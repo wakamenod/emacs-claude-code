@@ -29,12 +29,21 @@ make lint        # checkdoc（+ package-lint があれば）
 開発・テストで `claude` を起動するときは **必ず** 次を付ける:
 
 ```
---safe-mode --model haiku --max-budget-usd 0.5
+--settings '{"enabledPlugins":{"emacs-bridge@emacs-gravity-marketplace":false}}'
+--model haiku --max-budget-usd 0.5
 ```
 
-- `--safe-mode`: この環境には emacs-gravity プラグインの hooks が入っており、無いと AskUserQuestion がハングする。
+- `--settings` の `enabledPlugins`: この環境には emacs-gravity プラグインの hooks が入っており、
+  `PermissionRequest` hook が端末を出せずに `{"reason":"no_capable_terminal"}` を返すため、
+  そのままだと AskUserQuestion がハングする。このプラグインだけをセッション単位で止める。
+  ユーザーの対話用セッションには影響しない。
+- **`--safe-mode` は使わない。** MCP サーバー・skills・カスタムコマンド・agents まで丸ごと落ちてしまい、
+  この package が表示したいもの（FR-INP-1〜3 の `/` 補完、FR-DASH の agents、FR-MCP）が消える。
+  検証結果は `docs/verified.md` の D2。
 - `--model haiku` と `--max-budget-usd`: コスト上限。
 - stream-json には `--verbose` と `--permission-prompt-tool stdio` と `:connection-type 'pipe` が必須（計画 §2.1, §9）。
+
+Elisp 側では `ecc-safe-mode` は nil が既定。止めたいプラグインは `ecc-disabled-plugins` に入れる。
 
 ## コーディング規約
 

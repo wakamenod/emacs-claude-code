@@ -172,6 +172,16 @@ DESTINATION defaults to \"session\"."
     (mode . ,mode)
     (destination . ,(or destination "session"))))
 
+(defun ecc-protocol-settings-json (&optional disabled-plugins)
+  "Return the JSON to pass to --settings, or nil when there is nothing to say.
+DISABLED-PLUGINS is a list of plugin identifiers to turn off for this
+session only.  The CLI merges this on top of the user settings files, so
+the plugin stays enabled everywhere else."
+  (when disabled-plugins
+    (ecc--json-write
+     `((enabledPlugins . ,(mapcar (lambda (id) (cons (intern id) :false))
+                                  disabled-plugins))))))
+
 (defun ecc-protocol-serialize (object)
   "Serialize OBJECT to the JSON line sent to the CLI, without newline."
   (ecc--json-write object))

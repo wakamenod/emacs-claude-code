@@ -5,8 +5,8 @@
 #       --prompt "hello" [--policy allow] [-- 追加の claude オプション...]
 #
 # stdout の全行をそのまま OUT に書く。制御要求（can_use_tool）には --policy に
-# 従って応答する。開発ルール（CLAUDE.md）どおり --safe-mode / --model haiku /
-# --max-budget-usd を必ず付ける。
+# 従って応答する。開発ルール（CLAUDE.md）どおり --model haiku と
+# --max-budget-usd を必ず付け、emacs-gravity の hooks を --settings で止める。
 set -euo pipefail
 exec python3 - "$@" <<'EOF'
 import argparse, json, subprocess, sys, time, uuid
@@ -22,6 +22,10 @@ ap.add_argument("--answer-sep", default=", ",
                 help="AskUserQuestion の multiSelect 回答の区切り")
 ap.add_argument("--initialize", action="store_true", help="先に initialize を送る")
 ap.add_argument("--timeout", type=float, default=300.0)
+ap.add_argument("--disable-plugin", action="append",
+                default=["emacs-bridge@emacs-gravity-marketplace"],
+                help="このセッションだけ止めるプラグイン。--safe-mode と違い "
+                     "MCP・skills・コマンドは残る（docs/verified.md の D2）")
 ap.add_argument("--model", default="haiku")
 ap.add_argument("--budget", default="0.5")
 ap.add_argument("extra", nargs="*", help="追加の claude オプション（-- の後ろ）")
@@ -29,9 +33,13 @@ args = ap.parse_args()
 
 cmd = ["claude", "-p",
        "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-       "--permission-prompt-tool", "stdio", "--safe-mode",
+       "--permission-prompt-tool", "stdio",
        "--model", args.model, "--max-budget-usd", args.budget,
-       "--no-session-persistence", *args.extra]
+       "--no-session-persistence"]
+if args.disable_plugin:
+    cmd += ["--settings",
+            json.dumps({"enabledPlugins": {p: False for p in args.disable_plugin}})]
+cmd += args.extra
 print("$", " ".join(cmd), file=sys.stderr)
 
 p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,

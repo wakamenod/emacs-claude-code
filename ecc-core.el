@@ -60,12 +60,23 @@ Nil leaves the CLI default in place."
   "Spending cap passed with --max-budget-usd, or nil for no cap."
   :type '(choice (const :tag "No cap" nil) number))
 
-(defcustom ecc-safe-mode t
-  "Non-nil passes --safe-mode, which disables user hooks and plugins.
-The default is t because a PermissionRequest hook that cannot reach a
-terminal makes AskUserQuestion hang.  Note that --safe-mode also
-disables MCP servers configured with --mcp-config; see docs/verified.md."
+(defcustom ecc-safe-mode nil
+  "Non-nil passes --safe-mode, which disables every customization.
+That includes MCP servers, skills, custom commands and agents, which
+this package exists to surface, so it is off by default.  To silence a
+single misbehaving plugin use `ecc-disabled-plugins' instead."
   :type 'boolean)
+
+(defcustom ecc-disabled-plugins nil
+  "Plugin identifiers to disable for the sessions this package starts.
+Each entry looks like \"name@marketplace\" and is passed through
+--settings, so the plugin stays enabled in the terminal client.
+
+A hook that expects to reach a terminal cannot work behind a headless
+client: a PermissionRequest hook with nowhere to prompt makes
+AskUserQuestion hang.  Disabling the plugin that installs it is enough,
+and unlike `ecc-safe-mode' it leaves MCP servers and commands alone."
+  :type '(repeat string))
 
 (defcustom ecc-streaming-enabled t
   "Non-nil passes --include-partial-messages for incremental rendering."

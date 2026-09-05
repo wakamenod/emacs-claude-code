@@ -223,6 +223,15 @@ that parsed values can be echoed back unchanged."
                                       (alist-get 'request (ecc--json-read-verbatim line))))))
             (should (equal sent recorded))))))))
 
+(ert-deftest ecc-protocol-test-settings-json ()
+  "Disabled plugins turn into an enabledPlugins override for --settings."
+  (should (null (ecc-protocol-settings-json nil)))
+  (should (equal (ecc-protocol-settings-json '("emacs-bridge@emacs-gravity-marketplace"))
+                 (concat "{\"enabledPlugins\":"
+                         "{\"emacs-bridge@emacs-gravity-marketplace\":false}}")))
+  (should (equal (ecc-protocol-settings-json '("a@m" "b@m"))
+                 "{\"enabledPlugins\":{\"a@m\":false,\"b@m\":false}}")))
+
 (provide 'ecc-protocol-test)
 
 ;;; ecc-protocol-test.el ends here
