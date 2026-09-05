@@ -33,10 +33,11 @@ make lint        # checkdoc（+ package-lint があれば）
 --model haiku --max-budget-usd 0.5
 ```
 
-- `--settings` の `enabledPlugins`: この環境には emacs-gravity プラグインの hooks が入っており、
-  `PermissionRequest` hook が端末を出せずに `{"reason":"no_capable_terminal"}` を返すため、
-  そのままだと AskUserQuestion がハングする。このプラグインだけをセッション単位で止める。
-  ユーザーの対話用セッションには影響しない。
+- `--settings` の `enabledPlugins`: この環境には emacs-gravity プラグイン（emacs-bridge 4.6.2）の
+  hooks が入っている。**ハングはしない**（2026-09-05 に 2 回確認。hook は
+  `{"reason":"no_capable_terminal"}` を返して手を引き、`--permission-prompt-tool stdio` に落ちる）が、
+  fixture の記録では止めておく: hook events・1〜2 秒の遅延・gravity 自身の MCP と system prompt が混ざらない。
+  セッション単位なので、ユーザーの対話用セッションには影響しない。
 - **`--safe-mode` は使わない。** MCP サーバー・skills・カスタムコマンド・agents まで丸ごと落ちてしまい、
   この package が表示したいもの（FR-INP-1〜3 の `/` 補完、FR-DASH の agents、FR-MCP）が消える。
   検証結果は `docs/verified.md` の D2。

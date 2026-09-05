@@ -72,10 +72,11 @@ single misbehaving plugin use `ecc-disabled-plugins' instead."
 Each entry looks like \"name@marketplace\" and is passed through
 --settings, so the plugin stays enabled in the terminal client.
 
-A hook that expects to reach a terminal cannot work behind a headless
-client: a PermissionRequest hook with nowhere to prompt makes
-AskUserQuestion hang.  Disabling the plugin that installs it is enough,
-and unlike `ecc-safe-mode' it leaves MCP servers and commands alone."
+Hooks written for the terminal client cannot do their job behind a
+headless one; a well behaved one answers no_capable_terminal and steps
+aside, but it still costs a round trip and can inject settings of its
+own.  Disabling the plugin that installs it is enough, and unlike
+`ecc-safe-mode' it leaves MCP servers and commands alone."
   :type '(repeat string))
 
 (defcustom ecc-streaming-enabled t
