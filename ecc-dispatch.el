@@ -384,7 +384,10 @@ the patch of an Edit or a Write, the id and status of a task."
                                   (alist-get 'old_string input))
                               (or (alist-get 'newString result)
                                   (alist-get 'new_string input))
-                              patch)
+                              patch
+                              (if (stringp original)
+                                  original
+                                (ecc-model-node-get node 'before)))
          (when (stringp original)
            (ecc-model-note-snapshot
             session path
@@ -392,12 +395,14 @@ the patch of an Edit or a Write, the id and status of a task."
                             (or (alist-get 'new_string input) "")
                             original)))))
       ("Write"
-       (ecc-model-note-hunk session (alist-get 'file_path input)
-                            (or (alist-get 'originalFile result)
-                                (ecc-model-node-get node 'before))
-                            (or (alist-get 'content result)
-                                (alist-get 'content input))
-                            (alist-get 'structuredPatch result)))
+       (let ((original (or (alist-get 'originalFile result)
+                           (ecc-model-node-get node 'before))))
+         (ecc-model-note-hunk session (alist-get 'file_path input)
+                              original
+                              (or (alist-get 'content result)
+                                  (alist-get 'content input))
+                              (alist-get 'structuredPatch result)
+                              original)))
       ("TaskCreate"
        (let ((task (alist-get 'task result)))
          (ecc-model-note-task session (alist-get 'id task)

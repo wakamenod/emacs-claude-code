@@ -32,6 +32,7 @@
 (require 'ecc-prompt)
 (require 'ecc-perm)
 (require 'ecc-plan)
+(require 'ecc-review)
 (require 'ecc-sync)
 (require 'ecc-inbox)
 (require 'ecc-window)

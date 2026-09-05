@@ -151,8 +151,12 @@
   "What Claude did to one file during a session.
 HUNKS is a list of (OLD . NEW) strings, oldest first, one per Edit or
 Write; PATCHES holds the structuredPatch the CLI reported for each, in
-the same order, and SNAPSHOT the content of the file as last seen."
-  path reads edits writes hunks patches snapshot (added 0) (removed 0))
+the same order, and SNAPSHOT the content of the file as last seen.
+ORIGINAL is the whole file before the first change of the session, nil
+when the file did not exist, and `unknown' until a change is recorded;
+the review of a file git does not track diffs against it (FR-DIFF-3)."
+  path reads edits writes hunks patches snapshot (added 0) (removed 0)
+  (original 'unknown))
 
 (cl-defstruct ecc-task
   "One entry of Claude's own task list."
@@ -475,15 +479,20 @@ entry exists.  Returns the entry, or nil when PATH is not a string."
       (run-hook-with-args 'ecc-files-updated-hook session)
       entry)))
 
-(defun ecc-model-note-hunk (session path old new &optional patch)
+(defun ecc-model-note-hunk (session path old new &optional patch original)
   "Record that Claude changed PATH of SESSION from OLD to NEW.
 PATCH is the structuredPatch the CLI reported, when it did.  The line
-counts of the Files section come from PATCH when there is one."
+counts of the Files section come from PATCH when there is one.
+ORIGINAL is the whole file before this change, or nil for a file that
+did not exist; the first change of a file keeps it as what the session
+started from."
   (when-let* ((entry (ecc-model-note-file session path nil)))
     (setf (ecc-file-entry-hunks entry)
           (nconc (ecc-file-entry-hunks entry) (list (cons old new))))
     (setf (ecc-file-entry-patches entry)
           (nconc (ecc-file-entry-patches entry) (list patch)))
+    (when (eq (ecc-file-entry-original entry) 'unknown)
+      (setf (ecc-file-entry-original entry) original))
     (when (stringp new)
       (setf (ecc-file-entry-snapshot entry) new))
     entry))

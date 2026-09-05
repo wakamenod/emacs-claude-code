@@ -36,6 +36,8 @@
 (declare-function ecc-plan-open "ecc-plan" (request))
 (declare-function ecc-inbox "ecc-inbox" ())
 (declare-function ecc-next-attention "ecc-inbox" ())
+(declare-function ecc-review "ecc-review" (&optional session paths))
+(declare-function ecc-perm-request-at-point "ecc-perm" ())
 
 (defvar ecc-session-mode-map
   (let ((map (make-sparse-keymap)))
@@ -47,7 +49,8 @@
     (define-key map (kbd "R") #'ecc-session-resume)
     (define-key map (kbd "L") #'ecc-session-show-log)
     (define-key map (kbd "a") #'ecc-perm-allow)
-    (define-key map (kbd "d") #'ecc-perm-deny)
+    (define-key map (kbd "d") #'ecc-session-review-or-deny)
+    (define-key map (kbd "C-c d") #'ecc-session-review)
     (define-key map (kbd "C-c a") #'ecc-perm-allow-all)
     (define-key map (kbd "C-c A") #'ecc-session-allow-all-remember)
     (define-key map (kbd "C-c i") #'ecc-inbox)
@@ -182,6 +185,29 @@ answered in (FR-PERM-5, FR-PLAN-1)."
       (require 'ecc-plan)
       (pop-to-buffer (ecc-plan-open request)))
      (t (ecc-session--show-node session node)))))
+
+(defun ecc-session-review ()
+  "Open every change of this session as one diff to review (FR-DIFF-3)."
+  (interactive)
+  (require 'ecc-review)
+  (ecc-review (ecc-session-at-point)))
+
+(defun ecc-session-review-file ()
+  "Open the diff of the file at point in the Files section (FR-OUT-12)."
+  (interactive)
+  (require 'ecc-review)
+  (ecc-review (ecc-session-at-point)
+              (list (or (ecc-session-file-at-point)
+                        (user-error "Not on a file")))))
+
+(defun ecc-session-review-or-deny ()
+  "Deny the request at point, or open the review when not on one.
+The d key of the transcript does both (plan sections 6.3 and 6.5)."
+  (interactive)
+  (require 'ecc-perm)
+  (if (ecc-perm-request-at-point)
+      (call-interactively #'ecc-perm-deny)
+    (ecc-session-review)))
 
 (defun ecc-session-allow-all-remember ()
   "Allow every waiting request and stop asking about those tools (FR-PERM-9)."

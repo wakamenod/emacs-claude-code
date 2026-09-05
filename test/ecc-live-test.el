@@ -430,6 +430,92 @@ as git status is not used: the CLI runs those without asking."
           (kill-buffer buffer))
         (delete-directory directory t)))))
 
+
+(defun ecc-test-live-git (directory &rest args)
+  "Run git with ARGS in DIRECTORY, failing the test when it fails."
+  (with-temp-buffer
+    (let ((default-directory directory))
+      (unless (= (apply #'call-process "git" nil t nil args) 0)
+        (ert-fail (format "git %s failed: %s" args (buffer-string)))))))
+
+(defun ecc-test-live-file-string (file)
+  "Return the trimmed content of FILE."
+  (with-temp-buffer
+    (insert-file-contents file)
+    (string-trim (buffer-string))))
+
+(ert-deftest ecc-test-live-review ()
+  "The phase 4 acceptance check: three files changed, two hunks commented,
+one prompt sent, and the files corrected the way the comments said
+\(FR-DIFF-3, 4, 5).  One file is untracked, so its diff comes from the
+records and not from git."
+  :tags '(live)
+  (skip-unless (executable-find "git"))
+  (ecc-test-live-with-session session
+    (let* ((directory (file-name-as-directory
+                       (file-truename (make-temp-file "ecc-live-review" t))))
+           (greeting (concat directory "greeting.txt"))
+           (farewell (concat directory "farewell.txt"))
+           (notes (concat directory "notes.txt"))
+           (review nil))
+      (setf (ecc-session-auto-approve-kinds session) '("Write" "Edit" "MultiEdit"))
+      (unwind-protect
+          (progn
+            (ecc-test-live-git directory "init" "-q")
+            (ecc-test-live-git directory "config" "user.email" "t@example.com")
+            (ecc-test-live-git directory "config" "user.name" "t")
+            (with-temp-file greeting (insert "hello\n"))
+            (with-temp-file farewell (insert "bye\n"))
+            (ecc-test-live-git directory "add" ".")
+            (ecc-test-live-git directory "commit" "-q" "-m" "init")
+            (ecc-proc-send-prompt
+             session
+             (format (concat "Using only the Edit and Write tools (no shell): "
+                             "in %s replace the word in greeting.txt with: hi ; "
+                             "replace the word in farewell.txt with: ciao ; "
+                             "and create notes.txt containing the single word: todo")
+                     directory))
+            (ecc-test-live-wait-for-result session)
+            (should (equal (ecc-test-live-file-string greeting) "hi"))
+            (should (equal (ecc-test-live-file-string farewell) "ciao"))
+            (should (equal (ecc-test-live-file-string notes) "todo"))
+            ;; The review: git for the two tracked files, the records for
+            ;; the new one, all in one buffer.
+            (should (= (length (ecc-review-files session)) 3))
+            (setq review (ecc-review-buffer session))
+            (with-current-buffer review
+              (let ((text (buffer-string)))
+                (should (string-search "diff --git a/farewell.txt b/farewell.txt" text))
+                (should (string-search "diff --git a/greeting.txt b/greeting.txt" text))
+                (should (string-search "-bye\n+ciao\n" text))
+                (should (string-search "-hello\n+hi\n" text))
+                (should (string-search (format "--- /dev/null\n+++ %s\n" notes) text))
+                (should (string-search "+todo\n" text)))
+              (should (equal default-directory directory))
+              (should (= (length (ecc-review-hunks)) 3))
+              ;; Comment on the two git hunks, leave the new file alone.
+              (goto-char (point-min))
+              (diff-hunk-next)
+              (ecc-review-comment "Use the word adios instead of ciao.")
+              (diff-hunk-next)
+              (ecc-review-comment "Use the word hey instead of hi.")
+              (should (equal (mapcar (lambda (c) (plist-get c :path)) (ecc-review-comments))
+                             '("farewell.txt" "greeting.txt")))
+              (ecc-review-send)
+              (with-current-buffer (ecc-review-message-buffer-name session)
+                (let ((text (buffer-string)))
+                  (should (string-prefix-p ecc-review-header text))
+                  (should (string-search "## farewell.txt  L1-L1\n```diff\n@@ -1 +1 @@\n-bye\n+ciao\n```\nコメント: Use the word adios instead of ciao." text))
+                  (should (string-search "## greeting.txt  L1-L1\n" text)))
+                (ecc-review-message-send)))
+            (should-not (buffer-live-p review))
+            (ecc-test-live-wait-for-result session)
+            (should (equal (ecc-test-live-file-string farewell) "adios"))
+            (should (equal (ecc-test-live-file-string greeting) "hey"))
+            (should (equal (ecc-test-live-file-string notes) "todo")))
+        (when (buffer-live-p review) (kill-buffer review))
+        (delete-directory directory t)))))
+
 (provide 'ecc-live-test)
 
 ;;; ecc-live-test.el ends here

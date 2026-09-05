@@ -123,6 +123,8 @@ The whole diff is always available with RET (FR-OUT-7)."
     (define-key map (kbd "A") 'ecc-perm-allow-always)
     (define-key map (kbd "t") 'ecc-perm-approve-turn)
     (define-key map (kbd "p") 'ecc-perm-add-pattern)
+    (define-key map (kbd "c") 'ecc-review-comment-request)
+    (define-key map (kbd "e") 'ecc-review-edit-proposal)
     map)
   "Keymap of a section that is waiting for an answer (plan section 6.3).")
 
@@ -130,6 +132,7 @@ The whole diff is always available with RET (FR-OUT-7)."
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET") 'ecc-session-visit)
     (define-key map (kbd "SPC") 'magit-section-toggle)
+    (define-key map (kbd "d") 'ecc-session-review-file)
     map)
   "Keymap of a file row in the Files section.")
 
@@ -638,7 +641,7 @@ An Edit or a Write shows its input as a diff (FR-OUT-7)."
   (pcase kind
     ('question "   RET: answer  d: deny")
     ('plan "   RET: review  a: approve  d: deny")
-    (_ "   a: allow  d: deny  A: always  t: turn  p: pattern")))
+    (_ "   a: allow  d: deny  A: always  t: turn  p: pattern  c: comment  e: edit")))
 
 (defun ecc-render--request-heading (node)
   "Return the heading of the request NODE.
