@@ -39,6 +39,9 @@
 (require 'ecc-history)
 (require 'ecc-dashboard)
 (require 'ecc-window)
+(require 'ecc-context)
+(require 'ecc-notify)
+(require 'ecc-transient)
 
 (defcustom ecc-resume-on-abnormal-exit 'ask
   "What to do when the CLI of a session stops on its own (FR-SES-7).
@@ -57,6 +60,18 @@ an exit with status zero, are never resumed."
   :type 'boolean
   :group 'ecc)
 
+(defcustom ecc-notify-on-start t
+  "Non-nil turns `ecc-notify-mode' on with the first session (FR-NOTIFY-1)."
+  :type 'boolean
+  :group 'ecc)
+
+(defcustom ecc-track-source-buffer t
+  "Non-nil follows the buffer the user last worked in (FR-CTX-1).
+That is what `ecc-send-region' and the `@region' reference quote from
+when the current buffer is a transcript or a prompt."
+  :type 'boolean
+  :group 'ecc)
+
 (defun ecc-project-root ()
   "Return the root of the project of the current buffer, or its directory."
   (ecc-window-project-root))
@@ -70,7 +85,10 @@ argument asks for the directory and the name."
    (if current-prefix-arg
        (list (read-directory-name "Directory: " (ecc-project-root))
              (read-string "Session name: "))
-     (list (ecc-project-root) nil)))
+     ;; The second session of a project is told from the first by a name
+     ;; the user gives it (FR-WIN-3).
+     (let ((root (ecc-project-root)))
+       (list root (ecc-window-read-session-name root)))))
   (let ((session (ecc-model-create-session
                   :project-root (or directory (ecc-project-root))
                   :name (and name (not (string-empty-p name)) name))))
@@ -79,6 +97,10 @@ argument asks for the directory and the name."
     (ecc-proc-start session)
     (when ecc-inbox-indicator
       (ecc-inbox-indicator-mode 1))
+    (when ecc-notify-on-start
+      (ecc-notify-mode 1))
+    (when ecc-track-source-buffer
+      (ecc-track-source-buffer-mode 1))
     (ecc-display-prompt session)
     session))
 
@@ -187,21 +209,14 @@ a sentinel is no place to ask a question or start a process."
                          (user-error "No session to kill"))))
   (ecc-proc-stop session)
   (ecc-model-remove-session session)
+  (ecc-window-forget-session session)
+  (ecc-image-cleanup-session session)
   (dolist (buffer (list (ecc-session-buffer session)
                         (ecc-session-prompt-buffer session)
                         (ecc-session-stream-buffer session)))
     (when (buffer-live-p buffer)
       (kill-buffer buffer)))
   (message "%s を終了しました" (ecc-session-name session)))
-
-;;;###autoload
-(defun ecc-send (text &optional session)
-  "Send TEXT to SESSION, or to the most recently used one (FR-CTX-5)."
-  (interactive (list (read-string "Claude: ")))
-  (let ((session (or session ecc-render--session (car (ecc-model-sessions)))))
-    (unless session
-      (user-error "No session is running"))
-    (ecc-proc-send-prompt session text)))
 
 (provide 'ecc)
 

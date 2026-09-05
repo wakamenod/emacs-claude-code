@@ -39,6 +39,7 @@
 (declare-function ecc-next-attention "ecc-inbox" ())
 (declare-function ecc-review "ecc-review" (&optional session paths))
 (declare-function ecc-perm-request-at-point "ecc-perm" ())
+(declare-function ecc-menu "ecc-transient" ())
 
 (defvar ecc-session-mode-map
   (let ((map (make-sparse-keymap)))
@@ -69,6 +70,8 @@
     (define-key map (kbd "w") #'ecc-session-copy-at-point)
     (define-key map (kbd "f") #'ecc-session-goto-files)
     (define-key map (kbd "C-c C-e") #'ecc-session-export-markdown)
+    ;; One menu reaches every command (NFR-10).
+    (define-key map (kbd "?") #'ecc-menu)
     map)
   "Keymap of `ecc-session-mode'.")
 

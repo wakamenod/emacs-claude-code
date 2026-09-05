@@ -167,6 +167,10 @@ Returns the pending request."
   "Return the inner response of the Nth message sent, oldest first."
   (alist-get 'response (alist-get 'response (nth n (ecc-test-sent-messages)))))
 
+(defun ecc-test-sent-text (n)
+  "Return the text of the Nth user message sent, oldest first."
+  (alist-get 'content (alist-get 'message (nth n (ecc-test-sent-messages)))))
+
 (defun ecc-test-node-types (nodes)
   "Return the list of types of NODES."
   (mapcar #'ecc-node-type nodes))

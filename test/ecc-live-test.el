@@ -633,6 +633,55 @@ is what keeps the two from drifting apart."
           (should (equal (alist-get 'status agent) (alist-get 'status entry)))
           (should (ecc-dashboard--agent-entry entry)))))))
 
+(ert-deftest ecc-test-live-context ()
+  "A region sent from a source buffer arrives quoted (FR-CTX-5 c)."
+  :tags '(live)
+  (ecc-test-live-with-session session
+    (with-temp-buffer
+      (insert "def add(a, b):\n    return a - b\n")
+      (setq buffer-file-name (expand-file-name "calc.py" temporary-file-directory))
+      (unwind-protect
+          (let ((ecc-render--session nil))
+            ;; No transcript is current, so the session is the one this
+            ;; buffer resolves to (FR-WIN-4).
+            (ecc-send-region (point-min) (point-max)
+                             "この関数のバグを一語で答えて。説明は不要。")
+            (let ((text (ecc-test-live-turn-text
+                         (ecc-test-live-wait-for-result session))))
+              ;; The quote block reached the model: it can only answer
+              ;; from the code, which is nowhere but in the prompt.
+              (should (string-match-p
+                       "subtract\\|minus\\|sign\\|operator\\|引き算\\|減算\\|マイナス\\|符号\\|演算子\\|-"
+                       text))))
+        (setq buffer-file-name nil)))
+    (let ((prompt (ecc-turn-prompt (car (ecc-session-turns session)))))
+      (should (string-search "```python" prompt))
+      (should (string-search "return a - b" prompt))
+      (should (string-search "`calc.py` L1-L2" prompt)))))
+
+(ert-deftest ecc-test-live-image ()
+  "An image is passed by path and the model can see it (FR-INP-9)."
+  :tags '(live)
+  (ecc-test-live-with-session session
+    (let ((file (expand-file-name "red-square.png"
+                                  (expand-file-name "fixtures" ecc-test-directory))))
+      (should (file-exists-p file))
+      ;; This is what pasting an image into the prompt buffer leaves
+      ;; behind: a path, never base64 in the conversation.
+      (ecc-proc-send-prompt
+       session (format "@%s この画像の色を英語の一語で答えて。" file))
+      ;; Reading the file is a tool call, and it needs an answer.
+      (let ((deadline (+ (float-time) ecc-test-live-timeout)))
+        (while (and (ecc-session-current-turn session)
+                    (< (float-time) deadline)
+                    (process-live-p (ecc-session-process session)))
+          (accept-process-output (ecc-session-process session) 0.2)
+          (when-let* ((request (car (ecc-session-pending session))))
+            (ecc-perm-respond request 'allow))))
+      (let ((text (ecc-test-live-turn-text
+                   (car (last (ecc-session-turns session))))))
+        (should (string-match-p "\\(?:^\\|[^a-zA-Z]\\)[Rr]ed" text))))))
+
 (provide 'ecc-live-test)
 
 ;;; ecc-live-test.el ends here
