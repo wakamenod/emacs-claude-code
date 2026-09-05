@@ -6,15 +6,19 @@
 ;; ERT suites.  Fixtures are whole recordings of the CLI stream-json
 ;; output, one JSON object per line; see scripts/record-fixture.sh.
 ;;
-;; Phase 0 has no session or dispatch layer yet, so `ecc-test-feed-fixture'
-;; takes the handler to run on each parsed message.  Phase 1 passes the
-;; dispatch entry point.
+;; `ecc-test-feed-fixture' takes the handler to run on each parsed
+;; message; from phase 1 on that is usually a closure over `ecc-dispatch'
+;; and a session made by `ecc-test-with-fake-session'.
 
 ;;; Code:
 
 (require 'ert)
+(require 'cl-lib)
 (require 'ecc-core)
 (require 'ecc-protocol)
+(require 'ecc-model)
+(require 'ecc-proc)
+(require 'ecc-dispatch)
 
 (defconst ecc-test-directory
   (file-name-directory (or load-file-name buffer-file-name))
@@ -61,6 +65,70 @@ Returns the list of HANDLER return values."
   "Return the text of BUFFER, or the current buffer, without properties."
   (with-current-buffer (or buffer (current-buffer))
     (buffer-substring-no-properties (point-min) (point-max))))
+
+;;;; Sessions without a process (plan section 8)
+
+(defvar ecc-test-sent nil
+  "JSON objects the session under test sent, most recent first.")
+
+(defun ecc-test-sent-messages ()
+  "Return what the session under test sent, in the order it was sent."
+  (reverse ecc-test-sent))
+
+(defun ecc-test-cleanup-session (session)
+  "Kill every buffer SESSION created."
+  (dolist (buffer (list (ecc-session-buffer session)
+                        (ecc-session-prompt-buffer session)
+                        (ecc-session-stream-buffer session)
+                        (get-buffer (ecc-log-buffer-name (ecc-session-name session)))))
+    (when (buffer-live-p buffer)
+      (kill-buffer buffer))))
+
+(defmacro ecc-test-with-fake-session (var &rest body)
+  "Run BODY with VAR bound to a registered session that has no process.
+Everything the session sends is collected in `ecc-test-sent' instead of
+reaching a process, and the session registry is emptied afterwards so
+that tests cannot see each other."
+  (declare (indent 1) (debug (symbolp body)))
+  `(let* ((ecc-test-sent nil)
+          (ecc--sessions (make-hash-table :test #'equal))
+          (ecc--session-order nil)
+          (ecc-render-debounce 0)
+          (,var (ecc-model-create-session
+                 :name "test"
+                 :project-root temporary-file-directory)))
+     (unwind-protect
+         (cl-letf (((symbol-function #'ecc-proc-send-json)
+                    (lambda (_session object) (push object ecc-test-sent) object)))
+           ,@body)
+       (ecc-test-cleanup-session ,var))))
+
+(defun ecc-test-dispatch (session name &optional prompt)
+  "Feed every line of fixture NAME to SESSION through `ecc-dispatch'.
+PROMPT, when given, opens the turn the recording answers, the way
+sending a prompt from Emacs would."
+  (when prompt
+    (ecc-model-begin-turn session prompt))
+  (dolist (line (ecc-test-fixture-lines name))
+    (ecc-dispatch session (ecc-protocol-parse-line line)))
+  session)
+
+(defun ecc-test-node-types (nodes)
+  "Return the list of types of NODES."
+  (mapcar #'ecc-node-type nodes))
+
+(defun ecc-test-node-shape (nodes)
+  "Return the types of NODES, nesting the children of each."
+  (mapcar (lambda (node)
+            (if (ecc-node-children node)
+                (cons (ecc-node-type node)
+                      (ecc-test-node-shape (ecc-node-children node)))
+              (ecc-node-type node)))
+          nodes))
+
+(defun ecc-test-turn-shape (turn)
+  "Return the types of the children of TURN, nesting steps and tools."
+  (ecc-test-node-shape (ecc-turn-children turn)))
 
 ;;;; Snapshots (plan section 8)
 

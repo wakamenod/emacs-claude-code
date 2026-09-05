@@ -162,6 +162,56 @@ FORMAT-STRING and ARGS are passed to `format'."
   (when ecc-debug
     (apply #'message (concat "ecc[" name "]: " format-string) args)))
 
+;;;; Faces (plan section 5.3)
+
+;; The session buffer does not use font-lock (plan section 9, item 7), so
+;; every face below is applied when the text is inserted.
+
+(defface ecc-user-face
+  '((t :inherit font-lock-keyword-face))
+  "Face for the margin marker and text of a prompt sent by the user."
+  :group 'ecc)
+
+(defface ecc-assistant-face
+  '((t :inherit default))
+  "Face for assistant text."
+  :group 'ecc)
+
+(defface ecc-thinking-face
+  '((t :inherit shadow :slant italic))
+  "Face for thinking blocks."
+  :group 'ecc)
+
+(defface ecc-synthetic-face
+  '((t :inherit shadow))
+  "Face for replies the CLI itself made up, such as slash command output."
+  :group 'ecc)
+
+(defface ecc-tool-face
+  '((t :inherit font-lock-function-name-face))
+  "Face for a tool name in a heading."
+  :group 'ecc)
+
+(defface ecc-error-face
+  '((t :inherit error))
+  "Face for a failed tool call or a dispatch error."
+  :group 'ecc)
+
+(defface ecc-pending-face
+  '((t :inherit warning))
+  "Face for a request that is waiting for an answer."
+  :group 'ecc)
+
+(defface ecc-heading-face
+  '((t :inherit bold))
+  "Face for the session header and turn headings."
+  :group 'ecc)
+
+(defface ecc-dim-face
+  '((t :inherit shadow))
+  "Face for secondary detail such as costs and durations."
+  :group 'ecc)
+
 ;;;; UUID
 
 (defun ecc--hex4 ()

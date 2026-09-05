@@ -182,6 +182,20 @@ the plugin stays enabled everywhere else."
      `((enabledPlugins . ,(mapcar (lambda (id) (cons (intern id) :false))
                                   disabled-plugins))))))
 
+(defun ecc-protocol-value-string (value)
+  "Return VALUE, as parsed from JSON, as a string fit for display.
+Kept here because it is the only place that knows how the reader
+spells null, false and an array (NFR-2)."
+  (cond ((stringp value) value)
+        ((null value) "null")
+        ((eq value :null) "null")
+        ((eq value :false) "false")
+        ((eq value t) "true")
+        ((numberp value) (number-to-string value))
+        (t (condition-case nil
+               (ecc--json-write value)
+             (error (format "%S" value))))))
+
 (defun ecc-protocol-serialize (object)
   "Serialize OBJECT to the JSON line sent to the CLI, without newline."
   (ecc--json-write object))
