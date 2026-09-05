@@ -39,6 +39,8 @@
 (require 'ecc-markdown)
 (require 'ecc-diff)
 
+(declare-function ecc-history-load-more "ecc-history" (session &optional n-turns))
+
 (defcustom ecc-render-debounce 0.1
   "Seconds to gather changes before redrawing the live region (FR-OUT-10)."
   :type 'number
@@ -108,6 +110,8 @@ The whole diff is always available with RET (FR-OUT-7)."
   :documentation "A message this version does not understand.")
 (defclass ecc-section-tail (magit-section) ()
   :documentation "The state line at the end of the buffer.")
+(defclass ecc-section-history (magit-section) ()
+  :documentation "The button that reads the page before the first turn.")
 
 (defvar ecc-tool-section-map
   (let ((map (make-sparse-keymap)))
@@ -388,12 +392,35 @@ diff colouring survive."
                              (_ 'default)))
                     "\n")))))))
 
+(defun ecc-render--insert-history-button (session)
+  "Insert the button that reads the page before the first turn of SESSION.
+Nothing is inserted when the whole recording has been read, or when
+there is none (FR-HIST-1)."
+  (when (ecc-render--history-more-p session)
+    (magit-insert-section (ecc-section-history "history")
+      (insert-text-button
+       "古いメッセージを読み込む"
+       'action (lambda (_button)
+                 (require 'ecc-history)
+                 (ecc-history-load-more session))
+       'follow-link t
+       'help-echo "前の 50 ターンを読み込む")
+      (insert "\n"))))
+
+(defun ecc-render--history-more-p (session)
+  "Return non-nil when SESSION has an older page of its recording left.
+The paging position is a slot of the session, so this asks no module
+above the renderer (plan section 1.3)."
+  (let ((offset (ecc-session-history-offset session)))
+    (and offset (> offset 0))))
+
 (defun ecc-render--insert-top (session)
   "Insert the header, Files and Tasks of SESSION and the blank line after."
   (magit-insert-section (ecc-section-header "header")
     (insert (ecc-render--header-string session)))
   (ecc-render--insert-files session)
   (ecc-render--insert-tasks session)
+  (ecc-render--insert-history-button session)
   (insert "\n"))
 
 (defun ecc-render--top-sections ()
@@ -814,8 +841,12 @@ each question once the request was answered."
      (propertize (ecc--truncate (or (ecc-turn-prompt turn) "(resumed)") 60)
                  'face 'ecc-user-face)
      (if (ecc-turn-end-time turn)
-         (propertize (format "  ·  %.1fs  ·  $%.4f"
-                             (or duration 0) (or (ecc-turn-cost turn) 0))
+         (propertize (if (ecc-turn-cost turn)
+                         (format "  ·  %.1fs  ·  $%.4f"
+                                 (or duration 0) (ecc-turn-cost turn))
+                       ;; A turn read back from a recording has no result
+                       ;; message, so its cost is not known (FR-HIST-1).
+                       (format "  ·  %.1fs" (or duration 0)))
                      'face 'ecc-dim-face)
        ""))))
 

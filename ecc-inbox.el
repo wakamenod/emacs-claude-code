@@ -27,6 +27,10 @@
 (require 'ecc-window)
 
 (declare-function ecc-plan-open "ecc-plan" (request))
+;; Both are autoloaded commands of modules that require this one; the
+;; keymap only names them (plan section 1.3).
+(declare-function ecc-dashboard "ecc-dashboard" ())
+(declare-function ecc-history-open "ecc-history" (session-id))
 
 (defcustom ecc-answer-confirm t
   "Non-nil asks before a request is answered from another buffer."
@@ -276,6 +280,8 @@ question buffer opens with the first one answered."
     (define-key map (kbd "n") #'ecc-next-attention)
     (define-key map (kbd "N") #'ecc-next-attention-in-project)
     (define-key map (kbd "i") #'ecc-inbox)
+    (define-key map (kbd "D") #'ecc-dashboard)
+    (define-key map (kbd "h") #'ecc-history-open)
     (define-key map (kbd "1") #'ecc-answer-option-1)
     (define-key map (kbd "2") #'ecc-answer-option-2)
     (define-key map (kbd "3") #'ecc-answer-option-3)

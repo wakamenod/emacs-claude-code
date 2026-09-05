@@ -62,6 +62,10 @@ Elisp 側では `ecc-safe-mode` は nil が既定。止めたいプラグイン�
 
 - 各フェーズで計画 §8 に沿った ERT を書く。`make test` が通ることをフェーズ完了の条件に含める。
 - fixture は `test/fixtures/*.jsonl`。`scripts/record-fixture.sh` で実 CLI から記録する。
+- 履歴（`~/.claude/projects` の jsonl）の fixture は `test/fixtures/history/*.jsonl`。
+  `scripts/record-history.sh` で記録する（永続化ありで数ターン喋らせ、書かれた jsonl を取り込む）。
+  ストリームの fixture と同じディレクトリに置かないこと（`ecc-dispatch-test-no-fixture-line-is-unknown`
+  が全 fixture をストリームとして流すため）。
 - 描画のスナップショットは主要ケースに絞る。
 - 複数セッションにまたがる機能（Inbox、ダッシュボード）のテストは必ず 2 セッション以上で書く
   （`ecc-model-pending-all` の破壊的 sort は 1 セッションでは出なかった）。

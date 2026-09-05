@@ -263,6 +263,28 @@
                                  (hash-table-values (ecc-session-nodes session)))))
         (should (equal (cons name (length unknown)) (cons name 0)))))))
 
+(ert-deftest ecc-dispatch-test-system-subtype-list-is-current ()
+  "Every subtype `ecc-dispatch-system-subtypes' names is really handled.
+`ecc-history' trusts the list to tell a subtype of the stream from one
+only a recording holds, so it may not drift from the table."
+  (dolist (subtype ecc-dispatch-system-subtypes)
+    (ecc-test-with-fake-session session
+      (ecc-dispatch session `((type . "system") (subtype . ,subtype)))
+      (should (equal (cons subtype 0)
+                     (cons subtype
+                           (length (seq-filter
+                                    (lambda (node)
+                                      (eq (ecc-node-type node) 'unknown))
+                                    (hash-table-values
+                                     (ecc-session-nodes session)))))))))
+  ;; A subtype that is not in the list does land among the unknown ones.
+  (ecc-test-with-fake-session session
+    (ecc-dispatch session '((type . "system") (subtype . "away_summary")))
+    (should (= 1 (length (seq-filter (lambda (node)
+                                       (eq (ecc-node-type node) 'unknown))
+                                     (hash-table-values
+                                      (ecc-session-nodes session))))))))
+
 ;;;; Robustness (NFR-2, plan section 9, item 19)
 
 (ert-deftest ecc-dispatch-test-unknown-message-is-kept ()

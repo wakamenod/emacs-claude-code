@@ -53,6 +53,13 @@ NAME may be given with or without the .jsonl extension."
                                  t "\\.jsonl\\'"))
         #'string<))
 
+(defun ecc-test-history-fixture (name)
+  "Return the absolute path of the recorded history file NAME.
+These live in their own directory: a history file is not a stream, so
+the replay tests must not pick it up with the stream fixtures."
+  (expand-file-name (if (string-suffix-p ".jsonl" name) name (concat name ".jsonl"))
+                    (expand-file-name "fixtures/history" ecc-test-directory)))
+
 (defun ecc-test-feed-fixture (name handler)
   "Call HANDLER with each parsed message of fixture NAME, in order.
 Returns the list of HANDLER return values."

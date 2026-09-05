@@ -17,6 +17,8 @@
 (require 'ert)
 (require 'ecc-test-helpers)
 (require 'ecc)
+(require 'ecc-history)
+(require 'ecc-dashboard)
 
 (defconst ecc-test-live-options
   '(:model "haiku"
@@ -515,6 +517,104 @@ records and not from git."
             (should (equal (ecc-test-live-file-string notes) "todo")))
         (when (buffer-live-p review) (kill-buffer review))
         (delete-directory directory t)))))
+
+
+;;;; Phase 5: the recording, resuming it, and the session list
+
+(defconst ecc-test-live-persistent-options
+  '(:model "haiku"
+    :max-budget-usd 0.5
+    :streaming nil
+    :disabled-plugins ("emacs-bridge@emacs-gravity-marketplace"))
+  "Launch options for a live test that needs the CLI to keep a recording.
+The same as `ecc-test-live-options' without --no-session-persistence:
+a test of the history has to have a history to read.")
+
+(defmacro ecc-test-live-with-recorded-session (var &rest body)
+  "Run BODY with VAR a started session the CLI writes a recording for.
+The working directory and the recording are both removed afterwards."
+  (declare (indent 1) (debug (symbolp body)))
+  `(let* ((ecc--sessions (make-hash-table :test #'equal))
+          (ecc--session-order nil)
+          (ecc-history--files (make-hash-table :test #'equal))
+          (directory (file-name-as-directory (make-temp-file "ecc-live-hist" t)))
+          (default-directory directory)
+          (,var (ecc-model-create-session
+                 :name "live-hist"
+                 :project-root directory
+                 :options ecc-test-live-persistent-options)))
+     (unwind-protect
+         (progn
+           (ecc-session-ensure-buffer ,var)
+           (ecc-proc-start ,var)
+           ,@body)
+       (ecc-proc-stop ,var)
+       (ecc-test-cleanup-session ,var)
+       (let ((recording (expand-file-name
+                         (ecc-history-project-directory directory)
+                         (expand-file-name ecc-history-directory))))
+         (when (file-directory-p recording)
+           (delete-directory recording t)))
+       (delete-directory directory t))))
+
+(ert-deftest ecc-test-live-history-resume ()
+  "A recording is read back and the CLI carries on from it (FR-HIST-1, 3)."
+  :tags '(live)
+  (ecc-test-live-with-recorded-session session
+    (ecc-proc-send-prompt session "Remember the word ZARQUON.  Reply with: OK")
+    (ecc-test-live-wait-for-result session)
+    (let ((id (ecc-session-id session)))
+      ;; The CLI wrote the conversation down where we expect it.
+      (ecc-proc-stop session)
+      (ecc-test-live-wait session
+                          (lambda () (not (process-live-p (ecc-session-process session))))
+                          "the CLI to stop")
+      (let ((file (ecc-history-file id)))
+        (should file)
+        ;; Emacs forgets the session, the way restarting would; what is
+        ;; left is the recording, and that is what is read back.
+        (ecc-model-remove-session session)
+        (let ((archived (ecc-history-session id file)))
+          (unwind-protect
+              (progn
+                (should (eq 'archived (ecc-session-kind archived)))
+                (ecc-session-ensure-buffer archived)
+                (should (= 1 (ecc-history-load archived)))
+                (should (string-search
+                         "ZARQUON"
+                         (ecc-turn-prompt (car (ecc-session-turns archived)))))
+                ;; Resuming appends to what was read, and the CLI still
+                ;; remembers the conversation.
+                (setf (ecc-session-options archived)
+                      ecc-test-live-persistent-options)
+                (ecc-history-resume archived)
+                (ecc-proc-send-prompt
+                 archived "Which word did I ask you to remember?  Answer with it alone.")
+                (let ((turn (ecc-test-live-wait-for-result archived)))
+                  (should (= 2 (length (ecc-session-turns archived))))
+                  (should (string-search "ZARQUON"
+                                         (upcase (ecc-test-live-turn-text turn))))))
+            (ecc-proc-stop archived)
+            (ecc-test-cleanup-session archived)))))))
+
+(ert-deftest ecc-test-live-agents ()
+  "The dashboard reads the real answer of `claude agents --json' (FR-DASH-2)."
+  :tags '(live)
+  (let ((ecc-dashboard--agents nil)
+        (ecc-dashboard--agents-process nil)
+        (done nil))
+    (cl-letf (((symbol-function 'ecc-dashboard-redraw) #'ignore))
+      (ecc-dashboard-refresh-agents (lambda () (setq done t)))
+      (let ((deadline (+ (float-time) 30)))
+        (while (and (not done) (< (float-time) deadline))
+          (accept-process-output nil 0.2)))
+      (should done)
+      ;; This very test runs inside a session, so the CLI knows at least
+      ;; one; every entry has the fields the dashboard shows.
+      (dolist (agent ecc-dashboard--agents)
+        (should (alist-get 'sessionId agent))
+        (should (alist-get 'cwd agent))
+        (should (ecc-dashboard--agent-entry agent))))))
 
 (provide 'ecc-live-test)
 

@@ -19,6 +19,8 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'seq)
+(require 'iso8601)
 (require 'ecc-core)
 
 ;;;; Receiving
@@ -206,6 +208,113 @@ day it is (FR-PERM-8 writes the settings file itself instead)."
                                patterns)))
     (behavior . "allow")
     (destination . ,(or destination "session"))))
+
+;;;; Session history files (FR-HIST-1, 2)
+
+;; The jsonl the CLI keeps under ~/.claude/projects is not the stream: it
+;; holds the same `user' and `assistant' messages, but wraps them in its
+;; own bookkeeping and spells the structured tool result `toolUseResult'
+;; rather than `tool_use_result'.  Both shapes are read here, so that
+;; `ecc-history' can hand a recorded line to `ecc-dispatch' unchanged
+;; (plan section 6.8).
+
+(defconst ecc-protocol-history-types '("user" "assistant" "system")
+  "Line types of a history file that carry conversation content.
+Everything else is bookkeeping: `attachment', `summary',
+`file-history-snapshot', `last-prompt', `mode', `permission-mode',
+`bridge-session', `ai-title', `cost-state' and the rest (FR-HIST-2).")
+
+(defun ecc-protocol-history-user-line-p (line)
+  "Return non-nil when LINE of a history file might be a user message.
+A cheap test used to skip the lines that cannot open a turn before
+paying for a parse.  The type of a line is not always its first key —
+an assistant line puts the message, and the type of every block in it,
+first — so a line that passes still has to be parsed to be sure."
+  (and (string-match-p "\"type\"[ \t]*:[ \t]*\"user\"" line) t))
+
+(defun ecc-protocol-history-parse (line)
+  "Parse LINE of a history file into a message `ecc-dispatch' understands.
+Returns nil for a line that carries no conversation content, and for a
+line that does not parse: a history file is read for display, so one
+broken line must not stop the rest.  The structured tool result is
+renamed to the name the stream uses."
+  (condition-case nil
+      (let ((object (ecc--json-read line)))
+        (when (and (consp object)
+                   (member (alist-get 'type object) ecc-protocol-history-types))
+          (if-let* ((result (alist-get 'toolUseResult object)))
+              (cons (cons 'tool_use_result result) object)
+            object)))
+    (error nil)))
+
+(defun ecc-protocol-history-sidechain-p (message)
+  "Return non-nil when MESSAGE was written by a subagent (FR-HIST-2)."
+  (eq (alist-get 'isSidechain message) t))
+
+(defconst ecc-protocol-command-output-regexp "\\`[ \t\n]*<local-command-stdout>"
+  "Start of a user line that is the output of a slash command.
+The interactive CLI writes what a local command printed back into the
+conversation as a user message; it is not a prompt and starts no turn.")
+
+(defun ecc-protocol-history-prompt (message)
+  "Return the prompt MESSAGE opens a turn with, or nil.
+A turn starts at a `user' line whose content is text the user typed.
+A line carrying only tool results continues the turn it is in, a line
+the CLI wrote itself (`isMeta') is not a prompt at all, and neither is
+the output a local command printed into the conversation."
+  (when (and (equal (alist-get 'type message) "user")
+             (not (eq (alist-get 'isMeta message) t))
+             (not (ecc-protocol-history-sidechain-p message)))
+    (let* ((content (alist-get 'content (alist-get 'message message)))
+           (text (cond
+                  ((stringp content) content)
+                  ((vectorp content)
+                   (let ((texts (seq-keep
+                                 (lambda (block)
+                                   (and (equal (alist-get 'type block) "text")
+                                        (alist-get 'text block)))
+                                 content)))
+                     (and texts (string-join texts "\n"))))
+                  (t nil))))
+      (and text
+           (not (string-match-p ecc-protocol-command-output-regexp text))
+           text))))
+
+(defun ecc-protocol-history-timestamp (message)
+  "Return the `timestamp' of MESSAGE as an Emacs time, or nil."
+  (when-let* ((stamp (alist-get 'timestamp message)))
+    (ignore-errors (encode-time (iso8601-parse stamp)))))
+
+(defun ecc-protocol-history-info (line info)
+  "Fold LINE of a history file into the summary alist INFO.
+Only the keys a line actually carries are set, so that INFO can be
+built from the first lines of a file and then from the last ones, the
+later value winning (plan section 6.7).  The keys are `session-id',
+`cwd', `title', `prompt', `cost' and `time'."
+  (condition-case nil
+      (let* ((object (ecc--json-read line))
+             (type (and (consp object) (alist-get 'type object)))
+             (set (lambda (key value) (when value (setf (alist-get key info) value)))))
+        (when (consp object)
+          (funcall set 'session-id (alist-get 'sessionId object))
+          (funcall set 'cwd (alist-get 'cwd object))
+          (funcall set 'time (ecc-protocol-history-timestamp object))
+          (pcase type
+            ("ai-title" (funcall set 'title (alist-get 'aiTitle object)))
+            ("cost-state" (funcall set 'cost (alist-get 'totalCostUSD object)))
+            ("user" (funcall set 'prompt (ecc-protocol-history-prompt object)))))
+        info)
+    (error info)))
+
+(defun ecc-protocol-parse-agents (output)
+  "Return the sessions listed in OUTPUT, the JSON of `claude agents --json'.
+Each is an alist with pid, cwd, kind, startedAt, sessionId, name and
+status.  Returns nil when OUTPUT does not parse, which is what a CLI
+that does not know the subcommand prints."
+  (condition-case nil
+      (let ((agents (ecc--json-read output)))
+        (and (vectorp agents) (append agents nil)))
+    (error nil)))
 
 ;;;; Settings files (FR-PERM-8)
 

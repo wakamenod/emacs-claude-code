@@ -91,6 +91,16 @@ Errors are caught: an unreadable message must never stop the stream."
 
 ;;;; system
 
+(defconst ecc-dispatch-system-subtypes
+  '("init" "status" "thinking_tokens" "hook_started" "hook_response"
+    "permission_denied" "compact_boundary" "task_started" "task_progress"
+    "task_updated" "task_notification" "background_tasks_changed")
+  "The system subtypes `ecc-dispatch--system' handles.
+Kept next to the function it lists, and checked against it by a test.
+`ecc-history' asks this before handing a recorded line over: a
+recording holds subtypes the stream never sends, and those belong in a
+note rather than among the messages this version does not understand.")
+
 (defun ecc-dispatch--system (session message)
   "Apply the system MESSAGE to SESSION."
   (pcase (ecc-protocol-subtype message)

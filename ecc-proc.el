@@ -131,6 +131,7 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
                    :stderr (ecc-proc-stderr-buffer session)
                    :filter #'ecc-proc--filter
                    :sentinel #'ecc-proc--sentinel))
+    (setf (alist-get 'stop-requested (ecc-session-progress session)) nil)
     (process-put process 'ecc-session-id (ecc-session-id session))
     (setf (ecc-session-process session) process)
     (ecc-model-set-state session 'starting)
@@ -139,10 +140,17 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
     process))
 
 (defun ecc-proc-stop (session)
-  "Stop the CLI of SESSION if it is running."
+  "Stop the CLI of SESSION if it is running.
+The stop is noted, so that the sentinel can tell an exit the user asked
+for from one the CLI decided on (FR-SES-7)."
   (let ((process (ecc-session-process session)))
+    (setf (alist-get 'stop-requested (ecc-session-progress session)) t)
     (when (process-live-p process)
       (delete-process process))))
+
+(defun ecc-proc-stopped-on-request-p (session)
+  "Return non-nil when the CLI of SESSION was stopped from Emacs."
+  (and (alist-get 'stop-requested (ecc-session-progress session)) t))
 
 (defun ecc-proc--sentinel (process event)
   "Handle EVENT for PROCESS: close the session down cleanly."

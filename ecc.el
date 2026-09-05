@@ -35,7 +35,19 @@
 (require 'ecc-review)
 (require 'ecc-sync)
 (require 'ecc-inbox)
+(require 'ecc-history)
+(require 'ecc-dashboard)
 (require 'ecc-window)
+
+(defcustom ecc-resume-on-abnormal-exit 'ask
+  "What to do when the CLI of a session stops on its own (FR-SES-7).
+`ask' offers to resume it, `auto' resumes it without asking and nil
+only leaves the state in the buffer.  An exit the user asked for, and
+an exit with status zero, are never resumed."
+  :type '(choice (const :tag "Offer to resume" ask)
+                 (const :tag "Resume at once" auto)
+                 (const :tag "Say nothing" nil))
+  :group 'ecc)
 
 (defcustom ecc-inbox-indicator t
   "Non-nil shows the number of requests waiting in every mode line.
@@ -78,13 +90,37 @@ argument forks it into a new conversation (FR-SES-4)."
                          (car (ecc-model-sessions))
                          (user-error "No session to resume"))
                      current-prefix-arg))
-  (when (process-live-p (ecc-session-process session))
-    (user-error "%s is still running" (ecc-session-name session)))
-  (ecc-session-ensure-buffer session)
+  ;; What the recording holds is read first, so that the stream is
+  ;; appended to the conversation rather than starting an empty one
+  ;; (FR-HIST-3).  `ecc-history-resume' refuses a live process.
+  (ecc-history-resume session fork)
   (ecc-prompt-ensure-buffer session)
-  (ecc-proc-start session t fork)
   (ecc-display-session session)
   session)
+
+(defun ecc--offer-resume (session status)
+  "Offer to resume SESSION, whose CLI stopped with STATUS (FR-SES-7).
+The state is in the buffer already; this is the offer that goes with
+it.  Only an exit the user did not ask for is offered, and only when
+there is a recording to resume from.  The offer is made from a timer:
+a sentinel is no place to ask a question or start a process."
+  (when (and ecc-resume-on-abnormal-exit
+             (integerp status)
+             (/= status 0)
+             (not (ecc-proc-stopped-on-request-p session))
+             (ecc-history-file (ecc-session-id session)))
+    (run-at-time 0 nil #'ecc-offer-resume-now session status)))
+
+(defun ecc-offer-resume-now (session status)
+  "Ask whether to resume SESSION, which stopped with STATUS (FR-SES-7)."
+  (if (or (eq ecc-resume-on-abnormal-exit 'auto)
+          (y-or-n-p (format "%s が code %s で終了しました。resume しますか? "
+                            (ecc-session-name session) status)))
+      (ecc-resume session)
+    (message "%s: R または M-x ecc-resume で再開できます"
+             (ecc-session-name session))))
+
+(add-hook 'ecc-session-exited-hook #'ecc--offer-resume)
 
 ;;;###autoload
 (defun ecc-kill (session)

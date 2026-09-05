@@ -1,0 +1,37 @@
+[
+  {
+    "pid": 2668,
+    "cwd": "/Users/jun/.emacs.d/lisp/emacs-gravity",
+    "kind": "interactive",
+    "startedAt": 1788395583947,
+    "sessionId": "3871172f-2450-499e-bea4-ab1656261571",
+    "name": "emacs-gravity-a6",
+    "status": "idle"
+  },
+  {
+    "pid": 65232,
+    "cwd": "/Users/jun/Projects/SideProjects/emacs-claude-code",
+    "kind": "interactive",
+    "startedAt": 1788592217128,
+    "sessionId": "36aa4d8b-2068-4e5c-a95b-069f56efbfc6",
+    "name": "emacs-claude-code-65",
+    "status": "idle"
+  },
+  {
+    "pid": 11099,
+    "cwd": "/Users/jun/Projects/SideProjects/emacs-claude-code",
+    "kind": "interactive",
+    "startedAt": 1788643054477,
+    "sessionId": "abe5fa5a-a837-4357-8791-52d1cc1c9909",
+    "name": "emacs-claude-code-00",
+    "status": "busy"
+  },
+  {
+    "pid": 12399,
+    "cwd": "/Users/jun/Projects/SideProjects/emacs-claude-code",
+    "kind": "interactive",
+    "startedAt": 1788643188081,
+    "sessionId": "7fc76921-030e-4cc9-bbca-7e6b7f8b8867",
+    "name": "emacs-claude-code-7d"
+  }
+]
