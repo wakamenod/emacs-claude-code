@@ -1,0 +1,7 @@
+*.elc
+*~
+.#*
+/test/snapshots/*.new
+/.eask/
+/dist/
+.DS_Store
