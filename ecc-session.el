@@ -9,17 +9,20 @@
 ;;; Commentary:
 
 ;; The buffer a conversation is read in: `ecc-session-mode', its keys and
-;; the commands that move around a transcript.  Section 6.1 of
-;; IMPLEMENTATION_PLAN.md.
+;; the commands that move around a transcript and take things out of it
+;; (FR-OUT-14).  Section 6.1 of IMPLEMENTATION_PLAN.md.
 
 ;;; Code:
 
 (require 'cl-lib)
+(require 'seq)
 (require 'magit-section)
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
 (require 'ecc-render)
+(require 'ecc-markdown)
+(require 'ecc-diff)
 
 (declare-function ecc-prompt-pop-to-buffer "ecc-prompt" (session))
 (declare-function ecc-resume "ecc" (session &optional fork))
@@ -38,6 +41,17 @@
     (define-key map (kbd "a") #'ecc-perm-allow)
     (define-key map (kbd "d") #'ecc-perm-deny)
     (define-key map (kbd "C-c C-k") #'ecc-session-interrupt)
+    ;; Movement and extraction (FR-OUT-14)
+    (define-key map (kbd "C-c C-n") #'ecc-session-next-turn)
+    (define-key map (kbd "C-c C-p") #'ecc-session-previous-turn)
+    (define-key map (kbd "]") #'ecc-session-next-block)
+    (define-key map (kbd "[") #'ecc-session-previous-block)
+    (define-key map (kbd "+") #'ecc-session-expand-all)
+    (define-key map (kbd "-") #'ecc-session-collapse-all)
+    (define-key map (kbd "T") #'ecc-session-timeline)
+    (define-key map (kbd "w") #'ecc-session-copy-at-point)
+    (define-key map (kbd "f") #'ecc-session-goto-files)
+    (define-key map (kbd "C-c C-e") #'ecc-session-export-markdown)
     map)
   "Keymap of `ecc-session-mode'.")
 
@@ -56,9 +70,12 @@
   (add-hook 'kill-buffer-hook #'ecc-session--kill-process nil t))
 
 (defun ecc-session--kill-process ()
-  "Stop the CLI when the session buffer goes away (plan 9, item 10)."
+  "Stop the CLI when the session buffer goes away (plan 9, item 10).
+An agent transcript shares the session but is not its buffer, so
+killing it stops nothing."
   (when-let* ((session ecc-render--session))
-    (ecc-proc-stop session)))
+    (when (eq (current-buffer) (ecc-session-buffer session))
+      (ecc-proc-stop session))))
 
 (defun ecc-session-buffer-name (name)
   "Return the name of the transcript buffer of the session called NAME."
@@ -89,6 +106,12 @@
               (section (magit-current-section))
               (value (oref section value)))
     (and (stringp value) (ecc-model-node session value))))
+
+(defun ecc-session-file-at-point ()
+  "Return the path of the Files row the point is on, or nil."
+  (when-let* ((section (magit-current-section))
+              (value (oref section value)))
+    (and (stringp value) (string-prefix-p "file:" value) (substring value 5))))
 
 ;;;; Commands
 
@@ -122,12 +145,16 @@
   (pop-to-buffer (ecc--log-buffer (ecc-session-name (ecc-session-at-point)))))
 
 (defun ecc-session-visit ()
-  "Show everything about the thing at point in its own buffer (FR-OUT-1)."
+  "Open the thing at point: a file, an agent transcript or a detail buffer."
   (interactive)
-  (let ((node (ecc-session-node-at-point)))
-    (unless node
-      (user-error "Nothing to show here"))
-    (ecc-session--show-node (ecc-session-at-point) node)))
+  (let ((session (ecc-session-at-point))
+        (node (ecc-session-node-at-point))
+        (path (ecc-session-file-at-point)))
+    (cond
+     (path (find-file-other-window path))
+     ((null node) (user-error "Nothing to show here"))
+     ((eq (ecc-node-type node) 'agent) (ecc-session-show-agent session node))
+     (t (ecc-session--show-node session node)))))
 
 (defun ecc-session--show-node (session node)
   "Show every detail of NODE of SESSION in a buffer."
@@ -140,14 +167,261 @@
         (pcase (ecc-node-type node)
           ((or 'tool 'agent)
            (insert (format "%s\n\n" (ecc-model-node-get node 'name)))
-           (ecc-render--insert-input (ecc-model-node-get node 'input) "")
+           (ecc-session--insert-call (ecc-model-node-get node 'name)
+                                     (ecc-model-node-get node 'input)
+                                     (ecc-model-node-get node 'before))
            (insert "\n")
            (insert (ecc-render--result-text (ecc-model-node-get node 'result))))
+          ((or 'permission 'question 'plan)
+           (let ((request (ecc-model-node-get node 'request)))
+             (insert (format "%s  %s\n\n"
+                             (if request (ecc-request-tool-name request) "?")
+                             (ecc-node-status node)))
+             (when request
+               (ecc-session--insert-call (ecc-request-tool-name request)
+                                         (ecc-request-input request)
+                                         (ecc-model-node-get node 'before)))))
           (_ (insert (or (ecc-model-node-get node 'text)
                          (format "%S" (ecc-node-data node))))))
         (goto-char (point-min)))
       (special-mode))
     (pop-to-buffer buffer)))
+
+(defun ecc-session--insert-call (name input before)
+  "Insert the whole INPUT of a call to NAME, as a diff when it has one.
+BEFORE is the file as it was before the call, when known."
+  (let ((diff (ecc-diff-for-tool name input before)))
+    (if diff
+        (progn
+          (when-let* ((path (alist-get 'file_path input)))
+            (insert (abbreviate-file-name path) "\n"))
+          (insert diff))
+      (ecc-render--insert-input input ""))))
+
+(defun ecc-session-show-agent (session node)
+  "Show the transcript of the agent NODE of SESSION in its own buffer (FR-OUT-9)."
+  (let* ((input (ecc-model-node-get node 'input))
+         (title (format "%s: %s"
+                        (or (ecc-model-node-get node 'agent-type)
+                            (alist-get 'subagent_type input)
+                            "Agent")
+                        (ecc--truncate (or (alist-get 'description input)
+                                           (ecc-model-node-get node 'agent-description)
+                                           (ecc-node-id node))
+                                       60)))
+         (buffer (get-buffer-create (format "*ecc-agent: %s: %s*"
+                                            (ecc-session-name session) title))))
+    (with-current-buffer buffer
+      (unless (derived-mode-p 'ecc-session-mode)
+        (ecc-session-mode))
+      (ecc-render-draw-nodes session buffer
+                             (concat (ecc-render--agent-heading node 0) "\n"
+                                     (if-let* ((prompt (alist-get 'prompt input)))
+                                         (concat "\n" prompt "\n")
+                                       ""))
+                             (ecc-node-children node)))
+    (pop-to-buffer buffer)))
+
+;;;; Movement (FR-OUT-14 a, b, c)
+
+(defun ecc-session--sections (predicate)
+  "Return the sections of this buffer satisfying PREDICATE, in order."
+  (let (found)
+    (magit-map-sections (lambda (section)
+                          (when (funcall predicate section)
+                            (push section found))))
+    (sort (nreverse found)
+          (lambda (a b) (< (marker-position (oref a start))
+                           (marker-position (oref b start)))))))
+
+(defun ecc-session--goto-neighbour (sections forward)
+  "Move to the section of SECTIONS after point, or before when not FORWARD."
+  (let* ((pos (point))
+         (target (if forward
+                     (seq-find (lambda (s) (> (marker-position (oref s start)) pos))
+                               sections)
+                   (car (last (seq-filter
+                               (lambda (s) (< (marker-position (oref s start)) pos))
+                               sections))))))
+    (if target
+        (magit-section-goto target)
+      (user-error (if forward "No further section" "No earlier section")))))
+
+(defun ecc-session-next-turn ()
+  "Move to the next turn (FR-OUT-14 a)."
+  (interactive)
+  (ecc-session--goto-neighbour (ecc-render-turn-sections) t))
+
+(defun ecc-session-previous-turn ()
+  "Move to the previous turn (FR-OUT-14 a)."
+  (interactive)
+  (ecc-session--goto-neighbour (ecc-render-turn-sections) nil))
+
+(defun ecc-session--expandable-p (section)
+  "Return non-nil when SECTION is a block that can be folded."
+  (and (oref section content)
+       (seq-some (lambda (class) (cl-typep section class))
+                 ecc-render-expandable-classes)))
+
+(defun ecc-session-next-block ()
+  "Move to the next tool, diff or thinking block (FR-OUT-14 b)."
+  (interactive)
+  (ecc-session--goto-neighbour (ecc-session--sections #'ecc-session--expandable-p) t))
+
+(defun ecc-session-previous-block ()
+  "Move to the previous tool, diff or thinking block (FR-OUT-14 b)."
+  (interactive)
+  (ecc-session--goto-neighbour (ecc-session--sections #'ecc-session--expandable-p) nil))
+
+(defun ecc-session-expand-all ()
+  "Unfold every block in the transcript (FR-OUT-14 c)."
+  (interactive)
+  (dolist (section (ecc-session--sections #'ecc-session--expandable-p))
+    (magit-section-show section)))
+
+(defun ecc-session-collapse-all ()
+  "Fold every block in the transcript, keeping the turns open (FR-OUT-14 c)."
+  (interactive)
+  (dolist (section (ecc-session--sections #'ecc-session--expandable-p))
+    (magit-section-hide section)))
+
+(defun ecc-session-goto-files ()
+  "Move to the Files section, expanding it."
+  (interactive)
+  (let ((section (car (ecc-session--sections
+                       (lambda (s) (cl-typep s 'ecc-section-files))))))
+    (unless section
+      (user-error "No file has been touched yet"))
+    (magit-section-goto section)
+    (magit-section-show section)))
+
+;;;; Timeline (FR-OUT-14 d)
+
+(defun ecc-session-timeline ()
+  "Pick a turn by its prompt and move there (FR-OUT-14 d)."
+  (interactive)
+  (let* ((session (ecc-session-at-point))
+         (turns (ecc-session-turns session))
+         (n 0)
+         (candidates (mapcar (lambda (turn)
+                               (cons (format "%2d  %s" (cl-incf n)
+                                             (ecc--truncate (or (ecc-turn-prompt turn)
+                                                                "(resumed)")
+                                                            70))
+                                     turn))
+                             turns)))
+    (unless candidates
+      (user-error "No turn yet"))
+    (let* ((choice (completing-read "Turn: " (mapcar #'car candidates) nil t))
+           (turn (cdr (assoc choice candidates)))
+           (section (and turn (ecc-render--turn-section (ecc-turn-id turn)))))
+      (unless section
+        (user-error "That turn is not drawn"))
+      (magit-section-goto section)
+      (magit-section-show section))))
+
+;;;; Extraction (FR-OUT-14 e, f)
+
+(defun ecc-session--code-block-around-point (section)
+  "Return the fenced code block of SECTION that contains point, or nil.
+The buffer text is used, so the indentation the renderer added is
+stripped from every line."
+  (let ((start (marker-position (oref section start)))
+        (end (marker-position (oref section end)))
+        (fence (concat "^\\([ \t]*\\)" (substring ecc-markdown-fence-regexp 1))))
+    (save-excursion
+      (let ((here (line-beginning-position)))
+        (goto-char here)
+        (end-of-line)
+        (when (re-search-backward fence start t)
+          (let ((open (line-beginning-position))
+                (indent (match-string 1)))
+            (forward-line 1)
+            (let ((body-start (point)))
+              (when (and (re-search-forward fence end t)
+                         (>= (line-beginning-position) here))
+                (let ((body (buffer-substring-no-properties
+                             body-start (line-beginning-position))))
+                  (ignore open)
+                  (replace-regexp-in-string
+                   (concat "^" (regexp-quote indent)) "" body))))))))))
+
+(defun ecc-session-copy-at-point ()
+  "Copy the code block at point, or else the whole assistant reply (FR-OUT-14 e)."
+  (interactive)
+  (let* ((node (ecc-session-node-at-point))
+         (section (magit-current-section))
+         (text (cond
+                ((null node) nil)
+                ((eq (ecc-node-type node) 'text)
+                 (or (ecc-session--code-block-around-point section)
+                     (ecc-model-node-get node 'text)))
+                ((memq (ecc-node-type node) '(tool agent))
+                 (ecc-render--result-text (ecc-model-node-get node 'result)))
+                (t (ecc-model-node-get node 'text)))))
+    (unless (and text (not (string-empty-p text)))
+      (user-error "Nothing to copy here"))
+    (kill-new text)
+    (message "コピーしました（%d 文字）" (length text))))
+
+(defun ecc-session--markdown-node (node depth)
+  "Return NODE as Markdown, indented by DEPTH list levels."
+  (let ((pad (make-string (* 2 depth) ?\s)))
+    (pcase (ecc-node-type node)
+      ('text (concat (ecc-model-node-get node 'text) "\n\n"))
+      ('thinking (let ((text (string-trim (or (ecc-model-node-get node 'text) ""))))
+                   (if (string-empty-p text) ""
+                     (concat "<details><summary>Thinking</summary>\n\n" text
+                             "\n\n</details>\n\n"))))
+      ('step (concat (mapconcat (lambda (child)
+                                  (ecc-session--markdown-node child depth))
+                                (ecc-node-children node) "")
+                     "\n"))
+      ('tool (format "%s- `%s` %s\n" pad
+                     (ecc-model-node-get node 'name)
+                     (ecc-render-tool-summary (ecc-model-node-get node 'name)
+                                              (ecc-model-node-get node 'input))))
+      ('agent (concat (format "%s- Agent `%s`\n" pad
+                              (or (ecc-model-node-get node 'agent-type) "Agent"))
+                      (mapconcat (lambda (child)
+                                   (ecc-session--markdown-node child (1+ depth)))
+                                 (ecc-node-children node) "")))
+      ((or 'permission 'question 'plan)
+       (let ((request (ecc-model-node-get node 'request)))
+         (format "%s- %s: %s — %s\n\n" pad (ecc-node-type node)
+                 (if request (ecc-request-tool-name request) "?")
+                 (ecc-node-status node))))
+      ('result (let ((result (ecc-model-node-get node 'result)))
+                 (format "_%s · $%.4f_\n\n"
+                         (or (alist-get 'stop_reason result) "?")
+                         (or (alist-get 'total_cost_usd result) 0))))
+      ('system (if (eq (ecc-model-node-get node 'kind) 'prompt)
+                   (format "%s> %s\n\n" pad
+                           (string-replace "\n" (concat "\n" pad "> ")
+                                           (or (ecc-model-node-get node 'text) "")))
+                 ""))
+      (_ ""))))
+
+(defun ecc-session-export-markdown-string (session)
+  "Return the transcript of SESSION as Markdown."
+  (concat
+   (format "# %s\n\n" (ecc-session-name session))
+   (mapconcat
+    (lambda (turn)
+      (concat (format "## %s\n\n" (or (ecc-turn-prompt turn) "(resumed)"))
+              (mapconcat (lambda (node) (ecc-session--markdown-node node 0))
+                         (ecc-turn-children turn) "")))
+    (ecc-session-turns session) "")))
+
+(defun ecc-session-export-markdown (file)
+  "Save the transcript as Markdown in FILE (FR-OUT-14 f)."
+  (interactive
+   (list (read-file-name "Export to: " nil nil nil
+                         (format "%s.md" (ecc-session-name (ecc-session-at-point))))))
+  (let ((session (ecc-session-at-point)))
+    (with-temp-file file
+      (insert (ecc-session-export-markdown-string session)))
+    (message "%s に保存しました" (abbreviate-file-name file))))
 
 (provide 'ecc-session)
 

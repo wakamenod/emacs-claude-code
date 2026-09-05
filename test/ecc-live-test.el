@@ -170,6 +170,58 @@ WHAT names the thing waited for in the error message."
       (should-not (ecc-session-pending session))
       (should (process-live-p (ecc-session-process session))))))
 
+
+(ert-deftest ecc-test-live-streaming ()
+  "A long Write streams its input and the reply grows delta by delta.
+The phase 2 acceptance check: each delta costs well under 5ms to draw."
+  :tags '(live)
+  (ecc-test-live-with-session session
+    (let* ((directory (make-temp-file "ecc-live" t))
+           (file (expand-file-name "long.py" directory))
+           (deltas 0)
+           (drawn 0.0)
+           (text-seen nil))
+      (setf (ecc-session-options session)
+            (plist-put (copy-sequence ecc-test-live-options) :streaming t))
+      ;; The process was started with the shared options; restart it with
+      ;; --include-partial-messages.
+      (ecc-proc-stop session)
+      (ecc-test-live-wait session (lambda () (not (process-live-p (ecc-session-process session))))
+                          "the process to stop")
+      (setf (ecc-session-auto-approve-kinds session) '("Write"))
+      (ecc-proc-start session)
+      (unwind-protect
+          (let ((ecc-stream-delta-hook
+                 (cons (lambda (session node text)
+                         (cl-incf deltas)
+                         (when (eq (ecc-node-type node) 'text)
+                           (setq text-seen t))
+                         (cl-incf drawn
+                                  (car (benchmark-run 1
+                                         (ecc-render--on-delta session node text)))))
+                       (remq #'ecc-render--on-delta ecc-stream-delta-hook)))
+                (ecc-stream-throttle 0))
+            (ecc-proc-send-prompt
+             session
+             (format "Write the file %s with 60 Python functions f0 to f59, each returning its number, separated by blank lines. Then reply with one short sentence." file))
+            (let ((turn (ecc-test-live-wait-for-result session)))
+              (should (file-exists-p file))
+              (should (> deltas 5))
+              (should text-seen)
+              (message "streaming: %d deltas, %.2fms each to draw" deltas (* 1000 (/ drawn deltas)))
+              (should (< (/ drawn deltas) 0.005))
+              ;; Streamed blocks and complete messages made one tree.
+              (should (seq-find (lambda (node) (and (eq (ecc-node-type node) 'step)
+                                                    (= 1 (length (ecc-node-children node)))))
+                                (ecc-turn-children turn)))
+              (should (= 0 (hash-table-count (ecc-session-stream-blocks session))))
+              (ecc-render-flush session)
+              (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+                (should (string-search "✓ Write" text))
+                (should (string-search "@@ -0,0 +1," text))
+                (should (string-search "Files (1)" text)))))
+        (delete-directory directory t)))))
+
 (provide 'ecc-live-test)
 
 ;;; ecc-live-test.el ends here

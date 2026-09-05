@@ -24,6 +24,8 @@
 (require 'ecc-protocol)
 (require 'ecc-model)
 (require 'ecc-proc)
+(require 'ecc-diff)
+(require 'ecc-markdown)
 (require 'ecc-dispatch)
 (require 'ecc-render)
 (require 'ecc-session)

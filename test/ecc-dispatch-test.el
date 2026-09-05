@@ -229,9 +229,17 @@
                            (hash-table-values (ecc-session-nodes session)))))
       (should agent)
       (should (> (length (ecc-node-children agent)) 0))
-      ;; The task lifecycle found the same node by its tool_use_id.
+      ;; The task lifecycle found the same node by its tool_use_id and
+      ;; told us what kind of agent it is.
       (should (ecc-model-node-get agent 'task))
-      (should (> (hash-table-count (ecc-session-tasks session)) 0)))))
+      (should (equal (ecc-model-node-get agent 'agent-type) "Explore"))
+      (should (equal (ecc-model-node-get agent 'task-status) "completed"))
+      ;; The prompt, the thinking, the one Bash call and the reply of the
+      ;; agent hang under it, tools grouped in steps like a turn.
+      (should (equal (ecc-test-node-shape (ecc-node-children agent))
+                     '(system thinking (step tool) thinking text)))
+      ;; An agent is not a TODO item (FR-OUT-13).
+      (should (= (hash-table-count (ecc-session-tasks session)) 0)))))
 
 (ert-deftest ecc-dispatch-test-hook-events ()
   "Hook events are kept as system nodes rather than as unknown ones."
@@ -313,6 +321,132 @@
     (should (equal (ecc-turn-prompt (ecc-session-current-turn session)) "two"))
     (let ((sent (car (last (ecc-test-sent-messages)))))
       (should (equal (alist-get 'content (alist-get 'message sent)) "two")))))
+
+
+;;;; Streaming (FR-OUT-4)
+
+(ert-deftest ecc-dispatch-test-stream-blocks ()
+  "A streamed block is one node from its start to its completion."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "長いファイルを書いて")
+    (let* ((deltas nil)
+           (ecc-stream-delta-hook
+            (list (lambda (_session node text) (push (cons (ecc-node-type node) text) deltas)))))
+      (dolist (line (ecc-test-fixture-lines "partial-messages"))
+        (let ((message (ecc-protocol-parse-line line)))
+          (ecc-dispatch session message)
+          (let ((event (alist-get 'event message)))
+            (when (and (equal (alist-get 'type event) "content_block_start")
+                       (equal (alist-get 'type (alist-get 'content_block event)) "tool_use"))
+              ;; The tool node exists as soon as its block starts, with no
+              ;; input yet, under a step of the turn.
+              (let ((node (ecc-model-node session "toolu_01QcvmkL7eVaiQDvpEut8Pak")))
+                (should node)
+                (should (ecc-node-streaming node))
+                (should-not (ecc-model-node-get node 'input))
+                (should (eq (ecc-node-type (ecc-node-parent node)) 'step)))))))
+      (setq deltas (nreverse deltas))
+      ;; 29 input deltas of which one is empty, and 17 text deltas (verified.md).
+      (should (= 28 (cl-count 'tool deltas :key #'car)))
+      (should (= 17 (cl-count 'text deltas :key #'car)))
+      (should (equal (apply #'concat (mapcar #'cdr (seq-filter (lambda (d) (eq (car d) 'text))
+                                                               deltas)))
+                     "Done. Created `long.py` with 60 functions (f0 through f59), each with a one-line docstring and return statement, separated by blank lines. The file is approximately 300 lines.")))
+    ;; Afterwards the tree is the one of an unstreamed turn, the tool has
+    ;; its full input, and nothing is left open.
+    (let* ((turn (car (ecc-session-turns session)))
+           (tool (ecc-model-node session "toolu_01QcvmkL7eVaiQDvpEut8Pak")))
+      (should (equal (ecc-test-turn-shape turn)
+                     '(thinking (step tool) permission thinking text result)))
+      (should-not (ecc-node-streaming tool))
+      (should (string-suffix-p "long.py" (alist-get 'file_path (ecc-model-node-get tool 'input))))
+      (should (eq (ecc-node-status tool) 'done))
+      (should (= 0 (hash-table-count (ecc-session-stream-blocks session)))))))
+
+(ert-deftest ecc-dispatch-test-stream-stop-without-message ()
+  "A block that stops without its assistant message keeps the streamed text."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "hi")
+    (dolist (event '(((type . "content_block_start") (index . 0)
+                      (content_block . ((type . "text") (text . ""))))
+                     ((type . "content_block_delta") (index . 0)
+                      (delta . ((type . "text_delta") (text . "Hel"))))
+                     ((type . "content_block_delta") (index . 0)
+                      (delta . ((type . "text_delta") (text . "lo"))))
+                     ((type . "content_block_stop") (index . 0))))
+      (ecc-dispatch session (list (cons 'type "stream_event") (cons 'event event))))
+    (let ((node (car (ecc-turn-children (ecc-session-current-turn session)))))
+      (should (eq (ecc-node-type node) 'text))
+      (should (equal (ecc-model-node-get node 'text) "Hello"))
+      (should (eq (ecc-node-status node) 'done))
+      (should-not (ecc-node-streaming node)))))
+
+;;;; Files and tasks from tool_use_result (FR-OUT-12, FR-OUT-13)
+
+(ert-deftest ecc-dispatch-test-edit-records-hunk-and-snapshot ()
+  "An Edit keeps the patch the CLI reported and what the file became."
+  (ecc-test-with-fake-session session
+    (ecc-test-dispatch session "edit-tool" "greet を直して")
+    (let ((entry (car (ecc-model-files session))))
+      (should (string-suffix-p "hello.py" (ecc-file-entry-path entry)))
+      (should (= (ecc-file-entry-reads entry) 1))
+      (should (= (ecc-file-entry-edits entry) 1))
+      (should (= (length (ecc-file-entry-hunks entry)) 1))
+      (should (equal (car (ecc-file-entry-hunks entry))
+                     '("    return \"hi \" + name" . "    return \"hello \" + name")))
+      (should (= 1 (length (car (ecc-file-entry-patches entry)))))
+      ;; The Read filled the snapshot; the Edit updated it.
+      (should (string-search "return \"hello \" + name" (ecc-file-entry-snapshot entry)))
+      (should-not (string-search "return \"hi \" + name" (ecc-file-entry-snapshot entry))))
+    ;; Both the tool node and the permission node knew the file before
+    ;; the change, from the Read (FR-DIFF-1).
+    (let ((edit (seq-find (lambda (n) (and (eq (ecc-node-type n) 'tool)
+                                           (equal (ecc-model-node-get n 'name) "Edit")))
+                          (hash-table-values (ecc-session-nodes session))))
+          (permission (seq-find (lambda (n) (eq (ecc-node-type n) 'permission))
+                                (hash-table-values (ecc-session-nodes session)))))
+      (should (string-search "return \"hi \" + name" (ecc-model-node-get edit 'before)))
+      (should (string-search "return \"hi \" + name"
+                             (ecc-model-node-get permission 'before))))))
+
+(ert-deftest ecc-dispatch-test-tasks ()
+  "TaskCreate, TaskUpdate and TaskList keep the task list (FR-OUT-13)."
+  (ecc-test-with-fake-session session
+    (ecc-test-dispatch session "tasks" "タスクを作って")
+    (let ((tasks (ecc-model-tasks session)))
+      (should (equal (mapcar #'ecc-task-id tasks) '("1" "2")))
+      (should (equal (mapcar #'ecc-task-subject tasks) '("Write tests" "Update docs")))
+      (should (equal (mapcar #'ecc-task-status tasks) '("completed" "pending"))))
+    ;; No file was touched, so the Files summary is empty.
+    (should-not (ecc-model-files session))))
+
+(ert-deftest ecc-dispatch-test-todo-write ()
+  "TodoWrite replaces the whole list from its input."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "todo")
+    (ecc-dispatch session
+                  '((type . "assistant") (uuid . "u1")
+                    (message . ((role . "assistant")
+                                (content . [((type . "tool_use") (id . "t1") (name . "TodoWrite")
+                                             (input . ((todos . [((content . "a") (status . "completed"))
+                                                                 ((content . "b") (status . "in_progress"))]))))])))))
+    (should (equal (mapcar #'ecc-task-status (ecc-model-tasks session))
+                   '("completed" "in_progress")))))
+
+(ert-deftest ecc-dispatch-test-denied-write-is-not-counted ()
+  "A Write that was denied is not a write in the Files summary."
+  (ecc-test-with-fake-session session
+    (let ((answers '(deny allow)))
+      (dolist (line (ecc-test-fixture-lines "permission-deny-retry"))
+        (let ((message (ecc-protocol-parse-line line)))
+          (ecc-dispatch session message)
+          (when (eq (ecc-protocol-control-subtype message) 'can_use_tool)
+            (ecc-perm-respond (car (ecc-session-pending session))
+                              (if (eq (pop answers) 'deny) 'deny 'allow)
+                              :message "内容を hi にして")))))
+    (let ((entry (car (ecc-model-files session))))
+      (should (= (ecc-file-entry-writes entry) 1))
+      (should (= (length (ecc-file-entry-hunks entry)) 1)))))
 
 (provide 'ecc-dispatch-test)
 

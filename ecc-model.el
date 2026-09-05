@@ -76,6 +76,12 @@
 (defvar ecc-session-state-changed-hook nil
   "Functions run with a session and its previous state.")
 
+(defvar ecc-files-updated-hook nil
+  "Functions run with a session when its Files summary changed.")
+
+(defvar ecc-tasks-updated-hook nil
+  "Functions run with a session when its task list changed.")
+
 ;;;; Structures (plan section 3)
 
 (cl-defstruct (ecc-session (:constructor ecc-session--make) (:copier nil))
@@ -119,6 +125,7 @@
   history-offset
   recap-state
   tmp-dir
+  stream-blocks         ; hash: "PARENT:INDEX" -> node being streamed
   node-counter          ; counters for the ids of nodes and turns; the
   turn-counter)         ; ids have to be stable, see plan 9.6
 
@@ -135,12 +142,16 @@
   children
   data          ; alist, the keys depend on TYPE
   status        ; pending | running | done | error | denied
+  streaming     ; non-nil while stream events are still feeding the node
   streaming-text
   marker-start marker-end)              ; owned by the renderer
 
 (cl-defstruct ecc-file-entry
-  "What Claude did to one file during a session."
-  path reads edits writes hunks)
+  "What Claude did to one file during a session.
+HUNKS is a list of (OLD . NEW) strings, oldest first, one per Edit or
+Write; PATCHES holds the structuredPatch the CLI reported for each, in
+the same order, and SNAPSHOT the content of the file as last seen."
+  path reads edits writes hunks patches snapshot (added 0) (removed 0))
 
 (cl-defstruct ecc-task
   "One entry of Claude's own task list."
@@ -210,6 +221,7 @@ options that overrides the defcustoms for this session."
                    :pending-controls (make-hash-table :test #'equal)
                    :files (make-hash-table :test #'equal)
                    :tasks (make-hash-table :test #'equal)
+                   :stream-blocks (make-hash-table :test #'equal)
                    :total-cost 0
                    :context-tokens 0
                    :node-counter 0
@@ -352,14 +364,87 @@ node is registered so that a later message can find it by ID."
       (setq parent (ecc-node-parent parent)))
     parent))
 
-(defun ecc-model-step-for-tool (session turn)
-  "Return the step of TURN of SESSION a new tool call belongs to.
-A run of tool calls shares a step; assistant text or thinking ends the
-run, because it becomes the last child of the turn instead (FR-OUT-2)."
-  (let ((last (car (last (ecc-turn-children turn)))))
+(defun ecc-model-step-for-tool (session parent)
+  "Return the step under PARENT of SESSION a new tool call belongs to.
+PARENT is a turn or an agent node.  A run of tool calls shares a step;
+assistant text or thinking ends the run, because it becomes the last
+child of PARENT instead (FR-OUT-2)."
+  (let ((last (car (last (ecc-model-node-children parent)))))
     (if (and last (eq (ecc-node-type last) 'step))
         last
-      (ecc-model-add-node session :type 'step :parent turn :status 'running))))
+      (ecc-model-add-node session :type 'step :parent parent :status 'running))))
+
+(defun ecc-model-running-tool (session)
+  "Return the tool node of SESSION that is running right now, or nil.
+The most recently started one wins when several are."
+  (let (found)
+    (maphash (lambda (_id node)
+               (when (and (memq (ecc-node-type node) '(tool agent))
+                          (eq (ecc-node-status node) 'running)
+                          (or (null found)
+                              (time-less-p (or (ecc-model-node-get found 'started) 0)
+                                           (or (ecc-model-node-get node 'started) 0))))
+                 (setq found node)))
+             (ecc-session-nodes session))
+    found))
+
+;;;; Streaming (FR-OUT-4)
+
+(defun ecc-model--stream-key (parent-id index)
+  "Return the key of the streamed block INDEX under PARENT-ID."
+  (format "%s:%s" (or parent-id "") index))
+
+(defun ecc-model-open-stream (session parent-id index node)
+  "Remember in SESSION that NODE receives block INDEX under PARENT-ID."
+  (setf (ecc-node-streaming node) t)
+  (unless (ecc-node-streaming-text node)
+    (setf (ecc-node-streaming-text node) ""))
+  (puthash (ecc-model--stream-key parent-id index) node
+           (ecc-session-stream-blocks session))
+  node)
+
+(defun ecc-model-stream-node (session parent-id index)
+  "Return the node of SESSION receiving block INDEX under PARENT-ID."
+  (gethash (ecc-model--stream-key parent-id index)
+           (ecc-session-stream-blocks session)))
+
+(defun ecc-model-find-stream (session parent-id type &optional id)
+  "Return the open streamed node of TYPE under PARENT-ID in SESSION.
+With ID, only a node with that id qualifies.  The complete assistant
+message that follows a streamed block uses this to find the node the
+block was drawn into, so that nothing is drawn twice."
+  (let ((prefix (ecc-model--stream-key parent-id ""))
+        found found-index)
+    (maphash (lambda (key node)
+               (when (and (string-prefix-p prefix key)
+                          (eq (ecc-node-type node) type)
+                          (ecc-node-streaming node)
+                          (or (null id) (equal (ecc-node-id node) id)))
+                 ;; The lowest index is the block that started first.
+                 (let ((index (string-to-number (substring key (length prefix)))))
+                   (when (or (null found) (< index found-index))
+                     (setq found node found-index index)))))
+             (ecc-session-stream-blocks session))
+    found))
+
+(defun ecc-model-append-stream (session node text)
+  "Append TEXT to the streamed text of NODE of SESSION.
+Announces the delta through `ecc-stream-delta-hook' without marking the
+node changed, so that the renderer can append rather than redraw."
+  (when (and text (not (string-empty-p text)))
+    (setf (ecc-node-streaming-text node)
+          (concat (or (ecc-node-streaming-text node) "") text))
+    (run-hook-with-args 'ecc-stream-delta-hook session node text))
+  node)
+
+(defun ecc-model-close-stream (session node)
+  "Stop streaming into NODE of SESSION and forget its block."
+  (setf (ecc-node-streaming node) nil)
+  (let ((table (ecc-session-stream-blocks session))
+        keys)
+    (maphash (lambda (key value) (when (eq value node) (push key keys))) table)
+    (dolist (key keys) (remhash key table)))
+  node)
 
 (defun ecc-model-tool-counts (step)
   "Return an alist of tool name to call count for STEP, in first-seen order."
@@ -375,7 +460,8 @@ run, because it becomes the last child of the turn instead (FR-OUT-2)."
 
 (defun ecc-model-note-file (session path kind)
   "Record that Claude did KIND to PATH in SESSION.
-KIND is one of `read', `edit' or `write'."
+KIND is one of `read', `edit' or `write', or nil to only make sure the
+entry exists.  Returns the entry, or nil when PATH is not a string."
   (when (and path (stringp path))
     (let ((entry (or (gethash path (ecc-session-files session))
                      (puthash path (make-ecc-file-entry :path path :reads 0
@@ -385,16 +471,69 @@ KIND is one of `read', `edit' or `write'."
         ('read (cl-incf (ecc-file-entry-reads entry)))
         ('edit (cl-incf (ecc-file-entry-edits entry)))
         ('write (cl-incf (ecc-file-entry-writes entry))))
+      (run-hook-with-args 'ecc-files-updated-hook session)
       entry)))
 
+(defun ecc-model-note-hunk (session path old new &optional patch)
+  "Record that Claude changed PATH of SESSION from OLD to NEW.
+PATCH is the structuredPatch the CLI reported, when it did.  The line
+counts of the Files section come from PATCH when there is one."
+  (when-let* ((entry (ecc-model-note-file session path nil)))
+    (setf (ecc-file-entry-hunks entry)
+          (nconc (ecc-file-entry-hunks entry) (list (cons old new))))
+    (setf (ecc-file-entry-patches entry)
+          (nconc (ecc-file-entry-patches entry) (list patch)))
+    (when (stringp new)
+      (setf (ecc-file-entry-snapshot entry) new))
+    entry))
+
+(defun ecc-model-note-snapshot (session path content)
+  "Remember CONTENT as what PATH of SESSION looked like when last read."
+  (when-let* ((entry (and (stringp content) (ecc-model-note-file session path nil))))
+    (setf (ecc-file-entry-snapshot entry) content)
+    entry))
+
+(defun ecc-model-files (session)
+  "Return the file entries of SESSION that saw an operation, sorted by path.
+An entry that only holds a snapshot, because a call was denied or is
+still waiting, is left out."
+  (sort (seq-filter (lambda (entry)
+                      (> (+ (ecc-file-entry-reads entry)
+                            (ecc-file-entry-edits entry)
+                            (ecc-file-entry-writes entry))
+                         0))
+                    (hash-table-values (ecc-session-files session)))
+        (lambda (a b) (string< (ecc-file-entry-path a) (ecc-file-entry-path b)))))
+
 (defun ecc-model-note-task (session id subject status)
-  "Record the task ID of SESSION with SUBJECT and STATUS."
+  "Record the task ID of SESSION with SUBJECT and STATUS.
+Returns the task, or nil when ID is nil."
   (when id
-    (let ((task (or (gethash id (ecc-session-tasks session))
-                    (puthash id (make-ecc-task :id id) (ecc-session-tasks session)))))
+    (let* ((id (format "%s" id))
+           (task (or (gethash id (ecc-session-tasks session))
+                     (puthash id (make-ecc-task :id id :status "pending")
+                              (ecc-session-tasks session)))))
       (when subject (setf (ecc-task-subject task) subject))
       (when status (setf (ecc-task-status task) status))
+      (run-hook-with-args 'ecc-tasks-updated-hook session)
       task)))
+
+(defun ecc-model-replace-tasks (session tasks)
+  "Replace the task list of SESSION by TASKS, a list of `ecc-task'."
+  (clrhash (ecc-session-tasks session))
+  (dolist (task tasks)
+    (puthash (ecc-task-id task) task (ecc-session-tasks session)))
+  (run-hook-with-args 'ecc-tasks-updated-hook session))
+
+(defun ecc-model-tasks (session)
+  "Return the tasks of SESSION, in id order."
+  (sort (hash-table-values (ecc-session-tasks session))
+        (lambda (a b)
+          (let ((x (string-to-number (ecc-task-id a)))
+                (y (string-to-number (ecc-task-id b))))
+            (if (= x y)
+                (string< (ecc-task-id a) (ecc-task-id b))
+              (< x y))))))
 
 ;;;; Requests waiting for an answer (plan section 3.4)
 

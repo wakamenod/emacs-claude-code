@@ -18,6 +18,7 @@
 (require 'ecc-protocol)
 (require 'ecc-model)
 (require 'ecc-proc)
+(require 'ecc-diff)
 (require 'ecc-dispatch)
 
 (defconst ecc-test-directory
@@ -66,6 +67,10 @@ Returns the list of HANDLER return values."
   (with-current-buffer (or buffer (current-buffer))
     (buffer-substring-no-properties (point-min) (point-max))))
 
+(defun ecc-test-log-string (buffer)
+  "Return the text of the log BUFFER without the time stamps."
+  (replace-regexp-in-string "^[0-9:.]+ " "" (ecc-test-buffer-string buffer)))
+
 ;;;; Sessions without a process (plan section 8)
 
 (defvar ecc-test-sent nil
@@ -99,7 +104,11 @@ that tests cannot see each other."
                  :project-root temporary-file-directory)))
      (unwind-protect
          (cl-letf (((symbol-function #'ecc-proc-send-json)
-                    (lambda (_session object) (push object ecc-test-sent) object)))
+                    (lambda (_session object) (push object ecc-test-sent) object))
+                   ;; Recorded paths may or may not exist on this machine;
+                   ;; the diffs of a replay must not depend on that.
+                   ((symbol-function #'ecc-diff-file-content)
+                    (lambda (_path) nil)))
            ,@body)
        (ecc-test-cleanup-session ,var))))
 

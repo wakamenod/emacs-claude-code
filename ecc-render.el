@@ -12,11 +12,17 @@
 ;; IMPLEMENTATION_PLAN.md.  This is the only module that knows about
 ;; magit-section (NFR-9).
 ;;
-;; The buffer is laid out as a header, the turns that are finished, and a
-;; live region holding the current turn and the state line.  Finished
-;; turns are never touched again: a redraw deletes the live region and
-;; builds it anew, which keeps the cost proportional to the current turn
-;; rather than to the length of the conversation (plan section 5.2).
+;; The buffer is laid out as a top region (the header, the Files and the
+;; Tasks summaries), the turns that are finished, and a live region
+;; holding the current turn and the state line.  Finished turns are never
+;; touched again: a redraw deletes the live region and builds it anew,
+;; and the top region is replaced in place, which keeps the cost
+;; proportional to the current turn rather than to the length of the
+;; conversation (plan section 5.2).
+;;
+;; Streamed text is not redrawn at all: each delta is appended at the
+;; marker kept at the end of its node, thinned out by
+;; `ecc-stream-throttle' (FR-OUT-4, FR-OUT-10).
 ;;
 ;; Font lock is off in the session buffer, so faces are applied here as
 ;; the text is inserted (plan section 9, item 7).
@@ -30,6 +36,8 @@
 (require 'ecc-core)
 (require 'ecc-protocol)
 (require 'ecc-model)
+(require 'ecc-markdown)
+(require 'ecc-diff)
 
 (defcustom ecc-render-debounce 0.1
   "Seconds to gather changes before redrawing the live region (FR-OUT-10)."
@@ -47,6 +55,12 @@ The whole result is always available with RET."
   :type 'integer
   :group 'ecc)
 
+(defcustom ecc-render-diff-max-lines 40
+  "Lines of a diff shown inside a tool or permission section.
+The whole diff is always available with RET (FR-OUT-7)."
+  :type 'integer
+  :group 'ecc)
+
 (defcustom ecc-render-follow t
   "Non-nil scrolls to the end of the buffer while it is at the end."
   :type 'boolean
@@ -58,10 +72,19 @@ The whole result is always available with RET."
   :documentation "The whole session buffer.")
 (defclass ecc-section-header (magit-section) ()
   :documentation "The session summary at the top of the buffer.")
+(defclass ecc-section-files (magit-section) ()
+  :documentation "The files Claude touched (FR-OUT-12).")
+(defclass ecc-section-file (magit-section)
+  ((keymap :initform 'ecc-file-section-map))
+  :documentation "One file and the merged diff of its changes.")
+(defclass ecc-section-tasks (magit-section) ()
+  :documentation "The task list Claude keeps (FR-OUT-13).")
+(defclass ecc-section-task (magit-section) ()
+  :documentation "One task.")
 (defclass ecc-section-turn (magit-section) ()
   :documentation "One prompt and everything that followed it.")
 (defclass ecc-section-prompt (magit-section) ()
-  :documentation "The prompt the user sent.")
+  :documentation "The prompt the user, or a parent agent, sent.")
 (defclass ecc-section-text (magit-section) ()
   :documentation "Assistant text.")
 (defclass ecc-section-thinking (magit-section) ()
@@ -100,9 +123,21 @@ The whole result is always available with RET."
     map)
   "Keymap of a section that is waiting for an answer.")
 
-(defun ecc-render--class (type)
-  "Return the section class that draws a node of TYPE."
-  (pcase type
+(defvar ecc-file-section-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") 'ecc-session-visit)
+    (define-key map (kbd "SPC") 'magit-section-toggle)
+    map)
+  "Keymap of a file row in the Files section.")
+
+(defconst ecc-render-expandable-classes
+  '(ecc-section-tool ecc-section-agent ecc-section-thinking ecc-section-file
+    ecc-section-request ecc-section-system ecc-section-unknown)
+  "Section classes the block movement commands stop at (FR-OUT-14).")
+
+(defun ecc-render--class (node)
+  "Return the section class that draws NODE."
+  (pcase (ecc-node-type node)
     ('text 'ecc-section-text)
     ('thinking 'ecc-section-thinking)
     ('step 'ecc-section-step)
@@ -110,19 +145,28 @@ The whole result is always available with RET."
     ('agent 'ecc-section-agent)
     ((or 'permission 'question 'plan) 'ecc-section-request)
     ('result 'ecc-section-result)
-    ((or 'system 'recap) 'ecc-section-system)
+    ('system (if (eq (ecc-model-node-get node 'kind) 'prompt)
+                 'ecc-section-prompt
+               'ecc-section-system))
+    ('recap 'ecc-section-system)
     (_ 'ecc-section-unknown)))
+
+(defun ecc-render--hide-p (node)
+  "Return non-nil when the body of NODE starts collapsed (FR-OUT-3)."
+  (and (memq (ecc-node-type node) ecc-render-hidden-types)
+       (not (eq (ecc-model-node-get node 'kind) 'prompt))
+       t))
 
 ;;;; Buffer state
 
 (defvar-local ecc-render--session nil
   "The session drawn in this buffer.")
 
-(defvar-local ecc-render--header nil
-  "The header section object of this buffer.")
-
 (defvar-local ecc-render--live-start nil
   "Marker where the live region starts, after the last frozen turn.")
+
+(defvar-local ecc-render--top-end nil
+  "Marker where the top region ends and the first turn begins.")
 
 (defvar-local ecc-render--frozen 0
   "Number of turns that are finished and will not be drawn again.")
@@ -132,6 +176,20 @@ The whole result is always available with RET."
 
 (defvar-local ecc-render--timer nil
   "Debounce timer of this buffer, or nil.")
+
+(defvar-local ecc-render--node-sections nil
+  "Hash mapping a node id to (SECTION . DEPTH) for the nodes drawn live.
+Emptied by every redraw of the live region, so it can never point at a
+section that was deleted.")
+
+(defvar-local ecc-render--pending-deltas nil
+  "Alist of node to the streamed text not drawn yet, newest node first.")
+
+(defvar-local ecc-render--delta-timer nil
+  "Timer that will draw the pending deltas, or nil.")
+
+(defvar-local ecc-render--delta-count 0
+  "Deltas received since the pending ones were last drawn.")
 
 ;;;; Text helpers
 
@@ -144,10 +202,18 @@ The whole result is always available with RET."
   (replace-regexp-in-string "[ \t\n\r]+" " " (or string "")))
 
 (defun ecc-render--insert-lines (text prefix face)
-  "Insert TEXT in FACE, putting PREFIX in front of every line."
+  "Insert TEXT in FACE, putting PREFIX in front of every line.
+Faces TEXT already carries win over FACE, which is how Markdown and
+diff colouring survive."
   (let ((body (string-trim-right (or text "") "[\n]+")))
     (dolist (line (split-string body "\n"))
-      (insert (propertize (concat prefix line) 'face face) "\n"))))
+      (let ((string (concat prefix line)))
+        (add-face-text-property 0 (length string) face t string)
+        (insert string "\n")))))
+
+(defun ecc-render--stream-string (text prefix)
+  "Return TEXT with PREFIX after every newline, ready to be appended."
+  (string-replace "\n" (concat "\n" prefix) (or text "")))
 
 (defun ecc-render--insert-input (input prefix)
   "Insert the tool INPUT as one line per key, indented by PREFIX."
@@ -181,6 +247,12 @@ The whole result is always available with RET."
       (concat (string-join (seq-take lines limit) "\n")
               (format "\n… %d more lines (RET)" (- (length lines) limit))))))
 
+(defun ecc-render--count-string (n)
+  "Return N as a short string, in thousands above 999."
+  (cond ((null n) "?")
+        ((>= n 1000) (format "%.1fk" (/ n 1000.0)))
+        (t (format "%d" n))))
+
 (defun ecc-render-tool-summary (name input)
   "Return the one line summary of the call to NAME with INPUT."
   (ecc-render--one-line
@@ -192,14 +264,20 @@ The whole result is always available with RET."
          ((or "Glob" "Grep") (alist-get 'pattern input))
          ((or "Task" "Agent") (alist-get 'description input))
          ("TodoWrite" "todos")
+         ("TaskCreate" (alist-get 'subject input))
+         ("TaskUpdate" (format "#%s%s" (or (alist-get 'taskId input) "?")
+                               (if-let* ((status (alist-get 'status input)))
+                                   (concat " → " status)
+                                 "")))
          (_ nil))
-       (ecc--truncate (ecc-protocol-value-string (cdr (car input))) 60)
+       (and (consp input)
+            (ecc--truncate (ecc-protocol-value-string (cdr (car input))) 60))
        "")))
 
-;;;; The header
+;;;; The top region: header, Files, Tasks
 
 (defun ecc-render--header-string (session)
-  "Return the header text of SESSION, ending in a newline."
+  "Return the header line of SESSION, ending in a newline."
   (concat
    (propertize (or (ecc-session-name session) "?") 'face 'ecc-heading-face)
    (propertize
@@ -208,36 +286,146 @@ The whole result is always available with RET."
             (or (ecc-session-permission-mode session) "default")
             (ecc-session-state session)
             (or (ecc-session-total-cost session) 0))
-    'face 'ecc-dim-face)
-   "\n"))
+    'face 'ecc-dim-face)))
 
-(defun ecc-render--insert-header (session)
-  "Insert the header section of SESSION and return it."
+(defun ecc-render--file-counts (entry)
+  "Return (ADDED . REMOVED) over every change of the file ENTRY."
+  (let ((added 0) (removed 0)
+        (patches (ecc-file-entry-patches entry)))
+    (dolist (hunk (ecc-file-entry-hunks entry))
+      (let ((counts (if (and (car patches) (> (length (car patches)) 0))
+                        (ecc-diff-patch-counts (car patches))
+                      (ecc-diff-counts (ecc-diff-lines (car hunk) (cdr hunk))))))
+        (cl-incf added (car counts))
+        (cl-incf removed (cdr counts)))
+      (setq patches (cdr patches)))
+    (cons added removed)))
+
+(defun ecc-render--file-diff (entry)
+  "Return the merged diff text of every change of the file ENTRY."
+  (let ((patches (ecc-file-entry-patches entry))
+        (parts nil))
+    (dolist (hunk (ecc-file-entry-hunks entry))
+      (push (cond ((and (car patches) (> (length (car patches)) 0))
+                   (ecc-diff-from-patch (car patches)))
+                  ((null (car hunk)) (ecc-diff-for-write (cdr hunk) nil))
+                  (t (or (ecc-diff-render (car hunk) (cdr hunk))
+                         (propertize "(no change)\n" 'face 'diff-context))))
+            parts)
+      (setq patches (cdr patches)))
+    (string-join (nreverse parts) "")))
+
+(defun ecc-render--file-heading (entry)
+  "Return the heading of the file ENTRY."
+  (let ((counts (ecc-render--file-counts entry))
+        (ops (string-join
+              (delq nil (list (and (> (ecc-file-entry-reads entry) 0)
+                                   (format "R×%d" (ecc-file-entry-reads entry)))
+                              (and (> (ecc-file-entry-edits entry) 0)
+                                   (format "E×%d" (ecc-file-entry-edits entry)))
+                              (and (> (ecc-file-entry-writes entry) 0)
+                                   (format "W×%d" (ecc-file-entry-writes entry)))))
+              " ")))
+    (concat "  "
+            (propertize (abbreviate-file-name (ecc-file-entry-path entry))
+                        'face 'ecc-tool-face)
+            (propertize (concat "  " ops) 'face 'ecc-dim-face)
+            (if (ecc-file-entry-hunks entry)
+                (concat "  "
+                        (propertize (format "+%d" (car counts)) 'face 'diff-added)
+                        " "
+                        (propertize (format "−%d" (cdr counts)) 'face 'diff-removed))
+              ""))))
+
+(defun ecc-render--insert-files (session)
+  "Insert the Files section of SESSION, unless there is nothing to list."
+  (let ((entries (ecc-model-files session)))
+    (when entries
+      (magit-insert-section (ecc-section-files "files" t)
+        (magit-insert-heading
+          (propertize (format "Files (%d)" (length entries)) 'face 'ecc-heading-face))
+        (dolist (entry entries)
+          (magit-insert-section (ecc-section-file
+                                 (concat "file:" (ecc-file-entry-path entry)) t)
+            (magit-insert-heading (ecc-render--file-heading entry))
+            (when (ecc-file-entry-hunks entry)
+              (ecc-render--insert-lines (ecc-render--file-diff entry) "    "
+                                        'ecc-dim-face))))))))
+
+(defun ecc-render--task-mark (status)
+  "Return the checkbox for a task with STATUS."
+  (pcase status
+    ("completed" "[x]")
+    ("in_progress" "[/]")
+    (_ "[ ]")))
+
+(defun ecc-render--insert-tasks (session)
+  "Insert the Tasks section of SESSION, unless there are no tasks."
+  (let ((tasks (ecc-model-tasks session)))
+    (when tasks
+      (magit-insert-section (ecc-section-tasks "tasks")
+        (magit-insert-heading
+          (propertize (format "Tasks (%d/%d)"
+                              (seq-count (lambda (task)
+                                           (equal (ecc-task-status task) "completed"))
+                                         tasks)
+                              (length tasks))
+                      'face 'ecc-heading-face))
+        (dolist (task tasks)
+          (magit-insert-section (ecc-section-task (concat "task:" (ecc-task-id task)))
+            (insert (propertize
+                     (format "  %s %s" (ecc-render--task-mark (ecc-task-status task))
+                             (or (ecc-task-subject task) ""))
+                     'face (pcase (ecc-task-status task)
+                             ("completed" 'ecc-dim-face)
+                             ("in_progress" 'ecc-pending-face)
+                             (_ 'default)))
+                    "\n")))))))
+
+(defun ecc-render--insert-top (session)
+  "Insert the header, Files and Tasks of SESSION and the blank line after."
   (magit-insert-section (ecc-section-header "header")
-    (insert (ecc-render--header-string session))))
+    (insert (ecc-render--header-string session)))
+  (ecc-render--insert-files session)
+  (ecc-render--insert-tasks session)
+  (insert "\n"))
 
-(defun ecc-render--update-header (session)
-  "Redraw the header of SESSION in place, keeping its section object.
-Only the text of the header changes, so the sections below it keep
-their markers and are not drawn again."
-  (when-let* ((section ecc-render--header))
-    (when (marker-buffer (oref section start))
-      (let* ((start (marker-position (oref section start)))
-             (end (marker-position (oref section end)))
-             (text (ecc-render--header-string session))
-             (delta (- (length text) (- end start)))
-             (live (marker-position ecc-render--live-start)))
-        (save-excursion
-          (delete-region start end)
-          (goto-char start)
-          (insert text)
-          ;; The start marker advances with text inserted at its
-          ;; position, and the end marker collapsed with the deletion, so
-          ;; both are put back by hand.
-          (set-marker (oref section start) start)
-          (set-marker (oref section end) (point))
-          (set-marker ecc-render--live-start (+ live delta))
-          (put-text-property start (point) 'magit-section section))))))
+(defun ecc-render--top-sections ()
+  "Return the sections of the top region, in order."
+  (let ((pos (marker-position ecc-render--top-end)))
+    (seq-filter (lambda (section) (< (marker-position (oref section start)) pos))
+                (oref magit-root-section children))))
+
+(defun ecc-render--update-top (session)
+  "Redraw the top region of SESSION in place.
+The turns below keep their markers and are not drawn again."
+  (let* ((old (ecc-render--top-sections))
+         (root magit-root-section)
+         (start (marker-position (oref root start)))
+         (end (marker-position ecc-render--top-end))
+         (live (marker-position ecc-render--live-start)))
+    (mapc #'ecc-render--remember-visibility old)
+    (setf (oref root children)
+          (seq-remove (lambda (section) (memq section old)) (oref root children)))
+    (save-excursion
+      (delete-region start end)
+      (goto-char start)
+      (let ((magit-insert-section--parent root))
+        (ecc-render--insert-top session))
+      ;; The root start marker advances with text inserted at it, and the
+      ;; end markers collapsed with the deletion, so all are put back by
+      ;; hand.  The first turn starts where the top region ends, and its
+      ;; own start marker advanced with the insertion.
+      (set-marker (oref root start) start)
+      (set-marker ecc-render--top-end (point))
+      (set-marker ecc-render--live-start (+ live (- (point) end)))
+      (let ((new (seq-filter (lambda (section)
+                               (>= (marker-position (oref section start)) start))
+                             (ecc-render--top-sections))))
+        (setf (oref root children)
+              (append new (seq-remove (lambda (section) (memq section new))
+                                      (oref root children))))
+        (mapc #'ecc-render--apply-visibility new)))))
 
 ;;;; Nodes
 
@@ -245,6 +433,7 @@ their markers and are not drawn again."
   "Return non-nil when NODE has nothing worth drawing.
 An empty thinking block is all signature and no text."
   (and (eq (ecc-node-type node) 'thinking)
+       (not (ecc-node-streaming node))
        (string-empty-p (string-trim (or (ecc-model-node-get node 'text) "")))))
 
 (defun ecc-render--status-mark (status)
@@ -259,34 +448,63 @@ An empty thinking block is all signature and no text."
 (defun ecc-render--insert-node (session node depth)
   "Insert NODE of SESSION at DEPTH."
   (unless (ecc-render--skip-p node)
-    (let ((type (ecc-node-type node)))
-      (magit-insert-section ((eval (ecc-render--class type))
-                             (ecc-node-id node)
-                             (and (memq type ecc-render-hidden-types) t))
-        (pcase type
-          ('text (ecc-render--insert-text node depth))
-          ('thinking (ecc-render--insert-thinking node depth))
-          ('step (ecc-render--insert-step session node depth))
-          ((or 'tool 'agent) (ecc-render--insert-tool session node depth))
-          ((or 'permission 'question 'plan) (ecc-render--insert-request node depth))
-          ('result (ecc-render--insert-result node depth))
-          ((or 'system 'recap) (ecc-render--insert-system node depth))
-          (_ (ecc-render--insert-unknown node depth)))))))
+    (let ((type (ecc-node-type node))
+          (section nil))
+      (setq section
+            (magit-insert-section ((eval (ecc-render--class node))
+                                   (ecc-node-id node)
+                                   (ecc-render--hide-p node))
+              (pcase type
+                ('text (ecc-render--insert-text node depth))
+                ('thinking (ecc-render--insert-thinking node depth))
+                ('step (ecc-render--insert-step session node depth))
+                ('tool (ecc-render--insert-tool session node depth))
+                ('agent (ecc-render--insert-agent session node depth))
+                ((or 'permission 'question 'plan) (ecc-render--insert-request node depth))
+                ('result (ecc-render--insert-result node depth))
+                ((or 'system 'recap) (ecc-render--insert-system node depth))
+                (_ (ecc-render--insert-unknown node depth)))))
+      (when ecc-render--node-sections
+        (puthash (ecc-node-id node) (cons section depth) ecc-render--node-sections))
+      section)))
+
+(defun ecc-render--insert-stream-text (node text prefix face)
+  "Insert the streamed TEXT of NODE with PREFIX after each newline.
+A marker at the end of the text, kept on NODE, is where the next delta
+is appended (plan section 5.2, item 4)."
+  (insert (propertize (concat prefix (ecc-render--stream-string text prefix))
+                      'face face))
+  ;; The marker must stay put while the rest of the buffer is inserted
+  ;; after it, so it does not advance on insertion; a delta moves it by
+  ;; hand instead.
+  (let ((marker (or (ecc-node-marker-end node) (make-marker))))
+    (set-marker marker (point))
+    (set-marker-insertion-type marker nil)
+    (setf (ecc-node-marker-end node) marker))
+  (insert "\n"))
 
 (defun ecc-render--insert-text (node depth)
   "Insert the assistant text NODE at DEPTH."
-  (ecc-render--insert-lines (ecc-model-node-get node 'text)
-                            (ecc-render--pad depth)
-                            (if (ecc-model-node-get node 'synthetic)
-                                'ecc-synthetic-face
-                              'ecc-assistant-face)))
+  (let ((pad (ecc-render--pad depth))
+        (face (if (ecc-model-node-get node 'synthetic)
+                  'ecc-synthetic-face
+                'ecc-assistant-face)))
+    (if (ecc-node-streaming node)
+        (ecc-render--insert-stream-text node (ecc-node-streaming-text node) pad face)
+      (ecc-render--insert-lines (ecc-markdown-fontify (ecc-model-node-get node 'text))
+                                pad face))))
 
 (defun ecc-render--insert-thinking (node depth)
   "Insert the thinking NODE at DEPTH."
   (let ((pad (ecc-render--pad depth)))
-    (magit-insert-heading (concat pad (propertize "Thinking" 'face 'ecc-thinking-face)))
-    (ecc-render--insert-lines (ecc-model-node-get node 'text)
-                              (concat pad "  ") 'ecc-thinking-face)))
+    (magit-insert-heading
+      (concat pad (propertize (if (ecc-node-streaming node) "Thinking…" "Thinking")
+                              'face 'ecc-thinking-face)))
+    (if (ecc-node-streaming node)
+        (ecc-render--insert-stream-text node (ecc-node-streaming-text node)
+                                        (concat pad "  ") 'ecc-thinking-face)
+      (ecc-render--insert-lines (ecc-model-node-get node 'text)
+                                (concat pad "  ") 'ecc-thinking-face))))
 
 (defun ecc-render--insert-step (session node depth)
   "Insert the step NODE of SESSION at DEPTH."
@@ -300,22 +518,43 @@ An empty thinking block is all signature and no text."
     (dolist (child (ecc-node-children node))
       (ecc-render--insert-node session child (1+ depth)))))
 
-(defun ecc-render--insert-tool (session node depth)
-  "Insert the tool or agent NODE of SESSION at DEPTH."
-  (let* ((pad (ecc-render--pad depth))
-         (body (concat pad "  "))
-         (name (or (ecc-model-node-get node 'name) "?"))
+(defun ecc-render--tool-heading (node depth)
+  "Return the heading line of the tool NODE at DEPTH, without newline."
+  (let* ((name (or (ecc-model-node-get node 'name) "?"))
+         (error-p (eq (ecc-node-status node) 'error))
+         (summary (if (ecc-node-streaming node)
+                      (format "streaming %s chars…"
+                              (ecc-render--count-string
+                               (length (ecc-node-streaming-text node))))
+                    (ecc-render-tool-summary name (ecc-model-node-get node 'input)))))
+    (concat (ecc-render--pad depth)
+            (propertize (ecc-render--status-mark (ecc-node-status node))
+                        'face (if error-p 'ecc-error-face 'ecc-dim-face))
+            " "
+            (propertize name 'face (if error-p 'ecc-error-face 'ecc-tool-face))
+            "  "
+            (propertize summary 'face 'ecc-dim-face))))
+
+(defun ecc-render--insert-tool-body (node body)
+  "Insert the input and the result of the tool NODE, indented by BODY.
+An Edit or a Write shows its input as a diff (FR-OUT-7)."
+  (let* ((name (ecc-model-node-get node 'name))
          (input (ecc-model-node-get node 'input))
-         (error-p (eq (ecc-node-status node) 'error)))
-    (magit-insert-heading
-      (concat pad
-              (propertize (ecc-render--status-mark (ecc-node-status node))
-                          'face (if error-p 'ecc-error-face 'ecc-dim-face))
-              " "
-              (propertize name 'face (if error-p 'ecc-error-face 'ecc-tool-face))
-              "  "
-              (propertize (ecc-render-tool-summary name input) 'face 'ecc-dim-face)))
-    (ecc-render--insert-input input body)
+         (error-p (eq (ecc-node-status node) 'error))
+         (diff (and input (ecc-diff-for-tool name input
+                                             (ecc-model-node-get node 'before)))))
+    (cond
+     ((ecc-node-streaming node)
+      (ecc-render--insert-lines (ecc-render--clip (ecc-node-streaming-text node)
+                                                  ecc-render-result-max-lines)
+                                body 'ecc-dim-face))
+     (diff
+      (when-let* ((path (alist-get 'file_path input)))
+        (insert (propertize (concat body (abbreviate-file-name path)) 'face 'ecc-dim-face)
+                "\n"))
+      (ecc-render--insert-lines (ecc-render--clip diff ecc-render-diff-max-lines)
+                                body 'ecc-dim-face))
+     (t (ecc-render--insert-input input body)))
     (when-let* ((status (ecc-model-node-get node 'task-status)))
       (insert (propertize (format "%stask: %s" body status) 'face 'ecc-dim-face) "\n"))
     (pcase (ecc-node-status node)
@@ -327,9 +566,64 @@ An empty thinking block is all signature and no text."
                                (ecc-model-node-get node 'result))
                               ecc-render-result-max-lines)
             (concat body "→ ")
-            (if error-p 'ecc-error-face 'ecc-dim-face)))))
+            (if error-p 'ecc-error-face 'ecc-dim-face)))))))
+
+(defun ecc-render--insert-tool (session node depth)
+  "Insert the tool NODE of SESSION at DEPTH."
+  (magit-insert-heading (ecc-render--tool-heading node depth))
+  (ecc-render--insert-tool-body node (concat (ecc-render--pad depth) "  "))
+  (dolist (child (ecc-node-children node))
+    (ecc-render--insert-node session child (1+ depth))))
+
+(defun ecc-render--agent-heading (node depth)
+  "Return the heading line of the agent NODE at DEPTH."
+  (let* ((input (ecc-model-node-get node 'input))
+         (agent-type (or (ecc-model-node-get node 'agent-type)
+                         (alist-get 'subagent_type input)
+                         "Agent"))
+         (description (or (alist-get 'description input)
+                          (ecc-model-node-get node 'agent-description)
+                          ""))
+         (usage (ecc-model-node-get node 'agent-usage))
+         (tools (let ((n 0))
+                  (dolist (child (ecc-node-children node))
+                    (if (eq (ecc-node-type child) 'step)
+                        (cl-incf n (length (ecc-node-children child)))
+                      (when (memq (ecc-node-type child) '(tool agent))
+                        (cl-incf n))))
+                  (or (alist-get 'tool_uses usage) n)))
+         (duration (or (alist-get 'duration_ms usage)
+                       (when-let* ((started (ecc-model-node-get node 'started))
+                                   (finished (ecc-model-node-get node 'finished)))
+                         (round (* 1000 (float-time (time-subtract finished started)))))))
+         (error-p (eq (ecc-node-status node) 'error)))
+    (concat (ecc-render--pad depth)
+            (propertize (ecc-render--status-mark (ecc-node-status node))
+                        'face (if error-p 'ecc-error-face 'ecc-dim-face))
+            " "
+            (propertize (format "Agent %s" agent-type)
+                        'face (if error-p 'ecc-error-face 'ecc-tool-face))
+            "  "
+            (propertize (ecc-render--one-line description) 'face 'ecc-dim-face)
+            (propertize (format "  ·  %d tools%s" tools
+                                (if duration (format "  ·  %.1fs" (/ duration 1000.0)) ""))
+                        'face 'ecc-dim-face))))
+
+(defun ecc-render--insert-agent (session node depth)
+  "Insert the agent NODE of SESSION at DEPTH, its messages nested (FR-OUT-9)."
+  (let ((body (concat (ecc-render--pad depth) "  ")))
+    (magit-insert-heading (ecc-render--agent-heading node depth))
     (dolist (child (ecc-node-children node))
-      (ecc-render--insert-node session child (1+ depth)))))
+      (ecc-render--insert-node session child (1+ depth)))
+    (pcase (ecc-node-status node)
+      ('running (insert (propertize (concat body "…") 'face 'ecc-dim-face) "\n"))
+      (_ (when (ecc-model-node-get node 'result)
+           (ecc-render--insert-lines
+            (ecc-render--clip (ecc-render--result-text
+                               (ecc-model-node-get node 'result))
+                              ecc-render-result-max-lines)
+            (concat body "→ ")
+            (if (eq (ecc-node-status node) 'error) 'ecc-error-face 'ecc-dim-face)))))))
 
 (defun ecc-render--request-heading (node)
   "Return the heading of the request NODE."
@@ -359,14 +653,28 @@ An empty thinking block is all signature and no text."
                  (propertize "  allowed" 'face 'ecc-dim-face))))))
 
 (defun ecc-render--insert-request (node depth)
-  "Insert the permission, question or plan NODE at DEPTH."
+  "Insert the permission, question or plan NODE at DEPTH.
+An Edit or a Write is shown as the diff it would make, with the lines
+of the file around it (FR-DIFF-1)."
   (let* ((pad (ecc-render--pad depth))
-         (request (ecc-model-node-get node 'request)))
+         (body (concat pad "  "))
+         (request (ecc-model-node-get node 'request))
+         (diff (and request
+                    (ecc-diff-for-tool (ecc-request-tool-name request)
+                                       (ecc-request-input request)
+                                       (ecc-model-node-get node 'before)))))
     (magit-insert-heading (concat pad (ecc-render--request-heading node)))
-    (when request
-      (if (eq (ecc-request-kind request) 'question)
-          (ecc-render--insert-questions request (concat pad "  "))
-        (ecc-render--insert-input (ecc-request-input request) (concat pad "  "))))))
+    (cond
+     ((null request) nil)
+     ((eq (ecc-request-kind request) 'question)
+      (ecc-render--insert-questions request body))
+     (diff
+      (when-let* ((path (alist-get 'file_path (ecc-request-input request))))
+        (insert (propertize (concat body (abbreviate-file-name path)) 'face 'ecc-dim-face)
+                "\n"))
+      (ecc-render--insert-lines (ecc-render--clip diff ecc-render-diff-max-lines)
+                                body 'ecc-dim-face))
+     (t (ecc-render--insert-input (ecc-request-input request) body)))))
 
 (defun ecc-render--insert-questions (request prefix)
   "Insert the questions of REQUEST indented by PREFIX."
@@ -398,26 +706,42 @@ An empty thinking block is all signature and no text."
       'face 'ecc-dim-face)
      "\n")))
 
+(defun ecc-render--system-heading (node)
+  "Return the heading text of the system NODE."
+  (let ((kind (ecc-model-node-get node 'kind))
+        (message (ecc-model-node-get node 'message)))
+    (pcase kind
+      ('compact
+       (let ((result (ecc-model-node-get node 'result)))
+         (format "⟲ compact %s%s"
+                 (cond ((null result) "boundary")
+                       ((equal result "success") "done, context reset")
+                       (t result))
+                 (if-let* ((e (ecc-model-node-get node 'error)))
+                     (concat " — " e) ""))))
+      ('hook (format "hook %s%s"
+                     (alist-get 'hook_name message)
+                     (pcase (alist-get 'subtype message)
+                       ("hook_started" " started")
+                       ("hook_response" (format " → %s" (or (alist-get 'outcome message)
+                                                            "?")))
+                       (_ ""))))
+      (_ (or (ecc-model-node-get node 'text) (format "%s" kind))))))
+
 (defun ecc-render--insert-system (node depth)
   "Insert the system NODE at DEPTH."
-  (let* ((pad (ecc-render--pad depth))
-         (kind (ecc-model-node-get node 'kind))
-         (text (or (ecc-model-node-get node 'text)
-                   (pcase kind
-                     ('compact (format "compacted: %s%s"
-                                       (or (ecc-model-node-get node 'result) "boundary")
-                                       (if-let* ((e (ecc-model-node-get node 'error)))
-                                           (concat " — " e) "")))
-                     ('hook (format "hook %s"
-                                    (alist-get 'hook_name
-                                               (ecc-model-node-get node 'message))))
-                     (_ (format "%s" kind))))))
-    (magit-insert-heading
-      (concat pad (propertize (format "system: %s" (ecc-render--one-line text))
-                              'face 'ecc-dim-face)))
-    (when-let* ((message (ecc-model-node-get node 'message)))
-      (ecc-render--insert-lines (ecc--truncate (format "%S" message) 400)
-                                (concat pad "  ") 'ecc-dim-face))))
+  (let ((pad (ecc-render--pad depth))
+        (kind (ecc-model-node-get node 'kind)))
+    (if (eq kind 'prompt)
+        (ecc-render--insert-lines (ecc-model-node-get node 'text)
+                                  (concat pad "▌ ") 'ecc-user-face)
+      (magit-insert-heading
+        (concat pad (propertize (ecc-render--one-line
+                                 (ecc-render--system-heading node))
+                                'face 'ecc-dim-face)))
+      (when-let* ((message (ecc-model-node-get node 'message)))
+        (ecc-render--insert-lines (ecc--truncate (format "%S" message) 400)
+                                  (concat pad "  ") 'ecc-dim-face)))))
 
 (defun ecc-render--insert-unknown (node depth)
   "Insert the unknown NODE at DEPTH (FR-OUT-1)."
@@ -477,6 +801,71 @@ An empty thinking block is all signature and no text."
   (when-let* ((tail (ecc-render--tail-string session)))
     (magit-insert-section (ecc-section-tail "tail")
       (insert tail "\n"))))
+
+;;;; The state line (FR-OUT-6)
+
+(defun ecc-render-status-line (session)
+  "Return the one line summary of what SESSION is doing right now."
+  (let* ((progress (ecc-session-progress session))
+         (tool (ecc-model-running-tool session))
+         (thinking (alist-get 'thinking-tokens progress))
+         (streaming (alist-get 'streaming progress))
+         (status (alist-get 'status progress))
+         (request (car (ecc-session-pending session))))
+    (pcase (ecc-session-state session)
+      ('idle (propertize "○ idle" 'face 'ecc-dim-face))
+      ('starting (propertize "○ starting…" 'face 'ecc-dim-face))
+      ('exited (propertize (format "✗ exited (code %s)"
+                                   (or (alist-get 'exit-status progress) "?"))
+                           'face 'ecc-error-face))
+      ('compacting (propertize "⟲ compacting…" 'face 'ecc-pending-face))
+      ((or 'waiting-permission 'waiting-question 'waiting-plan)
+       (propertize
+        (format "⚠ %s: %s"
+                (pcase (and request (ecc-request-kind request))
+                  ('question "question")
+                  ('plan "plan review")
+                  (_ "permission"))
+                (if request
+                    (ecc-render--one-line
+                     (concat (ecc-request-tool-name request) " "
+                             (ecc-render-tool-summary (ecc-request-tool-name request)
+                                                      (ecc-request-input request))))
+                  ""))
+        'face 'ecc-pending-face))
+      (_
+       (concat
+        (propertize "● running" 'face 'ecc-pending-face)
+        (propertize
+         (concat
+          (when status (format "  ·  %s" status))
+          (when tool
+            (format "  ·  %s %s"
+                    (ecc-model-node-get tool 'name)
+                    (if (ecc-node-streaming tool)
+                        (format "(%s chars…)"
+                                (ecc-render--count-string
+                                 (length (ecc-node-streaming-text tool))))
+                      (ecc-render-tool-summary (ecc-model-node-get tool 'name)
+                                               (ecc-model-node-get tool 'input)))))
+          (when thinking (format "  ·  thinking %s tokens"
+                                 (ecc-render--count-string thinking)))
+          (when (and streaming (memq (car streaming) '(text thinking)))
+            (format "  ·  %s %s chars" (car streaming)
+                    (ecc-render--count-string (cdr streaming)))))
+         'face 'ecc-dim-face))))))
+
+(defun ecc-render-header-line ()
+  "Return the header line of the session buffer, for `header-line-format'."
+  (when ecc-render--session
+    (concat " " (ecc-render-status-line ecc-render--session))))
+
+(defun ecc-render--on-progress (session &rest _)
+  "Refresh the state line of SESSION."
+  (when-let* ((buffer (ecc-session-buffer session)))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (force-mode-line-update)))))
 
 ;;;; Visibility (plan section 9, item 6)
 
@@ -539,6 +928,19 @@ An empty thinking block is all signature and no text."
                    (equal (oref section value) id)))
             (oref magit-root-section children)))
 
+(defun ecc-render-turn-sections ()
+  "Return the turn sections of this buffer, in order."
+  (seq-filter (lambda (section) (cl-typep section 'ecc-section-turn))
+              (oref magit-root-section children)))
+
+(defun ecc-render--reset-deltas ()
+  "Forget the streamed text waiting to be drawn; a redraw drew it."
+  (setq ecc-render--pending-deltas nil
+        ecc-render--delta-count 0)
+  (when ecc-render--delta-timer
+    (cancel-timer ecc-render--delta-timer)
+    (setq ecc-render--delta-timer nil)))
+
 (defun ecc-render-refresh (session)
   "Draw the whole buffer of SESSION from scratch."
   (when-let* ((buffer (ecc-session-buffer session)))
@@ -546,15 +948,22 @@ An empty thinking block is all signature and no text."
       (with-current-buffer buffer
         (unless ecc-render--visibility-cache
           (setq ecc-render--visibility-cache (make-hash-table :test #'equal)))
+        (unless ecc-render--node-sections
+          (setq ecc-render--node-sections (make-hash-table :test #'equal)))
         (when (and magit-root-section (marker-buffer (oref magit-root-section start)))
           (ecc-render--remember-visibility magit-root-section))
         (with-silent-modifications
           (erase-buffer)
+          (clrhash ecc-render--node-sections)
+          (ecc-render--reset-deltas)
           (setq ecc-render--frozen 0)
           (unless ecc-render--live-start
             (setq ecc-render--live-start (make-marker)))
+          (unless ecc-render--top-end
+            (setq ecc-render--top-end (make-marker)))
           (magit-insert-section (ecc-section-root "root")
-            (setq ecc-render--header (ecc-render--insert-header session))
+            (ecc-render--insert-top session)
+            (set-marker ecc-render--top-end (point))
             (set-marker ecc-render--live-start (point))
             (ecc-render--insert-live session))
           (set-marker-insertion-type (oref magit-root-section end) t)
@@ -563,20 +972,23 @@ An empty thinking block is all signature and no text."
         (goto-char (point-max))))))
 
 (defun ecc-render-update (session)
-  "Redraw the header and the live region of SESSION."
+  "Redraw the top and the live region of SESSION."
   (when-let* ((buffer (ecc-session-buffer session)))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
         (if (or (null magit-root-section)
                 (null ecc-render--live-start)
+                (null ecc-render--top-end)
                 (null (marker-buffer ecc-render--live-start)))
             (ecc-render-refresh session)
           (let ((follow (and ecc-render-follow (ecc-render--windows-at-end)))
                 (at-end (>= (point) (marker-position ecc-render--live-start))))
             (with-silent-modifications
-              (ecc-render--update-header session)
+              (ecc-render--update-top session)
               (dolist (section (ecc-render--live-sections))
                 (ecc-render--remember-visibility section))
+              (clrhash ecc-render--node-sections)
+              (ecc-render--reset-deltas)
               (let ((pos (marker-position ecc-render--live-start)))
                 (setf (oref magit-root-section children)
                       (seq-remove (lambda (section)
@@ -592,7 +1004,8 @@ An empty thinking block is all signature and no text."
               (ecc-render--freeze session))
             (when at-end (goto-char (point-max)))
             (dolist (window follow)
-              (set-window-point window (point-max)))))))))
+              (set-window-point window (point-max)))
+            (force-mode-line-update)))))))
 
 (defun ecc-render-schedule (session)
   "Ask for a redraw of SESSION, gathering changes for a moment first."
@@ -622,13 +1035,136 @@ Tests and interactive commands use this instead of waiting."
           (setq ecc-render--timer nil)))
       (ecc-render-update session))))
 
+;;;; Streaming (FR-OUT-4, plan section 5.2, item 4)
+
+(defun ecc-render--replace-heading (section string)
+  "Replace the heading line of SECTION with STRING, keeping its markers."
+  (let* ((start (marker-position (oref section start)))
+         (content (oref section content))
+         (end (and content (1- (marker-position content)))))
+    (when (and end (> end start))
+      (save-excursion
+        (goto-char start)
+        (delete-region start end)
+        (insert (propertize string 'magit-section section))
+        (set-marker (oref section start) start)))))
+
+(defun ecc-render--append-delta (node text)
+  "Append the streamed TEXT to NODE in the current buffer.
+Text nodes grow at their end marker; a tool node only updates its
+heading, because its body starts collapsed anyway."
+  (when-let* ((entry (gethash (ecc-node-id node) ecc-render--node-sections)))
+    (let ((section (car entry))
+          (depth (cdr entry)))
+      (pcase (ecc-node-type node)
+        ((or 'text 'thinking)
+         (let ((marker (ecc-node-marker-end node)))
+           (when (and (markerp marker) (eq (marker-buffer marker) (current-buffer)))
+             (save-excursion
+               (goto-char marker)
+               (insert (propertize
+                        (ecc-render--stream-string
+                         text (ecc-render--pad (if (eq (ecc-node-type node) 'thinking)
+                                                   (1+ depth)
+                                                 depth)))
+                        'face (if (eq (ecc-node-type node) 'thinking)
+                                  'ecc-thinking-face
+                                'ecc-assistant-face)
+                        'magit-section section))
+               (set-marker marker (point))))))
+        ((or 'tool 'agent)
+         (ecc-render--replace-heading section (ecc-render--tool-heading node depth)))))))
+
+(defun ecc-render--flush-deltas ()
+  "Draw the streamed text that is waiting in the current buffer."
+  (when ecc-render--delta-timer
+    (cancel-timer ecc-render--delta-timer)
+    (setq ecc-render--delta-timer nil))
+  (let ((pending (nreverse ecc-render--pending-deltas))
+        (follow (and ecc-render-follow (ecc-render--windows-at-end)))
+        (at-end (>= (point) (marker-position ecc-render--live-start))))
+    (setq ecc-render--pending-deltas nil
+          ecc-render--delta-count 0)
+    (with-silent-modifications
+      (dolist (pair pending)
+        (ecc-render--append-delta (car pair) (cdr pair))))
+    (when at-end (goto-char (point-max)))
+    (dolist (window follow)
+      (set-window-point window (point-max)))
+    (force-mode-line-update)))
+
+(defun ecc-render--delta-timer-fired (buffer)
+  "Draw the pending deltas of BUFFER."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (ecc-render--flush-deltas))))
+
+(defun ecc-render--on-delta (session node text)
+  "Queue the streamed TEXT of NODE of SESSION for drawing (FR-OUT-10)."
+  (when-let* ((buffer (ecc-session-buffer session)))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (let ((cell (assq node ecc-render--pending-deltas)))
+          (if cell
+              (setcdr cell (concat (cdr cell) text))
+            (push (cons node text) ecc-render--pending-deltas)))
+        (cl-incf ecc-render--delta-count)
+        (pcase ecc-stream-throttle-method
+          ('count
+           (when (>= ecc-render--delta-count (max 1 ecc-stream-throttle-count))
+             (ecc-render--flush-deltas)))
+          (_
+           (if (<= ecc-stream-throttle 0)
+               (ecc-render--flush-deltas)
+             (unless ecc-render--delta-timer
+               (setq ecc-render--delta-timer
+                     (run-at-time ecc-stream-throttle nil
+                                  #'ecc-render--delta-timer-fired buffer))))))))))
+
+(defun ecc-render-flush-deltas (session)
+  "Draw the streamed text of SESSION that is waiting, at once."
+  (when-let* ((buffer (ecc-session-buffer session)))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (ecc-render--flush-deltas)))))
+
+;;;; Other buffers
+
+(defun ecc-render-draw-nodes (session buffer heading nodes)
+  "Draw NODES of SESSION into BUFFER under HEADING as a fresh tree.
+Used for the transcript of an agent (FR-OUT-9).  BUFFER must be in
+`ecc-session-mode' or a mode derived from `magit-section-mode'."
+  (with-current-buffer buffer
+    (setq ecc-render--session session)
+    (unless ecc-render--node-sections
+      (setq ecc-render--node-sections (make-hash-table :test #'equal)))
+    (unless ecc-render--visibility-cache
+      (setq ecc-render--visibility-cache (make-hash-table :test #'equal)))
+    (unless ecc-render--live-start
+      (setq ecc-render--live-start (make-marker)))
+    (with-silent-modifications
+      (erase-buffer)
+      (clrhash ecc-render--node-sections)
+      (magit-insert-section (ecc-section-root "root")
+        (insert (propertize heading 'face 'ecc-heading-face) "\n\n")
+        (set-marker ecc-render--live-start (point))
+        (dolist (node nodes)
+          (ecc-render--insert-node session node 0)))
+      (magit-section-show magit-root-section))
+    (goto-char (point-min))))
+
+;;;; Setup
+
 (defun ecc-render-setup (session buffer)
   "Prepare BUFFER to show SESSION and draw it."
   (with-current-buffer buffer
     (setq ecc-render--session session
           ecc-render--visibility-cache (make-hash-table :test #'equal)
+          ecc-render--node-sections (make-hash-table :test #'equal)
           ecc-render--frozen 0
+          ecc-render--top-end (make-marker)
           ecc-render--live-start (make-marker))
+    (setq header-line-format '(:eval (ecc-render-header-line)))
     (add-hook 'magit-section-set-visibility-hook #'ecc-render--visibility-of nil t)
     (ecc-render-refresh session)))
 
@@ -648,8 +1184,13 @@ Tests and interactive commands use this instead of waiting."
                 ecc-session-init-hook
                 ecc-status-hook
                 ecc-usage-hook
-                ecc-compact-hook))
+                ecc-compact-hook
+                ecc-files-updated-hook
+                ecc-tasks-updated-hook))
   (add-hook hook #'ecc-render--on-change))
+
+(add-hook 'ecc-stream-delta-hook #'ecc-render--on-delta)
+(add-hook 'ecc-progress-hook #'ecc-render--on-progress)
 
 (provide 'ecc-render)
 

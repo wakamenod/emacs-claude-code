@@ -15,6 +15,13 @@
 ;; Nothing is dropped.  A message this file does not know, and any error
 ;; raised while handling one, ends up as an `unknown' node in the
 ;; transcript and in the log (FR-OUT-1, NFR-2, plan section 9, item 19).
+;;
+;; Streaming (FR-OUT-4): with --include-partial-messages every content
+;; block arrives three times, as a content_block_start, as deltas and as
+;; the complete assistant message.  The start creates a provisional node,
+;; the deltas grow its streamed text, and the assistant message finds
+;; that node again and fills in the final content, so that the tree has
+;; one node per block whether or not the stream events came.
 
 ;;; Code:
 
@@ -24,6 +31,7 @@
 (require 'ecc-protocol)
 (require 'ecc-model)
 (require 'ecc-proc)
+(require 'ecc-diff)
 
 (defcustom ecc-turn-approve-tools '("Edit" "Write" "NotebookEdit")
   "Tools that a turn-wide approval covers (FR-PERM-7)."
@@ -76,6 +84,11 @@ Errors are caught: an unreadable message must never stop the stream."
                       :data (list (cons 'message message)
                                   (cons 'reason reason))))
 
+(defun ecc-dispatch--progress (session key value)
+  "Set KEY of the progress information of SESSION to VALUE and announce it."
+  (setf (alist-get key (ecc-session-progress session)) value)
+  (run-hook-with-args 'ecc-progress-hook session))
+
 ;;;; system
 
 (defun ecc-dispatch--system (session message)
@@ -84,9 +97,8 @@ Errors are caught: an unreadable message must never stop the stream."
     ('init (ecc-dispatch--init session message))
     ('status (ecc-dispatch--status session message))
     ('thinking_tokens
-     (setf (alist-get 'thinking-tokens (ecc-session-progress session))
-           (alist-get 'estimated_tokens message))
-     (run-hook-with-args 'ecc-progress-hook session))
+     (ecc-dispatch--progress session 'thinking-tokens
+                             (alist-get 'estimated_tokens message)))
     ((or 'hook_started 'hook_response)
      (ecc-model-add-node session :type 'system :status 'done
                          :data (list (cons 'kind 'hook)
@@ -120,13 +132,16 @@ updates what it is told and never rebuilds the session."
   "Apply the system/status MESSAGE to SESSION."
   (when-let* ((mode (alist-get 'permissionMode message)))
     (setf (ecc-session-permission-mode session) mode))
-  (when (equal (alist-get 'status message) "compacting")
-    (ecc-model-set-state session 'compacting))
+  (let ((status (alist-get 'status message)))
+    (setf (alist-get 'status (ecc-session-progress session)) status)
+    (when (equal status "compacting")
+      (ecc-model-set-state session 'compacting)))
   ;; The key is present with a null value on the closing message, so ask
   ;; for the cell rather than the value (plan section 12.8).
   (when (assq 'compact_result message)
     (ecc-dispatch--compacted session message (alist-get 'compact_result message)))
-  (run-hook-with-args 'ecc-status-hook session))
+  (run-hook-with-args 'ecc-status-hook session)
+  (run-hook-with-args 'ecc-progress-hook session))
 
 (defun ecc-dispatch--compacted (session message result)
   "Note in SESSION that MESSAGE reports a compaction with RESULT."
@@ -145,26 +160,37 @@ updates what it is told and never rebuilds the session."
 (defun ecc-dispatch--task (session message)
   "Apply a task lifecycle MESSAGE to SESSION.
 The node is looked up in the session rather than in the current turn,
-because an asynchronous agent reports after the turn is over (D5)."
+because an asynchronous agent reports after the turn is over (D5).
+A tool that starts a task is an agent from then on (FR-OUT-9), even
+when its messages never arrive because it runs in the background."
   (let* ((node (ecc-model-node session (alist-get 'tool_use_id message)))
          (patch (alist-get 'patch message))
          (status (or (alist-get 'status message) (alist-get 'status patch))))
-    (ecc-model-note-task session (alist-get 'task_id message)
-                         (or (alist-get 'subject message)
-                             (alist-get 'description message))
-                         status)
     (when node
+      (when (eq (ecc-node-type node) 'tool)
+        (setf (ecc-node-type node) 'agent))
       (ecc-model-node-put node 'task message)
+      (when-let* ((type (alist-get 'subagent_type message)))
+        (ecc-model-node-put node 'agent-type type))
+      (when-let* ((description (alist-get 'description message)))
+        (ecc-model-node-put node 'agent-description description))
+      (when-let* ((usage (alist-get 'usage message)))
+        (ecc-model-node-put node 'agent-usage usage))
+      (when-let* ((summary (alist-get 'summary message)))
+        (ecc-model-node-put node 'agent-summary summary))
       (when status (ecc-model-node-put node 'task-status status))
       (ecc-model-node-changed session node))))
 
 ;;;; assistant
 
 (defun ecc-dispatch--assistant (session message)
-  "Apply the assistant MESSAGE to SESSION, one content block at a time."
+  "Apply the assistant MESSAGE to SESSION, one content block at a time.
+A block that was streamed already has a node; it is completed rather
+than added again."
   (let* ((turn (ecc-model-ensure-turn session))
          (synthetic (ecc-protocol-synthetic-p message))
          (uuid (or (alist-get 'uuid message) (ecc-model-next-node-id session)))
+         (parent-id (alist-get 'parent_tool_use_id message))
          (index -1))
     ;; A synthetic reply reports no tokens, so it must not move the
     ;; context estimate (plan section 9, item 12).
@@ -177,18 +203,33 @@ because an asynchronous agent reports after the turn is over (D5)."
             (parent (ecc-dispatch--parent session message turn)))
         (pcase (alist-get 'type block)
           ("thinking"
-           (ecc-model-add-node session :id id :type 'thinking :status 'done
-                               :parent parent
-                               :data (list (cons 'text (alist-get 'thinking block)))))
+           (ecc-dispatch--finish-block
+            session parent-id 'thinking id parent
+            (list (cons 'text (alist-get 'thinking block)))))
           ("text"
-           (ecc-model-add-node session :id id :type 'text :status 'done
-                               :parent parent
-                               :data (list (cons 'text (alist-get 'text block))
-                                           (cons 'synthetic synthetic))))
+           (ecc-dispatch--finish-block
+            session parent-id 'text id parent
+            (list (cons 'text (alist-get 'text block))
+                  (cons 'synthetic synthetic))))
           ("tool_use" (ecc-dispatch--tool-use session block parent))
           (_ (ecc-model-add-node session :id id :type 'unknown :status 'done
                                  :parent parent
                                  :data (list (cons 'block block)))))))))
+
+(defun ecc-dispatch--finish-block (session parent-id type id parent data)
+  "Complete the streamed node of TYPE under PARENT-ID in SESSION.
+When nothing was streamed a new node is added instead; ID, PARENT and
+DATA describe it.  Returns the node."
+  (let ((node (ecc-model-find-stream session parent-id type)))
+    (if (null node)
+        (ecc-model-add-node session :id id :type type :status 'done
+                            :parent parent :data data)
+      (setf (ecc-node-data node) data
+            (ecc-node-status node) 'done
+            (ecc-node-streaming-text node) nil)
+      (ecc-model-close-stream session node)
+      (ecc-model-node-changed session node)
+      node)))
 
 (defun ecc-dispatch--parent (session message turn)
   "Return the node MESSAGE belongs under in TURN of SESSION.
@@ -201,51 +242,104 @@ under the tool node that started it (FR-OUT-9)."
         turn)))
 
 (defun ecc-dispatch--tool-use (session block parent)
-  "Add the tool_use BLOCK to SESSION under PARENT."
-  (let* ((name (alist-get 'name block))
-         (input (alist-get 'input block))
-         (step (if (ecc-turn-p parent)
-                   (ecc-model-step-for-tool session parent)
-                 parent))
-         (node (ecc-model-add-node
-                session
-                :id (alist-get 'id block)
-                :type 'tool
-                :parent step
-                :status 'running
-                :data (list (cons 'name name)
-                            (cons 'input input)
-                            (cons 'started (current-time))))))
-    (when-let* ((kind (cdr (assoc name ecc-dispatch-file-tools))))
-      (ecc-model-note-file session (alist-get 'file_path input) kind))
+  "Add the tool_use BLOCK to SESSION under PARENT, or complete its node.
+The node exists already when the block was streamed."
+  (let* ((id (alist-get 'id block))
+         (node (or (and id (ecc-model-node session id))
+                   (ecc-dispatch--new-tool session id (alist-get 'name block)
+                                           parent))))
+    (ecc-model-close-stream session node)
+    (ecc-dispatch--tool-input session node (alist-get 'input block))
     node))
+
+(defun ecc-dispatch--new-tool (session id name parent)
+  "Add a running tool node ID called NAME under PARENT in SESSION."
+  (ecc-model-add-node
+   session
+   :id id
+   :type 'tool
+   :parent (ecc-model-step-for-tool session parent)
+   :status 'running
+   :data (list (cons 'name name)
+               (cons 'started (current-time)))))
+
+(defun ecc-dispatch--tool-input (session node input)
+  "Record INPUT as the final input of the tool NODE of SESSION.
+File tools are noted in the Files summary and, for an Edit or a Write,
+what the file looks like before the call is kept for the diff."
+  (let ((name (ecc-model-node-get node 'name)))
+    (ecc-model-node-put node 'input input)
+    (setf (ecc-node-streaming-text node) nil)
+    (ecc-dispatch--progress session 'running-tool
+                            (cons name (alist-get 'file_path input)))
+    ;; The Files summary counts a call once its result says it happened
+    ;; (a denied Write wrote nothing); the entry itself is made now so
+    ;; that the state of the file before the call can be kept on it.
+    (when-let* ((kind (cdr (assoc name ecc-dispatch-file-tools))))
+      (ecc-model-note-file session (alist-get 'file_path input) nil)
+      (when (memq kind '(edit write))
+        (ecc-model-node-put node 'before
+                            (ecc-dispatch--file-before session
+                                                       (alist-get 'file_path input)))))
+    (when (equal name "TodoWrite")
+      (ecc-dispatch--todos session (alist-get 'todos input)))
+    (ecc-model-node-changed session node)))
+
+(defun ecc-dispatch--file-before (session path)
+  "Return what PATH of SESSION looks like before Claude changes it.
+The file on disk is the truth; the content of the last Read is the
+fallback when the file cannot be read.  Returns nil when neither is
+known."
+  (or (ecc-diff-file-content path)
+      (when-let* ((entry (and (stringp path)
+                              (gethash path (ecc-session-files session)))))
+        (ecc-file-entry-snapshot entry))))
+
+(defun ecc-dispatch--todos (session todos)
+  "Replace the task list of SESSION with the TodoWrite TODOS (FR-OUT-13)."
+  (let ((n 0))
+    (ecc-model-replace-tasks
+     session
+     (mapcar (lambda (todo)
+               (make-ecc-task :id (format "%d" (cl-incf n))
+                              :subject (alist-get 'content todo)
+                              :status (or (alist-get 'status todo) "pending")))
+             (append (or todos []) nil)))))
 
 ;;;; user
 
 (defun ecc-dispatch--user (session message)
   "Apply the user MESSAGE to SESSION.
 Most of these are tool results; the CLI also echoes prompts back when
---replay-user-messages is on, and those are acknowledgements only."
+--replay-user-messages is on, and those are acknowledgements only.  A
+text message under a parent_tool_use_id is the prompt a subagent was
+started with."
   (if (ecc-protocol-replay-p message)
       (setf (alist-get 'replayed (ecc-session-progress session))
             (alist-get 'content (alist-get 'message message)))
-    (dolist (block (ecc-protocol-content-blocks message))
-      (pcase (alist-get 'type block)
-        ("tool_result" (ecc-dispatch--tool-result session block))
-        ("text"
-         ;; Notes the CLI writes into the conversation itself, such as
-         ;; the acknowledgement of an interrupt.
-         (ecc-model-add-node session :type 'system :status 'done
-                             :data (list (cons 'kind 'note)
-                                         (cons 'text (alist-get 'text block)))))
-        (_ (ecc-model-add-node session :type 'unknown :status 'done
-                               :data (list (cons 'block block))))))))
+    (let ((parent (ecc-dispatch--parent session message
+                                        (ecc-model-ensure-turn session))))
+      (dolist (block (ecc-protocol-content-blocks message))
+        (pcase (alist-get 'type block)
+          ("tool_result" (ecc-dispatch--tool-result session block message))
+          ("text"
+           ;; Notes the CLI writes into the conversation itself, such as
+           ;; the acknowledgement of an interrupt, or the prompt of an agent.
+           (ecc-model-add-node session :type 'system :status 'done
+                               :parent parent
+                               :data (list (cons 'kind (if (ecc-turn-p parent)
+                                                            'note 'prompt))
+                                           (cons 'text (alist-get 'text block)))))
+          (_ (ecc-model-add-node session :type 'unknown :status 'done
+                                 :parent parent
+                                 :data (list (cons 'block block)))))))))
 
-(defun ecc-dispatch--tool-result (session block)
-  "Store the tool_result BLOCK on the tool node it belongs to in SESSION."
+(defun ecc-dispatch--tool-result (session block message)
+  "Store the tool_result BLOCK of MESSAGE on its tool node in SESSION."
   (let* ((id (alist-get 'tool_use_id block))
          (node (ecc-model-node session id))
-         (error-p (eq (alist-get 'is_error block) t)))
+         (error-p (eq (alist-get 'is_error block) t))
+         (structured (alist-get 'tool_use_result message)))
     (if (null node)
         (ecc-model-add-node session :type 'unknown :status 'done
                             :data (list (cons 'block block)
@@ -254,6 +348,14 @@ Most of these are tool results; the CLI also echoes prompts back when
       (ecc-model-node-put node 'is-error error-p)
       (ecc-model-node-put node 'finished (current-time))
       (setf (ecc-node-status node) (if error-p 'error 'done))
+      (ecc-dispatch--progress session 'running-tool nil)
+      (unless error-p
+        (when-let* ((kind (cdr (assoc (ecc-model-node-get node 'name)
+                                      ecc-dispatch-file-tools))))
+          (ecc-model-note-file session
+                               (alist-get 'file_path (ecc-model-node-get node 'input))
+                               kind))
+        (ecc-dispatch--structured-result session node structured))
       (ecc-model-node-changed session node)
       (let ((name (ecc-model-node-get node 'name))
             (path (alist-get 'file_path (ecc-model-node-get node 'input))))
@@ -261,6 +363,62 @@ Most of these are tool results; the CLI also echoes prompts back when
                    (memq (cdr (assoc name ecc-dispatch-file-tools)) '(edit write)))
           (run-hook-with-args 'ecc-sync-file-changed-hook session path)))
       node)))
+
+(defun ecc-dispatch--structured-result (session node result)
+  "Apply the structured tool_use_result RESULT of the tool NODE to SESSION.
+The CLI reports what a file tool did in a machine readable form next to
+the text Claude sees: the content a Read returned, the original file and
+the patch of an Edit or a Write, the id and status of a task."
+  (let ((name (ecc-model-node-get node 'name))
+        (input (ecc-model-node-get node 'input)))
+    (pcase name
+      ("Read"
+       (ecc-model-note-snapshot session (alist-get 'file_path input)
+                                (alist-get 'content (alist-get 'file result))))
+      ((or "Edit" "MultiEdit")
+       (let ((path (alist-get 'file_path input))
+             (original (alist-get 'originalFile result))
+             (patch (alist-get 'structuredPatch result)))
+         (ecc-model-note-hunk session path
+                              (or (alist-get 'oldString result)
+                                  (alist-get 'old_string input))
+                              (or (alist-get 'newString result)
+                                  (alist-get 'new_string input))
+                              patch)
+         (when (stringp original)
+           (ecc-model-note-snapshot
+            session path
+            (string-replace (or (alist-get 'old_string input) "")
+                            (or (alist-get 'new_string input) "")
+                            original)))))
+      ("Write"
+       (ecc-model-note-hunk session (alist-get 'file_path input)
+                            (or (alist-get 'originalFile result)
+                                (ecc-model-node-get node 'before))
+                            (or (alist-get 'content result)
+                                (alist-get 'content input))
+                            (alist-get 'structuredPatch result)))
+      ("TaskCreate"
+       (let ((task (alist-get 'task result)))
+         (ecc-model-note-task session (alist-get 'id task)
+                              (or (alist-get 'subject task)
+                                  (alist-get 'subject input))
+                              (or (alist-get 'status task) "pending"))))
+      ("TaskUpdate"
+       (ecc-model-note-task session
+                            (or (alist-get 'taskId result) (alist-get 'taskId input))
+                            (alist-get 'subject input)
+                            (or (alist-get 'to (alist-get 'statusChange result))
+                                (alist-get 'status input))))
+      ((or "TaskList" "TaskGet")
+       (when-let* ((tasks (alist-get 'tasks result)))
+         (ecc-model-replace-tasks
+          session
+          (mapcar (lambda (task)
+                    (make-ecc-task :id (format "%s" (alist-get 'id task))
+                                   :subject (alist-get 'subject task)
+                                   :status (alist-get 'status task)))
+                  (append tasks nil))))))))
 
 ;;;; control_request (can_use_tool)
 
@@ -278,6 +436,7 @@ Most of these are tool results; the CLI also echoes prompts back when
     (let* ((request-object (alist-get 'request message))
            (tool-name (alist-get 'tool_name request-object))
            (kind (ecc-dispatch--request-kind tool-name))
+           (input (ecc-protocol-request-input message))
            (request (make-ecc-request
                      :request-id (alist-get 'request_id message)
                      :session session
@@ -286,18 +445,27 @@ Most of these are tool results; the CLI also echoes prompts back when
                      :display-name (or (alist-get 'display_name request-object)
                                        tool-name)
                      :description (alist-get 'description request-object)
-                     :input (ecc-protocol-request-input message)
+                     :input input
                      :tool-use-id (alist-get 'tool_use_id request-object)
                      :suggestions (alist-get 'permission_suggestions request-object)
                      :created-at (current-time))))
       (if (ecc-dispatch-auto-approve-p session request)
           (ecc-dispatch--auto-allow session request)
         (setf (ecc-request-node request)
-              (ecc-model-add-node session
-                                  :type kind
-                                  :status 'pending
-                                  :data (list (cons 'request request)
-                                              (cons 'message message))))
+              (ecc-model-add-node
+               session
+               :type kind
+               :status 'pending
+               :data (list (cons 'request request)
+                           (cons 'message message)
+                           ;; What the file looks like now, for the diff
+                           ;; shown before the change is allowed (FR-DIFF-1).
+                           (cons 'before
+                                 (when (memq (cdr (assoc tool-name
+                                                         ecc-dispatch-file-tools))
+                                             '(edit write))
+                                   (ecc-dispatch--file-before
+                                    session (alist-get 'file_path input)))))))
         (ecc-model-add-request session request)))))
 
 (defun ecc-dispatch-auto-approve-p (session request)
@@ -352,23 +520,96 @@ tool the user allowed for the whole session is never asked about again
                          (if (ecc-session-pending session)
                              (ecc-session-state session)
                            'idle))
+    (setf (alist-get 'thinking-tokens (ecc-session-progress session)) nil
+          (alist-get 'running-tool (ecc-session-progress session)) nil
+          (alist-get 'streaming (ecc-session-progress session)) nil)
+    (run-hook-with-args 'ecc-progress-hook session)
     (ecc-proc-drain-queue session)
     turn))
 
-;;;; stream_event
+;;;; stream_event (FR-OUT-4)
 
 (defun ecc-dispatch--stream-event (session message)
-  "Note the streaming MESSAGE of SESSION.
-Phase 1 renders from the complete assistant messages that follow, so
-the deltas only drive the progress indicator here; phase 2 turns them
-into incremental text (plan section 5.2, item 4)."
-  (let ((event (alist-get 'event message)))
-    (when (equal (alist-get 'type event) "content_block_delta")
+  "Apply the streaming MESSAGE to SESSION.
+A content_block_start opens a provisional node, the deltas grow it, and
+the assistant message that follows completes it (plan section 5.2,
+item 4).  A content_block_stop that comes without an assistant message
+closes the node with what was streamed."
+  (let* ((event (alist-get 'event message))
+         (parent-id (alist-get 'parent_tool_use_id message))
+         (index (alist-get 'index event)))
+    (pcase (alist-get 'type event)
+      ("message_start"
+       (ecc-model-ensure-turn session))
+      ("content_block_start"
+       (ecc-dispatch--block-start session message parent-id index
+                                  (alist-get 'content_block event)))
+      ("content_block_delta"
+       (ecc-dispatch--block-delta session parent-id index (alist-get 'delta event)))
+      ("content_block_stop"
+       (when-let* ((node (ecc-model-stream-node session parent-id index)))
+         (when (ecc-node-streaming node)
+           (ecc-dispatch--block-stop session node))))
+      ("message_delta"
+       (when-let* ((usage (alist-get 'usage event)))
+         (setf (alist-get 'output-tokens (ecc-session-progress session))
+               (alist-get 'output_tokens usage))))
+      ("message_stop"
+       (ecc-dispatch--progress session 'streaming nil))
+      (_ nil))))
+
+(defun ecc-dispatch--block-start (session message parent-id index block)
+  "Open a node in SESSION for the streamed content BLOCK.
+The block is at INDEX under PARENT-ID; MESSAGE is the stream_event it
+came in."
+  (let* ((turn (ecc-model-ensure-turn session))
+         (parent (ecc-dispatch--parent session message turn))
+         (type (alist-get 'type block))
+         (node
+          (pcase type
+            ("tool_use"
+             (let ((node (ecc-dispatch--new-tool session (alist-get 'id block)
+                                                 (alist-get 'name block) parent)))
+               (ecc-dispatch--progress session 'running-tool
+                                       (cons (alist-get 'name block) nil))
+               node))
+            ((or "text" "thinking")
+             (ecc-model-add-node session
+                                 :type (intern type)
+                                 :parent parent
+                                 :status 'running
+                                 :data (list (cons 'text ""))))
+            (_ nil))))
+    (when node
+      (ecc-model-open-stream session parent-id index node))
+    node))
+
+(defun ecc-dispatch--block-delta (session parent-id index delta)
+  "Grow the node of SESSION streaming block INDEX under PARENT-ID by DELTA."
+  (let ((node (ecc-model-stream-node session parent-id index))
+        (text (pcase (alist-get 'type delta)
+                ("text_delta" (alist-get 'text delta))
+                ("thinking_delta" (alist-get 'thinking delta))
+                ("input_json_delta" (alist-get 'partial_json delta))
+                (_ nil))))
+    (when (and node text (not (string-empty-p text)))
+      (ecc-model-append-stream session node text)
       (setf (alist-get 'streaming (ecc-session-progress session))
-            (or (alist-get 'text (alist-get 'delta event))
-                (alist-get 'thinking (alist-get 'delta event))
-                (alist-get 'partial_json (alist-get 'delta event))))
-      (run-hook-with-args 'ecc-progress-hook session))))
+            (cons (ecc-node-type node)
+                  (length (ecc-node-streaming-text node)))))))
+
+(defun ecc-dispatch--block-stop (session node)
+  "Close the streamed NODE of SESSION with the text it received.
+The complete assistant message normally arrives first and replaces
+the streamed text; this is the fallback when it did not."
+  (pcase (ecc-node-type node)
+    ((or 'text 'thinking)
+     (ecc-model-node-put node 'text (or (ecc-node-streaming-text node) ""))
+     (setf (ecc-node-status node) 'done))
+    (_ nil))
+  (setf (ecc-node-streaming-text node) nil)
+  (ecc-model-close-stream session node)
+  (ecc-model-node-changed session node))
 
 (provide 'ecc-dispatch)
 

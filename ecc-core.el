@@ -96,6 +96,22 @@ own.  Disabling the plugin that installs it is enough, and unlike
 Only useful when `ecc-safe-mode' is nil, since safe mode disables hooks."
   :type 'boolean)
 
+(defcustom ecc-stream-throttle 0.05
+  "Seconds to gather streaming deltas before drawing them (FR-OUT-10).
+Zero draws every delta as it arrives.  Only used when
+`ecc-stream-throttle-method' is `time'."
+  :type 'number)
+
+(defcustom ecc-stream-throttle-method 'time
+  "How streaming deltas are thinned out before drawing (FR-OUT-10).
+`time' draws at most once per `ecc-stream-throttle' seconds; `count'
+draws every `ecc-stream-throttle-count' deltas."
+  :type '(choice (const time) (const count)))
+
+(defcustom ecc-stream-throttle-count 1
+  "Deltas gathered before drawing when thinning by count."
+  :type 'integer)
+
 (defcustom ecc-extra-args nil
   "Extra arguments appended to every CLI invocation."
   :type '(repeat string))
@@ -141,12 +157,13 @@ Nil keeps every line."
           (delete-region (point-min) (point)))))))
 
 (defun ecc--log-insert (name text)
-  "Append TEXT as one line to the log buffer of the session called NAME."
+  "Append TEXT as one line to the log buffer of the session called NAME.
+Each line is stamped with the time it was written."
   (with-current-buffer (ecc--log-buffer name)
     (let ((inhibit-read-only t))
       (save-excursion
         (goto-char (point-max))
-        (insert text)
+        (insert (format-time-string "%H:%M:%S.%3N ") text)
         (unless (bolp) (insert "\n")))
       (ecc--log-trim))))
 

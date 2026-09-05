@@ -57,7 +57,7 @@
           (ecc-log-raw name 'recv "{\"type\":\"system\"}")
           (ecc-log-raw name 'send "{\"type\":\"user\"}")
           (ecc-log name "started with %s" "haiku")
-          (should (equal (ecc-test-buffer-string buffer)
+          (should (equal (ecc-test-log-string buffer)
                          (concat "<< {\"type\":\"system\"}\n"
                                  ">> {\"type\":\"user\"}\n"
                                  "-- started with haiku\n"))))
@@ -71,7 +71,7 @@
     (unwind-protect
         (progn
           (dotimes (i 50) (ecc-log name "line %d" i))
-          (let ((text (ecc-test-buffer-string buffer)))
+          (let ((text (ecc-test-log-string buffer)))
             (should (= (length (split-string text "\n" t)) 10))
             (should (string-prefix-p "-- line 40" text))
             (should (string-suffix-p "-- line 49\n" text))))
