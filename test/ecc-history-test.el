@@ -282,6 +282,137 @@ the cost follows the page and not the file."
             (should (< elapsed 5.0)))
         (delete-file file)))))
 
+(defun ecc-history-test--line (uuid parent role text &optional extra)
+  "Return a recorded LINE with UUID hanging off PARENT.
+ROLE is `user' or `assistant', TEXT what was said, EXTRA more JSON
+fields as a string."
+  (format "{\"type\": \"%s\", \"uuid\": \"%s\", \"parentUuid\": %s,%s\
+ \"message\": {\"role\": \"%s\", \"content\": \"%s\"}}"
+          role uuid (if parent (format "\"%s\"" parent) "null")
+          (or extra "") role text))
+
+(defun ecc-history-test--last-prompt (leaf)
+  "Return the recorded line saying the conversation hangs from LEAF."
+  (format "{\"type\": \"last-prompt\", \"leafUuid\": \"%s\"}" leaf))
+
+;;;; Branches (FR-HIST-1)
+
+(ert-deftest ecc-history-test-no-branch-shows-everything ()
+  "A recording written by one process end to end has nothing to drop."
+  (should-not (ecc-history-abandoned
+               (ecc-history-lines ecc-history-test-file)))
+  ;; Without a last-prompt line there is nothing to follow, so the lines
+  ;; are taken in the order they were written.
+  (should-not (ecc-history-abandoned
+               (list (ecc-history-test--line "u1" nil "user" "one")
+                     (ecc-history-test--line "a1" "u1" "assistant" "two")))))
+
+(ert-deftest ecc-history-test-abandoned-branch-is-dropped ()
+  "The branch nobody continued is left out (FR-HIST-1).
+Two processes resuming the same session, and editing an earlier message
+in the interactive CLI, both hang a second reply off one parent; only
+the one the recording last pointed at is the conversation."
+  (let* ((lines (list (ecc-history-test--line "u1" nil "user" "one")
+                      (ecc-history-test--line "a1" "u1" "assistant" "first")
+                      ;; two turns hanging off the same answer
+                      (ecc-history-test--line "u2" "a1" "user" "left")
+                      (ecc-history-test--line "a2" "u2" "assistant" "left reply")
+                      (ecc-history-test--line "u3" "a1" "user" "right")
+                      (ecc-history-test--line "a3" "u3" "assistant" "right reply")
+                      (ecc-history-test--last-prompt "a2")
+                      (ecc-history-test--last-prompt "a3")))
+         (abandoned (ecc-history-abandoned lines)))
+    ;; The last last-prompt names a3, so the left branch is the old one.
+    (should abandoned)
+    (should (gethash "u2" abandoned))
+    (should (gethash "a2" abandoned))
+    (should-not (gethash "u3" abandoned))
+    (should-not (gethash "u1" abandoned))
+    ;; Only the turns of the current branch are counted and replayed.
+    (should (equal '(0 4) (ecc-history-turn-starts lines abandoned)))
+    (should (equal '(0 2 4) (ecc-history-turn-starts lines)))
+    (ecc-test-with-fake-session session
+      (ecc-history--replay session lines abandoned)
+      (should (equal '("one" "right")
+                     (ecc-history-test--prompts session))))))
+
+(ert-deftest ecc-history-test-earlier-tree-is-kept ()
+  "History before a compaction is another tree, not an abandoned branch.
+A compaction starts a fresh root, so following the current branch back
+would otherwise hide everything said before it."
+  (let* ((lines (list (ecc-history-test--line "u1" nil "user" "before")
+                      (ecc-history-test--line "a1" "u1" "assistant" "before reply")
+                      ;; the compaction starts again from no parent
+                      (ecc-history-test--line "u2" nil "user" "after")
+                      (ecc-history-test--line "a2" "u2" "assistant" "after reply")
+                      ;; and one abandoned retry of the new tree
+                      (ecc-history-test--line "u3" "a2" "user" "dropped")
+                      (ecc-history-test--line "u4" "a2" "user" "kept")
+                      (ecc-history-test--last-prompt "u4")))
+         (abandoned (ecc-history-abandoned lines)))
+    (should abandoned)
+    (should (gethash "u3" abandoned))
+    (should-not (gethash "u1" abandoned))
+    (should-not (gethash "a1" abandoned))
+    (ecc-test-with-fake-session session
+      (ecc-history--replay session lines abandoned)
+      (should (equal '("before" "after" "kept")
+                     (ecc-history-test--prompts session))))))
+
+(ert-deftest ecc-history-test-branch-of-a-page ()
+  "The branch worked out when the recording is opened is used for every page."
+  (let ((lines (list (ecc-history-test--line "u1" nil "user" "one")
+                     (ecc-history-test--line "a1" "u1" "assistant" "1")
+                     (ecc-history-test--line "u2" "a1" "user" "two")
+                     (ecc-history-test--line "a2" "u2" "assistant" "2")
+                     (ecc-history-test--line "u3" "a1" "user" "gone")
+                     (ecc-history-test--last-prompt "a2"))))
+    (ecc-test-with-fake-session session
+      (let ((file (make-temp-file "ecc-history-branch" nil ".jsonl"
+                                  (concat (string-join lines "\n") "\n"))))
+        (unwind-protect
+            (progn
+              (should (= 1 (ecc-history-load session 1 file)))
+              (should (equal '("two") (ecc-history-test--prompts session)))
+              (should (ecc-history-more-p session))
+              ;; The older page skips the abandoned turn without reading
+              ;; the branch again.
+              (should (= 1 (ecc-history-load-more session 5)))
+              (should (equal '("one" "two") (ecc-history-test--prompts session))))
+          (delete-file file))))))
+
+;;;; Describing a recording without reading it (FR-DASH-2 c)
+
+(ert-deftest ecc-history-test-edges-read-both-ends ()
+  "Only the two ends of a long recording are read."
+  (let* ((middle (make-string 400 ?x))
+         (file (make-temp-file "ecc-history-edges" nil ".jsonl")))
+    (unwind-protect
+        (progn
+          (with-temp-file file
+            (insert "{\"type\": \"first\"}\n")
+            (dotimes (n 400)
+              (insert (format "{\"type\": \"filler\", \"n\": %d, \"pad\": \"%s\"}\n"
+                              n middle)))
+            (insert "{\"type\": \"last\"}\n"))
+          (let* ((ecc-history-scan-head-bytes 200)
+                 (ecc-history-scan-tail-bytes 200)
+                 (edges (ecc-history--edges file)))
+            ;; Both ends are there and whole; the middle is not.
+            (should (string-search "\"first\"" (car edges)))
+            (should (string-search "\"last\"" (car (last edges))))
+            (should (< (length edges) 10))
+            (dolist (line edges)
+              (should (ecc--json-read line)))))
+      (delete-file file))))
+
+(ert-deftest ecc-history-test-edges-of-a-short-file ()
+  "A recording smaller than the two ranges is read whole."
+  (let ((ecc-history-scan-head-bytes 65536)
+        (ecc-history-scan-tail-bytes 65536))
+    (should (equal (ecc-history-lines ecc-history-test-file)
+                   (ecc-history--edges ecc-history-test-file)))))
+
 ;;;; Finding and describing the files (FR-DASH-2, FR-DASH-3)
 
 (ert-deftest ecc-history-test-project-directory ()
@@ -308,6 +439,26 @@ the cost follows the page and not the file."
                               (directory-file-name directory)))))
       (delete-directory directory t))))
 
+(ert-deftest ecc-history-test-recordings-are-newest-first ()
+  "The recordings of a project are offered most recently used first."
+  (ecc-history-test--with-directory file
+    (let ((second (expand-file-name "11111111-1111-1111-1111-111111111111.jsonl"
+                                    (file-name-directory file))))
+      (copy-file file second)
+      ;; The scan reads the time out of the recording, so both carry the
+      ;; same one; the older file is made older on disk as well.
+      (set-file-times second (time-subtract (current-time) 86400))
+      (let* ((cwd (alist-get 'cwd (ecc-history-scan-file file)))
+             (infos (ecc-history-recordings cwd)))
+        (should (= 2 (length infos)))
+        (should (equal cwd (alist-get 'cwd (car infos))))
+        ;; A project nothing ran in has none.
+        (should-not (ecc-history-recordings
+                     (expand-file-name "ecc-no-such-project"
+                                       temporary-file-directory)))
+        ;; Without a project every recording is offered.
+        (should (= 2 (length (ecc-history-recordings))))))))
+
 (ert-deftest ecc-history-test-files-and-lookup ()
   "The recordings are found one level down, and one of them by session id."
   (ecc-history-test--with-directory file
@@ -317,9 +468,12 @@ the cost follows the page and not the file."
     (should-not (ecc-history-file "no-such-session"))))
 
 (ert-deftest ecc-history-test-scan-file ()
-  "A few lines of a recording say where it ran and how it ended."
+  "A few lines of a recording say where it ran and how it ended.
+The id is the name of the file, which is what --resume takes, and not
+what the lines call the session: a copied recording keeps the old name
+inside it."
   (let ((info (ecc-history-scan-file ecc-history-test-file)))
-    (should (equal "24a1aa86-d53f-4457-b09e-4f4caf450f03"
+    (should (equal (file-name-base ecc-history-test-file)
                    (alist-get 'session-id info)))
     (should (string-suffix-p "ecc-history-2m0x5w0z" (alist-get 'cwd info)))
     (should (equal "Hello" (alist-get 'title info)))

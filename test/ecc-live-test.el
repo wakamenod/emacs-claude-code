@@ -18,6 +18,7 @@
 (require 'ecc-test-helpers)
 (require 'ecc)
 (require 'ecc-history)
+(require 'ecc-registry)
 (require 'ecc-dashboard)
 
 (defconst ecc-test-live-options
@@ -584,10 +585,17 @@ The working directory and the recording are both removed afterwards."
                          "ZARQUON"
                          (ecc-turn-prompt (car (ecc-session-turns archived)))))
                 ;; Resuming appends to what was read, and the CLI still
-                ;; remembers the conversation.
+                ;; remembers the conversation.  Nobody is running the
+                ;; session any more, so nothing may be asked: the file
+                ;; the killed CLI left in the registry is stale, and
+                ;; `ecc-registry' has to see through it (FR-TUI-5).
                 (setf (ecc-session-options archived)
                       ecc-test-live-persistent-options)
-                (ecc-history-resume archived)
+                (should-not (ecc-registry-live-p id))
+                (cl-letf (((symbol-function 'yes-or-no-p)
+                           (lambda (&rest _)
+                             (ert-fail "asked about a session nobody runs"))))
+                  (ecc-history-resume archived))
                 (ecc-proc-send-prompt
                  archived "Which word did I ask you to remember?  Answer with it alone.")
                 (let ((turn (ecc-test-live-wait-for-result archived)))
@@ -598,23 +606,32 @@ The working directory and the recording are both removed afterwards."
             (ecc-test-cleanup-session archived)))))))
 
 (ert-deftest ecc-test-live-agents ()
-  "The dashboard reads the real answer of `claude agents --json' (FR-DASH-2)."
+  "The registry agrees with `claude agents --json' (FR-DASH-2, FR-DASH-6).
+The dashboard reads the files rather than running the command, so this
+is what keeps the two from drifting apart."
   :tags '(live)
-  (let ((ecc-dashboard--agents nil)
-        (ecc-dashboard--agents-process nil)
-        (done nil))
-    (cl-letf (((symbol-function 'ecc-dashboard-redraw) #'ignore))
-      (ecc-dashboard-refresh-agents (lambda () (setq done t)))
-      (let ((deadline (+ (float-time) 30)))
-        (while (and (not done) (< (float-time) deadline))
-          (accept-process-output nil 0.2)))
-      (should done)
-      ;; This very test runs inside a session, so the CLI knows at least
-      ;; one; every entry has the fields the dashboard shows.
-      (dolist (agent ecc-dashboard--agents)
-        (should (alist-get 'sessionId agent))
-        (should (alist-get 'cwd agent))
-        (should (ecc-dashboard--agent-entry agent))))))
+  (let* ((output (with-output-to-string
+                   (with-current-buffer standard-output
+                     (call-process ecc-executable nil t nil "agents" "--json"))))
+         (reported (ecc-protocol-parse-agents output))
+         (registry (ecc-registry-sessions)))
+    ;; This very test runs inside a session, so neither is empty.
+    (should reported)
+    (should registry)
+    ;; The command also lists background sessions that have finished,
+    ;; which leave no file behind; every running one is in both.
+    (let ((running (seq-filter (lambda (a) (alist-get 'pid a)) reported)))
+      (should (equal (sort (mapcar (lambda (a) (alist-get 'sessionId a)) running)
+                           #'string<)
+                     (sort (mapcar (lambda (a) (alist-get 'sessionId a)) registry)
+                           #'string<)))
+      (dolist (agent running)
+        (let ((entry (ecc-registry-session (alist-get 'sessionId agent))))
+          (should entry)
+          (should (equal (alist-get 'pid agent) (alist-get 'pid entry)))
+          (should (equal (alist-get 'cwd agent) (alist-get 'cwd entry)))
+          (should (equal (alist-get 'status agent) (alist-get 'status entry)))
+          (should (ecc-dashboard--agent-entry entry)))))))
 
 (provide 'ecc-live-test)
 

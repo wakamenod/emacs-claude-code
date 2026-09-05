@@ -15,10 +15,11 @@
 ;;
 ;; The three sources are read differently.  The sessions of this Emacs
 ;; are in the model and are always current.  The sessions of another
-;; process come from `claude agents --json', which takes about a second,
-;; so it is run asynchronously and only while the buffer is on screen
-;; (plan section 9, item 15).  The recordings are scanned on the first
-;; draw and on g, reading a few lines of each file rather than all of it.
+;; process come from `ecc-registry', which reads the files Claude Code
+;; keeps about itself: no subprocess, and the directory can be watched,
+;; so the list is current without polling for it.  The recordings are
+;; scanned on the first draw and on g, reading the two ends of each file
+;; rather than all of it.
 ;;
 ;; A session that appears in more than one source is shown once: a live
 ;; session knows more about itself than its recording does.
@@ -36,16 +37,17 @@
 (require 'ecc-perm)
 (require 'ecc-inbox)
 (require 'ecc-history)
+(require 'ecc-registry)
 (require 'ecc-window)
 
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-kill "ecc" (session))
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 
-(defcustom ecc-dashboard-poll-interval 10
-  "Seconds between two runs of `claude agents --json' (FR-DASH-2).
-The list of the sessions of other processes is only refreshed while
-the dashboard is on screen."
+(defcustom ecc-dashboard-poll-interval 30
+  "Seconds between two rereads of the session registry (FR-DASH-2).
+The registry is watched, so this only catches what a file notification
+missed, and it only runs while the dashboard is on screen."
   :type 'number
   :group 'ecc)
 
@@ -95,7 +97,7 @@ Scanning them reads a few lines of every file under
 
 (defun ecc-dashboard--agent-entry (agent)
   "Return the row of AGENT, a session another process runs (FR-DASH-6).
-The CLI reports its state itself; `waitingFor' says what it is waiting
+The CLI records its state itself; `waitingFor' says what it is waiting
 for when it is not simply busy or idle."
   (let ((waiting-for (alist-get 'waitingFor agent))
         (status (alist-get 'status agent)))
@@ -108,10 +110,11 @@ for when it is not simply busy or idle."
                 (format "waiting: %s" waiting-for)
               (or status "?"))
      :cwd (alist-get 'cwd agent)
-     :model ""
+     :model (or (alist-get 'version agent) "")
      :prompt (or (alist-get 'kind agent) "")
-     :time (when-let* ((started (alist-get 'startedAt agent)))
-             (time-convert (/ started 1000.0) 'list))
+     :time (when-let* ((updated (or (alist-get 'updatedAt agent)
+                                    (alist-get 'startedAt agent))))
+             (time-convert (/ updated 1000.0) 'list))
      :cost nil
      :waiting (if (and waiting-for (stringp waiting-for)) 1 0))))
 
@@ -133,10 +136,7 @@ for when it is not simply busy or idle."
 ;;;; The sources
 
 (defvar ecc-dashboard--agents nil
-  "The latest answer of `claude agents --json', as a list of alists.")
-
-(defvar ecc-dashboard--agents-process nil
-  "The `claude agents --json' process that is running, or nil.")
+  "The sessions Claude Code is running, as `ecc-registry' last read them.")
 
 (defvar ecc-dashboard--recordings nil
   "The scan of `ecc-history-directory', as a list of alists.")
@@ -145,30 +145,13 @@ for when it is not simply busy or idle."
   "Timer that polls the sessions of other processes, or nil.")
 
 (defun ecc-dashboard-refresh-agents (&optional callback)
-  "Run `claude agents --json' and remember what it says (FR-DASH-2 b).
-CALLBACK, when given, is called once the answer is in.  A run that is
-still going is left alone: the command takes about a second and the
-dashboard polls faster than that when it is redrawn by hand."
-  (unless (process-live-p ecc-dashboard--agents-process)
-    (let ((buffer (generate-new-buffer " *ecc-agents*")))
-      (setq ecc-dashboard--agents-process
-            (make-process
-             :name "ecc-agents"
-             :command (list ecc-executable "agents" "--json")
-             :connection-type 'pipe
-             :noquery t
-             :buffer buffer
-             :sentinel
-             (lambda (process _event)
-               (unless (process-live-p process)
-                 (let ((output (with-current-buffer (process-buffer process)
-                                 (buffer-string))))
-                   (setq ecc-dashboard--agents
-                         (ecc-protocol-parse-agents output))
-                   (kill-buffer (process-buffer process))
-                   (setq ecc-dashboard--agents-process nil)
-                   (when callback (funcall callback))
-                   (ecc-dashboard-redraw)))))))))
+  "Reread the sessions Claude Code is running (FR-DASH-2 b).
+CALLBACK, when given, is called once they are in.  Reading the registry
+costs a few small files, so unlike `claude agents --json' this needs no
+process and can be done as often as the list is drawn."
+  (setq ecc-dashboard--agents (ecc-registry-sessions))
+  (when callback (funcall callback))
+  ecc-dashboard--agents)
 
 (defun ecc-dashboard-refresh-recordings ()
   "Scan `ecc-history-directory' and remember what it holds (FR-DASH-2 c)."
@@ -296,11 +279,11 @@ it was built from are not, so the list is copied (docs/verified.md)."
       (unless (derived-mode-p 'ecc-dashboard-mode)
         (ecc-dashboard-mode))
       (ecc-dashboard-refresh-recordings)
+      (ecc-dashboard-refresh-agents)
       (ecc-dashboard--collect)
       (tabulated-list-print t))
     (pop-to-buffer buffer)
-    (ecc-dashboard-refresh-agents)
-    (ecc-dashboard--start-timer)
+    (ecc-dashboard--start-watch)
     buffer))
 
 (defun ecc-dashboard-redraw ()
@@ -320,29 +303,45 @@ it was built from are not, so the list is copied (docs/verified.md)."
   (ecc-dashboard-refresh-agents)
   (ecc-dashboard-redraw))
 
-;;;; Polling (plan section 9, item 15)
+;;;; Keeping up with the registry (FR-DASH-6)
 
-(defun ecc-dashboard--start-timer ()
-  "Poll the sessions of other processes while the dashboard is on screen."
+;; The registry directory is watched, which is what makes a session
+;; started in a terminal appear here at once.  A file notification is a
+;; courtesy rather than a promise, so a slow timer reads it again while
+;; the dashboard is on screen (plan section 9, item 15).
+
+(defun ecc-dashboard--start-watch ()
+  "Watch the session registry and poll it slowly while the list is shown."
+  (add-hook 'ecc-registry-changed-hook #'ecc-dashboard--registry-changed)
+  (ecc-registry-watch)
   (unless ecc-dashboard--timer
     (setq ecc-dashboard--timer
           (run-at-time ecc-dashboard-poll-interval ecc-dashboard-poll-interval
                        #'ecc-dashboard--poll))))
 
 (defun ecc-dashboard--stop-timer ()
-  "Stop polling the sessions of other processes."
+  "Stop watching and polling the session registry."
+  (remove-hook 'ecc-registry-changed-hook #'ecc-dashboard--registry-changed)
+  (ecc-registry-unwatch)
   (when ecc-dashboard--timer
     (cancel-timer ecc-dashboard--timer)
     (setq ecc-dashboard--timer nil)))
 
+(defun ecc-dashboard--registry-changed ()
+  "Draw the dashboard again after a session started or stopped."
+  (when (get-buffer ecc-dashboard-buffer-name)
+    (ecc-dashboard-refresh-agents)
+    (ecc-dashboard-redraw)))
+
 (defun ecc-dashboard--poll ()
-  "Ask again for the sessions of other processes, or stop polling.
-Nothing is asked while the dashboard is not shown anywhere."
+  "Read the registry again, or stop when the dashboard is gone.
+Nothing is read while the dashboard is not shown anywhere."
   (let ((buffer (get-buffer ecc-dashboard-buffer-name)))
     (cond
      ((not (buffer-live-p buffer)) (ecc-dashboard--stop-timer))
      ((null (get-buffer-window buffer t)) nil)
-     (t (ecc-dashboard-refresh-agents)))))
+     (t (ecc-dashboard-refresh-agents)
+        (ecc-dashboard-redraw)))))
 
 ;;;; Commands
 
@@ -433,13 +432,9 @@ A session another process runs has to be stopped there first: two CLIs
 on one recording would each write their own version of it, which is
 the exclusion of FR-TUI-5."
   (interactive)
-  (let* ((entry (ecc-dashboard-entry-at-point))
-         (fork current-prefix-arg))
-    (when (eq (ecc-dashboard-entry-kind entry) 'external)
-      (unless (yes-or-no-p
-               (format "Pid %s がこのセッションを実行中です。止めてから続けますか? "
-                       (or (alist-get 'pid (ecc-dashboard-entry-agent entry)) "?")))
-        (user-error "中止しました")))
+  (let ((fork current-prefix-arg))
+    ;; A session another process is running is refused by
+    ;; `ecc-history-resume' unless the user insists (FR-TUI-5).
     (let ((session (or (ecc-dashboard-session-at-point t)
                        (user-error "This session has no recording"))))
       (ecc-history-resume session fork)

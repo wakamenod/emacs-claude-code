@@ -19,6 +19,7 @@
 (require 'ecc-test-helpers)
 (require 'ecc-dashboard)
 (require 'ecc-history)
+(require 'ecc-registry)
 (require 'ecc-session)
 
 (defconst ecc-dashboard-test-agents
@@ -27,6 +28,10 @@
                                             ecc-test-directory))
     (buffer-string))
   "The recorded answer of `claude agents --json'.")
+
+(defconst ecc-dashboard-test-registry
+  (expand-file-name "fixtures/registry" ecc-test-directory)
+  "The recorded session registry the dashboard reads.")
 
 (defmacro ecc-dashboard-test--with-two-sessions (a b &rest body)
   "Run BODY with A and B two sessions of this Emacs, plus recorded sources.
@@ -170,7 +175,7 @@ this also pins down what a row with nothing to say looks like."
 (defmacro ecc-dashboard-test--in-buffer (&rest body)
   "Draw the dashboard without asking the CLI and run BODY inside it."
   `(cl-letf (((symbol-function 'ecc-dashboard-refresh-agents) #'ignore)
-             ((symbol-function 'ecc-dashboard--start-timer) #'ignore)
+             ((symbol-function 'ecc-dashboard--start-watch) #'ignore)
              ((symbol-function 'pop-to-buffer) #'set-buffer))
      (let ((buffer (ecc-dashboard)))
        (unwind-protect
@@ -293,12 +298,51 @@ this also pins down what a row with nothing to say looks like."
 
 ;;;; Polling (plan section 9, item 15)
 
+(ert-deftest ecc-dashboard-test-reads-the-registry ()
+  "The sessions of other processes come from the registry, not a subprocess."
+  (let ((ecc-registry-directory ecc-dashboard-test-registry)
+        (ecc-registry-check-process nil)
+        (ecc-dashboard--agents nil)
+        (called nil))
+    (cl-letf (((symbol-function 'make-process)
+               (lambda (&rest _) (error "The dashboard started a process"))))
+      (ecc-dashboard-refresh-agents (lambda () (setq called t))))
+    (should called)
+    (should (= 3 (length ecc-dashboard--agents)))
+    (should (equal "emacs-claude-code-00"
+                   (alist-get 'name (car ecc-dashboard--agents))))
+    ;; The row keeps what the registry says about it.
+    (let ((entry (ecc-dashboard--agent-entry (car ecc-dashboard--agents))))
+      (should (eq 'external (ecc-dashboard-entry-kind entry)))
+      (should (equal "busy" (ecc-dashboard-entry-state entry)))
+      (should (equal "2.1.261" (ecc-dashboard-entry-model entry))))))
+
+(ert-deftest ecc-dashboard-test-registry-change-redraws ()
+  "A session starting or stopping elsewhere reaches the list at once."
+  (ecc-dashboard-test--with-two-sessions a b
+    (let ((ecc-registry-directory ecc-dashboard-test-registry)
+          (ecc-registry-check-process nil)
+          (ecc-dashboard--agents nil)
+          (buffer (get-buffer-create ecc-dashboard-buffer-name)))
+      (unwind-protect
+          (with-current-buffer buffer
+            (ecc-dashboard-mode)
+            (ecc-dashboard--registry-changed)
+            (should (= 3 (length ecc-dashboard--agents)))
+            ;; The rows were drawn again with the new list in them.
+            (should (member "emacs-claude-code-00"
+                            (ecc-dashboard-test--names
+                             (mapcar #'car tabulated-list-entries)))))
+        (kill-buffer buffer)))
+    (ignore a b)))
+
 (ert-deftest ecc-dashboard-test-poll-only-while-shown ()
-  "The CLI is not asked while the dashboard is off screen."
+  "The registry is not reread while the dashboard is off screen."
   (let ((asked 0)
         (ecc-dashboard--timer nil))
     (cl-letf (((symbol-function 'ecc-dashboard-refresh-agents)
-               (lambda (&rest _) (cl-incf asked))))
+               (lambda (&rest _) (cl-incf asked)))
+              ((symbol-function 'ecc-dashboard-redraw) #'ignore))
       ;; No buffer at all: the timer stops itself.
       (let ((buffer (get-buffer ecc-dashboard-buffer-name)))
         (when buffer (kill-buffer buffer)))

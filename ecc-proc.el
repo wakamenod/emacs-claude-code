@@ -29,6 +29,14 @@
   :type 'number
   :group 'ecc)
 
+(defcustom ecc-stop-grace 2.0
+  "Seconds the CLI is given to stop by itself before it is killed.
+A terminated CLI writes its last lines and takes itself out of the
+session registry other Claude Code processes read, which a killed one
+cannot; it normally takes a fraction of a second.  Zero kills at once."
+  :type 'number
+  :group 'ecc)
+
 (defvar ecc-proc-message-function #'ignore
   "Function called with a session and every parsed message.
 `ecc-dispatch' installs itself here when it is loaded.")
@@ -140,13 +148,32 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
     process))
 
 (defun ecc-proc-stop (session)
-  "Stop the CLI of SESSION if it is running.
-The stop is noted, so that the sentinel can tell an exit the user asked
-for from one the CLI decided on (FR-SES-7)."
+  "Stop the CLI of SESSION if it is running, and wait for it to go.
+It is asked to stop first and only killed when it will not: a CLI that
+stops by itself removes its entry from the registry other Claude Code
+processes read, so that nothing thinks the session is still running
+\(FR-TUI-5).  The stop is noted, so that the sentinel can tell an exit
+the user asked for from one the CLI decided on (FR-SES-7)."
   (let ((process (ecc-session-process session)))
     (setf (alist-get 'stop-requested (ecc-session-progress session)) t)
     (when (process-live-p process)
-      (delete-process process))))
+      (if (<= ecc-stop-grace 0)
+          (delete-process process)
+        (signal-process process 'TERM)
+        (let ((deadline (+ (float-time) ecc-stop-grace)))
+          (while (and (process-live-p process) (< (float-time) deadline))
+            (accept-process-output process 0.05)))
+        (when (process-live-p process)
+          (ecc-log (ecc-session-name session)
+                   "did not stop in %ss; killing" ecc-stop-grace)
+          (delete-process process))))
+    ;; The process is gone from Emacs, but the system may take another
+    ;; moment to forget it, and the registry is read by process id.
+    (when (and process (not (process-live-p process)))
+      (let ((pid (process-id process))
+            (deadline (+ (float-time) 1.0)))
+        (while (and pid (process-attributes pid) (< (float-time) deadline))
+          (accept-process-output nil 0.02))))))
 
 (defun ecc-proc-stopped-on-request-p (session)
   "Return non-nil when the CLI of SESSION was stopped from Emacs."

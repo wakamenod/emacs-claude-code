@@ -32,6 +32,7 @@
 (require 'ecc-model)
 (require 'ecc-proc)
 (require 'ecc-dispatch)
+(require 'ecc-registry)
 
 (declare-function ecc-render-refresh "ecc-render" (session))
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
@@ -71,6 +72,11 @@ draws once at the end.")
 
 (defvar ecc-history--files (make-hash-table :test #'equal)
   "Hash mapping a session id to the history file it was read from.")
+
+(defvar ecc-history--abandoned (make-hash-table :test #'equal)
+  "Hash mapping a session id to the uuids of its abandoned branches.
+Worked out once when the recording is opened and used again by every
+page read after that.")
 
 ;;;; Finding the files
 
@@ -114,16 +120,21 @@ which Emacs may not know, so the file is looked for by name."
       (insert-file-contents file))
     (split-string (buffer-string) "\n" t)))
 
-(defun ecc-history-turn-starts (lines)
+(defun ecc-history-turn-starts (lines &optional abandoned)
   "Return the indices of LINES that open a turn, oldest first.
 A line is only parsed when its type says it might be a prompt, which
-is what makes paging over a long recording cheap."
+is what makes paging over a long recording cheap.  ABANDONED, when
+given, is the hash of uuids of a branch nobody continued; a turn of
+one of those is not a turn of this conversation (FR-HIST-1)."
   (let ((index -1) starts)
     (dolist (line lines (nreverse starts))
       (cl-incf index)
       (when (and (ecc-protocol-history-user-line-p line)
                  (when-let* ((message (ecc-protocol-history-parse line)))
-                   (ecc-protocol-history-prompt message)))
+                   (and (ecc-protocol-history-prompt message)
+                        (not (and abandoned
+                                  (gethash (alist-get 'uuid message)
+                                           abandoned))))))
         (push index starts)))))
 
 (defun ecc-history-page-start (starts n &optional before)
@@ -141,6 +152,70 @@ Zero when no turn of STARTS begins before FROM: the lines left over are
 the bookkeeping the CLI writes before the first prompt, and offering to
 read them would offer nothing (FR-HIST-1)."
   (if (seq-find (lambda (index) (< index from)) starts) from 0))
+
+;;;; Branches (FR-HIST-1)
+
+;; A recording is a tree, not a list.  Editing an earlier message in the
+;; interactive CLI, interrupting a turn, and two processes resuming the
+;; same session all hang a new message off an older parent, and the
+;; abandoned branch stays in the file.  Reading the lines in the order
+;; they were written would show both branches at once.
+;;
+;; The CLI writes which message the conversation now hangs from into a
+;; `last-prompt' line after every turn; the last one is the branch a
+;; resume would continue.  Walking up from there gives the current
+;; series.  What is left over is only dropped when it hangs off that
+;; series: a compaction starts a fresh root, and everything before it is
+;; a different tree, not an abandoned branch, so it stays (verified
+;; against every recording on this machine, see docs/verified.md).
+
+(defun ecc-history--links (lines)
+  "Return a hash mapping the uuid of each of LINES to that of its parent."
+  (let ((table (make-hash-table :test #'equal)))
+    (dolist (line lines table)
+      (when-let* ((link (ecc-protocol-history-link line)))
+        (puthash (car link) (cdr link) table)))))
+
+(defun ecc-history--leaf (lines)
+  "Return the uuid LINES last said the conversation hangs from, or nil."
+  (let (leaf)
+    (dolist (line lines leaf)
+      (when-let* ((uuid (ecc-protocol-history-leaf line)))
+        (setq leaf uuid)))))
+
+(defun ecc-history--chain (links leaf)
+  "Return the uuids on the way from LEAF to its root, following LINKS."
+  (let ((chain (make-hash-table :test #'equal))
+        (uuid leaf))
+    (while (and uuid (not (gethash uuid chain)))
+      (puthash uuid t chain)
+      (setq uuid (gethash uuid links)))
+    chain))
+
+(defun ecc-history-abandoned (lines)
+  "Return the uuids of LINES that belong to a branch nobody continued.
+Nil when the recording says nothing about where it hangs from, in
+which case every line is shown in the order it was written."
+  (let ((leaf (ecc-history--leaf lines)))
+    (when leaf
+      (let* ((links (ecc-history--links lines))
+             (chain (ecc-history--chain links leaf))
+             (abandoned (make-hash-table :test #'equal)))
+        (maphash
+         (lambda (uuid _parent)
+           (unless (gethash uuid chain)
+             ;; Off the series: dropped only when an ancestor is on it,
+             ;; which is what makes it a branch of this conversation
+             ;; rather than an older tree of the same file.
+             (let ((seen (make-hash-table :test #'equal))
+                   (up (gethash uuid links)))
+               (while (and up (not (gethash up seen)) (not (gethash up chain)))
+                 (puthash up t seen)
+                 (setq up (gethash up links)))
+               (when (and up (gethash up chain))
+                 (puthash uuid t abandoned)))))
+         links)
+        (and (> (hash-table-count abandoned) 0) abandoned)))))
 
 ;;;; Replaying (plan section 6.8)
 
@@ -197,32 +272,38 @@ PROMPT is what the message opens a turn with, or nil."
       (_ (ecc-history--note-system session message))))
    (t (ecc-dispatch session message))))
 
-(defun ecc-history--replay-lines (session lines)
+(defun ecc-history--replay-lines (session lines &optional abandoned)
   "Feed LINES of a recorded conversation to SESSION and return the turns made.
-Each prompt opens a turn, everything else goes through `ecc-dispatch'."
+Each prompt opens a turn, everything else goes through `ecc-dispatch'.
+ABANDONED, when given, is the hash of uuids that belong to a branch
+nobody continued; those lines are left out (FR-HIST-1)."
   (let ((made 0) (sidechain 0) (time nil))
     (dolist (line lines)
       (when-let* ((message (ecc-protocol-history-parse line)))
         (when-let* ((stamp (ecc-protocol-history-timestamp message)))
           (setq time stamp))
-        (if (and (ecc-protocol-history-sidechain-p message)
-                 (not ecc-history-include-sidechain))
-            (cl-incf sidechain)
+        (cond
+         ((and abandoned (gethash (alist-get 'uuid message) abandoned)) nil)
+         ((and (ecc-protocol-history-sidechain-p message)
+               (not ecc-history-include-sidechain))
+          (cl-incf sidechain))
+         (t
           (let ((prompt (ecc-protocol-history-prompt message)))
             (when prompt
               ;; The skipped lines belong to the turn they were in.
               (ecc-history--note-sidechain session sidechain)
               (setq sidechain 0)
               (cl-incf made))
-            (ecc-history--replay-line session message prompt time)))))
+            (ecc-history--replay-line session message prompt time))))))
     (ecc-history--note-sidechain session sidechain)
     (ecc-history--close-turn session time)
     made))
 
-(defun ecc-history--replay (session lines)
+(defun ecc-history--replay (session lines &optional abandoned)
   "Replay LINES into SESSION with the hooks of the outside world off.
-The state SESSION was in is put back afterwards, so that replaying into
-a live session cannot make it look busy."
+ABANDONED is passed to `ecc-history--replay-lines'.  The state SESSION
+was in is put back afterwards, so that replaying into a live session
+cannot make it look busy."
   (let ((state (ecc-session-state session))
         (current (ecc-session-current-turn session))
         (made 0))
@@ -230,7 +311,7 @@ a live session cannot make it look busy."
         (make-list (length ecc-history-suppressed-hooks) nil)
       (setf (ecc-session-current-turn session) nil)
       (unwind-protect
-          (setq made (ecc-history--replay-lines session lines))
+          (setq made (ecc-history--replay-lines session lines abandoned))
         (setf (ecc-session-current-turn session) current)
         (ecc-model-set-state session state)))
     made))
@@ -247,13 +328,15 @@ the top of the buffer can read the page before it (FR-HIST-1)."
                    (user-error "No recorded conversation for %s"
                                (ecc-session-id session))))
          (lines (ecc-history-lines file))
-         (starts (ecc-history-turn-starts lines))
+         (abandoned (ecc-history-abandoned lines))
+         (starts (ecc-history-turn-starts lines abandoned))
          (from (or (ecc-history-page-start starts
                                            (or n-turns ecc-history-page-turns))
                    0)))
     (puthash (ecc-session-id session) file ecc-history--files)
+    (puthash (ecc-session-id session) abandoned ecc-history--abandoned)
     (setf (ecc-session-history-offset session) (ecc-history--offset starts from))
-    (prog1 (ecc-history--replay session (nthcdr from lines))
+    (prog1 (ecc-history--replay session (nthcdr from lines) abandoned)
       (ecc-history--redraw session))))
 
 (defun ecc-history-load-more (session &optional n-turns)
@@ -270,7 +353,8 @@ is drawn again from the top (FR-HIST-1).  Returns the number read."
       0)
      (t
       (let* ((lines (ecc-history-lines file))
-             (starts (ecc-history-turn-starts lines))
+             (abandoned (gethash (ecc-session-id session) ecc-history--abandoned))
+             (starts (ecc-history-turn-starts lines abandoned))
              (from (or (ecc-history-page-start
                         starts (or n-turns ecc-history-page-turns) offset)
                        0))
@@ -281,7 +365,7 @@ is drawn again from the top (FR-HIST-1).  Returns the number read."
         ;; empty list and the turns already read are put back after them.
         (setf (ecc-session-turns session) nil)
         (unwind-protect
-            (setq made (ecc-history--replay session older))
+            (setq made (ecc-history--replay session older abandoned))
           (setf (ecc-session-turns session)
                 (append (ecc-session-turns session) existing)))
         (setf (ecc-session-history-offset session) (ecc-history--offset starts from))
@@ -304,24 +388,86 @@ drawn rather than the live region alone."
 
 ;;;; Opening a recorded conversation (FR-DASH-3)
 
-(defun ecc-history-scan-file (file &optional head tail)
+(defcustom ecc-history-scan-head-bytes 8192
+  "Bytes read from the start of a recording when it is only described.
+Enough for the first few lines, which say where the session ran."
+  :type 'integer
+  :group 'ecc)
+
+(defcustom ecc-history-scan-tail-bytes 65536
+  "Bytes read from the end of a recording when it is only described.
+The CLI repeats the title, the cost and the last prompt after every
+turn, so the end holds the current values."
+  :type 'integer
+  :group 'ecc)
+
+(defun ecc-history--edges (file)
+  "Return the first and last lines of FILE without reading the middle.
+A recording runs to megabytes and the session list describes dozens of
+them, so only `ecc-history-scan-head-bytes' from the front and
+`ecc-history-scan-tail-bytes' from the back are read.  The line the
+two ranges cut through is dropped rather than guessed at."
+  (let ((size (or (file-attribute-size (file-attributes file)) 0))
+        (head ecc-history-scan-head-bytes)
+        (tail ecc-history-scan-tail-bytes))
+    (with-temp-buffer
+      (let ((coding-system-for-read 'utf-8-unix))
+        (if (<= size (+ head tail))
+            (insert-file-contents file)
+          (insert-file-contents file nil 0 head)
+          ;; The last line of the head range was cut in the middle, so it
+          ;; is thrown away; the newline before it is kept, because the
+          ;; tail is about to be added after it.
+          (goto-char (point-max))
+          (if (search-backward "\n" nil t)
+              (delete-region (1+ (point)) (point-max))
+            (erase-buffer))
+          ;; The tail range starts in the middle of a line too, so its
+          ;; first whole line is the one after the first newline.
+          (let ((start (point-max)))
+            (goto-char start)
+            (insert-file-contents file nil (- size tail) size)
+            (goto-char start)
+            (when (search-forward "\n" nil t)
+              (delete-region start (point))))))
+      (split-string (buffer-string) "\n" t))))
+
+(defun ecc-history-scan-file (file)
   "Return what FILE says about itself, without reading all of it.
-The first HEAD lines say where the session ran, the last TAIL ones how
-it ended; the CLI repeats its title, its cost and the prompt after
-every turn, so the tail holds the current values (plan section 6.7).
-The alist also carries `file', `session-id' and `mtime'."
-  (let* ((head (or head 5))
-         (tail (or tail 40))
-         (lines (ecc-history-lines file))
-         (info (list (cons 'file file)
-                     (cons 'session-id (file-name-base file))
-                     (cons 'mtime (file-attribute-modification-time
-                                   (file-attributes file))))))
-    (dolist (line (seq-take lines head))
+The first lines say where the session ran, the last ones how it ended
+\(plan section 6.7).  The alist also carries `file', `session-id' and
+`mtime'."
+  (let ((info (list (cons 'file file)
+                    (cons 'mtime (file-attribute-modification-time
+                                  (file-attributes file))))))
+    (dolist (line (ecc-history--edges file))
       (setq info (ecc-protocol-history-info line info)))
-    (dolist (line (last lines tail))
-      (setq info (ecc-protocol-history-info line info)))
+    ;; The name of the file is the id --resume takes.  What the lines say
+    ;; is only what the session called itself while it was written, which
+    ;; is not the same thing once a file has been copied or renamed.
+    (setf (alist-get 'session-id info) (file-name-base file))
     info))
+
+(defun ecc-history-recordings (&optional project-root)
+  "Return a description of every recording, most recently used first.
+With PROJECT-ROOT, only the recordings whose working directory is under
+it.  Each is the alist of `ecc-history-scan-file' (FR-DASH-2 c)."
+  (let* ((root (and project-root
+                    (file-name-as-directory
+                     (file-truename (expand-file-name project-root)))))
+         (infos (mapcar #'ecc-history-scan-file (ecc-history-files))))
+    (seq-sort
+     (lambda (a b)
+       (let ((ta (or (alist-get 'time a) (alist-get 'mtime a)))
+             (tb (or (alist-get 'time b) (alist-get 'mtime b))))
+         (cond ((and ta tb) (time-less-p tb ta)) (ta t) (t nil))))
+     (if root
+         (seq-filter (lambda (info)
+                       (when-let* ((cwd (alist-get 'cwd info)))
+                         (string-prefix-p root (file-name-as-directory
+                                                (file-truename cwd)))))
+                     infos)
+       infos))))
 
 (defun ecc-history-session (session-id &optional file)
   "Return a session that shows the recording of SESSION-ID, reading it.
@@ -374,6 +520,19 @@ Interactively the recordings are offered by name."
 ;;;; Resuming what was read (FR-HIST-3, FR-SES-4)
 
 ;;;###autoload
+(defun ecc-history--check-not-running (session)
+  "Refuse to resume SESSION while another process is running it (FR-TUI-5).
+There is no lock: a second CLI on the same session id writes into the
+same recording, and the conversation quietly grows a second branch
+\(docs/verified.md).  The way out is to stop the other one first, so
+this asks rather than deciding, and names the process."
+  (when-let* ((entry (ecc-registry-session (ecc-session-id session))))
+    (unless (yes-or-no-p
+             (format "%s は pid %s が実行中です。続けると会話が分岐します。それでも resume しますか? "
+                     (or (alist-get 'name entry) (ecc-session-name session))
+                     (or (alist-get 'pid entry) "?")))
+      (user-error "中止しました"))))
+
 (defun ecc-history-resume (session &optional fork)
   "Start SESSION again, keeping what the recording said (FR-HIST-3).
 The turns already read stay at the top of the buffer and the stream is
@@ -382,6 +541,7 @@ off this one (FR-SES-4).  A session whose process is still alive is
 never resumed: the CLI would run twice on the same recording."
   (when (process-live-p (ecc-session-process session))
     (user-error "%s はまだ動いています" (ecc-session-name session)))
+  (ecc-history--check-not-running session)
   (when (and (null (ecc-session-turns session))
              (ecc-history-file (ecc-session-id session)))
     (ecc-history-load session))

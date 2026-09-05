@@ -62,6 +62,7 @@ Elisp 側では `ecc-safe-mode` は nil が既定。止めたいプラグイン�
 
 - 各フェーズで計画 §8 に沿った ERT を書く。`make test` が通ることをフェーズ完了の条件に含める。
 - fixture は `test/fixtures/*.jsonl`。`scripts/record-fixture.sh` で実 CLI から記録する。
+- セッションレジストリの fixture は `test/fixtures/registry/*.json`（`~/.claude/sessions` からコピー）。
 - 履歴（`~/.claude/projects` の jsonl）の fixture は `test/fixtures/history/*.jsonl`。
   `scripts/record-history.sh` で記録する（永続化ありで数ターン喋らせ、書かれた jsonl を取り込む）。
   ストリームの fixture と同じディレクトリに置かないこと（`ecc-dispatch-test-no-fixture-line-is-unknown`
@@ -70,6 +71,16 @@ Elisp 側では `ecc-safe-mode` は nil が既定。止めたいプラグイン�
 - 複数セッションにまたがる機能（Inbox、ダッシュボード）のテストは必ず 2 セッション以上で書く
   （`ecc-model-pending-all` の破壊的 sort は 1 セッションでは出なかった）。
 - `format-mode-line` は batch では空文字列を返す。mode-line の `:eval` は関数を直接呼んで検証する。
+
+## セッションの所在（フェーズ 5 の調査。詳細は docs/verified.md）
+
+- 生きているセッション: `~/.claude/sessions/<pid>.json`。`ecc-registry.el` が読む。
+  headless も載る。`claude agents --json` は使わない（同じ内容を subprocess 越しに返すだけ）。
+- 記録: `~/.claude/projects/<cwd の英数字以外を - にしたもの>/<session-id>.jsonl`。
+- 記録は木。編集・中断・二重 resume で枝ができるので、`ecc-history-abandoned` で
+  現在の系列にぶら下がった枝だけを落とす（`/compact` は新しい根を作るので落としてはいけない）。
+- **生きているセッションを別プロセスが `--resume` するとロック無しで会話が分岐する。**
+  止めてから resume すること（`ecc-history-resume` が確認する）。
 
 ## 作業の進め方
 

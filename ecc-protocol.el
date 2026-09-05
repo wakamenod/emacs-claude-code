@@ -306,11 +306,51 @@ later value winning (plan section 6.7).  The keys are `session-id',
         info)
     (error info)))
 
+(defun ecc-protocol-history-link (line)
+  "Return (UUID . PARENT-UUID) of LINE of a history file, or nil.
+Every kind of line is looked at, bookkeeping included: an attachment
+sits in the chain between two messages, so a walk up the chain that
+skipped one would stop early (FR-HIST-1)."
+  (condition-case nil
+      (let ((object (ecc--json-read line)))
+        (when-let* ((uuid (and (consp object) (alist-get 'uuid object))))
+          (cons uuid (alist-get 'parentUuid object))))
+    (error nil)))
+
+(defun ecc-protocol-history-leaf (line)
+  "Return the leaf uuid LINE of a history file names, or nil.
+The CLI writes a `last-prompt' line after every turn saying which
+message the conversation now hangs from; the last one in the file is
+the branch a resume would continue (FR-HIST-1)."
+  (when (string-match-p "\"last-prompt\"" line)
+    (condition-case nil
+        (let ((object (ecc--json-read line)))
+          (when (equal (alist-get 'type object) "last-prompt")
+            (alist-get 'leafUuid object)))
+      (error nil))))
+
+(defun ecc-protocol-read-json-file (file)
+  "Return the JSON object in FILE as an alist, or nil.
+Never signals: the file belongs to another program, which may be
+writing it right now."
+  (condition-case nil
+      (let ((object (ecc--json-read
+                     (with-temp-buffer
+                       (let ((coding-system-for-read 'utf-8-unix))
+                         (insert-file-contents file))
+                       (buffer-string)))))
+        (and (consp object) object))
+    (error nil)))
+
 (defun ecc-protocol-parse-agents (output)
   "Return the sessions listed in OUTPUT, the JSON of `claude agents --json'.
-Each is an alist with pid, cwd, kind, startedAt, sessionId, name and
-status.  Returns nil when OUTPUT does not parse, which is what a CLI
-that does not know the subcommand prints."
+Each is an alist with pid, cwd, kind, startedAt, sessionId, name and,
+usually, status.  Returns nil when OUTPUT does not parse, which is what
+a CLI that does not know the subcommand prints.
+
+The session list is read from the files of `ecc-registry' rather than
+from this command, which costs a subprocess and says less; this reader
+is what checks that the two still agree (`ecc-test-live-agents')."
   (condition-case nil
       (let ((agents (ecc--json-read output)))
         (and (vectorp agents) (append agents nil)))

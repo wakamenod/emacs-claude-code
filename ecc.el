@@ -35,6 +35,7 @@
 (require 'ecc-review)
 (require 'ecc-sync)
 (require 'ecc-inbox)
+(require 'ecc-registry)
 (require 'ecc-history)
 (require 'ecc-dashboard)
 (require 'ecc-window)
@@ -86,10 +87,7 @@ argument asks for the directory and the name."
   "Start SESSION again with --resume, forking it when FORK is non-nil.
 Interactively, resume the session of the current buffer; a prefix
 argument forks it into a new conversation (FR-SES-4)."
-  (interactive (list (or ecc-render--session
-                         (car (ecc-model-sessions))
-                         (user-error "No session to resume"))
-                     current-prefix-arg))
+  (interactive (list (ecc-read-session "Resume: ") current-prefix-arg))
   ;; What the recording holds is read first, so that the stream is
   ;; appended to the conversation rather than starting an empty one
   ;; (FR-HIST-3).  `ecc-history-resume' refuses a live process.
@@ -97,6 +95,65 @@ argument forks it into a new conversation (FR-SES-4)."
   (ecc-prompt-ensure-buffer session)
   (ecc-display-session session)
   session)
+
+(defun ecc--session-candidates (&optional project-root)
+  "Return (LABEL . SESSION-ID) for every session worth resuming.
+The sessions of this Emacs come first, then the recordings under
+PROJECT-ROOT, most recently used first.  A session another process is
+running is labelled as such rather than hidden: it can still be read,
+and resuming it asks first (FR-TUI-5)."
+  (let ((seen (make-hash-table :test #'equal))
+        candidates)
+    (dolist (session (ecc-model-sessions))
+      (let ((id (ecc-session-id session)))
+        (unless (gethash id seen)
+          (puthash id t seen)
+          (push (cons (format "%-28s  %-10s %s"
+                              (ecc--truncate (ecc-session-name session) 28)
+                              (if (process-live-p (ecc-session-process session))
+                                  "実行中" "この Emacs")
+                              (abbreviate-file-name
+                               (or (ecc-session-cwd session) "")))
+                      id)
+                candidates))))
+    (dolist (info (ecc-history-recordings project-root))
+      (let* ((id (alist-get 'session-id info))
+             (entry (and id (ecc-registry-session id))))
+        (unless (or (null id) (gethash id seen))
+          (puthash id t seen)
+          (push (cons (format "%-28s  %-10s %s"
+                              (ecc--truncate (or (alist-get 'title info) id) 28)
+                              (cond (entry (format "pid %s"
+                                                   (or (alist-get 'pid entry) "?")))
+                                    (t (ecc-dashboard--time-label
+                                        (or (alist-get 'time info)
+                                            (alist-get 'mtime info)))))
+                              (ecc--truncate (or (alist-get 'prompt info) "") 60))
+                      id)
+                candidates))))
+    (nreverse candidates)))
+
+(defun ecc-read-session (&optional prompt)
+  "Return a session to work on, asking with PROMPT when there is a choice.
+The session of the current buffer wins.  Otherwise the sessions of this
+Emacs and the recordings of the current project are offered, and the
+recordings of every project when this one has none.  A recording that
+is picked is read back into an archived session (FR-DASH-3, FR-HIST-1)."
+  (or ecc-render--session
+      (let* ((root (ecc-project-root))
+             (candidates (or (ecc--session-candidates root)
+                             (ecc--session-candidates)))
+             (choice (progn
+                       (unless candidates
+                         (user-error "No session and no recorded conversation"))
+                       (if (= 1 (length candidates))
+                           (car candidates)
+                         (let ((label (completing-read (or prompt "Session: ")
+                                                       (mapcar #'car candidates)
+                                                       nil t)))
+                           (assoc label candidates))))))
+        (or (ecc-model-session (cdr choice))
+            (ecc-history-session (cdr choice))))))
 
 (defun ecc--offer-resume (session status)
   "Offer to resume SESSION, whose CLI stopped with STATUS (FR-SES-7).
