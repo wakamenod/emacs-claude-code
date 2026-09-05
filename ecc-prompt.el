@@ -53,6 +53,8 @@
                     (ecc-prompt-buffer-name (ecc-session-name session))))
       (setf (ecc-session-prompt-buffer session) buffer)
       (with-current-buffer buffer
+        (setq default-directory (or (ecc-session-project-root session)
+                                    default-directory))
         (ecc-prompt-mode)
         (setq ecc-prompt--session session)))
     buffer))

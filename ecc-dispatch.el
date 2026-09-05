@@ -447,7 +447,7 @@ the patch of an Edit or a Write, the id and status of a task."
                      :description (alist-get 'description request-object)
                      :input input
                      :tool-use-id (alist-get 'tool_use_id request-object)
-                     :suggestions (alist-get 'permission_suggestions request-object)
+                     :suggestions (ecc-protocol-request-suggestions message)
                      :created-at (current-time))))
       (if (ecc-dispatch-auto-approve-p session request)
           (ecc-dispatch--auto-allow session request)

@@ -31,13 +31,21 @@
 (require 'ecc-session)
 (require 'ecc-prompt)
 (require 'ecc-perm)
+(require 'ecc-plan)
+(require 'ecc-sync)
+(require 'ecc-inbox)
 (require 'ecc-window)
+
+(defcustom ecc-inbox-indicator t
+  "Non-nil shows the number of requests waiting in every mode line.
+`ecc-inbox-indicator-mode' is turned on by the first session started
+\(FR-PERM-4)."
+  :type 'boolean
+  :group 'ecc)
 
 (defun ecc-project-root ()
   "Return the root of the project of the current buffer, or its directory."
-  (or (when-let* ((project (project-current nil)))
-        (expand-file-name (project-root project)))
-      default-directory))
+  (ecc-window-project-root))
 
 ;;;###autoload
 (defun ecc-start (&optional directory name)
@@ -55,6 +63,8 @@ argument asks for the directory and the name."
     (ecc-session-ensure-buffer session)
     (ecc-prompt-ensure-buffer session)
     (ecc-proc-start session)
+    (when ecc-inbox-indicator
+      (ecc-inbox-indicator-mode 1))
     (ecc-display-prompt session)
     session))
 

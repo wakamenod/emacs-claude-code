@@ -122,6 +122,44 @@ sending a prompt from Emacs would."
     (ecc-dispatch session (ecc-protocol-parse-line line)))
   session)
 
+(defun ecc-test-add-request (session &optional name input)
+  "Add a pending request for tool NAME with INPUT to SESSION and return it.
+NAME defaults to Write and INPUT to a small Write of /tmp/a.txt; the
+kind follows the tool the way `ecc-dispatch' decides it."
+  (let* ((tool (or name "Write"))
+         (node (ecc-model-add-node session
+                                   :type (ecc-dispatch--request-kind tool)
+                                   :status 'pending))
+         (request (make-ecc-request
+                   :request-id (format "req-%d" (hash-table-count (ecc-session-nodes session)))
+                   :session session
+                   :kind (ecc-dispatch--request-kind tool)
+                   :tool-name tool :display-name tool
+                   :input (or input '((file_path . "/tmp/a.txt") (content . "hi")))
+                   :tool-use-id (format "toolu_%d" (hash-table-count (ecc-session-nodes session)))
+                   :created-at (current-time)
+                   :node node)))
+    (ecc-model-node-put node 'request request)
+    (ecc-model-add-request session request)
+    request))
+
+(defun ecc-test-feed-until-request (session name prompt)
+  "Feed fixture NAME to SESSION under PROMPT up to its first can_use_tool.
+Returns the pending request."
+  (ecc-model-begin-turn session prompt)
+  (let ((lines (ecc-test-fixture-lines name))
+        (request nil))
+    (while (and lines (null request))
+      (let ((message (ecc-protocol-parse-line (pop lines))))
+        (ecc-dispatch session message)
+        (when (eq (ecc-protocol-control-subtype message) 'can_use_tool)
+          (setq request (car (ecc-session-pending session))))))
+    request))
+
+(defun ecc-test-response (n)
+  "Return the inner response of the Nth message sent, oldest first."
+  (alist-get 'response (alist-get 'response (nth n (ecc-test-sent-messages)))))
+
 (defun ecc-test-node-types (nodes)
   "Return the list of types of NODES."
   (mapcar #'ecc-node-type nodes))

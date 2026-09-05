@@ -28,6 +28,14 @@
 (declare-function ecc-resume "ecc" (session &optional fork))
 (declare-function ecc-perm-allow "ecc-perm" ())
 (declare-function ecc-perm-deny "ecc-perm" (&optional reason))
+(declare-function ecc-perm-allow-always "ecc-perm" ())
+(declare-function ecc-perm-approve-turn "ecc-perm" ())
+(declare-function ecc-perm-add-pattern "ecc-perm" ())
+(declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
+(declare-function ecc-question-open "ecc-perm" (request))
+(declare-function ecc-plan-open "ecc-plan" (request))
+(declare-function ecc-inbox "ecc-inbox" ())
+(declare-function ecc-next-attention "ecc-inbox" ())
 
 (defvar ecc-session-mode-map
   (let ((map (make-sparse-keymap)))
@@ -40,6 +48,10 @@
     (define-key map (kbd "L") #'ecc-session-show-log)
     (define-key map (kbd "a") #'ecc-perm-allow)
     (define-key map (kbd "d") #'ecc-perm-deny)
+    (define-key map (kbd "C-c a") #'ecc-perm-allow-all)
+    (define-key map (kbd "C-c A") #'ecc-session-allow-all-remember)
+    (define-key map (kbd "C-c i") #'ecc-inbox)
+    (define-key map (kbd "C-c n") #'ecc-next-attention)
     (define-key map (kbd "C-c C-k") #'ecc-session-interrupt)
     ;; Movement and extraction (FR-OUT-14)
     (define-key map (kbd "C-c C-n") #'ecc-session-next-turn)
@@ -67,6 +79,9 @@
   (when (boundp 'magit-section-visibility-indicators)
     (setq-local magit-section-visibility-indicators nil))
   (setq-local truncate-lines nil)
+  ;; The state, and above all a request waiting for an answer, is shown
+  ;; next to the mode name (FR-PERM-4).
+  (setq-local mode-line-process '(:eval (ecc-render-mode-line-process)))
   (add-hook 'kill-buffer-hook #'ecc-session--kill-process nil t))
 
 (defun ecc-session--kill-process ()
@@ -89,9 +104,11 @@ killing it stops nothing."
                     (ecc-session-buffer-name (ecc-session-name session))))
       (setf (ecc-session-buffer session) buffer)
       (with-current-buffer buffer
-        (let ((default-directory (or (ecc-session-project-root session)
-                                     default-directory)))
-          (ecc-session-mode))
+        ;; The buffer lives in the project, so that project commands and
+        ;; `ecc-next-attention-in-project' see the right root.
+        (setq default-directory (or (ecc-session-project-root session)
+                                    default-directory))
+        (ecc-session-mode)
         (ecc-render-setup session buffer)))
     buffer))
 
@@ -145,16 +162,32 @@ killing it stops nothing."
   (pop-to-buffer (ecc--log-buffer (ecc-session-name (ecc-session-at-point)))))
 
 (defun ecc-session-visit ()
-  "Open the thing at point: a file, an agent transcript or a detail buffer."
+  "Open the thing at point: a file, an agent transcript or a detail buffer.
+A question or a plan that is still waiting opens the buffer it is
+answered in (FR-PERM-5, FR-PLAN-1)."
   (interactive)
-  (let ((session (ecc-session-at-point))
-        (node (ecc-session-node-at-point))
-        (path (ecc-session-file-at-point)))
+  (let* ((session (ecc-session-at-point))
+         (node (ecc-session-node-at-point))
+         (path (ecc-session-file-at-point))
+         (request (and node (ecc-model-node-get node 'request)))
+         (pending (and request (memq request (ecc-session-pending session)))))
     (cond
      (path (find-file-other-window path))
      ((null node) (user-error "Nothing to show here"))
      ((eq (ecc-node-type node) 'agent) (ecc-session-show-agent session node))
+     ((and pending (eq (ecc-node-type node) 'question))
+      (require 'ecc-perm)
+      (pop-to-buffer (ecc-question-open request)))
+     ((and pending (eq (ecc-node-type node) 'plan))
+      (require 'ecc-plan)
+      (pop-to-buffer (ecc-plan-open request)))
      (t (ecc-session--show-node session node)))))
+
+(defun ecc-session-allow-all-remember ()
+  "Allow every waiting request and stop asking about those tools (FR-PERM-9)."
+  (interactive)
+  (require 'ecc-perm)
+  (ecc-perm-allow-all t))
 
 (defun ecc-session--show-node (session node)
   "Show every detail of NODE of SESSION in a buffer."

@@ -222,6 +222,214 @@ The phase 2 acceptance check: each delta costs well under 5ms to draw."
                 (should (string-search "Files (1)" text)))))
         (delete-directory directory t)))))
 
+;;;; Phase 3 (permissions, plan review, Inbox, file sync)
+
+(defun ecc-test-live-wait-any (sessions predicate &optional what)
+  "Wait until PREDICATE returns non-nil, reading output from all SESSIONS.
+WHAT names the thing waited for in the error message."
+  (let ((deadline (+ (float-time) ecc-test-live-timeout))
+        (value nil))
+    (while (and (not (setq value (funcall predicate)))
+                (< (float-time) deadline)
+                (seq-some (lambda (session) (process-live-p (ecc-session-process session)))
+                          sessions))
+      (accept-process-output nil 0.2))
+    (unless value
+      (ert-fail (format "timed out waiting for %s" (or what "the CLI"))))
+    value))
+
+(defun ecc-test-live-restart (session options)
+  "Stop the CLI of SESSION and start it again with OPTIONS."
+  (setf (ecc-session-options session) options)
+  (ecc-proc-stop session)
+  (ecc-test-live-wait session
+                      (lambda () (not (process-live-p (ecc-session-process session))))
+                      "the process to stop")
+  (ecc-proc-start session))
+
+(defun ecc-test-live-wait-for-plan (session &optional previous)
+  "Wait until SESSION has a plan request other than PREVIOUS and return it."
+  (ecc-test-live-wait session
+                      (lambda ()
+                        (let ((request (car (ecc-session-pending session))))
+                          (and request
+                               (eq (ecc-request-kind request) 'plan)
+                               (not (eq request previous))
+                               request)))
+                      "a plan review request"))
+
+(ert-deftest ecc-test-live-plan ()
+  "Feedback in the plan buffer sends the three sections and brings a new plan.
+A clean approval then allows and switches the session to acceptEdits
+\(the phase 3 acceptance check for FR-PLAN-1 to 5)."
+  :tags '(live)
+  (ecc-test-live-with-session session
+    (let ((directory (make-temp-file "ecc-live-plan" t)))
+      (unwind-protect
+          (progn
+            (setf (ecc-session-project-root session) (file-name-as-directory directory))
+            (ecc-test-live-restart session
+                                   (append '(:permission-mode "plan" :max-budget-usd 1.0)
+                                           ecc-test-live-options))
+            (ecc-proc-send-prompt
+             session
+             "Make a short plan (5 lines at most) for creating utils.py with add(a, b) and sub(a, b). Then call ExitPlanMode. Do not implement anything.")
+            (let* ((first (ecc-test-live-wait-for-plan session))
+                   (feedback nil))
+              (should (alist-get 'plan (ecc-request-input first)))
+              (with-current-buffer (ecc-plan-open first)
+                (should (derived-mode-p 'ecc-plan-mode))
+                (goto-char (point-min))
+                (ecc-plan-comment "keep each function a one-liner")
+                (goto-char (point-max))
+                (insert "\nUse type hints on both functions.\n")
+                (insert "@claude: add mul(a, b) as a third function\n")
+                (setq feedback (ecc-plan-approve)))
+              (should (string-search "## Inline comments:" feedback))
+              (should (string-search "## @claude markers:" feedback))
+              (should (string-search "## Changes requested:" feedback))
+              (should (eq (ecc-node-status (ecc-request-node first)) 'denied))
+              ;; The revised plan comes back as a new request.
+              (let ((second (ecc-test-live-wait-for-plan session first)))
+                (message "revised plan mentions mul: %s"
+                         (and (string-search "mul" (ecc-plan-text second)) t))
+                (with-current-buffer (ecc-plan-open second)
+                  ;; FR-PLAN-5: the lines that changed are marked.
+                  (should (ecc-plan-changed-lines))
+                  (should-not (ecc-plan-approve "acceptEdits")))
+                (ecc-test-live-wait-for-result session)
+                (should-not (ecc-session-pending session))
+                ;; system/status reported the switch (FR-PLAN-4).
+                (should (equal (ecc-session-permission-mode session) "acceptEdits")))))
+        (delete-directory directory t)))))
+
+(ert-deftest ecc-test-live-pattern ()
+  "A Bash request offers Bash(touch *) and the pattern lands in the settings.
+Afterwards a matching command is sent again to see whether the running
+CLI picks the new rule up without a restart.  A read-only command such
+as git status is not used: the CLI runs those without asking."
+  :tags '(live)
+  (ecc-test-live-with-session session
+    (let* ((directory (make-temp-file "ecc-live-pattern" t))
+           (file (expand-file-name ".claude/settings.local.json" directory)))
+      (unwind-protect
+          (progn
+            (setf (ecc-session-project-root session) (file-name-as-directory directory))
+            (ecc-test-live-restart session ecc-test-live-options)
+            (ecc-proc-send-prompt
+             session "Run exactly `touch build.marker` with the Bash tool, then reply with one word.")
+            (let ((request (ecc-test-live-wait
+                            session (lambda () (car (ecc-session-pending session)))
+                            "the Bash permission request")))
+              (should (equal (ecc-request-tool-name request) "Bash"))
+              (let ((patterns (ecc-perm-suggest-patterns
+                               "Bash" (ecc-request-input request) directory)))
+                (should (member "Bash(touch *)" patterns))
+                (cl-letf (((symbol-function 'completing-read-multiple)
+                           (lambda (&rest _) (list "Bash(touch *)")))
+                          ((symbol-function 'y-or-n-p) (lambda (_) t)))
+                  (with-current-buffer (ecc-session-buffer session)
+                    (ecc-perm-add-pattern))))
+              (should (equal (ecc-protocol-settings-allow-list
+                              (ecc-protocol-read-settings-file file))
+                             '("Bash(touch *)")))
+              (should-not (ecc-session-pending session)))
+            (ecc-test-live-wait-for-result session)
+            ;; Does the running CLI honour the new rule?  Either outcome is
+            ;; recorded; the answer goes to docs/verified.md.
+            (ecc-proc-send-prompt session "Run exactly `touch other.marker` with the Bash tool, then reply with one word.")
+            (let ((asked (ecc-test-live-wait
+                          session
+                          (lambda () (or (car (ecc-session-pending session))
+                                         (and (null (ecc-session-current-turn session))
+                                              'finished)))
+                          "the second Bash call")))
+              (message "settings.local.json hot reload: %s"
+                       (if (eq asked 'finished) "yes (no can_use_tool arrived)"
+                         "no (can_use_tool arrived again)"))
+              (unless (eq asked 'finished)
+                (ecc-perm-respond asked 'allow)
+                (ecc-test-live-wait-for-result session))))
+        (delete-directory directory t)))))
+
+(ert-deftest ecc-test-live-inbox ()
+  "Two sessions wait at once; the Inbox lists both and the oldest is answered first."
+  :tags '(live)
+  (ecc-test-live-with-session session
+    (let* ((directory (make-temp-file "ecc-live-inbox" t))
+           (other (ecc-model-create-session :name "live-2"
+                                            :project-root temporary-file-directory
+                                            :options ecc-test-live-options))
+           (ecc-answer-confirm nil)
+           ;; The model may reach for Bash instead of Write; both count here.
+           (ecc-answer-exclude-tools nil))
+      (unwind-protect
+          (progn
+            (ecc-session-ensure-buffer other)
+            (ecc-proc-start other)
+            (ecc-proc-send-prompt
+             session (format "Create the file %s containing the word one, using the Write tool."
+                             (expand-file-name "one.txt" directory)))
+            (ecc-proc-send-prompt
+             other (format "Create the file %s containing the word two, using the Write tool."
+                           (expand-file-name "two.txt" directory)))
+            (ecc-test-live-wait-any (list session other)
+                                    (lambda () (= 2 (length (ecc-model-pending-all))))
+                                    "two permission requests")
+            (should (= 2 (length (ecc-inbox-entries))))
+            (should (equal (sort (mapcar (lambda (e) (aref (cadr e) 1)) (ecc-inbox-entries))
+                                 #'string<)
+                           '("live" "live-2")))
+            (let ((oldest (car (ecc-model-pending-all))))
+              (should (eq (ecc-answer-allow) oldest))
+              (should (= 1 (length (ecc-model-pending-all))))
+              (should (ecc-answer-allow))
+              (should-not (ecc-model-pending-all)))
+            (ecc-test-live-wait-any (list session other)
+                                    (lambda () (and (null (ecc-session-current-turn session))
+                                                    (null (ecc-session-current-turn other))))
+                                    "both results")
+            (should (file-exists-p (expand-file-name "one.txt" directory)))
+            (should (file-exists-p (expand-file-name "two.txt" directory))))
+        (ecc-proc-stop other)
+        (ecc-test-cleanup-session other)
+        (delete-directory directory t)))))
+
+(ert-deftest ecc-test-live-sync ()
+  "An Edit by Claude reverts the buffer visiting the file; an unsaved one is warned."
+  :tags '(live)
+  (ecc-test-live-with-session session
+    (let* ((directory (make-temp-file "ecc-live-sync" t))
+           (file (expand-file-name "greet.py" directory))
+           (buffer nil))
+      (unwind-protect
+          (progn
+            (with-temp-file file
+              (insert "def greet(name):\n    return \"hi \" + name\n"))
+            (setq buffer (find-file-noselect file))
+            (setf (ecc-session-auto-approve-kinds session) '("Edit" "Write"))
+            (ecc-proc-send-prompt
+             session (format "In %s replace the string \"hi \" with \"hello \" using the Edit tool. Do nothing else." file))
+            (ecc-test-live-wait-for-result session)
+            (should (string-search "hello" (with-current-buffer buffer (buffer-string))))
+            (should-not (buffer-modified-p buffer))
+            ;; Now the buffer has unsaved changes: it is left alone.
+            (with-current-buffer buffer
+              (goto-char (point-max))
+              (insert "# local note\n"))
+            (ecc-proc-send-prompt
+             session (format "In %s replace the string \"hello \" with \"hey \" using the Edit tool. Do nothing else." file))
+            (ecc-test-live-wait-for-result session)
+            (should (string-search "hey " (with-temp-buffer (insert-file-contents file)
+                                                            (buffer-string))))
+            (should (buffer-modified-p buffer))
+            (should (string-search "# local note" (with-current-buffer buffer (buffer-string))))
+            (should (string-search "hello" (with-current-buffer buffer (buffer-string)))))
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer))
+        (delete-directory directory t)))))
+
 (provide 'ecc-live-test)
 
 ;;; ecc-live-test.el ends here

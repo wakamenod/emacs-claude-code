@@ -145,12 +145,12 @@
           (let ((request (car (ecc-session-pending session))))
             (should (eq (ecc-request-kind request) 'question))
             (should (eq (ecc-session-state session) 'waiting-question))
-            ;; Answer the way the minimal user interface does.
-            (cl-letf (((symbol-function 'completing-read)
-                       (lambda (&rest _) "Emacs"))
-                      ((symbol-function 'completing-read-multiple)
-                       (lambda (&rest _) '("Elisp" "Python"))))
-              (ecc-perm-allow))))))
+            ;; Answer in the question buffer (FR-PERM-5).
+            (with-current-buffer (ecc-question-open request)
+              (ecc-question-choose 1)
+              (ecc-question-choose 1)
+              (ecc-question-choose 2)
+              (ecc-question-submit))))))
     (let* ((response (alist-get 'response
                                 (alist-get 'response
                                            (car (ecc-test-sent-messages)))))

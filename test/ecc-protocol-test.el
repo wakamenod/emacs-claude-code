@@ -232,6 +232,66 @@ that parsed values can be echoed back unchanged."
   (should (equal (ecc-protocol-settings-json '("a@m" "b@m"))
                  "{\"enabledPlugins\":{\"a@m\":false,\"b@m\":false}}")))
 
+;;;; Settings files (FR-PERM-8)
+
+(ert-deftest ecc-protocol-test-settings-add-allow-creates-the-file ()
+  "A missing settings file is created with the permissions.allow list."
+  (let* ((root (make-temp-file "ecc-settings" t))
+         (file (expand-file-name ".claude/settings.local.json" root)))
+    (unwind-protect
+        (progn
+          (should (equal (ecc-protocol-settings-add-allow file '("Bash(git *)"))
+                         '("Bash(git *)")))
+          (should (file-exists-p file))
+          (should (equal (with-temp-buffer (insert-file-contents file) (buffer-string))
+                         "{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git *)\"\n    ]\n  }\n}\n"))
+          ;; Adding the same pattern again changes nothing.
+          (should-not (ecc-protocol-settings-add-allow file '("Bash(git *)")))
+          (should (equal (ecc-protocol-settings-add-allow file '("Bash(git *)" "Edit(src/**)"))
+                         '("Edit(src/**)"))))
+      (delete-directory root t))))
+
+(ert-deftest ecc-protocol-test-settings-add-allow-keeps-other-keys ()
+  "Everything else in the file survives, including {} [] false and null."
+  (let ((file (make-temp-file "ecc-settings" nil ".json"
+                              "{\"hooks\":{},\"permissions\":{\"allow\":[\"A\"],\"deny\":[]},\"flag\":false,\"nothing\":null}")))
+    (unwind-protect
+        (progn
+          (ecc-protocol-settings-add-allow file '("B"))
+          (let ((object (ecc-protocol-read-settings-file file)))
+            (should (equal (ecc-protocol-settings-allow-list object) '("A" "B")))
+            (should (equal (alist-get 'deny (alist-get 'permissions object)) []))
+            (should (equal (alist-get 'hooks object) nil))
+            (should (eq (alist-get 'flag object) :false))
+            (should (eq (alist-get 'nothing object) :null)))
+          (let ((text (with-temp-buffer (insert-file-contents file) (buffer-string))))
+            (should (string-search "\"hooks\": {}" text))
+            (should (string-search "\"deny\": []" text))
+            (should (string-search "\"flag\": false" text))
+            (should (string-search "\"nothing\": null" text))))
+      (delete-file file))))
+
+(ert-deftest ecc-protocol-test-settings-add-allow-refuses-a-broken-file ()
+  "A file that does not parse is reported and never written over (9.16)."
+  (let ((file (make-temp-file "ecc-settings" nil ".json" "{not json")))
+    (unwind-protect
+        (progn
+          (should-error (ecc-protocol-settings-add-allow file '("A")))
+          (should (equal (with-temp-buffer (insert-file-contents file) (buffer-string))
+                         "{not json")))
+      (delete-file file))))
+
+(ert-deftest ecc-protocol-test-request-suggestions-verbatim ()
+  "Suggestions come back exactly as sent, or nil when absent."
+  (let ((edit (ecc-test-find-message
+               "edit-tool" (lambda (m) (eq (ecc-protocol-control-subtype m) 'can_use_tool))))
+        (question (ecc-test-find-message
+                   "ask-user-question"
+                   (lambda (m) (eq (ecc-protocol-control-subtype m) 'can_use_tool)))))
+    (should (equal (ecc-protocol-serialize (ecc-protocol-request-suggestions edit))
+                   "[{\"type\":\"setMode\",\"mode\":\"acceptEdits\",\"destination\":\"session\"}]"))
+    (should-not (ecc-protocol-request-suggestions question))))
+
 (provide 'ecc-protocol-test)
 
 ;;; ecc-protocol-test.el ends here

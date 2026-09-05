@@ -18,11 +18,15 @@
 ## コマンド
 
 ```
-make compile     # byte-compile（警告をエラー扱い）
+make compile     # byte-compile（警告をエラー扱い）。古い .elc を先に消す
 make test        # ERT（fixture リプレイ。実プロセスは使わない）
 make test-live   # 実 CLI を使う ERT（tag live）。手動でのみ実行
 make lint        # checkdoc（+ package-lint があれば）
 ```
+
+`make test-live` は全部で数分・$1 弱かかる。1 本だけ回すときは
+`$(BATCH) -l test/ecc-test-helpers.el -l test/ecc-live-test.el --eval '(ert-run-tests-batch-and-exit (quote ecc-test-live-plan))'`
+のように selector で絞る。
 
 ## CLI を起動するときの必須ルール
 
@@ -59,6 +63,9 @@ Elisp 側では `ecc-safe-mode` は nil が既定。止めたいプラグイン�
 - 各フェーズで計画 §8 に沿った ERT を書く。`make test` が通ることをフェーズ完了の条件に含める。
 - fixture は `test/fixtures/*.jsonl`。`scripts/record-fixture.sh` で実 CLI から記録する。
 - 描画のスナップショットは主要ケースに絞る。
+- 複数セッションにまたがる機能（Inbox、ダッシュボード）のテストは必ず 2 セッション以上で書く
+  （`ecc-model-pending-all` の破壊的 sort は 1 セッションでは出なかった）。
+- `format-mode-line` は batch では空文字列を返す。mode-line の `:eval` は関数を直接呼んで検証する。
 
 ## 作業の進め方
 

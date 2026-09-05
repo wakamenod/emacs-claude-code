@@ -14,6 +14,7 @@
 
 ;;; Code:
 
+(require 'project)
 (require 'ecc-core)
 (require 'ecc-model)
 
@@ -39,6 +40,14 @@
   "Height in lines of the prompt window under a transcript."
   :type 'integer
   :group 'ecc)
+
+(defun ecc-window-project-root (&optional directory)
+  "Return the root of the project of DIRECTORY, or DIRECTORY itself.
+DIRECTORY defaults to `default-directory' (plan section 6.13)."
+  (let ((default-directory (or directory default-directory)))
+    (or (when-let* ((project (project-current nil)))
+          (file-name-as-directory (expand-file-name (project-root project))))
+        (file-name-as-directory (expand-file-name default-directory)))))
 
 (defun ecc-display-session (session)
   "Show the transcript of SESSION and return its window."

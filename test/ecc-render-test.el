@@ -19,8 +19,8 @@
 
 (defun ecc-render-test--replay (session name prompt &optional answers)
   "Replay fixture NAME into SESSION under PROMPT and draw it.
-ANSWERS is a list of `allow' or `(deny . REASON)', used in turn for the
-requests the recording makes."
+ANSWERS is a list of `allow', `(deny . REASON)' or a function called
+with the request, used in turn for the requests the recording makes."
   (ecc-session-ensure-buffer session)
   (ecc-model-begin-turn session prompt)
   (dolist (line (ecc-test-fixture-lines name))
@@ -29,9 +29,9 @@ requests the recording makes."
       (when (and answers (eq (ecc-protocol-control-subtype message) 'can_use_tool))
         (let ((request (car (ecc-session-pending session)))
               (answer (pop answers)))
-          (if (eq answer 'allow)
-              (ecc-perm-respond request 'allow)
-            (ecc-perm-respond request 'deny :message (cdr answer)))))))
+          (cond ((functionp answer) (funcall answer request))
+                ((eq answer 'allow) (ecc-perm-respond request 'allow))
+                (t (ecc-perm-respond request 'deny :message (cdr answer))))))))
   (ecc-render-flush session)
   (ecc-test-buffer-string (ecc-session-buffer session)))
 
@@ -72,6 +72,81 @@ requests the recording makes."
       (ecc-render-test--check "permission-deny-retry" text)
       (should (string-search "✗ Permission: Write  denied: 内容を hi にして" text))
       (should (string-search "✓ Permission: Write" text)))))
+
+(ert-deftest ecc-render-test-plan-review ()
+  "A plan request shows the plan and, once approved, the mode chosen."
+  (ecc-test-with-fake-session session
+    (require 'ecc-plan)
+    (let ((text (ecc-render-test--replay
+                 session "plan-mode" "utils.py の計画を立てて"
+                 (list (lambda (request)
+                         (with-current-buffer (ecc-plan-open request)
+                           (ecc-plan-approve)))))))
+      (ecc-render-test--check "plan-mode" text)
+      (should (string-search "✓ Plan review  approved → acceptEdits" text))
+      (should (string-search "# Plan: utils.py" text)))))
+
+(ert-deftest ecc-render-test-question ()
+  "A question lists its options and, once answered, the answers given."
+  (ecc-test-with-fake-session session
+    (let ((text (ecc-render-test--replay
+                 session "ask-user-question" "質問して"
+                 (list (lambda (request)
+                         (with-current-buffer (ecc-question-open request)
+                           (ecc-question-choose 1)
+                           (ecc-question-choose 1)
+                           (ecc-question-choose 2)
+                           (ecc-question-submit)))))))
+      (ecc-render-test--check "ask-user-question" text)
+      (should (string-search "✓ Question  answered: Emacs · Elisp, Python" text))
+      (should (string-search "→ Elisp, Python" text)))))
+
+(ert-deftest ecc-render-test-pending-request-hints ()
+  "A waiting permission shows its keys; a waiting question its own."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (let ((node (ecc-model-add-node session :type 'permission :status 'pending))
+          (request (make-ecc-request :request-id "r" :session session :kind 'permission
+                                     :tool-name "Bash" :display-name "Bash"
+                                     :input '((command . "ls")) :created-at (current-time))))
+      (ecc-model-node-put node 'request request)
+      (setf (ecc-request-node request) node)
+      (ecc-model-add-request session request)
+      (ecc-render-flush session)
+      (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+        (should (string-search "⚠ Permission: Bash  ls   a: allow  d: deny  A: always  t: turn  p: pattern"
+                               text))))))
+
+(ert-deftest ecc-render-test-unsaved-warning-in-heading ()
+  "An Edit of a file open with unsaved changes says so in its heading (FR-SYNC-2)."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (let* ((file (make-temp-file "ecc-render" nil ".txt" "one\n"))
+           (buffer (find-file-noselect file)))
+      (unwind-protect
+          (progn
+            (with-current-buffer buffer (insert "x"))
+            (let ((node (ecc-model-add-node session :type 'permission :status 'pending))
+                  (request (make-ecc-request :request-id "r" :session session
+                                             :kind 'permission :tool-name "Edit"
+                                             :display-name "Edit"
+                                             :input `((file_path . ,file)
+                                                      (old_string . "one")
+                                                      (new_string . "two"))
+                                             :created-at (current-time))))
+              (ecc-model-node-put node 'request request)
+              (setf (ecc-request-node request) node)
+              (ecc-model-add-request session request)
+              (ecc-render-flush session)
+              (should (string-search "⚠ 未保存の変更あり"
+                                     (ecc-test-buffer-string (ecc-session-buffer session))))
+              (with-current-buffer buffer (set-buffer-modified-p nil))
+              (ecc-render-refresh session)
+              (should-not (string-search "未保存"
+                                         (ecc-test-buffer-string (ecc-session-buffer session))))))
+        (with-current-buffer buffer (set-buffer-modified-p nil))
+        (kill-buffer buffer)
+        (delete-file file)))))
 
 ;;;; Incremental drawing (NFR-9, plan section 5.2)
 

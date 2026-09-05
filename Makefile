@@ -14,7 +14,10 @@ BATCH := $(EMACS) -Q --batch $(INIT) -L . -L test
 
 all: compile lint test
 
+# 古い .elc が残っていると、依存先の変更が反映されないまま読み込まれて
+# 「関数が未定義」の偽エラーになる。毎回消してから compile する（1〜2 秒）。
 compile:
+	rm -f *.elc test/*.elc
 	$(BATCH) --eval '(setq byte-compile-error-on-warn t)' -f batch-byte-compile $(SRC)
 
 test: compile

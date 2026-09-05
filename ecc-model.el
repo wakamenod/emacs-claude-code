@@ -125,6 +125,7 @@
   history-offset
   recap-state
   tmp-dir
+  last-plan             ; text of the last plan reviewed (FR-PLAN-5)
   stream-blocks         ; hash: "PARENT:INDEX" -> node being streamed
   node-counter          ; counters for the ids of nodes and turns; the
   turn-counter)         ; ids have to be stable, see plan 9.6
@@ -567,11 +568,26 @@ Returns the task, or nil when ID is nil."
   (run-hook-with-args 'ecc-request-resolved-hook session request)
   request)
 
-(defun ecc-model-pending-all ()
-  "Return the pending requests of every session, oldest first."
-  (sort (apply #'append (mapcar #'ecc-session-pending (ecc-model-sessions)))
-        (lambda (a b) (time-less-p (ecc-request-created-at a)
-                                   (ecc-request-created-at b)))))
+(defun ecc-model-pending-all (&optional project-root)
+  "Return the pending requests of every session, oldest first.
+With PROJECT-ROOT, only the sessions of that project are looked at."
+  ;; `append' shares the last list it is given and `sort' is destructive,
+  ;; so the queue of a session must never be sorted in place.
+  (seq-sort (lambda (a b) (time-less-p (ecc-request-created-at a)
+                                       (ecc-request-created-at b)))
+            (apply #'append
+                   (mapcar (lambda (session) (copy-sequence (ecc-session-pending session)))
+                           (if project-root
+                               (seq-filter (lambda (session)
+                                             (equal (ecc-session-project-root session)
+                                                    (file-name-as-directory
+                                                     (expand-file-name project-root))))
+                                           (ecc-model-sessions))
+                             (ecc-model-sessions))))))
+
+(defun ecc-model-request-age (request)
+  "Return how many seconds ago REQUEST arrived."
+  (float-time (time-subtract (current-time) (ecc-request-created-at request))))
 
 ;;;; Usage (FR-HINT-3 groundwork)
 

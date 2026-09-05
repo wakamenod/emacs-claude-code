@@ -120,8 +120,11 @@ The whole diff is always available with RET (FR-OUT-7)."
     (define-key map (kbd "RET") 'ecc-session-visit)
     (define-key map (kbd "a") 'ecc-perm-allow)
     (define-key map (kbd "d") 'ecc-perm-deny)
+    (define-key map (kbd "A") 'ecc-perm-allow-always)
+    (define-key map (kbd "t") 'ecc-perm-approve-turn)
+    (define-key map (kbd "p") 'ecc-perm-add-pattern)
     map)
-  "Keymap of a section that is waiting for an answer.")
+  "Keymap of a section that is waiting for an answer (plan section 6.3).")
 
 (defvar ecc-file-section-map
   (let ((map (make-sparse-keymap)))
@@ -625,14 +628,31 @@ An Edit or a Write shows its input as a diff (FR-OUT-7)."
             (concat body "→ ")
             (if (eq (ecc-node-status node) 'error) 'ecc-error-face 'ecc-dim-face)))))))
 
+(defun ecc-render--unsaved-p (path)
+  "Return non-nil when a buffer visiting PATH has unsaved changes (FR-SYNC-2)."
+  (when-let* ((buffer (and (stringp path) (find-buffer-visiting path))))
+    (buffer-modified-p buffer)))
+
+(defun ecc-render--request-hints (kind)
+  "Return the key hints shown on a pending request of KIND."
+  (pcase kind
+    ('question "   RET: answer  d: deny")
+    ('plan "   RET: review  a: approve  d: deny")
+    (_ "   a: allow  d: deny  A: always  t: turn  p: pattern")))
+
 (defun ecc-render--request-heading (node)
-  "Return the heading of the request NODE."
+  "Return the heading of the request NODE.
+A pending one carries its key hints and, for a file that is open with
+unsaved changes, a warning (FR-SYNC-2); an answered one keeps what was
+answered."
   (let* ((request (ecc-model-node-get node 'request))
          (name (if request (ecc-request-tool-name request) "?"))
-         (label (pcase (ecc-node-type node)
+         (kind (ecc-node-type node))
+         (label (pcase kind
                   ('question "Question")
                   ('plan "Plan review")
-                  (_ (format "Permission: %s" name)))))
+                  (_ (format "Permission: %s" name))))
+         (outcome (ecc-model-node-get node 'outcome-message)))
     (pcase (ecc-node-status node)
       ('pending (concat (propertize (format "⚠ %s" label) 'face 'ecc-pending-face)
                         "  "
@@ -641,16 +661,24 @@ An Edit or a Write shows its input as a diff (FR-OUT-7)."
                                           (ecc-render-tool-summary
                                            name (ecc-request-input request))))
                                     'face 'ecc-dim-face)
-                        (propertize "   a: allow  d: deny" 'face 'ecc-dim-face)))
+                        (if (and request
+                                 (ecc-render--unsaved-p
+                                  (alist-get 'file_path (ecc-request-input request))))
+                            (propertize "  ⚠ 未保存の変更あり" 'face 'ecc-error-face)
+                          "")
+                        (propertize (ecc-render--request-hints kind)
+                                    'face 'ecc-dim-face)))
       ('denied (concat (propertize (format "✗ %s" label) 'face 'ecc-error-face)
                        (propertize (format "  denied%s"
-                                           (if-let* ((why (ecc-model-node-get
-                                                          node 'outcome-message)))
-                                               (concat ": " (ecc-render--one-line why))
+                                           (if outcome
+                                               (concat ": " (ecc-render--one-line outcome))
                                              ""))
                                    'face 'ecc-dim-face)))
       (_ (concat (propertize (format "✓ %s" label) 'face 'ecc-dim-face)
-                 (propertize "  allowed" 'face 'ecc-dim-face))))))
+                 (propertize (concat "  " (if outcome
+                                              (ecc-render--one-line outcome)
+                                            "allowed"))
+                             'face 'ecc-dim-face))))))
 
 (defun ecc-render--insert-request (node depth)
   "Insert the permission, question or plan NODE at DEPTH.
@@ -667,7 +695,14 @@ of the file around it (FR-DIFF-1)."
     (cond
      ((null request) nil)
      ((eq (ecc-request-kind request) 'question)
-      (ecc-render--insert-questions request body))
+      (ecc-render--insert-questions request body
+                                    (ecc-model-node-get node 'answers)))
+     ((eq (ecc-request-kind request) 'plan)
+      (ecc-render--insert-lines
+       (ecc-render--clip (ecc-markdown-fontify
+                          (or (alist-get 'plan (ecc-request-input request)) ""))
+                         ecc-render-diff-max-lines)
+       body 'ecc-assistant-face))
      (diff
       (when-let* ((path (alist-get 'file_path (ecc-request-input request))))
         (insert (propertize (concat body (abbreviate-file-name path)) 'face 'ecc-dim-face)
@@ -676,21 +711,28 @@ of the file around it (FR-DIFF-1)."
                                 body 'ecc-dim-face))
      (t (ecc-render--insert-input (ecc-request-input request) body)))))
 
-(defun ecc-render--insert-questions (request prefix)
-  "Insert the questions of REQUEST indented by PREFIX."
+(defun ecc-render--insert-questions (request prefix &optional answers)
+  "Insert the questions of REQUEST indented by PREFIX.
+ANSWERS is an alist of question text to the answer given, drawn under
+each question once the request was answered."
   (let ((questions (alist-get 'questions (ecc-request-input request)))
         (n 0))
     (seq-doseq (question (or questions []))
-      (insert (propertize (concat prefix (ecc-render--one-line
-                                          (alist-get 'question question)))
-                          'face 'ecc-pending-face)
-              "\n")
-      (setq n 0)
-      (seq-doseq (option (or (alist-get 'options question) []))
-        (cl-incf n)
-        (insert (propertize (format "%s  %d. %s" prefix n (alist-get 'label option))
-                            'face 'ecc-dim-face)
-                "\n")))))
+      (let* ((text (alist-get 'question question))
+             (answer (cdr (assoc text answers))))
+        (insert (propertize (concat prefix (ecc-render--one-line text))
+                            'face (if answer 'ecc-dim-face 'ecc-pending-face))
+                "\n")
+        (setq n 0)
+        (seq-doseq (option (or (alist-get 'options question) []))
+          (cl-incf n)
+          (insert (propertize (format "%s  %d. %s" prefix n (alist-get 'label option))
+                              'face 'ecc-dim-face)
+                  "\n"))
+        (when answer
+          (insert (propertize (format "%s  → %s" prefix (ecc-render--one-line answer))
+                              'face 'ecc-user-face)
+                  "\n"))))))
 
 (defun ecc-render--insert-result (node depth)
   "Insert the result NODE at DEPTH."
@@ -860,6 +902,31 @@ of the file around it (FR-DIFF-1)."
   (when ecc-render--session
     (concat " " (ecc-render-status-line ecc-render--session))))
 
+(defun ecc-render-mode-line-state (session)
+  "Return the short state of SESSION for a mode line, or nil when idle.
+A request waiting for an answer is what the mode line exists to show
+\(FR-PERM-4), so it is spelled out with its kind."
+  (pcase (ecc-session-state session)
+    ((or 'idle 'starting) nil)
+    ('exited (propertize "✗ exited" 'face 'ecc-error-face))
+    ('compacting (propertize "⟲ compacting" 'face 'ecc-pending-face))
+    ((or 'waiting-permission 'waiting-question 'waiting-plan)
+     (let ((n (length (ecc-session-pending session))))
+       (propertize (format "⚠ %s%s"
+                           (pcase (ecc-session-state session)
+                             ('waiting-question "question")
+                             ('waiting-plan "plan")
+                             (_ "permission"))
+                           (if (> n 1) (format " ×%d" n) ""))
+                   'face 'ecc-pending-face)))
+    (_ (propertize "● running" 'face 'ecc-pending-face))))
+
+(defun ecc-render-mode-line-process ()
+  "Return the `mode-line-process' text of the session buffer."
+  (when-let* ((session ecc-render--session)
+              (state (ecc-render-mode-line-state session)))
+    (concat " [" state "]")))
+
 (defun ecc-render--on-progress (session &rest _)
   "Refresh the state line of SESSION."
   (when-let* ((buffer (ecc-session-buffer session)))
@@ -932,6 +999,27 @@ of the file around it (FR-DIFF-1)."
   "Return the turn sections of this buffer, in order."
   (seq-filter (lambda (section) (cl-typep section 'ecc-section-turn))
               (oref magit-root-section children)))
+
+(defun ecc-render-node-section (id)
+  "Return the section of this buffer drawn for the node ID, or nil."
+  (let (found)
+    (magit-map-sections (lambda (section)
+                          (when (and (null found) (equal (oref section value) id))
+                            (setq found section))))
+    found))
+
+(defun ecc-render-goto-node (session node)
+  "Move point in the buffer of SESSION to NODE and unfold it.
+The buffer is drawn first when a redraw is waiting.  Returns the
+section, or nil when the node is not drawn."
+  (when-let* ((buffer (ecc-session-buffer session)))
+    (when (buffer-live-p buffer)
+      (ecc-render-flush session)
+      (with-current-buffer buffer
+        (when-let* ((section (ecc-render-node-section (ecc-node-id node))))
+          (magit-section-goto section)
+          (magit-section-show section)
+          section)))))
 
 (defun ecc-render--reset-deltas ()
   "Forget the streamed text waiting to be drawn; a redraw drew it."

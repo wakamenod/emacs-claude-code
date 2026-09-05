@@ -69,6 +69,18 @@ already parsed input when the raw line was not kept."
                (alist-get 'request
                           (if raw (ecc--json-read-verbatim raw) message)))))
 
+(defun ecc-protocol-request-suggestions (message)
+  "Return the permission_suggestions of the can_use_tool MESSAGE, verbatim.
+Like `ecc-protocol-request-input', the value is re-read from the raw
+line so that a suggestion can be sent back as updatedPermissions
+without any change (FR-PERM-3).  Nil when there are none."
+  (let* ((raw (alist-get 'ecc-raw message))
+         (suggestions (alist-get 'permission_suggestions
+                                 (alist-get 'request
+                                            (if raw (ecc--json-read-verbatim raw)
+                                              message)))))
+    (and (vectorp suggestions) (> (length suggestions) 0) suggestions)))
+
 (defun ecc-protocol-replay-p (message)
   "Return non-nil when MESSAGE is the CLI echo of a message we sent.
 The CLI marks these with isReplay when --replay-user-messages is on."
@@ -181,6 +193,78 @@ the plugin stays enabled everywhere else."
     (ecc--json-write
      `((enabledPlugins . ,(mapcar (lambda (id) (cons (intern id) :false))
                                   disabled-plugins))))))
+
+(defun ecc-protocol-add-rules-update (tool-name patterns &optional destination)
+  "Return one addRules permission update allowing PATTERNS of TOOL-NAME.
+PATTERNS are rule contents such as \"git push *\"; DESTINATION
+defaults to \"session\".  Unverified against the CLI, kept for the
+day it is (FR-PERM-8 writes the settings file itself instead)."
+  `((type . "addRules")
+    (rules . ,(vconcat (mapcar (lambda (pattern)
+                                 `((toolName . ,tool-name)
+                                   (ruleContent . ,pattern)))
+                               patterns)))
+    (behavior . "allow")
+    (destination . ,(or destination "session"))))
+
+;;;; Settings files (FR-PERM-8)
+
+;; The settings file is JSON too, so it is read and written here and not
+;; in `ecc-perm' (NFR-2).  `json-pretty-print-buffer' is used for the
+;; layout; it keeps {} and [] apart from null, which was checked on the
+;; Emacs this is developed on.
+
+(defun ecc-protocol-read-settings-file (file)
+  "Return the JSON object in FILE as an alist, or nil when FILE is absent.
+An empty file counts as an empty object.  A file that does not parse,
+or whose top level is not an object, signals an error: it is never
+written over (plan section 9, item 16)."
+  (when (file-exists-p file)
+    (let ((text (with-temp-buffer
+                  (insert-file-contents file)
+                  (string-trim (buffer-string)))))
+      (if (string-empty-p text)
+          nil
+        (let ((object (condition-case err
+                          (ecc--json-read-verbatim text)
+                        (error (error "%s does not parse as JSON: %s"
+                                      (abbreviate-file-name file)
+                                      (error-message-string err))))))
+          (unless (listp object)
+            (error "%s does not hold a JSON object" (abbreviate-file-name file)))
+          object)))))
+
+(defun ecc-protocol-write-settings-file (file object)
+  "Write OBJECT to FILE as indented JSON, creating the directory."
+  (require 'json)
+  (make-directory (file-name-directory file) t)
+  (with-temp-buffer
+    (insert (ecc--json-write object))
+    (json-pretty-print-buffer)
+    (goto-char (point-max))
+    (unless (bolp) (insert "\n"))
+    (write-region (point-min) (point-max) file nil 'silent)))
+
+(defun ecc-protocol-settings-allow-list (object)
+  "Return the permissions.allow patterns of the settings OBJECT as a list."
+  (let ((allow (alist-get 'allow (alist-get 'permissions object))))
+    (and (vectorp allow) (append allow nil))))
+
+(defun ecc-protocol-settings-add-allow (file patterns)
+  "Add PATTERNS to permissions.allow in the settings FILE.
+Other keys of the file are kept.  Returns the patterns that were new;
+nothing is written when there is none."
+  (let* ((object (ecc-protocol-read-settings-file file))
+         (existing (ecc-protocol-settings-allow-list object))
+         (new (seq-remove (lambda (pattern) (member pattern existing)) patterns)))
+    (when new
+      (let ((permissions (alist-get 'permissions object)))
+        (unless (listp permissions)
+          (error "Permissions in %s is not an object" (abbreviate-file-name file)))
+        (setf (alist-get 'allow permissions) (vconcat existing new))
+        (setf (alist-get 'permissions object) permissions))
+      (ecc-protocol-write-settings-file file object))
+    new))
 
 (defun ecc-protocol-value-string (value)
   "Return VALUE, as parsed from JSON, as a string fit for display.

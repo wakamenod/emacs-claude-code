@@ -164,6 +164,26 @@
         (ecc-model-add-node session :type 'text)
         (should (= (length seen) 3))))))
 
+(ert-deftest ecc-model-test-pending-all-leaves-the-queues-alone ()
+  "Listing the requests of two sessions must not reorder or share their queues."
+  (let ((ecc--sessions (make-hash-table :test #'equal))
+        (ecc--session-order nil))
+    (let* ((a (ecc-model-create-session :name "a" :project-root temporary-file-directory))
+           (b (ecc-model-create-session :name "b" :project-root temporary-file-directory))
+           (old (make-ecc-request :request-id "old" :session a :kind 'permission
+                                  :tool-name "Bash"
+                                  :created-at (time-subtract (current-time) 60)))
+           (new (make-ecc-request :request-id "new" :session b :kind 'permission
+                                  :tool-name "Write" :created-at (current-time))))
+      (ecc-model-add-request a old)
+      (ecc-model-add-request b new)
+      (should (equal (ecc-model-pending-all) (list old new)))
+      (should (equal (ecc-model-pending-all) (list old new)))
+      (should (equal (ecc-session-pending a) (list old)))
+      (should (equal (ecc-session-pending b) (list new)))
+      (should (equal (ecc-model-pending-all temporary-file-directory) (list old new)))
+      (should-not (ecc-model-pending-all "/nonexistent/")))))
+
 (provide 'ecc-model-test)
 
 ;;; ecc-model-test.el ends here
