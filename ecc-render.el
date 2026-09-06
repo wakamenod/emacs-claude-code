@@ -1063,35 +1063,53 @@ section, or nil when the node is not drawn."
     (cancel-timer ecc-render--delta-timer)
     (setq ecc-render--delta-timer nil)))
 
+(defun ecc-render--windows-following ()
+  "Return the windows of this buffer that are watching the end.
+Before anything has been drawn there is no live region yet, and a
+buffer that has just been made is at its end, so every window counts."
+  (if (and ecc-render--live-start (marker-buffer ecc-render--live-start))
+      (ecc-render--windows-at-end)
+    (get-buffer-window-list (current-buffer) nil t)))
+
 (defun ecc-render-refresh (session)
   "Draw the whole buffer of SESSION from scratch."
   (when-let* ((buffer (ecc-session-buffer session)))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
-        (unless ecc-render--visibility-cache
-          (setq ecc-render--visibility-cache (make-hash-table :test #'equal)))
-        (unless ecc-render--node-sections
-          (setq ecc-render--node-sections (make-hash-table :test #'equal)))
-        (when (and magit-root-section (marker-buffer (oref magit-root-section start)))
-          (ecc-render--remember-visibility magit-root-section))
-        (with-silent-modifications
-          (erase-buffer)
-          (clrhash ecc-render--node-sections)
-          (ecc-render--reset-deltas)
-          (setq ecc-render--frozen 0)
-          (unless ecc-render--live-start
-            (setq ecc-render--live-start (make-marker)))
-          (unless ecc-render--top-end
-            (setq ecc-render--top-end (make-marker)))
-          (magit-insert-section (ecc-section-root "root")
-            (ecc-render--insert-top session)
-            (set-marker ecc-render--top-end (point))
-            (set-marker ecc-render--live-start (point))
-            (ecc-render--insert-live session))
-          (set-marker-insertion-type (oref magit-root-section end) t)
-          (magit-section-show magit-root-section)
-          (ecc-render--freeze session))
-        (goto-char (point-max))))))
+        ;; Erasing the buffer drags every window point back to the top,
+        ;; and a window that is no longer at the end stops being followed
+        ;; (`ecc-render-update'), so a session drawn again after a
+        ;; resume or a history page would never scroll to a new turn
+        ;; again.  Which windows were watching the end is therefore
+        ;; remembered before the buffer is touched.
+        (let ((following (and ecc-render-follow (ecc-render--windows-following))))
+          (unless ecc-render--visibility-cache
+            (setq ecc-render--visibility-cache (make-hash-table :test #'equal)))
+          (unless ecc-render--node-sections
+            (setq ecc-render--node-sections (make-hash-table :test #'equal)))
+          (when (and magit-root-section (marker-buffer (oref magit-root-section start)))
+            (ecc-render--remember-visibility magit-root-section))
+          (with-silent-modifications
+            (erase-buffer)
+            (clrhash ecc-render--node-sections)
+            (ecc-render--reset-deltas)
+            (setq ecc-render--frozen 0)
+            (unless ecc-render--live-start
+              (setq ecc-render--live-start (make-marker)))
+            (unless ecc-render--top-end
+              (setq ecc-render--top-end (make-marker)))
+            (magit-insert-section (ecc-section-root "root")
+              (ecc-render--insert-top session)
+              (set-marker ecc-render--top-end (point))
+              (set-marker ecc-render--live-start (point))
+              (ecc-render--insert-live session))
+            (set-marker-insertion-type (oref magit-root-section end) t)
+            (magit-section-show magit-root-section)
+            (ecc-render--freeze session))
+          (goto-char (point-max))
+          (dolist (window following)
+            (when (window-live-p window)
+              (set-window-point window (point-max)))))))))
 
 (defun ecc-render-update (session)
   "Redraw the top and the live region of SESSION."

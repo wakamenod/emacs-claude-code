@@ -605,6 +605,62 @@ follow have a section to grow.  Returns the remaining lines."
       ;; a delta that redraws the whole live region.
       (should (< (/ elapsed count) 0.005)))))
 
+;;;; Following the end (FR-OUT-10)
+
+(defun ecc-render-test--answer (session text &optional uuid)
+  "Give SESSION an assistant TEXT and a result, as one turn would."
+  (ecc-dispatch session `((type . "assistant")
+                          (message . ((role . "assistant")
+                                      (content . [((type . "text") (text . ,text))])))
+                          (uuid . ,(or uuid text))))
+  (ecc-dispatch session '((type . "result") (subtype . "success"))))
+
+(ert-deftest ecc-render-test-refresh-keeps-following-the-end ()
+  "A window watching the end keeps watching it after a full redraw.
+Drawing from scratch erases the buffer, which drags every window point
+back to the top; a window that is no longer at the end is not followed,
+so before this was handled a resumed session never scrolled to a new
+turn again and looked as though nothing had arrived."
+  (ecc-test-with-fake-session session
+    (let ((buffer (ecc-session-ensure-buffer session))
+          (window (split-window)))
+      (unwind-protect
+          (progn
+            (set-window-buffer window buffer)
+            (ecc-model-begin-turn session "one")
+            (ecc-render-test--answer session "first answer")
+            (ecc-render-flush session)
+            (set-window-point window (with-current-buffer buffer (point-max)))
+            ;; What a resume, a history page and `g' all do.
+            (ecc-render-refresh session)
+            (should (= (window-point window)
+                       (with-current-buffer buffer (point-max))))
+            ;; And the next turn is followed, rather than appended out of sight.
+            (ecc-model-begin-turn session "two")
+            (ecc-render-test--answer session "second answer")
+            (ecc-render-flush session)
+            (should (string-search "second answer" (ecc-test-buffer-string buffer)))
+            (should (= (window-point window)
+                       (with-current-buffer buffer (point-max)))))
+        (when (window-live-p window) (delete-window window))))))
+
+(ert-deftest ecc-render-test-refresh-leaves-a-reader-alone ()
+  "A window looking at an older turn is not dragged to the end."
+  (ecc-test-with-fake-session session
+    (let ((buffer (ecc-session-ensure-buffer session))
+          (window (split-window)))
+      (unwind-protect
+          (progn
+            (set-window-buffer window buffer)
+            (ecc-model-begin-turn session "one")
+            (ecc-render-test--answer session "first answer")
+            (ecc-render-flush session)
+            (set-window-point window (point-min))
+            (ecc-render-refresh session)
+            (should-not (= (window-point window)
+                           (with-current-buffer buffer (point-max)))))
+        (when (window-live-p window) (delete-window window))))))
+
 (provide 'ecc-render-test)
 
 ;;; ecc-render-test.el ends here
