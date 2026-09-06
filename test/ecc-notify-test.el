@@ -11,6 +11,7 @@
 (require 'ert)
 (require 'ecc-test-helpers)
 (require 'ecc-notify)
+(require 'ecc-session)
 
 (defmacro ecc-notify-test--collecting (var &rest body)
   "Run BODY with `ecc-notify-function' collecting (EVENT . TEXT) into VAR."
@@ -104,6 +105,72 @@
                  (lambda (_text) (error "The desktop must not be bothered"))))
         (should (ecc-notify-default session 'request "waiting"))
         (should (equal said "waiting"))))))
+
+
+;;;; The tab line of the sessions (FR-NOTIFY-2)
+
+(ert-deftest ecc-notify-test-tab-state ()
+  "A session is running, waiting, exited or idle, and shows the mark of it."
+  (ecc-test-with-fake-session session
+    (ecc-model-set-state session 'idle)
+    (should (eq (ecc-tab-state session) 'idle))
+    (ecc-model-set-state session 'running)
+    (should (eq (ecc-tab-state session) 'running))
+    ;; A request waiting for an answer beats anything else: it is the
+    ;; one state the user has to do something about.
+    (ecc-test-add-request session)
+    (should (eq (ecc-tab-state session) 'attention))
+    (should (equal (ecc-tab-mark session) "⚠"))))
+
+(ert-deftest ecc-notify-test-tab-line-lists-every-session ()
+  "Every session is a tab, the one being shown is marked as current."
+  (ecc-test-with-fake-session first
+    (let ((second (ecc-model-create-session
+                   :name "other" :project-root temporary-file-directory)))
+      (unwind-protect
+          (progn
+            (ecc-session-ensure-buffer first)
+            (ecc-model-set-state second 'running)
+            (let ((line (substring-no-properties
+                         (ecc-tab-line-string (ecc-session-buffer first)))))
+              (should (string-search "test" line))
+              (should (string-search "other" line))
+              (should (string-search "●" line)))
+            ;; From the buffer of the first session, the first tab is the
+            ;; current one and the second is not.
+            (let* ((line (ecc-tab-line-string (ecc-session-buffer first)))
+                   (at (lambda (name)
+                         (get-text-property (string-search name line) 'face line))))
+              (should (eq (funcall at "test") 'ecc-tab-current-face))
+              (should (eq (funcall at "other") 'ecc-tab-running-face))))
+        (ecc-test-cleanup-session second)
+        (ecc-model-remove-session second)))))
+
+(ert-deftest ecc-notify-test-tab-line-mode-installs-and-removes ()
+  "The mode puts the tab line in the session buffers and takes it out."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (unwind-protect
+        (progn
+          (ecc-tab-line-mode 1)
+          (with-current-buffer (ecc-session-buffer session)
+            (should (equal tab-line-format ecc-tab-line--construct)))
+          (ecc-tab-line-mode -1)
+          (with-current-buffer (ecc-session-buffer session)
+            (should-not tab-line-format)))
+      (ecc-tab-line-mode -1))))
+
+(ert-deftest ecc-notify-test-tab-bar-name ()
+  "The tab bar carries the state only when it is asked to (FR-NOTIFY-2)."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (cl-letf (((default-value 'tab-bar-tab-name-function) (lambda () "work"))
+              ((symbol-function #'get-buffer-window) (lambda (&rest _) t)))
+      (ecc-test-add-request session)
+      (let ((ecc-tab-bar-state nil))
+        (should (equal (ecc-tab-bar-tab-name) "work")))
+      (let ((ecc-tab-bar-state t))
+        (should (equal (ecc-tab-bar-tab-name) "⚠ work"))))))
 
 (provide 'ecc-notify-test)
 

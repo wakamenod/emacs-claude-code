@@ -26,6 +26,8 @@
 (declare-function notifications-notify "notifications" (&rest params))
 (declare-function ecc-window-session-visible-p "ecc-window" (session &optional frame))
 
+(defvar ecc-render--session)
+
 (defcustom ecc-notify-level 'message
   "How much noise an event of a session makes (FR-NOTIFY-1).
 `message' writes one line in the echo area, `pulse' flashes the
@@ -170,6 +172,156 @@ not worth a notification."
     (ecc-notify session 'exited
                 (format "%s: the CLI exited with code %s"
                         (ecc-session-name session) status))))
+
+;;;; The tab line of the sessions (FR-NOTIFY-2)
+
+;; Every session is a tab in the tab line of a session window, coloured
+;; by what it is doing: running, waiting for an answer, or idle.  Which
+;; session the window shows is what the tab line marks as current, and
+;; mouse-1 on a tab switches to it.
+
+(defcustom ecc-tab-line t
+  "Non-nil lists every session in the tab line of a session window.
+`ecc-tab-line-mode' is turned on by the first session started
+\(FR-NOTIFY-2)."
+  :type 'boolean
+  :group 'ecc)
+
+(defcustom ecc-tab-bar-state nil
+  "Non-nil marks the state of the sessions in the tab bar too.
+`ecc-tab-bar-tab-name' has to be `tab-bar-tab-name-function' for this
+to have anywhere to show (FR-NOTIFY-2)."
+  :type 'boolean
+  :group 'ecc)
+
+(defface ecc-tab-running-face
+  '((t :inherit ecc-heading-face))
+  "Face of the tab of a session that is working."
+  :group 'ecc)
+
+(defface ecc-tab-attention-face
+  '((t :inherit ecc-pending-face))
+  "Face of the tab of a session that is waiting for an answer."
+  :group 'ecc)
+
+(defface ecc-tab-idle-face
+  '((t :inherit ecc-dim-face))
+  "Face of the tab of a session with nothing to do."
+  :group 'ecc)
+
+(defface ecc-tab-current-face
+  '((t :inherit (bold ecc-heading-face) :underline t))
+  "Face of the tab of the session the window is showing."
+  :group 'ecc)
+
+(defun ecc-tab-state (session)
+  "Return `attention', `running', `exited' or `idle' for SESSION."
+  (cond
+   ((ecc-session-pending session) 'attention)
+   ((memq (ecc-session-state session) '(starting running compacting)) 'running)
+   ((eq (ecc-session-state session) 'exited) 'exited)
+   (t 'idle)))
+
+(defun ecc-tab-mark (session)
+  "Return the character that stands for the state of SESSION."
+  (pcase (ecc-tab-state session)
+    ('attention "⚠") ('running "●") ('exited "✗") (_ "·")))
+
+(defun ecc-tab-face (session current)
+  "Return the face of the tab of SESSION, CURRENT saying whether it is shown."
+  (if current
+      'ecc-tab-current-face
+    (pcase (ecc-tab-state session)
+      ('attention 'ecc-tab-attention-face)
+      ('running 'ecc-tab-running-face)
+      ('exited 'ecc-error-face)
+      (_ 'ecc-tab-idle-face))))
+
+(defun ecc-tab-label (session &optional current)
+  "Return the tab of SESSION, CURRENT saying whether it is the one shown."
+  (propertize (format " %s %s " (ecc-tab-mark session)
+                      (ecc--truncate (ecc-session-name session) 20))
+              'face (ecc-tab-face session current)
+              'help-echo (format "%s: %s" (ecc-session-name session)
+                                 (ecc-tab-state session))
+              'mouse-face 'tab-line-highlight
+              'keymap (let ((map (make-sparse-keymap)))
+                        (define-key map [tab-line mouse-1]
+                                    (lambda ()
+                                      (interactive)
+                                      (ecc-tab-line-visit session)))
+                        map)))
+
+(defun ecc-tab-line-visit (session)
+  "Show SESSION in the window the tab was clicked in."
+  (when-let* ((buffer (ecc-session-buffer session)))
+    (when (buffer-live-p buffer)
+      (pop-to-buffer buffer))))
+
+(defun ecc-tab-line-string (&optional buffer)
+  "Return the tab line listing every session, from BUFFER's point of view."
+  (let* ((buffer (or buffer (current-buffer)))
+         (current (buffer-local-value 'ecc-render--session buffer)))
+    (ecc--mode-line-escape
+     (mapconcat (lambda (session)
+                  (ecc-tab-label session (eq session current)))
+                (ecc-model-sessions)
+                ""))))
+
+(defconst ecc-tab-line--construct '(:eval (ecc-tab-line-string))
+  "What `ecc-tab-line-mode' puts in `tab-line-format'.")
+
+(defvar ecc-tab-line-mode)
+
+(defun ecc-tab-line--install (&rest _)
+  "Put the tab line in every session buffer, or take it out again."
+  (dolist (session (ecc-model-sessions))
+    (when-let* ((buffer (ecc-session-buffer session)))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer
+          (setq-local tab-line-format
+                      (and ecc-tab-line-mode ecc-tab-line--construct))))))
+  (force-mode-line-update t))
+
+(define-minor-mode ecc-tab-line-mode
+  "List every session in the tab line of the session windows (FR-NOTIFY-2)."
+  :global t
+  :group 'ecc
+  (if ecc-tab-line-mode
+      (progn
+        (add-hook 'ecc-session-state-changed-hook #'ecc-tab-line--install)
+        (add-hook 'ecc-request-added-hook #'ecc-tab-line--install)
+        (add-hook 'ecc-request-resolved-hook #'ecc-tab-line--install)
+        (add-hook 'ecc-session-init-hook #'ecc-tab-line--install))
+    (remove-hook 'ecc-session-state-changed-hook #'ecc-tab-line--install)
+    (remove-hook 'ecc-request-added-hook #'ecc-tab-line--install)
+    (remove-hook 'ecc-request-resolved-hook #'ecc-tab-line--install)
+    (remove-hook 'ecc-session-init-hook #'ecc-tab-line--install))
+  (ecc-tab-line--install))
+
+(defun ecc-tab-bar-tab-name ()
+  "Return the name of the current tab, marked with the state of its sessions.
+Set `tab-bar-tab-name-function' to this to see in the tab bar which
+tab is waiting for an answer (FR-NOTIFY-2)."
+  (let* ((name (funcall (default-value 'tab-bar-tab-name-function)))
+         (sessions (seq-filter (lambda (session)
+                                 (when-let* ((buffer (ecc-session-buffer session)))
+                                   (get-buffer-window buffer)))
+                               (ecc-model-sessions)))
+         (state (cond ((null sessions) nil)
+                      ((seq-find (lambda (session)
+                                   (eq (ecc-tab-state session) 'attention))
+                                 sessions)
+                       'attention)
+                      ((seq-find (lambda (session)
+                                   (eq (ecc-tab-state session) 'running))
+                                 sessions)
+                       'running))))
+    (if (and ecc-tab-bar-state state)
+        (format "%s %s"
+                (pcase state ('attention "⚠") (_ "●"))
+                name)
+      name)))
 
 (define-minor-mode ecc-notify-mode
   "Announce what the sessions of this Emacs are waiting for (FR-NOTIFY-1)."

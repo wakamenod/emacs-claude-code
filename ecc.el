@@ -104,6 +104,8 @@ argument asks for the directory and the name."
       (ecc-inbox-indicator-mode 1))
     (when ecc-notify-on-start
       (ecc-notify-mode 1))
+    (when ecc-tab-line
+      (ecc-tab-line-mode 1))
     ;; The timers that sum a conversation up cost a turn when they fire,
     ;; so they only start once a session exists and only when the recap
     ;; is wanted at all (FR-HINT-1, NFR-3).
