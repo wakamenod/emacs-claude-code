@@ -4,12 +4,15 @@ This repository builds `ecc`, a package that drives the Claude Code CLI from Ema
 
 ## Read these first
 
-1. `REQUIREMENTS.md` — the requirements of record (106 of them: the original 106, plus FR-OUT-15, less FR-TUI-2 which was dropped on 2026-09-06). Refer to them by id (FR-xxx-N, NFR-N).
+1. `REQUIREMENTS.md` — the requirements of record (108 of them: the original 106, plus FR-OUT-15 and the FR-UI pair of phase 9, less FR-TUI-2 which was dropped on 2026-09-06). Refer to them by id (FR-xxx-N, NFR-N).
 2. `IMPLEMENTATION_PLAN.md` — the implementation plan. Follow the instructions of §0 and the phase order of §7.
 3. `docs/verified.md` — CLI behaviour confirmed against the real thing. Add to it whenever something open in §10 is settled.
 4. `docs/decisions.md` — the record of findings that clash with the requirements, and what was decided.
+5. `docs/phase9-ui-redesign.md` — the phase 9 revision of the transcript and prompt UI. It
+   overrides §5.2, §5.3 of `REQUIREMENTS.md` and §5, §6.1, §6.2 of the plan; where they
+   disagree, it wins. Phase 9a is done; 9b takes magit-section out of the renderer.
 
-Those four documents live in the working directory but are not in the repository: they
+Those five documents live in the working directory but are not in the repository: they
 are listed in `.gitignore`, and a clone does not carry them. They are written in Japanese
 and stay that way; the code, the tests and this file are in English.
 
