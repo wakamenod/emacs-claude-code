@@ -174,7 +174,7 @@ result message to carry it (FR-HIST-2)."
                                 (hash-table-values (ecc-session-nodes session)))))))))
 
 (ert-deftest ecc-history-test-command-output-opens-no-turn ()
-  "What a slash command printed is not a prompt (FR-HIST-2)."
+  "Neither a slash command nor what it printed is a prompt (FR-HIST-2)."
   (ecc-test-with-fake-session session
     (let ((lines (list
                   (concat "{\"type\": \"user\", \"uuid\": \"u1\","
@@ -184,12 +184,15 @@ result message to carry it (FR-HIST-2)."
                           " \"message\": {\"role\": \"user\", \"content\":"
                           " \"<local-command-stdout>Set model</local-command-stdout>\"}}"))))
       (ecc-history--replay session lines)
-      ;; The command the user typed opens a turn; its output joins it.
-      (should (= 1 (length (ecc-session-turns session))))
-      (should (equal "<command-name>/model</command-name>"
-                     (ecc-turn-prompt (car (ecc-session-turns session)))))
-      (should (equal '(system)
-                     (ecc-test-turn-shape (car (ecc-session-turns session))))))))
+      ;; The CLI answered the command itself, so nothing was said to the
+      ;; model: the turn the node hangs from carries no prompt, and the
+      ;; command is one node with what it printed on it.
+      (should-not (seq-some #'ecc-turn-prompt (ecc-session-turns session)))
+      (let ((nodes (hash-table-values (ecc-session-nodes session))))
+        (should (= 1 (length nodes)))
+        (should (eq (ecc-node-type (car nodes)) 'command))
+        (should (equal (ecc-model-node-get (car nodes) 'name) "/model"))
+        (should (equal (ecc-model-node-get (car nodes) 'output) "Set model"))))))
 
 (ert-deftest ecc-history-test-sidechain-is-counted-not-shown ()
   "A subagent line is left out and its number noted (FR-HIST-2)."
@@ -585,6 +588,47 @@ inside it."
             (setf (ecc-session-process session) process)
             (should-error (ecc-history-resume session) :type 'user-error))
         (delete-process process)))))
+
+(ert-deftest ecc-history-test-local-commands ()
+  "The record of a slash command is read as a command, not as a turn.
+The recording is the one of the screenshots of docs/phase9-ui-redesign.md:
+three prompts, and six local commands (/advisor, /color four times and
+/recap) that the CLI answered itself (FR-HIST-2)."
+  (ecc-test-with-fake-session session
+    (let ((file (ecc-test-history-fixture "local-commands")))
+      (should (= 3 (ecc-history-load session nil file)))
+      (should (equal '("`ecc-core.el` L20-L30 このフォームは何してる？" "続けて" "もう少し何か書いて")
+                     (mapcar (lambda (turn)
+                               (car (split-string (ecc-turn-prompt turn) "\n")))
+                             (ecc-session-turns session))))
+      (let* ((nodes (hash-table-values (ecc-session-nodes session)))
+             (commands (seq-filter (lambda (node) (eq (ecc-node-type node) 'command))
+                                   nodes)))
+        (should (equal '("/advisor" "/color" "/color" "/color" "/color" "/recap")
+                       (sort (mapcar (lambda (node) (ecc-model-node-get node 'name))
+                                     commands)
+                             #'string<)))
+        ;; What the command printed is on the node it belongs to.
+        (should (equal (ecc-model-node-get
+                        (seq-find (lambda (node)
+                                    (equal (ecc-model-node-get node 'name) "/advisor"))
+                                  commands)
+                        'output)
+                       "Advisor: off\nUsage: /advisor <fable|opus|sonnet|off>"))
+        ;; Nothing of the record is left over as a note or as unknown.
+        (should-not (seq-some (lambda (node)
+                                (eq (ecc-node-type node) 'unknown))
+                              nodes)))
+      (ecc-session-ensure-buffer session)
+      (ecc-render-flush session)
+      (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+        (should (string-search "〉 /advisor" text))
+        (should (string-search "〉 /color red" text))
+        (should (string-search "  Advisor: off" text))
+        ;; The caveat is written for the model and is not shown (FR-HIST-2).
+        (should-not (string-search "local-command-caveat" text))
+        (should-not (string-search "<command-name>" text))
+        (should-not (string-search "local-command-stdout" text))))))
 
 (provide 'ecc-history-test)
 

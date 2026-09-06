@@ -1,0 +1,8 @@
+test  ·  —  ·  default  ·  running  ·  $0.0000
+
+Turn 1  hello
+▌ hello
+  〉 /advisor
+    Advisor: off
+    Usage: /advisor <fable|opus|sonnet|off>
+● running…

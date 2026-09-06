@@ -103,6 +103,8 @@ The whole diff is always available with RET (FR-OUT-7)."
 (defclass ecc-section-request (magit-section)
   ((keymap :initform 'ecc-request-section-map))
   :documentation "A permission request, a question or a plan review.")
+(defclass ecc-section-command (magit-section) ()
+  :documentation "A slash command the CLI answered itself, and its output.")
 (defclass ecc-section-result (magit-section) ()
   :documentation "The result line that closes a turn.")
 (defclass ecc-section-system (magit-section) ()
@@ -143,7 +145,8 @@ The whole diff is always available with RET (FR-OUT-7)."
 
 (defconst ecc-render-expandable-classes
   '(ecc-section-tool ecc-section-agent ecc-section-thinking ecc-section-file
-    ecc-section-request ecc-section-system ecc-section-unknown)
+    ecc-section-request ecc-section-system ecc-section-unknown
+    ecc-section-command)
   "Section classes the block movement commands stop at (FR-OUT-14).")
 
 (defun ecc-render--class (node)
@@ -156,6 +159,7 @@ The whole diff is always available with RET (FR-OUT-7)."
     ('agent 'ecc-section-agent)
     ((or 'permission 'question 'plan) 'ecc-section-request)
     ('result 'ecc-section-result)
+    ('command 'ecc-section-command)
     ('system (if (eq (ecc-model-node-get node 'kind) 'prompt)
                  'ecc-section-prompt
                'ecc-section-system))
@@ -512,6 +516,7 @@ An empty thinking block is all signature and no text."
                 ('agent (ecc-render--insert-agent session node depth))
                 ((or 'permission 'question 'plan) (ecc-render--insert-request node depth))
                 ('result (ecc-render--insert-result node depth))
+                ('command (ecc-render--insert-command node depth))
                 ((or 'system 'recap) (ecc-render--insert-system node depth))
                 (_ (ecc-render--insert-unknown node depth)))))
       (when ecc-render--node-sections
@@ -827,6 +832,21 @@ each question once the request was answered."
               (/ (or (alist-get 'duration_ms result) 0) 1000.0))
       'face 'ecc-dim-face)
      "\n")))
+
+(defun ecc-render--insert-command (node depth)
+  "Insert the local command NODE at DEPTH (FR-HIST-2).
+The command is drawn the way the user typed it, and what it printed
+follows in the dim face of something the CLI said rather than the
+model."
+  (let ((pad (ecc-render--pad depth))
+        (name (or (ecc-model-node-get node 'name) "?"))
+        (args (ecc-model-node-get node 'args))
+        (output (ecc-model-node-get node 'output)))
+    (magit-insert-heading
+      (concat pad (propertize (concat "〉 " name (if args (concat " " args) ""))
+                              'face 'ecc-user-face)))
+    (when (and (stringp output) (not (string-empty-p (string-trim output))))
+      (ecc-render--insert-lines output (concat pad "  ") 'ecc-dim-face))))
 
 (defun ecc-render--system-heading (node)
   "Return the heading text of the system NODE."

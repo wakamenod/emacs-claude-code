@@ -256,28 +256,91 @@ renamed to the name the stream uses."
 The interactive CLI writes what a local command printed back into the
 conversation as a user message; it is not a prompt and starts no turn.")
 
+;;;; Local commands (FR-HIST-2)
+
+;; A slash command the CLI ran itself leaves three kinds of line in the
+;; recording: the caveat it writes to tell the model to ignore what
+;; follows, the command itself as a user message of tagged fields, and
+;; what the command printed, either as `system/local_command' or as
+;; another user message.  None of them is something the user typed at
+;; the model, so none of them opens a turn (confirmed against the
+;; recording of session 4cc012b5, see docs/verified.md).
+
+(defconst ecc-protocol-command-caveat-regexp "\\`[ \t\n]*<local-command-caveat>"
+  "Start of the note the CLI writes before the record of a local command.
+It is addressed to the model, not to the user, and the terminal client
+does not show it either, so it is not drawn (FR-HIST-2).")
+
+(defconst ecc-protocol-command-name-regexp "\\`[ \t\n]*<command-name>"
+  "Start of the user line that records a slash command the CLI ran.")
+
+(defun ecc-protocol-command-tag (text tag)
+  "Return what TEXT holds between <TAG> and </TAG>, or nil.
+The value is trimmed: the CLI indents the fields it writes after the
+first one."
+  (when (and (stringp text)
+             (string-match (format "<%s>\\(\\(?:.\\|
+\\)*?\\)</%s>"
+                                   (regexp-quote tag) (regexp-quote tag))
+                           text))
+    (string-trim (match-string 1 text))))
+
+(defun ecc-protocol-command-caveat-p (text)
+  "Return non-nil when TEXT is the caveat before a local command."
+  (and (stringp text)
+       (string-match-p ecc-protocol-command-caveat-regexp text)
+       t))
+
+(defun ecc-protocol-parse-command (text)
+  "Return the fields of the local command TEXT records, or nil.
+The alist holds `name' (with its leading slash), `message' and `args';
+`args' is nil when the command was given none."
+  (when (and (stringp text)
+             (string-match-p ecc-protocol-command-name-regexp text))
+    (let ((name (ecc-protocol-command-tag text "command-name"))
+          (message (ecc-protocol-command-tag text "command-message"))
+          (args (ecc-protocol-command-tag text "command-args")))
+      (list (cons 'name (or name "?"))
+            (cons 'message message)
+            (cons 'args (and args (not (string-empty-p args)) args))))))
+
+(defun ecc-protocol-command-output (text)
+  "Return what TEXT records a local command as having printed, or nil."
+  (when (and (stringp text)
+             (string-match-p ecc-protocol-command-output-regexp text))
+    (or (ecc-protocol-command-tag text "local-command-stdout") "")))
+
+(defun ecc-protocol-history-text (message)
+  "Return the text content of the user MESSAGE of a history file, or nil.
+The blocks of a message that carries several are joined by newlines;
+a message of tool results has no text at all."
+  (let ((content (alist-get 'content (alist-get 'message message))))
+    (cond
+     ((stringp content) content)
+     ((vectorp content)
+      (let ((texts (seq-keep
+                    (lambda (block)
+                      (and (equal (alist-get 'type block) "text")
+                           (alist-get 'text block)))
+                    content)))
+        (and texts (string-join texts "\n"))))
+     (t nil))))
+
 (defun ecc-protocol-history-prompt (message)
   "Return the prompt MESSAGE opens a turn with, or nil.
 A turn starts at a `user' line whose content is text the user typed.
 A line carrying only tool results continues the turn it is in, a line
 the CLI wrote itself (`isMeta') is not a prompt at all, and neither is
-the output a local command printed into the conversation."
+the record of a local command: neither the command, nor the caveat
+before it, nor what it printed was said to the model (FR-HIST-2)."
   (when (and (equal (alist-get 'type message) "user")
              (not (eq (alist-get 'isMeta message) t))
              (not (ecc-protocol-history-sidechain-p message)))
-    (let* ((content (alist-get 'content (alist-get 'message message)))
-           (text (cond
-                  ((stringp content) content)
-                  ((vectorp content)
-                   (let ((texts (seq-keep
-                                 (lambda (block)
-                                   (and (equal (alist-get 'type block) "text")
-                                        (alist-get 'text block)))
-                                 content)))
-                     (and texts (string-join texts "\n"))))
-                  (t nil))))
+    (let ((text (ecc-protocol-history-text message)))
       (and text
            (not (string-match-p ecc-protocol-command-output-regexp text))
+           (not (string-match-p ecc-protocol-command-name-regexp text))
+           (not (ecc-protocol-command-caveat-p text))
            text))))
 
 (defun ecc-protocol-history-timestamp (message)

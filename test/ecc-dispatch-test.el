@@ -524,6 +524,43 @@ once every result is in."
                               (tool_use_id . "toolu_x")))
       (should-not (ecc-model-running-tool session)))))
 
+(ert-deftest ecc-dispatch-test-local-command ()
+  "A slash command the CLI ran becomes one node, its caveat none (FR-HIST-2)."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "hello")
+    (let ((user (lambda (text)
+                  (ecc-dispatch session
+                                `((type . "user")
+                                  (message . ((role . "user") (content . ,text))))))))
+      (funcall user (concat "<local-command-caveat>Caveat: ignore this."
+                            "</local-command-caveat>"))
+      (funcall user (concat "<command-name>/color</command-name>\n"
+                            "            <command-args>red</command-args>"))
+      (ecc-dispatch session '((type . "system") (subtype . "local_command")
+                              (content . "<local-command-stdout>Session color set to: red</local-command-stdout>")))
+      (funcall user "<local-command-stdout>and again</local-command-stdout>"))
+    (let ((nodes (hash-table-values (ecc-session-nodes session))))
+      ;; The caveat is not drawn at all, so it is not a node.
+      (should (= 1 (length nodes)))
+      (let ((node (car nodes)))
+        (should (eq (ecc-node-type node) 'command))
+        (should (equal (ecc-model-node-get node 'name) "/color"))
+        (should (equal (ecc-model-node-get node 'args) "red"))
+        ;; Both ways of recording what a command printed land on it.
+        (should (equal (ecc-model-node-get node 'output)
+                       "Session color set to: red\nand again"))))))
+
+(ert-deftest ecc-dispatch-test-command-output-without-a-command ()
+  "Output whose command is not in this page is kept rather than dropped."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "hello")
+    (ecc-dispatch session '((type . "system") (subtype . "local_command")
+                            (content . "<local-command-stdout>Bye!</local-command-stdout>")))
+    (let ((node (car (hash-table-values (ecc-session-nodes session)))))
+      (should (eq (ecc-node-type node) 'system))
+      (should (equal (ecc-model-node-get node 'kind) 'command-output))
+      (should (equal (ecc-model-node-get node 'text) "Bye!")))))
+
 (provide 'ecc-dispatch-test)
 
 ;;; ecc-dispatch-test.el ends here

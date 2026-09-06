@@ -94,7 +94,8 @@ Errors are caught: an unreadable message must never stop the stream."
 (defconst ecc-dispatch-system-subtypes
   '("init" "status" "thinking_tokens" "hook_started" "hook_response"
     "permission_denied" "compact_boundary" "task_started" "task_progress"
-    "task_updated" "task_notification" "background_tasks_changed")
+    "task_updated" "task_notification" "background_tasks_changed"
+    "local_command")
   "The system subtypes `ecc-dispatch--system' handles.
 Kept next to the function it lists, and checked against it by a test.
 `ecc-history' asks this before handing a recorded line over: a
@@ -113,6 +114,8 @@ note rather than among the messages this version does not understand.")
      (ecc-model-add-node session :type 'system :status 'done
                          :data (list (cons 'kind 'hook)
                                      (cons 'message message))))
+    ('local_command
+     (ecc-dispatch-command-output session (alist-get 'content message)))
     ('permission_denied
      (when-let* ((node (ecc-model-node session (alist-get 'tool_use_id message))))
        (setf (ecc-node-status node) 'denied)
@@ -355,16 +358,64 @@ started with."
         (pcase (alist-get 'type block)
           ("tool_result" (ecc-dispatch--tool-result session block message))
           ("text"
-           ;; Notes the CLI writes into the conversation itself, such as
-           ;; the acknowledgement of an interrupt, or the prompt of an agent.
-           (ecc-model-add-node session :type 'system :status 'done
-                               :parent parent
-                               :data (list (cons 'kind (if (ecc-turn-p parent)
-                                                            'note 'prompt))
-                                           (cons 'text (alist-get 'text block)))))
+           (let ((text (alist-get 'text block)))
+             (cond
+              ;; The note the CLI writes before the record of a local
+              ;; command is addressed to the model, and is not drawn
+              ;; (FR-HIST-2); the log keeps it.
+              ((ecc-protocol-command-caveat-p text)
+               (ecc-log (ecc-session-name session) "local command caveat skipped"))
+              ((ecc-protocol-parse-command text)
+               (ecc-dispatch--command session text parent))
+              ((ecc-protocol-command-output text)
+               (ecc-dispatch-command-output session text))
+              (t
+               ;; Notes the CLI writes into the conversation itself, such as
+               ;; the acknowledgement of an interrupt, or the prompt of an agent.
+               (ecc-model-add-node session :type 'system :status 'done
+                                   :parent parent
+                                   :data (list (cons 'kind (if (ecc-turn-p parent)
+                                                               'note 'prompt))
+                                               (cons 'text text)))))))
           (_ (ecc-model-add-node session :type 'unknown :status 'done
                                  :parent parent
                                  :data (list (cons 'block block)))))))))
+
+(defun ecc-dispatch--command (session text parent)
+  "Add the local command TEXT records to SESSION under PARENT.
+A slash command the CLI answered itself is not a prompt: it opens no
+turn, and what it printed arrives after it and is put on this node
+\(FR-HIST-2)."
+  (let* ((fields (ecc-protocol-parse-command text))
+         (node (ecc-model-add-node session :type 'command :status 'done
+                                   :parent parent
+                                   :data (list (cons 'name (alist-get 'name fields))
+                                               (cons 'args (alist-get 'args fields))
+                                               (cons 'output nil)))))
+    (setf (alist-get 'command-node (ecc-session-progress session))
+          (ecc-node-id node))
+    node))
+
+(defun ecc-dispatch-command-output (session text)
+  "Put what a local command printed, TEXT, on the command node of SESSION.
+TEXT is the whole `<local-command-stdout>' element, or what
+`system/local_command' carries.  Without a command to put it on -- a
+page of a recording can start between the two lines -- it is kept as a
+system note rather than dropped (NFR-2)."
+  (let* ((output (or (ecc-protocol-command-output text) text))
+         (id (alist-get 'command-node (ecc-session-progress session)))
+         (node (and id (ecc-model-node session id))))
+    (if (not (and node (eq (ecc-node-type node) 'command)))
+        (ecc-model-add-node session :type 'system :status 'done
+                            :data (list (cons 'kind 'command-output)
+                                        (cons 'text output)))
+      (ecc-model-node-put node 'output
+                          (let ((had (ecc-model-node-get node 'output)))
+                            (if (and had (not (string-empty-p had)))
+                                (concat had "\n" output)
+                              output)))
+      (ecc-model-node-changed session node)
+      node)))
 
 (defun ecc-dispatch--tool-result (session block message)
   "Store the tool_result BLOCK of MESSAGE on its tool node in SESSION."
