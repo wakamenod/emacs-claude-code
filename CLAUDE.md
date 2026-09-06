@@ -10,7 +10,8 @@ This repository builds `ecc`, a package that drives the Claude Code CLI from Ema
 4. `docs/decisions.md` — the record of findings that clash with the requirements, and what was decided.
 5. `docs/phase9-ui-redesign.md` — the phase 9 revision of the transcript and prompt UI. It
    overrides §5.2, §5.3 of `REQUIREMENTS.md` and §5, §6.1, §6.2 of the plan; where they
-   disagree, it wins. Phase 9a is done; 9b takes magit-section out of the renderer.
+   disagree, it wins. Phases 9a and 9b are done (9b: one buffer, `ecc-chat-mode`,
+   no magit-section); 9c, the visual finish, is next.
 
 Those five documents live in the working directory but are not in the repository: they
 are listed in `.gitignore`, and a clone does not carry them. They are written in Japanese
@@ -19,7 +20,7 @@ and stay that way; the code, the tests and this file are in English.
 ## Environment
 
 - Emacs: `emacs` is not on PATH. It is `/opt/homebrew/Cellar/emacs-plus@32/32.0.50/Emacs.app/Contents/MacOS/Emacs` (the Emacs 32 development build), already named by the `EMACS` variable of `Makefile`.
-- The dependencies live in `~/.emacs.d/elpa` (magit-section, markdown-mode, nerd-icons, spinner, ghostel); `transient` ships with Emacs itself. `package-initialize` finds them. `package-lint` is not installed, and lint skips it on its own.
+- The dependencies live in `~/.emacs.d/elpa` (markdown-mode, nerd-icons, spinner, ghostel); `transient` ships with Emacs itself. magit-section is no longer used (phase 9b). `package-initialize` finds them. `package-lint` is not installed, and lint skips it on its own.
 - The terminal of the hand-off is **ghostel** (libghostty-vt), and the only one: neither vterm nor a terminal outside Emacs is supported (see `docs/decisions.md`). ghostel loads and runs in batch, so `ecc-tui-test` drives the real backend.
 - Claude Code CLI: `claude` 2.1.261.
 
@@ -66,9 +67,12 @@ On the Elisp side `ecc-safe-mode` is nil by default. Plugins to turn off go in
 
 - `lexical-binding: t`. The prefix is `ecc-`, and internal functions are `ecc--`.
 - JSON is touched only by `ecc-protocol.el` and `ecc-proc.el` (plus the two that speak
-  to a process of their own, `ecc-mcp.el` and `ecc-inline.el`). magit-section is
-  required only by `ecc-render.el` and `ecc-session.el` (the transcript's major mode and
-  its section navigation); the model never sees it (plan §0, NFR-9).
+  to a process of their own, `ecc-mcp.el` and `ecc-inline.el`). The transcript is drawn
+  by `ecc-render.el` alone, with text properties (`ecc-node`, `ecc-depth`,
+  `ecc-heading`, `keymap`, `read-only`) and fold overlays; `ecc-chat.el` holds the
+  major mode, the keymaps and the movement. The model never sees the buffer (plan §0,
+  NFR-9). The prompt region lives after `ecc-render--prompt-start` in the same buffer,
+  and no redraw deletes past it (FR-UI-2).
 - Arrays for `json-serialize` are vectors. `nil` is `{}`. `null` is `:null` and false is
   `:false` (plan §2.3).
 - No font-lock in a session buffer. Faces are put on at insertion time.
