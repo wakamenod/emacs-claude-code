@@ -6,8 +6,9 @@
 ;; (FR-TUI-1, 2), the transcript following the recording while it is
 ;; there (FR-TUI-3), the session coming back afterwards (FR-TUI-4) and
 ;; the rule that only one process may have a session at a time
-;; (FR-TUI-5).  No terminal is started here; what would open one is
-;; replaced.
+;; (FR-TUI-5).  No terminal is started here; `ecc-tui--open-ghostel' is
+;; replaced by one that makes a buffer and a process of its own, which
+;; is all the hand-off asks of a terminal.
 
 ;;; Code:
 
@@ -19,6 +20,13 @@
 
 (defvar ecc-tui-test--opened nil
   "What the fake terminal was asked to open.")
+
+(defun ecc-tui-test--fake-terminal (session)
+  "Stand in for a terminal: a buffer with a process that outlives it.
+Returns (BUFFER . PROCESS) the way the real backends do."
+  (setq ecc-tui-test--opened (ecc-tui-arguments session))
+  (let ((buffer (get-buffer-create (ecc-tui-buffer-name session))))
+    (cons buffer (start-process "ecc-tui-test" buffer "sleep" "60"))))
 
 (defmacro ecc-tui-test--with-session (var &rest body)
   "Run BODY with VAR bound to a session whose terminal is a fake one.
@@ -35,7 +43,15 @@ The process the session would run is pretended to be alive until
            (stopped nil)
            (interrupted nil))
        (ignore stopped interrupted)
-       (cl-letf* (((symbol-function 'process-live-p) (lambda (&rest _) alive))
+       (ignore alive)
+       (cl-letf* ((real-process-live-p (symbol-function 'process-live-p))
+                  ;; The session has no process of its own, so a nil
+                  ;; process is the one being pretended to be alive; a
+                  ;; real one (the fake terminal) answers for itself.
+                  ((symbol-function 'process-live-p)
+                   (lambda (object) (if (processp object)
+                                        (funcall real-process-live-p object)
+                                      alive)))
                   ((symbol-function 'ecc-proc-interrupt)
                    (lambda (session)
                      (setq interrupted t)
@@ -45,13 +61,14 @@ The process the session would run is pretended to be alive until
                   ((symbol-function 'ecc-proc-stop)
                    (lambda (_session) (setq stopped t alive nil)))
                   ((symbol-function 'ecc-registry-session) (lambda (_id) nil))
-                  ((symbol-function 'ecc-tui--open-vterm)
-                   (lambda (session)
-                     (setq ecc-tui-test--opened (ecc-tui-shell-command session))
-                     (get-buffer-create (ecc-tui-buffer-name session)))))
+                  ((symbol-function 'ecc-tui--open-ghostel)
+                   #'ecc-tui-test--fake-terminal))
          (unwind-protect (progn ,@body)
            (ecc-tui-follow-stop ,var)
            (when-let* ((buffer (get-buffer (ecc-tui-buffer-name ,var))))
+             (when-let* ((process (get-buffer-process buffer)))
+               (set-process-sentinel process #'ignore)
+               (delete-process process))
              (kill-buffer buffer)))))))
 
 ;;;; The command the terminal is opened with (FR-TUI-1, FR-TUI-2)
@@ -68,6 +85,8 @@ The process the session would run is pretended to be alive until
     (should-not (member "-p" (ecc-tui-arguments session)))
     (let ((ecc-tui-extra-args '("--effort" "high")))
       (should (equal (last (ecc-tui-arguments session) 2) '("--effort" "high"))))
+    ;; ghostel takes argv, so nothing has to survive a shell; the one
+    ;; place a shell line is needed is the external terminal template.
     (should (string-search (format "--resume %s" (ecc-session-id session))
                            (ecc-tui-shell-command session)))))
 
@@ -80,7 +99,11 @@ The process the session would run is pretended to be alive until
                      (format "open -na Ghostty --args -e %s --resume %s"
                              ecc-executable (ecc-session-id session)))))
     (let ((ecc-tui-external-command "cd %d && %c --resume %i"))
-      (should (string-prefix-p "cd /tmp/work/ && " (ecc-tui-external-command session))))))
+      (should (string-prefix-p "cd /tmp/work/ && " (ecc-tui-external-command session))))
+    ;; %a carries the whole command line, options and all.
+    (setf (ecc-session-options session) '(:model "haiku"))
+    (let ((ecc-tui-external-command "open -na Ghostty --args -e %a"))
+      (should (string-search "--model haiku" (ecc-tui-external-command session))))))
 
 ;;;; Only one process at a time (FR-TUI-5)
 
@@ -92,7 +115,7 @@ The process the session would run is pretended to be alive until
     (should interrupted)
     (should stopped)
     (should (eq (ecc-session-state session) 'idle))
-    (should ecc-tui-test--opened)
+    (should (member "--resume" ecc-tui-test--opened))
     (should (eq (ecc-session-kind session) 'handoff))
     (should (ecc-tui-handoff-p session))
     ;; It cannot be handed over twice.
@@ -206,8 +229,8 @@ The process the session would run is pretended to be alive until
 
 ;;;; Coming back (FR-TUI-4)
 
-(ert-deftest ecc-tui-test-returns-when-the-terminal-is-gone ()
-  "The session is resumed headless once its terminal buffer has ended."
+(ert-deftest ecc-tui-test-returns-when-the-terminal-ends ()
+  "The session is resumed headless as soon as the terminal process dies."
   (ecc-tui-test--with-session session
     (let ((resumed nil))
       (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) nil))
@@ -220,12 +243,94 @@ The process the session would run is pretended to be alive until
         (ecc-tui--tick session)
         (should-not resumed)
         (should (ecc-tui-handoff-p session))
-        (kill-buffer (ecc-tui-buffer-name session))
-        (should (ecc-tui-finished-p session))
-        (ecc-tui--tick session)
+        ;; The terminal is left: the sentinel takes the session back
+        ;; without waiting for the next poll.
+        (delete-process (plist-get (ecc-tui-state session) :process))
+        (with-timeout (5 (ert-fail "the terminal ended and nothing came back"))
+          (while (not resumed) (sit-for 0.05)))
         (should (eq resumed t))
         (should (eq (ecc-session-kind session) 'own))
         (should-not (ecc-tui-handoff-p session))))))
+
+(ert-deftest ecc-tui-test-a-dead-terminal-is-noticed-by-the-poll ()
+  "A terminal that dies unseen is still noticed on the next check."
+  (ecc-tui-test--with-session session
+    (let ((resumed nil))
+      (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) nil))
+                ((symbol-function 'ecc-registry-live-p) (lambda (_id) nil))
+                ((symbol-function 'ecc-proc-start)
+                 (lambda (_session &optional resume _fork) (setq resumed resume))))
+        (ecc-tui-open session)
+        ;; The sentinel is taken away, as a terminal of its own could do.
+        (let ((process (plist-get (ecc-tui-state session) :process)))
+          (set-process-sentinel process #'ignore)
+          (delete-process process))
+        (should (ecc-tui-finished-p session))
+        (ecc-tui--tick session)
+        (should (eq resumed t))
+        (should-not (ecc-tui-handoff-p session))))))
+
+(ert-deftest ecc-tui-test-the-terminals-own-sentinel-still-runs ()
+  "Watching the terminal does not take its own teardown away from it."
+  (ecc-tui-test--with-session session
+    (let ((torn-down nil))
+      (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) nil))
+                ((symbol-function 'ecc-registry-live-p) (lambda (_id) nil))
+                ((symbol-function 'ecc-proc-start) (lambda (&rest _) nil))
+                ((symbol-function 'ecc-tui--open-ghostel)
+                 (lambda (session)
+                   (let* ((buffer (get-buffer-create (ecc-tui-buffer-name session)))
+                          (process (start-process "ecc-tui-test" buffer "sleep" "60")))
+                     (set-process-sentinel process
+                                           (lambda (&rest _) (setq torn-down t)))
+                     (cons buffer process)))))
+        (ecc-tui-open session)
+        (delete-process (plist-get (ecc-tui-state session) :process))
+        (with-timeout (5 (ert-fail "the terminal's own sentinel never ran"))
+          (while (not torn-down) (sit-for 0.05)))
+        (should torn-down)))))
+
+(ert-deftest ecc-tui-test-ghostel-really-runs-and-really-comes-back ()
+  "The ghostel backend is driven for real, with a stand-in for the CLI.
+Nothing here is replaced but the CLI itself and the resume: the buffer,
+the process, the sentinel and the teardown are ghostel's own."
+  (skip-unless (and (require 'ghostel nil t) (fboundp 'ghostel-exec)))
+  (ecc-test-with-fake-session session
+    (let ((script (make-temp-file "ecc-tui-cli" nil ".sh"
+                                  "#!/bin/sh\nsleep 30\n"))
+          (resumed nil))
+      (set-file-modes script #o755)
+      (unwind-protect
+          (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) nil))
+                    ((symbol-function 'ecc-registry-session) (lambda (_id) nil))
+                    ((symbol-function 'ecc-registry-live-p) (lambda (_id) nil))
+                    ((symbol-function 'ecc-proc-start)
+                     (lambda (_session &optional resume _fork) (setq resumed resume))))
+            (let ((ecc-executable script)
+                  (ecc-tui-terminal 'ghostel)
+                  (ecc-tui--handoffs (make-hash-table :test #'equal)))
+              (ecc-tui-open session)
+              (let* ((state (ecc-tui-state session))
+                     (buffer (plist-get state :buffer))
+                     (process (plist-get state :process)))
+                (should (process-live-p process))
+                (should (buffer-live-p buffer))
+                ;; The terminal is on screen: it is what the user asked for.
+                (should (get-buffer-window buffer))
+                (should (eq (ecc-session-kind session) 'handoff))
+                ;; Leaving the terminal takes the session back, and
+                ;; ghostel still gets to clean up after itself: its own
+                ;; sentinel is called before ours (it kills the buffer).
+                (delete-process process)
+                (with-timeout (5 (ert-fail "the hand-off never came back"))
+                  (while (not resumed) (sit-for 0.05)))
+                (should (eq resumed t))
+                (should (eq (ecc-session-kind session) 'own))
+                (should-not (ecc-tui-handoff-p session))
+                (should-not (buffer-live-p buffer)))))
+        (delete-file script)
+        (when-let* ((buffer (get-buffer (ecc-tui-buffer-name session))))
+          (kill-buffer buffer))))))
 
 (ert-deftest ecc-tui-test-does-not-resume-behind-a-live-terminal ()
   "A terminal that is still running keeps the session (FR-TUI-5)."
@@ -236,25 +341,33 @@ The process the session would run is pretended to be alive until
                 ((symbol-function 'ecc-proc-start)
                  (lambda (_session &optional resume _fork) (setq resumed resume))))
         (ecc-tui-open session)
-        (kill-buffer (ecc-tui-buffer-name session))
         (should-not (ecc-tui-return session))
-        (should-not resumed)))))
+        (should-not resumed)
+        ;; The hand-off is kept, so the watch can take it back later.
+        (should (ecc-tui-handoff-p session))))))
 
 (ert-deftest ecc-tui-test-external-terminal-is-watched-in-the-registry ()
-  "An external terminal is over once it has been seen and is gone."
+  "An external terminal is over once it has been seen and is gone.
+The process that opened the window says nothing about the CLI, so it
+is not what the hand-off waits on."
   (ecc-tui-test--with-session session
-    (let ((live nil))
-      (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) nil))
-                ((symbol-function 'ecc-registry-live-p) (lambda (_id) live))
-                ((symbol-function 'ecc-tui--open-external) (lambda (_session) nil)))
-        (let ((ecc-tui-terminal 'external))
-          (ecc-tui-open session))
-        ;; Not there yet: the terminal is still starting up, not gone.
-        (should-not (ecc-tui-finished-p session))
-        (setq live t)
-        (should-not (ecc-tui-finished-p session))
-        (setq live nil)
-        (should (ecc-tui-finished-p session))))))
+    (let ((live nil)
+          (opener (start-process "ecc-tui-test-open" nil "sleep" "60")))
+      (unwind-protect
+          (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) nil))
+                    ((symbol-function 'ecc-registry-live-p) (lambda (_id) live))
+                    ((symbol-function 'ecc-tui--open-external)
+                     (lambda (_session) (cons nil opener))))
+            (let ((ecc-tui-terminal 'external))
+              (ecc-tui-open session))
+            (should-not (plist-get (ecc-tui-state session) :process))
+            ;; Not there yet: the terminal is still starting up, not gone.
+            (should-not (ecc-tui-finished-p session))
+            (setq live t)
+            (should-not (ecc-tui-finished-p session))
+            (setq live nil)
+            (should (ecc-tui-finished-p session)))
+        (delete-process opener)))))
 
 (provide 'ecc-tui-test)
 

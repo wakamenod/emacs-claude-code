@@ -24,6 +24,14 @@
 ;; through `ecc-history', so the transcript keeps up without a process
 ;; of its own.  When the terminal is left, the session comes back
 ;; headless with --resume (FR-TUI-4).
+;;
+;; The terminal inside Emacs is ghostel, which draws the CLI's full
+;; screen interface with the same engine Ghostty uses (D on the
+;; decisions list; FR-TUI-1 named vterm).  It takes the command as argv
+;; rather than as a shell line, so nothing has to survive quoting, and
+;; it hands back the process, which is what tells Emacs the terminal is
+;; over.  Ghostty itself, or any other terminal application, is reached
+;; through `ecc-tui-external-command' instead (FR-TUI-2).
 
 ;;; Code:
 
@@ -40,25 +48,24 @@
 
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-window-resolve-session "ecc-window" (&optional force-ask))
-(declare-function vterm "vterm" (&optional arg))
-(defvar vterm-shell)
-(defvar vterm-exit-functions)
+(declare-function ghostel-exec "ghostel" (buffer program &optional args identity))
 
 ;;;; Options
 
-(defcustom ecc-tui-terminal 'vterm
+(defcustom ecc-tui-terminal 'ghostel
   "Where a session handed over is opened (FR-TUI-1, FR-TUI-2).
-`vterm' runs the CLI in a vterm buffer, `external' runs
-`ecc-tui-external-command' instead."
-  :type '(choice (const :tag "vterm" vterm)
+`ghostel' runs the CLI in a ghostel buffer inside Emacs, `external'
+runs `ecc-tui-external-command' in a terminal application instead."
+  :type '(choice (const :tag "ghostel" ghostel)
                  (const :tag "An external terminal" external))
   :group 'ecc)
 
 (defcustom ecc-tui-external-command
   "open -na Ghostty --args -e %c --resume %i"
   "Shell command that opens the CLI in an external terminal (FR-TUI-2).
-The specifications are %c the CLI executable, %i the session id and %d
-the directory the session runs in."
+The specifications are %c the CLI executable, %i the session id, %d
+the directory the session runs in and %a the whole command line the
+terminal inside Emacs would run, quoted for a shell."
   :type 'string
   :group 'ecc)
 
@@ -144,6 +151,7 @@ and the options that decide what it costs."
   (format-spec ecc-tui-external-command
                `((?c . ,ecc-executable)
                  (?i . ,(ecc-session-id session))
+                 (?a . ,(ecc-tui-shell-command session))
                  (?d . ,(or (ecc-session-cwd session)
                             (ecc-session-project-root session) "")))))
 
@@ -186,29 +194,51 @@ the conversation without saying so (FR-TUI-5)."
   "Return the name of the terminal buffer of SESSION."
   (format "*ecc-tui: %s*" (ecc-session-name session)))
 
-(defun ecc-tui--open-vterm (session)
-  "Open SESSION in a vterm buffer and return it.
-The CLI is run as the shell of the buffer rather than typed into one,
-so that leaving it ends the buffer and Emacs can tell (FR-TUI-4)."
-  (unless (require 'vterm nil t)
-    (user-error "vterm is not installed; set `ecc-tui-terminal' to `external'"))
-  (let* ((default-directory (or (ecc-session-cwd session)
-                                (ecc-session-project-root session)
-                                default-directory))
-         (vterm-shell (ecc-tui-shell-command session))
-         (buffer (save-window-excursion (vterm (ecc-tui-buffer-name session)))))
-    (add-hook 'vterm-exit-functions #'ecc-tui--vterm-exited)
-    buffer))
+(defun ecc-tui-directory (session)
+  "Return the directory a terminal for SESSION should start in."
+  (or (ecc-session-cwd session) (ecc-session-project-root session)
+      default-directory))
+
+(defun ecc-tui--open-ghostel (session)
+  "Open SESSION in a ghostel buffer and return (BUFFER . PROCESS).
+The CLI is the process of the buffer, so leaving it ends the buffer
+and Emacs is told without having to ask (FR-TUI-4)."
+  (unless (require 'ghostel nil t)
+    (user-error "ghostel is not installed; set `ecc-tui-terminal' to `external'"))
+  (unless (fboundp 'ghostel-exec)
+    (user-error "This ghostel has no `ghostel-exec'; update it, or set `ecc-tui-terminal' to `external'"))
+  (let* ((name (ecc-tui-buffer-name session))
+         (stale (get-buffer name)))
+    ;; A buffer left over from an earlier hand-off is reused; one that
+    ;; still runs something is not touched.
+    (when (buffer-live-p stale)
+      (when (process-live-p (get-buffer-process stale))
+        (user-error "%s already has a terminal running" name))
+      (kill-buffer stale))
+    (let ((buffer (get-buffer-create name))
+          (arguments (ecc-tui-arguments session)))
+      (with-current-buffer buffer
+        (setq default-directory (ecc-tui-directory session)))
+      ;; Shown before the CLI starts, and selected: ghostel sizes the
+      ;; terminal to the window the buffer is in when it execs, and the
+      ;; point of a hand-off is that the user types in there next.
+      (pop-to-buffer buffer)
+      (with-current-buffer buffer
+        (let ((process (ghostel-exec buffer (car arguments) (cdr arguments))))
+          (unless process
+            (error "ghostel started no process for %s" (ecc-session-name session)))
+          (cons buffer process))))))
 
 (defun ecc-tui--open-external (session)
-  "Open SESSION in an external terminal and return the process."
-  (let ((default-directory (or (ecc-session-cwd session)
-                               (ecc-session-project-root session)
-                               default-directory))
-        (command (ecc-tui-external-command session)))
+  "Open SESSION in an external terminal and return (nil . PROCESS).
+The process is the one that asks the terminal application to open; it
+says nothing about the CLI, which runs in a window of its own, so the
+end of the hand-off is watched for in the session registry instead."
+  (let* ((default-directory (ecc-tui-directory session))
+         (command (ecc-tui-external-command session)))
     (ecc-log (ecc-session-name session) "terminal: %s" command)
-    (start-process-shell-command
-     (format "ecc-tui-%s" (ecc-session-name session)) nil command)))
+    (cons nil (start-process-shell-command
+               (format "ecc-tui-%s" (ecc-session-name session)) nil command))))
 
 ;;;###autoload
 (defun ecc-tui-open (&optional session)
@@ -228,11 +258,18 @@ follows along and the session comes back when the terminal is left."
     (setf (ecc-session-kind session) 'handoff)
     (ecc-tui--put session :seen nil)
     (ecc-tui-follow-start session)
-    (let ((opened (pcase ecc-tui-terminal
-                    ('external (ecc-tui--open-external session))
-                    (_ (ecc-tui--open-vterm session)))))
-      (when (bufferp opened)
-        (ecc-tui--put session :buffer opened)))
+    (let* ((opened (pcase ecc-tui-terminal
+                     ('external (ecc-tui--open-external session))
+                     (_ (ecc-tui--open-ghostel session))))
+           (buffer (car-safe opened))
+           (process (cdr-safe opened)))
+      (when (bufferp buffer)
+        (ecc-tui--put session :buffer buffer))
+      ;; The process of an external terminal is the one that opened the
+      ;; window, not the CLI, so it is not what the hand-off waits on.
+      (when (and (processp process) (not (eq ecc-tui-terminal 'external)))
+        (ecc-tui--put session :process process)
+        (ecc-tui--watch-process session process)))
     (ecc-tui--start-timer session)
     (ecc-render-refresh session)
     (message "%s is in the terminal now; it comes back when you leave it"
@@ -347,28 +384,39 @@ notification can arrive while the CLI is halfway through writing one."
 
 (defun ecc-tui-finished-p (session)
   "Return non-nil when the terminal that had SESSION is gone.
-A vterm buffer answers for itself.  An external terminal is only
-visible in the session registry, so it counts as finished once it has
-been seen there and is there no longer; a terminal that never showed
-up is waited for rather than given up on."
+A terminal inside Emacs answers for itself: its process, or failing
+that its buffer.  Whether the buffer is killed when the process dies
+is the terminal's own setting, so the process is asked first.  An
+external terminal is only visible in the session registry, so it counts
+as finished once it has been seen there and is there no longer; one
+that never showed up is waited for rather than given up on."
   (let* ((state (ecc-tui-state session))
+         (process (plist-get state :process))
          (buffer (plist-get state :buffer)))
     (cond
+     ((processp process) (not (process-live-p process)))
      ((bufferp buffer) (not (buffer-live-p buffer)))
      ((ecc-registry-live-p (ecc-session-id session))
       (ecc-tui--put session :seen t)
       nil)
      (t (and (plist-get state :seen) t)))))
 
-(defun ecc-tui--vterm-exited (buffer &optional _event)
-  "Take back the session whose terminal BUFFER has just ended."
-  (when-let* ((session (seq-find (lambda (session)
-                                   (eq (plist-get (ecc-tui-state session) :buffer)
-                                       buffer))
-                                 (ecc-tui-sessions))))
-    (ecc-tui--put session :buffer nil)
-    (when ecc-tui-return-on-exit
-      (ecc-tui-return session))))
+(defun ecc-tui--watch-process (session process)
+  "Come back to SESSION as soon as PROCESS, its terminal, ends.
+The sentinel the terminal installed is called first: it is what tears
+down the terminal's own timers and kills its buffer."
+  (let ((previous (process-sentinel process))
+        (id (ecc-session-id session)))
+    (set-process-sentinel
+     process
+     (lambda (proc event)
+       (when previous (ignore-errors (funcall previous proc event)))
+       (unless (process-live-p proc)
+         (when-let* ((session (ecc-model-session id)))
+           (when (and (ecc-tui-handoff-p session) ecc-tui-return-on-exit)
+             ;; Out of the sentinel: taking the session back starts a
+             ;; process and draws, and a sentinel is no place for that.
+             (run-at-time 0 nil #'ecc-tui-return session))))))))
 
 ;;;###autoload
 (defun ecc-tui-return (&optional session)
@@ -379,16 +427,23 @@ running keeps the session: resuming it now would branch the
 conversation."
   (interactive)
   (let ((session (or session (ecc-window-resolve-session))))
-    (when (ecc-tui-handoff-p session)
-      (when ecc-tui-follow (ecc-tui-read-new-lines session))
-      (ecc-tui-follow-stop session))
-    (setf (ecc-session-kind session) 'own)
     (cond
-     ((process-live-p (ecc-session-process session)) session)
+     ;; Already back.
+     ((process-live-p (ecc-session-process session))
+      (ecc-tui-follow-stop session)
+      (setf (ecc-session-kind session) 'own)
+      session)
+     ;; Somebody is still writing to this session.  The hand-off is left
+     ;; as it is, so that the watch keeps looking and takes it back once
+     ;; the terminal is really gone (FR-TUI-5).
      ((ecc-registry-live-p (ecc-session-id session))
       (message "%s is still open in a terminal" (ecc-session-name session))
       nil)
      (t
+      (when (ecc-tui-handoff-p session)
+        (when ecc-tui-follow (ecc-tui-read-new-lines session))
+        (ecc-tui-follow-stop session))
+      (setf (ecc-session-kind session) 'own)
       (require 'ecc-session)
       (ecc-session-ensure-buffer session)
       (ecc-proc-start session t)
