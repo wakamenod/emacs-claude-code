@@ -159,7 +159,7 @@ same suffix from one call to the next."
          (list (string (aref ecc-transient--keys index))
                (string-trim
                 (format "%s %s%s" name
-                        (if (member name terminal) "[端末専用] " "")
+                        (if (member name terminal) "[端末UI] " "")
                         (ecc--truncate (cdr command) 48)))
                (ecc-transient-slash-command name))))
      (seq-take commands limit))))

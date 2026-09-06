@@ -72,7 +72,7 @@ message, so Emacs asks for the argument first."
   :group 'ecc)
 
 (defcustom ecc-terminal-slash-commands '("doctor" "color" "reload-plugins")
-  "Commands taken to be terminal-only until the CLI says otherwise.
+  "Commands taken to belong to the terminal client until the CLI says otherwise.
 The real list is `terminal_slash_commands' of system/init, but init does
 not arrive until the first turn of a session has been sent
 \(docs/verified.md), so a session that has not spoken yet would have no
@@ -83,9 +83,13 @@ about a brand new session."
   :group 'ecc)
 
 (defcustom ecc-prompt-warn-terminal-commands t
-  "Non-nil says so when a command only the terminal client can run (FR-INP-4).
-The command is sent anyway: the CLI answers with a message of its own
-rather than doing anything harmful."
+  "Non-nil says so when a command belongs to the terminal client (FR-INP-4).
+What is terminal-only about these is their effect, not the sending: the
+CLI accepts them from a headless client and answers, but the answer is
+about something Emacs does not have, such as the colour of the prompt
+bar of the terminal client.  So the command is sent as it was typed and
+the reply is shown; only a note in the echo area says not to expect
+anything to happen here."
   :type 'boolean
   :group 'ecc)
 
@@ -329,7 +333,7 @@ newest answer stands in for a session that has not heard one yet.")
 (add-hook 'ecc-session-init-hook #'ecc-prompt-note-terminal-commands)
 
 (defun ecc-prompt-terminal-commands (session)
-  "Return the commands of SESSION that only the terminal client runs.
+  "Return the commands of SESSION that belong to the terminal client.
 The CLI names them in system/init as terminal_slash_commands (FR-INP-4);
 until that arrives, the last list any session heard is used, and failing
 that `ecc-terminal-slash-commands'."
@@ -380,7 +384,8 @@ A command only the terminal client of SESSION can run is reported
      (t
       (when (and ecc-prompt-warn-terminal-commands
                  (member command (ecc-prompt-terminal-commands session)))
-        (message "%s は端末専用のコマンドです。CLI の返答をそのまま表示します" command))
+        (message "%s は端末 UI 用のコマンドです。Emacs 側では効果が見えませんが、返答はそのまま表示します"
+                 command))
       (if (and (assoc command ecc-prompt-interactive-commands)
                (string-empty-p (or (ecc-prompt-command-argument text) "")))
           (if-let* ((argument (ecc-prompt-read-argument command)))
@@ -484,7 +489,7 @@ which is where the CLI looks for a command."
                 :annotation-function
                 (lambda (candidate)
                   (let ((description (cdr (assoc candidate commands))))
-                    (concat (when (member candidate terminal) "  端末専用")
+                    (concat (when (member candidate terminal) "  端末UI")
                             (unless (or (null description)
                                         (string-empty-p description))
                               (concat "  " description)))))))))))

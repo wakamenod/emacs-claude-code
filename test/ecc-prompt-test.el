@@ -124,14 +124,14 @@
       (insert "/do")
       (let* ((capf (ecc-prompt-capf))
              (annotate (plist-get (nthcdr 3 capf) :annotation-function)))
-        (should (string-search "端末専用" (funcall annotate "/doctor")))
-        (should-not (string-search "端末専用" (funcall annotate "/context")))))
+        (should (string-search "端末UI" (funcall annotate "/doctor")))
+        (should-not (string-search "端末UI" (funcall annotate "/context")))))
     ;; It is still sent: the CLI answers it with a message of its own.
     (let ((messages nil))
       (cl-letf (((symbol-function 'message)
                  (lambda (format &rest args) (push (apply #'format format args) messages))))
         (should (equal (ecc-prompt-prepare-command session "/doctor") "/doctor")))
-      (should (string-search "端末専用" (car (last messages)))))))
+      (should (string-search "端末 UI" (car (last messages)))))))
 
 (ert-deftest ecc-prompt-test-terminal-commands-before-init ()
   "The annotation is there before the first turn, too (FR-INP-4).
