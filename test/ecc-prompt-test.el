@@ -118,6 +118,7 @@
   "A command only the terminal client runs says so (FR-INP-4)."
   (ecc-test-with-fake-session session
     (ecc-prompt-test--init session)
+    (ecc-prompt-note-terminal-commands session)
     (should (equal (ecc-prompt-terminal-commands session) '("/doctor" "/color")))
     (ecc-prompt-test--in-buffer session
       (insert "/do")
@@ -131,6 +132,27 @@
                  (lambda (format &rest args) (push (apply #'format format args) messages))))
         (should (equal (ecc-prompt-prepare-command session "/doctor") "/doctor")))
       (should (string-search "端末専用" (car (last messages)))))))
+
+(ert-deftest ecc-prompt-test-terminal-commands-before-init ()
+  "The annotation is there before the first turn, too (FR-INP-4).
+system/init does not arrive until a prompt has been sent, so a session
+that has not spoken yet falls back to what the CLI said last, and
+failing that to the setting."
+  (ecc-test-with-fake-session session
+    (let ((ecc-prompt--terminal-commands nil)
+          (ecc-terminal-slash-commands '("doctor" "color")))
+      (should-not (ecc-session-init session))
+      (should (equal (ecc-prompt-terminal-commands session) '("/doctor" "/color")))
+      ;; What a session was told replaces the fallback everywhere.
+      (setf (ecc-session-init session)
+            '((terminal_slash_commands . ["doctor" "color" "reload-plugins"])))
+      (ecc-dispatch session '((type . "system") (subtype . "init")
+                              (terminal_slash_commands . ["doctor" "color" "reload-plugins"])))
+      (should (equal ecc-prompt--terminal-commands
+                     '("doctor" "color" "reload-plugins")))
+      (ecc-test-with-fake-session fresh
+        (should (equal (ecc-prompt-terminal-commands fresh)
+                       '("/doctor" "/color" "/reload-plugins")))))))
 
 (ert-deftest ecc-prompt-test-interactive-command-asks-for-its-argument ()
   "A command that opens a menu in the terminal is asked about (FR-INP-5)."

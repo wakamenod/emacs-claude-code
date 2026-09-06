@@ -71,6 +71,17 @@ message, so Emacs asks for the argument first."
   :type '(repeat string)
   :group 'ecc)
 
+(defcustom ecc-terminal-slash-commands '("doctor" "color" "reload-plugins")
+  "Commands taken to be terminal-only until the CLI says otherwise.
+The real list is `terminal_slash_commands' of system/init, but init does
+not arrive until the first turn of a session has been sent
+\(docs/verified.md), so a session that has not spoken yet would have no
+annotation to show (FR-INP-4).  Whatever init reports replaces this for
+the rest of the Emacs session, so the list here only has to be right
+about a brand new session."
+  :type '(repeat string)
+  :group 'ecc)
+
 (defcustom ecc-prompt-warn-terminal-commands t
   "Non-nil says so when a command only the terminal client can run (FR-INP-4).
 The command is sent anyway: the CLI answers with a message of its own
@@ -302,16 +313,34 @@ description; the command list of system/init fills in the rest."
         (push (cons (concat "/" name) "") commands)))
     (nreverse commands)))
 
+(defvar ecc-prompt--terminal-commands nil
+  "The terminal_slash_commands the CLI reported most recently.
+The list belongs to the CLI rather than to one conversation, so the
+newest answer stands in for a session that has not heard one yet.")
+
+(defun ecc-prompt-note-terminal-commands (session)
+  "Remember the terminal_slash_commands SESSION was just told about."
+  (let ((reported (alist-get 'terminal_slash_commands
+                             (ecc-session-init session))))
+    (when (and reported (> (length reported) 0))
+      (setq ecc-prompt--terminal-commands
+            (seq-filter #'stringp (append reported nil))))))
+
+(add-hook 'ecc-session-init-hook #'ecc-prompt-note-terminal-commands)
+
 (defun ecc-prompt-terminal-commands (session)
   "Return the commands of SESSION that only the terminal client runs.
-The CLI names them in system/init as terminal_slash_commands (FR-INP-4)."
-  (let (names)
-    (seq-doseq (name (or (alist-get 'terminal_slash_commands
-                                    (ecc-session-init session))
-                         []))
-      (when (stringp name)
-        (push (concat "/" name) names)))
-    (nreverse names)))
+The CLI names them in system/init as terminal_slash_commands (FR-INP-4);
+until that arrives, the last list any session heard is used, and failing
+that `ecc-terminal-slash-commands'."
+  (let* ((reported (alist-get 'terminal_slash_commands
+                              (ecc-session-init session)))
+         (names (if (and reported (> (length reported) 0))
+                    (append reported nil)
+                  (or ecc-prompt--terminal-commands
+                      ecc-terminal-slash-commands))))
+    (mapcar (lambda (name) (concat "/" name))
+            (seq-filter #'stringp names))))
 
 (defun ecc-prompt-command-name (text)
   "Return the slash command TEXT starts with, or nil."
