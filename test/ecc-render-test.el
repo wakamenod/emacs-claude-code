@@ -540,6 +540,40 @@ follow have a section to grow.  Returns the remaining lines."
                           (total_cost_usd . 0.01) (duration_ms . 100) (num_turns . 1)))
   (ecc-render-flush session))
 
+(ert-deftest ecc-render-test-code-block-reaches-the-buffer ()
+  "A fenced block is coloured by its mode and its fences are out of sight.
+The colouring of FR-OUT-15 has to survive the trip from
+`ecc-markdown-fontify\=' into the session buffer, and the fence lines
+have to be there for whatever searches the text while showing nothing
+\(FR-OUT-8 as revised by the phase 9 redesign)."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "show me code")
+    (ecc-dispatch session
+                  '((type . "assistant") (uuid . "u9")
+                    (message . ((role . "assistant")
+                                (content . [((type . "text")
+                                             (text . "Here:\n\n```elisp\n(defun f () (message \"hi\"))\n```\n"))])))))
+    (ecc-render-flush session)
+    (with-current-buffer (ecc-session-buffer session)
+      (goto-char (point-min))
+      (should (search-forward "defun" nil t))
+      (let ((faces (get-text-property (match-beginning 0) 'face)))
+        (should (memq 'font-lock-keyword-face (if (listp faces) faces (list faces))))
+        (should (memq 'ecc-markdown-code-face (if (listp faces) faces (list faces)))))
+      ;; A string further in is coloured as well, so the whole block
+      ;; came through and not just its first token.
+      (goto-char (point-min))
+      (should (search-forward "\"hi\"" nil t))
+      (let ((faces (get-text-property (match-beginning 0) 'face)))
+        (should (memq 'font-lock-string-face (if (listp faces) faces (list faces)))))
+      ;; The fence is in the buffer and hidden, newline and all.
+      (goto-char (point-min))
+      (should (search-forward "```elisp" nil t))
+      (let ((bol (line-beginning-position)))
+        (should (eq (get-text-property bol 'invisible) 'ecc-markup))
+        (should (eq (get-text-property (line-end-position) 'invisible) 'ecc-markup))))))
+
 (ert-deftest ecc-render-test-turn-movement-and-timeline ()
   "Turns can be walked and picked by their prompt (FR-OUT-14 a, d)."
   (ecc-test-with-fake-session session

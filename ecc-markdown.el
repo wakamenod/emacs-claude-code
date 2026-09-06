@@ -235,7 +235,10 @@ symbols are hidden by the ecc-markup invisible property when
             (cond
              ((looking-at ecc-markdown-fence-regexp)
               (ecc-markdown--add-face start end 'ecc-markdown-code-face)
-              (ecc-markdown--hide-markup (match-beginning 1) (match-end 1))
+              ;; The fence says nothing a reader who can see the block
+              ;; needs, so the whole line goes, the newline that ends it
+              ;; included: what is left is the code.
+              (ecc-markdown--hide-markup start (min (point-max) (1+ end)))
               (if body-start
                   (progn
                     (ecc-markdown--fontify-code body-start start language)

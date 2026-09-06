@@ -185,15 +185,47 @@ Each entry is (KIND . ID); see `ecc-render--apply-effects'.")
   "Return STRING with newlines squeezed out, for use in a heading."
   (replace-regexp-in-string "[ \t\n\r]+" " " (or string "")))
 
+(defun ecc-render--hidden-line-p (line)
+  "Return non-nil when every character of LINE is hidden markup.
+A fence line is such a line: `ecc-markdown-fontify\=' hides it whole."
+  (and (> (length line) 0)
+       (not (text-property-not-all 0 (length line) 'invisible 'ecc-markup line))))
+
 (defun ecc-render--insert-lines (text prefix face)
   "Insert TEXT in FACE, putting PREFIX in front of every line.
 Faces TEXT already carries win over FACE, which is how Markdown and
-diff colouring survive."
+diff colouring survive.
+
+A line the Markdown code hid whole, a fence, keeps its place in the
+buffer so that whatever searches the text still finds it, but the
+indentation put in front of it and the newline that ends it are hidden
+with it; drawn plainly they would leave an empty row where the fence
+was."
   (let ((body (string-trim-right (or text "") "[\n]+")))
     (dolist (line (split-string body "\n"))
-      (let ((string (concat prefix line)))
+      (let ((hidden (ecc-render--hidden-line-p line))
+            (string (concat prefix line)))
         (add-face-text-property 0 (length string) face t string)
-        (insert string "\n")))))
+        (when hidden
+          (put-text-property 0 (length string) 'invisible 'ecc-markup string))
+        (insert string)
+        (insert (if hidden (propertize "\n" 'invisible 'ecc-markup) "\n"))))))
+
+(defun ecc-render--insert-band (text pad face)
+  "Insert TEXT as the band of something the user said, indented by PAD.
+The mark opens the first line only and the rest line up under it, and
+`wrap-prefix\=' keeps a line that wraps lined up as well.  FACE carries
+a background that extends past the end of the line, so that the band
+spans the window rather than the text."
+  (let* ((body (string-trim-right (or text "") "[\n]+"))
+         (indent (concat pad (make-string (string-width ecc-render-user-mark) ?\s)))
+         (first t))
+    (dolist (line (split-string body "\n"))
+      (let ((string (concat (if first (concat pad ecc-render-user-mark) indent) line)))
+        (add-face-text-property 0 (length string) face t string)
+        (put-text-property 0 (length string) 'wrap-prefix indent string)
+        (insert string "\n")
+        (setq first nil)))))
 
 (defun ecc-render--stream-string (text prefix)
   "Return TEXT with PREFIX after every newline, ready to be appended."
@@ -1163,9 +1195,8 @@ model."
         (ecc-render--insert-owned
          node depth
          (lambda ()
-           (ecc-render--insert-lines (ecc-model-node-get node 'text)
-                                     (concat pad ecc-render-user-mark)
-                                     'ecc-user-face)))
+           (ecc-render--insert-band (ecc-model-node-get node 'text)
+                                    pad 'ecc-user-face)))
       (ecc-render--insert-owned
        node depth
        (lambda ()
@@ -1253,8 +1284,7 @@ that the movement commands stop once per turn rather than twice."
             ;; region and the context Emacs attached (FR-CTX-1,
             ;; FR-INP-8), which are worth the same colouring as the
             ;; reply (FR-OUT-15).
-            (ecc-render--insert-lines (ecc-markdown-fontify prompt)
-                                      ecc-render-user-mark 'ecc-user-face)
+            (ecc-render--insert-band (ecc-markdown-fontify prompt) "" 'ecc-user-face)
             ;; The band stands at the depth of the turn, not of the
             ;; turn's children: it is the heading of the turn, and the
             ;; movement commands lean on that to tell a turn's children

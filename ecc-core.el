@@ -215,8 +215,14 @@ the one it stands next to, so a face is not broken in the middle."
 ;; every face below is applied when the text is inserted.
 
 (defface ecc-user-face
-  '((t :inherit font-lock-keyword-face))
-  "Face for the margin marker and text of a prompt sent by the user."
+  '((((background dark))  :extend t :background "#23282e")
+    (((background light)) :extend t :background "#eceff4")
+    (t :inherit font-lock-keyword-face))
+  "Face for the band a prompt sent by the user is drawn in.
+Only the background is set, so that the colour the theme gives the
+text is what is read, and it extends past the end of the line so that
+the band spans the window however wide it is.  A display that names no
+background falls back to a colour for the text instead."
   :group 'ecc)
 
 (defface ecc-assistant-face
