@@ -109,7 +109,7 @@ still fenced as what it is."
     (if (<= (length lines) ecc-context-max-lines)
         text
       (concat (string-join (seq-take lines ecc-context-max-lines) "\n")
-              (format "\n… （残り %d 行は省略）"
+              (format "\n… (%d more lines omitted)"
                       (- (length lines) ecc-context-max-lines))))))
 
 (cl-defun ecc-context-capture (&key buffer region)
@@ -154,7 +154,7 @@ positions to take instead of the active one."
 (defun ecc-context-format (context)
   "Return CONTEXT as the quote block appended to a prompt (FR-CTX-2)."
   (when context
-    (concat "\n\n---\n現在のコンテキスト: " (ecc-context-location context)
+    (concat "\n\n---\nCurrent context: " (ecc-context-location context)
             (when-let* ((text (plist-get context :text)))
               (format "\n```%s\n%s\n```" (plist-get context :language) text)))))
 
@@ -252,8 +252,8 @@ screen."
   (let* ((session (or session (ecc-window-resolve-session current-prefix-arg)))
          (outcome (ecc-proc-send-prompt session text)))
     (if (eq outcome 'sent)
-        (message "%s に送信しました" (ecc-session-name session))
-      (message "%s: 実行中のターンがあります。キューの %d 件目に入れました"
+        (message "Sent to %s" (ecc-session-name session))
+      (message "%s: a turn is running; queued at position %d"
                (ecc-session-name session) outcome))
     session))
 
@@ -263,14 +263,14 @@ screen."
 A prefix argument asks which session to send to."
   (interactive (list (read-string "Claude: ")))
   (when (string-empty-p (string-trim text))
-    (user-error "プロンプトが空です"))
+    (user-error "Prompt is empty"))
   (ecc-context--send text session))
 
 ;;;###autoload
 (defun ecc-send-with-context (text &optional session)
   "Send TEXT with the file and line of the current buffer (FR-CTX-5 b).
 SESSION defaults to the one this buffer resolves to (FR-WIN-4)."
-  (interactive (list (read-string "Claude（コンテキスト付き）: ")))
+  (interactive (list (read-string "Claude (with context): ")))
   (ecc-context--send (concat text (or (ecc-context-block) "")) session))
 
 ;;;###autoload
@@ -280,7 +280,7 @@ BEG and END default to the region.  INSTRUCTION is asked for with a
 prefix argument and put before the quoted code."
   (interactive
    (let ((instruction (when current-prefix-arg
-                        (read-string "指示: "))))
+                        (read-string "Instruction: "))))
      (if (use-region-p)
          (list (region-beginning) (region-end) instruction)
        (list (point-min) (point-max) instruction))))
@@ -288,21 +288,21 @@ prefix argument and put before the quoted code."
          (context (ecc-context-capture :buffer buffer :region (cons beg end)))
          (instruction (if (and instruction (not (string-empty-p (string-trim instruction))))
                           (string-trim instruction)
-                        "次のコードについて答えてください。")))
+                        "Please answer the following about this code.")))
     (ecc-context--send (concat instruction (ecc-context-format context)))))
 
 ;;;###autoload
 (defun ecc-send-buffer-file (&optional instruction)
   "Send the file of the current buffer as an @path reference (FR-CTX-5 d).
 INSTRUCTION is asked for with a prefix argument."
-  (interactive (list (when current-prefix-arg (read-string "指示: "))))
+  (interactive (list (when current-prefix-arg (read-string "Instruction: "))))
   (let ((file (or (buffer-file-name)
-                  (user-error "このバッファはファイルを訪れていません"))))
-    (when (and (buffer-modified-p) (y-or-n-p "保存してから送りますか? "))
+                  (user-error "This buffer is not visiting a file"))))
+    (when (and (buffer-modified-p) (y-or-n-p "Save the buffer before sending? "))
       (save-buffer))
     (ecc-context--send
      (string-trim (format "%s @%s"
-                          (or instruction "次のファイルを見てください。")
+                          (or instruction "Please look at the following file.")
                           (ecc-context-path))))
     file))
 
@@ -311,11 +311,11 @@ INSTRUCTION is asked for with a prefix argument."
   "Ask Claude to fix the diagnostic at point (FR-CTX-5 e, FR-CTX-4).
 The diagnostics on the current line are quoted with the code around
 them.  INSTRUCTION replaces the default request when given."
-  (interactive (list (when current-prefix-arg (read-string "指示: "))))
+  (interactive (list (when current-prefix-arg (read-string "Instruction: "))))
   (let* ((line-beg (line-beginning-position))
          (line-end (line-end-position))
          (diagnostics (or (ecc-context-diagnostics nil line-beg line-end)
-                          (user-error "この行に診断はありません")))
+                          (user-error "No diagnostics on this line")))
          (context (ecc-context-capture
                    :buffer (current-buffer)
                    :region (cons (save-excursion
@@ -327,7 +327,7 @@ them.  INSTRUCTION replaces the default request when given."
                                    (forward-line 4)
                                    (point))))))
     (ecc-context--send
-     (concat (or instruction "次のエラーを直してください。")
+     (concat (or instruction "Please fix the following error.")
              "\n\n```\n" (string-join diagnostics "\n") "\n```"
              (ecc-context-format context)))))
 

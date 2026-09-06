@@ -47,8 +47,8 @@
           (ecc-model-finish-turn session '((duration_ms . 1500)))
           (should (equal (mapcar #'car seen) '(request turn-finished)))
           (should (string-search "Write" (cdr (assq 'request seen))))
-          (should (string-search "完了" (cdr (assq 'turn-finished seen))))
-          (should (string-search "1.5 秒" (cdr (assq 'turn-finished seen)))))
+          (should (string-search "done" (cdr (assq 'turn-finished seen))))
+          (should (string-search "1.5s" (cdr (assq 'turn-finished seen)))))
       (ecc-notify-mode -1))))
 
 (ert-deftest ecc-notify-test-only-an-abnormal-exit-is-announced ()

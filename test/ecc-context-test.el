@@ -57,7 +57,7 @@ VAR is bound to the file name."
     (let* ((context (ecc-context-capture :buffer (current-buffer)
                                          :region (cons (point-min) (point-max))))
            (block (ecc-context-format context)))
-      (should (string-prefix-p "\n\n---\n現在のコンテキスト: " block))
+      (should (string-prefix-p "\n\n---\nCurrent context: " block))
       (should (string-search (format "`%s` L1-L2" (file-name-nondirectory file))
                              block))
       (should (string-search "```python\na = 1\nb = 2\n```" block)))
@@ -84,7 +84,7 @@ VAR is bound to the file name."
       (let ((context (ecc-context-capture :buffer (current-buffer)
                                           :region (cons (point-min) (point-max)))))
         (should (string-prefix-p "1\n2\n3" (plist-get context :text)))
-        (should (string-search "省略" (plist-get context :text)))))))
+        (should (string-search "lines omitted" (plist-get context :text)))))))
 
 (ert-deftest ecc-context-test-file-range ()
   "A line range is read out of the file, or out of its buffer (FR-INP-8)."
@@ -153,7 +153,7 @@ VAR is bound to the file name."
       (ecc-send-with-context "これは何?"))
     (let ((text (ecc-context-test--sent-text)))
       (should (string-prefix-p "これは何?" text))
-      (should (string-search "現在のコンテキスト: " text))
+      (should (string-search "Current context: " text))
       (should (string-search " L2" text)))))
 
 (ert-deftest ecc-context-test-send-region ()

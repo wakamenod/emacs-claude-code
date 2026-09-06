@@ -233,7 +233,7 @@ prompt that follows it or by the end of the page."
   (when (> count 0)
     (ecc-model-add-node session :type 'system :status 'done
                         :data (list (cons 'kind 'sidechain)
-                                    (cons 'text (format "サイドチェーン %d 行を省略"
+                                    (cons 'text (format "%d sidechain lines omitted"
                                                         count))))))
 
 (defun ecc-history--note-turn-duration (session message)
@@ -349,7 +349,7 @@ is drawn again from the top (FR-HIST-1).  Returns the number read."
          (file (ecc-history-file (ecc-session-id session))))
     (cond
      ((or (null offset) (null file) (<= offset 0))
-      (message "これ以上古いメッセージはありません")
+      (message "No older messages")
       0)
      (t
       (let* ((lines (ecc-history-lines file))
@@ -370,7 +370,7 @@ is drawn again from the top (FR-HIST-1).  Returns the number read."
                 (append (ecc-session-turns session) existing)))
         (setf (ecc-session-history-offset session) (ecc-history--offset starts from))
         (ecc-history--redraw session)
-        (message "古い %d ターンを読み込みました" made)
+        (message "Read %d older turns" made)
         made)))))
 
 (defun ecc-history--redraw (session)
@@ -528,10 +528,10 @@ same recording, and the conversation quietly grows a second branch
 this asks rather than deciding, and names the process."
   (when-let* ((entry (ecc-registry-session (ecc-session-id session))))
     (unless (yes-or-no-p
-             (format "%s は pid %s が実行中です。続けると会話が分岐します。それでも resume しますか? "
+             (format "%s is running as pid %s; resuming branches the conversation.  Resume anyway? "
                      (or (alist-get 'name entry) (ecc-session-name session))
                      (or (alist-get 'pid entry) "?")))
-      (user-error "中止しました"))))
+      (user-error "Aborted"))))
 
 (defun ecc-history-resume (session &optional fork)
   "Start SESSION again, keeping what the recording said (FR-HIST-3).
@@ -540,7 +540,7 @@ appended to them.  FORK asks the CLI for a new conversation branching
 off this one (FR-SES-4).  A session whose process is still alive is
 never resumed: the CLI would run twice on the same recording."
   (when (process-live-p (ecc-session-process session))
-    (user-error "%s はまだ動いています" (ecc-session-name session)))
+    (user-error "%s is still running" (ecc-session-name session)))
   (ecc-history--check-not-running session)
   (when (and (null (ecc-session-turns session))
              (ecc-history-file (ecc-session-id session)))

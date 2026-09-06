@@ -71,16 +71,16 @@ On macOS this is the name of a system sound such as \"Glass\"."
 (defun ecc-notify-turn-text (session turn)
   "Return the line announcing that TURN of SESSION finished."
   (let ((result (ecc-turn-result turn)))
-    (format "%s: 完了%s"
+    (format "%s: done%s"
             (ecc-session-name session)
             (if-let* ((duration (ecc-model-turn-duration turn)))
-                (format "（%.1f 秒%s）" duration
-                        (if (and result (alist-get 'is_error result)) "・エラー" ""))
+                (format " (%.1fs%s)" duration
+                        (if (and result (alist-get 'is_error result)) ", error" ""))
               ""))))
 
 (defun ecc-notify-request-text (session request)
   "Return the line announcing REQUEST of SESSION."
-  (format "%s: %s の確認待ち"
+  (format "%s: waiting on %s"
           (ecc-session-name session)
           (or (ecc-request-display-name request)
               (ecc-request-tool-name request)
@@ -168,7 +168,7 @@ not worth a notification."
   (when (and (integerp status) (/= status 0)
              (not (ecc-proc-stopped-on-request-p session)))
     (ecc-notify session 'exited
-                (format "%s: CLI が code %s で終了しました"
+                (format "%s: the CLI exited with code %s"
                         (ecc-session-name session) status))))
 
 (define-minor-mode ecc-notify-mode

@@ -124,14 +124,14 @@
       (insert "/do")
       (let* ((capf (ecc-prompt-capf))
              (annotate (plist-get (nthcdr 3 capf) :annotation-function)))
-        (should (string-search "端末UI" (funcall annotate "/doctor")))
-        (should-not (string-search "端末UI" (funcall annotate "/context")))))
+        (should (string-search "terminal UI" (funcall annotate "/doctor")))
+        (should-not (string-search "terminal UI" (funcall annotate "/context")))))
     ;; It is still sent: the CLI answers it with a message of its own.
     (let ((messages nil))
       (cl-letf (((symbol-function 'message)
                  (lambda (format &rest args) (push (apply #'format format args) messages))))
         (should (equal (ecc-prompt-prepare-command session "/doctor") "/doctor")))
-      (should (string-search "端末 UI" (car (last messages)))))))
+      (should (string-search "terminal UI" (car (last messages)))))))
 
 (ert-deftest ecc-prompt-test-terminal-commands-before-init ()
   "The annotation is there before the first turn, too (FR-INP-4).
@@ -268,7 +268,7 @@ failing that to the setting."
                     ((symbol-function 'flymake-diagnostic-text) (lambda (_) "bad")))
             (let ((text (ecc-prompt-expand-references "直して @diagnostics" source)))
               (should (string-search "L1: bad" text))
-              (should (string-search "診断: " text)))))
+              (should (string-search "Diagnostics: " text)))))
       (kill-buffer source))))
 
 (ert-deftest ecc-prompt-test-at-completion ()
@@ -281,7 +281,7 @@ failing that to the setting."
              (candidates (all-completions "@re" (nth 2 capf))))
         (should (= (nth 0 capf) (- (point) 3)))
         (should (member "@region" candidates))
-        (should (string-search "選択範囲"
+        (should (string-search "Send the region"
                                (funcall (plist-get (nthcdr 3 capf)
                                                    :annotation-function)
                                         "@region")))))))
@@ -338,14 +338,14 @@ failing that to the setting."
               (ecc-prompt-test--in-buffer session
                 (insert "これは何?")
                 (ecc-prompt-send)
-                (should-not (string-search "現在のコンテキスト"
+                (should-not (string-search "Current context"
                                            (ecc-test-sent-text 0)))
                 (ecc-dispatch session '((type . "result") (subtype . "success")))
                 (ecc-prompt-toggle-context)
                 (should ecc-prompt--attach-context)
                 (insert "これは何?")
                 (ecc-prompt-send)
-                (should (string-search "現在のコンテキスト"
+                (should (string-search "Current context"
                                        (ecc-test-sent-text 1))))))
         (kill-buffer source)))))
 

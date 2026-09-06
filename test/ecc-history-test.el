@@ -205,7 +205,7 @@ result message to carry it (FR-HIST-2)."
       (let ((note (car (last (ecc-turn-children
                               (car (ecc-session-turns session)))))))
         (should (eq 'sidechain (ecc-model-node-get note 'kind)))
-        (should (string-search "1 行" (ecc-model-node-get note 'text)))))))
+        (should (string-search "1 sidechain" (ecc-model-node-get note 'text)))))))
 
 (ert-deftest ecc-history-test-replay-touches-nothing-outside ()
   "A replay does not revert a buffer, fill the Inbox or say a session died."
@@ -234,7 +234,7 @@ result message to carry it (FR-HIST-2)."
     (ecc-session-ensure-buffer session)
     (ecc-history-load session 2 ecc-history-test-file)
     (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
-      (should (string-search "古いメッセージを読み込む" text))
+      (should (string-search "Load older messages" text))
       (should (ecc-test-snapshot "history" text)))))
 
 (ert-deftest ecc-history-test-button-is-gone-when-all-is-read ()
@@ -242,7 +242,7 @@ result message to carry it (FR-HIST-2)."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (ecc-history-load session nil ecc-history-test-file)
-    (should-not (string-search "古いメッセージを読み込む"
+    (should-not (string-search "Load older messages"
                                (ecc-test-buffer-string
                                 (ecc-session-buffer session))))))
 

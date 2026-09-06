@@ -133,7 +133,7 @@ and resuming it asks first (FR-TUI-5)."
           (push (cons (format "%-28s  %-10s %s"
                               (ecc--truncate (ecc-session-name session) 28)
                               (if (process-live-p (ecc-session-process session))
-                                  "実行中" "この Emacs")
+                                  "running" "in this Emacs")
                               (abbreviate-file-name
                                (or (ecc-session-cwd session) "")))
                       id)
@@ -193,10 +193,10 @@ a sentinel is no place to ask a question or start a process."
 (defun ecc-offer-resume-now (session status)
   "Ask whether to resume SESSION, which stopped with STATUS (FR-SES-7)."
   (if (or (eq ecc-resume-on-abnormal-exit 'auto)
-          (y-or-n-p (format "%s が code %s で終了しました。resume しますか? "
+          (y-or-n-p (format "%s exited with code %s.  Resume it? "
                             (ecc-session-name session) status)))
       (ecc-resume session)
-    (message "%s: R または M-x ecc-resume で再開できます"
+    (message "%s: R, or M-x ecc-resume, starts it again"
              (ecc-session-name session))))
 
 (add-hook 'ecc-session-exited-hook #'ecc--offer-resume)
@@ -216,7 +216,7 @@ a sentinel is no place to ask a question or start a process."
                         (ecc-session-stream-buffer session)))
     (when (buffer-live-p buffer)
       (kill-buffer buffer)))
-  (message "%s を終了しました" (ecc-session-name session)))
+  (message "Stopped %s" (ecc-session-name session)))
 
 (provide 'ecc)
 

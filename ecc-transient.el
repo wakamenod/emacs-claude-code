@@ -63,7 +63,7 @@ is not where a prompt is written."
   (interactive)
   (let ((session (ecc-menu-session)))
     (ecc-proc-interrupt session)
-    (message "%s: 割り込みを送りました" (ecc-session-name session))))
+    (message "%s: interrupt sent" (ecc-session-name session))))
 
 ;;;###autoload
 (defun ecc-set-permission-mode (mode)
@@ -74,7 +74,7 @@ is not where a prompt is written."
                           nil t)))
   (let ((session (ecc-menu-session)))
     (ecc-proc-set-permission-mode session mode)
-    (message "%s: %s に切り替えます" (ecc-session-name session) mode)))
+    (message "%s: switching to %s" (ecc-session-name session) mode)))
 
 ;;;###autoload
 (defun ecc-set-model (model)
@@ -142,7 +142,7 @@ same suffix from one call to the next."
                                (ecc-prompt-read-argument name)))
                    (text (if argument (concat name " " argument) name)))
               (ecc-proc-send-prompt session text)
-              (message "%s に %s を送りました" (ecc-session-name session) text)))
+              (message "Sent %s to %s" text (ecc-session-name session))))
           (format "Send the slash command %s to the session at hand." name))
         (puthash name symbol ecc-transient--slash-commands)
         symbol)))
@@ -159,7 +159,7 @@ same suffix from one call to the next."
          (list (string (aref ecc-transient--keys index))
                (string-trim
                 (format "%s %s%s" name
-                        (if (member name terminal) "[端末UI] " "")
+                        (if (member name terminal) "[terminal UI] " "")
                         (ecc--truncate (cdr command) 48)))
                (ecc-transient-slash-command name))))
      (seq-take commands limit))))

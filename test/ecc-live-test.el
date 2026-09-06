@@ -508,7 +508,7 @@ records and not from git."
               (with-current-buffer (ecc-review-message-buffer-name session)
                 (let ((text (buffer-string)))
                   (should (string-prefix-p ecc-review-header text))
-                  (should (string-search "## farewell.txt  L1-L1\n```diff\n@@ -1 +1 @@\n-bye\n+ciao\n```\nコメント: Use the word adios instead of ciao." text))
+                  (should (string-search "## farewell.txt  L1-L1\n```diff\n@@ -1 +1 @@\n-bye\n+ciao\n```\nComment: Use the word adios instead of ciao." text))
                   (should (string-search "## greeting.txt  L1-L1\n" text)))
                 (ecc-review-message-send)))
             (should-not (buffer-live-p review))

@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
-# 実 CLI に数ターン会話させ、~/.claude/projects に残る jsonl を fixture として
-# 取り込む（フェーズ 5 / FR-HIST-1〜3 のリプレイテスト用）。
+# Let the real CLI talk for a few turns and take the jsonl it leaves in
+# ~/.claude/projects as a fixture (for the replay tests of phase 5 /
+# FR-HIST-1..3).
 #
 #   scripts/record-history.sh --out test/fixtures/history-session.jsonl \
 #       --prompt "hello" --prompt "hi.txt を作って"
 #
-# record-fixture.sh と違い --no-session-persistence を付けない。履歴ファイルが
-# 書かれないと意味が無いため。作業ディレクトリは毎回作り直す一時ディレクトリで、
-# 記録後に消す。開発ルール（CLAUDE.md）どおり --model haiku と --max-budget-usd
-# を必ず付け、emacs-gravity の hooks を --settings で止める。
+# Unlike record-fixture.sh this does not pass --no-session-persistence:
+# without the history file there is nothing to record.  The working
+# directory is a fresh temporary one, removed after the recording.  As the
+# development rules (CLAUDE.md) require, --model haiku and --max-budget-usd
+# are always passed, and the emacs-gravity hooks are turned off with
+# --settings.
 set -euo pipefail
 exec python3 - "$@" <<'EOF'
 import argparse, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time, uuid
@@ -21,14 +24,14 @@ ap.add_argument("--disable-plugin", action="append",
                 default=["emacs-bridge@emacs-gravity-marketplace"])
 ap.add_argument("--model", default="haiku")
 ap.add_argument("--budget", default="0.5")
-ap.add_argument("--keep-cwd", action="store_true", help="作業ディレクトリを消さない")
+ap.add_argument("--keep-cwd", action="store_true", help="keep the working directory")
 args = ap.parse_args()
 
 session_id = str(uuid.uuid4())
 cwd = tempfile.mkdtemp(prefix="ecc-history-")
 projects = pathlib.Path.home() / ".claude" / "projects"
-# ディレクトリ名は cwd（シンボリックリンク解決済み）の英数字とハイフン以外を
-# すべて - に置き換えたもの（docs/verified.md）。
+# The directory name is the cwd (with symlinks resolved) with everything
+# but letters, digits and hyphens replaced by - (docs/verified.md).
 cwd = os.path.realpath(cwd)
 encoded = re.sub(r"[^A-Za-z0-9-]", "-", cwd.rstrip("/"))
 
@@ -84,7 +87,7 @@ src = projects / encoded / f"{session_id}.jsonl"
 if not src.exists():
     hits = list(projects.glob(f"*/{session_id}.jsonl"))
     if not hits:
-        sys.exit(f"履歴ファイルが見つからない: {src}")
+        sys.exit(f"history file not found: {src}")
     src = hits[0]
 os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
 shutil.copyfile(src, args.out)

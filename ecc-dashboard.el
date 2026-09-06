@@ -261,9 +261,9 @@ it was built from are not, so the list is copied (docs/verified.md)."
 
 \\{ecc-dashboard-mode-map}"
   :interactive nil
-  (setq tabulated-list-format [("種別" 5 t) ("名前" 24 t) ("状態" 18 t)
-                               ("cwd" 30 t) ("モデル" 20 t) ("直近プロンプト" 40 t)
-                               ("更新" 6 t) ("コスト" 8 t)])
+  (setq tabulated-list-format [("Kind" 5 t) ("Name" 24 t) ("State" 18 t)
+                               ("cwd" 30 t) ("Model" 20 t) ("Last prompt" 40 t)
+                               ("Updated" 7 t) ("Cost" 8 t)])
   (setq tabulated-list-padding 1)
   (setq tabulated-list-sort-key nil)
   (add-hook 'tabulated-list-revert-hook #'ecc-dashboard--collect nil t)
@@ -380,8 +380,8 @@ read only and R offers to resume it."
              (progn (ecc-history-open key)
                     (when (eq (ecc-dashboard-entry-kind entry) 'external)
                       (message
-                       "他プロセスのセッションです。R で「元プロセスを止めてから resume」")))
-           (user-error "%s には記録がありません" key))))))
+                       "Session of another process; R stops it and resumes here")))
+           (user-error "%s has no recording" key))))))
 
 (defun ecc-dashboard-new (directory)
   "Start a session in DIRECTORY (FR-DASH-5)."
@@ -406,7 +406,7 @@ read only and R offers to resume it."
          (file (or (ecc-dashboard-entry-file entry)
                    (ecc-history-file (ecc-dashboard-entry-key entry))
                    (user-error "This session has no recording"))))
-    (when (yes-or-no-p (format "%s を削除しますか? " (abbreviate-file-name file)))
+    (when (yes-or-no-p (format "Delete %s? " (abbreviate-file-name file)))
       (delete-file file)
       (when-let* ((session (ecc-model-session (ecc-dashboard-entry-key entry))))
         (when (eq (ecc-session-kind session) 'archived)
@@ -447,7 +447,7 @@ the exclusion of FR-TUI-5."
   (let ((session (or (ecc-dashboard-session-at-point)
                      (user-error "This session does not run in this Emacs"))))
     (or (car (ecc-session-pending session))
-        (user-error "%s は応答を待っていません" (ecc-session-name session)))))
+        (user-error "%s is not waiting for an answer" (ecc-session-name session)))))
 
 (defun ecc-dashboard-allow ()
   "Allow the oldest waiting request of the session at point (FR-DASH-4)."
@@ -457,7 +457,7 @@ the exclusion of FR-TUI-5."
 
 (defun ecc-dashboard-deny (reason)
   "Deny the oldest waiting request of the session at point with REASON."
-  (interactive (list (read-string "拒否の理由（空でも可）: ")))
+  (interactive (list (read-string "Reason for denying (may be empty): ")))
   (ecc-perm-respond (ecc-dashboard--request-at-point) 'deny :message reason)
   (ecc-dashboard-redraw))
 

@@ -79,9 +79,9 @@ Neither is in a git repository, so both are diffed from the records."
                     (:path "src/b.py" :start 10 :end 10
                      :text "@@ -10 +10 @@\n-x\n+y" :comment "keep x")))))
     (should (equal message
-                   (concat "以下の変更に対するレビューコメントです。各コメントに沿って修正してください。\n\n"
-                           "## src/a.py  L3-L5\n```diff\n@@ -3,2 +3,3 @@\n a\n+b\n c\n```\nコメント: rename b\n\n"
-                           "## src/b.py  L10-L10\n```diff\n@@ -10 +10 @@\n-x\n+y\n```\nコメント: keep x")))))
+                   (concat "Review comments on the changes below.  Please act on each of them.\n\n"
+                           "## src/a.py  L3-L5\n```diff\n@@ -3,2 +3,3 @@\n a\n+b\n c\n```\nComment: rename b\n\n"
+                           "## src/b.py  L10-L10\n```diff\n@@ -10 +10 @@\n-x\n+y\n```\nComment: keep x")))))
 
 (ert-deftest ecc-review-test-format-message-fence ()
   "A hunk holding a fence is quoted with a longer one, and the header can change."
@@ -308,7 +308,7 @@ Neither is in a git repository, so both are diffed from the records."
                 (ecc-review-message-send)))
             (should-not ecc-test-sent)
             (should (= (length (ecc-session-input-queue session)) 1))
-            (should (string-search "コメント: later"
+            (should (string-search "Comment: later"
                                    (car (ecc-session-input-queue session)))))
         (ecc-review-test--kill-review-buffers)))))
 
@@ -404,7 +404,7 @@ Neither is in a git repository, so both are diffed from the records."
             (ecc-review-send)
             (with-current-buffer "*ecc-review-message: test*"
               (should (string-prefix-p ecc-review-proposal-header (buffer-string)))
-              (should (string-search "## /nowhere/r.txt  L1-L3\n```diff\n@@ -1,3 +1,3 @@\n one\n-two\n+2\n three\n```\nコメント: spell it out"
+              (should (string-search "## /nowhere/r.txt  L1-L3\n```diff\n@@ -1,3 +1,3 @@\n one\n-two\n+2\n three\n```\nComment: spell it out"
                                      (buffer-string)))
               (ecc-review-message-send)))
           (should-not (buffer-live-p buffer))
@@ -461,7 +461,7 @@ Neither is in a git repository, so both are diffed from the records."
             (should (equal (alist-get 'file_path updated) "/nowhere/w.txt")))
           (should-not (ecc-session-pending session))
           (let ((note (car (ecc-session-input-queue session))))
-            (should (string-prefix-p "先の Write（/nowhere/w.txt）" note))
+            (should (string-prefix-p "The user changed the earlier Write (/nowhere/w.txt)" note))
             (should (string-search "```diff\n@@ -1,1 +1,2 @@\n hello\n+world\n```" note))))
       (ecc-review-test--kill-review-buffers))))
 

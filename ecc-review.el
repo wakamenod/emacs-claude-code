@@ -43,13 +43,13 @@
   :group 'ecc)
 
 (defcustom ecc-review-header
-  "以下の変更に対するレビューコメントです。各コメントに沿って修正してください。"
+  "Review comments on the changes below.  Please act on each of them."
   "First line of the prompt the review comments are sent as (FR-DIFF-5)."
   :type 'string
   :group 'ecc)
 
 (defcustom ecc-review-proposal-header
-  "以下の提案に対するレビューコメントです。各コメントに沿って修正し、もう一度提案してください。"
+  "Review comments on the proposal below.  Please act on each of them and propose it again."
   "First line of the deny message built from comments on a proposal (FR-DIFF-2)."
   :type 'string
   :group 'ecc)
@@ -328,7 +328,7 @@ and PATHS are remembered as what the buffer reviews."
                 (ecc-review--attach (cdr key)))
             (cl-incf lost)))
         (when (> lost 0)
-          (message "%d 件のコメントは対応する hunk が無くなったので外しました" lost)))
+          (message "Dropped %d comments whose hunk is gone" lost)))
       (force-mode-line-update)
       buffer)))
 
@@ -468,7 +468,7 @@ Interactively the earlier comment is offered for editing (FR-DIFF-4)."
    (progn
      (unless (ecc-review--hunk-bounds)
        (user-error "Not on a hunk"))
-     (list (read-string "この hunk へのコメント: "
+     (list (read-string "Comment on this hunk: "
                         (when-let* ((overlay (ecc-review-comment-at-point)))
                           (overlay-get overlay 'ecc-review-comment))))))
   (when (string-empty-p (string-trim text))
@@ -476,14 +476,14 @@ Interactively the earlier comment is offered for editing (FR-DIFF-4)."
   (when-let* ((old (ecc-review-comment-at-point)))
     (ecc-review--detach old))
   (prog1 (ecc-review--attach (string-trim text))
-    (message "コメントを付けました（%d 件）" (length (ecc-review-comment-overlays)))))
+    (message "Comment attached (%d in all)" (length (ecc-review-comment-overlays)))))
 
 (defun ecc-review-remove-comment ()
   "Remove the comment of the hunk at point."
   (interactive)
   (ecc-review--detach (or (ecc-review-comment-at-point)
                           (user-error "No comment on this hunk")))
-  (message "コメントを外しました（残り %d 件）" (length (ecc-review-comment-overlays))))
+  (message "Comment removed (%d left)" (length (ecc-review-comment-overlays))))
 
 (defun ecc-review-comments ()
   "Return the comments of this buffer in file and hunk order.
@@ -507,7 +507,7 @@ Each is the plist of `ecc-review-hunk-at' with :comment added."
   (interactive)
   (let* ((comments (or (ecc-review-comments) (user-error "No comment yet")))
          (labels (mapcar #'ecc-review--comment-label comments))
-         (choice (completing-read "コメント: " labels nil t))
+         (choice (completing-read "Comment: " labels nil t))
          (comment (nth (seq-position labels choice) comments)))
     (goto-char (plist-get comment :position))))
 
@@ -528,7 +528,7 @@ COMMENTS are the plists of `ecc-review-comments'; HEADER replaces
    (or header ecc-review-header) "\n\n"
    (mapconcat (lambda (comment)
                 (let ((fence (ecc-review--fence (plist-get comment :text))))
-                  (format "## %s  L%d-L%d\n%sdiff\n%s\n%s\nコメント: %s"
+                  (format "## %s  L%d-L%d\n%sdiff\n%s\n%s\nComment: %s"
                           (or (plist-get comment :path) "?")
                           (plist-get comment :start) (plist-get comment :end)
                           fence (plist-get comment :text) fence
@@ -564,7 +564,7 @@ COMMENTS are the plists of `ecc-review-comments'; HEADER replaces
 \\{ecc-review-message-mode-map}"
   :interactive nil
   (setq header-line-format
-        (propertize " C-c C-c で送信、C-c C-k で戻る。本文は編集できる" 'face 'ecc-dim-face)))
+        (propertize " C-c C-c sends, C-c C-k goes back; the text may be edited" 'face 'ecc-dim-face)))
 
 (defun ecc-review-message-buffer-name (session)
   "Return the name of the confirmation buffer of SESSION."
@@ -607,12 +607,12 @@ deny instead (FR-DIFF-2)."
       (unless (memq request (ecc-session-pending session))
         (user-error "This proposal was answered already"))
       (ecc-perm-respond request 'deny :message text)
-      (message "コメントを添えて拒否しました: %s" (ecc-request-tool-name request)))
+      (message "Denied with comments: %s" (ecc-request-tool-name request)))
      (t
       (let ((outcome (ecc-proc-send-prompt session text)))
         (if (eq outcome 'sent)
-            (message "レビューコメントを送信しました")
-          (message "実行中のターンがあります。キューの %d 件目に入れました" outcome)))))
+            (message "Review comments sent")
+          (message "A turn is running; queued at position %d" outcome)))))
     (set-buffer-modified-p nil)
     (ecc-perm-close-buffer message-buffer)
     (when (buffer-live-p review)
@@ -672,7 +672,7 @@ files."
     (if ecc-review--request
         (ecc-review-request ecc-review--request)
       (ecc-review-buffer session ecc-review--paths))
-    (message "更新しました")))
+    (message "Refreshed")))
 
 (defun ecc-review-quit ()
   "Close the review buffer, dropping its comments."
@@ -766,7 +766,7 @@ The way a comment is left from the transcript (FR-DIFF-2)."
 ;;;; Editing a proposal before allowing it (FR-DIFF-7)
 
 (defcustom ecc-review-edited-note
-  "先の %s（%s）はユーザーが次のように修正して適用した。以後はこの内容を前提にすること:"
+  "The user changed the earlier %s (%s) as follows before applying it.  Work from this from now on:"
   "Format of the note queued after a proposal was changed and applied.
 The two arguments are the tool name and the file; the diff between
 the proposal and what was applied follows."
@@ -792,7 +792,7 @@ the proposal and what was applied follows."
   :keymap ecc-review-proposal-mode-map
   (setq header-line-format
         (and ecc-review-proposal-mode
-             (propertize " 提案を編集中。C-c C-c でこの内容で許可、C-c C-k で戻る"
+             (propertize " Editing the proposal; C-c C-c allows it as it stands, C-c C-k goes back"
                          'face 'ecc-dim-face))))
 
 (defun ecc-review-proposal-key (request)
@@ -874,14 +874,14 @@ prompt queue so that the next message tells Claude what was applied."
     (if (not changed)
         (progn
           (ecc-perm-allow-request request)
-          (message "そのまま許可しました: %s" (ecc-request-tool-name request)))
+          (message "Allowed as it stands: %s" (ecc-request-tool-name request)))
       (let ((input (copy-alist (ecc-request-input request))))
         (setf (alist-get key input) edited)
         (ecc-perm-respond request 'allow :updated-input input
                           :message "edited by the user and applied")
         (push (ecc-review-proposal-note request ecc-review-proposal--original edited)
               (ecc-session-input-queue session))
-        (message "修正した内容で許可しました: %s（次のメッセージに修正内容を添えます）"
+        (message "Allowed with your changes: %s (the next message carries what you changed)"
                  (ecc-request-tool-name request))))
     (set-buffer-modified-p nil)
     (ecc-perm-close-buffer buffer)

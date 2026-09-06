@@ -97,11 +97,11 @@ says, unless FORCE is non-nil.  Returns nil when nothing was reverted."
      ((or force (eq ecc-sync-modified-action 'revert))
       (ecc-sync-revert-buffer buffer))
      ((eq ecc-sync-modified-action 'ask)
-      (when (y-or-n-p (format "%s は未保存の変更があります。Claude の変更で置き換えますか? "
+      (when (y-or-n-p (format "%s has unsaved changes.  Replace them with what Claude wrote? "
                               (buffer-name buffer)))
         (ecc-sync-revert-buffer buffer)))
      (t
-      (message "ecc: %s は未保存の変更があるため revert しませんでした"
+      (message "ecc: %s was not reverted; it has unsaved changes"
                (buffer-name buffer))
       nil))))
 
@@ -114,7 +114,7 @@ says, unless FORCE is non-nil.  Returns nil when nothing was reverted."
       (error
        (ecc-log (ecc-session-name session) "revert of %s failed: %s"
                 path (error-message-string err))
-       (message "ecc: %s の revert に失敗しました: %s"
+       (message "ecc: reverting %s failed: %s"
                 (abbreviate-file-name path) (error-message-string err))))))
 
 (add-hook 'ecc-sync-file-changed-hook #'ecc-sync--on-file-changed)

@@ -138,11 +138,11 @@ with the request, used in turn for the requests the recording makes."
               (setf (ecc-request-node request) node)
               (ecc-model-add-request session request)
               (ecc-render-flush session)
-              (should (string-search "⚠ 未保存の変更あり"
+              (should (string-search "⚠ unsaved changes"
                                      (ecc-test-buffer-string (ecc-session-buffer session))))
               (with-current-buffer buffer (set-buffer-modified-p nil))
               (ecc-render-refresh session)
-              (should-not (string-search "未保存"
+              (should-not (string-search "unsaved"
                                          (ecc-test-buffer-string (ecc-session-buffer session))))))
         (with-current-buffer buffer (set-buffer-modified-p nil))
         (kill-buffer buffer)

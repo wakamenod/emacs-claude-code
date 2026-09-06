@@ -201,7 +201,7 @@ is on.")
   "Replace the buffer with the previous prompt sent (FR-INP-7)."
   (interactive)
   (unless ecc-prompt-history
-    (user-error "履歴がありません"))
+    (user-error "No history"))
   (unless ecc-prompt--history-index
     (setq ecc-prompt--history-draft (buffer-string)))
   (ecc-prompt--history-show
@@ -212,17 +212,17 @@ is on.")
   "Walk back towards what was being written before the history walk."
   (interactive)
   (unless ecc-prompt--history-index
-    (user-error "履歴を遡っていません"))
+    (user-error "Not walking the history"))
   (ecc-prompt--history-show
    (and (> ecc-prompt--history-index 0) (1- ecc-prompt--history-index))))
 
 (defun ecc-prompt-resend-last (&optional session)
   "Send the last prompt again to SESSION (FR-INP-7)."
   (interactive)
-  (let ((text (or (car ecc-prompt-history) (user-error "履歴がありません")))
+  (let ((text (or (car ecc-prompt-history) (user-error "No history")))
         (session (or session ecc-prompt--session
                      (ecc-window-resolve-session current-prefix-arg))))
-    (when (y-or-n-p (format "もう一度送りますか: %s? " (ecc--truncate text 40)))
+    (when (y-or-n-p (format "Send again: %s? " (ecc--truncate text 40)))
       (ecc-proc-send-prompt session text)
       text)))
 
@@ -280,7 +280,7 @@ The file is passed by path rather than inline: base64 in the prompt
 would be written into the recording of the conversation."
   (let ((file (ecc-prompt-save-image (ecc-prompt-session) data mime)))
     (ecc-prompt-insert-reference file)
-    (message "画像を %s に保存しました" (abbreviate-file-name file))
+    (message "Image saved to %s" (abbreviate-file-name file))
     file))
 
 (defun ecc-prompt-dnd-insert (url &optional _action)
@@ -369,7 +369,7 @@ as it was typed."
                            ((listp source) source)))
          (answer (if candidates
                      (completing-read (format "%s: " command) candidates nil nil)
-                   (read-string (format "%s の引数（空で送信）: " command)))))
+                   (read-string (format "Argument for %s (empty sends it as is): " command)))))
     (unless (string-empty-p (string-trim answer))
       (string-trim answer))))
 
@@ -384,7 +384,7 @@ A command only the terminal client of SESSION can run is reported
      (t
       (when (and ecc-prompt-warn-terminal-commands
                  (member command (ecc-prompt-terminal-commands session)))
-        (message "%s は端末 UI 用のコマンドです。Emacs 側では効果が見えませんが、返答はそのまま表示します"
+        (message "%s is a terminal UI command; nothing of it shows in Emacs, but the answer does"
                  command))
       (if (and (assoc command ecc-prompt-interactive-commands)
                (string-empty-p (or (ecc-prompt-command-argument text) "")))
@@ -436,7 +436,7 @@ SOURCE is the buffer @region and @diagnostics read from.  A plain
      ((equal path "diagnostics")
       (when (buffer-live-p source)
         (when-let* ((block (ecc-context-diagnostics-block source)))
-          (cons (format "診断: `%s`" (ecc-context-path source)) block))))
+          (cons (format "Diagnostics: `%s`" (ecc-context-path source)) block))))
      (start
       (when-let* ((context (ecc-context-file-range path start end)))
         (ecc-prompt--block context))))))
@@ -489,14 +489,14 @@ which is where the CLI looks for a command."
                 :annotation-function
                 (lambda (candidate)
                   (let ((description (cdr (assoc candidate commands))))
-                    (concat (when (member candidate terminal) "  端末UI")
+                    (concat (when (member candidate terminal) "  terminal UI")
                             (unless (or (null description)
                                         (string-empty-p description))
                               (concat "  " description)))))))))))
 
 (defconst ecc-prompt-at-specials
-  '(("@region" . "選択範囲を引用して送る")
-    ("@diagnostics" . "このファイルの診断を送る"))
+  '(("@region" . "Send the region, quoted")
+    ("@diagnostics" . "Send the diagnostics of this file"))
   "The @ references that are not files (FR-INP-8).")
 
 (defun ecc-prompt-project-files (session)
@@ -533,8 +533,8 @@ which is where the CLI looks for a command."
   "Turn the editor context of this prompt buffer on or off (FR-CTX-1)."
   (interactive)
   (setq ecc-prompt--attach-context (not ecc-prompt--attach-context))
-  (message "コンテキストの添付を%sにしました"
-           (if ecc-prompt--attach-context "オン" "オフ")))
+  (message "Attaching the editor context is %s"
+           (if ecc-prompt--attach-context "on" "off")))
 
 (defun ecc-prompt-prepare-text (session text &optional source attach)
   "Return TEXT as it should be sent for SESSION.
@@ -553,7 +553,7 @@ is appended when ATTACH is non-nil (FR-CTX-1)."
   (let* ((session (ecc-prompt-session))
          (raw (string-trim (buffer-string))))
     (when (string-empty-p raw)
-      (user-error "プロンプトが空です"))
+      (user-error "Prompt is empty"))
     (let* ((source (ecc-window-last-source-buffer))
            (text (ecc-prompt-prepare-text session raw source
                                           ecc-prompt--attach-context))
@@ -563,8 +563,8 @@ is appended when ATTACH is non-nil (FR-CTX-1)."
             ecc-prompt--history-draft nil)
       (erase-buffer)
       (if (eq outcome 'sent)
-          (message "送信しました")
-        (message "実行中のターンがあります。キューの %d 件目に入れました" outcome))
+          (message "Sent")
+        (message "A turn is running; queued at position %d" outcome))
       outcome)))
 
 (defun ecc-prompt-clear ()
@@ -577,8 +577,8 @@ is appended when ATTACH is non-nil (FR-CTX-1)."
   (interactive)
   (let ((queue (ecc-session-input-queue (ecc-prompt-session))))
     (if (null queue)
-        (message "キューは空です")
-      (message "キュー: %s"
+        (message "The queue is empty")
+      (message "Queue: %s"
                (mapconcat (lambda (text) (ecc--truncate text 30)) queue " | ")))))
 
 (provide 'ecc-prompt)

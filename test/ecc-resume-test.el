@@ -68,7 +68,7 @@ that has no sessions in it."
             ;; The recording is the same session, so it is not repeated.
             (should (= 1 (length candidates)))
             (should (string-search "mine" (caar candidates)))
-            (should (string-search "この Emacs" (caar candidates))))
+            (should (string-search "in this Emacs" (caar candidates))))
         (ecc-test-cleanup-session session)))))
 
 (ert-deftest ecc-resume-test-reads-the-recording-back ()

@@ -156,7 +156,7 @@ killing it stops nothing."
   (interactive)
   (let ((session (ecc-session-at-point)))
     (ecc-proc-interrupt session)
-    (message "中断を要求しました")))
+    (message "Interrupt requested")))
 
 (defun ecc-session-resume ()
   "Start this session again with --resume (FR-SES-7)."
@@ -426,7 +426,7 @@ stripped from every line."
     (unless (and text (not (string-empty-p text)))
       (user-error "Nothing to copy here"))
     (kill-new text)
-    (message "コピーしました（%d 文字）" (length text))))
+    (message "Copied %d characters" (length text))))
 
 (defun ecc-session--markdown-node (node depth)
   "Return NODE as Markdown, indented by DEPTH list levels."
@@ -485,7 +485,7 @@ stripped from every line."
   (let ((session (ecc-session-at-point)))
     (with-temp-file file
       (insert (ecc-session-export-markdown-string session)))
-    (message "%s に保存しました" (abbreviate-file-name file))))
+    (message "Saved to %s" (abbreviate-file-name file))))
 
 (provide 'ecc-session)
 

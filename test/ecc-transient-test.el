@@ -37,8 +37,8 @@
       (should (string-search "/context" (nth 0 descriptions)))
       (should (string-search "Show context usage" (nth 0 descriptions)))
       ;; What the terminal client alone can run is marked (FR-INP-4).
-      (should (string-search "[端末UI]" (nth 1 descriptions)))
-      (should-not (string-search "端末UI" (nth 0 descriptions)))
+      (should (string-search "[terminal UI]" (nth 1 descriptions)))
+      (should-not (string-search "terminal UI" (nth 0 descriptions)))
       (dolist (suffix suffixes)
         (should (commandp (nth 2 suffix)))))))
 

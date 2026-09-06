@@ -399,12 +399,12 @@ there is none (FR-HIST-1)."
   (when (ecc-render--history-more-p session)
     (magit-insert-section (ecc-section-history "history")
       (insert-text-button
-       "古いメッセージを読み込む"
+       "Load older messages"
        'action (lambda (_button)
                  (require 'ecc-history)
                  (ecc-history-load-more session))
        'follow-link t
-       'help-echo "前の 50 ターンを読み込む")
+       'help-echo "Load the previous 50 turns")
       (insert "\n"))))
 
 (defun ecc-render--history-more-p (session)
@@ -694,7 +694,7 @@ answered."
                         (if (and request
                                  (ecc-render--unsaved-p
                                   (alist-get 'file_path (ecc-request-input request))))
-                            (propertize "  ⚠ 未保存の変更あり" 'face 'ecc-error-face)
+                            (propertize "  ⚠ unsaved changes" 'face 'ecc-error-face)
                           "")
                         (propertize (ecc-render--request-hints kind)
                                     'face 'ecc-dim-face)))
@@ -865,7 +865,7 @@ each question once the request was answered."
   (pcase (ecc-session-state session)
     ('idle nil)
     ('exited (propertize
-              (format "終了（code %s）。R で resume"
+              (format "Exited with code %s; R resumes it"
                       (or (alist-get 'exit-status (ecc-session-progress session)) "?"))
               'face 'ecc-error-face))
     (state (propertize (format "● %s…" state) 'face 'ecc-pending-face))))

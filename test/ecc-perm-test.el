@@ -402,11 +402,11 @@
       (with-current-buffer buffer
         (should-error (ecc-question-submit) :type 'user-error)
         (ecc-question-other "Neovim")
-        (should (string-search "その他: Neovim" (buffer-string)))
+        (should (string-search "Other: Neovim" (buffer-string)))
         (ecc-question-next)
         (ecc-question-choose 3)
         (ecc-question-other "Zig")
-        (should (string-search "[x] その他: Zig" (buffer-string)))
+        (should (string-search "[x] Other: Zig" (buffer-string)))
         (should (equal (ecc-question-answers)
                        '(("Which editor do you prefer?" . "Neovim")
                          ("Which languages do you use?" . "Rust, Zig"))))

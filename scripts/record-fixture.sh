@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# 実 CLI を叩いて stream-json の全行を fixture として記録する。
+# Run the real CLI and record every stream-json line as a fixture.
 #
 #   scripts/record-fixture.sh --out test/fixtures/basic-turn.jsonl \
-#       --prompt "hello" [--policy allow] [-- 追加の claude オプション...]
+#       --prompt "hello" [--policy allow] [-- more claude options...]
 #
-# stdout の全行をそのまま OUT に書く。制御要求（can_use_tool）には --policy に
-# 従って応答する。開発ルール（CLAUDE.md）どおり --model haiku と
-# --max-budget-usd を必ず付け、emacs-gravity の hooks を --settings で止める。
+# Every line of stdout goes to OUT as it is.  Control requests
+# (can_use_tool) are answered the way --policy says.  As the development
+# rules (CLAUDE.md) require, --model haiku and --max-budget-usd are always
+# passed, and the emacs-gravity hooks are turned off with --settings.
 set -euo pipefail
 exec python3 - "$@" <<'EOF'
 import argparse, json, subprocess, sys, time, uuid
@@ -14,21 +15,22 @@ import argparse, json, subprocess, sys, time, uuid
 ap = argparse.ArgumentParser()
 ap.add_argument("--out", required=True)
 ap.add_argument("--prompt", action="append", required=True,
-                help="送るプロンプト。複数指定すると連続で送る")
+                help="prompt to send; give it more than once to send them in turn")
 ap.add_argument("--policy", default="allow",
                 choices=["allow", "deny-then-allow", "question", "plan", "none"])
 ap.add_argument("--deny-message", default="内容を hi にして")
 ap.add_argument("--answer-sep", default=", ",
-                help="AskUserQuestion の multiSelect 回答の区切り")
-ap.add_argument("--initialize", action="store_true", help="先に initialize を送る")
+                help="separator between multiSelect answers of AskUserQuestion")
+ap.add_argument("--initialize", action="store_true", help="send initialize first")
 ap.add_argument("--timeout", type=float, default=300.0)
 ap.add_argument("--disable-plugin", action="append",
                 default=["emacs-bridge@emacs-gravity-marketplace"],
-                help="このセッションだけ止めるプラグイン。--safe-mode と違い "
-                     "MCP・skills・コマンドは残る（docs/verified.md の D2）")
+                help="plugin to turn off for this session only.  Unlike "
+                     "--safe-mode this keeps MCP, skills and commands "
+                     "(D2 in docs/verified.md)")
 ap.add_argument("--model", default="haiku")
 ap.add_argument("--budget", default="0.5")
-ap.add_argument("extra", nargs="*", help="追加の claude オプション（-- の後ろ）")
+ap.add_argument("extra", nargs="*", help="more claude options, after the --")
 args = ap.parse_args()
 
 cmd = ["claude", "-p",
@@ -57,7 +59,7 @@ def control(subtype, **fields):
           "request": {"subtype": subtype, **fields}})
 
 def answer_questions(inp):
-    """AskUserQuestion の updatedInput を作る。先頭の選択肢を選ぶ。"""
+    """Build the updatedInput of an AskUserQuestion, choosing the first option."""
     answers = {}
     for q in inp.get("questions", []):
         labels = [o["label"] for o in q.get("options", [])]

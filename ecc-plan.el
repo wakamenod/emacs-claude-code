@@ -226,7 +226,7 @@ Returns (ADDED . REMOVED)."
 (defun ecc-plan-comment (text)
   "Attach the comment TEXT to the current line.
 The line is underlined and the comment shown after it."
-  (interactive (list (read-string "この行へのコメント: "
+  (interactive (list (read-string "Comment on this line: "
                                   (when-let* ((overlay (ecc-plan-comment-at-point)))
                                     (overlay-get overlay 'ecc-plan-comment)))))
   (when (string-empty-p (string-trim text))
@@ -356,7 +356,7 @@ markers, the diff of the edits, and the general comment (FR-PLAN-3)."
 
 (defun ecc-plan--read-mode ()
   "Ask for the permission mode to switch to."
-  (let ((choice (completing-read "承認後の権限モード: "
+  (let ((choice (completing-read "Permission mode after approval: "
                                  (append ecc-plan-modes '("(CLI default)"))
                                  nil t nil nil
                                  (or ecc-plan--mode ecc-plan-default-mode))))
@@ -367,7 +367,7 @@ markers, the diff of the edits, and the general comment (FR-PLAN-3)."
   (interactive (list (ecc-plan--read-mode)))
   (setq ecc-plan--mode mode)
   (force-mode-line-update)
-  (message "承認時の権限モード: %s" (or mode "(CLI default)")))
+  (message "Permission mode on approval: %s" (or mode "(CLI default)")))
 
 (defun ecc-plan-approve-request (request &optional mode)
   "Allow REQUEST as it stands, switching to permission MODE.
@@ -398,12 +398,12 @@ defaults to what `ecc-plan-set-mode' chose, then to
          (buffer (current-buffer))
          (mode (or mode ecc-plan--mode ecc-plan-default-mode))
          (feedback (ecc-plan-buffer-feedback))
-         (summary (format "修正依頼を送りました（コメント %d 件、マーカー %d 件%s）"
+         (summary (format "Sent back for revision (%d comments, %d markers%s)"
                           (length (ecc-plan-comments))
                           (length (ecc-plan-markers (buffer-string)))
                           (if (ecc-plan-diff-text ecc-plan--original
                                                   (ecc-plan-strip-markers (buffer-string)))
-                              "、本文の編集あり" ""))))
+                              ", body edited" ""))))
     (unless (memq request (ecc-session-pending session))
       (user-error "This plan was answered already"))
     (if feedback
@@ -411,7 +411,7 @@ defaults to what `ecc-plan-set-mode' chose, then to
           (ecc-perm-respond request 'deny :message feedback)
           (message "%s" summary))
       (ecc-plan-approve-request request mode)
-      (message "プランを承認しました%s" (if mode (format "（権限モード → %s）" mode) "")))
+      (message "Plan approved%s" (if mode (format " (permission mode → %s)" mode) "")))
     (ecc-plan--finish buffer)
     feedback))
 
@@ -419,7 +419,7 @@ defaults to what `ecc-plan-set-mode' chose, then to
   "Deny the plan with REASON as the general comment.
 Inline comments, markers and edits present in the buffer are sent
 along with it."
-  (interactive (list (read-string "修正依頼（全体へのコメント）: ")))
+  (interactive (list (read-string "Revision request (comment on the whole plan): ")))
   (let* ((request (or ecc-plan--request (user-error "Not a plan buffer")))
          (session (ecc-request-session request))
          (buffer (current-buffer))
@@ -428,7 +428,7 @@ along with it."
     (unless (memq request (ecc-session-pending session))
       (user-error "This plan was answered already"))
     (ecc-perm-respond request 'deny :message feedback)
-    (message "プランを差し戻しました")
+    (message "Plan sent back")
     (ecc-plan--finish buffer)
     feedback))
 

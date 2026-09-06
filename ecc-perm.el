@@ -139,7 +139,7 @@ Returns `save', `allow', `deny', or nil when there is nothing to ask."
                            (ecc-sync-unsaved-buffer
                             (alist-get 'file_path (ecc-request-input request))))))
     (pcase (car (read-multiple-choice
-                 (format "%s に未保存の変更があります" (buffer-name buffer))
+                 (format "%s has unsaved changes" (buffer-name buffer))
                  '((?s "save and allow" "Save the buffer, then let Claude change the file")
                    (?a "allow anyway" "Let Claude change the file on disk as it is")
                    (?d "deny" "Refuse the change and tell Claude why"))))
@@ -175,16 +175,16 @@ Returns `allow', `deny', `save' or `opened'."
   (let ((request (ecc-perm-current-request)))
     (pcase (ecc-perm-allow-request request)
       ('opened nil)
-      ('deny (message "拒否しました: %s（未保存の変更あり）"
+      ('deny (message "Denied: %s (the buffer has unsaved changes)"
                       (ecc-request-tool-name request)))
-      (_ (message "許可しました: %s" (ecc-request-tool-name request))))))
+      (_ (message "Allowed: %s" (ecc-request-tool-name request))))))
 
 (defun ecc-perm-deny (&optional reason)
   "Deny the request at point with REASON, asking for one (FR-PERM-2)."
-  (interactive (list (read-string "拒否の理由（空でも可）: ")))
+  (interactive (list (read-string "Reason for denying (may be empty): ")))
   (let ((request (ecc-perm-current-request)))
     (ecc-perm-respond request 'deny :message reason)
-    (message "拒否しました: %s" (ecc-request-tool-name request))))
+    (message "Denied: %s" (ecc-request-tool-name request))))
 
 (defun ecc-perm-allow-next ()
   "Allow the oldest request waiting in this session (FR-PERM-9)."
@@ -193,16 +193,16 @@ Returns `allow', `deny', `save' or `opened'."
                                                    (user-error "No session"))))
                      (user-error "No request is waiting for an answer"))))
     (ecc-perm-allow-request request)
-    (message "許可しました: %s" (ecc-request-tool-name request))))
+    (message "Allowed: %s" (ecc-request-tool-name request))))
 
 (defun ecc-perm-deny-next (&optional reason)
   "Deny the oldest request waiting in this session with REASON (FR-PERM-9)."
-  (interactive (list (read-string "拒否の理由（空でも可）: ")))
+  (interactive (list (read-string "Reason for denying (may be empty): ")))
   (let ((request (or (car (ecc-session-pending (or (ecc-perm-session)
                                                    (user-error "No session"))))
                      (user-error "No request is waiting for an answer"))))
     (ecc-perm-respond request 'deny :message reason)
-    (message "拒否しました: %s" (ecc-request-tool-name request))))
+    (message "Denied: %s" (ecc-request-tool-name request))))
 
 (defun ecc-perm-allow-all (&optional remember)
   "Allow every permission request waiting in this session (FR-PERM-9).
@@ -225,13 +225,13 @@ buffers.  Returns the requests that were allowed."
           (cl-pushnew (ecc-request-tool-name request)
                       (ecc-session-auto-approve-kinds session)
                       :test #'equal))))
-    (message "%d 件を許可しました%s%s" (length allowed)
+    (message "Allowed %d requests%s%s" (length allowed)
              (if remember
-                 (format "。このセッションでは %s を以後自動で許可します"
+                 (format "; %s is allowed on its own for the rest of this session"
                          (string-join (ecc-session-auto-approve-kinds session) ", "))
                "")
              (if (> skipped 0)
-                 (format "（質問・プラン %d 件はそのまま）" skipped)
+                 (format " (%d questions and plans left alone)" skipped)
                ""))
     (nreverse allowed)))
 
@@ -261,7 +261,7 @@ allowed as they come; the flag is cleared by the result (FR-PERM-7)."
                      (member (ecc-request-tool-name request) ecc-turn-approve-tools)))
         (unless (eq (ecc-perm-allow-request request) 'deny)
           (cl-incf allowed))))
-    (message "%d 件を許可しました。このターンの %s は自動で許可します"
+    (message "Allowed %d requests; %s is allowed on its own for this turn"
              allowed (string-join ecc-turn-approve-tools ", "))
     allowed))
 
@@ -271,18 +271,18 @@ allowed as they come; the flag is cleared by the result (FR-PERM-7)."
   "Return a readable description of the permission SUGGESTION."
   (pcase (alist-get 'type suggestion)
     ("setMode"
-     (format "権限モードを %s にする（%s）"
+     (format "Set the permission mode to %s (%s)"
              (alist-get 'mode suggestion)
              (or (alist-get 'destination suggestion) "session")))
     ("addRules"
-     (format "ルールを追加: %s（%s）"
+     (format "Add rules: %s (%s)"
              (mapconcat (lambda (rule)
                           (format "%s(%s)" (alist-get 'toolName rule)
                                   (alist-get 'ruleContent rule)))
                         (append (or (alist-get 'rules suggestion) []) nil) ", ")
              (or (alist-get 'destination suggestion) "session")))
     ("addDirectories"
-     (format "ディレクトリを追加: %s"
+     (format "Add directories: %s"
              (mapconcat #'identity
                         (append (or (alist-get 'directories suggestion) []) nil)
                         ", ")))
@@ -298,7 +298,7 @@ A single suggestion is returned without asking."
                                (cons (ecc-perm-suggestion-label suggestion)
                                      suggestion))
                              suggestions))
-             (choice (completing-read "今後の扱い: " (mapcar #'car labels) nil t)))
+             (choice (completing-read "From now on: " (mapcar #'car labels) nil t)))
         (cdr (assoc choice labels))))))
 
 (defun ecc-perm-allow-always ()
@@ -315,7 +315,7 @@ pattern is chosen and saved instead (FR-PERM-8)."
           (ecc-perm-respond request 'allow
                             :updated-permissions (vector suggestion)
                             :message (ecc-perm-suggestion-label suggestion))
-          (message "許可しました: %s" (ecc-perm-suggestion-label suggestion)))))))
+          (message "Allowed: %s" (ecc-perm-suggestion-label suggestion)))))))
 
 ;;;; Allow patterns (FR-PERM-8)
 
@@ -403,21 +403,21 @@ confirmation that names the file and the patterns (FR-PERM-8)."
                                                 (ecc-session-project-root session)))
          (crm-separator "[ \t]*;[ \t]*")
          (chosen (completing-read-multiple
-                  (format "保存する許可パターン（; 区切り、既定 %s）: " (car candidates))
+                  (format "Allow patterns to save (; separated, default %s): " (car candidates))
                   candidates nil nil nil nil (car candidates)))
          (file (ecc-perm-settings-file session)))
     (setq chosen (seq-remove #'string-empty-p (mapcar #'string-trim chosen)))
     (unless chosen
       (user-error "No pattern chosen"))
-    (unless (y-or-n-p (format "%s に %s を追加しますか? "
-                              (abbreviate-file-name file) (string-join chosen ", ")))
+    (unless (y-or-n-p (format "Add %s to %s? "
+                              (string-join chosen ", ") (abbreviate-file-name file)))
       (user-error "Nothing written"))
     (let ((new (ecc-perm-save-patterns session chosen)))
       (message "%s: %s" (abbreviate-file-name file)
-               (if new (format "%s を追加しました" (string-join new ", "))
-                 "追加するものはありませんでした")))
+               (if new (format "added %s" (string-join new ", "))
+                 "nothing to add")))
     (when (and (memq request (ecc-session-pending session))
-               (y-or-n-p (format "この %s も今すぐ許可しますか? "
+               (y-or-n-p (format "Allow this %s now as well? "
                                  (ecc-request-tool-name request))))
       (ecc-perm-allow-request request))
     chosen))
@@ -530,7 +530,7 @@ confirmation that names the file and the patterns (FR-PERM-8)."
         (insert (propertize (format "Q%d  %s" (1+ index)
                                     (or (alist-get 'header question) ""))
                             'face 'ecc-heading-face)
-                (propertize (if multi "  (複数選択可)" "") 'face 'ecc-dim-face)
+                (propertize (if multi "  (several may be chosen)" "") 'face 'ecc-dim-face)
                 "\n"
                 (propertize (or (alist-get 'question question) "") 'face 'ecc-pending-face)
                 "\n")
@@ -550,7 +550,7 @@ confirmation that names the file and the patterns (FR-PERM-8)."
                         (propertize (format " — %s" description) 'face 'ecc-dim-face)
                       "")
                     "\n")))
-        (insert (propertize (format "  o. %s その他%s" (if others (if multi "[x]" "(•)")
+        (insert (propertize (format "  o. %s Other%s" (if others (if multi "[x]" "(•)")
                                                       (if multi "[ ]" "( )"))
                                     (if others (concat ": " (string-join others ", ")) ""))
                             'face (if others 'ecc-question-chosen-face 'ecc-dim-face)
@@ -558,8 +558,9 @@ confirmation that names the file and the patterns (FR-PERM-8)."
                 "\n\n")
         (put-text-property start (point) 'ecc-question index)))
     (insert (propertize
-             (concat "1-9: 選ぶ  SPC/RET: 行の選択肢を切替  o: 自由記述  n/p: 次/前の質問"
-                     "  u: 取り消し  C-c C-c: 送信  C-c C-k: 質問を拒否")
+             (concat "1-9: choose  SPC/RET: toggle the option on this line  o: free text"
+                     "  n/p: next/previous question  u: undo  C-c C-c: send"
+                     "  C-c C-k: refuse the question")
              'face 'ecc-dim-face)
             "\n")))
 
@@ -630,7 +631,7 @@ moves on to the next question afterwards."
 
 (defun ecc-question-other (text)
   "Answer the question at point with the free TEXT (the Other choice)."
-  (interactive (list (read-string "その他の回答: ")))
+  (interactive (list (read-string "Other answer: ")))
   (let ((index (ecc-question--index-at-point)))
     (when (string-empty-p (string-trim text))
       (user-error "Empty answer"))
@@ -689,20 +690,20 @@ keyed by the question text, a multiSelect answer joined by \", \"."
                                                          (ecc-protocol-answers pairs))))
                       :message (concat "answered: "
                                        (mapconcat #'cdr pairs " · ")))
-    (message "回答を送りました")
+    (message "Answer sent")
     (ecc-perm-close-buffer buffer)
     pairs))
 
 (defun ecc-question-cancel (&optional reason)
   "Refuse to answer the question, telling Claude REASON."
-  (interactive (list (read-string "拒否の理由（空でも可）: ")))
+  (interactive (list (read-string "Reason for denying (may be empty): ")))
   (let ((request ecc-question--request)
         (buffer (current-buffer)))
     (ecc-perm-respond request 'deny
                       :message (if (string-empty-p (or reason ""))
                                    "User declined to answer the question."
                                  reason))
-    (message "質問を拒否しました")
+    (message "Question refused")
     (ecc-perm-close-buffer buffer)))
 
 (defun ecc-question--on-request-resolved (_session request)

@@ -104,7 +104,7 @@ after it are told apart by a name the user gives (FR-WIN-3)."
      (list session (read-string "New name: " (ecc-session-name session)))))
   (let ((name (ecc-model-unique-name (string-trim name))))
     (when (string-empty-p name)
-      (user-error "名前が空です"))
+      (user-error "The name is empty"))
     (setf (ecc-session-name session) name)
     (require 'ecc-session)
     (require 'ecc-prompt)
@@ -270,7 +270,7 @@ rather than the ones of the current project (FR-WIN-2)."
      (visible
       (ecc-window-set-hidden-sessions (mapcar #'ecc-session-id visible))
       (mapc #'ecc-window-hide-session visible)
-      (message "%d 件のセッションを隠しました" (length visible)))
+      (message "Hid %d sessions" (length visible)))
      (t
       (let ((shown (seq-filter
                     #'identity
@@ -278,10 +278,10 @@ rather than the ones of the current project (FR-WIN-2)."
                             (or (ecc-window-hidden-sessions)
                                 (mapcar #'ecc-session-id sessions))))))
         (if (null shown)
-            (message "表示するセッションがありません")
+            (message "No session to show")
           (mapc #'ecc-display-session shown)
           (ecc-window-set-hidden-sessions nil)
-          (message "%d 件のセッションを表示しました" (length shown)))
+          (message "Showing %d sessions" (length shown)))
         shown)))))
 
 ;;;###autoload

@@ -92,8 +92,8 @@ A request for one of them has to be answered where it can be read."
 
 \\{ecc-inbox-mode-map}"
   :interactive nil
-  (setq tabulated-list-format [("経過" 6 t) ("セッション" 16 t) ("種別" 10 t)
-                               ("要約" 0 t)])
+  (setq tabulated-list-format [("Age" 6 t) ("Session" 16 t) ("Kind" 10 t)
+                               ("Summary" 0 t)])
   (setq tabulated-list-padding 1)
   (setq tabulated-list-sort-key nil)
   (add-hook 'tabulated-list-revert-hook #'ecc-inbox--collect nil t)
@@ -169,7 +169,7 @@ A request for one of them has to be answered where it can be read."
 
 (defun ecc-inbox-deny (reason)
   "Deny the request at point with REASON."
-  (interactive (list (read-string "拒否の理由（空でも可）: ")))
+  (interactive (list (read-string "Reason for denying (may be empty): ")))
   (let ((request (ecc-inbox-request-at-point)))
     (ecc-perm-respond request 'deny :message reason)
     (ecc-inbox-refresh)))
@@ -195,7 +195,7 @@ The order is the arrival order and it wraps around."
                      ((null position) (car requests))
                      (t (nth (mod (1+ position) (length requests)) requests)))))
     (if (null next)
-        (message "要対応はありません")
+        (message "Nothing needs attention")
       (ecc-inbox-goto-request next)
       (message "%d/%d: %s — %s"
                (1+ (seq-position requests next #'eq)) (length requests)
@@ -236,17 +236,17 @@ is being answered from afar."
                      (user-error "No permission request is waiting"))))
     (when (ecc-answer--confirm "Allow" request)
       (ecc-perm-allow-request request)
-      (message "許可しました: %s" (ecc-inbox-summary request))
+      (message "Allowed: %s" (ecc-inbox-summary request))
       request)))
 
 (defun ecc-answer-deny (reason)
   "Deny the oldest waiting request with REASON, from any buffer (FR-INBOX-3)."
-  (interactive (list (read-string "拒否の理由（空でも可）: ")))
+  (interactive (list (read-string "Reason for denying (may be empty): ")))
   (let ((request (or (ecc-answer-target)
                      (user-error "No request is waiting"))))
     (when (ecc-answer--confirm "Deny" request)
       (ecc-perm-respond request 'deny :message reason)
-      (message "拒否しました: %s" (ecc-inbox-summary request))
+      (message "Denied: %s" (ecc-inbox-summary request))
       request)))
 
 (defun ecc-answer-option (n)

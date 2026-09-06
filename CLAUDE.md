@@ -1,89 +1,109 @@
-# emacs-claude-code — 開発者向けメモ（Claude Code 用）
+# emacs-claude-code — developer notes (for Claude Code)
 
-このリポジトリは Emacs から Claude Code CLI を使うパッケージ `ecc` を作るもの。
+This repository builds `ecc`, a package that drives the Claude Code CLI from Emacs.
 
-## 最初に読むもの
+## Read these first
 
-1. `REQUIREMENTS.md` — 要件の正本（106 件）。要件 ID（FR-xxx-N, NFR-N）で参照する。
-2. `IMPLEMENTATION_PLAN.md` — 実装計画。§0 の指示、§7 のフェーズ順に従う。
-3. `docs/verified.md` — 実機で確認済みの CLI 挙動。§10 の未検証事項を確認したらここに追記する。
-4. `docs/decisions.md` — 要件と衝突する発見と決定の記録。
+1. `REQUIREMENTS.md` — the requirements of record (106 of them). Refer to them by id (FR-xxx-N, NFR-N).
+2. `IMPLEMENTATION_PLAN.md` — the implementation plan. Follow the instructions of §0 and the phase order of §7.
+3. `docs/verified.md` — CLI behaviour confirmed against the real thing. Add to it whenever something open in §10 is settled.
+4. `docs/decisions.md` — the record of findings that clash with the requirements, and what was decided.
 
-## 環境
+Those three documents are written in Japanese and stay that way; the code, the tests and this file are in English.
 
-- Emacs: `emacs` は PATH に無い。`/opt/homebrew/Cellar/emacs-plus@32/32.0.50/Emacs.app/Contents/MacOS/Emacs`（Emacs 32 開発版）。`Makefile` の `EMACS` 変数で指定済み。
-- 依存パッケージは `~/.emacs.d/elpa` にある（magit-section, markdown-mode, nerd-icons, spinner, vterm）。`transient` は Emacs 本体に同梱。`package-initialize` で読める。`package-lint` は未導入（lint は自動でスキップする）。
-- Claude Code CLI: `claude` 2.1.261。
+## Environment
 
-## コマンド
+- Emacs: `emacs` is not on PATH. It is `/opt/homebrew/Cellar/emacs-plus@32/32.0.50/Emacs.app/Contents/MacOS/Emacs` (the Emacs 32 development build), already named by the `EMACS` variable of `Makefile`.
+- The dependencies live in `~/.emacs.d/elpa` (magit-section, markdown-mode, nerd-icons, spinner, vterm); `transient` ships with Emacs itself. `package-initialize` finds them. `package-lint` is not installed, and lint skips it on its own.
+- Claude Code CLI: `claude` 2.1.261.
+
+## Commands
 
 ```
-make compile     # byte-compile（警告をエラー扱い）。古い .elc を先に消す
-make test        # ERT（fixture リプレイ。実プロセスは使わない）
-make test-live   # 実 CLI を使う ERT（tag live）。手動でのみ実行
-make lint        # checkdoc（+ package-lint があれば）
+make compile     # byte-compile (warnings are errors); wipes stale .elc first
+make test        # ERT (fixture replay; no real process)
+make test-live   # ERT against the real CLI (tag live); run by hand only
+make lint        # checkdoc (+ package-lint when it is there)
 ```
 
-`make test-live` は全部で数分・$1 弱かかる。1 本だけ回すときは
+`make test-live` takes a few minutes and a little under $1 for the whole set. To run
+a single one, narrow it with a selector:
 `$(BATCH) -l test/ecc-test-helpers.el -l test/ecc-live-test.el --eval '(ert-run-tests-batch-and-exit (quote ecc-test-live-plan))'`
-のように selector で絞る。
 
-## CLI を起動するときの必須ルール
+## Rules for starting the CLI
 
-開発・テストで `claude` を起動するときは **必ず** 次を付ける:
+Development and testing **always** start `claude` with:
 
 ```
 --settings '{"enabledPlugins":{"emacs-bridge@emacs-gravity-marketplace":false}}'
 --model haiku --max-budget-usd 0.5
 ```
 
-- `--settings` の `enabledPlugins`: この環境には emacs-gravity プラグイン（emacs-bridge 4.6.2）の
-  hooks が入っている。**ハングはしない**（2026-09-05 に 2 回確認。hook は
-  `{"reason":"no_capable_terminal"}` を返して手を引き、`--permission-prompt-tool stdio` に落ちる）が、
-  fixture の記録では止めておく: hook events・1〜2 秒の遅延・gravity 自身の MCP と system prompt が混ざらない。
-  セッション単位なので、ユーザーの対話用セッションには影響しない。
-- **`--safe-mode` は使わない。** MCP サーバー・skills・カスタムコマンド・agents まで丸ごと落ちてしまい、
-  この package が表示したいもの（FR-INP-1〜3 の `/` 補完、FR-DASH の agents、FR-MCP）が消える。
-  検証結果は `docs/verified.md` の D2。
-- `--model haiku` と `--max-budget-usd`: コスト上限。
-- stream-json には `--verbose` と `--permission-prompt-tool stdio` と `:connection-type 'pipe` が必須（計画 §2.1, §9）。
+- `enabledPlugins` in `--settings`: this machine carries the hooks of the emacs-gravity
+  plugin (emacs-bridge 4.6.2). They **do not hang** (confirmed twice on 2026-09-05: the
+  hook answers `{"reason":"no_capable_terminal"}`, withdraws, and the CLI falls back to
+  `--permission-prompt-tool stdio`), but keep them off while recording fixtures, so that
+  hook events, one or two seconds of delay, and gravity's own MCP and system prompt stay
+  out of the recording. It is per session, so the user's own interactive sessions are
+  unaffected.
+- **Never use `--safe-mode`.** It drops MCP servers, skills, custom commands and agents
+  altogether, which takes away the very things this package wants to show (`/` completion
+  of FR-INP-1..3, the agents of FR-DASH, FR-MCP). See D2 in `docs/verified.md`.
+- `--model haiku` and `--max-budget-usd`: the cost cap.
+- stream-json needs `--verbose`, `--permission-prompt-tool stdio` and
+  `:connection-type 'pipe` (plan §2.1, §9).
 
-Elisp 側では `ecc-safe-mode` は nil が既定。止めたいプラグインは `ecc-disabled-plugins` に入れる。
+On the Elisp side `ecc-safe-mode` is nil by default. Plugins to turn off go in
+`ecc-disabled-plugins`.
 
-## コーディング規約
+## Coding rules
 
-- `lexical-binding: t`。プレフィックス `ecc-`、内部関数は `ecc--`。
-- JSON を触るのは `ecc-protocol.el` と `ecc-proc.el` だけ。magit-section を require するのは `ecc-render.el` だけ（計画 §0）。
-- `json-serialize` の配列はベクタ。`nil` は `{}`。`null` は `:null`、偽は `:false`（計画 §2.3）。
-- セッションバッファで font-lock を使わない。face は挿入時に付ける。
-- 例外を握りつぶさない。dispatch の失敗はログと `unknown` ノードに残す。
+- `lexical-binding: t`. The prefix is `ecc-`, and internal functions are `ecc--`.
+- JSON is touched only by `ecc-protocol.el` and `ecc-proc.el`. magit-section is required
+  only by `ecc-render.el` (plan §0).
+- Arrays for `json-serialize` are vectors. `nil` is `{}`. `null` is `:null` and false is
+  `:false` (plan §2.3).
+- No font-lock in a session buffer. Faces are put on at insertion time.
+- Never swallow an error. A failed dispatch is left in the log and in an `unknown` node.
+- Code, comments, docstrings and user-facing messages are written in English.
 
-## テスト
+## Tests
 
-- 各フェーズで計画 §8 に沿った ERT を書く。`make test` が通ることをフェーズ完了の条件に含める。
-- fixture は `test/fixtures/*.jsonl`。`scripts/record-fixture.sh` で実 CLI から記録する。
-- セッションレジストリの fixture は `test/fixtures/registry/*.json`（`~/.claude/sessions` からコピー）。
-- 履歴（`~/.claude/projects` の jsonl）の fixture は `test/fixtures/history/*.jsonl`。
-  `scripts/record-history.sh` で記録する（永続化ありで数ターン喋らせ、書かれた jsonl を取り込む）。
-  ストリームの fixture と同じディレクトリに置かないこと（`ecc-dispatch-test-no-fixture-line-is-unknown`
-  が全 fixture をストリームとして流すため）。
-- 描画のスナップショットは主要ケースに絞る。
-- 複数セッションにまたがる機能（Inbox、ダッシュボード）のテストは必ず 2 セッション以上で書く
-  （`ecc-model-pending-all` の破壊的 sort は 1 セッションでは出なかった）。
-- `format-mode-line` は batch では空文字列を返す。mode-line の `:eval` は関数を直接呼んで検証する。
+- Each phase gets the ERT of plan §8. A phase is not done until `make test` passes.
+- Fixtures are `test/fixtures/*.jsonl`, recorded from the real CLI by
+  `scripts/record-fixture.sh`.
+- Session registry fixtures are `test/fixtures/registry/*.json`, copied from
+  `~/.claude/sessions`.
+- History fixtures (the jsonl of `~/.claude/projects`) are `test/fixtures/history/*.jsonl`,
+  recorded by `scripts/record-history.sh`: it talks for a few turns with persistence on and
+  takes the jsonl that was written. Do not put them in the same directory as the stream
+  fixtures, because `ecc-dispatch-test-no-fixture-line-is-unknown` feeds every fixture
+  through as a stream.
+- Keep rendering snapshots to the main cases.
+- Anything that spans sessions (the Inbox, the dashboard) is tested with two sessions or
+  more: the destructive sort in `ecc-model-pending-all` did not show up with one.
+- `format-mode-line` returns an empty string in batch. Check the `:eval` of a mode-line by
+  calling its function directly.
+- Japanese prompts in the tests are input data. They match what the fixtures recorded, and
+  they cover multibyte text, so leave them in Japanese.
 
-## セッションの所在（フェーズ 5 の調査。詳細は docs/verified.md）
+## Where a session lives (from the phase 5 investigation; details in docs/verified.md)
 
-- 生きているセッション: `~/.claude/sessions/<pid>.json`。`ecc-registry.el` が読む。
-  headless も載る。`claude agents --json` は使わない（同じ内容を subprocess 越しに返すだけ）。
-- 記録: `~/.claude/projects/<cwd の英数字以外を - にしたもの>/<session-id>.jsonl`。
-- 記録は木。編集・中断・二重 resume で枝ができるので、`ecc-history-abandoned` で
-  現在の系列にぶら下がった枝だけを落とす（`/compact` は新しい根を作るので落としてはいけない）。
-- **生きているセッションを別プロセスが `--resume` するとロック無しで会話が分岐する。**
-  止めてから resume すること（`ecc-history-resume` が確認する）。
+- Live sessions: `~/.claude/sessions/<pid>.json`, read by `ecc-registry.el`. Headless ones
+  are there too. `claude agents --json` is not used: it returns the same thing through a
+  subprocess.
+- The recording: `~/.claude/projects/<cwd with every non-alphanumeric turned into ->/<session-id>.jsonl`.
+- The recording is a tree. Editing, interrupting and resuming twice all grow branches, so
+  `ecc-history-abandoned` drops only the branches hanging off the current line (`/compact`
+  starts a new root, and must not be dropped).
+- **A second process running `--resume` on a live session forks the conversation, with no
+  lock to stop it.** Stop it before resuming; `ecc-history-resume` asks first.
 
-## 作業の進め方
+## How the work goes
 
-- 1 フェーズ = 1 セッションを目安にする。フェーズの受け入れ基準を満たしたら報告し、次に進む前にユーザーの確認を取る。
-- フェーズ内でも意味のある単位でコミットする。メッセージは Conventional Commits（`feat(proc): ...`, `fix(render): ...`, `test: ...`, `docs: ...`）。
-- 要件と衝突する発見があれば `docs/decisions.md` に記録してユーザーに確認する。勝手に要件を変えない。
+- One phase per session, roughly. Report once the acceptance criteria of the phase are met,
+  and get the user's word before moving on.
+- Commit in meaningful steps within a phase too. Messages follow Conventional Commits
+  (`feat(proc): ...`, `fix(render): ...`, `test: ...`, `docs: ...`).
+- A finding that clashes with the requirements goes in `docs/decisions.md` and to the user.
+  Never change a requirement on your own.
