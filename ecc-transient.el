@@ -39,6 +39,8 @@
 (declare-function ecc-session-goto-files "ecc-session" ())
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-history-open "ecc-history" (session-id))
+(declare-function ecc-tui-open "ecc-tui" (&optional session))
+(declare-function ecc-tui-return "ecc-tui" (&optional session))
 
 ;;;; Commands the menu needs of its own
 
@@ -200,7 +202,9 @@ same suffix from one call to the next."
     ("R" "Rename" ecc-rename-session)
     ("v" "Go to the prompt buffer" ecc-show-session)
     ("w" "Hide or restore windows" ecc-toggle)
-    ("i" "Interrupt" ecc-interrupt)]
+    ("i" "Interrupt" ecc-interrupt)
+    ("t" "Hand over to the terminal" ecc-tui-open)
+    ("u" "Take it back" ecc-tui-return)]
    ["Send"
     ("s" "Send a line" ecc-send)
     ("x" "Send with context" ecc-send-with-context)

@@ -208,7 +208,10 @@
       (should (= (length nodes) 2))
       (should (member "success" (mapcar (lambda (n) (ecc-model-node-get n 'result))
                                         nodes))))
-    (should (= (ecc-session-context-tokens session) 0))))
+    ;; The estimate of what is in the window starts again from what the
+    ;; boundary says is left of the conversation (FR-HINT-5); the
+    ;; recording of this fixture compacted 17496 tokens down to 1339.
+    (should (= (ecc-session-context-tokens session) 1339))))
 
 (ert-deftest ecc-dispatch-test-replay-echo-adds-nothing ()
   "The echo of a prompt is an acknowledgement, not a message (D5)."

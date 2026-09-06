@@ -682,6 +682,66 @@ is what keeps the two from drifting apart."
                    (car (last (ecc-session-turns session))))))
         (should (string-match-p "\\(?:^\\|[^a-zA-Z]\\)[Rr]ed" text))))))
 
+(ert-deftest ecc-test-live-recap ()
+  "/recap comes back as one synthetic line, outside the transcript (FR-HINT-1)."
+  :tags '(live)
+  (ecc-test-live-with-session session
+    (ecc-proc-send-prompt
+     session "Reply with exactly: PONG.  Do not use any tool.")
+    (ecc-test-live-wait-for-result session)
+    ;; The recap waits for the user to have been away; the wait itself
+    ;; is what the timers of `ecc-hint-mode' do, and is not worth two
+    ;; minutes of a test.
+    (setf (ecc-session-last-result-time session)
+          (time-subtract (current-time) 300))
+    (should-not (ecc-hint-maybe-recap session))
+    ;; It went out without opening a turn the transcript shows.
+    (should (= (length (ecc-session-turns session)) 1))
+    (should (ecc-turn-transient (ecc-session-current-turn session)))
+    (ecc-test-live-wait session
+                        (lambda () (ecc-hint-recap-get session 'text))
+                        "the recap")
+    ;; The result of the transient turn follows the line itself.
+    (ecc-test-live-wait session
+                        (lambda () (null (ecc-session-current-turn session)))
+                        "the end of the recap turn")
+    (let ((text (ecc-hint-recap-get session 'text)))
+      ;; One line, and about this conversation.
+      (should (> (length text) 10))
+      (should-not (string-search "\n" text))
+      ;; The conversation itself is untouched: one turn, the one asked.
+      (should (= (length (ecc-session-turns session)) 1))
+      (should (eq (ecc-session-state session) 'idle))
+      (ecc-render-flush session)
+      (let ((drawn (ecc-test-buffer-string (ecc-session-buffer session))))
+        (should (string-search "✎ " drawn))
+        (should (string-search (car (split-string text "  " t)) drawn))))
+    ;; Nothing new has been said, so it is not asked again (FR-HINT-2).
+    (should (eq (ecc-hint-maybe-recap session) 'unchanged))))
+
+(ert-deftest ecc-test-live-context-left ()
+  "The context left falls as the conversation grows (FR-HINT-3)."
+  :tags '(live)
+  (ecc-test-live-with-session session
+    ;; The window is the one guessed from the model, since the session
+    ;; was started without --autocompact: what is measured here is that
+    ;; the estimate moves the right way, not the guess itself.
+    (should-not (ecc-hint-context-left session))
+    (ecc-proc-send-prompt session "Reply with exactly: ONE.  Do not use any tool.")
+    (ecc-test-live-wait-for-result session)
+    (let ((first (ecc-hint-context-left session))
+          (tokens (ecc-session-context-tokens session)))
+      ;; The estimate is the input side of the usage the CLI reported.
+      (should (> tokens 0))
+      (should (and (> first 0.0) (< first 1.0)))
+      (should (string-search "context" (ecc-hint-context-string session)))
+      (ecc-proc-send-prompt session "Reply with exactly: TWO.  Do not use any tool.")
+      (ecc-test-live-wait-for-result session)
+      (should (> (ecc-session-context-tokens session) tokens))
+      (should (< (ecc-hint-context-left session) first))
+      ;; The mode line says the same thing in one line.
+      (should (string-match-p "%" (ecc-hint-mode-line-string session))))))
+
 (provide 'ecc-live-test)
 
 ;;; ecc-live-test.el ends here

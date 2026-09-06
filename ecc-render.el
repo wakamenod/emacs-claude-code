@@ -784,11 +784,20 @@ each question once the request was answered."
         (message (ecc-model-node-get node 'message)))
     (pcase kind
       ('compact
-       (let ((result (ecc-model-node-get node 'result)))
-         (format "⟲ compact %s%s"
+       (let ((result (ecc-model-node-get node 'result))
+             (metadata (ecc-model-node-get node 'metadata)))
+         (format "⟲ compact %s%s%s"
                  (cond ((null result) "boundary")
                        ((equal result "success") "done, context reset")
                        (t result))
+                 ;; What the compaction did to the context, which is
+                 ;; what the indicator of FR-HINT-3 goes back to.
+                 (if-let* ((post (alist-get 'post_tokens metadata)))
+                     (format " · %s → %s tokens"
+                             (ecc-render--count-string
+                              (or (alist-get 'pre_tokens metadata) 0))
+                             (ecc-render--count-string post))
+                   "")
                  (if-let* ((e (ecc-model-node-get node 'error)))
                      (concat " — " e) ""))))
       ('hook (format "hook %s%s"
@@ -860,23 +869,54 @@ each question once the request was answered."
     (dolist (child (ecc-turn-children turn))
       (ecc-render--insert-node session child 1))))
 
+(defvar ecc-render-tail-functions nil
+  "Functions adding a line under the state line at the end of a transcript.
+Each is called with the session and returns a string without a final
+newline, or nil.  The modules above the renderer put what belongs at
+the end of the conversation here rather than in the turns: the recap
+of FR-HINT-1 is one such line (plan section 5.2).")
+
+(defvar ecc-render-header-functions nil
+  "Functions adding to the header line of a session buffer.
+Each is called with the session and returns a string or nil; what
+comes back is appended to the state line of FR-OUT-6.  The context
+left of FR-HINT-3 arrives this way.")
+
 (defun ecc-render--tail-string (session)
   "Return the state line of SESSION, or nil when there is nothing to say."
-  (pcase (ecc-session-state session)
-    ('idle nil)
-    ('exited (propertize
-              (format "Exited with code %s; R resumes it"
-                      (or (alist-get 'exit-status (ecc-session-progress session)) "?"))
-              'face 'ecc-error-face))
-    (state (propertize (format "● %s…" state) 'face 'ecc-pending-face))))
+  (if (eq (ecc-session-kind session) 'handoff)
+      ;; The process is gone on purpose: the conversation is being had in
+      ;; a terminal and the buffer follows the recording (FR-TUI-3).
+      (propertize "⇄ open in the terminal; it comes back when the terminal is left"
+                  'face 'ecc-pending-face)
+    (pcase (ecc-session-state session)
+      ('idle nil)
+      ('exited (propertize
+                (format "Exited with code %s; R resumes it"
+                        (or (alist-get 'exit-status (ecc-session-progress session))
+                            "?"))
+                'face 'ecc-error-face))
+      (state (propertize (format "● %s…" state) 'face 'ecc-pending-face)))))
+
+(defun ecc-render--tail-lines (session)
+  "Return the lines drawn at the end of the transcript of SESSION."
+  (delq nil (cons (ecc-render--tail-string session)
+                  (mapcar (lambda (function)
+                            (condition-case err (funcall function session)
+                              (error (ecc-log (ecc-session-name session)
+                                              "tail function %s: %s" function
+                                              (error-message-string err))
+                                     nil)))
+                          ecc-render-tail-functions))))
 
 (defun ecc-render--insert-live (session)
   "Insert the turns of SESSION that are not frozen yet, and the state line."
   (dolist (turn (seq-drop (ecc-session-turns session) ecc-render--frozen))
     (ecc-render--insert-turn session turn))
-  (when-let* ((tail (ecc-render--tail-string session)))
+  (when-let* ((lines (ecc-render--tail-lines session)))
     (magit-insert-section (ecc-section-tail "tail")
-      (insert tail "\n"))))
+      (dolist (line lines)
+        (insert line "\n")))))
 
 ;;;; The state line (FR-OUT-6)
 
@@ -888,7 +928,9 @@ each question once the request was answered."
          (streaming (alist-get 'streaming progress))
          (status (alist-get 'status progress))
          (request (car (ecc-session-pending session))))
-    (pcase (ecc-session-state session)
+    (pcase (if (eq (ecc-session-kind session) 'handoff) 'handoff
+             (ecc-session-state session))
+      ('handoff (propertize "⇄ handed over to the terminal" 'face 'ecc-pending-face))
       ('idle (propertize "○ idle" 'face 'ecc-dim-face))
       ('starting (propertize "○ starting…" 'face 'ecc-dim-face))
       ('exited (propertize (format "✗ exited (code %s)"
@@ -932,16 +974,31 @@ each question once the request was answered."
          'face 'ecc-dim-face))))))
 
 (defun ecc-render-header-line ()
-  "Return the header line of the session buffer, for `header-line-format'."
+  "Return the header line of the session buffer, for `header-line-format'.
+What `ecc-render-header-functions' returns follows the state line,
+separated by the same middle dot the state line uses."
   (when ecc-render--session
-    (concat " " (ecc-render-status-line ecc-render--session))))
+    (let ((session ecc-render--session))
+      (concat " " (ecc-render-status-line session)
+              (mapconcat (lambda (function)
+                           (if-let* ((text (condition-case err (funcall function session)
+                                             (error (ecc-log (ecc-session-name session)
+                                                             "header function %s: %s"
+                                                             function
+                                                             (error-message-string err))
+                                                    nil))))
+                               (concat "  ·  " text)
+                             ""))
+                         ecc-render-header-functions "")))))
 
 (defun ecc-render-mode-line-state (session)
   "Return the short state of SESSION for a mode line, or nil when idle.
 A request waiting for an answer is what the mode line exists to show
 \(FR-PERM-4), so it is spelled out with its kind."
-  (pcase (ecc-session-state session)
+  (pcase (if (eq (ecc-session-kind session) 'handoff) 'handoff
+           (ecc-session-state session))
     ((or 'idle 'starting) nil)
+    ('handoff (propertize "⇄ terminal" 'face 'ecc-pending-face))
     ('exited (propertize "✗ exited" 'face 'ecc-error-face))
     ('compacting (propertize "⟲ compacting" 'face 'ecc-pending-face))
     ((or 'waiting-permission 'waiting-question 'waiting-plan)

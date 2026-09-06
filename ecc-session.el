@@ -21,6 +21,7 @@
 (require 'ecc-model)
 (require 'ecc-proc)
 (require 'ecc-render)
+(require 'ecc-hint)
 (require 'ecc-markdown)
 (require 'ecc-diff)
 
@@ -40,6 +41,7 @@
 (declare-function ecc-review "ecc-review" (&optional session paths))
 (declare-function ecc-perm-request-at-point "ecc-perm" ())
 (declare-function ecc-menu "ecc-transient" ())
+(declare-function ecc-tui-open "ecc-tui" (&optional session))
 
 (defvar ecc-session-mode-map
   (let ((map (make-sparse-keymap)))
@@ -50,6 +52,7 @@
     (define-key map (kbd "RET") #'ecc-session-visit)
     (define-key map (kbd "R") #'ecc-session-resume)
     (define-key map (kbd "L") #'ecc-session-show-log)
+    (define-key map (kbd "t") #'ecc-tui-open)
     (define-key map (kbd "a") #'ecc-perm-allow)
     (define-key map (kbd "d") #'ecc-session-review-or-deny)
     (define-key map (kbd "C-c d") #'ecc-session-review)
@@ -88,8 +91,11 @@
     (setq-local magit-section-visibility-indicators nil))
   (setq-local truncate-lines nil)
   ;; The state, and above all a request waiting for an answer, is shown
-  ;; next to the mode name (FR-PERM-4).
-  (setq-local mode-line-process '(:eval (ecc-render-mode-line-process)))
+  ;; next to the mode name (FR-PERM-4), and after it what the session
+  ;; costs and how much room is left in its context (FR-HINT-3).
+  (setq-local mode-line-process
+              '(:eval (concat (ecc-render-mode-line-process)
+                              (ecc-hint-mode-line-string))))
   (add-hook 'kill-buffer-hook #'ecc-session--kill-process nil t))
 
 (defun ecc-session--kill-process ()

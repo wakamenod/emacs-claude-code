@@ -41,6 +41,8 @@
 (require 'ecc-window)
 (require 'ecc-context)
 (require 'ecc-notify)
+(require 'ecc-hint)
+(require 'ecc-tui)
 (require 'ecc-transient)
 
 (defcustom ecc-resume-on-abnormal-exit 'ask
@@ -99,6 +101,11 @@ argument asks for the directory and the name."
       (ecc-inbox-indicator-mode 1))
     (when ecc-notify-on-start
       (ecc-notify-mode 1))
+    ;; The timers that sum a conversation up cost a turn when they fire,
+    ;; so they only start once a session exists and only when the recap
+    ;; is wanted at all (FR-HINT-1, NFR-3).
+    (when ecc-recap-enabled
+      (ecc-hint-mode 1))
     (when ecc-track-source-buffer
       (ecc-track-source-buffer-mode 1))
     (ecc-display-prompt session)

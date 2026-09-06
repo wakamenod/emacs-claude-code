@@ -229,6 +229,16 @@ FORMAT-STRING and ARGS are passed to `format'."
   "Face for secondary detail such as costs and durations."
   :group 'ecc)
 
+(defface ecc-recap-face
+  '((t :inherit shadow :slant italic))
+  "Face for the recap line at the end of the transcript (FR-HINT-1)."
+  :group 'ecc)
+
+(defface ecc-warning-face
+  '((t :inherit warning))
+  "Face for a hint that is worth noticing, such as a small context left."
+  :group 'ecc)
+
 ;;;; UUID
 
 (defun ecc--hex4 ()

@@ -159,14 +159,26 @@ updates what it is told and never rebuilds the session."
   (run-hook-with-args 'ecc-progress-hook session))
 
 (defun ecc-dispatch--compacted (session message result)
-  "Note in SESSION that MESSAGE reports a compaction with RESULT."
-  (ecc-model-add-node session :type 'system :status 'done
-                      :data (list (cons 'kind 'compact)
-                                  (cons 'result result)
-                                  (cons 'error (alist-get 'compact_error message))
-                                  (cons 'message message)))
-  (when (equal result "success")
-    (setf (ecc-session-context-tokens session) 0))
+  "Note in SESSION that MESSAGE reports a compaction with RESULT.
+RESULT is nil on the compact_boundary that opens the compacted
+conversation, and the outcome the CLI reported on the status message
+that closes the compaction itself."
+  (let ((metadata (alist-get 'compact_metadata message)))
+    (ecc-model-add-node session :type 'system :status 'done
+                        :data (list (cons 'kind 'compact)
+                                    (cons 'result result)
+                                    (cons 'error (alist-get 'compact_error message))
+                                    (cons 'metadata metadata)
+                                    (cons 'message message)))
+    ;; The context left starts again from what is in the window now
+    ;; (FR-HINT-5).  Only the boundary knows how much that is; a
+    ;; successful status message is followed by one, so its guess of
+    ;; zero is corrected within the same exchange.  A failed compaction
+    ;; changed nothing and must not move the estimate.
+    (let ((post (alist-get 'post_tokens metadata)))
+      (when (or post (null result) (equal result "success"))
+        (setf (ecc-session-context-tokens session) (or post 0))
+        (run-hook-with-args 'ecc-usage-hook session))))
   (when (eq (ecc-session-state session) 'compacting)
     (ecc-model-set-state session
                          (if (ecc-session-current-turn session) 'running 'idle)))
