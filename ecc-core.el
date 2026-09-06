@@ -179,6 +179,28 @@ FORMAT-STRING and ARGS are passed to `format'."
   (when ecc-debug
     (apply #'message (concat "ecc[" name "]: " format-string) args)))
 
+;;;; The mode line and the header line
+
+(defun ecc--mode-line-escape (string)
+  "Return STRING as it must be written to reach a mode line intact.
+A mode line and a header line read `%' as the start of a construct of
+their own: `%s' is the process status, and an unrecognised one takes
+the character after it away with it: \"83% left\" arrives as
+\"83left\".  Everything this package puts there is text meant for a
+person, and it carries session names, shell commands and percentages,
+so every `%' is doubled.  The added character copies the properties of
+the one it stands next to, so a face is not broken in the middle."
+  (when string
+    (let ((result nil)
+          (start 0)
+          (pos nil))
+      (while (setq pos (string-search "%" string start))
+        (push (substring string start (1+ pos)) result)
+        (push (substring string pos (1+ pos)) result)
+        (setq start (1+ pos)))
+      (push (substring string start) result)
+      (apply #'concat (nreverse result)))))
+
 ;;;; Faces (plan section 5.3)
 
 ;; The session buffer does not use font-lock (plan section 9, item 7), so

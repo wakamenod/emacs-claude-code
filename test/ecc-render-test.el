@@ -661,6 +661,18 @@ turn again and looked as though nothing had arrived."
                            (with-current-buffer buffer (point-max)))))
         (when (window-live-p window) (delete-window window))))))
 
+(ert-deftest ecc-render-test-header-line-keeps-a-percent-sign ()
+  "A command with a percent sign in it is not eaten by the header line."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "print something")
+    (ecc-test-add-request session "Bash" '((command . "printf %s done")))
+    (with-current-buffer (ecc-session-buffer session)
+      (let ((header (substring-no-properties (ecc-render-header-line))))
+        ;; Doubled on the way in, so that one of them is drawn.
+        (should (string-search "printf %%s done" header))
+        (should-not (string-search "printf %s done" header))))))
+
 (provide 'ecc-render-test)
 
 ;;; ecc-render-test.el ends here

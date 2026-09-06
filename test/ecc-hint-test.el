@@ -110,8 +110,13 @@ session has none."
     (setf (ecc-session-options session) '(:autocompact 1000))
     (ecc-model-update-usage session '((input_tokens . 100)))
     (with-current-buffer (ecc-session-buffer session)
+      ;; The header line is read for %-constructs, so what goes into it
+      ;; carries a doubled percent sign; it reaches the eye as one.
+      (should (string-search "context 90%% left"
+                             (substring-no-properties (ecc-render-header-line))))
       (should (string-search "context 90% left"
-                             (substring-no-properties (ecc-render-header-line)))))))
+                             (substring-no-properties
+                              (ecc-hint-context-string session)))))))
 
 ;;;; The mode line (FR-HINT-3)
 

@@ -281,7 +281,8 @@ With REQUEST it is the buffer reviewing that one proposal."
 
 (defun ecc-review--header-line ()
   "Return the header line of the review buffer."
-  (concat
+  (ecc--mode-line-escape
+   (concat
    (propertize (format " %s: %s"
                        (if ecc-review--request "Proposal review" "Review")
                        (if ecc-review--session
@@ -293,7 +294,7 @@ With REQUEST it is the buffer reviewing that one proposal."
    (propertize (if ecc-review--request
                    "  ·  c comment  e edit and apply  C-c C-c send as deny  n/p hunk  RET source"
                  "  ·  c comment  C-c l list  C-c d delete  C-c C-c send  n/p hunk  RET source")
-               'face 'ecc-dim-face)))
+               'face 'ecc-dim-face))))
 
 (defun ecc-review--fill (buffer session text root &optional request paths)
   "Put the diff TEXT into BUFFER for SESSION, keeping the comments that fit.

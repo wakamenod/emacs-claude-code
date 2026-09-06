@@ -192,8 +192,9 @@ The request of A is a Bash call and older; the one of B is a Write."
     ;; evaluated by hand.
     (with-current-buffer (ecc-session-buffer a)
       (should (equal mode-line-process
-                     '(:eval (concat (ecc-render-mode-line-process)
-                                     (ecc-hint-mode-line-string)))))
+                     '(:eval (ecc--mode-line-escape
+                              (concat (ecc-render-mode-line-process)
+                                      (ecc-hint-mode-line-string))))))
       (should (string-search "⚠ question ×2" (ecc-render-mode-line-process))))
     ;; Answered, the session is back to the turn that was running.
     (ecc-perm-respond (car (ecc-session-pending b)) 'deny)

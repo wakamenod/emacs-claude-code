@@ -155,7 +155,8 @@ session running in the background does not grab the window."
 
 (defun ecc-plan--header-line ()
   "Return the header line of the plan buffer."
-  (concat
+  (ecc--mode-line-escape
+   (concat
    (propertize (format " Plan review: %s"
                        (if ecc-plan--request
                            (ecc-session-name (ecc-request-session ecc-plan--request))
@@ -170,7 +171,7 @@ session running in the background does not grab the window."
                          ""))
                'face 'ecc-dim-face)
    (propertize "  ·  C-c C-c approve  C-c C-k deny  C-c c comment  C-c m mode"
-               'face 'ecc-dim-face)))
+               'face 'ecc-dim-face))))
 
 ;;;; What changed since the last plan (FR-PLAN-5)
 

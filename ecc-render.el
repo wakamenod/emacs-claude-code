@@ -979,7 +979,8 @@ What `ecc-render-header-functions' returns follows the state line,
 separated by the same middle dot the state line uses."
   (when ecc-render--session
     (let ((session ecc-render--session))
-      (concat " " (ecc-render-status-line session)
+      (ecc--mode-line-escape
+       (concat " " (ecc-render-status-line session)
               (mapconcat (lambda (function)
                            (if-let* ((text (condition-case err (funcall function session)
                                              (error (ecc-log (ecc-session-name session)
@@ -989,7 +990,7 @@ separated by the same middle dot the state line uses."
                                                     nil))))
                                (concat "  ·  " text)
                              ""))
-                         ecc-render-header-functions "")))))
+                         ecc-render-header-functions ""))))))
 
 (defun ecc-render-mode-line-state (session)
   "Return the short state of SESSION for a mode line, or nil when idle.

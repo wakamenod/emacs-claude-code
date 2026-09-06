@@ -84,6 +84,28 @@
   (should (equal (ecc--truncate nil 4) ""))
   (should (equal (ecc--truncate "abcd" 4) "abcd")))
 
+(ert-deftest ecc-core-test-mode-line-escape ()
+  "A percent sign written for a person survives a mode line."
+  ;; What a mode line makes of these is checked by hand rather than
+  ;; here: `format-mode-line' draws nothing in batch.  With a real
+  ;; frame, "context 83% left" arrives as "context 83left" and
+  ;; "printf %s" as "printf no process", which is what this doubling is
+  ;; for (measured on 2026-09-06, docs/verified.md).
+  (should (equal (ecc--mode-line-escape "context 83% left")
+                 "context 83%% left"))
+  (should (equal (ecc--mode-line-escape "Bash printf %s") "Bash printf %%s"))
+  (should (equal (ecc--mode-line-escape "100%%") "100%%%%"))
+  ;; Nothing to do, and nothing done.
+  (should (equal (ecc--mode-line-escape "plain") "plain"))
+  (should-not (ecc--mode-line-escape nil))
+  ;; The added character looks like the one it doubles, so a face is not
+  ;; cut in half.
+  (let* ((text (concat "left " (propertize "83%" 'face 'ecc-error-face)))
+         (escaped (ecc--mode-line-escape text)))
+    (should (equal (substring-no-properties escaped) "left 83%%"))
+    (should (eq (get-text-property 7 'face escaped) 'ecc-error-face))
+    (should (eq (get-text-property 8 'face escaped) 'ecc-error-face))))
+
 (provide 'ecc-core-test)
 
 ;;; ecc-core-test.el ends here

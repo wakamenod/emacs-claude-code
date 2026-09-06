@@ -94,8 +94,11 @@
   ;; next to the mode name (FR-PERM-4), and after it what the session
   ;; costs and how much room is left in its context (FR-HINT-3).
   (setq-local mode-line-process
-              '(:eval (concat (ecc-render-mode-line-process)
-                              (ecc-hint-mode-line-string))))
+              ;; Escaped where it is put together rather than in each
+              ;; piece: what the pieces return is text for a person.
+              '(:eval (ecc--mode-line-escape
+                       (concat (ecc-render-mode-line-process)
+                               (ecc-hint-mode-line-string)))))
   (add-hook 'kill-buffer-hook #'ecc-session--kill-process nil t))
 
 (defun ecc-session--kill-process ()
