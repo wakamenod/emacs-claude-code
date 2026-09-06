@@ -30,7 +30,13 @@
   :type 'string)
 
 (defcustom ecc-model nil
-  "Model passed to the CLI with --model, or nil for the CLI default."
+  "Model a new session is started with, or nil for the CLI default.
+
+It is passed with --model when a session is created.  A session that is
+resumed keeps the model its recording ends on instead, so that a
+`/model\=' sent from Emacs or from the terminal of a hand-off survives
+being taken up again; to pin a model to a session of its own, put
+`:model\=' in its options."
   :type '(choice (const :tag "CLI default" nil) string))
 
 (defcustom ecc-permission-mode nil

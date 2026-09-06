@@ -61,10 +61,31 @@ cannot; it normally takes a fraction of a second.  Zero kills at once."
 
 ;;;; The command line (plan section 2.1)
 
+(defun ecc-proc--model (session &optional resume)
+  "Return the model SESSION should be started with, or nil for none.
+RESUME non-nil means the session is being resumed rather than created.
+
+The CLI has no record of what a session was started with: resuming
+without --model picks up the model of the last real assistant message
+of the recording, and passing --model overrides that for good (verified
+on 2026-09-06, `docs/verified.md').  Handing a resumed session
+`ecc-model' would therefore undo every `/model' made since, in the
+terminal of a hand-off above all (FR-TUI-4).  So the global default
+starts a new session only; the option of a session, which somebody put
+there on purpose, is passed either way."
+  (if resume
+      (ecc-model-option session :model nil)
+    (ecc-model-option session :model ecc-model)))
+
 (defun ecc-proc-build-command (session &optional resume fork)
   "Return the command list that starts the CLI for SESSION.
 With RESUME non-nil the session id is passed to --resume instead of
---session-id, and FORK adds --fork-session."
+--session-id, and FORK adds --fork-session.
+
+A resumed session keeps the model its recording ends on, so --model is
+only passed when this session was given one of its own: `ecc-model' is
+the default of a *new* session, not an instruction to change the model
+of one that already exists (see `ecc-proc--model')."
   (let* ((opt (lambda (key default) (ecc-model-option session key default)))
          (command
           (append
@@ -92,7 +113,7 @@ With RESUME non-nil the session id is passed to --resume instead of
                 (list "--prompt-suggestions"))
            (and (funcall opt :hook-events ecc-hook-events-enabled)
                 (list "--include-hook-events"))
-           (when-let* ((model (funcall opt :model ecc-model)))
+           (when-let* ((model (ecc-proc--model session resume)))
              (list "--model" model))
            (when-let* ((mode (funcall opt :permission-mode ecc-permission-mode)))
              (list "--permission-mode" mode))

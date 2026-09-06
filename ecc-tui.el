@@ -115,9 +115,15 @@ the poll timer, and `:buffer' and `:process' of the terminal.")
   "Return the command line that opens SESSION in a terminal.
 It is the interactive CLI, not the headless one this package drives:
 no stream-json, no permission prompt tool, only the session to resume
-and the options that decide what it costs."
+and the options that decide what it costs.
+
+The hand-off is a resume, so the model is the one the recording ends on
+and --model is left out unless this session was given one of its own:
+the terminal is where `/model' is easiest to reach, and a model named
+here would take the change back on the way in as well as on the way
+out (`ecc-proc--model')."
   (append (list ecc-executable "--resume" (ecc-session-id session))
-          (when-let* ((model (ecc-model-option session :model ecc-model)))
+          (when-let* ((model (ecc-proc--model session t)))
             (list "--model" model))
           ecc-tui-extra-args))
 

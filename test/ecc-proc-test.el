@@ -45,6 +45,26 @@
       (should (member "--fork-session" command))
       (should-not (member "--session-id" command)))))
 
+(ert-deftest ecc-proc-test-command-resume-keeps-the-recorded-model ()
+  "Resuming does not pass `ecc-model' (2026-09-06, `docs/verified.md').
+The CLI takes the model of a resumed session from the last real
+assistant message of its recording, and --model overrides that for
+good; `ecc-model' is the default of a new session, not an instruction
+to change the model of one that already exists."
+  (ecc-test-with-fake-session session
+    (let ((ecc-model "haiku"))
+      (should (equal (ecc-proc-test--flag-value
+                      (ecc-proc-build-command session) "--model")
+                     "haiku"))
+      (should-not (member "--model" (ecc-proc-build-command session t)))
+      ;; A model of the session's own is meant, and survives a resume:
+      ;; this is how the inline sessions of FR-INLINE-1 keep a model
+      ;; that is not the one of the session they branch from.
+      (setf (ecc-session-options session) '(:model "opus"))
+      (should (equal (ecc-proc-test--flag-value
+                      (ecc-proc-build-command session t) "--model")
+                     "opus")))))
+
 (ert-deftest ecc-proc-test-command-options ()
   "Session options win over the defcustoms (FR-SES-2)."
   (ecc-test-with-fake-session session

@@ -43,7 +43,6 @@ Development and testing **always** start `claude` with:
 
 ```
 --settings '{"enabledPlugins":{"emacs-bridge@emacs-gravity-marketplace":false}}'
---model haiku --max-budget-usd 0.5
 ```
 
 - `enabledPlugins` in `--settings`: this machine carries the hooks of the emacs-gravity
@@ -56,10 +55,15 @@ Development and testing **always** start `claude` with:
 - **Never use `--safe-mode`.** It drops MCP servers, skills, custom commands and agents
   altogether, which takes away the very things this package wants to show (`/` completion
   of FR-INP-1..3, the agents of FR-DASH, FR-MCP). See D2 in `docs/verified.md`.
-- `--model haiku` and `--max-budget-usd`: the cost cap.  `ecc` itself has no budget
-  option any more (removed 2026-09-06, see `docs/decisions.md`): the scripts pass the
-  flag themselves and the live tests pass it in `:extra-args`.  A cap for ordinary use
-  belongs in the Claude Code settings.
+- **Cost belongs in the Claude Code settings, not here** (2026-09-06, see
+  `docs/decisions.md`).  `ecc` has no budget option, and no rule says to force a model
+  on it: `scripts/record-*.sh` pass a cheap model and a cap of their own, and the live
+  tests pass theirs in `:extra-args`.
+- **`--model` is passed to a new session only.**  A resumed session keeps the model of
+  the last real assistant message of its recording, and passing `--model` overrides that
+  for good, so `ecc-model` would undo every `/model` made since -- in the terminal of a
+  hand-off above all.  A model that belongs to one session goes in its `:model` option,
+  which is passed either way (`ecc-proc--model`, 2026-09-06).
 - stream-json needs `--verbose`, `--permission-prompt-tool stdio` and
   `:connection-type 'pipe` (plan §2.1, §9).
 
