@@ -215,6 +215,8 @@ A key not here falls through to `ecc-chat-mode-map'.")
   (setq-local word-wrap t)
   ;; A folded body shows as an ellipsis after its heading (FR-OUT-3).
   (add-to-invisibility-spec '(ecc-fold . t))
+  ;; Markdown markup symbols are hidden by the ecc-markup invisible spec (§3.3).
+  (add-to-invisibility-spec '(ecc-markup . nil))
   (setq-local completion-at-point-functions
               (list #'ecc-prompt-capf #'ecc-prompt-at-capf))
   ;; The state, and above all a request waiting for an answer, is shown
