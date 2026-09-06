@@ -152,7 +152,12 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
     (setf (alist-get 'stop-requested (ecc-session-progress session)) nil)
     (process-put process 'ecc-session-id (ecc-session-id session))
     (setf (ecc-session-process session) process)
-    (ecc-model-set-state session 'starting)
+    ;; The CLI is up as soon as `make-process' returned: it is waiting
+    ;; for a prompt, which is what idle means (FR-UI-1).  `starting' is
+    ;; left for a session whose process never came up, because
+    ;; system/init only arrives with the first turn (docs/verified.md)
+    ;; and a session that waited for it would spin for ever.
+    (ecc-model-set-state session 'idle)
     ;; FR-SES-8: ask for the slash commands as soon as the CLI is up.
     (ecc-proc-control session "initialize" nil 'hooks nil)
     process))

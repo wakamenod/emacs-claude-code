@@ -302,7 +302,9 @@ diff colouring survive."
    (propertize (or (ecc-session-name session) "?") 'face 'ecc-heading-face)
    (propertize
     (format "  ·  %s  ·  %s  ·  %s  ·  $%.4f\n"
-            (or (alist-get 'model (ecc-session-init session)) "?")
+            ;; init only comes with the first turn, so there is
+            ;; nothing to say about the model before it.
+            (or (alist-get 'model (ecc-session-init session)) "—")
             (or (ecc-session-permission-mode session) "default")
             (ecc-session-state session)
             (or (ecc-session-total-cost session) 0))
@@ -1275,7 +1277,9 @@ buffer that has just been made is at its end, so every window counts."
 
 (defun ecc-render--update-spinner (session)
   "Turn the spinner of the current buffer while SESSION has work to do."
-  (if (memq (ecc-session-state session) '(starting running compacting))
+  ;; `starting' does not turn the spinner: a session waits in it only
+  ;; when its process never came up (FR-UI-1).
+  (if (memq (ecc-session-state session) '(running compacting))
       (ecc-visual-spinner-start (current-buffer))
     (ecc-visual-spinner-stop (current-buffer))))
 

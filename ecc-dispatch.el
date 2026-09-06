@@ -140,6 +140,8 @@ updates what it is told and never rebuilds the session."
     (setf (ecc-session-cwd session) cwd))
   (when-let* ((mode (alist-get 'permissionMode message)))
     (setf (ecc-session-permission-mode session) mode))
+  ;; A session that never got its process up is still `starting'; init
+  ;; proves the CLI is there (FR-UI-1).
   (when (eq (ecc-session-state session) 'starting)
     (ecc-model-set-state session 'idle))
   (run-hook-with-args 'ecc-session-init-hook session))

@@ -93,6 +93,11 @@ WHAT names the thing waited for in the error message."
   "One prompt, one turn, a result with a cost, and a drawn transcript."
   :tags '(live)
   (ecc-test-live-with-session session
+    ;; The CLI is up and waiting for a prompt as soon as it started; it
+    ;; is not `starting' until system/init, which only comes with the
+    ;; first turn (FR-UI-1).
+    (should (eq (ecc-session-state session) 'idle))
+    (should (string-prefix-p "○ idle" (ecc-render-status-line session)))
     (ecc-proc-send-prompt session "Reply with exactly: PONG")
     (let ((turn (ecc-test-live-wait-for-result session)))
       ;; The slash commands arrived in the initialize answer (FR-SES-8),
@@ -757,8 +762,10 @@ is what keeps the two from drifting apart."
       (ecc-test-live-wait-for-result session)
       (should (> (ecc-session-context-tokens session) tokens))
       (should (< (ecc-hint-context-left session) first))
-      ;; The mode line says the same thing in one line.
-      (should (string-match-p "%" (ecc-hint-mode-line-string session))))))
+      ;; The mode line says nothing unless it was asked to (FR-HINT-3).
+      (should (equal (ecc-hint-mode-line-string session) ""))
+      (let ((ecc-mode-line-format " %n · %l"))
+        (should (string-match-p "%" (ecc-hint-mode-line-string session)))))))
 
 
 ;;;; The Emacs MCP server (FR-MCP-1, the acceptance check of phase 8)

@@ -54,7 +54,7 @@ off (NFR-3)."
   :type 'boolean
   :group 'ecc)
 
-(defcustom ecc-recap-idle-seconds 120
+(defcustom ecc-recap-idle-seconds 60
   "Seconds of Emacs idleness after which a session is summed up."
   :type 'number
   :group 'ecc)
@@ -114,8 +114,10 @@ would say the threshold outright."
   :type 'number
   :group 'ecc)
 
-(defcustom ecc-mode-line-format " %n · %m · %p · %l · %c"
+(defcustom ecc-mode-line-format nil
   "How a session describes itself in the mode line (FR-HINT-3).
+Nil by default: the mode line is narrow, the same numbers are in the
+header line, and a session that repeated them in both was unreadable.
 The specifications are %n the session name, %m the model, %p the
 permission mode, %l the context left as a percentage, %t the tokens in
 the context, %c the cost so far, %r the rate limit utilization and %s
@@ -237,7 +239,7 @@ straight into a mode line construct."
         (format-spec
          ecc-mode-line-format
          `((?n . ,(ecc-session-name session))
-           (?m . ,(or (ecc-hint-model session) "?"))
+           (?m . ,(or (ecc-hint-model session) "—"))
            (?p . ,(or (ecc-session-permission-mode session) "default"))
            (?l . ,(if left
                       (propertize (format "%d%%" (round (* 100 left)))

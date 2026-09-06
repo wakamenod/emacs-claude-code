@@ -129,7 +129,11 @@ session has none."
     (setf (ecc-session-permission-mode session) "acceptEdits")
     (ecc-model-update-usage session '((input_tokens . 250)))
     (setf (ecc-session-total-cost session) 0.5)
-    (let ((line (substring-no-properties (ecc-hint-mode-line-string session))))
+    ;; Nothing is put in the mode line unless it was asked for: the
+    ;; header line carries the same numbers (FR-HINT-3).
+    (should (equal (ecc-hint-mode-line-string session) ""))
+    (let* ((ecc-mode-line-format " %n · %m · %p · %l · %c")
+           (line (substring-no-properties (ecc-hint-mode-line-string session))))
       (should (equal line " test · claude-haiku-4-5 · acceptEdits · 75% · $0.5000")))
     ;; Every item and the whole format are settings (FR-HINT-3, NFR-7).
     (let ((ecc-mode-line-format "%t %r"))
