@@ -53,7 +53,7 @@ with the request, used in turn for the requests the recording makes."
       (should (string-prefix-p "test  ·  claude-haiku-4-5-20251001  ·  default  ·  idle"
                                text))
       ;; The prompt is quoted with a margin marker (plan 5.3).
-      (should (string-search "\n▌ hello\n" text)))))
+      (should (string-search "\n〉 hello\n" text)))))
 
 (ert-deftest ecc-render-test-tool-use ()
   "A tool call draws as a step, a tool and the permission that allowed it."
@@ -173,7 +173,7 @@ with the request, used in turn for the requests the recording makes."
         ;; the positions moved; the text between the markers did not.
         (let ((bounds (ecc-render-node-bounds "turn-1")))
           (should (equal text (buffer-substring-no-properties (car bounds) (cdr bounds)))))
-        (should (string-search "Turn 2  again" (buffer-string)))))))
+        (should (string-search "〉 again" (buffer-string)))))))
 
 (ert-deftest ecc-render-test-folding-survives-a-redraw ()
   "Collapsing a section sticks, because node ids are stable (plan 9.6)."
@@ -307,7 +307,7 @@ follow have a section to grow.  Returns the remaining lines."
         (should (= 1 (cl-count-if (lambda (line) (string-prefix-p "  Done. Created" line))
                                   (split-string text "\n"))))
         (should (string-search "  Done. Created `long.py` with 60 functions" text))
-        (should (string-search "● end_turn" text))
+        (should (string-match-p "[0-9.]+s · \\$[0-9.]+" text))
         (should-not (ecc-model-find-stream session nil 'text)))
       ;; A code span inside the reply got its Markdown face (FR-OUT-8).
       (with-current-buffer buffer
@@ -369,7 +369,7 @@ follow have a section to grow.  Returns the remaining lines."
       (ecc-render-test--check "subagent" text)
       (should (string-search "✓ Agent Explore  Find all .py files in current directory  ·  1 tools  ·  5.1s"
                              text))
-      (should (string-search "      ▌ List all .py files" text))
+      (should (string-search "      〉 List all .py files" text))
       (should (string-search "        ✓ Bash  find . -name" text))
       (let ((agent (seq-find (lambda (node) (eq (ecc-node-type node) 'agent))
                              (hash-table-values (ecc-session-nodes session)))))
@@ -386,7 +386,7 @@ follow have a section to grow.  Returns the remaining lines."
                 (let ((text (ecc-test-buffer-string buffer)))
                   (should (string-prefix-p "✓ Agent Explore" text))
                   (should (string-search "Bash  find . -name" text))
-                  (should (string-search "▌ List all .py files" text)))
+                  (should (string-search "〉 List all .py files" text)))
               (kill-buffer buffer))))))))
 
 ;;;; Diffs (FR-OUT-7, FR-DIFF-1)
@@ -539,16 +539,16 @@ follow have a section to grow.  Returns the remaining lines."
     (with-current-buffer (ecc-session-buffer session)
       (goto-char (point-min))
       (ecc-chat-next-turn)
-      (should (looking-at "Turn 1  hello"))
+      (should (looking-at "〉 hello"))
       (ecc-chat-next-turn)
-      (should (looking-at "Turn 2  show me code"))
+      (should (looking-at "〉 show me code"))
       (should-error (ecc-chat-next-turn) :type 'user-error)
       (ecc-chat-previous-turn)
-      (should (looking-at "Turn 1  hello"))
+      (should (looking-at "〉 hello"))
       (cl-letf (((symbol-function 'completing-read)
                  (lambda (_prompt candidates &rest _) (cadr candidates))))
         (ecc-session-timeline))
-      (should (looking-at "Turn 2  show me code")))))
+      (should (looking-at "〉 show me code")))))
 
 (ert-deftest ecc-render-test-block-movement-and-folding ()
   "Blocks can be walked, and all of them folded or unfolded (FR-OUT-14 b, c)."

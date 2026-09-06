@@ -204,7 +204,7 @@ failing that to the setting."
         (should (equal (string-trim (ecc-chat-draft)) "draft"))
         ;; The transcript above is untouched by the walk.
         (ecc-render-flush session)
-        (should (string-search "Turn 1  first" (buffer-string)))
+        (should (string-search "〉 first" (buffer-string)))
         (should (equal (string-trim (ecc-chat-draft)) "draft"))
         (should-error (ecc-prompt-history-next) :type 'user-error)))))
 

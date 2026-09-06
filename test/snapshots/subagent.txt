@@ -1,10 +1,9 @@
 test  ·  claude-haiku-4-5-20251001  ·  default  ·  idle  ·  $0.0279
 
-Turn 1  探して  ·  9.9s  ·  $0.0279
-▌ 探して
+〉 探して
   Agent ×1
     ✓ Agent Explore  Find all .py files in current directory  ·  1 tools  ·  5.1s
-      ▌ List all .py files in the current directory and its subdirectories. Do a quick search using find or bash patterns. Report the full paths of all Python files found.
+      〉 List all .py files in the current directory and its subdirectories. Do a quick search using find or bash patterns. Report the full paths of all Python files found.
       Bash ×1
         ✓ Bash  find . -name "*.py" -type f
           command: find . -name "*.py" -type f
@@ -23,5 +22,5 @@ Turn 1  探して  ·  9.9s  ·  $0.0279
   - `long.py` (in the current directory)
   
   This matches what we saw in the git status earlier, which showed `?? long.py` as an untracked file.
-  ● end_turn · 2 turns · $0.0279 · 9.9s
+ 9.9s · $0.0279
  

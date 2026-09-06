@@ -3,8 +3,7 @@ Tasks (1/2)
   [x] Write tests
   [ ] Update docs
 
-Turn 1  タスクを作って  ·  11.8s  ·  $0.0301
-▌ タスクを作って
+〉 タスクを作って
   ToolSearch ×1
     ✓ ToolSearch  select:TaskCreate,TaskUpdate,TaskList
       query: select:TaskCreate,TaskUpdate,TaskList
@@ -35,5 +34,5 @@ Turn 1  タスクを作って  ·  11.8s  ·  $0.0301
       → #1 [completed] Write tests
       → #2 [pending] Update docs
   Task #1 is now complete and task #2 is pending.
-  ● end_turn · 7 turns · $0.0301 · 11.8s
+ 11.8s · $0.0301
  

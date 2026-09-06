@@ -83,6 +83,13 @@ The whole diff is always available with RET (FR-OUT-7)."
   :type 'integer
   :group 'ecc)
 
+(defcustom ecc-render-show-result-line t
+  "Non-nil closes every finished turn with what it cost and how long it took.
+The line sits at the right edge under the answer; nil leaves a turn to
+end with its last message."
+  :type 'boolean
+  :group 'ecc)
+
 (defcustom ecc-render-follow t
   "Non-nil scrolls to the end of the buffer while it is at the end.
 The prompt region counts as the end: a window whose point is there,
@@ -94,6 +101,11 @@ or in the live region above it, keeps looking at what arrives."
   '((t :inherit shadow :underline t))
   "Face of the line between the transcript and the prompt region."
   :group 'ecc)
+
+(defconst ecc-render-user-mark "〉 "
+  "What every line of a user prompt is prefixed with.
+A turn read back from a recording is drawn with the same mark as one
+this session sent, so that the two do not read as different things.")
 
 (defconst ecc-render-block-types
   '(tool agent thinking permission question plan system unknown command)
@@ -646,9 +658,14 @@ marker of theirs lies in the region that is."
 (defun ecc-render--skip-p (node)
   "Return non-nil when NODE has nothing worth drawing.
 An empty thinking block is all signature and no text."
-  (and (eq (ecc-node-type node) 'thinking)
-       (not (ecc-node-streaming node))
-       (string-empty-p (string-trim (or (ecc-model-node-get node 'text) "")))))
+  (or
+   ;; The result message closes the turn, and the turn draws it itself
+   ;; as the line that ends it (`ecc-render--insert-turn-end-line'): a
+   ;; node of its own here would say the same cost a second time.
+   (eq (ecc-node-type node) 'result)
+   (and (eq (ecc-node-type node) 'thinking)
+        (not (ecc-node-streaming node))
+        (string-empty-p (string-trim (or (ecc-model-node-get node 'text) ""))))))
 
 (defun ecc-render--icon (tool-name)
   "Return the icon of TOOL-NAME with the space that follows it, or nothing."
@@ -699,7 +716,6 @@ their own marks stay."
         ('tool (ecc-render--insert-tool session node depth))
         ('agent (ecc-render--insert-agent session node depth))
         ((or 'permission 'question 'plan) (ecc-render--insert-request node depth))
-        ('result (ecc-render--insert-result node depth))
         ('command (ecc-render--insert-command node depth))
         ((or 'system 'recap) (ecc-render--insert-system node depth))
         (_ (ecc-render--insert-unknown node depth)))
@@ -1031,23 +1047,6 @@ each question once the request was answered."
                               'face 'ecc-user-face)
                   "\n"))))))
 
-(defun ecc-render--insert-result (node depth)
-  "Insert the result NODE at DEPTH."
-  (let ((result (ecc-model-node-get node 'result)))
-    (ecc-render--insert-owned
-     node depth
-     (lambda ()
-       (insert
-        (propertize
-         (format "%s● %s · %s turns · $%.4f · %.1fs"
-                 (ecc-render--pad depth)
-                 (or (alist-get 'stop_reason result) (alist-get 'subtype result) "?")
-                 (or (alist-get 'num_turns result) 0)
-                 (or (alist-get 'total_cost_usd result) 0)
-                 (/ (or (alist-get 'duration_ms result) 0) 1000.0))
-         'face 'ecc-dim-face)
-        "\n")))))
-
 (defun ecc-render--insert-command (node depth)
   "Insert the local command NODE at DEPTH (FR-HIST-2).
 The command is drawn the way the user typed it, and what it printed
@@ -1060,7 +1059,8 @@ model."
     (ecc-render--insert-owned
      node depth
      (lambda ()
-       (insert (concat pad (propertize (concat "〉 " name (if args (concat " " args) ""))
+       (insert (concat pad (propertize (concat ecc-render-user-mark name
+                                               (if args (concat " " args) ""))
                                        'face 'ecc-user-face))
                "\n")))
     (when (and (stringp output) (not (string-empty-p (string-trim output))))
@@ -1108,7 +1108,8 @@ model."
          node depth
          (lambda ()
            (ecc-render--insert-lines (ecc-model-node-get node 'text)
-                                     (concat pad "▌ ") 'ecc-user-face)))
+                                     (concat pad ecc-render-user-mark)
+                                     'ecc-user-face)))
       (ecc-render--insert-owned
        node depth
        (lambda ()
@@ -1145,44 +1146,77 @@ model."
 
 ;;;; Turns
 
-(defun ecc-render--turn-heading (session turn)
-  "Return the heading of TURN of SESSION."
-  (let ((duration (ecc-model-turn-duration turn))
-        (index (1+ (seq-position (ecc-session-turns session) turn #'eq))))
-    (concat
-     (propertize (format "Turn %d" index) 'face 'ecc-heading-face)
-     "  "
-     (propertize (ecc--truncate (or (ecc-turn-prompt turn) "(resumed)") 60)
-                 'face 'ecc-user-face)
-     (if (ecc-turn-end-time turn)
-         (propertize (if (ecc-turn-cost turn)
-                         (format "  ·  %.1fs  ·  $%.4f"
-                                 (or duration 0) (ecc-turn-cost turn))
-                       ;; A turn read back from a recording has no result
-                       ;; message, so its cost is not known (FR-HIST-1).
-                       (format "  ·  %.1fs" (or duration 0)))
-                     'face 'ecc-dim-face)
-       ""))))
+(defun ecc-render--turn-end-mark (turn)
+  "Return how TURN ended when it did not end normally, else nil."
+  (when-let* ((result (ecc-turn-result turn))
+              (subtype (alist-get 'subtype result)))
+    (unless (equal subtype "success")
+      (propertize (format "✗ %s" subtype) 'face 'ecc-error-face))))
+
+(defun ecc-render--insert-turn-end-line (turn)
+  "Close TURN with what it cost and how long it took.
+The figures are held at the right edge by a stretched space; the
+property that stretches it sits on that space alone, because a display
+property over the figures themselves would show a blank in their
+place.  An end that was not a plain one is named on the left.  Nothing
+is drawn while the turn is still running."
+  (when (and ecc-render-show-result-line (ecc-turn-end-time turn))
+    (let* ((duration (ecc-model-turn-duration turn))
+           (cost (ecc-turn-cost turn))
+           (left (ecc-render--turn-end-mark turn))
+           ;; A turn read back from a recording has no result message,
+           ;; so what it cost is not known (FR-HIST-1).
+           (right (cond ((and duration cost)
+                         (format "%.1fs · $%.4f" duration cost))
+                        (cost (format "$%.4f" cost))
+                        (duration (format "%.1fs" duration)))))
+      (when (or left right)
+        (when left (insert left))
+        (when right
+          (insert (propertize
+                   " " 'display
+                   (list 'space :align-to
+                         (list '- 'right (1+ (string-width right)))))
+                  (propertize right 'face 'ecc-dim-face)))
+        (insert "\n")))))
 
 (defun ecc-render--insert-turn (session turn)
-  "Insert TURN of SESSION."
+  "Insert TURN of SESSION.
+No heading line of its own is drawn any more (FR-OUT-2 as revised by
+the phase 9 redesign): the band the prompt is drawn in is what parts
+one turn from the next, and it carries the heading of the turn, so
+that the movement commands stop once per turn rather than twice."
   (let ((id (ecc-turn-id turn))
         (start (point)))
-    (insert (ecc-render--turn-heading session turn) "\n")
-    (ecc-render--mark start (point) id 0)
-    (ecc-render--mark-heading start id)
-    (when-let* ((prompt (ecc-turn-prompt turn)))
-      (let ((prompt-id (concat id "/prompt"))
-            (prompt-start (point)))
-        ;; The prompt carries fenced blocks of its own: the quoted region
-        ;; and the context Emacs attached (FR-CTX-1, FR-INP-8), which are
-        ;; worth the same colouring as the reply (FR-OUT-15).
-        (ecc-render--insert-lines (ecc-markdown-fontify prompt) "▌ " 'ecc-user-face)
-        (ecc-render--mark prompt-start (point) prompt-id 1)
-        (ecc-render--mark-heading prompt-start prompt-id)
-        (ecc-render--register prompt-id prompt-start (point) 1)))
+    (let ((prompt (ecc-turn-prompt turn)))
+      (if prompt
+          (progn
+            ;; The prompt carries fenced blocks of its own: the quoted
+            ;; region and the context Emacs attached (FR-CTX-1,
+            ;; FR-INP-8), which are worth the same colouring as the
+            ;; reply (FR-OUT-15).
+            (ecc-render--insert-lines (ecc-markdown-fontify prompt)
+                                      ecc-render-user-mark 'ecc-user-face)
+            ;; The band stands at the depth of the turn, not of the
+            ;; turn's children: it is the heading of the turn, and the
+            ;; movement commands lean on that to tell a turn's children
+            ;; from what lies outside it.
+            (let ((prompt-id (concat id "/prompt")))
+              (ecc-render--mark start (point) prompt-id 0)
+              (ecc-render--register prompt-id start (point) 0)))
+        ;; A turn resumed from a recording has no prompt of its own, but
+        ;; it still needs the band that parts it from the turn before.
+        (insert (propertize (concat ecc-render-user-mark "(resumed)")
+                            'face 'ecc-dim-face)
+                "\n")
+        (ecc-render--mark start (point) id 0))
+      (ecc-render--mark-heading start id))
     (dolist (child (ecc-turn-children turn))
       (ecc-render--insert-node session child 1))
+    (ecc-render--insert-turn-end-line turn)
+    ;; The turn spans all of that, but none of it is marked again: the
+    ;; children carry their own `ecc-node' and `keymap', and marking
+    ;; over them would take both away (see `ecc-render--mark').
     (ecc-render--register id start (point) 0 t)))
 
 (defvar ecc-render-tail-functions nil

@@ -4,8 +4,7 @@ Files (1)
     @@ -0,0 +1,1 @@
     +hello from emacs
 
-Turn 1  hello.txt を作って  ·  9.3s  ·  $0.0110
-▌ hello.txt を作って
+〉 hello.txt を作って
   Write ×1
     ✗ Write  /private/tmp/claude-501/-Users-jun-Projects-SideProjects-emacs-claude-code/a599bb74-923b-40f5-9a48-afbd84ad3ccd/scratchpad/sandbox/hello.txt
       /private/tmp/claude-501/-Users-jun-Projects-SideProjects-emacs-claude-code/a599bb74-923b-40f5-9a48-afbd84ad3ccd/scratchpad/sandbox/hello.txt
@@ -27,5 +26,5 @@ Turn 1  hello.txt を作って  ·  9.3s  ·  $0.0110
     @@ -0,0 +1,1 @@
     +hello from emacs
   Done! Created hello.txt with the content "hello from emacs".
-  ● end_turn · 3 turns · $0.0110 · 9.3s
+ 9.3s · $0.0110
  

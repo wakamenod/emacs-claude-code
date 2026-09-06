@@ -9,8 +9,7 @@ Files (1)
     +File will live in the current working directory.
     +No tests requested; verification is a quick manual call to both functions in a Python shell.
 
-Turn 1  utils.py の計画を立てて  ·  10.3s  ·  $0.1342
-▌ utils.py の計画を立てて
+〉 utils.py の計画を立てて
   ToolSearch ×1
     ✓ ToolSearch  select:ExitPlanMode
       query: select:ExitPlanMode
@@ -56,5 +55,5 @@ Turn 1  utils.py の計画を立てて  ·  10.3s  ·  $0.1342
     File will live in the current working directory.
     No tests requested; verification is a quick manual call to both functions in a Python shell.
   Plan approved. Ready to implement when you give the word.
-  ● end_turn · 4 turns · $0.1342 · 10.3s
+ 10.3s · $0.1342
  

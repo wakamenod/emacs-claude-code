@@ -131,9 +131,7 @@
       (should (string-prefix-p "Files (1)" (ecc-chat-test--line)))
       ;; The file row under it is folded away, so it is skipped.
       (ecc-chat-next-heading)
-      (should (string-prefix-p "Turn 1" (ecc-chat-test--line)))
-      (ecc-chat-next-heading)
-      (should (string-prefix-p "▌ hello.txt" (ecc-chat-test--line)))
+      (should (string-prefix-p "〉 hello.txt" (ecc-chat-test--line)))
       (ecc-chat-next-heading)
       (should (equal (ecc-chat-test--line) "  Write ×1"))
       (ecc-chat-next-heading)
@@ -156,9 +154,11 @@
       ;; Siblings stay at the same depth.
       (ecc-chat-previous-sibling)
       (should (equal (ecc-chat-test--line) "  Write ×1"))
-      (ecc-chat-previous-sibling)
-      (should (string-prefix-p "▌ hello.txt" (ecc-chat-test--line)))
+      ;; The band above is the turn itself, a level up, so the walk
+      ;; along this depth stops rather than leaving the turn.
       (should-error (ecc-chat-previous-sibling) :type 'user-error)
+      (ecc-chat-up-heading)
+      (should (string-prefix-p "〉 hello.txt" (ecc-chat-test--line)))
       ;; Past the last heading there is nothing.
       (goto-char (point-max))
       (should-error (ecc-chat-next-heading) :type 'user-error))))
@@ -257,8 +257,7 @@
       (ecc-prompt-send)
       (should (equal (ecc-chat-draft) ""))
       (ecc-render-flush session)
-      (should (string-search "▌ hello there" (buffer-string)))
-      (should (string-search "Turn 1  hello there" (buffer-string)))
+      (should (string-search "〉 hello there" (buffer-string)))
       ;; Point is back at the start of the empty prompt region, in
       ;; front of the placeholder, ready for more.
       (should (ecc-chat-in-prompt-p))
@@ -458,7 +457,7 @@ Anything written takes it away, wherever in it the cursor was."
                   (should-error (insert "x") :type 'text-read-only)
                   (goto-char (point-min))
                   (ecc-chat-next-heading)
-                  (should (string-prefix-p "▌ List all" (ecc-chat-test--line)))
+                  (should (string-prefix-p "〉 List all" (ecc-chat-test--line)))
                   (ecc-chat-next-block)
                   (should (string-prefix-p "  ✓ Bash" (ecc-chat-test--line))))
               (kill-buffer buffer))))))))
