@@ -5,3 +5,8 @@
 /.eask/
 /dist/
 .DS_Store
+
+# Specification documents, kept locally but out of the repository
+/REQUIREMENTS.md
+/IMPLEMENTATION_PLAN.md
+/docs/

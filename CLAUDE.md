@@ -9,7 +9,9 @@ This repository builds `ecc`, a package that drives the Claude Code CLI from Ema
 3. `docs/verified.md` — CLI behaviour confirmed against the real thing. Add to it whenever something open in §10 is settled.
 4. `docs/decisions.md` — the record of findings that clash with the requirements, and what was decided.
 
-Those three documents are written in Japanese and stay that way; the code, the tests and this file are in English.
+Those four documents live in the working directory but are not in the repository: they
+are listed in `.gitignore`, and a clone does not carry them. They are written in Japanese
+and stay that way; the code, the tests and this file are in English.
 
 ## Environment
 
