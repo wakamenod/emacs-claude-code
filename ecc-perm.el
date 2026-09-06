@@ -187,8 +187,11 @@ Returns `allow', `deny', `save' or `opened'."
       (_ (message "Allowed: %s" (ecc-request-tool-name request))))))
 
 (defun ecc-perm-deny (&optional reason)
-  "Deny the request at point with REASON, asking for one (FR-PERM-2)."
-  (interactive (list (read-string "Reason for denying (may be empty): ")))
+  "Deny the request at point with REASON, asking for one (FR-PERM-2).
+The request is looked up before the reason is asked for, so that a key
+pressed with nothing waiting says so instead of asking first."
+  (interactive (list (progn (ecc-perm-current-request)
+                            (read-string "Reason for denying (may be empty): "))))
   (let ((request (ecc-perm-current-request)))
     (ecc-perm-respond request 'deny :message reason)
     (message "Denied: %s" (ecc-request-tool-name request))))

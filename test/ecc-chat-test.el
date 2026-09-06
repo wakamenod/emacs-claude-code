@@ -10,6 +10,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'ert)
 (require 'ecc-test-helpers)
 (require 'ecc-chat)
@@ -202,6 +203,35 @@
       (should (eq (key-binding (kbd "d")) #'ecc-perm-deny))
       (should (eq (key-binding (kbd "p")) #'ecc-perm-add-pattern))
       (should (eq (key-binding (kbd "n")) #'ecc-chat-next-heading)))))
+
+(ert-deftest ecc-chat-test-answering-from-the-prompt-region ()
+  "C-c C-a and C-c C-d answer the oldest request without leaving the prompt."
+  (ecc-test-with-fake-session session
+    (with-current-buffer (ecc-session-ensure-buffer session)
+      (ecc-model-begin-turn session "hello")
+      (let ((first (ecc-test-add-request session "Write"))
+            (second (ecc-test-add-request session "Edit")))
+        (ecc-render-flush session)
+        (ecc-chat-goto-prompt)
+        (should (eq (key-binding (kbd "C-c C-a")) #'ecc-perm-allow))
+        (should (eq (key-binding (kbd "C-c C-d")) #'ecc-perm-deny))
+        ;; The point is nowhere near the request, so the oldest one wins.
+        (should-not (ecc-perm-request-at-point))
+        (ecc-perm-allow)
+        (should (equal (ecc-session-pending session) (list second)))
+        (should (eq (ecc-node-status (ecc-request-node first)) 'done))
+        (ecc-perm-deny "not this one")
+        (should-not (ecc-session-pending session))
+        (should (eq (ecc-node-status (ecc-request-node second)) 'denied))))))
+
+(ert-deftest ecc-chat-test-deny-asks-for-nothing-when-nothing-waits ()
+  "C-c C-d with no request waiting says so instead of asking for a reason."
+  (ecc-test-with-fake-session session
+    (with-current-buffer (ecc-session-ensure-buffer session)
+      (ecc-chat-goto-prompt)
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (&rest _) (error "The reason was asked for"))))
+        (should-error (call-interactively #'ecc-perm-deny) :type 'user-error)))))
 
 (ert-deftest ecc-chat-test-return-sends-when-asked ()
   "RET is a newline by default and sends when `ecc-chat-return-sends' is on."

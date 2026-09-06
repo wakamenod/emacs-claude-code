@@ -19,6 +19,11 @@
 ;; major mode applies, and that one only binds RET, TAB and C-c keys.
 ;; Sending is C-c C-c, or RET when `ecc-chat-return-sends' is on.
 ;;
+;; A request waiting for an answer is answered from the prompt region
+;; too, without walking to it: C-c C-a allows one and C-c C-d denies
+;; one, both through `ecc-perm-current-request', which falls back to the
+;; oldest request waiting when the point is not on one (FR-PERM-6).
+;;
 ;; Folding and movement work on the headings the renderer marked (the
 ;; `ecc-heading', `ecc-node' and `ecc-depth' text properties) and on the
 ;; node table it keeps; the commands here are the keys of magit-section
@@ -119,6 +124,8 @@ FR-HINT-4 arrives this way.")
     (define-key map (kbd "C-c C-n") #'ecc-chat-next-turn)
     (define-key map (kbd "C-c C-p") #'ecc-chat-previous-turn)
     (define-key map (kbd "C-c d") #'ecc-session-review)
+    (define-key map (kbd "C-c C-a") #'ecc-perm-allow)
+    (define-key map (kbd "C-c C-d") #'ecc-perm-deny)
     (define-key map (kbd "C-c a") #'ecc-perm-allow-all)
     (define-key map (kbd "C-c A") #'ecc-session-allow-all-remember)
     (define-key map (kbd "C-c I") #'ecc-inbox)
