@@ -43,6 +43,7 @@
 (require 'ecc-context)
 (require 'ecc-notify)
 (require 'ecc-hint)
+(require 'ecc-mcp)
 (require 'ecc-tui)
 (require 'ecc-transient)
 
