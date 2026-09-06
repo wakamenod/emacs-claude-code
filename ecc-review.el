@@ -36,6 +36,7 @@
 (require 'ecc-diff)
 (require 'ecc-render)
 (require 'ecc-perm)
+(require 'ecc-window)
 
 (defcustom ecc-review-git-executable "git"
   "The git program the review runs for `git diff'."
@@ -664,7 +665,8 @@ files."
                  "Files: "
                  (mapcar #'ecc-file-entry-path (ecc-review-files session))
                  nil t)))))
-  (pop-to-buffer (ecc-review-buffer (or session (ecc-review-session)) paths)))
+  (let ((session (or session (ecc-review-session))))
+    (ecc-window-display-review (ecc-review-buffer session paths) session)))
 
 (defun ecc-review-refresh ()
   "Read the diff again, keeping the comments whose hunks still exist."
@@ -725,7 +727,7 @@ REQUEST defaults to the one at point.  Returns the buffer."
                    (get-buffer-create (ecc-review-buffer-name session request))
                    session diff nil request)))
       (when (called-interactively-p 'any)
-        (pop-to-buffer buffer))
+        (ecc-window-display-review buffer session))
       buffer)))
 
 (defun ecc-review-comment-request (text)

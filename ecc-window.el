@@ -217,6 +217,57 @@ same side of the frame."
       (select-window window))
     window))
 
+;;;; Opening a review (FR-WIN-5)
+
+;; A diff or a plan wants room, and the session windows are what there
+;; is to take it from.  What happens is the user's to decide: whether
+;; the session windows step aside, and where point ends up.
+
+(defcustom ecc-window-hide-on-review nil
+  "Whether opening a diff or a plan review hides the session windows.
+`project' hides the sessions of the project being reviewed, `all'
+hides every session, and nil leaves the windows as they are
+\(FR-WIN-5).  `ecc-toggle' brings back what was hidden."
+  :type '(choice (const :tag "Leave them alone" nil)
+                 (const :tag "The sessions of this project" project)
+                 (const :tag "Every session" all))
+  :group 'ecc)
+
+(defcustom ecc-window-review-focus 'review
+  "Where point goes when a diff or a plan review opens (FR-WIN-5).
+`review' selects the review, `session' leaves it in the transcript and
+nil leaves it wherever it was."
+  :type '(choice (const :tag "The review" review)
+                 (const :tag "The transcript" session)
+                 (const :tag "Wherever it was" nil))
+  :group 'ecc)
+
+(defun ecc-window-display-review (buffer &optional session)
+  "Show the review in BUFFER, of SESSION, and return its window.
+`ecc-window-hide-on-review' and `ecc-window-review-focus' decide what
+happens to the session windows and where point lands (FR-WIN-5)."
+  (let ((hidden (pcase ecc-window-hide-on-review
+                  ('all (ecc-model-sessions))
+                  ('project (if session
+                                (ecc-window-project-sessions
+                                 (ecc-session-project-root session))
+                              (ecc-window-project-sessions)))
+                  (_ nil))))
+    (when hidden
+      (let ((visible (seq-filter #'ecc-window-session-visible-p hidden)))
+        (when visible
+          (ecc-window-set-hidden-sessions (mapcar #'ecc-session-id visible))
+          (mapc #'ecc-window-hide-session visible))))
+    (let ((window (display-buffer buffer)))
+      (pcase ecc-window-review-focus
+        ('review (when (window-live-p window) (select-window window)))
+        ('session
+         (when-let* ((buffer (and session (ecc-session-buffer session)))
+                     (session-window (and (buffer-live-p buffer)
+                                          (get-buffer-window buffer))))
+           (select-window session-window))))
+      window)))
+
 (defun ecc-window-session-buffers (session)
   "Return the live buffers of SESSION that are shown in a window of their own."
   (seq-filter #'buffer-live-p

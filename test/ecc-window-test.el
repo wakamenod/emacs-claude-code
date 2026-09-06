@@ -204,6 +204,61 @@ They live in different projects; the second is the most recently used."
             (should (eq (ecc-window-resolve-session t) two))
             (should (= asked 2))))))))
 
+
+;;;; Opening a review (FR-WIN-5)
+
+(ert-deftest ecc-window-test-review-leaves-the-windows-alone-by-default ()
+  "With the defaults a review just opens; nothing is hidden."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (let ((review (generate-new-buffer "*ecc-review-test*"))
+          (ecc-window-hide-on-review nil)
+          (ecc-window-review-focus nil))
+      (unwind-protect
+          (progn
+            (ecc-display-session session)
+            (should (ecc-window-display-review review session))
+            (should (ecc-window-session-visible-p session))
+            (should-not (ecc-window-hidden-sessions)))
+        (kill-buffer review)
+        (ecc-window-hide-session session)))))
+
+(ert-deftest ecc-window-test-review-can-hide-the-session ()
+  "`ecc-window-hide-on-review' takes the session windows away (FR-WIN-5)."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (let ((review (generate-new-buffer "*ecc-review-test*"))
+          (ecc-window-hide-on-review 'all)
+          (ecc-window-review-focus 'review))
+      (unwind-protect
+          (progn
+            (ecc-display-session session)
+            (should (ecc-window-session-visible-p session))
+            (ecc-window-display-review review session)
+            (should-not (ecc-window-session-visible-p session))
+            ;; What was hidden is remembered, so `ecc-toggle' brings it back.
+            (should (member (ecc-session-id session)
+                            (ecc-window-hidden-sessions)))
+            (should (eq (window-buffer (selected-window)) review)))
+        (kill-buffer review)
+        (ecc-window-set-hidden-sessions nil)))))
+
+(ert-deftest ecc-window-test-review-focus-can-stay-in-the-transcript ()
+  "`ecc-window-review-focus' session leaves point in the transcript."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (let ((review (generate-new-buffer "*ecc-review-test*"))
+          (ecc-window-hide-on-review nil)
+          (ecc-window-review-focus 'session))
+      (unwind-protect
+          (progn
+            (ecc-display-session session)
+            (ecc-window-display-review review session)
+            (should (eq (window-buffer (selected-window))
+                        (ecc-session-buffer session))))
+        (kill-buffer review)
+        (ecc-window-hide-session session)))))
+
 (provide 'ecc-window-test)
 
 ;;; ecc-window-test.el ends here

@@ -29,6 +29,7 @@
 (require 'ecc-diff)
 (require 'ecc-render)
 (require 'ecc-perm)
+(require 'ecc-window)
 
 (defcustom ecc-plan-modes '("acceptEdits" "default" "bypassPermissions" "plan")
   "Permission modes offered when a plan is approved (FR-PLAN-4).
@@ -457,7 +458,7 @@ along with it."
   (when (and ecc-plan-auto-open
              (eq (ecc-request-kind request) 'plan)
              (get-buffer-window (ecc-session-buffer session) t))
-    (pop-to-buffer (ecc-plan-open request))))
+    (ecc-window-display-review (ecc-plan-open request) session)))
 
 (defun ecc-plan--on-request-resolved (_session request)
   "Close the review buffer of REQUEST, which was answered somewhere else."
