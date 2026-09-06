@@ -74,7 +74,14 @@ With RESUME non-nil the session id is passed to --resume instead of
                  "--verbose"
                  "--permission-prompt-tool" "stdio")
            (if resume
-               (append (list "--resume" (ecc-session-id session))
+               ;; A fork normally resumes the session itself; `:resume-from'
+               ;; lets a new session branch off another one instead, which
+               ;; is how the inline questions of FR-INLINE-1 get a
+               ;; conversation of their own without taking over the one
+               ;; they branched from.
+               (append (list "--resume" (or (ecc-model-option session
+                                                              :resume-from nil)
+                                            (ecc-session-id session)))
                        (and fork (list "--fork-session")))
              (list "--session-id" (ecc-session-id session)))
            (and (funcall opt :streaming ecc-streaming-enabled)

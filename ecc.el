@@ -44,6 +44,7 @@
 (require 'ecc-notify)
 (require 'ecc-hint)
 (require 'ecc-mcp)
+(require 'ecc-inline)
 (require 'ecc-tui)
 (require 'ecc-transient)
 

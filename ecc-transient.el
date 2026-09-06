@@ -32,6 +32,8 @@
 (declare-function ecc-inbox "ecc-inbox" ())
 (declare-function ecc-dashboard "ecc-dashboard" ())
 (declare-function ecc-capabilities-show "ecc-dashboard" (session))
+(declare-function ecc-inline-prompt "ecc-inline" (question))
+(declare-function ecc-rewrite "ecc-inline" (beg end instruction))
 (declare-function ecc-next-attention "ecc-inbox" (&optional project-root))
 (declare-function ecc-answer-allow "ecc-inbox" ())
 (declare-function ecc-answer-deny "ecc-inbox" (reason))
@@ -212,6 +214,8 @@ same suffix from one call to the next."
     ("g" "Send the region" ecc-send-region)
     ("f" "Send this file" ecc-send-buffer-file)
     ("e" "Fix the error at point" ecc-fix-error-at-point)
+    ("l" "Ask inline" ecc-inline-prompt)
+    ("W" "Rewrite the region" ecc-rewrite)
     ("/" "Slash command" ecc-slash-menu)]
    ["Review"
     ("d" "Diff review" ecc-review)
@@ -225,7 +229,7 @@ same suffix from one call to the next."
     ("I" "Inbox" ecc-inbox)]
    ["View"
     ("b" "Dashboard" ecc-dashboard)
-    ("c" "Capabilities" ecc-capabilities-show)
+    ("y" "Capabilities" ecc-capabilities-show)
     ("h" "History" ecc-history-open)
     ("L" "Log" ecc-show-log)]
    ["Config"
