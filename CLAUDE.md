@@ -4,7 +4,7 @@ This repository builds `ecc`, a package that drives the Claude Code CLI from Ema
 
 ## Read these first
 
-1. `REQUIREMENTS.md` — the requirements of record (106 of them). Refer to them by id (FR-xxx-N, NFR-N).
+1. `REQUIREMENTS.md` — the requirements of record (106 of them: the original 106, plus FR-OUT-15, less FR-TUI-2 which was dropped on 2026-09-06). Refer to them by id (FR-xxx-N, NFR-N).
 2. `IMPLEMENTATION_PLAN.md` — the implementation plan. Follow the instructions of §0 and the phase order of §7.
 3. `docs/verified.md` — CLI behaviour confirmed against the real thing. Add to it whenever something open in §10 is settled.
 4. `docs/decisions.md` — the record of findings that clash with the requirements, and what was decided.
@@ -17,7 +17,7 @@ and stay that way; the code, the tests and this file are in English.
 
 - Emacs: `emacs` is not on PATH. It is `/opt/homebrew/Cellar/emacs-plus@32/32.0.50/Emacs.app/Contents/MacOS/Emacs` (the Emacs 32 development build), already named by the `EMACS` variable of `Makefile`.
 - The dependencies live in `~/.emacs.d/elpa` (magit-section, markdown-mode, nerd-icons, spinner, ghostel); `transient` ships with Emacs itself. `package-initialize` finds them. `package-lint` is not installed, and lint skips it on its own.
-- The terminal of the hand-off is **ghostel** (libghostty-vt), not vterm: see D in `docs/decisions.md`. It loads and runs in batch, so `ecc-tui-test` drives the real backend.
+- The terminal of the hand-off is **ghostel** (libghostty-vt), and the only one: neither vterm nor a terminal outside Emacs is supported (see `docs/decisions.md`). ghostel loads and runs in batch, so `ecc-tui-test` drives the real backend.
 - Claude Code CLI: `claude` 2.1.261.
 
 ## Commands

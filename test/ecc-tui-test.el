@@ -3,7 +3,7 @@
 ;;; Commentary:
 
 ;; The hand-off to the terminal client: the command it is opened with
-;; (FR-TUI-1, 2), the transcript following the recording while it is
+;; (FR-TUI-1), the transcript following the recording while it is
 ;; there (FR-TUI-3), the session coming back afterwards (FR-TUI-4) and
 ;; the rule that only one process may have a session at a time
 ;; (FR-TUI-5).  No terminal is started here; `ecc-tui--open-ghostel' is
@@ -85,25 +85,8 @@ The process the session would run is pretended to be alive until
     (should-not (member "-p" (ecc-tui-arguments session)))
     (let ((ecc-tui-extra-args '("--effort" "high")))
       (should (equal (last (ecc-tui-arguments session) 2) '("--effort" "high"))))
-    ;; ghostel takes argv, so nothing has to survive a shell; the one
-    ;; place a shell line is needed is the external terminal template.
-    (should (string-search (format "--resume %s" (ecc-session-id session))
-                           (ecc-tui-shell-command session)))))
-
-(ert-deftest ecc-tui-test-external-command ()
-  "An external terminal is described by a command with specifications."
-  (ecc-test-with-fake-session session
-    (setf (ecc-session-cwd session) "/tmp/work/")
-    (let ((ecc-tui-external-command "open -na Ghostty --args -e %c --resume %i"))
-      (should (equal (ecc-tui-external-command session)
-                     (format "open -na Ghostty --args -e %s --resume %s"
-                             ecc-executable (ecc-session-id session)))))
-    (let ((ecc-tui-external-command "cd %d && %c --resume %i"))
-      (should (string-prefix-p "cd /tmp/work/ && " (ecc-tui-external-command session))))
-    ;; %a carries the whole command line, options and all.
-    (setf (ecc-session-options session) '(:model "haiku"))
-    (let ((ecc-tui-external-command "open -na Ghostty --args -e %a"))
-      (should (string-search "--model haiku" (ecc-tui-external-command session))))))
+    ;; ghostel takes argv, so nothing has to survive a shell.
+    (should (member "--resume" (ecc-tui-arguments session)))))
 
 ;;;; Only one process at a time (FR-TUI-5)
 
@@ -345,29 +328,6 @@ the process, the sentinel and the teardown are ghostel's own."
         (should-not resumed)
         ;; The hand-off is kept, so the watch can take it back later.
         (should (ecc-tui-handoff-p session))))))
-
-(ert-deftest ecc-tui-test-external-terminal-is-watched-in-the-registry ()
-  "An external terminal is over once it has been seen and is gone.
-The process that opened the window says nothing about the CLI, so it
-is not what the hand-off waits on."
-  (ecc-tui-test--with-session session
-    (let ((live nil)
-          (opener (start-process "ecc-tui-test-open" nil "sleep" "60")))
-      (unwind-protect
-          (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) nil))
-                    ((symbol-function 'ecc-registry-live-p) (lambda (_id) live))
-                    ((symbol-function 'ecc-tui--open-external)
-                     (lambda (_session) (cons nil opener))))
-            (let ((ecc-tui-terminal 'external))
-              (ecc-tui-open session))
-            (should-not (plist-get (ecc-tui-state session) :process))
-            ;; Not there yet: the terminal is still starting up, not gone.
-            (should-not (ecc-tui-finished-p session))
-            (setq live t)
-            (should-not (ecc-tui-finished-p session))
-            (setq live nil)
-            (should (ecc-tui-finished-p session)))
-        (delete-process opener)))))
 
 (provide 'ecc-tui-test)
 
