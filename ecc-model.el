@@ -104,6 +104,9 @@
   options               ; plist of launch options, nil means "use the
                         ; matching defcustom"
   init                  ; the latest system/init message
+  last-model            ; model of the last real assistant message; the
+                        ; CLI reports it on every one and a `/model'
+                        ; changes it mid-session (FR-HINT-3)
   commands              ; commands from the initialize response
   permission-mode
   turns                 ; list of ecc-turn, oldest first

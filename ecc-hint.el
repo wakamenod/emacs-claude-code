@@ -148,9 +148,14 @@ The suggestions only arrive when the session was started with
 
 (defun ecc-hint-model (session)
   "Return the name of the model SESSION is talking to, or nil.
-What the CLI said in system/init is the truth; before the first turn
-there is only what the session was started with."
-  (or (alist-get 'model (ecc-session-init session))
+The last real assistant message is the truth: the CLI names the model
+on every one, and a `/model\=' sent from here or from the terminal of a
+hand-off shows up there and nowhere else.  Before the first answer
+there is system/init, and before that only what the session was
+started with -- a session read from history has neither, which is why
+the recorded messages are asked first."
+  (or (ecc-session-last-model session)
+      (alist-get 'model (ecc-session-init session))
       (ecc-model-option session :model ecc-model)))
 
 (defun ecc-hint-model-window (session)

@@ -226,10 +226,17 @@ than added again."
          (parent-id (alist-get 'parent_tool_use_id message))
          (index -1))
     ;; A synthetic reply reports no tokens, so it must not move the
-    ;; context estimate (plan section 9, item 12).
-    (unless synthetic
+    ;; context estimate (plan section 9, item 12).  An agent talks in a
+    ;; context of its own, so neither its tokens nor its model belong to
+    ;; the session.
+    (unless (or synthetic parent-id)
       (ecc-model-update-usage session
-                              (alist-get 'usage (alist-get 'message message))))
+                              (alist-get 'usage (alist-get 'message message)))
+      ;; The recording carries no system/init, so this is the only place
+      ;; a session read from history learns which model it talks to
+      ;; (FR-HINT-3).
+      (when-let* ((model (alist-get 'model (alist-get 'message message))))
+        (setf (ecc-session-last-model session) model)))
     (dolist (block (ecc-protocol-content-blocks message))
       (cl-incf index)
       (let ((id (format "%s:%d" uuid index))
