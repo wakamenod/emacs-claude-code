@@ -46,6 +46,14 @@
   :type 'string
   :group 'ecc)
 
+(defcustom ecc-perm-remember-exclude-tools '("Bash")
+  "Tools that `ecc-perm-allow-all-remember' allows once but never remembers.
+Remembering a tool allows every later call of it for the rest of the
+session without a look (FR-PERM-9); a tool that can run anything is
+not worth that shortcut.  Nil remembers every tool."
+  :type '(repeat string)
+  :group 'ecc)
+
 (defcustom ecc-perm-settings-file ".claude/settings.local.json"
   "Settings file, relative to the project root, that allow patterns go to."
   :type 'string
@@ -221,15 +229,21 @@ buffers.  Returns the requests that were allowed."
     (dolist (request requests)
       (unless (eq (ecc-perm-allow-request request) 'deny)
         (push request allowed)
-        (when remember
+        (when (and remember
+                   (not (member (ecc-request-tool-name request)
+                                ecc-perm-remember-exclude-tools)))
           (cl-pushnew (ecc-request-tool-name request)
                       (ecc-session-auto-approve-kinds session)
                       :test #'equal))))
     (message "Allowed %d requests%s%s" (length allowed)
-             (if remember
-                 (format "; %s is allowed on its own for the rest of this session"
-                         (string-join (ecc-session-auto-approve-kinds session) ", "))
-               "")
+             (cond
+              ((and remember (ecc-session-auto-approve-kinds session))
+               (format "; %s is allowed on its own for the rest of this session"
+                       (string-join (ecc-session-auto-approve-kinds session) ", ")))
+              (remember
+               (format "; nothing remembered (%s is never remembered)"
+                       (string-join ecc-perm-remember-exclude-tools ", ")))
+              (t ""))
              (if (> skipped 0)
                  (format " (%d questions and plans left alone)" skipped)
                ""))

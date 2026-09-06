@@ -62,8 +62,10 @@ On the Elisp side `ecc-safe-mode` is nil by default. Plugins to turn off go in
 ## Coding rules
 
 - `lexical-binding: t`. The prefix is `ecc-`, and internal functions are `ecc--`.
-- JSON is touched only by `ecc-protocol.el` and `ecc-proc.el`. magit-section is required
-  only by `ecc-render.el` (plan §0).
+- JSON is touched only by `ecc-protocol.el` and `ecc-proc.el` (plus the two that speak
+  to a process of their own, `ecc-mcp.el` and `ecc-inline.el`). magit-section is
+  required only by `ecc-render.el` and `ecc-session.el` (the transcript's major mode and
+  its section navigation); the model never sees it (plan §0, NFR-9).
 - Arrays for `json-serialize` are vectors. `nil` is `{}`. `null` is `:null` and false is
   `:false` (plan §2.3).
 - No font-lock in a session buffer. Faces are put on at insertion time.

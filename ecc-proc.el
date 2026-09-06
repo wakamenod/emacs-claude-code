@@ -193,14 +193,23 @@ the user asked for from one the CLI decided on (FR-SES-7)."
   "Handle EVENT for PROCESS: close the session down cleanly."
   (let ((session (ecc-proc-session process)))
     (when (and session (not (process-live-p process)))
-      (let ((status (process-exit-status process)))
-        (ecc-log (ecc-session-name session) "exited: %s (code %s)"
-                 (string-trim event) status)
-        (setf (ecc-session-process session) nil)
-        (setf (alist-get 'exit-status (ecc-session-progress session)) status)
-        (ecc-proc--close-pending session)
-        (ecc-model-set-state session 'exited)
-        (run-hook-with-args 'ecc-session-exited-hook session status)))))
+      (ecc-proc--handle-exit session (process-exit-status process) event))))
+
+(defun ecc-proc--handle-exit (session status event)
+  "Close SESSION down after its CLI exited with STATUS, described by EVENT."
+  (ecc-log (ecc-session-name session) "exited: %s (code %s)"
+           (string-trim (or event "")) status)
+  (setf (ecc-session-process session) nil)
+  (setf (alist-get 'exit-status (ecc-session-progress session)) status)
+  (ecc-proc--close-pending session)
+  ;; A turn the CLI was in the middle of will never get its result.
+  ;; Left open, it would hold every later prompt in the queue, and a
+  ;; resumed session would never speak again (FR-SES-7).
+  (when-let* ((turn (ecc-model-abort-turn session)))
+    (ecc-log (ecc-session-name session) "turn %s left open by the exit; closed"
+             (ecc-turn-id turn)))
+  (ecc-model-set-state session 'exited)
+  (run-hook-with-args 'ecc-session-exited-hook session status))
 
 (defun ecc-proc--close-pending (session)
   "Deny every unanswered request of SESSION (NFR-4).
@@ -278,9 +287,12 @@ response object once the CLI answers.  Returns the request id."
 
 (defun ecc-proc-send-user (session content)
   "Send CONTENT to SESSION as a user message and start a turn.
-CONTENT is a string or a vector of content blocks."
-  (ecc-model-begin-turn session (if (stringp content) content ""))
-  (ecc-proc-send-json session (ecc-protocol-user-message content)))
+CONTENT is a string or a vector of content blocks.  The message goes
+out before the turn is opened: a turn opened for a message that never
+went out would hold every later prompt in the queue.  Nothing can
+arrive in between, since output is only read when Emacs waits for it."
+  (prog1 (ecc-proc-send-json session (ecc-protocol-user-message content))
+    (ecc-model-begin-turn session (if (stringp content) content ""))))
 
 (defun ecc-proc-send-transient (session content)
   "Send CONTENT to SESSION without opening a turn (plan section 9, item 11)."

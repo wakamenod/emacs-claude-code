@@ -116,6 +116,7 @@ note rather than among the messages this version does not understand.")
     ('permission_denied
      (when-let* ((node (ecc-model-node session (alist-get 'tool_use_id message))))
        (setf (ecc-node-status node) 'denied)
+       (ecc-model-note-tool-finished session node)
        (ecc-model-node-changed session node)))
     ;; /reload-plugins, /reload-skills and a plugin installed while the
     ;; session runs send the whole list again (FR-INP-3, FR-SES-8).
@@ -281,14 +282,16 @@ The node exists already when the block was streamed."
 
 (defun ecc-dispatch--new-tool (session id name parent)
   "Add a running tool node ID called NAME under PARENT in SESSION."
-  (ecc-model-add-node
+  (ecc-model-note-tool-running
    session
-   :id id
-   :type 'tool
-   :parent (ecc-model-step-for-tool session parent)
-   :status 'running
-   :data (list (cons 'name name)
-               (cons 'started (current-time)))))
+   (ecc-model-add-node
+    session
+    :id id
+    :type 'tool
+    :parent (ecc-model-step-for-tool session parent)
+    :status 'running
+    :data (list (cons 'name name)
+                (cons 'started (current-time))))))
 
 (defun ecc-dispatch--tool-input (session node input)
   "Record INPUT as the final input of the tool NODE of SESSION.
@@ -375,6 +378,7 @@ started with."
       (ecc-model-node-put node 'is-error error-p)
       (ecc-model-node-put node 'finished (current-time))
       (setf (ecc-node-status node) (if error-p 'error 'done))
+      (ecc-model-note-tool-finished session node)
       (ecc-dispatch--progress session 'running-tool nil)
       (unless error-p
         (when-let* ((kind (cdr (assoc (ecc-model-node-get node 'name)

@@ -332,6 +332,21 @@ turn-wide approval nor counts as the moment the session last spoke."
         (run-hook-with-args 'ecc-turn-finished-hook session turn)))
     turn))
 
+(defun ecc-model-abort-turn (session)
+  "Close the current turn of SESSION without a result, and return it.
+The CLI stopped, or could not be sent to, before the turn came to its
+end: nothing announces a finished turn, no cost is counted, and the
+turn-wide approval of FR-PERM-7 ends with it.  A prompt sent after this
+must start a turn of its own rather than wait behind a turn that will
+never finish (plan section 2.5, FR-SES-7).  Returns nil when no turn
+was open."
+  (when-let* ((turn (ecc-session-current-turn session)))
+    (setf (ecc-turn-end-time turn) (current-time))
+    (setf (ecc-session-current-turn session) nil)
+    (setf (ecc-session-auto-approve-turn session) nil)
+    (setf (alist-get 'running-tools (ecc-session-progress session)) nil)
+    turn))
+
 (defun ecc-model-turn-duration (turn)
   "Return the duration of TURN in seconds, as the CLI reported it.
 Falls back to the wall clock when there is no result yet."
@@ -408,19 +423,38 @@ child of PARENT instead (FR-OUT-2)."
         last
       (ecc-model-add-node session :type 'step :parent parent :status 'running))))
 
+;; The tools that are running are kept as a list on the session rather
+;; than found by walking every node: the state line asks for the running
+;; tool on every redisplay, and a long session has thousands of nodes
+;; (NFR-1).  `ecc-dispatch' adds a tool when it starts and takes it out
+;; when its result arrives.
+
+(defun ecc-model-running-tools (session)
+  "Return the tool nodes of SESSION that are running, most recent first.
+A node that stopped running without a result, after an interrupt or a
+denial, is dropped when it is met."
+  (let ((running (seq-filter (lambda (node) (eq (ecc-node-status node) 'running))
+                             (alist-get 'running-tools (ecc-session-progress session)))))
+    (setf (alist-get 'running-tools (ecc-session-progress session)) running)
+    running))
+
+(defun ecc-model-note-tool-running (session node)
+  "Record in SESSION that the tool NODE has started."
+  (setf (alist-get 'running-tools (ecc-session-progress session))
+        (cons node (delq node (alist-get 'running-tools
+                                         (ecc-session-progress session)))))
+  node)
+
+(defun ecc-model-note-tool-finished (session node)
+  "Record in SESSION that the tool NODE is no longer running."
+  (setf (alist-get 'running-tools (ecc-session-progress session))
+        (delq node (alist-get 'running-tools (ecc-session-progress session))))
+  node)
+
 (defun ecc-model-running-tool (session)
   "Return the tool node of SESSION that is running right now, or nil.
 The most recently started one wins when several are."
-  (let (found)
-    (maphash (lambda (_id node)
-               (when (and (memq (ecc-node-type node) '(tool agent))
-                          (eq (ecc-node-status node) 'running)
-                          (or (null found)
-                              (time-less-p (or (ecc-model-node-get found 'started) 0)
-                                           (or (ecc-model-node-get node 'started) 0))))
-                 (setq found node)))
-             (ecc-session-nodes session))
-    found))
+  (car (ecc-model-running-tools session)))
 
 ;;;; Streaming (FR-OUT-4)
 

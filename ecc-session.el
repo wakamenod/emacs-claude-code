@@ -99,15 +99,33 @@
               '(:eval (ecc--mode-line-escape
                        (concat (ecc-render-mode-line-process)
                                (ecc-hint-mode-line-string)))))
-  (add-hook 'kill-buffer-hook #'ecc-session--kill-process nil t))
+  (add-hook 'kill-buffer-hook #'ecc-session--forget-on-kill nil t))
 
-(defun ecc-session--kill-process ()
-  "Stop the CLI when the session buffer goes away (plan 9, item 10).
-An agent transcript shares the session but is not its buffer, so
-killing it stops nothing."
+(declare-function ecc-window-forget-session "ecc-window" (session))
+(declare-function ecc-image-cleanup-session "ecc-prompt" (session))
+
+(defun ecc-session--forget-on-kill ()
+  "Stop and forget the session when its transcript buffer is killed.
+Killing the buffer is taken as killing the session (plan 9, item 10):
+the CLI is stopped, the session leaves the list, and its prompt and
+line buffers go with it, so that nothing lingers in the dashboard as
+an exited session with no buffer.  An agent transcript shares the
+session but is not its buffer, so killing it does nothing."
   (when-let* ((session ecc-render--session))
-    (when (eq (current-buffer) (ecc-session-buffer session))
-      (ecc-proc-stop session))))
+    (when (and (eq (current-buffer) (ecc-session-buffer session))
+               ;; `ecc-kill' has forgotten the session already; the
+               ;; buffers are all that is left to it.
+               (eq (ecc-model-session (ecc-session-id session)) session))
+      (ecc-proc-stop session)
+      (ecc-model-remove-session session)
+      (when (fboundp 'ecc-window-forget-session)
+        (ecc-window-forget-session session))
+      (when (fboundp 'ecc-image-cleanup-session)
+        (ecc-image-cleanup-session session))
+      (dolist (buffer (list (ecc-session-prompt-buffer session)
+                            (ecc-session-stream-buffer session)))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))))))
 
 (defun ecc-session-buffer-name (name)
   "Return the name of the transcript buffer of the session called NAME."

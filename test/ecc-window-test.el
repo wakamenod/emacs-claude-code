@@ -259,6 +259,20 @@ They live in different projects; the second is the most recently used."
         (kill-buffer review)
         (ecc-window-hide-session session)))))
 
+(ert-deftest ecc-window-test-killing-the-transcript-forgets-the-session ()
+  "Killing a session buffer kills the session: nothing lingers in the list.
+The prompt buffer goes with it; an agent transcript of the same
+session does not count."
+  (ecc-test-with-fake-session session
+    (let ((buffer (ecc-session-ensure-buffer session))
+          (prompt (ecc-prompt-ensure-buffer session))
+          (id (ecc-session-id session)))
+      (should (ecc-model-session id))
+      (kill-buffer buffer)
+      (should-not (ecc-model-session id))
+      (should-not (buffer-live-p prompt))
+      (should-not (assoc id ecc-window--slots)))))
+
 (provide 'ecc-window-test)
 
 ;;; ecc-window-test.el ends here

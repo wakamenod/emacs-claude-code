@@ -124,11 +124,22 @@ symbolic links resolved first: the CLI records the resolved one."
                                            (file-truename cwd)))))
                 (or entries (ecc-registry-sessions)))))
 
+(defconst ecc-registry-status-names '(("shell" . "busy"))
+  "Statuses a session file spells differently from `claude agents --json'.
+The file says what the CLI is doing (`shell' while a shell command
+runs); the command folds that into `busy'.  Checked on 2026-09-06, see
+docs/verified.md.")
+
+(defun ecc-registry-display-status (status)
+  "Return STATUS of a session file as `claude agents --json' would show it."
+  (or (cdr (assoc status ecc-registry-status-names)) status))
+
 (defun ecc-registry-describe (entry)
   "Return a one line description of the running session ENTRY."
   (format "%s  %s  %s"
           (or (alist-get 'name entry) (alist-get 'sessionId entry) "?")
-          (or (alist-get 'status entry) (alist-get 'kind entry) "?")
+          (or (ecc-registry-display-status (alist-get 'status entry))
+              (alist-get 'kind entry) "?")
           (abbreviate-file-name (or (alist-get 'cwd entry) ""))))
 
 ;;;; Watching (FR-DASH-6)

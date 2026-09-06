@@ -175,6 +175,13 @@ but with nothing in it, so there is no start time to confirm."
     (should-not (ecc-registry-sessions))
     (should-not (ecc-registry-watch))))
 
+(ert-deftest ecc-registry-test-display-status ()
+  "A status the file spells its own way is shown as `claude agents' shows it."
+  (should (equal "busy" (ecc-registry-display-status "shell")))
+  (should (equal "idle" (ecc-registry-display-status "idle")))
+  (should (equal "waiting" (ecc-registry-display-status "waiting")))
+  (should-not (ecc-registry-display-status nil)))
+
 (ert-deftest ecc-registry-test-describe ()
   "A running session describes itself in one line."
   (ecc-registry-test--with-fixture

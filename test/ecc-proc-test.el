@@ -185,6 +185,36 @@ This one uses the real sender, so it builds its session by hand."
         (should-error (ecc-proc-send-json session '((type . "user"))))
       (ecc-test-cleanup-session session))))
 
+(ert-deftest ecc-proc-test-send-user-opens-no-turn-without-a-process ()
+  "A prompt that cannot go out opens no turn.
+Otherwise every later prompt would queue behind a turn that never
+finishes."
+  (let* ((ecc--sessions (make-hash-table :test #'equal))
+         (ecc--session-order nil)
+         (session (ecc-model-create-session
+                   :name "no-process" :project-root temporary-file-directory)))
+    (unwind-protect
+        (progn
+          (should-error (ecc-proc-send-prompt session "hello"))
+          (should-not (ecc-session-current-turn session))
+          (should-not (ecc-session-input-queue session))
+          (should-not (eq (ecc-session-state session) 'running)))
+      (ecc-test-cleanup-session session))))
+
+(ert-deftest ecc-proc-test-exit-closes-the-open-turn ()
+  "A CLI that dies in the middle of a turn leaves no turn open (FR-SES-7).
+The next prompt after a resume must be sent, not queued."
+  (ecc-test-with-fake-session session
+    (let ((turn (ecc-model-begin-turn session "work")))
+      (setf (ecc-session-auto-approve-turn session) t)
+      (ecc-proc--handle-exit session 137 "killed")
+      (should (eq (ecc-session-state session) 'exited))
+      (should-not (ecc-session-current-turn session))
+      (should (ecc-turn-end-time turn))
+      (should-not (ecc-session-auto-approve-turn session))
+      ;; The turn stays in the transcript; it just is not open any more.
+      (should (memq turn (ecc-session-turns session))))))
+
 (provide 'ecc-proc-test)
 
 ;;; ecc-proc-test.el ends here

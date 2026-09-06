@@ -108,7 +108,7 @@ for when it is not simply busy or idle."
      :name (or (alist-get 'name agent) "?")
      :state (if (and waiting-for (stringp waiting-for))
                 (format "waiting: %s" waiting-for)
-              (or status "?"))
+              (or (ecc-registry-display-status status) "?"))
      :cwd (alist-get 'cwd agent)
      :model (or (alist-get 'version agent) "")
      :prompt (or (alist-get 'kind agent) "")

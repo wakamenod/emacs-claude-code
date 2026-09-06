@@ -272,16 +272,30 @@
       (should-not (ecc-session-auto-approve-kinds session)))))
 
 (ert-deftest ecc-perm-test-allow-all-remember ()
-  "Allow all with remember stops asking about those tools in this session."
+  "Allow all with remember stops asking about those tools in this session.
+A tool in `ecc-perm-remember-exclude-tools' is allowed this once but
+not remembered: Bash is not worth a blanket approval."
   (ecc-test-with-fake-session session
     (ecc-test-add-request session "Write")
     (ecc-test-add-request session "Bash")
     (ecc-perm-allow-all t)
     (should-not (ecc-session-pending session))
-    (should (equal (sort (copy-sequence (ecc-session-auto-approve-kinds session)) #'string<)
-                   '("Bash" "Write")))
+    (should (equal (ecc-session-auto-approve-kinds session) '("Write")))
     (should (ecc-dispatch-auto-approve-p
-             session (make-ecc-request :kind 'permission :tool-name "Bash")))))
+             session (make-ecc-request :kind 'permission :tool-name "Write")))
+    (should-not (ecc-dispatch-auto-approve-p
+                 session (make-ecc-request :kind 'permission :tool-name "Bash")))))
+
+(ert-deftest ecc-perm-test-allow-all-remember-everything ()
+  "With no exclusions, every tool allowed is remembered."
+  (ecc-test-with-fake-session session
+    (let ((ecc-perm-remember-exclude-tools nil))
+      (ecc-test-add-request session "Write")
+      (ecc-test-add-request session "Bash")
+      (ecc-perm-allow-all t)
+      (should (equal (sort (copy-sequence (ecc-session-auto-approve-kinds session))
+                           #'string<)
+                     '("Bash" "Write"))))))
 
 (ert-deftest ecc-perm-test-next-commands ()
   "Allow next and deny next act on the oldest request of the session."

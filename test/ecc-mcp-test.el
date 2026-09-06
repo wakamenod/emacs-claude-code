@@ -49,7 +49,7 @@ The answer comes back as (STATUS . BODY-STRING)."
           (process-send-string
            client
            (concat (format "%s %s HTTP/1.1\r\n" method target)
-                   "Host: 127.0.0.1\r\n"
+                   (format "Host: %s\r\n" ecc-mcp-test--host)
                    "Accept: application/json, text/event-stream\r\n"
                    "Content-Type: application/json\r\n"
                    (format "Content-Length: %d\r\n\r\n" (length payload))
@@ -77,10 +77,14 @@ The answer comes back as (STATUS . BODY-STRING)."
             0)
           (decode-coding-string (substring text (+ head-end 4)) 'utf-8))))
 
+(defvar ecc-mcp-test--host "127.0.0.1"
+  "What the Host header of a test request says.")
+
 (defun ecc-mcp-test--rpc (port object)
   "Send OBJECT as a JSON-RPC request to PORT and return (STATUS . ANSWER)."
   (pcase-let ((`(,status . ,body)
-               (ecc-mcp-test--http port "POST" "/mcp" (ecc--json-write object))))
+               (ecc-mcp-test--http port "POST" (ecc-mcp-path)
+                                   (ecc--json-write object))))
     (cons status (if (string-empty-p body) nil (ecc--json-read body)))))
 
 ;;;; The registry (FR-MCP-2)
@@ -220,7 +224,44 @@ The answer comes back as (STATUS . BODY-STRING)."
 (ert-deftest ecc-mcp-test-http-get-is-refused ()
   "GET is answered with 405, which the CLI carries on from."
   (ecc-mcp-test-with-server port
-    (should (= 405 (car (ecc-mcp-test--http port "GET" "/mcp" ""))))))
+    (should (= 405 (car (ecc-mcp-test--http port "GET" (ecc-mcp-path) ""))))))
+
+(ert-deftest ecc-mcp-test-http-wrong-path-is-refused ()
+  "A request that does not carry the secret of the path gets 404.
+The secret is what keeps a process that only knows the port out."
+  (ecc-mcp-test-with-server port
+    (should (string-prefix-p "/mcp/" (ecc-mcp-path)))
+    (should (= 404 (car (ecc-mcp-test--http
+                         port "POST" "/mcp"
+                         (ecc--json-write '((jsonrpc . "2.0") (id . 1)
+                                            (method . "tools/list")))))))
+    (should (= 404 (car (ecc-mcp-test--http
+                         port "POST" "/mcp/not-the-secret"
+                         (ecc--json-write '((jsonrpc . "2.0") (id . 1)
+                                            (method . "tools/list")))))))))
+
+(ert-deftest ecc-mcp-test-http-foreign-host-is-refused ()
+  "A request whose Host header names another machine gets 403.
+That is what a page in a browser sends when it talks to this port."
+  (ecc-mcp-test-with-server port
+    (let ((ecc-mcp-test--host "evil.example"))
+      (should (= 403 (car (ecc-mcp-test--rpc
+                           port '((jsonrpc . "2.0") (id . 1)
+                                  (method . "tools/list")))))))
+    (let ((ecc-mcp-test--host "localhost:1234"))
+      (should (= 200 (car (ecc-mcp-test--rpc
+                           port '((jsonrpc . "2.0") (id . 1)
+                                  (method . "tools/list")))))))))
+
+(ert-deftest ecc-mcp-test-token-changes-with-every-start ()
+  "Stopping and starting the server hands out a new secret."
+  (ecc-mcp-test-with-server _port
+    (let ((first (ecc-mcp-path)))
+      (ecc-mcp-stop)
+      (should-not (ecc-mcp-path))
+      (ecc-mcp-start)
+      (should (ecc-mcp-path))
+      (should-not (equal first (ecc-mcp-path))))))
 
 (ert-deftest ecc-mcp-test-http-notification-is-accepted ()
   "A notification is answered with 202 and no body."
@@ -256,7 +297,7 @@ The answer comes back as (STATUS . BODY-STRING)."
     ;; is what keep-alive means.
     (let* ((body (ecc--json-write '((jsonrpc . "2.0") (id . 1) (method . "ping"))))
            (payload (encode-coding-string body 'utf-8))
-           (request (concat "POST /mcp HTTP/1.1\r\nHost: x\r\n"
+           (request (concat "POST " (ecc-mcp-path) " HTTP/1.1\r\nHost: 127.0.0.1\r\n"
                             (format "Content-Length: %d\r\n\r\n" (length payload))
                             payload))
            (answer "")
@@ -279,7 +320,7 @@ The answer comes back as (STATUS . BODY-STRING)."
   "A body that is not JSON comes back as a parse error, not a crash."
   (ecc-mcp-test-with-server port
     (pcase-let ((`(,status . ,answer)
-                 (ecc-mcp-test--http port "POST" "/mcp" "{not json")))
+                 (ecc-mcp-test--http port "POST" (ecc-mcp-path) "{not json")))
       (should (= status 200))
       (should (equal (alist-get 'code (alist-get 'error (ecc--json-read answer)))
                      -32700)))))
@@ -292,6 +333,7 @@ The answer comes back as (STATUS . BODY-STRING)."
     (ecc-mcp-test-with-server _port
       (let ((url (ecc-mcp-url session)))
         (should (string-search (format "session=%s" (ecc-session-id session)) url))
+        (should (string-search (ecc-mcp-path) url))
         (should (equal (ecc-mcp--session-of-target
                         (concat "/mcp?session=" (ecc-session-id session)))
                        (ecc-session-id session)))

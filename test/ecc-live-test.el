@@ -308,10 +308,17 @@ A clean approval then allows and switches the session to acceptEdits
                   ;; FR-PLAN-5: the lines that changed are marked.
                   (should (ecc-plan-changed-lines))
                   (should-not (ecc-plan-approve "acceptEdits")))
-                (ecc-test-live-wait-for-result session)
                 (should-not (ecc-session-pending session))
-                ;; system/status reported the switch (FR-PLAN-4).
-                (should (equal (ecc-session-permission-mode session) "acceptEdits")))))
+                ;; system/status reports the switch at once (FR-PLAN-4).
+                ;; What Claude does with the approval is its own affair
+                ;; and can take minutes, so the turn is not waited for:
+                ;; it is interrupted once the switch has been seen.
+                (ecc-test-live-wait
+                 session
+                 (lambda () (equal (ecc-session-permission-mode session) "acceptEdits"))
+                 "the switch to acceptEdits")
+                (ecc-proc-interrupt session)
+                (ecc-test-live-wait-for-result session))))
         (delete-directory directory t)))))
 
 (ert-deftest ecc-test-live-pattern ()
@@ -638,7 +645,10 @@ is what keeps the two from drifting apart."
           (should entry)
           (should (equal (alist-get 'pid agent) (alist-get 'pid entry)))
           (should (equal (alist-get 'cwd agent) (alist-get 'cwd entry)))
-          (should (equal (alist-get 'status agent) (alist-get 'status entry)))
+          ;; The file says `shell' where the command says `busy'
+          ;; (docs/verified.md); the dashboard shows the command's word.
+          (should (equal (alist-get 'status agent)
+                         (ecc-registry-display-status (alist-get 'status entry))))
           (should (ecc-dashboard--agent-entry entry)))))))
 
 (ert-deftest ecc-test-live-context ()

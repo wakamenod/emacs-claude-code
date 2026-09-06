@@ -497,6 +497,33 @@ the whole list into an unknown node."
                                      (ecc-session-nodes session))
                             nodes)))))
 
+(ert-deftest ecc-dispatch-test-running-tool-is-tracked ()
+  "The running tool is known without a walk over every node (NFR-1).
+It is the tool that started last and has no result yet, and nothing
+once every result is in."
+  (ecc-test-with-fake-session session
+    (let ((seen-running nil))
+      (dolist (message (ecc-test-fixture-messages "tool-use-write"))
+        (ecc-dispatch session message)
+        (let ((running (ecc-model-running-tool session)))
+          (when running
+            (setq seen-running t)
+            (should (eq (ecc-node-status running) 'running))
+            (should (memq (ecc-node-type running) '(tool agent))))))
+      (should seen-running)
+      (should-not (ecc-model-running-tool session))
+      (should-not (alist-get 'running-tools (ecc-session-progress session))))))
+
+(ert-deftest ecc-dispatch-test-running-tool-forgets-a-denied-one ()
+  "A tool that was denied is not running, even without a result."
+  (ecc-test-with-fake-session session
+    (let ((node (ecc-dispatch--new-tool session "toolu_x" "Bash"
+                                        (ecc-model-ensure-turn session))))
+      (should (eq (ecc-model-running-tool session) node))
+      (ecc-dispatch session '((type . "system") (subtype . "permission_denied")
+                              (tool_use_id . "toolu_x")))
+      (should-not (ecc-model-running-tool session)))))
+
 (provide 'ecc-dispatch-test)
 
 ;;; ecc-dispatch-test.el ends here

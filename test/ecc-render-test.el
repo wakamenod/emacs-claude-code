@@ -485,6 +485,9 @@ follow have a section to grow.  Returns the remaining lines."
                                              session (ecc-session-current-turn session))
                                     :data '((name . "Bash") (input . ((command . "git status")))
                                             (started . (0 1))))))
+      ;; The dispatcher is what notes a tool as running (NFR-1); a node
+      ;; made by hand has to be noted the same way.
+      (ecc-model-note-tool-running session node)
       (should (string-search "Bash git status" (ecc-render-status-line session)))
       (setf (ecc-node-status node) 'done))
     (ecc-model-add-request session (make-ecc-request

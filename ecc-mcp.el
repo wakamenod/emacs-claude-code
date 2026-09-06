@@ -279,6 +279,45 @@ the server down with it."
 (defvar ecc-mcp--server nil
   "The listening process, or nil.")
 
+;; The server has no login.  What keeps it to the CLI it was started for
+;; is a secret in the path, handed to the CLI through --mcp-config and to
+;; nobody else, and a look at the Host header: a page in a browser can
+;; POST to a loopback port without asking anybody, but it cannot guess
+;; the path and it sends the host it was told to talk to.
+
+(defvar ecc-mcp--token nil
+  "Secret path segment of the running server, or nil.
+Made afresh every time the server starts.")
+
+(defun ecc-mcp-path ()
+  "Return the path the CLI reaches this server at, or nil when it is down."
+  (and ecc-mcp--token (concat "/mcp/" ecc-mcp--token)))
+
+(defconst ecc-mcp-allowed-hosts '("127.0.0.1" "localhost" "[::1]")
+  "Hosts a request may name in its Host header, besides `ecc-mcp-host'.")
+
+(defun ecc-mcp--header (name header-lines)
+  "Return the value of the header NAME in HEADER-LINES, or nil."
+  (let ((regexp (concat "\\`" (regexp-quote name) ":[ \t]*\\(.*?\\)[ \t]*\\'")))
+    (seq-some (lambda (line)
+                (when (let ((case-fold-search t)) (string-match regexp line))
+                  (match-string 1 line)))
+              header-lines)))
+
+(defun ecc-mcp--host-allowed-p (header-lines)
+  "Return non-nil when the Host header in HEADER-LINES names this machine.
+The port is not looked at; a request without a Host header is refused."
+  (when-let* ((host (ecc-mcp--header "Host" header-lines)))
+    (let ((name (if (string-match "\\`\\(\\[[^]]*\\]\\|[^:]*\\)" host)
+                    (match-string 1 host)
+                  host)))
+      (and (member name (cons ecc-mcp-host ecc-mcp-allowed-hosts)) t))))
+
+(defun ecc-mcp--target-allowed-p (target)
+  "Return non-nil when TARGET, the request path, carries the secret."
+  (and ecc-mcp--token
+       (equal (car (split-string target "?")) (ecc-mcp-path))))
+
 (defun ecc-mcp-running-p ()
   "Return non-nil when the MCP server is listening."
   (and ecc-mcp--server (process-live-p ecc-mcp--server)))
@@ -293,6 +332,7 @@ the server down with it."
   "Start the MCP server and return the port it listens on (FR-MCP-1)."
   (interactive)
   (unless (ecc-mcp-running-p)
+    (setq ecc-mcp--token (ecc--uuid))
     (setq ecc-mcp--server
           (make-network-process
            :name "ecc-mcp"
@@ -315,6 +355,7 @@ the server down with it."
   (when ecc-mcp--server
     (delete-process ecc-mcp--server)
     (setq ecc-mcp--server nil))
+  (setq ecc-mcp--token nil)
   (ecc-mcp-indicator-mode -1))
 
 (defun ecc-mcp--log (_server connection _message)
@@ -345,7 +386,7 @@ a whole request yet."
            (length (ecc-mcp--content-length (cdr lines))))
       (when (<= (+ body-start length) (length text))
         (let ((body (substring text body-start (+ body-start length))))
-          (ecc-mcp--respond connection method target body)
+          (ecc-mcp--respond connection method target body (cdr lines))
           (+ body-start length))))))
 
 (defun ecc-mcp--content-length (header-lines)
@@ -362,10 +403,20 @@ a whole request yet."
   (when (string-match "[?&]session=\\([^&]+\\)" target)
     (match-string 1 target)))
 
-(defun ecc-mcp--respond (connection method target body)
-  "Answer the request of METHOD for TARGET with BODY on CONNECTION."
+(defun ecc-mcp--respond (connection method target body &optional header-lines)
+  "Answer the request of METHOD for TARGET with BODY on CONNECTION.
+HEADER-LINES are the request headers.  A request from another host, or
+one that does not carry the secret of the path, is refused before
+anything else is looked at."
   (let ((ecc-mcp--session-id (ecc-mcp--session-of-target target)))
     (cond
+     ((not (ecc-mcp--host-allowed-p header-lines))
+      (ecc-log "mcp" "refused a request for host %S"
+               (ecc-mcp--header "Host" header-lines))
+      (ecc-mcp--send connection 403 nil))
+     ((not (ecc-mcp--target-allowed-p target))
+      (ecc-log "mcp" "refused a request for %s" (car (split-string target "?")))
+      (ecc-mcp--send connection 404 nil))
      ;; Only POST is implemented; the CLI tries a GET and carries on when
      ;; it is refused (docs/verified.md, 2026-09-05, item 5).
      ((not (equal method "POST"))
@@ -394,6 +445,7 @@ a whole request yet."
                                "Connection: keep-alive\r\n\r\n")
                        status
                        (pcase status (200 "OK") (202 "Accepted")
+                              (403 "Forbidden") (404 "Not Found")
                               (405 "Method Not Allowed") (_ "Error"))
                        (length body))))
     (when (process-live-p connection)
@@ -404,10 +456,11 @@ a whole request yet."
 
 (defun ecc-mcp-url (session)
   "Return the URL the CLI of SESSION reaches this server at.
-The session id travels in the query string, which is how a tool knows
-whose project to run in."
-  (format "http://%s:%s/mcp?session=%s"
-          ecc-mcp-host (ecc-mcp-listening-port) (ecc-session-id session)))
+The path carries the secret of this server and the query string the
+session id, which is how a tool knows whose project to run in."
+  (format "http://%s:%s%s?session=%s"
+          ecc-mcp-host (ecc-mcp-listening-port) (ecc-mcp-path)
+          (ecc-session-id session)))
 
 (defun ecc-mcp-config (session)
   "Return the --mcp-config argument for SESSION, or nil when MCP is off.
