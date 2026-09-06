@@ -31,6 +31,7 @@
 (declare-function ecc-kill "ecc" (session))
 (declare-function ecc-inbox "ecc-inbox" ())
 (declare-function ecc-dashboard "ecc-dashboard" ())
+(declare-function ecc-capabilities-show "ecc-dashboard" (session))
 (declare-function ecc-next-attention "ecc-inbox" (&optional project-root))
 (declare-function ecc-answer-allow "ecc-inbox" ())
 (declare-function ecc-answer-deny "ecc-inbox" (reason))
@@ -224,6 +225,7 @@ same suffix from one call to the next."
     ("I" "Inbox" ecc-inbox)]
    ["View"
     ("b" "Dashboard" ecc-dashboard)
+    ("c" "Capabilities" ecc-capabilities-show)
     ("h" "History" ecc-history-open)
     ("L" "Log" ecc-show-log)]
    ["Config"

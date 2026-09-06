@@ -357,6 +357,152 @@ this also pins down what a row with nothing to say looks like."
                    (should (= 0 asked)))
           (kill-buffer buffer))))))
 
+
+;;;; Capabilities (FR-DASH-7)
+
+(defmacro ecc-dashboard-test-with-capabilities (session &rest body)
+  "Run BODY with SESSION bound to a session whose project defines things.
+The project holds a skill, an agent and a command of its own, the user
+directory holds one of each too, and a plugin holds a skill: the three
+scopes FR-DASH-7 asks for."
+  (declare (indent 1) (debug (symbolp body)))
+  `(let* ((root (make-temp-file "ecc-capabilities-project" t))
+          (home (make-temp-file "ecc-capabilities-home" t))
+          (plugin (make-temp-file "ecc-capabilities-plugin" t))
+          (ecc-capabilities-directory home))
+     (unwind-protect
+         (ecc-test-with-fake-session ,session
+           (setf (ecc-session-project-root ,session) root)
+           (ecc-dashboard-test--write
+            (expand-file-name ".claude/skills/project-skill/SKILL.md" root))
+           (ecc-dashboard-test--write
+            (expand-file-name ".claude/agents/project-agent.md" root))
+           (ecc-dashboard-test--write
+            (expand-file-name ".claude/commands/project-command.md" root))
+           (ecc-dashboard-test--write
+            (expand-file-name "skills/user-skill/SKILL.md" home))
+           (ecc-dashboard-test--write
+            (expand-file-name "skills/plugin-skill/SKILL.md" plugin))
+           (setf (ecc-session-init ,session)
+                 `((skills . ["project-skill" "user-skill" "plugin-skill"
+                              "unknown-skill"])
+                   (agents . ["project-agent" "general-purpose"])
+                   (slash_commands . ["project-command" "project-skill" "clear"])
+                   (mcp_servers . [((name . "emacs") (status . "connected"))])
+                   (plugins . [((name . "demo") (path . ,plugin)
+                                (source . "demo@market") (version . "1.0"))])
+                   (tools . ["Read" "mcp__emacs__xref_find_references"
+                             "mcp__emacs__project_info"])))
+           (setf (ecc-session-commands ,session)
+                 [((name . "project-command") (description . "Does a thing."))])
+           ,@body)
+       (delete-directory root t)
+       (delete-directory home t)
+       (delete-directory plugin t))))
+
+(defun ecc-dashboard-test--write (file)
+  "Create FILE, and the directories above it, with a line in it."
+  (make-directory (file-name-directory file) t)
+  (with-temp-file file (insert "# sample\n")))
+
+(defun ecc-dashboard-test--capability (entries kind name)
+  "Return the KIND called NAME among ENTRIES."
+  (seq-find (lambda (entry)
+              (and (eq (ecc-capability-kind entry) kind)
+                   (equal (ecc-capability-name entry) name)))
+            entries))
+
+(ert-deftest ecc-dashboard-test-capabilities-scopes ()
+  "Each capability is placed in the scope whose directory defines it."
+  (ecc-dashboard-test-with-capabilities session
+    (let ((entries (ecc-capabilities session)))
+      (should (eq (ecc-capability-scope
+                   (ecc-dashboard-test--capability entries 'skill "project-skill"))
+                  'project))
+      (should (eq (ecc-capability-scope
+                   (ecc-dashboard-test--capability entries 'skill "user-skill"))
+                  'global))
+      (let ((from-plugin (ecc-dashboard-test--capability
+                          entries 'skill "plugin-skill")))
+        (should (eq (ecc-capability-scope from-plugin) 'plugin))
+        (should (equal (ecc-capability-origin from-plugin) "demo")))
+      ;; Nothing on disk defines it, so it comes with the CLI.
+      (let ((builtin (ecc-dashboard-test--capability
+                      entries 'skill "unknown-skill")))
+        (should (eq (ecc-capability-scope builtin) 'builtin))
+        (should-not (ecc-capability-file builtin)))
+      (should (eq (ecc-capability-scope
+                   (ecc-dashboard-test--capability entries 'agent "project-agent"))
+                  'project)))))
+
+(ert-deftest ecc-dashboard-test-capabilities-files ()
+  "RET has a file to open for everything that has one."
+  (ecc-dashboard-test-with-capabilities session
+    (let* ((entries (ecc-capabilities session))
+           (skill (ecc-dashboard-test--capability entries 'skill "project-skill"))
+           (command (ecc-dashboard-test--capability
+                     entries 'command "project-command"))
+           (plugin (ecc-dashboard-test--capability entries 'plugin "demo")))
+      (should (string-suffix-p "skills/project-skill/SKILL.md"
+                               (ecc-capability-file skill)))
+      (should (string-suffix-p "commands/project-command.md"
+                               (ecc-capability-file command)))
+      ;; A plugin opens where it lives.
+      (should (file-directory-p (ecc-capability-file plugin))))))
+
+(ert-deftest ecc-dashboard-test-capabilities-descriptions-and-servers ()
+  "Descriptions come from initialize, and a server says how it is doing."
+  (ecc-dashboard-test-with-capabilities session
+    (let* ((entries (ecc-capabilities session))
+           (command (ecc-dashboard-test--capability
+                     entries 'command "project-command"))
+           (server (ecc-dashboard-test--capability entries 'mcp "emacs")))
+      (should (equal (ecc-capability-description command) "Does a thing."))
+      ;; The MCP server carries its status and how many tools it published.
+      (should (equal (ecc-capability-detail server) "connected, 2 tools"))
+      ;; A command a skill installs is listed once, as the skill.
+      (should-not (ecc-dashboard-test--capability entries 'command "project-skill")))))
+
+(ert-deftest ecc-dashboard-test-capabilities-buffer ()
+  "The buffer groups by kind and scope, and folds a group away."
+  (ecc-dashboard-test-with-capabilities session
+    (with-temp-buffer
+      (ecc-capabilities-mode)
+      (setq ecc-capabilities--session session)
+      (ecc-capabilities-draw session)
+      (let ((text (ecc-test-buffer-string)))
+        (should (string-search "Skills (4)" text))
+        (should (string-search "Agents (2)" text))
+        (should (string-search "Slash commands (2)" text))
+        (should (string-search "MCP servers (1)" text))
+        (should (string-search "Plugins (1)" text))
+        (should (string-search "project (1)" text))
+        (should (string-search "project-skill" text))
+        (should (string-search "connected, 2 tools" text)))
+      ;; Folding the skills hides what is under them and nothing else.
+      (goto-char (point-min))
+      (should (search-forward "Skills (4)" nil t))
+      (goto-char (line-beginning-position))
+      (ecc-capabilities-toggle)
+      (let ((text (ecc-test-buffer-string)))
+        (should (string-search "Skills (4)" text))
+        (should-not (string-search "project-skill" text))
+        (should (string-search "project-agent" text)))
+      ;; And unfolding brings them back.
+      (goto-char (point-min))
+      (should (search-forward "Skills (4)" nil t))
+      (goto-char (line-beginning-position))
+      (ecc-capabilities-toggle)
+      (should (string-search "project-skill" (ecc-test-buffer-string))))))
+
+(ert-deftest ecc-dashboard-test-capabilities-without-init ()
+  "A session that has not heard from the CLI yet says so rather than fails."
+  (ecc-test-with-fake-session session
+    (with-temp-buffer
+      (ecc-capabilities-mode)
+      (ecc-capabilities-draw session)
+      (should (string-search "Nothing yet" (ecc-test-buffer-string))))))
+
 (provide 'ecc-dashboard-test)
 
 ;;; ecc-dashboard-test.el ends here
