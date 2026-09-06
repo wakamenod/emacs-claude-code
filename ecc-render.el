@@ -865,7 +865,10 @@ each question once the request was answered."
     (magit-insert-heading (ecc-render--turn-heading session turn))
     (when-let* ((prompt (ecc-turn-prompt turn)))
       (magit-insert-section (ecc-section-prompt (concat (ecc-turn-id turn) "/prompt"))
-        (ecc-render--insert-lines prompt "▌ " 'ecc-user-face)))
+        ;; The prompt carries fenced blocks of its own: the quoted region
+        ;; and the context Emacs attached (FR-CTX-1, FR-INP-8), which are
+        ;; worth the same colouring as the reply (FR-OUT-15).
+        (ecc-render--insert-lines (ecc-markdown-fontify prompt) "▌ " 'ecc-user-face)))
     (dolist (child (ecc-turn-children turn))
       (ecc-render--insert-node session child 1))))
 
