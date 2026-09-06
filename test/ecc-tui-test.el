@@ -76,10 +76,10 @@ The process the session would run is pretended to be alive until
 (ert-deftest ecc-tui-test-command ()
   "The terminal resumes the same session with the interactive CLI."
   (ecc-test-with-fake-session session
-    (setf (ecc-session-options session) '(:model "haiku" :max-budget-usd 0.5))
+    (setf (ecc-session-options session) '(:model "haiku"))
     (should (equal (ecc-tui-arguments session)
                    (list ecc-executable "--resume" (ecc-session-id session)
-                         "--model" "haiku" "--max-budget-usd" "0.5")))
+                         "--model" "haiku")))
     ;; None of the headless flags belong in a terminal.
     (should-not (member "--output-format" (ecc-tui-arguments session)))
     (should-not (member "-p" (ecc-tui-arguments session)))

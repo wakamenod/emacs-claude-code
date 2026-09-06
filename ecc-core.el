@@ -56,10 +56,6 @@ Nil leaves the CLI default in place."
   "Tool patterns passed with --disallowedTools."
   :type '(repeat string))
 
-(defcustom ecc-max-budget-usd nil
-  "Spending cap passed with --max-budget-usd, or nil for no cap."
-  :type '(choice (const :tag "No cap" nil) number))
-
 (defcustom ecc-safe-mode nil
   "Non-nil passes --safe-mode, which disables every customization.
 That includes MCP servers, skills, custom commands and agents, which

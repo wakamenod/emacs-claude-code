@@ -56,7 +56,10 @@ Development and testing **always** start `claude` with:
 - **Never use `--safe-mode`.** It drops MCP servers, skills, custom commands and agents
   altogether, which takes away the very things this package wants to show (`/` completion
   of FR-INP-1..3, the agents of FR-DASH, FR-MCP). See D2 in `docs/verified.md`.
-- `--model haiku` and `--max-budget-usd`: the cost cap.
+- `--model haiku` and `--max-budget-usd`: the cost cap.  `ecc` itself has no budget
+  option any more (removed 2026-09-06, see `docs/decisions.md`): the scripts pass the
+  flag themselves and the live tests pass it in `:extra-args`.  A cap for ordinary use
+  belongs in the Claude Code settings.
 - stream-json needs `--verbose`, `--permission-prompt-tool stdio` and
   `:connection-type 'pipe` (plan §2.1, §9).
 

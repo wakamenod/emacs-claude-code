@@ -307,8 +307,6 @@ and for nothing else, and Emacs is what touches the file."
                 "--tools" "")
           (when-let* ((model (or model ecc-rewrite-model ecc-model)))
             (list "--model" model))
-          (when-let* ((budget ecc-max-budget-usd))
-            (list "--max-budget-usd" (format "%s" budget)))
           (when-let* ((settings (ecc-protocol-settings-json ecc-disabled-plugins)))
             (list "--settings" settings))))
 

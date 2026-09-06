@@ -119,9 +119,6 @@ and the options that decide what it costs."
   (append (list ecc-executable "--resume" (ecc-session-id session))
           (when-let* ((model (ecc-model-option session :model ecc-model)))
             (list "--model" model))
-          (when-let* ((budget (ecc-model-option session :max-budget-usd
-                                                ecc-max-budget-usd)))
-            (list "--max-budget-usd" (format "%s" budget)))
           ecc-tui-extra-args))
 
 ;;;; Making sure nobody else has it (FR-TUI-5)

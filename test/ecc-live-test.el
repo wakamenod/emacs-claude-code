@@ -23,10 +23,9 @@
 
 (defconst ecc-test-live-options
   '(:model "haiku"
-    :max-budget-usd 0.5
     :streaming nil
     :disabled-plugins ("emacs-bridge@emacs-gravity-marketplace")
-    :extra-args ("--no-session-persistence"))
+    :extra-args ("--no-session-persistence" "--max-budget-usd" "0.5"))
   "Launch options every live test uses.")
 
 (defvar ecc-test-live-timeout 90
@@ -314,7 +313,9 @@ A clean approval then allows and switches the session to acceptEdits
           (progn
             (setf (ecc-session-project-root session) (file-name-as-directory directory))
             (ecc-test-live-restart session
-                                   (append '(:permission-mode "plan" :max-budget-usd 1.0)
+                                   (append '(:permission-mode "plan"
+                                             :extra-args ("--no-session-persistence"
+                                                          "--max-budget-usd" "1.0"))
                                            ecc-test-live-options))
             (ecc-proc-send-prompt
              session
@@ -573,9 +574,9 @@ records and not from git."
 
 (defconst ecc-test-live-persistent-options
   '(:model "haiku"
-    :max-budget-usd 0.5
     :streaming nil
-    :disabled-plugins ("emacs-bridge@emacs-gravity-marketplace"))
+    :disabled-plugins ("emacs-bridge@emacs-gravity-marketplace")
+    :extra-args ("--max-budget-usd" "0.5"))
   "Launch options for a live test that needs the CLI to keep a recording.
 The same as `ecc-test-live-options' without --no-session-persistence:
 a test of the history has to have a history to read.")

@@ -51,14 +51,13 @@
     (let ((ecc-model "opus")
           (ecc-streaming-enabled t))
       (setf (ecc-session-options session)
-            (list :model "haiku" :max-budget-usd 0.5 :streaming nil
+            (list :model "haiku" :streaming nil
                   :permission-mode "plan" :allowed-tools '("Read" "Bash(git *)")
                   :disabled-plugins '("emacs-bridge@emacs-gravity-marketplace")
                   :extra-args '("--no-session-persistence")))
       (let ((command (ecc-proc-build-command session)))
         (should (equal (ecc-proc-test--flag-value command "--model") "haiku"))
         (should (equal (ecc-proc-test--flag-value command "--permission-mode") "plan"))
-        (should (equal (ecc-proc-test--flag-value command "--max-budget-usd") "0.5"))
         (should-not (member "--include-partial-messages" command))
         ;; A repeatable flag takes each pattern as its own argument.
         (should (equal (seq-take (member "--allowedTools" command) 3)

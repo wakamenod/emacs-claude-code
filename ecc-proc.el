@@ -104,8 +104,6 @@ With RESUME non-nil the session id is passed to --resume instead of
              (cons "--allowedTools" tools))
            (when-let* ((tools (funcall opt :disallowed-tools ecc-disallowed-tools)))
              (cons "--disallowedTools" tools))
-           (when-let* ((budget (funcall opt :max-budget-usd ecc-max-budget-usd)))
-             (list "--max-budget-usd" (format "%s" budget)))
            (when-let* ((config (and ecc-mcp-config-function
                                     (funcall ecc-mcp-config-function session))))
              (list "--mcp-config" config))

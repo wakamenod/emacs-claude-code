@@ -141,7 +141,6 @@
 (ert-deftest ecc-inline-test-rewrite-command ()
   "The rewrite is one shot, with no tools and a schema (FR-INLINE-2)."
   (let ((ecc-rewrite-model "haiku")
-        (ecc-max-budget-usd 0.5)
         (ecc-disabled-plugins nil))
     (let ((command (ecc-rewrite-command)))
       (should (member "-p" command))
@@ -149,7 +148,6 @@
       (should (equal (cadr (member "--json-schema" command)) ecc-rewrite-schema))
       (should (equal (cadr (member "--tools" command)) ""))
       (should (equal (cadr (member "--model" command)) "haiku"))
-      (should (equal (cadr (member "--max-budget-usd" command)) "0.5"))
       ;; No Edit tool is asked for, so nothing can be written behind us.
       (should-not (member "--permission-prompt-tool" command)))))
 
