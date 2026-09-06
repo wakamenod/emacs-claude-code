@@ -12,12 +12,15 @@
 (require 'ert)
 (require 'ecc-test-helpers)
 (require 'ecc-prompt)
+(require 'ecc-session)
 (require 'ecc-dispatch)
 
 (defmacro ecc-prompt-test--in-buffer (session &rest body)
-  "Run BODY in the prompt buffer of SESSION."
+  "Run BODY in the buffer of SESSION, with point in the prompt region."
   (declare (indent 1))
-  `(with-current-buffer (ecc-prompt-ensure-buffer ,session) ,@body))
+  `(with-current-buffer (ecc-session-ensure-buffer ,session)
+     (ecc-chat-goto-prompt)
+     ,@body))
 
 (ert-deftest ecc-prompt-test-send ()
   "The buffer goes out as a user message and is emptied (FR-INP-1)."
@@ -25,7 +28,7 @@
     (ecc-prompt-test--in-buffer session
       (insert "hello\nworld")
       (ecc-prompt-send)
-      (should (string-empty-p (buffer-string))))
+      (should (string-empty-p (ecc-chat-draft))))
     (let ((sent (car (ecc-test-sent-messages))))
       (should (equal (ecc-protocol-serialize sent)
                      (ecc-protocol-serialize
@@ -98,8 +101,11 @@
       ;; Only the first word of a slash line is a command.
       (insert " and more")
       (should-not (ecc-prompt-capf))
-      (erase-buffer)
+      (ecc-prompt-clear)
       (insert "hello")
+      (should-not (ecc-prompt-capf))
+      ;; Nothing is completed in the transcript (FR-INP-3).
+      (goto-char (point-min))
       (should-not (ecc-prompt-capf)))))
 
 
@@ -186,16 +192,20 @@ failing that to the setting."
         ;; What is being written is kept and comes back at the end.
         (insert "draft")
         (ecc-prompt-history-previous)
-        (should (equal (string-trim (buffer-string)) "second"))
+        (should (equal (string-trim (ecc-chat-draft)) "second"))
         (ecc-prompt-history-previous)
-        (should (equal (string-trim (buffer-string)) "first"))
+        (should (equal (string-trim (ecc-chat-draft)) "first"))
         ;; The oldest entry is as far back as it goes.
         (ecc-prompt-history-previous)
-        (should (equal (string-trim (buffer-string)) "first"))
+        (should (equal (string-trim (ecc-chat-draft)) "first"))
         (ecc-prompt-history-next)
-        (should (equal (string-trim (buffer-string)) "second"))
+        (should (equal (string-trim (ecc-chat-draft)) "second"))
         (ecc-prompt-history-next)
-        (should (equal (string-trim (buffer-string)) "draft"))
+        (should (equal (string-trim (ecc-chat-draft)) "draft"))
+        ;; The transcript above is untouched by the walk.
+        (ecc-render-flush session)
+        (should (string-search "Turn 1  first" (buffer-string)))
+        (should (equal (string-trim (ecc-chat-draft)) "draft"))
         (should-error (ecc-prompt-history-next) :type 'user-error)))))
 
 (ert-deftest ecc-prompt-test-history-is-deduplicated-and-capped ()
@@ -275,7 +285,6 @@ failing that to the setting."
   "The @ completion offers the files of the project and the two words."
   (ecc-test-with-fake-session session
     (ecc-prompt-test--in-buffer session
-      (erase-buffer)
       (insert "見て @re")
       (let* ((capf (ecc-prompt-at-capf))
              (candidates (all-completions "@re" (nth 2 capf))))
@@ -302,7 +311,7 @@ failing that to the setting."
                                                          ecc-image-dir)
                                        file))
               ;; The prompt refers to it; no base64 goes into the recording.
-              (should (equal (buffer-string) (format "これは @%s " file)))
+              (should (equal (ecc-chat-draft) (format "これは @%s " file)))
               (should-not (string-search "PNG-data" (buffer-string)))
               ;; jpeg keeps the extension the CLI expects.
               (should (equal (file-name-extension

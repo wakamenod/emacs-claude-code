@@ -25,7 +25,7 @@
 ;;   made here out of the usage of the last assistant message and the
 ;;   window of the model in use.  A compaction resets it.
 ;;
-;; - the prompt suggestion (FR-HINT-4), shown in the prompt buffer while
+;; - the prompt suggestion (FR-HINT-4), shown in the prompt region while
 ;;   it is empty and taken with one key.
 ;;
 ;; Every one of these costs something -- an API call for the recap, the
@@ -41,8 +41,7 @@
 (require 'ecc-model)
 (require 'ecc-proc)
 (require 'ecc-render)
-
-(declare-function ecc-prompt-ensure-buffer "ecc-prompt" (session))
+(require 'ecc-chat)
 
 ;;;; Options
 
@@ -131,7 +130,7 @@ the state.  Nil shows nothing."
   :group 'ecc)
 
 (defcustom ecc-prompt-suggestion-display t
-  "Non-nil shows the suggestion the CLI offers in the prompt buffer.
+  "Non-nil shows the suggestion the CLI offers in the prompt region.
 The suggestions only arrive when the session was started with
 --prompt-suggestions, which `ecc-prompt-suggestions-enabled' controls."
   :type 'boolean
@@ -261,11 +260,11 @@ straight into a mode line construct."
   (setf (alist-get key (ecc-session-recap-state session)) value))
 
 (defun ecc-hint-draft-p (session)
-  "Return non-nil when something is written in the prompt buffer of SESSION."
-  (let ((buffer (ecc-session-prompt-buffer session)))
+  "Return non-nil when something is written in the prompt region of SESSION."
+  (let ((buffer (ecc-session-buffer session)))
     (and (buffer-live-p buffer)
          (with-current-buffer buffer
-           (not (string-empty-p (string-trim (buffer-string))))))))
+           (not (string-empty-p (string-trim (ecc-chat-draft))))))))
 
 (defun ecc-hint-recap-skip-reason (session)
   "Return why SESSION is not worth summing up now, or nil when it is.
@@ -365,9 +364,6 @@ than copied, so that the transcript holds one node for one message."
 
 ;;;; The prompt suggestion (FR-HINT-4)
 
-(defvar-local ecc-hint--suggestion-overlay nil
-  "Overlay showing the suggestion in a prompt buffer.")
-
 (defun ecc-hint-suggestion (session)
   "Return the prompt the CLI last suggested for SESSION, or nil."
   (let ((suggestion (ecc-hint-recap-get session 'suggestion)))
@@ -375,43 +371,38 @@ than copied, so that the transcript holds one node for one message."
           ((consp suggestion) (or (alist-get 'prompt suggestion)
                                   (alist-get 'text suggestion))))))
 
+(defun ecc-hint-suggestion-placeholder (session)
+  "Return the suggestion of SESSION as the placeholder of its prompt region.
+The placeholder is only shown while nothing has been typed, which is
+what keeps a suggestion out of the way of a draft (FR-HINT-4)."
+  (when-let* ((suggestion (and ecc-prompt-suggestion-display
+                               (ecc-hint-suggestion session))))
+    (format "%s   (C-c C-s to take it)" suggestion)))
+
+(add-hook 'ecc-chat-placeholder-functions #'ecc-hint-suggestion-placeholder)
+
 (defun ecc-hint-show-suggestion (session)
-  "Show the suggestion of SESSION in its prompt buffer (FR-HINT-4).
-It is shown only while nothing has been typed: a suggestion over a
-draft is in the way.  Returns the text shown, or nil."
-  (let ((buffer (ecc-session-prompt-buffer session))
-        (suggestion (and ecc-prompt-suggestion-display
-                         (ecc-hint-suggestion session))))
+  "Show the suggestion of SESSION in its prompt region (FR-HINT-4).
+Returns the suggestion shown, or nil when there is none or a draft is
+in the way."
+  (let ((buffer (ecc-session-buffer session)))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
-        (let ((empty (string-empty-p (string-trim (buffer-string)))))
-          (cond
-           ((and suggestion empty)
-            (unless (overlayp ecc-hint--suggestion-overlay)
-              (setq ecc-hint--suggestion-overlay (make-overlay (point-min) (point-min) nil t)))
-            (move-overlay ecc-hint--suggestion-overlay (point-min) (point-min))
-            (overlay-put ecc-hint--suggestion-overlay 'after-string
-                         (propertize (format "%s   (C-c C-s to take it)" suggestion)
-                                     'face 'ecc-dim-face))
-            suggestion)
-           (t (ecc-hint-clear-suggestion) nil)))))))
-
-(defun ecc-hint-clear-suggestion ()
-  "Remove the suggestion shown in this prompt buffer."
-  (when (overlayp ecc-hint--suggestion-overlay)
-    (delete-overlay ecc-hint--suggestion-overlay))
-  (setq ecc-hint--suggestion-overlay nil))
+        (ecc-chat-update-placeholder)
+        (and (ecc-hint-suggestion-placeholder session)
+             (string-empty-p (string-trim (ecc-chat-draft)))
+             (ecc-hint-suggestion session))))))
 
 (defun ecc-hint-accept-suggestion ()
-  "Write the suggested prompt into this buffer (FR-HINT-4)."
+  "Write the suggested prompt into the prompt region (FR-HINT-4)."
   (interactive)
-  (let* ((session (or (bound-and-true-p ecc-prompt--session)
+  (let* ((session (or ecc-render--session
                       (user-error "This buffer does not belong to a Claude session")))
          (suggestion (or (ecc-hint-suggestion session)
                          (user-error "Nothing has been suggested"))))
-    (ecc-hint-clear-suggestion)
-    (goto-char (point-max))
+    (ecc-chat-goto-prompt)
     (insert suggestion)
+    (ecc-chat-update-placeholder)
     suggestion))
 
 (defun ecc-hint--on-suggestion (session &rest _)
@@ -471,10 +462,6 @@ FR-HINT-3 stay, since they cost nothing."
 (add-hook 'ecc-progress-hook #'ecc-hint--on-suggestion)
 (add-hook 'ecc-render-tail-functions #'ecc-hint-recap-line)
 (add-hook 'ecc-render-header-functions #'ecc-hint-context-indicator)
-
-(with-eval-after-load 'ecc-prompt
-  (when (boundp 'ecc-prompt-mode-map)
-    (define-key ecc-prompt-mode-map (kbd "C-c C-s") #'ecc-hint-accept-suggestion)))
 
 (provide 'ecc-hint)
 

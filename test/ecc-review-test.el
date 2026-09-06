@@ -348,7 +348,7 @@ Neither is in a git repository, so both are diffed from the records."
 
 (ert-deftest ecc-review-test-session-keys ()
   "d reviews from the transcript, denies on a request, and c comments on one."
-  (should (eq (lookup-key ecc-session-mode-map (kbd "d")) #'ecc-session-review-or-deny))
+  (should (eq (lookup-key ecc-chat-transcript-map (kbd "d")) #'ecc-session-review-or-deny))
   (should (eq (lookup-key ecc-request-section-map (kbd "d")) 'ecc-perm-deny))
   (should (eq (lookup-key ecc-request-section-map (kbd "c")) 'ecc-review-comment-request))
   (should (eq (lookup-key ecc-request-section-map (kbd "e")) 'ecc-review-edit-proposal))

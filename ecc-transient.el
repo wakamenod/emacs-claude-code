@@ -39,7 +39,7 @@
 (declare-function ecc-answer-deny "ecc-inbox" (reason))
 (declare-function ecc-review "ecc-review" (&optional session paths))
 (declare-function ecc-session-timeline "ecc-session" ())
-(declare-function ecc-session-goto-files "ecc-session" ())
+(declare-function ecc-chat-goto-files "ecc-chat" ())
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-history-open "ecc-history" (session-id))
 (declare-function ecc-tui-open "ecc-tui" (&optional session))
@@ -53,13 +53,12 @@
 
 ;;;###autoload
 (defun ecc-show-session ()
-  "Show the session this buffer talks to and select its prompt buffer.
-Both windows come back, and the point lands where something can be
-typed: `C-x o' from a source buffer reaches the transcript first, which
-is not where a prompt is written."
+  "Show the session this buffer talks to and go to its prompt.
+The window comes back and the point lands where something can be
+typed."
   (interactive)
   (let ((session (ecc-menu-session)))
-    (ecc-display-prompt session)
+    (ecc-window-select-session session)
     session))
 
 ;;;###autoload
@@ -110,7 +109,7 @@ its buffer."
 (defun ecc-goto-files ()
   "Move to the Files section of the session this buffer talks to."
   (interactive)
-  (ecc-menu--in-session #'ecc-session-goto-files))
+  (ecc-menu--in-session #'ecc-chat-goto-files))
 
 ;;;###autoload
 (defun ecc-timeline ()
@@ -203,7 +202,7 @@ same suffix from one call to the next."
     ("r" "Resume" ecc-resume)
     ("k" "Kill" ecc-kill)
     ("R" "Rename" ecc-rename-session)
-    ("v" "Go to the prompt buffer" ecc-show-session)
+    ("v" "Go to the prompt" ecc-show-session)
     ("w" "Hide or restore windows" ecc-toggle)
     ("i" "Interrupt" ecc-interrupt)
     ("t" "Hand over to the terminal" ecc-tui-open)

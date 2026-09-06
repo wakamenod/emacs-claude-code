@@ -40,15 +40,15 @@
 
 (defcustom ecc-context-attach-by-default nil
   "Non-nil attaches the editor context to every prompt sent (FR-CTX-1).
-It can be turned on and off in a prompt buffer with
-\\<ecc-prompt-mode-map>\\[ecc-prompt-toggle-context]."
+It can be turned on and off in a session buffer with
+\\<ecc-chat-mode-map>\\[ecc-prompt-toggle-context]."
   :type 'boolean
   :group 'ecc)
 
 (defcustom ecc-context-visible t
   "Non-nil appends the context to a prompt as a quote block (FR-CTX-2).
 That is what the user sees before sending.  Nil sends the same text
-without showing it in the prompt buffer, which is the invisible form
+without showing it in the prompt region, which is the invisible form
 the requirement makes optional."
   :type 'boolean
   :group 'ecc)

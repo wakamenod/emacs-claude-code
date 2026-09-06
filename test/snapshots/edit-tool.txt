@@ -49,3 +49,4 @@ Turn 1  greet を直して  ·  9.9s  ·  $0.0262
      def farewell(name):
   Changed the greet function to return "hello " + name instead of "hi " + name.
   ● end_turn · 3 turns · $0.0262 · 9.9s
+ 

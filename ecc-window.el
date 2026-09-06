@@ -26,8 +26,7 @@
 
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-session-buffer-name "ecc-session" (name))
-(declare-function ecc-prompt-ensure-buffer "ecc-prompt" (session))
-(declare-function ecc-prompt-buffer-name "ecc-prompt" (name))
+(declare-function ecc-chat-goto-prompt "ecc-chat" ())
 
 (defcustom ecc-window-use-side-window t
   "Non-nil shows a transcript in a side window rather than an ordinary one."
@@ -47,11 +46,6 @@
 (defcustom ecc-window-height 0.4
   "Height of the transcript side window when it is put on top or bottom."
   :type 'number
-  :group 'ecc)
-
-(defcustom ecc-prompt-window-height 6
-  "Height in lines of the prompt window under a transcript."
-  :type 'integer
   :group 'ecc)
 
 (defcustom ecc-window-ask-name-for-second-session t
@@ -107,13 +101,9 @@ after it are told apart by a name the user gives (FR-WIN-3)."
       (user-error "The name is empty"))
     (setf (ecc-session-name session) name)
     (require 'ecc-session)
-    (require 'ecc-prompt)
     (when (buffer-live-p (ecc-session-buffer session))
       (with-current-buffer (ecc-session-buffer session)
         (rename-buffer (ecc-session-buffer-name name) t)))
-    (when (buffer-live-p (ecc-session-prompt-buffer session))
-      (with-current-buffer (ecc-session-prompt-buffer session)
-        (rename-buffer (ecc-prompt-buffer-name name) t)))
     (force-mode-line-update t)
     name))
 
@@ -125,10 +115,8 @@ after it are told apart by a name the user gives (FR-WIN-3)."
 (defun ecc-window-buffer-session (&optional buffer)
   "Return the session BUFFER belongs to, or nil."
   (let ((buffer (or buffer (current-buffer))))
-    (or (and (boundp 'ecc-render--session)
-             (buffer-local-value 'ecc-render--session buffer))
-        (and (boundp 'ecc-prompt--session)
-             (buffer-local-value 'ecc-prompt--session buffer)))))
+    (and (boundp 'ecc-render--session)
+         (buffer-local-value 'ecc-render--session buffer))))
 
 (defun ecc-window-own-buffer-p (&optional buffer)
   "Return non-nil when BUFFER is one this package put on the screen."
@@ -181,40 +169,33 @@ does not shuffle the windows around."
           (push (cons id slot) ecc-window--slots)
           slot))))
 
-(defun ecc-window--side-parameters (slot &optional height)
-  "Return the display action alist for SLOT, HEIGHT lines high."
+(defun ecc-window--side-parameters (slot)
+  "Return the display action alist for SLOT."
   (let ((horizontal (memq ecc-window-side '(left right))))
     `((side . ,ecc-window-side)
       (slot . ,slot)
       ,@(if horizontal
             `((window-width . ,ecc-window-width))
-          `((window-height . ,(or height ecc-window-height))))
-      ,@(when (and horizontal height) `((window-height . ,height))))))
+          `((window-height . ,ecc-window-height))))))
 
 (defun ecc-display-session (session)
-  "Show the transcript of SESSION and return its window."
+  "Show the buffer of SESSION and return its window.
+The window is not selected; `ecc-window-select-session' does that."
   (require 'ecc-session)
   (let ((buffer (ecc-session-ensure-buffer session)))
     (if ecc-window-use-side-window
         (display-buffer-in-side-window
-         buffer (ecc-window--side-parameters (* 2 (ecc-window-slot session))))
+         buffer (ecc-window--side-parameters (ecc-window-slot session)))
       (display-buffer buffer))))
 
-(defun ecc-display-prompt (session)
-  "Show the prompt buffer of SESSION next to its transcript and select it.
-Side windows cannot be split, so the prompt takes the next slot on the
-same side of the frame."
-  (require 'ecc-prompt)
-  (ecc-display-session session)
-  (let* ((buffer (ecc-prompt-ensure-buffer session))
-         (window (if ecc-window-use-side-window
-                     (display-buffer-in-side-window
-                      buffer (ecc-window--side-parameters
-                              (1+ (* 2 (ecc-window-slot session)))
-                              ecc-prompt-window-height))
-                   (display-buffer buffer))))
+(defun ecc-window-select-session (session)
+  "Show the buffer of SESSION, select its window and go to the prompt.
+That is where something can be typed, which is what showing a session
+is usually for (FR-WIN-1)."
+  (let ((window (ecc-display-session session)))
     (when (window-live-p window)
-      (select-window window))
+      (select-window window)
+      (ecc-chat-goto-prompt))
     window))
 
 ;;;; Opening a review (FR-WIN-5)
@@ -271,8 +252,7 @@ happens to the session windows and where point lands (FR-WIN-5)."
 (defun ecc-window-session-buffers (session)
   "Return the live buffers of SESSION that are shown in a window of their own."
   (seq-filter #'buffer-live-p
-              (list (ecc-session-buffer session)
-                    (ecc-session-prompt-buffer session))))
+              (list (ecc-session-buffer session))))
 
 (defun ecc-window-session-visible-p (session &optional frame)
   "Return non-nil when a buffer of SESSION is shown on FRAME."

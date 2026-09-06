@@ -6,3 +6,4 @@ Turn 1  hello
     Advisor: off
     Usage: /advisor <fable|opus|sonnet|off>
 ● running…
+ 

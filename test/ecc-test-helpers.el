@@ -91,7 +91,6 @@ Returns the list of HANDLER return values."
 (defun ecc-test-cleanup-session (session)
   "Kill every buffer SESSION created."
   (dolist (buffer (list (ecc-session-buffer session)
-                        (ecc-session-prompt-buffer session)
                         (ecc-session-stream-buffer session)
                         (get-buffer (ecc-log-buffer-name (ecc-session-name session)))))
     (when (buffer-live-p buffer)

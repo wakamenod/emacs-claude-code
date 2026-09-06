@@ -191,10 +191,9 @@ The request of A is a Bash call and older; the one of B is a Write."
     ;; `format-mode-line' draws nothing in batch, so the construct is
     ;; evaluated by hand.
     (with-current-buffer (ecc-session-buffer a)
-      (should (equal mode-line-process
-                     '(:eval (ecc--mode-line-escape
-                              (concat (ecc-render-mode-line-process)
-                                      (ecc-hint-mode-line-string))))))
+      (should (eq (car mode-line-process) :eval))
+      (should (string-search "⚠ question ×2"
+                             (eval (cadr mode-line-process) t)))
       (should (string-search "⚠ question ×2" (ecc-render-mode-line-process))))
     ;; Answered, the session is back to the turn that was running.
     (ecc-perm-respond (car (ecc-session-pending b)) 'deny)

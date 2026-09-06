@@ -1,4 +1,4 @@
-;;; ecc-prompt.el --- The prompt buffer of a session  -*- lexical-binding: t; -*-
+;;; ecc-prompt.el --- The prompt region of a session  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Jun
 
@@ -8,8 +8,9 @@
 
 ;;; Commentary:
 
-;; Where a prompt is written and sent from.  Section 6.2 of
-;; IMPLEMENTATION_PLAN.md: multi-line input (FR-INP-1), slash commands
+;; What is done with the prompt region of a session buffer (the region
+;; itself belongs to `ecc-chat').  Section 6.2 of IMPLEMENTATION_PLAN.md
+;; as revised by docs/phase9-ui-redesign.md: multi-line input (FR-INP-1), slash commands
 ;; with their completion and the two kinds that need care (FR-INP-2, 3,
 ;; 4, 5), the queue that holds a prompt back while a turn runs
 ;; (FR-INP-6), the history shared by every session (FR-INP-7), the `@'
@@ -24,6 +25,8 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
+(require 'ecc-render)
+(require 'ecc-chat)
 (require 'ecc-window)
 (require 'ecc-context)
 
@@ -93,80 +96,36 @@ anything to happen here."
   :type 'boolean
   :group 'ecc)
 
-;;;; The buffer
+;;;; The session and its settings
 
-(defvar-local ecc-prompt--session nil
-  "The session this prompt buffer belongs to.")
+(defvar-local ecc-prompt--attach-context 'unset
+  "Whether this buffer appends the editor context to what it sends.
+`unset' means `ecc-context-attach-by-default' decides.")
 
-(defvar-local ecc-prompt--attach-context nil
-  "Non-nil appends the editor context to what this buffer sends.")
-
-(defvar ecc-prompt-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c C-c") #'ecc-prompt-send)
-    (define-key map (kbd "C-c C-k") #'ecc-prompt-clear)
-    (define-key map (kbd "C-c C-q") #'ecc-prompt-show-queue)
-    (define-key map (kbd "C-c C-r") #'ecc-prompt-resend-last)
-    (define-key map (kbd "C-c C-x") #'ecc-prompt-toggle-context)
-    (define-key map (kbd "C-c C-i") #'ecc-prompt-insert-image)
-    (define-key map (kbd "M-p") #'ecc-prompt-history-previous)
-    (define-key map (kbd "M-n") #'ecc-prompt-history-next)
-    (define-key map (kbd "C-<up>") #'ecc-prompt-history-previous)
-    (define-key map (kbd "C-<down>") #'ecc-prompt-history-next)
-    ;; `?' stays self-inserting in a buffer one writes prose in, so the
-    ;; menu is on C-c ? here rather than on ? (NFR-10).
-    (define-key map (kbd "C-c ?") #'ecc-menu)
-    map)
-  "Keymap of `ecc-prompt-mode'.")
-
-(declare-function ecc-menu "ecc-transient" ())
-
-(define-derived-mode ecc-prompt-mode text-mode "Claude-Prompt"
-  "Major mode of the buffer a prompt is written in.
-
-\\{ecc-prompt-mode-map}"
-  :interactive nil
-  (setq-local completion-at-point-functions
-              (list #'ecc-prompt-capf #'ecc-prompt-at-capf))
-  (setq-local ecc-prompt--attach-context ecc-context-attach-by-default)
-  ;; An image on the clipboard is worth a file reference (FR-INP-9).
-  (when (fboundp 'yank-media-handler)
-    (yank-media-handler "image/.*" #'ecc-prompt-yank-image))
-  (setq-local dnd-protocol-alist
-              (cons '("^file:" . ecc-prompt-dnd-insert) dnd-protocol-alist))
-  (visual-line-mode 1))
-
-(defun ecc-prompt-buffer-name (name)
-  "Return the name of the prompt buffer of the session called NAME."
-  (format "*ecc-prompt: %s*" name))
-
-(defun ecc-prompt-ensure-buffer (session)
-  "Return the prompt buffer of SESSION, creating it if needed."
-  (let ((buffer (ecc-session-prompt-buffer session)))
-    (unless (buffer-live-p buffer)
-      (setq buffer (get-buffer-create
-                    (ecc-prompt-buffer-name (ecc-session-name session))))
-      (setf (ecc-session-prompt-buffer session) buffer)
-      (with-current-buffer buffer
-        (setq default-directory (or (ecc-session-project-root session)
-                                    default-directory))
-        (ecc-prompt-mode)
-        (setq ecc-prompt--session session)))
-    buffer))
-
-(defun ecc-prompt-pop-to-buffer (session)
-  "Show the prompt buffer of SESSION and select it."
-  (pop-to-buffer (ecc-prompt-ensure-buffer session)))
+(defun ecc-prompt-attach-context-p ()
+  "Return non-nil when this buffer appends the editor context (FR-CTX-1)."
+  (if (eq ecc-prompt--attach-context 'unset)
+      ecc-context-attach-by-default
+    ecc-prompt--attach-context))
 
 (defun ecc-prompt-session ()
-  "Return the session of this prompt buffer, or signal an error."
-  (or ecc-prompt--session
+  "Return the session of this buffer, or signal an error."
+  (or ecc-render--session
       (user-error "This buffer does not belong to a Claude session")))
+
+(defun ecc-prompt--ensure-region ()
+  "Move point into the prompt region unless it is there already.
+Returns where the region starts."
+  (let ((start (or (ecc-chat-prompt-start)
+                   (user-error "This buffer has no prompt region"))))
+    (unless (ecc-chat-in-prompt-p)
+      (goto-char (point-max)))
+    start))
 
 ;;;; History (FR-INP-7)
 
 (defvar ecc-prompt-history nil
-  "Prompts sent from a prompt buffer, most recent first.
+  "Prompts sent from a prompt region, most recent first.
 Shared by every session and kept across restarts when `savehist-mode'
 is on.")
 
@@ -192,18 +151,19 @@ is on.")
     ecc-prompt-history))
 
 (defun ecc-prompt--history-show (index)
-  "Replace the buffer with entry INDEX of the history, or the draft at nil."
-  (erase-buffer)
-  (insert (if index (nth index ecc-prompt-history) (or ecc-prompt--history-draft "")))
+  "Replace the prompt region with entry INDEX of the history.
+INDEX nil brings the draft back."
+  (ecc-chat-set-draft
+   (if index (nth index ecc-prompt-history) (or ecc-prompt--history-draft "")))
   (setq ecc-prompt--history-index index))
 
 (defun ecc-prompt-history-previous ()
-  "Replace the buffer with the previous prompt sent (FR-INP-7)."
+  "Replace the prompt region with the previous prompt sent (FR-INP-7)."
   (interactive)
   (unless ecc-prompt-history
     (user-error "No history"))
   (unless ecc-prompt--history-index
-    (setq ecc-prompt--history-draft (buffer-string)))
+    (setq ecc-prompt--history-draft (ecc-chat-draft)))
   (ecc-prompt--history-show
    (min (1- (length ecc-prompt-history))
         (if ecc-prompt--history-index (1+ ecc-prompt--history-index) 0))))
@@ -220,7 +180,7 @@ is on.")
   "Send the last prompt again to SESSION (FR-INP-7)."
   (interactive)
   (let ((text (or (car ecc-prompt-history) (user-error "No history")))
-        (session (or session ecc-prompt--session
+        (session (or session ecc-render--session
                      (ecc-window-resolve-session current-prefix-arg))))
     (when (y-or-n-p (format "Send again: %s? " (ecc--truncate text 40)))
       (ecc-proc-send-prompt session text)
@@ -268,7 +228,9 @@ Returns the file it was written to (FR-INP-9)."
     file))
 
 (defun ecc-prompt-insert-reference (path)
-  "Insert PATH as an @ reference at point, with a space after it."
+  "Insert PATH as an @ reference at point, with a space after it.
+Point is moved into the prompt region first when it is not there."
+  (ecc-prompt--ensure-region)
   (unless (or (bolp) (memq (char-before) '(?\s ?\t)))
     (insert " "))
   (insert "@" path " ")
@@ -401,7 +363,7 @@ A command only the terminal client of SESSION can run is reported
 The line range of `@file:10-40' is part of the match; it is taken
 apart by `ecc-prompt-split-reference' rather than by the regexp,
 because the end of a path cannot be found with a syntax table that
-depends on the major mode of the prompt buffer.")
+depends on the major mode of the session buffer.")
 
 (defun ecc-prompt-split-reference (token)
   "Return (PATH START END) for the @ reference TOKEN.
@@ -476,8 +438,9 @@ the diagnostics from."
   "Complete a slash command at point (FR-INP-3, FR-INP-4).
 Only the first word of a line that starts with a slash is completed,
 which is where the CLI looks for a command."
-  (when-let* ((session ecc-prompt--session))
-    (let ((start (line-beginning-position))
+  (when-let* ((session ecc-render--session)
+              (region (ecc-chat-prompt-start)))
+    (let ((start (max region (line-beginning-position)))
           (end (point)))
       (when (and (eq (char-after start) ?/)
                  (not (string-match-p "[ \t\n]" (buffer-substring-no-properties
@@ -510,10 +473,11 @@ which is where the CLI looks for a command."
 
 (defun ecc-prompt-at-capf ()
   "Complete an @ reference at point (FR-INP-8)."
-  (when-let* ((session ecc-prompt--session))
+  (when-let* ((session ecc-render--session)
+              (region (ecc-chat-prompt-start)))
     (save-excursion
       (let ((end (point)))
-        (when (re-search-backward "@[^ \t\n]*\\=" (line-beginning-position) t)
+        (when (re-search-backward "@[^ \t\n]*\\=" (max region (line-beginning-position)) t)
           (let ((start (point)))
             (list start end
                   (completion-table-dynamic
@@ -530,9 +494,9 @@ which is where the CLI looks for a command."
 ;;;; Sending
 
 (defun ecc-prompt-toggle-context ()
-  "Turn the editor context of this prompt buffer on or off (FR-CTX-1)."
+  "Turn the editor context of this session buffer on or off (FR-CTX-1)."
   (interactive)
-  (setq ecc-prompt--attach-context (not ecc-prompt--attach-context))
+  (setq ecc-prompt--attach-context (not (ecc-prompt-attach-context-p)))
   (message "Attaching the editor context is %s"
            (if ecc-prompt--attach-context "on" "off")))
 
@@ -548,29 +512,30 @@ is appended when ATTACH is non-nil (FR-CTX-1)."
       text)))
 
 (defun ecc-prompt-send ()
-  "Send the buffer as a prompt, or queue it while a turn runs (FR-INP-1, 6)."
+  "Send the prompt region, or queue it while a turn runs (FR-INP-1, 6).
+The region is emptied either way; what was sent goes into the history."
   (interactive)
   (let* ((session (ecc-prompt-session))
-         (raw (string-trim (buffer-string))))
+         (raw (string-trim (ecc-chat-draft))))
     (when (string-empty-p raw)
       (user-error "Prompt is empty"))
     (let* ((source (ecc-window-last-source-buffer))
            (text (ecc-prompt-prepare-text session raw source
-                                          ecc-prompt--attach-context))
+                                          (ecc-prompt-attach-context-p)))
            (outcome (ecc-proc-send-prompt session text)))
       (ecc-prompt-history-add raw)
       (setq ecc-prompt--history-index nil
             ecc-prompt--history-draft nil)
-      (erase-buffer)
+      (ecc-chat-clear-draft)
       (if (eq outcome 'sent)
           (message "Sent")
         (message "A turn is running; queued at position %d" outcome))
       outcome)))
 
 (defun ecc-prompt-clear ()
-  "Empty the prompt buffer."
+  "Empty the prompt region."
   (interactive)
-  (erase-buffer))
+  (ecc-chat-clear-draft))
 
 (defun ecc-prompt-show-queue ()
   "Show the prompts waiting to be sent (FR-INP-6)."

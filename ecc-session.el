@@ -1,116 +1,48 @@
-;;; ecc-session.el --- Session buffer and keys for the ecc client  -*- lexical-binding: t; -*-
+;;; ecc-session.el --- Session buffer and its commands for the ecc client  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
-;; Package-Requires: ((emacs "29.1") (magit-section "4.0"))
+;; Package-Requires: ((emacs "29.1"))
 
 ;;; Commentary:
 
-;; The buffer a conversation is read in: `ecc-session-mode', its keys and
-;; the commands that move around a transcript and take things out of it
-;; (FR-OUT-14).  Section 6.1 of IMPLEMENTATION_PLAN.md.
+;; The buffer a conversation is read and written in, and the commands
+;; that act on it: visiting what is at point, reviewing, and taking
+;; things out of the transcript (FR-OUT-14).  Section 6.1 of
+;; IMPLEMENTATION_PLAN.md as revised by docs/phase9-ui-redesign.md.  The
+;; major mode, the keys and the movement live in `ecc-chat'.
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'seq)
-(require 'magit-section)
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
 (require 'ecc-render)
-(require 'ecc-hint)
+(require 'ecc-chat)
 (require 'ecc-markdown)
 (require 'ecc-diff)
 
-(declare-function ecc-prompt-pop-to-buffer "ecc-prompt" (session))
 (declare-function ecc-resume "ecc" (session &optional fork))
-(declare-function ecc-perm-allow "ecc-perm" ())
 (declare-function ecc-perm-deny "ecc-perm" (&optional reason))
-(declare-function ecc-perm-allow-always "ecc-perm" ())
-(declare-function ecc-perm-approve-turn "ecc-perm" ())
-(declare-function ecc-perm-add-pattern "ecc-perm" ())
 (declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
 (declare-function ecc-question-open "ecc-perm" (request))
 (declare-function ecc-plan-open "ecc-plan" (request))
-(declare-function ecc-inbox "ecc-inbox" ())
-(declare-function ecc-dashboard "ecc-dashboard" ())
-(declare-function ecc-next-attention "ecc-inbox" ())
 (declare-function ecc-review "ecc-review" (&optional session paths))
 (declare-function ecc-perm-request-at-point "ecc-perm" ())
-(declare-function ecc-menu "ecc-transient" ())
-(declare-function ecc-tui-open "ecc-tui" (&optional session))
-
-(defvar ecc-session-mode-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map magit-section-mode-map)
-    (define-key map (kbd "g") #'ecc-session-refresh)
-    (define-key map (kbd "q") #'quit-window)
-    (define-key map (kbd "i") #'ecc-session-goto-prompt)
-    (define-key map (kbd "RET") #'ecc-session-visit)
-    (define-key map (kbd "R") #'ecc-session-resume)
-    (define-key map (kbd "L") #'ecc-session-show-log)
-    (define-key map (kbd "t") #'ecc-tui-open)
-    (define-key map (kbd "a") #'ecc-perm-allow)
-    (define-key map (kbd "d") #'ecc-session-review-or-deny)
-    (define-key map (kbd "C-c d") #'ecc-session-review)
-    (define-key map (kbd "C-c a") #'ecc-perm-allow-all)
-    (define-key map (kbd "C-c A") #'ecc-session-allow-all-remember)
-    (define-key map (kbd "C-c i") #'ecc-inbox)
-    (define-key map (kbd "C-c D") #'ecc-dashboard)
-    (define-key map (kbd "C-c n") #'ecc-next-attention)
-    (define-key map (kbd "C-c C-k") #'ecc-session-interrupt)
-    ;; Movement and extraction (FR-OUT-14)
-    (define-key map (kbd "C-c C-n") #'ecc-session-next-turn)
-    (define-key map (kbd "C-c C-p") #'ecc-session-previous-turn)
-    (define-key map (kbd "]") #'ecc-session-next-block)
-    (define-key map (kbd "[") #'ecc-session-previous-block)
-    (define-key map (kbd "+") #'ecc-session-expand-all)
-    (define-key map (kbd "-") #'ecc-session-collapse-all)
-    (define-key map (kbd "T") #'ecc-session-timeline)
-    (define-key map (kbd "w") #'ecc-session-copy-at-point)
-    (define-key map (kbd "f") #'ecc-session-goto-files)
-    (define-key map (kbd "C-c C-e") #'ecc-session-export-markdown)
-    ;; One menu reaches every command (NFR-10).
-    (define-key map (kbd "?") #'ecc-menu)
-    map)
-  "Keymap of `ecc-session-mode'.")
-
-(define-derived-mode ecc-session-mode magit-section-mode "Claude"
-  "Major mode of a Claude Code transcript.
-
-\\{ecc-session-mode-map}"
-  :interactive nil
-  ;; Faces are applied when text is inserted, so no font lock is wanted;
-  ;; the parent mode already switches it off.  A visibility indicator
-  ;; would add text of its own to a collapsed heading, which the
-  ;; rendering tests compare (plan section 9, item 7).
-  (when (boundp 'magit-section-visibility-indicators)
-    (setq-local magit-section-visibility-indicators nil))
-  (setq-local truncate-lines nil)
-  ;; The state, and above all a request waiting for an answer, is shown
-  ;; next to the mode name (FR-PERM-4), and after it what the session
-  ;; costs and how much room is left in its context (FR-HINT-3).
-  (setq-local mode-line-process
-              ;; Escaped where it is put together rather than in each
-              ;; piece: what the pieces return is text for a person.
-              '(:eval (ecc--mode-line-escape
-                       (concat (ecc-render-mode-line-process)
-                               (ecc-hint-mode-line-string)))))
-  (add-hook 'kill-buffer-hook #'ecc-session--forget-on-kill nil t))
-
 (declare-function ecc-window-forget-session "ecc-window" (session))
 (declare-function ecc-image-cleanup-session "ecc-prompt" (session))
 
 (defun ecc-session--forget-on-kill ()
-  "Stop and forget the session when its transcript buffer is killed.
+  "Stop and forget the session when its buffer is killed.
 Killing the buffer is taken as killing the session (plan 9, item 10):
-the CLI is stopped, the session leaves the list, and its prompt and
-line buffers go with it, so that nothing lingers in the dashboard as
-an exited session with no buffer.  An agent transcript shares the
-session but is not its buffer, so killing it does nothing."
+the CLI is stopped, the session leaves the list, and its line buffer
+goes with it, so that nothing lingers in the dashboard as an exited
+session with no buffer.  An agent transcript shares the session but is
+not its buffer, so killing it does nothing."
   (when-let* ((session ecc-render--session))
     (when (and (eq (current-buffer) (ecc-session-buffer session))
                ;; `ecc-kill' has forgotten the session already; the
@@ -122,17 +54,16 @@ session but is not its buffer, so killing it does nothing."
         (ecc-window-forget-session session))
       (when (fboundp 'ecc-image-cleanup-session)
         (ecc-image-cleanup-session session))
-      (dolist (buffer (list (ecc-session-prompt-buffer session)
-                            (ecc-session-stream-buffer session)))
+      (let ((buffer (ecc-session-stream-buffer session)))
         (when (buffer-live-p buffer)
           (kill-buffer buffer))))))
 
 (defun ecc-session-buffer-name (name)
-  "Return the name of the transcript buffer of the session called NAME."
+  "Return the name of the buffer of the session called NAME."
   (format "*ecc: %s*" name))
 
 (defun ecc-session-ensure-buffer (session)
-  "Return the transcript buffer of SESSION, creating and drawing it if needed."
+  "Return the buffer of SESSION, creating and drawing it if needed."
   (let ((buffer (ecc-session-buffer session)))
     (unless (buffer-live-p buffer)
       (setq buffer (get-buffer-create
@@ -143,7 +74,8 @@ session but is not its buffer, so killing it does nothing."
         ;; `ecc-next-attention-in-project' see the right root.
         (setq default-directory (or (ecc-session-project-root session)
                                     default-directory))
-        (ecc-session-mode)
+        (ecc-chat-mode)
+        (add-hook 'kill-buffer-hook #'ecc-session--forget-on-kill nil t)
         (ecc-render-setup session buffer)))
     buffer))
 
@@ -152,31 +84,12 @@ session but is not its buffer, so killing it does nothing."
   (or ecc-render--session
       (user-error "This buffer does not belong to a Claude session")))
 
-(defun ecc-session-node-at-point ()
-  "Return the node the point is on, or nil."
-  (when-let* ((session ecc-render--session)
-              (section (magit-current-section))
-              (value (oref section value)))
-    (and (stringp value) (ecc-model-node session value))))
-
-(defun ecc-session-file-at-point ()
-  "Return the path of the Files row the point is on, or nil."
-  (when-let* ((section (magit-current-section))
-              (value (oref section value)))
-    (and (stringp value) (string-prefix-p "file:" value) (substring value 5))))
-
 ;;;; Commands
 
 (defun ecc-session-refresh ()
   "Redraw the whole transcript (FR-OUT-10)."
   (interactive)
   (ecc-render-refresh (ecc-session-at-point)))
-
-(defun ecc-session-goto-prompt ()
-  "Switch to the prompt buffer of this session."
-  (interactive)
-  (require 'ecc-prompt)
-  (ecc-prompt-pop-to-buffer (ecc-session-at-point)))
 
 (defun ecc-session-interrupt ()
   "Interrupt the running turn (FR-SES-5)."
@@ -202,8 +115,8 @@ A question or a plan that is still waiting opens the buffer it is
 answered in (FR-PERM-5, FR-PLAN-1)."
   (interactive)
   (let* ((session (ecc-session-at-point))
-         (node (ecc-session-node-at-point))
-         (path (ecc-session-file-at-point))
+         (node (ecc-chat-node-at-point))
+         (path (ecc-chat-file-at-point))
          (request (and node (ecc-model-node-get node 'request)))
          (pending (and request (memq request (ecc-session-pending session)))))
     (cond
@@ -229,7 +142,7 @@ answered in (FR-PERM-5, FR-PLAN-1)."
   (interactive)
   (require 'ecc-review)
   (ecc-review (ecc-session-at-point)
-              (list (or (ecc-session-file-at-point)
+              (list (or (ecc-chat-file-at-point)
                         (user-error "Not on a file")))))
 
 (defun ecc-session-review-or-deny ()
@@ -303,8 +216,8 @@ BEFORE is the file as it was before the call, when known."
          (buffer (get-buffer-create (format "*ecc-agent: %s: %s*"
                                             (ecc-session-name session) title))))
     (with-current-buffer buffer
-      (unless (derived-mode-p 'ecc-session-mode)
-        (ecc-session-mode))
+      (unless (derived-mode-p 'ecc-chat-mode)
+        (ecc-chat-mode))
       (ecc-render-draw-nodes session buffer
                              (concat (ecc-render--agent-heading node 0) "\n"
                                      (if-let* ((prompt (alist-get 'prompt input)))
@@ -312,79 +225,6 @@ BEFORE is the file as it was before the call, when known."
                                        ""))
                              (ecc-node-children node)))
     (pop-to-buffer buffer)))
-
-;;;; Movement (FR-OUT-14 a, b, c)
-
-(defun ecc-session--sections (predicate)
-  "Return the sections of this buffer satisfying PREDICATE, in order."
-  (let (found)
-    (magit-map-sections (lambda (section)
-                          (when (funcall predicate section)
-                            (push section found))))
-    (sort (nreverse found)
-          (lambda (a b) (< (marker-position (oref a start))
-                           (marker-position (oref b start)))))))
-
-(defun ecc-session--goto-neighbour (sections forward)
-  "Move to the section of SECTIONS after point, or before when not FORWARD."
-  (let* ((pos (point))
-         (target (if forward
-                     (seq-find (lambda (s) (> (marker-position (oref s start)) pos))
-                               sections)
-                   (car (last (seq-filter
-                               (lambda (s) (< (marker-position (oref s start)) pos))
-                               sections))))))
-    (if target
-        (magit-section-goto target)
-      (user-error (if forward "No further section" "No earlier section")))))
-
-(defun ecc-session-next-turn ()
-  "Move to the next turn (FR-OUT-14 a)."
-  (interactive)
-  (ecc-session--goto-neighbour (ecc-render-turn-sections) t))
-
-(defun ecc-session-previous-turn ()
-  "Move to the previous turn (FR-OUT-14 a)."
-  (interactive)
-  (ecc-session--goto-neighbour (ecc-render-turn-sections) nil))
-
-(defun ecc-session--expandable-p (section)
-  "Return non-nil when SECTION is a block that can be folded."
-  (and (oref section content)
-       (seq-some (lambda (class) (cl-typep section class))
-                 ecc-render-expandable-classes)))
-
-(defun ecc-session-next-block ()
-  "Move to the next tool, diff or thinking block (FR-OUT-14 b)."
-  (interactive)
-  (ecc-session--goto-neighbour (ecc-session--sections #'ecc-session--expandable-p) t))
-
-(defun ecc-session-previous-block ()
-  "Move to the previous tool, diff or thinking block (FR-OUT-14 b)."
-  (interactive)
-  (ecc-session--goto-neighbour (ecc-session--sections #'ecc-session--expandable-p) nil))
-
-(defun ecc-session-expand-all ()
-  "Unfold every block in the transcript (FR-OUT-14 c)."
-  (interactive)
-  (dolist (section (ecc-session--sections #'ecc-session--expandable-p))
-    (magit-section-show section)))
-
-(defun ecc-session-collapse-all ()
-  "Fold every block in the transcript, keeping the turns open (FR-OUT-14 c)."
-  (interactive)
-  (dolist (section (ecc-session--sections #'ecc-session--expandable-p))
-    (magit-section-hide section)))
-
-(defun ecc-session-goto-files ()
-  "Move to the Files section, expanding it."
-  (interactive)
-  (let ((section (car (ecc-session--sections
-                       (lambda (s) (cl-typep s 'ecc-section-files))))))
-    (unless section
-      (user-error "No file has been touched yet"))
-    (magit-section-goto section)
-    (magit-section-show section)))
 
 ;;;; Timeline (FR-OUT-14 d)
 
@@ -404,48 +244,44 @@ BEFORE is the file as it was before the call, when known."
     (unless candidates
       (user-error "No turn yet"))
     (let* ((choice (completing-read "Turn: " (mapcar #'car candidates) nil t))
-           (turn (cdr (assoc choice candidates)))
-           (section (and turn (ecc-render--turn-section (ecc-turn-id turn)))))
-      (unless section
+           (turn (cdr (assoc choice candidates))))
+      (unless (and turn (ecc-render-node-bounds (ecc-turn-id turn)))
         (user-error "That turn is not drawn"))
-      (magit-section-goto section)
-      (magit-section-show section))))
+      (ecc-render-goto-id (ecc-turn-id turn)))))
 
 ;;;; Extraction (FR-OUT-14 e, f)
 
-(defun ecc-session--code-block-around-point (section)
-  "Return the fenced code block of SECTION that contains point, or nil.
+(defun ecc-session--code-block-around-point (id)
+  "Return the fenced code block of the node ID that contains point, or nil.
 The buffer text is used, so the indentation the renderer added is
 stripped from every line."
-  (let ((start (marker-position (oref section start)))
-        (end (marker-position (oref section end)))
-        (fence (concat "^\\([ \t]*\\)" (substring ecc-markdown-fence-regexp 1))))
+  (let* ((bounds (ecc-render-node-bounds id))
+         (start (car bounds))
+         (end (cdr bounds))
+         (fence (concat "^\\([ \t]*\\)" (substring ecc-markdown-fence-regexp 1))))
     (save-excursion
       (let ((here (line-beginning-position)))
         (goto-char here)
         (end-of-line)
         (when (re-search-backward fence start t)
-          (let ((open (line-beginning-position))
-                (indent (match-string 1)))
+          (let ((indent (match-string 1)))
             (forward-line 1)
             (let ((body-start (point)))
               (when (and (re-search-forward fence end t)
                          (>= (line-beginning-position) here))
                 (let ((body (buffer-substring-no-properties
                              body-start (line-beginning-position))))
-                  (ignore open)
                   (replace-regexp-in-string
                    (concat "^" (regexp-quote indent)) "" body))))))))))
 
 (defun ecc-session-copy-at-point ()
   "Copy the code block at point, or else the whole assistant reply (FR-OUT-14 e)."
   (interactive)
-  (let* ((node (ecc-session-node-at-point))
-         (section (magit-current-section))
+  (let* ((node (ecc-chat-node-at-point))
          (text (cond
                 ((null node) nil)
                 ((eq (ecc-node-type node) 'text)
-                 (or (ecc-session--code-block-around-point section)
+                 (or (ecc-session--code-block-around-point (ecc-node-id node))
                      (ecc-model-node-get node 'text)))
                 ((memq (ecc-node-type node) '(tool agent))
                  (ecc-render--result-text (ecc-model-node-get node 'result)))

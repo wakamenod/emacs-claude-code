@@ -100,9 +100,8 @@ The session of the buffer wins, then the most recently used one."
 (defun ecc-perm-request-at-point ()
   "Return the request the point is on, or nil."
   (when-let* ((session ecc-render--session)
-              (section (magit-current-section))
-              (value (oref section value))
-              (node (and (stringp value) (ecc-model-node session value)))
+              (id (get-text-property (point) 'ecc-node))
+              (node (ecc-model-node session id))
               (request (ecc-model-node-get node 'request)))
     (and (memq request (ecc-session-pending session)) request)))
 

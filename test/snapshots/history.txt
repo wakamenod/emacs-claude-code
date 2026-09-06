@@ -22,3 +22,4 @@ Turn 2  hi.txt を読んで、中身をそのまま教えて  ·  3.0s
       → 1	hi
   hi
 ● starting…
+ 

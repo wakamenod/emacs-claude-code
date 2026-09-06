@@ -14,6 +14,7 @@
 (require 'ecc-hint)
 (require 'ecc-session)
 (require 'ecc-prompt)
+(require 'ecc-session)
 (require 'ecc-render)
 
 (defun ecc-hint-test--synthetic (text)
@@ -186,14 +187,16 @@ session has none."
       (should (eq (ecc-hint-recap-skip-reason session) 'waiting))
       (ecc-model-resolve-request session request 'allow))
     (ecc-model-set-state session 'idle)
-    ;; A draft in the prompt buffer.
-    (with-current-buffer (ecc-prompt-ensure-buffer session)
+    ;; A draft in the prompt region.
+    (with-current-buffer (ecc-session-ensure-buffer session)
+      (ecc-chat-goto-prompt)
       (insert "  "))
     (should-not (ecc-hint-recap-skip-reason session))
-    (with-current-buffer (ecc-prompt-ensure-buffer session)
+    (with-current-buffer (ecc-session-ensure-buffer session)
+      (ecc-chat-goto-prompt)
       (insert "and now?"))
     (should (eq (ecc-hint-recap-skip-reason session) 'draft))
-    (with-current-buffer (ecc-prompt-ensure-buffer session) (erase-buffer))
+    (with-current-buffer (ecc-session-ensure-buffer session) (ecc-prompt-clear))
     ;; The rate limit is nearly used up.
     (setf (ecc-session-rate-limit session)
           '((unifiedWindows . ((five_hour . ((utilization . 0.95)))))))
@@ -354,30 +357,36 @@ the shape of the answer is the CLI's rather than this test's."
 ;;;; The prompt suggestion (FR-HINT-4)
 
 (ert-deftest ecc-hint-test-suggestion ()
-  "A suggestion is shown over an empty prompt buffer and taken with a key."
+  "A suggestion is shown over an empty prompt region and taken with a key."
   (ecc-test-with-fake-session session
-    (let ((buffer (ecc-prompt-ensure-buffer session)))
+    (let ((buffer (ecc-session-ensure-buffer session)))
       (ecc-dispatch session '((type . "prompt_suggestion")
                               (prompt_suggestion . "Run the tests")))
       (should (equal (ecc-hint-suggestion session) "Run the tests"))
       (should (equal (ecc-hint-show-suggestion session) "Run the tests"))
       (with-current-buffer buffer
         (should (string-search "Run the tests"
-                               (overlay-get ecc-hint--suggestion-overlay 'after-string)))
+                               (overlay-get ecc-chat--placeholder-overlay 'after-string)))
         ;; It is in the way of a draft, so it goes when one is written.
+        (ecc-chat-goto-prompt)
         (insert "no thanks")
         (should-not (ecc-hint-show-suggestion session))
-        (should-not ecc-hint--suggestion-overlay)
-        (erase-buffer)
+        (should-not ecc-chat--placeholder-overlay)
+        (ecc-prompt-clear)
         (should (ecc-hint-show-suggestion session))
-        ;; One key writes it into the buffer.
+        ;; One key writes it into the prompt region.
         (call-interactively #'ecc-hint-accept-suggestion)
-        (should (equal (string-trim (buffer-string)) "Run the tests"))
-        (should-not ecc-hint--suggestion-overlay))
-      ;; It costs an API flag, so it can be left out of sight (NFR-3).
-      (with-current-buffer buffer (erase-buffer))
+        (should (equal (string-trim (ecc-chat-draft)) "Run the tests"))
+        (should-not ecc-chat--placeholder-overlay))
+      ;; It costs an API flag, so it can be left out of sight (NFR-3):
+      ;; the placeholder goes back to its plain words.
+      (with-current-buffer buffer (ecc-prompt-clear))
       (let ((ecc-prompt-suggestion-display nil))
-        (should-not (ecc-hint-show-suggestion session))))))
+        (should-not (ecc-hint-show-suggestion session))
+        (with-current-buffer buffer
+          (should (equal (substring-no-properties
+                          (overlay-get ecc-chat--placeholder-overlay 'after-string))
+                         ecc-chat-placeholder)))))))
 
 (provide 'ecc-hint-test)
 

@@ -112,6 +112,35 @@ WHAT names the thing waited for in the error message."
       (should (string-search "▌ Reply with exactly: PONG" text))
       (should (string-match-p "● end_turn · [0-9]+ turns · \\$" text)))))
 
+(ert-deftest ecc-test-live-chat ()
+  "One turn the way the user has it: typed in the prompt region and sent.
+The prompt moves up into the transcript, the reply flows in under it,
+and a draft typed meanwhile is untouched (phase 9b, FR-INP-1, FR-UI-2)."
+  :tags '(live)
+  (ecc-test-live-with-session session
+    (with-current-buffer (ecc-session-buffer session)
+      (ecc-chat-goto-prompt)
+      (insert "Reply with exactly: PONG")
+      (ecc-prompt-send)
+      (should (equal (ecc-chat-draft) ""))
+      ;; Something is typed while the answer is on its way.
+      (ecc-chat-goto-prompt)
+      (insert "next question")
+      (ecc-test-live-wait-for-result session)
+      (ecc-render-flush session)
+      (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+        (should (string-search "▌ Reply with exactly: PONG" text))
+        (should (string-search "PONG" (ecc-test-live-turn-text
+                                       (car (last (ecc-session-turns session))))))
+        (should (string-match-p "● end_turn · [0-9]+ turns · \\$" text)))
+      (should (equal (ecc-chat-draft) "next question"))
+      (should (ecc-chat-in-prompt-p))
+      ;; The transcript above the draft is read-only and folds.
+      (goto-char (point-min))
+      (should-error (insert "x") :type 'text-read-only)
+      (ecc-chat-next-turn)
+      (should (looking-at "Turn 1  Reply with exactly: PONG")))))
+
 (ert-deftest ecc-test-live-permission ()
   "Deny with a reason, get a new proposal, allow it, and see the file."
   :tags '(live)

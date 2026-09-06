@@ -5,14 +5,14 @@
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "29.1") (magit-section "4.0"))
+;; Package-Requires: ((emacs "29.1"))
 ;; URL: https://github.com/wakamenod/emacs-claude-code
 
 ;;; Commentary:
 
 ;; An Emacs client for the Claude Code CLI: it runs `claude' headless
-;; with the stream-json protocol and shows the conversation as a
-;; magit-section transcript.
+;; with the stream-json protocol and shows the conversation in one
+;; buffer, the transcript above and the prompt below.
 ;;
 ;; Start one with \\[ecc-start].  See REQUIREMENTS.md and
 ;; IMPLEMENTATION_PLAN.md in the repository for what is built when.
@@ -29,6 +29,7 @@
 (require 'ecc-visual)
 (require 'ecc-dispatch)
 (require 'ecc-render)
+(require 'ecc-chat)
 (require 'ecc-session)
 (require 'ecc-prompt)
 (require 'ecc-perm)
@@ -98,7 +99,6 @@ argument asks for the directory and the name."
                   :project-root (or directory (ecc-project-root))
                   :name (and name (not (string-empty-p name)) name))))
     (ecc-session-ensure-buffer session)
-    (ecc-prompt-ensure-buffer session)
     (ecc-proc-start session)
     (when ecc-inbox-indicator
       (ecc-inbox-indicator-mode 1))
@@ -113,7 +113,7 @@ argument asks for the directory and the name."
       (ecc-hint-mode 1))
     (when ecc-track-source-buffer
       (ecc-track-source-buffer-mode 1))
-    (ecc-display-prompt session)
+    (ecc-window-select-session session)
     session))
 
 ;;;###autoload
@@ -126,7 +126,6 @@ argument forks it into a new conversation (FR-SES-4)."
   ;; appended to the conversation rather than starting an empty one
   ;; (FR-HIST-3).  `ecc-history-resume' refuses a live process.
   (ecc-history-resume session fork)
-  (ecc-prompt-ensure-buffer session)
   (ecc-display-session session)
   session)
 
@@ -224,7 +223,6 @@ a sentinel is no place to ask a question or start a process."
   (ecc-window-forget-session session)
   (ecc-image-cleanup-session session)
   (dolist (buffer (list (ecc-session-buffer session)
-                        (ecc-session-prompt-buffer session)
                         (ecc-session-stream-buffer session)))
     (when (buffer-live-p buffer)
       (kill-buffer buffer)))

@@ -4,3 +4,4 @@ Turn 1  hello  ·  1.3s  ·  $0.0106
 ▌ hello
   hello from emacs
   ● end_turn · 1 turns · $0.0106 · 1.3s
+ 

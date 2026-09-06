@@ -14,6 +14,7 @@
 (require 'ecc-window)
 (require 'ecc-session)
 (require 'ecc-prompt)
+(require 'ecc-session)
 
 (defmacro ecc-window-test--with-sessions (first second &rest body)
   "Run BODY with two registered sessions bound to FIRST and SECOND.
@@ -57,12 +58,9 @@ They live in different projects; the second is the most recently used."
   "Renaming a session renames its buffers with it (FR-WIN-3)."
   (ecc-window-test--with-sessions one _two
     (ecc-session-ensure-buffer one)
-    (ecc-prompt-ensure-buffer one)
     (ecc-rename-session one "refactor")
     (should (equal (ecc-session-name one) "refactor"))
-    (should (equal (buffer-name (ecc-session-buffer one)) "*ecc: refactor*"))
-    (should (equal (buffer-name (ecc-session-prompt-buffer one))
-                   "*ecc-prompt: refactor*"))))
+    (should (equal (buffer-name (ecc-session-buffer one)) "*ecc: refactor*"))))
 
 ;;;; Slots and hiding (FR-WIN-1, FR-WIN-2, FR-WIN-5)
 
@@ -147,20 +145,21 @@ They live in different projects; the second is the most recently used."
             ;; is what is left.
             (with-current-buffer (ecc-session-ensure-buffer one)
               (should (ecc-window-own-buffer-p))
-              (should (eq (ecc-window-last-source-buffer) source)))
-            (with-current-buffer (ecc-prompt-ensure-buffer one)
-              (should (ecc-window-own-buffer-p))
+              (should (eq (ecc-window-last-source-buffer) source))
+              ;; From the prompt region as much as from the transcript.
+              (ecc-chat-goto-prompt)
               (should (eq (ecc-window-last-source-buffer) source))))
         (kill-buffer source)))))
 
 ;;;; Which session a command talks to (FR-WIN-4)
 
 (ert-deftest ecc-window-test-resolve-in-a-session-buffer ()
-  "A command in a transcript or a prompt talks to that session (FR-WIN-4)."
+  "A command in a session buffer talks to that session (FR-WIN-4)."
   (ecc-window-test--with-sessions one two
     (with-current-buffer (ecc-session-ensure-buffer two)
       (should (eq (ecc-window-resolve-session) two)))
-    (with-current-buffer (ecc-prompt-ensure-buffer one)
+    (with-current-buffer (ecc-session-ensure-buffer one)
+      (ecc-chat-goto-prompt)
       (should (eq (ecc-window-resolve-session) one)))))
 
 (ert-deftest ecc-window-test-resolve-by-project-then-recency ()
@@ -261,16 +260,13 @@ They live in different projects; the second is the most recently used."
 
 (ert-deftest ecc-window-test-killing-the-transcript-forgets-the-session ()
   "Killing a session buffer kills the session: nothing lingers in the list.
-The prompt buffer goes with it; an agent transcript of the same
-session does not count."
+An agent transcript of the same session does not count."
   (ecc-test-with-fake-session session
     (let ((buffer (ecc-session-ensure-buffer session))
-          (prompt (ecc-prompt-ensure-buffer session))
           (id (ecc-session-id session)))
       (should (ecc-model-session id))
       (kill-buffer buffer)
       (should-not (ecc-model-session id))
-      (should-not (buffer-live-p prompt))
       (should-not (assoc id ecc-window--slots)))))
 
 (provide 'ecc-window-test)
