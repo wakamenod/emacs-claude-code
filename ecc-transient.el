@@ -48,7 +48,10 @@
 
 ;;;###autoload
 (defun ecc-show-session ()
-  "Show the transcript of the session this buffer talks to."
+  "Show the session this buffer talks to and select its prompt buffer.
+Both windows come back, and the point lands where something can be
+typed: `C-x o' from a source buffer reaches the transcript first, which
+is not where a prompt is written."
   (interactive)
   (let ((session (ecc-menu-session)))
     (ecc-display-prompt session)
@@ -195,7 +198,7 @@ same suffix from one call to the next."
     ("r" "Resume" ecc-resume)
     ("k" "Kill" ecc-kill)
     ("R" "Rename" ecc-rename-session)
-    ("v" "Show transcript" ecc-show-session)
+    ("v" "Go to the prompt buffer" ecc-show-session)
     ("w" "Hide or restore windows" ecc-toggle)
     ("i" "Interrupt" ecc-interrupt)]
    ["Send"
