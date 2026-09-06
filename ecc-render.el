@@ -396,6 +396,46 @@ PREDICATE is called with the id and its entry."
   "Unfold the node OVERLAY hides, for `isearch-open-invisible'."
   (ecc-render-show-node (overlay-get overlay 'ecc-fold)))
 
+(defconst ecc-render-fold-open-mark "▾"
+  "Shown at the head of a heading whose body is in sight.")
+
+(defconst ecc-render-fold-closed-mark "▸"
+  "Shown at the head of a heading whose body is folded away.")
+
+(defun ecc-render--indicator-position (id)
+  "Return where the fold mark of the node ID belongs, or nil.
+It is the first character of the heading line, the one the indentation
+stops at, so that the mark lines up with the depth of the node."
+  (when-let* ((entry (ecc-render-node-entry id)))
+    (let* ((start (marker-position (nth 0 entry)))
+           (pos (+ start (* 2 (nth 2 entry)))))
+      (and (< pos (save-excursion (goto-char start) (line-end-position)))
+           pos))))
+
+(defun ecc-render--indicator-wanted-p (id)
+  "Return non-nil when the node ID should show a fold mark.
+A call that is running, that failed or that is waiting for an answer
+keeps the mark it has: what it is doing matters more than whether it
+is folded."
+  (let ((node (and ecc-render--session (ecc-model-node ecc-render--session id))))
+    (or (null node)
+        (not (memq (ecc-node-status node) '(running error pending denied))))))
+
+(defun ecc-render--update-indicator (id)
+  "Show on the heading of the node ID whether its body is folded.
+The mark is a `display' property over the first character, so the text
+underneath is untouched and a copy of the line still carries the mark
+the node was drawn with (FR-OUT-3)."
+  (when-let* ((pos (ecc-render--indicator-position id)))
+    (with-silent-modifications
+      (if (and (ecc-render-node-foldable-p id)
+               (ecc-render--indicator-wanted-p id))
+          (put-text-property pos (1+ pos) 'display
+                             (if (ecc-render-node-hidden-p id)
+                                 ecc-render-fold-closed-mark
+                               ecc-render-fold-open-mark))
+        (remove-text-properties pos (1+ pos) '(display nil))))))
+
 (defun ecc-render--hide (id)
   "Fold the body of the node ID away, without touching the memory of it.
 The overlay starts at the end of the heading line and stops before the
@@ -412,12 +452,14 @@ appended at its end, which is where a streamed delta lands."
             (overlay-put overlay 'ecc-fold id)
             (overlay-put overlay 'evaporate t)
             (overlay-put overlay 'isearch-open-invisible #'ecc-render--isearch-open)
+            (ecc-render--update-indicator id)
             overlay))))))
 
 (defun ecc-render--show (id)
   "Unfold the body of the node ID, without touching the memory of it."
   (when-let* ((overlay (ecc-render--fold-overlay id)))
     (delete-overlay overlay)
+    (ecc-render--update-indicator id)
     t))
 
 (defun ecc-render-hide-node (id)
@@ -463,7 +505,10 @@ The folds are overlays of their own, so their order does not matter."
   (dolist (id ecc-render--drawn)
     (when (and (ecc-render-node-foldable-p id)
                (ecc-render--wanted-hidden-p id))
-      (ecc-render--hide id)))
+      (ecc-render--hide id))
+    ;; A heading left open needs its mark too, and one that cannot fold
+    ;; needs whatever mark it was drawn with left alone.
+    (ecc-render--update-indicator id))
   (setq ecc-render--drawn nil))
 
 ;;;; The top region: header, Files, Tasks
@@ -709,7 +754,16 @@ their own marks stay."
                           (eq (ecc-model-node-get node 'kind) 'prompt)))
            (foldable (not (or prompt-p (memq type '(text result)))))
            (block (and (not prompt-p) (memq type ecc-render-block-types))))
+      ;; A step over a single tool says nothing the tool line does not
+      ;; say already, so it is drawn through: the tool takes its place
+      ;; and its depth, and the step itself is neither marked nor
+      ;; registered, which would take the tool's own heading away.
+      (when (and (eq type 'step) (< (length (ecc-node-children node)) 2))
+        (dolist (child (ecc-node-children node))
+          (ecc-render--insert-node session child depth))
+        (setq type nil))
       (pcase type
+        ('nil nil)
         ('text (ecc-render--insert-text node depth))
         ('thinking (ecc-render--insert-thinking node depth))
         ('step (ecc-render--insert-step session node depth))
@@ -721,7 +775,7 @@ their own marks stay."
         (_ (ecc-render--insert-unknown node depth)))
       ;; A node that put nothing in the buffer has no line to mark: the
       ;; line at point would be the draft's.
-      (when (> (point) start)
+      (when (and type (> (point) start))
         (ecc-render--mark-heading start id)
         (ecc-render--register id start (point) depth foldable block)
         (ecc-render--note-effect node))
@@ -833,8 +887,9 @@ is appended (plan section 5.2, item 4)."
             " "
             (ecc-render--icon name)
             (propertize name 'face (if error-p 'ecc-error-face 'ecc-tool-face))
-            "  "
-            (propertize summary 'face 'ecc-dim-face))))
+            (if (string-empty-p summary)
+                ""
+              (propertize (concat " · " summary) 'face 'ecc-dim-face)))))
 
 (defun ecc-render--insert-tool-body (node body)
   "Insert the input and the result of the tool NODE, indented by BODY.
@@ -909,11 +964,13 @@ An Edit or a Write shows its input as a diff (FR-OUT-7)."
             (ecc-render--icon "Agent")
             (propertize (format "Agent %s" agent-type)
                         'face (if error-p 'ecc-error-face 'ecc-tool-face))
-            "  "
-            (propertize (ecc-render--one-line description) 'face 'ecc-dim-face)
-            (propertize (format "  ·  %d tools%s" tools
-                                (if duration (format "  ·  %.1fs" (/ duration 1000.0)) ""))
-                        'face 'ecc-dim-face))))
+            (propertize
+             (concat (if (string-empty-p (ecc-render--one-line description))
+                         ""
+                       (concat " · " (ecc-render--one-line description)))
+                     (format " · %d tools" tools)
+                     (if duration (format " · %.1fs" (/ duration 1000.0)) ""))
+             'face 'ecc-dim-face))))
 
 (defun ecc-render--insert-agent (session node depth)
   "Insert the agent NODE of SESSION at DEPTH, its messages nested (FR-OUT-9)."

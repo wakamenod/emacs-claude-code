@@ -4,35 +4,31 @@ Tasks (1/2)
   [ ] Update docs
 
 〉 タスクを作って
-  ToolSearch ×1
-    ✓ ToolSearch  select:TaskCreate,TaskUpdate,TaskList
-      query: select:TaskCreate,TaskUpdate,TaskList
-      → {"type":"tool_reference","tool_name":"TaskCreate"}
-      → {"type":"tool_reference","tool_name":"TaskUpdate"}
-      → {"type":"tool_reference","tool_name":"TaskList"}
+  ✓ ToolSearch · select:TaskCreate,TaskUpdate,TaskList
+    query: select:TaskCreate,TaskUpdate,TaskList
+    → {"type":"tool_reference","tool_name":"TaskCreate"}
+    → {"type":"tool_reference","tool_name":"TaskUpdate"}
+    → {"type":"tool_reference","tool_name":"TaskList"}
   TaskCreate ×2
-    ✓ TaskCreate  Write tests
+    ✓ TaskCreate · Write tests
       subject: Write tests
       description: Write tests for the project
       → Task #1 created successfully: Write tests
-    ✓ TaskCreate  Update docs
+    ✓ TaskCreate · Update docs
       subject: Update docs
       description: Update documentation
       → Task #2 created successfully: Update docs
-  TaskUpdate ×1
-    ✓ TaskUpdate  #1 → in_progress
-      taskId: 1
-      status: in_progress
-      → Updated task #1 status
-  TaskUpdate ×1
-    ✓ TaskUpdate  #1 → completed
-      taskId: 1
-      status: completed
-      → Updated task #1 status
-  TaskList ×1
-    ✓ TaskList  
-      → #1 [completed] Write tests
-      → #2 [pending] Update docs
+  ✓ TaskUpdate · #1 → in_progress
+    taskId: 1
+    status: in_progress
+    → Updated task #1 status
+  ✓ TaskUpdate · #1 → completed
+    taskId: 1
+    status: completed
+    → Updated task #1 status
+  ✓ TaskList
+    → #1 [completed] Write tests
+    → #2 [pending] Update docs
   Task #1 is now complete and task #2 is pending.
  11.8s · $0.0301
  

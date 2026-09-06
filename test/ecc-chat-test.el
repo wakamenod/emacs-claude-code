@@ -37,6 +37,17 @@
 (defconst ecc-chat-test--write-tool "toolu_01Hcu5xtMTxBqGiZ6MfT3XyZ"
   "The Write call of the tool-use-write recording.")
 
+(defun ecc-chat-test--step-and-tool (session)
+  "Return (STEP . TOOL) ids of a step SESSION drew over several tools.
+A step over a single tool is not drawn at all, so a recording with two
+calls in one step is what the depth ladder needs."
+  (let ((step (seq-find (lambda (node)
+                          (and (eq (ecc-node-type node) 'step)
+                               (> (length (ecc-node-children node)) 1)))
+                        (hash-table-values (ecc-session-nodes session)))))
+    (should step)
+    (cons (ecc-node-id step) (ecc-node-id (car (ecc-node-children step))))))
+
 ;;;; Folding (FR-OUT-3)
 
 (ert-deftest ecc-chat-test-toggle-folds-and-unfolds ()
@@ -48,7 +59,7 @@
         ;; A tool starts folded: its heading is there, its diff is not.
         (should (ecc-render-node-hidden-p tool))
         (goto-char (car (ecc-render-node-bounds tool)))
-        (should (string-prefix-p "    ✓ Write" (ecc-chat-test--line)))
+        (should (string-prefix-p "  ✓ Write" (ecc-chat-test--line)))
         (forward-line 1)
         (should (invisible-p (point)))
         (goto-char (car (ecc-render-node-bounds tool)))
@@ -60,7 +71,7 @@
         ;; From a line of the body, TAB goes back up and folds.
         (ecc-chat-toggle)
         (should (ecc-render-node-hidden-p tool))
-        (should (string-prefix-p "    ✓ Write" (ecc-chat-test--line)))
+        (should (string-prefix-p "  ✓ Write" (ecc-chat-test--line)))
         ;; A line with nothing to fold says so.
         (goto-char (point-min))
         (should-error (ecc-chat-toggle) :type 'user-error)))))
@@ -68,12 +79,9 @@
 (ert-deftest ecc-chat-test-fold-is-remembered-across-redraws ()
   "What the user folded stays folded when the region is drawn again."
   (ecc-test-with-fake-session session
-    (with-current-buffer (ecc-chat-test--replay session "tool-use-write"
-                                               "hello.txt を作って")
-      (let ((tool ecc-chat-test--write-tool)
-            (step (ecc-node-id (seq-find (lambda (node) (eq (ecc-node-type node) 'step))
-                                         (ecc-turn-children
-                                          (car (ecc-session-turns session)))))))
+    (with-current-buffer (ecc-chat-test--replay session "plan-mode"
+                                               "utils.py の計画を立てて")
+      (pcase-let ((`(,step . ,tool) (ecc-chat-test--step-and-tool session)))
         (ecc-render-show-node tool)
         (ecc-render-hide-node step)
         ;; A full redraw and a live redraw both keep it.
@@ -90,12 +98,9 @@
 (ert-deftest ecc-chat-test-show-level ()
   "The number keys unfold down to a depth and fold what is deeper."
   (ecc-test-with-fake-session session
-    (with-current-buffer (ecc-chat-test--replay session "tool-use-write"
-                                               "hello.txt を作って")
-      (let ((tool ecc-chat-test--write-tool)
-            (step (ecc-node-id (seq-find (lambda (node) (eq (ecc-node-type node) 'step))
-                                         (ecc-turn-children
-                                          (car (ecc-session-turns session)))))))
+    (with-current-buffer (ecc-chat-test--replay session "plan-mode"
+                                               "utils.py の計画を立てて")
+      (pcase-let ((`(,step . ,tool) (ecc-chat-test--step-and-tool session)))
         (ecc-chat-show-level-1)
         (should (ecc-render-node-hidden-p "turn-1"))
         (ecc-chat-show-level-2)
@@ -106,6 +111,29 @@
         (should (ecc-render-node-hidden-p tool))
         (ecc-chat-show-level-4)
         (should-not (ecc-render-node-hidden-p tool))))))
+
+(ert-deftest ecc-chat-test-fold-mark-follows-the-fold ()
+  "A heading that folds says which way it is, over its own status mark."
+  (ecc-test-with-fake-session session
+    (with-current-buffer (ecc-chat-test--replay session "tool-use-write"
+                                               "hello.txt を作って")
+      (let* ((tool ecc-chat-test--write-tool)
+             (pos (ecc-render--indicator-position tool)))
+        (should pos)
+        ;; A tool starts folded, so the mark points at what is hidden.
+        (should (ecc-render-node-hidden-p tool))
+        (should (equal (get-text-property pos 'display)
+                       ecc-render-fold-closed-mark))
+        ;; The character underneath is untouched, so a copy of the line
+        ;; still says how the call went (FR-OUT-3).
+        (should (equal (char-to-string (char-after pos)) "✓"))
+        (goto-char pos)
+        (ecc-chat-toggle)
+        (should (equal (get-text-property pos 'display)
+                       ecc-render-fold-open-mark))
+        (ecc-chat-toggle)
+        (should (equal (get-text-property pos 'display)
+                       ecc-render-fold-closed-mark))))))
 
 (ert-deftest ecc-chat-test-isearch-opens-a-fold ()
   "A fold carries the property that lets isearch open it."
@@ -132,10 +160,9 @@
       ;; The file row under it is folded away, so it is skipped.
       (ecc-chat-next-heading)
       (should (string-prefix-p "〉 hello.txt" (ecc-chat-test--line)))
+      ;; A step over one tool is not drawn, so the tool follows the band.
       (ecc-chat-next-heading)
-      (should (equal (ecc-chat-test--line) "  Write ×1"))
-      (ecc-chat-next-heading)
-      (should (string-prefix-p "    ✓ Write" (ecc-chat-test--line)))
+      (should (string-prefix-p "  ✓ Write" (ecc-chat-test--line)))
       (ecc-chat-next-heading)
       (should (string-prefix-p "  ✓ Permission: Write" (ecc-chat-test--line)))
       ;; p from the middle of a heading goes to its start, then back.
@@ -144,16 +171,12 @@
       (should (bolp))
       (should (string-prefix-p "  ✓ Permission" (ecc-chat-test--line)))
       (ecc-chat-previous-heading)
-      (should (string-prefix-p "    ✓ Write" (ecc-chat-test--line)))
-      ;; Folding the step hides the tool heading from n.
-      (ecc-chat-up-heading)
-      (should (equal (ecc-chat-test--line) "  Write ×1"))
-      (ecc-chat-toggle)
-      (ecc-chat-next-heading)
-      (should (string-prefix-p "  ✓ Permission" (ecc-chat-test--line)))
+      (should (string-prefix-p "  ✓ Write" (ecc-chat-test--line)))
       ;; Siblings stay at the same depth.
+      (ecc-chat-next-sibling)
+      (should (string-prefix-p "  ✓ Permission" (ecc-chat-test--line)))
       (ecc-chat-previous-sibling)
-      (should (equal (ecc-chat-test--line) "  Write ×1"))
+      (should (string-prefix-p "  ✓ Write" (ecc-chat-test--line)))
       ;; The band above is the turn itself, a level up, so the walk
       ;; along this depth stops rather than leaving the turn.
       (should-error (ecc-chat-previous-sibling) :type 'user-error)
@@ -459,7 +482,7 @@ Anything written takes it away, wherever in it the cursor was."
                   (ecc-chat-next-heading)
                   (should (string-prefix-p "〉 List all" (ecc-chat-test--line)))
                   (ecc-chat-next-block)
-                  (should (string-prefix-p "  ✓ Bash" (ecc-chat-test--line))))
+                  (should (string-prefix-p "✓ Bash" (ecc-chat-test--line))))
               (kill-buffer buffer))))))))
 
 (provide 'ecc-chat-test)

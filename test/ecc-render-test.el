@@ -56,12 +56,14 @@ with the request, used in turn for the requests the recording makes."
       (should (string-search "\n〉 hello\n" text)))))
 
 (ert-deftest ecc-render-test-tool-use ()
-  "A tool call draws as a step, a tool and the permission that allowed it."
+  "A lone tool draws as a tool line and the permission that allowed it."
   (ecc-test-with-fake-session session
     (let ((text (ecc-render-test--replay session "tool-use-write"
                                          "hello.txt を作って" '(allow))))
       (ecc-render-test--check "tool-use-write" text)
-      (should (string-search "Write ×1" text))
+      ;; One tool needs no step over it: the tool line takes its place.
+      (should-not (string-search "Write ×1" text))
+      (should (string-search "\n  ✓ Write · " text))
       (should (string-search "✓ Permission: Write" text)))))
 
 (ert-deftest ecc-render-test-deny-then-allow ()
@@ -330,7 +332,7 @@ follow have a section to grow.  Returns the remaining lines."
       (let ((text (ecc-test-buffer-string (ecc-session-buffer session)))
             (node (ecc-model-node session "toolu_01QcvmkL7eVaiQDvpEut8Pak")))
         (should (ecc-node-streaming node))
-        (should (string-match-p "… Write  streaming [0-9]+ chars…" text))
+        (should (string-match-p "… Write · streaming [0-9]+ chars…" text))
         (should (string-search "Write" (ecc-render-status-line session)))))))
 
 (ert-deftest ecc-render-test-throttle-by-count ()
@@ -367,10 +369,10 @@ follow have a section to grow.  Returns the remaining lines."
   (ecc-test-with-fake-session session
     (let ((text (ecc-render-test--replay session "subagent" "探して")))
       (ecc-render-test--check "subagent" text)
-      (should (string-search "✓ Agent Explore  Find all .py files in current directory  ·  1 tools  ·  5.1s"
+      (should (string-search "✓ Agent Explore · Find all .py files in current directory · 1 tools · 5.1s"
                              text))
-      (should (string-search "      〉 List all .py files" text))
-      (should (string-search "        ✓ Bash  find . -name" text))
+      (should (string-search "    〉 List all .py files" text))
+      (should (string-search "    ✓ Bash · find . -name" text))
       (let ((agent (seq-find (lambda (node) (eq (ecc-node-type node) 'agent))
                              (hash-table-values (ecc-session-nodes session)))))
         (should (= 5 (length (ecc-node-children agent))))
@@ -385,7 +387,7 @@ follow have a section to grow.  Returns the remaining lines."
             (unwind-protect
                 (let ((text (ecc-test-buffer-string buffer)))
                   (should (string-prefix-p "✓ Agent Explore" text))
-                  (should (string-search "Bash  find . -name" text))
+                  (should (string-search "Bash · find . -name" text))
                   (should (string-search "〉 List all .py files" text)))
               (kill-buffer buffer))))))))
 
@@ -408,7 +410,7 @@ follow have a section to grow.  Returns the remaining lines."
                                      "    +    return \"hello \" + name\n")
                              text))
       ;; The tool section shows the same diff (FR-OUT-7) ...
-      (should (string-search "      -    return \"hi \" + name\n      +    return \"hello \" + name\n"
+      (should (string-search "    -    return \"hi \" + name\n    +    return \"hello \" + name\n"
                              text))
       ;; ... with diff-mode faces.
       (with-current-buffer (ecc-session-buffer session)
@@ -426,7 +428,7 @@ follow have a section to grow.  Returns the remaining lines."
     (let* ((ecc-render-diff-max-lines 5)
            (text (ecc-render-test--replay session "partial-messages"
                                          "長いファイルを書いて" '(allow))))
-      (should (string-search "      @@ -0,0 +1,298 @@\n      +def f0():\n" text))
+      (should (string-search "    @@ -0,0 +1,298 @@\n    +def f0():\n" text))
       (should (string-search "… 294 more lines (RET)" text))
       ;; The Files section keeps the whole diff behind its fold.
       (should (string-search "long.py  W×1  +298 −0\n" text))
@@ -559,11 +561,11 @@ follow have a section to grow.  Returns the remaining lines."
       (ecc-chat-next-block)
       (should (looking-at "  /private/tmp/claude-501/.*hello.py  R×1 E×1"))
       (ecc-chat-next-block)
-      (should (looking-at "    ✓ Read"))
+      (should (looking-at "  ✓ Read"))
       (ecc-chat-next-block)
-      (should (looking-at "    ✓ Edit"))
+      (should (looking-at "  ✓ Edit"))
       (ecc-chat-previous-block)
-      (should (looking-at "    ✓ Read"))
+      (should (looking-at "  ✓ Read"))
       (let ((tool "toolu_018jWzDJTbLaoSRyvPEiAggK"))
         (ecc-chat-expand-all)
         (should-not (ecc-render-node-hidden-p tool))
