@@ -58,6 +58,14 @@ WHAT names the thing waited for in the error message."
   `(let* ((ecc--sessions (make-hash-table :test #'equal))
           (ecc--session-order nil)
           (default-directory temporary-file-directory)
+          ;; The icons and the spinner of FR-OUT-11 depend on what this
+          ;; machine has and on the instant; the tests below compare the
+          ;; text of the transcript, so they run without them.
+          (ecc-visual-enable-icons nil)
+          (ecc-visual-enable-spinner nil)
+          (ecc-visual-enable-pulse nil)
+          (ecc-visual-enable-blink nil)
+          (ecc-visual-enable-flash nil)
           (,var (ecc-model-create-session
                  :name "live"
                  :project-root temporary-file-directory
@@ -753,7 +761,12 @@ what the Elisp function returned."
   :tags '(live)
   (require 'ecc-mcp)
   (let ((ecc-mcp-port 0)
-        (ecc-mcp-enabled t))
+        (ecc-mcp-enabled t)
+        ;; An MCP tool asks permission like any other tool; the rule for a
+        ;; whole server is its name without a suffix, which this test is
+        ;; also the check of (decision on FR-PERM-8).
+        (ecc-test-live-options (append '(:allowed-tools ("mcp__emacs"))
+                                       ecc-test-live-options)))
     (unwind-protect
         (progn
           (ecc-mcp-define-tool
@@ -766,6 +779,7 @@ Call it whenever the user asks for the secret word."
             ;; The server is up and the session was told where it is.
             (should (ecc-mcp-running-p))
             (should (member "--mcp-config" (ecc-proc-build-command session)))
+            (should (member "mcp__emacs" (ecc-proc-build-command session)))
             (ecc-proc-send-prompt
              session
              "Use the mcp__emacs__ecc_live_probe tool and reply with exactly \
@@ -779,8 +793,11 @@ what it returned, and nothing else.")
                        (append (alist-get 'mcp_servers
                                           (ecc-session-init session))
                                nil)))
-              ;; ... and what the Elisp function returned came back.
-              (should (string-search "shibboleth-42" text)))))
+              ;; ... and what the Elisp function returned came back,
+              ;; with no permission left unanswered: the server-wide
+              ;; allow rule covered the tool.
+              (should (string-search "shibboleth-42" text))
+              (should-not (ecc-session-pending session)))))
       (remhash "ecc_live_probe" ecc-mcp-tools)
       (ecc-mcp-stop))))
 
