@@ -742,6 +742,48 @@ is what keeps the two from drifting apart."
       ;; The mode line says the same thing in one line.
       (should (string-match-p "%" (ecc-hint-mode-line-string session))))))
 
+
+;;;; The Emacs MCP server (FR-MCP-1, the acceptance check of phase 8)
+
+(ert-deftest ecc-test-live-mcp ()
+  "Claude uses a tool this Emacs published, and its answer comes back.
+The acceptance criterion of phase 8: a session started with
+--mcp-config reaches the server of `ecc-mcp' and the tool_result holds
+what the Elisp function returned."
+  :tags '(live)
+  (require 'ecc-mcp)
+  (let ((ecc-mcp-port 0)
+        (ecc-mcp-enabled t))
+    (unwind-protect
+        (progn
+          (ecc-mcp-define-tool
+           :name "ecc_live_probe"
+           :description "Return the secret word this Emacs is holding.  \
+Call it whenever the user asks for the secret word."
+           :args nil
+           :function (lambda () "shibboleth-42"))
+          (ecc-test-live-with-session session
+            ;; The server is up and the session was told where it is.
+            (should (ecc-mcp-running-p))
+            (should (member "--mcp-config" (ecc-proc-build-command session)))
+            (ecc-proc-send-prompt
+             session
+             "Use the mcp__emacs__ecc_live_probe tool and reply with exactly \
+what it returned, and nothing else.")
+            (let* ((turn (ecc-test-live-wait-for-result session))
+                   (text (ecc-test-live-turn-text turn)))
+              ;; The CLI registered the server ...
+              (should (seq-find
+                       (lambda (server)
+                         (equal (alist-get 'name server) ecc-mcp-server-name))
+                       (append (alist-get 'mcp_servers
+                                          (ecc-session-init session))
+                               nil)))
+              ;; ... and what the Elisp function returned came back.
+              (should (string-search "shibboleth-42" text)))))
+      (remhash "ecc_live_probe" ecc-mcp-tools)
+      (ecc-mcp-stop))))
+
 (provide 'ecc-live-test)
 
 ;;; ecc-live-test.el ends here
