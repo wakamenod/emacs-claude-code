@@ -33,13 +33,13 @@
   :group 'ecc)
 
 (defface ecc-markdown-code-face
-  '((t :inherit fixed-pitch :background "#e8f5e9" :box (:line-width -1 :style flat-button)))
-  "Face for inline code spans."
-  :group 'ecc)
-
-(defface ecc-markdown-block-face
-  '((t :inherit fixed-pitch :background "#fafafa"))
-  "Face for fenced code block backgrounds."
+  '((((background dark))  :inherit fixed-pitch :background "#2a2f33")
+    (((background light)) :inherit fixed-pitch :background "#eceff1")
+    (t :inherit fixed-pitch))
+  "Face for code, both fenced blocks and inline spans.
+Only the background is set, so that the colour the theme gives the
+text is what is read; a foreground of its own would fight whichever
+theme is in use.  A terminal that names no background gets neither."
   :group 'ecc)
 
 (defface ecc-markdown-bullet-face
@@ -71,8 +71,10 @@ empty on a closing fence and on an opening one that names nothing.")
   "Regexp matching bold text.")
 
 (defcustom ecc-markdown-hide-markup t
-  "Non-nil hides Markdown markup symbols (**bold**, `code`, ## heading).
-Nil displays the markup as-is (§3.3)."
+  "Non-nil hides the markup around bold, code and headings (FR-OUT-8).
+Nil leaves the asterisks, the backquotes and the number signs in
+sight, which is what a reader who wants the source of the reply
+rather than its shape wants."
   :type 'boolean
   :group 'ecc)
 
@@ -219,7 +221,7 @@ The characters are left as they are; only text properties are added.
 The body of a fenced code block gets the faces of the major mode its
 fence names on top of `ecc-markdown-code-face' (FR-OUT-15).  Markup
 symbols are hidden by the ecc-markup invisible property when
-`ecc-markdown-hide-markup' is non-nil (§3.3)."
+`ecc-markdown-hide-markup' is non-nil (FR-OUT-8)."
   (if (or (null text) (string-empty-p text))
       (or text "")
     (with-temp-buffer
