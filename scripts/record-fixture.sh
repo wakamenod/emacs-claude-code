@@ -77,6 +77,9 @@ for text in args.prompt:
 
 denied = set()
 n = 0
+# One result closes one prompt; a recording of several prompts is over
+# when the last of them has been answered.
+results = 0
 with open(args.out, "w") as f:
     deadline = time.time() + args.timeout
     while time.time() < deadline:
@@ -106,7 +109,9 @@ with open(args.out, "w") as f:
             send({"type": "control_response",
                   "response": {"subtype": "success", "request_id": rid, "response": resp}})
         if o.get("type") == "result":
-            break
+            results += 1
+            if results >= len(args.prompt):
+                break
 
 p.stdin.close()
 try:
