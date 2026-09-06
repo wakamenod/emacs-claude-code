@@ -470,6 +470,30 @@ only a recording holds, so it may not drift from the table."
       (should (= (ecc-file-entry-writes entry) 1))
       (should (= (length (ecc-file-entry-hunks entry)) 1)))))
 
+(ert-deftest ecc-dispatch-test-commands-changed ()
+  "A reloaded command list replaces the old one (FR-INP-3, FR-SES-8).
+The CLI sends system/commands_changed after /reload-plugins and
+/reload-skills; leaving it unhandled left the completion stale and put
+the whole list into an unknown node."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-commands session)
+          [((name . "old") (description . "gone") (argumentHint . ""))])
+    (let ((announced 0))
+      (let ((ecc-commands-updated-hook
+             (list (lambda (_session) (setq announced (1+ announced))))))
+        (ecc-dispatch session
+                      '((type . "system") (subtype . "commands_changed")
+                        (commands . [((name . "new") (description . "fresh")
+                                      (argumentHint . "[x]"))]))))
+      (should (= announced 1)))
+    (should (equal (alist-get 'name (aref (ecc-session-commands session) 0)) "new"))
+    ;; It is understood, so nothing is left over as unknown.
+    (should-not (seq-some (lambda (node) (eq (ecc-node-type node) 'unknown))
+                          (let (nodes)
+                            (maphash (lambda (_id node) (push node nodes))
+                                     (ecc-session-nodes session))
+                            nodes)))))
+
 (provide 'ecc-dispatch-test)
 
 ;;; ecc-dispatch-test.el ends here

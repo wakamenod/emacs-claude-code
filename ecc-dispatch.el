@@ -117,6 +117,11 @@ note rather than among the messages this version does not understand.")
      (when-let* ((node (ecc-model-node session (alist-get 'tool_use_id message))))
        (setf (ecc-node-status node) 'denied)
        (ecc-model-node-changed session node)))
+    ;; /reload-plugins, /reload-skills and a plugin installed while the
+    ;; session runs send the whole list again (FR-INP-3, FR-SES-8).
+    ('commands_changed
+     (setf (ecc-session-commands session) (alist-get 'commands message))
+     (run-hook-with-args 'ecc-commands-updated-hook session))
     ('compact_boundary (ecc-dispatch--compacted session message nil))
     ((or 'task_started 'task_progress 'task_updated 'task_notification
          'background_tasks_changed)
