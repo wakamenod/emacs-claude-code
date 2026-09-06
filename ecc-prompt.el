@@ -119,7 +119,7 @@ Returns where the region starts."
   (let ((start (or (ecc-chat-prompt-start)
                    (user-error "This buffer has no prompt region"))))
     (unless (ecc-chat-in-prompt-p)
-      (goto-char (point-max)))
+      (ecc-chat-goto-prompt))
     start))
 
 ;;;; History (FR-INP-7)

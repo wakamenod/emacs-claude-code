@@ -365,28 +365,25 @@ the shape of the answer is the CLI's rather than this test's."
       (should (equal (ecc-hint-suggestion session) "Run the tests"))
       (should (equal (ecc-hint-show-suggestion session) "Run the tests"))
       (with-current-buffer buffer
-        (should (string-search "Run the tests"
-                               (overlay-get ecc-chat--placeholder-overlay 'after-string)))
+        (should (string-search "Run the tests" (ecc-chat-placeholder-shown)))
         ;; It is in the way of a draft, so it goes when one is written.
         (ecc-chat-goto-prompt)
         (insert "no thanks")
         (should-not (ecc-hint-show-suggestion session))
-        (should-not ecc-chat--placeholder-overlay)
+        (should-not (ecc-chat-placeholder-shown))
         (ecc-prompt-clear)
         (should (ecc-hint-show-suggestion session))
         ;; One key writes it into the prompt region.
         (call-interactively #'ecc-hint-accept-suggestion)
         (should (equal (string-trim (ecc-chat-draft)) "Run the tests"))
-        (should-not ecc-chat--placeholder-overlay))
+        (should-not (ecc-chat-placeholder-shown)))
       ;; It costs an API flag, so it can be left out of sight (NFR-3):
       ;; the placeholder goes back to its plain words.
       (with-current-buffer buffer (ecc-prompt-clear))
       (let ((ecc-prompt-suggestion-display nil))
         (should-not (ecc-hint-show-suggestion session))
         (with-current-buffer buffer
-          (should (equal (substring-no-properties
-                          (overlay-get ecc-chat--placeholder-overlay 'after-string))
-                         ecc-chat-placeholder)))))))
+          (should (equal (ecc-chat-placeholder-shown) ecc-chat-placeholder)))))))
 
 (provide 'ecc-hint-test)
 

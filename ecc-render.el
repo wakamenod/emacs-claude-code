@@ -102,8 +102,8 @@ A file row of the Files section is a block too.")
 
 (defvar ecc-render-after-draw-hook nil
   "Functions run in a session buffer after it was drawn or redrawn.
-The prompt region is in place again by then; `ecc-chat' puts its
-placeholder back from here.")
+The prompt region is in place again by then; `ecc-chat' checks its
+placeholder from here.")
 
 ;;;; Buffer state
 
@@ -1432,29 +1432,35 @@ undo history of the draft is moved along with it."
           (cond (offset (set-window-point window (min (point-max) (+ start offset))))
                 ((and following ecc-render-follow) (set-window-point window start))))))))
 
-(defun ecc-render--shift-undo (delta)
-  "Move every position in the undo history of this buffer by DELTA.
-Everything the user can undo lies in the prompt region, and what the
-renderer does is kept out of the history; so when the transcript
-above the region grows or shrinks, the positions the history remembers
-are stale by exactly DELTA (FR-UI-2)."
+(defun ecc-render--shift-undo (delta &optional from)
+  "Move the positions in the undo history of this buffer by DELTA.
+Only positions at or after FROM move; FROM defaults to the start of
+the buffer.  Everything the user can undo lies in the prompt region,
+and what the renderer does is kept out of the history; so when the
+transcript above the region grows or shrinks, the positions the
+history remembers are stale by exactly DELTA (FR-UI-2).  `ecc-chat'
+uses the same for the placeholder it puts in and takes out silently."
   (when (and (consp buffer-undo-list) (/= delta 0))
-    (setq buffer-undo-list
-          (mapcar (lambda (entry) (ecc-render--shift-undo-entry entry delta))
-                  buffer-undo-list))))
+    (let ((from (or from (point-min))))
+      (setq buffer-undo-list
+            (mapcar (lambda (entry) (ecc-render--shift-undo-entry entry delta from))
+                    buffer-undo-list)))))
 
-(defun ecc-render--shift-undo-entry (entry delta)
-  "Return the undo ENTRY with its positions moved by DELTA."
-  (pcase entry
-    ((pred integerp) (+ entry delta))
-    (`(,(and beg (pred integerp)) . ,(and end (pred integerp)))
-     (cons (+ beg delta) (+ end delta)))
-    (`(,(and text (pred stringp)) . ,(and position (pred integerp)))
-     ;; A negative position says point was at the end of the text.
-     (cons text (if (< position 0) (- position delta) (+ position delta))))
-    (`(nil ,property ,value ,(and beg (pred integerp)) . ,(and end (pred integerp)))
-     `(nil ,property ,value ,(+ beg delta) . ,(+ end delta)))
-    (_ entry)))
+(defun ecc-render--shift-undo-entry (entry delta from)
+  "Return the undo ENTRY with its positions at or after FROM moved by DELTA."
+  (let ((shift (lambda (x) (if (>= x from) (+ x delta) x))))
+    (pcase entry
+      ((pred integerp) (funcall shift entry))
+      (`(,(and beg (pred integerp)) . ,(and end (pred integerp)))
+       (cons (funcall shift beg) (funcall shift end)))
+      (`(,(and text (pred stringp)) . ,(and position (pred integerp)))
+       ;; A negative position says point was at the end of the text.
+       (cons text (if (< position 0)
+                      (- (funcall shift (- position)))
+                    (funcall shift position))))
+      (`(nil ,property ,value ,(and beg (pred integerp)) . ,(and end (pred integerp)))
+       `(nil ,property ,value ,(funcall shift beg) . ,(funcall shift end)))
+      (_ entry))))
 
 ;;;; Drawing
 

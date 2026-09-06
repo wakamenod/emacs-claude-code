@@ -71,9 +71,16 @@ Returns the list of HANDLER return values."
   (seq-find predicate (ecc-test-fixture-messages name)))
 
 (defun ecc-test-buffer-string (&optional buffer)
-  "Return the text of BUFFER, or the current buffer, without properties."
+  "Return the text of BUFFER, or the current buffer, without properties.
+In a session buffer the prompt region is left out: what is compared
+with a snapshot is the transcript, not the placeholder or a draft."
   (with-current-buffer (or buffer (current-buffer))
-    (buffer-substring-no-properties (point-min) (point-max))))
+    (buffer-substring-no-properties
+     (point-min)
+     (or (and (boundp 'ecc-render--prompt-start)
+              ecc-render--prompt-start
+              (marker-position ecc-render--prompt-start))
+         (point-max)))))
 
 (defun ecc-test-log-string (buffer)
   "Return the text of the log BUFFER without the time stamps."

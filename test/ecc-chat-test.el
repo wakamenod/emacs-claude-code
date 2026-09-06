@@ -229,9 +229,11 @@
       (ecc-render-flush session)
       (should (string-search "▌ hello there" (buffer-string)))
       (should (string-search "Turn 1  hello there" (buffer-string)))
-      ;; Point is back in the empty prompt region, ready for more.
+      ;; Point is back at the start of the empty prompt region, in
+      ;; front of the placeholder, ready for more.
       (should (ecc-chat-in-prompt-p))
-      (should (= (point) (point-max))))))
+      (should (= (point) (ecc-chat-prompt-start)))
+      (should (ecc-chat-placeholder-shown)))))
 
 ;;;; The draft survives every redraw (FR-UI-2)
 
@@ -338,25 +340,71 @@
 ;;;; The placeholder
 
 (ert-deftest ecc-chat-test-placeholder ()
-  "An empty prompt region shows a placeholder, a draft hides it."
+  "An empty prompt region shows a placeholder the cursor can walk over.
+Anything written takes it away, wherever in it the cursor was."
   (ecc-test-with-fake-session session
     (with-current-buffer (ecc-session-ensure-buffer session)
       (should (equal (ecc-chat-update-placeholder) ecc-chat-placeholder))
-      (should (overlayp ecc-chat--placeholder-overlay))
-      (should (= (overlay-start ecc-chat--placeholder-overlay)
-                 (ecc-chat-prompt-start)))
+      (should (equal (ecc-chat-placeholder-shown) ecc-chat-placeholder))
+      (should (equal (ecc-chat-draft) ""))
+      ;; It is text, so point moves over it, and it cannot be deleted.
       (ecc-chat-goto-prompt)
+      (should (= (point) (ecc-chat-prompt-start)))
+      (forward-char 4)
+      (should (= (point) (+ (ecc-chat-prompt-start) 4)))
+      (should-error (delete-char 1) :type 'text-read-only)
+      ;; Typing in the middle of it leaves only what was typed.
       (insert "x")
+      (should (equal (ecc-chat-draft) "x"))
+      (should-not (ecc-chat-placeholder-shown))
+      (should (= (point) (1+ (ecc-chat-prompt-start))))
+      (should (string-suffix-p " \nx" (buffer-string)))
       (should-not (ecc-chat-update-placeholder))
-      (should-not ecc-chat--placeholder-overlay)
+      ;; Emptied, it comes back; a redraw keeps it in place.
       (ecc-prompt-clear)
-      ;; A redraw puts it back where the region now starts.
+      (should (equal (ecc-chat-update-placeholder) ecc-chat-placeholder))
       (ecc-model-begin-turn session "hello")
       (ecc-test-dispatch session "basic-turn")
       (ecc-render-flush session)
-      (should (overlayp ecc-chat--placeholder-overlay))
-      (should (= (overlay-start ecc-chat--placeholder-overlay)
-                 (ecc-chat-prompt-start))))))
+      (should (equal (ecc-chat-placeholder-shown) ecc-chat-placeholder))
+      (should (= (point) (ecc-chat-prompt-start)))
+      (should (string-search "hello from emacs" (buffer-string)))
+      ;; Typing at its end works too, and sending sees no placeholder.
+      (goto-char (point-max))
+      (insert "send me")
+      (should (equal (ecc-chat-draft) "send me"))
+      (ecc-prompt-send)
+      (should (equal (ecc-turn-prompt (ecc-session-current-turn session)) "send me")))))
+
+(ert-deftest ecc-chat-test-placeholder-stays-out-of-undo ()
+  "Undo in the draft is not confused by the placeholder coming and going."
+  (ecc-test-with-fake-session session
+    (with-current-buffer (ecc-session-ensure-buffer session)
+      (buffer-enable-undo)
+      (setq buffer-undo-list nil)
+      (ecc-chat-goto-prompt)
+      (forward-char 3)
+      (insert "abc")
+      (undo-boundary)
+      (should (equal (ecc-chat-draft) "abc"))
+      (insert "def")
+      (undo-boundary)
+      (let ((last-command nil)) (undo))
+      (undo-boundary)
+      (should (equal (ecc-chat-draft) "abc"))
+      ;; Emptying it brings the placeholder back; undo brings the text.
+      ;; The command loop would run the pre-command hook, which takes
+      ;; the placeholder out of the way of the replay.
+      (ecc-prompt-clear)
+      (undo-boundary)
+      (ecc-chat-update-placeholder)
+      (should (ecc-chat-placeholder-shown))
+      (let ((last-command nil) (this-command 'undo))
+        (ecc-chat--pre-command)
+        (should-not (ecc-chat-placeholder-shown))
+        (undo))
+      (should (equal (ecc-chat-draft) "abc"))
+      (should-not (ecc-chat-placeholder-shown)))))
 
 ;;;; An agent transcript has no prompt region
 

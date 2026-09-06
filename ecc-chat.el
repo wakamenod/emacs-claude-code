@@ -233,7 +233,9 @@ A key not here falls through to `ecc-chat-mode-map'.")
     (yank-media-handler "image/.*" #'ecc-prompt-yank-image))
   (setq-local dnd-protocol-alist
               (cons '("^file:" . ecc-prompt-dnd-insert) dnd-protocol-alist))
-  (add-hook 'post-command-hook #'ecc-chat--post-command nil t))
+  (add-hook 'pre-command-hook #'ecc-chat--pre-command nil t)
+  (add-hook 'post-command-hook #'ecc-chat--post-command nil t)
+  (add-hook 'after-change-functions #'ecc-chat--after-change nil t))
 
 ;;;; The prompt region
 
@@ -247,30 +249,44 @@ A key not here falls through to `ecc-chat-mode-map'.")
     (>= (or position (point)) start)))
 
 (defun ecc-chat-draft ()
-  "Return what is written in the prompt region, without properties."
+  "Return what is written in the prompt region, without properties.
+The placeholder is not part of it."
   (if-let* ((start (ecc-chat-prompt-start)))
-      (buffer-substring-no-properties start (point-max))
+      (let ((runs (ecc-chat--placeholder-runs))
+            (pos start)
+            (parts nil))
+        (dolist (run runs)
+          (push (buffer-substring-no-properties pos (car run)) parts)
+          (setq pos (cdr run)))
+        (push (buffer-substring-no-properties pos (point-max)) parts)
+        (apply #'concat (nreverse parts)))
     ""))
 
 (defun ecc-chat-clear-draft ()
   "Empty the prompt region."
   (when-let* ((start (ecc-chat-prompt-start)))
+    (ecc-chat--remove-placeholder)
     (delete-region start (point-max))))
 
 (defun ecc-chat-set-draft (text)
   "Replace the prompt region with TEXT and leave point at its end."
   (let ((start (or (ecc-chat-prompt-start)
                    (user-error "This buffer has no prompt region"))))
+    (ecc-chat--remove-placeholder)
     (delete-region start (point-max))
     (goto-char start)
     (insert text)))
 
 (defun ecc-chat-goto-prompt ()
-  "Move point to the end of the prompt region."
+  "Move point to the end of the prompt region.
+With nothing written there yet, that is its start, in front of the
+placeholder."
   (interactive)
   (unless (ecc-chat-prompt-start)
     (user-error "This buffer has no prompt region"))
-  (goto-char (point-max)))
+  (goto-char (if (string-empty-p (ecc-chat-draft))
+                 (ecc-chat-prompt-start)
+               (point-max))))
 
 (defun ecc-chat-return ()
   "Insert a newline, or send the prompt when `ecc-chat-return-sends' is on."
@@ -295,8 +311,12 @@ A key not here falls through to `ecc-chat-mode-map'.")
 
 ;;;; The placeholder
 
-(defvar-local ecc-chat--placeholder-overlay nil
-  "Overlay showing the placeholder over an empty prompt region.")
+;; The placeholder is real text in the prompt region, so that the cursor
+;; can walk over it; it is dim, read-only, marked `ecc-placeholder', and
+;; goes as soon as anything else is put in the region.  It is put in and
+;; taken out silently, outside the undo history, and the positions the
+;; history remembers are moved along (the way the renderer moves them
+;; for the transcript above).
 
 (defun ecc-chat-placeholder-string ()
   "Return the placeholder of this buffer, or nil when it has none."
@@ -306,6 +326,51 @@ A key not here falls through to `ecc-chat-mode-map'.")
                        ecc-chat-placeholder-functions))
         ecc-chat-placeholder)))
 
+(defun ecc-chat--placeholder-runs ()
+  "Return the (START . END) runs of placeholder text in the prompt region."
+  (when-let* ((start (ecc-chat-prompt-start)))
+    (let ((pos start) runs)
+      (while (< pos (point-max))
+        (let ((next (or (next-single-property-change pos 'ecc-placeholder)
+                        (point-max))))
+          (when (get-text-property pos 'ecc-placeholder)
+            (push (cons pos next) runs))
+          (setq pos next)))
+      (nreverse runs))))
+
+(defun ecc-chat-placeholder-shown ()
+  "Return the placeholder text shown in the prompt region, or nil."
+  (when-let* ((runs (ecc-chat--placeholder-runs)))
+    (mapconcat (lambda (run) (buffer-substring-no-properties (car run) (cdr run)))
+               runs "")))
+
+(defun ecc-chat--remove-placeholder ()
+  "Take the placeholder text out of the prompt region, silently.
+Returns non-nil when there was one."
+  (let ((runs (ecc-chat--placeholder-runs)))
+    (when runs
+      ;; From the end, so that the earlier runs keep their positions.
+      ;; The history is moved outside the silent block, which binds it.
+      (dolist (run (reverse runs))
+        (with-silent-modifications
+          (delete-region (car run) (cdr run)))
+        (ecc-render--shift-undo (- (car run) (cdr run)) (cdr run)))
+      t)))
+
+(defun ecc-chat--insert-placeholder (text)
+  "Put TEXT at the start of the prompt region as the placeholder, silently.
+Point is left where it was, in front of the text when it was there."
+  (let ((start (ecc-chat-prompt-start)))
+    (with-silent-modifications
+      (save-excursion
+        (goto-char start)
+        (insert (propertize text
+                            'face 'ecc-dim-face
+                            'ecc-placeholder t
+                            'read-only t
+                            'rear-nonsticky t))))
+    (ecc-render--shift-undo (length text) start)))
+
 (defun ecc-chat-update-placeholder (&optional buffer)
   "Show the placeholder in BUFFER while its prompt region is empty.
 BUFFER defaults to the current one.  Returns the text shown, or nil."
@@ -314,19 +379,30 @@ BUFFER defaults to the current one.  Returns the text shown, or nil."
           (text (ecc-chat-placeholder-string)))
       (cond
        ((and start text (string-empty-p (ecc-chat-draft)))
-        (unless (overlayp ecc-chat--placeholder-overlay)
-          (setq ecc-chat--placeholder-overlay (make-overlay start start nil t t)))
-        (move-overlay ecc-chat--placeholder-overlay start start)
-        (overlay-put ecc-chat--placeholder-overlay 'after-string
-                     (propertize text 'face 'ecc-dim-face))
+        (unless (equal (ecc-chat-placeholder-shown) text)
+          (ecc-chat--remove-placeholder)
+          (ecc-chat--insert-placeholder text))
         text)
-       (t (ecc-chat-clear-placeholder) nil)))))
+       (t (ecc-chat--remove-placeholder) nil)))))
 
-(defun ecc-chat-clear-placeholder ()
-  "Take the placeholder off this buffer."
-  (when (overlayp ecc-chat--placeholder-overlay)
-    (delete-overlay ecc-chat--placeholder-overlay))
-  (setq ecc-chat--placeholder-overlay nil))
+(defun ecc-chat--after-change (beg _end _length)
+  "Take the placeholder out as soon as the prompt region is written to.
+BEG is where the change began.  The change itself is left alone: what
+was typed stays, wherever in the placeholder the cursor was."
+  (when (and (ecc-chat-in-prompt-p beg)
+             (ecc-chat--placeholder-runs))
+    (ecc-chat--remove-placeholder)))
+
+(defun ecc-chat--pre-command ()
+  "Take the placeholder out before an undo replays changes over it.
+An undo group can hold several changes; once the first of them has
+been replayed and the placeholder is gone, the positions of the rest
+would be off by its length.  Nothing else replays old positions, so
+nothing else needs this."
+  (when (and (derived-mode-p 'ecc-chat-mode)
+             (symbolp this-command)
+             (string-match-p "undo\\|redo" (symbol-name this-command)))
+    (ecc-chat--remove-placeholder)))
 
 (defun ecc-chat--post-command ()
   "Keep the placeholder right after a command in this buffer."
@@ -334,7 +410,7 @@ BUFFER defaults to the current one.  Returns the text shown, or nil."
     (ecc-chat-update-placeholder)))
 
 (defun ecc-chat--after-draw ()
-  "Put the placeholder back after the buffer was drawn."
+  "Check the placeholder after the buffer was drawn."
   (when (derived-mode-p 'ecc-chat-mode)
     (ecc-chat-update-placeholder)))
 
