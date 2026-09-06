@@ -19,6 +19,7 @@
 (require 'ecc-model)
 (require 'ecc-proc)
 (require 'ecc-diff)
+(require 'ecc-visual)
 (require 'ecc-dispatch)
 
 (defconst ecc-test-directory
@@ -106,6 +107,15 @@ that tests cannot see each other."
           (ecc--sessions (make-hash-table :test #'equal))
           (ecc--session-order nil)
           (ecc-render-debounce 0)
+          ;; The visual effects of FR-OUT-11 depend on what this machine
+          ;; has (a nerd font, a spinner frame at this instant), so the
+          ;; snapshots are taken without them.  `ecc-visual-test' and the
+          ;; render tests that ask for them turn them back on.
+          (ecc-visual-enable-icons nil)
+          (ecc-visual-enable-spinner nil)
+          (ecc-visual-enable-pulse nil)
+          (ecc-visual-enable-blink nil)
+          (ecc-visual-enable-flash nil)
           (,var (ecc-model-create-session
                  :name "test"
                  :project-root temporary-file-directory)))

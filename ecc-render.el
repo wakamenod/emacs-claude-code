@@ -38,6 +38,7 @@
 (require 'ecc-model)
 (require 'ecc-markdown)
 (require 'ecc-diff)
+(require 'ecc-visual)
 
 (declare-function ecc-history-load-more "ecc-history" (session &optional n-turns))
 
@@ -191,6 +192,15 @@ The whole diff is always available with RET (FR-OUT-7)."
   "Hash mapping a node id to (SECTION . DEPTH) for the nodes drawn live.
 Emptied by every redraw of the live region, so it can never point at a
 section that was deleted.")
+
+(defvar-local ecc-render--flash-pending nil
+  "Non-nil when the live region should flash after the next redraw.
+Set when a turn finishes, so that the eye is drawn to the answer that
+has just arrived (FR-OUT-11 e).")
+
+(defvar-local ecc-render--effect-targets nil
+  "Sections noted for a visual effect while the live region was drawn.
+Each entry is (KIND . SECTION); see `ecc-render--apply-effects'.")
 
 (defvar-local ecc-render--pending-deltas nil
   "Alist of node to the streamed text not drawn yet, newest node first.")
@@ -469,6 +479,11 @@ An empty thinking block is all signature and no text."
        (not (ecc-node-streaming node))
        (string-empty-p (string-trim (or (ecc-model-node-get node 'text) "")))))
 
+(defun ecc-render--icon (tool-name)
+  "Return the icon of TOOL-NAME with the space that follows it, or nothing."
+  (let ((icon (ecc-visual-icon tool-name)))
+    (if (string-empty-p icon) "" (concat icon " "))))
+
 (defun ecc-render--status-mark (status)
   "Return the one character mark for STATUS."
   (pcase status
@@ -499,7 +514,38 @@ An empty thinking block is all signature and no text."
                 (_ (ecc-render--insert-unknown node depth)))))
       (when ecc-render--node-sections
         (puthash (ecc-node-id node) (cons section depth) ecc-render--node-sections))
+      (ecc-render--note-effect node section)
       section)))
+
+(defun ecc-render--note-effect (node section)
+  "Remember that SECTION of NODE deserves a visual effect (FR-OUT-11).
+The effects themselves are put on once the redraw is over: an overlay
+made now would be deleted with the region it sits in."
+  (pcase (ecc-node-type node)
+    ((or 'tool 'agent)
+     (when (eq (ecc-node-status node) 'running)
+       (push (cons 'pulse section) ecc-render--effect-targets)))
+    ((or 'permission 'question 'plan)
+     (when (eq (ecc-node-status node) 'pending)
+       (push (cons 'blink section) ecc-render--effect-targets)))))
+
+(defun ecc-render--apply-effects ()
+  "Animate the lines noted while the live region was drawn (FR-OUT-11).
+The newest line comes first, so that the limit of
+`ecc-visual-max-effects' keeps what is happening now."
+  (ecc-visual-clear-effects (current-buffer))
+  (dolist (target (nreverse ecc-render--effect-targets))
+    (pcase-let ((`(,kind . ,section) target))
+      (when (and (markerp (oref section start))
+                 (marker-position (oref section start)))
+        (let* ((start (oref section start))
+               (end (save-excursion (goto-char start) (line-end-position)))
+               (overlay (make-overlay start end (current-buffer))))
+          (overlay-put overlay 'evaporate t)
+          (pcase kind
+            ('pulse (ecc-visual-pulse-overlay overlay))
+            ('blink (ecc-visual-blink-overlay overlay)))))))
+  (setq ecc-render--effect-targets nil))
 
 (defun ecc-render--insert-stream-text (node text prefix face)
   "Insert the streamed TEXT of NODE with PREFIX after each newline.
@@ -564,6 +610,7 @@ is appended (plan section 5.2, item 4)."
             (propertize (ecc-render--status-mark (ecc-node-status node))
                         'face (if error-p 'ecc-error-face 'ecc-dim-face))
             " "
+            (ecc-render--icon name)
             (propertize name 'face (if error-p 'ecc-error-face 'ecc-tool-face))
             "  "
             (propertize summary 'face 'ecc-dim-face))))
@@ -634,6 +681,7 @@ An Edit or a Write shows its input as a diff (FR-OUT-7)."
             (propertize (ecc-render--status-mark (ecc-node-status node))
                         'face (if error-p 'ecc-error-face 'ecc-dim-face))
             " "
+            (ecc-render--icon "Agent")
             (propertize (format "Agent %s" agent-type)
                         'face (if error-p 'ecc-error-face 'ecc-tool-face))
             "  "
@@ -899,7 +947,12 @@ left of FR-HINT-3 arrives this way.")
                         (or (alist-get 'exit-status (ecc-session-progress session))
                             "?"))
                 'face 'ecc-error-face))
-      (state (propertize (format "● %s…" state) 'face 'ecc-pending-face)))))
+      (state (propertize (format "%s %s…" (ecc-render--running-mark) state)
+                         'face 'ecc-pending-face)))))
+
+(defun ecc-render--running-mark ()
+  "Return the mark that stands for work in progress (FR-OUT-11 a)."
+  (if ecc-visual-enable-spinner (ecc-visual-spinner-frame) "●"))
 
 (defun ecc-render--tail-lines (session)
   "Return the lines drawn at the end of the transcript of SESSION."
@@ -983,7 +1036,11 @@ separated by the same middle dot the state line uses."
   (when ecc-render--session
     (let ((session ecc-render--session))
       (ecc--mode-line-escape
-       (concat " " (ecc-render-status-line session)
+       (concat " "
+               (if (ecc-visual-spinner-running-p (current-buffer))
+                   (concat (ecc-visual-spinner-string) " ")
+                 "")
+               (ecc-render-status-line session)
               (mapconcat (lambda (function)
                            (if-let* ((text (condition-case err (funcall function session)
                                              (error (ecc-log (ecc-session-name session)
@@ -1167,6 +1224,8 @@ buffer that has just been made is at its end, so every window counts."
             (set-marker-insertion-type (oref magit-root-section end) t)
             (magit-section-show magit-root-section)
             (ecc-render--freeze session))
+          (ecc-render--apply-effects)
+          (ecc-render--update-spinner session)
           (goto-char (point-max))
           (dolist (window following)
             (when (window-live-p window)
@@ -1203,10 +1262,22 @@ buffer that has just been made is at its end, so every window counts."
               (set-marker (oref magit-root-section end) (point-max))
               (mapc #'ecc-render--apply-visibility (ecc-render--live-sections))
               (ecc-render--freeze session))
+            (ecc-render--apply-effects)
+            (ecc-render--update-spinner session)
             (when at-end (goto-char (point-max)))
             (dolist (window follow)
               (set-window-point window (point-max)))
+            (when ecc-render--flash-pending
+              (setq ecc-render--flash-pending nil)
+              (ecc-visual-flash-region (marker-position ecc-render--live-start)
+                                       (point-max)))
             (force-mode-line-update)))))))
+
+(defun ecc-render--update-spinner (session)
+  "Turn the spinner of the current buffer while SESSION has work to do."
+  (if (memq (ecc-session-state session) '(starting running compacting))
+      (ecc-visual-spinner-start (current-buffer))
+    (ecc-visual-spinner-stop (current-buffer))))
 
 (defun ecc-render-schedule (session)
   "Ask for a redraw of SESSION, gathering changes for a moment first."
@@ -1390,6 +1461,14 @@ Used for the transcript of an agent (FR-OUT-9).  BUFFER must be in
                 ecc-tasks-updated-hook))
   (add-hook hook #'ecc-render--on-change))
 
+(defun ecc-render--on-turn-finished (session &rest _)
+  "Ask for a flash of the live region of SESSION after the next redraw."
+  (when-let* ((buffer (ecc-session-buffer session)))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (setq ecc-render--flash-pending t)))))
+
+(add-hook 'ecc-turn-finished-hook #'ecc-render--on-turn-finished)
 (add-hook 'ecc-stream-delta-hook #'ecc-render--on-delta)
 (add-hook 'ecc-progress-hook #'ecc-render--on-progress)
 

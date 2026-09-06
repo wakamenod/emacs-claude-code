@@ -26,6 +26,7 @@
 (require 'ecc-proc)
 (require 'ecc-diff)
 (require 'ecc-markdown)
+(require 'ecc-visual)
 (require 'ecc-dispatch)
 (require 'ecc-render)
 (require 'ecc-session)
