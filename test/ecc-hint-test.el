@@ -74,6 +74,24 @@ session has none."
     (let ((ecc-autocompact-buffer 0.0))
       (should (= (ecc-hint-context-window session) 200000)))))
 
+(ert-deftest ecc-hint-test-context-window-of-a-plain-claude-5-name ()
+  "A Claude 5 model has its million token window without saying [1m].
+The CLI announces no window anywhere, and the recordings of this
+environment run past 200k tokens with no compaction, so the plain
+names are listed in `ecc-model-context-window'."
+  (ecc-test-with-fake-session session
+    (dolist (model '("claude-opus-5" "claude-sonnet-5" "claude-fable-5-1"))
+      (setf (ecc-session-init session) `((model . ,model)))
+      (should (= (ecc-hint-model-window session) 1000000)))
+    ;; 450k of a real session is half the window, not nothing left.
+    (setf (ecc-session-init session) '((model . "claude-opus-5")))
+    (ecc-model-update-usage session '((input_tokens . 2)
+                                      (cache_read_input_tokens . 448377)
+                                      (cache_creation_input_tokens . 2272)))
+    (should (> (ecc-hint-context-left session) 0.4))
+    (should (eq (ecc-hint-context-face (ecc-hint-context-left session))
+                'ecc-dim-face))))
+
 (ert-deftest ecc-hint-test-context-left ()
   "The fraction left follows the usage, and warns before it runs out."
   (ecc-test-with-fake-session session

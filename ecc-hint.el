@@ -82,12 +82,20 @@ The turn it opened is closed, so that prompts stop queueing behind it."
   :type 'number
   :group 'ecc)
 
-(defcustom ecc-model-context-window '(("[1m]" . 1000000))
+(defcustom ecc-model-context-window '(("[1m]" . 1000000)
+                                      ("opus-5" . 1000000)
+                                      ("sonnet-5" . 1000000)
+                                      ("fable-5" . 1000000)
+                                      ("haiku-4-5" . 200000))
   "Context window in tokens of the models whose name matches.
 An alist of (SUBSTRING . TOKENS); the first entry whose substring
 appears in the model name wins, and `ecc-context-window-default' is
-used when none does.  The 1M window is announced in the model name
-itself, as in \"claude-sonnet-5[1m]\"."
+used when none does.  A 1M window can be announced in the model name
+itself, as in \"claude-sonnet-5[1m]\", but it is not always: the
+Claude 5 models carry one under their plain names too, which the CLI
+says nowhere -- neither system/init nor the recording mentions a
+window -- so the names are listed here (see docs/decisions.md,
+2026-09-06)."
   :type '(alist :key-type string :value-type integer)
   :group 'ecc)
 
