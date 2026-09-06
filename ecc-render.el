@@ -402,15 +402,24 @@ PREDICATE is called with the id and its entry."
 (defconst ecc-render-fold-closed-mark "▸"
   "Shown at the head of a heading whose body is folded away.")
 
+(defun ecc-render--fold-cell ()
+  "Return the two characters a heading with no mark of its own opens with.
+The first is where the fold mark goes.  A heading that already opens
+with a mark, such as the status of a tool call, names that character
+as its cell instead of carrying one of these."
+  (concat (propertize " " 'ecc-fold-cell t) " "))
+
 (defun ecc-render--indicator-position (id)
   "Return where the fold mark of the node ID belongs, or nil.
-It is the first character of the heading line, the one the indentation
-stops at, so that the mark lines up with the depth of the node."
+The character is named when the heading is drawn rather than counted
+from the indentation, so a heading whose own mark says more than a
+fold mark would, such as the band of a turn or a waiting request,
+simply has no cell and keeps what it draws."
   (when-let* ((entry (ecc-render-node-entry id)))
-    (let* ((start (marker-position (nth 0 entry)))
-           (pos (+ start (* 2 (nth 2 entry)))))
-      (and (< pos (save-excursion (goto-char start) (line-end-position)))
-           pos))))
+    (let ((start (marker-position (nth 0 entry))))
+      (text-property-any start (save-excursion (goto-char start)
+                                               (line-end-position))
+                         'ecc-fold-cell t))))
 
 (defun ecc-render--indicator-wanted-p (id)
   "Return non-nil when the node ID should show a fold mark.
@@ -513,20 +522,6 @@ The folds are overlays of their own, so their order does not matter."
 
 ;;;; The top region: header, Files, Tasks
 
-(defun ecc-render--header-string (session)
-  "Return the header line of SESSION, ending in a newline."
-  (concat
-   (propertize (or (ecc-session-name session) "?") 'face 'ecc-heading-face)
-   (propertize
-    (format "  ·  %s  ·  %s  ·  %s  ·  $%.4f\n"
-            ;; init only comes with the first turn, so there is
-            ;; nothing to say about the model before it.
-            (or (alist-get 'model (ecc-session-init session)) "—")
-            (or (ecc-session-permission-mode session) "default")
-            (ecc-session-state session)
-            (or (ecc-session-total-cost session) 0))
-    'face 'ecc-dim-face)))
-
 (defun ecc-render--file-counts (entry)
   "Return (ADDED . REMOVED) over every change of the file ENTRY."
   (let ((added 0) (removed 0)
@@ -565,7 +560,7 @@ The folds are overlays of their own, so their order does not matter."
                               (and (> (ecc-file-entry-writes entry) 0)
                                    (format "W×%d" (ecc-file-entry-writes entry)))))
               " ")))
-    (concat "  "
+    (concat "  " (ecc-render--fold-cell)
             (propertize (abbreviate-file-name (ecc-file-entry-path entry))
                         'face 'ecc-tool-face)
             (propertize (concat "  " ops) 'face 'ecc-dim-face)
@@ -586,7 +581,7 @@ The folds are overlays of their own, so their order does not matter."
     (ecc-render--mark-heading start id)
     (when (ecc-file-entry-hunks entry)
       (let ((body (point)))
-        (ecc-render--insert-lines (ecc-render--file-diff entry) "    " 'ecc-dim-face)
+        (ecc-render--insert-lines (ecc-render--file-diff entry) "      " 'ecc-dim-face)
         (ecc-render--mark body (point) id 2 map)))
     (ecc-render--register id start (point) 1
                           (and (ecc-file-entry-hunks entry) t) t)))
@@ -596,7 +591,8 @@ The folds are overlays of their own, so their order does not matter."
   (let ((entries (ecc-model-files session)))
     (when entries
       (let ((start (point)))
-        (insert (propertize (format "Files (%d)" (length entries))
+        (insert (ecc-render--fold-cell)
+                (propertize (format "Files (%d)" (length entries))
                             'face 'ecc-heading-face)
                 "\n")
         (ecc-render--mark start (point) "files" 0)
@@ -617,7 +613,8 @@ The folds are overlays of their own, so their order does not matter."
   (let ((tasks (ecc-model-tasks session)))
     (when tasks
       (let ((start (point)))
-        (insert (propertize (format "Tasks (%d/%d)"
+        (insert (ecc-render--fold-cell)
+                (propertize (format "Tasks (%d/%d)"
                                     (seq-count (lambda (task)
                                                  (equal (ecc-task-status task) "completed"))
                                                tasks)
@@ -630,7 +627,7 @@ The folds are overlays of their own, so their order does not matter."
           (let ((id (concat "task:" (ecc-task-id task)))
                 (row (point)))
             (insert (propertize
-                     (format "  %s %s" (ecc-render--task-mark (ecc-task-status task))
+                     (format "    %s %s" (ecc-render--task-mark (ecc-task-status task))
                              (or (ecc-task-subject task) ""))
                      'face (pcase (ecc-task-status task)
                              ("completed" 'ecc-dim-face)
@@ -671,11 +668,10 @@ above the renderer (plan section 1.3)."
     (and offset (> offset 0))))
 
 (defun ecc-render--insert-top (session)
-  "Insert the header, Files and Tasks of SESSION."
-  (let ((start (point)))
-    (insert (ecc-render--header-string session))
-    (ecc-render--mark start (point) "header" 0)
-    (ecc-render--register "header" start (point) 0))
+  "Insert the Files and the Tasks of SESSION.
+What the session is and what it costs is the business of the header
+line now, not of the first line of the buffer (FR-OUT-6 as revised by
+the phase 9 redesign)."
   (ecc-render--insert-files session)
   (ecc-render--insert-tasks session)
   (ecc-render--insert-history-button session))
@@ -845,8 +841,9 @@ is appended (plan section 5.2, item 4)."
     (ecc-render--insert-owned
      node depth
      (lambda ()
-       (insert (concat pad (propertize (if (ecc-node-streaming node) "Thinking…" "Thinking")
-                                       'face 'ecc-thinking-face))
+       (insert (concat pad (ecc-render--fold-cell)
+                       (propertize (if (ecc-node-streaming node) "Thinking…" "Thinking")
+                                   'face 'ecc-thinking-face))
                "\n")))
     (ecc-render--insert-owned
      node (1+ depth)
@@ -883,7 +880,8 @@ is appended (plan section 5.2, item 4)."
                     (ecc-render-tool-summary name (ecc-model-node-get node 'input)))))
     (concat (ecc-render--pad depth)
             (propertize (ecc-render--status-mark (ecc-node-status node))
-                        'face (if error-p 'ecc-error-face 'ecc-dim-face))
+                        'face (if error-p 'ecc-error-face 'ecc-dim-face)
+                        'ecc-fold-cell t)
             " "
             (ecc-render--icon name)
             (propertize name 'face (if error-p 'ecc-error-face 'ecc-tool-face))
@@ -959,7 +957,8 @@ An Edit or a Write shows its input as a diff (FR-OUT-7)."
          (error-p (eq (ecc-node-status node) 'error)))
     (concat (ecc-render--pad depth)
             (propertize (ecc-render--status-mark (ecc-node-status node))
-                        'face (if error-p 'ecc-error-face 'ecc-dim-face))
+                        'face (if error-p 'ecc-error-face 'ecc-dim-face)
+                        'ecc-fold-cell t)
             " "
             (ecc-render--icon "Agent")
             (propertize (format "Agent %s" agent-type)
@@ -1170,9 +1169,10 @@ model."
       (ecc-render--insert-owned
        node depth
        (lambda ()
-         (insert (concat pad (propertize (ecc-render--one-line
-                                          (ecc-render--system-heading node))
-                                         'face 'ecc-dim-face))
+         (insert (concat pad (ecc-render--fold-cell)
+                         (propertize (ecc-render--one-line
+                                      (ecc-render--system-heading node))
+                                     'face 'ecc-dim-face))
                  "\n")))
       (when-let* ((message (ecc-model-node-get node 'message)))
         (ecc-render--insert-owned
@@ -1190,7 +1190,8 @@ model."
     (ecc-render--insert-owned
      node depth
      (lambda ()
-       (insert (concat pad (propertize (format "unknown: %s%s"
+       (insert (concat pad (ecc-render--fold-cell)
+                       (propertize (format "unknown: %s%s"
                                                (or (alist-get 'type message) "?")
                                                (if reason (format " (%s)" reason) ""))
                                        'face 'ecc-error-face))
@@ -1404,28 +1405,59 @@ and the separator before the prompt region."
                     (ecc-render--count-string (cdr streaming)))))
          'face 'ecc-dim-face))))))
 
+(defun ecc-render--model-name (session)
+  "Return the short name of the model SESSION runs, or nil.
+The CLI names a model in full, `claude-sonnet-4-5-20250929\='; a header
+line has room for the part that tells one from another.  Nil until the
+first turn, because the name arrives with init."
+  (when-let* ((model (alist-get 'model (ecc-session-init session))))
+    (replace-regexp-in-string
+     "-[0-9].*\\'" "" (replace-regexp-in-string "\\`claude-" "" model))))
+
+(defun ecc-render--header-right (session)
+  "Return what the right of the header line says SESSION is, or nil.
+The model and the permission mode, and after them whatever the modules
+above the renderer add through `ecc-render-header-functions\=', which is
+how the room left in the context window arrives (FR-HINT-3)."
+  (let* ((own (mapcar (lambda (text) (propertize text 'face 'ecc-dim-face))
+                      (delq nil (list (ecc-render--model-name session)
+                                      (ecc-session-permission-mode session)))))
+         (added (delq nil
+                      (mapcar (lambda (function)
+                                (condition-case err (funcall function session)
+                                  (error (ecc-log (ecc-session-name session)
+                                                  "header function %s: %s" function
+                                                  (error-message-string err))
+                                         nil)))
+                              ecc-render-header-functions)))
+         (parts (append own added)))
+    (when parts
+      (string-join parts (propertize " · " 'face 'ecc-dim-face)))))
+
 (defun ecc-render-header-line ()
-  "Return the header line of the session buffer, for `header-line-format'.
-What `ecc-render-header-functions' returns follows the state line,
-separated by the same middle dot the state line uses."
+  "Return the header line of the session buffer, for `header-line-format\='.
+What the session is doing stands on the left and what it is on the
+right, a stretched space between them.  The property that stretches it
+sits on that space alone: over the text it would show a blank in its
+place.  Each side is made fit for a header line before they are put
+together, so that the space keeps the property that aligns it."
   (when ecc-render--session
-    (let ((session ecc-render--session))
-      (ecc--mode-line-escape
-       (concat " "
-               (if (ecc-visual-spinner-running-p (current-buffer))
-                   (concat (ecc-visual-spinner-string) " ")
-                 "")
-               (ecc-render-status-line session)
-              (mapconcat (lambda (function)
-                           (if-let* ((text (condition-case err (funcall function session)
-                                             (error (ecc-log (ecc-session-name session)
-                                                             "header function %s: %s"
-                                                             function
-                                                             (error-message-string err))
-                                                    nil))))
-                               (concat "  ·  " text)
-                             ""))
-                         ecc-render-header-functions ""))))))
+    (let* ((session ecc-render--session)
+           (left (ecc--mode-line-escape
+                  (concat " "
+                          (if (ecc-visual-spinner-running-p (current-buffer))
+                              (concat (ecc-visual-spinner-string) " ")
+                            "")
+                          (ecc-render-status-line session))))
+           (right (ecc-render--header-right session)))
+      (if right
+          (let ((right (ecc--mode-line-escape right)))
+            (concat left
+                    (propertize " " 'display
+                                (list 'space :align-to
+                                      (list '- 'right (1+ (string-width right)))))
+                    right))
+        left))))
 
 (defun ecc-render-mode-line-state (session)
   "Return the short state of SESSION for a mode line, or nil when idle.
@@ -1656,7 +1688,13 @@ and a point that was in it stays in it (FR-UI-2)."
               (goto-char (point-min))
               (ecc-render--insert-top session)
               (set-marker ecc-render--top-end (point))
-              (insert "\n")
+              (let ((anchor (point)))
+                (insert "\n")
+                ;; The newline that anchors the top region belongs to no
+                ;; node, but it is transcript all the same, so the keys
+                ;; of the transcript have to reach it.
+                (put-text-property anchor (point) 'keymap
+                                   (ecc-render--map 'ecc-chat-transcript-map)))
               (set-marker ecc-render--live-start (point))
               (ecc-render--insert-live session)
               (ecc-render--seal (point-min) (point))

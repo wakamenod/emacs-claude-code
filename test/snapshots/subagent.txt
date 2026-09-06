@@ -1,4 +1,3 @@
-test  ·  claude-haiku-4-5-20251001  ·  default  ·  idle  ·  $0.0279
 
 〉 探して
   ✓ Agent Explore · Find all .py files in current directory · 1 tools · 5.1s

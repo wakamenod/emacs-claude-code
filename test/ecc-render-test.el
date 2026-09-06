@@ -49,11 +49,17 @@ with the request, used in turn for the requests the recording makes."
   (ecc-test-with-fake-session session
     (let ((text (ecc-render-test--replay session "basic-turn" "hello")))
       (ecc-render-test--check "basic-turn" text)
-      ;; The header carries what the CLI told us about the session.
-      (should (string-prefix-p "test  ·  claude-haiku-4-5-20251001  ·  default  ·  idle"
-                               text))
-      ;; The prompt is quoted with a margin marker (plan 5.3).
-      (should (string-search "\n〉 hello\n" text)))))
+      ;; No heading of the session stands at the top of the buffer any
+      ;; more; the band of the first turn is what it opens with.
+      (should (string-prefix-p "\n〉 hello\n" text))
+      (should-not (string-search "claude-haiku" text))
+      ;; What it is doing is on the left of the header line, what it is
+      ;; on the right (FR-OUT-6 as revised by the phase 9 redesign).
+      (with-current-buffer (ecc-session-buffer session)
+        (let ((header (substring-no-properties (ecc-render-header-line))))
+          (should (string-search "○ idle" header))
+          (should (string-search "haiku" header))
+          (should-not (string-search "claude-haiku" header)))))))
 
 (ert-deftest ecc-render-test-tool-use ()
   "A lone tool draws as a tool line and the permission that allowed it."
@@ -419,8 +425,8 @@ follow have a section to grow.  Returns the remaining lines."
         (should (memq 'diff-added
                       (ensure-list (get-text-property (match-beginning 0) 'face)))))
       ;; The Files section merges the patches the CLI reported (FR-OUT-12).
-      (should (string-search "Files (1)\n  /private/tmp/claude-501/" text))
-      (should (string-search "hello.py  R×1 E×1  +1 −1\n    @@ -1,6 +1,6 @@\n" text)))))
+      (should (string-search "  Files (1)\n    /private/tmp/claude-501/" text))
+      (should (string-search "hello.py  R×1 E×1  +1 −1\n      @@ -1,6 +1,6 @@\n" text)))))
 
 (ert-deftest ecc-render-test-write-diff-is-clipped ()
   "A long Write shows the head of its diff and says how much was cut."
@@ -441,7 +447,7 @@ follow have a section to grow.  Returns the remaining lines."
   (ecc-test-with-fake-session session
     (let ((text (ecc-render-test--replay session "tasks" "タスクを作って")))
       (ecc-render-test--check "tasks" text)
-      (should (string-search "Tasks (1/2)\n  [x] Write tests\n  [ ] Update docs\n" text)))))
+      (should (string-search "  Tasks (1/2)\n    [x] Write tests\n    [ ] Update docs\n" text)))))
 
 (ert-deftest ecc-render-test-tasks-follow-each-update ()
   "The checklist changes as soon as a task changes, not only at the end."
@@ -559,7 +565,7 @@ follow have a section to grow.  Returns the remaining lines."
     (with-current-buffer (ecc-session-buffer session)
       (goto-char (point-min))
       (ecc-chat-next-block)
-      (should (looking-at "  /private/tmp/claude-501/.*hello.py  R×1 E×1"))
+      (should (looking-at "    /private/tmp/claude-501/.*hello.py  R×1 E×1"))
       (ecc-chat-next-block)
       (should (looking-at "  ✓ Read"))
       (ecc-chat-next-block)

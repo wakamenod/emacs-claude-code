@@ -203,8 +203,16 @@ it (FR-HINT-3)."
                 'face (ecc-hint-context-face left))))
 
 (defun ecc-hint-context-indicator (session)
-  "Return the header line addition of SESSION (FR-HINT-3)."
-  (and ecc-context-indicator (ecc-hint-context-string session)))
+  "Return what the header line of SESSION says about its context.
+The right of the header line is a tight place, so this is the bare
+percentage; below `ecc-context-critical-threshold\=' it says what to do
+about it as well (FR-HINT-3)."
+  (when ecc-context-indicator
+    (when-let* ((left (ecc-hint-context-left session)))
+      (propertize (format "%d%%%s" (round (* 100 left))
+                          (if (<= left ecc-context-critical-threshold)
+                              " — /compact" ""))
+                  'face (ecc-hint-context-face left)))))
 
 ;;;; The rate limit (FR-HINT-3)
 

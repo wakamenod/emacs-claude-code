@@ -226,9 +226,11 @@ A key not here falls through to `ecc-chat-mode-map'.")
   (add-to-invisibility-spec '(ecc-markup . nil))
   (setq-local completion-at-point-functions
               (list #'ecc-prompt-capf #'ecc-prompt-at-capf))
-  ;; The state, and above all a request waiting for an answer, is shown
-  ;; next to the mode name (FR-PERM-4), and after it what the session
-  ;; costs and how much room is left in its context (FR-HINT-3).
+  ;; A request waiting for an answer is what the mode line is for
+  ;; (FR-PERM-4).  What the session costs and how much room is left in
+  ;; its context are on the right of the header line instead, where
+  ;; they do not crowd the mode name; `ecc-mode-line-format\=' puts them
+  ;; back for whoever wants them there (FR-HINT-3).
   (setq-local mode-line-process
               ;; Escaped where it is put together rather than in each
               ;; piece: what the pieces return is text for a person.

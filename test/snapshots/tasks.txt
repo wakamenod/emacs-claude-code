@@ -1,7 +1,6 @@
-test  ·  claude-haiku-4-5-20251001  ·  default  ·  idle  ·  $0.0301
-Tasks (1/2)
-  [x] Write tests
-  [ ] Update docs
+  Tasks (1/2)
+    [x] Write tests
+    [ ] Update docs
 
 〉 タスクを作って
   ✓ ToolSearch · select:TaskCreate,TaskUpdate,TaskList

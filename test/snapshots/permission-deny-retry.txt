@@ -1,8 +1,7 @@
-test  ·  claude-haiku-4-5-20251001  ·  default  ·  idle  ·  $0.0110
-Files (1)
-  /private/tmp/claude-501/-Users-jun-Projects-SideProjects-emacs-claude-code/a599bb74-923b-40f5-9a48-afbd84ad3ccd/scratchpad/sandbox/hello.txt  W×1  +1 −0
-    @@ -0,0 +1,1 @@
-    +hello from emacs
+  Files (1)
+    /private/tmp/claude-501/-Users-jun-Projects-SideProjects-emacs-claude-code/a599bb74-923b-40f5-9a48-afbd84ad3ccd/scratchpad/sandbox/hello.txt  W×1  +1 −0
+      @@ -0,0 +1,1 @@
+      +hello from emacs
 
 〉 hello.txt を作って
   ✗ Write · /private/tmp/claude-501/-Users-jun-Projects-SideProjects-emacs-claude-code/a599bb74-923b-40f5-9a48-afbd84ad3ccd/scratchpad/sandbox/hello.txt

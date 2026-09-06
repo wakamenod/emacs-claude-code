@@ -130,8 +130,10 @@ names are listed in `ecc-model-context-window'."
     (ecc-model-update-usage session '((input_tokens . 100)))
     (with-current-buffer (ecc-session-buffer session)
       ;; The header line is read for %-constructs, so what goes into it
-      ;; carries a doubled percent sign; it reaches the eye as one.
-      (should (string-search "context 90%% left"
+      ;; carries a doubled percent sign; it reaches the eye as one.  The
+      ;; right of the header is a tight place, so it is the bare share
+      ;; there and the whole sentence everywhere else.
+      (should (string-search "90%%"
                              (substring-no-properties (ecc-render-header-line))))
       (should (string-search "context 90% left"
                              (substring-no-properties

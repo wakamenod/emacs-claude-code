@@ -1,8 +1,7 @@
-test  ·  —  ·  default  ·  starting  ·  $0.0000
-Files (1)
-  /private/var/folders/4v/6r7_g65n4jz15_y1z350h0340000gn/T/ecc-history-2m0x5w0z/hi.txt  R×1 W×1  +1 −0
-    @@ -0,0 +1,1 @@
-    +hi
+  Files (1)
+    /private/var/folders/4v/6r7_g65n4jz15_y1z350h0340000gn/T/ecc-history-2m0x5w0z/hi.txt  R×1 W×1  +1 −0
+      @@ -0,0 +1,1 @@
+      +hi
 Load older messages
 
 〉 hi.txt というファイルを作って。中身は hi の 1 行だけ
