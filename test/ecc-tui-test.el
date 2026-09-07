@@ -163,6 +163,67 @@ the terminal on the way out (FR-TUI-4)."
       (insert text)
       (write-region (point-min) (point-max) file t 'quiet))))
 
+(ert-deftest ecc-tui-test-a-recording-found-later-is-not-replayed-whole ()
+  "A recording that appears after the follow began is joined at its end.
+A session writes its recording only once it has something to record,
+so the file is often missing when the follow starts.  What it holds
+when it turns up is what the transcript already shows, and reading it
+from the top would say the whole conversation a second time."
+  (let* ((file (make-temp-file "ecc-tui-" nil ".jsonl"))
+         (lines (with-temp-buffer
+                  (let ((coding-system-for-read 'utf-8-unix))
+                    (insert-file-contents (ecc-test-history-fixture "session")))
+                  (split-string (buffer-string) "\n" t))))
+    (unwind-protect
+        (ecc-tui-test--with-session session
+          (cl-letf (((symbol-function 'ecc-history-file)
+                     (lambda (_id) (and (file-exists-p file) file)))
+                    ((symbol-function 'file-notify-add-watch) (lambda (&rest _) nil)))
+            ;; There is no recording yet when the follow begins.
+            (delete-file file)
+            (ecc-tui-open session)
+            ;; The CLI writes one, and it is found on the next read.
+            (ecc-tui-test--write file lines)
+            (should (= (ecc-tui-read-new-lines session) 0))
+            (should (= (length (ecc-session-turns session)) 0))
+            ;; From there on what is appended is followed as usual.
+            (ecc-tui-test--write file (append lines lines))
+            (should (> (ecc-tui-read-new-lines session) 0))))
+      (ignore-errors (delete-file file)))))
+
+(ert-deftest ecc-tui-test-following-does-not-open-a-turn-per-batch ()
+  "Reading the recording a batch at a time makes no turns of its own.
+A batch of appended lines is the middle of a turn, not a turn: opening
+one for each would fill the transcript with empty turns timed from the
+moment they were read to a moment in the past."
+  (let* ((file (make-temp-file "ecc-tui-" nil ".jsonl"))
+         (lines (with-temp-buffer
+                  (let ((coding-system-for-read 'utf-8-unix))
+                    (insert-file-contents (ecc-test-history-fixture "session")))
+                  (split-string (buffer-string) "\n" t))))
+    (unwind-protect
+        (ecc-tui-test--with-session session
+          (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) file))
+                    ((symbol-function 'file-notify-add-watch) (lambda (&rest _) nil)))
+            (ecc-tui-test--write file nil)
+            (ecc-tui-open session)
+            ;; The recording arrives a few lines at a time, the way it
+            ;; does while a terminal is writing it.
+            (let ((n 0))
+              (while (< n (length lines))
+                (setq n (min (length lines) (+ n 3)))
+                (ecc-tui-test--write file (seq-take lines n))
+                (ecc-tui-read-new-lines session)))
+            (let ((turns (ecc-session-turns session)))
+              (should (> (length turns) 0))
+              ;; Every turn came from a prompt in the recording, and
+              ;; none of them ran for a negative length of time.
+              (dolist (turn turns)
+                (should (ecc-turn-prompt turn))
+                (when-let* ((duration (ecc-model-turn-duration turn)))
+                  (should (>= duration 0)))))))
+      (delete-file file))))
+
 (ert-deftest ecc-tui-test-follow-reads-what-the-terminal-appends ()
   "The transcript keeps up with the recording the terminal writes."
   (let* ((file (make-temp-file "ecc-tui-" nil ".jsonl"))

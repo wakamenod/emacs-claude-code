@@ -267,7 +267,13 @@ notification can arrive while the CLI is halfway through writing one."
                    (let ((found (ecc-history-file (ecc-session-id session))))
                      (when found
                        (ecc-tui--put session :file found)
-                       (ecc-tui--put session :position 0)
+                       ;; The recording is joined where it stands, as
+                       ;; `ecc-tui-follow-start' joins one that was
+                       ;; already there: what it holds is on screen
+                       ;; already, and reading it from the top would put
+                       ;; the whole conversation in a second time.
+                       (ecc-tui--put session :position
+                                     (ecc-tui--file-size found))
                        (when ecc-tui-follow (ecc-tui--watch session found))
                        found))))
          (from (or (plist-get state :position) 0))
@@ -291,7 +297,9 @@ notification can arrive while the CLI is halfway through writing one."
             0
           (ecc-tui--put session :position (+ from (string-bytes whole)))
           (prog1 (length lines)
-            (ecc-history--replay session lines)
+            ;; A batch of new lines is not a turn: it is the middle of
+            ;; one, so the turn the last batch left open carries on.
+            (ecc-history--replay session lines nil t)
             (ecc-render-refresh session))))))))
 
 (defun ecc-tui-follow-stop (session)

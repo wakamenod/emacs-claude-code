@@ -272,11 +272,13 @@ PROMPT is what the message opens a turn with, or nil."
       (_ (ecc-history--note-system session message))))
    (t (ecc-dispatch session message))))
 
-(defun ecc-history--replay-lines (session lines &optional abandoned)
+(defun ecc-history--replay-lines (session lines &optional abandoned keep-open)
   "Feed LINES of a recorded conversation to SESSION and return the turns made.
 Each prompt opens a turn, everything else goes through `ecc-dispatch'.
 ABANDONED, when given, is the hash of uuids that belong to a branch
-nobody continued; those lines are left out (FR-HIST-1)."
+nobody continued; those lines are left out (FR-HIST-1).  KEEP-OPEN
+leaves the last turn open, for a caller that will bring the rest of
+it in a moment."
   (let ((made 0) (sidechain 0) (time nil))
     (dolist (line lines)
       (when-let* ((message (ecc-protocol-history-parse line)))
@@ -296,23 +298,33 @@ nobody continued; those lines are left out (FR-HIST-1)."
               (cl-incf made))
             (ecc-history--replay-line session message prompt time))))))
     (ecc-history--note-sidechain session sidechain)
-    (ecc-history--close-turn session time)
+    (unless keep-open
+      (ecc-history--close-turn session time))
     made))
 
-(defun ecc-history--replay (session lines &optional abandoned)
+(defun ecc-history--replay (session lines &optional abandoned continue)
   "Replay LINES into SESSION with the hooks of the outside world off.
-ABANDONED is passed to `ecc-history--replay-lines'.  The state SESSION
+ABANDONED is passed to `ecc-history--replay-lines\='.  The state SESSION
 was in is put back afterwards, so that replaying into a live session
-cannot make it look busy."
+cannot make it look busy.
+
+CONTINUE carries on the turn SESSION is already in rather than
+starting a fresh one and closing it at the end.  Following a recording
+as it is written wants that: the lines arrive a batch at a time, and a
+batch is not a turn.  Without it every batch opens a turn of its own
+with nothing in it, timed from the moment it was read to the moment
+the recording says it ended, which is in the past."
   (let ((state (ecc-session-state session))
         (current (ecc-session-current-turn session))
         (made 0))
     (cl-progv ecc-history-suppressed-hooks
         (make-list (length ecc-history-suppressed-hooks) nil)
-      (setf (ecc-session-current-turn session) nil)
+      (unless continue
+        (setf (ecc-session-current-turn session) nil))
       (unwind-protect
-          (setq made (ecc-history--replay-lines session lines abandoned))
-        (setf (ecc-session-current-turn session) current)
+          (setq made (ecc-history--replay-lines session lines abandoned continue))
+        (unless continue
+          (setf (ecc-session-current-turn session) current))
         (ecc-model-set-state session state)))
     made))
 
