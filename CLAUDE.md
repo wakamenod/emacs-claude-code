@@ -10,8 +10,9 @@ This repository builds `ecc`, a package that drives the Claude Code CLI from Ema
 4. `docs/decisions.md` — the record of findings that clash with the requirements, and what was decided.
 5. `docs/phase9-ui-redesign.md` — the phase 9 revision of the transcript and prompt UI. It
    overrides §5.2, §5.3 of `REQUIREMENTS.md` and §5, §6.1, §6.2 of the plan; where they
-   disagree, it wins. Phases 9a and 9b are done (9b: one buffer, `ecc-chat-mode`,
-   no magit-section); 9c, the visual finish, is next.
+   disagree, it wins. **Phase 9 is done in full** (9a; 9b: one buffer, `ecc-chat-mode`,
+   no magit-section; 9c: the visual finish, 9c-1..9c-7, confirmed on a real frame
+   2026-09-08).
 
 Those five documents live in the working directory but are not in the repository: they
 are listed in `.gitignore`, and a clone does not carry them. They are written in Japanese
