@@ -771,6 +771,21 @@ turn again and looked as though nothing had arrived."
         (should (string-search "printf %%s done" header))
         (should-not (string-search "printf %s done" header))))))
 
+(ert-deftest ecc-render-test-question-summary-is-the-question ()
+  "A question reads as the question, not as the JSON around it."
+  (let ((input (ecc--json-read
+                (concat "{\"questions\":[{\"question\":\"行頭の記号は？\","
+                        "\"header\":\"行頭\",\"options\":[{\"label\":\"状態\"}]}]}"))))
+    (should (equal (ecc-render-tool-summary "AskUserQuestion" input)
+                   "行頭の記号は？")))
+  ;; Two questions are joined; the shape is still never shown.
+  (let ((input (ecc--json-read
+                "{\"questions\":[{\"question\":\"一つ目\"},{\"question\":\"二つ目\"}]}")))
+    (should (equal (ecc-render-tool-summary "AskUserQuestion" input)
+                   "一つ目 / 二つ目")))
+  ;; Nothing to read falls back to the first value rather than erroring.
+  (should (equal (ecc-render-tool-summary "AskUserQuestion" nil) "")))
+
 (provide 'ecc-render-test)
 
 ;;; ecc-render-test.el ends here

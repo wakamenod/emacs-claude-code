@@ -321,6 +321,16 @@ that parsed values can be echoed back unchanged."
                    (ecc-protocol-history-prompt
                     '((type . "user") (message . ((role . "user") (content . "hello")))))))))
 
+(ert-deftest ecc-protocol-test-value-string-is-text-not-bytes ()
+  "A serialized value reads as text: `json-serialize' answers in bytes."
+  (let ((value (ecc--json-read "[{\"question\":\"ツール行\"}]")))
+    (should (equal (ecc-protocol-value-string value)
+                   "[{\"question\":\"ツール行\"}]"))
+    (should (multibyte-string-p (ecc-protocol-value-string value))))
+  ;; The scalars are passed through as they are.
+  (should (equal (ecc-protocol-value-string "ツール行") "ツール行"))
+  (should (equal (ecc-protocol-value-string :false) "false")))
+
 (provide 'ecc-protocol-test)
 
 ;;; ecc-protocol-test.el ends here

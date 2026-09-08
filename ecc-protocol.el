@@ -451,7 +451,7 @@ written over (plan section 9, item 16)."
   (require 'json)
   (make-directory (file-name-directory file) t)
   (with-temp-buffer
-    (insert (ecc--json-write object))
+    (insert (decode-coding-string (ecc--json-write object) 'utf-8))
     (json-pretty-print-buffer)
     (goto-char (point-max))
     (unless (bolp) (insert "\n"))
@@ -481,7 +481,9 @@ nothing is written when there is none."
 (defun ecc-protocol-value-string (value)
   "Return VALUE, as parsed from JSON, as a string fit for display.
 Kept here because it is the only place that knows how the reader
-spells null, false and an array (NFR-2)."
+spells null, false and an array (NFR-2).  `json-serialize' answers with
+a unibyte string, whose UTF-8 bytes would be drawn one escape at a time,
+so the serialized shapes are decoded back to text."
   (cond ((stringp value) value)
         ((null value) "null")
         ((eq value :null) "null")
@@ -489,7 +491,7 @@ spells null, false and an array (NFR-2)."
         ((eq value t) "true")
         ((numberp value) (number-to-string value))
         (t (condition-case nil
-               (ecc--json-write value)
+               (decode-coding-string (ecc--json-write value) 'utf-8)
              (error (format "%S" value))))))
 
 (defun ecc-protocol-serialize (object)

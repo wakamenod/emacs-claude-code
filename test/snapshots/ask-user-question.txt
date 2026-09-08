@@ -1,7 +1,7 @@
 
 〉 質問して
 
-  ✓ AskUserQuestion · [{"question":"Which editor do you prefer?","header":"Editor…
+  ✓ AskUserQuestion
     questions: [{"question":"Which editor do you prefer?","header":"Editor","multiSelect":false,"options":[{"label":"Emacs","description":"Extensible text editor with Lisp customization"},{"label":"Vim","description":"Modal text editor with keyboard-centric workflow"}]},{"question":"Which languages do you use?","header":"Languages","multiSelect":true,"options":[{"label":"Elisp","description":"Emacs Lisp for scripting and extensions"},{"label":"Python","description":"General-purpose programming language"},{"label":"Rust","description":"Systems programming language focused on safety"},{"label":"Go","description":"Compiled language for concurrent and distributed systems"}]}]
     → Your questions have been answered: "Which editor do you prefer?"="Emacs", "Which languages do you use?"="Elisp, Python". You can now continue with these answers in mind.
 

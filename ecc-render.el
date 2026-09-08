@@ -308,6 +308,13 @@ spans the window rather than the text."
          ((or "Glob" "Grep") (alist-get 'pattern input))
          ((or "Task" "Agent") (alist-get 'description input))
          ("TodoWrite" "todos")
+         ;; The question itself is what there is to read: the JSON around
+         ;; it says nothing the answer buffer does not say better.
+         ("AskUserQuestion"
+          (let ((questions (append (alist-get 'questions input) nil)))
+            (when questions
+              (mapconcat (lambda (question) (alist-get 'question question))
+                         questions " / "))))
          ("TaskCreate" (alist-get 'subject input))
          ("TaskUpdate" (format "#%s%s" (or (alist-get 'taskId input) "?")
                                (if-let* ((status (alist-get 'status input)))
@@ -933,11 +940,16 @@ is appended (plan section 5.2, item 4)."
   "Return the heading line of the tool NODE at DEPTH, without newline."
   (let* ((name (or (ecc-model-node-get node 'name) "?"))
          (error-p (eq (ecc-node-status node) 'error))
-         (summary (if (ecc-node-streaming node)
-                      (format "streaming %s chars…"
-                              (ecc-render--count-string
-                               (length (ecc-node-streaming-text node))))
-                    (ecc-render-tool-summary name (ecc-model-node-get node 'input)))))
+         (summary (cond
+                   ((ecc-node-streaming node)
+                    (format "streaming %s chars…"
+                            (ecc-render--count-string
+                             (length (ecc-node-streaming-text node)))))
+                   ;; The question is read in the Question block below;
+                   ;; saying it here as well only doubles it.
+                   ((equal name "AskUserQuestion") "")
+                   (t (ecc-render-tool-summary
+                       name (ecc-model-node-get node 'input))))))
     (concat (ecc-render--pad depth)
             (propertize (ecc-render--status-mark (ecc-node-status node))
                         'face (if error-p 'ecc-error-face 'ecc-dim-face)
@@ -1080,8 +1092,10 @@ answered."
     (pcase (ecc-node-status node)
       ('pending (concat (propertize (format "⚠ %s" label) 'face 'ecc-pending-face)
                         "  "
+                        ;; A question is written out in full underneath;
+                        ;; the heading would only say it twice.
                         (propertize (ecc-render--one-line
-                                     (and request
+                                     (and request (not (eq kind 'question))
                                           (ecc-render-tool-summary
                                            name (ecc-request-input request))))
                                     'face 'ecc-dim-face)
