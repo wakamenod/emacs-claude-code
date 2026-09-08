@@ -241,6 +241,95 @@ failing that to the setting."
   (should (equal (ecc-prompt-split-reference "@region") '("region" nil nil)))
   (should (equal (ecc-prompt-split-reference "@src/a.py.") '("src/a.py" nil nil))))
 
+(ert-deftest ecc-prompt-test-next-reference-stops-at-a-special ()
+  "A special reference ends at its name when a letter follows (FR-INP-8)."
+  (should (equal (ecc-prompt--next-reference "\u6b21\u306e@region\u306f\u3069\u3046\u3067\u3059\u304b\uff1f" 0)
+                 (list 2 9 "@region")))
+  (should (equal (nth 2 (ecc-prompt--next-reference "@diagnostics\u3092\u898b\u3066" 0))
+                 "@diagnostics"))
+  (should (equal (nth 2 (ecc-prompt--next-reference "\u8aac\u660e\u3057\u3066 @region" 0)) "@region"))
+  ;; A path that only begins like one is still a path.
+  (should (equal (nth 2 (ecc-prompt--next-reference "@regions/list.py \u3092" 0))
+                 "@regions/list.py")))
+
+(ert-deftest ecc-prompt-test-expand-region-before-a-particle ()
+  "@region is expanded with a Japanese particle straight after it."
+  (let ((source (get-buffer-create "ecc-prompt-test-particle")))
+    (unwind-protect
+        (with-current-buffer source
+          (insert "a = 1\n")
+          (setq-local major-mode 'python-mode)
+          (transient-mark-mode 1)
+          (goto-char (point-min))
+          (push-mark (point-max) t t)
+          (let ((text (ecc-prompt-expand-references "\u6b21\u306e@region\u306f\u3069\u3046\u3067\u3059\u304b\uff1f" source)))
+            (should-not (string-search "@region" text))
+            (should (string-search "\u306f\u3069\u3046\u3067\u3059\u304b\uff1f" text))
+            (should (string-search "```python\na = 1\n```" text))
+            (should (equal (length ecc-prompt-last-attachments) 1))
+            (should-not ecc-prompt-last-skipped)))
+      (kill-buffer source))))
+
+(ert-deftest ecc-prompt-test-region-survives-a-dead-mark ()
+  "@region falls back on the snapshot when the mark has been deactivated."
+  (let ((source (get-buffer-create "ecc-prompt-test-snapshot"))
+        (ecc-window--last-source-buffer nil)
+        (ecc-window--last-region nil))
+    (unwind-protect
+        (with-current-buffer source
+          (insert "a = 1\n")
+          (setq-local major-mode 'python-mode)
+          (transient-mark-mode 1)
+          (goto-char (point-min))
+          (push-mark (point-max) t t)
+          ;; Leaving the buffer takes the region down while it lives.
+          (setq ecc-window--last-source-buffer source)
+          (ecc-window-snapshot-region)
+          (deactivate-mark)
+          (should-not (ecc-window-buffer-region source))
+          (let ((text (ecc-prompt-expand-references "@region" source)))
+            (should (string-search "```python\na = 1\n```" text))
+            (should-not ecc-prompt-last-skipped)))
+      (kill-buffer source))))
+
+(defun ecc-prompt-test--count (needle text)
+  "Return how often NEEDLE occurs in TEXT."
+  (let ((count 0) (index 0))
+    (while (setq index (string-search needle text index))
+      (setq count (1+ count) index (+ index (length needle))))
+    count))
+
+(ert-deftest ecc-prompt-test-one-block-for-two-references ()
+  "Two @region in a sentence are labelled twice and quoted once."
+  (let ((source (get-buffer-create "ecc-prompt-test-twice")))
+    (unwind-protect
+        (with-current-buffer source
+          (insert "a = 1\n")
+          (setq-local major-mode 'python-mode)
+          (transient-mark-mode 1)
+          (goto-char (point-min))
+          (push-mark (point-max) t t)
+          (let* ((text (ecc-prompt-expand-references "@region\u3060\u306d\n\n@region" source))
+                 (label (car ecc-prompt-last-attachments)))
+            (should (equal (length ecc-prompt-last-attachments) 1))
+            ;; Twice where they were written, and once over the block.
+            (should (equal 3 (ecc-prompt-test--count label text)))
+            (should (equal 1 (ecc-prompt-test--count "```python" text)))))
+      (kill-buffer source))))
+
+(ert-deftest ecc-prompt-test-skipped-special-is-noted ()
+  "A @region with no region is left alone and noted (FR-INP-8)."
+  (let ((source (get-buffer-create "ecc-prompt-test-skipped")))
+    (unwind-protect
+        (with-current-buffer source
+          (insert "a = 1\n")
+          (deactivate-mark)
+          (should (equal (ecc-prompt-expand-references "@region\u3092" source) "@region\u3092"))
+          (should (equal ecc-prompt-last-skipped '("@region")))
+          (should-not ecc-prompt-last-attachments)
+          (should (string-search "nothing to send" (ecc-prompt--attachment-report))))
+      (kill-buffer source))))
+
 (ert-deftest ecc-prompt-test-plain-path-is-left-to-the-cli ()
   "A bare @path is the CLI's own reference and is not expanded (FR-INP-8)."
   (should (equal (ecc-prompt-expand-references "look at @src/a.py please")

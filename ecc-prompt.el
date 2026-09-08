@@ -363,7 +363,34 @@ A command only the terminal client of SESSION can run is reported
 The line range of `@file:10-40' is part of the match; it is taken
 apart by `ecc-prompt-split-reference' rather than by the regexp,
 because the end of a path cannot be found with a syntax table that
-depends on the major mode of the session buffer.")
+depends on the major mode of the session buffer.  A reference that
+names something Emacs knows rather than a path is cut short of the
+match by `ecc-prompt--next-reference'.")
+
+(defconst ecc-prompt-special-references '("region" "diagnostics")
+  "The @ references that name what Emacs is looking at, not a path.
+`ecc-prompt--expansion' reads them from the source buffer.")
+
+(defun ecc-prompt--next-reference (text start)
+  "Return (BEG END TOKEN) for the first @ reference of TEXT from START.
+A special reference ends at its own name when what follows it is not
+ASCII, so that a particle written straight after it is not taken for the
+rest of a path: in a Japanese sentence `@region' is followed by a letter
+rather than a space, and the whole clause was being read as one filename.
+An ASCII letter does go on with the path, which leaves `@regions/list.py'
+the file it looks like."
+  (when (string-match ecc-prompt-reference-regexp text start)
+    (let* ((beg (match-beginning 0))
+           (body (match-string 1 text))
+           (special (seq-find
+                     (lambda (name)
+                       (and (string-prefix-p name body)
+                            (or (= (length name) (length body))
+                                (>= (aref body (length name)) 128))))
+                     ecc-prompt-special-references)))
+      (if special
+          (list beg (+ beg 1 (length special)) (concat "@" special))
+        (list beg (match-end 0) (match-string 0 text))))))
 
 (defun ecc-prompt-split-reference (token)
   "Return (PATH START END) for the @ reference TOKEN.
@@ -392,7 +419,15 @@ SOURCE is the buffer @region and @diagnostics read from.  A plain
   (pcase-let ((`(,path ,start ,end) (ecc-prompt-split-reference token)))
     (cond
      ((equal path "region")
-      (when-let* ((context (ecc-context-capture :buffer source)))
+      ;; The region of SOURCE if it still has one, and otherwise
+      ;; whatever region is left on the screen or was last seen: the
+      ;; mark of the buffer the user came from does not always live as
+      ;; far as the send (FR-CTX-1).
+      (when-let* ((region (or (ecc-window-buffer-region source)
+                              (ecc-window-active-region)))
+                  (context (ecc-context-capture
+                            :buffer (nth 0 region)
+                            :region (cons (nth 1 region) (nth 2 region)))))
         (when (plist-get context :text)
           (ecc-prompt--block context))))
      ((equal path "diagnostics")
@@ -403,28 +438,49 @@ SOURCE is the buffer @region and @diagnostics read from.  A plain
       (when-let* ((context (ecc-context-file-range path start end)))
         (ecc-prompt--block context))))))
 
+(defvar ecc-prompt-last-attachments nil
+  "Labels of the @ references the last expansion appended (FR-INP-8).")
+
+(defvar ecc-prompt-last-skipped nil
+  "Special @ references the last expansion had nothing to put in place of.
+A `@region' with no active region is one: it is sent as it stands, and
+`ecc-prompt-send' says so rather than leaving the user to find out from
+the answer.")
+
 (defun ecc-prompt-expand-references (text &optional source)
   "Return TEXT with its @ references expanded (FR-INP-8).
 A line range, @region and @diagnostics are replaced by a short label
 and their content is appended as a quote block; a plain @path is left
 for the CLI to resolve.  SOURCE is the buffer to read the region and
-the diagnostics from."
+the diagnostics from.  Two references to the same thing share the one
+block.  What was appended, and which special reference had nothing to
+append, are left in `ecc-prompt-last-attachments' and
+`ecc-prompt-last-skipped'."
   (let ((source (or source (ecc-window-last-source-buffer)))
         (blocks nil)
+        (skipped nil)
         (result text)
-        (start 0))
-    (while (string-match ecc-prompt-reference-regexp result start)
-      (let* ((token (match-string 0 result))
-             (beg (match-beginning 0))
-             (finish (match-end 0))
-             (expansion (ecc-prompt--expansion token source)))
-        (if (null expansion)
-            (setq start finish)
-          (setq result (concat (substring result 0 beg)
-                               (car expansion)
-                               (substring result finish))
-                start (+ beg (length (car expansion))))
-          (push expansion blocks))))
+        (start 0)
+        (reference nil))
+    (while (setq reference (ecc-prompt--next-reference result start))
+      (pcase-let ((`(,beg ,finish ,token) reference))
+        (let ((expansion (ecc-prompt--expansion token source)))
+          (cond
+           (expansion
+            (setq result (concat (substring result 0 beg)
+                                 (car expansion)
+                                 (substring result finish))
+                  start (+ beg (length (car expansion))))
+            ;; The label stands wherever it was written, but one quote
+            ;; block says it: two @region in a sentence are one region.
+            (unless (member expansion blocks)
+              (push expansion blocks)))
+           (t
+            (when (member (substring token 1) ecc-prompt-special-references)
+              (push token skipped))
+            (setq start finish))))))
+    (setq ecc-prompt-last-attachments (mapcar #'car (reverse blocks))
+          ecc-prompt-last-skipped (nreverse skipped))
     (if (null blocks)
         result
       (concat result "\n\n"
@@ -511,6 +567,19 @@ is appended when ATTACH is non-nil (FR-CTX-1)."
         (concat text (or (ecc-context-block source) ""))
       text)))
 
+(defun ecc-prompt--attachment-report ()
+  "Return what to add to the message of a send about its @ references.
+The empty string when the prompt carried none: what Emacs attached is
+worth a word, because the labels of the quote blocks are all the user
+sees of it, and a `@region' that expanded to nothing is worth more
+\(FR-INP-8)."
+  (concat
+   (when ecc-prompt-last-attachments
+     (format "; attached %s" (mapconcat #'identity ecc-prompt-last-attachments ", ")))
+   (when ecc-prompt-last-skipped
+     (format "; %s had nothing to send and went as it stands"
+             (mapconcat #'identity ecc-prompt-last-skipped ", ")))))
+
 (defun ecc-prompt-send ()
   "Send the prompt region, or queue it while a turn runs (FR-INP-1, 6).
 The region is emptied either way; what was sent goes into the history."
@@ -528,15 +597,17 @@ The region is emptied either way; what was sent goes into the history."
             ecc-prompt--history-draft nil)
       (ecc-chat-clear-draft)
       (if (eq outcome 'sent)
-          (message "Sent")
+          (message "Sent%s" (ecc-prompt--attachment-report))
         ;; A turn somebody started from a phone queues the prompt just
         ;; the same, and the reason is worth saying: nothing on screen
         ;; would otherwise explain why this was not sent (FR-INP-6).
-        (message "%s; queued at position %d"
+        ;; The queue holds the text with its blocks already in it, so
+        ;; what was attached belongs in the same message (FR-INP-8).
+        (message "%s; queued at position %d%s"
                  (if (ecc-model-remote-turn-p (ecc-session-current-turn session))
                      "A turn started from Remote Control is running"
                    "A turn is running")
-                 outcome))
+                 outcome (ecc-prompt--attachment-report)))
       outcome)))
 
 (defun ecc-prompt-clear ()
