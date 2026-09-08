@@ -472,6 +472,24 @@ passing through Emacs; the echo is the only way it can be shown."
       (ecc-dispatch session message))
     (should-not (ecc-session-turns session))))
 
+(ert-deftest ecc-dispatch-test-post-turn-summary-is-not-unknown ()
+  "The summary the CLI writes as a turn ends is known, and quiet."
+  (ecc-test-with-fake-session session
+    (ecc-dispatch session '((type . "system") (subtype . "post_turn_summary")
+                            (summarizes_uuid . "ed94573f")
+                            (status_category . "completed")
+                            (status_detail . "user request acknowledged")
+                            (needs_action . "")))
+    (let ((summary (alist-get 'turn-summary (ecc-session-progress session))))
+      (should (equal (alist-get 'category summary) "completed"))
+      (should (equal (alist-get 'detail summary) "user request acknowledged"))
+      ;; An empty needs_action means none, not the empty string.
+      (should-not (alist-get 'needs-action summary)))
+    (should-not (seq-find (lambda (node) (eq (ecc-node-type node) 'unknown))
+                          (hash-table-values (ecc-session-nodes session))))
+    ;; It arrives as a turn ends, and must not open one of its own.
+    (should-not (ecc-session-turns session))))
+
 (ert-deftest ecc-dispatch-test-command-lifecycle-is-not-unknown ()
   "The lifecycle of a prompt is known, and quiet.
 It says a prompt was queued or started, naming the uuid of the user

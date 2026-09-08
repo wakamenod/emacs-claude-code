@@ -96,7 +96,7 @@ Errors are caught: an unreadable message must never stop the stream."
   '("init" "status" "thinking_tokens" "hook_started" "hook_response"
     "permission_denied" "compact_boundary" "task_started" "task_progress"
     "task_updated" "task_notification" "background_tasks_changed"
-    "local_command" "bridge_state")
+    "local_command" "bridge_state" "post_turn_summary")
   "The system subtypes `ecc-dispatch--system' handles.
 Kept next to the function it lists, and checked against it by a test.
 `ecc-history' asks this before handing a recorded line over: a
@@ -118,6 +118,7 @@ note rather than among the messages this version does not understand.")
     ('local_command
      (ecc-dispatch-command-output session (alist-get 'content message)))
     ('bridge_state (ecc-dispatch--bridge-state session message))
+    ('post_turn_summary (ecc-dispatch--post-turn-summary session message))
     ('permission_denied
      (when-let* ((node (ecc-model-node session (alist-get 'tool_use_id message))))
        (setf (ecc-node-status node) 'denied)
@@ -156,6 +157,29 @@ comes with a state that needs explaining."
                                                              (format " — %s" detail)
                                                            "")))))
     (run-hook-with-args 'ecc-remote-control-functions session)
+    (run-hook-with-args 'ecc-progress-hook session)))
+
+(defun ecc-dispatch--post-turn-summary (session message)
+  "Apply the system/post_turn_summary MESSAGE to SESSION.
+The CLI sums a turn up as it ends: which message it summarizes, a
+`status_category\=' such as \"completed\", a `status_detail\=' in
+words, and `needs_action\=' -- empty when it does not.  The transcript
+already holds the turn it describes, so this is kept where the state
+line and the Inbox can reach it rather than drawn (measured
+2026-09-08, `docs/verified.md\=')."
+  (let ((detail (alist-get 'status_detail message))
+        (needs-action (alist-get 'needs_action message)))
+    (setf (alist-get 'turn-summary (ecc-session-progress session))
+          (list (cons 'category (alist-get 'status_category message))
+                (cons 'detail detail)
+                (cons 'needs-action (and (stringp needs-action)
+                                         (not (string-empty-p needs-action))
+                                         needs-action))
+                (cons 'summarizes (alist-get 'summarizes_uuid message))))
+    (ecc-log (ecc-session-name session) "turn summary: %s%s"
+             (or detail (alist-get 'status_category message) "?")
+             (if (and (stringp needs-action) (not (string-empty-p needs-action)))
+                 (format " (needs action: %s)" needs-action) ""))
     (run-hook-with-args 'ecc-progress-hook session)))
 
 (defun ecc-dispatch--init (session message)
