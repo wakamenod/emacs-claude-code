@@ -107,6 +107,11 @@ or in the live region above it, keeps looking at what arrives."
 A turn read back from a recording is drawn with the same mark as one
 this session sent, so that the two do not read as different things.")
 
+(defconst ecc-render-cluster-types '(tool agent step system unknown)
+  "Node types that stand together rather than one blank line apart.
+A run of tool calls reads as one piece of work; two paragraphs of an
+answer do not.")
+
 (defconst ecc-render-block-types
   '(tool agent thinking permission question plan system unknown command)
   "Node types the block movement commands stop at (FR-OUT-14 b).
@@ -211,6 +216,21 @@ was."
         (insert string)
         (insert (if hidden (propertize "\n" 'invisible 'ecc-markup) "\n"))))))
 
+(defun ecc-render--cluster-p (previous next)
+  "Return non-nil when NEXT belongs with PREVIOUS rather than apart from it."
+  (and previous
+       (memq (ecc-node-type previous) ecc-render-cluster-types)
+       (memq (ecc-node-type next) ecc-render-cluster-types)))
+
+(defun ecc-render--insert-gap ()
+  "Insert the blank line that parts one block of a turn from the next.
+It is under no node, so it takes the keymap of the transcript by hand;
+the seal that follows makes it read-only along with everything else."
+  (let ((start (point)))
+    (insert "\n")
+    (put-text-property start (point) 'keymap
+                       (ecc-render--map 'ecc-chat-transcript-map))))
+
 (defun ecc-render--insert-band (text pad face)
   "Insert TEXT as the band of something the user said, indented by PAD.
 The mark opens the first line only and the rest line up under it, and
@@ -221,10 +241,18 @@ spans the window rather than the text."
          (indent (concat pad (make-string (string-width ecc-render-user-mark) ?\s)))
          (first t))
     (dolist (line (split-string body "\n"))
-      (let ((string (concat (if first (concat pad ecc-render-user-mark) indent) line)))
+      ;; The newline wears the face along with the rest of the line:
+      ;; `:extend' has nothing to reach the edge of the window with
+      ;; unless the face covers the character the line ends on.
+      (let ((string (concat (if first (concat pad ecc-render-user-mark) indent)
+                            line "\n")))
         (add-face-text-property 0 (length string) face t string)
+        (when first
+          (add-face-text-property (length pad)
+                                  (+ (length pad) (length ecc-render-user-mark))
+                                  'ecc-user-mark-face nil string))
         (put-text-property 0 (length string) 'wrap-prefix indent string)
-        (insert string "\n")
+        (insert string)
         (setq first nil)))))
 
 (defun ecc-render--stream-string (text prefix)
@@ -1292,16 +1320,28 @@ that the movement commands stop once per turn rather than twice."
             (let ((prompt-id (concat id "/prompt")))
               (ecc-render--mark start (point) prompt-id 0)
               (ecc-render--register prompt-id start (point) 0)))
-        ;; A turn resumed from a recording has no prompt of its own, but
-        ;; it still needs the band that parts it from the turn before.
-        (insert (propertize (concat ecc-render-user-mark "(resumed)")
-                            'face 'ecc-dim-face)
+        ;; A turn resumed from a recording has no prompt of its own.  It
+        ;; still needs a line to part it from the turn before and to
+        ;; hang its heading on, but not the mark of a user band: nobody
+        ;; said this.
+        (insert (ecc-render--fold-cell)
+                (propertize "(resumed)" 'face 'ecc-dim-face)
                 "\n")
         (ecc-render--mark start (point) id 0))
       (ecc-render--mark-heading start id))
-    (dolist (child (ecc-turn-children turn))
-      (ecc-render--insert-node session child 1))
+    ;; The band, and then each block of the answer, stand a blank line
+    ;; apart, so that a turn reads as a few things rather than one wall
+    ;; of text; a run of tool calls stays together inside that.
+    (let ((previous nil))
+      (dolist (child (ecc-turn-children turn))
+        (unless (ecc-render--skip-p child)
+          (unless (ecc-render--cluster-p previous child)
+            (ecc-render--insert-gap))
+          (ecc-render--insert-node session child 1)
+          (setq previous child))))
     (ecc-render--insert-turn-end-line turn)
+    ;; And one turn stands apart from the next.
+    (ecc-render--insert-gap)
     ;; The turn spans all of that, but none of it is marked again: the
     ;; children carry their own `ecc-node' and `keymap', and marking
     ;; over them would take both away (see `ecc-render--mark').

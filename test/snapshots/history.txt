@@ -5,18 +5,24 @@
 Load older messages
 
 〉 hi.txt というファイルを作って。中身は hi の 1 行だけ
+
   ✓ Write · /private/var/folders/4v/6r7_g65n4jz15_y1z350h0340000gn/T/ecc-history-2m0x5w0z/hi.txt
     /private/var/folders/4v/6r7_g65n4jz15_y1z350h0340000gn/T/ecc-history-2m0x5w0z/hi.txt
     @@ -0,0 +1,1 @@
     +hi
     → File created successfully at: /private/var/folders/4v/6r7_g65n4jz15_y1z350h0340000gn/T/ecc-history-2m0x5w0z/hi.txt (file state is current in your context — no need to Read it back)
+
   完了しました。`hi.txt` ファイルを作成しました。中身は `hi` です。
  6.0s
+
 〉 hi.txt を読んで、中身をそのまま教えて
+
   ✓ Read · /private/var/folders/4v/6r7_g65n4jz15_y1z350h0340000gn/T/ecc-history-2m0x5w0z/hi.txt
     file_path: /private/var/folders/4v/6r7_g65n4jz15_y1z350h0340000gn/T/ecc-history-2m0x5w0z/hi.txt
     → 1	hi
+
   hi
  3.0s
+
 ● starting…
  

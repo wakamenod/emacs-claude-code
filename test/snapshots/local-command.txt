@@ -1,7 +1,9 @@
 
 〉 hello
+
   〉 /advisor
     Advisor: off
     Usage: /advisor <fable|opus|sonnet|off>
+
 ● running…
  

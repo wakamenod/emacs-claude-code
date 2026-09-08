@@ -1,5 +1,7 @@
 
 〉 hello
+
   hello from emacs
  1.3s · $0.0106
+
  

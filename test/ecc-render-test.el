@@ -540,6 +540,24 @@ follow have a section to grow.  Returns the remaining lines."
                           (total_cost_usd . 0.01) (duration_ms . 100) (num_turns . 1)))
   (ecc-render-flush session))
 
+(ert-deftest ecc-render-test-band-reaches-the-edge-of-the-window ()
+  "The band of a prompt is a band, not a highlight around the words.
+`:extend\=' paints to the edge of the window only where the face covers
+the character a line ends on, so the newline has to wear it too.  No
+snapshot can catch this: a face is not text."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--replay session "basic-turn" "hello")
+    (with-current-buffer (ecc-session-buffer session)
+      (goto-char (point-min))
+      (should (search-forward "〉 hello" nil t))
+      (let ((faces (get-text-property (line-end-position) 'face)))
+        (should (memq 'ecc-user-face (if (listp faces) faces (list faces)))))
+      (should (eq (face-attribute 'ecc-user-face :extend nil t) t))
+      ;; The mark carries a colour of its own on top of the band.
+      (let ((faces (get-text-property (line-beginning-position) 'face)))
+        (should (memq 'ecc-user-mark-face (if (listp faces) faces (list faces))))
+        (should (memq 'ecc-user-face (if (listp faces) faces (list faces))))))))
+
 (ert-deftest ecc-render-test-code-block-reaches-the-buffer ()
   "A fenced block is coloured by its mode and its fences are out of sight.
 The colouring of FR-OUT-15 has to survive the trip from

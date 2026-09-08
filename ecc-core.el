@@ -215,14 +215,21 @@ the one it stands next to, so a face is not broken in the middle."
 ;; every face below is applied when the text is inserted.
 
 (defface ecc-user-face
-  '((((background dark))  :extend t :background "#23282e")
-    (((background light)) :extend t :background "#eceff4")
+  '((((background dark))  :extend t :background "#3b5329")
+    (((background light)) :extend t :background "#e6f0d4")
     (t :inherit font-lock-keyword-face))
   "Face for the band a prompt sent by the user is drawn in.
 Only the background is set, so that the colour the theme gives the
 text is what is read, and it extends past the end of the line so that
 the band spans the window however wide it is.  A display that names no
 background falls back to a colour for the text instead."
+  :group 'ecc)
+
+(defface ecc-user-mark-face
+  '((t :inherit (bold font-lock-keyword-face)))
+  "Face of the mark that opens the band of a prompt sent by the user.
+The band is a background; the mark is what gives it a colour of its
+own, so that the eye finds where a turn begins."
   :group 'ecc)
 
 (defface ecc-assistant-face
