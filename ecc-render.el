@@ -14,11 +14,14 @@
 ;; text properties and overlays of its own rather than with magit-section
 ;; (phase 9b).
 ;;
-;; The buffer is laid out as a top region (the header, the Files and the
-;; Tasks summaries), a newline that anchors it, the turns that are
-;; finished, a live region holding the current turn, the state line and
-;; the separator, and after that the prompt region, which is the only
-;; part of the buffer the user may edit.  Finished turns are never
+;; The buffer is laid out as a top region (the button that pages the
+;; recording in), a newline that anchors it, the turns that are
+;; finished, a live region holding the current turn, the Files and the
+;; Tasks summaries, the state line and the separator, and after that the
+;; prompt region, which is the only part of the buffer the user may
+;; edit.  The summaries stand at the end because at the start of a long
+;; conversation they scroll out of sight; `ecc-render-summary-position'
+;; puts them back at the top.  Finished turns are never
 ;; touched again: a redraw deletes the live region and builds it anew,
 ;; and the top region is replaced in place, which keeps the cost
 ;; proportional to the current turn rather than to the length of the
@@ -88,6 +91,18 @@ The whole diff is always available with RET (FR-OUT-7)."
 The line sits at the right edge under the answer; nil leaves a turn to
 end with its last message."
   :type 'boolean
+  :group 'ecc)
+
+(defcustom ecc-render-summary-position 'bottom
+  "Where the Files and the Tasks summaries stand (FR-OUT-12, FR-OUT-13).
+`bottom' draws them at the end of the transcript, just above the state
+line and the separator, where they stay in sight however long the
+conversation grows.  `top' draws them at the start of the buffer, where
+the phase 9 redesign first put them; the button that loads older
+messages stays there either way, because what it loads appears above
+the first turn (FR-HIST-1)."
+  :type '(choice (const :tag "Above the prompt" bottom)
+                 (const :tag "At the start of the buffer" top))
   :group 'ecc)
 
 (defcustom ecc-render-follow t
@@ -734,13 +749,20 @@ above the renderer (plan section 1.3)."
   (let ((offset (ecc-session-history-offset session)))
     (and offset (> offset 0))))
 
+(defun ecc-render--insert-summaries (session)
+  "Insert the Files and the Tasks summaries of SESSION."
+  (ecc-render--insert-files session)
+  (ecc-render--insert-tasks session))
+
 (defun ecc-render--insert-top (session)
-  "Insert the Files and the Tasks of SESSION.
+  "Insert what stands before the first turn of SESSION.
 What the session is and what it costs is the business of the header
 line now, not of the first line of the buffer (FR-OUT-6 as revised by
-the phase 9 redesign)."
-  (ecc-render--insert-files session)
-  (ecc-render--insert-tasks session)
+the phase 9 redesign).  What is left here is the button that pages the
+recording in, and the summaries when `ecc-render-summary-position' asks
+for them at the top."
+  (when (eq ecc-render-summary-position 'top)
+    (ecc-render--insert-summaries session))
   (ecc-render--insert-history-button session))
 
 (defun ecc-render--update-top (session)
@@ -1422,10 +1444,15 @@ the window has."
 
 (defun ecc-render--insert-live (session)
   "Insert the turns of SESSION that are not frozen yet, then the end.
-The end is the state line, whatever `ecc-render-tail-functions' add,
-and the separator before the prompt region."
+The end is the Files and the Tasks summaries, unless they were drawn at
+the top, then the state line, whatever `ecc-render-tail-functions' add,
+and the separator before the prompt region.  The summaries are redrawn
+with the live region, which is what keeps them current: they belong to
+no turn, so nothing freezes them."
   (dolist (turn (seq-drop (ecc-session-turns session) ecc-render--frozen))
     (ecc-render--insert-turn session turn))
+  (unless (eq ecc-render-summary-position 'top)
+    (ecc-render--insert-summaries session))
   (when-let* ((lines (ecc-render--tail-lines session)))
     (let ((start (point)))
       (dolist (line lines)

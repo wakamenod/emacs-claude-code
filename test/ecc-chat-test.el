@@ -155,11 +155,9 @@ calls in one step is what the depth ladder needs."
   (ecc-test-with-fake-session session
     (with-current-buffer (ecc-chat-test--replay session "tool-use-write"
                                                "hello.txt を作って")
-      ;; The buffer opens on the Files section now: no heading of the
-      ;; session stands above it any more.
+      ;; The Files summary stands below the turns now, so the band of
+      ;; the prompt is the first heading of the buffer.
       (goto-char (point-min))
-      (should (string-prefix-p "  Files (1)" (ecc-chat-test--line)))
-      ;; The file row under it is folded away, so it is skipped.
       (ecc-chat-next-heading)
       (should (string-prefix-p "〉 hello.txt" (ecc-chat-test--line)))
       ;; A step over one tool is not drawn, so the tool follows the band.

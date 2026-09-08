@@ -511,6 +511,44 @@ follow have a section to grow.  Returns the remaining lines."
             (ecc-session-visit))
           (should (equal opened path)))))))
 
+(ert-deftest ecc-render-test-summaries-stand-above-the-prompt ()
+  "The summaries are drawn under the turns, not at the start of the buffer.
+At the top they scroll out of sight as the conversation grows;
+`ecc-render-summary-position' puts them back there."
+  (ecc-test-with-fake-session session
+    (let* ((text (ecc-render-test--replay session "edit-tool"
+                                         "greet を直して" '(allow)))
+           (band (string-search "〉 greet" text))
+           (tool (string-search "✓ Edit" text))
+           (files (string-search "Files (1)" text)))
+      (should band)
+      (should tool)
+      (should files)
+      (should (< band tool files))))
+  (ecc-test-with-fake-session session
+    (let* ((ecc-render-summary-position 'top)
+           (text (ecc-render-test--replay session "edit-tool"
+                                         "greet を直して" '(allow))))
+      (should (< (string-search "Files (1)" text)
+                 (string-search "〉 greet" text))))))
+
+(ert-deftest ecc-render-test-summary-fold-survives-a-redraw ()
+  "A summary the user opened stays open when the live region is drawn again.
+It is redrawn with every turn now, so its fold has to come back from
+the cache the same way a node of the transcript does."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--replay session "edit-tool" "greet を直して" '(allow))
+    (with-current-buffer (ecc-session-buffer session)
+      (should (ecc-render-node-hidden-p "files"))
+      (ecc-render-show-node "files")
+      (ecc-model-begin-turn session "もう一度")
+      (ecc-render-flush session)
+      (should (ecc-render-node-bounds "files"))
+      (should-not (ecc-render-node-hidden-p "files"))
+      (ecc-render-hide-node "files")
+      (ecc-render-refresh session)
+      (should (ecc-render-node-hidden-p "files")))))
+
 ;;;; The state line (FR-OUT-6)
 
 (ert-deftest ecc-render-test-status-line ()
@@ -634,13 +672,17 @@ have to be there for whatever searches the text while showing nothing
     (with-current-buffer (ecc-session-buffer session)
       (goto-char (point-min))
       (ecc-chat-next-block)
-      (should (looking-at "    /private/tmp/claude-501/.*hello.py  R×1 E×1"))
-      (ecc-chat-next-block)
       (should (looking-at "  ✓ Read"))
       (ecc-chat-next-block)
       (should (looking-at "  ✓ Edit"))
+      ;; The file row is a block too, and it stands under the turns now,
+      ;; after the permission the Edit asked for.
+      (ecc-chat-next-block)
+      (should (looking-at "  ✓ Permission: Edit"))
+      (ecc-chat-next-block)
+      (should (looking-at "    /private/tmp/claude-501/.*hello.py  R×1 E×1"))
       (ecc-chat-previous-block)
-      (should (looking-at "  ✓ Read"))
+      (should (looking-at "  ✓ Permission: Edit"))
       (let ((tool "toolu_018jWzDJTbLaoSRyvPEiAggK"))
         (ecc-chat-expand-all)
         (should-not (ecc-render-node-hidden-p tool))

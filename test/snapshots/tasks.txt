@@ -1,6 +1,3 @@
-  Tasks (1/2)
-    [x] Write tests
-    [ ] Update docs
 
 〉 タスクを作って
 
@@ -33,4 +30,7 @@
   Task #1 is now complete and task #2 is pending.
  11.8s · $0.0301
 
+  Tasks (1/2)
+    [x] Write tests
+    [ ] Update docs
  

@@ -1,12 +1,3 @@
-  Files (1)
-    ~/.claude/plans/plan-do-not-implement-inherited-platypus.md  W×1  +6 −0
-      @@ -0,0 +1,6 @@
-      +# Plan: utils.py
-      +
-      +Create `utils.py` with two functions: `add(a, b)` returning `a + b`, and `sub(a, b)` returning `a - b`.
-      +No classes, error handling, type hints, or docstrings — keep it minimal.
-      +File will live in the current working directory.
-      +No tests requested; verification is a quick manual call to both functions in a Python shell.
 
 〉 utils.py の計画を立てて
 
@@ -60,4 +51,13 @@
   Plan approved. Ready to implement when you give the word.
  10.3s · $0.1342
 
+  Files (1)
+    ~/.claude/plans/plan-do-not-implement-inherited-platypus.md  W×1  +6 −0
+      @@ -0,0 +1,6 @@
+      +# Plan: utils.py
+      +
+      +Create `utils.py` with two functions: `add(a, b)` returning `a + b`, and `sub(a, b)` returning `a - b`.
+      +No classes, error handling, type hints, or docstrings — keep it minimal.
+      +File will live in the current working directory.
+      +No tests requested; verification is a quick manual call to both functions in a Python shell.
  
