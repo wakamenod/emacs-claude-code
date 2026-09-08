@@ -86,11 +86,19 @@ The turn it opened is closed, so that prompts stop queueing behind it."
                                       ("opus-5" . 1000000)
                                       ("sonnet-5" . 1000000)
                                       ("fable-5" . 1000000)
-                                      ("haiku-4-5" . 200000))
+                                      ("haiku-4-5" . 200000)
+                                      ("opus" . 1000000)
+                                      ("sonnet" . 1000000)
+                                      ("fable" . 1000000)
+                                      ("haiku" . 200000))
   "Context window in tokens of the models whose name matches.
 An alist of (SUBSTRING . TOKENS); the first entry whose substring
 appears in the model name wins, and `ecc-context-window-default' is
-used when none does.  A 1M window can be announced in the model name
+used when none does.  The bare names at the end are the aliases a
+`/model' is given (\"opus\", \"haiku\"), which is all that is known of
+the model between sending one and the answer that names it in full.
+
+A 1M window can be announced in the model name
 itself, as in \"claude-sonnet-5[1m]\", but it is not always: the
 Claude 5 models carry one under their plain names too, which the CLI
 says nowhere -- neither system/init nor the recording mentions a

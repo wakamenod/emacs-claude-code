@@ -1478,9 +1478,12 @@ and the separator before the prompt region."
 (defun ecc-render--model-name (session)
   "Return the short name of the model SESSION runs, or nil.
 The CLI names a model in full, `claude-sonnet-4-5-20250929\='; a header
-line has room for the part that tells one from another.  Nil until the
-first turn, because the name arrives with init."
-  (when-let* ((model (alist-get 'model (ecc-session-init session))))
+line has room for the part that tells one from another.  The model of
+the last answer comes first, so that a `/model\=' shows here as soon as
+it is sent; init answers until there has been one, and nothing does
+before the first turn."
+  (when-let* ((model (or (ecc-session-last-model session)
+                         (alist-get 'model (ecc-session-init session)))))
     (replace-regexp-in-string
      "-[0-9].*\\'" "" (replace-regexp-in-string "\\`claude-" "" model))))
 

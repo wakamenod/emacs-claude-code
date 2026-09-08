@@ -306,6 +306,24 @@ response object once the CLI answers.  Returns the request id."
     (remhash request-id (ecc-session-pending-controls session))
     callback))
 
+(defconst ecc-proc--model-command-regexp
+  "\\`[ \t\n]*/model[ \t]+\\([^ \t\n]+\\)[ \t\n]*\\'"
+  "What a `/model' that names a model looks like.
+A `/model' with nothing after it asks rather than tells, and is left
+alone.")
+
+(defun ecc-proc--note-model (session content)
+  "Take note of the model a `/model' among CONTENT names for SESSION.
+The CLI answers a `/model' with a local command of its own and says
+nothing else about it: the new name turns up in the next real assistant
+message and nowhere earlier, so the header line would go on naming the
+old model until the session is next spoken to (FR-HINT-3).  What is
+remembered here is the name as it was typed, `opus' rather than
+`claude-opus-5', and the next answer replaces it with the full one."
+  (when (and (stringp content)
+             (string-match ecc-proc--model-command-regexp content))
+    (setf (ecc-session-last-model session) (match-string 1 content))))
+
 (defun ecc-proc-send-user (session content)
   "Send CONTENT to SESSION as a user message and start a turn.
 CONTENT is a string or a vector of content blocks.  The message goes
@@ -313,6 +331,7 @@ out before the turn is opened: a turn opened for a message that never
 went out would hold every later prompt in the queue.  Nothing can
 arrive in between, since output is only read when Emacs waits for it."
   (prog1 (ecc-proc-send-json session (ecc-protocol-user-message content))
+    (ecc-proc--note-model session content)
     (ecc-model-begin-turn session (if (stringp content) content ""))))
 
 (defun ecc-proc-send-transient (session content)

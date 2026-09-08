@@ -218,6 +218,29 @@ finishes."
           (should-not (eq (ecc-session-state session) 'running)))
       (ecc-test-cleanup-session session))))
 
+(ert-deftest ecc-proc-test-a-slash-model-is-noted-as-it-is-sent ()
+  "A `/model' changes what the session says it runs at once (FR-HINT-3).
+The CLI names the new model in the next real assistant message and
+nowhere earlier, so without this the header line goes on naming the old
+one until the session is next spoken to."
+  (ecc-test-with-fake-session session
+    (ecc-proc-send-prompt session "/model opus")
+    (should (equal (ecc-session-last-model session) "opus"))
+    ;; The send above opened a turn, so this one queues behind it: it is
+    ;; noted when it goes out, not when it is put in the queue.
+    (ecc-proc-send-prompt session "/model haiku")
+    (should (equal (ecc-session-last-model session) "opus"))
+    (ecc-model-abort-turn session)
+    (ecc-proc-drain-queue session)
+    (should (equal (ecc-session-last-model session) "haiku"))
+    ;; A `/model' with nothing after it asks rather than tells, and an
+    ;; ordinary prompt says nothing about the model at all.
+    (ecc-model-abort-turn session)
+    (ecc-proc-send-prompt session "/model")
+    (ecc-model-abort-turn session)
+    (ecc-proc-send-prompt session "which model are you?")
+    (should (equal (ecc-session-last-model session) "haiku"))))
+
 (ert-deftest ecc-proc-test-exit-closes-the-open-turn ()
   "A CLI that dies in the middle of a turn leaves no turn open (FR-SES-7).
 The next prompt after a resume must be sent, not queued."

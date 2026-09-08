@@ -17,6 +17,7 @@
 (require 'ecc-session)
 (require 'ecc-perm)
 (require 'ecc-dispatch)
+(require 'ecc-proc)
 
 (defun ecc-render-test--replay (session name prompt &optional answers)
   "Replay fixture NAME into SESSION under PROMPT and draw it.
@@ -60,6 +61,22 @@ with the request, used in turn for the requests the recording makes."
           (should (string-search "○ idle" header))
           (should (string-search "haiku" header))
           (should-not (string-search "claude-haiku" header)))))))
+
+(ert-deftest ecc-render-test-header-follows-a-model-change ()
+  "The header line names the new model as soon as `/model' is sent.
+It used to name the model of init, which the CLI never sends again, so
+a `/model' only showed once the next answer named the model it came
+back with (FR-HINT-3)."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (setf (ecc-session-init session) '((model . "claude-haiku-4-5-20251001")))
+    (with-current-buffer (ecc-session-buffer session)
+      (should (string-search "haiku" (substring-no-properties
+                                      (ecc-render-header-line))))
+      (ecc-proc-send-prompt session "/model opus")
+      (let ((header (substring-no-properties (ecc-render-header-line))))
+        (should (string-search "opus" header))
+        (should-not (string-search "haiku" header))))))
 
 (ert-deftest ecc-render-test-tool-use ()
   "A lone tool draws as a tool line and the permission that allowed it."
