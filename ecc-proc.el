@@ -367,14 +367,23 @@ on the request."
                 "interrupt closed %d unanswered request(s)"
                 (length abandoned))))))
 
-(defun ecc-proc-set-permission-mode (session mode)
-  "Ask SESSION to switch to permission MODE (FR-SES-6)."
+(defun ecc-proc-set-permission-mode (session mode &optional on-error)
+  "Ask SESSION to switch to permission MODE (FR-SES-6).
+ON-ERROR, when given, is called with the session and what the CLI said
+if it refuses.  It does refuse: \"auto\" is only for a model that
+supports it, and \"bypassPermissions\" only where it is allowed."
   (ecc-proc-control
    session "set_permission_mode"
    (lambda (session response)
-     (when-let* ((mode (alist-get 'mode response)))
-       (setf (ecc-session-permission-mode session) mode)
-       (run-hook-with-args 'ecc-permission-mode-functions session mode)))
+     (let ((refusal (alist-get 'error response))
+           (mode (alist-get 'mode response)))
+       (cond (refusal (when on-error
+                        (funcall on-error session
+                                 (if (stringp refusal) refusal
+                                   "the CLI refused the permission mode"))))
+             (mode
+              (setf (ecc-session-permission-mode session) mode)
+              (run-hook-with-args 'ecc-permission-mode-functions session mode)))))
    'mode mode))
 
 (provide 'ecc-proc)

@@ -597,7 +597,13 @@ tool the user allowed for the whole session is never asked about again
          (callback (ecc-proc-take-control-callback session request-id)))
     (when (equal (alist-get 'subtype outer) "error")
       (ecc-log (ecc-session-name session) "control request %s failed: %s"
-               request-id (alist-get 'error outer)))
+               request-id (alist-get 'error outer))
+      ;; An error carries no inner response object, so what went wrong is
+      ;; handed to the callback in its place: a request that was refused
+      ;; is not the same as one that was answered with nothing, and the
+      ;; caller has to be able to tell (a permission mode this model
+      ;; cannot have, for one).
+      (setq response (list (cons 'error (or (alist-get 'error outer) t)))))
     (when (assq 'commands response)
       (setf (ecc-session-commands session) (alist-get 'commands response))
       (run-hook-with-args 'ecc-commands-updated-hook session))

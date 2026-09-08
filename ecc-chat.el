@@ -120,19 +120,25 @@ its own prompt."
   :group 'ecc)
 
 (defcustom ecc-chat-permission-mode-cycle
-  '("default" "acceptEdits" "plan")
+  '("default" "acceptEdits" "plan" "auto")
   "Permission modes `ecc-chat-cycle-permission-mode\=' walks through.
-The three the terminal client cycles with shift+tab.
-\"bypassPermissions\" is deliberately not among them: it answers every
-request on its own, which is not something a key pressed by mistake
-should turn on.  `ecc-set-permission-mode\=' still reaches it."
+What shift+tab walks through in the terminal client, less
+\"bypassPermissions\", which it enters between \"plan\" and \"auto\"
+where the environment allows it: that mode answers every request on
+its own, which is not something a key pressed by mistake should turn
+on.  `ecc-set-permission-mode\=' still reaches it.
+
+\"auto\" is a mode of its own, not another name for \"acceptEdits\":
+it answers the prompts itself, `Bash\=' among them, while
+\"acceptEdits\" only takes the edits (`claude\=' 2.1.263)."
   :type '(repeat string)
   :group 'ecc)
 
 (defcustom ecc-chat-permission-mode-labels
   '(("default" . "⏵ manual mode")
-    ("acceptEdits" . "⏵⏵ auto mode on")
+    ("acceptEdits" . "⏵⏵ accept edits on")
     ("plan" . "⏸ plan mode on")
+    ("auto" . "⏵⏵ auto mode on")
     ("bypassPermissions" . "⏵⏵ bypass permissions on"))
   "What the footer calls each permission mode.
 The words and the marks of the terminal client (`claude\=' 2.1.263),
@@ -469,12 +475,15 @@ BUFFER defaults to the current one.  Returns the text shown, or nil."
 ;; out of the undo history of the draft as the placeholder does.
 
 (defun ecc-chat--permission-mode-label (session)
-  "Return what the footer calls the permission mode SESSION runs."
+  "Return what the footer calls the permission mode SESSION runs.
+A mode that answers requests on its own is named in the warning face,
+as the terminal client colours those two."
   (let* ((mode (or (ecc-session-permission-mode session) "default"))
          (label (or (cdr (assoc mode ecc-chat-permission-mode-labels)) mode)))
-    (concat (propertize label 'face (if (equal mode "bypassPermissions")
-                                        'ecc-warning-face
-                                      'ecc-dim-face))
+    (concat (propertize label
+                        'face (if (member mode '("auto" "bypassPermissions"))
+                                  'ecc-warning-face
+                                'ecc-dim-face))
             (propertize " (S-TAB to cycle)" 'face 'ecc-dim-face))))
 
 (defun ecc-chat-footer-string ()
@@ -549,19 +558,48 @@ or nil."
        ((equal (substring-no-properties text) (ecc-chat-footer-shown)) text)
        (t (ecc-chat--insert-footer text) text)))))
 
+(defvar-local ecc-chat--refused-modes nil
+  "Permission modes the CLI of this session has refused.
+The cycle steps over them from then on, so that S-TAB is not stuck
+asking again for a mode this session cannot have.")
+
+(defun ecc-chat--next-permission-mode (current)
+  "Return the mode to switch to after CURRENT, or nil when there is none.
+The next one in `ecc-chat-permission-mode-cycle\=', around from the end,
+and past whatever the CLI has already refused.  A CURRENT outside the
+cycle -- \"bypassPermissions\", or the mode a plan review left behind --
+goes to the first of it."
+  (let ((cycle (seq-remove (lambda (mode) (member mode ecc-chat--refused-modes))
+                           ecc-chat-permission-mode-cycle)))
+    (when cycle
+      (or (cadr (member current cycle)) (car cycle)))))
+
 (defun ecc-chat-cycle-permission-mode ()
   "Switch the session of this buffer to the next permission mode (FR-SES-6).
 The modes of `ecc-chat-permission-mode-cycle\=' in order, as shift+tab
-walks through them in the terminal client.  A mode outside the cycle,
-such as the one a plan review left behind, goes to its first."
+walks through them in the terminal client.
+
+The CLI can refuse one -- \"auto\" is only for a model that supports it
+\(claude 2.1.263) -- and it answers the request rather than the key, so
+the refusal arrives later: it is said in the echo area, the mode is
+struck off the cycle of this session, and the one after it is asked for
+instead."
   (interactive)
   (let* ((session (or ecc-render--session
                       (user-error "This buffer talks to no session")))
-         (cycle (or ecc-chat-permission-mode-cycle
-                    (user-error "`ecc-chat-permission-mode-cycle' is empty")))
          (current (or (ecc-session-permission-mode session) "default"))
-         (next (or (cadr (member current cycle)) (car cycle))))
-    (ecc-proc-set-permission-mode session next)
+         (next (or (ecc-chat--next-permission-mode current)
+                   (user-error "No permission mode left for this session")))
+         (buffer (current-buffer)))
+    (ecc-proc-set-permission-mode
+     session next
+     (lambda (session reason)
+       (when (buffer-live-p buffer)
+         (with-current-buffer buffer
+           (cl-pushnew next ecc-chat--refused-modes :test #'equal)
+           (message "%s: %s" (ecc-session-name session) reason)
+           (when (ecc-chat--next-permission-mode current)
+             (ecc-chat-cycle-permission-mode))))))
     (message "%s: switching to %s" (ecc-session-name session) next)
     next))
 

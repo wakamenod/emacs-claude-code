@@ -176,7 +176,10 @@ The empty hooks object is sent as nil, which serializes to {}."
 
 (defun ecc-protocol-set-permission-mode (request-id mode)
   "Return the set_permission_mode control request with REQUEST-ID.
-MODE is one of default, acceptEdits, bypassPermissions or plan."
+MODE is one of default, acceptEdits, plan, auto, bypassPermissions or
+dontAsk.  The CLI refuses one it cannot have -- auto asks for a model
+that supports it -- with an error control response (docs/verified.md,
+2026-09-08)."
   (ecc-protocol-control-request request-id "set_permission_mode" 'mode mode))
 
 (defun ecc-protocol-set-mode-suggestion (mode &optional destination)

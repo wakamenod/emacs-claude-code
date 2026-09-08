@@ -74,7 +74,8 @@ typed."
   "Ask the session this buffer talks to to switch to permission MODE."
   (interactive
    (list (completing-read "Permission mode: "
-                          '("default" "acceptEdits" "bypassPermissions" "plan")
+                          '("default" "acceptEdits" "plan" "auto"
+                            "bypassPermissions")
                           nil t)))
   (let ((session (ecc-menu-session)))
     (ecc-proc-set-permission-mode session mode)

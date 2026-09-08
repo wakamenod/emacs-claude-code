@@ -570,16 +570,29 @@ and the draft is written in front of it and survives a redraw
       (should (get-text-property (ecc-chat-prompt-end) 'ecc-footer))
       (should (equal (ecc-chat-test--footer-mode)
                      "⏵ manual mode (S-TAB to cycle)"))
-      ;; It says what the session runs, and warns about the mode that
-      ;; answers every request on its own.
+      ;; It says what the session runs, and warns about the modes that
+      ;; answer requests on their own.  `auto' is one of those and is
+      ;; not another name for `acceptEdits' (claude 2.1.263).
       (setf (ecc-session-permission-mode session) "acceptEdits")
       (ecc-chat--update-ghosts)
       (should (equal (ecc-chat-test--footer-mode)
-                     "⏵⏵ auto mode on (S-TAB to cycle)"))
+                     "⏵⏵ accept edits on (S-TAB to cycle)"))
+      (save-excursion
+        (goto-char (point-max))
+        (should (eq (get-text-property (line-beginning-position) 'face)
+                    'ecc-dim-face)))
       (setf (ecc-session-permission-mode session) "plan")
       (ecc-chat--update-ghosts)
       (should (equal (ecc-chat-test--footer-mode)
                      "⏸ plan mode on (S-TAB to cycle)"))
+      (setf (ecc-session-permission-mode session) "auto")
+      (ecc-chat--update-ghosts)
+      (should (equal (ecc-chat-test--footer-mode)
+                     "⏵⏵ auto mode on (S-TAB to cycle)"))
+      (save-excursion
+        (goto-char (point-max))
+        (should (eq (get-text-property (line-beginning-position) 'face)
+                    'ecc-warning-face)))
       (setf (ecc-session-permission-mode session) "bypassPermissions")
       (ecc-chat--update-ghosts)
       (should (equal (ecc-chat-test--footer-mode)
@@ -621,6 +634,8 @@ and the draft is written in front of it and survives a redraw
       (setf (ecc-session-permission-mode session) "acceptEdits")
       (should (equal (ecc-chat-cycle-permission-mode) "plan"))
       (setf (ecc-session-permission-mode session) "plan")
+      (should (equal (ecc-chat-cycle-permission-mode) "auto"))
+      (setf (ecc-session-permission-mode session) "auto")
       (should (equal (ecc-chat-cycle-permission-mode) "default"))
       ;; A mode outside the cycle -- bypassPermissions is never entered
       ;; by S-TAB -- goes to its first.
@@ -629,11 +644,11 @@ and the draft is written in front of it and survives a redraw
       ;; Each of them went out as a control request, and the answer is
       ;; what makes the footer say the new mode.
       (let ((sent (ecc-test-sent-messages)))
-        (should (= (length sent) 4))
+        (should (= (length sent) 5))
         (should (equal (mapcar (lambda (message)
                                  (alist-get 'mode (alist-get 'request message)))
                                sent)
-                       '("acceptEdits" "plan" "default" "default")))
+                       '("acceptEdits" "plan" "auto" "default" "default")))
         (should (equal (alist-get 'subtype (alist-get 'request (car sent)))
                        "set_permission_mode"))
         (let* ((message (car sent))
@@ -642,7 +657,50 @@ and the draft is written in front of it and survives a redraw
           (funcall callback session '((mode . "acceptEdits")))
           (should (equal (ecc-session-permission-mode session) "acceptEdits"))
           (should (equal (ecc-chat-test--footer-mode)
-                         "⏵⏵ auto mode on (S-TAB to cycle)")))))))
+                         "⏵⏵ accept edits on (S-TAB to cycle)")))))))
+
+(ert-deftest ecc-chat-test-cycle-steps-over-a-refused-mode ()
+  "A mode the CLI refuses is struck off the cycle and the next asked for.
+\"auto\" is only for a model that supports it (claude 2.1.263), and the
+refusal comes back as an error control response, long after the key was
+pressed."
+  (ecc-test-with-fake-session session
+    (with-current-buffer (ecc-session-ensure-buffer session)
+      (setf (ecc-session-permission-mode session) "plan")
+      (should (equal (ecc-chat-cycle-permission-mode) "auto"))
+      (let* ((message (car (ecc-test-sent-messages)))
+             (callback (ecc-proc-take-control-callback
+                        session (alist-get 'request_id message))))
+        ;; The CLI refuses, which is an error response and carries no
+        ;; mode: the session stays where it was, and the mode after the
+        ;; refused one is asked for instead.
+        (funcall callback session
+                 '((error . "auto mode unavailable for this model")))
+        (should (equal (ecc-session-permission-mode session) "plan"))
+        (should (member "auto" ecc-chat--refused-modes))
+        (should (equal (mapcar (lambda (sent)
+                                 (alist-get 'mode (alist-get 'request sent)))
+                               (ecc-test-sent-messages))
+                       '("auto" "default")))
+        ;; From then on the cycle steps over it without asking again.
+        (setf (ecc-session-permission-mode session) "plan")
+        (should (equal (ecc-chat-cycle-permission-mode) "default"))))))
+
+(ert-deftest ecc-chat-test-control-error-reaches-the-callback ()
+  "An error control response tells the callback what went wrong."
+  (ecc-test-with-fake-session session
+    (let ((seen nil))
+      (ecc-proc-set-permission-mode session "auto"
+                                    (lambda (_session reason) (setq seen reason)))
+      (let ((request-id (alist-get 'request_id (car (ecc-test-sent-messages)))))
+        (ecc-dispatch
+         session
+         `((type . "control_response")
+           (response . ((subtype . "error")
+                        (request_id . ,request-id)
+                        (error . "auto mode unavailable for this model")))))
+        (should (equal seen "auto mode unavailable for this model"))
+        (should-not (ecc-session-permission-mode session))))))
 
 ;;;; An agent transcript has no prompt region
 

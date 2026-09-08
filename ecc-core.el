@@ -37,8 +37,8 @@
   "Initial permission mode passed with --permission-mode.
 Nil leaves the CLI default in place."
   :type '(choice (const :tag "CLI default" nil)
-                 (const "default") (const "acceptEdits")
-                 (const "bypassPermissions") (const "plan")))
+                 (const "default") (const "acceptEdits") (const "plan")
+                 (const "auto") (const "bypassPermissions")))
 
 (defvar ecc-permission-mode-functions nil
   "Functions run once a session has switched permission mode.
