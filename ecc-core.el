@@ -338,6 +338,24 @@ Newlines are replaced by spaces and an ellipsis marks a cut."
         flat
       (concat (substring flat 0 (max 0 (1- width))) "…"))))
 
+(defun ecc--fit (string width)
+  "Return STRING shortened to at most WIDTH columns on the display.
+Like `ecc--truncate', but counts what a column costs to draw rather
+than how many characters it holds: a Japanese title is twice as wide as
+it is long, and counting characters is what tears a list of them out of
+line."
+  (let ((flat (replace-regexp-in-string "[ \t\n\r]+" " " (or string ""))))
+    (if (<= (string-width flat) width)
+        flat
+      ;; The padding fills the half column left behind when the cut
+      ;; falls in the middle of a wide character.
+      (truncate-string-to-width flat width nil ?\s "…"))))
+
+(defun ecc--column (string width)
+  "Return STRING as a field of exactly WIDTH columns, padded with spaces."
+  (let ((fitted (ecc--fit string width)))
+    (concat fitted (make-string (max 0 (- width (string-width fitted))) ?\s))))
+
 (provide 'ecc-core)
 
 ;;; ecc-core.el ends here

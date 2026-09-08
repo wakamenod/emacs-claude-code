@@ -129,6 +129,110 @@ argument forks it into a new conversation (FR-SES-4)."
   (ecc-display-session session)
   session)
 
+(defconst ecc--session-time-units
+  '((31536000 . "year") (2592000 . "month") (604800 . "week")
+    (86400 . "day") (3600 . "hour") (60 . "minute"))
+  "Seconds and the name of the unit, largest first.
+The month and the year are the rounded ones a reader expects of \"3
+months ago\"; nothing here is meant to be a calendar.")
+
+(defun ecc--session-time-label (time)
+  "Return how long ago TIME was, in words, or an empty string when nil.
+The list of sessions is read to tell one conversation from another, and
+which one was last worked in is what tells them apart; the reading is
+kept to a single unit (\"3 hours ago\") for that reason."
+  (if (null time)
+      ""
+    (let ((age (float-time (time-subtract (current-time) time))))
+      (if (< age 60)
+          "just now"
+        (let ((unit (seq-find (lambda (u) (>= age (car u)))
+                              ecc--session-time-units)))
+          (let ((n (floor (/ age (car unit)))))
+            (format "%d %s%s ago" n (cdr unit) (if (= n 1) "" "s"))))))))
+
+(defun ecc--session-time (session)
+  "Return when SESSION was last worked in, or nil.
+A session this Emacs started carries the time of its last result.  One
+that has not answered yet -- a session just started, or one read back
+from a recording -- falls back to when its recording was last written."
+  (or (ecc-session-last-result-time session)
+      (when-let* ((file (ecc-history-file (ecc-session-id session)))
+                  (attributes (file-attributes file)))
+        (file-attribute-modification-time attributes))))
+
+(defface ecc-session-running-face
+  '((t :inherit success))
+  "Face for the icon of a session this Emacs is running."
+  :group 'ecc)
+
+(defface ecc-session-own-face
+  '((t :inherit font-lock-keyword-face))
+  "Face for the icon of a stopped session this Emacs still holds."
+  :group 'ecc)
+
+(defface ecc-session-elsewhere-face
+  '((t :inherit warning))
+  "Face for the icon of a session another process is running."
+  :group 'ecc)
+
+(defface ecc-session-recorded-face
+  '((t :inherit shadow))
+  "Face for the icon of a conversation that is only a recording."
+  :group 'ecc)
+
+(defcustom ecc-session-status-icons
+  '((running "nf-cod-triangle_right" ">" ecc-session-running-face)
+    (own "nf-cod-circle_small_filled" "*" ecc-session-own-face)
+    (elsewhere "nf-cod-broadcast" "@" ecc-session-elsewhere-face)
+    (recorded "nf-cod-history" "-" ecc-session-recorded-face))
+  "Icon of each state a session can be offered in.
+Each entry is (STATE NERD-ICON-NAME ASCII FACE).  `running' is a
+session this Emacs is running, `own' one it holds that has stopped,
+`elsewhere' one another process is running, and `recorded' a
+conversation that is only a recording.  The nerd icon is used when
+`nerd-icons' is installed and the ASCII stand-in otherwise, as in
+`ecc-visual-icon-alist'."
+  :type '(alist :key-type symbol
+                :value-type (list string string face))
+  :group 'ecc)
+
+(defcustom ecc-session-icon-height 0.8
+  "How tall the icon of a session is, as a share of the normal height.
+Only a graphical display scales an icon; on a terminal it is one cell
+whatever this says."
+  :type 'number
+  :group 'ecc)
+
+(declare-function nerd-icons-codicon "nerd-icons" (name &rest args))
+
+(defun ecc--session-status-icon (status)
+  "Return the one-column icon of STATUS, a key of `ecc-session-status-icons'.
+It is drawn in the face of its state, so that a running session is told
+from a recording before the line is read at all."
+  (let* ((entry (or (alist-get status ecc-session-status-icons)
+                    (alist-get 'recorded ecc-session-status-icons)))
+         (face (nth 2 entry))
+         (glyph (and (ecc-visual-nerd-icons-p)
+                     (condition-case nil
+                         (nerd-icons-codicon (nth 0 entry)
+                                             :face face
+                                             :height ecc-session-icon-height)
+                       (error nil)))))
+    (or glyph (propertize (nth 1 entry) 'face face))))
+
+(defun ecc--session-label (status name time rest)
+  "Return the line a session is offered on.
+STATUS is the icon it opens with, NAME the conversation, TIME how long
+ago it was worked in and REST whatever is left to say about it.  The
+fields are measured in columns rather than in characters, so that a
+Japanese title leaves the ones after it where they are."
+  (format "%s %s  %s  %s"
+          (ecc--session-status-icon status)
+          (ecc--column name 36)
+          (ecc--column (ecc--session-time-label time) 14)
+          (ecc--fit rest 60)))
+
 (defun ecc--session-candidates (&optional project-root)
   "Return (LABEL . SESSION-ID) for every session worth resuming.
 The sessions of this Emacs come first, then the recordings under
@@ -141,12 +245,12 @@ and resuming it asks first (FR-TUI-5)."
       (let ((id (ecc-session-id session)))
         (unless (gethash id seen)
           (puthash id t seen)
-          (push (cons (format "%-28s  %-10s %s"
-                              (ecc--truncate (ecc-session-name session) 28)
-                              (if (process-live-p (ecc-session-process session))
-                                  "running" "in this Emacs")
-                              (abbreviate-file-name
-                               (or (ecc-session-cwd session) "")))
+          (push (cons (ecc--session-label
+                       (if (process-live-p (ecc-session-process session))
+                           'running 'own)
+                       (ecc-session-name session)
+                       (ecc--session-time session)
+                       (abbreviate-file-name (or (ecc-session-cwd session) "")))
                       id)
                 candidates))))
     (dolist (info (ecc-history-recordings project-root))
@@ -154,17 +258,28 @@ and resuming it asks first (FR-TUI-5)."
              (entry (and id (ecc-registry-session id))))
         (unless (or (null id) (gethash id seen))
           (puthash id t seen)
-          (push (cons (format "%-28s  %-10s %s"
-                              (ecc--truncate (or (alist-get 'title info) id) 28)
-                              (cond (entry (format "pid %s"
-                                                   (or (alist-get 'pid entry) "?")))
-                                    (t (ecc-dashboard--time-label
-                                        (or (alist-get 'time info)
-                                            (alist-get 'mtime info)))))
-                              (ecc--truncate (or (alist-get 'prompt info) "") 60))
+          (push (cons (ecc--session-label
+                       (if entry 'elsewhere 'recorded)
+                       (or (alist-get 'title info) id)
+                       (or (alist-get 'time info) (alist-get 'mtime info))
+                       (or (alist-get 'prompt info) ""))
                       id)
                 candidates))))
     (nreverse candidates)))
+
+(defun ecc--session-table (candidates)
+  "Return a completion table over the labels of CANDIDATES.
+The candidates are already in the order they should be read in -- the
+sessions of this Emacs first, then the recordings, most recently used
+first -- so the table says so, rather than leaving the completion UI
+to sort them by name or by length."
+  (let ((labels (mapcar #'car candidates)))
+    (lambda (string predicate action)
+      (if (eq action 'metadata)
+          '(metadata (category . ecc-session)
+                     (display-sort-function . identity)
+                     (cycle-sort-function . identity))
+        (complete-with-action action labels string predicate)))))
 
 (defun ecc-read-session (&optional prompt)
   "Return a session to work on, asking with PROMPT when there is a choice.
@@ -181,9 +296,10 @@ is picked is read back into an archived session (FR-DASH-3, FR-HIST-1)."
                          (user-error "No session and no recorded conversation"))
                        (if (= 1 (length candidates))
                            (car candidates)
-                         (let ((label (completing-read (or prompt "Session: ")
-                                                       (mapcar #'car candidates)
-                                                       nil t)))
+                         (let ((label (completing-read
+                                       (or prompt "Session: ")
+                                       (ecc--session-table candidates)
+                                       nil t)))
                            (assoc label candidates))))))
         (or (ecc-model-session (cdr choice))
             (ecc-history-session (cdr choice))))))

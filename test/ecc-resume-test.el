@@ -61,15 +61,101 @@ that has no sessions in it."
   (ecc-resume-test--with-recordings file
     (let ((session (ecc-model-create-session
                     :id "24a1aa86-d53f-4457-b09e-4f4caf450f03"
-                    :name "mine"
+                    :name "local"
                     :project-root (ecc-resume-test--cwd file))))
       (unwind-protect
           (let ((candidates (ecc--session-candidates (ecc-resume-test--cwd file))))
             ;; The recording is the same session, so it is not repeated.
             (should (= 1 (length candidates)))
-            (should (string-search "mine" (caar candidates)))
-            (should (string-search "in this Emacs" (caar candidates))))
+            (should (string-search "local" (caar candidates)))
+            ;; It opens with the icon of a session this Emacs holds.
+            (should (string-prefix-p (ecc--session-status-icon 'own)
+                                     (caar candidates))))
         (ecc-test-cleanup-session session)))))
+
+(ert-deftest ecc-resume-test-a-session-of-this-emacs-is-timed-too ()
+  "A session this Emacs holds is timed like a recording is.
+It has answered nothing yet, so the time comes from its recording."
+  (ecc-resume-test--with-recordings file
+    (let ((session (ecc-model-create-session
+                    :id "24a1aa86-d53f-4457-b09e-4f4caf450f03"
+                    :name "local"
+                    :project-root (ecc-resume-test--cwd file))))
+      (unwind-protect
+          (progn
+            (should (string-search "just now"
+                                   (caar (ecc--session-candidates
+                                          (ecc-resume-test--cwd file)))))
+            ;; Once it has answered, that is what the label reads from.
+            (setf (ecc-session-last-result-time session)
+                  (time-subtract (current-time) (* 3 3600)))
+            (should (string-search "3 hours ago"
+                                   (caar (ecc--session-candidates
+                                          (ecc-resume-test--cwd file))))))
+        (ecc-test-cleanup-session session)))))
+
+(ert-deftest ecc-resume-test-the-columns-line-up ()
+  "Every label puts its columns at the same place, whatever the script.
+A Japanese title is twice as wide as it is long, so the fields are
+measured in columns; with the length they would drift apart."
+  (let* ((time (time-subtract (current-time) 3600))
+         (ascii (ecc--session-label 'own "session order" time "hello"))
+         (japanese (ecc--session-label 'own "セッション並び順" time "こんにちは"))
+         (long (ecc--session-label
+                'own "セッションの並び順とアイコンの見た目を直したいという話"
+                time "x"))
+         (column (lambda (label)
+                   ;; Where the time column starts on the display.
+                   (string-width (car (split-string label "1 hour ago"))))))
+    (should (= (funcall column ascii) (funcall column japanese)))
+    (should (= (funcall column ascii) (funcall column long)))
+    ;; A title too long for its column is cut, not allowed to push.
+    (should (string-search "…" long))))
+
+(ert-deftest ecc-resume-test-the-status-is-one-icon ()
+  "The state of a session is the single glyph the label opens with."
+  (dolist (status '(running own elsewhere recorded))
+    (let ((icon (ecc--session-status-icon status)))
+      (should (= 1 (string-width icon)))
+      (should (string-prefix-p icon (ecc--session-label status "n" nil "")))))
+  ;; Without nerd-icons the ASCII stand-ins are used, and they differ.
+  (let* ((ecc-visual--nerd-icons nil)
+         (icons (mapcar #'ecc--session-status-icon
+                        '(running own elsewhere recorded))))
+    (should (equal '(">" "*" "@" "-") icons))))
+
+(ert-deftest ecc-resume-test-time-label-reads-as-an-age ()
+  "The time column says how long ago the conversation was worked in."
+  (let ((label (lambda (seconds)
+                 (ecc--session-time-label
+                  (time-subtract (current-time) seconds)))))
+    (should (equal "" (ecc--session-time-label nil)))
+    (should (equal "just now" (funcall label 5)))
+    (should (equal "1 minute ago" (funcall label 60)))
+    (should (equal "5 minutes ago" (funcall label (* 5 60))))
+    (should (equal "1 hour ago" (funcall label 3600)))
+    (should (equal "3 hours ago" (funcall label (* 3 3600))))
+    (should (equal "1 day ago" (funcall label 86400)))
+    (should (equal "2 days ago" (funcall label (* 2 86400))))
+    (should (equal "1 week ago" (funcall label (* 8 86400))))
+    (should (equal "3 weeks ago" (funcall label (* 21 86400))))
+    (should (equal "1 month ago" (funcall label (* 31 86400))))
+    (should (equal "8 months ago" (funcall label (* 250 86400))))
+    (should (equal "1 year ago" (funcall label (* 400 86400))))
+    (should (equal "2 years ago" (funcall label (* 800 86400))))
+    ;; Every label fits the column it is put in.
+    (should (<= (length (funcall label (* 800 86400))) 14))))
+
+(ert-deftest ecc-resume-test-the-table-keeps-the-order ()
+  "The completion table hands the candidates over in the order they are in.
+Without it the completion UI sorts them by name or by length, and the
+most recent conversation is no longer the first one."
+  (let* ((candidates '(("b newest" . "1") ("a older" . "2")))
+         (table (ecc--session-table candidates))
+         (metadata (cdr (funcall table "" nil 'metadata))))
+    (should (equal '("b newest" "a older") (all-completions "" table)))
+    (should (eq 'identity (alist-get 'display-sort-function metadata)))
+    (should (eq 'identity (alist-get 'cycle-sort-function metadata)))))
 
 (ert-deftest ecc-resume-test-reads-the-recording-back ()
   "Picking a recording gives a session with the conversation in it."
@@ -94,9 +180,9 @@ that has no sessions in it."
       (let* ((default-directory (ecc-resume-test--cwd file))
              (asked nil)
              (session (cl-letf (((symbol-function 'completing-read)
-                                 (lambda (_prompt candidates &rest _)
-                                   (setq asked candidates)
-                                   (car (last candidates)))))
+                                 (lambda (_prompt table &rest _)
+                                   (setq asked (all-completions "" table))
+                                   (car (last asked)))))
                         (ecc-read-session))))
         (unwind-protect
             (progn
