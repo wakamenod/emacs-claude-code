@@ -234,9 +234,17 @@ screen; left pending, it would blink for an answer nobody wants."
     (should (= (ecc-session-context-tokens session) 1339))))
 
 (ert-deftest ecc-dispatch-test-replay-echo-adds-nothing ()
-  "The echo of a prompt is an acknowledgement, not a message (D5)."
+  "The echo of a prompt is an acknowledgement, not a message (D5).
+The recording was made by a client that sent both prompts itself, so
+both echoes are its own; the session under test is told as much, the
+way `ecc-proc-send-user\=' would have."
   (ecc-test-with-fake-session session
+    (setf (ecc-session-sent-echoes session)
+          (list "Reply with exactly: ONE" "Reply with exactly: TWO"))
     (ecc-test-dispatch session "replay-user-messages" "Reply with exactly: ONE")
+    (should-not (ecc-session-sent-echoes session))
+    (dolist (turn (ecc-session-turns session))
+      (should-not (ecc-turn-label turn)))
     (dolist (turn (ecc-session-turns session))
       (dolist (node (ecc-turn-children turn))
         (should-not (and (eq (ecc-node-type node) 'system)
@@ -405,6 +413,78 @@ prompt must not be lost, and it must not wait for ever (FR-INP-6)."
     (should (eq (ecc-session-state session) 'running))
     (should-not (ecc-session-input-queue session))
     (should (equal "ecc から送る" (ecc-test-sent-text 0)))))
+
+(ert-deftest ecc-dispatch-test-replay-echo-of-our-own-prompt ()
+  "The echo of a prompt sent from here is an acknowledgement, not news.
+With --replay-user-messages every user message comes back; ours must
+not draw a second time (measured 2026-09-08)."
+  (ecc-test-with-fake-session session
+    (ecc-proc-send-user session "hello")
+    (should (= 1 (length (ecc-session-turns session))))
+    (ecc-dispatch session '((type . "user")
+                            (message . ((role . "user") (content . "hello")))
+                            (isReplay . t)))
+    (should (= 1 (length (ecc-session-turns session))))
+    (should-not (ecc-turn-label (car (ecc-session-turns session))))
+    (should-not (ecc-session-sent-echoes session))
+    ;; The same text sent twice is recognised twice, and no more.
+    (ecc-dispatch session '((type . "user")
+                            (message . ((role . "user") (content . "hello")))
+                            (isReplay . t)))
+    (should (equal "(remote)"
+                   (ecc-turn-label (car (last (ecc-session-turns session))))))))
+
+(ert-deftest ecc-dispatch-test-replay-shows-a-prompt-from-elsewhere ()
+  "A prompt nobody typed here is drawn as the prompt of its turn.
+Sent from a phone over Remote Control, it reaches the CLI without
+passing through Emacs; the echo is the only way it can be shown."
+  (ecc-test-with-fake-session session
+    (ecc-dispatch session '((type . "user")
+                            (message . ((role . "user")
+                                        (content . "スマホからの投稿です")))
+                            (isReplay . t)
+                            (origin . ((kind . "human")))))
+    (let ((turn (car (ecc-session-turns session))))
+      (should (equal "スマホからの投稿です" (ecc-turn-prompt turn)))
+      (should (equal "(remote)" (ecc-turn-label turn))))
+    ;; The answer that follows joins that turn rather than opening one.
+    (ecc-dispatch session '((type . "assistant")
+                            (message . ((role . "assistant")
+                                        (model . "claude-opus-5")
+                                        (content . [((type . "text")
+                                                     (text . "はい"))])))))
+    (should (= 1 (length (ecc-session-turns session))))))
+
+(ert-deftest ecc-dispatch-test-replay-leaves-the-cli-own-notes-alone ()
+  "What the CLI writes into the conversation itself is not a prompt."
+  (ecc-test-with-fake-session session
+    (dolist (message '(((type . "user")
+                        (message . ((role . "user")
+                                    (content . "<system-reminder>x</system-reminder>")))
+                        (isReplay . t) (isSynthetic . t))
+                       ((type . "user")
+                        (message . ((role . "user") (content . "   ")))
+                        (isReplay . t))
+                       ((type . "user")
+                        (message . ((role . "user")
+                                    (content . "<command-name>/model</command-name>")))
+                        (isReplay . t))))
+      (ecc-dispatch session message))
+    (should-not (ecc-session-turns session))))
+
+(ert-deftest ecc-dispatch-test-command-lifecycle-is-not-unknown ()
+  "The lifecycle of a prompt is known, and quiet.
+It says a prompt was queued or started, naming the uuid of the user
+message; the answer that follows is what the transcript shows, so this
+only reaches the progress information and the log."
+  (ecc-test-with-fake-session session
+    (ecc-dispatch session '((type . "command_lifecycle")
+                            (command_uuid . "4a2abdf3") (state . "queued")))
+    (should (equal '("4a2abdf3" . "queued")
+                   (alist-get 'command-lifecycle (ecc-session-progress session))))
+    (should-not (seq-find (lambda (node) (eq (ecc-node-type node) 'unknown))
+                          (hash-table-values (ecc-session-nodes session))))
+    (should-not (ecc-session-turns session))))
 
 (ert-deftest ecc-dispatch-test-bridge-state-detail ()
   "A state that needs explaining brings a detail, and it is shown."

@@ -131,6 +131,8 @@
   auto-approve-turn     ; FR-PERM-7
   auto-approve-kinds    ; FR-PERM-9
   input-queue           ; FR-INP-6, oldest first
+  sent-echoes           ; contents sent from here whose --replay echo
+                        ; has not come back yet, newest first
   history-offset
   recap-state           ; FR-HINT-1: an alist with `text' and `time' of
                         ; the last recap, the `turn' it summed up, the

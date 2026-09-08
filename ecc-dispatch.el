@@ -70,6 +70,7 @@ Errors are caught: an unreadable message must never stop the stream."
     ('rate_limit_event
      (setf (ecc-session-rate-limit session) (alist-get 'rate_limit_info message))
      (run-hook-with-args 'ecc-usage-hook session))
+    ('command_lifecycle (ecc-dispatch--command-lifecycle session message))
     ('prompt_suggestion
      (setf (alist-get 'suggestion (ecc-session-recap-state session))
            (alist-get 'prompt_suggestion message))
@@ -377,13 +378,18 @@ known."
 
 (defun ecc-dispatch--user (session message)
   "Apply the user MESSAGE to SESSION.
-Most of these are tool results; the CLI also echoes prompts back when
---replay-user-messages is on, and those are acknowledgements only.  A
+Most of these are tool results.  With --replay-user-messages the CLI
+also echoes prompts back: the echo of one sent from here is an
+acknowledgement and nothing more, while one nobody here typed came from
+somewhere else -- a phone on the Remote Control bridge -- and is the
+prompt of the turn about to run (`ecc-dispatch--remote-prompt\=').  A
 text message under a parent_tool_use_id is the prompt a subagent was
 started with."
   (if (ecc-protocol-replay-p message)
-      (setf (alist-get 'replayed (ecc-session-progress session))
-            (alist-get 'content (alist-get 'message message)))
+      (let ((content (alist-get 'content (alist-get 'message message))))
+        (setf (alist-get 'replayed (ecc-session-progress session)) content)
+        (unless (ecc-proc-take-sent-echo session content)
+          (ecc-dispatch--remote-prompt session message content)))
     (let ((parent (ecc-dispatch--parent session message
                                         (ecc-model-ensure-turn session))))
       (dolist (block (ecc-protocol-content-blocks message))
@@ -412,6 +418,35 @@ started with."
           (_ (ecc-model-add-node session :type 'unknown :status 'done
                                  :parent parent
                                  :data (list (cons 'block block)))))))))
+
+(defun ecc-dispatch--remote-prompt (session message content)
+  "Show CONTENT of MESSAGE as a prompt of SESSION that Emacs did not send.
+It came from wherever else the session can be reached, which today
+means the Remote Control bridge.  The CLI echoes it before it answers,
+so the usual case is that no turn is open yet and this opens one, the
+way `ecc-proc-send-user\=' would have; a turn already opened by an
+answer that arrived first takes the text as its prompt instead.
+
+Synthetic messages are left alone: the CLI writes those into the
+conversation itself (a system reminder, the record of a local command)
+and they are not anybody\='s prompt."
+  (unless (or (ecc--json-true-p (alist-get 'isSynthetic message))
+              (not (stringp content))
+              (string-empty-p (string-trim content))
+              (ecc-protocol-command-caveat-p content)
+              (ecc-protocol-parse-command content)
+              (ecc-protocol-command-output content))
+    (ecc-log (ecc-session-name session) "prompt from elsewhere: %s"
+             (ecc--truncate content 60))
+    (let ((turn (or (ecc-session-current-turn session)
+                    (ecc-model-begin-turn session content))))
+      (unless (ecc-turn-prompt turn)
+        (setf (ecc-turn-prompt turn) content))
+      ;; It is still a turn nobody here started, and the state line and
+      ;; the queue message say so.
+      (setf (ecc-turn-label turn) ecc-model-remote-turn-label)
+      (run-hook-with-args 'ecc-progress-hook session)
+      turn)))
 
 (defun ecc-dispatch--command (session text parent)
   "Add the local command TEXT records to SESSION under PARENT.
@@ -611,6 +646,23 @@ tool the user allowed for the whole session is never asked about again
                       :data (list (cons 'kind 'auto-allow)
                                   (cons 'text (format "auto-allowed %s"
                                                       (ecc-request-tool-name request))))))
+
+(defun ecc-dispatch--command-lifecycle (session message)
+  "Apply the command_lifecycle MESSAGE to SESSION.
+The CLI reports what became of a prompt it was handed: `queued\=',
+`started\=' and `completed\=', each naming the uuid of the user message
+it is about.  A prompt sent from the Remote Control bridge arrives this
+way and no other -- the text is not in the stream unless
+`ecc-replay-user-messages\=' is on (docs/verified.md, 2026-09-08) --
+which is worth knowing but not worth a line in the transcript: the
+answer that follows is the line.  It is kept in the progress
+information, where the state line can reach it, and in the log."
+  (let ((state (alist-get 'state message))
+        (uuid (alist-get 'command_uuid message)))
+    (ecc-log (ecc-session-name session) "prompt %s: %s" (or uuid "?") state)
+    (setf (alist-get 'command-lifecycle (ecc-session-progress session))
+          (cons uuid state))
+    (run-hook-with-args 'ecc-progress-hook session)))
 
 ;;;; control_response
 

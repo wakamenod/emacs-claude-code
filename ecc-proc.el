@@ -106,6 +106,10 @@ a resumed one the model its recording ends on (see `ecc-proc--model')."
                 (list "--include-partial-messages"))
            (and (funcall opt :subagent-text ecc-subagent-text-enabled)
                 (list "--forward-subagent-text"))
+           ;; So that a prompt sent from elsewhere -- a phone on the
+           ;; Remote Control bridge -- shows up here too.
+           (and (funcall opt :replay-user-messages ecc-replay-user-messages)
+                (list "--replay-user-messages"))
            (and (funcall opt :prompt-suggestions ecc-prompt-suggestions-enabled)
                 (list "--prompt-suggestions"))
            (and (funcall opt :hook-events ecc-hook-events-enabled)
@@ -325,6 +329,29 @@ remembered here is the name as it was typed, `opus' rather than
              (string-match ecc-proc--model-command-regexp content))
     (setf (ecc-session-last-model session) (match-string 1 content))))
 
+(defun ecc-proc--note-sent (session content)
+  "Remember CONTENT as something SESSION sent itself.
+With --replay-user-messages the CLI echoes every user message back, and
+the echo of one this package sent is an acknowledgement rather than
+news.  What tells the two apart is this list: the CLI hands back the
+content unchanged, and an entry is spent the first time it matches."
+  (when (ecc-model-option session :replay-user-messages ecc-replay-user-messages)
+    (push content (ecc-session-sent-echoes session))))
+
+(defun ecc-proc-take-sent-echo (session content)
+  "Return non-nil when CONTENT is the echo of something SESSION sent.
+The entry is forgotten, so that the same text sent twice is recognised
+twice and no more."
+  (let ((sent (ecc-session-sent-echoes session)))
+    (when (member content sent)
+      (setf (ecc-session-sent-echoes session)
+            (let ((removed nil))
+              (seq-remove (lambda (entry)
+                            (and (not removed) (equal entry content)
+                                 (setq removed t)))
+                          sent)))
+      t)))
+
 (defun ecc-proc-send-user (session content)
   "Send CONTENT to SESSION as a user message and start a turn.
 CONTENT is a string or a vector of content blocks.  The message goes
@@ -333,10 +360,12 @@ went out would hold every later prompt in the queue.  Nothing can
 arrive in between, since output is only read when Emacs waits for it."
   (prog1 (ecc-proc-send-json session (ecc-protocol-user-message content))
     (ecc-proc--note-model session content)
+    (ecc-proc--note-sent session content)
     (ecc-model-begin-turn session (if (stringp content) content ""))))
 
 (defun ecc-proc-send-transient (session content)
   "Send CONTENT to SESSION without opening a turn (plan section 9, item 11)."
+  (ecc-proc--note-sent session content)
   (ecc-proc-send-json session (ecc-protocol-user-message content)))
 
 (defun ecc-proc-send-prompt (session text)

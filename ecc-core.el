@@ -120,6 +120,19 @@ own.  Disabling the plugin that installs it is enough, and unlike
   "Non-nil passes --include-partial-messages for incremental rendering."
   :type 'boolean)
 
+(defcustom ecc-replay-user-messages t
+  "Non-nil passes --replay-user-messages, so that prompts come back.
+The CLI then echoes every user message on the output stream, marked
+`isReplay\='.  The ones this package sent are dropped again -- it knows
+what it sent -- and what is left is a prompt somebody sent from
+somewhere else: from a phone over Remote Control, above all.  Without
+this the transcript shows the answer to such a prompt with nothing in
+front of it, since the text reaches the CLI without ever passing
+through Emacs (measured 2026-09-08, `docs/verified.md\=').
+
+It costs one extra line per turn and nothing else."
+  :type 'boolean)
+
 (defcustom ecc-subagent-text-enabled t
   "Non-nil passes --forward-subagent-text to receive subagent output."
   :type 'boolean)
