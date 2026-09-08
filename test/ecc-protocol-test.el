@@ -331,6 +331,26 @@ that parsed values can be echoed back unchanged."
   (should (equal (ecc-protocol-value-string "ツール行") "ツール行"))
   (should (equal (ecc-protocol-value-string :false) "false")))
 
+(ert-deftest ecc-protocol-test-remote-control ()
+  "The remote_control request says its boolean the way the CLI wants it."
+  (let ((on (alist-get 'request (ecc-protocol-remote-control "r1" t "session")))
+        (off (alist-get 'request (ecc-protocol-remote-control "r2" nil))))
+    (should (equal (alist-get 'subtype on) "remote_control"))
+    (should (eq (alist-get 'enabled on) t))
+    (should (equal (alist-get 'name on) "session"))
+    ;; A switch-off carries no name, and false is `:false': nil would
+    ;; serialize as an empty object and read as true.
+    (should (eq (alist-get 'enabled off) :false))
+    (should-not (assq 'name off))
+    (should (string-search "\"enabled\":false"
+                           (ecc-protocol-serialize
+                            (ecc-protocol-remote-control "r2" nil))))
+    ;; The bridge is folded up with the session (docs/decisions.md).
+    (dolist (request (list on off))
+      (should-not (assq 'keep_session_on_exit request))
+      (should-not (assq 'work_secret request))
+      (should-not (assq 'reattach_session_id request)))))
+
 (provide 'ecc-protocol-test)
 
 ;;; ecc-protocol-test.el ends here

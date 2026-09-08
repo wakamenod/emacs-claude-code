@@ -48,6 +48,39 @@ process filter rather than from the command that asked for it, and
 this is how what shows the mode -- the footer of `ecc-chat' -- hears
 about it (FR-SES-6).")
 
+(defcustom ecc-remote-control 'auto
+  "Whether to reach a session of this package from claude.ai/code.
+
+Remote Control is the bridge the CLI itself offers: with it on, the
+session shows up in the Code tab of the Claude app and can be driven
+from there.  The switch belongs to the Claude Code settings
+\(`remoteControlAtStartup\=' at user scope), and this package follows
+them rather than writing settings of its own (2026-09-08,
+`docs/decisions.md\=').
+
+`auto\=' does what the CLI would do: the initialize response says
+whether this session should turn the bridge on, and it is obeyed.  A
+stream-json client is only advised, never switched on for it, so
+nothing happens unless this package asks (docs/verified.md,
+2026-09-08).  `t\=' turns it on wherever the CLI can offer it, and nil
+never does.  One session can say otherwise with the `:remote-control\='
+launch option."
+  :type '(choice (const :tag "Follow the Claude Code settings" auto)
+                 (const :tag "Always, where it is available" t)
+                 (const :tag "Never" nil)))
+
+(defcustom ecc-remote-control-name-function nil
+  "Function returning the name to give a session on the bridge, or nil.
+It is called with the session; nil, the default, sends the name of the
+session itself."
+  :type '(choice (const :tag "The session name" nil) function))
+
+(defvar ecc-remote-control-functions nil
+  "Functions run when the Remote Control state of a session changes.
+Each is called with the session.  Like the permission mode, the answer
+arrives from the process filter rather than from the command that
+asked, so this is how the header line hears about it.")
+
 (defcustom ecc-effort nil
   "Reasoning effort passed with --effort, or nil for the CLI default."
   :type '(choice (const :tag "CLI default" nil) string))
@@ -358,6 +391,13 @@ byte for byte, such as the tool input of an allow response."
                      :array-type 'array
                      :null-object :null
                      :false-object :false))
+
+(defun ecc--json-true-p (value)
+  "Return non-nil when VALUE is a JSON true.
+JSON false reads as `:false\=', which is a symbol and therefore true to
+Emacs; a boolean of the CLI has to be asked this way rather than tested
+for itself."
+  (and value (not (eq value :false)) (not (eq value :null))))
 
 (defun ecc--json-write (object)
   "Serialize OBJECT to a JSON string.

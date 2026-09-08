@@ -109,6 +109,12 @@
                         ; changes it mid-session (FR-HINT-3)
   commands              ; commands from the initialize response
   permission-mode
+  remote-control        ; alist of what the CLI said about Remote
+                        ; Control: `available', `auto-enable',
+                        ; `auto-on-by-default' from the initialize
+                        ; response, then `enabled', `session-url',
+                        ; `bridge-session-id', `state', `detail' and
+                        ; `error' once the bridge is asked for
   turns                 ; list of ecc-turn, oldest first
   current-turn
   nodes                 ; hash: node id -> ecc-node
@@ -266,6 +272,22 @@ Resuming with --fork-session hands back an id we did not choose."
     (if (plist-member options key)
         (plist-get options key)
       default)))
+
+(defun ecc-model-remote-control (session key &optional default)
+  "Return KEY of what SESSION knows about Remote Control, or DEFAULT."
+  (let ((cell (assq key (ecc-session-remote-control session))))
+    (if cell (cdr cell) default)))
+
+(defun ecc-model-set-remote-control (session &rest pairs)
+  "Set the Remote Control information of SESSION from PAIRS.
+PAIRS is a plist of keys and values; the keys not named keep the value
+they had, so that the bridge state does not lose what the initialize
+response said."
+  (while pairs
+    (setf (alist-get (car pairs) (ecc-session-remote-control session))
+          (cadr pairs))
+    (setq pairs (cddr pairs)))
+  (ecc-session-remote-control session))
 
 (defun ecc-model-set-state (session state)
   "Set the state of SESSION to STATE and announce the change."

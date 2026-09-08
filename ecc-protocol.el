@@ -182,6 +182,17 @@ that supports it -- with an error control response (docs/verified.md,
 2026-09-08)."
   (ecc-protocol-control-request request-id "set_permission_mode" 'mode mode))
 
+(defun ecc-protocol-remote-control (request-id enabled &optional name)
+  "Return the remote_control control request with REQUEST-ID.
+ENABLED turns the bridge on when non-nil and off otherwise; it goes out
+as t or :false, the way the CLI wants a boolean.  NAME, when given, is
+the name the session takes on the bridge.  `keep_session_on_exit\=' is
+deliberately not sent: the bridge is folded up with the session
+\(2026-09-08, `docs/decisions.md\=')."
+  (apply #'ecc-protocol-control-request request-id "remote_control"
+         'enabled (if enabled t :false)
+         (when name (list 'name name))))
+
 (defun ecc-protocol-set-mode-suggestion (mode &optional destination)
   "Return one setMode permission suggestion for MODE.
 DESTINATION defaults to \"session\"."
