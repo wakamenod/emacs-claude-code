@@ -59,11 +59,13 @@ Development and testing **always** start `claude` with:
   `docs/decisions.md`).  `ecc` has no budget option, and no rule says to force a model
   on it: `scripts/record-*.sh` pass a cheap model and a cap of their own, and the live
   tests pass theirs in `:extra-args`.
-- **`--model` is passed to a new session only.**  A resumed session keeps the model of
-  the last real assistant message of its recording, and passing `--model` overrides that
-  for good, so `ecc-model` would undo every `/model` made since -- in the terminal of a
-  hand-off above all.  A model that belongs to one session goes in its `:model` option,
-  which is passed either way (`ecc-proc--model`, 2026-09-06).
+- **There is no setting that names a model, and `--model` is passed only for a session
+  that carries one.**  The model comes from the Claude Code settings for a new session,
+  and from the last real assistant message of its recording for a resumed one; passing
+  `--model` overrides that for good, which would undo every `/model` made since -- in the
+  terminal of a hand-off above all.  A model that belongs to one session goes in its
+  `:model` option, which is passed either way (`ecc-proc--model`; 2026-09-06, revised
+  2026-09-08 when `ecc-model` was removed).
 - stream-json needs `--verbose`, `--permission-prompt-tool stdio` and
   `:connection-type 'pipe` (plan §2.1, §9).
 

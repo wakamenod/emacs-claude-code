@@ -156,7 +156,7 @@ started with -- a session read from history has neither, which is why
 the recorded messages are asked first."
   (or (ecc-session-last-model session)
       (alist-get 'model (ecc-session-init session))
-      (ecc-model-option session :model ecc-model)))
+      (ecc-model-option session :model nil)))
 
 (defun ecc-hint-model-window (session)
   "Return the context window in tokens of the model of SESSION."

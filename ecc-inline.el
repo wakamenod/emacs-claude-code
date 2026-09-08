@@ -73,7 +73,7 @@ for `smerge-mode' to resolve."
   :group 'ecc)
 
 (defcustom ecc-rewrite-model nil
-  "Model `ecc-rewrite' asks, or nil for `ecc-model' and then the default."
+  "Model `ecc-rewrite' asks, or nil for the default of the CLI."
   :type '(choice (const :tag "The usual model" nil) string)
   :group 'ecc)
 
@@ -305,7 +305,7 @@ and for nothing else, and Emacs is what touches the file."
                 "--output-format" "json"
                 "--json-schema" ecc-rewrite-schema
                 "--tools" "")
-          (when-let* ((model (or model ecc-rewrite-model ecc-model)))
+          (when-let* ((model (or model ecc-rewrite-model)))
             (list "--model" model))
           (when-let* ((settings (ecc-protocol-settings-json ecc-disabled-plugins)))
             (list "--settings" settings))))

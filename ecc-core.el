@@ -29,15 +29,9 @@
   "Name of, or path to, the Claude Code CLI executable."
   :type 'string)
 
-(defcustom ecc-model nil
-  "Model a new session is started with, or nil for the CLI default.
-
-It is passed with --model when a session is created.  A session that is
-resumed keeps the model its recording ends on instead, so that a
-`/model\=' sent from Emacs or from the terminal of a hand-off survives
-being taken up again; to pin a model to a session of its own, put
-`:model\=' in its options."
-  :type '(choice (const :tag "CLI default" nil) string))
+;; There is deliberately no `ecc-model' (2026-09-08, `docs/decisions.md').
+;; The model belongs to the Claude Code settings, and a session that wants
+;; one of its own carries it in `:model\=' among its options.
 
 (defcustom ecc-permission-mode nil
   "Initial permission mode passed with --permission-mode.

@@ -88,7 +88,7 @@ Scanning them reads a few lines of every file under
      :state (format "%s" (ecc-session-state session))
      :cwd (or (ecc-session-cwd session) (ecc-session-project-root session))
      :model (or (alist-get 'model (ecc-session-init session))
-                (ecc-model-option session :model ecc-model))
+                (ecc-model-option session :model nil))
      :prompt (or (and turn (ecc-turn-prompt turn)) "")
      :time (or (ecc-session-last-result-time session)
                (and turn (ecc-turn-start-time turn)))

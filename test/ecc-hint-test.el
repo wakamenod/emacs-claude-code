@@ -59,8 +59,7 @@ session has none."
   (ecc-test-with-fake-session session
     ;; Nothing said yet: the default model window less the room the CLI
     ;; keeps to compact in.
-    (let ((ecc-model nil))
-      (should (= (ecc-hint-context-window session) (round (* 200000 0.87)))))
+    (should (= (ecc-hint-context-window session) (round (* 200000 0.87))))
     ;; The name announces a million token window.
     (setf (ecc-session-init session) '((model . "claude-sonnet-5[1m]")))
     (should (= (ecc-hint-model-window session) 1000000))

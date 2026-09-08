@@ -123,7 +123,7 @@ the terminal is where `/model' is easiest to reach, and a model named
 here would take the change back on the way in as well as on the way
 out (`ecc-proc--model')."
   (append (list ecc-executable "--resume" (ecc-session-id session))
-          (when-let* ((model (ecc-proc--model session t)))
+          (when-let* ((model (ecc-proc--model session)))
             (list "--model" model))
           ecc-tui-extra-args))
 

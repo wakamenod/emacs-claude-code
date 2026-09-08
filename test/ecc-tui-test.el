@@ -90,17 +90,16 @@ The process the session would run is pretended to be alive until
 
 (ert-deftest ecc-tui-test-command-leaves-the-model-alone ()
   "The hand-off does not name a model the session was not given.
-A resume keeps the model its recording ends on, so passing `ecc-model'
-here would undo a `/model' made in Emacs on the way in, and one made in
-the terminal on the way out (FR-TUI-4)."
+A resume keeps the model its recording ends on, so naming a model here
+would undo a `/model' made in Emacs on the way in, and one made in the
+terminal on the way out (FR-TUI-4)."
   (ecc-test-with-fake-session session
-    (let ((ecc-model "haiku"))
-      (should-not (member "--model" (ecc-tui-arguments session)))
-      ;; A model put in the options of this session is somebody's doing
-      ;; and is still passed.
-      (setf (ecc-session-options session) '(:model "opus"))
-      (should (equal (cadr (member "--model" (ecc-tui-arguments session)))
-                     "opus")))))
+    (should-not (member "--model" (ecc-tui-arguments session)))
+    ;; A model put in the options of this session is somebody's doing
+    ;; and is still passed.
+    (setf (ecc-session-options session) '(:model "opus"))
+    (should (equal (cadr (member "--model" (ecc-tui-arguments session)))
+                   "opus"))))
 
 ;;;; Only one process at a time (FR-TUI-5)
 

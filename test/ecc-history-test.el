@@ -113,20 +113,18 @@ The recording carries no system/init, so the only place the model is
 named is the assistant messages.  Without it every session read from
 history was taken for the default window and showed no context left."
   (ecc-test-with-fake-session session
-    (let ((ecc-model nil))
-      (should-not (ecc-hint-model session))
-      (ecc-history-load session nil ecc-history-test-file)
-      (should (equal (ecc-hint-model session) "claude-haiku-4-5-20251001"))
-      (should (= (ecc-hint-model-window session) 200000))
-      ;; A recording of three short turns leaves most of it.
-      (should (> (ecc-hint-context-left session) 0.8)))))
+    (should-not (ecc-hint-model session))
+    (ecc-history-load session nil ecc-history-test-file)
+    (should (equal (ecc-hint-model session) "claude-haiku-4-5-20251001"))
+    (should (= (ecc-hint-model-window session) 200000))
+    ;; A recording of three short turns leaves most of it.
+    (should (> (ecc-hint-context-left session) 0.8))))
 
 (ert-deftest ecc-history-test-a-synthetic-answer-keeps-the-model ()
   "The \"<synthetic>\" of a slash command is not the model of the session."
   (ecc-test-with-fake-session session
-    (let ((ecc-model nil))
-      (ecc-history-load session nil (ecc-test-history-fixture "local-commands"))
-      (should (equal (ecc-hint-model session) "claude-haiku-4-5-20251001")))))
+    (ecc-history-load session nil (ecc-test-history-fixture "local-commands"))
+    (should (equal (ecc-hint-model session) "claude-haiku-4-5-20251001"))))
 
 (ert-deftest ecc-history-test-nothing-is-unknown ()
   "No line of a recording falls through the dispatch table (FR-HIST-2)."
