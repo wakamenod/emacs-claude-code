@@ -107,8 +107,9 @@ the first turn (FR-HIST-1)."
 
 (defcustom ecc-render-follow t
   "Non-nil scrolls to the end of the buffer while it is at the end.
-The prompt region counts as the end: a window whose point is there,
-or in the live region above it, keeps looking at what arrives."
+The prompt region is the end: a window whose point is there keeps
+looking at what arrives.  A window whose point is above it, in the
+transcript, is reading, and a redraw leaves it where it was."
   :type 'boolean
   :group 'ecc)
 
@@ -1621,53 +1622,98 @@ A request waiting for an answer is what the mode line exists to show
 
 (defun ecc-render--following-p (position)
   "Return non-nil when POSITION is watching the end of the transcript.
-That is anywhere from the start of the live region on, the prompt
-region included."
-  (and ecc-render--live-start
-       (marker-position ecc-render--live-start)
-       (>= position (marker-position ecc-render--live-start))))
+That is the prompt region and what follows it.  A position above it,
+in the live region of a turn that is still growing, is reading rather
+than following: it used to count as the end, and every redraw of the
+live region -- ten a second while a turn arrives -- dragged it down to
+the prompt, so that point could not be moved into a running turn at
+all (FR-UI-2)."
+  (>= position (ecc-render--draw-limit)))
 
 (defun ecc-render--prompt-offset (position)
   "Return how far into the prompt region POSITION lies, or nil outside it."
   (when-let* ((start (ecc-render-prompt-start)))
     (and (>= position start) (- position start))))
 
+(defun ecc-render--anchor (position)
+  "Return (ID . OFFSET) tying POSITION to the node it stands in, or nil.
+ID is the node whose text POSITION lies in, or the nearest one before
+it, and OFFSET how far POSITION stands from where that node starts.
+The text of the live region is deleted and inserted again by every
+redraw, so a plain position there means nothing afterwards; the node
+ids do not change, and `ecc-render--restore-points' finds the place
+again through them."
+  (let ((pos (min position (max (point-min) (1- (ecc-render--draw-limit)))))
+        (id nil))
+    (while (and (>= pos (point-min))
+                (null (setq id (get-text-property pos 'ecc-node))))
+      (setq pos (1- (or (previous-single-property-change pos 'ecc-node)
+                        (point-min)))))
+    (when-let* ((id id)
+                (bounds (ecc-render-node-bounds id)))
+      (cons id (- position (car bounds))))))
+
+(defun ecc-render--note-position (position fresh)
+  "Return how POSITION is to be found again once the buffer is redrawn.
+The value is (OFFSET FOLLOWING ANCHOR); FRESH says nothing has been
+drawn yet, in which case there is nothing to anchor to and the buffer
+is at its end."
+  (list (ecc-render--prompt-offset position)
+        (or fresh (ecc-render--following-p position))
+        (and (not fresh) (ecc-render--anchor position))))
+
 (defun ecc-render--note-points ()
   "Return where point, the window points and the prompt region stand.
-The value is what `ecc-render--restore-points' takes.
+The value is what `ecc-render--restore-points' takes.  The top of each
+window is noted along with its point, so that the redraw does not
+scroll the text out from under the reader.
 Before anything has been drawn there is no live region yet, and a
 buffer that has just been made is at its end, so every window counts
 as following."
   (let ((fresh (not (and ecc-render--live-start
                          (marker-buffer ecc-render--live-start)))))
     (list :prompt (ecc-render-prompt-start)
-          :point (list (ecc-render--prompt-offset (point))
-                       (or fresh (ecc-render--following-p (point))))
+          :point (ecc-render--note-position (point) fresh)
           :windows (mapcar (lambda (window)
-                             (let ((position (window-point window)))
-                               (list window
-                                     (ecc-render--prompt-offset position)
-                                     (or fresh (ecc-render--following-p position)))))
+                             (list window
+                                   (ecc-render--note-position (window-point window)
+                                                              fresh)
+                                   (ecc-render--note-position (window-start window)
+                                                              fresh)))
                            (get-buffer-window-list (current-buffer) nil t)))))
+
+(defun ecc-render--restore-position (noted)
+  "Return where NOTED stands now, or nil to leave it where it is.
+A position that was in the prompt region goes back to the same place
+in it; one that was anchored to a node goes back to the same place in
+that node, wherever the node ended up; one that was watching the end
+goes to the start of the prompt region when `ecc-render-follow' is on."
+  (pcase-let* ((`(,offset ,following ,anchor) noted)
+               (limit (ecc-render--draw-limit))
+               (bounds (and anchor (ecc-render-node-bounds (car anchor)))))
+    (cond (offset (min (point-max) (+ limit offset)))
+          (bounds (max (point-min) (min limit (+ (car bounds) (cdr anchor)))))
+          ((and following ecc-render-follow) limit))))
 
 (defun ecc-render--restore-points (noted)
   "Put point and the window points back where NOTED says they were.
-A point that was in the prompt region goes back to the same place in
-it; one that was watching the end is put at the start of the prompt
-region when `ecc-render-follow' is on, and left alone otherwise.  The
-undo history of the draft is moved along with it."
-  (let ((start (ecc-render--draw-limit))
-        (before (plist-get noted :prompt)))
+The undo history of the draft is moved along with the prompt region."
+  (let ((before (plist-get noted :prompt)))
     (when (and before (ecc-render-prompt-start))
       (ecc-render--shift-undo (- (ecc-render-prompt-start) before)))
-    (pcase-let ((`(,offset ,following) (plist-get noted :point)))
-      (cond (offset (goto-char (min (point-max) (+ start offset))))
-            ((and following ecc-render-follow) (goto-char start))))
+    (when-let* ((position (ecc-render--restore-position (plist-get noted :point))))
+      (goto-char position))
     (dolist (entry (plist-get noted :windows))
-      (pcase-let ((`(,window ,offset ,following) entry))
+      (pcase-let ((`(,window ,noted-point ,noted-start) entry))
         (when (window-live-p window)
-          (cond (offset (set-window-point window (min (point-max) (+ start offset))))
-                ((and following ecc-render-follow) (set-window-point window start))))))))
+          (let ((position (ecc-render--restore-position noted-point)))
+            ;; A window at the end is left to scroll there itself; one
+            ;; reading further up keeps the line it had at its top.
+            (unless (and position (>= position (ecc-render--draw-limit)))
+              (when-let* ((top (ecc-render--restore-position noted-start)))
+                (set-window-start window top t)))
+            (when position
+              (set-window-point window position))))))))
 
 (defun ecc-render--shift-undo (delta &optional from)
   "Move the positions in the undo history of this buffer by DELTA.
@@ -1942,13 +1988,18 @@ heading, because its body starts collapsed anyway."
     (cancel-timer ecc-render--delta-timer)
     (setq ecc-render--delta-timer nil))
   (let ((pending (nreverse ecc-render--pending-deltas))
-        (noted (ecc-render--note-points)))
+        (before (ecc-render-prompt-start)))
     (setq ecc-render--pending-deltas nil
           ecc-render--delta-count 0)
     (with-silent-modifications
       (dolist (pair pending)
         (ecc-render--append-delta (car pair) (cdr pair))))
-    (ecc-render--restore-points noted)
+    ;; Nothing is deleted here: the text goes in at a marker, so point,
+    ;; the window points and the prompt region all move along with it on
+    ;; their own.  Only the undo history of the draft, which records
+    ;; plain positions, is left behind (FR-UI-2).
+    (when (and before (ecc-render-prompt-start))
+      (ecc-render--shift-undo (- (ecc-render-prompt-start) before)))
     (force-mode-line-update)))
 
 (defun ecc-render--delta-timer-fired (buffer)

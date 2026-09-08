@@ -348,7 +348,8 @@ calls in one step is what the depth ladder needs."
       (should (string-search "hello from emacs" (buffer-string))))))
 
 (ert-deftest ecc-chat-test-window-point-in-the-prompt-is-kept ()
-  "A window whose point is in the prompt region keeps it there."
+  "A window whose point is in the prompt region keeps it there.
+A window reading the transcript keeps its place there instead."
   (ecc-test-with-fake-session session
     (let ((buffer (ecc-session-ensure-buffer session))
           (window (split-window)))
@@ -362,11 +363,28 @@ calls in one step is what the depth ladder needs."
             (ecc-test-dispatch session "basic-turn")
             (ecc-render-flush session)
             (should (= (window-point window) (- (point-max) 2)))
-            ;; A window reading the live region follows to the prompt.
-            (set-window-point window (marker-position ecc-render--live-start))
+            ;; A window reading a turn that is still growing stays on the
+            ;; line it was reading.  The live region is drawn again from
+            ;; scratch on every change, and it used to drag every point in
+            ;; it down to the prompt, so that a window could not be moved
+            ;; into a running turn at all.
             (ecc-model-begin-turn session "again")
+            (ecc-model-add-node session :type 'text
+                                :data '((text . "first paragraph of the answer")))
             (ecc-render-flush session)
-            (should (= (window-point window) (ecc-chat-prompt-start))))
+            (let* ((position (+ 2 (marker-position ecc-render--live-start)))
+                   (line (lambda ()
+                           (save-excursion
+                             (goto-char (window-point window))
+                             (buffer-substring-no-properties
+                              (line-beginning-position) (line-end-position))))))
+              (set-window-point window position)
+              (let ((before (funcall line)))
+                (ecc-model-add-node session :type 'text
+                                    :data '((text . "second paragraph")))
+                (ecc-render-flush session)
+                (should-not (= (window-point window) (ecc-chat-prompt-start)))
+                (should (equal (funcall line) before)))))
         (when (window-live-p window) (delete-window window))))))
 
 (ert-deftest ecc-chat-test-another-session-does-not-touch-the-draft ()

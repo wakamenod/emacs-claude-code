@@ -755,6 +755,44 @@ have to be there for whatever searches the text while showing nothing
                           (uuid . ,(or uuid text))))
   (ecc-dispatch session '((type . "result") (subtype . "success"))))
 
+(defun ecc-render-test--line ()
+  "Return the line point stands on, without its properties."
+  (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
+
+(ert-deftest ecc-render-test-point-stays-in-a-running-turn ()
+  "Point in a turn that is still growing is not dragged to the prompt.
+The live region is deleted and drawn again on every change, and a
+point in it used to count as watching the end, so a redraw -- ten a
+second while a turn arrives -- put it back at the prompt and the
+cursor could not be moved into the answer at all (FR-UI-2)."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "hello")
+    (dotimes (i 6)
+      (ecc-model-add-node session :type 'text
+                          :data `((text . ,(format "paragraph %d" i)))))
+    (ecc-render-flush session)
+    (with-current-buffer (ecc-session-buffer session)
+      (goto-char (marker-position ecc-render--live-start))
+      (should (search-forward "paragraph 3" nil t))
+      (goto-char (match-beginning 0))
+      (let ((line (ecc-render-test--line)))
+        ;; A redraw of the live region: another node of the same turn.
+        (ecc-model-add-node session :type 'text :data '((text . "paragraph 6")))
+        (ecc-render-flush session)
+        (should (equal (ecc-render-test--line) line))
+        (should-not (= (point) (ecc-render-prompt-start)))
+        ;; And a flush of streamed text, which arrives far more often.
+        (let ((node (ecc-model-add-node session :type 'text :data '((text . "")))))
+          (ecc-render-flush session)
+          (goto-char (marker-position ecc-render--live-start))
+          (should (search-forward "paragraph 3" nil t))
+          (goto-char (match-beginning 0))
+          (ecc-render--on-delta session node "streamed")
+          (ecc-render-flush-deltas session)
+          (should (equal (ecc-render-test--line) line))
+          (should-not (= (point) (ecc-render-prompt-start))))))))
+
 (ert-deftest ecc-render-test-refresh-keeps-following-the-end ()
   "A window watching the end keeps watching it after a full redraw.
 Drawing from scratch erases the buffer, which drags every window point
