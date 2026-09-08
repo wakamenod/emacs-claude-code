@@ -355,6 +355,32 @@ failing that to the setting."
       (delete-file other)
       (delete-directory root t))))
 
+(ert-deftest ecc-prompt-test-cursor-without-a-tracked-source ()
+  "@cursor reads a buffer on the screen when nothing was tracked."
+  (let ((source (get-buffer-create "ecc-prompt-test-untracked"))
+        ;; A prompt is sent from a buffer of this package, so the
+        ;; current one is no help; nothing was ever tracked either.
+        (own (get-buffer-create "*ecc-prompt-test-own*"))
+        (ecc-window--last-source-buffer nil)
+        (ecc-window--last-region nil)
+        (ecc-context-cursor-lines 0))
+    (unwind-protect
+        (progn
+          (with-current-buffer source
+            (insert "one\ntwo\nthree\n")
+            (setq-local major-mode 'python-mode)
+            (goto-char (point-min))
+            (forward-line 1))
+          (set-window-buffer (selected-window) source)
+          (with-current-buffer own
+            ;; The buffer comes from the frame instead.
+            (should (eq (ecc-window-context-buffer) source))
+            (let ((text (ecc-prompt-expand-references "@cursor" nil)))
+              (should (string-search "```python\ntwo\n```" text))
+              (should-not ecc-prompt-last-skipped))))
+      (kill-buffer source)
+      (kill-buffer own))))
+
 (ert-deftest ecc-prompt-test-skipped-special-is-noted ()
   "A @region with no region is left alone and noted (FR-INP-8)."
   (let ((source (get-buffer-create "ecc-prompt-test-skipped")))

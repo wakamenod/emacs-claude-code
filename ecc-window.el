@@ -162,6 +162,21 @@ highlighted on the screen.  This is what it looked like while it lived.")
                   (and (<= (point-min) beg) (< beg end) (<= end (point-max)))))
        region))))
 
+(defun ecc-window-context-buffer ()
+  "Return the buffer `@cursor' and `@diagnostics' read, or nil (FR-CTX-1).
+The buffer the user last worked in first, then any ordinary buffer on
+the screen, then the one a region was last seen in.  The first of those
+is nil until `ecc-track-source-buffer-mode' has watched a buffer being
+selected, which is not the case in an Emacs that only ever resumed a
+session, so the two after it are what make the references work there."
+  (or (ecc-window-last-source-buffer)
+      (seq-find (lambda (buffer)
+                  (and (not (ecc-window-own-buffer-p buffer))
+                       (not (minibufferp buffer))
+                       (not (string-prefix-p " " (buffer-name buffer)))))
+                (mapcar #'window-buffer (window-list)))
+      (car (ecc-window--live-region ecc-window--last-region))))
+
 (defun ecc-window-active-region ()
   "Return (BUFFER BEG END) for `@region' and the like, or nil (FR-CTX-1).
 The buffer the user last worked in is asked first, then any buffer on

@@ -83,6 +83,26 @@ when the current buffer is a transcript or a prompt."
   "Return the root of the project of the current buffer, or its directory."
   (ecc-window-project-root))
 
+(defun ecc--enable-session-modes ()
+  "Turn on the global modes a session wants, as the options ask.
+Every way into a session comes through here, and not `ecc-start'
+alone: an Emacs that only resumed a session was left without the hook
+that follows the source buffer, and `@region' and its like then had
+nothing to read (FR-CTX-1)."
+  (when ecc-inbox-indicator
+    (ecc-inbox-indicator-mode 1))
+  (when ecc-notify-on-start
+    (ecc-notify-mode 1))
+  (when ecc-tab-line
+    (ecc-tab-line-mode 1))
+  ;; The timers that sum a conversation up cost a turn when they fire,
+  ;; so they only start once a session exists and only when the recap
+  ;; is wanted at all (FR-HINT-1, NFR-3).
+  (when ecc-recap-enabled
+    (ecc-hint-mode 1))
+  (when ecc-track-source-buffer
+    (ecc-track-source-buffer-mode 1)))
+
 ;;;###autoload
 (defun ecc-start (&optional directory name)
   "Start a Claude Code session in DIRECTORY under NAME (FR-SES-1, 3).
@@ -101,19 +121,7 @@ argument asks for the directory and the name."
                   :name (and name (not (string-empty-p name)) name))))
     (ecc-session-ensure-buffer session)
     (ecc-proc-start session)
-    (when ecc-inbox-indicator
-      (ecc-inbox-indicator-mode 1))
-    (when ecc-notify-on-start
-      (ecc-notify-mode 1))
-    (when ecc-tab-line
-      (ecc-tab-line-mode 1))
-    ;; The timers that sum a conversation up cost a turn when they fire,
-    ;; so they only start once a session exists and only when the recap
-    ;; is wanted at all (FR-HINT-1, NFR-3).
-    (when ecc-recap-enabled
-      (ecc-hint-mode 1))
-    (when ecc-track-source-buffer
-      (ecc-track-source-buffer-mode 1))
+    (ecc--enable-session-modes)
     (ecc-window-select-session session)
     session))
 
@@ -127,6 +135,7 @@ argument forks it into a new conversation (FR-SES-4)."
   ;; appended to the conversation rather than starting an empty one
   ;; (FR-HIST-3).  `ecc-history-resume' refuses a live process.
   (ecc-history-resume session fork)
+  (ecc--enable-session-modes)
   (ecc-display-session session)
   session)
 

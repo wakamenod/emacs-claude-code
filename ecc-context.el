@@ -157,7 +157,7 @@ The lines around it are `ecc-context-cursor-lines' either way, while
 `:line' is the line the cursor sits on and `:end-line' is nil: the
 label of the block points at the cursor, not at the lines that came
 along with it.  ROOT is what `:path' is relative to."
-  (let ((buffer (or buffer (ecc-window-last-source-buffer))))
+  (let ((buffer (or buffer (ecc-window-context-buffer))))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
         (let ((beg (save-excursion
