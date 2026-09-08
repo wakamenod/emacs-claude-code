@@ -125,8 +125,58 @@ after it are told apart by a name the user gives (FR-WIN-3)."
          (or (ecc-window-buffer-session buffer)
              (string-prefix-p "*ecc" (buffer-name buffer))))))
 
+(defvar ecc-window--last-region nil
+  "(BUFFER BEG END) of the last region seen in an ordinary buffer.
+The mark of the buffer the user came from is not to be relied on at the
+moment a prompt is sent: a command run in between deactivates it, and
+`@region' then had nothing to quote though a region was plainly still
+highlighted on the screen.  This is what it looked like while it lived.")
+
+(defun ecc-window-buffer-region (&optional buffer)
+  "Return (BUFFER BEG END) when BUFFER has a region to quote, or nil."
+  (let ((buffer (or buffer (current-buffer))))
+    (when (and (buffer-live-p buffer)
+               (not (ecc-window-own-buffer-p buffer))
+               (not (minibufferp buffer)))
+      (with-current-buffer buffer
+        (when (use-region-p)
+          (list buffer (region-beginning) (region-end)))))))
+
+(defun ecc-window--frame-region ()
+  "Return the region of a buffer shown in some window, or nil."
+  (seq-some (lambda (window) (ecc-window-buffer-region (window-buffer window)))
+            (window-list)))
+
+(defun ecc-window-snapshot-region ()
+  "Remember the region of the buffer the user is leaving (FR-CTX-1)."
+  (when-let* ((region (or (ecc-window-buffer-region ecc-window--last-source-buffer)
+                          (ecc-window--frame-region))))
+    (setq ecc-window--last-region region)))
+
+(defun ecc-window--live-region (region)
+  "Return REGION when its buffer is alive and its bounds still hold."
+  (pcase region
+    (`(,buffer ,beg ,end)
+     (when (and (buffer-live-p buffer)
+                (with-current-buffer buffer
+                  (and (<= (point-min) beg) (< beg end) (<= end (point-max)))))
+       region))))
+
+(defun ecc-window-active-region ()
+  "Return (BUFFER BEG END) for `@region' and the like, or nil (FR-CTX-1).
+The buffer the user last worked in is asked first, then any buffer on
+the screen, and the snapshot of `ecc-window-snapshot-region' last: a
+mark that died between choosing the region and sending the prompt is
+the one failure this is here to survive."
+  (or (ecc-window-buffer-region (ecc-window-last-source-buffer))
+      (ecc-window--frame-region)
+      (ecc-window--live-region ecc-window--last-region)))
+
 (defun ecc-window-note-source-buffer (&rest _)
   "Remember the current buffer as the source to quote from (FR-CTX-1)."
+  ;; The region is taken down before the buffer is, because the buffer
+  ;; being left is still the one recorded here.
+  (ecc-window-snapshot-region)
   (let ((buffer (window-buffer (selected-window))))
     (unless (or (ecc-window-own-buffer-p buffer)
                 (minibufferp buffer)
