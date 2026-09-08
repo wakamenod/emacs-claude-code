@@ -284,11 +284,26 @@ screen says where the session can be reached (docs/verified.md,
   "A message the client does not understand still reaches the buffer."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
-    (ecc-dispatch session '((type . "brand_new_thing") (detail . "hello")))
+    (ecc-dispatch session '((type . "brand_new_thing") (subtype . "odd")
+                            (detail . "hello")))
     (ecc-render-flush session)
     (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
-      (should (string-search "unknown: brand_new_thing" text))
+      ;; The subtype is in the heading: it is what tells the next one apart.
+      (should (string-search "unknown: brand_new_thing/odd" text))
       (should (string-search "hello" text)))))
+
+(ert-deftest ecc-render-test-unhandled-system-is-a-note ()
+  "A system subtype this version does not handle is a dim note saying
+which one it was, not the red line of an error (2026-09-09)."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-dispatch session '((type . "system") (subtype . "vcs_state_changed")
+                            (kind . "commit") (branch . "main")
+                            (cwd . "/tmp/x")))
+    (ecc-render-flush session)
+    (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+      (should (string-search "system/vcs_state_changed — git commit main" text))
+      (should-not (string-search "unknown:" text)))))
 
 ;;;; Cost of drawing (NFR-1)
 
@@ -592,6 +607,14 @@ the cache the same way a node of the transcript does."
     (ecc-dispatch session '((type . "system") (subtype . "thinking_tokens")
                             (estimated_tokens . 1200)))
     (should (string-search "thinking 1.2k tokens" (ecc-render-status-line session)))
+    ;; The line the CLI keeps about the turn (system/task_summary).
+    (ecc-dispatch session '((type . "system") (subtype . "task_summary")
+                            (detail . "reading ecc-render.el")))
+    (should (string-search "reading ecc-render.el" (ecc-render-status-line session)))
+    (ecc-dispatch session '((type . "system") (subtype . "task_summary")
+                            (detail . :null)))
+    (should-not (string-search "reading ecc-render.el"
+                               (ecc-render-status-line session)))
     (let ((node (ecc-model-add-node session :id "t1" :type 'tool :status 'running
                                     :parent (ecc-model-step-for-tool
                                              session (ecc-session-current-turn session))

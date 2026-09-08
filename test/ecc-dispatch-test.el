@@ -308,13 +308,42 @@ only a recording holds, so it may not drift from the table."
                                       (eq (ecc-node-type node) 'unknown))
                                     (hash-table-values
                                      (ecc-session-nodes session)))))))))
-  ;; A subtype that is not in the list does land among the unknown ones.
+  ;; A subtype that is not in the list is a note, not an error: the CLI
+  ;; adds one whenever it grows a feature (2026-09-09).
   (ecc-test-with-fake-session session
     (ecc-dispatch session '((type . "system") (subtype . "away_summary")))
-    (should (= 1 (length (seq-filter (lambda (node)
-                                       (eq (ecc-node-type node) 'unknown))
-                                     (hash-table-values
-                                      (ecc-session-nodes session))))))))
+    (let ((nodes (hash-table-values (ecc-session-nodes session))))
+      (should-not (seq-find (lambda (node) (eq (ecc-node-type node) 'unknown))
+                            nodes))
+      (should (seq-find (lambda (node)
+                          (and (eq (ecc-node-type node) 'system)
+                               (eq (ecc-model-node-get node 'kind) 'notice)))
+                        nodes))
+      ;; It arrived between turns and must not have opened one (76e61b1).
+      (should-not (ecc-session-current-turn session)))))
+
+(ert-deftest ecc-dispatch-test-task-summary ()
+  "The line the CLI keeps about the turn goes to the state line, not the
+transcript, and a null detail clears it (2026-09-09)."
+  (ecc-test-with-fake-session session
+    (ecc-dispatch session '((type . "system") (subtype . "task_summary")
+                            (detail . "reading ecc-dispatch.el")))
+    (should (equal "reading ecc-dispatch.el"
+                   (alist-get 'task-summary (ecc-session-progress session))))
+    (should (= 0 (hash-table-count (ecc-session-nodes session))))
+    (should-not (ecc-session-current-turn session))
+    (ecc-dispatch session '((type . "system") (subtype . "task_summary")
+                            (detail . :null)))
+    (should-not (alist-get 'task-summary (ecc-session-progress session)))))
+
+(ert-deftest ecc-dispatch-test-hook-progress-is-quiet ()
+  "The output a running hook reports every second draws nothing: the hook
+already has a note of its own from hook_started."
+  (ecc-test-with-fake-session session
+    (ecc-dispatch session '((type . "system") (subtype . "hook_progress")
+                            (hook_id . "h1") (hook_name . "SessionStart")
+                            (stdout . "working…")))
+    (should (= 0 (hash-table-count (ecc-session-nodes session))))))
 
 (ert-deftest ecc-dispatch-test-bridge-state ()
   "Remote Control reports itself as system/bridge_state, not as the unknown.

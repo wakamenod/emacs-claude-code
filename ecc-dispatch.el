@@ -103,8 +103,9 @@ queued behind it (2026-09-08).  Nothing is dropped either way
 
 (defconst ecc-dispatch-system-subtypes
   '("init" "status" "thinking_tokens" "hook_started" "hook_response"
-    "permission_denied" "compact_boundary" "task_started" "task_progress"
-    "task_updated" "task_notification" "background_tasks_changed"
+    "hook_progress" "permission_denied" "compact_boundary" "task_started"
+    "task_progress" "task_updated" "task_notification" "task_summary"
+    "background_tasks_changed" "commands_changed" "session_state_changed"
     "local_command" "bridge_state" "post_turn_summary")
   "The system subtypes `ecc-dispatch--system' handles.
 Kept next to the function it lists, and checked against it by a test.
@@ -125,10 +126,18 @@ note rather than among the messages this version does not understand.")
      (ecc-model-add-aside session :type 'system :status 'done
                           :data (list (cons 'kind 'hook)
                                       (cons 'message message))))
+    ;; A hook that runs for a while reports its output once a second.
+    ;; The hook itself already has a note of its own from hook_started.
+    ('hook_progress nil)
     ('local_command
      (ecc-dispatch-command-output session (alist-get 'content message)))
     ('bridge_state (ecc-dispatch--bridge-state session message))
     ('post_turn_summary (ecc-dispatch--post-turn-summary session message))
+    ('task_summary (ecc-dispatch--task-summary session message))
+    ;; What the CLI thinks the session is doing.  Only sent when
+    ;; CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS is set, and ecc keeps the
+    ;; state of a session itself (FR-SES-7).
+    ('session_state_changed nil)
     ('permission_denied
      (when-let* ((node (ecc-model-node session (alist-get 'tool_use_id message))))
        (setf (ecc-node-status node) 'denied)
@@ -143,7 +152,30 @@ note rather than among the messages this version does not understand.")
     ((or 'task_started 'task_progress 'task_updated 'task_notification
          'background_tasks_changed)
      (ecc-dispatch--task session message))
-    (_ (ecc-dispatch--unknown session message nil))))
+    (_ (ecc-dispatch--system-note session message))))
+
+(defun ecc-dispatch--system-note (session message)
+  "Keep the system MESSAGE of SESSION as a folded note.
+The CLI grows a system subtype whenever it grows a feature -- twenty of
+them can reach the stream of 2.1.265, and the list only gets longer --
+so one this version has no use for is bookkeeping rather than a fault,
+and it is not drawn in the colour of an error.  The raw message is kept
+under the note and in the log, so nothing is dropped \(FR-OUT-1,
+NFR-2)."
+  (ecc-log (ecc-session-name session) "system/%s is not handled"
+           (or (alist-get 'subtype message) "?"))
+  (ecc-model-add-aside session :type 'system :status 'done
+                       :data (list (cons 'kind 'notice)
+                                   (cons 'message message))))
+
+(defun ecc-dispatch--task-summary (session message)
+  "Apply the system/task_summary MESSAGE to SESSION.
+The CLI keeps a line of its own saying what the turn is doing, and
+sends it again every time it changes; `detail\=' is null when the turn
+ends and the line is cleared.  It says the same thing the state line
+does, so it goes there rather than into the transcript (2026-09-09)."
+  (let ((detail (alist-get 'detail message)))
+    (ecc-dispatch--progress session 'task-summary (and (stringp detail) detail))))
 
 (defun ecc-dispatch--bridge-state (session message)
   "Apply the system/bridge_state MESSAGE to SESSION.
@@ -764,7 +796,10 @@ so does the state line."
     (ecc-model-set-state session 'idle)
     (setf (alist-get 'thinking-tokens (ecc-session-progress session)) nil
           (alist-get 'running-tool (ecc-session-progress session)) nil
-          (alist-get 'streaming (ecc-session-progress session)) nil)
+          (alist-get 'streaming (ecc-session-progress session)) nil
+          ;; The CLI clears its own line with a null detail, but a turn
+          ;; that ended some other way must not leave it standing.
+          (alist-get 'task-summary (ecc-session-progress session)) nil)
     (run-hook-with-args 'ecc-progress-hook session)
     (ecc-proc-drain-queue session)
     turn))

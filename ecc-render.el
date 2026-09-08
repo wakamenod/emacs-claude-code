@@ -1250,7 +1250,33 @@ model."
                        ("hook_response" (format " → %s" (or (alist-get 'outcome message)
                                                             "?")))
                        (_ ""))))
+      ('notice (ecc-render--system-notice-heading message))
       (_ (or (ecc-model-node-get node 'text) (format "%s" kind))))))
+
+(defun ecc-render--system-notice-heading (message)
+  "Return the heading of a system MESSAGE this version does not handle.
+The subtype is always there, because that is what tells the next one
+apart; the few whose shape is known say what happened as well."
+  (let ((subtype (alist-get 'subtype message)))
+    (concat
+     (format "system/%s" (or subtype "?"))
+     (pcase subtype
+       ("notification"
+        (if-let* ((text (alist-get 'text message))) (format " — %s" text) ""))
+       ("vcs_state_changed"
+        (format " — git %s%s" (or (alist-get 'kind message) "?")
+                (if-let* ((branch (alist-get 'branch message)))
+                    (format " %s" branch) "")))
+       ("code_change_published"
+        (format " — %s %s" (or (alist-get 'action message) "published")
+                (or (alist-get 'url message) (alist-get 'repo message) "")))
+       ("dev_intent"
+        (format " — %s" (or (alist-get 'kind message) "?")))
+       ("elicitation_complete"
+        (format " — %s" (or (alist-get 'mcp_server_name message) "?")))
+       ("feedback_draft_queued"
+        (format " — %s" (or (alist-get 'title message) "draft")))
+       (_ "")))))
 
 (defun ecc-render--insert-system (node depth)
   "Insert the system NODE at DEPTH."
@@ -1287,8 +1313,11 @@ model."
      node depth
      (lambda ()
        (insert (concat pad (ecc-render--fold-cell)
-                       (propertize (format "unknown: %s%s"
+                       (propertize (format "unknown: %s%s%s"
                                                (or (alist-get 'type message) "?")
+                                               (if-let* ((subtype (alist-get
+                                                                   'subtype message)))
+                                                   (format "/%s" subtype) "")
                                                (if reason (format " (%s)" reason) ""))
                                        'face 'ecc-error-face))
                "\n")))
@@ -1474,6 +1503,7 @@ no turn, so nothing freezes them."
          (thinking (alist-get 'thinking-tokens progress))
          (streaming (alist-get 'streaming progress))
          (status (alist-get 'status progress))
+         (task-summary (alist-get 'task-summary progress))
          (request (car (ecc-session-pending session))))
     (pcase (if (eq (ecc-session-kind session) 'handoff) 'handoff
              (ecc-session-state session))
@@ -1507,6 +1537,9 @@ no turn, so nothing freezes them."
         (propertize
          (concat
           (when status (format "  ·  %s" status))
+          ;; What the CLI itself says the turn is doing (system/task_summary).
+          (when task-summary
+            (format "  ·  %s" (ecc-render--one-line task-summary)))
           (when tool
             (format "  ·  %s %s"
                     (ecc-model-node-get tool 'name)

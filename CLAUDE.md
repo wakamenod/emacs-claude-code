@@ -23,7 +23,7 @@ and stay that way; the code, the tests and this file are in English.
 - Emacs: `emacs` is not on PATH. It is `/opt/homebrew/Cellar/emacs-plus@32/32.0.50/Emacs.app/Contents/MacOS/Emacs` (the Emacs 32 development build), already named by the `EMACS` variable of `Makefile`.
 - The dependencies live in `~/.emacs.d/elpa` (markdown-mode, nerd-icons, spinner, ghostel; posframe is optional and only `ecc-usage-display` uses it); `transient` ships with Emacs itself. magit-section is no longer used (phase 9b). `package-initialize` finds them. `package-lint` is not installed, and lint skips it on its own.
 - The terminal of the hand-off is **ghostel** (libghostty-vt), and the only one: neither vterm nor a terminal outside Emacs is supported (see `docs/decisions.md`). ghostel loads and runs in batch, so `ecc-tui-test` drives the real backend.
-- Claude Code CLI: `claude` 2.1.261.
+- Claude Code CLI: `claude` 2.1.265.
 
 ## Commands
 
