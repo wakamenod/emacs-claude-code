@@ -44,6 +44,7 @@
 (require 'ecc-context)
 (require 'ecc-notify)
 (require 'ecc-hint)
+(require 'ecc-usage)
 (require 'ecc-mcp)
 (require 'ecc-inline)
 (require 'ecc-tui)

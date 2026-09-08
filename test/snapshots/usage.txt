@@ -1,0 +1,23 @@
+Claude Code usage — pro
+  Current session              20%  ████░░░░░░░░░░░░░░░░  resets 09/08 14:00
+  Current week (all models)    25%  █████░░░░░░░░░░░░░░░  resets 09/12 12:00
+  Current week (Fable)         15%  ███░░░░░░░░░░░░░░░░░  resets 09/12 12:00
+  Usage credits               $0.00 / $50.00  (off: org_level_disabled_until)
+
+This session
+  $0.4131 · api 2m14s · wall 18m02s · +412 −87 lines
+  claude-opus-5                in 2 · out 1,204 · cache 9,492 r / 12,515 w
+  claude-haiku-4-5-20251001    in 140 · out 88 · cache 0 r / 0 w
+
+What is spending the limits
+  Approximate: the sessions on this machine only, not other devices or claude.ai.
+  Last 24 hours
+    700 requests · 12 sessions
+    long context 33% · subagent heavy 12%
+    agents        Explore 3%
+  Last 7 days
+    3,200 requests · 46 sessions
+    long context 80% · scheduled 15%
+    agents        Explore 5%
+    skills        dataviz 2%
+

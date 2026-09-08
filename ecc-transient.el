@@ -275,6 +275,7 @@ same suffix from one call to the next."
     ("b" "Dashboard" ecc-dashboard)
     ("y" "Capabilities" ecc-capabilities-show)
     ("h" "History" ecc-history-open)
+    ("U" "Usage" ecc-usage)
     ("L" "Log" ecc-show-log)]
    ["Config"
     ("m" "Model" ecc-set-model)

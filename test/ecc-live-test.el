@@ -848,6 +848,27 @@ what it returned, and nothing else.")
       (remhash "ecc_live_probe" ecc-mcp-tools)
       (ecc-mcp-stop))))
 
+(ert-deftest ecc-test-live-usage ()
+  "The CLI answers `get_usage' with the numbers the usage buffer draws.
+No prompt is sent: the session is started, asked, and left alone, so
+this one costs nothing."
+  :tags '(live)
+  (ecc-test-live-with-session session
+    (let ((answer nil))
+      (ecc-usage-fetch session (lambda (_session response) (setq answer response)))
+      (ecc-test-live-wait session (lambda () answer) "the usage")
+      (should-not (alist-get 'error answer))
+      ;; Either the plan windows or the session totals have to be there;
+      ;; which one depends on how this machine is authenticated.
+      (should (or (alist-get 'rate_limits answer) (alist-get 'session answer)))
+      (when (ecc--json-true-p (alist-get 'rate_limits_available answer))
+        (let ((windows (ecc-usage-windows answer)))
+          (should windows)
+          (should (seq-every-p (lambda (window) (plist-get window :title)) windows))))
+      ;; And it draws without complaining about anything it was given.
+      (should (string-match-p "Claude Code usage"
+                              (ecc-usage-render answer))))))
+
 (provide 'ecc-live-test)
 
 ;;; ecc-live-test.el ends here

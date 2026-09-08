@@ -38,6 +38,7 @@
 (require 'ecc-inbox)
 (require 'ecc-history)
 (require 'ecc-registry)
+(require 'ecc-usage)
 (require 'ecc-window)
 
 (declare-function ecc-start "ecc" (&optional directory name))
@@ -544,6 +545,7 @@ which arrives with the first turn.\n"
     (define-key map (kbd "d") #'ecc-dashboard-deny)
     (define-key map (kbd "g") #'ecc-dashboard-refresh)
     (define-key map (kbd "C") #'ecc-capabilities-show)
+    (define-key map (kbd "U") #'ecc-usage)
     map)
   "Keymap of `ecc-dashboard-mode'.")
 
