@@ -308,6 +308,50 @@ only a recording holds, so it may not drift from the table."
                                      (hash-table-values
                                       (ecc-session-nodes session))))))))
 
+(ert-deftest ecc-dispatch-test-bridge-state ()
+  "Remote Control reports itself as system/bridge_state, not as the unknown.
+Two of them arrive, `ready' and then `connected', and only the second
+carries the epoch of the bridge (docs/verified.md, 2026-09-08)."
+  (ecc-test-with-fake-session session
+    (let ((announced 0))
+      (let ((ecc-remote-control-functions
+             (list (lambda (_session) (cl-incf announced)))))
+        (ecc-dispatch session '((type . "system") (subtype . "bridge_state")
+                                (state . "ready") (session_id . "s1")))
+        (should (equal (ecc-model-remote-control session 'state) "ready"))
+        (should-not (ecc-model-remote-control session 'bridge-epoch))
+        (ecc-dispatch session '((type . "system") (subtype . "bridge_state")
+                                (state . "connected") (bridge_epoch . 1)
+                                (session_id . "s1")))
+        (should (equal (ecc-model-remote-control session 'state) "connected"))
+        (should (equal (ecc-model-remote-control session 'bridge-epoch) 1))
+        (should (ecc-model-remote-control session 'enabled))
+        (should (= 2 announced)))
+      (let ((nodes (hash-table-values (ecc-session-nodes session))))
+        (should-not (seq-find (lambda (node) (eq (ecc-node-type node) 'unknown))
+                              nodes))
+        (should (equal '("remote control connected" "remote control ready")
+                       (sort (mapcar (lambda (node)
+                                       (ecc-model-node-get node 'text))
+                                     (seq-filter
+                                      (lambda (node)
+                                        (eq (ecc-model-node-get node 'kind)
+                                            'remote-control))
+                                      nodes))
+                             #'string<)))))))
+
+(ert-deftest ecc-dispatch-test-bridge-state-detail ()
+  "A state that needs explaining brings a detail, and it is shown."
+  (ecc-test-with-fake-session session
+    (ecc-dispatch session '((type . "system") (subtype . "bridge_state")
+                            (state . "disconnected") (detail . "network lost")))
+    (should (equal (ecc-model-remote-control session 'detail) "network lost"))
+    (should (seq-find
+             (lambda (node)
+               (equal (ecc-model-node-get node 'text)
+                      "remote control disconnected — network lost"))
+             (hash-table-values (ecc-session-nodes session))))))
+
 ;;;; Robustness (NFR-2, plan section 9, item 19)
 
 (ert-deftest ecc-dispatch-test-unknown-message-is-kept ()

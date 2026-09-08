@@ -95,7 +95,7 @@ Errors are caught: an unreadable message must never stop the stream."
   '("init" "status" "thinking_tokens" "hook_started" "hook_response"
     "permission_denied" "compact_boundary" "task_started" "task_progress"
     "task_updated" "task_notification" "background_tasks_changed"
-    "local_command")
+    "local_command" "bridge_state")
   "The system subtypes `ecc-dispatch--system' handles.
 Kept next to the function it lists, and checked against it by a test.
 `ecc-history' asks this before handing a recorded line over: a
@@ -116,6 +116,7 @@ note rather than among the messages this version does not understand.")
                                      (cons 'message message))))
     ('local_command
      (ecc-dispatch-command-output session (alist-get 'content message)))
+    ('bridge_state (ecc-dispatch--bridge-state session message))
     ('permission_denied
      (when-let* ((node (ecc-model-node session (alist-get 'tool_use_id message))))
        (setf (ecc-node-status node) 'denied)
@@ -131,6 +132,30 @@ note rather than among the messages this version does not understand.")
          'background_tasks_changed)
      (ecc-dispatch--task session message))
     (_ (ecc-dispatch--unknown session message nil))))
+
+(defun ecc-dispatch--bridge-state (session message)
+  "Apply the system/bridge_state MESSAGE to SESSION.
+Remote Control reports itself this way: `ready\=' once the bridge is up
+and `connected\=' when somebody is on the other end, the latter with
+the epoch of the bridge (docs/verified.md, 2026-09-08).  A `detail\='
+comes with a state that needs explaining."
+  (let ((state (alist-get 'state message))
+        (detail (alist-get 'detail message)))
+    (ecc-model-set-remote-control session
+                                  'enabled t
+                                  'state state
+                                  'detail detail)
+    (when-let* ((epoch (alist-get 'bridge_epoch message)))
+      (ecc-model-set-remote-control session 'bridge-epoch epoch))
+    (ecc-model-add-node session :type 'system :status 'done
+                        :data (list (cons 'kind 'remote-control)
+                                    (cons 'text (format "remote control %s%s"
+                                                        (or state "?")
+                                                        (if detail
+                                                            (format " — %s" detail)
+                                                          "")))))
+    (run-hook-with-args 'ecc-remote-control-functions session)
+    (run-hook-with-args 'ecc-progress-hook session)))
 
 (defun ecc-dispatch--init (session message)
   "Apply the system/init MESSAGE to SESSION.
