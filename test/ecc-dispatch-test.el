@@ -502,6 +502,42 @@ that had already ended (FR-INP-6, FR-SES-7)."
       ;; So the next prompt goes out instead of queueing for ever.
       (should (eq 'sent (ecc-proc-send-prompt session "ecc から送る"))))))
 
+(ert-deftest ecc-dispatch-test-a-permission-answered-elsewhere-is-withdrawn ()
+  "A permission the phone answered stops asking here (measured 2026-09-08).
+With Remote Control on, a can_use_tool reaches Emacs and the phone at
+once; whoever answers first ends it, and the CLI withdraws the other
+side with control_cancel_request.  Unhandled, the transcript went on
+showing a request nobody could answer and the session stayed in
+`waiting-permission' until the turn ended."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "書いて")
+    (let* ((request (ecc-test-add-request session "Write"))
+           (node (ecc-request-node request)))
+      (should (eq (ecc-session-state session) 'waiting-permission))
+      (ecc-dispatch session `((type . "control_cancel_request")
+                              (request_id . ,(ecc-request-request-id request))
+                              (session_id . "s1")))
+      (should-not (ecc-session-pending session))
+      (should (eq (ecc-node-status node) 'done))
+      (should (equal "answered elsewhere"
+                     (ecc-model-node-get node 'outcome-message)))
+      ;; The turn is still running; nothing was sent back.
+      (should (eq (ecc-session-state session) 'running))
+      (should-not (ecc-test-sent-messages)))
+    ;; One for a request that is not here is not an unknown message.
+    (ecc-dispatch session '((type . "control_cancel_request")
+                            (request_id . "gone")))
+    (should-not (seq-find (lambda (node) (eq (ecc-node-type node) 'unknown))
+                          (hash-table-values (ecc-session-nodes session))))))
+
+(ert-deftest ecc-dispatch-test-keep-alive-is-quiet ()
+  "A keep_alive says nothing and must draw nothing."
+  (ecc-test-with-fake-session session
+    (ecc-dispatch session '((type . "keep_alive")))
+    (should-not (ecc-session-turns session))
+    (should-not (seq-find (lambda (node) (eq (ecc-node-type node) 'unknown))
+                          (hash-table-values (ecc-session-nodes session))))))
+
 (ert-deftest ecc-dispatch-test-post-turn-summary-is-not-unknown ()
   "The summary the CLI writes as a turn ends is known, and quiet."
   (ecc-test-with-fake-session session

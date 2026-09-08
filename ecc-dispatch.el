@@ -65,6 +65,9 @@ Errors are caught: an unreadable message must never stop the stream."
     ('user (ecc-dispatch--user session message))
     ('control_request (ecc-dispatch--control-request session message))
     ('control_response (ecc-dispatch--control-response session message))
+    ('control_cancel_request (ecc-dispatch--control-cancel session message))
+    ;; The CLI keeps a quiet stream alive; there is nothing to show.
+    ('keep_alive nil)
     ('result (ecc-dispatch--result session message))
     ('stream_event (ecc-dispatch--stream-event session message))
     ('rate_limit_event
@@ -718,6 +721,31 @@ information, where the state line can reach it, and in the log."
       (run-hook-with-args 'ecc-commands-updated-hook session))
     (when (functionp callback)
       (funcall callback session response))))
+
+(defun ecc-dispatch--control-cancel (session message)
+  "Withdraw the request MESSAGE cancels from SESSION.
+The CLI sends it when it no longer needs the answer, and a permission
+answered somewhere else is how that happens here: with
+Remote Control on, a can_use_tool goes to Emacs and to the phone at
+once, and whoever answers first ends it for both (measured
+2026-09-08).  Nothing is sent back; the request is closed, so that the
+transcript stops asking for an answer that has already been given, and
+so does the state line."
+  (let* ((request-id (alist-get 'request_id message))
+         (request (and request-id (ecc-model-request session request-id))))
+    (ecc-log (ecc-session-name session) "request %s was withdrawn%s"
+             (or request-id "?") (if request "" " (nothing pending)"))
+    (when request
+      (when-let* ((node (ecc-request-node request)))
+        (ecc-model-node-put node 'outcome-message "answered elsewhere"))
+      (ecc-model-resolve-request session request 'done)
+      (run-hook-with-args 'ecc-progress-hook session))
+    ;; A control request of our own can be withdrawn too; its callback
+    ;; will never be called, so it is forgotten rather than left to time
+    ;; out (NFR-4).
+    (when request-id
+      (ecc-proc-take-control-callback session request-id))
+    request))
 
 ;;;; result
 
