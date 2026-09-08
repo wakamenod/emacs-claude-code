@@ -78,12 +78,18 @@ Errors are caught: an unreadable message must never stop the stream."
     (_ (ecc-dispatch--unknown session message nil))))
 
 (defun ecc-dispatch--unknown (session message reason)
-  "Keep MESSAGE of SESSION as an unknown node, noting REASON."
-  (ecc-model-add-node session
-                      :type 'unknown
-                      :status 'done
-                      :data (list (cons 'message message)
-                                  (cons 'reason reason))))
+  "Keep MESSAGE of SESSION as an unknown node, noting REASON.
+It goes beside the conversation rather than into a turn of its own: a
+message this version does not understand can arrive between turns --
+`post_turn_summary' did, and opened a turn that nothing would ever
+close, which left the session running for good and every later prompt
+queued behind it (2026-09-08).  Nothing is dropped either way
+(FR-OUT-1, NFR-2)."
+  (ecc-model-add-aside session
+                       :type 'unknown
+                       :status 'done
+                       :data (list (cons 'message message)
+                                   (cons 'reason reason))))
 
 (defun ecc-dispatch--progress (session key value)
   "Set KEY of the progress information of SESSION to VALUE and announce it."
@@ -112,9 +118,10 @@ note rather than among the messages this version does not understand.")
      (ecc-dispatch--progress session 'thinking-tokens
                              (alist-get 'estimated_tokens message)))
     ((or 'hook_started 'hook_response)
-     (ecc-model-add-node session :type 'system :status 'done
-                         :data (list (cons 'kind 'hook)
-                                     (cons 'message message))))
+     ;; A SessionStart hook runs before any turn does.
+     (ecc-model-add-aside session :type 'system :status 'done
+                          :data (list (cons 'kind 'hook)
+                                      (cons 'message message))))
     ('local_command
      (ecc-dispatch-command-output session (alist-get 'content message)))
     ('bridge_state (ecc-dispatch--bridge-state session message))
@@ -220,12 +227,13 @@ RESULT is nil on the compact_boundary that opens the compacted
 conversation, and the outcome the CLI reported on the status message
 that closes the compaction itself."
   (let ((metadata (alist-get 'compact_metadata message)))
-    (ecc-model-add-node session :type 'system :status 'done
-                        :data (list (cons 'kind 'compact)
-                                    (cons 'result result)
-                                    (cons 'error (alist-get 'compact_error message))
-                                    (cons 'metadata metadata)
-                                    (cons 'message message)))
+    ;; A compaction happens between turns as often as during one.
+    (ecc-model-add-aside session :type 'system :status 'done
+                         :data (list (cons 'kind 'compact)
+                                     (cons 'result result)
+                                     (cons 'error (alist-get 'compact_error message))
+                                     (cons 'metadata metadata)
+                                     (cons 'message message)))
     ;; The context left starts again from what is in the window now
     ;; (FR-HINT-5).  Only the boundary knows how much that is; a
     ;; successful status message is followed by one, so its guess of
@@ -497,9 +505,9 @@ system note rather than dropped (NFR-2)."
          (id (alist-get 'command-node (ecc-session-progress session)))
          (node (and id (ecc-model-node session id))))
     (if (not (and node (eq (ecc-node-type node) 'command)))
-        (ecc-model-add-node session :type 'system :status 'done
-                            :data (list (cons 'kind 'command-output)
-                                        (cons 'text output)))
+        (ecc-model-add-aside session :type 'system :status 'done
+                             :data (list (cons 'kind 'command-output)
+                                         (cons 'text output)))
       (ecc-model-node-put node 'output
                           (let ((had (ecc-model-node-get node 'output)))
                             (if (and had (not (string-empty-p had)))
@@ -515,9 +523,9 @@ system note rather than dropped (NFR-2)."
          (error-p (eq (alist-get 'is_error block) t))
          (structured (alist-get 'tool_use_result message)))
     (if (null node)
-        (ecc-model-add-node session :type 'unknown :status 'done
-                            :data (list (cons 'block block)
-                                        (cons 'reason "no tool_use for this result")))
+        (ecc-model-add-aside session :type 'unknown :status 'done
+                             :data (list (cons 'block block)
+                                         (cons 'reason "no tool_use for this result")))
       (ecc-model-node-put node 'result (alist-get 'content block))
       (ecc-model-node-put node 'is-error error-p)
       (ecc-model-node-put node 'finished (current-time))
@@ -666,10 +674,10 @@ tool the user allowed for the whole session is never asked about again
                       (ecc-protocol-permission-allow
                        (ecc-request-request-id request)
                        :updated-input (ecc-request-input request)))
-  (ecc-model-add-node session :type 'system :status 'done
-                      :data (list (cons 'kind 'auto-allow)
-                                  (cons 'text (format "auto-allowed %s"
-                                                      (ecc-request-tool-name request))))))
+  (ecc-model-add-aside session :type 'system :status 'done
+                       :data (list (cons 'kind 'auto-allow)
+                                   (cons 'text (format "auto-allowed %s"
+                                                       (ecc-request-tool-name request))))))
 
 (defun ecc-dispatch--command-lifecycle (session message)
   "Apply the command_lifecycle MESSAGE to SESSION.

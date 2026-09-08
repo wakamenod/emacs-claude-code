@@ -472,6 +472,36 @@ passing through Emacs; the echo is the only way it can be shown."
       (ecc-dispatch session message))
     (should-not (ecc-session-turns session))))
 
+(ert-deftest ecc-dispatch-test-a-message-after-the-result-starts-no-turn ()
+  "Anything arriving between turns leaves the session idle and sending.
+This is the failure of 2026-09-08: `post_turn_summary' came after the
+result of a turn started from a phone, drew as an unknown node, and
+that node opened a turn nothing would ever close.  The session read
+`running' from then on and every prompt typed here queued behind a turn
+that had already ended (FR-INP-6, FR-SES-7)."
+  (dolist (message '(((type . "system") (subtype . "post_turn_summary")
+                      (status_category . "completed"))
+                     ((type . "system") (subtype . "away_summary"))
+                     ((type . "no_such_type_at_all"))
+                     ((type . "system") (subtype . "hook_started")
+                      (hook_name . "SessionStart"))))
+    (ecc-test-with-fake-session session
+      ;; A turn from elsewhere ran and ended.
+      (ecc-model-set-remote-control session 'enabled t 'state "connected")
+      (ecc-dispatch session '((type . "user")
+                              (message . ((role . "user") (content . "スマホから")))
+                              (isReplay . t)))
+      (ecc-dispatch session '((type . "result") (subtype . "success")
+                              (is_error . :false)))
+      (should (eq (ecc-session-state session) 'idle))
+      ;; And then this arrives.
+      (ecc-dispatch session message)
+      (should (equal (cons message 'idle)
+                     (cons message (ecc-session-state session))))
+      (should-not (ecc-session-current-turn session))
+      ;; So the next prompt goes out instead of queueing for ever.
+      (should (eq 'sent (ecc-proc-send-prompt session "ecc から送る"))))))
+
 (ert-deftest ecc-dispatch-test-post-turn-summary-is-not-unknown ()
   "The summary the CLI writes as a turn ends is known, and quiet."
   (ecc-test-with-fake-session session
