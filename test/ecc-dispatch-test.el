@@ -170,6 +170,26 @@
                                   (lambda (m) (eq (ecc-protocol-control-subtype m)
                                                   'can_use_tool))))))))))
 
+(ert-deftest ecc-dispatch-test-result-closes-an-unanswered-question ()
+  "A turn that ends leaves no question waiting, and no buffer for it.
+An interrupt ends the turn with a result while the question is still on
+screen; left pending, it would blink for an answer nobody wants."
+  (ecc-test-with-fake-session session
+    (let* ((request (ecc-test-feed-until-request session "ask-user-question" "質問して"))
+           (node (ecc-request-node request))
+           (buffer (ecc-question-open request))
+           (sent (length (ecc-test-sent-messages))))
+      (should (eq (ecc-session-state session) 'waiting-question))
+      (ecc-dispatch session '((type . "result")
+                              (subtype . "error_during_execution")
+                              (is_error . t)))
+      (should-not (ecc-session-pending session))
+      (should (eq (ecc-session-state session) 'idle))
+      (should (eq (ecc-node-status node) 'denied))
+      ;; Nothing is sent back: the CLI is not listening for it any more.
+      (should (= sent (length (ecc-test-sent-messages))))
+      (should-not (buffer-live-p buffer)))))
+
 ;;;; plan-mode
 
 (ert-deftest ecc-dispatch-test-plan ()

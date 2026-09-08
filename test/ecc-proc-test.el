@@ -191,6 +191,28 @@ one the model of the last real assistant message of its recording
       (should (eq (ecc-node-status node) 'denied))
       (should (= 0 (hash-table-count (ecc-session-pending-controls session)))))))
 
+(ert-deftest ecc-proc-test-interrupt-closes-a-waiting-question ()
+  "An interrupt closes the question it was asked in the middle of (FR-SES-5).
+The CLI has stopped listening for the answer, so a request left pending
+would blink for an answer that can no longer go anywhere."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "質問して")
+    (let* ((request (ecc-test-add-request session "AskUserQuestion"
+                                          '((questions . []))))
+           (node (ecc-request-node request))
+           (request-id (ecc-proc-interrupt session)))
+      (should (eq (ecc-session-state session) 'waiting-question))
+      (ecc-dispatch session
+                    (ecc-protocol-parse-line
+                     (ecc-protocol-serialize
+                      (ecc-protocol-control-response
+                       request-id '((still_queued . []))))))
+      (should-not (ecc-session-pending session))
+      (should (eq (ecc-node-status node) 'denied))
+      (should (ecc-model-node-get node 'outcome-message))
+      ;; Nothing was answered: only the interrupt itself went out.
+      (should (= 1 (length (ecc-test-sent-messages)))))))
+
 (ert-deftest ecc-proc-test-send-needs-a-process ()
   "Sending to a session that is not running is an error, not a silent drop.
 This one uses the real sender, so it builds its session by hand."

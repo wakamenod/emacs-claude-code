@@ -612,10 +612,13 @@ tool the user allowed for the whole session is never asked about again
     (ecc-model-add-node session :type 'result :parent turn :status 'done
                         :data (list (cons 'result message)))
     (ecc-model-finish-turn session message)
-    (ecc-model-set-state session
-                         (if (ecc-session-pending session)
-                             (ecc-session-state session)
-                           'idle))
+    ;; The turn is over, so nothing is waiting for the answer to a
+    ;; request it left open -- an interrupt ends a turn this way.
+    (when-let* ((abandoned (ecc-model-abandon-requests
+                            session "the turn ended before it was answered")))
+      (ecc-log (ecc-session-name session)
+               "the result closed %d unanswered request(s)" (length abandoned)))
+    (ecc-model-set-state session 'idle)
     (setf (alist-get 'thinking-tokens (ecc-session-progress session)) nil
           (alist-get 'running-tool (ecc-session-progress session)) nil
           (alist-get 'streaming (ecc-session-progress session)) nil)

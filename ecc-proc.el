@@ -236,8 +236,7 @@ the user asked for from one the CLI decided on (FR-SES-7)."
   "Deny every unanswered request of SESSION (NFR-4).
 The process is gone, so nothing can be sent; the requests are closed
 locally so that the queue does not keep stale entries."
-  (dolist (request (copy-sequence (ecc-session-pending session)))
-    (ecc-model-resolve-request session request 'denied))
+  (ecc-model-abandon-requests session "the session ended before it was answered")
   (clrhash (ecc-session-pending-controls session)))
 
 ;;;; Receiving (plan section 2.2)
@@ -354,8 +353,19 @@ Returns `sent' or the position in the queue."
     text))
 
 (defun ecc-proc-interrupt (session)
-  "Interrupt the running turn of SESSION (FR-SES-5)."
-  (ecc-proc-control session "interrupt" nil))
+  "Interrupt the running turn of SESSION (FR-SES-5).
+A question or a permission the CLI was waiting on is closed as soon as
+it acknowledges the interrupt: it has stopped listening for the answer,
+and the `result' that ends the turn may never come while it is blocked
+on the request."
+  (ecc-proc-control
+   session "interrupt"
+   (lambda (session _response)
+     (when-let* ((abandoned (ecc-model-abandon-requests
+                             session "the turn was interrupted")))
+       (ecc-log (ecc-session-name session)
+                "interrupt closed %d unanswered request(s)"
+                (length abandoned))))))
 
 (defun ecc-proc-set-permission-mode (session mode)
   "Ask SESSION to switch to permission MODE (FR-SES-6)."

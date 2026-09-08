@@ -643,6 +643,21 @@ Returns the task, or nil when ID is nil."
   (run-hook-with-args 'ecc-request-resolved-hook session request)
   request)
 
+(defun ecc-model-abandon-requests (session message)
+  "Close every request of SESSION that will never be answered.
+MESSAGE says why, and is what the transcript shows on the request.
+Nothing is sent back: the CLI has stopped listening, because it exited
+or because the turn was interrupted, and a request left pending would
+blink for an answer that can no longer go anywhere (NFR-4).  Returns
+the requests that were closed."
+  (let ((abandoned (copy-sequence (ecc-session-pending session))))
+    (dolist (request abandoned)
+      (when-let* ((node (ecc-request-node request)))
+        (ecc-model-node-put node 'outcome 'deny)
+        (ecc-model-node-put node 'outcome-message message))
+      (ecc-model-resolve-request session request 'denied))
+    abandoned))
+
 (defun ecc-model-pending-all (&optional project-root)
   "Return the pending requests of every session, oldest first.
 With PROJECT-ROOT, only the sessions of that project are looked at."
