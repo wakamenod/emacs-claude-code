@@ -454,10 +454,10 @@ arrive this way, and none of them may be swallowed (NFR-2)."
   (ecc-model-set-remote-control session 'enabled nil 'error reason)
   (ecc-log (ecc-session-name session) "remote control %s failed: %s"
            (if enabled "on" "off") reason)
-  (ecc-model-add-node session :type 'system :status 'done
-                      :data (list (cons 'kind 'remote-control)
-                                  (cons 'text (format "remote control refused: %s"
-                                                      reason))))
+  (ecc-model-add-aside session :type 'system :status 'done
+                       :data (list (cons 'kind 'remote-control)
+                                   (cons 'text (format "remote control refused: %s"
+                                                       reason))))
   (run-hook-with-args 'ecc-remote-control-functions session))
 
 (defun ecc-proc-remote-control (session enabled &optional on-error)
@@ -490,7 +490,7 @@ nothing on screen to say where the session went."
                           (or (ecc-model-remote-control session 'session-url)
                               (ecc-model-remote-control session 'bridge-session-id)
                               "no url"))
-                 (ecc-model-add-node
+                 (ecc-model-add-aside
                   session :type 'system :status 'done
                   :data (list (cons 'kind 'remote-control)
                               (cons 'text (ecc-proc--remote-control-notice session))))
@@ -501,9 +501,9 @@ nothing on screen to say where the session went."
                                                'detail nil 'session-url nil
                                                'bridge-session-id nil)
                  (ecc-log (ecc-session-name session) "remote control off")
-                 (ecc-model-add-node session :type 'system :status 'done
-                                     :data (list (cons 'kind 'remote-control)
-                                                 (cons 'text "remote control off")))
+                 (ecc-model-add-aside session :type 'system :status 'done
+                                      :data (list (cons 'kind 'remote-control)
+                                                  (cons 'text "remote control off")))
                  (run-hook-with-args 'ecc-remote-control-functions session)))))
            'enabled (if enabled t :false)
            (when name (list 'name name)))))

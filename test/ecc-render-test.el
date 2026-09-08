@@ -98,7 +98,16 @@ screen says where the session can be reached (docs/verified.md,
       ;; Somebody on the other end shows as a dot.
       (ecc-model-set-remote-control session 'state "connected")
       (should (string-search "⇄ remote ●" (substring-no-properties
-                                           (ecc-render-header-line)))))))
+                                           (ecc-render-header-line)))))
+    ;; What the bridge says lands under a turn of its own, and that turn
+    ;; says what it is: nobody prompted it, and nothing was resumed.
+    (ecc-dispatch session '((type . "system") (subtype . "bridge_state")
+                            (state . "connected")))
+    (ecc-render-refresh session)
+    (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+      (should (string-search "(session)" text))
+      (should-not (string-search "(resumed)" text))
+      (should (string-search "remote control connected" text)))))
 
 (ert-deftest ecc-render-test-tool-use ()
   "A lone tool draws as a tool line and the permission that allowed it."

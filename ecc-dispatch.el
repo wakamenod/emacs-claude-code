@@ -147,13 +147,13 @@ comes with a state that needs explaining."
                                   'detail detail)
     (when-let* ((epoch (alist-get 'bridge_epoch message)))
       (ecc-model-set-remote-control session 'bridge-epoch epoch))
-    (ecc-model-add-node session :type 'system :status 'done
-                        :data (list (cons 'kind 'remote-control)
-                                    (cons 'text (format "remote control %s%s"
-                                                        (or state "?")
-                                                        (if detail
-                                                            (format " — %s" detail)
-                                                          "")))))
+    (ecc-model-add-aside session :type 'system :status 'done
+                         :data (list (cons 'kind 'remote-control)
+                                     (cons 'text (format "remote control %s%s"
+                                                         (or state "?")
+                                                         (if detail
+                                                             (format " — %s" detail)
+                                                           "")))))
     (run-hook-with-args 'ecc-remote-control-functions session)
     (run-hook-with-args 'ecc-progress-hook session)))
 

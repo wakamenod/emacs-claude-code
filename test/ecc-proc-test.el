@@ -438,6 +438,38 @@ workspace all come back as the error of a control response."
     (should-not (ecc-model-remote-control session 'enabled))
     (should-not (ecc-model-remote-control session 'session-url))))
 
+(ert-deftest ecc-proc-test-remote-control-opens-no-turn ()
+  "A bridge notice does not make the session look busy.
+It answers no prompt, so a turn opened for it would never end: the
+state line would say `running' for ever and the next prompt would queue
+behind it (FR-INP-6)."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-project-root session) ecc-test-directory)
+    (ecc-model-set-state session 'idle)
+    (ecc-proc-remote-control session t)
+    (ecc-proc-test--answer-last
+     session '((session_url . "https://claude.ai/code/session_01TED")
+               (bridge_session_id . "cse_01TED")))
+    (should (eq (ecc-session-state session) 'idle))
+    (should-not (ecc-session-current-turn session))
+    ;; The note is in the transcript all the same.
+    (should (seq-find (lambda (node)
+                        (eq (ecc-model-node-get node 'kind) 'remote-control))
+                      (hash-table-values (ecc-session-nodes session))))
+    ;; And the next prompt goes out rather than queueing.
+    (should (eq 'sent (ecc-proc-send-prompt session "hello")))))
+
+(ert-deftest ecc-proc-test-remote-control-joins-the-turn-at-hand ()
+  "A notice that arrives during a turn joins it rather than starting one."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-project-root session) ecc-test-directory)
+    (let ((turn (ecc-model-begin-turn session "hello")))
+      (ecc-proc-remote-control session t)
+      (ecc-proc-test--answer-last session '((bridge_session_id . "cse_01TED")))
+      (should (eq (ecc-session-current-turn session) turn))
+      (should (= 1 (length (ecc-session-turns session))))
+      (should (eq (ecc-session-state session) 'running)))))
+
 (provide 'ecc-proc-test)
 
 ;;; ecc-proc-test.el ends here

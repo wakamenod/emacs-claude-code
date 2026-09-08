@@ -340,6 +340,23 @@ carries the epoch of the bridge (docs/verified.md, 2026-09-08)."
                                       nodes))
                              #'string<)))))))
 
+(ert-deftest ecc-dispatch-test-bridge-state-leaves-the-session-idle ()
+  "The bridge reporting itself between turns starts no turn.
+The turn would never end, so the session would say `running' for ever
+and the next prompt would queue behind it."
+  (ecc-test-with-fake-session session
+    (ecc-model-set-state session 'idle)
+    (ecc-dispatch session '((type . "system") (subtype . "bridge_state")
+                            (state . "connected") (bridge_epoch . 1)))
+    (should (eq (ecc-session-state session) 'idle))
+    (should-not (ecc-session-current-turn session))
+    ;; The turn it hangs on says what it is, rather than "(resumed)".
+    (should (equal "(session)" (ecc-turn-label (car (ecc-session-turns session)))))
+    ;; A later notice joins the same turn instead of adding another.
+    (ecc-dispatch session '((type . "system") (subtype . "bridge_state")
+                            (state . "disconnected")))
+    (should (= 1 (length (ecc-session-turns session))))))
+
 (ert-deftest ecc-dispatch-test-bridge-state-detail ()
   "A state that needs explaining brings a detail, and it is shown."
   (ecc-test-with-fake-session session

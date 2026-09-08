@@ -1357,12 +1357,15 @@ that the movement commands stop once per turn rather than twice."
             (let ((prompt-id (concat id "/prompt")))
               (ecc-render--mark start (point) prompt-id 0)
               (ecc-render--register prompt-id start (point) 0)))
-        ;; A turn resumed from a recording has no prompt of its own.  It
-        ;; still needs a line to part it from the turn before and to
-        ;; hang its heading on, but not the mark of a user band: nobody
-        ;; said this.
+        ;; A turn resumed from a recording has no prompt of its own,
+        ;; and neither has one holding what the CLI said between turns
+        ;; (`ecc-model-aside-turn', which labels its own).  It still
+        ;; needs a line to part it from the turn before and to hang its
+        ;; heading on, but not the mark of a user band: nobody said
+        ;; this.
         (insert (ecc-render--fold-cell)
-                (propertize "(resumed)" 'face 'ecc-dim-face)
+                (propertize (or (ecc-turn-label turn) "(resumed)")
+                            'face 'ecc-dim-face)
                 "\n")
         (ecc-render--mark start (point) id 0))
       (ecc-render--mark-heading start id))

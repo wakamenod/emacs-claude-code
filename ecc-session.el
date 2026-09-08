@@ -237,6 +237,7 @@ BEFORE is the file as it was before the call, when known."
          (candidates (mapcar (lambda (turn)
                                (cons (format "%2d  %s" (cl-incf n)
                                              (ecc--truncate (or (ecc-turn-prompt turn)
+                                                                (ecc-turn-label turn)
                                                                 "(resumed)")
                                                             70))
                                      turn))
@@ -335,7 +336,9 @@ stripped from every line."
    (format "# %s\n\n" (ecc-session-name session))
    (mapconcat
     (lambda (turn)
-      (concat (format "## %s\n\n" (or (ecc-turn-prompt turn) "(resumed)"))
+      (concat (format "## %s\n\n" (or (ecc-turn-prompt turn)
+                                           (ecc-turn-label turn)
+                                           "(resumed)"))
               (mapconcat (lambda (node) (ecc-session--markdown-node node 0))
                          (ecc-turn-children turn) "")))
     (ecc-session-turns session) "")))

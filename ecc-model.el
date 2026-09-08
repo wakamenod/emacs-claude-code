@@ -148,7 +148,9 @@ TRANSIENT marks a turn Emacs opened for something it asked on its own,
 such as the `/recap' of FR-HINT-1: the CLI answers it like any other
 prompt, but it is not part of the conversation the user is reading, so
 it is kept out of the transcript (plan section 9, item 11)."
-  id start-time end-time prompt children result cost transient)
+  id start-time end-time prompt children result cost transient
+  label)        ; heading of a turn nobody prompted, see
+                ; `ecc-model-aside-turn'
 
 (cl-defstruct ecc-node
   "One item in the transcript tree."
@@ -330,6 +332,33 @@ starting or finishing."
     (setf (ecc-session-current-turn session) turn)
     (ecc-model-set-state session 'running)
     turn))
+
+(defun ecc-model-aside-turn (session)
+  "Return the turn an unprompted note of SESSION belongs under.
+Something the CLI says between turns -- Remote Control reporting the
+bridge, for one -- still has to be shown, but it answers nothing.
+`ecc-model-ensure-turn\=' would open a turn for it, and that turn would
+never end: the session would look like it were running for ever, and
+every later prompt would queue behind it (FR-INP-6).  So the note joins
+the turn at hand, or the last one there was, and only when there is
+neither does it get a turn of its own -- one that is not the current
+turn and does not touch the state."
+  (or (ecc-session-current-turn session)
+      (car (last (ecc-session-turns session)))
+      (let* ((state (ecc-session-state session))
+             (turn (ecc-model-begin-turn session nil)))
+        (setf (ecc-turn-label turn) "(session)")
+        (setf (ecc-session-current-turn session) nil)
+        (ecc-model-set-state session state)
+        turn)))
+
+(defun ecc-model-add-aside (session &rest args)
+  "Add a node to SESSION for something that answers no prompt.
+ARGS are those of `ecc-model-add-node\=', which this is otherwise: the
+parent is `ecc-model-aside-turn\=' rather than a turn opened on the
+spot."
+  (apply #'ecc-model-add-node session
+         :parent (ecc-model-aside-turn session) args))
 
 (defun ecc-model-ensure-turn (session)
   "Return the current turn of SESSION, starting an implicit one if needed.
