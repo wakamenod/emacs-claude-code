@@ -135,17 +135,23 @@ it answers the prompts itself, `Bash\=' among them, while
   :group 'ecc)
 
 (defcustom ecc-chat-permission-mode-labels
-  '(("default" . "⏵ manual mode")
-    ("acceptEdits" . "⏵⏵ accept edits on")
-    ("plan" . "⏸ plan mode on")
-    ("auto" . "⏵⏵ auto mode on")
-    ("bypassPermissions" . "⏵⏵ bypass permissions on"))
-  "What the footer calls each permission mode.
-The words and the marks of the terminal client (`claude\=' 2.1.263),
-which says nothing at all in the default mode; the footer names it
+  '(("default" "⏵ manual mode" ecc-dim-face)
+    ("acceptEdits" "⏵⏵ accept edits on" ecc-accept-edits-face)
+    ("plan" "⏸ plan mode on" ecc-plan-mode-face)
+    ("auto" "⏵⏵ auto mode on" ecc-auto-mode-face)
+    ("bypassPermissions" "⏵⏵ bypass permissions on" ecc-error-face))
+  "What the footer calls each permission mode, and in which face.
+The words, the marks and the colours of the terminal client (`claude\='
+2.1.263): purple for the edits it takes on its own, teal for plan,
+amber for auto, which answers the requests itself.  Red for
+bypassPermissions, which the client does not put here at all.
+
+The client says nothing in the default mode; the footer names it
 anyway, because otherwise nothing tells the reader that S-TAB
-switches.  A mode that is not listed is shown under its own name."
-  :type '(alist :key-type string :value-type string)
+switches.  A mode that is not listed is shown under its own name, in
+the dim face."
+  :type '(alist :key-type (string :tag "Mode")
+                :value-type (list (string :tag "Label") (face :tag "Face")))
   :group 'ecc)
 
 ;;;; Keymaps
@@ -476,14 +482,11 @@ BUFFER defaults to the current one.  Returns the text shown, or nil."
 
 (defun ecc-chat--permission-mode-label (session)
   "Return what the footer calls the permission mode SESSION runs.
-A mode that answers requests on its own is named in the warning face,
-as the terminal client colours those two."
+The label and the face come from `ecc-chat-permission-mode-labels\='."
   (let* ((mode (or (ecc-session-permission-mode session) "default"))
-         (label (or (cdr (assoc mode ecc-chat-permission-mode-labels)) mode)))
-    (concat (propertize label
-                        'face (if (member mode '("auto" "bypassPermissions"))
-                                  'ecc-warning-face
-                                'ecc-dim-face))
+         (entry (cdr (assoc mode ecc-chat-permission-mode-labels))))
+    (concat (propertize (or (car entry) mode)
+                        'face (or (cadr entry) 'ecc-dim-face))
             (propertize " (S-TAB to cycle)" 'face 'ecc-dim-face))))
 
 (defun ecc-chat-footer-string ()

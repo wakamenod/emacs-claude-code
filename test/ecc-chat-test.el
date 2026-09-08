@@ -580,7 +580,7 @@ and the draft is written in front of it and survives a redraw
       (save-excursion
         (goto-char (point-max))
         (should (eq (get-text-property (line-beginning-position) 'face)
-                    'ecc-dim-face)))
+                    'ecc-accept-edits-face)))
       (setf (ecc-session-permission-mode session) "plan")
       (ecc-chat--update-ghosts)
       (should (equal (ecc-chat-test--footer-mode)
@@ -592,7 +592,7 @@ and the draft is written in front of it and survives a redraw
       (save-excursion
         (goto-char (point-max))
         (should (eq (get-text-property (line-beginning-position) 'face)
-                    'ecc-warning-face)))
+                    'ecc-auto-mode-face)))
       (setf (ecc-session-permission-mode session) "bypassPermissions")
       (ecc-chat--update-ghosts)
       (should (equal (ecc-chat-test--footer-mode)
@@ -600,7 +600,7 @@ and the draft is written in front of it and survives a redraw
       (save-excursion
         (goto-char (point-max))
         (should (eq (get-text-property (line-beginning-position) 'face)
-                    'ecc-warning-face)))
+                    'ecc-error-face)))
       ;; A mode nobody listed is shown under its own name.
       (setf (ecc-session-permission-mode session) "somethingElse")
       (ecc-chat--update-ghosts)

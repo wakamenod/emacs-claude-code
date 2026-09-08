@@ -284,6 +284,35 @@ own, so that the eye finds where a turn begins."
   "Face for a hint that is worth noticing, such as a small context left."
   :group 'ecc)
 
+;; The three permission modes the terminal client colours, in the colours
+;; it gives them (`claude\=' 2.1.263, its light and dark themes; the
+;; ansi fallbacks are the ones it uses on a terminal with no more than
+;; sixteen colours).  Shown under the prompt by `ecc-chat\='.
+
+(defface ecc-accept-edits-face
+  '((((background dark) (min-colors 88)) :foreground "#af87ff")
+    (((background light) (min-colors 88)) :foreground "#8700ff")
+    (((background dark)) :foreground "brightmagenta")
+    (t :foreground "magenta"))
+  "Face naming the acceptEdits permission mode."
+  :group 'ecc)
+
+(defface ecc-plan-mode-face
+  '((((background dark) (min-colors 88)) :foreground "#48968c")
+    (((background light) (min-colors 88)) :foreground "#006666")
+    (((background dark)) :foreground "brightcyan")
+    (t :foreground "cyan"))
+  "Face naming the plan permission mode."
+  :group 'ecc)
+
+(defface ecc-auto-mode-face
+  '((((background dark) (min-colors 88)) :foreground "#ffc107")
+    (((background light) (min-colors 88)) :foreground "#966c1e")
+    (((background dark)) :foreground "brightyellow")
+    (t :foreground "yellow"))
+  "Face naming the auto permission mode, which answers requests itself."
+  :group 'ecc)
+
 ;;;; UUID
 
 (defun ecc--hex4 ()
