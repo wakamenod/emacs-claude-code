@@ -392,20 +392,30 @@ calls in one step is what the depth ladder needs."
 ;;;; The placeholder
 
 (ert-deftest ecc-chat-test-placeholder ()
-  "An empty prompt region shows a placeholder the cursor can walk over.
-Anything written takes it away, wherever in it the cursor was."
+  "An empty prompt region shows a placeholder as ghost text.
+It is the `after-string' of an overlay, so it is not buffer text and
+the cursor cannot walk into it; anything written takes it away."
   (ecc-test-with-fake-session session
     (with-current-buffer (ecc-session-ensure-buffer session)
       (should (equal (ecc-chat-update-placeholder) ecc-chat-placeholder))
       (should (equal (ecc-chat-placeholder-shown) ecc-chat-placeholder))
       (should (equal (ecc-chat-draft) ""))
-      ;; It is text, so point moves over it, and it cannot be deleted.
+      ;; It is shown and nothing more: no text, and the cursor draws on
+      ;; its first character rather than behind the whole of it.
+      (let ((overlay ecc-chat--placeholder-overlay))
+        (should (= (overlay-start overlay) (ecc-chat-prompt-start)))
+        (should (= (overlay-start overlay) (overlay-end overlay)))
+        (should (equal (substring-no-properties
+                        (overlay-get overlay 'after-string))
+                       ecc-chat-placeholder))
+        (should (get-text-property 0 'cursor (overlay-get overlay 'after-string))))
+      (should-not (string-search ecc-chat-placeholder (buffer-string)))
+      ;; The prompt region is empty, so point has nowhere to walk to.
       (ecc-chat-goto-prompt)
       (should (= (point) (ecc-chat-prompt-start)))
-      (forward-char 4)
-      (should (= (point) (+ (ecc-chat-prompt-start) 4)))
-      (should-error (delete-char 1) :type 'text-read-only)
-      ;; Typing in the middle of it leaves only what was typed.
+      (should (= (point) (point-max)))
+      (should-error (forward-char 1) :type 'end-of-buffer)
+      ;; Typing takes it away and leaves only what was typed.
       (insert "x")
       (should (equal (ecc-chat-draft) "x"))
       (should-not (ecc-chat-placeholder-shown))
@@ -429,13 +439,17 @@ Anything written takes it away, wherever in it the cursor was."
       (should (equal (ecc-turn-prompt (ecc-session-current-turn session)) "send me")))))
 
 (ert-deftest ecc-chat-test-placeholder-stays-out-of-undo ()
-  "Undo in the draft is not confused by the placeholder coming and going."
+  "Undo in the draft never sees the placeholder: it is not buffer text."
   (ecc-test-with-fake-session session
     (with-current-buffer (ecc-session-ensure-buffer session)
       (buffer-enable-undo)
       (setq buffer-undo-list nil)
+      (ecc-chat-update-placeholder)
+      (should (ecc-chat-placeholder-shown))
+      ;; Showing it changed neither the buffer nor its history.
+      (should-not (buffer-modified-p))
+      (should (null buffer-undo-list))
       (ecc-chat-goto-prompt)
-      (forward-char 3)
       (insert "abc")
       (undo-boundary)
       (should (equal (ecc-chat-draft) "abc"))
@@ -444,19 +458,15 @@ Anything written takes it away, wherever in it the cursor was."
       (let ((last-command nil)) (undo))
       (undo-boundary)
       (should (equal (ecc-chat-draft) "abc"))
-      ;; Emptying it brings the placeholder back; undo brings the text.
-      ;; The command loop would run the pre-command hook, which takes
-      ;; the placeholder out of the way of the replay.
+      ;; Emptying it brings the placeholder back; undo brings the text
+      ;; back with nothing in the way of the replay.
       (ecc-prompt-clear)
       (undo-boundary)
       (ecc-chat-update-placeholder)
       (should (ecc-chat-placeholder-shown))
-      (let ((last-command nil) (this-command 'undo))
-        (ecc-chat--pre-command)
-        (should-not (ecc-chat-placeholder-shown))
-        (undo))
+      (let ((last-command nil)) (undo))
       (should (equal (ecc-chat-draft) "abc"))
-      (should-not (ecc-chat-placeholder-shown)))))
+      (should-not (ecc-chat-update-placeholder)))))
 
 ;;;; An agent transcript has no prompt region
 

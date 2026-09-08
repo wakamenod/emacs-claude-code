@@ -1675,8 +1675,7 @@ Only positions at or after FROM move; FROM defaults to the start of
 the buffer.  Everything the user can undo lies in the prompt region,
 and what the renderer does is kept out of the history; so when the
 transcript above the region grows or shrinks, the positions the
-history remembers are stale by exactly DELTA (FR-UI-2).  `ecc-chat'
-uses the same for the placeholder it puts in and takes out silently."
+history remembers are stale by exactly DELTA (FR-UI-2)."
   (when (and (consp buffer-undo-list) (/= delta 0))
     (let ((from (or from (point-min))))
       (setq buffer-undo-list
