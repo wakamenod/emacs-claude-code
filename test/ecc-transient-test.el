@@ -68,6 +68,43 @@
       (ecc-set-model "haiku")
       (should (equal (ecc-test-sent-text 0) "/model haiku")))))
 
+(ert-deftest ecc-transient-test-remote-control-toggle ()
+  "Turning the bridge on by hand asks, and says why when it cannot.
+The temporary directory of the fake session stands in for a workspace
+Remote Control was never trusted with."
+  (ecc-test-with-fake-session session
+    (with-temp-buffer
+      ;; The CLI has not said it can offer it.
+      (should-error (ecc-remote-control-toggle) :type 'user-error)
+      (ecc-model-set-remote-control session 'available t)
+      ;; It can, but not for this workspace.
+      (should-error (ecc-remote-control-toggle) :type 'user-error)
+      (setf (ecc-session-project-root session) ecc-test-directory)
+      (ecc-remote-control-toggle)
+      (let ((request (alist-get 'request (car (ecc-test-sent-messages)))))
+        (should (equal (alist-get 'subtype request) "remote_control"))
+        (should (eq (alist-get 'enabled request) t)))
+      ;; A second call turns it off again.
+      (ecc-model-set-remote-control session 'enabled t)
+      (ecc-remote-control-toggle)
+      (should (eq :false (alist-get 'enabled
+                                    (alist-get 'request
+                                               (car (last (ecc-test-sent-messages))))))))))
+
+(ert-deftest ecc-transient-test-remote-control-url ()
+  "The URL of a session on the bridge can be opened and copied."
+  (ecc-test-with-fake-session session
+    (with-temp-buffer
+      (should-error (ecc-remote-control-copy-url) :type 'user-error)
+      (ecc-model-set-remote-control
+       session 'enabled t 'session-url "https://claude.ai/code/session_01")
+      (let (visited)
+        (cl-letf (((symbol-function 'browse-url) (lambda (url) (setq visited url))))
+          (ecc-remote-control-open))
+        (should (equal visited "https://claude.ai/code/session_01")))
+      (ecc-remote-control-copy-url)
+      (should (equal (current-kill 0) "https://claude.ai/code/session_01")))))
+
 (provide 'ecc-transient-test)
 
 ;;; ecc-transient-test.el ends here

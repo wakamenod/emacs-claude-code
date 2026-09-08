@@ -81,6 +81,50 @@ typed."
     (ecc-proc-set-permission-mode session mode)
     (message "%s: switching to %s" (ecc-session-name session) mode)))
 
+
+;;;###autoload
+(defun ecc-remote-control-toggle ()
+  "Turn Remote Control on or off for the session this buffer talks to.
+With it on the session shows up in the Code tab of the Claude app and
+can be driven from there; whether it starts that way is up to the
+Claude Code settings, which `ecc-remote-control\=' follows."
+  (interactive)
+  (let* ((session (ecc-menu-session))
+         (on (ecc-model-remote-control session 'enabled)))
+    (unless (or on (ecc-model-remote-control session 'available))
+      (user-error "%s cannot offer Remote Control%s" (ecc-session-name session)
+                  (if (ecc-session-init session) ""
+                    " yet; the CLI has not answered initialize")))
+    (unless (or on (ecc-proc-remote-control-offerable-p session))
+      (user-error "%s is not a session Remote Control accepts (an untrusted \
+or internal workspace)" (ecc-session-name session)))
+    (ecc-proc-remote-control session (not on)
+                             (lambda (session reason)
+                               (message "%s: remote control refused: %s"
+                                        (ecc-session-name session) reason)))
+    (message "%s: turning remote control %s" (ecc-session-name session)
+             (if on "off" "on"))))
+
+(defun ecc-remote-control--url (session)
+  "Return the URL that opens SESSION away from Emacs, or signal."
+  (or (ecc-model-remote-control session 'session-url)
+      (user-error "%s is not on the Remote Control bridge"
+                  (ecc-session-name session))))
+
+;;;###autoload
+(defun ecc-remote-control-open ()
+  "Open the session this buffer talks to at claude.ai/code."
+  (interactive)
+  (browse-url (ecc-remote-control--url (ecc-menu-session))))
+
+;;;###autoload
+(defun ecc-remote-control-copy-url ()
+  "Put the claude.ai/code URL of this session in the kill ring."
+  (interactive)
+  (let ((url (ecc-remote-control--url (ecc-menu-session))))
+    (kill-new url)
+    (message "%s" url)))
+
 ;;;###autoload
 (defun ecc-set-model (model)
   "Ask the session this buffer talks to to use MODEL (FR-INP-5).
@@ -235,6 +279,9 @@ same suffix from one call to the next."
    ["Config"
     ("m" "Model" ecc-set-model)
     ("p" "Permission mode" ecc-set-permission-mode)
+    ("o" "Remote control" ecc-remote-control-toggle)
+    ("O" "Open remotely" ecc-remote-control-open)
+    ("K" "Copy the remote URL" ecc-remote-control-copy-url)
     ("C" "Customize" ecc-customize)]])
 
 (provide 'ecc-transient)

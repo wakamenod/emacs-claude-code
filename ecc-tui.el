@@ -206,7 +206,12 @@ and Emacs is told without having to ask (FR-TUI-4)."
   "Carry on with SESSION in the real terminal UI (FR-TUI-1).
 The turn in flight is interrupted, the process Emacs runs is stopped,
 and the terminal resumes the same conversation.  The transcript
-follows along and the session comes back when the terminal is left."
+follows along and the session comes back when the terminal is left.
+
+Stopping the process takes the Remote Control bridge down with it, if
+one was up: nothing asks for `keep_session_on_exit\=' (2026-09-08,
+`docs/decisions.md\='), so the session leaves the Code tab of the phone
+until the CLI in the terminal brings up a bridge of its own."
   (interactive)
   (let ((session (or session (ecc-window-resolve-session))))
     (when-let* ((entry (ecc-tui--other-process session)))

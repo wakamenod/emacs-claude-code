@@ -78,6 +78,28 @@ back with (FR-HINT-3)."
         (should (string-search "opus" header))
         (should-not (string-search "haiku" header))))))
 
+(ert-deftest ecc-render-test-header-shows-remote-control ()
+  "A session on the Remote Control bridge says so, with the URL in the tooltip.
+The header line has no room for the URL, and without it nothing on
+screen says where the session can be reached (docs/verified.md,
+2026-09-08)."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (with-current-buffer (ecc-session-buffer session)
+      (should-not (string-search "remote" (substring-no-properties
+                                           (ecc-render-header-line))))
+      (ecc-model-set-remote-control session 'enabled t 'state "ready"
+                                    'session-url "https://claude.ai/code/session_01")
+      (let ((header (ecc-render-header-line)))
+        (should (string-search "⇄ remote" (substring-no-properties header)))
+        (should (equal "https://claude.ai/code/session_01"
+                       (get-text-property (string-search "⇄" header)
+                                          'help-echo header))))
+      ;; Somebody on the other end shows as a dot.
+      (ecc-model-set-remote-control session 'state "connected")
+      (should (string-search "⇄ remote ●" (substring-no-properties
+                                           (ecc-render-header-line)))))))
+
 (ert-deftest ecc-render-test-tool-use ()
   "A lone tool draws as a tool line and the permission that allowed it."
   (ecc-test-with-fake-session session

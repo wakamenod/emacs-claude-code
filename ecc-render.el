@@ -1529,14 +1529,28 @@ before the first turn."
     (replace-regexp-in-string
      "-[0-9].*\\'" "" (replace-regexp-in-string "\\`claude-" "" model))))
 
+(defun ecc-render--remote-control (session)
+  "Return the Remote Control mark of SESSION for the header line, or nil.
+Only a session that is on the bridge says so.  The URL that opens it
+elsewhere is carried in the tooltip, since a header line has no room
+for it; `ecc-remote-control-open\=' is the way to follow it."
+  (when (ecc-model-remote-control session 'enabled)
+    (let ((url (ecc-model-remote-control session 'session-url))
+          (state (ecc-model-remote-control session 'state)))
+      (propertize (if (equal state "connected") "⇄ remote ●" "⇄ remote")
+                  'face 'ecc-pending-face
+                  'help-echo (or url "remote control is on")))))
+
 (defun ecc-render--header-right (session)
   "Return what the right of the header line says SESSION is, or nil.
 The model and the permission mode, and after them whatever the modules
 above the renderer add through `ecc-render-header-functions\=', which is
 how the room left in the context window arrives (FR-HINT-3)."
-  (let* ((own (mapcar (lambda (text) (propertize text 'face 'ecc-dim-face))
-                      (delq nil (list (ecc-render--model-name session)
-                                      (ecc-session-permission-mode session)))))
+  (let* ((own (append
+               (mapcar (lambda (text) (propertize text 'face 'ecc-dim-face))
+                       (delq nil (list (ecc-render--model-name session)
+                                       (ecc-session-permission-mode session))))
+               (delq nil (list (ecc-render--remote-control session)))))
          (added (delq nil
                       (mapcar (lambda (function)
                                 (condition-case err (funcall function session)
@@ -2109,6 +2123,7 @@ read-only."
 (add-hook 'ecc-turn-finished-hook #'ecc-render--on-turn-finished)
 (add-hook 'ecc-stream-delta-hook #'ecc-render--on-delta)
 (add-hook 'ecc-progress-hook #'ecc-render--on-progress)
+(add-hook 'ecc-remote-control-functions #'ecc-render--on-progress)
 
 (provide 'ecc-render)
 
