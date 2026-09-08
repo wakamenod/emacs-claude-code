@@ -363,9 +363,20 @@ spot."
 (defun ecc-model-ensure-turn (session)
   "Return the current turn of SESSION, starting an implicit one if needed.
 Output can arrive without Emacs having sent anything, for instance
-after a resume, and none of it may be dropped (FR-OUT-1)."
+after a resume, and none of it may be dropped (FR-OUT-1).
+
+A session on the Remote Control bridge gets this every time somebody
+prompts it from elsewhere: the CLI does not echo user messages to a
+stream-json client (nothing passes --replay-user-messages), so the
+answer arrives with no prompt in front of it.  Such a turn says
+`(remote)\=' rather than the `(resumed)\=' of one read back from a
+recording, so that an answer to something said on a phone is not
+mistaken for the tail of an old conversation."
   (or (ecc-session-current-turn session)
-      (ecc-model-begin-turn session nil)))
+      (let ((turn (ecc-model-begin-turn session nil)))
+        (when (ecc-model-remote-control session 'enabled)
+          (setf (ecc-turn-label turn) "(remote)"))
+        turn)))
 
 (defun ecc-model-finish-turn (session result)
   "Close the current turn of SESSION with the RESULT message.

@@ -357,6 +357,31 @@ and the next prompt would queue behind it."
                             (state . "disconnected")))
     (should (= 1 (length (ecc-session-turns session))))))
 
+(ert-deftest ecc-dispatch-test-a-remote-turn-says-so ()
+  "An answer to a prompt sent from elsewhere is not a resumed turn.
+The CLI does not echo user messages to a stream-json client, so a turn
+somebody started from the bridge arrives with no prompt of its own; it
+would otherwise read as \"(resumed)\", which is what a recording looks
+like."
+  (ecc-test-with-fake-session session
+    (ecc-model-set-remote-control session 'enabled t 'state "connected")
+    (ecc-dispatch session '((type . "assistant")
+                            (message . ((role . "assistant")
+                                        (model . "claude-opus-5")
+                                        (content . [((type . "text")
+                                                     (text . "はい"))])))))
+    (let ((turn (car (ecc-session-turns session))))
+      (should (equal "(remote)" (ecc-turn-label turn)))
+      (should-not (ecc-turn-prompt turn)))
+    ;; Without the bridge it stays what it was.
+    (ecc-test-with-fake-session other
+      (ecc-dispatch other '((type . "assistant")
+                            (message . ((role . "assistant")
+                                        (model . "claude-opus-5")
+                                        (content . [((type . "text")
+                                                     (text . "はい"))])))))
+      (should-not (ecc-turn-label (car (ecc-session-turns other)))))))
+
 (ert-deftest ecc-dispatch-test-bridge-state-detail ()
   "A state that needs explaining brings a detail, and it is shown."
   (ecc-test-with-fake-session session
