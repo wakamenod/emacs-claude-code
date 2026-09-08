@@ -333,6 +333,9 @@ starting or finishing."
     (ecc-model-set-state session 'running)
     turn))
 
+(defconst ecc-model-remote-turn-label "(remote)"
+  "Heading of a turn somebody started from the Remote Control bridge.")
+
 (defun ecc-model-aside-turn (session)
   "Return the turn an unprompted note of SESSION belongs under.
 Something the CLI says between turns -- Remote Control reporting the
@@ -375,8 +378,14 @@ mistaken for the tail of an old conversation."
   (or (ecc-session-current-turn session)
       (let ((turn (ecc-model-begin-turn session nil)))
         (when (ecc-model-remote-control session 'enabled)
-          (setf (ecc-turn-label turn) "(remote)"))
+          (setf (ecc-turn-label turn) ecc-model-remote-turn-label))
         turn)))
+
+(defun ecc-model-remote-turn-p (turn)
+  "Return non-nil when TURN was started from the Remote Control bridge.
+What tells one is that Emacs did not open it and the bridge was up when
+it appeared; see `ecc-model-ensure-turn\='."
+  (and turn (equal (ecc-turn-label turn) ecc-model-remote-turn-label)))
 
 (defun ecc-model-finish-turn (session result)
   "Close the current turn of SESSION with the RESULT message.

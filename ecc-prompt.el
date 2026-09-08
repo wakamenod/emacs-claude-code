@@ -529,7 +529,14 @@ The region is emptied either way; what was sent goes into the history."
       (ecc-chat-clear-draft)
       (if (eq outcome 'sent)
           (message "Sent")
-        (message "A turn is running; queued at position %d" outcome))
+        ;; A turn somebody started from a phone queues the prompt just
+        ;; the same, and the reason is worth saying: nothing on screen
+        ;; would otherwise explain why this was not sent (FR-INP-6).
+        (message "%s; queued at position %d"
+                 (if (ecc-model-remote-turn-p (ecc-session-current-turn session))
+                     "A turn started from Remote Control is running"
+                   "A turn is running")
+                 outcome))
       outcome)))
 
 (defun ecc-prompt-clear ()

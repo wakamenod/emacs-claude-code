@@ -1500,7 +1500,10 @@ no turn, so nothing freezes them."
         'face 'ecc-pending-face))
       (_
        (concat
-        (propertize "● running" 'face 'ecc-pending-face)
+        (propertize (if (ecc-model-remote-turn-p (ecc-session-current-turn session))
+                        "● running · remote"
+                      "● running")
+                    'face 'ecc-pending-face)
         (propertize
          (concat
           (when status (format "  ·  %s" status))
@@ -1610,7 +1613,10 @@ A request waiting for an answer is what the mode line exists to show
                              (_ "permission"))
                            (if (> n 1) (format " ×%d" n) ""))
                    'face 'ecc-pending-face)))
-    (_ (propertize "● running" 'face 'ecc-pending-face))))
+    (_ (propertize (if (ecc-model-remote-turn-p (ecc-session-current-turn session))
+                       "● running · remote"
+                     "● running")
+                   'face 'ecc-pending-face))))
 
 (defun ecc-render-mode-line-process ()
   "Return the `mode-line-process' text of the session buffer."

@@ -382,6 +382,30 @@ like."
                                                      (text . "はい"))])))))
       (should-not (ecc-turn-label (car (ecc-session-turns other)))))))
 
+(ert-deftest ecc-dispatch-test-a-remote-turn-queues-and-drains ()
+  "A prompt typed while a remote turn runs waits for it and then goes.
+Emacs did not open that turn, so nothing local knows it is there; the
+prompt must not be lost, and it must not wait for ever (FR-INP-6)."
+  (ecc-test-with-fake-session session
+    (ecc-model-set-remote-control session 'enabled t 'state "connected")
+    (ecc-dispatch session '((type . "assistant")
+                            (message . ((role . "assistant")
+                                        (model . "claude-opus-5")
+                                        (content . [((type . "text")
+                                                     (text . "はい"))])))))
+    (should (eq (ecc-session-state session) 'running))
+    (should (equal 1 (ecc-proc-send-prompt session "ecc から送る")))
+    ;; It is in the queue, not on the wire.
+    (should (equal '("ecc から送る") (ecc-session-input-queue session)))
+    (should-not (seq-find (lambda (message) (equal (alist-get 'type message) "user"))
+                          (ecc-test-sent-messages)))
+    ;; The result of the remote turn closes it and lets the queue go.
+    (ecc-dispatch session '((type . "result") (subtype . "success")
+                            (is_error . :false)))
+    (should (eq (ecc-session-state session) 'running))
+    (should-not (ecc-session-input-queue session))
+    (should (equal "ecc から送る" (ecc-test-sent-text 0)))))
+
 (ert-deftest ecc-dispatch-test-bridge-state-detail ()
   "A state that needs explaining brings a detail, and it is shown."
   (ecc-test-with-fake-session session
