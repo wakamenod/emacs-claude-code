@@ -1,7 +1,7 @@
 Claude Code usage — pro
-  Current session              20%  ████░░░░░░░░░░░░░░░░  resets 09/08 14:00
-  Current week (all models)    25%  █████░░░░░░░░░░░░░░░  resets 09/12 12:00
-  Current week (Fable)         15%  ███░░░░░░░░░░░░░░░░░  resets 09/12 12:00
+  Current session              20%  ████░░░░░░░░░░░░░░░░  resets in 17m
+  Current week (all models)    25%  █████░░░░░░░░░░░░░░░  resets in 3d 22h
+  Current week (Fable)         15%  ███░░░░░░░░░░░░░░░░░  resets in 3d 22h
   Usage credits               $0.00 / $50.00  (off: org_level_disabled_until)
 
 This session

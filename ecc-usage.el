@@ -40,6 +40,13 @@
 
 (declare-function ecc-dashboard-session-at-point "ecc-dashboard" (&optional open))
 
+;; posframe is not a dependency of this package: without it, and on a
+;; frame that cannot carry a child frame, the buffer goes in a window.
+(declare-function posframe-workable-p "posframe" ())
+(declare-function posframe-show "posframe" (buffer &rest args))
+(declare-function posframe-hide "posframe" (buffer))
+(declare-function posframe-poshandler-frame-center "posframe" (info))
+
 (defcustom ecc-usage-buffer-name "*ecc-usage*"
   "Name of the buffer `ecc-usage' draws into."
   :type 'string
@@ -62,6 +69,44 @@ tools, and a recording of it would be an empty conversation."
 (defcustom ecc-usage-bar-width 20
   "Width, in characters, of the bar drawn beside a rate limit window."
   :type 'integer
+  :group 'ecc)
+
+(defcustom ecc-usage-reset-format 'relative
+  "How the time a rate limit window resets at is written.
+`relative' says how long there is to go, the way the web client does;
+`absolute' gives the date and time; `both' gives the two of them."
+  :type '(choice (const :tag "In 17m" relative)
+                 (const :tag "09/08 23:00" absolute)
+                 (const :tag "In 17m (09/08 23:00)" both))
+  :group 'ecc)
+
+(defcustom ecc-usage-display 'window
+  "Where `ecc-usage' shows what it found.
+`window' puts the buffer in a window.  `posframe' floats it over the
+frame instead, which needs the posframe package and a graphical frame;
+without either, a window is used and the buffer is the same one."
+  :type '(choice (const :tag "A window" window)
+                 (const :tag "A frame floating over this one" posframe))
+  :group 'ecc)
+
+(defface ecc-usage-bar-face
+  '((t :inherit success))
+  "Face for the used part of a rate limit bar."
+  :group 'ecc)
+
+(defface ecc-usage-bar-warning-face
+  '((t :inherit warning))
+  "Face for the used part of a bar past `ecc-usage-warn-threshold'."
+  :group 'ecc)
+
+(defface ecc-usage-bar-critical-face
+  '((t :inherit error))
+  "Face for the used part of a bar past `ecc-usage-critical-threshold'."
+  :group 'ecc)
+
+(defface ecc-usage-bar-empty-face
+  '((t :inherit shadow))
+  "Face for the part of a rate limit bar that is still free."
   :group 'ecc)
 
 (defcustom ecc-usage-warn-threshold 70
@@ -194,13 +239,43 @@ are the fallback for an answer that carries none."
 The tests pin it, because a snapshot may not depend on where the
 machine running it happens to be.")
 
+(defvar ecc-usage--now nil
+  "Instant the times to go are counted from; nil is now.
+The tests pin it, because a snapshot may not depend on when it ran.")
+
+(defun ecc-usage--time-to-go (seconds)
+  "Return SECONDS as the time there is to go, in words."
+  (let* ((seconds (round seconds))
+         (minutes (/ seconds 60))
+         (hours (/ minutes 60))
+         (days (/ hours 24)))
+    (cond ((< seconds 60) "in less than a minute")
+          ((< minutes 60) (format "in %dm" minutes))
+          ((< hours 24) (if (zerop (% minutes 60))
+                            (format "in %dh" hours)
+                          (format "in %dh %dm" hours (% minutes 60))))
+          (t (if (zerop (% hours 24))
+                 (format "in %dd" days)
+               (format "in %dd %dh" days (% hours 24)))))))
+
 (defun ecc-usage--reset-string (iso)
-  "Return the reset time ISO as a local time, or nil when it is not one."
+  "Return when the window resetting at ISO resets, or nil.
+`ecc-usage-reset-format' decides whether that is the time there is to
+go, the time itself, or both."
   (when (stringp iso)
     (condition-case nil
-        (format-time-string "%m/%d %H:%M"
-                            (encode-time (iso8601-parse iso))
-                            ecc-usage--time-zone)
+        (let* ((time (encode-time (iso8601-parse iso)))
+               (left (- (float-time time) (float-time (or ecc-usage--now
+                                                          (current-time)))))
+               (relative (if (<= left 0)
+                             "any moment now"
+                           (ecc-usage--time-to-go left)))
+               (absolute (format-time-string "%m/%d %H:%M" time
+                                             ecc-usage--time-zone)))
+          (pcase ecc-usage-reset-format
+            ('absolute absolute)
+            ('both (format "%s (%s)" relative absolute))
+            (_ relative)))
       (error nil))))
 
 (defun ecc-usage--money (minor exponent currency)
@@ -252,13 +327,27 @@ The `spend' object is preferred: it names its own currency and scale."
         ((>= percent ecc-usage-warn-threshold) 'ecc-warning-face)
         (t 'default)))
 
-(defun ecc-usage--bar (percent)
-  "Return a bar `ecc-usage-bar-width' wide filled to PERCENT."
+(defun ecc-usage--bar-face (percent severity)
+  "Return the face for the used part of a bar at PERCENT, called SEVERITY."
+  (cond ((member severity '("critical" "rejected")) 'ecc-usage-bar-critical-face)
+        ((member severity '("warning" "allowed_warning")) 'ecc-usage-bar-warning-face)
+        ((not (numberp percent)) 'ecc-usage-bar-empty-face)
+        ((>= percent ecc-usage-critical-threshold) 'ecc-usage-bar-critical-face)
+        ((>= percent ecc-usage-warn-threshold) 'ecc-usage-bar-warning-face)
+        (t 'ecc-usage-bar-face)))
+
+(defun ecc-usage--bar (percent &optional severity)
+  "Return a bar `ecc-usage-bar-width' wide filled to PERCENT.
+The used part is coloured for how full the window is, or for SEVERITY
+when the CLI graded it itself; the rest is dim."
   (let* ((width (max 1 ecc-usage-bar-width))
          (filled (if (numberp percent)
                      (min width (max 0 (round (* width (/ percent 100.0)))))
                    0)))
-    (concat (make-string filled ?█) (make-string (- width filled) ?░))))
+    (concat (propertize (make-string filled ?█)
+                        'face (ecc-usage--bar-face percent severity))
+            (propertize (make-string (- width filled) ?░)
+                        'face 'ecc-usage-bar-empty-face))))
 
 (defun ecc-usage--window-line (window)
   "Return the line drawn for the rate limit WINDOW, a plist."
@@ -271,7 +360,7 @@ The `spend' object is preferred: it names its own currency and scale."
                                     (format "%d%%" (round percent))
                                   "—"))
                         'face face)
-            (propertize (ecc-usage--bar percent) 'face face)
+            (ecc-usage--bar percent (plist-get window :severity))
             (if resets
                 (propertize (concat "  resets " resets) 'face 'ecc-dim-face)
               "")
@@ -426,6 +515,7 @@ whose own cost and tokens are zero and say nothing."
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "g") #'ecc-usage-refresh)
     (define-key map (kbd "b") #'ecc-usage-toggle-behaviors)
+    (define-key map (kbd "q") #'ecc-usage-hide)
     map)
   "Keymap of `ecc-usage-mode'.")
 
@@ -436,6 +526,43 @@ whose own cost and tokens are zero and say nothing."
   :interactive nil
   (setq-local truncate-lines t))
 
+(defun ecc-usage--posframe-p ()
+  "Return non-nil when the usage buffer can be floated over the frame."
+  (and (eq ecc-usage-display 'posframe)
+       (require 'posframe nil t)
+       (posframe-workable-p)))
+
+(defun ecc-usage-hide ()
+  "Take the usage away."
+  (interactive)
+  (when-let* ((buffer (get-buffer ecc-usage-buffer-name)))
+    (when (and (fboundp 'posframe-hide) (featurep 'posframe))
+      (posframe-hide buffer))
+    (when-let* ((window (get-buffer-window buffer)))
+      (quit-window nil window))))
+
+(defun ecc-usage--show-posframe (buffer)
+  "Float BUFFER over the frame and read one key for it.
+A child frame takes no focus of its own, so the keys of the usage
+buffer are lent to the frame the user is really in until one of them
+is done with."
+  (posframe-show buffer
+                 :position (point)
+                 :poshandler #'posframe-poshandler-frame-center
+                 :internal-border-width 1
+                 :internal-border-color (face-foreground 'shadow nil t)
+                 :accept-focus nil
+                 :hidehandler nil)
+  (set-transient-map
+   (let ((map (make-sparse-keymap)))
+     (define-key map (kbd "g") #'ecc-usage-refresh)
+     (define-key map (kbd "b") #'ecc-usage-toggle-behaviors)
+     map)
+   ;; Stay up while g and b are being used; the first other key both
+   ;; takes it away and does what it was going to do.
+   (lambda () (memq this-command '(ecc-usage-refresh ecc-usage-toggle-behaviors)))
+   #'ecc-usage-hide))
+
 (defun ecc-usage--draw (text)
   "Put TEXT in the usage buffer, keeping where the user was looking."
   (when-let* ((buffer (get-buffer ecc-usage-buffer-name)))
@@ -445,7 +572,9 @@ whose own cost and tokens are zero and say nothing."
         (erase-buffer)
         (insert text)
         (goto-char (point-min))
-        (forward-line (1- line))))))
+        (forward-line (1- line))))
+    (when (and (ecc-usage--posframe-p) (get-buffer-window buffer t))
+      (ecc-usage--show-posframe buffer))))
 
 (defun ecc-usage--receive (session response)
   "Draw RESPONSE, the usage answer SESSION gave."
@@ -477,7 +606,9 @@ nothing."
         (let ((inhibit-read-only t))
           (insert (propertize "Asking the CLI…\n" 'face 'ecc-dim-face)))))
     (ecc-usage--ask #'ecc-usage--receive)
-    (pop-to-buffer buffer)
+    (if (ecc-usage--posframe-p)
+        (ecc-usage--show-posframe buffer)
+      (pop-to-buffer buffer))
     buffer))
 
 (defun ecc-usage-refresh ()

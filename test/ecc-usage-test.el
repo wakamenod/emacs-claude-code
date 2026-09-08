@@ -19,9 +19,45 @@
     (alist-get 'response (alist-get 'response message))))
 
 (defmacro ecc-usage-test--fixed-zone (&rest body)
-  "Run BODY with the reset times shown in UTC."
+  "Run BODY with the clock and the zone of the reset times pinned.
+A snapshot may not depend on where the machine running it is, nor on
+when it ran: the windows of the fixture reset 17 minutes and just
+under 4 days after the instant fixed here."
   (declare (indent 0) (debug t))
-  `(let ((ecc-usage--time-zone t)) ,@body))
+  `(let ((ecc-usage--time-zone t)
+         (ecc-usage--now (encode-time (iso8601-parse "2026-09-08T13:43:00+00:00"))))
+     ,@body))
+
+(ert-deftest ecc-usage-test-reset-says-how-long-there-is-to-go ()
+  "The reset is written the way the web client writes it."
+  (ecc-usage-test--fixed-zone
+    (should (equal (ecc-usage--reset-string "2026-09-08T14:00:00+00:00")
+                   "in 17m"))
+    (should (equal (ecc-usage--reset-string "2026-09-12T12:00:00+00:00")
+                   "in 3d 22h"))
+    ;; A window whose moment has passed is not counted backwards.
+    (should (equal (ecc-usage--reset-string "2026-09-08T13:00:00+00:00")
+                   "any moment now"))
+    (let ((ecc-usage-reset-format 'absolute))
+      (should (equal (ecc-usage--reset-string "2026-09-08T14:00:00+00:00")
+                     "09/08 14:00")))
+    (let ((ecc-usage-reset-format 'both))
+      (should (equal (ecc-usage--reset-string "2026-09-08T14:00:00+00:00")
+                     "in 17m (09/08 14:00)")))))
+
+(ert-deftest ecc-usage-test-the-bar-is-coloured-for-how-full-it-is ()
+  "The used part of a bar carries a face, and the free part is dim."
+  (let ((bar (ecc-usage--bar 50)))
+    (should (eq (get-text-property 0 'face bar) 'ecc-usage-bar-face))
+    (should (eq (get-text-property (1- (length bar)) 'face bar)
+                'ecc-usage-bar-empty-face)))
+  (should (eq (get-text-property 0 'face (ecc-usage--bar 95))
+              'ecc-usage-bar-critical-face))
+  (should (eq (get-text-property 0 'face (ecc-usage--bar 75))
+              'ecc-usage-bar-warning-face))
+  ;; A grade the CLI made itself wins over the thresholds here.
+  (should (eq (get-text-property 0 'face (ecc-usage--bar 10 "critical"))
+              'ecc-usage-bar-critical-face)))
 
 (ert-deftest ecc-usage-test-fetch-asks-for-get-usage ()
   "The request goes out as a control request of subtype get_usage."
