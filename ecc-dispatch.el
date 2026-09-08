@@ -84,7 +84,7 @@ message this version does not understand can arrive between turns --
 `post_turn_summary' did, and opened a turn that nothing would ever
 close, which left the session running for good and every later prompt
 queued behind it (2026-09-08).  Nothing is dropped either way
-(FR-OUT-1, NFR-2)."
+\(FR-OUT-1, NFR-2)."
   (ecc-model-add-aside session
                        :type 'unknown
                        :status 'done
