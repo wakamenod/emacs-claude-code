@@ -175,7 +175,9 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
     ;; and a session that waited for it would spin for ever.
     (ecc-model-set-state session 'idle)
     ;; FR-SES-8: ask for the slash commands as soon as the CLI is up.
-    (ecc-proc-control session "initialize" nil 'hooks nil)
+    ;; The answer also carries what the Claude Code settings say about
+    ;; Remote Control, which is where the bridge is turned on.
+    (ecc-proc-control session "initialize" #'ecc-proc--on-initialize 'hooks nil)
     process))
 
 (defun ecc-proc-stop (session)
@@ -385,6 +387,139 @@ supports it, and \"bypassPermissions\" only where it is allowed."
               (setf (ecc-session-permission-mode session) mode)
               (run-hook-with-args 'ecc-permission-mode-functions session mode)))))
    'mode mode))
+
+
+;;;; Remote Control (docs/decisions.md, 2026-09-08)
+
+;; The bridge the CLI itself offers: the session shows up in the Code tab
+;; of the Claude app and can be driven from there.  The CLI never turns it
+;; on for a stream-json client on its own -- the initialize response only
+;; advises, and the client has to ask (docs/verified.md, 2026-09-08) --
+;; so everything here hangs off that answer.
+;;
+;; A hand-off to the terminal (`ecc-tui-open\=') stops this process, which
+;; takes the bridge down with it; the CLI the terminal starts brings up
+;; one of its own if the settings say so.
+
+(defun ecc-proc--remote-control-name (session)
+  "Return the name to give SESSION on the bridge."
+  (if ecc-remote-control-name-function
+      (funcall ecc-remote-control-name-function session)
+    (ecc-session-name session)))
+
+(defun ecc-proc-remote-control-offerable-p (session)
+  "Return non-nil when SESSION may be put on the bridge at all.
+Two things stand in the way of a session this package made for itself.
+The bridge refuses a workspace that was never trusted, which is what a
+session running in a temporary directory is; and an internal session --
+the light one of `ecc-inline\=' and its forks -- has no business
+appearing in the list on somebody\='s phone.  The latter says so with
+`:remote-control\=' among its launch options, which is also how a
+session of the user\='s own opts out."
+  (and (eq (ecc-session-kind session) 'own)
+       (not (file-in-directory-p (ecc-session-project-root session)
+                                 temporary-file-directory))))
+
+(defun ecc-proc-remote-control-wanted-p (session)
+  "Return non-nil when SESSION should turn Remote Control on now.
+`auto\=', the default, follows `remote_control_auto_enable\=' of the
+initialize response, which is the Claude Code settings resolved against
+the organisation policy; t asks wherever the CLI says it can offer it."
+  (let ((setting (ecc-model-option session :remote-control ecc-remote-control)))
+    (and setting
+         (ecc-model-remote-control session 'available)
+         (ecc-proc-remote-control-offerable-p session)
+         (or (not (eq setting 'auto))
+             (ecc-model-remote-control session 'auto-enable))
+         t)))
+
+(defun ecc-proc--on-initialize (session response)
+  "Take note of the initialize RESPONSE of SESSION.
+The commands are picked up by the dispatcher, which sees every control
+response; what is left is what the CLI says about Remote Control."
+  (when (assq 'remote_control_available response)
+    (ecc-model-set-remote-control
+     session
+     'available (ecc--json-true-p (alist-get 'remote_control_available response))
+     'auto-enable (ecc--json-true-p (alist-get 'remote_control_auto_enable response))
+     'auto-on-by-default
+     (ecc--json-true-p (alist-get 'remote_control_auto_on_by_default response)))
+    (when (ecc-proc-remote-control-wanted-p session)
+      (ecc-proc-remote-control session t))))
+
+(defun ecc-proc--remote-control-failed (session enabled reason)
+  "Note that SESSION could not switch Remote Control to ENABLED, for REASON.
+Authentication, an organisation policy and an untrusted workspace all
+arrive this way, and none of them may be swallowed (NFR-2)."
+  (ecc-model-set-remote-control session 'enabled nil 'error reason)
+  (ecc-log (ecc-session-name session) "remote control %s failed: %s"
+           (if enabled "on" "off") reason)
+  (ecc-model-add-node session :type 'system :status 'done
+                      :data (list (cons 'kind 'remote-control)
+                                  (cons 'text (format "remote control refused: %s"
+                                                      reason))))
+  (run-hook-with-args 'ecc-remote-control-functions session))
+
+(defun ecc-proc-remote-control (session enabled &optional on-error)
+  "Turn Remote Control of SESSION on when ENABLED, off otherwise.
+ON-ERROR, when given, is called with the session and what the CLI said
+if it refuses.  The answer to a successful switch-on carries the URL
+that opens the session in a browser, which is kept: without it there is
+nothing on screen to say where the session went."
+  (let ((name (and enabled (ecc-proc--remote-control-name session))))
+    (ecc-model-set-remote-control session 'error nil)
+    (apply #'ecc-proc-control
+           session "remote_control"
+           (lambda (session response)
+             (let ((refusal (alist-get 'error response)))
+               (cond
+                (refusal
+                 (let ((reason (if (stringp refusal) refusal
+                                 "the CLI refused Remote Control")))
+                   (ecc-proc--remote-control-failed session enabled reason)
+                   (when on-error (funcall on-error session reason))))
+                (enabled
+                 (ecc-model-set-remote-control
+                  session
+                  'enabled t
+                  'session-url (alist-get 'session_url response)
+                  'connect-url (alist-get 'connect_url response)
+                  'bridge-session-id (alist-get 'bridge_session_id response)
+                  'bridge-epoch (alist-get 'bridge_epoch response))
+                 (ecc-log (ecc-session-name session) "remote control on: %s"
+                          (or (ecc-model-remote-control session 'session-url)
+                              (ecc-model-remote-control session 'bridge-session-id)
+                              "no url"))
+                 (ecc-model-add-node
+                  session :type 'system :status 'done
+                  :data (list (cons 'kind 'remote-control)
+                              (cons 'text (ecc-proc--remote-control-notice session))))
+                 (run-hook-with-args 'ecc-remote-control-functions session))
+                (t
+                 ;; The answer to a switch-off is empty (docs/verified.md).
+                 (ecc-model-set-remote-control session 'enabled nil 'state nil
+                                               'detail nil 'session-url nil
+                                               'bridge-session-id nil)
+                 (ecc-log (ecc-session-name session) "remote control off")
+                 (ecc-model-add-node session :type 'system :status 'done
+                                     :data (list (cons 'kind 'remote-control)
+                                                 (cons 'text "remote control off")))
+                 (run-hook-with-args 'ecc-remote-control-functions session)))))
+           'enabled (if enabled t :false)
+           (when name (list 'name name)))))
+
+(defun ecc-proc--remote-control-notice (session)
+  "Return the line the transcript shows when SESSION goes on the bridge.
+The CLI discloses a bridge it turned on by itself rather than on the
+user\='s say-so, and so does this."
+  (concat "remote control on"
+          (if-let* ((url (ecc-model-remote-control session 'session-url)))
+              (concat " · " url) "")
+          (if (and (ecc-model-remote-control session 'auto-on-by-default)
+                   (eq (ecc-model-option session :remote-control ecc-remote-control)
+                       'auto))
+              " (turned on by your organisation or a rollout, not by a setting of yours)"
+            "")))
 
 (provide 'ecc-proc)
 

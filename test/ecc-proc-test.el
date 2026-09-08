@@ -277,6 +277,167 @@ The next prompt after a resume must be sent, not queued."
       ;; The turn stays in the transcript; it just is not open any more.
       (should (memq turn (ecc-session-turns session))))))
 
+
+;;;; Remote Control (docs/decisions.md, 2026-09-08)
+
+(defun ecc-proc-test--initialize (session response)
+  "Answer the initialize request of SESSION with RESPONSE.
+The callback is the one `ecc-proc-start' registers; the process it
+would need is not, so the request is sent by hand."
+  (let ((request-id (ecc-proc-control session "initialize"
+                                      #'ecc-proc--on-initialize 'hooks nil)))
+    (ecc-dispatch session
+                  (ecc-protocol-parse-line
+                   (ecc-protocol-serialize
+                    (ecc-protocol-control-response request-id response))))))
+
+(defun ecc-proc-test--answer-last (session response)
+  "Answer the control request SESSION sent last with RESPONSE."
+  (let ((request-id (car (hash-table-keys (ecc-session-pending-controls session)))))
+    (ecc-dispatch session
+                  (ecc-protocol-parse-line
+                   (ecc-protocol-serialize
+                    (ecc-protocol-control-response request-id response))))))
+
+(defun ecc-proc-test--remote-control-requests ()
+  "Return the remote_control requests the session under test sent."
+  (seq-filter (lambda (message)
+                (equal (alist-get 'subtype (alist-get 'request message))
+                       "remote_control"))
+              (ecc-test-sent-messages)))
+
+(defconst ecc-proc-test--initialize-response
+  '((commands . [])
+    (remote_control_available . t)
+    (remote_control_auto_enable . t)
+    (remote_control_auto_on_by_default . :false))
+  "An initialize response of a machine where Remote Control is on.
+The values are the ones measured on 2026-09-08 (docs/verified.md).")
+
+(ert-deftest ecc-proc-test-initialize-turns-remote-control-on ()
+  "A session follows what the initialize response says (FR-SES-2, `auto').
+The CLI only advises a stream-json client, so the bridge is asked for
+here or nowhere (docs/verified.md, 2026-09-08)."
+  (ecc-test-with-fake-session session
+    ;; Remote Control refuses a workspace that was never trusted, which
+    ;; the temporary directory of the fake session is.
+    (setf (ecc-session-project-root session) ecc-test-directory)
+    (let ((ecc-remote-control 'auto))
+      (ecc-proc-test--initialize session ecc-proc-test--initialize-response)
+      (should (ecc-model-remote-control session 'available))
+      (let ((requests (ecc-proc-test--remote-control-requests)))
+        (should (= 1 (length requests)))
+        (let ((request (alist-get 'request (car requests))))
+          (should (eq (alist-get 'enabled request) t))
+          (should (equal (alist-get 'name request) (ecc-session-name session)))))
+      ;; The answer carries the URL that opens the session elsewhere;
+      ;; without it nothing on screen says where the session went.
+      (ecc-proc-test--answer-last
+       session '((session_url . "https://claude.ai/code/session_01TED")
+                 (connect_url . "https://claude.ai/code?environment=")
+                 (environment_id . "")
+                 (bridge_epoch . 1)
+                 (bridge_session_id . "cse_01TED")))
+      (should (ecc-model-remote-control session 'enabled))
+      (should (equal (ecc-model-remote-control session 'session-url)
+                     "https://claude.ai/code/session_01TED"))
+      (should (equal (ecc-model-remote-control session 'bridge-session-id)
+                     "cse_01TED"))
+      (should (seq-find (lambda (node)
+                          (eq (ecc-model-node-get node 'kind) 'remote-control))
+                        (hash-table-values (ecc-session-nodes session)))))))
+
+(ert-deftest ecc-proc-test-remote-control-stays-off-when-it-should ()
+  "Nothing asks for the bridge unless the setting, the CLI and the workspace agree."
+  (dolist (case '((nil . "the setting says no")
+                  (auto-off . "the CLI advises against it")
+                  (unavailable . "the CLI cannot offer it")
+                  (temporary . "the workspace was never trusted")
+                  (option . "the session opted out")))
+    (ecc-test-with-fake-session session
+      (unless (eq (car case) 'temporary)
+        (setf (ecc-session-project-root session) ecc-test-directory))
+      (when (eq (car case) 'option)
+        (setf (ecc-session-options session) (list :remote-control nil)))
+      (let ((ecc-remote-control (if (eq (car case) nil) nil 'auto))
+            (response (copy-alist ecc-proc-test--initialize-response)))
+        (pcase (car case)
+          ('auto-off (setf (alist-get 'remote_control_auto_enable response) :false))
+          ('unavailable (setf (alist-get 'remote_control_available response) :false)))
+        (ecc-proc-test--initialize session response)
+        (should (equal (cons (cdr case) 0)
+                       (cons (cdr case)
+                             (length (ecc-proc-test--remote-control-requests)))))))))
+
+(ert-deftest ecc-proc-test-remote-control-is-asked-for-when-told-to ()
+  "`t' asks wherever the CLI says it can offer it, advice or none."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-project-root session) ecc-test-directory)
+    (let ((ecc-remote-control t)
+          (response (copy-alist ecc-proc-test--initialize-response)))
+      (setf (alist-get 'remote_control_auto_enable response) :false)
+      (ecc-proc-test--initialize session response)
+      (should (= 1 (length (ecc-proc-test--remote-control-requests)))))))
+
+(ert-deftest ecc-proc-test-remote-control-refusal-is-kept ()
+  "A refused bridge is left in the log and in the transcript (NFR-2).
+Missing authentication, an organisation policy and an untrusted
+workspace all come back as the error of a control response."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-project-root session) ecc-test-directory)
+    (let (reported)
+      (ecc-proc-remote-control session t (lambda (_session reason)
+                                           (setq reported reason)))
+      (ecc-proc-test--answer-last session nil)
+      ;; The dispatcher turns the error subtype into an `error' key.
+      (ecc-dispatch session
+                    (ecc-protocol-parse-line
+                     (ecc-protocol-serialize
+                      `((type . "control_response")
+                        (response . ((subtype . "error")
+                                     (request_id . "gone")
+                                     (error . "Remote Control requires a Claude subscription")))))))
+      (should-not reported))
+    ;; The same, with the request id the session is waiting on.
+    (let (reported)
+      (ecc-proc-remote-control session t (lambda (_session reason)
+                                           (setq reported reason)))
+      (let ((request-id (car (hash-table-keys
+                              (ecc-session-pending-controls session)))))
+        (ecc-dispatch session
+                      (ecc-protocol-parse-line
+                       (ecc-protocol-serialize
+                        `((type . "control_response")
+                          (response . ((subtype . "error")
+                                       (request_id . ,request-id)
+                                       (error . "workspace is not trusted"))))))))
+      (should (equal reported "workspace is not trusted"))
+      (should-not (ecc-model-remote-control session 'enabled))
+      (should (equal (ecc-model-remote-control session 'error)
+                     "workspace is not trusted"))
+      (should (string-search "remote control refused: workspace is not trusted"
+                             (mapconcat (lambda (node)
+                                          (or (ecc-model-node-get node 'text) ""))
+                                        (hash-table-values
+                                         (ecc-session-nodes session))
+                                        "\n")))
+      (should (string-search "remote control on failed: workspace is not trusted"
+                             (ecc-test-log-string
+                              (ecc--log-buffer (ecc-session-name session))))))))
+
+(ert-deftest ecc-proc-test-remote-control-off-clears-the-session ()
+  "Switching the bridge off is answered with nothing, and forgets the URL."
+  (ecc-test-with-fake-session session
+    (ecc-model-set-remote-control session 'enabled t 'state "connected"
+                                  'session-url "https://claude.ai/code/session_01TED")
+    (ecc-proc-remote-control session nil)
+    (let ((request (alist-get 'request (car (ecc-proc-test--remote-control-requests)))))
+      (should (eq (alist-get 'enabled request) :false))
+      (should-not (assq 'name request)))
+    (ecc-proc-test--answer-last session nil)
+    (should-not (ecc-model-remote-control session 'enabled))
+    (should-not (ecc-model-remote-control session 'session-url))))
+
 (provide 'ecc-proc-test)
 
 ;;; ecc-proc-test.el ends here

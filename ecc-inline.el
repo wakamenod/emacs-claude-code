@@ -230,9 +230,14 @@ was; the CLI hands the fork its real id in system/init."
                                  (file-name-nondirectory
                                   (directory-file-name root)))
                    :project-root root
-                   :options (if forkp
-                                (list :resume-from (ecc-session-id parent))
-                              (list :extra-args ecc-inline-light-args)))))
+                   ;; An inline session is machinery, not a
+                   ;; conversation somebody would look for on a phone,
+                   ;; so it stays off the Remote Control bridge.
+                   :options (append
+                             (if forkp
+                                 (list :resume-from (ecc-session-id parent))
+                               (list :extra-args ecc-inline-light-args))
+                             (list :remote-control nil)))))
     (ecc-proc-start session forkp forkp)
     session))
 
