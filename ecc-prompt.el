@@ -367,7 +367,7 @@ depends on the major mode of the session buffer.  A reference that
 names something Emacs knows rather than a path is cut short of the
 match by `ecc-prompt--next-reference'.")
 
-(defconst ecc-prompt-special-references '("region" "diagnostics")
+(defconst ecc-prompt-special-references '("region" "diagnostics" "cursor")
   "The @ references that name what Emacs is looking at, not a path.
 `ecc-prompt--expansion' reads them from the source buffer.")
 
@@ -412,10 +412,11 @@ that ends a sentence rather than a path is dropped."
         (format "```%s\n%s\n```" (plist-get context :language)
                 (plist-get context :text))))
 
-(defun ecc-prompt--expansion (token source)
+(defun ecc-prompt--expansion (token source &optional root)
   "Return (LABEL . BLOCK) for the reference TOKEN, or nil to leave it alone.
-SOURCE is the buffer @region and @diagnostics read from.  A plain
-@path is left alone: the CLI resolves that one itself."
+SOURCE is the buffer @region, @cursor and @diagnostics read from, and
+ROOT is where the CLI that reads the label stands.  A plain @path is
+left alone: the CLI resolves that one itself."
   (pcase-let ((`(,path ,start ,end) (ecc-prompt-split-reference token)))
     (cond
      ((equal path "region")
@@ -427,13 +428,19 @@ SOURCE is the buffer @region and @diagnostics read from.  A plain
                               (ecc-window-active-region)))
                   (context (ecc-context-capture
                             :buffer (nth 0 region)
-                            :region (cons (nth 1 region) (nth 2 region)))))
+                            :region (cons (nth 1 region) (nth 2 region))
+                            :root root)))
         (when (plist-get context :text)
+          (ecc-prompt--block context))))
+     ((equal path "cursor")
+      (when-let* ((context (ecc-context-cursor source root)))
+        (when (not (string-empty-p (string-trim (or (plist-get context :text) ""))))
           (ecc-prompt--block context))))
      ((equal path "diagnostics")
       (when (buffer-live-p source)
         (when-let* ((block (ecc-context-diagnostics-block source)))
-          (cons (format "Diagnostics: `%s`" (ecc-context-path source)) block))))
+          (cons (format "Diagnostics: `%s`" (ecc-context-path source root))
+                block))))
      (start
       (when-let* ((context (ecc-context-file-range path start end)))
         (ecc-prompt--block context))))))
@@ -447,15 +454,16 @@ A `@region' with no active region is one: it is sent as it stands, and
 `ecc-prompt-send' says so rather than leaving the user to find out from
 the answer.")
 
-(defun ecc-prompt-expand-references (text &optional source)
+(defun ecc-prompt-expand-references (text &optional source root)
   "Return TEXT with its @ references expanded (FR-INP-8).
-A line range, @region and @diagnostics are replaced by a short label
-and their content is appended as a quote block; a plain @path is left
-for the CLI to resolve.  SOURCE is the buffer to read the region and
-the diagnostics from.  Two references to the same thing share the one
-block.  What was appended, and which special reference had nothing to
-append, are left in `ecc-prompt-last-attachments' and
-`ecc-prompt-last-skipped'."
+A line range, @region, @cursor and @diagnostics are replaced by a
+short label and their content is appended as a quote block; a plain
+@path is left for the CLI to resolve.  SOURCE is the buffer to read
+the region, the cursor and the diagnostics from, and ROOT is what the
+paths of the labels are relative to.  Two references to the same thing
+share the one block.  What was appended, and which
+special reference had nothing to append, are left in
+`ecc-prompt-last-attachments' and `ecc-prompt-last-skipped'."
   (let ((source (or source (ecc-window-last-source-buffer)))
         (blocks nil)
         (skipped nil)
@@ -464,7 +472,7 @@ append, are left in `ecc-prompt-last-attachments' and
         (reference nil))
     (while (setq reference (ecc-prompt--next-reference result start))
       (pcase-let ((`(,beg ,finish ,token) reference))
-        (let ((expansion (ecc-prompt--expansion token source)))
+        (let ((expansion (ecc-prompt--expansion token source root)))
           (cond
            (expansion
             (setq result (concat (substring result 0 beg)
@@ -515,6 +523,7 @@ which is where the CLI looks for a command."
 
 (defconst ecc-prompt-at-specials
   '(("@region" . "Send the region, quoted")
+    ("@cursor" . "Send the line the cursor is on, with its neighbours")
     ("@diagnostics" . "Send the diagnostics of this file"))
   "The @ references that are not files (FR-INP-8).")
 
@@ -560,11 +569,14 @@ which is where the CLI looks for a command."
   "Return TEXT as it should be sent for SESSION.
 The slash command is dealt with first (FR-INP-4, 5), then the @
 references are expanded (FR-INP-8), then the editor context of SOURCE
-is appended when ATTACH is non-nil (FR-CTX-1)."
-  (let ((text (ecc-prompt-expand-references
-               (ecc-prompt-prepare-command session text) source)))
+is appended when ATTACH is non-nil (FR-CTX-1).  The paths of the
+labels are relative to the project of SESSION, which is where the CLI
+reading them stands."
+  (let* ((root (ecc-window-project-root (ecc-session-project-root session)))
+         (text (ecc-prompt-expand-references
+                (ecc-prompt-prepare-command session text) source root)))
     (if attach
-        (concat text (or (ecc-context-block source) ""))
+        (concat text (or (ecc-context-block source root) ""))
       text)))
 
 (defun ecc-prompt--attachment-report ()

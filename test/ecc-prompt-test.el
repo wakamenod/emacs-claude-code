@@ -317,6 +317,44 @@ failing that to the setting."
             (should (equal 1 (ecc-prompt-test--count "```python" text)))))
       (kill-buffer source))))
 
+(ert-deftest ecc-prompt-test-expand-cursor ()
+  "@cursor quotes the line the cursor is on and its neighbours."
+  (let ((source (get-buffer-create "ecc-prompt-test-cursor"))
+        (ecc-context-cursor-lines 1))
+    (unwind-protect
+        (with-current-buffer source
+          (insert "one\ntwo\nthree\nfour\nfive\n")
+          (setq-local major-mode 'python-mode)
+          (goto-char (point-min))
+          (forward-line 2)
+          (let ((text (ecc-prompt-expand-references "\u3053\u3053@cursor\u306f\uff1f" source)))
+            (should (string-search "```python\ntwo\nthree\nfour\n```" text))
+            ;; The label points at the cursor, not at the lines around it.
+            (should (string-search "L3" text))
+            (should-not (string-search "L2-L4" text))
+            (should-not (string-search "@cursor" text))))
+      (kill-buffer source))))
+
+(ert-deftest ecc-prompt-test-path-outside-the-session-root ()
+  "A file outside the project of the session is labelled in full."
+  (let* ((root (file-name-as-directory (make-temp-file "ecc-root" t)))
+         (other (make-temp-file "ecc-other" nil ".py" "a = 1\n"))
+         (buffer (find-file-noselect other)))
+    (unwind-protect
+        (with-current-buffer buffer
+          (transient-mark-mode 1)
+          (goto-char (point-min))
+          (push-mark (point-max) t t)
+          ;; Relative to its own project the file is a bare name, which
+          ;; the CLI would resolve from the root of the session instead.
+          (let ((here (ecc-prompt-expand-references "@region" buffer))
+                (there (ecc-prompt-expand-references "@region" buffer root)))
+            (should (string-search (abbreviate-file-name other) there))
+            (should-not (equal here there))))
+      (kill-buffer buffer)
+      (delete-file other)
+      (delete-directory root t))))
+
 (ert-deftest ecc-prompt-test-skipped-special-is-noted ()
   "A @region with no region is left alone and noted (FR-INP-8)."
   (let ((source (get-buffer-create "ecc-prompt-test-skipped")))

@@ -53,6 +53,12 @@ the requirement makes optional."
   :type 'boolean
   :group 'ecc)
 
+(defcustom ecc-context-cursor-lines 3
+  "Lines quoted above and below the cursor by the `@cursor' reference.
+Zero sends the line the cursor is on and nothing else."
+  :type 'integer
+  :group 'ecc)
+
 (defcustom ecc-context-max-lines 200
   "Most lines of a region or a file range quoted into a prompt."
   :type 'integer
@@ -93,11 +99,15 @@ still fenced as what it is."
               (match-string 1 name)
             "")))))
 
-(defun ecc-context-path (&optional buffer)
-  "Return the path of BUFFER relative to its project, or its name."
+(defun ecc-context-path (&optional buffer root)
+  "Return the path of BUFFER relative to ROOT, or its name.
+ROOT is where the CLI reading the path stands, and defaults to the
+project of BUFFER itself.  A file outside it is named in full: a
+relative path would be resolved from the directory of the session and
+land on another file of that name, which is worse than a long label."
   (with-current-buffer (or buffer (current-buffer))
     (if buffer-file-name
-        (let ((root (ecc-window-project-root)))
+        (let ((root (or root (ecc-window-project-root))))
           (if (string-prefix-p root buffer-file-name)
               (file-relative-name buffer-file-name root)
             (abbreviate-file-name buffer-file-name)))
@@ -112,12 +122,13 @@ still fenced as what it is."
               (format "\n… (%d more lines omitted)"
                       (- (length lines) ecc-context-max-lines))))))
 
-(cl-defun ecc-context-capture (&key buffer region)
+(cl-defun ecc-context-capture (&key buffer region root)
   "Return what the editor is looking at, as a plist (FR-CTX-1).
 BUFFER defaults to `ecc-window-last-source-buffer'.  The keys are
 `:path', `:line', `:end-line', `:text' and `:language'; `:text' is only
 there when a region is active, or when REGION is a cons of two
-positions to take instead of the active one."
+positions to take instead of the active one.  ROOT is what `:path' is
+relative to, and is the project of the session the prompt goes to."
   (let ((buffer (or buffer (ecc-window-last-source-buffer))))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
@@ -125,7 +136,7 @@ positions to take instead of the active one."
                           ((use-region-p) (region-beginning))))
                (end (cond ((consp region) (cdr region))
                           ((use-region-p) (region-end)))))
-          (list :path (ecc-context-path buffer)
+          (list :path (ecc-context-path buffer root)
                 :buffer buffer
                 :language (ecc-context-language)
                 :line (line-number-at-pos (or beg (point)))
@@ -139,6 +150,27 @@ positions to take instead of the active one."
                                 (string-trim-right
                                  (buffer-substring-no-properties beg end)
                                  "\n")))))))))
+
+(defun ecc-context-cursor (&optional buffer root)
+  "Return what the cursor of BUFFER is looking at, as a plist (FR-CTX-1).
+The lines around it are `ecc-context-cursor-lines' either way, while
+`:line' is the line the cursor sits on and `:end-line' is nil: the
+label of the block points at the cursor, not at the lines that came
+along with it.  ROOT is what `:path' is relative to."
+  (let ((buffer (or buffer (ecc-window-last-source-buffer))))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (let ((beg (save-excursion
+                     (forward-line (- ecc-context-cursor-lines))
+                     (line-beginning-position)))
+              (end (save-excursion
+                     (forward-line ecc-context-cursor-lines)
+                     (line-end-position)))
+              (line (line-number-at-pos)))
+          (let ((context (ecc-context-capture :buffer buffer
+                                              :region (cons beg end)
+                                              :root root)))
+            (plist-put (plist-put context :line line) :end-line nil)))))))
 
 ;;;; Formatting (FR-CTX-2)
 
@@ -158,9 +190,10 @@ positions to take instead of the active one."
             (when-let* ((text (plist-get context :text)))
               (format "\n```%s\n%s\n```" (plist-get context :language) text)))))
 
-(defun ecc-context-block (&optional buffer)
-  "Return the context quote block for BUFFER, or nil when there is none."
-  (ecc-context-format (ecc-context-capture :buffer buffer)))
+(defun ecc-context-block (&optional buffer root)
+  "Return the context quote block for BUFFER, or nil when there is none.
+ROOT is what the path of the block is relative to."
+  (ecc-context-format (ecc-context-capture :buffer buffer :root root)))
 
 ;;;; File ranges and diagnostics (FR-INP-8, FR-CTX-4)
 
