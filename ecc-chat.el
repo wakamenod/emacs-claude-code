@@ -12,8 +12,9 @@
 ;; `ecc-render' draws, and under it, after a separator, the prompt region
 ;; the user types in (docs/phase9-ui-redesign.md, section 4).  Under the
 ;; region come another rule and the permission mode the session runs,
-;; which S-TAB walks through (FR-SES-6); both of those and the
-;; placeholder are ghost text rather than buffer text.
+;; which S-TAB walks through (FR-SES-6); that footer is read-only text,
+;; and the region ends where it begins rather than at the end of the
+;; buffer.  The placeholder of an empty region is ghost text.
 ;;
 ;; The two parts answer to different keys.  The transcript is read-only
 ;; text carrying `ecc-chat-transcript-map' as its `keymap' property, so
@@ -100,6 +101,11 @@ Off, RET inserts a newline and \\<ecc-chat-mode-map>\\[ecc-prompt-send] sends; o
 (defvar-local ecc-chat--placeholder-overlay nil
   "The overlay whose `after-string' is the ghost text of this buffer.")
 
+(defvar-local ecc-chat--prompt-end nil
+  "Marker where the prompt region ends and the footer begins.
+It advances with what is typed at it, so that the draft grows in front
+of the footer rather than into it.")
+
 (defvar ecc-chat-placeholder-functions nil
   "Functions offering a placeholder for an empty prompt region.
 Each is called with the session and returns a string or nil; the
@@ -135,9 +141,6 @@ anyway, because otherwise nothing tells the reader that S-TAB
 switches.  A mode that is not listed is shown under its own name."
   :type '(alist :key-type string :value-type string)
   :group 'ecc)
-
-(defvar-local ecc-chat--footer-overlay nil
-  "The overlay whose `after-string' is the footer of this buffer.")
 
 ;;;; Keymaps
 
@@ -296,30 +299,39 @@ A key not here falls through to `ecc-chat-mode-map'.")
   "Return where the prompt region of this buffer starts, or nil."
   (ecc-render-prompt-start))
 
+(defun ecc-chat-prompt-end ()
+  "Return where the prompt region of this buffer ends.
+That is where the footer under it begins, and the end of the buffer
+while there is no footer."
+  (if (and ecc-chat--prompt-end (marker-buffer ecc-chat--prompt-end))
+      (marker-position ecc-chat--prompt-end)
+    (point-max)))
+
 (defun ecc-chat-in-prompt-p (&optional position)
   "Return non-nil when POSITION, or point, is in the prompt region."
-  (when-let* ((start (ecc-chat-prompt-start)))
-    (>= (or position (point)) start)))
+  (when-let* ((start (ecc-chat-prompt-start))
+              (position (or position (point))))
+    (and (>= position start) (<= position (ecc-chat-prompt-end)))))
 
 (defun ecc-chat-draft ()
   "Return what is written in the prompt region, without properties.
-The placeholder is ghost text rather than buffer text, so it is not
-part of it."
+The placeholder is ghost text rather than buffer text and the footer
+lies past the end of the region, so neither is part of it."
   (if-let* ((start (ecc-chat-prompt-start)))
-      (buffer-substring-no-properties start (point-max))
+      (buffer-substring-no-properties start (ecc-chat-prompt-end))
     ""))
 
 (defun ecc-chat-clear-draft ()
   "Empty the prompt region."
   (when-let* ((start (ecc-chat-prompt-start)))
-    (delete-region start (point-max))))
+    (delete-region start (ecc-chat-prompt-end))))
 
 (defun ecc-chat-set-draft (text)
   "Replace the prompt region with TEXT and leave point at its end."
   (let ((start (or (ecc-chat-prompt-start)
                    (user-error "This buffer has no prompt region"))))
     (ecc-chat--remove-placeholder)
-    (delete-region start (point-max))
+    (delete-region start (ecc-chat-prompt-end))
     (goto-char start)
     (insert text)))
 
@@ -330,9 +342,7 @@ sits on the first character of the ghost text."
   (interactive)
   (unless (ecc-chat-prompt-start)
     (user-error "This buffer has no prompt region"))
-  (goto-char (if (string-empty-p (ecc-chat-draft))
-                 (ecc-chat-prompt-start)
-               (point-max))))
+  (goto-char (ecc-chat-prompt-end)))
 
 (defun ecc-chat-return ()
   "Insert a newline, or send the prompt when `ecc-chat-return-sends' is on."
@@ -425,20 +435,22 @@ BUFFER defaults to the current one.  Returns the text shown, or nil."
 
 ;; Under the prompt region come a rule and one dim line naming the
 ;; permission mode, as the terminal client has them under its own
-;; prompt.  Like the placeholder above, they are ghost text -- the
-;; `after-string' of an empty overlay at the end of the buffer -- and
-;; for the same reason: the prompt region runs to `point-max', so
-;; anything written there would be part of the draft.  Nothing here is
-;; buffer text, so `ecc-chat-draft', the undo history and every redraw
-;; go on knowing only the draft.
+;; prompt.
 ;;
-;; Both ghosts sit at the same place while the draft is empty.  The
-;; after-strings of a position are shown by falling priority, so the
-;; footer carries one below the priority of the placeholder, which has
-;; none and counts as zero.
-
-(defconst ecc-chat--footer-priority -50
-  "Priority of the footer overlay, under the priority of the placeholder.")
+;; They are read-only buffer text, and the region above them ends at
+;; the `ecc-chat--prompt-end' marker rather than at the end of the
+;; buffer.  Ghost text was tried first -- the `after-string' of an
+;; overlay, the way the placeholder is drawn -- and the cursor could
+;; not be kept out of it: a string shown after point takes the cursor
+;; with it, and the `cursor' property that is supposed to bring it back
+;; did not once the placeholder had a string at the same place
+;; (2026-09-08, `docs/decisions.md').  Text has no such question: the
+;; end of the draft is a position in the buffer like any other.
+;;
+;; What the renderer does is unaffected, because it draws only up to
+;; the start of the prompt region and never deletes past it (FR-UI-2).
+;; The footer is written with `with-silent-modifications', so it stays
+;; out of the undo history of the draft as the placeholder does.
 
 (defun ecc-chat--permission-mode-label (session)
   "Return what the footer calls the permission mode SESSION runs."
@@ -461,37 +473,50 @@ region is, so that it spans whatever width the window has."
             (ecc-chat--permission-mode-label session))))
 
 (defun ecc-chat-footer-shown ()
-  "Return the footer text shown under the prompt region, or nil."
-  (when (and ecc-chat--footer-overlay
-             (overlay-buffer ecc-chat--footer-overlay))
-    (overlay-get ecc-chat--footer-overlay 'ecc-footer)))
+  "Return the footer under the prompt region, without properties, or nil."
+  (when (and ecc-chat--prompt-end (marker-buffer ecc-chat--prompt-end)
+             (< (ecc-chat-prompt-end) (point-max)))
+    (buffer-substring-no-properties (ecc-chat-prompt-end) (point-max))))
 
 (defun ecc-chat--remove-footer ()
   "Take the footer out from under the prompt region.
 Returns non-nil when there was one."
-  (when (and ecc-chat--footer-overlay
-             (overlay-buffer ecc-chat--footer-overlay))
-    (delete-overlay ecc-chat--footer-overlay)
+  (when (ecc-chat-footer-shown)
+    (let ((start (ecc-chat-prompt-end)))
+      (with-silent-modifications
+        (delete-region start (point-max))
+        (set-marker ecc-chat--prompt-end nil)
+        (setq ecc-chat--prompt-end nil)))
     t))
 
+(defun ecc-chat--footer-text (text)
+  "Return TEXT ready to be put under the prompt region.
+It is read-only, and answers to the keys of the transcript -- all but
+its first character, the newline that ends the draft line.  The draft
+is written at that very position, and `key-lookup\=' takes the keymap
+of the character after point: a keymap there would make a letter typed
+into an empty prompt region move about the transcript instead."
+  (let ((text (propertize text 'read-only t 'ecc-footer t)))
+    (when (> (length text) 1)
+      (put-text-property 1 (length text) 'keymap ecc-chat-transcript-map text))
+    text))
+
 (defun ecc-chat--insert-footer (text)
-  "Show TEXT as the ghost text under the prompt region."
-  (let ((ghost (copy-sequence text)))
-    ;; With point at the end of the buffer the cursor would be drawn
-    ;; behind the whole of the ghost text, two lines under the draft;
-    ;; on its first character, the newline, it is drawn where the draft
-    ;; ends.  The placeholder asks for the cursor too, and while it is
-    ;; shown the prompt region is empty and that is where it belongs.
-    (when (and (> (length ghost) 0) (not (ecc-chat-placeholder-shown)))
-      (put-text-property 0 1 'cursor t ghost))
-    (if (and ecc-chat--footer-overlay
-             (overlay-buffer ecc-chat--footer-overlay))
-        (move-overlay ecc-chat--footer-overlay (point-max) (point-max))
-      ;; No `evaporate': an empty overlay carrying it is deleted at once.
-      (setq ecc-chat--footer-overlay (make-overlay (point-max) (point-max))))
-    (overlay-put ecc-chat--footer-overlay 'after-string ghost)
-    (overlay-put ecc-chat--footer-overlay 'priority ecc-chat--footer-priority)
-    (overlay-put ecc-chat--footer-overlay 'ecc-footer text)))
+  "Put TEXT under the prompt region as read-only text.
+The marker that ends the region is left in front of it, and takes what
+is typed at the end of the draft with it."
+  (let ((start (ecc-chat-prompt-end)))
+    (with-silent-modifications
+      (save-excursion
+        (delete-region start (point-max))
+        (goto-char start)
+        (insert (ecc-chat--footer-text text))
+        ;; The marker advances with an insertion at it, which is what
+        ;; keeps the draft in front of the footer, so it has to be put
+        ;; back in front of the text just written.
+        (if (and ecc-chat--prompt-end (marker-buffer ecc-chat--prompt-end))
+            (set-marker ecc-chat--prompt-end start)
+          (setq ecc-chat--prompt-end (copy-marker start t)))))))
 
 (defun ecc-chat-update-footer (&optional buffer)
   "Show the footer under the prompt region of BUFFER.
@@ -501,12 +526,12 @@ or nil."
   (with-current-buffer (or buffer (current-buffer))
     (let ((text (and (ecc-chat-prompt-start) (ecc-chat-footer-string))))
       (cond
-       (text
-        ;; Put in every time: a redraw leaves the overlay behind where
-        ;; the buffer used to end, and the mode may have changed.
-        (ecc-chat--insert-footer text)
-        text)
-       (t (ecc-chat--remove-footer) nil)))))
+       ((null text) (ecc-chat--remove-footer) nil)
+       ;; Written again only when it has something else to say: every
+       ;; command passes through here, and the draft is not to be
+       ;; disturbed for nothing.
+       ((equal (substring-no-properties text) (ecc-chat-footer-shown)) text)
+       (t (ecc-chat--insert-footer text) text)))))
 
 (defun ecc-chat-cycle-permission-mode ()
   "Switch the session of this buffer to the next permission mode (FR-SES-6).

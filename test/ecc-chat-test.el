@@ -428,17 +428,21 @@ the cursor cannot walk into it; anything written takes it away."
                        ecc-chat-placeholder))
         (should (get-text-property 0 'cursor (overlay-get overlay 'after-string))))
       (should-not (string-search ecc-chat-placeholder (buffer-string)))
-      ;; The prompt region is empty, so point has nowhere to walk to.
+      ;; The prompt region is empty, so point has nowhere to walk to:
+      ;; what follows it is the footer, which cannot be written in.
       (ecc-chat-goto-prompt)
       (should (= (point) (ecc-chat-prompt-start)))
-      (should (= (point) (point-max)))
-      (should-error (forward-char 1) :type 'end-of-buffer)
+      (should (= (point) (ecc-chat-prompt-end)))
+      (should (get-text-property (point) 'ecc-footer))
+      (save-excursion
+        (forward-char 1)
+        (should-error (insert "x") :type 'text-read-only))
       ;; Typing takes it away and leaves only what was typed.
       (insert "x")
       (should (equal (ecc-chat-draft) "x"))
       (should-not (ecc-chat-placeholder-shown))
       (should (= (point) (1+ (ecc-chat-prompt-start))))
-      (should (string-suffix-p " \nx" (buffer-string)))
+      (should (string-search " \nx" (buffer-string)))
       (should-not (ecc-chat-update-placeholder))
       ;; Emptied, it comes back; a redraw keeps it in place.
       (ecc-prompt-clear)
@@ -450,7 +454,7 @@ the cursor cannot walk into it; anything written takes it away."
       (should (= (point) (ecc-chat-prompt-start)))
       (should (string-search "hello from emacs" (buffer-string)))
       ;; Typing at its end works too, and sending sees no placeholder.
-      (goto-char (point-max))
+      (ecc-chat-goto-prompt)
       (insert "send me")
       (should (equal (ecc-chat-draft) "send me"))
       (ecc-prompt-send)
@@ -494,48 +498,46 @@ the cursor cannot walk into it; anything written takes it away."
     (substring-no-properties (car (last (split-string text "\n"))))))
 
 (ert-deftest ecc-chat-test-footer ()
-  "The permission mode is shown under the prompt as ghost text.
-Like the placeholder, it is the `after-string' of an overlay, so the
-draft never sees it; it follows the end of the buffer as the draft
-grows and stays there over a redraw (FR-UI-2)."
+  "The permission mode is shown under the prompt as read-only text.
+The prompt region ends where it begins, so the draft never sees it,
+and the draft is written in front of it and survives a redraw
+\(FR-UI-2)."
   (ecc-test-with-fake-session session
     (with-current-buffer (ecc-session-ensure-buffer session)
       (ecc-chat--update-ghosts)
       (should (equal (ecc-chat-test--footer-mode)
                      "⏵ manual mode (S-TAB to cycle)"))
-      (let ((overlay ecc-chat--footer-overlay))
-        (should (= (overlay-start overlay) (point-max)))
-        (should (= (overlay-start overlay) (overlay-end overlay)))
-        ;; It is shown and nothing more: no text, and nothing of it in
-        ;; the draft.
-        (should-not (string-search "S-TAB" (buffer-string)))
-        (should (equal (ecc-chat-draft) ""))
-        ;; The rule spans the window, as the separator above does.
-        (should (string-prefix-p "\n" (overlay-get overlay 'after-string)))
-        (should (equal (get-text-property
-                        1 'display (overlay-get overlay 'after-string))
-                       '(space :align-to right)))
-        ;; The cursor belongs to the placeholder while there is one.
-        (should (ecc-chat-placeholder-shown))
-        (should-not (get-text-property 0 'cursor (overlay-get overlay 'after-string)))
-        ;; With a draft written, the cursor is drawn where the draft
-        ;; ends rather than behind the whole of the ghost text.
-        (ecc-chat-goto-prompt)
-        (insert "hello")
-        (ecc-chat--update-ghosts)
-        (should-not (ecc-chat-placeholder-shown))
-        (should (= (overlay-start ecc-chat--footer-overlay) (point-max)))
-        (should (get-text-property 0 'cursor
-                                   (overlay-get ecc-chat--footer-overlay
-                                                'after-string)))
-        (should (equal (ecc-chat-draft) "hello")))
-      ;; A redraw leaves the overlay behind; the next update brings it
-      ;; back to the end, with the draft untouched.
+      ;; It is text of its own, past the end of the prompt region.
+      (should (string-search "S-TAB" (buffer-string)))
+      (should (equal (ecc-chat-draft) ""))
+      (should (= (ecc-chat-prompt-end) (ecc-chat-prompt-start)))
+      (should (< (ecc-chat-prompt-end) (point-max)))
+      (should (get-text-property (ecc-chat-prompt-end) 'ecc-footer))
+      (should (get-text-property (ecc-chat-prompt-end) 'read-only))
+      ;; Its rule spans the window as the separator above does.
+      (should (equal (get-text-property (+ (ecc-chat-prompt-end) 1) 'display)
+                     '(space :align-to right)))
+      ;; A letter typed where the draft begins is a letter: the keys of
+      ;; the transcript start after the newline that ends the region.
+      (ecc-chat-goto-prompt)
+      (should (eq (key-binding (kbd "n")) #'self-insert-command))
+      (should (eq (key-binding (kbd "<backtab>"))
+                  #'ecc-chat-cycle-permission-mode))
+      (save-excursion
+        (forward-char 2)
+        (should (eq (key-binding (kbd "n")) #'ecc-chat-next-heading)))
+      ;; The draft grows in front of the footer rather than into it.
+      (insert "hello")
+      (ecc-chat--update-ghosts)
+      (should (equal (ecc-chat-draft) "hello"))
+      (should (= (point) (ecc-chat-prompt-end)))
+      (should (get-text-property (ecc-chat-prompt-end) 'ecc-footer))
+      ;; A redraw of the transcript above leaves both alone.
       (ecc-model-begin-turn session "hello")
       (ecc-test-dispatch session "basic-turn")
       (ecc-render-flush session)
       (should (equal (ecc-chat-draft) "hello"))
-      (should (= (overlay-start ecc-chat--footer-overlay) (point-max)))
+      (should (get-text-property (ecc-chat-prompt-end) 'ecc-footer))
       (should (equal (ecc-chat-test--footer-mode)
                      "⏵ manual mode (S-TAB to cycle)"))
       ;; It says what the session runs, and warns about the mode that
@@ -552,9 +554,10 @@ grows and stays there over a redraw (FR-UI-2)."
       (ecc-chat--update-ghosts)
       (should (equal (ecc-chat-test--footer-mode)
                      "⏵⏵ bypass permissions on (S-TAB to cycle)"))
-      (should (eq (get-text-property
-                   0 'face (car (last (split-string (ecc-chat-footer-shown) "\n"))))
-                  'ecc-warning-face))
+      (save-excursion
+        (goto-char (point-max))
+        (should (eq (get-text-property (line-beginning-position) 'face)
+                    'ecc-warning-face)))
       ;; A mode nobody listed is shown under its own name.
       (setf (ecc-session-permission-mode session) "somethingElse")
       (ecc-chat--update-ghosts)
