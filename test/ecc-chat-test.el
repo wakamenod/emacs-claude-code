@@ -490,6 +490,36 @@ the cursor cannot walk into it; anything written takes it away."
       (should (equal (ecc-chat-draft) "abc"))
       (should-not (ecc-chat-update-placeholder)))))
 
+(ert-deftest ecc-chat-test-kill-line-stays-in-the-prompt ()
+  "C-k kills within the draft and leaves the footer under it alone.
+The newline that ends the last line of the draft belongs to the
+footer, which is read-only, so `kill-line' has to be kept inside the
+prompt region."
+  (ecc-test-with-fake-session session
+    (with-current-buffer (ecc-session-ensure-buffer session)
+      (ecc-chat--update-ghosts)
+      (should (eq (key-binding (kbd "C-k")) #'ecc-chat-kill-line))
+      (ecc-chat-set-draft "one\ntwo")
+      ;; From the middle of the first line: the rest of the line goes,
+      ;; then the newline, and the second line comes up.
+      (goto-char (+ (ecc-chat-prompt-start) 1))
+      (ecc-chat-kill-line)
+      (should (equal (ecc-chat-draft) "o\ntwo"))
+      (ecc-chat-kill-line)
+      (should (equal (ecc-chat-draft) "otwo"))
+      ;; At the end of the draft there is nothing left to kill: the
+      ;; footer is not the draft's last line.
+      (ecc-chat-goto-prompt)
+      (should-error (ecc-chat-kill-line) :type 'end-of-buffer)
+      (should (equal (ecc-chat-draft) "otwo"))
+      (should (get-text-property (ecc-chat-prompt-end) 'ecc-footer))
+      ;; From its start the whole draft goes, and the footer stays.
+      (goto-char (ecc-chat-prompt-start))
+      (ecc-chat-kill-line)
+      (should (equal (ecc-chat-draft) ""))
+      (should (equal (ecc-chat-test--footer-mode)
+                     "⏵ manual mode (S-TAB to cycle)")))))
+
 ;;;; The footer: the permission mode under the prompt (FR-SES-6)
 
 (defun ecc-chat-test--footer-mode ()

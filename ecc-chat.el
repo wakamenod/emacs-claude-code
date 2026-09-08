@@ -150,6 +150,7 @@ switches.  A mode that is not listed is shown under its own name."
     (define-key map (kbd "S-<return>") #'ecc-chat-newline)
     (define-key map (kbd "C-j") #'ecc-chat-newline)
     (define-key map (kbd "TAB") #'ecc-chat-tab)
+    (define-key map (kbd "C-k") #'ecc-chat-kill-line)
     (define-key map (kbd "<backtab>") #'ecc-chat-cycle-permission-mode)
     (define-key map (kbd "S-<tab>") #'ecc-chat-cycle-permission-mode)
     (define-key map (kbd "C-c C-c") #'ecc-prompt-send)
@@ -357,6 +358,21 @@ sits on the first character of the ghost text."
   (unless (ecc-chat-in-prompt-p)
     (user-error "The transcript is read-only; i moves to the prompt"))
   (newline))
+
+(defun ecc-chat-kill-line (&optional arg)
+  "Kill to the end of the line, staying inside the prompt region.
+The footer under the region is read-only text of its own, and the
+newline that ends the last line of the draft is the first character of
+it, so a plain `kill-line\=' at the end of the draft is refused rather
+than killing the line.  Narrowing to the region keeps ARG,
+`kill-whole-line\=' and everything else about `kill-line\=' as they are
+anywhere else, and ends the draft where the region ends."
+  (interactive "P")
+  (if-let* ((start (and (ecc-chat-in-prompt-p) (ecc-chat-prompt-start))))
+      (save-restriction
+        (narrow-to-region start (ecc-chat-prompt-end))
+        (kill-line arg))
+    (kill-line arg)))
 
 (defun ecc-chat-tab ()
   "Complete in the prompt region, or fold in the transcript."
