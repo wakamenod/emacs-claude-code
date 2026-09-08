@@ -373,7 +373,8 @@ on the request."
    session "set_permission_mode"
    (lambda (session response)
      (when-let* ((mode (alist-get 'mode response)))
-       (setf (ecc-session-permission-mode session) mode)))
+       (setf (ecc-session-permission-mode session) mode)
+       (run-hook-with-args 'ecc-permission-mode-functions session mode)))
    'mode mode))
 
 (provide 'ecc-proc)

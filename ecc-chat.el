@@ -10,7 +10,10 @@
 
 ;; `ecc-chat-mode' is the major mode of a session buffer: the transcript
 ;; `ecc-render' draws, and under it, after a separator, the prompt region
-;; the user types in (docs/phase9-ui-redesign.md, section 4).
+;; the user types in (docs/phase9-ui-redesign.md, section 4).  Under the
+;; region come another rule and the permission mode the session runs,
+;; which S-TAB walks through (FR-SES-6); both of those and the
+;; placeholder are ghost text rather than buffer text.
 ;;
 ;; The two parts answer to different keys.  The transcript is read-only
 ;; text carrying `ecc-chat-transcript-map' as its `keymap' property, so
@@ -103,6 +106,39 @@ Each is called with the session and returns a string or nil; the
 first string wins over `ecc-chat-placeholder'.  The suggestion of
 FR-HINT-4 arrives this way.")
 
+(defcustom ecc-chat-show-footer t
+  "Non-nil says which permission mode the session runs under the prompt.
+A rule and one dim line, the way the terminal client puts them under
+its own prompt."
+  :type 'boolean
+  :group 'ecc)
+
+(defcustom ecc-chat-permission-mode-cycle
+  '("default" "acceptEdits" "plan")
+  "Permission modes `ecc-chat-cycle-permission-mode\=' walks through.
+The three the terminal client cycles with shift+tab.
+\"bypassPermissions\" is deliberately not among them: it answers every
+request on its own, which is not something a key pressed by mistake
+should turn on.  `ecc-set-permission-mode\=' still reaches it."
+  :type '(repeat string)
+  :group 'ecc)
+
+(defcustom ecc-chat-permission-mode-labels
+  '(("default" . "⏵ manual mode")
+    ("acceptEdits" . "⏵⏵ auto mode on")
+    ("plan" . "⏸ plan mode on")
+    ("bypassPermissions" . "⏵⏵ bypass permissions on"))
+  "What the footer calls each permission mode.
+The words and the marks of the terminal client (`claude\=' 2.1.263),
+which says nothing at all in the default mode; the footer names it
+anyway, because otherwise nothing tells the reader that S-TAB
+switches.  A mode that is not listed is shown under its own name."
+  :type '(alist :key-type string :value-type string)
+  :group 'ecc)
+
+(defvar-local ecc-chat--footer-overlay nil
+  "The overlay whose `after-string' is the footer of this buffer.")
+
 ;;;; Keymaps
 
 (defvar ecc-chat-mode-map
@@ -111,6 +147,8 @@ FR-HINT-4 arrives this way.")
     (define-key map (kbd "S-<return>") #'ecc-chat-newline)
     (define-key map (kbd "C-j") #'ecc-chat-newline)
     (define-key map (kbd "TAB") #'ecc-chat-tab)
+    (define-key map (kbd "<backtab>") #'ecc-chat-cycle-permission-mode)
+    (define-key map (kbd "S-<tab>") #'ecc-chat-cycle-permission-mode)
     (define-key map (kbd "C-c C-c") #'ecc-prompt-send)
     (define-key map (kbd "C-c C-k") #'ecc-prompt-clear)
     (define-key map (kbd "C-c C-g") #'ecc-session-interrupt)
@@ -146,6 +184,8 @@ letter is a letter.")
 (defvar ecc-chat-transcript-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "TAB") #'ecc-chat-toggle)
+    (define-key map (kbd "<backtab>") #'ecc-chat-cycle-permission-mode)
+    (define-key map (kbd "S-<tab>") #'ecc-chat-cycle-permission-mode)
     (define-key map (kbd "n") #'ecc-chat-next-heading)
     (define-key map (kbd "p") #'ecc-chat-previous-heading)
     (define-key map (kbd "M-n") #'ecc-chat-next-sibling)
@@ -381,6 +421,119 @@ BUFFER defaults to the current one.  Returns the text shown, or nil."
         text)
        (t (ecc-chat--remove-placeholder) nil)))))
 
+;;;; The footer: which permission mode the session runs (FR-SES-6)
+
+;; Under the prompt region come a rule and one dim line naming the
+;; permission mode, as the terminal client has them under its own
+;; prompt.  Like the placeholder above, they are ghost text -- the
+;; `after-string' of an empty overlay at the end of the buffer -- and
+;; for the same reason: the prompt region runs to `point-max', so
+;; anything written there would be part of the draft.  Nothing here is
+;; buffer text, so `ecc-chat-draft', the undo history and every redraw
+;; go on knowing only the draft.
+;;
+;; Both ghosts sit at the same place while the draft is empty.  The
+;; after-strings of a position are shown by falling priority, so the
+;; footer carries one below the priority of the placeholder, which has
+;; none and counts as zero.
+
+(defconst ecc-chat--footer-priority -50
+  "Priority of the footer overlay, under the priority of the placeholder.")
+
+(defun ecc-chat--permission-mode-label (session)
+  "Return what the footer calls the permission mode SESSION runs."
+  (let* ((mode (or (ecc-session-permission-mode session) "default"))
+         (label (or (cdr (assoc mode ecc-chat-permission-mode-labels)) mode)))
+    (concat (propertize label 'face (if (equal mode "bypassPermissions")
+                                        'ecc-warning-face
+                                      'ecc-dim-face))
+            (propertize " (S-TAB to cycle)" 'face 'ecc-dim-face))))
+
+(defun ecc-chat-footer-string ()
+  "Return the footer of this buffer, or nil when it has none.
+The rule is one stretched space, as the separator above the prompt
+region is, so that it spans whatever width the window has."
+  (when-let* ((session (and ecc-chat-show-footer ecc-render--session)))
+    (concat "\n"
+            (propertize " " 'display '(space :align-to right)
+                        'face 'ecc-separator-face)
+            "\n"
+            (ecc-chat--permission-mode-label session))))
+
+(defun ecc-chat-footer-shown ()
+  "Return the footer text shown under the prompt region, or nil."
+  (when (and ecc-chat--footer-overlay
+             (overlay-buffer ecc-chat--footer-overlay))
+    (overlay-get ecc-chat--footer-overlay 'ecc-footer)))
+
+(defun ecc-chat--remove-footer ()
+  "Take the footer out from under the prompt region.
+Returns non-nil when there was one."
+  (when (and ecc-chat--footer-overlay
+             (overlay-buffer ecc-chat--footer-overlay))
+    (delete-overlay ecc-chat--footer-overlay)
+    t))
+
+(defun ecc-chat--insert-footer (text)
+  "Show TEXT as the ghost text under the prompt region."
+  (let ((ghost (copy-sequence text)))
+    ;; With point at the end of the buffer the cursor would be drawn
+    ;; behind the whole of the ghost text, two lines under the draft;
+    ;; on its first character, the newline, it is drawn where the draft
+    ;; ends.  The placeholder asks for the cursor too, and while it is
+    ;; shown the prompt region is empty and that is where it belongs.
+    (when (and (> (length ghost) 0) (not (ecc-chat-placeholder-shown)))
+      (put-text-property 0 1 'cursor t ghost))
+    (if (and ecc-chat--footer-overlay
+             (overlay-buffer ecc-chat--footer-overlay))
+        (move-overlay ecc-chat--footer-overlay (point-max) (point-max))
+      ;; No `evaporate': an empty overlay carrying it is deleted at once.
+      (setq ecc-chat--footer-overlay (make-overlay (point-max) (point-max))))
+    (overlay-put ecc-chat--footer-overlay 'after-string ghost)
+    (overlay-put ecc-chat--footer-overlay 'priority ecc-chat--footer-priority)
+    (overlay-put ecc-chat--footer-overlay 'ecc-footer text)))
+
+(defun ecc-chat-update-footer (&optional buffer)
+  "Show the footer under the prompt region of BUFFER.
+BUFFER defaults to the current one.  A buffer with no prompt region --
+the transcript of an agent -- has no footer.  Returns the text shown,
+or nil."
+  (with-current-buffer (or buffer (current-buffer))
+    (let ((text (and (ecc-chat-prompt-start) (ecc-chat-footer-string))))
+      (cond
+       (text
+        ;; Put in every time: a redraw leaves the overlay behind where
+        ;; the buffer used to end, and the mode may have changed.
+        (ecc-chat--insert-footer text)
+        text)
+       (t (ecc-chat--remove-footer) nil)))))
+
+(defun ecc-chat-cycle-permission-mode ()
+  "Switch the session of this buffer to the next permission mode (FR-SES-6).
+The modes of `ecc-chat-permission-mode-cycle\=' in order, as shift+tab
+walks through them in the terminal client.  A mode outside the cycle,
+such as the one a plan review left behind, goes to its first."
+  (interactive)
+  (let* ((session (or ecc-render--session
+                      (user-error "This buffer talks to no session")))
+         (cycle (or ecc-chat-permission-mode-cycle
+                    (user-error "`ecc-chat-permission-mode-cycle' is empty")))
+         (current (or (ecc-session-permission-mode session) "default"))
+         (next (or (cadr (member current cycle)) (car cycle))))
+    (ecc-proc-set-permission-mode session next)
+    (message "%s: switching to %s" (ecc-session-name session) next)
+    next))
+
+(defun ecc-chat--on-permission-mode (session _mode)
+  "Say in the buffer of SESSION which mode it runs now."
+  (when-let* ((buffer (ecc-session-buffer session)))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (ecc-chat-update-footer)
+        (force-mode-line-update)))))
+
+(add-hook 'ecc-permission-mode-functions #'ecc-chat--on-permission-mode)
+
 (defun ecc-chat--after-change (beg _end _length)
   "Take the placeholder out as soon as the prompt region is written to.
 BEG is where the change began."
@@ -388,15 +541,22 @@ BEG is where the change began."
              (ecc-chat-placeholder-shown))
     (ecc-chat--remove-placeholder)))
 
+(defun ecc-chat--update-ghosts ()
+  "Put the placeholder and the footer of this buffer where they belong.
+The placeholder comes first: whether it is shown decides where the
+cursor of an empty prompt region is drawn."
+  (ecc-chat-update-placeholder)
+  (ecc-chat-update-footer))
+
 (defun ecc-chat--post-command ()
-  "Keep the placeholder right after a command in this buffer."
+  "Keep the ghost text right after a command in this buffer."
   (when (derived-mode-p 'ecc-chat-mode)
-    (ecc-chat-update-placeholder)))
+    (ecc-chat--update-ghosts)))
 
 (defun ecc-chat--after-draw ()
-  "Check the placeholder after the buffer was drawn."
+  "Check the ghost text after the buffer was drawn."
   (when (derived-mode-p 'ecc-chat-mode)
-    (ecc-chat-update-placeholder)))
+    (ecc-chat--update-ghosts)))
 
 (add-hook 'ecc-render-after-draw-hook #'ecc-chat--after-draw)
 

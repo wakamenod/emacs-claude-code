@@ -40,6 +40,14 @@ Nil leaves the CLI default in place."
                  (const "default") (const "acceptEdits")
                  (const "bypassPermissions") (const "plan")))
 
+(defvar ecc-permission-mode-functions nil
+  "Functions run once a session has switched permission mode.
+Each is called with the session and the mode the CLI acknowledged.
+The switch is a control request, so its answer arrives from the
+process filter rather than from the command that asked for it, and
+this is how what shows the mode -- the footer of `ecc-chat' -- hears
+about it (FR-SES-6).")
+
 (defcustom ecc-effort nil
   "Reasoning effort passed with --effort, or nil for the CLI default."
   :type '(choice (const :tag "CLI default" nil) string))

@@ -486,6 +486,131 @@ the cursor cannot walk into it; anything written takes it away."
       (should (equal (ecc-chat-draft) "abc"))
       (should-not (ecc-chat-update-placeholder)))))
 
+;;;; The footer: the permission mode under the prompt (FR-SES-6)
+
+(defun ecc-chat-test--footer-mode ()
+  "Return the mode line of the footer of this buffer, without properties."
+  (when-let* ((text (ecc-chat-footer-shown)))
+    (substring-no-properties (car (last (split-string text "\n"))))))
+
+(ert-deftest ecc-chat-test-footer ()
+  "The permission mode is shown under the prompt as ghost text.
+Like the placeholder, it is the `after-string' of an overlay, so the
+draft never sees it; it follows the end of the buffer as the draft
+grows and stays there over a redraw (FR-UI-2)."
+  (ecc-test-with-fake-session session
+    (with-current-buffer (ecc-session-ensure-buffer session)
+      (ecc-chat--update-ghosts)
+      (should (equal (ecc-chat-test--footer-mode)
+                     "⏵ manual mode (S-TAB to cycle)"))
+      (let ((overlay ecc-chat--footer-overlay))
+        (should (= (overlay-start overlay) (point-max)))
+        (should (= (overlay-start overlay) (overlay-end overlay)))
+        ;; It is shown and nothing more: no text, and nothing of it in
+        ;; the draft.
+        (should-not (string-search "S-TAB" (buffer-string)))
+        (should (equal (ecc-chat-draft) ""))
+        ;; The rule spans the window, as the separator above does.
+        (should (string-prefix-p "\n" (overlay-get overlay 'after-string)))
+        (should (equal (get-text-property
+                        1 'display (overlay-get overlay 'after-string))
+                       '(space :align-to right)))
+        ;; The cursor belongs to the placeholder while there is one.
+        (should (ecc-chat-placeholder-shown))
+        (should-not (get-text-property 0 'cursor (overlay-get overlay 'after-string)))
+        ;; With a draft written, the cursor is drawn where the draft
+        ;; ends rather than behind the whole of the ghost text.
+        (ecc-chat-goto-prompt)
+        (insert "hello")
+        (ecc-chat--update-ghosts)
+        (should-not (ecc-chat-placeholder-shown))
+        (should (= (overlay-start ecc-chat--footer-overlay) (point-max)))
+        (should (get-text-property 0 'cursor
+                                   (overlay-get ecc-chat--footer-overlay
+                                                'after-string)))
+        (should (equal (ecc-chat-draft) "hello")))
+      ;; A redraw leaves the overlay behind; the next update brings it
+      ;; back to the end, with the draft untouched.
+      (ecc-model-begin-turn session "hello")
+      (ecc-test-dispatch session "basic-turn")
+      (ecc-render-flush session)
+      (should (equal (ecc-chat-draft) "hello"))
+      (should (= (overlay-start ecc-chat--footer-overlay) (point-max)))
+      (should (equal (ecc-chat-test--footer-mode)
+                     "⏵ manual mode (S-TAB to cycle)"))
+      ;; It says what the session runs, and warns about the mode that
+      ;; answers every request on its own.
+      (setf (ecc-session-permission-mode session) "acceptEdits")
+      (ecc-chat--update-ghosts)
+      (should (equal (ecc-chat-test--footer-mode)
+                     "⏵⏵ auto mode on (S-TAB to cycle)"))
+      (setf (ecc-session-permission-mode session) "plan")
+      (ecc-chat--update-ghosts)
+      (should (equal (ecc-chat-test--footer-mode)
+                     "⏸ plan mode on (S-TAB to cycle)"))
+      (setf (ecc-session-permission-mode session) "bypassPermissions")
+      (ecc-chat--update-ghosts)
+      (should (equal (ecc-chat-test--footer-mode)
+                     "⏵⏵ bypass permissions on (S-TAB to cycle)"))
+      (should (eq (get-text-property
+                   0 'face (car (last (split-string (ecc-chat-footer-shown) "\n"))))
+                  'ecc-warning-face))
+      ;; A mode nobody listed is shown under its own name.
+      (setf (ecc-session-permission-mode session) "somethingElse")
+      (ecc-chat--update-ghosts)
+      (should (equal (ecc-chat-test--footer-mode)
+                     "somethingElse (S-TAB to cycle)")))))
+
+(ert-deftest ecc-chat-test-footer-can-be-turned-off ()
+  "`ecc-chat-show-footer' nil leaves nothing under the prompt."
+  (ecc-test-with-fake-session session
+    (with-current-buffer (ecc-session-ensure-buffer session)
+      (ecc-chat--update-ghosts)
+      (should (ecc-chat-footer-shown))
+      (let ((ecc-chat-show-footer nil))
+        (should-not (ecc-chat-update-footer))
+        (should-not (ecc-chat-footer-shown))
+        ;; The placeholder is a thing of its own and stays.
+        (should (ecc-chat-placeholder-shown)))
+      (should (ecc-chat-update-footer)))))
+
+(ert-deftest ecc-chat-test-cycle-permission-mode ()
+  "S-TAB walks through the modes and asks the CLI to switch (FR-SES-6)."
+  (ecc-test-with-fake-session session
+    (with-current-buffer (ecc-session-ensure-buffer session)
+      (should (eq (lookup-key ecc-chat-mode-map (kbd "<backtab>"))
+                  #'ecc-chat-cycle-permission-mode))
+      (should (eq (lookup-key ecc-chat-transcript-map (kbd "<backtab>"))
+                  #'ecc-chat-cycle-permission-mode))
+      ;; Nothing is set yet, which is the default mode; the cycle goes
+      ;; on from there and around.
+      (should (equal (ecc-chat-cycle-permission-mode) "acceptEdits"))
+      (setf (ecc-session-permission-mode session) "acceptEdits")
+      (should (equal (ecc-chat-cycle-permission-mode) "plan"))
+      (setf (ecc-session-permission-mode session) "plan")
+      (should (equal (ecc-chat-cycle-permission-mode) "default"))
+      ;; A mode outside the cycle -- bypassPermissions is never entered
+      ;; by S-TAB -- goes to its first.
+      (setf (ecc-session-permission-mode session) "bypassPermissions")
+      (should (equal (ecc-chat-cycle-permission-mode) "default"))
+      ;; Each of them went out as a control request, and the answer is
+      ;; what makes the footer say the new mode.
+      (let ((sent (ecc-test-sent-messages)))
+        (should (= (length sent) 4))
+        (should (equal (mapcar (lambda (message)
+                                 (alist-get 'mode (alist-get 'request message)))
+                               sent)
+                       '("acceptEdits" "plan" "default" "default")))
+        (should (equal (alist-get 'subtype (alist-get 'request (car sent)))
+                       "set_permission_mode"))
+        (let* ((message (car sent))
+               (callback (ecc-proc-take-control-callback
+                          session (alist-get 'request_id message))))
+          (funcall callback session '((mode . "acceptEdits")))
+          (should (equal (ecc-session-permission-mode session) "acceptEdits"))
+          (should (equal (ecc-chat-test--footer-mode)
+                         "⏵⏵ auto mode on (S-TAB to cycle)")))))))
+
 ;;;; An agent transcript has no prompt region
 
 (ert-deftest ecc-chat-test-agent-buffer-is-all-transcript ()
@@ -504,6 +629,8 @@ the cursor cannot walk into it; anything written takes it away."
                   (should (derived-mode-p 'ecc-chat-mode))
                   (should-not (ecc-chat-prompt-start))
                   (should-error (ecc-chat-goto-prompt) :type 'user-error)
+                  ;; With nowhere to type there is no footer either.
+                  (should-not (ecc-chat-update-footer))
                   (goto-char (point-max))
                   (should-error (insert "x") :type 'text-read-only)
                   (goto-char (point-min))
