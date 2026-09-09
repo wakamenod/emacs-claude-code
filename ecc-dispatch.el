@@ -371,13 +371,29 @@ DATA describe it.  Returns the node."
       (ecc-model-node-changed session node)
       node)))
 
+(defconst ecc-dispatch-agent-tools '("Task" "Agent")
+  "Names of the tools that start a subagent (FR-OUT-9).")
+
+(defun ecc-dispatch--agent-tool-p (node)
+  "Return non-nil when NODE is a tool that starts a subagent.
+A `parent_tool_use_id\=' is not enough on its own to call a node an
+agent: the CLI names a plain tool there as well, and a Bash drawn as an
+agent takes the command out of its heading and puts a tool count and a
+duration in its place (2026-09-09)."
+  (or (eq (ecc-node-type node) 'agent)
+      (member (ecc-model-node-get node 'name) ecc-dispatch-agent-tools)
+      (and (ecc-model-node-get node 'task) t)))
+
 (defun ecc-dispatch--parent (session message turn)
   "Return the node MESSAGE belongs under in TURN of SESSION.
 A message with a parent_tool_use_id belongs to a subagent, so it goes
-under the tool node that started it (FR-OUT-9)."
+under the tool node that started it, and that tool is an agent from
+then on (FR-OUT-9).  A node that starts no subagent keeps its type and
+only takes the message as a child."
   (let ((parent-id (alist-get 'parent_tool_use_id message)))
     (or (when-let* ((node (and parent-id (ecc-model-node session parent-id))))
-          (setf (ecc-node-type node) 'agent)
+          (when (ecc-dispatch--agent-tool-p node)
+            (setf (ecc-node-type node) 'agent))
           node)
         turn)))
 

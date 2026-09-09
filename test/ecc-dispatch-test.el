@@ -272,6 +272,31 @@ way `ecc-proc-send-user\=' would have."
       ;; An agent is not a TODO item (FR-OUT-13).
       (should (= (hash-table-count (ecc-session-tasks session)) 0)))))
 
+(ert-deftest ecc-dispatch-test-only-an-agent-tool-becomes-an-agent ()
+  "A plain tool named as a parent stays a tool (FR-OUT-9)."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "動かして")
+    (let ((bash (ecc-model-add-node session :id "toolu_bash" :type 'tool
+                                    :data '((name . "Bash")
+                                            (input . ((command . "ls"))))))
+          (task (ecc-model-add-node session :id "toolu_task" :type 'tool
+                                    :data '((name . "Agent")
+                                            (input . ((description . "look")))))))
+      ;; A message that names the Bash as its parent hangs under it, but
+      ;; does not turn it into an agent.
+      (should (eq bash (ecc-dispatch--parent
+                        session '((parent_tool_use_id . "toolu_bash")) nil)))
+      (should (eq (ecc-node-type bash) 'tool))
+      ;; The tool that does start a subagent is promoted, as before.
+      (should (eq task (ecc-dispatch--parent
+                        session '((parent_tool_use_id . "toolu_task")) nil)))
+      (should (eq (ecc-node-type task) 'agent))
+      ;; So is one the task lifecycle has already spoken about.
+      (ecc-model-node-put bash 'task '((tool_use_id . "toolu_bash")))
+      (should (eq (ecc-node-type (ecc-dispatch--parent
+                                  session '((parent_tool_use_id . "toolu_bash")) nil))
+                  'agent)))))
+
 (ert-deftest ecc-dispatch-test-hook-events ()
   "Hook events are kept as system nodes rather than as unknown ones."
   (ecc-test-with-fake-session session
