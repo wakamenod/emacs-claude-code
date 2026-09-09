@@ -230,7 +230,7 @@ result message to carry it (FR-HIST-2)."
         (should (string-search "1 sidechain" (ecc-model-node-get note 'text)))))))
 
 (ert-deftest ecc-history-test-replay-touches-nothing-outside ()
-  "A replay does not revert a buffer, fill the Inbox or say a session died."
+  "A replay does not revert a buffer, queue a request or say a session died."
   (ecc-test-with-fake-session session
     (let ((calls nil))
       (cl-letf (((symbol-function 'ecc-history-test--note)

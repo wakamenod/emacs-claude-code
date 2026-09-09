@@ -102,7 +102,7 @@ On the Elisp side `ecc-safe-mode` is nil by default. Plugins to turn off go in
   fixtures, because `ecc-dispatch-test-no-fixture-line-is-unknown` feeds every fixture
   through as a stream.
 - Keep rendering snapshots to the main cases.
-- Anything that spans sessions (the Inbox, the dashboard) is tested with two sessions or
+- Anything that spans sessions (the dashboard, answering from anywhere) is tested with two sessions or
   more: the destructive sort in `ecc-model-pending-all` did not show up with one.
 - `format-mode-line` returns an empty string in batch. Check the `:eval` of a mode-line by
   calling its function directly.

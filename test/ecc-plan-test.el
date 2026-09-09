@@ -283,7 +283,7 @@ resume too, where the permission request is not replayed."
                      "acceptEdits")))))
 
 (ert-deftest ecc-plan-test-buffer-closes-when-answered-elsewhere ()
-  "Answering the plan from the Inbox takes the review buffer away."
+  "Answering the plan from another buffer takes the review buffer away."
   (ecc-test-with-fake-session session
     (let* ((request (ecc-plan-test--request session))
            (buffer (ecc-plan-open request)))

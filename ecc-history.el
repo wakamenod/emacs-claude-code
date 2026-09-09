@@ -21,7 +21,7 @@
 ;;
 ;; Recorded lines go through `ecc-dispatch' exactly like live ones, with
 ;; the hooks that act on the world switched off: a replay must not revert
-;; a buffer, fill the Inbox or raise a notification.
+;; a buffer, note a waiting request or raise a notification.
 
 ;;; Code:
 
@@ -66,7 +66,8 @@ counted (FR-HIST-2).  See docs/verified.md."
     ecc-compact-hook)
   "Hooks silenced while a recorded conversation is replayed.
 These are the ones that act on the world rather than describe the
-model: reverting a buffer, filling the Inbox, raising a notification.
+model: reverting a buffer, noting a waiting request, raising a
+notification.
 Everything the renderer listens to is left alone, and a replay simply
 draws once at the end.")
 

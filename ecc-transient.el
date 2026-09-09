@@ -29,14 +29,13 @@
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-resume "ecc" (session &optional fork))
 (declare-function ecc-kill "ecc" (session))
-(declare-function ecc-inbox "ecc-inbox" ())
 (declare-function ecc-dashboard "ecc-dashboard" ())
 (declare-function ecc-capabilities-show "ecc-dashboard" (session))
 (declare-function ecc-inline-prompt "ecc-inline" (question))
 (declare-function ecc-rewrite "ecc-inline" (beg end instruction))
-(declare-function ecc-next-attention "ecc-inbox" (&optional project-root))
-(declare-function ecc-answer-allow "ecc-inbox" ())
-(declare-function ecc-answer-deny "ecc-inbox" (reason))
+(declare-function ecc-next-attention "ecc-answer" (&optional project-root))
+(declare-function ecc-answer-allow "ecc-answer" ())
+(declare-function ecc-answer-deny "ecc-answer" (reason))
 (declare-function ecc-review "ecc-review" (&optional session paths))
 (declare-function ecc-session-timeline "ecc-session" ())
 (declare-function ecc-chat-goto-files "ecc-chat" ())
@@ -289,8 +288,7 @@ same suffix from one call to the next."
    ["Respond"
     ("a" "Allow the oldest request" ecc-answer-allow)
     ("D" "Deny the oldest request" ecc-answer-deny)
-    ("n" "Next request" ecc-next-attention)
-    ("I" "Inbox" ecc-inbox)]
+    ("n" "Next request" ecc-next-attention)]
    ["View"
     ("b" "Dashboard" ecc-dashboard)
     ("y" "Capabilities" ecc-capabilities-show)

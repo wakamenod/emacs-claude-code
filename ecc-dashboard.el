@@ -35,7 +35,7 @@
 (require 'ecc-proc)
 (require 'ecc-render)
 (require 'ecc-perm)
-(require 'ecc-inbox)
+(require 'ecc-answer)
 (require 'ecc-history)
 (require 'ecc-registry)
 (require 'ecc-usage)

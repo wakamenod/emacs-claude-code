@@ -267,7 +267,7 @@ The phase 2 acceptance check: each delta costs well under 5ms to draw."
                 (should (string-search "Files (1)" text)))))
         (delete-directory directory t)))))
 
-;;;; Phase 3 (permissions, plan review, Inbox, file sync)
+;;;; Phase 3 (permissions, plan review, answering from anywhere, file sync)
 
 (defun ecc-test-live-wait-any (sessions predicate &optional what)
   "Wait until PREDICATE returns non-nil, reading output from all SESSIONS.
@@ -406,11 +406,11 @@ as git status is not used: the CLI runs those without asking."
                 (ecc-test-live-wait-for-result session))))
         (delete-directory directory t)))))
 
-(ert-deftest ecc-test-live-inbox ()
-  "Two sessions wait at once; the Inbox lists both and the oldest is answered first."
+(ert-deftest ecc-test-live-pending ()
+  "Two sessions wait at once; both are listed and the oldest is answered first."
   :tags '(live)
   (ecc-test-live-with-session session
-    (let* ((directory (make-temp-file "ecc-live-inbox" t))
+    (let* ((directory (make-temp-file "ecc-live-pending" t))
            (other (ecc-model-create-session :name "live-2"
                                             :project-root temporary-file-directory
                                             :options ecc-test-live-options))
@@ -430,8 +430,9 @@ as git status is not used: the CLI runs those without asking."
             (ecc-test-live-wait-any (list session other)
                                     (lambda () (= 2 (length (ecc-model-pending-all))))
                                     "two permission requests")
-            (should (= 2 (length (ecc-inbox-entries))))
-            (should (equal (sort (mapcar (lambda (e) (aref (cadr e) 1)) (ecc-inbox-entries))
+            (should (= 2 (length (ecc-dashboard-entries))))
+            (should (equal (sort (mapcar #'ecc-dashboard-entry-name
+                                         (ecc-dashboard-entries))
                                  #'string<)
                            '("live" "live-2")))
             (let ((oldest (car (ecc-model-pending-all))))

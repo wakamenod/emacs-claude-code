@@ -37,7 +37,7 @@
 (require 'ecc-plan)
 (require 'ecc-review)
 (require 'ecc-sync)
-(require 'ecc-inbox)
+(require 'ecc-answer)
 (require 'ecc-registry)
 (require 'ecc-history)
 (require 'ecc-dashboard)
@@ -62,9 +62,9 @@ an exit with status zero, are never resumed."
                  (const :tag "Say nothing" nil))
   :group 'ecc)
 
-(defcustom ecc-inbox-indicator t
+(defcustom ecc-pending-indicator t
   "Non-nil shows the number of requests waiting in every mode line.
-`ecc-inbox-indicator-mode' is turned on by the first session started
+`ecc-pending-indicator-mode' is turned on by the first session started
 \(FR-PERM-4)."
   :type 'boolean
   :group 'ecc)
@@ -91,8 +91,8 @@ Every way into a session comes through here, and not `ecc-start'
 alone: an Emacs that only resumed a session was left without the hook
 that follows the source buffer, and `@region' and its like then had
 nothing to read (FR-CTX-1)."
-  (when ecc-inbox-indicator
-    (ecc-inbox-indicator-mode 1))
+  (when ecc-pending-indicator
+    (ecc-pending-indicator-mode 1))
   (when ecc-notify-on-start
     (ecc-notify-mode 1))
   (when ecc-tab-line

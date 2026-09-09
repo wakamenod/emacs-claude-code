@@ -1,25 +1,27 @@
-;;; ecc-inbox.el --- Every request waiting for an answer, in one place  -*- lexical-binding: t; -*-
+;;; ecc-answer.el --- Answer a waiting request from anywhere  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
-;; Package-Requires: ((emacs "29.1"))
 
 ;;; Commentary:
 
-;; Three ways to reach a request without hunting for its session
-;; (section 6.6 of IMPLEMENTATION_PLAN.md): the Inbox buffer that lists
-;; the requests of every session (FR-INBOX-1), the commands that jump to
-;; the next one (FR-INBOX-2), and the commands that answer the oldest
-;; one from wherever the user is (FR-INBOX-3).  A mode line indicator
-;; shows how many are waiting (FR-PERM-4).
+;; A session stops as soon as it needs a word from the user: a
+;; permission to run a tool, a plan to review, a question to pick an
+;; answer to.  With several sessions running, finding which one stopped
+;; is the work this module takes away.
+;;
+;; Two ways of reaching a request without hunting for its session: the
+;; commands that jump to the next one (FR-INBOX-2), and the commands
+;; that answer the oldest one from wherever the user is (FR-INBOX-3).
+;; A mode line indicator says how many are waiting (FR-PERM-4), and the
+;; dashboard is where they are seen as a list (FR-DASH-4).
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'seq)
-(require 'tabulated-list)
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-render)
@@ -27,8 +29,8 @@
 (require 'ecc-window)
 
 (declare-function ecc-plan-open "ecc-plan" (request))
-;; Both are autoloaded commands of modules that require this one; the
-;; keymap only names them (plan section 1.3).
+;; Autoloaded commands of modules that require this one; the keymap
+;; only names them (plan section 1.3).
 (declare-function ecc-dashboard "ecc-dashboard" ())
 (declare-function ecc-history-open "ecc-history" (session-id))
 
@@ -45,14 +47,7 @@ A request for one of them has to be answered where it can be read."
 
 ;;;; Describing a request
 
-(defun ecc-inbox-kind-label (request)
-  "Return the kind of REQUEST as a short label."
-  (pcase (ecc-request-kind request)
-    ('question "question")
-    ('plan "plan")
-    (_ "permission")))
-
-(defun ecc-inbox-summary (request)
+(defun ecc-answer-summary (request)
   "Return the one line summary of REQUEST."
   (pcase (ecc-request-kind request)
     ('question
@@ -67,83 +62,7 @@ A request for one of them has to be answered where it can be read."
                 (ecc-render-tool-summary (ecc-request-tool-name request)
                                          (ecc-request-input request)))))))
 
-(defun ecc-inbox-age-string (seconds)
-  "Return SECONDS as a short age such as 12s, 3m or 2h."
-  (cond ((< seconds 60) (format "%ds" (round seconds)))
-        ((< seconds 3600) (format "%dm" (floor seconds 60)))
-        (t (format "%dh" (floor seconds 3600)))))
-
-;;;; The Inbox buffer (FR-INBOX-1)
-
-(defconst ecc-inbox-buffer-name "*ecc-inbox*"
-  "Name of the Inbox buffer.")
-
-(defvar ecc-inbox-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "RET") #'ecc-inbox-visit)
-    (define-key map (kbd "a") #'ecc-inbox-allow)
-    (define-key map (kbd "d") #'ecc-inbox-deny)
-    (define-key map (kbd "g") #'ecc-inbox-refresh)
-    map)
-  "Keymap of `ecc-inbox-mode'.")
-
-(define-derived-mode ecc-inbox-mode tabulated-list-mode "Claude-Inbox"
-  "Major mode listing the requests of every session that wait for an answer.
-
-\\{ecc-inbox-mode-map}"
-  :interactive nil
-  (setq tabulated-list-format [("Age" 6 t) ("Session" 16 t) ("Kind" 10 t)
-                               ("Summary" 0 t)])
-  (setq tabulated-list-padding 1)
-  (setq tabulated-list-sort-key nil)
-  (add-hook 'tabulated-list-revert-hook #'ecc-inbox--collect nil t)
-  (tabulated-list-init-header))
-
-(defun ecc-inbox-entries ()
-  "Return the `tabulated-list-entries' of every waiting request, oldest first."
-  (mapcar (lambda (request)
-            (list request
-                  (vector (ecc-inbox-age-string (ecc-model-request-age request))
-                          (ecc-session-name (ecc-request-session request))
-                          (ecc-inbox-kind-label request)
-                          (ecc-inbox-summary request))))
-          (ecc-model-pending-all)))
-
-(defun ecc-inbox--collect ()
-  "Fill `tabulated-list-entries' for the Inbox."
-  (setq tabulated-list-entries (ecc-inbox-entries)))
-
-(defun ecc-inbox ()
-  "Show every request waiting for an answer, across sessions (FR-INBOX-1)."
-  (interactive)
-  (let ((buffer (get-buffer-create ecc-inbox-buffer-name)))
-    (with-current-buffer buffer
-      (unless (derived-mode-p 'ecc-inbox-mode)
-        (ecc-inbox-mode))
-      (ecc-inbox--collect)
-      (tabulated-list-print t))
-    (pop-to-buffer buffer)
-    buffer))
-
-(defun ecc-inbox-refresh ()
-  "Draw the Inbox again."
-  (interactive)
-  (when-let* ((buffer (get-buffer ecc-inbox-buffer-name)))
-    (when (buffer-live-p buffer)
-      (with-current-buffer buffer
-        (ecc-inbox--collect)
-        (tabulated-list-print t)))))
-
-(defun ecc-inbox-request-at-point ()
-  "Return the request of the Inbox row at point, or signal an error."
-  (let ((request (tabulated-list-get-id)))
-    (unless (ecc-request-p request)
-      (user-error "No request on this line"))
-    (unless (memq request (ecc-session-pending (ecc-request-session request)))
-      (user-error "This request was answered already"))
-    request))
-
-(defun ecc-inbox-goto-request (request)
+(defun ecc-answer-goto-request (request)
   "Show where REQUEST is answered: its section, question or plan buffer."
   (pcase (ecc-request-kind request)
     ('question (pop-to-buffer (ecc-question-open request)))
@@ -155,32 +74,12 @@ A request for one of them has to be answered where it can be read."
          (when-let* ((node (ecc-request-node request)))
            (ecc-render-goto-node session node))))))
 
-(defun ecc-inbox-visit ()
-  "Go to the request at point (FR-INBOX-1)."
-  (interactive)
-  (ecc-inbox-goto-request (ecc-inbox-request-at-point)))
-
-(defun ecc-inbox-allow ()
-  "Allow the request at point."
-  (interactive)
-  (let ((request (ecc-inbox-request-at-point)))
-    (ecc-perm-allow-request request)
-    (ecc-inbox-refresh)))
-
-(defun ecc-inbox-deny (reason)
-  "Deny the request at point with REASON."
-  (interactive (list (read-string "Reason for denying (may be empty): ")))
-  (let ((request (ecc-inbox-request-at-point)))
-    (ecc-perm-respond request 'deny :message reason)
-    (ecc-inbox-refresh)))
-
 ;;;; Going round the requests (FR-INBOX-2)
 
-(defun ecc-inbox-current-request ()
+(defun ecc-answer-current-request ()
   "Return the request the current buffer is about, or nil."
   (or (bound-and-true-p ecc-question--request)
       (bound-and-true-p ecc-plan--request)
-      (and (derived-mode-p 'ecc-inbox-mode) (tabulated-list-get-id))
       (ecc-perm-request-at-point)))
 
 (defun ecc-next-attention (&optional project-root)
@@ -189,18 +88,18 @@ With PROJECT-ROOT, only the sessions of that project are visited.
 The order is the arrival order and it wraps around."
   (interactive)
   (let* ((requests (ecc-model-pending-all project-root))
-         (current (ecc-inbox-current-request))
+         (current (ecc-answer-current-request))
          (position (and current (seq-position requests current #'eq)))
          (next (cond ((null requests) nil)
                      ((null position) (car requests))
                      (t (nth (mod (1+ position) (length requests)) requests)))))
     (if (null next)
         (message "Nothing needs attention")
-      (ecc-inbox-goto-request next)
+      (ecc-answer-goto-request next)
       (message "%d/%d: %s — %s"
                (1+ (seq-position requests next #'eq)) (length requests)
                (ecc-session-name (ecc-request-session next))
-               (ecc-inbox-summary next)))
+               (ecc-answer-summary next)))
     next))
 
 (defun ecc-next-attention-in-project ()
@@ -227,7 +126,7 @@ is being answered from afar."
   (or (not ecc-answer-confirm)
       (y-or-n-p (format "%s %s: %s? " verb
                         (ecc-session-name (ecc-request-session request))
-                        (ecc-inbox-summary request)))))
+                        (ecc-answer-summary request)))))
 
 (defun ecc-answer-allow ()
   "Allow the oldest waiting permission request, from any buffer (FR-INBOX-3)."
@@ -236,7 +135,7 @@ is being answered from afar."
                      (user-error "No permission request is waiting"))))
     (when (ecc-answer--confirm "Allow" request)
       (ecc-perm-allow-request request)
-      (message "Allowed: %s" (ecc-inbox-summary request))
+      (message "Allowed: %s" (ecc-answer-summary request))
       request)))
 
 (defun ecc-answer-deny (reason)
@@ -246,7 +145,7 @@ is being answered from afar."
                      (user-error "No request is waiting"))))
     (when (ecc-answer--confirm "Deny" request)
       (ecc-perm-respond request 'deny :message reason)
-      (message "Denied: %s" (ecc-inbox-summary request))
+      (message "Denied: %s" (ecc-answer-summary request))
       request)))
 
 (defun ecc-answer-option (n)
@@ -279,7 +178,6 @@ question buffer opens with the first one answered."
     (define-key map (kbd "d") #'ecc-answer-deny)
     (define-key map (kbd "n") #'ecc-next-attention)
     (define-key map (kbd "N") #'ecc-next-attention-in-project)
-    (define-key map (kbd "i") #'ecc-inbox)
     (define-key map (kbd "D") #'ecc-dashboard)
     (define-key map (kbd "h") #'ecc-history-open)
     (define-key map (kbd "1") #'ecc-answer-option-1)
@@ -292,45 +190,44 @@ Bind it to a prefix, for instance (global-set-key (kbd \"C-c c\") ecc-global-map
 
 ;;;; The mode line indicator (FR-PERM-4)
 
-(defun ecc-inbox-mode-line-string ()
+(defun ecc-pending-mode-line-string ()
   "Return the mode line text saying how many requests are waiting."
   (let ((n (length (ecc-model-pending-all))))
     (if (zerop n)
         ""
       (propertize (format " ⚠ecc:%d " n)
                   'face 'ecc-pending-face
-                  'help-echo "Claude is waiting for an answer.  mouse-1: Inbox"
+                  'help-echo "Claude is waiting for an answer.  mouse-1: dashboard"
                   'mouse-face 'mode-line-highlight
                   'local-map (let ((map (make-sparse-keymap)))
-                               (define-key map [mode-line mouse-1] #'ecc-inbox)
+                               (define-key map [mode-line mouse-1] #'ecc-dashboard)
                                map)))))
 
-(defconst ecc-inbox--mode-line-construct '(:eval (ecc-inbox-mode-line-string))
-  "What `ecc-inbox-indicator-mode' adds to `global-mode-string'.")
+(defconst ecc-pending--mode-line-construct '(:eval (ecc-pending-mode-line-string))
+  "What `ecc-pending-indicator-mode' adds to `global-mode-string'.")
 
-(define-minor-mode ecc-inbox-indicator-mode
+(define-minor-mode ecc-pending-indicator-mode
   "Show in every mode line how many requests are waiting (FR-PERM-4)."
   :global t
   :group 'ecc
-  (if ecc-inbox-indicator-mode
-      (unless (member ecc-inbox--mode-line-construct global-mode-string)
+  (if ecc-pending-indicator-mode
+      (unless (member ecc-pending--mode-line-construct global-mode-string)
         (setq global-mode-string
               (append (or global-mode-string '(""))
-                      (list ecc-inbox--mode-line-construct))))
+                      (list ecc-pending--mode-line-construct))))
     (setq global-mode-string
-          (remove ecc-inbox--mode-line-construct global-mode-string)))
+          (remove ecc-pending--mode-line-construct global-mode-string)))
   (force-mode-line-update t))
 
 ;;;; Wiring
 
-(defun ecc-inbox--on-change (&rest _)
-  "Redraw the Inbox and the indicators after a request came or went."
-  (ecc-inbox-refresh)
+(defun ecc-answer--on-change (&rest _)
+  "Refresh the indicators after a request came or went."
   (force-mode-line-update t))
 
-(add-hook 'ecc-request-added-hook #'ecc-inbox--on-change)
-(add-hook 'ecc-request-resolved-hook #'ecc-inbox--on-change)
+(add-hook 'ecc-request-added-hook #'ecc-answer--on-change)
+(add-hook 'ecc-request-resolved-hook #'ecc-answer--on-change)
 
-(provide 'ecc-inbox)
+(provide 'ecc-answer)
 
-;;; ecc-inbox.el ends here
+;;; ecc-answer.el ends here
