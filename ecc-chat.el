@@ -78,6 +78,7 @@
 (declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
 (declare-function ecc-review-comment-request "ecc-review" (text))
 (declare-function ecc-review-edit-proposal "ecc-review" (&optional request))
+(declare-function ecc-btw-show "ecc-btw" (&optional session))
 (declare-function ecc-inbox "ecc-inbox" ())
 (declare-function ecc-next-attention "ecc-inbox" ())
 (declare-function ecc-dashboard "ecc-dashboard" ())
@@ -191,6 +192,7 @@ the dim face."
     (define-key map (kbd "C-c I") #'ecc-inbox)
     (define-key map (kbd "C-c D") #'ecc-dashboard)
     (define-key map (kbd "C-c n") #'ecc-next-attention)
+    (define-key map (kbd "C-c b") #'ecc-btw-show)
     (define-key map (kbd "C-c C-e") #'ecc-session-export-markdown)
     ;; `?' stays self-inserting in a region one writes prose in, so the
     ;; menu is on C-c ? here and on ? in the transcript (NFR-10).

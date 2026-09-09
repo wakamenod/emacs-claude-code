@@ -284,6 +284,24 @@ remember?")))
       ;; The list the CLI sent is not touched.
       (should (= (length (ecc-session-commands session)) 1)))))
 
+(ert-deftest ecc-btw-test-the-panel-opens-on-its-own ()
+  "The panel can be opened without asking anything (FR-BTW-3)."
+  (ecc-btw-test-with-session session
+    (should (commandp 'ecc-btw-show))
+    ;; Nothing has been asked yet: it opens and says so, and sends
+    ;; nothing to the CLI.
+    (let ((buffer (ecc-btw-show session)))
+      (should (buffer-live-p buffer))
+      (with-current-buffer buffer
+        (should (derived-mode-p 'ecc-btw-mode))
+        (should (eq ecc-btw--session session))
+        (should (string-search "Nothing asked yet"
+                               (buffer-substring-no-properties (point-min)
+                                                               (point-max))))))
+    (should-not (ecc-test-sent-messages))
+    ;; And it is on a key of the prompt region.
+    (should (eq (lookup-key ecc-chat-mode-map (kbd "C-c b")) 'ecc-btw-show))))
+
 ;;;; More than one session (CLAUDE.md: anything that spans sessions)
 
 (ert-deftest ecc-btw-test-two-sessions-do-not-mix ()

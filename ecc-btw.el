@@ -36,10 +36,10 @@
 (require 'ecc-model)
 (require 'ecc-proc)
 (require 'ecc-markdown)
+(require 'ecc-window)
 
 (declare-function ecc-prompt-command-name "ecc-prompt" (text))
 (declare-function ecc-prompt-command-argument "ecc-prompt" (text))
-(declare-function ecc-window-buffer-session "ecc-window" (&optional buffer))
 (declare-function posframe-workable-p "posframe" ())
 (declare-function posframe-show "posframe" (buffer &rest args))
 (declare-function posframe-hide "posframe" (buffer))
@@ -115,6 +115,12 @@ A plist of :question, :request-id, :status and :timer.")
 (defun ecc-btw-buffer-name (session)
   "Return the name of the buffer showing the side questions of SESSION."
   (format "*ecc-btw: %s*" (ecc-session-name session)))
+
+(defun ecc-btw--session ()
+  "Return the session the side questions of this buffer belong to."
+  (or ecc-btw--session
+      (ecc-window-buffer-session)
+      (user-error "No session here to ask beside")))
 
 (defvar ecc-btw-mode-map
   (let ((map (make-sparse-keymap)))
@@ -226,9 +232,16 @@ of them is done with."
       (setq ecc-btw--session session))
     buffer))
 
-(defun ecc-btw-show (session)
-  "Show what SESSION has asked on the side, where the settings say."
-  (let ((buffer (ecc-btw-buffer session)))
+;;;###autoload
+(defun ecc-btw-show (&optional session)
+  "Show what SESSION has asked on the side, where the settings say.
+Called interactively it opens the side questions of the session this
+buffer talks to (FR-WIN-4), without asking anything: the panel is worth
+looking at on its own, to read an answer again or to ask the next one
+with \\[ecc-btw-ask-again]."
+  (interactive (list (ecc-window-resolve-session current-prefix-arg)))
+  (let* ((session (or session (ecc-btw--session)))
+         (buffer (ecc-btw-buffer session)))
     (ecc-btw--draw session)
     (if (ecc-btw--posframe-p)
         (ecc-btw--show-posframe buffer)
@@ -236,12 +249,6 @@ of them is done with."
     buffer))
 
 ;;;; Asking (FR-BTW-1, 4)
-
-(defun ecc-btw--session ()
-  "Return the session the side questions of this buffer belong to."
-  (or ecc-btw--session
-      (and (fboundp 'ecc-window-buffer-session) (ecc-window-buffer-session))
-      (user-error "No session here to ask beside")))
 
 (defun ecc-btw--history (session)
   "Return the past exchanges of SESSION as the CLI wants them.
