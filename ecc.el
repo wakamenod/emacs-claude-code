@@ -47,6 +47,7 @@
 (require 'ecc-usage)
 (require 'ecc-mcp)
 (require 'ecc-inline)
+(require 'ecc-btw)
 (require 'ecc-tui)
 (require 'ecc-transient)
 
