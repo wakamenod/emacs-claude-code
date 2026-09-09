@@ -69,13 +69,17 @@
   :type 'number
   :group 'ecc)
 
-(defcustom ecc-render-hidden-types '(thinking tool agent system unknown)
+(defconst ecc-render--hidden-types '(thinking tool agent system unknown)
   "Node types whose body starts collapsed (FR-OUT-3).
 An agent is in the list as well: its body is a conversation of its own,
 and reading it is something one asks for rather than something the
-transcript should unroll by itself."
-  :type '(repeat symbol)
-  :group 'ecc)
+transcript should unroll by itself.
+
+This is not a setting.  It was one until 2026-09-09, and a value saved
+from an older default then held a new type open for good, which is a
+puzzle nobody should have to solve; what a reader wants to see is a
+matter of the moment, and TAB, the digits and `+\=' / `-\=' say it per
+node and are remembered.  See `docs/decisions.md\='.")
 
 (defcustom ecc-render-result-max-lines 12
   "Lines of a tool result shown in the transcript.
@@ -165,7 +169,7 @@ follows is the draft the user is writing (FR-UI-2).")
 (defvar-local ecc-render--visibility-cache nil
   "Hash mapping a node id to whether the user left it collapsed.
 Only the nodes the user folded or unfolded are in it; the others
-follow `ecc-render-hidden-types' (plan section 9, item 6).")
+follow `ecc-render--hidden-types' (plan section 9, item 6).")
 
 (defvar-local ecc-render--timer nil
   "Debounce timer of this buffer, or nil.")
@@ -582,7 +586,7 @@ appended at its end, which is where a streamed delta lands."
    ((not ecc-render--session) nil)
    (t (let ((node (ecc-model-node ecc-render--session id)))
         (and node
-             (memq (ecc-node-type node) ecc-render-hidden-types)
+             (memq (ecc-node-type node) ecc-render--hidden-types)
              (not (eq (ecc-model-node-get node 'kind) 'prompt))
              t)))))
 
