@@ -252,10 +252,27 @@ remember?")))
     (should-not (ecc-test-sent-messages))))
 
 (ert-deftest ecc-btw-test-intercept-of-a-bare-btw-sends-nothing ()
-  "/btw with no question is a usage message, not a prompt (FR-BTW-1)."
+  "/btw with no question opens the panel, and never sends (FR-BTW-1)."
   (ecc-btw-test-with-session session
+    ;; With nothing asked yet there is nothing to show.
     (should (ecc-btw-intercept session "/btw"))
-    (should-not (ecc-test-sent-messages))))
+    (should-not (ecc-test-sent-messages))
+    (should-not (get-buffer (ecc-btw-buffer-name session)))
+    ;; Once something has been asked, a bare /btw brings it back, the
+    ;; way the terminal client's panel does.
+    (let ((request-id (ecc-btw-ask session "the first one")))
+      (ecc-btw-test--answer session request-id
+                            '((response . "an answer") (synthetic . :false))))
+    (kill-buffer (ecc-btw-buffer-name session))
+    (should (ecc-btw-intercept session "/btw"))
+    (should (get-buffer (ecc-btw-buffer-name session)))
+    (should (= (length (ecc-test-sent-messages)) 1))))
+
+(ert-deftest ecc-btw-test-the-intercept-is-really-registered ()
+  "Loading the package puts /btw on the send path (FR-BTW-1).
+The other tests bind `ecc-prompt-intercept-functions\=' themselves, so
+they would pass even if nothing ever registered."
+  (should (memq 'ecc-btw-intercept ecc-prompt-intercept-functions)))
 
 (ert-deftest ecc-btw-test-send-does-not-reach-the-cli ()
   "`ecc-prompt-send' hands /btw over and empties the region (FR-BTW-1)."

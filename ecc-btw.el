@@ -429,11 +429,16 @@ Returns non-nil when it did, which is what keeps the draft from being
 sent as a prompt.  This is on `ecc-prompt-intercept-functions'."
   (when (equal (ecc-prompt-command-name text) ecc-btw-command)
     (let ((question (ecc-prompt-command-argument text)))
-      (if (or (null question) (string-empty-p (string-trim question)))
-          ;; The wording is the CLI's, and so is the behaviour: an empty
-          ;; /btw asks nothing rather than sending the word itself.
-          (message "Usage: /btw <your question>")
+      (cond
+       ((not (or (null question) (string-empty-p (string-trim question))))
         (ecc-btw-ask session question))
+       ;; A bare /btw opens the panel on what has been asked already,
+       ;; which is what the terminal client does with one: the question
+       ;; being answered if there is one, else the last answer.  Only
+       ;; with nothing to show at all is it a usage message.
+       ((or (ecc-btw-inflight session) (ecc-btw-exchanges session))
+        (ecc-btw-show session))
+       (t (message "Usage: /btw <your question>")))
       t)))
 
 (with-eval-after-load 'ecc-prompt
