@@ -74,6 +74,16 @@ describe belong here.  Every command whose hint names its alternatives
   :type '(alist :key-type string :value-type sexp)
   :group 'ecc)
 
+(defcustom ecc-prompt-slash-reads-command t
+  "Whether typing `/' in the prompt asks which slash command is meant.
+When this is on, a slash at the start of a line of the prompt region
+opens `completing-read' with the commands the CLI named, and what is
+chosen is written after it (FR-INP-3).  The completion of
+`ecc-prompt-capf\=' is offered on TAB either way, so corfu and company
+keep working as they did; turning this off leaves them the only way."
+  :type 'boolean
+  :group 'ecc)
+
 (defcustom ecc-model-candidates
   '("default" "sonnet" "opus" "haiku" "fable")
   "Models offered for /model until the CLI names its own (FR-INP-5).
@@ -667,6 +677,19 @@ special reference had nothing to append, are left in
 
 ;;;; Completion (FR-INP-3, FR-INP-8)
 
+(defun ecc-prompt--annotator (commands terminal)
+  "Return the function that annotates a slash command candidate.
+COMMANDS is the alist of `ecc-prompt-commands\=' and TERMINAL the list
+of `ecc-prompt-terminal-commands\='; a command only the terminal client
+can run says so (FR-INP-4), and the description of the initialize
+response follows."
+  (lambda (candidate)
+    (let ((description (cdr (assoc candidate commands))))
+      (concat (when (member candidate terminal) "  terminal UI")
+              (unless (or (null description)
+                          (string-empty-p description))
+                (concat "  " description))))))
+
 (defun ecc-prompt-capf ()
   "Complete a slash command at point (FR-INP-3, FR-INP-4).
 Only the first word of a line that starts with a slash is completed,
@@ -678,17 +701,36 @@ which is where the CLI looks for a command."
       (when (and (eq (char-after start) ?/)
                  (not (string-match-p "[ \t\n]" (buffer-substring-no-properties
                                                  start end))))
-        (let ((commands (ecc-prompt-commands session))
-              (terminal (ecc-prompt-terminal-commands session)))
+        (let ((commands (ecc-prompt-commands session)))
           (list start end (mapcar #'car commands)
                 :exclusive 'no
                 :annotation-function
-                (lambda (candidate)
-                  (let ((description (cdr (assoc candidate commands))))
-                    (concat (when (member candidate terminal) "  terminal UI")
-                            (unless (or (null description)
-                                        (string-empty-p description))
-                              (concat "  " description)))))))))))
+                (ecc-prompt--annotator
+                 commands (ecc-prompt-terminal-commands session))))))))
+
+(defun ecc-prompt-read-command (session)
+  "Ask which slash command of SESSION is meant, and return it, or nil.
+The name is returned with its slash.  Nil is the answer when nothing
+was chosen -- an empty answer, a bare slash, or a `C-g\=' -- which leaves
+the slash that was typed alone (FR-INP-3)."
+  (let* ((commands (ecc-prompt-commands session))
+         (annotate (ecc-prompt--annotator
+                    commands (ecc-prompt-terminal-commands session)))
+         (table (lambda (string predicate action)
+                  (if (eq action 'metadata)
+                      `(metadata (category . ecc-slash-command)
+                                 (annotation-function . ,annotate))
+                    (complete-with-action action (mapcar #'car commands)
+                                          string predicate))))
+         ;; A command the CLI has not named is still worth sending, so
+         ;; the answer does not have to be one of the candidates.
+         (answer (condition-case nil
+                     (completing-read "Slash command: " table nil nil "/")
+                   (quit nil))))
+    (when answer
+      (let ((name (string-trim answer)))
+        (unless (member name '("" "/"))
+          name)))))
 
 (defconst ecc-prompt-at-specials
   '(("@region" . "Send the region, quoted")

@@ -108,6 +108,89 @@
       (goto-char (point-min))
       (should-not (ecc-prompt-capf)))))
 
+(defmacro ecc-prompt-test--reading-command (answer asked &rest body)
+  "Run BODY with `completing-read' answering ANSWER.
+ASKED is bound to a list the candidates offered and the prompt are
+pushed onto, newest first.  ANSWER may be the symbol `quit', which
+stands for the user pressing \\[keyboard-quit]."
+  (declare (indent 2))
+  `(let ((,asked nil))
+     (cl-letf (((symbol-function 'completing-read)
+                (lambda (prompt collection &rest _)
+                  (push (cons prompt (all-completions "" collection)) ,asked)
+                  (if (eq ,answer 'quit) (signal 'quit nil) ,answer))))
+       ,@body)))
+
+(ert-deftest ecc-prompt-test-slash-offers-the-commands ()
+  "A slash at the start of a prompt line asks which command (FR-INP-3)."
+  (ecc-test-with-fake-session session
+    (ecc-prompt-test--init session)
+    (ecc-prompt-test--in-buffer session
+      (ecc-prompt-test--reading-command "/context" asked
+        (ecc-chat-slash 1)
+        (should (equal (ecc-chat-draft) "/context"))
+        (should (member "/context" (cdar asked)))
+        ;; system/init names /model and nothing else does; it is offered.
+        (should (member "/model" (cdar asked)))))))
+
+(ert-deftest ecc-prompt-test-slash-in-prose-is-a-slash ()
+  "A slash inside a line is left alone (FR-INP-3)."
+  (ecc-test-with-fake-session session
+    (ecc-prompt-test--init session)
+    (ecc-prompt-test--in-buffer session
+      (insert "see src")
+      (ecc-prompt-test--reading-command "/context" asked
+        (ecc-chat-slash 1)
+        (should-not asked)
+        (should (equal (ecc-chat-draft) "see src/"))
+        ;; The start of the second line is the start of a command again.
+        (insert "\n")
+        (ecc-chat-slash 1)
+        (should (equal (ecc-chat-draft) "see src/\n/context"))))))
+
+(ert-deftest ecc-prompt-test-slash-quit-keeps-the-slash ()
+  "Leaving the question keeps what was typed (FR-INP-3)."
+  (ecc-test-with-fake-session session
+    (ecc-prompt-test--init session)
+    (ecc-prompt-test--in-buffer session
+      (ecc-prompt-test--reading-command 'quit asked
+        (ecc-chat-slash 1)
+        (should asked)
+        (should (equal (ecc-chat-draft) "/")))
+      (ecc-prompt-clear)
+      ;; An empty answer is no answer either.
+      (ecc-prompt-test--reading-command "" asked
+        (ecc-chat-slash 1)
+        (should (equal (ecc-chat-draft) "/"))))))
+
+(ert-deftest ecc-prompt-test-slash-question-can-be-turned-off ()
+  "With the setting off a slash is only a slash (FR-INP-3)."
+  (ecc-test-with-fake-session session
+    (ecc-prompt-test--init session)
+    (ecc-prompt-test--in-buffer session
+      (let ((ecc-prompt-slash-reads-command nil))
+        (ecc-prompt-test--reading-command "/context" asked
+          (ecc-chat-slash 1)
+          (should-not asked)
+          (should (equal (ecc-chat-draft) "/"))))
+      ;; TAB completion is there either way.
+      (should (ecc-prompt-capf)))))
+
+(ert-deftest ecc-prompt-test-slash-question-annotates-as-completion-does ()
+  "The question shows what the completion shows (FR-INP-3, FR-INP-4)."
+  (ecc-test-with-fake-session session
+    (ecc-prompt-test--init session)
+    (ecc-prompt-note-terminal-commands session)
+    (let ((annotate nil))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (_prompt collection &rest _)
+                   (setq annotate (cdr (assq 'annotation-function
+                                             (cdr (funcall collection "" nil 'metadata)))))
+                   nil)))
+        (ecc-prompt-read-command session))
+      (should (string-search "terminal UI" (funcall annotate "/doctor")))
+      (should (string-search "Show context usage" (funcall annotate "/context"))))))
+
 
 ;;;; Terminal only and interactive slash commands (FR-INP-4, FR-INP-5)
 

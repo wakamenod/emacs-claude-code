@@ -200,6 +200,9 @@ calls in one step is what the depth ladder needs."
       (ecc-chat-goto-prompt)
       (should (eq (key-binding (kbd "n")) #'self-insert-command))
       (should (eq (key-binding (kbd "TAB")) #'ecc-chat-tab))
+      ;; A slash is the one punctuation mark with a command of its own:
+      ;; it inserts itself and offers the slash commands (FR-INP-3).
+      (should (eq (key-binding (kbd "/")) #'ecc-chat-slash))
       (should (eq (key-binding (kbd "RET")) #'ecc-chat-return))
       (should (eq (key-binding (kbd "C-c C-c")) #'ecc-prompt-send))
       (should (eq (key-binding (kbd "C-c C-k")) #'ecc-prompt-clear))

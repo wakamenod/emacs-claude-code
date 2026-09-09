@@ -54,6 +54,8 @@
 (declare-function ecc-prompt-history-next "ecc-prompt" ())
 (declare-function ecc-prompt-capf "ecc-prompt" ())
 (declare-function ecc-prompt-at-capf "ecc-prompt" ())
+(declare-function ecc-prompt-read-command "ecc-prompt" (session))
+(defvar ecc-prompt-slash-reads-command)
 (declare-function ecc-prompt-yank-image "ecc-prompt" (mime data))
 (declare-function ecc-prompt-dnd-insert "ecc-prompt" (url &optional action))
 (declare-function ecc-session-visit "ecc-session" ())
@@ -162,6 +164,7 @@ the dim face."
     (define-key map (kbd "S-<return>") #'ecc-chat-newline)
     (define-key map (kbd "C-j") #'ecc-chat-newline)
     (define-key map (kbd "TAB") #'ecc-chat-tab)
+    (define-key map (kbd "/") #'ecc-chat-slash)
     (define-key map (kbd "C-k") #'ecc-chat-kill-line)
     (define-key map (kbd "<backtab>") #'ecc-chat-cycle-permission-mode)
     (define-key map (kbd "S-<tab>") #'ecc-chat-cycle-permission-mode)
@@ -195,7 +198,8 @@ the dim face."
     map)
   "Keymap of `ecc-chat-mode', in force in the prompt region.
 Everything here is RET, TAB or a key under the mode prefix, so that a
-letter is a letter.")
+letter is a letter.  The one exception is `/', which inserts itself
+and then offers the slash commands (`ecc-chat-slash').")
 
 (defvar ecc-chat-transcript-map
   (let ((map (make-sparse-keymap)))
@@ -392,6 +396,33 @@ anywhere else, and ends the draft where the region ends."
   (if (ecc-chat-in-prompt-p)
       (progn (require 'ecc-prompt) (completion-at-point))
     (ecc-chat-toggle)))
+
+(defun ecc-chat--slash-opens-commands-p ()
+  "Return non-nil when the slash just typed should ask for a command.
+Only a slash that starts a line of the prompt region does, which is
+where the CLI looks for a command and where `ecc-prompt-capf\=' offers
+one.  A slash written into prose -- `src/foo.el\=', a URL -- is left
+alone, and so is one a keyboard macro types, where there is nobody to
+answer the minibuffer."
+  (and (bound-and-true-p ecc-prompt-slash-reads-command)
+       ecc-render--session
+       (not executing-kbd-macro)
+       (not (minibufferp))
+       (ecc-chat-in-prompt-p)
+       (when-let* ((start (ecc-chat-prompt-start)))
+         (= (point) (1+ (max start (line-beginning-position)))))))
+
+(defun ecc-chat-slash (n)
+  "Insert a slash, and offer the slash commands when it starts one.
+N is the prefix argument, as for `self-insert-command\='.  The slash is
+inserted first, so that leaving the question with `C-g\=' keeps it
+\(FR-INP-3)."
+  (interactive "p")
+  (self-insert-command n ?/)
+  (when (and (= n 1) (progn (require 'ecc-prompt) t)
+             (ecc-chat--slash-opens-commands-p))
+    (when-let* ((command (ecc-prompt-read-command ecc-render--session)))
+      (insert (string-remove-prefix "/" command)))))
 
 ;;;; The placeholder
 
