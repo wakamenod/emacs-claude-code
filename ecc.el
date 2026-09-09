@@ -133,7 +133,10 @@ argument forks it into a new conversation (FR-SES-4)."
   ;; (FR-HIST-3).  `ecc-history-resume' refuses a live process.
   (ecc-history-resume session fork)
   (ecc--enable-session-modes)
-  (ecc-display-session session)
+  ;; Like `ecc-start': the window is selected and point put in the
+  ;; prompt, which is what a resumed session is opened to type in
+  ;; (FR-WIN-1).
+  (ecc-window-select-session session)
   session)
 
 (defconst ecc--session-time-units
