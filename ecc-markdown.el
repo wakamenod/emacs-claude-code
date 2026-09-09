@@ -37,13 +37,15 @@
   :group 'ecc)
 
 (defface ecc-markdown-code-face
-  '((((background dark))  :background "#2a2f33")
-    (((background light)) :background "#eceff1")
-    (t nil))
+  '((t :inherit font-lock-constant-face))
   "Face for code, both fenced blocks and inline spans.
-Only the background is set, so that the colour the theme gives the
-text is what is read; a foreground of its own would fight whichever
-theme is in use.  A terminal that names no background gets neither.
+Only the foreground is set, and it is the one the theme already gives a
+constant, which is what `markdown-mode\=' colours an inline span with as
+well.  A band of background behind every function name broke the line up
+and was hard to read, so there is none (2026-09-09).  Inside a fenced
+block the faces of the major mode are laid on top of this one, so code
+that is highlighted keeps its own colours and only what the mode leaves
+alone is coloured here.
 
 The font is left alone as well, and `fixed-pitch' in particular is not
 inherited.  The transcript is already drawn in the default face, which
