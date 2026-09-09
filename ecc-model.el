@@ -49,6 +49,12 @@
 (defvar ecc-stream-delta-hook nil
   "Functions run with a session, a node and the text appended to it.")
 
+(defvar ecc-control-progress-hook nil
+  "Functions run with a session, a request id and a progress message.
+The CLI reports on a control request of ours while it works on it; the
+side question of FR-BTW-3 is the only one that takes long enough to say
+anything.  It is not `ecc-progress-hook\', which is about the turn.")
+
 (defvar ecc-request-added-hook nil
   "Functions run with a session and a request that needs an answer.")
 

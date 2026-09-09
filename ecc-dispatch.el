@@ -121,6 +121,13 @@ note rather than among the messages this version does not understand.")
     ('thinking_tokens
      (ecc-dispatch--progress session 'thinking-tokens
                              (alist-get 'estimated_tokens message)))
+    ('control_request_progress
+     ;; Progress on a control request Emacs sent, not on the turn: the
+     ;; side question of FR-BTW-3 reports "started" and then every API
+     ;; retry.  It belongs to whoever sent the request, and putting it in
+     ;; the transcript would be noise the CLI never meant for it.
+     (run-hook-with-args 'ecc-control-progress-hook session
+                         (alist-get 'request_id message) message))
     ((or 'hook_started 'hook_response)
      ;; A SessionStart hook runs before any turn does.
      (ecc-model-add-aside session :type 'system :status 'done

@@ -305,6 +305,13 @@ response object once the CLI answers.  Returns the request id."
                                        request-id subtype fields))
     request-id))
 
+(defun ecc-proc-cancel-control (session request-id)
+  "Withdraw the control request REQUEST-ID of SESSION.
+The callback is forgotten first: the CLI answers a cancelled request
+with an error of its own, and by then nobody is waiting for it."
+  (ecc-proc-take-control-callback session request-id)
+  (ecc-proc-send-json session (ecc-protocol-control-cancel request-id)))
+
 (defun ecc-proc-take-control-callback (session request-id)
   "Return and forget the callback SESSION registered for REQUEST-ID."
   (let ((callback (gethash request-id (ecc-session-pending-controls session))))

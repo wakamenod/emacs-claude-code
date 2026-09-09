@@ -127,6 +127,14 @@ request object, in the order given."
       (request_id . ,request-id)
       (request . ,request))))
 
+(defun ecc-protocol-control-cancel (request-id)
+  "Return a control_cancel_request alist withdrawing REQUEST-ID.
+The CLI drops the work it was doing for that request and answers it with
+an error rather than a result; a side question cancelled this way comes
+back as \"Side question cancelled\" (FR-BTW-3, measured 2026-09-09)."
+  `((type . "control_cancel_request")
+    (request_id . ,request-id)))
+
 (defun ecc-protocol-control-response (request-id response)
   "Return a successful control_response alist for REQUEST-ID.
 RESPONSE is the inner response object."
