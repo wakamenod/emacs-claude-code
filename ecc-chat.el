@@ -399,18 +399,24 @@ anywhere else, and ends the draft where the region ends."
 
 (defun ecc-chat--slash-opens-commands-p ()
   "Return non-nil when the slash just typed should ask for a command.
-Only a slash that starts a line of the prompt region does, which is
-where the CLI looks for a command and where `ecc-prompt-capf\=' offers
-one.  A slash written into prose -- `src/foo.el\=', a URL -- is left
+Only a slash that opens the prompt does: the CLI reads a command from
+the start of what it is sent and nowhere else, so a slash further in
+would be offered commands that are not going to run
+\(`ecc-prompt-command-name\=').  A slash written into prose is left
 alone, and so is one a keyboard macro types, where there is nobody to
-answer the minibuffer."
+answer the minibuffer.  What starts a word is still completed on TAB
+wherever it stands (`ecc-prompt-command-bounds\=')."
   (and (bound-and-true-p ecc-prompt-slash-reads-command)
        ecc-render--session
        (not executing-kbd-macro)
        (not (minibufferp))
        (ecc-chat-in-prompt-p)
-       (when-let* ((start (ecc-chat-prompt-start)))
-         (= (point) (1+ (max start (line-beginning-position)))))))
+       (when-let* ((start (ecc-chat-prompt-start))
+                   ((> (point) start)))
+         ;; Only blanks may stand before it, and no newline: that is
+         ;; what `ecc-prompt-command-name' reads as a command.
+         (string-match-p "\\`[ \t]*\\'"
+                         (buffer-substring-no-properties start (1- (point)))))))
 
 (defun ecc-chat-slash (n)
   "Insert a slash, and offer the slash commands when it starts one.

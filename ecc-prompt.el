@@ -76,11 +76,12 @@ describe belong here.  Every command whose hint names its alternatives
 
 (defcustom ecc-prompt-slash-reads-command t
   "Whether typing `/' in the prompt asks which slash command is meant.
-When this is on, a slash at the start of a line of the prompt region
-opens `completing-read' with the commands the CLI named, and what is
-chosen is written after it (FR-INP-3).  The completion of
-`ecc-prompt-capf\=' is offered on TAB either way, so corfu and company
-keep working as they did; turning this off leaves them the only way."
+When this is on, a slash that opens the prompt -- the only place the
+CLI runs a command from -- opens `completing-read' with the commands
+it named, and what is chosen is written after it (FR-INP-3).  A slash
+anywhere else is only a slash; `ecc-prompt-capf\=' still completes one
+that starts a word, on TAB, so corfu and company keep working as they
+did.  Turning this off leaves them the only way."
   :type 'boolean
   :group 'ecc)
 
@@ -690,23 +691,35 @@ response follows."
                           (string-empty-p description))
                 (concat "  " description))))))
 
+(defun ecc-prompt-command-bounds ()
+  "Return (START . END) of the slash command word before point, or nil.
+A word is one when the slash that opens it follows whitespace or opens
+the prompt region, which is what the terminal client completes: it
+answers `please run /co\=' with `/copy\=' but leaves `src/fo\=' and
+`a/co\=' alone (docs/verified.md, 2026-09-09).  Whether the CLI would
+run it is another matter -- only the command the prompt opens with is
+run -- so this is for the completion, not for the sending."
+  (when-let* (((ecc-chat-in-prompt-p))
+              (region (ecc-chat-prompt-start)))
+    (save-excursion
+      (let ((end (point))
+            (limit (max region (line-beginning-position))))
+        (skip-chars-backward "^ \t" limit)
+        (when (eq (char-after (point)) ?/)
+          (cons (point) end))))))
+
 (defun ecc-prompt-capf ()
   "Complete a slash command at point (FR-INP-3, FR-INP-4).
-Only the first word of a line that starts with a slash is completed,
-which is where the CLI looks for a command."
+A word that starts with a slash is completed wherever it stands in the
+prompt region, as the terminal client does (`ecc-prompt-command-bounds\=')."
   (when-let* ((session ecc-render--session)
-              (region (ecc-chat-prompt-start)))
-    (let ((start (max region (line-beginning-position)))
-          (end (point)))
-      (when (and (eq (char-after start) ?/)
-                 (not (string-match-p "[ \t\n]" (buffer-substring-no-properties
-                                                 start end))))
-        (let ((commands (ecc-prompt-commands session)))
-          (list start end (mapcar #'car commands)
-                :exclusive 'no
-                :annotation-function
-                (ecc-prompt--annotator
-                 commands (ecc-prompt-terminal-commands session))))))))
+              (bounds (ecc-prompt-command-bounds)))
+    (let ((commands (ecc-prompt-commands session)))
+      (list (car bounds) (cdr bounds) (mapcar #'car commands)
+            :exclusive 'no
+            :annotation-function
+            (ecc-prompt--annotator
+             commands (ecc-prompt-terminal-commands session))))))
 
 (defun ecc-prompt-read-command (session)
   "Ask which slash command of SESSION is meant, and return it, or nil.

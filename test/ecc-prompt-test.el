@@ -122,7 +122,7 @@ stands for the user pressing \\[keyboard-quit]."
        ,@body)))
 
 (ert-deftest ecc-prompt-test-slash-offers-the-commands ()
-  "A slash at the start of a prompt line asks which command (FR-INP-3)."
+  "The slash the prompt opens with asks which command (FR-INP-3)."
   (ecc-test-with-fake-session session
     (ecc-prompt-test--init session)
     (ecc-prompt-test--in-buffer session
@@ -134,7 +134,10 @@ stands for the user pressing \\[keyboard-quit]."
         (should (member "/model" (cdar asked)))))))
 
 (ert-deftest ecc-prompt-test-slash-in-prose-is-a-slash ()
-  "A slash inside a line is left alone (FR-INP-3)."
+  "Only the slash the prompt opens with asks (FR-INP-2, FR-INP-3).
+The CLI runs a command written at the start of what it is sent and
+nowhere else (`ecc-prompt-command-name\='), so a slash further in is
+not offered commands that would not run."
   (ecc-test-with-fake-session session
     (ecc-prompt-test--init session)
     (ecc-prompt-test--in-buffer session
@@ -143,10 +146,45 @@ stands for the user pressing \\[keyboard-quit]."
         (ecc-chat-slash 1)
         (should-not asked)
         (should (equal (ecc-chat-draft) "see src/"))
-        ;; The start of the second line is the start of a command again.
+        ;; Nor does the start of the second line: what is sent starts
+        ;; with `see', so nothing in it is a command.
         (insert "\n")
         (ecc-chat-slash 1)
-        (should (equal (ecc-chat-draft) "see src/\n/context"))))))
+        (should-not asked)
+        (should (equal (ecc-chat-draft) "see src/\n/")))
+      (ecc-prompt-clear)
+      ;; Blanks before it are all the CLI allows, and all Emacs does.
+      (insert "  ")
+      (ecc-prompt-test--reading-command "/context" asked
+        (ecc-chat-slash 1)
+        (should asked)
+        (should (equal (ecc-chat-draft) "  /context"))))))
+
+(ert-deftest ecc-prompt-test-completion-follows-a-word-anywhere ()
+  "TAB completes a word that starts with a slash wherever it stands.
+The terminal client does the same, with a dim suggestion inside the
+input rather than a list (docs/verified.md, 2026-09-09); it leaves a
+slash inside a word -- a path, a URL -- alone."
+  (ecc-test-with-fake-session session
+    (ecc-prompt-test--init session)
+    (ecc-prompt-test--in-buffer session
+      (insert "please run /co")
+      (let ((capf (ecc-prompt-capf)))
+        (should capf)
+        (should (equal (buffer-substring-no-properties (nth 0 capf) (nth 1 capf))
+                       "/co"))
+        (should (member "/context" (nth 2 capf))))
+      ;; A slash inside a word is part of the word.
+      (ecc-prompt-clear)
+      (insert "see src/fo")
+      (should-not (ecc-prompt-capf))
+      (ecc-prompt-clear)
+      (insert "run a/co")
+      (should-not (ecc-prompt-capf))
+      ;; The line before it makes no difference.
+      (ecc-prompt-clear)
+      (insert "first line\n/co")
+      (should (ecc-prompt-capf)))))
 
 (ert-deftest ecc-prompt-test-slash-quit-keeps-the-slash ()
   "Leaving the question keeps what was typed (FR-INP-3)."
