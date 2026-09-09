@@ -16,6 +16,7 @@
 
 ;;; Code:
 
+(require 'seq)
 (require 'subr-x)
 
 (defgroup ecc nil
@@ -509,6 +510,48 @@ line."
   "Return STRING as a field of exactly WIDTH columns, padded with spaces."
   (let ((fitted (ecc--fit string width)))
     (concat fitted (make-string (max 0 (- width (string-width fitted))) ?\s))))
+
+;;;; Naming a session in a list
+
+(defconst ecc--session-time-units
+  '((31536000 . "year") (2592000 . "month") (604800 . "week")
+    (86400 . "day") (3600 . "hour") (60 . "minute"))
+  "Seconds and the name of the unit, largest first.
+The month and the year are the rounded ones a reader expects of \"3
+months ago\"; nothing here is meant to be a calendar.")
+
+(defun ecc--session-time-label (time)
+  "Return how long ago TIME was, in words, or an empty string when nil.
+A list of sessions is read to tell one conversation from another, and
+which one was last worked in is what tells them apart; the reading is
+kept to a single unit (\"3 hours ago\") for that reason."
+  (if (null time)
+      ""
+    (let ((age (float-time (time-subtract (current-time) time))))
+      (if (< age 60)
+          "just now"
+        (let ((unit (seq-find (lambda (u) (>= age (car u)))
+                              ecc--session-time-units)))
+          (let ((n (floor (/ age (car unit)))))
+            (format "%d %s%s ago" n (cdr unit) (if (= n 1) "" "s"))))))))
+
+(defun ecc--short-model-name (model)
+  "Return the family MODEL belongs to, or nil when it names none.
+The CLI names a model in full, `claude-sonnet-4-5-20250929\='; what
+tells one from another in a list is the family, `sonnet\='.  A name the
+CLI made up rather than ran -- the `<synthetic>\=' of a slash command --
+is not a model to show, so nil comes back for it."
+  (when (and model (not (string-empty-p model))
+             (not (string-prefix-p "<" model)))
+    (replace-regexp-in-string
+     "-[0-9].*\\'" "" (replace-regexp-in-string "\\`claude-" "" model))))
+
+(defun ecc--project-label (directory)
+  "Return the name of DIRECTORY itself, without the path leading to it.
+A dashboard column has room for the project, not for where it lives."
+  (if (or (null directory) (equal directory ""))
+      ""
+    (file-name-nondirectory (directory-file-name (expand-file-name directory)))))
 
 (provide 'ecc-core)
 

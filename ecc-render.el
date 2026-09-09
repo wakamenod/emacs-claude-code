@@ -1604,10 +1604,8 @@ line has room for the part that tells one from another.  The model of
 the last answer comes first, so that a `/model\=' shows here as soon as
 it is sent; init answers until there has been one, and nothing does
 before the first turn."
-  (when-let* ((model (or (ecc-session-last-model session)
-                         (alist-get 'model (ecc-session-init session)))))
-    (replace-regexp-in-string
-     "-[0-9].*\\'" "" (replace-regexp-in-string "\\`claude-" "" model))))
+  (ecc--short-model-name (or (ecc-session-last-model session)
+                             (alist-get 'model (ecc-session-init session)))))
 
 (defun ecc-render--remote-control (session)
   "Return the Remote Control mark of SESSION for the header line, or nil.
