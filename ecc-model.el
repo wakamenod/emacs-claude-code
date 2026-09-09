@@ -155,6 +155,11 @@ anything.  It is not `ecc-progress-hook\', which is about the turn.")
                         ; session to, oldest first; ExitPlanMode names
                         ; one in `planFilePath' (FR-PLAN-1)
   stream-blocks         ; hash: "PARENT:INDEX" -> node being streamed
+  created               ; order this session was made in.  The registry
+                        ; is kept most recently used first, which is the
+                        ; wrong order for a row of tabs: they would
+                        ; shuffle every time one is used.  The tab line
+                        ; sorts by this instead (FR-NOTIFY-2)
   node-counter          ; counters for the ids of nodes and turns; the
   turn-counter)         ; ids have to be stable, see plan 9.6
 
@@ -216,6 +221,9 @@ the review of a file git does not track diffs against it (FR-DIFF-3)."
 (defvar ecc--session-order nil
   "Session ids, most recently used first.")
 
+(defvar ecc--session-counter 0
+  "How many sessions have been made, for the `created' of the next one.")
+
 (defun ecc-model-sessions ()
   "Return the live sessions, most recently used first."
   (delq nil (mapcar (lambda (id) (gethash id ecc--sessions)) ecc--session-order)))
@@ -263,6 +271,7 @@ options that overrides the defcustoms for this session."
                    :stream-blocks (make-hash-table :test #'equal)
                    :total-cost 0
                    :context-tokens 0
+                   :created (cl-incf ecc--session-counter)
                    :node-counter 0
                    :turn-counter 0)))
     (puthash (ecc-session-id session) session ecc--sessions)

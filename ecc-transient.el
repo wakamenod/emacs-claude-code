@@ -267,6 +267,7 @@ same suffix from one call to the next."
     ("R" "Rename" ecc-rename-session)
     ("v" "Go to the prompt" ecc-show-session)
     ("w" "Hide or restore windows" ecc-toggle)
+    ("S" "Switch this window to another session" ecc-switch-session)
     ("i" "Interrupt" ecc-interrupt)
     ("t" "Hand over to the terminal" ecc-tui-open)
     ("u" "Take it back" ecc-tui-return)]

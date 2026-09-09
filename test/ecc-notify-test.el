@@ -123,41 +123,73 @@
     (should (equal (ecc-tab-mark session) "⚠"))))
 
 (ert-deftest ecc-notify-test-tab-line-lists-every-session ()
-  "Every session is a tab, the one being shown is marked as current."
+  "Every session is a tab, coloured by what it is doing (FR-NOTIFY-2)."
   (ecc-test-with-fake-session first
     (let ((second (ecc-model-create-session
                    :name "other" :project-root temporary-file-directory)))
       (unwind-protect
           (progn
             (ecc-session-ensure-buffer first)
+            (ecc-session-ensure-buffer second)
+            (ecc-model-set-state first 'idle)
             (ecc-model-set-state second 'running)
-            (let ((line (substring-no-properties
-                         (ecc-tab-line-string (ecc-session-buffer first)))))
-              (should (string-search "test" line))
-              (should (string-search "other" line))
-              (should (string-search "●" line)))
-            ;; From the buffer of the first session, the first tab is the
-            ;; current one and the second is not.
-            (let* ((line (ecc-tab-line-string (ecc-session-buffer first)))
-                   (at (lambda (name)
-                         (get-text-property (string-search name line) 'face line))))
-              (should (eq (funcall at "test") 'ecc-tab-current-face))
-              (should (eq (funcall at "other") 'ecc-tab-running-face))))
+            (let ((tabs (ecc-tab-line-tabs)))
+              (should (equal (mapcar #'buffer-name tabs)
+                             (list (buffer-name (ecc-session-buffer first))
+                                   (buffer-name (ecc-session-buffer second)))))
+              ;; A session with nothing to say carries no mark; a running
+              ;; one does.
+              (should (equal (ecc-tab-line-tab-name (car tabs)) " test "))
+              (should (equal (ecc-tab-line-tab-name (cadr tabs)) " ● other "))
+              ;; The state is put on top of whatever face the tab line
+              ;; settled on, so the theme still shapes the tab.
+              (should (equal (ecc-tab-line-tab-face
+                              (cadr tabs) tabs 'tab-line-tab-inactive t nil)
+                             '(:inherit (ecc-tab-running-face
+                                         tab-line-tab-inactive))))
+              (should (equal (ecc-tab-line-tab-face
+                              (car tabs) tabs 'tab-line-tab-current t t)
+                             '(:inherit (ecc-tab-current-face
+                                         tab-line-tab-current))))))
+        (ecc-test-cleanup-session second)
+        (ecc-model-remove-session second)))))
+
+(ert-deftest ecc-notify-test-tab-line-keeps-the-order-sessions-were-made-in ()
+  "Using a session does not move its tab (FR-NOTIFY-2).
+The registry is most recently used first, which would shuffle the tabs
+about as one works."
+  (ecc-test-with-fake-session first
+    (let ((second (ecc-model-create-session
+                   :name "other" :project-root temporary-file-directory)))
+      (unwind-protect
+          (progn
+            (ecc-session-ensure-buffer first)
+            (ecc-session-ensure-buffer second)
+            (let ((before (ecc-tab-line-tabs)))
+              ;; The second session is used, so it heads the registry.
+              (ecc-model-touch second)
+              (should (eq (car (ecc-model-sessions)) second))
+              (should (equal (ecc-tab-line-tabs) before))))
         (ecc-test-cleanup-session second)
         (ecc-model-remove-session second)))))
 
 (ert-deftest ecc-notify-test-tab-line-mode-installs-and-removes ()
-  "The mode puts the tab line in the session buffers and takes it out."
+  "The mode turns `tab-line-mode' on in the session buffers, and off again."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (unwind-protect
         (progn
           (ecc-tab-line-mode 1)
           (with-current-buffer (ecc-session-buffer session)
-            (should (equal tab-line-format ecc-tab-line--construct)))
+            (should tab-line-mode)
+            (should (eq tab-line-tabs-function #'ecc-tab-line-tabs))
+            (should (eq tab-line-tab-name-function #'ecc-tab-line-tab-name))
+            (should (equal tab-line-tab-face-functions
+                           '(ecc-tab-line-tab-face))))
           (ecc-tab-line-mode -1)
           (with-current-buffer (ecc-session-buffer session)
-            (should-not tab-line-format)))
+            (should-not tab-line-mode)
+            (should-not (local-variable-p 'tab-line-tabs-function))))
       (ecc-tab-line-mode -1))))
 
 (ert-deftest ecc-notify-test-tab-bar-name ()

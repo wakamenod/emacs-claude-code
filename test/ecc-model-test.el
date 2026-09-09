@@ -184,6 +184,23 @@
       (should (equal (ecc-model-pending-all temporary-file-directory) (list old new)))
       (should-not (ecc-model-pending-all "/nonexistent/")))))
 
+(ert-deftest ecc-model-test-created-counts-up ()
+  "Every session records the order it was made in (FR-NOTIFY-2).
+The tab line reads it: the registry is most recently used first, which
+would shuffle the tabs about as one works."
+  (let ((ecc--sessions (make-hash-table :test #'equal))
+        (ecc--session-order nil))
+    (let ((a (ecc-model-create-session :name "a"
+                                       :project-root temporary-file-directory))
+          (b (ecc-model-create-session :name "b"
+                                       :project-root temporary-file-directory)))
+      (should (< (ecc-session-created a) (ecc-session-created b)))
+      ;; Using a session does not change it, though it does move the
+      ;; session to the front of the registry.
+      (ecc-model-touch a)
+      (should (eq (car (ecc-model-sessions)) a))
+      (should (< (ecc-session-created a) (ecc-session-created b))))))
+
 (provide 'ecc-model-test)
 
 ;;; ecc-model-test.el ends here

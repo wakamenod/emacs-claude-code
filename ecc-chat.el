@@ -58,6 +58,7 @@
 (defvar ecc-prompt-slash-reads-command)
 (declare-function ecc-prompt-yank-image "ecc-prompt" (mime data))
 (declare-function ecc-prompt-dnd-insert "ecc-prompt" (url &optional action))
+(declare-function ecc-switch-session "ecc-window" (session))
 (declare-function ecc-session-visit "ecc-session" ())
 (declare-function ecc-session-refresh "ecc-session" ())
 (declare-function ecc-session-show-log "ecc-session" ())
@@ -191,6 +192,7 @@ the dim face."
     (define-key map (kbd "C-c D") #'ecc-dashboard)
     (define-key map (kbd "C-c n") #'ecc-next-attention)
     (define-key map (kbd "C-c b") #'ecc-btw-show)
+    (define-key map (kbd "C-c t") #'ecc-switch-session)
     (define-key map (kbd "C-c C-e") #'ecc-session-export-markdown)
     ;; `?' stays self-inserting in a region one writes prose in, so the
     ;; menu is on C-c ? here and on ? in the transcript (NFR-10).

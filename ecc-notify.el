@@ -19,6 +19,7 @@
 
 (require 'cl-lib)
 (require 'seq)
+(require 'tab-line)
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
@@ -178,7 +179,12 @@ not worth a notification."
 ;; Every session is a tab in the tab line of a session window, coloured
 ;; by what it is doing: running, waiting for an answer, or idle.  Which
 ;; session the window shows is what the tab line marks as current, and
-;; mouse-1 on a tab switches to it.
+;; mouse-1 on a tab shows that session in the window the tab was
+;; clicked in.
+;;
+;; The tabs are `tab-line-mode' itself rather than a tab line drawn
+;; here: that is where the look of a tab, the scrolling and the
+;; click come from.  Only what a tab says, and its colour, are ours.
 
 (defcustom ecc-tab-line t
   "Non-nil lists every session in the tab line of a session window.
@@ -223,9 +229,11 @@ to have anywhere to show (FR-NOTIFY-2)."
    (t 'idle)))
 
 (defun ecc-tab-mark (session)
-  "Return the character that stands for the state of SESSION."
+  "Return the character that stands for the state of SESSION.
+A session with nothing to say gets no mark: a row of tabs is quieter
+when only the ones that want something are marked."
   (pcase (ecc-tab-state session)
-    ('attention "⚠") ('running "●") ('exited "✗") (_ "·")))
+    ('attention "⚠") ('running "●") ('exited "✗") (_ "")))
 
 (defun ecc-tab-face (session current)
   "Return the face of the tab of SESSION, CURRENT saying whether it is shown."
@@ -237,51 +245,67 @@ to have anywhere to show (FR-NOTIFY-2)."
       ('exited 'ecc-error-face)
       (_ 'ecc-tab-idle-face))))
 
-(defun ecc-tab-label (session &optional current)
-  "Return the tab of SESSION, CURRENT saying whether it is the one shown."
-  (propertize (format " %s %s " (ecc-tab-mark session)
-                      (ecc--truncate (ecc-session-name session) 20))
-              'face (ecc-tab-face session current)
-              'help-echo (format "%s: %s" (ecc-session-name session)
-                                 (ecc-tab-state session))
-              'mouse-face 'tab-line-highlight
-              'keymap (let ((map (make-sparse-keymap)))
-                        (define-key map [tab-line mouse-1]
-                                    (lambda ()
-                                      (interactive)
-                                      (ecc-tab-line-visit session)))
-                        map)))
+(defun ecc-tab-line-tabs ()
+  "Return the session buffers, oldest session first (FR-NOTIFY-2).
+This is `tab-line-tabs-function' in a session buffer.  The registry is
+kept most recently used first, which is the wrong order for a row of
+tabs -- they would move about as one works -- so the sessions are put
+back into the order they were made in."
+  (let ((sessions (sort (copy-sequence (ecc-model-sessions))
+                        (lambda (a b)
+                          (< (or (ecc-session-created a) 0)
+                             (or (ecc-session-created b) 0))))))
+    (seq-filter #'buffer-live-p (mapcar #'ecc-session-buffer sessions))))
 
-(defun ecc-tab-line-visit (session)
-  "Show SESSION in the window the tab was clicked in."
-  (when-let* ((buffer (ecc-session-buffer session)))
-    (when (buffer-live-p buffer)
-      (pop-to-buffer buffer))))
+(defun ecc-tab-line-tab-name (buffer &optional _tabs)
+  "Return what the tab of BUFFER says (`tab-line-tab-name-function')."
+  (let ((session (and (buffer-live-p buffer)
+                      (buffer-local-value 'ecc-render--session buffer))))
+    (if (not session)
+        (buffer-name buffer)
+      (let ((mark (ecc-tab-mark session)))
+        (format " %s%s "
+                (if (string-empty-p mark) "" (concat mark " "))
+                (ecc--truncate (ecc-session-name session) 20))))))
 
-(defun ecc-tab-line-string (&optional buffer)
-  "Return the tab line listing every session, from BUFFER's point of view."
-  (let* ((buffer (or buffer (current-buffer)))
-         (current (buffer-local-value 'ecc-render--session buffer)))
-    (ecc--mode-line-escape
-     (mapconcat (lambda (session)
-                  (ecc-tab-label session (eq session current)))
-                (ecc-model-sessions)
-                ""))))
-
-(defconst ecc-tab-line--construct '(:eval (ecc-tab-line-string))
-  "What `ecc-tab-line-mode' puts in `tab-line-format'.")
+(defun ecc-tab-line-tab-face (tab _tabs face buffer-p selected-p)
+  "Colour the tab of a session by its state (`tab-line-tab-face-functions').
+TAB is a buffer when BUFFER-P, and SELECTED-P says it is the one the
+window shows.  FACE is what the tab line settled on, which is kept
+underneath so that the theme still decides the shape of a tab."
+  (let* ((buffer (if buffer-p tab (cdr (assq 'buffer tab))))
+         (session (and (buffer-live-p buffer)
+                       (buffer-local-value 'ecc-render--session buffer))))
+    (if session
+        `(:inherit (,(ecc-tab-face session selected-p) ,face))
+      face)))
 
 (defvar ecc-tab-line-mode)
 
 (defun ecc-tab-line--install (&rest _)
-  "Put the tab line in every session buffer, or take it out again."
+  "Put the tab line in every session buffer, or take it out again.
+The tabs are the ones of `tab-line-mode' itself, so that they look and
+behave like tabs: clicking one shows that session in the window the tab
+was clicked in, which is the whole point of them (FR-NOTIFY-2)."
   (dolist (session (ecc-model-sessions))
     (when-let* ((buffer (ecc-session-buffer session)))
       (when (buffer-live-p buffer)
         (with-current-buffer buffer
-          (setq-local tab-line-format
-                      (and ecc-tab-line-mode ecc-tab-line--construct))))))
-  (force-mode-line-update t))
+          (cond
+           (ecc-tab-line-mode
+            (setq-local tab-line-tabs-function #'ecc-tab-line-tabs
+                        tab-line-tab-name-function #'ecc-tab-line-tab-name
+                        tab-line-tab-face-functions '(ecc-tab-line-tab-face))
+            (tab-line-mode 1))
+           (t
+            (tab-line-mode -1)
+            (kill-local-variable 'tab-line-tabs-function)
+            (kill-local-variable 'tab-line-tab-name-function)
+            (kill-local-variable 'tab-line-tab-face-functions)))))))
+  ;; A tab line is cached per window on a key that does not know a
+  ;; session's state, so a state that changed needs the cache cleared
+  ;; rather than a redisplay alone.
+  (tab-line-force-update t))
 
 (define-minor-mode ecc-tab-line-mode
   "List every session in the tab line of the session windows (FR-NOTIFY-2)."

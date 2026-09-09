@@ -48,6 +48,22 @@
   :type 'number
   :group 'ecc)
 
+(defcustom ecc-window-large-frame-min-height 80
+  "Height, in lines, a frame needs before it gets a third session window.
+Below it the sessions share two windows and the tab line reaches the
+rest (FR-WIN-1).  The default tells a laptop from a large display: a
+14-inch screen holds around 58 lines and a 16-inch one around 67, while
+the display this was measured on holds 114."
+  :type 'integer
+  :group 'ecc)
+
+(defcustom ecc-window-sub-height 0.33
+  "Height of the third session window, as a fraction or a line count.
+It is taken from the main area of the frame -- the source code, usually
+-- rather than from the side the other two are on."
+  :type 'number
+  :group 'ecc)
+
 (defcustom ecc-window-ask-name-for-second-session t
   "Non-nil asks for a name when a project gets a second session (FR-WIN-3)."
   :type 'boolean
@@ -221,37 +237,143 @@ them runs, the current buffer may be a transcript or a prompt."
 
 ;;;; Showing and hiding (FR-WIN-1, FR-WIN-2, FR-WIN-5)
 
-(defvar ecc-window--slots nil
-  "Alist of session id and the side window slot it was given.")
+;; This package puts three windows on the screen at the most: `main' at
+;; the near end of the side, `sub-1' after it, and `sub-2' under the
+;; main area of the frame -- the source code, usually -- on a frame with
+;; the height to spare.  A session past that gets no window of its own:
+;; it takes over a sub window, and the tab line is how the ones that are
+;; not on the screen are reached (FR-WIN-1, FR-NOTIFY-2).
+;;
+;; Which window has which role is written on the window itself, in the
+;; `ecc-window-role' parameter, rather than kept in a table here: the
+;; user closes windows, and a table of our own would go stale.
 
-(defun ecc-window-slot (session)
-  "Return the side window slot of SESSION, giving it one if it has none.
-Sessions keep their slot for as long as they live, so that a redisplay
-does not shuffle the windows around."
-  (let ((id (ecc-session-id session)))
-    (or (cdr (assoc id ecc-window--slots))
-        (let ((slot (1+ (apply #'max -1 (mapcar #'cdr ecc-window--slots)))))
-          (push (cons id slot) ecc-window--slots)
-          slot))))
+(defconst ecc-window-roles '(main sub-1 sub-2)
+  "The roles a window of this package can have, in the order they fill.")
 
-(defun ecc-window--side-parameters (slot)
-  "Return the display action alist for SLOT."
+(defvar ecc-window--last-sub nil
+  "The sub role the last session was given, so that the next one alternates.")
+
+(defun ecc-window-large-frame-p (&optional frame)
+  "Return non-nil when FRAME has the room for a third session window."
+  (>= (frame-height frame) ecc-window-large-frame-min-height))
+
+(defun ecc-window-available-roles (&optional frame)
+  "Return the roles FRAME has the room for, in the order they fill.
+A frame that is not tall enough goes without `sub-2' (FR-WIN-1)."
+  (if (ecc-window-large-frame-p frame)
+      ecc-window-roles
+    (remq 'sub-2 ecc-window-roles)))
+
+(defun ecc-window--role-window (role &optional frame)
+  "Return the live window carrying ROLE on FRAME, or nil."
+  (seq-find (lambda (window)
+              (eq (window-parameter window 'ecc-window-role) role))
+            (window-list frame 'no-minibuffer)))
+
+(defun ecc-window--role-free-p (role &optional frame)
+  "Return non-nil when no session holds ROLE on FRAME.
+A window some other buffer borrowed -- a review, say -- counts as free:
+the session that was in it has left the screen already."
+  (let ((window (ecc-window--role-window role frame)))
+    (or (null window)
+        (not (ecc-window-buffer-session (window-buffer window))))))
+
+(defun ecc-window--session-role (session &optional frame)
+  "Return the role of the window SESSION is shown in on FRAME, or nil."
+  (let ((buffer (ecc-session-buffer session)))
+    (when (buffer-live-p buffer)
+      (seq-find (lambda (role)
+                  (let ((window (ecc-window--role-window role frame)))
+                    (and window (eq (window-buffer window) buffer))))
+                ecc-window-roles))))
+
+(defun ecc-window--next-sub (&optional frame)
+  "Return the sub role for the next session on FRAME, taking the subs in turn.
+Asking does not move the turn along: only a session that really goes
+into a sub window does that, in `ecc-display-session-in-role'."
+  (let ((subs (remq 'main (ecc-window-available-roles frame))))
+    (or (cadr (memq ecc-window--last-sub subs)) (car subs))))
+
+(defun ecc-window-role-for (session &optional frame)
+  "Return the role the window of SESSION should have on FRAME (FR-WIN-1).
+The window it is in already wins; then the first role standing empty;
+then a sub window, the two being taken in turn.  `main' is never taken
+from the session that holds it: only the user moves that one, by
+clicking a tab or with `ecc-switch-session'."
+  (or (ecc-window--session-role session frame)
+      (seq-find (lambda (role) (ecc-window--role-free-p role frame))
+                (ecc-window-available-roles frame))
+      (ecc-window--next-sub frame)))
+
+(defun ecc-window--side-parameters (role)
+  "Return the display action alist of the side window of ROLE."
   (let ((horizontal (memq ecc-window-side '(left right))))
     `((side . ,ecc-window-side)
-      (slot . ,slot)
+      (slot . ,(if (eq role 'main) 0 1))
+      (window-parameters . ((ecc-window-role . ,role)))
       ,@(if horizontal
             `((window-width . ,ecc-window-width))
           `((window-height . ,ecc-window-height))))))
 
+(defun ecc-window--sub-2-parameters ()
+  "Return the display action alist of the third window (FR-WIN-1).
+It is not a side window: a side window at the bottom would run the
+whole width of the frame and pass under the other two.  This one takes
+its room from the main area instead, which leaves the side alone.  It
+is left undedicated on purpose, so that a review may borrow it and
+`quit-window' hand it back."
+  `((direction . below)
+    (window . main)
+    (window-height . ,ecc-window-sub-height)
+    (window-parameters . ((ecc-window-role . sub-2)))))
+
+(defun ecc-display-session-in-role (session role)
+  "Show the buffer of SESSION in the window of ROLE and return that window.
+A window that is there already keeps its place: what is in it is
+replaced rather than a second window being opened."
+  (require 'ecc-session)
+  (when (memq role '(sub-1 sub-2))
+    (setq ecc-window--last-sub role))
+  (let ((buffer (ecc-session-ensure-buffer session))
+        (window (ecc-window--role-window role)))
+    (cond
+     ;; `set-window-buffer' would do, but it drops the `side' dedication
+     ;; of a side window, and an undedicated side window is the next
+     ;; thing `display-buffer' takes.  Asking for the side window again
+     ;; reuses the same one and leaves it dedicated.
+     ((eq role 'sub-2)
+      (if (window-live-p window)
+          (progn (set-window-buffer window buffer)
+                 (set-window-parameter window 'ecc-window-role role)
+                 window)
+        (display-buffer-in-direction buffer (ecc-window--sub-2-parameters))))
+     (t
+      (display-buffer-in-side-window
+       buffer (ecc-window--side-parameters role))))))
+
 (defun ecc-display-session (session)
-  "Show the buffer of SESSION and return its window.
+  "Show the buffer of SESSION and return its window (FR-WIN-1).
 The window is not selected; `ecc-window-select-session' does that."
   (require 'ecc-session)
-  (let ((buffer (ecc-session-ensure-buffer session)))
-    (if ecc-window-use-side-window
-        (display-buffer-in-side-window
-         buffer (ecc-window--side-parameters (ecc-window-slot session)))
-      (display-buffer buffer))))
+  (if (not ecc-window-use-side-window)
+      (display-buffer (ecc-session-ensure-buffer session))
+    (ecc-display-session-in-role session (ecc-window-role-for session))))
+
+;;;; Keeping a side window a side window
+
+(defun ecc-window-repair-side-windows (&optional frame)
+  "Give back the dedication a session side window lost (FR-WIN-1).
+Both `switch-to-buffer', which is how the tab line changes what a
+window shows, and `set-window-buffer' clear the `side' dedication of a
+side window, and an undedicated side window is the next one
+`display-buffer' takes over -- geometry and all.  This puts it back.
+FRAME is what `window-buffer-change-functions' passes."
+  (dolist (window (window-list (and (framep frame) frame) 'no-minibuffer))
+    (when (and (memq (window-parameter window 'ecc-window-role) '(main sub-1))
+               (window-parameter window 'window-side)
+               (not (window-dedicated-p window)))
+      (set-window-dedicated-p window 'side))))
 
 (defun ecc-window-select-session (session)
   "Show the buffer of SESSION, select its window and go to the prompt.
@@ -302,7 +424,7 @@ happens to the session windows and where point lands (FR-WIN-5)."
     (when hidden
       (let ((visible (seq-filter #'ecc-window-session-visible-p hidden)))
         (when visible
-          (ecc-window-set-hidden-sessions (mapcar #'ecc-session-id visible))
+          (ecc-window-set-hidden-sessions (ecc-window--hidden-entries visible))
           (mapc #'ecc-window-hide-session visible))))
     (let ((window (display-buffer buffer)))
       (pcase ecc-window-review-focus
@@ -342,16 +464,36 @@ list is per tab as well (FR-WIN-5)."
       'frame))
 
 (defun ecc-window-hidden-sessions ()
-  "Return the ids of the sessions hidden by `ecc-toggle' here."
+  "Return the sessions hidden by `ecc-toggle' here, as (ID . ROLE) pairs.
+The role goes with the id so that restoring puts every session back in
+the window it came from, rather than dealing them out again."
   (alist-get (ecc-window--layout-key)
              (frame-parameter nil 'ecc-hidden-sessions) nil nil #'equal))
 
-(defun ecc-window-set-hidden-sessions (ids)
-  "Remember IDS as the sessions hidden by `ecc-toggle' here."
+(defun ecc-window-set-hidden-sessions (entries)
+  "Remember ENTRIES, a list of (ID . ROLE), as hidden by `ecc-toggle' here."
   (let ((alist (frame-parameter nil 'ecc-hidden-sessions)))
-    (setf (alist-get (ecc-window--layout-key) alist nil nil #'equal) ids)
+    (setf (alist-get (ecc-window--layout-key) alist nil nil #'equal) entries)
     (set-frame-parameter nil 'ecc-hidden-sessions alist)
-    ids))
+    entries))
+
+(defun ecc-window--hidden-entries (sessions)
+  "Return the (ID . ROLE) pairs to remember for SESSIONS before hiding them."
+  (mapcar (lambda (session)
+            (cons (ecc-session-id session) (ecc-window--session-role session)))
+          sessions))
+
+(defun ecc-window--restore-hidden (entries)
+  "Show again the sessions of ENTRIES, each in the role it had.
+Return the sessions that were shown."
+  (delq nil
+        (mapcar (lambda (entry)
+                  (when-let* ((session (ecc-model-session (car entry))))
+                    (if (and (cdr entry) ecc-window-use-side-window)
+                        (ecc-display-session-in-role session (cdr entry))
+                      (ecc-display-session session))
+                    session))
+                entries)))
 
 ;;;###autoload
 (defun ecc-toggle (&optional all)
@@ -364,18 +506,17 @@ rather than the ones of the current project (FR-WIN-2)."
          (visible (seq-filter #'ecc-window-session-visible-p sessions)))
     (cond
      (visible
-      (ecc-window-set-hidden-sessions (mapcar #'ecc-session-id visible))
+      (ecc-window-set-hidden-sessions (ecc-window--hidden-entries visible))
       (mapc #'ecc-window-hide-session visible)
       (message "Hid %d sessions" (length visible)))
      (t
-      (let ((shown (seq-filter
-                    #'identity
-                    (mapcar #'ecc-model-session
-                            (or (ecc-window-hidden-sessions)
-                                (mapcar #'ecc-session-id sessions))))))
+      (let* ((entries (or (ecc-window-hidden-sessions)
+                          (mapcar (lambda (session)
+                                    (cons (ecc-session-id session) nil))
+                                  sessions)))
+             (shown (ecc-window--restore-hidden entries)))
         (if (null shown)
             (message "No session to show")
-          (mapc #'ecc-display-session shown)
           (ecc-window-set-hidden-sessions nil)
           (message "Showing %d sessions" (length shown)))
         shown)))))
@@ -439,9 +580,46 @@ the buffer."
         session)))
 
 (defun ecc-window-forget-session (session)
-  "Forget the slot and the hidden entry SESSION had."
-  (setq ecc-window--slots
-        (assoc-delete-all (ecc-session-id session) ecc-window--slots)))
+  "Forget the hidden entry SESSION had.
+The role it held needs no forgetting: it is written on the window, and
+the window goes with the buffer."
+  (let ((id (ecc-session-id session))
+        (alist (frame-parameter nil 'ecc-hidden-sessions)))
+    (dolist (layout alist)
+      (setcdr layout (assoc-delete-all id (cdr layout))))
+    (set-frame-parameter nil 'ecc-hidden-sessions alist)))
+
+;;;; Switching a window to another session (FR-WIN-1, FR-NOTIFY-2)
+
+(defun ecc-window--switch-target ()
+  "Return the window `ecc-switch-session' should change.
+The current window when it is one of ours, and `main' otherwise: a
+command run from the source code means the session one is looking at."
+  (let ((window (selected-window)))
+    (if (window-parameter window 'ecc-window-role)
+        window
+      (ecc-window--role-window 'main))))
+
+;;;###autoload
+(defun ecc-switch-session (session)
+  "Show SESSION in this window, the way clicking its tab would (FR-WIN-1).
+Which session a window shows is the user's to choose: this is the same
+choice the tab line offers, for when the tabs are not to hand."
+  (interactive (list (ecc-window-read-session "Switch to: ")))
+  (require 'ecc-session)
+  (let ((window (ecc-window--switch-target)))
+    (if (not (window-live-p window))
+        (ecc-window-select-session session)
+      (set-window-buffer window (ecc-session-ensure-buffer session))
+      (ecc-window-repair-side-windows (window-frame window))
+      (select-window window)
+      (ecc-chat-goto-prompt)
+      window)))
+
+;; The tab line changes what a window shows with `switch-to-buffer',
+;; which costs a side window its dedication; so does anything else the
+;; user does in one.  Nothing else puts it back, so this watches.
+(add-hook 'window-buffer-change-functions #'ecc-window-repair-side-windows)
 
 (provide 'ecc-window)
 

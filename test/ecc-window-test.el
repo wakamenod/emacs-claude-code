@@ -23,7 +23,7 @@ They live in different projects; the second is the most recently used."
   `(let* ((ecc-test-sent nil)
           (ecc--sessions (make-hash-table :test #'equal))
           (ecc--session-order nil)
-          (ecc-window--slots nil)
+          (ecc-window--last-sub nil)
           (ecc-window--last-source-buffer nil)
           (,first (ecc-model-create-session
                    :name "one" :project-root "/tmp/project-one/"))
@@ -62,20 +62,113 @@ They live in different projects; the second is the most recently used."
     (should (equal (ecc-session-name one) "refactor"))
     (should (equal (buffer-name (ecc-session-buffer one)) "*ecc: refactor*"))))
 
-;;;; Slots and hiding (FR-WIN-1, FR-WIN-2, FR-WIN-5)
+;;;; Roles and hiding (FR-WIN-1, FR-WIN-2, FR-WIN-5)
 
-(ert-deftest ecc-window-test-slots-are-stable ()
-  "Each session keeps the slot it was given (FR-WIN-1)."
+(defmacro ecc-window-test--with-frame (roomy &rest body)
+  "Run BODY with a frame that has room for a third window when ROOMY.
+The frame is not really resized: `set-frame-height' does not reach
+`frame-height' in batch, so the threshold is moved instead, which is
+the thing being tested anyway.  Any session window BODY opened is taken
+down again."
+  (declare (indent 1))
+  `(let ((ecc-window--last-sub nil)
+         (ecc-window-large-frame-min-height
+          (if ,roomy 1 (1+ (frame-height)))))
+     (unwind-protect (progn ,@body)
+       (dolist (window (window-list nil 'no-minibuffer))
+         (when (and (window-parameter window 'ecc-window-role)
+                    (not (eq window (frame-root-window window))))
+           (delete-window window))))))
+
+(ert-deftest ecc-window-test-a-tall-frame-has-three-roles ()
+  "A frame with the height to spare gets a third window (FR-WIN-1)."
+  (let ((ecc-window-large-frame-min-height (frame-height)))
+    (should (ecc-window-large-frame-p))
+    (should (equal (ecc-window-available-roles) '(main sub-1 sub-2))))
+  (let ((ecc-window-large-frame-min-height (1+ (frame-height))))
+    (should-not (ecc-window-large-frame-p))
+    (should (equal (ecc-window-available-roles) '(main sub-1))))
+  ;; The constant is not to be eaten by the roles that are handed out.
+  (should (equal ecc-window-roles '(main sub-1 sub-2))))
+
+(ert-deftest ecc-window-test-roles-fill-then-alternate ()
+  "Sessions fill the roles in order, then take the subs in turn (FR-WIN-1).
+Two sessions are not enough to see this: the fourth is the first one
+that has to displace somebody."
   (ecc-window-test--with-sessions one two
-    (should (= (ecc-window-slot one) 0))
-    (should (= (ecc-window-slot two) 1))
-    (should (= (ecc-window-slot one) 0))
-    ;; The prompt of a session sits next to its transcript.
-    (should (equal (alist-get 'slot (ecc-window--side-parameters
-                                     (1+ (* 2 (ecc-window-slot two)))))
-                   3))
-    (ecc-window-forget-session one)
-    (should (= (ecc-window-slot one) 2))))
+    (ecc-window-test--with-frame t
+      (let ((three (ecc-model-create-session
+                    :name "three" :project-root "/tmp/project-three/"))
+            (four (ecc-model-create-session
+                   :name "four" :project-root "/tmp/project-four/"))
+            (five (ecc-model-create-session
+                   :name "five" :project-root "/tmp/project-five/")))
+        (unwind-protect
+            (progn
+              (should (eq (ecc-window-role-for one) 'main))
+              (ecc-display-session one)
+              (should (eq (ecc-window-role-for two) 'sub-1))
+              (ecc-display-session two)
+              (should (eq (ecc-window-role-for three) 'sub-2))
+              (ecc-display-session three)
+              ;; Every role is taken now, so the subs come round in turn
+              ;; and `main' is left where it is.
+              (should (eq (ecc-window-role-for four) 'sub-1))
+              (ecc-display-session four)
+              (should (eq (ecc-window--session-role four) 'sub-1))
+              (should (eq (ecc-window-role-for five) 'sub-2))
+              (ecc-display-session five)
+              (should (eq (ecc-window--session-role five) 'sub-2))
+              ;; `main' was left alone the whole way through.
+              (should (eq (ecc-window--session-role one) 'main))
+              ;; A session already on the screen keeps the window it is in.
+              (should (eq (ecc-window-role-for one) 'main))
+              (should (eq (ecc-window-role-for four) 'sub-1)))
+          (dolist (session (list three four five))
+            (ecc-test-cleanup-session session)
+            (ecc-model-remove-session session)))))))
+
+(ert-deftest ecc-window-test-a-short-frame-keeps-to-two-windows ()
+  "Without the height for a third window the subs are all one (FR-WIN-1)."
+  (ecc-window-test--with-sessions one two
+    (ecc-window-test--with-frame nil
+      (let ((three (ecc-model-create-session
+                    :name "three" :project-root "/tmp/project-three/")))
+        (unwind-protect
+            (progn
+              (ecc-display-session one)
+              (ecc-display-session two)
+              (should (eq (ecc-window-role-for three) 'sub-1))
+              (ecc-display-session three)
+              ;; The third session took the window the second was in.
+              (should-not (ecc-window-session-visible-p two))
+              (should (ecc-window-session-visible-p three)))
+          (ecc-test-cleanup-session three)
+          (ecc-model-remove-session three))))))
+
+(ert-deftest ecc-window-test-main-is-filled-again-when-it-falls-empty ()
+  "A role nobody holds is the first one the next session takes (FR-WIN-1)."
+  (ecc-window-test--with-sessions one two
+    (ecc-window-test--with-frame t
+      (ecc-display-session one)
+      (should (eq (ecc-window--session-role one) 'main))
+      (ecc-window-hide-session one)
+      (should (eq (ecc-window-role-for two) 'main)))))
+
+(ert-deftest ecc-window-test-a-side-window-keeps-its-dedication ()
+  "Switching what a session window shows leaves it a side window (FR-WIN-1).
+`switch-to-buffer' drops the `side' dedication, and an undedicated side
+window is the next one `display-buffer' takes over."
+  (ecc-window-test--with-sessions one two
+    (ecc-window-test--with-frame t
+      (ecc-display-session one)
+      (let ((window (ecc-window--role-window 'main)))
+        (should (eq (window-dedicated-p window) 'side))
+        (with-selected-window window
+          (switch-to-buffer (ecc-session-ensure-buffer two)))
+        (should-not (window-dedicated-p window))
+        (ecc-window-repair-side-windows)
+        (should (eq (window-dedicated-p window) 'side))))))
 
 (ert-deftest ecc-window-test-hidden-list-is-per-tab ()
   "What was hidden is remembered per tab, not per Emacs (FR-WIN-5)."
@@ -115,7 +208,8 @@ They live in different projects; the second is the most recently used."
         (let ((default-directory "/tmp/project-one/"))
           (ecc-toggle))
         (should (equal hidden (list one)))
-        (should (equal (ecc-window-hidden-sessions) (list (ecc-session-id one))))
+        (should (equal (mapcar #'car (ecc-window-hidden-sessions))
+                       (list (ecc-session-id one))))
         (let ((default-directory "/tmp/project-one/"))
           (ecc-toggle))
         (should (equal shown (list one)))
@@ -236,8 +330,8 @@ They live in different projects; the second is the most recently used."
             (ecc-window-display-review review session)
             (should-not (ecc-window-session-visible-p session))
             ;; What was hidden is remembered, so `ecc-toggle' brings it back.
-            (should (member (ecc-session-id session)
-                            (ecc-window-hidden-sessions)))
+            (should (assoc (ecc-session-id session)
+                           (ecc-window-hidden-sessions)))
             (should (eq (window-buffer (selected-window)) review)))
         (kill-buffer review)
         (ecc-window-set-hidden-sessions nil)))))
@@ -267,7 +361,7 @@ An agent transcript of the same session does not count."
       (should (ecc-model-session id))
       (kill-buffer buffer)
       (should-not (ecc-model-session id))
-      (should-not (assoc id ecc-window--slots)))))
+      (should-not (assoc id (ecc-window-hidden-sessions))))))
 
 (provide 'ecc-window-test)
 
