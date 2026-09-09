@@ -37,14 +37,15 @@
   :group 'ecc)
 
 (defface ecc-markdown-code-face
-  '((((background dark) (min-colors 88)) :foreground "#af87ff")
-    (((background light) (min-colors 88)) :foreground "#8700ff")
-    (((background dark)) :foreground "brightmagenta")
-    (t :foreground "magenta"))
+  '((((background dark) (min-colors 88)) :foreground "#a5b4fc")
+    (((background light) (min-colors 88)) :foreground "#5a5fd0")
+    (((background dark)) :foreground "brightblue")
+    (t :foreground "blue"))
   "Face for code, both fenced blocks and inline spans.
-Only the foreground is set, and it is the pale violet the terminal
-client draws with (the `autoAccept\=' constant of its themes, the same
-pair `ecc-accept-edits-face\=' carries; `docs/verified.md\=', 2026-09-08).
+Only the foreground is set, and it is a pale violet leaning towards
+blue -- the violet the terminal client draws with (`autoAccept\=',
+#af87ff; `docs/verified.md\=', 2026-09-08) was too strong to read a
+sentence through, so this is lighter and cooler than that.
 A band of background behind every function name broke the line up and
 was hard to read, so there is none (2026-09-09).  Inside a fenced block
 the faces of the major mode are laid on top of this one, so code that is
