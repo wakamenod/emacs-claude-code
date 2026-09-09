@@ -20,6 +20,7 @@
 (require 'ecc-history)
 (require 'ecc-registry)
 (require 'ecc-dashboard)
+(require 'ecc-btw)
 
 (defconst ecc-test-live-options
   '(:model "haiku"
@@ -868,6 +869,58 @@ this one costs nothing."
       ;; And it draws without complaining about anything it was given.
       (should (string-match-p "Claude Code usage"
                               (ecc-usage-render answer))))))
+
+(ert-deftest ecc-test-live-btw ()
+  "A side question is answered beside a running turn (FR-BTW-1..4).
+The turn is not interrupted, the answer never reaches the transcript,
+and a follow-up carrying `history\' knows what was asked before."
+  :tags '(live)
+  (ecc-test-live-with-session session
+    (let ((ecc-btw--exchanges (make-hash-table :test #'eq))
+          (ecc-btw--inflight (make-hash-table :test #'eq)))
+      (unwind-protect
+          (progn
+            ;; Something to ask about.
+            (ecc-proc-send-prompt session "Remember the number 4271. Just say OK.")
+            (ecc-test-live-wait-for-result session)
+            (let ((turns (length (ecc-session-turns session))))
+              ;; Ask beside a turn that is running.
+              ;; Long enough that it is still going when the side
+               ;; answer lands; a short one races the answer.
+              (ecc-proc-send-prompt
+               session "Count slowly from 1 to 300, one number per line.")
+              (ecc-test-live-wait session
+                                  (lambda () (ecc-turn-children
+                                              (ecc-session-current-turn session)))
+                                  "the turn to start")
+              (ecc-btw-ask session "What number did I ask you to remember?")
+              (ecc-test-live-wait session
+                                  (lambda () (ecc-btw-exchanges session))
+                                  "the side answer")
+              ;; The answer knows the conversation, and it arrived while
+              ;; the turn was still going.
+              (let ((exchange (car (ecc-btw-exchanges session))))
+                (should-not (plist-get exchange :error))
+                (should (string-search "4271" (plist-get exchange :response))))
+              ;; The turn was never interrupted: it is still running
+              ;; with the answer already in hand, and it ends on its own.
+              (should (ecc-session-current-turn session))
+              (ecc-test-live-wait-for-result session)
+              ;; Neither the question nor the answer became a turn or a
+              ;; node of its own (FR-BTW-2).
+              (should (= (length (ecc-session-turns session)) (1+ turns)))
+              (should-not
+               (seq-find (lambda (node)
+                           (string-search "4271" (format "%s" (ecc-node-data node))))
+                         (ecc-turn-children (car (last (ecc-session-turns session)))))))
+            ;; A follow-up threads what was asked before (FR-BTW-4).
+            (ecc-btw-ask session "What did I just ask you on the side?")
+            (ecc-test-live-wait session
+                                (lambda () (cdr (ecc-btw-exchanges session)))
+                                "the second side answer")
+            (should-not (plist-get (cadr (ecc-btw-exchanges session)) :error)))
+        (when-let* ((buffer (get-buffer (ecc-btw-buffer-name session))))
+          (kill-buffer buffer))))))
 
 (provide 'ecc-live-test)
 

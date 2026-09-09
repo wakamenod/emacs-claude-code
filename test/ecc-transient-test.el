@@ -31,7 +31,10 @@
     (let* ((suffixes (ecc-transient-slash-suffixes session))
            (keys (mapcar #'car suffixes))
            (descriptions (mapcar #'cadr suffixes)))
-      (should (= (length suffixes) 2))
+      ;; The two of the session, and the /btw Emacs answers itself
+      ;; (FR-BTW-1): it is in no list the CLI sends.
+      (should (= (length suffixes) 3))
+      (should (string-search "/btw" (nth 2 descriptions)))
       ;; A key is handed out once.
       (should (equal keys (seq-uniq keys)))
       (should (string-search "/context" (nth 0 descriptions)))
