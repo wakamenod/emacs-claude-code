@@ -97,11 +97,6 @@ nothing to read (FR-CTX-1)."
     (ecc-notify-mode 1))
   (when ecc-tab-line
     (ecc-tab-line-mode 1))
-  ;; The timers that sum a conversation up cost a turn when they fire,
-  ;; so they only start once a session exists and only when the recap
-  ;; is wanted at all (FR-HINT-1, NFR-3).
-  (when ecc-recap-enabled
-    (ecc-hint-mode 1))
   (when ecc-track-source-buffer
     (ecc-track-source-buffer-mode 1)))
 

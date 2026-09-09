@@ -146,10 +146,9 @@ anything.  It is not `ecc-progress-hook\', which is about the turn.")
   sent-echoes           ; contents sent from here whose --replay echo
                         ; has not come back yet, newest first
   history-offset
-  recap-state           ; FR-HINT-1: an alist with `text' and `time' of
-                        ; the last recap, the `turn' it summed up, the
-                        ; `suggestion' the CLI last offered, and
-                        ; `awaiting' while one was asked for
+  hint-state            ; alist of what the CLI told the session about
+                        ; itself: the `suggestion' it last offered
+                        ; (FR-HINT-4)
   tmp-dir
   last-plan             ; text of the last plan reviewed (FR-PLAN-5)
   plan-files            ; the files the CLI wrote the plans of this
@@ -161,10 +160,10 @@ anything.  It is not `ecc-progress-hook\', which is about the turn.")
 
 (cl-defstruct ecc-turn
   "One prompt and everything that followed it up to the result.
-TRANSIENT marks a turn Emacs opened for something it asked on its own,
-such as the `/recap' of FR-HINT-1: the CLI answers it like any other
-prompt, but it is not part of the conversation the user is reading, so
-it is kept out of the transcript (plan section 9, item 11)."
+TRANSIENT marks a turn Emacs opened for something it asked on its own:
+the CLI answers it like any other prompt, but it is not part of the
+conversation the user is reading, so it is kept out of the
+transcript (plan section 9, item 11)."
   id start-time end-time prompt children result cost transient
   label)        ; heading of a turn nobody prompted, see
                 ; `ecc-model-aside-turn'
@@ -173,7 +172,7 @@ it is kept out of the transcript (plan section 9, item 11)."
   "One item in the transcript tree."
   id
   type          ; step | text | thinking | tool | agent | system
-                ; | permission | question | plan | recap | result | unknown
+                ; | permission | question | plan | result | unknown
   parent        ; an ecc-node or an ecc-turn
   children
   data          ; alist, the keys depend on TYPE

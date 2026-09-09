@@ -864,7 +864,7 @@ their own marks stay."
            (id (ecc-node-id node))
            (start (point))
            ;; A quoted prompt is text, not a heading with a body.
-           (prompt-p (and (memq type '(system recap))
+           (prompt-p (and (eq type 'system)
                           (eq (ecc-model-node-get node 'kind) 'prompt)))
            (foldable (not (or prompt-p (memq type '(text result)))))
            (block (and (not prompt-p) (memq type ecc-render-block-types))))
@@ -885,7 +885,7 @@ their own marks stay."
         ('agent (ecc-render--insert-agent session node depth))
         ((or 'permission 'question 'plan) (ecc-render--insert-request node depth))
         ('command (ecc-render--insert-command node depth))
-        ((or 'system 'recap) (ecc-render--insert-system node depth))
+        ('system (ecc-render--insert-system node depth))
         (_ (ecc-render--insert-unknown node depth)))
       ;; A node that put nothing in the buffer has no line to mark: the
       ;; line at point would be the draft's.
@@ -1448,8 +1448,8 @@ that the movement commands stop once per turn rather than twice."
   "Functions adding a line under the state line at the end of a transcript.
 Each is called with the session and returns a string without a final
 newline, or nil.  The modules above the renderer put what belongs at
-the end of the conversation here rather than in the turns: the recap
-of FR-HINT-1 is one such line (plan section 5.2).")
+the end of the conversation here rather than in the turns (plan
+section 5.2).")
 
 (defvar ecc-render-header-functions nil
   "Functions adding to the header line of a session buffer.

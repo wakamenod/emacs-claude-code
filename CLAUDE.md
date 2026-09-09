@@ -4,7 +4,7 @@ This repository builds `ecc`, a package that drives the Claude Code CLI from Ema
 
 ## Read these first
 
-1. `REQUIREMENTS.md` — the requirements of record (112 of them: the original 106, plus FR-OUT-15, the FR-UI pair of phase 9 and the four FR-BTW of 2026-09-09, less FR-TUI-2 which was dropped on 2026-09-06). Refer to them by id (FR-xxx-N, NFR-N).
+1. `REQUIREMENTS.md` — the requirements of record (110 of them: the original 106, plus FR-OUT-15, the FR-UI pair of phase 9 and the four FR-BTW of 2026-09-09, less FR-TUI-2 which was dropped on 2026-09-06 and the FR-HINT pair withdrawn on 2026-09-09 — the automatic `/recap`, implementation and all). Refer to them by id (FR-xxx-N, NFR-N).
 2. `IMPLEMENTATION_PLAN.md` — the implementation plan. Follow the instructions of §0 and the phase order of §7.
 3. `docs/verified.md` — CLI behaviour confirmed against the real thing. Add to it whenever something open in §10 is settled.
 4. `docs/decisions.md` — the record of findings that clash with the requirements, and what was decided.

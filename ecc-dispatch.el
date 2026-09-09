@@ -75,7 +75,7 @@ Errors are caught: an unreadable message must never stop the stream."
      (run-hook-with-args 'ecc-usage-hook session))
     ('command_lifecycle (ecc-dispatch--command-lifecycle session message))
     ('prompt_suggestion
-     (setf (alist-get 'suggestion (ecc-session-recap-state session))
+     (setf (alist-get 'suggestion (ecc-session-hint-state session))
            (alist-get 'prompt_suggestion message))
      (run-hook-with-args 'ecc-progress-hook session))
     (_ (ecc-dispatch--unknown session message nil))))
