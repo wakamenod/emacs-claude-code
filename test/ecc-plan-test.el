@@ -10,6 +10,7 @@
 (require 'ert)
 (require 'ecc-test-helpers)
 (require 'ecc-plan)
+(require 'ecc-session)
 
 (defconst ecc-plan-test--plan "# Plan\n\nCreate utils.py.\nAdd add(a, b).\nAdd sub(a, b).\n")
 
@@ -79,6 +80,73 @@
       ;; Opening again returns the same buffer.
       (should (eq (ecc-plan-open request) buffer))
       (should (equal (ecc-session-last-plan session) (ecc-plan-text request))))))
+
+(ert-deftest ecc-plan-test-file-path ()
+  "The buffer keeps the planFilePath the request carried."
+  (ecc-test-with-fake-session session
+    (let* ((request (ecc-plan-test--request session))
+           (buffer (ecc-plan-open request)))
+      (should (equal (ecc-plan-file-path request)
+                     "/Users/jun/.claude/plans/plan-do-not-implement-inherited-platypus.md"))
+      (should (buffer-live-p buffer))))
+  ;; A request without the field, or with an empty one, has no file.
+  (should-not (ecc-plan-file-path (make-ecc-request :input '((plan . "# Plan")))))
+  (should-not (ecc-plan-file-path
+               (make-ecc-request :input '((plan . "# Plan") (planFilePath . ""))))))
+
+(ert-deftest ecc-plan-test-visit-file-from-the-transcript ()
+  "RET on a plan that was answered already opens its file."
+  (let ((path (make-temp-file "ecc-plan-" nil ".md" "# Plan on disk\n")))
+    (unwind-protect
+        (ecc-test-with-fake-session session
+          (ecc-session-ensure-buffer session)
+          (let* ((request (ecc-plan-test--request session))
+                 (node (ecc-request-node request)))
+            (setf (ecc-request-input request)
+                  (cons (cons 'planFilePath path)
+                        (assq-delete-all 'planFilePath (ecc-request-input request))))
+            (ecc-plan-approve-request request)
+            (ecc-render-flush session)
+            (with-current-buffer (ecc-session-buffer session)
+              (should (ecc-render-goto-id (ecc-node-id node)))
+              (let (opened)
+                (cl-letf (((symbol-function 'find-file-other-window)
+                           (lambda (file) (setq opened file))))
+                  (ecc-session-visit))
+                (should (equal opened path))))))
+      (delete-file path))))
+
+(ert-deftest ecc-plan-test-plan-section ()
+  "The plan file is listed in the Plan section, where RET opens it.
+The path is taken from the ExitPlanMode call, so it is there after a
+resume too, where the permission request is not replayed."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (should-not (ecc-model-plan-files session))
+    (let* ((request (ecc-plan-test--request session))
+           (path (ecc-plan-file-path request)))
+      ;; The tool call alone recorded it, before the request was answered.
+      (should (equal (ecc-model-plan-files session) (list path)))
+      ;; A plan shown again names the same file and is not listed twice.
+      (ecc-model-note-plan-file session path)
+      (should (equal (ecc-model-plan-files session) (list path)))
+      (ecc-plan-approve-request request)
+      (ecc-render-flush session)
+      (with-current-buffer (ecc-session-buffer session)
+        (should (string-search "Plan (1)" (ecc-test-buffer-string)))
+        (should (string-search (abbreviate-file-name path) (ecc-test-buffer-string)))
+        (should (ecc-render-goto-id (concat "plan:" path)))
+        (should (equal (ecc-chat-plan-file-at-point) path))
+        (should-not (ecc-chat-file-at-point))
+        (let (opened)
+          (cl-letf (((symbol-function 'find-file-other-window)
+                     (lambda (file) (setq opened file))))
+            (ecc-session-visit))
+          (should (equal opened path)))
+        ;; P moves to the section from anywhere in the buffer.
+        (ecc-chat-goto-prompt)
+        (ecc-chat-goto-plans)
+        (should (equal (ecc-chat-heading-at-point) "plans"))))))
 
 (ert-deftest ecc-plan-test-approve-clean ()
   "C-c C-c on an untouched plan allows and switches to acceptEdits (FR-PLAN-4)."

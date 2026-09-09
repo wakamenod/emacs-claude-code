@@ -152,6 +152,9 @@ anything.  It is not `ecc-progress-hook\', which is about the turn.")
                         ; `awaiting' while one was asked for
   tmp-dir
   last-plan             ; text of the last plan reviewed (FR-PLAN-5)
+  plan-files            ; the files the CLI wrote the plans of this
+                        ; session to, oldest first; ExitPlanMode names
+                        ; one in `planFilePath' (FR-PLAN-1)
   stream-blocks         ; hash: "PARENT:INDEX" -> node being streamed
   node-counter          ; counters for the ids of nodes and turns; the
   turn-counter)         ; ids have to be stable, see plan 9.6
@@ -665,6 +668,22 @@ still waiting, is left out."
                          0))
                     (hash-table-values (ecc-session-files session)))
         (lambda (a b) (string< (ecc-file-entry-path a) (ecc-file-entry-path b)))))
+
+(defun ecc-model-note-plan-file (session path)
+  "Record that a plan of SESSION was written to PATH.
+The same plan revised again names the same file, so a path already
+known is not added twice.  Returns the path, or nil when there is
+none to record."
+  (when (and (stringp path) (not (string-empty-p path)))
+    (unless (member path (ecc-session-plan-files session))
+      (setf (ecc-session-plan-files session)
+            (append (ecc-session-plan-files session) (list path)))
+      (run-hook-with-args 'ecc-files-updated-hook session))
+    path))
+
+(defun ecc-model-plan-files (session)
+  "Return the plan files of SESSION, oldest first."
+  (ecc-session-plan-files session))
 
 (defun ecc-model-note-task (session id subject status)
   "Record the task ID of SESSION with SUBJECT and STATUS.

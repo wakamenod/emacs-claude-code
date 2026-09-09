@@ -60,4 +60,6 @@
       +No classes, error handling, type hints, or docstrings — keep it minimal.
       +File will live in the current working directory.
       +No tests requested; verification is a quick manual call to both functions in a Python shell.
+  Plan (1)
+    ~/.claude/plans/plan-do-not-implement-inherited-platypus.md
  

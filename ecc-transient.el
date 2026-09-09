@@ -40,6 +40,7 @@
 (declare-function ecc-review "ecc-review" (&optional session paths))
 (declare-function ecc-session-timeline "ecc-session" ())
 (declare-function ecc-chat-goto-files "ecc-chat" ())
+(declare-function ecc-chat-goto-plans "ecc-chat" ())
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-history-open "ecc-history" (session-id))
 (declare-function ecc-tui-open "ecc-tui" (&optional session))
@@ -163,6 +164,12 @@ its buffer."
   (ecc-menu--in-session #'ecc-chat-goto-files))
 
 ;;;###autoload
+(defun ecc-goto-plan ()
+  "Move to the Plan section of the session this buffer talks to."
+  (interactive)
+  (ecc-menu--in-session #'ecc-chat-goto-plans))
+
+;;;###autoload
 (defun ecc-timeline ()
   "Pick a turn of the session this buffer talks to (FR-OUT-14 d)."
   (interactive)
@@ -276,6 +283,7 @@ same suffix from one call to the next."
    ["Review"
     ("d" "Diff review" ecc-review)
     ("F" "Files" ecc-goto-files)
+    ("P" "Plan" ecc-goto-plan)
     ("T" "Timeline" ecc-timeline)]]
   ["Respond and look around"
    ["Respond"

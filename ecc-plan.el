@@ -131,6 +131,13 @@ session running in the background does not grab the window."
   "Return the plan text carried by REQUEST."
   (or (alist-get 'plan (ecc-request-input request)) ""))
 
+(defun ecc-plan-file-path (request)
+  "Return the file the CLI wrote the plan of REQUEST to, or nil.
+The ExitPlanMode input carries it as `planFilePath'; a CLI that names
+none gives nil."
+  (let ((path (alist-get 'planFilePath (ecc-request-input request))))
+    (and (stringp path) (not (string-empty-p path)) path)))
+
 (defun ecc-plan-open (request)
   "Return the buffer reviewing REQUEST, creating it if needed (FR-PLAN-1)."
   (or (ecc-plan-buffer request)

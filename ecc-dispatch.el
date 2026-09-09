@@ -417,6 +417,11 @@ what the file looks like before the call is kept for the diff."
     ;; The Files summary counts a call once its result says it happened
     ;; (a denied Write wrote nothing); the entry itself is made now so
     ;; that the state of the file before the call can be kept on it.
+    ;; ExitPlanMode names the file the CLI wrote the plan to.  It is
+    ;; taken from the tool call rather than from the permission request,
+    ;; because only the call is in the recording a resume replays.
+    (when (equal name "ExitPlanMode")
+      (ecc-model-note-plan-file session (alist-get 'planFilePath input)))
     (when-let* ((kind (cdr (assoc name ecc-dispatch-file-tools))))
       (ecc-model-note-file session (alist-get 'file_path input) nil)
       (when (memq kind '(edit write))
@@ -667,6 +672,8 @@ the patch of an Edit or a Write, the id and status of a task."
            (tool-name (alist-get 'tool_name request-object))
            (kind (ecc-dispatch--request-kind tool-name))
            (input (ecc-protocol-request-input message))
+           (_ (when (eq kind 'plan)
+                (ecc-model-note-plan-file session (alist-get 'planFilePath input))))
            (request (make-ecc-request
                      :request-id (alist-get 'request_id message)
                      :session session

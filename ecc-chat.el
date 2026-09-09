@@ -237,6 +237,7 @@ and then offers the slash commands (`ecc-chat-slash').")
     (define-key map (kbd "T") #'ecc-session-timeline)
     (define-key map (kbd "w") #'ecc-session-copy-at-point)
     (define-key map (kbd "f") #'ecc-chat-goto-files)
+    (define-key map (kbd "P") #'ecc-chat-goto-plans)
     (define-key map (kbd "?") #'ecc-menu)
     map)
   "Keymap of the transcript, put on its text as the `keymap' property.
@@ -699,6 +700,11 @@ The Files and Tasks rows are drawn without a node and give nil."
   (when-let* ((id (ecc-chat-node-id-at-point)))
     (and (string-prefix-p "file:" id) (substring id 5))))
 
+(defun ecc-chat-plan-file-at-point ()
+  "Return the path of the Plan row the point is on, or nil."
+  (when-let* ((id (ecc-chat-node-id-at-point)))
+    (and (string-prefix-p "plan:" id) (substring id 5))))
+
 (defun ecc-chat-heading-at-point ()
   "Return the id of the heading whose line the point is on, or nil."
   (get-text-property (line-beginning-position) 'ecc-heading))
@@ -883,6 +889,13 @@ and so on, the way the number keys of magit-section did."
   (unless (ecc-render-node-bounds "files")
     (user-error "No file has been touched yet"))
   (ecc-render-goto-id "files"))
+
+(defun ecc-chat-goto-plans ()
+  "Move to the Plan section, unfolding it."
+  (interactive)
+  (unless (ecc-render-node-bounds "plans")
+    (user-error "No plan of this session came with a file"))
+  (ecc-render-goto-id "plans"))
 
 (provide 'ecc-chat)
 

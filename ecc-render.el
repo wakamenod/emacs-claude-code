@@ -684,6 +684,33 @@ The folds are overlays of their own, so their order does not matter."
           (ecc-render--insert-file entry))
         (ecc-render--register "files" start (point) 0 t)))))
 
+(defun ecc-render--insert-plan-file (path)
+  "Insert the row of the plan file PATH."
+  (let ((id (concat "plan:" path))
+        (start (point)))
+    (insert "  " (ecc-render--fold-cell)
+            (propertize (abbreviate-file-name path) 'face 'ecc-tool-face)
+            "\n")
+    (ecc-render--mark start (point) id 1)
+    (ecc-render--mark-heading start id)
+    (ecc-render--register id start (point) 1 nil t)))
+
+(defun ecc-render--insert-plans (session)
+  "Insert the Plan section of SESSION, unless it made no plan file.
+The plans are listed by their file, which RET opens (FR-PLAN-1)."
+  (let ((paths (ecc-model-plan-files session)))
+    (when paths
+      (let ((start (point)))
+        (insert (ecc-render--fold-cell)
+                (propertize (format "Plan (%d)" (length paths))
+                            'face 'ecc-heading-face)
+                "\n")
+        (ecc-render--mark start (point) "plans" 0)
+        (ecc-render--mark-heading start "plans")
+        (dolist (path paths)
+          (ecc-render--insert-plan-file path))
+        (ecc-render--register "plans" start (point) 0 t)))))
+
 (defun ecc-render--task-mark (status)
   "Return the checkbox for a task with STATUS."
   (pcase status
@@ -751,8 +778,9 @@ above the renderer (plan section 1.3)."
     (and offset (> offset 0))))
 
 (defun ecc-render--insert-summaries (session)
-  "Insert the Files and the Tasks summaries of SESSION."
+  "Insert the Files, the Plan and the Tasks summaries of SESSION."
   (ecc-render--insert-files session)
+  (ecc-render--insert-plans session)
   (ecc-render--insert-tasks session))
 
 (defun ecc-render--insert-top (session)

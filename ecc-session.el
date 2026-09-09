@@ -31,6 +31,7 @@
 (declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
 (declare-function ecc-question-open "ecc-perm" (request))
 (declare-function ecc-plan-open "ecc-plan" (request))
+(declare-function ecc-plan-file-path "ecc-plan" (request))
 (declare-function ecc-review "ecc-review" (&optional session paths))
 (declare-function ecc-perm-request-at-point "ecc-perm" ())
 (declare-function ecc-window-forget-session "ecc-window" (session))
@@ -116,7 +117,7 @@ answered in (FR-PERM-5, FR-PLAN-1)."
   (interactive)
   (let* ((session (ecc-session-at-point))
          (node (ecc-chat-node-at-point))
-         (path (ecc-chat-file-at-point))
+         (path (or (ecc-chat-file-at-point) (ecc-chat-plan-file-at-point)))
          (request (and node (ecc-model-node-get node 'request)))
          (pending (and request (memq request (ecc-session-pending session)))))
     (cond
@@ -129,6 +130,14 @@ answered in (FR-PERM-5, FR-PLAN-1)."
      ((and pending (eq (ecc-node-type node) 'plan))
       (require 'ecc-plan)
       (pop-to-buffer (ecc-plan-open request)))
+     ((eq (ecc-node-type node) 'plan)
+      ;; A plan that was answered already: show the file the CLI wrote it
+      ;; to, when it named one and it is still there.
+      (require 'ecc-plan)
+      (let ((path (and request (ecc-plan-file-path request))))
+        (if (and path (file-exists-p path))
+            (find-file-other-window path)
+          (ecc-session--show-node session node))))
      (t (ecc-session--show-node session node)))))
 
 (defun ecc-session-review ()
