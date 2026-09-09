@@ -37,15 +37,19 @@
   :group 'ecc)
 
 (defface ecc-markdown-code-face
-  '((t :inherit font-lock-constant-face))
+  '((((background dark) (min-colors 88)) :foreground "#af87ff")
+    (((background light) (min-colors 88)) :foreground "#8700ff")
+    (((background dark)) :foreground "brightmagenta")
+    (t :foreground "magenta"))
   "Face for code, both fenced blocks and inline spans.
-Only the foreground is set, and it is the one the theme already gives a
-constant, which is what `markdown-mode\=' colours an inline span with as
-well.  A band of background behind every function name broke the line up
-and was hard to read, so there is none (2026-09-09).  Inside a fenced
-block the faces of the major mode are laid on top of this one, so code
-that is highlighted keeps its own colours and only what the mode leaves
-alone is coloured here.
+Only the foreground is set, and it is the pale violet the terminal
+client draws with (the `autoAccept\=' constant of its themes, the same
+pair `ecc-accept-edits-face\=' carries; `docs/verified.md\=', 2026-09-08).
+A band of background behind every function name broke the line up and
+was hard to read, so there is none (2026-09-09).  Inside a fenced block
+the faces of the major mode are laid on top of this one, so code that is
+highlighted keeps its own colours and only what the mode leaves alone is
+coloured here.
 
 The font is left alone as well, and `fixed-pitch' in particular is not
 inherited.  The transcript is already drawn in the default face, which
