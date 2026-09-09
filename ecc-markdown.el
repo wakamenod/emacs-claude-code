@@ -10,8 +10,11 @@
 
 ;; `ecc-markdown-fontify' takes the text of an assistant reply and returns
 ;; it with faces for headings, list bullets, code blocks, inline code and
-;; bold (FR-OUT-8).  The text itself is not changed, so what the model
-;; wrote is what the buffer shows and what a copy yields.
+;; bold (FR-OUT-8).  Apart from a table, the text itself is not changed,
+;; so what the model wrote is what the buffer shows and what a copy
+;; yields.  A table is the one thing that cannot be lined up with
+;; properties alone, and `ecc-table-format' redraws it; see
+;; `ecc-table.el'.
 ;;
 ;; This is deliberately small.  `markdown-mode' is not used: the session
 ;; buffer has no font lock (plan section 9, item 7), and a pure function
@@ -26,6 +29,7 @@
 
 (require 'cl-lib)
 (require 'ecc-core)
+(require 'ecc-table)
 
 (defface ecc-markdown-heading-face
   '((t :inherit bold :height 1.1))
@@ -215,13 +219,45 @@ when `ecc-markdown-highlight-code' is nil."
       (ecc-markdown--hide-markup (match-beginning 0) (+ (match-beginning 0) 2))
       (ecc-markdown--hide-markup (- (match-end 0) 2) (match-end 0)))))
 
+(defun ecc-markdown--fontify-table (start)
+  "Lay out the table beginning at START, and return where its last line does.
+START is at the beginning of the line the table opens on.  The inline
+markup of the cells is coloured first, because hiding it is what makes
+a cell narrower than the characters it holds and the layout counts what
+is drawn (see `ecc-table--width').  The table is then replaced by
+`ecc-table-format', which is the one place where fontifying changes the
+text rather than only its properties."
+  (let ((end (ecc-table-end))
+        (lines nil))
+    (save-excursion
+      (goto-char start)
+      (while (< (point) end)
+        (ecc-markdown--fontify-inline (line-beginning-position) (line-end-position))
+        (forward-line 1)))
+    (save-excursion
+      (goto-char start)
+      (while (< (point) end)
+        (push (buffer-substring (line-beginning-position) (line-end-position)) lines)
+        (forward-line 1)))
+    (let ((drawn (ecc-table-format (nreverse lines))))
+      (delete-region start end)
+      (goto-char start)
+      (insert (string-join drawn "\n"))
+      ;; The loop this returns to steps over one line, so point is left
+      ;; on the last of the lines that were put in rather than past it.
+      (goto-char (line-beginning-position))
+      (point))))
+
 (defun ecc-markdown-fontify (text)
   "Return TEXT with faces for its Markdown structure.
-The characters are left as they are; only text properties are added.
+Every character is left as it is, a table apart; the rest is text
+properties.
 The body of a fenced code block gets the faces of the major mode its
 fence names on top of `ecc-markdown-code-face' (FR-OUT-15).  Markup
 symbols are hidden by the ecc-markup invisible property when
-`ecc-markdown-hide-markup' is non-nil (FR-OUT-8)."
+`ecc-markdown-hide-markup' is non-nil (FR-OUT-8).  A pipe table is the
+one construct whose text is rewritten: `ecc-table-format' draws it with
+its columns lined up."
   (if (or (null text) (string-empty-p text))
       (or text "")
     (with-temp-buffer
@@ -252,6 +288,8 @@ symbols are hidden by the ecc-markup invisible property when
                 (goto-char start)
                 (ecc-markdown--hide-markup (point) (re-search-forward "#+" nil t)))
               (ecc-markdown--add-face start end 'ecc-markdown-heading-face))
+             ((and (not (eq ecc-table-style 'off)) (ecc-table-at-point-p))
+              (ecc-markdown--fontify-table start))
              (t
               (when (looking-at ecc-markdown-bullet-regexp)
                 (let ((bullet-start (match-beginning 1))

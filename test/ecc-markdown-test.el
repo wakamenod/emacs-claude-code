@@ -3,7 +3,9 @@
 ;;; Commentary:
 
 ;; The Markdown faces of FR-OUT-8 (plan section 8).  The text itself
-;; must come out unchanged; only faces are added.
+;; must come out unchanged; only faces are added.  A table is the one
+;; thing that is redrawn rather than coloured, and it is tested apart in
+;; `ecc-table-test'.
 
 ;;; Code:
 
@@ -29,7 +31,9 @@ block on top of `ecc-markdown-code-face' (FR-OUT-15)."
     (if (listp face) face (list face))))
 
 (ert-deftest ecc-markdown-test-text-is-unchanged ()
-  "Fontifying only adds properties (FR-OUT-8)."
+  "Fontifying only adds properties (FR-OUT-8).
+A table is the one construct whose text is rewritten, and there is none
+here; `ecc-table-test' covers that."
   (should (equal (substring-no-properties (ecc-markdown-fontify ecc-markdown-test-sample))
                  ecc-markdown-test-sample))
   (should (equal (ecc-markdown-fontify "") ""))
