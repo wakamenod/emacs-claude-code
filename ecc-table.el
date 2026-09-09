@@ -30,8 +30,12 @@
 ;; when that matters).
 ;;
 ;; Like the rest of the transcript, this counts on the buffer being drawn
-;; in a fixed-pitch font.  `ecc-table-face' is the handle for a reader
-;; whose default face is proportional: give it `:inherit fixed-pitch'.
+;; in a font whose Japanese is exactly twice as wide as its Latin.  That
+;; is the default face's business, and `ecc-table-face' is the handle for
+;; a reader whose default face is not that: name the family there.  Note
+;; that `fixed-pitch' is no answer on its own -- it names a family of its
+;; own (Courier, on a Mac) while the Japanese keeps falling back to the
+;; reader's own font, and the two are then no longer in step.
 
 ;;; Code:
 
@@ -41,9 +45,10 @@
 (defface ecc-table-face
   '((t :inherit default))
   "Face put under the whole of a table, below every other face.
-It says nothing on its own.  It is there so that a reader whose
-default face is proportional can give it `:inherit fixed-pitch' and
-have the columns line up again."
+It says nothing on its own.  It is there so that a reader whose default
+face does not draw a Japanese character exactly twice as wide as a
+Latin one can name a family here that does, and have the columns line
+up again."
   :group 'ecc)
 
 (defface ecc-table-border-face

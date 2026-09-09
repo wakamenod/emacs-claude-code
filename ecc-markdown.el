@@ -37,13 +37,23 @@
   :group 'ecc)
 
 (defface ecc-markdown-code-face
-  '((((background dark))  :inherit fixed-pitch :background "#2a2f33")
-    (((background light)) :inherit fixed-pitch :background "#eceff1")
-    (t :inherit fixed-pitch))
+  '((((background dark))  :background "#2a2f33")
+    (((background light)) :background "#eceff1")
+    (t nil))
   "Face for code, both fenced blocks and inline spans.
 Only the background is set, so that the colour the theme gives the
 text is what is read; a foreground of its own would fight whichever
-theme is in use.  A terminal that names no background gets neither."
+theme is in use.  A terminal that names no background gets neither.
+
+The font is left alone as well, and `fixed-pitch' in particular is not
+inherited.  The transcript is already drawn in the default face, which
+is where a reader has put the pair of fonts that draws a Japanese
+character exactly twice as wide as a Latin one; `fixed-pitch' names a
+family of its own (Courier, on a Mac), the Japanese of the block keeps
+falling back to the reader\='s own font, and the two are then no longer
+in step -- which is what tears a table inside a fence out of line.  A
+reader whose default face is proportional can put `:inherit
+fixed-pitch' back."
   :group 'ecc)
 
 (defface ecc-markdown-bullet-face
