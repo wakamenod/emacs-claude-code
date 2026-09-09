@@ -460,6 +460,42 @@ follow have a section to grow.  Returns the remaining lines."
                   (should (string-search "〉 List all .py files" text)))
               (kill-buffer buffer))))))))
 
+(ert-deftest ecc-render-test-subagent-starts-folded ()
+  "The body of an agent starts folded, like a tool's (FR-OUT-3)."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--replay session "subagent" "探して")
+    (let ((agent (seq-find (lambda (node) (eq (ecc-node-type node) 'agent))
+                           (hash-table-values (ecc-session-nodes session)))))
+      (should agent)
+      (with-current-buffer (ecc-session-buffer session)
+        (let ((id (ecc-node-id agent)))
+          (should (ecc-render-node-hidden-p id))
+          ;; Its heading is still there to open it with.
+          (should (ecc-render-node-bounds id))
+          (ecc-render-show-node id)
+          (should-not (ecc-render-node-hidden-p id))
+          (ecc-render-flush session)
+          (should-not (ecc-render-node-hidden-p id)))))))
+
+(ert-deftest ecc-render-test-agent-with-no-type-is-named-once ()
+  "An agent that names no type says \"Agent\", not \"Agent Agent\"."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "調べて")
+    (let* ((node (ecc-model-add-node
+                  session :id "toolu_agentless" :type 'agent
+                  :data '((name . "Task")
+                          (input . ((description . "look around"))))))
+           (heading (substring-no-properties
+                     (ecc-render--agent-heading node 0))))
+      (should (string-search "Agent · look around" heading))
+      (should-not (string-search "Agent Agent" heading))
+      ;; A type, when there is one, is still said.
+      (ecc-model-node-put node 'agent-type "Explore")
+      (should (string-search "Agent Explore"
+                             (substring-no-properties
+                              (ecc-render--agent-heading node 0)))))))
+
 ;;;; Diffs (FR-OUT-7, FR-DIFF-1)
 
 (ert-deftest ecc-render-test-edit-diff ()

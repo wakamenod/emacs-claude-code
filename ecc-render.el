@@ -69,8 +69,11 @@
   :type 'number
   :group 'ecc)
 
-(defcustom ecc-render-hidden-types '(thinking tool system unknown)
-  "Node types whose body starts collapsed (FR-OUT-3)."
+(defcustom ecc-render-hidden-types '(thinking tool agent system unknown)
+  "Node types whose body starts collapsed (FR-OUT-3).
+An agent is in the list as well: its body is a conversation of its own,
+and reading it is something one asks for rather than something the
+transcript should unroll by itself."
   :type '(repeat symbol)
   :group 'ecc)
 
@@ -1063,9 +1066,11 @@ An Edit or a Write shows its input as a diff (FR-OUT-7)."
 (defun ecc-render--agent-heading (node depth)
   "Return the heading line of the agent NODE at DEPTH."
   (let* ((input (ecc-model-node-get node 'input))
+         ;; The type is missing when the call named no `subagent_type\='
+         ;; and no task event has said one yet; the heading then says
+         ;; "Agent" alone rather than "Agent Agent".
          (agent-type (or (ecc-model-node-get node 'agent-type)
-                         (alist-get 'subagent_type input)
-                         "Agent"))
+                         (alist-get 'subagent_type input)))
          (description (or (alist-get 'description input)
                           (ecc-model-node-get node 'agent-description)
                           ""))
@@ -1088,7 +1093,7 @@ An Edit or a Write shows its input as a diff (FR-OUT-7)."
                         'ecc-fold-cell t)
             " "
             (ecc-render--icon "Agent")
-            (propertize (format "Agent %s" agent-type)
+            (propertize (if agent-type (format "Agent %s" agent-type) "Agent")
                         'face (if error-p 'ecc-error-face 'ecc-tool-face))
             (propertize
              (concat (if (string-empty-p (ecc-render--one-line description))
