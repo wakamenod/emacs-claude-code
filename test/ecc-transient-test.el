@@ -43,7 +43,12 @@
       (should (string-search "[terminal UI]" (nth 1 descriptions)))
       (should-not (string-search "terminal UI" (nth 0 descriptions)))
       (dolist (suffix suffixes)
-        (should (commandp (nth 2 suffix)))))))
+        (should (commandp (nth 2 suffix)))))
+    ;; Hidden unless kept: the menu shows what the completion shows.
+    (let* ((ecc-prompt-kept-terminal-commands nil)
+           (descriptions (mapcar #'cadr (ecc-transient-slash-suffixes session))))
+      (should-not (seq-some (lambda (d) (string-search "/doctor" d)) descriptions))
+      (should (seq-some (lambda (d) (string-search "/context" d)) descriptions)))))
 
 (ert-deftest ecc-transient-test-slash-command-sends ()
   "Picking a slash command sends it to the session at hand (NFR-10)."

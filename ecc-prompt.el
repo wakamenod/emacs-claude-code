@@ -111,10 +111,42 @@ not answered yet."
   "Commands taken to belong to the terminal client until the CLI says otherwise.
 The real list is `terminal_slash_commands' of system/init, but init does
 not arrive until the first turn of a session has been sent
-\(docs/verified.md), so a session that has not spoken yet would have no
-annotation to show (FR-INP-4).  Whatever init reports replaces this for
+\(docs/verified.md), so a session that has not spoken yet would have
+nothing to go on (FR-INP-4).  Whatever init reports replaces this for
 the rest of the Emacs session, so the list here only has to be right
-about a brand new session."
+about a brand new session.
+
+These are the commands the CLI marks `terminalOriented' and hands to a
+headless client, measured against 2.1.266 (docs/verified.md).  The list
+is now hidden as well as annotated, so a name that does not belong here
+costs a command."
+  :type '(repeat string)
+  :group 'ecc)
+
+(defcustom ecc-prompt-hide-terminal-commands t
+  "Non-nil keeps the terminal-only commands out of the candidates (FR-INP-4).
+The CLI names them in `terminal_slash_commands' of system/init and says
+of that field: \"Subset of slash_commands whose UX is bound to the
+local terminal (e.g. exit, statusline).  Phone/remote UIs should hide
+these from command menus; desktop surfaces may keep them.\"  Emacs is
+one of the remote UIs, so it hides them.
+
+Only the menus are affected -- completion, the question `/' asks and
+the transient menu.  A command typed out by hand is still sent, and its
+answer still drawn (FR-INP-2); `ecc-prompt-warn-terminal-commands' is
+what says not to expect anything of it.  Nil offers them all again."
+  :type 'boolean
+  :group 'ecc)
+
+(defcustom ecc-prompt-kept-terminal-commands '("/reload-plugins" "/doctor")
+  "Terminal-only commands offered all the same (FR-INP-4).
+A command the CLI calls terminal-oriented can still be worth having
+here.  `/reload-plugins' makes the CLI resend its command list
+\(system/commands_changed), which is Emacs's own completion being
+brought up to date, so hiding it would take away something that works
+\(docs/verified.md, 2026-09-06).  `/doctor' health-checks the setup and
+answers in plain text, which reads here as well as anywhere.  Names
+carry their slash."
   :type '(repeat string)
   :group 'ecc)
 
@@ -377,6 +409,26 @@ that `ecc-terminal-slash-commands'."
                       ecc-terminal-slash-commands))))
     (mapcar (lambda (name) (concat "/" name))
             (seq-filter #'stringp names))))
+
+(defun ecc-prompt-hidden-commands (session)
+  "Return the commands of SESSION kept out of the menus (FR-INP-4).
+The terminal-only ones the CLI named, less those
+`ecc-prompt-kept-terminal-commands' asks for anyway."
+  (when ecc-prompt-hide-terminal-commands
+    (seq-remove (lambda (name)
+                  (member name ecc-prompt-kept-terminal-commands))
+                (ecc-prompt-terminal-commands session))))
+
+(defun ecc-prompt-offered-commands (session)
+  "Return the slash commands of SESSION worth offering (FR-INP-3, FR-INP-4).
+`ecc-prompt-commands' is everything the CLI knows about, which is what
+a description is looked up in; this is what the menus show, and it
+leaves out `ecc-prompt-hidden-commands'."
+  (let ((hidden (ecc-prompt-hidden-commands session)))
+    (if (null hidden)
+        (ecc-prompt-commands session)
+      (seq-remove (lambda (command) (member (car command) hidden))
+                  (ecc-prompt-commands session)))))
 
 (defun ecc-prompt-command-name (text)
   "Return the slash command TEXT starts with, or nil."
@@ -726,10 +778,12 @@ run -- so this is for the completion, not for the sending."
 (defun ecc-prompt-capf ()
   "Complete a slash command at point (FR-INP-3, FR-INP-4).
 A word that starts with a slash is completed wherever it stands in the
-prompt region, as the terminal client does (`ecc-prompt-command-bounds\=')."
+prompt region, as the terminal client does (`ecc-prompt-command-bounds\=').
+What is offered leaves the terminal-only commands out
+\(`ecc-prompt-offered-commands\=')."
   (when-let* ((session ecc-render--session)
               (bounds (ecc-prompt-command-bounds)))
-    (let ((commands (ecc-prompt-commands session)))
+    (let ((commands (ecc-prompt-offered-commands session)))
       (list (car bounds) (cdr bounds) (mapcar #'car commands)
             :exclusive 'no
             :annotation-function
@@ -740,8 +794,9 @@ prompt region, as the terminal client does (`ecc-prompt-command-bounds\=')."
   "Ask which slash command of SESSION is meant, and return it, or nil.
 The name is returned with its slash.  Nil is the answer when nothing
 was chosen -- an empty answer, a bare slash, or a `C-g\=' -- which leaves
-the slash that was typed alone (FR-INP-3)."
-  (let* ((commands (ecc-prompt-commands session))
+the slash that was typed alone (FR-INP-3).  The terminal-only commands
+are not offered, but one typed out by hand is still accepted."
+  (let* ((commands (ecc-prompt-offered-commands session))
          (annotate (ecc-prompt--annotator
                     commands (ecc-prompt-terminal-commands session)))
          (table (lambda (string predicate action)

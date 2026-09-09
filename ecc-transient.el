@@ -218,7 +218,7 @@ same suffix from one call to the next."
 (defun ecc-transient-slash-suffixes (&optional session)
   "Return the suffix specifications for the slash commands of SESSION."
   (let* ((session (or session (ecc-menu-session)))
-         (commands (ecc-prompt-commands session))
+         (commands (ecc-prompt-offered-commands session))
          (terminal (ecc-prompt-terminal-commands session))
          (limit (length ecc-transient--keys)))
     (seq-map-indexed
@@ -237,7 +237,7 @@ same suffix from one call to the next."
   "Send the slash command NAME, chosen with completion (FR-INP-2, 3)."
   (interactive
    (let* ((session (ecc-window-resolve-session))
-          (commands (ecc-prompt-commands session)))
+          (commands (ecc-prompt-offered-commands session)))
      (list (completing-read "Slash command: " (mapcar #'car commands) nil nil "/"))))
   (funcall (ecc-transient-slash-command name)))
 

@@ -226,7 +226,7 @@ slash inside a word -- a path, a URL -- alone."
                                              (cdr (funcall collection "" nil 'metadata)))))
                    nil)))
         (ecc-prompt-read-command session))
-      (should (string-search "terminal UI" (funcall annotate "/doctor")))
+      (should (string-search "terminal UI" (funcall annotate "/reload-plugins")))
       (should (string-search "Show context usage" (funcall annotate "/context"))))))
 
 
@@ -236,22 +236,25 @@ slash inside a word -- a path, a URL -- alone."
   "Give SESSION the command lists a system/init message carries."
   (setf (ecc-session-commands session)
         [((name . "context") (description . "Show context usage") (argumentHint . ""))
-         ((name . "doctor") (description . "Check the installation") (argumentHint . ""))])
+         ((name . "doctor") (description . "Check the installation") (argumentHint . ""))
+         ((name . "reload-plugins") (description . "Activate plugin changes")
+          (argumentHint . ""))])
   (setf (ecc-session-init session)
-        '((slash_commands . ["context" "doctor" "model"])
-          (terminal_slash_commands . ["doctor" "color"]))))
+        '((slash_commands . ["context" "doctor" "model" "reload-plugins" "color"])
+          (terminal_slash_commands . ["doctor" "color" "reload-plugins"]))))
 
 (ert-deftest ecc-prompt-test-terminal-commands ()
   "A command only the terminal client runs says so (FR-INP-4)."
   (ecc-test-with-fake-session session
     (ecc-prompt-test--init session)
     (ecc-prompt-note-terminal-commands session)
-    (should (equal (ecc-prompt-terminal-commands session) '("/doctor" "/color")))
+    (should (equal (ecc-prompt-terminal-commands session)
+                   '("/doctor" "/color" "/reload-plugins")))
     (ecc-prompt-test--in-buffer session
-      (insert "/do")
+      (insert "/re")
       (let* ((capf (ecc-prompt-capf))
              (annotate (plist-get (nthcdr 3 capf) :annotation-function)))
-        (should (string-search "terminal UI" (funcall annotate "/doctor")))
+        (should (string-search "terminal UI" (funcall annotate "/reload-plugins")))
         (should-not (string-search "terminal UI" (funcall annotate "/context")))))
     ;; It is still sent: the CLI answers it with a message of its own.
     (let ((messages nil))
@@ -259,6 +262,77 @@ slash inside a word -- a path, a URL -- alone."
                  (lambda (format &rest args) (push (apply #'format format args) messages))))
         (should (equal (ecc-prompt-prepare-command session "/doctor") "/doctor")))
       (should (string-search "terminal UI" (car (last messages)))))))
+
+(ert-deftest ecc-prompt-test-terminal-commands-are-not-offered ()
+  "The commands bound to the terminal stay out of the menus (FR-INP-4).
+The CLI says of `terminal_slash_commands\=' that a remote UI should hide
+them from its command menus, and Emacs is one."
+  (ecc-test-with-fake-session session
+    (ecc-prompt-test--init session)
+    (ecc-prompt-note-terminal-commands session)
+    (let ((offered (mapcar #'car (ecc-prompt-offered-commands session))))
+      (should-not (member "/color" offered))
+      (should (member "/context" offered))
+      ;; What the CLI knows is unchanged; only what is offered shrank.
+      (should (member "/color" (mapcar #'car (ecc-prompt-commands session)))))
+    (ecc-prompt-test--in-buffer session
+      (insert "/co")
+      (let ((candidates (nth 2 (ecc-prompt-capf))))
+        (should-not (member "/color" candidates))
+        (should (member "/context" candidates)))
+      ;; The question `/\=' asks does not offer them either.
+      (ecc-prompt-clear)
+      (ecc-prompt-test--reading-command "/context" asked
+        (ecc-chat-slash 1)
+        (should-not (member "/color" (cdar asked)))
+        (should (member "/context" (cdar asked)))))))
+
+(ert-deftest ecc-prompt-test-a-kept-terminal-command-is-offered ()
+  "A terminal command worth having is offered, and still marked (FR-INP-4).
+`/reload-plugins\=' makes the CLI resend its command list, which is what
+keeps the completion of Emacs current, and `/doctor\=' answers in plain
+text; hiding either would take away something that works here."
+  (ecc-test-with-fake-session session
+    (ecc-prompt-test--init session)
+    (ecc-prompt-note-terminal-commands session)
+    (let ((offered (mapcar #'car (ecc-prompt-offered-commands session))))
+      (should (member "/reload-plugins" offered))
+      (should (member "/doctor" offered)))
+    ;; Emptying the exception list hides them like the rest.
+    (let* ((ecc-prompt-kept-terminal-commands nil)
+           (offered (mapcar #'car (ecc-prompt-offered-commands session))))
+      (should-not (member "/reload-plugins" offered))
+      (should-not (member "/doctor" offered)))))
+
+(ert-deftest ecc-prompt-test-hiding-can-be-turned-off ()
+  "With the setting off every command the CLI named is offered (FR-INP-4)."
+  (ecc-test-with-fake-session session
+    (ecc-prompt-test--init session)
+    (ecc-prompt-note-terminal-commands session)
+    (let ((ecc-prompt-hide-terminal-commands nil))
+      (should-not (ecc-prompt-hidden-commands session))
+      (should (equal (ecc-prompt-offered-commands session)
+                     (ecc-prompt-commands session)))
+      (should (member "/color"
+                      (mapcar #'car (ecc-prompt-offered-commands session)))))))
+
+(ert-deftest ecc-prompt-test-a-hidden-command-is-still-sent ()
+  "Hiding a command from the menus does not stop it being sent (FR-INP-2).
+What is terminal-only is the effect, not the sending: the CLI answers
+it, and the answer is drawn.  Only the menus leave it out."
+  (ecc-test-with-fake-session session
+    (ecc-prompt-test--init session)
+    (ecc-prompt-note-terminal-commands session)
+    (let ((messages nil))
+      (cl-letf (((symbol-function 'message)
+                 (lambda (format &rest args) (push (apply #'format format args) messages))))
+        (should (equal (ecc-prompt-prepare-command session "/color red")
+                       "/color red")))
+      (should (string-search "terminal UI" (car (last messages)))))
+    (ecc-prompt-test--in-buffer session
+      (insert "/color red")
+      (ecc-prompt-send))
+    (should (equal (ecc-test-sent-text 0) "/color red"))))
 
 (ert-deftest ecc-prompt-test-terminal-commands-before-init ()
   "The annotation is there before the first turn, too (FR-INP-4).
