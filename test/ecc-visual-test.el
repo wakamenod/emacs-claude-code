@@ -189,6 +189,32 @@
   (let ((ecc-visual-enable-icons nil))
     (should (equal (ecc-visual-icon "Bash") ""))))
 
+(ert-deftest ecc-visual-test-icon-carries-the-face-of-its-group ()
+  "An icon is drawn in the face of its group, which gives it a background."
+  (let ((ecc-visual-enable-icons t)
+        (ecc-visual--nerd-icons nil))
+    (should (eq (ecc-visual-icon-face "Bash") 'ecc-icon-shell-face))
+    (should (eq (ecc-visual-icon-face "Read") 'ecc-icon-read-face))
+    ;; A tool nobody listed still gets a badge, in the plain one.
+    (should (eq (ecc-visual-icon-face "NoSuchTool") 'ecc-icon-face))
+    (should (eq (ecc-visual-icon-face nil) 'ecc-icon-face))
+    (should (eq (get-text-property 0 'face (ecc-visual-icon "Bash"))
+                'ecc-icon-shell-face))
+    ;; Every group names a background, so that the badge reads as one.
+    (dolist (face (cons 'ecc-icon-face
+                        (mapcar #'cdr ecc-visual-icon-face-alist)))
+      (should (facep face)))))
+
+(ert-deftest ecc-visual-test-icon-badge-covers-the-space-after-it ()
+  "The space that follows an icon is in its face, so the badge is two wide."
+  (let ((ecc-visual-enable-icons t)
+        (ecc-visual--nerd-icons nil))
+    (let ((badge (ecc-render--icon "Bash")))
+      (should (equal badge "$ "))
+      (should (eq (get-text-property 1 'face badge) 'ecc-icon-shell-face)))
+    (let ((ecc-visual-enable-icons nil))
+      (should (equal (ecc-render--icon "Bash") "")))))
+
 ;;;; What the renderer does with them
 
 (ert-deftest ecc-visual-test-render-puts-an-icon-in-a-tool-heading ()

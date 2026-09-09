@@ -304,6 +304,38 @@ what every other display gets."
 (defconst ecc-visual-default-icon '("nf-cod-tools" . "·")
   "Icon for a tool that is not in `ecc-visual-icon-alist'.")
 
+(defcustom ecc-visual-icon-face-alist
+  '(("Read" . ecc-icon-read-face)
+    ("NotebookRead" . ecc-icon-read-face)
+    ("Write" . ecc-icon-write-face)
+    ("Edit" . ecc-icon-write-face)
+    ("NotebookEdit" . ecc-icon-write-face)
+    ("Bash" . ecc-icon-shell-face)
+    ("BashOutput" . ecc-icon-shell-face)
+    ("KillShell" . ecc-icon-shell-face)
+    ("Glob" . ecc-icon-search-face)
+    ("Grep" . ecc-icon-search-face)
+    ("Task" . ecc-icon-agent-face)
+    ("Agent" . ecc-icon-agent-face)
+    ("WebFetch" . ecc-icon-web-face)
+    ("WebSearch" . ecc-icon-web-face)
+    ("TodoWrite" . ecc-icon-task-face)
+    ("ExitPlanMode" . ecc-icon-task-face)
+    ("AskUserQuestion" . ecc-icon-task-face)
+    ("Skill" . ecc-icon-task-face))
+  "Face the icon of each tool is drawn in: (TOOL-NAME . FACE).
+The faces carry a background as well as a foreground, so that the icon
+reads as a small badge.  A tool that is named here but not in
+`ecc-visual-icon-alist' still gets the colour of its group; one that is
+in neither gets `ecc-icon-face'."
+  :type '(alist :key-type string :value-type face)
+  :group 'ecc)
+
+(defun ecc-visual-icon-face (tool-name)
+  "Return the face the icon of TOOL-NAME is drawn in."
+  (or (cdr (assoc (or tool-name "") ecc-visual-icon-face-alist))
+      'ecc-icon-face))
+
 (declare-function nerd-icons-codicon "nerd-icons" (name &rest args))
 
 (defvar ecc-visual--nerd-icons 'unknown
@@ -319,16 +351,19 @@ what every other display gets."
 (defun ecc-visual-icon (tool-name)
   "Return the icon of TOOL-NAME, or the empty string when icons are off.
 A nerd icon is used when the font is there and an ASCII stand-in when
-it is not, so the transcript reads the same either way (FR-OUT-11 d)."
+it is not, so the transcript reads the same either way (FR-OUT-11 d).
+Either one is drawn in the face of its group (`ecc-visual-icon-face\='),
+which gives it a background of its own."
   (if (not ecc-visual-enable-icons)
       ""
     (let* ((entry (or (cdr (assoc (or tool-name "") ecc-visual-icon-alist))
                       ecc-visual-default-icon))
+           (face (ecc-visual-icon-face tool-name))
            (glyph (and (ecc-visual-nerd-icons-p)
                        (condition-case nil
-                           (nerd-icons-codicon (car entry))
+                           (nerd-icons-codicon (car entry) :face face)
                          (error nil)))))
-      (or glyph (cdr entry)))))
+      (or glyph (propertize (cdr entry) 'face face)))))
 
 (provide 'ecc-visual)
 

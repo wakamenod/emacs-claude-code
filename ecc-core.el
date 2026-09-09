@@ -305,6 +305,75 @@ own, so that the eye finds where a turn begins."
   "Face for a failed tool call or a dispatch error."
   :group 'ecc)
 
+;; The icon that opens a tool heading is drawn as a small badge: the
+;; colour says what kind of work the tool does, so that a Bash is told
+;; from a Read before the name is read.  The background is kept close to
+;; the background of the frame, so that a screenful of them stays quiet;
+;; a display with few colours gets the foreground alone.
+
+(defface ecc-icon-face
+  '((((background dark) (min-colors 88)) :foreground "#b0b6c0" :background "#26292e")
+    (((background light) (min-colors 88)) :foreground "#555b66" :background "#ebedf0")
+    (t :inherit shadow))
+  "Face of the icon of a tool that falls in no other group."
+  :group 'ecc)
+
+(defface ecc-icon-read-face
+  '((((background dark) (min-colors 88)) :foreground "#8ab4f8" :background "#1e2a3a")
+    (((background light) (min-colors 88)) :foreground "#1a5fb4" :background "#dce8f8")
+    (((background dark)) :foreground "brightblue")
+    (t :foreground "blue"))
+  "Face of the icon of a tool that reads."
+  :group 'ecc)
+
+(defface ecc-icon-write-face
+  '((((background dark) (min-colors 88)) :foreground "#8fd18f" :background "#1f2e1f")
+    (((background light) (min-colors 88)) :foreground "#1c7430" :background "#dff0dd")
+    (((background dark)) :foreground "brightgreen")
+    (t :foreground "green"))
+  "Face of the icon of a tool that writes a file."
+  :group 'ecc)
+
+(defface ecc-icon-shell-face
+  '((((background dark) (min-colors 88)) :foreground "#c9a0ff" :background "#2a2338")
+    (((background light) (min-colors 88)) :foreground "#6b3fa0" :background "#ece2f8")
+    (((background dark)) :foreground "brightmagenta")
+    (t :foreground "magenta"))
+  "Face of the icon of a tool that runs a command."
+  :group 'ecc)
+
+(defface ecc-icon-search-face
+  '((((background dark) (min-colors 88)) :foreground "#e8c66a" :background "#302a1c")
+    (((background light) (min-colors 88)) :foreground "#8a6100" :background "#f6ecd2")
+    (((background dark)) :foreground "brightyellow")
+    (t :foreground "yellow"))
+  "Face of the icon of a tool that searches."
+  :group 'ecc)
+
+(defface ecc-icon-agent-face
+  '((((background dark) (min-colors 88)) :foreground "#f08ac0" :background "#33202c")
+    (((background light) (min-colors 88)) :foreground "#a3216e" :background "#fadfec")
+    (((background dark)) :foreground "brightmagenta")
+    (t :foreground "magenta"))
+  "Face of the icon of a tool that hands the work to an agent."
+  :group 'ecc)
+
+(defface ecc-icon-web-face
+  '((((background dark) (min-colors 88)) :foreground "#6fc9c9" :background "#1b2e2e")
+    (((background light) (min-colors 88)) :foreground "#16706f" :background "#d8f0ef")
+    (((background dark)) :foreground "brightcyan")
+    (t :foreground "cyan"))
+  "Face of the icon of a tool that goes out to the network."
+  :group 'ecc)
+
+(defface ecc-icon-task-face
+  '((((background dark) (min-colors 88)) :foreground "#f0a06a" :background "#33261c")
+    (((background light) (min-colors 88)) :foreground "#a35316" :background "#fbe6d5")
+    (((background dark)) :foreground "brightred")
+    (t :foreground "red"))
+  "Face of the icon of a tool that plans or asks."
+  :group 'ecc)
+
 (defface ecc-pending-face
   '((t :inherit warning))
   "Face for a request that is waiting for an answer."

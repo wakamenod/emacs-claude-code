@@ -827,9 +827,13 @@ An empty thinking block is all signature and no text."
         (string-empty-p (string-trim (or (ecc-model-node-get node 'text) ""))))))
 
 (defun ecc-render--icon (tool-name)
-  "Return the icon of TOOL-NAME with the space that follows it, or nothing."
+  "Return the icon of TOOL-NAME with the space that follows it, or nothing.
+The space is drawn in the face of the icon as well, so that the badge
+is two columns wide and does not sit tight against the tool name."
   (let ((icon (ecc-visual-icon tool-name)))
-    (if (string-empty-p icon) "" (concat icon " "))))
+    (if (string-empty-p icon)
+        ""
+      (concat icon (propertize " " 'face (ecc-visual-icon-face tool-name))))))
 
 (defun ecc-render--status-mark (status)
   "Return the one character mark for STATUS."
