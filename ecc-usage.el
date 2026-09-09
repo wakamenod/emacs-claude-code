@@ -38,7 +38,7 @@
 (require 'ecc-model)
 (require 'ecc-proc)
 
-(declare-function ecc-dashboard-session-at-point "ecc-dashboard" (&optional open))
+(declare-function ecc-dashboard-session-at-point "ecc-dashboard" ())
 
 ;; posframe is not a dependency of this package: without it, and on a
 ;; frame that cannot carry a child frame, the buffer goes in a window.

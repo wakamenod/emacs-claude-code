@@ -375,7 +375,7 @@ before it, nor what it printed was said to the model (FR-HIST-2)."
 Only the keys a line actually carries are set, so that INFO can be
 built from the first lines of a file and then from the last ones, the
 later value winning (plan section 6.7).  The keys are `session-id',
-`cwd', `title', `prompt', `cost' and `time'."
+`cwd', `title', `prompt', `cost', `model' and `time'."
   (condition-case nil
       (let* ((object (ecc--json-read line))
              (type (and (consp object) (alist-get 'type object)))
@@ -387,7 +387,13 @@ later value winning (plan section 6.7).  The keys are `session-id',
           (pcase type
             ("ai-title" (funcall set 'title (alist-get 'aiTitle object)))
             ("cost-state" (funcall set 'cost (alist-get 'totalCostUSD object)))
-            ("user" (funcall set 'prompt (ecc-protocol-history-prompt object)))))
+            ("user" (funcall set 'prompt (ecc-protocol-history-prompt object)))
+            ;; The model of the last real answer is the one a resume
+            ;; would carry on with; a synthetic reply names none.
+            ("assistant" (unless (ecc-protocol-synthetic-p object)
+                           (funcall set 'model
+                                    (alist-get 'model
+                                               (alist-get 'message object)))))))
         info)
     (error info)))
 

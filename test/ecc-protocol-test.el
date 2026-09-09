@@ -351,6 +351,23 @@ that parsed values can be echoed back unchanged."
       (should-not (assq 'work_secret request))
       (should-not (assq 'reattach_session_id request)))))
 
+(ert-deftest ecc-protocol-test-parses-the-agent-list ()
+  "The answer of `claude agents --json' is read as recorded.
+The dashboard no longer asks for it, but a live test still compares it
+against what the registry says."
+  (let* ((output (with-temp-buffer
+                   (insert-file-contents
+                    (expand-file-name "fixtures/agents.json" ecc-test-directory))
+                   (buffer-string)))
+         (agents (ecc-protocol-parse-agents output)))
+    (should (= 4 (length agents)))
+    (should (equal "emacs-gravity-a6" (alist-get 'name (car agents))))
+    (should (equal "idle" (alist-get 'status (car agents))))
+    (should (alist-get 'pid (car agents)))
+    ;; A CLI that does not know the subcommand prints something else.
+    (should-not (ecc-protocol-parse-agents "unknown command\n"))
+    (should-not (ecc-protocol-parse-agents ""))))
+
 (provide 'ecc-protocol-test)
 
 ;;; ecc-protocol-test.el ends here
