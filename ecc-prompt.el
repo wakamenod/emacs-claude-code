@@ -60,7 +60,8 @@ old conversation readable again."
   '(("/model" . ecc-prompt-model-candidates)
     ("/effort" . ecc-prompt-effort-candidates)
     ("/permissions" . nil)
-    ("/config" . nil))
+    ("/config" . nil)
+    ("/btw" . nil))
   "Slash commands whose argument the CLI does not spell out (FR-INP-5).
 Each entry is a command name and where the argument comes from: a list
 of candidates, a function called with the session that returns one, or
@@ -318,10 +319,21 @@ moment is added to it (`ecc-prompt-current-argument\=')."
         (string-trim (format "%s (currently %s)" description current))
       description)))
 
+(defcustom ecc-prompt-local-commands
+  '(("/btw" . "Ask a side question without interrupting the running turn"))
+  "Commands Emacs offers that the CLI does not name.
+They are added to the list `ecc-prompt-commands\' returns, after
+everything the CLI reported.  `/btw\' is one: the terminal client
+catches it in its input layer, so it is in no list the CLI sends, and
+Emacs answers it itself (FR-BTW-1)."
+  :type '(alist :key-type string :value-type string)
+  :group 'ecc)
+
 (defun ecc-prompt-commands (session)
   "Return the slash commands of SESSION as an alist of name and description.
 The initialize response is the better source because it carries a
-description; the command list of system/init fills in the rest."
+description; the command list of system/init fills in the rest, and
+`ecc-prompt-local-commands\' adds what Emacs answers on its own."
   (let ((commands nil))
     (seq-doseq (command (or (ecc-session-commands session) []))
       (let ((name (alist-get 'name command)))
@@ -332,6 +344,9 @@ description; the command list of system/init fills in the rest."
     (seq-doseq (name (or (alist-get 'slash_commands (ecc-session-init session)) []))
       (when (and (stringp name) (not (assoc (concat "/" name) commands)))
         (push (cons (concat "/" name) "") commands)))
+    (dolist (command ecc-prompt-local-commands)
+      (unless (assoc (car command) commands)
+        (push command commands)))
     (nreverse commands)))
 
 (defvar ecc-prompt--terminal-commands nil
@@ -816,14 +831,35 @@ sees of it, and a `@region' that expanded to nothing is worth more
      (format "; %s had nothing to send and went as it stands"
              (mapconcat #'identity ecc-prompt-last-skipped ", ")))))
 
-(defun ecc-prompt-send ()
+(defvar ecc-prompt-intercept-functions nil
+  "Functions given a session and a draft before the draft is sent.
+The first one to return non-nil takes the draft: nothing is sent to the
+CLI, and `ecc-prompt-send\' returns `intercepted\'.  The draft is
+emptied and remembered either way, so that a typo can be brought back
+with \\[ecc-prompt-history-previous].
+
+Only a draft the CLI is not meant to see belongs here.  The side
+question of FR-BTW-1 is the one there is: `/btw\' is not a slash
+command, and sending it would put it in the conversation it is supposed
+to be asked beside.")
+
+(cl-defun ecc-prompt-send ()
   "Send the prompt region, or queue it while a turn runs (FR-INP-1, 6).
-The region is emptied either way; what was sent goes into the history."
+A draft one of `ecc-prompt-intercept-functions\' takes is not sent at
+all (FR-BTW-1).  The region is emptied either way; what was sent goes
+into the history."
   (interactive)
   (let* ((session (ecc-prompt-session))
          (raw (string-trim (ecc-chat-draft))))
     (when (string-empty-p raw)
       (user-error "Prompt is empty"))
+    (when (run-hook-with-args-until-success
+           'ecc-prompt-intercept-functions session raw)
+      (ecc-prompt-history-add raw)
+      (setq ecc-prompt--history-index nil
+            ecc-prompt--history-draft nil)
+      (ecc-chat-clear-draft)
+      (cl-return-from ecc-prompt-send 'intercepted))
     (let* ((source (ecc-window-last-source-buffer))
            (text (ecc-prompt-prepare-text session raw source
                                           (ecc-prompt-attach-context-p)))

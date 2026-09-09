@@ -196,8 +196,14 @@ same suffix from one call to the next."
                    (argument (when (ecc-prompt-interactive-command-p session name)
                                (ecc-prompt-read-argument name session)))
                    (text (if argument (concat name " " argument) name)))
-              (ecc-proc-send-prompt session text)
-              (message "Sent %s to %s" text (ecc-session-name session))))
+              ;; The menu is another way to run what the prompt region
+              ;; runs, so a command Emacs answers itself -- /btw of
+              ;; FR-BTW-1 -- must not be sent from here either.
+              (if (run-hook-with-args-until-success
+                   'ecc-prompt-intercept-functions session text)
+                  (message "%s was answered by Emacs" name)
+                (ecc-proc-send-prompt session text)
+                (message "Sent %s to %s" text (ecc-session-name session)))))
           (format "Send the slash command %s to the session at hand." name))
         (puthash name symbol ecc-transient--slash-commands)
         symbol)))
