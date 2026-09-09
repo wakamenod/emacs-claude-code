@@ -108,6 +108,12 @@
                         ; CLI reports it on every one and a `/model'
                         ; changes it mid-session (FR-HINT-3)
   commands              ; commands from the initialize response
+  models                ; models from the initialize response: what
+                        ; /model may be given, and the name the
+                        ; terminal client shows for each
+  last-effort           ; effort level of the last `/effort' sent from
+                        ; here; nothing in the stream reports one
+                        ; (docs/verified.md, FR-INP-5)
   permission-mode
   remote-control        ; alist of what the CLI said about Remote
                         ; Control: `available', `auto-enable',

@@ -160,6 +160,155 @@ failing that to the setting."
         (should (equal (ecc-prompt-terminal-commands fresh)
                        '("/doctor" "/color" "/reload-plugins")))))))
 
+(defconst ecc-prompt-test--models
+  [((value . "default") (resolvedModel . "claude-sonnet-5")
+    (displayName . "Default (recommended)")
+    (description . "Sonnet 5 \u00b7 Efficient for routine tasks"))
+   ((value . "opus") (resolvedModel . "claude-opus-5")
+    (displayName . "Opus")
+    (description . "Opus 5 \u00b7 Best for everyday, complex tasks"))
+   ((value . "haiku") (resolvedModel . "claude-haiku-4-5-20251001")
+    (displayName . "Haiku")
+    (description . "Haiku 4.5 \u00b7 Fastest for quick answers"))]
+  "The `models' array of an initialize response, cut down.")
+
+(ert-deftest ecc-prompt-test-models-come-from-the-initialize-answer ()
+  "/model offers what the CLI says it may be given (FR-INP-5)."
+  (ecc-test-with-fake-session session
+    ;; Until the answer arrives there is only the setting.
+    (let ((ecc-model-candidates '("default" "opus")))
+      (should (equal (ecc-prompt-model-candidates session) '("default" "opus"))))
+    (ecc-dispatch session
+                  `((type . "control_response")
+                    (response . ((subtype . "success")
+                                 (request_id . "r1")
+                                 (response . ((models . ,ecc-prompt-test--models)))))))
+    (should (equal (ecc-session-models session) ecc-prompt-test--models))
+    (should (equal (ecc-prompt-model-candidates session)
+                   '("default" "opus" "haiku")))
+    (should (string-search "Opus 5"
+                           (cdr (assoc "opus" (ecc-prompt-models session)))))))
+
+(ert-deftest ecc-prompt-test-model-command-names-the-model-in-use ()
+  "The annotation of /model says which model the session is on.
+The terminal client adds this; the description the CLI sends is fixed
+text (docs/verified.md)."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-models session) ecc-prompt-test--models
+          (ecc-session-commands session)
+          [((name . "model") (description . "Set the AI model for Claude Code")
+            (argumentHint . "<model>"))])
+    ;; Nothing is known about the model before the first answer.
+    (should-not (ecc-prompt-current-model session))
+    (should-not (string-search "currently"
+                               (cdr (assoc "/model" (ecc-prompt-commands session)))))
+    ;; The id of an assistant message is resolved to the display name,
+    ;; and `default', which resolves to the same id, does not answer for it.
+    (setf (ecc-session-last-model session) "claude-opus-5")
+    (should (equal (ecc-prompt-current-model session) "Opus"))
+    (setf (ecc-session-last-model session) "claude-sonnet-5")
+    (should (equal (ecc-prompt-current-model session) "claude-sonnet-5"))
+    ;; What was sent to /model is a value of the array and matches outright.
+    (setf (ecc-session-last-model session) "haiku")
+    (should (equal (ecc-prompt-current-model session) "Haiku"))
+    (ecc-prompt-test--in-buffer session
+      (insert "/mo")
+      (let* ((capf (ecc-prompt-capf))
+             (annotate (plist-get (nthcdr 3 capf) :annotation-function)))
+        (should (string-search "(currently Haiku)" (funcall annotate "/model")))))
+    ;; A model the array does not name stands in for itself.
+    (setf (ecc-session-models session) nil
+          (ecc-session-last-model session) "claude-opus-5")
+    (should (equal (ecc-prompt-current-model session) "claude-opus-5"))))
+
+(ert-deftest ecc-prompt-test-effort-levels-come-from-the-argument-hint ()
+  "/effort offers the levels the CLI spells out in its hint (FR-INP-5).
+The hint is the only place the set of levels appears: the models array
+says which models take an effort at all, but not that `auto' is one of
+the answers (verified on 2026-09-09, CLI 2.1.265)."
+  (ecc-test-with-fake-session session
+    (let ((ecc-effort-candidates '("low" "high")))
+      ;; Until the answer arrives there is only the setting.
+      (should (equal (ecc-prompt-effort-candidates session) '("low" "high")))
+      (setf (ecc-session-commands session)
+            [((name . "effort") (description . "Set effort level for model usage")
+              (argumentHint . "<low|medium|high|xhigh|max|auto>"))
+             ((name . "config") (description . "Set a setting by key")
+              (argumentHint . "key=value"))
+             ((name . "loop") (description . "Run a prompt on an interval")
+              (argumentHint . "[interval] [prompt]"))
+             ((name . "model") (description . "Set the AI model for Claude Code")
+              (argumentHint . "<model>"))])
+      (should (equal (ecc-prompt-effort-candidates session)
+                     '("low" "medium" "high" "xhigh" "max" "auto")))
+      ;; A hint that is a placeholder rather than a list of alternatives
+      ;; has nothing to offer.
+      (should-not (ecc-prompt-argument-candidates session "/config"))
+      (should-not (ecc-prompt-argument-candidates session "/loop"))
+      (should-not (ecc-prompt-argument-candidates session "/model"))
+      (should-not (ecc-prompt-argument-candidates session "/nonesuch")))))
+
+(ert-deftest ecc-prompt-test-every-command-with-alternatives-is-offered-them ()
+  "A command whose hint names its arguments is asked about (FR-INP-5).
+The hints are the ones CLI 2.1.265 really sends (docs/verified.md)."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-commands session)
+          [((name . "fast") (argumentHint . "[on|off]"))
+           ((name . "design") (argumentHint . "consent | revoke"))
+           ((name . "color") (argumentHint . "[red|blue|default]"))
+           ;; A placeholder among the alternatives is not a set of them.
+           ((name . "autocompact") (argumentHint . "[auto|<tokens>]"))
+           ;; Nor is a second argument, or a flag.
+           ((name . "mcp") (argumentHint . "[reconnect|enable|disable [<server>|all]]"))
+           ((name . "code-review")
+            (argumentHint . "[low|medium|max|ultra] [--fix] [<pr#>|<branch>]"))
+           ;; Nor one placeholder on its own.
+           ((name . "compact") (argumentHint . "<optional custom instructions>"))
+           ((name . "clear") (argumentHint . "[name]"))
+           ((name . "context") (argumentHint . ""))])
+    (should (equal (ecc-prompt-command-candidates session "/fast") '("on" "off")))
+    (should (equal (ecc-prompt-command-candidates session "/design")
+                   '("consent" "revoke")))
+    (should (equal (ecc-prompt-command-candidates session "/color")
+                   '("red" "blue" "default")))
+    (dolist (command '("/autocompact" "/mcp" "/code-review" "/compact" "/clear"
+                       "/context" "/nonesuch"))
+      (should-not (ecc-prompt-argument-candidates session command))
+      (should-not (ecc-prompt-interactive-command-p session command)))
+    ;; Being offered them means being asked before the command goes out,
+    ;; without an entry in `ecc-prompt-interactive-commands'.
+    (should-not (assoc "/fast" ecc-prompt-interactive-commands))
+    (should (ecc-prompt-interactive-command-p session "/fast"))
+    (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) "on")))
+      (should (equal (ecc-prompt-prepare-command session "/fast") "/fast on")))
+    ;; system/init says what /fast is set to, so the annotation can too.
+    (setf (ecc-session-init session) '((fast_mode_state . "off")))
+    (should (equal (ecc-prompt-current-argument session "/fast") "off"))))
+
+(ert-deftest ecc-prompt-test-effort-command-names-the-level-in-use ()
+  "The annotation of /effort says which level the session is on.
+Nothing in the stream reports one, so what was sent from here is what
+is known (docs/verified.md)."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-commands session)
+          [((name . "effort") (description . "Set effort level for model usage")
+            (argumentHint . "<low|medium|high|xhigh|max|auto>"))])
+    (let ((ecc-effort nil))
+      (should-not (ecc-prompt-current-effort session))
+      (should-not (string-search "currently"
+                                 (cdr (assoc "/effort" (ecc-prompt-commands session)))))
+      ;; The --effort the session was started with counts.
+      (setf (ecc-session-options session) '(:effort "high"))
+      (should (equal (ecc-prompt-current-effort session) "high"))
+      ;; Sending an /effort replaces it; the CLI never says so itself.
+      (ecc-proc-send-user session "/effort xhigh")
+      (should (equal (ecc-session-last-effort session) "xhigh"))
+      (should (string-search "(currently xhigh)"
+                             (cdr (assoc "/effort" (ecc-prompt-commands session)))))
+      ;; An /effort that asks rather than tells is left alone.
+      (ecc-proc-send-user session "/effort")
+      (should (equal (ecc-session-last-effort session) "xhigh")))))
+
 (ert-deftest ecc-prompt-test-interactive-command-asks-for-its-argument ()
   "A command that opens a menu in the terminal is asked about (FR-INP-5)."
   (ecc-test-with-fake-session session

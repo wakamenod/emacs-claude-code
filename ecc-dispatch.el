@@ -748,6 +748,11 @@ information, where the state line can reach it, and in the log."
       ;; caller has to be able to tell (a permission mode this model
       ;; cannot have, for one).
       (setq response (list (cons 'error (or (alist-get 'error outer) t)))))
+    ;; The initialize response carries the model catalogue beside the
+    ;; commands, and /model is offered from it (FR-INP-5).  It is read
+    ;; first so that the hook below sees both.
+    (when (assq 'models response)
+      (setf (ecc-session-models session) (alist-get 'models response)))
     (when (assq 'commands response)
       (setf (ecc-session-commands session) (alist-get 'commands response))
       (run-hook-with-args 'ecc-commands-updated-hook session))

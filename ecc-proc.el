@@ -329,6 +329,24 @@ remembered here is the name as it was typed, `opus' rather than
              (string-match ecc-proc--model-command-regexp content))
     (setf (ecc-session-last-model session) (match-string 1 content))))
 
+(defconst ecc-proc--effort-command-regexp
+  "\\`[ \t\n]*/effort[ \t]+\\([^ \t\n]+\\)[ \t\n]*\\'"
+  "What an `/effort' that names a level looks like.
+An `/effort' with nothing after it is answered with a usage message
+rather than acted on, and is left alone.")
+
+(defun ecc-proc--note-effort (session content)
+  "Take note of the level an `/effort' among CONTENT names for SESSION.
+Nothing in the stream ever reports the effort level: neither
+system/init nor an assistant message carries one (verified on
+2026-09-09 against CLI 2.1.265; the `effort' of a recording is written
+by the recorder and is not sent).  So what Emacs asked for is all
+there is to go on, and a level set from the terminal of a hand-off
+cannot be seen here."
+  (when (and (stringp content)
+             (string-match ecc-proc--effort-command-regexp content))
+    (setf (ecc-session-last-effort session) (match-string 1 content))))
+
 (defun ecc-proc--note-sent (session content)
   "Remember CONTENT as something SESSION sent itself.
 With --replay-user-messages the CLI echoes every user message back, and
@@ -360,6 +378,7 @@ went out would hold every later prompt in the queue.  Nothing can
 arrive in between, since output is only read when Emacs waits for it."
   (prog1 (ecc-proc-send-json session (ecc-protocol-user-message content))
     (ecc-proc--note-model session content)
+    (ecc-proc--note-effort session content)
     (ecc-proc--note-sent session content)
     (ecc-model-begin-turn session (if (stringp content) content ""))))
 

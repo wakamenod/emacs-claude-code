@@ -27,6 +27,7 @@
 (require 'ecc-proc)
 (require 'ecc-render)
 (require 'ecc-chat)
+(require 'ecc-hint)
 (require 'ecc-window)
 (require 'ecc-context)
 
@@ -57,20 +58,40 @@ old conversation readable again."
 
 (defcustom ecc-prompt-interactive-commands
   '(("/model" . ecc-prompt-model-candidates)
-    ("/effort" . ("low" "medium" "high"))
+    ("/effort" . ecc-prompt-effort-candidates)
     ("/permissions" . nil)
     ("/config" . nil))
-  "Slash commands that open a menu in the terminal client (FR-INP-5).
+  "Slash commands whose argument the CLI does not spell out (FR-INP-5).
 Each entry is a command name and where the argument comes from: a list
-of candidates, a function returning one, or nil to ask for a string.
-Sending one of these without an argument is answered with a usage
-message, so Emacs asks for the argument first."
+of candidates, a function called with the session that returns one, or
+nil to ask for a string.  Sending one of these without an argument is
+answered with a usage message, so Emacs asks for the argument first.
+
+Only the commands the argument hint of the initialize response cannot
+describe belong here.  Every command whose hint names its alternatives
+\(`[on|off]\=' for /fast) is offered them without being listed, by
+`ecc-prompt-argument-candidates\='."
   :type '(alist :key-type string :value-type sexp)
   :group 'ecc)
 
 (defcustom ecc-model-candidates
-  '("opus" "sonnet" "haiku" "opusplan" "default")
-  "Model names offered for the /model command (FR-INP-5)."
+  '("default" "sonnet" "opus" "haiku" "fable")
+  "Models offered for /model until the CLI names its own (FR-INP-5).
+The initialize response carries the real catalogue in its `models\='
+array -- the value to send, a display name and a description -- and
+`ecc-prompt-models\=' offers that as soon as it has arrived, so this
+list only has to serve a session whose CLI has not answered yet."
+  :type '(repeat string)
+  :group 'ecc)
+
+(defcustom ecc-effort-candidates
+  '("low" "medium" "high" "xhigh" "max" "auto")
+  "Effort levels offered for /effort until the CLI names its own (FR-INP-5).
+The argument hint of the initialize response spells them out
+\(`<low|medium|high|xhigh|max|auto>\='), and
+`ecc-prompt-effort-candidates\=' reads them from there as soon as it
+has arrived, so this list only has to serve a session whose CLI has
+not answered yet."
   :type '(repeat string)
   :group 'ecc)
 
@@ -259,6 +280,33 @@ would be written into the recording of the conversation."
 
 ;;;; Slash commands (FR-INP-2, 3, 4, 5)
 
+(defun ecc-prompt-current-argument (session command)
+  "Return what COMMAND has SESSION set to at the moment, or nil.
+Only the commands that set something have an answer.  The terminal
+client shows it after their description; the CLI sends a description
+that is fixed text and leaves it out (docs/verified.md)."
+  (when session
+    (pcase command
+      ("/model" (ecc-prompt-current-model session))
+      ("/effort" (ecc-prompt-current-effort session))
+      ;; system/init reports this one outright.
+      ("/fast" (alist-get 'fast_mode_state (ecc-session-init session))))))
+
+(defun ecc-prompt--describe-command (session name command)
+  "Return what is shown beside the slash command NAME of SESSION.
+COMMAND is its entry in the initialize response, which carries the
+argument hint and a description.  What the command has set at the
+moment is added to it (`ecc-prompt-current-argument\=')."
+  (let ((description (string-trim
+                      (format "%s %s"
+                              (or (alist-get 'argumentHint command) "")
+                              (ecc--truncate (or (alist-get 'description command) "")
+                                             70))))
+        (current (ecc-prompt-current-argument session (concat "/" name))))
+    (if current
+        (string-trim (format "%s (currently %s)" description current))
+      description)))
+
 (defun ecc-prompt-commands (session)
   "Return the slash commands of SESSION as an alist of name and description.
 The initialize response is the better source because it carries a
@@ -268,11 +316,7 @@ description; the command list of system/init fills in the rest."
       (let ((name (alist-get 'name command)))
         (when name
           (push (cons (concat "/" name)
-                      (string-trim
-                       (format "%s %s"
-                               (or (alist-get 'argumentHint command) "")
-                               (ecc--truncate (or (alist-get 'description command) "")
-                                              70))))
+                      (ecc-prompt--describe-command session name command))
                 commands))))
     (seq-doseq (name (or (alist-get 'slash_commands (ecc-session-init session)) []))
       (when (and (stringp name) (not (assoc (concat "/" name) commands)))
@@ -318,19 +362,141 @@ that `ecc-terminal-slash-commands'."
   (when (string-match "\\`[ \t]*/[^ \t\n]+\\(\\(?:.\\|\n\\)*\\)\\'" text)
     (string-trim (match-string 1 text))))
 
-(defun ecc-prompt-model-candidates ()
-  "Return the models offered for /model (FR-INP-5)."
-  ecc-model-candidates)
+(defun ecc-prompt-models (session)
+  "Return the models of SESSION as an alist of value and description.
+The `models\=' array of the initialize response is the source: `value\='
+is what /model takes, and the display name and the description are
+what the terminal client shows beside it.  Until that answer arrives
+there is only `ecc-model-candidates\='."
+  (let ((models nil))
+    (seq-doseq (model (or (and session (ecc-session-models session)) []))
+      (when-let* ((value (alist-get 'value model)))
+        (push (cons value
+                    (string-trim
+                     (format "%s %s"
+                             (or (alist-get 'displayName model) "")
+                             (ecc--truncate (or (alist-get 'description model) "")
+                                            70))))
+              models)))
+    (or (nreverse models)
+        (mapcar (lambda (name) (cons name "")) ecc-model-candidates))))
 
-(defun ecc-prompt-read-argument (command)
+(defun ecc-prompt-model-candidates (&optional session)
+  "Return the models offered for /model in SESSION (FR-INP-5)."
+  (mapcar #'car (ecc-prompt-models session)))
+
+(defun ecc-prompt-command-entry (session command)
+  "Return what the initialize response of SESSION says about COMMAND.
+COMMAND is written with its slash.  Nil is returned for a command the
+answer has not arrived for, or one that only system/init names."
+  (let ((name (string-remove-prefix "/" command)))
+    (seq-find (lambda (entry) (equal name (alist-get 'name entry)))
+              (or (and session (ecc-session-commands session)) []))))
+
+(defconst ecc-prompt--alternative-regexp "\\`[a-zA-Z0-9][-a-zA-Z0-9_.]*\\'"
+  "What one alternative of an argument hint looks like.
+A bare word.  Anything else in the list -- a placeholder to fill in
+\(`<tokens>\='), a flag (`--fix\='), the leftovers of a second argument
+\(`disable [<server>\=') -- says the hint is not a set of alternatives
+after all.")
+
+(defun ecc-prompt-argument-candidates (session command)
+  "Return the arguments the CLI says COMMAND of SESSION takes, or nil.
+The argument hint of the initialize response names the alternatives
+where a command has a fixed set of them: `<low|medium|high|xhigh|max|auto>\='
+for /effort, `[on|off]\=' for /fast, `consent | revoke\=' for /design.
+A hint that holds anything else -- one placeholder to fill in
+\(`key=value\=', `[name]\='), a mix of the two (`[auto|<tokens>]\='), or
+more than one argument (`[low|...|ultra] [--fix]\=') -- describes
+nothing that can be offered, and nil is returned for it."
+  (when-let* ((entry (ecc-prompt-command-entry session command))
+              (hint (alist-get 'argumentHint entry))
+              (body (string-trim hint))
+              ((string-search "|" body)))
+    ;; The brackets say whether the argument may be left out, which is
+    ;; not what is being asked here; only what is inside them matters.
+    (when (and (> (length body) 1)
+               (memq (aref body 0) '(?< ?\[))
+               (memq (aref body (1- (length body))) '(?> ?\])))
+      (setq body (substring body 1 -1)))
+    (let ((alternatives (mapcar #'string-trim (split-string body "|" t))))
+      (when (and (> (length alternatives) 1)
+                 (seq-every-p (lambda (alternative)
+                                (string-match-p ecc-prompt--alternative-regexp
+                                                alternative))
+                              alternatives))
+        alternatives))))
+
+(defun ecc-prompt-command-candidates (session command)
+  "Return what SESSION offers as the argument of COMMAND, or nil.
+`ecc-prompt-interactive-commands\=' answers for the commands whose
+argument the CLI does not spell out; for every other command the
+argument hint of the initialize response is read."
+  (let ((entry (assoc command ecc-prompt-interactive-commands)))
+    (if entry
+        (let ((source (cdr entry)))
+          (cond ((functionp source) (funcall source session))
+                ((listp source) source)))
+      (ecc-prompt-argument-candidates session command))))
+
+(defun ecc-prompt-interactive-command-p (session command)
+  "Non-nil when COMMAND of SESSION is asked for its argument first.
+Either `ecc-prompt-interactive-commands\=' names it, or the CLI says
+in its argument hint which arguments it takes, which is as good a
+reason to offer them (FR-INP-5)."
+  (or (assoc command ecc-prompt-interactive-commands)
+      (and (ecc-prompt-argument-candidates session command) t)))
+
+(defun ecc-prompt-effort-candidates (&optional session)
+  "Return the effort levels offered for /effort in SESSION (FR-INP-5)."
+  (or (ecc-prompt-argument-candidates session "/effort")
+      ecc-effort-candidates))
+
+(defun ecc-prompt-current-effort (session)
+  "Return the effort level SESSION is set to, or nil.
+Nothing in the stream reports one -- neither system/init nor an
+assistant message carries it (docs/verified.md) -- so what Emacs asked
+for is all there is: the last /effort it sent, and failing that the
+--effort the session was started with.  An /effort sent from the
+terminal of a hand-off is therefore not seen."
+  (or (ecc-session-last-effort session)
+      (ecc-model-option session :effort ecc-effort)))
+
+(defun ecc-prompt-current-model (session)
+  "Return the display name of the model SESSION talks to, or nil.
+`ecc-hint-model\=' says which one it is, either as the argument of the
+last /model or as the id the CLI reports on every assistant message,
+and the `models\=' array of the initialize response turns that into the
+name the terminal client shows.  The name stands in for itself when
+the CLI has not sent the array yet."
+  (when-let* ((model (ecc-hint-model session))
+              (models (or (and session (ecc-session-models session)) [])))
+    (or (seq-some (lambda (entry)
+                    (and (equal model (alist-get 'value entry))
+                         (alist-get 'displayName entry)))
+                  models)
+        ;; `default' resolves to the model it stands for, so it would
+        ;; answer for that model as well as for itself; only an entry
+        ;; that names a model is asked about a resolved id.
+        (seq-some (lambda (entry)
+                    (and (not (equal "default" (alist-get 'value entry)))
+                         (equal model (alist-get 'resolvedModel entry))
+                         (alist-get 'displayName entry)))
+                  models)
+        model)))
+
+(defun ecc-prompt-read-argument (command &optional session)
   "Ask for the argument of COMMAND, an interactive slash command (FR-INP-5).
-Nil is returned when the user leaves it empty, which sends the command
-as it was typed."
-  (let* ((source (cdr (assoc command ecc-prompt-interactive-commands)))
-         (candidates (cond ((functionp source) (funcall source))
-                           ((listp source) source)))
+The candidates of SESSION are offered where the command has any.  Nil
+is returned when the user leaves it empty, which sends the command as
+it was typed."
+  (let* ((candidates (ecc-prompt-command-candidates session command))
+         (current (ecc-prompt-current-argument session command))
+         (prompt (if current
+                     (format "%s (currently %s): " command current)
+                   (format "%s: " command)))
          (answer (if candidates
-                     (completing-read (format "%s: " command) candidates nil nil)
+                     (completing-read prompt candidates nil nil)
                    (read-string (format "Argument for %s (empty sends it as is): " command)))))
     (unless (string-empty-p (string-trim answer))
       (string-trim answer))))
@@ -348,9 +514,9 @@ A command only the terminal client of SESSION can run is reported
                  (member command (ecc-prompt-terminal-commands session)))
         (message "%s is a terminal UI command; nothing of it shows in Emacs, but the answer does"
                  command))
-      (if (and (assoc command ecc-prompt-interactive-commands)
+      (if (and (ecc-prompt-interactive-command-p session command)
                (string-empty-p (or (ecc-prompt-command-argument text) "")))
-          (if-let* ((argument (ecc-prompt-read-argument command)))
+          (if-let* ((argument (ecc-prompt-read-argument command session)))
               (concat (string-trim text) " " argument)
             text)
         text)))))

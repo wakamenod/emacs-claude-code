@@ -130,7 +130,13 @@ or internal workspace)" (ecc-session-name session)))
   "Ask the session this buffer talks to to use MODEL (FR-INP-5).
 The CLI answers a /model command even when it is driven headless, so
 the model can be changed without restarting it."
-  (interactive (list (completing-read "Model: " (ecc-prompt-model-candidates))))
+  (interactive
+   (let* ((session (ecc-menu-session))
+          (current (ecc-prompt-current-model session)))
+     (list (completing-read (if current
+                                (format "Model (currently %s): " current)
+                              "Model: ")
+                            (ecc-prompt-model-candidates session)))))
   (let ((session (ecc-menu-session)))
     (ecc-proc-send-prompt session (concat "/model " model))
     model))
@@ -187,8 +193,8 @@ same suffix from one call to the next."
           (lambda ()
             (interactive)
             (let* ((session (ecc-menu-session))
-                   (argument (when (assoc name ecc-prompt-interactive-commands)
-                               (ecc-prompt-read-argument name)))
+                   (argument (when (ecc-prompt-interactive-command-p session name)
+                               (ecc-prompt-read-argument name session)))
                    (text (if argument (concat name " " argument) name)))
               (ecc-proc-send-prompt session text)
               (message "Sent %s to %s" text (ecc-session-name session))))
