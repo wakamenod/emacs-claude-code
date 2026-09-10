@@ -1,6 +1,7 @@
 # emacs-claude-code — build / test / lint
-# `emacs` is not on PATH, so EMACS names it outright.  See CLAUDE.md.
-EMACS ?= /opt/homebrew/Cellar/emacs-plus@32/32.0.50/Emacs.app/Contents/MacOS/Emacs
+# Override EMACS if the one you want is not the `emacs` on PATH, e.g.
+#   make test EMACS=/Applications/Emacs.app/Contents/MacOS/Emacs
+EMACS ?= emacs
 ELPA  ?= $(HOME)/.emacs.d/elpa
 
 SRC   := $(wildcard ecc*.el)
