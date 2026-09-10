@@ -140,7 +140,7 @@
               ;; A session with nothing to say carries no mark; a running
               ;; one does.
               (should (equal (ecc-tab-line-tab-name (car tabs)) " test "))
-              (should (equal (ecc-tab-line-tab-name (cadr tabs)) " ● other "))
+              (should (equal (ecc-tab-line-tab-name (cadr tabs)) " ▶ other "))
               ;; The state is put on top of whatever face the tab line
               ;; settled on, so the theme still shapes the tab.
               (should (equal (ecc-tab-line-tab-face

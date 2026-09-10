@@ -639,7 +639,7 @@ the cache the same way a node of the transcript does."
     (ecc-session-ensure-buffer session)
     (should (string-prefix-p "○ starting" (ecc-render-status-line session)))
     (ecc-model-begin-turn session "hello")
-    (should (string-prefix-p "● running" (ecc-render-status-line session)))
+    (should (string-prefix-p "▶ running" (ecc-render-status-line session)))
     (ecc-dispatch session '((type . "system") (subtype . "thinking_tokens")
                             (estimated_tokens . 1200)))
     (should (string-search "thinking 1.2k tokens" (ecc-render-status-line session)))

@@ -202,18 +202,10 @@ to have anywhere to show (FR-NOTIFY-2)."
   :group 'ecc)
 
 (defface ecc-tab-running-face
-  '((((class color) (min-colors 88) (background dark))
-     :inherit ecc-heading-face :foreground "#a6e22e")
-    (((class color) (min-colors 88) (background light))
-     :inherit ecc-heading-face :foreground "#4e8f00")
-    (((class color))
-     :inherit ecc-heading-face :foreground "green")
-    (t :inherit ecc-heading-face))
+  '((t :inherit (ecc-running-face ecc-heading-face)))
   "Face of the tab of a session that is working.
-A yellow green, which says the session is moving on its own without
-asking for anything -- the one state that is neither a warning nor
-something to read.  A light background takes a darker shade of it,
-since the bright one is not readable there."
+The yellow green of `ecc-running-face', which the transcript and the
+mode line use for the same state, over the weight of a heading."
   :group 'ecc)
 
 (defface ecc-tab-attention-face
@@ -264,7 +256,7 @@ step (FR-NOTIFY-2, FR-OUT-11 c)."
 A session with nothing to say gets no mark: a row of tabs is quieter
 when only the ones that want something are marked."
   (pcase (ecc-tab-state session)
-    ('attention "⚠") ('running "●") ('exited "✗") (_ "")))
+    ('attention "⚠") ('running "▶") ('exited "✗") (_ "")))
 
 (defun ecc-tab-faces (session current)
   "Return the faces to lay over the tab of SESSION, the telling one first.
@@ -448,7 +440,7 @@ tab is waiting for an answer (FR-NOTIFY-2)."
                        'running))))
     (if (and ecc-tab-bar-state state)
         (format "%s %s"
-                (pcase state ('attention "⚠") (_ "●"))
+                (pcase state ('attention "⚠") (_ "▶"))
                 name)
       name)))
 

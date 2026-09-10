@@ -380,6 +380,18 @@ own, so that the eye finds where a turn begins."
   "Face for a request that is waiting for an answer."
   :group 'ecc)
 
+(defface ecc-running-face
+  '((((class color) (min-colors 88) (background dark)) :foreground "#a6e22e")
+    (((class color) (min-colors 88) (background light)) :foreground "#4e8f00")
+    (((class color)) :foreground "green")
+    (t :inherit default))
+  "Face for a session that is working under its own steam.
+Yellow green, so that the amber of `ecc-pending-face' is left to mean
+one thing only: that the session is waiting on the user.  A light
+background takes a darker shade, the bright one being unreadable
+there."
+  :group 'ecc)
+
 (defface ecc-heading-face
   '((t :inherit bold))
   "Face for the session header and turn headings."

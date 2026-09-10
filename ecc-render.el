@@ -1554,7 +1554,7 @@ no turn, so nothing freezes them."
       ('exited (propertize (format "✗ exited (code %s)"
                                    (or (alist-get 'exit-status progress) "?"))
                            'face 'ecc-error-face))
-      ('compacting (propertize "⟲ compacting…" 'face 'ecc-pending-face))
+      ('compacting (propertize "⟲ compacting…" 'face 'ecc-running-face))
       ((or 'waiting-permission 'waiting-question 'waiting-plan)
        (propertize
         (format "⚠ %s: %s"
@@ -1572,9 +1572,9 @@ no turn, so nothing freezes them."
       (_
        (concat
         (propertize (if (ecc-model-remote-turn-p (ecc-session-current-turn session))
-                        "● running · remote"
-                      "● running")
-                    'face 'ecc-pending-face)
+                        "▶ running · remote"
+                      "▶ running")
+                    'face 'ecc-running-face)
         (propertize
          (concat
           (when status (format "  ·  %s" status))
@@ -1675,7 +1675,7 @@ A request waiting for an answer is what the mode line exists to show
     ((or 'idle 'starting) nil)
     ('handoff (propertize "⇄ terminal" 'face 'ecc-pending-face))
     ('exited (propertize "✗ exited" 'face 'ecc-error-face))
-    ('compacting (propertize "⟲ compacting" 'face 'ecc-pending-face))
+    ('compacting (propertize "⟲ compacting" 'face 'ecc-running-face))
     ((or 'waiting-permission 'waiting-question 'waiting-plan)
      (let ((n (length (ecc-session-pending session))))
        (propertize (format "⚠ %s%s"
@@ -1686,9 +1686,9 @@ A request waiting for an answer is what the mode line exists to show
                            (if (> n 1) (format " ×%d" n) ""))
                    'face 'ecc-pending-face)))
     (_ (propertize (if (ecc-model-remote-turn-p (ecc-session-current-turn session))
-                       "● running · remote"
-                     "● running")
-                   'face 'ecc-pending-face))))
+                       "▶ running · remote"
+                     "▶ running")
+                   'face 'ecc-running-face))))
 
 (defun ecc-render-mode-line-process ()
   "Return the `mode-line-process' text of the session buffer."

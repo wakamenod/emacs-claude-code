@@ -156,7 +156,7 @@ The request of A is a Bash call and older; the one of B is a Write."
       (should (string-search "⚠ question ×2" (ecc-render-mode-line-process))))
     ;; Answered, the session is back to the turn that was running.
     (ecc-perm-respond (car (ecc-session-pending b)) 'deny)
-    (should (equal (substring-no-properties (ecc-render-mode-line-state b)) "● running"))
+    (should (equal (substring-no-properties (ecc-render-mode-line-state b)) "▶ running"))
     (ecc-dispatch b '((type . "result") (subtype . "success") (total_cost_usd . 0)))
     (should-not (ecc-render-mode-line-state b))))
 
