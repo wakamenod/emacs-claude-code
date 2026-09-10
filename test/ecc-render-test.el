@@ -114,6 +114,49 @@ screen says where the session can be reached (docs/verified.md,
       (should-not (string-search "(resumed)" text))
       (should (string-search "remote control connected" text)))))
 
+(ert-deftest ecc-render-test-rail ()
+  "A turn is drawn down one rail, and a line that wraps stays on it.
+The rest of the snapshots are taken with `ecc-render-rail' off, so this
+is where the rail itself and the wrap prefix that carries it are read."
+  (ecc-test-with-fake-session session
+    (let ((ecc-render-rail "▏"))
+      (ecc-render-test--replay session "tool-use-write" "hello.txt を作って"
+                               '(allow))
+      (with-current-buffer (ecc-session-buffer session)
+        (let ((text (ecc-test-buffer-string)))
+          ;; The band of the prompt stands clear of the rail; everything
+          ;; the answer is made of hangs off it.
+          (should (string-search "\n〉 hello.txt を作って\n" text))
+          (should (string-search "\n▏ ✓ Write · " text))
+          ;; Including the blank lines between the blocks and the line
+          ;; that closes the turn: a rail broken at either would say the
+          ;; turn had ended.
+          (should (string-search "\n▏\n" text))
+          (should (string-match-p "\n▏ +[0-9.]+s · \\$" text))
+          ;; And the width of the indentation is what it was without it.
+          (should-not (string-search "\n▏  ✓ Write" text)))
+        ;; A line too long for the window wraps under its own
+        ;; indentation, rail and all, rather than back at the left edge.
+        (goto-char (point-min))
+        (should (search-forward "✓ Write · " nil t))
+        (let ((wrap (get-text-property (line-beginning-position) 'wrap-prefix)))
+          (should (stringp wrap))
+          (should (string-prefix-p "▏" wrap))
+          (should (equal 'ecc-rail-face (get-text-property 0 'face wrap))))))))
+
+(ert-deftest ecc-render-test-wrap-prefix-follows-the-indentation ()
+  "Every line of a body says where a line that wraps out of it lines up."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--replay session "basic-turn" "hello")
+    (with-current-buffer (ecc-session-buffer session)
+      (goto-char (point-min))
+      ;; The text of the answer sits two columns in, and a wrapped line
+      ;; sits under it rather than at the left edge, hung by
+      ;; `ecc-render-wrap-hang' so that it does not read as a new line.
+      (should (search-forward "\n  " nil t))
+      (let ((wrap (get-text-property (line-beginning-position) 'wrap-prefix)))
+        (should (equal (make-string (+ 2 ecc-render-wrap-hang) ?\s) wrap))))))
+
 (ert-deftest ecc-render-test-tool-use ()
   "A lone tool draws as a tool line and the permission that allowed it."
   (ecc-test-with-fake-session session

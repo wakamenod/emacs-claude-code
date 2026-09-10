@@ -125,6 +125,24 @@ transcript, is reading, and a redraw leaves it where it was."
   "Face of the line between the transcript and the prompt region."
   :group 'ecc)
 
+(defcustom ecc-render-rail "▏"
+  "The character drawn down the left of a turn, or nil for none.
+Everything the assistant says in one turn -- its text, what it thought,
+the tools it ran, whatever a subagent of its own said -- is indented
+under the band of the prompt that asked for it.  The rail takes the
+first of those columns and makes the extent of the turn plain; set this
+to nil to go back to plain spaces."
+  :type '(choice (const :tag "None" nil) string)
+  :group 'ecc)
+
+(defcustom ecc-render-wrap-hang 2
+  "Columns a line that wrapped hangs past the line that began it.
+A wrapped line lines up under its own indentation rather than at the
+left edge of the window, and this hangs it a little further still, so
+that it is not read as a line of its own."
+  :type 'integer
+  :group 'ecc)
+
 (defconst ecc-render-user-mark "〉 "
   "What every line of a user prompt is prefixed with.
 A turn read back from a recording is drawn with the same mark as one
@@ -206,8 +224,50 @@ Each entry is (KIND . ID); see `ecc-render--apply-effects'.")
 ;;;; Text helpers
 
 (defun ecc-render--pad (depth)
-  "Return the indentation string for DEPTH."
-  (make-string (* 2 depth) ?\s))
+  "Return the indentation string for DEPTH.
+Every depth past the first opens with `ecc-render-rail\=', so that one
+turn reads as one thing; the rail takes a column the indentation was
+using anyway, and the width of the whole is unchanged."
+  (cond ((<= depth 0) "")
+        ((null ecc-render-rail) (make-string (* 2 depth) ?\s))
+        (t (concat (propertize ecc-render-rail 'face 'ecc-rail-face)
+                   (make-string (- (* 2 depth)
+                                   (string-width ecc-render-rail))
+                                ?\s)))))
+
+(defun ecc-render--wrap-prefix (prefix)
+  "Return what a line that wrapped past PREFIX lines up under.
+The rail PREFIX opens with is kept, because a wrapped line is still
+inside the turn; everything after it is blanked, because a mark, an
+arrow or a key of an input says its piece once.  `ecc-render-wrap-hang\='
+is added on the end, to tell a wrapped line from one of its own."
+  (let* ((rail (if (and ecc-render-rail
+                        (string-prefix-p ecc-render-rail prefix))
+                   (propertize ecc-render-rail 'face 'ecc-rail-face)
+                 ""))
+         (rest (- (string-width prefix) (string-width rail))))
+    (concat rail (make-string (max 0 (+ rest ecc-render-wrap-hang)) ?\s))))
+
+(defun ecc-render--hang (string prefix)
+  "Return STRING, wrapping under PREFIX rather than at the left edge.
+A heading is built as one string and inserted whole, so it takes its
+wrap prefix here rather than in `ecc-render--insert-lines\='."
+  (put-text-property 0 (length string) 'wrap-prefix
+                     (ecc-render--wrap-prefix prefix) string)
+  string)
+
+(defmacro ecc-render--small (&rest body)
+  "Run BODY and draw whatever it inserted in `ecc-tool-line-face\='.
+The face carries a height and nothing else, and it is added under what
+is already there, so the colours of a heading and of a body come
+through it.  What the assistant says is what is read; the calls it made
+along the way are what is skimmed, and they are drawn a little smaller
+so that the eye passes over them."
+  (declare (indent 0) (debug t))
+  `(let ((ecc-render--small-start (point)))
+     ,@body
+     (add-face-text-property ecc-render--small-start (point)
+                             'ecc-tool-line-face t)))
 
 (defun ecc-render--one-line (string)
   "Return STRING with newlines squeezed out, for use in a heading."
@@ -228,12 +288,17 @@ A line the Markdown code hid whole, a fence, keeps its place in the
 buffer so that whatever searches the text still finds it, but the
 indentation put in front of it and the newline that ends it are hidden
 with it; drawn plainly they would leave an empty row where the fence
-was."
-  (let ((body (string-trim-right (or text "") "[\n]+")))
+was.
+
+A line too long for the window wraps under PREFIX rather than back to
+the left edge (`ecc-render--wrap-prefix\=')."
+  (let ((body (string-trim-right (or text "") "[\n]+"))
+        (wrap (ecc-render--wrap-prefix prefix)))
     (dolist (line (split-string body "\n"))
       (let ((hidden (ecc-render--hidden-line-p line))
             (string (concat prefix line)))
         (add-face-text-property 0 (length string) face t string)
+        (put-text-property 0 (length string) 'wrap-prefix wrap string)
         (when hidden
           (put-text-property 0 (length string) 'invisible 'ecc-markup string))
         (insert string)
@@ -245,12 +310,16 @@ was."
        (memq (ecc-node-type previous) ecc-render-cluster-types)
        (memq (ecc-node-type next) ecc-render-cluster-types)))
 
-(defun ecc-render--insert-gap ()
+(defun ecc-render--insert-gap (&optional depth)
   "Insert the blank line that parts one block of a turn from the next.
 It is under no node, so it takes the keymap of the transcript by hand;
-the seal that follows makes it read-only along with everything else."
+the seal that follows makes it read-only along with everything else.
+
+DEPTH, when it is given, draws the rail of `ecc-render--pad\=' on the
+line: a gap inside a turn is still inside it, and a rail broken at
+every gap would say the opposite."
   (let ((start (point)))
-    (insert "\n")
+    (insert (if depth (string-trim-right (ecc-render--pad depth)) "") "\n")
     (put-text-property start (point) 'keymap
                        (ecc-render--map 'ecc-chat-transcript-map))))
 
@@ -274,7 +343,8 @@ spans the window rather than the text."
           (add-face-text-property (length pad)
                                   (+ (length pad) (length ecc-render-user-mark))
                                   'ecc-user-mark-face nil string))
-        (put-text-property 0 (length string) 'wrap-prefix indent string)
+        (put-text-property 0 (length string) 'wrap-prefix
+                           (ecc-render--wrap-prefix indent) string)
         (insert string)
         (setq first nil)))))
 
@@ -291,8 +361,9 @@ spans the window rather than the text."
           (progn
             (insert (propertize (format "%s%s:" prefix key) 'face 'ecc-dim-face) "\n")
             (ecc-render--insert-lines value (concat prefix "  ") 'ecc-dim-face))
-        (insert (propertize (format "%s%s: %s" prefix key value)
-                            'face 'ecc-dim-face)
+        (insert (ecc-render--hang
+                 (propertize (format "%s%s: %s" prefix key value) 'face 'ecc-dim-face)
+                 (concat prefix (make-string (string-width key) ?\s) "  "))
                 "\n")))))
 
 (defun ecc-render--result-text (result)
@@ -967,7 +1038,8 @@ The newest line comes first, so that the limit of
 A marker at the end of the text, kept on NODE, is where the next delta
 is appended (plan section 5.2, item 4)."
   (insert (propertize (concat prefix (ecc-render--stream-string text prefix))
-                      'face face))
+                      'face face
+                      'wrap-prefix (ecc-render--wrap-prefix prefix)))
   ;; The marker must stay put while the rest of the buffer is inserted
   ;; after it, so it does not advance on insertion; a delta moves it by
   ;; hand instead.
@@ -997,9 +1069,11 @@ is appended (plan section 5.2, item 4)."
     (ecc-render--insert-owned
      node depth
      (lambda ()
-       (insert (concat pad (ecc-render--fold-cell)
-                       (propertize (if (ecc-node-streaming node) "Thinking…" "Thinking")
-                                   'face 'ecc-thinking-face))
+       (insert (ecc-render--hang
+                (concat pad (ecc-render--fold-cell)
+                        (propertize (if (ecc-node-streaming node) "Thinking…" "Thinking")
+                                    'face 'ecc-thinking-face))
+                (concat pad "  "))
                "\n")))
     (ecc-render--insert-owned
      node (1+ depth)
@@ -1016,12 +1090,15 @@ is appended (plan section 5.2, item 4)."
     (ecc-render--insert-owned
      node depth
      (lambda ()
-       (insert (concat pad
-                       (propertize
-                        (mapconcat (lambda (pair) (format "%s ×%d" (car pair) (cdr pair)))
-                                   (ecc-model-tool-counts node) ", ")
-                        'face 'ecc-tool-face))
-               "\n")))
+       (ecc-render--small
+        (insert (ecc-render--hang
+                 (concat pad
+                         (propertize
+                          (mapconcat (lambda (pair) (format "%s ×%d" (car pair) (cdr pair)))
+                                     (ecc-model-tool-counts node) ", ")
+                          'face 'ecc-tool-face))
+                 (concat pad "  "))
+                "\n"))))
     (dolist (child (ecc-node-children node))
       (ecc-render--insert-node session child (1+ depth)))))
 
@@ -1088,10 +1165,16 @@ An Edit or a Write shows its input as a diff (FR-OUT-7)."
   "Insert the tool NODE of SESSION at DEPTH."
   (ecc-render--insert-owned
    node depth
-   (lambda () (insert (ecc-render--tool-heading node depth) "\n")))
+   (lambda ()
+     (ecc-render--small
+       (insert (ecc-render--hang (ecc-render--tool-heading node depth)
+                                 (concat (ecc-render--pad depth) "  "))
+               "\n"))))
   (ecc-render--insert-owned
    node (1+ depth)
-   (lambda () (ecc-render--insert-tool-body node (concat (ecc-render--pad depth) "  "))))
+   (lambda ()
+     (ecc-render--small
+       (ecc-render--insert-tool-body node (concat (ecc-render--pad depth) "  ")))))
   (dolist (child (ecc-node-children node))
     (ecc-render--insert-node session child (1+ depth))))
 
@@ -1144,21 +1227,31 @@ An Edit or a Write shows its input as a diff (FR-OUT-7)."
   (let ((body (concat (ecc-render--pad depth) "  ")))
     (ecc-render--insert-owned
      node depth
-     (lambda () (insert (ecc-render--agent-heading node depth) "\n")))
+     (lambda ()
+       (ecc-render--small
+        (insert (ecc-render--hang (ecc-render--agent-heading node depth)
+                                  (concat (ecc-render--pad depth) "  "))
+                "\n"))))
     (dolist (child (ecc-node-children node))
       (ecc-render--insert-node session child (1+ depth)))
     (ecc-render--insert-owned
      node (1+ depth)
      (lambda ()
-       (pcase (ecc-node-status node)
-         ('running (insert (propertize (concat body "…") 'face 'ecc-dim-face) "\n"))
-         (_ (when (ecc-model-node-get node 'result)
-              (ecc-render--insert-lines
-               (ecc-render--clip (ecc-render--result-text
-                                  (ecc-model-node-get node 'result))
-                                 ecc-render-result-max-lines)
-               (concat body "→ ")
-               (if (eq (ecc-node-status node) 'error) 'ecc-error-face 'ecc-dim-face)))))))))
+       (ecc-render--small
+        (pcase (ecc-node-status node)
+          ('running (insert (ecc-render--hang
+                             (propertize (concat body "…") 'face 'ecc-dim-face)
+                             body)
+                            "\n"))
+          (_ (when (ecc-model-node-get node 'result)
+               (ecc-render--insert-lines
+                (ecc-render--clip (ecc-render--result-text
+                                   (ecc-model-node-get node 'result))
+                                  ecc-render-result-max-lines)
+                (concat body "→ ")
+                (if (eq (ecc-node-status node) 'error)
+                    'ecc-error-face
+                  'ecc-dim-face))))))))))
 
 (defun ecc-render--unsaved-p (path)
   "Return non-nil when a buffer visiting PATH has unsaved changes (FR-SYNC-2)."
@@ -1227,7 +1320,10 @@ of the file around it (FR-DIFF-1)."
                                        (ecc-model-node-get node 'before)))))
     (ecc-render--insert-owned
      node depth
-     (lambda () (insert (concat pad (ecc-render--request-heading node)) "\n")))
+     (lambda () (insert (ecc-render--hang
+                         (concat pad (ecc-render--request-heading node))
+                         (concat pad "  "))
+                        "\n")))
     (ecc-render--insert-owned
      node (1+ depth)
      (lambda ()
@@ -1244,7 +1340,10 @@ of the file around it (FR-DIFF-1)."
           body 'ecc-assistant-face))
         (diff
          (when-let* ((path (alist-get 'file_path (ecc-request-input request))))
-           (insert (propertize (concat body (abbreviate-file-name path)) 'face 'ecc-dim-face)
+           (insert (ecc-render--hang
+                    (propertize (concat body (abbreviate-file-name path))
+                                'face 'ecc-dim-face)
+                    body)
                    "\n"))
          (ecc-render--insert-lines (ecc-render--clip diff ecc-render-diff-max-lines)
                                    body 'ecc-dim-face))
@@ -1259,18 +1358,24 @@ each question once the request was answered."
     (seq-doseq (question (or questions []))
       (let* ((text (alist-get 'question question))
              (answer (cdr (assoc text answers))))
-        (insert (propertize (concat prefix (ecc-render--one-line text))
-                            'face (if answer 'ecc-dim-face 'ecc-pending-face))
+        (insert (ecc-render--hang
+                 (propertize (concat prefix (ecc-render--one-line text))
+                             'face (if answer 'ecc-dim-face 'ecc-pending-face))
+                 prefix)
                 "\n")
         (setq n 0)
         (seq-doseq (option (or (alist-get 'options question) []))
           (cl-incf n)
-          (insert (propertize (format "%s  %d. %s" prefix n (alist-get 'label option))
-                              'face 'ecc-dim-face)
+          (insert (ecc-render--hang
+                   (propertize (format "%s  %d. %s" prefix n (alist-get 'label option))
+                               'face 'ecc-dim-face)
+                   (concat prefix "     "))
                   "\n"))
         (when answer
-          (insert (propertize (format "%s  → %s" prefix (ecc-render--one-line answer))
-                              'face 'ecc-user-face)
+          (insert (ecc-render--hang
+                   (propertize (format "%s  → %s" prefix (ecc-render--one-line answer))
+                               'face 'ecc-user-face)
+                   (concat prefix "    "))
                   "\n"))))))
 
 (defun ecc-render--insert-command (node depth)
@@ -1285,9 +1390,11 @@ model."
     (ecc-render--insert-owned
      node depth
      (lambda ()
-       (insert (concat pad (propertize (concat ecc-render-user-mark name
-                                               (if args (concat " " args) ""))
-                                       'face 'ecc-user-face))
+       (insert (ecc-render--hang
+                (concat pad (propertize (concat ecc-render-user-mark name
+                                                (if args (concat " " args) ""))
+                                        'face 'ecc-user-face))
+                (concat pad (make-string (string-width ecc-render-user-mark) ?\s)))
                "\n")))
     (when (and (stringp output) (not (string-empty-p (string-trim output))))
       (ecc-render--insert-owned
@@ -1364,10 +1471,12 @@ apart; the few whose shape is known say what happened as well."
       (ecc-render--insert-owned
        node depth
        (lambda ()
-         (insert (concat pad (ecc-render--fold-cell)
-                         (propertize (ecc-render--one-line
-                                      (ecc-render--system-heading node))
-                                     'face 'ecc-dim-face))
+         (insert (ecc-render--hang
+                  (concat pad (ecc-render--fold-cell)
+                          (propertize (ecc-render--one-line
+                                       (ecc-render--system-heading node))
+                                      'face 'ecc-dim-face))
+                  (concat pad "  "))
                  "\n")))
       (when-let* ((message (ecc-model-node-get node 'message)))
         (ecc-render--insert-owned
@@ -1385,14 +1494,16 @@ apart; the few whose shape is known say what happened as well."
     (ecc-render--insert-owned
      node depth
      (lambda ()
-       (insert (concat pad (ecc-render--fold-cell)
-                       (propertize (format "unknown: %s%s%s"
+       (insert (ecc-render--hang
+                (concat pad (ecc-render--fold-cell)
+                        (propertize (format "unknown: %s%s%s"
                                                (or (alist-get 'type message) "?")
                                                (if-let* ((subtype (alist-get
                                                                    'subtype message)))
                                                    (format "/%s" subtype) "")
                                                (if reason (format " (%s)" reason) ""))
-                                       'face 'ecc-error-face))
+                                    'face 'ecc-error-face))
+                (concat pad "  "))
                "\n")))
     (ecc-render--insert-owned
      node (1+ depth)
@@ -1427,6 +1538,8 @@ is drawn while the turn is still running."
                         (cost (format "$%.4f" cost))
                         (duration (format "%.1fs" duration)))))
       (when (or left right)
+        ;; The line closes the turn, so it stands inside it, on the rail.
+        (insert (ecc-render--pad 1))
         (when left (insert left))
         (when right
           (insert (propertize
@@ -1465,9 +1578,11 @@ that the movement commands stop once per turn rather than twice."
         ;; needs a line to part it from the turn before and to hang its
         ;; heading on, but not the mark of a user band: nobody said
         ;; this.
-        (insert (ecc-render--fold-cell)
-                (propertize (or (ecc-turn-label turn) "(resumed)")
-                            'face 'ecc-dim-face)
+        (insert (ecc-render--hang
+                 (concat (ecc-render--fold-cell)
+                         (propertize (or (ecc-turn-label turn) "(resumed)")
+                                     'face 'ecc-dim-face))
+                 "  ")
                 "\n")
         (ecc-render--mark start (point) id 0))
       (ecc-render--mark-heading start id))
@@ -1478,7 +1593,7 @@ that the movement commands stop once per turn rather than twice."
       (dolist (child (ecc-turn-children turn))
         (unless (ecc-render--skip-p child)
           (unless (ecc-render--cluster-p previous child)
-            (ecc-render--insert-gap))
+            (ecc-render--insert-gap 1))
           (ecc-render--insert-node session child 1)
           (setq previous child))))
     (ecc-render--insert-turn-end-line turn)
@@ -2068,13 +2183,19 @@ heading, because its body starts collapsed anyway."
                         (ecc-render--stream-string
                          text (ecc-render--pad (if thinking (1+ depth) depth)))
                         'face (if thinking 'ecc-thinking-face 'ecc-assistant-face)
+                        'wrap-prefix (ecc-render--wrap-prefix
+                                      (ecc-render--pad
+                                       (if thinking (1+ depth) depth)))
                         'ecc-node (ecc-node-id node)
                         'ecc-depth (if thinking (1+ depth) depth)
                         'keymap (ecc-render--map 'ecc-chat-transcript-map)
                         'read-only t))
                (set-marker marker (point))))))
         ((or 'tool 'agent)
-         (ecc-render--replace-heading node depth (ecc-render--tool-heading node depth)))))))
+         (ecc-render--replace-heading
+          node depth
+          (ecc-render--hang (ecc-render--tool-heading node depth)
+                            (concat (ecc-render--pad depth) "  "))))))))
 
 (defun ecc-render--flush-deltas ()
   "Draw the streamed text that is waiting in the current buffer."
