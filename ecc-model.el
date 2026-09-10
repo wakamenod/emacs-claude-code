@@ -117,7 +117,8 @@ It is not `ecc-progress-hook\', which is about the turn.")
                         ; /model may be given, and the name the
                         ; terminal client shows for each
   last-effort           ; effort level of the last `/effort' sent from
-                        ; here; nothing in the stream reports one
+                        ; here, or the one a recorded assistant line
+                        ; carries; nothing in the stream reports one
   permission-mode
   remote-control        ; alist of what the CLI said about Remote
                         ; Control: `available', `auto-enable',

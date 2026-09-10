@@ -469,6 +469,27 @@ behind it."
       (should (= 1 (length (ecc-session-turns session))))
       (should (eq (ecc-session-state session) 'running)))))
 
+(ert-deftest ecc-proc-test-a-turn-left-open-does-not-survive-a-start ()
+  "A CLI that has just started is not in the middle of a turn.
+One left open by whatever came before would hold every prompt in the
+queue, and the session would take nothing said to it."
+  (ecc-test-with-fake-session session
+    (cl-letf* ((real-make-process (symbol-function 'make-process))
+               ((symbol-function 'make-process)
+                (lambda (&rest arguments)
+                  (apply real-make-process
+                         (plist-put (copy-sequence arguments)
+                                    :command '("sleep" "30")))))
+               ((symbol-function 'ecc-proc-control) (lambda (&rest _) nil)))
+      (ecc-model-begin-turn session "left open")
+      (let ((process (ecc-proc-start session t)))
+        (unwind-protect
+            (progn
+              (should-not (ecc-session-current-turn session))
+              (should (eq (ecc-session-state session) 'idle)))
+          (set-process-sentinel process #'ignore)
+          (delete-process process))))))
+
 (provide 'ecc-proc-test)
 
 ;;; ecc-proc-test.el ends here

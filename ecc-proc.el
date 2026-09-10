@@ -171,6 +171,16 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
     ;; session whose process never came up, because system/init only
     ;; arrives with the first turn and a session that waited for it
     ;; would spin for ever.
+    ;;
+    ;; A CLI that has just started is not in the middle of a turn
+    ;; either.  One left open by whatever came before -- a hand-off
+    ;; whose follow was still in a turn, a recording read back -- would
+    ;; hold every prompt in the queue and the session would take
+    ;; nothing said to it, so it ends here rather than never.
+    (when-let* ((turn (ecc-model-abort-turn session)))
+      (ecc-log (ecc-session-name session)
+               "turn %s was still open when the CLI started; closed"
+               (ecc-turn-id turn)))
     (ecc-model-set-state session 'idle)
     ;; Ask for the slash commands as soon as the CLI is up. The answer
     ;; also carries what the Claude Code settings say about Remote

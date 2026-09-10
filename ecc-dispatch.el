@@ -351,7 +351,16 @@ than added again."
       ;; The recording carries no system/init, so this is the only place
       ;; a session read from history learns which model it talks to.
       (when-let* ((model (alist-get 'model (alist-get 'message message))))
-        (setf (ecc-session-last-model session) model)))
+        (setf (ecc-session-last-model session) model))
+      ;; A recorded assistant line carries the effort level beside the
+      ;; message, which the stream never does (confirmed 2026-09-11
+      ;; against the recordings of CLI 2.1.x: a top-level `effort' on
+      ;; every assistant line, and nothing anywhere in the stream).  It
+      ;; is what an `/effort' typed in the terminal of a hand-off leaves
+      ;; behind, and reading it here is the only way this side hears of
+      ;; it -- the follow of `ecc-tui' replays these lines.
+      (when-let* ((effort (alist-get 'effort message)))
+        (setf (ecc-session-last-effort session) effort)))
     (dolist (block (ecc-protocol-content-blocks message))
       (cl-incf index)
       (let ((id (format "%s:%d" uuid index))
