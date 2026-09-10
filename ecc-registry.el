@@ -34,20 +34,16 @@
 (require 'ecc-core)
 (require 'ecc-protocol)
 
-(defcustom ecc-registry-directory "~/.claude/sessions/"
+(defvar ecc-registry-directory "~/.claude/sessions/"
   "Directory in which Claude Code records the sessions it is running.
-One JSON file per process, named after its process id."
-  :type 'directory
-  :group 'ecc)
+One JSON file per process, named after its process id.")
 
-(defcustom ecc-registry-check-process t
+(defvar ecc-registry-check-process t
   "Non-nil ignores a session whose process is not running any more.
 The CLI deletes its own file, so an entry that outlives its process is
 one that was killed; believing it would show a session that cannot be
 reached.  Turning this off is only useful where `process-attributes'
-says nothing useful."
-  :type 'boolean
-  :group 'ecc)
+says nothing useful.")
 
 ;;;; Reading
 

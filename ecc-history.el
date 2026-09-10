@@ -38,25 +38,19 @@
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-display-session "ecc-window" (session))
 
-(defcustom ecc-history-directory "~/.claude/projects/"
+(defvar ecc-history-directory "~/.claude/projects/"
   "Directory the CLI keeps its recorded conversations in.
 It holds one subdirectory per working directory, each with one jsonl
-file per session."
-  :type 'directory
-  :group 'ecc)
+file per session.")
 
-(defcustom ecc-history-page-turns 50
-  "Number of turns read when a recorded conversation is opened (FR-HIST-1)."
-  :type 'integer
-  :group 'ecc)
+(defvar ecc-history-page-turns 50
+  "Number of turns read when a recorded conversation is opened (FR-HIST-1).")
 
-(defcustom ecc-history-include-sidechain nil
+(defvar ecc-history-include-sidechain nil
   "Non-nil replays the subagent lines of a recorded conversation.
 The CLI of this version writes none: a subagent leaves its transcript
 beside the session file instead, so the lines are skipped and only
-counted (FR-HIST-2).  See docs/verified.md."
-  :type 'boolean
-  :group 'ecc)
+counted (FR-HIST-2).  See docs/verified.md.")
 
 (defconst ecc-history-suppressed-hooks
   '(ecc-sync-file-changed-hook
@@ -401,18 +395,14 @@ drawn rather than the live region alone."
 
 ;;;; Opening a recorded conversation (FR-DASH-3)
 
-(defcustom ecc-history-scan-head-bytes 8192
+(defvar ecc-history-scan-head-bytes 8192
   "Bytes read from the start of a recording when it is only described.
-Enough for the first few lines, which say where the session ran."
-  :type 'integer
-  :group 'ecc)
+Enough for the first few lines, which say where the session ran.")
 
-(defcustom ecc-history-scan-tail-bytes 65536
+(defvar ecc-history-scan-tail-bytes 65536
   "Bytes read from the end of a recording when it is only described.
 The CLI repeats the title, the cost and the last prompt after every
-turn, so the end holds the current values."
-  :type 'integer
-  :group 'ecc)
+turn, so the end holds the current values.")
 
 (defun ecc-history--edges (file)
   "Return the first and last lines of FILE without reading the middle.

@@ -91,28 +91,22 @@ empty on a closing fence and on an opening one that names nothing.")
 (defconst ecc-markdown-bold-regexp "\\*\\*\\([^*\n]+\\)\\*\\*"
   "Regexp matching bold text.")
 
-(defcustom ecc-markdown-hide-markup t
+(defvar ecc-markdown-hide-markup t
   "Non-nil hides the markup around bold, code and headings (FR-OUT-8).
 Nil leaves the asterisks, the backquotes and the number signs in
 sight, which is what a reader who wants the source of the reply
-rather than its shape wants."
-  :type 'boolean
-  :group 'ecc)
+rather than its shape wants.")
 
-(defcustom ecc-markdown-highlight-code t
+(defvar ecc-markdown-highlight-code t
   "Non-nil colours a fenced code block with the major mode of its language.
-Nil leaves every block in `ecc-markdown-code-face' (FR-OUT-15)."
-  :type 'boolean
-  :group 'ecc)
+Nil leaves every block in `ecc-markdown-code-face' (FR-OUT-15).")
 
-(defcustom ecc-markdown-highlight-max-lines 300
+(defvar ecc-markdown-highlight-max-lines 300
   "Longest code block, in lines, that is coloured with a major mode.
 A long block in a heavy mode costs more than the colour is worth, and
-the transcript is redrawn often.  Nil colours every block."
-  :type '(choice (const :tag "No limit" nil) integer)
-  :group 'ecc)
+the transcript is redrawn often.  Nil colours every block.")
 
-(defcustom ecc-markdown-language-modes
+(defvar ecc-markdown-language-modes
   '(("elisp" . emacs-lisp-mode)
     ("emacs-lisp" . emacs-lisp-mode)
     ("el" . emacs-lisp-mode)
@@ -136,9 +130,7 @@ the transcript is redrawn often.  Nil colours every block."
     ("markdown" . markdown-mode))
   "Fence languages whose major mode is not named after them.
 A language that is not listed is looked up by trying `LANG-mode' and
-`LANG-ts-mode', and then `auto-mode-alist' for the extension LANG."
-  :type '(alist :key-type string :value-type symbol)
-  :group 'ecc)
+`LANG-ts-mode', and then `auto-mode-alist' for the extension LANG.")
 
 (defun ecc-markdown-language-mode (language)
   "Return the major mode that colours LANGUAGE, or nil when there is none.

@@ -31,12 +31,10 @@
 (require 'ecc-perm)
 (require 'ecc-window)
 
-(defcustom ecc-plan-modes '("acceptEdits" "default" "bypassPermissions" "plan")
+(defvar ecc-plan-modes '("acceptEdits" "default" "bypassPermissions" "plan")
   "Permission modes offered when a plan is approved (FR-PLAN-4).
 Choosing \"plan\" sends setMode plan back with the approval; whether
-the CLI stays in plan mode after ExitPlanMode is not verified."
-  :type '(repeat string)
-  :group 'ecc)
+the CLI stays in plan mode after ExitPlanMode is not verified.")
 
 (defcustom ecc-plan-default-mode "acceptEdits"
   "Permission mode switched to when a plan is approved without choosing one.
@@ -45,18 +43,14 @@ by leaving plan mode for the default mode."
   :type '(choice (const :tag "Leave it to the CLI" nil) string)
   :group 'ecc)
 
-(defcustom ecc-plan-auto-open t
+(defvar ecc-plan-auto-open t
   "Non-nil opens the review buffer as soon as a plan arrives.
 Only done while the transcript of the session is on screen, so that a
-session running in the background does not grab the window."
-  :type 'boolean
-  :group 'ecc)
+session running in the background does not grab the window.")
 
-(defcustom ecc-plan-feedback-footer
+(defvar ecc-plan-feedback-footer
   "Please update your plan to match these changes and call ExitPlanMode again."
-  "Sentence that closes every feedback message."
-  :type 'string
-  :group 'ecc)
+  "Sentence that closes every feedback message.")
 
 (defface ecc-plan-comment-face
   '((t :inherit font-lock-comment-face :slant italic))

@@ -151,10 +151,8 @@ project from another; the whole path is in the tooltip."
 (defconst ecc-capabilities-buffer-name "*ecc-capabilities*"
   "Name of the Capabilities buffer.")
 
-(defcustom ecc-capabilities-directory "~/.claude/"
-  "Directory holding the skills, agents and commands of every project."
-  :type 'directory
-  :group 'ecc)
+(defvar ecc-capabilities-directory "~/.claude/"
+  "Directory holding the skills, agents and commands of every project.")
 
 (cl-defstruct ecc-capability
   "One thing a session can do."

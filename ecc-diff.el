@@ -33,17 +33,13 @@
   :type 'integer
   :group 'ecc)
 
-(defcustom ecc-diff-max-file-size (* 1024 1024)
-  "Largest file, in bytes, read to give a diff its context."
-  :type 'integer
-  :group 'ecc)
+(defvar ecc-diff-max-file-size (* 1024 1024)
+  "Largest file, in bytes, read to give a diff its context.")
 
-(defcustom ecc-diff-max-cells 400000
+(defvar ecc-diff-max-cells 400000
   "Largest product of the two line counts the exact diff is tried on.
 Above it the whole old text is shown removed and the new text added,
-which keeps a Write of thousands of lines from freezing Emacs."
-  :type 'integer
-  :group 'ecc)
+which keeps a Write of thousands of lines from freezing Emacs.")
 
 ;;;; Reading a file
 

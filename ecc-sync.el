@@ -21,17 +21,13 @@
 (require 'ecc-core)
 (require 'ecc-model)
 
-(defcustom ecc-sync-enabled t
-  "Non-nil reverts a buffer when Claude changes the file it visits."
-  :type 'boolean
-  :group 'ecc)
+(defvar ecc-sync-enabled t
+  "Non-nil reverts a buffer when Claude changes the file it visits.")
 
-(defcustom ecc-sync-modified-action 'warn
+(defvar ecc-sync-modified-action 'warn
   "What to do when Claude changes a file whose buffer has unsaved changes.
 `warn' leaves the buffer alone and says so, `ask' offers to revert it,
-and `revert' throws the unsaved changes away without asking."
-  :type '(choice (const warn) (const ask) (const revert))
-  :group 'ecc)
+and `revert' throws the unsaved changes away without asking.")
 
 (defvar ecc-sync-after-revert-hook nil
   "Functions run in a buffer right after this package reverted it.")

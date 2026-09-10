@@ -38,22 +38,16 @@
 (require 'ecc-perm)
 (require 'ecc-window)
 
-(defcustom ecc-review-git-executable "git"
-  "The git program the review runs for `git diff'."
-  :type 'string
-  :group 'ecc)
+(defvar ecc-review-git-executable "git"
+  "The git program the review runs for `git diff'.")
 
-(defcustom ecc-review-header
+(defvar ecc-review-header
   "Review comments on the changes below.  Please act on each of them."
-  "First line of the prompt the review comments are sent as (FR-DIFF-5)."
-  :type 'string
-  :group 'ecc)
+  "First line of the prompt the review comments are sent as (FR-DIFF-5).")
 
-(defcustom ecc-review-proposal-header
+(defvar ecc-review-proposal-header
   "Review comments on the proposal below.  Please act on each of them and propose it again."
-  "First line of the deny message built from comments on a proposal (FR-DIFF-2)."
-  :type 'string
-  :group 'ecc)
+  "First line of the deny message built from comments on a proposal (FR-DIFF-2).")
 
 (defcustom ecc-review-context-lines 3
   "Lines of context around a change in a diff the review makes itself."
@@ -768,13 +762,11 @@ The way a comment is left from the transcript (FR-DIFF-2)."
 
 ;;;; Editing a proposal before allowing it (FR-DIFF-7)
 
-(defcustom ecc-review-edited-note
+(defvar ecc-review-edited-note
   "The user changed the earlier %s (%s) as follows before applying it.  Work from this from now on:"
   "Format of the note queued after a proposal was changed and applied.
 The two arguments are the tool name and the file; the diff between
-the proposal and what was applied follows."
-  :type 'string
-  :group 'ecc)
+the proposal and what was applied follows.")
 
 (defvar-local ecc-review-proposal--request nil
   "The request whose text this buffer edits.")

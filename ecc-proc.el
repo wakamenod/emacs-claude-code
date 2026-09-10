@@ -24,18 +24,14 @@
 (require 'ecc-protocol)
 (require 'ecc-model)
 
-(defcustom ecc-control-timeout 30
-  "Seconds to wait for the answer to a control request before warning."
-  :type 'number
-  :group 'ecc)
+(defvar ecc-control-timeout 30
+  "Seconds to wait for the answer to a control request before warning.")
 
-(defcustom ecc-stop-grace 2.0
+(defvar ecc-stop-grace 2.0
   "Seconds the CLI is given to stop by itself before it is killed.
 A terminated CLI writes its last lines and takes itself out of the
 session registry other Claude Code processes read, which a killed one
-cannot; it normally takes a fraction of a second.  Zero kills at once."
-  :type 'number
-  :group 'ecc)
+cannot; it normally takes a fraction of a second.  Zero kills at once.")
 
 (defvar ecc-proc-message-function #'ignore
   "Function called with a session and every parsed message.

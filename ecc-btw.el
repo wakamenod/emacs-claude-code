@@ -56,19 +56,15 @@ without either, a window is used and the buffer is the same one."
                  (const :tag "A frame floating over this one" posframe))
   :group 'ecc)
 
-(defcustom ecc-btw-history-limit 10
+(defvar ecc-btw-history-limit 10
   "How many past exchanges go back with the next side question.
 The CLI threads nothing by itself, so this is the whole of the context
-a follow-up has (FR-BTW-4).  Nil sends none."
-  :type '(choice (const :tag "None" nil) integer)
-  :group 'ecc)
+a follow-up has (FR-BTW-4).  Nil sends none.")
 
-(defcustom ecc-btw-timeout 120
+(defvar ecc-btw-timeout 120
   "Seconds to wait for the answer to a side question.
 Longer than `ecc-control-timeout', which is meant for the control
-requests that are answered at once."
-  :type 'number
-  :group 'ecc)
+requests that are answered at once.")
 
 (defface ecc-btw-question-face
   '((t :inherit ecc-user-face))

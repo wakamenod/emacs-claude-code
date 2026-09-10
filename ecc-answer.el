@@ -34,16 +34,12 @@
 (declare-function ecc-dashboard "ecc-dashboard" ())
 (declare-function ecc-history-open "ecc-history" (session-id))
 
-(defcustom ecc-answer-confirm t
-  "Non-nil asks before a request is answered from another buffer."
-  :type 'boolean
-  :group 'ecc)
+(defvar ecc-answer-confirm t
+  "Non-nil asks before a request is answered from another buffer.")
 
-(defcustom ecc-answer-exclude-tools '("Bash")
+(defvar ecc-answer-exclude-tools '("Bash")
   "Tools that `ecc-answer-allow' and friends never answer.
-A request for one of them has to be answered where it can be read."
-  :type '(repeat string)
-  :group 'ecc)
+A request for one of them has to be answered where it can be read.")
 
 ;;;; Describing a request
 

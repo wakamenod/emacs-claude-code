@@ -52,38 +52,28 @@
 
 ;;;; Options
 
-(defcustom ecc-tui-extra-args nil
-  "Extra arguments passed to the CLI started in a terminal."
-  :type '(repeat string)
-  :group 'ecc)
+(defvar ecc-tui-extra-args nil
+  "Extra arguments passed to the CLI started in a terminal.")
 
-(defcustom ecc-tui-interrupt-timeout 10
-  "Seconds to wait for a running turn to stop before the process is killed."
-  :type 'number
-  :group 'ecc)
+(defvar ecc-tui-interrupt-timeout 10
+  "Seconds to wait for a running turn to stop before the process is killed.")
 
-(defcustom ecc-tui-follow t
+(defvar ecc-tui-follow t
   "Non-nil follows the recording while a session is open in a terminal.
 Not to be confused with `ecc-render-follow', which is about point
 keeping up with the end of a transcript.
 This is what keeps the transcript current during a hand-off
 \(FR-TUI-3); turning it off leaves the buffer as it was until the
-session comes back."
-  :type 'boolean
-  :group 'ecc)
+session comes back.")
 
-(defcustom ecc-tui-poll-interval 2
+(defvar ecc-tui-poll-interval 2
   "Seconds between the checks made while a session is in a terminal.
 A file notification is a courtesy rather than a promise, so the timer
 runs even when the recording is being watched, and it is also what
-notices a terminal that ended without its sentinel being called."
-  :type 'number
-  :group 'ecc)
+notices a terminal that ended without its sentinel being called.")
 
-(defcustom ecc-tui-return-on-exit t
-  "Non-nil resumes a session in Emacs once its terminal is left (FR-TUI-4)."
-  :type 'boolean
-  :group 'ecc)
+(defvar ecc-tui-return-on-exit t
+  "Non-nil resumes a session in Emacs once its terminal is left (FR-TUI-4).")
 
 ;;;; What is being handed over
 

@@ -33,10 +33,8 @@
 (require 'ecc-proc)
 (require 'ecc-diff)
 
-(defcustom ecc-turn-approve-tools '("Edit" "Write" "NotebookEdit")
-  "Tools that a turn-wide approval covers (FR-PERM-7)."
-  :type '(repeat string)
-  :group 'ecc)
+(defvar ecc-turn-approve-tools '("Edit" "Write" "NotebookEdit")
+  "Tools that a turn-wide approval covers (FR-PERM-7).")
 
 (defconst ecc-dispatch-file-tools
   '(("Read" . read) ("Edit" . edit) ("MultiEdit" . edit) ("NotebookEdit" . edit)

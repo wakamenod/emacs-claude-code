@@ -40,42 +40,30 @@
 
 ;;;; Settings
 
-(defcustom ecc-inline-max-lines 12
+(defvar ecc-inline-max-lines 12
   "Lines of an inline answer shown at once (FR-INLINE-1).
-The rest is scrolled to inside the overlay."
-  :type 'integer
-  :group 'ecc)
+The rest is scrolled to inside the overlay.")
 
-(defcustom ecc-inline-binding 'ask
+(defvar ecc-inline-binding 'ask
   "Which session an inline question of a buffer goes to (FR-INLINE-1).
 `fork' branches the session of the project with --fork-session, so the
 answer knows the conversation so far; `light' starts a session with no
 tools, which is cheaper and knows nothing; `ask' asks the first time
-and remembers the answer for that buffer."
-  :type '(choice (const :tag "Ask the first time" ask)
-                 (const :tag "Fork the session of the project" fork)
-                 (const :tag "A light session of its own" light))
-  :group 'ecc)
+and remembers the answer for that buffer.")
 
-(defcustom ecc-inline-light-args '("--tools" "")
+(defvar ecc-inline-light-args '("--tools" "")
   "Arguments added to a light inline session.
 The point of a light session is that it answers questions and touches
-nothing, which is what an empty tool list says."
-  :type '(repeat string)
-  :group 'ecc)
+nothing, which is what an empty tool list says.")
 
-(defcustom ecc-rewrite-finished-action 'show-actions
+(defvar ecc-rewrite-finished-action 'show-actions
   "What `ecc-rewrite' does once the rewritten code arrives (FR-INLINE-2).
 `show-actions' shows it in an overlay and waits; `accept' puts it in
 the buffer at once; `diff' opens the diff; `merge' leaves a conflict
-for `smerge-mode' to resolve."
-  :type '(choice (const show-actions) (const accept) (const diff) (const merge))
-  :group 'ecc)
+for `smerge-mode' to resolve.")
 
-(defcustom ecc-rewrite-model nil
-  "Model `ecc-rewrite' asks, or nil for the default of the CLI."
-  :type '(choice (const :tag "The usual model" nil) string)
-  :group 'ecc)
+(defvar ecc-rewrite-model nil
+  "Model `ecc-rewrite' asks, or nil for the default of the CLI.")
 
 (defface ecc-inline-face
   '((t :inherit shadow :extend t))

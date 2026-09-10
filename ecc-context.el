@@ -38,42 +38,32 @@
 (declare-function flycheck-error-message "flycheck" (err))
 (declare-function flycheck-error-line "flycheck" (err))
 
-(defcustom ecc-context-attach-by-default nil
+(defvar ecc-context-attach-by-default nil
   "Non-nil attaches the editor context to every prompt sent (FR-CTX-1).
 It can be turned on and off in a session buffer with
-\\<ecc-chat-mode-map>\\[ecc-prompt-toggle-context]."
-  :type 'boolean
-  :group 'ecc)
+\\<ecc-chat-mode-map>\\[ecc-prompt-toggle-context].")
 
-(defcustom ecc-context-visible t
+(defvar ecc-context-visible t
   "Non-nil appends the context to a prompt as a quote block (FR-CTX-2).
 That is what the user sees before sending.  Nil sends the same text
 without showing it in the prompt region, which is the invisible form
-the requirement makes optional."
-  :type 'boolean
-  :group 'ecc)
+the requirement makes optional.")
 
-(defcustom ecc-context-cursor-lines 3
+(defvar ecc-context-cursor-lines 3
   "Lines quoted above and below the cursor by the `@cursor' reference.
-Zero sends the line the cursor is on and nothing else."
-  :type 'integer
-  :group 'ecc)
+Zero sends the line the cursor is on and nothing else.")
 
-(defcustom ecc-context-max-lines 200
-  "Most lines of a region or a file range quoted into a prompt."
-  :type 'integer
-  :group 'ecc)
+(defvar ecc-context-max-lines 200
+  "Most lines of a region or a file range quoted into a prompt.")
 
-(defcustom ecc-context-language-alist
+(defvar ecc-context-language-alist
   '((emacs-lisp-mode . "elisp")
     (lisp-interaction-mode . "elisp")
     (c++-mode . "cpp")
     (c++-ts-mode . "cpp")
     (sh-mode . "bash")
     (bash-ts-mode . "bash"))
-  "Major modes whose fenced code block language is not the mode name."
-  :type '(alist :key-type symbol :value-type string)
-  :group 'ecc)
+  "Major modes whose fenced code block language is not the mode name.")
 
 ;;;; Capturing (FR-CTX-1)
 

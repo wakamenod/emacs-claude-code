@@ -61,23 +61,17 @@ up again."
   "Face for the cells of the first row of a table."
   :group 'ecc)
 
-(defcustom ecc-table-style 'box
+(defvar ecc-table-style 'box
   "How a Markdown table is drawn in the transcript.
 `box' redraws it with rules, `pipe' keeps the pipes the model wrote
 and only lines the columns up, and `off' leaves the table exactly as
-it arrived."
-  :type '(choice (const :tag "Rules" box)
-                 (const :tag "Pipes" pipe)
-                 (const :tag "Leave alone" off))
-  :group 'ecc)
+it arrived.")
 
-(defcustom ecc-table-max-width 92
+(defvar ecc-table-max-width 92
   "Widest a table is drawn, in columns, or nil for no limit.
 A column wider than its share is wrapped to fit.  The transcript
 indents an assistant reply by a couple of columns, so this is a little
-under the width of the window it is meant for."
-  :type '(choice (const :tag "No limit" nil) integer)
-  :group 'ecc)
+under the width of the window it is meant for.")
 
 (defconst ecc-table-row-regexp "^[ \t]*|"
   "Regexp matching a line that could be a row of a table.")
