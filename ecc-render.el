@@ -1553,11 +1553,6 @@ no turn, so nothing freezes them."
 (defun ecc-render-status-line (session)
   "Return the one line summary of what SESSION is doing right now."
   (let* ((progress (ecc-session-progress session))
-         (tool (ecc-model-running-tool session))
-         (thinking (alist-get 'thinking-tokens progress))
-         (streaming (alist-get 'streaming progress))
-         (status (alist-get 'status progress))
-         (task-summary (alist-get 'task-summary progress))
          (request (car (ecc-session-pending session))))
     (pcase (if (eq (ecc-session-kind session) 'handoff) 'handoff
              (ecc-session-state session))
@@ -1583,40 +1578,18 @@ no turn, so nothing freezes them."
                   ""))
         'face 'ecc-pending-face))
       (_
-       (concat
-        (propertize (if (ecc-model-remote-turn-p (ecc-session-current-turn session))
-                        "▶ running · remote"
-                      "▶ running")
-                    'face 'ecc-running-face)
-        (propertize
-         (concat
-          (when status (format "  ·  %s" status))
-          ;; What the CLI itself says the turn is doing (system/task_summary).
-          (when task-summary
-            (format "  ·  %s" (ecc-render--one-line task-summary)))
-          (when tool
-            (format "  ·  %s %s"
-                    (ecc-model-node-get tool 'name)
-                    (if (ecc-node-streaming tool)
-                        (format "(%s chars…)"
-                                (ecc-render--count-string
-                                 (length (ecc-node-streaming-text tool))))
-                      (ecc-render-tool-summary (ecc-model-node-get tool 'name)
-                                               (ecc-model-node-get tool 'input)))))
-          (when thinking (format "  ·  thinking %s tokens"
-                                 (ecc-render--count-string thinking)))
-          (when (and streaming (memq (car streaming) '(text thinking)))
-            (format "  ·  %s %s chars" (car streaming)
-                    (ecc-render--count-string (cdr streaming)))))
-         'face 'ecc-dim-face))))))
+       (propertize (if (ecc-model-remote-turn-p (ecc-session-current-turn session))
+                       "▶ running · remote"
+                     "▶ running")
+                   'face 'ecc-running-face)))))
 
 (defun ecc-render--model-name (session)
   "Return the short name of the model SESSION runs, or nil.
-The CLI names a model in full, `claude-sonnet-4-5-20250929\='; a header
-line has room for the part that tells one from another.  The model of
-the last answer comes first, so that a `/model\=' shows here as soon as
-it is sent; init answers until there has been one, and nothing does
-before the first turn."
+The CLI names a model in full, `claude-sonnet-4-5-20250929\='; the
+footer under the prompt and the dashboard have room for the part that
+tells one from another.  The model of the last answer comes first, so
+that a `/model\=' shows as soon as it is sent; init answers until there
+has been one, and nothing does before the first turn."
   (ecc--short-model-name (or (ecc-session-last-model session)
                              (alist-get 'model (ecc-session-init session)))))
 
@@ -1634,14 +1607,12 @@ for it; `ecc-remote-control-open\=' is the way to follow it."
 
 (defun ecc-render--header-right (session)
   "Return what the right of the header line says SESSION is, or nil.
-The model and the permission mode, and after them whatever the modules
-above the renderer add through `ecc-render-header-functions\=', which is
-how the room left in the context window arrives (FR-HINT-3)."
-  (let* ((own (append
-               (mapcar (lambda (text) (propertize text 'face 'ecc-dim-face))
-                       (delq nil (list (ecc-render--model-name session)
-                                       (ecc-session-permission-mode session))))
-               (delq nil (list (ecc-render--remote-control session)))))
+The Remote Control mark, and after it whatever the modules above the
+renderer add through `ecc-render-header-functions\=', which is how the
+room left in the context window arrives (FR-HINT-3).  The model and
+the permission mode are not here: the footer under the prompt names
+them both, and saying it twice on one screen is noise."
+  (let* ((own (delq nil (list (ecc-render--remote-control session))))
          (added (delq nil
                       (mapcar (lambda (function)
                                 (condition-case err (funcall function session)

@@ -361,11 +361,13 @@ A window reading the transcript keeps its place there instead."
             (set-window-buffer window buffer)
             (ecc-chat-goto-prompt)
             (insert "draft")
-            (set-window-point window (- (point-max) 2))
+            ;; Three characters into the draft, which the footer under
+            ;; it must not be confused with.
+            (set-window-point window (- (point) 2))
             (ecc-model-begin-turn session "hello")
             (ecc-test-dispatch session "basic-turn")
             (ecc-render-flush session)
-            (should (= (window-point window) (- (point-max) 2)))
+            (should (= (window-point window) (+ (ecc-chat-prompt-start) 3)))
             ;; A window reading a turn that is still growing stays on the
             ;; line it was reading.  The live region is drawn again from
             ;; scratch on every change, and it used to drag every point in
@@ -525,10 +527,20 @@ prompt region."
 
 ;;;; The footer: the permission mode under the prompt (FR-SES-6)
 
-(defun ecc-chat-test--footer-mode ()
-  "Return the mode line of the footer of this buffer, without properties."
+(defun ecc-chat-test--footer-line ()
+  "Return the last line of the footer of this buffer, without properties."
   (when-let* ((text (ecc-chat-footer-shown)))
     (substring-no-properties (car (last (split-string text "\n"))))))
+
+(defun ecc-chat-test--footer-mode ()
+  "Return what the footer of this buffer calls the permission mode.
+The model stands on the right of the same line, held apart by a
+stretched space; what is asked for here is the left of it."
+  (when-let* ((line (ecc-chat-test--footer-line)))
+    (let ((tail (concat " " (ecc-render--model-name ecc-render--session))))
+      (if (string-suffix-p tail line)
+          (substring line 0 (- (length line) (length tail)))
+        line))))
 
 (ert-deftest ecc-chat-test-footer ()
   "The permission mode is shown under the prompt as read-only text.
@@ -540,6 +552,14 @@ and the draft is written in front of it and survives a redraw
       (ecc-chat--update-ghosts)
       (should (equal (ecc-chat-test--footer-mode)
                      "⏵ manual mode (S-TAB to cycle)"))
+      ;; A session that knows its model names it on the right of the
+      ;; same line, where the header line used to.
+      (should (equal (ecc-chat-test--footer-line)
+                     "⏵ manual mode (S-TAB to cycle)"))
+      (setf (ecc-session-init session) '((model . "claude-haiku-4-5-20251001")))
+      (ecc-chat-update-footer)
+      (should (equal (ecc-chat-test--footer-line)
+                     "⏵ manual mode (S-TAB to cycle) haiku"))
       ;; It is text of its own, past the end of the prompt region.
       (should (string-search "S-TAB" (buffer-string)))
       (should (equal (ecc-chat-draft) ""))

@@ -529,16 +529,33 @@ The label and the face come from `ecc-chat-permission-mode-labels\='."
                         'face (or (cadr entry) 'ecc-dim-face))
             (propertize " (S-TAB to cycle)" 'face 'ecc-dim-face))))
 
+(defun ecc-chat--footer-model (session)
+  "Return the model SESSION runs, for the right of the footer, or nil.
+The header line used to name it; it belongs next to the permission
+mode, since both say what the session is rather than what it is
+doing."
+  (when-let* ((model (ecc-render--model-name session)))
+    (propertize model 'face 'ecc-dim-face)))
+
 (defun ecc-chat-footer-string ()
   "Return the footer of this buffer, or nil when it has none.
 The rule is one stretched space, as the separator above the prompt
-region is, so that it spans whatever width the window has."
+region is, so that it spans whatever width the window has.  The
+permission mode stands on the left of the line under it and the model
+on the right, held there by a stretched space of its own."
   (when-let* ((session (and ecc-chat-show-footer ecc-render--session)))
-    (concat "\n"
-            (propertize " " 'display '(space :align-to right)
-                        'face 'ecc-separator-face)
-            "\n"
-            (ecc-chat--permission-mode-label session))))
+    (let ((model (ecc-chat--footer-model session)))
+      (concat "\n"
+              (propertize " " 'display '(space :align-to right)
+                          'face 'ecc-separator-face)
+              "\n"
+              (ecc-chat--permission-mode-label session)
+              (when model
+                (concat (propertize
+                         " " 'display (list 'space :align-to
+                                            (list '- 'right
+                                                  (1+ (string-width model)))))
+                        model))))))
 
 (defun ecc-chat-footer-shown ()
   "Return the footer under the prompt region, without properties, or nil."

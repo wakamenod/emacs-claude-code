@@ -53,7 +53,7 @@ names are listed in `ecc-model-context-window'."
                                       (cache_creation_input_tokens . 2272)))
     (should (> (ecc-hint-context-left session) 0.4))
     (should (eq (ecc-hint-context-face (ecc-hint-context-left session))
-                'ecc-dim-face))))
+                'ecc-ok-face))))
 
 (ert-deftest ecc-hint-test-context-left ()
   "The fraction left follows the usage, and warns before it runs out."
@@ -66,7 +66,9 @@ names are listed in `ecc-model-context-window'."
                                       (cache_read_input_tokens . 100)))
     (should (= (ecc-session-context-tokens session) 500))
     (should (< (abs (- (ecc-hint-context-left session) 0.5)) 0.001))
-    (should (eq (ecc-hint-context-face (ecc-hint-context-left session)) 'ecc-dim-face))
+    ;; A window with room to spare is yellow-green, and the colour is
+    ;; all the indicator has to say it with.
+    (should (eq (ecc-hint-context-face (ecc-hint-context-left session)) 'ecc-ok-face))
     (should (equal (substring-no-properties (ecc-hint-context-string session))
                    "context 50% left"))
     ;; Below the warning threshold the face changes; below the critical
@@ -78,6 +80,12 @@ names are listed in `ecc-model-context-window'."
     (should (eq (ecc-hint-context-face (ecc-hint-context-left session))
                 'ecc-error-face))
     (should (string-search "run /compact" (ecc-hint-context-string session)))
+    ;; The header indicator says none of that: the header is no place to
+    ;; run a command from, so it is the bare percentage in red.
+    (should (equal (substring-no-properties (ecc-hint-context-indicator session))
+                   "5%"))
+    (should (eq (get-text-property 0 'face (ecc-hint-context-indicator session))
+                'ecc-error-face))
     ;; A window that is overrun reads as empty, not as a negative share.
     (ecc-model-update-usage session '((input_tokens . 5000)))
     (should (= (ecc-hint-context-left session) 0.0))

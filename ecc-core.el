@@ -407,6 +407,16 @@ there."
   "Face for a hint that is worth noticing, such as a small context left."
   :group 'ecc)
 
+(defface ecc-ok-face
+  '((((background dark) (min-colors 88)) :foreground "#a6d189")
+    (((background light) (min-colors 88)) :foreground "#3d7a1f")
+    (((background dark)) :foreground "brightgreen")
+    (t :foreground "green"))
+  "Face for a measure that is still in good health, such as the context left.
+Yellow-green: it reads as room to spare next to the amber of
+`ecc-warning-face' and the red of `ecc-error-face'."
+  :group 'ecc)
+
 ;; The three permission modes the terminal client colours, in the colours
 ;; it gives them (`claude\=' 2.1.263, its light and dark themes; the
 ;; ansi fallbacks are the ones it uses on a terminal with no more than

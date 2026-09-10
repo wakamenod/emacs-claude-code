@@ -151,7 +151,7 @@ the CLI gets round to compacting."
   (cond ((null left) 'ecc-dim-face)
         ((<= left ecc-context-critical-threshold) 'ecc-error-face)
         ((<= left ecc-context-warn-threshold) 'ecc-warning-face)
-        (t 'ecc-dim-face)))
+        (t 'ecc-ok-face)))
 
 (defun ecc-hint-context-string (session)
   "Return the context left of SESSION as a line, or nil when unknown.
@@ -167,13 +167,11 @@ it (FR-HINT-3)."
 (defun ecc-hint-context-indicator (session)
   "Return what the header line of SESSION says about its context.
 The right of the header line is a tight place, so this is the bare
-percentage; below `ecc-context-critical-threshold\=' it says what to do
-about it as well (FR-HINT-3)."
+percentage.  What is left of the window is told by its colour --
+yellow-green, amber, red as it runs out (FR-HINT-3)."
   (when ecc-context-indicator
     (when-let* ((left (ecc-hint-context-left session)))
-      (propertize (format "%d%%%s" (round (* 100 left))
-                          (if (<= left ecc-context-critical-threshold)
-                              " — /compact" ""))
+      (propertize (format "%d%%" (round (* 100 left)))
                   'face (ecc-hint-context-face left)))))
 
 ;;;; The rate limit (FR-HINT-3)

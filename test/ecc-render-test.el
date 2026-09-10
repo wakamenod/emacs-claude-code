@@ -57,27 +57,31 @@ with the request, used in turn for the requests the recording makes."
       (should-not (string-search "claude-haiku" text))
       ;; What it is doing is on the left of the header line, what it is
       ;; on the right (FR-OUT-6 as revised by the phase 9 redesign).
+      ;; The model is not there: the footer under the prompt names it.
       (with-current-buffer (ecc-session-buffer session)
         (let ((header (substring-no-properties (ecc-render-header-line))))
           (should (string-search "○ idle" header))
-          (should (string-search "haiku" header))
-          (should-not (string-search "claude-haiku" header)))))))
+          (should-not (string-search "haiku" header)))))))
 
-(ert-deftest ecc-render-test-header-follows-a-model-change ()
-  "The header line names the new model as soon as `/model' is sent.
+(ert-deftest ecc-render-test-footer-follows-a-model-change ()
+  "The footer names the new model as soon as `/model' is sent.
 It used to name the model of init, which the CLI never sends again, so
 a `/model' only showed once the next answer named the model it came
-back with (FR-HINT-3)."
+back with (FR-HINT-3).  The name stands under the prompt rather than
+in the header line, next to the permission mode."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (setf (ecc-session-init session) '((model . "claude-haiku-4-5-20251001")))
     (with-current-buffer (ecc-session-buffer session)
-      (should (string-search "haiku" (substring-no-properties
-                                      (ecc-render-header-line))))
+      (should (equal "haiku" (ecc-render--model-name session)))
+      (ecc-chat-update-footer)
+      (should (string-suffix-p " haiku" (ecc-chat-footer-shown)))
       (ecc-proc-send-prompt session "/model opus")
-      (let ((header (substring-no-properties (ecc-render-header-line))))
-        (should (string-search "opus" header))
-        (should-not (string-search "haiku" header))))))
+      (should (equal "opus" (ecc-render--model-name session)))
+      (ecc-chat-update-footer)
+      (let ((footer (ecc-chat-footer-shown)))
+        (should (string-suffix-p " opus" footer))
+        (should-not (string-search "haiku" footer))))))
 
 (ert-deftest ecc-render-test-header-shows-remote-control ()
   "A session on the Remote Control bridge says so, with the URL in the tooltip.
@@ -367,9 +371,7 @@ follow have a section to grow.  Returns the remaining lines."
       (should (string-search "\n  Done. Created\n" (ecc-test-buffer-string buffer)))
       (let ((node (ecc-model-find-stream session nil 'text)))
         (should node)
-        (should (equal (ecc-node-streaming-text node) "Done. Created"))
-        ;; The header line says what is streaming (FR-OUT-6).
-        (should (string-search "text" (ecc-render-status-line session))))
+        (should (equal (ecc-node-streaming-text node) "Done. Created")))
       ;; Feed the rest: the complete message replaces the streamed text
       ;; with the formatted one, and it is there exactly once.
       (dolist (line lines)
@@ -698,27 +700,23 @@ the cache the same way a node of the transcript does."
     (ecc-session-ensure-buffer session)
     (should (string-prefix-p "○ starting" (ecc-render-status-line session)))
     (ecc-model-begin-turn session "hello")
-    (should (string-prefix-p "▶ running" (ecc-render-status-line session)))
+    ;; A running turn says that and no more: the tool, the token counts
+    ;; and the line the CLI keeps about the turn were dropped from the
+    ;; header, since the transcript below shows them already.
+    (should (equal "▶ running"
+                   (substring-no-properties (ecc-render-status-line session))))
     (ecc-dispatch session '((type . "system") (subtype . "thinking_tokens")
                             (estimated_tokens . 1200)))
-    (should (string-search "thinking 1.2k tokens" (ecc-render-status-line session)))
-    ;; The line the CLI keeps about the turn (system/task_summary).
     (ecc-dispatch session '((type . "system") (subtype . "task_summary")
                             (detail . "reading ecc-render.el")))
-    (should (string-search "reading ecc-render.el" (ecc-render-status-line session)))
-    (ecc-dispatch session '((type . "system") (subtype . "task_summary")
-                            (detail . :null)))
-    (should-not (string-search "reading ecc-render.el"
-                               (ecc-render-status-line session)))
     (let ((node (ecc-model-add-node session :id "t1" :type 'tool :status 'running
                                     :parent (ecc-model-step-for-tool
                                              session (ecc-session-current-turn session))
                                     :data '((name . "Bash") (input . ((command . "git status")))
                                             (started . (0 1))))))
-      ;; The dispatcher is what notes a tool as running (NFR-1); a node
-      ;; made by hand has to be noted the same way.
       (ecc-model-note-tool-running session node)
-      (should (string-search "Bash git status" (ecc-render-status-line session)))
+      (should (equal "▶ running"
+                     (substring-no-properties (ecc-render-status-line session))))
       (setf (ecc-node-status node) 'done))
     (ecc-model-add-request session (make-ecc-request
                                     :request-id "r" :session session :kind 'permission
