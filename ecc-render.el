@@ -922,6 +922,12 @@ made now would be deleted with the region it sits in."
     ((or 'tool 'agent)
      (when (eq (ecc-node-status node) 'running)
        (push (cons 'pulse (ecc-node-id node)) ecc-render--effect-targets)))
+    ;; A thinking block has no status: it is running exactly while it
+    ;; streams.  The heading says so with an ellipsis, and the pulse is
+    ;; what gives that line the movement the spinner gives the header.
+    ('thinking
+     (when (ecc-node-streaming node)
+       (push (cons 'pulse (ecc-node-id node)) ecc-render--effect-targets)))
     ((or 'permission 'question 'plan)
      (when (eq (ecc-node-status node) 'pending)
        (push (cons 'blink (ecc-node-id node)) ecc-render--effect-targets)))))

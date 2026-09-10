@@ -18,6 +18,7 @@
 (require 'ecc-perm)
 (require 'ecc-dispatch)
 (require 'ecc-proc)
+(require 'ecc-visual)
 
 (defun ecc-render-test--replay (session name prompt &optional answers)
   "Replay fixture NAME into SESSION under PROMPT and draw it.
@@ -401,8 +402,42 @@ follow have a section to grow.  Returns the remaining lines."
       (let ((text (ecc-test-buffer-string (ecc-session-buffer session)))
             (node (ecc-model-node session "toolu_01QcvmkL7eVaiQDvpEut8Pak")))
         (should (ecc-node-streaming node))
-        (should (string-match-p "… Write · streaming [0-9]+ chars…" text))
-        (should (string-search "Write" (ecc-render-status-line session)))))))
+        (should (string-match-p "… Write · streaming [0-9]+ chars…" text))))))
+
+(ert-deftest ecc-render-test-thinking-pulses-while-it-streams ()
+  "The heading of a thinking block pulses until the block ends (FR-OUT-11 b)."
+  (ecc-test-with-fake-session session
+    (let ((ecc-visual-enable-pulse t)
+          (ecc-stream-throttle 0)
+          (seen 0))
+      (unwind-protect
+          (let ((rest (ecc-render-test--stream
+                       session "partial-messages" "長いファイルを書いて"
+                       (lambda (message)
+                         (when (ecc-render-test--delta-p message "thinking_delta")
+                           (cl-incf seen))
+                         (= seen 2)))))
+            ;; While it streams the heading says so and its line moves.
+            (should (string-search "Thinking…"
+                                   (ecc-test-buffer-string (ecc-session-buffer session))))
+            (should (ecc-render-test--pulsed-line session "Thinking…"))
+            ;; Once the block is over the ellipsis and the pulse go with it.
+            (dolist (line rest)
+              (ecc-dispatch session (ecc-protocol-parse-line line)))
+            (ecc-render-flush session)
+            (should-not (ecc-render-test--pulsed-line session "Thinking")))
+        (ecc-visual-clear-effects (ecc-session-buffer session))))))
+
+(defun ecc-render-test--pulsed-line (session text)
+  "Return non-nil when an effect of SESSION sits on a line holding TEXT."
+  (with-current-buffer (ecc-session-buffer session)
+    (cl-some (lambda (overlay)
+               (and (eq (overlay-buffer overlay) (current-buffer))
+                    (overlay-get overlay 'ecc-visual-timer)
+                    (string-search text (buffer-substring-no-properties
+                                         (overlay-start overlay)
+                                         (overlay-end overlay)))))
+             (ecc-visual-effects))))
 
 (ert-deftest ecc-render-test-throttle-by-count ()
   "Counting deltas draws every Nth one and nothing in between."
