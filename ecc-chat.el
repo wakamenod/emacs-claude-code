@@ -89,12 +89,14 @@
 
 ;;;; Options
 
-(defcustom ecc-chat-return-sends nil
+(defvar ecc-chat-return-sends nil
   "Non-nil makes RET send the prompt, the way the terminal client does.
 Off, RET inserts a newline and \\<ecc-chat-mode-map>\\[ecc-prompt-send] sends; on,
-\\[ecc-chat-newline] inserts the newline (FR-INP-1)."
-  :type 'boolean
-  :group 'ecc)
+\\[ecc-chat-newline] inserts the newline (FR-INP-1).
+
+RET is a newline because that is what RET is in Emacs; a reader who
+wants the terminal habit sets this, or rebinds the two keys in
+`ecc-chat-mode-map' outright.")
 
 (defcustom ecc-chat-line-spacing 0.15
   "Extra room under every line of a session buffer, or nil for none.
@@ -113,10 +115,8 @@ whatever else the window holds is unaffected."
   :type '(choice (const :tag "The whole window" nil) integer)
   :group 'ecc)
 
-(defcustom ecc-chat-placeholder "Ask Claude… (C-c ? for the menu)"
-  "What an empty prompt region says, in a dim face."
-  :type 'string
-  :group 'ecc)
+(defvar ecc-chat-placeholder "Ask Claude… (C-c ? for the menu)"
+  "What an empty prompt region says, in a dim face.")
 
 (defvar-local ecc-chat--placeholder-overlay nil
   "The overlay whose `after-string' is the ghost text of this buffer.")
@@ -132,14 +132,12 @@ Each is called with the session and returns a string or nil; the
 first string wins over `ecc-chat-placeholder'.  The suggestion of
 FR-HINT-4 arrives this way.")
 
-(defcustom ecc-chat-show-footer t
+(defvar ecc-chat-show-footer t
   "Non-nil says which permission mode the session runs under the prompt.
 A rule and one dim line, the way the terminal client puts them under
-its own prompt."
-  :type 'boolean
-  :group 'ecc)
+its own prompt.")
 
-(defcustom ecc-chat-permission-mode-cycle
+(defvar ecc-chat-permission-mode-cycle
   '("default" "acceptEdits" "plan" "auto")
   "Permission modes `ecc-chat-cycle-permission-mode\=' walks through.
 What shift+tab walks through in the terminal client, less
@@ -150,11 +148,9 @@ on.  `ecc-set-permission-mode\=' still reaches it.
 
 \"auto\" is a mode of its own, not another name for \"acceptEdits\":
 it answers the prompts itself, `Bash\=' among them, while
-\"acceptEdits\" only takes the edits (`claude\=' 2.1.263)."
-  :type '(repeat string)
-  :group 'ecc)
+\"acceptEdits\" only takes the edits (`claude\=' 2.1.263).")
 
-(defcustom ecc-chat-permission-mode-labels
+(defvar ecc-chat-permission-mode-labels
   '(("default" "⏵ manual mode" ecc-dim-face)
     ("acceptEdits" "⏵⏵ accept edits on" ecc-accept-edits-face)
     ("plan" "⏸ plan mode on" ecc-plan-mode-face)
@@ -169,10 +165,7 @@ bypassPermissions, which the client does not put here at all.
 The client says nothing in the default mode; the footer names it
 anyway, because otherwise nothing tells the reader that S-TAB
 switches.  A mode that is not listed is shown under its own name, in
-the dim face."
-  :type '(alist :key-type (string :tag "Mode")
-                :value-type (list (string :tag "Label") (face :tag "Face")))
-  :group 'ecc)
+the dim face.")
 
 ;;;; Keymaps
 

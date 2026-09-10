@@ -36,27 +36,20 @@
 
 ;;;; Options
 
-(defcustom ecc-prompt-history-size 200
-  "Number of prompts kept in `ecc-prompt-history' (FR-INP-7)."
-  :type 'integer
-  :group 'ecc)
+(defvar ecc-prompt-history-size 200
+  "Number of prompts kept in `ecc-prompt-history' (FR-INP-7).")
 
-(defcustom ecc-image-dir (expand-file-name "ecc-images" temporary-file-directory)
+(defvar ecc-image-dir (expand-file-name "ecc-images" temporary-file-directory)
   "Directory the images pasted into a prompt are written to (FR-INP-9).
-Each session gets a subdirectory of its own."
-  :type 'directory
-  :group 'ecc)
+Each session gets a subdirectory of its own.")
 
-(defcustom ecc-image-cleanup 'on-exit
+(defvar ecc-image-cleanup 'on-exit
   "What becomes of the images of a session when it ends (FR-INP-9).
 `on-exit' deletes the directory of the session, `never' keeps it.  The
 recording refers to the files by path, so keeping them is what makes an
-old conversation readable again."
-  :type '(choice (const :tag "Delete when the session ends" on-exit)
-                 (const :tag "Keep" never))
-  :group 'ecc)
+old conversation readable again.")
 
-(defcustom ecc-prompt-interactive-commands
+(defvar ecc-prompt-interactive-commands
   '(("/model" . ecc-prompt-model-candidates)
     ("/effort" . ecc-prompt-effort-candidates)
     ("/permissions" . nil)
@@ -71,43 +64,35 @@ answered with a usage message, so Emacs asks for the argument first.
 Only the commands the argument hint of the initialize response cannot
 describe belong here.  Every command whose hint names its alternatives
 \(`[on|off]\=' for /fast) is offered them without being listed, by
-`ecc-prompt-argument-candidates\='."
-  :type '(alist :key-type string :value-type sexp)
-  :group 'ecc)
+`ecc-prompt-argument-candidates\='.")
 
-(defcustom ecc-prompt-slash-reads-command t
+(defvar ecc-prompt-slash-reads-command t
   "Whether typing `/' in the prompt asks which slash command is meant.
 When this is on, a slash that opens the prompt -- the only place the
 CLI runs a command from -- opens `completing-read' with the commands
 it named, and what is chosen is written after it (FR-INP-3).  A slash
 anywhere else is only a slash; `ecc-prompt-capf\=' still completes one
 that starts a word, on TAB, so corfu and company keep working as they
-did.  Turning this off leaves them the only way."
-  :type 'boolean
-  :group 'ecc)
+did.  Turning this off leaves them the only way.")
 
-(defcustom ecc-model-candidates
+(defvar ecc-model-candidates
   '("default" "sonnet" "opus" "haiku" "fable")
   "Models offered for /model until the CLI names its own (FR-INP-5).
 The initialize response carries the real catalogue in its `models\='
 array -- the value to send, a display name and a description -- and
 `ecc-prompt-models\=' offers that as soon as it has arrived, so this
-list only has to serve a session whose CLI has not answered yet."
-  :type '(repeat string)
-  :group 'ecc)
+list only has to serve a session whose CLI has not answered yet.")
 
-(defcustom ecc-effort-candidates
+(defvar ecc-effort-candidates
   '("low" "medium" "high" "xhigh" "max" "auto")
   "Effort levels offered for /effort until the CLI names its own (FR-INP-5).
 The argument hint of the initialize response spells them out
 \(`<low|medium|high|xhigh|max|auto>\='), and
 `ecc-prompt-effort-candidates\=' reads them from there as soon as it
 has arrived, so this list only has to serve a session whose CLI has
-not answered yet."
-  :type '(repeat string)
-  :group 'ecc)
+not answered yet.")
 
-(defcustom ecc-terminal-slash-commands '("doctor" "color" "reload-plugins")
+(defvar ecc-terminal-slash-commands '("doctor" "color" "reload-plugins")
   "Commands taken to belong to the terminal client until the CLI says otherwise.
 The real list is `terminal_slash_commands' of system/init, but init does
 not arrive until the first turn of a session has been sent
@@ -119,11 +104,9 @@ about a brand new session.
 These are the commands the CLI marks `terminalOriented' and hands to a
 headless client, measured against 2.1.266 (docs/verified.md).  The list
 is now hidden as well as annotated, so a name that does not belong here
-costs a command."
-  :type '(repeat string)
-  :group 'ecc)
+costs a command.")
 
-(defcustom ecc-prompt-hide-terminal-commands t
+(defvar ecc-prompt-hide-terminal-commands t
   "Non-nil keeps the terminal-only commands out of the candidates (FR-INP-4).
 The CLI names them in `terminal_slash_commands' of system/init and says
 of that field: \"Subset of slash_commands whose UX is bound to the
@@ -134,11 +117,9 @@ one of the remote UIs, so it hides them.
 Only the menus are affected -- completion, the question `/' asks and
 the transient menu.  A command typed out by hand is still sent, and its
 answer still drawn (FR-INP-2); `ecc-prompt-warn-terminal-commands' is
-what says not to expect anything of it.  Nil offers them all again."
-  :type 'boolean
-  :group 'ecc)
+what says not to expect anything of it.  Nil offers them all again.")
 
-(defcustom ecc-prompt-kept-terminal-commands '("/reload-plugins" "/doctor")
+(defvar ecc-prompt-kept-terminal-commands '("/reload-plugins" "/doctor")
   "Terminal-only commands offered all the same (FR-INP-4).
 A command the CLI calls terminal-oriented can still be worth having
 here.  `/reload-plugins' makes the CLI resend its command list
@@ -146,20 +127,16 @@ here.  `/reload-plugins' makes the CLI resend its command list
 brought up to date, so hiding it would take away something that works
 \(docs/verified.md, 2026-09-06).  `/doctor' health-checks the setup and
 answers in plain text, which reads here as well as anywhere.  Names
-carry their slash."
-  :type '(repeat string)
-  :group 'ecc)
+carry their slash.")
 
-(defcustom ecc-prompt-warn-terminal-commands t
+(defvar ecc-prompt-warn-terminal-commands t
   "Non-nil says so when a command belongs to the terminal client (FR-INP-4).
 What is terminal-only about these is their effect, not the sending: the
 CLI accepts them from a headless client and answers, but the answer is
 about something Emacs does not have, such as the colour of the prompt
 bar of the terminal client.  So the command is sent as it was typed and
 the reply is shown; only a note in the echo area says not to expect
-anything to happen here."
-  :type 'boolean
-  :group 'ecc)
+anything to happen here.")
 
 ;;;; The session and its settings
 
@@ -351,15 +328,13 @@ moment is added to it (`ecc-prompt-current-argument\=')."
         (string-trim (format "%s (currently %s)" description current))
       description)))
 
-(defcustom ecc-prompt-local-commands
+(defvar ecc-prompt-local-commands
   '(("/btw" . "Ask a side question without interrupting the running turn"))
   "Commands Emacs offers that the CLI does not name.
 They are added to the list `ecc-prompt-commands\' returns, after
 everything the CLI reported.  `/btw\' is one: the terminal client
 catches it in its input layer, so it is in no list the CLI sends, and
-Emacs answers it itself (FR-BTW-1)."
-  :type '(alist :key-type string :value-type string)
-  :group 'ecc)
+Emacs answers it itself (FR-BTW-1).")
 
 (defun ecc-prompt-commands (session)
   "Return the slash commands of SESSION as an alist of name and description.
