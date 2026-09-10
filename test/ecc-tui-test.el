@@ -594,6 +594,49 @@ follow is stopped and nothing ever reads that far again."
                              "hi.txt を読んで、中身をそのまま教えて")))))
       (delete-file file))))
 
+(ert-deftest ecc-tui-test-a-late-notification-does-not-start-the-follow-again ()
+  "A read that arrives after the hand-off is over does nothing.
+The watch is removed while the CLI is writing its last lines, and a
+notification is delivered from the event loop: one can arrive with the
+session already back in Emacs.  Reading then used to put the hand-off
+back on -- the recording was looked up, the position taken and the
+watch added again -- and from that moment the session replayed what
+its own process was writing into the transcript it was drawing,
+opening turns nothing would ever close."
+  (let* ((file (make-temp-file "ecc-tui-" nil ".jsonl"))
+         (lines (with-temp-buffer
+                  (let ((coding-system-for-read 'utf-8-unix))
+                    (insert-file-contents (ecc-test-history-fixture "session")))
+                  (split-string (buffer-string) "\n" t))))
+    (unwind-protect
+        (ecc-tui-test--with-session session
+          (let ((watched 0))
+            (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) file))
+                      ((symbol-function 'file-notify-add-watch)
+                       (lambda (&rest _) (cl-incf watched) nil))
+                      ((symbol-function 'ecc-registry-live-p) (lambda (_id) nil))
+                      ((symbol-function 'ecc-proc-start)
+                       (lambda (session &optional _resume _fork)
+                         (ecc-model-set-state session 'idle) nil)))
+              (ecc-tui-test--write file (seq-take lines 2))
+              (ecc-tui-open session)
+              (let ((process (plist-get (ecc-tui-state session) :process)))
+                (set-process-sentinel process #'ignore)
+                (delete-process process))
+              (ecc-tui-return session)
+              (should-not (ecc-tui-handoff-p session))
+              (setq watched 0)
+              ;; The recording grows again: it is the session's own
+              ;; process writing now.
+              (ecc-tui-test--write file lines)
+              (should (= (ecc-tui-read-new-lines session) 0))
+              (should (= watched 0))
+              (should-not (ecc-tui-handoff-p session))
+              (should-not (ecc-session-turns session))
+              (should-not (ecc-session-current-turn session))
+              (should (eq (ecc-proc-send-prompt session "and now?") 'sent)))))
+      (delete-file file))))
+
 (provide 'ecc-tui-test)
 
 ;;; ecc-tui-test.el ends here

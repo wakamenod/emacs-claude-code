@@ -271,7 +271,22 @@ appends from here on is replayed."
 (defun ecc-tui-read-new-lines (session)
   "Replay into SESSION whatever the terminal appended to its recording.
 Returns the number of lines read.  Only whole lines are taken: a
-notification can arrive while the CLI is halfway through writing one."
+notification can arrive while the CLI is halfway through writing one.
+
+Nothing is read for a session that is not in a terminal.  A
+notification is delivered from the event loop and can arrive after the
+hand-off is over -- the CLI writes its last lines on the way out, and
+the watch is removed in the middle of that -- and reading then would
+put the hand-off back on a session that has a process of its own: the
+follow would find its recording, watch it, and replay everything that
+process writes into the transcript it is already drawing, leaving a
+turn open that nothing closes and a queue that nothing drains."
+  (if (not (ecc-tui-handoff-p session))
+      0
+    (ecc-tui--read-new-lines session)))
+
+(defun ecc-tui--read-new-lines (session)
+  "Read what was appended to the recording SESSION is following."
   (let* ((state (ecc-tui-state session))
          (file (or (plist-get state :file)
                    (let ((found (ecc-history-file (ecc-session-id session))))
