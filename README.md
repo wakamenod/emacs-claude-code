@@ -2,7 +2,7 @@
 
 ---
 
-# ecc
+# Emacs client for the Claude Code
 
 An Emacs client for the Claude Code CLI. Conversations run directly inside ordinary Emacs buffers.
 
@@ -15,7 +15,7 @@ An Emacs client for the Claude Code CLI. Conversations run directly inside ordin
 
 ## Overview
 
-ecc runs `claude` in headless mode, communicates over pipes using its stream-json protocol, and renders the session in a standard Emacs buffer (a read-only transcript at the top, an editable prompt at the bottom, separated by a divider). 
+ecc runs `claude` in headless mode, communicates over pipes using its stream-json protocol, and renders the session in a standard Emacs buffer.
 
 Because the transcript is standard buffer text, you can use regular Emacs workflows: search, `occur`, narrowing, copying, and exporting to Markdown. Buffer faces are applied on insertion and can be customized with `M-x customize`.
 

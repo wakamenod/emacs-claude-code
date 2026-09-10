@@ -2,7 +2,7 @@
 
 ---
 
-# ecc
+# Emacs client for the Claude Code
 
 Claude Code CLI 向けの Emacs クライアントです。通常の Emacs バッファ内で直接対話を行うことができます。
 
