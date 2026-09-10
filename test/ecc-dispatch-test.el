@@ -13,6 +13,7 @@
 (require 'ecc-model)
 (require 'ecc-dispatch)
 (require 'ecc-perm)
+(require 'ecc-render)
 
 ;;;; basic-turn
 
@@ -272,6 +273,31 @@ way `ecc-proc-send-user\=' would have."
       ;; An agent is not a TODO item (FR-OUT-13).
       (should (= (hash-table-count (ecc-session-tasks session)) 0)))))
 
+(ert-deftest ecc-dispatch-test-backgrounded-bash-stays-a-tool ()
+  "A backgrounded shell command is a task, but not an agent (FR-OUT-9).
+Recorded from claude 2.1.265 on 2026-09-10: the CLI registers such a
+command as a task of its own, `local_bash\=', and the heading of a Bash
+drawn as an agent loses its command."
+  (ecc-test-with-fake-session session
+    (ecc-test-dispatch session "background-bash" "run it in the background")
+    (let ((nodes (hash-table-values (ecc-session-nodes session))))
+      (should-not (seq-find (lambda (node) (eq (ecc-node-type node) 'agent)) nodes))
+      (let ((bash (seq-find (lambda (node)
+                              (equal (ecc-model-node-get node 'name) "Bash"))
+                            nodes)))
+        (should bash)
+        (should (eq (ecc-node-type bash) 'tool))
+        ;; The task itself is kept, so the heading can still say how it goes.
+        (let ((task (ecc-model-node-get bash 'task)))
+          (should task)
+          (should (equal (alist-get 'task_type task) "local_bash"))
+          (should-not (alist-get 'subagent_type task))
+          (should-not (ecc-dispatch--agent-task-p task)))
+        ;; Its command is what the heading reads, not a tool count.
+        (should (equal (ecc-render-tool-summary
+                        "Bash" (ecc-model-node-get bash 'input))
+                       "sleep 8; echo finished"))))))
+
 (ert-deftest ecc-dispatch-test-only-an-agent-tool-becomes-an-agent ()
   "A plain tool named as a parent stays a tool (FR-OUT-9)."
   (ecc-test-with-fake-session session
@@ -291,11 +317,21 @@ way `ecc-proc-send-user\=' would have."
       (should (eq task (ecc-dispatch--parent
                         session '((parent_tool_use_id . "toolu_task")) nil)))
       (should (eq (ecc-node-type task) 'agent))
-      ;; So is one the task lifecycle has already spoken about.
-      (ecc-model-node-put bash 'task '((tool_use_id . "toolu_bash")))
+      ;; A backgrounded shell command is a task too, and stays a tool:
+      ;; the CLI calls it `local_bash\=' (confirmed 2026-09-10).
+      (ecc-model-node-put bash 'task '((tool_use_id . "toolu_bash")
+                                       (task_type . "local_bash")))
       (should (eq (ecc-node-type (ecc-dispatch--parent
                                   session '((parent_tool_use_id . "toolu_bash")) nil))
-                  'agent)))))
+                  'tool))
+      ;; A task that does start a subagent promotes the tool it names.
+      (let ((spawn (ecc-model-add-node session :id "toolu_spawn" :type 'tool
+                                       :data '((name . "Bash")))))
+        (ecc-model-node-put spawn 'task '((tool_use_id . "toolu_spawn")
+                                          (task_type . "local_agent")))
+        (should (eq (ecc-node-type (ecc-dispatch--parent
+                                    session '((parent_tool_use_id . "toolu_spawn")) nil))
+                    'agent))))))
 
 (ert-deftest ecc-dispatch-test-hook-events ()
   "Hook events are kept as system nodes rather than as unknown ones."

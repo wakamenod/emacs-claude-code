@@ -294,13 +294,17 @@ that closes the compaction itself."
   "Apply a task lifecycle MESSAGE to SESSION.
 The node is looked up in the session rather than in the current turn,
 because an asynchronous agent reports after the turn is over (D5).
-A tool that starts a task is an agent from then on (FR-OUT-9), even
-when its messages never arrive because it runs in the background."
+A tool that starts a subagent is an agent from then on (FR-OUT-9), even
+when its messages never arrive because it runs in the background; a
+task that is only a backgrounded shell command stays the tool it is."
   (let* ((node (ecc-model-node session (alist-get 'tool_use_id message)))
          (patch (alist-get 'patch message))
          (status (or (alist-get 'status message) (alist-get 'status patch))))
     (when node
-      (when (eq (ecc-node-type node) 'tool)
+      (when (and (eq (ecc-node-type node) 'tool)
+                 (or (ecc-dispatch--agent-task-p message)
+                     (member (ecc-model-node-get node 'name)
+                             ecc-dispatch-agent-tools)))
         (setf (ecc-node-type node) 'agent))
       (ecc-model-node-put node 'task message)
       (when-let* ((type (alist-get 'subagent_type message)))
@@ -374,6 +378,15 @@ DATA describe it.  Returns the node."
 (defconst ecc-dispatch-agent-tools '("Task" "Agent")
   "Names of the tools that start a subagent (FR-OUT-9).")
 
+(defun ecc-dispatch--agent-task-p (task)
+  "Return non-nil when the TASK lifecycle message is a subagent.
+The CLI registers a backgrounded shell command as a task as well, and
+tells the two apart by `task_type\=': `local_agent\=' for a subagent and
+`local_bash\=' for a command, the latter carrying no `subagent_type\='
+either (confirmed against claude 2.1.265 on 2026-09-10)."
+  (or (equal (alist-get 'task_type task) "local_agent")
+      (and (alist-get 'subagent_type task) t)))
+
 (defun ecc-dispatch--agent-tool-p (node)
   "Return non-nil when NODE is a tool that starts a subagent.
 A `parent_tool_use_id\=' is not enough on its own to call a node an
@@ -382,7 +395,7 @@ agent takes the command out of its heading and puts a tool count and a
 duration in its place (2026-09-09)."
   (or (eq (ecc-node-type node) 'agent)
       (member (ecc-model-node-get node 'name) ecc-dispatch-agent-tools)
-      (and (ecc-model-node-get node 'task) t)))
+      (ecc-dispatch--agent-task-p (ecc-model-node-get node 'task))))
 
 (defun ecc-dispatch--parent (session message turn)
   "Return the node MESSAGE belongs under in TURN of SESSION.
