@@ -10,6 +10,7 @@
 
 (require 'ert)
 (require 'ecc-test-helpers)
+(require 'ecc)
 (require 'ecc-notify)
 (require 'ecc-session)
 
@@ -23,6 +24,17 @@
             (lambda (_session event text)
               (setq ,var (append ,var (list (cons event text)))))))
        ,@body)))
+
+(defun ecc-notify-test--dark-spec (face)
+  "Return the attributes FACE puts on a colour display with a dark background.
+`face-attribute' answers with nothing in batch, where there is no such
+display, so the `defface' spec is read instead."
+  (cdr (seq-find (lambda (entry)
+                   (let ((display (car entry)))
+                     (or (eq display t)
+                         (and (consp display)
+                              (member '(background dark) display)))))
+                 (get face 'face-defface-spec))))
 
 (ert-deftest ecc-notify-test-events-can-be-turned-off ()
   "Only the events that were asked for are announced."
@@ -143,9 +155,11 @@
               (should (equal (ecc-tab-line-tab-name (cadr tabs)) " ▶ other "))
               ;; The state is put on top of whatever face the tab line
               ;; settled on, so the theme still shapes the tab.
+              ;; A working session the window is not showing takes the
+              ;; quieter green: the full one read as the current tab.
               (should (equal (ecc-tab-line-tab-face
                               (cadr tabs) tabs 'tab-line-tab-inactive t nil)
-                             '(:inherit (ecc-tab-running-face
+                             '(:inherit (ecc-tab-running-dim-face
                                          tab-line-tab-inactive))))
               ;; The tab the window shows keeps its state colour, the
               ;; current face being laid under it rather than over it.
@@ -195,12 +209,75 @@ about as one works."
             (should (eq tab-line-tabs-function #'ecc-tab-line-tabs))
             (should (eq tab-line-tab-name-function #'ecc-tab-line-tab-name))
             (should (equal tab-line-tab-face-functions
-                           '(ecc-tab-line-tab-face))))
+                           '(ecc-tab-line-tab-face)))
+            ;; The x of a tab has to end the session: burying the buffer,
+            ;; which is what the tab line does by itself, leaves the tab
+            ;; where it was.
+            (should (eq tab-line-close-tab-function #'ecc-tab-close)))
           (ecc-tab-line-mode -1)
           (with-current-buffer (ecc-session-buffer session)
             (should-not tab-line-mode)
-            (should-not (local-variable-p 'tab-line-tabs-function))))
+            (should-not (local-variable-p 'tab-line-tabs-function))
+            (should-not (local-variable-p 'tab-line-close-tab-function))))
       (ecc-tab-line-mode -1))))
+
+(ert-deftest ecc-notify-test-a-working-tab-elsewhere-is-quieter ()
+  "The green of a working session is the full one only on the current tab.
+Two sessions, because the whole point is the difference between the tab
+in front of you and the one beside it."
+  (ecc-test-with-fake-session first
+    (let ((second (ecc-model-create-session
+                   :name "other" :project-root temporary-file-directory)))
+      (unwind-protect
+          (progn
+            (ecc-model-set-state first 'running)
+            (ecc-model-set-state second 'running)
+            (should (equal (ecc-tab-faces first t)
+                           '(ecc-tab-running-face ecc-tab-current-face)))
+            (should (equal (ecc-tab-faces second nil)
+                           '(ecc-tab-running-dim-face)))
+            ;; The quieter green is a green of its own, and it carries
+            ;; no weight: bold was half of what made it read as the
+            ;; current tab.  Batch has no colour display, so the specs
+            ;; are read rather than the faces resolved.
+            (let ((dim (ecc-notify-test--dark-spec 'ecc-tab-running-dim-face))
+                  (full (ecc-notify-test--dark-spec 'ecc-running-face)))
+              (should (plist-get dim :foreground))
+              (should-not (equal (plist-get dim :foreground)
+                                 (plist-get full :foreground)))
+              (should-not (plist-get dim :inherit))
+              (should-not (plist-get dim :weight))))
+        (ecc-test-cleanup-session second)
+        (ecc-model-remove-session second)))))
+
+(ert-deftest ecc-notify-test-the-x-of-a-tab-stops-the-session ()
+  "The close button ends the session, and asks before it does."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (let ((buffer (ecc-session-buffer session))
+          (killed nil))
+      (cl-letf (((symbol-function #'ecc-kill)
+                 (lambda (s) (setq killed s))))
+        ;; Answering no leaves the session alone.
+        (let ((ecc-tab-close-confirm t))
+          (cl-letf (((symbol-function #'y-or-n-p) (lambda (&rest _) nil)))
+            (ecc-tab-close buffer))
+          (should-not killed)
+          (cl-letf (((symbol-function #'y-or-n-p) (lambda (&rest _) t)))
+            (ecc-tab-close buffer))
+          (should (eq killed session)))
+        (setq killed nil)
+        (let ((ecc-tab-close-confirm nil))
+          (ecc-tab-close buffer)
+          (should (eq killed session)))))))
+
+(ert-deftest ecc-notify-test-the-x-of-a-buffer-with-no-session-kills-it ()
+  "A tab that is not a session is closed the plain way."
+  (let ((buffer (generate-new-buffer " *ecc-test-plain*")))
+    (ecc-tab-close buffer)
+    (should-not (buffer-live-p buffer))
+    ;; A buffer that is gone already is not an error.
+    (ecc-tab-close buffer)))
 
 (ert-deftest ecc-notify-test-a-waiting-tab-blinks ()
   "The tab of a session waiting for an answer is lit on every other beat.
