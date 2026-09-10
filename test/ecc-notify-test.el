@@ -192,6 +192,70 @@ about as one works."
             (should-not (local-variable-p 'tab-line-tabs-function))))
       (ecc-tab-line-mode -1))))
 
+(ert-deftest ecc-notify-test-a-waiting-tab-blinks ()
+  "The tab of a session waiting for an answer is lit on every other beat.
+Two sessions, so that the one that wants nothing is seen to stay put."
+  (ecc-test-with-fake-session first
+    (let ((second (ecc-model-create-session
+                   :name "other" :project-root temporary-file-directory)))
+      (unwind-protect
+          (progn
+            (ecc-model-set-state first 'idle)
+            (ecc-model-set-state second 'idle)
+            (ecc-test-add-request first)
+            (should (eq (ecc-tab-state first) 'attention))
+            (let ((ecc-tab--blink-phase nil))
+              (should (eq (ecc-tab-face first nil) 'ecc-tab-attention-face))
+              (should (eq (ecc-tab-face second nil) 'ecc-tab-idle-face)))
+            (let ((ecc-tab--blink-phase t))
+              (should (eq (ecc-tab-face first nil)
+                          'ecc-tab-attention-blink-face))
+              ;; Being the tab the window shows does not hold the blink off.
+              (should (eq (ecc-tab-face first t)
+                          'ecc-tab-attention-blink-face))
+              ;; A session that wants nothing is left alone.
+              (should (eq (ecc-tab-face second nil) 'ecc-tab-idle-face))
+              (should (eq (ecc-tab-face second t) 'ecc-tab-current-face))))
+        (ecc-test-cleanup-session second)
+        (ecc-model-remove-session second)))))
+
+(ert-deftest ecc-notify-test-the-blink-runs-only-while-something-waits ()
+  "The timer starts with a request and is gone once it is answered."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (unwind-protect
+        (let ((ecc-tab-blink t))
+          (ecc-tab-line-mode 1)
+          ;; Nothing is waiting yet.
+          (should-not ecc-tab--blink-timer)
+          (let ((request (ecc-test-add-request session)))
+            (ecc-tab-blink-update)
+            (should ecc-tab--blink-timer)
+            ;; A tick turns the tabs over without stopping.
+            (ecc-tab--blink-tick)
+            (should ecc-tab--blink-phase)
+            (should ecc-tab--blink-timer)
+            (ecc-model-resolve-request session request 'allowed))
+          (ecc-tab-blink-update)
+          (should-not ecc-tab--blink-timer)
+          (should-not ecc-tab--blink-phase))
+      (ecc-tab-blink-stop)
+      (ecc-tab-line-mode -1))))
+
+(ert-deftest ecc-notify-test-the-blink-can-be-turned-off ()
+  "`ecc-tab-blink' nil leaves the tab coloured but still."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (unwind-protect
+        (let ((ecc-tab-blink nil))
+          (ecc-tab-line-mode 1)
+          (ecc-test-add-request session)
+          (ecc-tab-blink-update)
+          (should-not ecc-tab--blink-timer)
+          (should (eq (ecc-tab-face session nil) 'ecc-tab-attention-face)))
+      (ecc-tab-blink-stop)
+      (ecc-tab-line-mode -1))))
+
 (ert-deftest ecc-notify-test-tab-bar-name ()
   "The tab bar carries the state only when it is asked to (FR-NOTIFY-2)."
   (ecc-test-with-fake-session session

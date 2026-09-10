@@ -23,6 +23,7 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
+(require 'ecc-visual)
 
 (declare-function notifications-notify "notifications" (&rest params))
 (declare-function ecc-window-session-visible-p "ecc-window" (session &optional frame))
@@ -215,10 +216,30 @@ to have anywhere to show (FR-NOTIFY-2)."
   "Face of the tab of a session with nothing to do."
   :group 'ecc)
 
+(defcustom ecc-tab-blink t
+  "Non-nil blinks the tab of a session that is waiting for an answer.
+A tab that wants something is worth more than a colour when the eye is
+on the source code.  The rhythm is `ecc-visual-blink-interval', so that
+a blinking tab and the blinking line of the request it stands for keep
+step (FR-NOTIFY-2, FR-OUT-11 c)."
+  :type 'boolean
+  :group 'ecc)
+
+(defface ecc-tab-attention-blink-face
+  '((t :inherit ecc-tab-attention-face :inverse-video t))
+  "Face of a tab waiting for an answer, on every other beat of the blink."
+  :group 'ecc)
+
 (defface ecc-tab-current-face
   '((t :inherit (bold ecc-heading-face) :underline t))
   "Face of the tab of the session the window is showing."
   :group 'ecc)
+
+(defvar ecc-tab--blink-phase nil
+  "Non-nil on the beat a tab waiting for an answer is drawn lit.")
+
+(defvar ecc-tab--blink-timer nil
+  "Timer that blinks the tabs of the sessions waiting for an answer.")
 
 (defun ecc-tab-state (session)
   "Return `attention', `running', `exited' or `idle' for SESSION."
@@ -236,14 +257,19 @@ when only the ones that want something are marked."
     ('attention "⚠") ('running "●") ('exited "✗") (_ "")))
 
 (defun ecc-tab-face (session current)
-  "Return the face of the tab of SESSION, CURRENT saying whether it is shown."
-  (if current
-      'ecc-tab-current-face
+  "Return the face of the tab of SESSION, CURRENT saying whether it is shown.
+A session waiting for an answer beats both on the lit half of the
+blink: that is the one the user has to look at."
+  (cond
+   ((and ecc-tab--blink-phase (eq (ecc-tab-state session) 'attention))
+    'ecc-tab-attention-blink-face)
+   (current 'ecc-tab-current-face)
+   (t
     (pcase (ecc-tab-state session)
       ('attention 'ecc-tab-attention-face)
       ('running 'ecc-tab-running-face)
       ('exited 'ecc-error-face)
-      (_ 'ecc-tab-idle-face))))
+      (_ 'ecc-tab-idle-face)))))
 
 (defun ecc-tab-line-tabs ()
   "Return the session buffers, oldest session first (FR-NOTIFY-2).
@@ -305,7 +331,64 @@ was clicked in, which is the whole point of them (FR-NOTIFY-2)."
   ;; A tab line is cached per window on a key that does not know a
   ;; session's state, so a state that changed needs the cache cleared
   ;; rather than a redisplay alone.
-  (tab-line-force-update t))
+  (tab-line-force-update t)
+  (ecc-tab-blink-update))
+
+;;;; Blinking the tabs that want an answer (FR-NOTIFY-2, FR-OUT-11 c)
+
+(defun ecc-tab--waiting-p ()
+  "Return non-nil when some session is waiting for an answer."
+  (seq-some (lambda (session) (eq (ecc-tab-state session) 'attention))
+            (ecc-model-sessions)))
+
+(defun ecc-tab--windows ()
+  "Return the windows showing a session buffer, on any frame."
+  (let (windows)
+    (dolist (session (ecc-model-sessions))
+      (let ((buffer (ecc-session-buffer session)))
+        (when (buffer-live-p buffer)
+          (setq windows (nconc (get-buffer-window-list buffer nil t) windows)))))
+    windows))
+
+(defun ecc-tab--blink-redisplay ()
+  "Draw the tab lines of the session windows again.
+The tab line of a window is cached on a key that knows nothing of the
+blink, so the cache is what has to go; a redisplay on its own would
+show the same tabs over again."
+  (when-let* ((windows (ecc-tab--windows)))
+    (dolist (window windows)
+      (set-window-parameter window 'tab-line-cache nil))
+    (force-mode-line-update t)
+    windows))
+
+(defun ecc-tab-blink-stop ()
+  "Stop the blink and leave the waiting tabs lit no longer."
+  (when ecc-tab--blink-timer
+    (cancel-timer ecc-tab--blink-timer)
+    (setq ecc-tab--blink-timer nil))
+  (when ecc-tab--blink-phase
+    (setq ecc-tab--blink-phase nil)
+    (ecc-tab--blink-redisplay)))
+
+(defun ecc-tab--blink-tick ()
+  "Turn the waiting tabs on or off, and stop once nothing is waiting."
+  (if (not (and ecc-tab-line-mode ecc-tab-blink (ecc-tab--waiting-p)))
+      (ecc-tab-blink-stop)
+    (setq ecc-tab--blink-phase (not ecc-tab--blink-phase))
+    ;; A session with no window costs only this: there is nothing on the
+    ;; screen to draw again.
+    (ecc-tab--blink-redisplay)))
+
+(defun ecc-tab-blink-update ()
+  "Blink the tabs while a session waits for an answer, and stop after.
+Called from `ecc-tab-line--install', which every event that changes
+what a tab says already goes through."
+  (if (and ecc-tab-line-mode ecc-tab-blink (ecc-tab--waiting-p))
+      (unless ecc-tab--blink-timer
+        (setq ecc-tab--blink-timer
+              (run-at-time ecc-visual-blink-interval ecc-visual-blink-interval
+                           #'ecc-tab--blink-tick)))
+    (ecc-tab-blink-stop)))
 
 (define-minor-mode ecc-tab-line-mode
   "List every session in the tab line of the session windows (FR-NOTIFY-2)."
