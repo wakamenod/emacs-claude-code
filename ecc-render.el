@@ -1494,19 +1494,15 @@ left of FR-HINT-3 arrives this way.")
       ;; a terminal and the buffer follows the recording (FR-TUI-3).
       (propertize "⇄ open in the terminal; it comes back when the terminal is left"
                   'face 'ecc-pending-face)
-    (pcase (ecc-session-state session)
-      ('idle nil)
-      ('exited (propertize
-                (format "Exited with code %s; R resumes it"
-                        (or (alist-get 'exit-status (ecc-session-progress session))
-                            "?"))
-                'face 'ecc-error-face))
-      (state (propertize (format "%s %s…" (ecc-render--running-mark) state)
-                         'face 'ecc-pending-face)))))
-
-(defun ecc-render--running-mark ()
-  "Return the mark that stands for work in progress (FR-OUT-11 a)."
-  (if ecc-visual-enable-spinner (ecc-visual-spinner-frame) "●"))
+    ;; Every other state is what the header line says all the while, in
+    ;; better words and with a spinner that actually turns (FR-OUT-6);
+    ;; `exited' alone stays, because the way back out of it is named
+    ;; nowhere else.
+    (when (eq (ecc-session-state session) 'exited)
+      (propertize (format "Exited with code %s; R resumes it"
+                          (or (alist-get 'exit-status (ecc-session-progress session))
+                              "?"))
+                  'face 'ecc-error-face))))
 
 (defun ecc-render--tail-lines (session)
   "Return the lines drawn at the end of the transcript of SESSION."
