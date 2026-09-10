@@ -191,9 +191,21 @@ to have anywhere to show.")
 
 (defface ecc-tab-running-face
   '((t :inherit (ecc-running-face ecc-heading-face)))
-  "Face of the tab of a session that is working.
+  "Face of the tab of the working session the window is showing.
 The yellow green of `ecc-running-face', which the transcript and the
 mode line use for the same state, over the weight of a heading."
+  :group 'ecc)
+
+(defface ecc-tab-running-dim-face
+  '((((class color) (min-colors 88) (background dark)) :foreground "#7a9c33")
+    (((class color) (min-colors 88) (background light)) :foreground "#7d9e60")
+    (((class color)) :foreground "green")
+    (t :inherit default))
+  "Face of the tab of a working session the window is not showing.
+The full yellow green of `ecc-tab-running-face', bold, reads as the tab
+one is looking at, whichever tab that is; a working session elsewhere
+says the same thing more quietly, in a shade of the same green and at
+the weight of the rest of the row."
   :group 'ecc)
 
 (defface ecc-tab-attention-face
@@ -252,13 +264,18 @@ add what it alone says -- the weight and the underline that mark the
 tab one is looking at.  Putting `current' first instead, as this did
 before, cost the tab of the session in front of you the very colour
 that says what it is doing.  An idle tab is the one exception, and is
-left to `ecc-tab-current-face' alone."
+left to `ecc-tab-current-face' alone.  A running tab that is not the
+current one takes the quieter `ecc-tab-running-dim-face': the full
+green, bold, was bright enough elsewhere in the row to be read as the
+tab in front of you."
   (let ((state (if (and ecc-tab--blink-phase
                         (eq (ecc-tab-state session) 'attention))
                    'ecc-tab-attention-blink-face
                  (pcase (ecc-tab-state session)
                    ('attention 'ecc-tab-attention-face)
-                   ('running 'ecc-tab-running-face)
+                   ('running (if current
+                                 'ecc-tab-running-face
+                               'ecc-tab-running-dim-face))
                    ('exited 'ecc-error-face)
                    (_ 'ecc-tab-idle-face)))))
     (cond
@@ -308,6 +325,31 @@ underneath so that the theme still decides the shape of a tab."
 
 (defvar ecc-tab-line-mode)
 
+(defvar ecc-tab-close-confirm t
+  "Non-nil asks before the x of a tab stops the session it stands for.
+Closing a tab here is not the cheap, undoable thing it is elsewhere in
+Emacs -- it stops the CLI and forgets the transcript -- so it asks
+first.")
+
+(declare-function ecc-kill "ecc" (session))
+
+(defun ecc-tab-close (buffer)
+  "Stop the session of BUFFER (`tab-line-close-tab-function').
+The tabs are the sessions of the registry rather than the buffers of a
+window, so the tab line's own answer to the x -- burying the buffer --
+left the tab exactly where it was (confirmed 2026-09-10).  Closing the
+tab of a session is stopping it, which `ecc-tab-close-confirm' asks
+about first.  A buffer with no session behind it is only killed."
+  (let ((session (and (buffer-live-p buffer)
+                      (buffer-local-value 'ecc-render--session buffer))))
+    (cond
+     ((not (buffer-live-p buffer)) nil)
+     ((null session) (kill-buffer buffer))
+     ((and ecc-tab-close-confirm
+           (not (y-or-n-p (format "Stop %s? " (ecc-session-name session)))))
+      (message "Left %s running" (ecc-session-name session)))
+     (t (ecc-kill session)))))
+
 ;; `tab-line-force-update' is Emacs 30 and later (confirmed 2026-09-10 on
 ;; the CI matrix, which builds on 29.1).  What it does is what the blink
 ;; does by hand: drop the per-window cache, then ask for a redisplay.
@@ -332,13 +374,15 @@ was clicked in, which is the whole point of them."
            (ecc-tab-line-mode
             (setq-local tab-line-tabs-function #'ecc-tab-line-tabs
                         tab-line-tab-name-function #'ecc-tab-line-tab-name
-                        tab-line-tab-face-functions '(ecc-tab-line-tab-face))
+                        tab-line-tab-face-functions '(ecc-tab-line-tab-face)
+                        tab-line-close-tab-function #'ecc-tab-close)
             (tab-line-mode 1))
            (t
             (tab-line-mode -1)
             (kill-local-variable 'tab-line-tabs-function)
             (kill-local-variable 'tab-line-tab-name-function)
-            (kill-local-variable 'tab-line-tab-face-functions)))))))
+            (kill-local-variable 'tab-line-tab-face-functions)
+            (kill-local-variable 'tab-line-close-tab-function)))))))
   ;; A tab line is cached per window on a key that does not know a
   ;; session's state, so a state that changed needs the cache cleared
   ;; rather than a redisplay alone.
