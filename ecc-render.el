@@ -320,6 +320,11 @@ spans the window rather than the text."
         ((>= n 1000) (format "%.1fk" (/ n 1000.0)))
         (t (format "%d" n))))
 
+(defconst ecc-render-summary-width 60
+  "Most characters a heading gives the summary of a call.
+A heading is worth reading only while it stays on one line, so every
+summary is cut to the same width whatever the tool.")
+
 (defun ecc-render-tool-summary (name input)
   "Return the one line summary of the call to NAME with INPUT."
   (ecc-render--one-line
@@ -327,9 +332,11 @@ spans the window rather than the text."
          ((or "Read" "Write" "Edit" "MultiEdit" "NotebookEdit")
           (when-let* ((path (alist-get 'file_path input)))
             (abbreviate-file-name path)))
-         ("Bash" (ecc--truncate (alist-get 'command input) 60))
+         ("Bash" (ecc--truncate (alist-get 'command input)
+                                ecc-render-summary-width))
          ((or "Glob" "Grep") (alist-get 'pattern input))
-         ((or "Task" "Agent") (alist-get 'description input))
+         ((or "Task" "Agent") (ecc--truncate (alist-get 'description input)
+                                             ecc-render-summary-width))
          ("TodoWrite" "todos")
          ;; The question itself is what there is to read: the JSON around
          ;; it says nothing the answer buffer does not say better.
@@ -345,7 +352,8 @@ spans the window rather than the text."
                                  "")))
          (_ nil))
        (and (consp input)
-            (ecc--truncate (ecc-protocol-value-string (cdr (car input))) 60))
+            (ecc--truncate (ecc-protocol-value-string (cdr (car input)))
+                           ecc-render-summary-width))
        "")))
 
 ;;;; Marking the text: nodes, headings and keys
@@ -1075,9 +1083,12 @@ An Edit or a Write shows its input as a diff (FR-OUT-7)."
          ;; "Agent" alone rather than "Agent Agent".
          (agent-type (or (ecc-model-node-get node 'agent-type)
                          (alist-get 'subagent_type input)))
-         (description (or (alist-get 'description input)
-                          (ecc-model-node-get node 'agent-description)
-                          ""))
+         ;; The prompt an agent was given runs long, and a heading that
+         ;; wraps is no longer a heading: cut it as a tool call is cut.
+         (description (ecc--truncate (or (alist-get 'description input)
+                                         (ecc-model-node-get node 'agent-description)
+                                         "")
+                                     ecc-render-summary-width))
          (usage (ecc-model-node-get node 'agent-usage))
          (tools (let ((n 0))
                   (dolist (child (ecc-node-children node))
@@ -1100,9 +1111,9 @@ An Edit or a Write shows its input as a diff (FR-OUT-7)."
             (propertize (if agent-type (format "Agent %s" agent-type) "Agent")
                         'face (if error-p 'ecc-error-face 'ecc-tool-face))
             (propertize
-             (concat (if (string-empty-p (ecc-render--one-line description))
+             (concat (if (string-empty-p description)
                          ""
-                       (concat " · " (ecc-render--one-line description)))
+                       (concat " · " description))
                      (format " · %d tools" tools)
                      (if duration (format " · %.1fs" (/ duration 1000.0)) ""))
              'face 'ecc-dim-face))))

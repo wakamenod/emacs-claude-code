@@ -496,6 +496,30 @@ follow have a section to grow.  Returns the remaining lines."
                              (substring-no-properties
                               (ecc-render--agent-heading node 0)))))))
 
+(ert-deftest ecc-render-test-agent-description-is-cut-to-one-line ()
+  "A long agent description is cut like a tool call, not wrapped."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "調べて")
+    (let* ((long (make-string 200 ?x))
+           (node (ecc-model-add-node
+                  session :id "toolu_agent_long" :type 'agent
+                  :data `((name . "Task")
+                          (input . ((description . ,long))))))
+           (heading (substring-no-properties
+                     (ecc-render--agent-heading node 0))))
+      (should (string-search (concat (make-string
+                                      (1- ecc-render-summary-width) ?x)
+                                     "…")
+                             heading))
+      (should-not (string-search (make-string ecc-render-summary-width ?x)
+                                 heading))
+      (should (= 1 (length (split-string heading "\n")))))
+    ;; The same description reaches the same width through the tool path.
+    (should (= ecc-render-summary-width
+               (length (ecc-render-tool-summary
+                        "Task" `((description . ,(make-string 200 ?x)))))))))
+
 ;;;; Diffs (FR-OUT-7, FR-DIFF-1)
 
 (ert-deftest ecc-render-test-edit-diff ()
