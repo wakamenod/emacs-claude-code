@@ -147,13 +147,20 @@
                               (cadr tabs) tabs 'tab-line-tab-inactive t nil)
                              '(:inherit (ecc-tab-running-face
                                          tab-line-tab-inactive))))
-              ;; The tab the window shows keeps its state colour: the
-              ;; current face is laid under it, not over it.
+              ;; The tab the window shows keeps its state colour, the
+              ;; current face being laid under it rather than over it.
+              ;; An idle one is dimmed by neither.
               (should (equal (ecc-tab-line-tab-face
                               (car tabs) tabs 'tab-line-tab-current t t)
-                             '(:inherit (ecc-tab-idle-face
+                             '(:inherit (ecc-tab-current-face
+                                         tab-line-tab-current))))
+              (ecc-model-set-state first 'running)
+              (should (equal (ecc-tab-line-tab-face
+                              (car tabs) tabs 'tab-line-tab-current t t)
+                             '(:inherit (ecc-tab-running-face
                                          ecc-tab-current-face
-                                         tab-line-tab-current))))))
+                                         tab-line-tab-current))))
+              (ecc-model-set-state first 'idle)))
         (ecc-test-cleanup-session second)
         (ecc-model-remove-session second)))))
 
@@ -224,8 +231,11 @@ Two sessions, so that the one that wants nothing is seen to stay put."
               ;; A session that wants nothing is left alone.
               (should (equal (ecc-tab-faces second nil)
                              '(ecc-tab-idle-face)))
+              ;; Idle is the one state the current tab does not wear:
+              ;; the tab being read is not one to sink into the
+              ;; background.
               (should (equal (ecc-tab-faces second t)
-                             '(ecc-tab-idle-face ecc-tab-current-face)))))
+                             '(ecc-tab-current-face)))))
         (ecc-test-cleanup-session second)
         (ecc-model-remove-session second)))))
 

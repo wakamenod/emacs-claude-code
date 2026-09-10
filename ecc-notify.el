@@ -273,7 +273,8 @@ first so that its colour wins, and `ecc-tab-current-face' follows to
 add what it alone says -- the weight and the underline that mark the
 tab one is looking at.  Putting `current' first instead, as this did
 before, cost the tab of the session in front of you the very colour
-that says what it is doing."
+that says what it is doing.  An idle tab is the one exception, and is
+left to `ecc-tab-current-face' alone."
   (let ((state (if (and ecc-tab--blink-phase
                         (eq (ecc-tab-state session) 'attention))
                    'ecc-tab-attention-blink-face
@@ -282,7 +283,15 @@ that says what it is doing."
                    ('running 'ecc-tab-running-face)
                    ('exited 'ecc-error-face)
                    (_ 'ecc-tab-idle-face)))))
-    (if current (list state 'ecc-tab-current-face) (list state))))
+    (cond
+     ;; Idle is not a colour so much as the want of one: the dim face
+     ;; is there to sink the sessions with nothing to say into the
+     ;; background, and the one being read does not belong there.  Dim
+     ;; and current together read as neither.
+     ((and current (eq state 'ecc-tab-idle-face))
+      (list 'ecc-tab-current-face))
+     (current (list state 'ecc-tab-current-face))
+     (t (list state)))))
 
 (defun ecc-tab-line-tabs ()
   "Return the session buffers, oldest session first (FR-NOTIFY-2).
