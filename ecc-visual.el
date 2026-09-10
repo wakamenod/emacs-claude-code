@@ -30,72 +30,46 @@
 (require 'pulse)
 (require 'ecc-core)
 
-(defcustom ecc-visual-enable-spinner t
-  "Non-nil turns the spinner of a running turn (FR-OUT-11 a)."
-  :type 'boolean
-  :group 'ecc)
+(defvar ecc-visual-enable-spinner t
+  "Non-nil turns the spinner of a running turn (FR-OUT-11 a).")
 
-(defcustom ecc-visual-enable-pulse t
-  "Non-nil pulses the background of a running tool or agent (FR-OUT-11 b)."
-  :type 'boolean
-  :group 'ecc)
+(defvar ecc-visual-enable-pulse t
+  "Non-nil pulses the background of a running tool or agent (FR-OUT-11 b).")
 
-(defcustom ecc-visual-enable-blink t
-  "Non-nil blinks the line of a request waiting for an answer (FR-OUT-11 c)."
-  :type 'boolean
-  :group 'ecc)
+(defvar ecc-visual-enable-blink t
+  "Non-nil blinks the line of a request waiting for an answer (FR-OUT-11 c).")
 
-(defcustom ecc-visual-enable-icons t
-  "Non-nil puts an icon in front of a tool name (FR-OUT-11 d)."
-  :type 'boolean
-  :group 'ecc)
+(defvar ecc-visual-enable-icons t
+  "Non-nil puts an icon in front of a tool name (FR-OUT-11 d).")
 
-(defcustom ecc-visual-enable-flash t
-  "Non-nil flashes a section that has just finished (FR-OUT-11 e)."
-  :type 'boolean
-  :group 'ecc)
+(defvar ecc-visual-enable-flash t
+  "Non-nil flashes a section that has just finished (FR-OUT-11 e).")
 
-(defcustom ecc-visual-max-effects 4
+(defvar ecc-visual-max-effects 4
   "Most overlays that may be animated at one time.
 The effects exist to draw the eye; more than a few of them at once do
-the opposite, and each one is a timer."
-  :type 'integer
-  :group 'ecc)
+the opposite, and each one is a timer.")
 
-(defcustom ecc-visual-spinner-frames ["⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏"]
-  "Frames of the spinner, in order."
-  :type '(vector string)
-  :group 'ecc)
+(defvar ecc-visual-spinner-frames ["⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏"]
+  "Frames of the spinner, in order.")
 
-(defcustom ecc-visual-spinner-interval 0.1
-  "Seconds between two frames of the spinner."
-  :type 'number
-  :group 'ecc)
+(defvar ecc-visual-spinner-interval 0.1
+  "Seconds between two frames of the spinner.")
 
-(defcustom ecc-visual-pulse-interval 0.08
-  "Seconds between two steps of a pulsing background."
-  :type 'number
-  :group 'ecc)
+(defvar ecc-visual-pulse-interval 0.08
+  "Seconds between two steps of a pulsing background.")
 
-(defcustom ecc-visual-pulse-period 1.6
-  "Seconds a pulsing background takes to go and come back."
-  :type 'number
-  :group 'ecc)
+(defvar ecc-visual-pulse-period 1.6
+  "Seconds a pulsing background takes to go and come back.")
 
-(defcustom ecc-visual-pulse-color "#3a5f3a"
-  "Colour a pulsing background travels towards."
-  :type 'color
-  :group 'ecc)
+(defvar ecc-visual-pulse-color "#3a5f3a"
+  "Colour a pulsing background travels towards.")
 
-(defcustom ecc-visual-pulse-depth 0.6
-  "How far towards `ecc-visual-pulse-color' a pulse goes, from 0 to 1."
-  :type 'number
-  :group 'ecc)
+(defvar ecc-visual-pulse-depth 0.6
+  "How far towards `ecc-visual-pulse-color' a pulse goes, from 0 to 1.")
 
-(defcustom ecc-visual-blink-interval 0.6
-  "Seconds between two states of a blinking line."
-  :type 'number
-  :group 'ecc)
+(defvar ecc-visual-blink-interval 0.6
+  "Seconds between two states of a blinking line.")
 
 (defface ecc-visual-blink-face
   '((t :inherit ecc-pending-face :inverse-video t))
@@ -277,64 +251,48 @@ at the ends."
 
 ;;;; Icons (FR-OUT-11 d)
 
-(defcustom ecc-visual-icon-alist
-  '(("Read" "nf-cod-book" . "R")
-    ("Write" "nf-cod-new_file" . "W")
-    ("Edit" "nf-cod-edit" . "✎")
-    ("NotebookEdit" "nf-cod-notebook" . "✎")
-    ("Bash" "nf-cod-terminal" . "$")
-    ("BashOutput" "nf-cod-terminal" . "$")
-    ("Glob" "nf-cod-search" . "*")
-    ("Grep" "nf-cod-search" . "/")
-    ("Task" "nf-cod-organization" . "@")
-    ("Agent" "nf-cod-organization" . "@")
-    ("WebFetch" "nf-cod-globe" . "⇩")
-    ("WebSearch" "nf-cod-globe" . "?")
-    ("TodoWrite" "nf-cod-checklist" . "☑")
-    ("AskUserQuestion" "nf-cod-question" . "?")
-    ("ExitPlanMode" "nf-cod-checklist" . "▸")
-    ("Skill" "nf-cod-star" . "★"))
-  "Icon of each tool: (TOOL-NAME NERD-ICON-NAME . ASCII).
-The nerd icon is used when `nerd-icons' is installed; the last field is
-what every other display gets."
-  :type '(alist :key-type string
-                :value-type (cons string string))
-  :group 'ecc)
+(defvar ecc-visual-icon-alist
+  '(("Read"            "nf-cod-book"          "R" ecc-icon-read-face)
+    ("NotebookRead"    "nf-cod-notebook"      "R" ecc-icon-read-face)
+    ("Write"           "nf-cod-new_file"      "W" ecc-icon-write-face)
+    ("Edit"            "nf-cod-edit"          "✎" ecc-icon-write-face)
+    ("NotebookEdit"    "nf-cod-notebook"      "✎" ecc-icon-write-face)
+    ("Bash"            "nf-cod-terminal"      "$" ecc-icon-shell-face)
+    ("BashOutput"      "nf-cod-terminal"      "$" ecc-icon-shell-face)
+    ("KillShell"       "nf-cod-terminal"      "$" ecc-icon-shell-face)
+    ("Glob"            "nf-cod-search"        "*" ecc-icon-search-face)
+    ("Grep"            "nf-cod-search"        "/" ecc-icon-search-face)
+    ("Task"            "nf-cod-organization"  "@" ecc-icon-agent-face)
+    ("Agent"           "nf-cod-organization"  "@" ecc-icon-agent-face)
+    ("WebFetch"        "nf-cod-globe"         "⇩" ecc-icon-web-face)
+    ("WebSearch"       "nf-cod-globe"         "?" ecc-icon-web-face)
+    ("TodoWrite"       "nf-cod-checklist"     "☑" ecc-icon-task-face)
+    ("AskUserQuestion" "nf-cod-question"      "?" ecc-icon-task-face)
+    ("ExitPlanMode"    "nf-cod-checklist"     "▸" ecc-icon-task-face)
+    ("Skill"           "nf-cod-star"          "★" ecc-icon-task-face))
+  "Icon of each tool: (TOOL-NAME NERD-ICON-NAME ASCII FACE).
+The nerd icon is used when `nerd-icons' is installed and the ASCII
+stand-in on every other display, so the transcript reads the same
+either way.  The faces carry a background as well as a foreground, so
+that the icon reads as a small badge.
 
-(defconst ecc-visual-default-icon '("nf-cod-tools" . "·")
+This was two tables until 2026-09-10, one for the glyphs and one for
+the faces, and a tool could be in one and not the other: `NotebookRead'
+and `KillShell' had a colour and no glyph.  One table cannot fall out
+of step with itself.  A tool that is not here at all gets
+`ecc-visual-default-icon' and `ecc-icon-face'.")
+
+(defconst ecc-visual-default-icon '("nf-cod-tools" "·" ecc-icon-face)
   "Icon for a tool that is not in `ecc-visual-icon-alist'.")
 
-(defcustom ecc-visual-icon-face-alist
-  '(("Read" . ecc-icon-read-face)
-    ("NotebookRead" . ecc-icon-read-face)
-    ("Write" . ecc-icon-write-face)
-    ("Edit" . ecc-icon-write-face)
-    ("NotebookEdit" . ecc-icon-write-face)
-    ("Bash" . ecc-icon-shell-face)
-    ("BashOutput" . ecc-icon-shell-face)
-    ("KillShell" . ecc-icon-shell-face)
-    ("Glob" . ecc-icon-search-face)
-    ("Grep" . ecc-icon-search-face)
-    ("Task" . ecc-icon-agent-face)
-    ("Agent" . ecc-icon-agent-face)
-    ("WebFetch" . ecc-icon-web-face)
-    ("WebSearch" . ecc-icon-web-face)
-    ("TodoWrite" . ecc-icon-task-face)
-    ("ExitPlanMode" . ecc-icon-task-face)
-    ("AskUserQuestion" . ecc-icon-task-face)
-    ("Skill" . ecc-icon-task-face))
-  "Face the icon of each tool is drawn in: (TOOL-NAME . FACE).
-The faces carry a background as well as a foreground, so that the icon
-reads as a small badge.  A tool that is named here but not in
-`ecc-visual-icon-alist' still gets the colour of its group; one that is
-in neither gets `ecc-icon-face'."
-  :type '(alist :key-type string :value-type face)
-  :group 'ecc)
+(defun ecc-visual-icon-entry (tool-name)
+  "Return the (NERD-ICON ASCII FACE) of TOOL-NAME, or the default."
+  (or (cdr (assoc (or tool-name "") ecc-visual-icon-alist))
+      ecc-visual-default-icon))
 
 (defun ecc-visual-icon-face (tool-name)
   "Return the face the icon of TOOL-NAME is drawn in."
-  (or (cdr (assoc (or tool-name "") ecc-visual-icon-face-alist))
-      'ecc-icon-face))
+  (nth 2 (ecc-visual-icon-entry tool-name)))
 
 (declare-function nerd-icons-codicon "nerd-icons" (name &rest args))
 
@@ -356,14 +314,13 @@ Either one is drawn in the face of its group (`ecc-visual-icon-face\='),
 which gives it a background of its own."
   (if (not ecc-visual-enable-icons)
       ""
-    (let* ((entry (or (cdr (assoc (or tool-name "") ecc-visual-icon-alist))
-                      ecc-visual-default-icon))
-           (face (ecc-visual-icon-face tool-name))
+    (let* ((entry (ecc-visual-icon-entry tool-name))
+           (face (nth 2 entry))
            (glyph (and (ecc-visual-nerd-icons-p)
                        (condition-case nil
-                           (nerd-icons-codicon (car entry) :face face)
+                           (nerd-icons-codicon (nth 0 entry) :face face)
                          (error nil)))))
-      (or glyph (propertize (cdr entry) 'face face)))))
+      (or glyph (propertize (nth 1 entry) 'face face)))))
 
 (provide 'ecc-visual)
 

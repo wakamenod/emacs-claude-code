@@ -184,8 +184,8 @@
       (should (equal (ecc-visual-icon "Edit") "✎"))
       ;; A tool nobody listed still gets something.
       (should (equal (ecc-visual-icon "NoSuchTool")
-                     (cdr ecc-visual-default-icon)))
-      (should (equal (ecc-visual-icon nil) (cdr ecc-visual-default-icon)))))
+                     (nth 1 ecc-visual-default-icon)))
+      (should (equal (ecc-visual-icon nil) (nth 1 ecc-visual-default-icon)))))
   (let ((ecc-visual-enable-icons nil))
     (should (equal (ecc-visual-icon "Bash") ""))))
 
@@ -202,7 +202,8 @@
                 'ecc-icon-shell-face))
     ;; Every group names a background, so that the badge reads as one.
     (dolist (face (cons 'ecc-icon-face
-                        (mapcar #'cdr ecc-visual-icon-face-alist)))
+                        (mapcar (lambda (entry) (nth 3 entry))
+                                ecc-visual-icon-alist)))
       (should (facep face)))))
 
 (ert-deftest ecc-visual-test-icon-badge-covers-the-space-after-it ()
