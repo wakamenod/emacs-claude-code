@@ -147,9 +147,12 @@
                               (cadr tabs) tabs 'tab-line-tab-inactive t nil)
                              '(:inherit (ecc-tab-running-face
                                          tab-line-tab-inactive))))
+              ;; The tab the window shows keeps its state colour: the
+              ;; current face is laid under it, not over it.
               (should (equal (ecc-tab-line-tab-face
                               (car tabs) tabs 'tab-line-tab-current t t)
-                             '(:inherit (ecc-tab-current-face
+                             '(:inherit (ecc-tab-idle-face
+                                         ecc-tab-current-face
                                          tab-line-tab-current))))))
         (ecc-test-cleanup-session second)
         (ecc-model-remove-session second)))))
@@ -205,17 +208,24 @@ Two sessions, so that the one that wants nothing is seen to stay put."
             (ecc-test-add-request first)
             (should (eq (ecc-tab-state first) 'attention))
             (let ((ecc-tab--blink-phase nil))
-              (should (eq (ecc-tab-face first nil) 'ecc-tab-attention-face))
-              (should (eq (ecc-tab-face second nil) 'ecc-tab-idle-face)))
+              (should (equal (ecc-tab-faces first nil)
+                             '(ecc-tab-attention-face)))
+              (should (equal (ecc-tab-faces second nil)
+                             '(ecc-tab-idle-face))))
             (let ((ecc-tab--blink-phase t))
-              (should (eq (ecc-tab-face first nil)
-                          'ecc-tab-attention-blink-face))
-              ;; Being the tab the window shows does not hold the blink off.
-              (should (eq (ecc-tab-face first t)
-                          'ecc-tab-attention-blink-face))
+              (should (equal (ecc-tab-faces first nil)
+                             '(ecc-tab-attention-blink-face)))
+              ;; Being the tab the window shows does not hold the blink
+              ;; off, and it does not cost the tab its colour either:
+              ;; the current face is laid under the state, not over it.
+              (should (equal (ecc-tab-faces first t)
+                             '(ecc-tab-attention-blink-face
+                               ecc-tab-current-face)))
               ;; A session that wants nothing is left alone.
-              (should (eq (ecc-tab-face second nil) 'ecc-tab-idle-face))
-              (should (eq (ecc-tab-face second t) 'ecc-tab-current-face))))
+              (should (equal (ecc-tab-faces second nil)
+                             '(ecc-tab-idle-face)))
+              (should (equal (ecc-tab-faces second t)
+                             '(ecc-tab-idle-face ecc-tab-current-face)))))
         (ecc-test-cleanup-session second)
         (ecc-model-remove-session second)))))
 
@@ -252,7 +262,8 @@ Two sessions, so that the one that wants nothing is seen to stay put."
           (ecc-test-add-request session)
           (ecc-tab-blink-update)
           (should-not ecc-tab--blink-timer)
-          (should (eq (ecc-tab-face session nil) 'ecc-tab-attention-face)))
+          (should (equal (ecc-tab-faces session nil)
+                         '(ecc-tab-attention-face))))
       (ecc-tab-blink-stop)
       (ecc-tab-line-mode -1))))
 

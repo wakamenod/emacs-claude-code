@@ -266,20 +266,23 @@ when only the ones that want something are marked."
   (pcase (ecc-tab-state session)
     ('attention "⚠") ('running "●") ('exited "✗") (_ "")))
 
-(defun ecc-tab-face (session current)
-  "Return the face of the tab of SESSION, CURRENT saying whether it is shown.
-A session waiting for an answer beats both on the lit half of the
-blink: that is the one the user has to look at."
-  (cond
-   ((and ecc-tab--blink-phase (eq (ecc-tab-state session) 'attention))
-    'ecc-tab-attention-blink-face)
-   (current 'ecc-tab-current-face)
-   (t
-    (pcase (ecc-tab-state session)
-      ('attention 'ecc-tab-attention-face)
-      ('running 'ecc-tab-running-face)
-      ('exited 'ecc-error-face)
-      (_ 'ecc-tab-idle-face)))))
+(defun ecc-tab-faces (session current)
+  "Return the faces to lay over the tab of SESSION, the telling one first.
+CURRENT says the window is showing this session.  The state comes
+first so that its colour wins, and `ecc-tab-current-face' follows to
+add what it alone says -- the weight and the underline that mark the
+tab one is looking at.  Putting `current' first instead, as this did
+before, cost the tab of the session in front of you the very colour
+that says what it is doing."
+  (let ((state (if (and ecc-tab--blink-phase
+                        (eq (ecc-tab-state session) 'attention))
+                   'ecc-tab-attention-blink-face
+                 (pcase (ecc-tab-state session)
+                   ('attention 'ecc-tab-attention-face)
+                   ('running 'ecc-tab-running-face)
+                   ('exited 'ecc-error-face)
+                   (_ 'ecc-tab-idle-face)))))
+    (if current (list state 'ecc-tab-current-face) (list state))))
 
 (defun ecc-tab-line-tabs ()
   "Return the session buffers, oldest session first (FR-NOTIFY-2).
@@ -313,7 +316,7 @@ underneath so that the theme still decides the shape of a tab."
          (session (and (buffer-live-p buffer)
                        (buffer-local-value 'ecc-render--session buffer))))
     (if session
-        `(:inherit (,(ecc-tab-face session selected-p) ,face))
+        `(:inherit (,@(ecc-tab-faces session selected-p) ,face))
       face)))
 
 (defvar ecc-tab-line-mode)
