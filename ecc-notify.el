@@ -308,6 +308,17 @@ underneath so that the theme still decides the shape of a tab."
 
 (defvar ecc-tab-line-mode)
 
+;; `tab-line-force-update' is Emacs 30 and later (confirmed 2026-09-10 on
+;; the CI matrix, which builds on 29.1).  What it does is what the blink
+;; does by hand: drop the per-window cache, then ask for a redisplay.
+(defun ecc-tab--force-update ()
+  "Draw the tab lines again, cache and all."
+  (if (fboundp 'tab-line-force-update)
+      (funcall 'tab-line-force-update t)
+    (dolist (window (window-list-1 nil nil t))
+      (set-window-parameter window 'tab-line-cache nil))
+    (force-mode-line-update t)))
+
 (defun ecc-tab-line--install (&rest _)
   "Put the tab line in every session buffer, or take it out again.
 The tabs are the ones of `tab-line-mode' itself, so that they look and
@@ -331,7 +342,7 @@ was clicked in, which is the whole point of them."
   ;; A tab line is cached per window on a key that does not know a
   ;; session's state, so a state that changed needs the cache cleared
   ;; rather than a redisplay alone.
-  (tab-line-force-update t)
+  (ecc-tab--force-update)
   (ecc-tab-blink-update))
 
 ;;;; Blinking the tabs that want an answer

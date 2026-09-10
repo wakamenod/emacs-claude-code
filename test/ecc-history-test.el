@@ -448,18 +448,24 @@ would otherwise hide everything said before it."
   (should (equal "-Users-jun-my-project-v1-2"
                  (ecc-history-project-directory "/Users/jun/my_project/v1.2")))
   ;; The CLI records the resolved path: on macOS a session started in
-  ;; /var/folders is written under /private/var/folders.
-  (let* ((directory (make-temp-file "ecc-history-link" t))
-         (resolved (directory-file-name (file-truename directory))))
+  ;; /var/folders is written under /private/var/folders.  A symbolic
+  ;; link of our own asks the same question on a machine where the
+  ;; temporary directory is a real one, as it is on Linux.
+  (let* ((target (make-temp-file "ecc-history-target" t))
+         (link (make-temp-name
+                (expand-file-name "ecc-history-link" temporary-file-directory)))
+         (resolved (directory-file-name (file-truename target))))
+    (make-symbolic-link target link)
     (unwind-protect
         (progn
           (should (equal (replace-regexp-in-string "[^A-Za-z0-9-]" "-" resolved)
-                         (ecc-history-project-directory directory)))
-          (should-not (equal (ecc-history-project-directory directory)
+                         (ecc-history-project-directory link)))
+          (should-not (equal (ecc-history-project-directory link)
                              (replace-regexp-in-string
                               "[^A-Za-z0-9-]" "-"
-                              (directory-file-name directory)))))
-      (delete-directory directory t))))
+                              (directory-file-name link)))))
+      (delete-file link)
+      (delete-directory target t))))
 
 (ert-deftest ecc-history-test-recordings-are-newest-first ()
   "The recordings of a project are offered most recently used first."
