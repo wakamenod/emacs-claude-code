@@ -105,8 +105,9 @@ git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/em
 ```
 
 `(require 'ecc)` は全ファイルを読む。コマンドは autoload されているので `M-x ecc-start`
-は `require` 無しでも動くが、`ecc-global-map` は変数なので束縛する前に読み込まれて
-いる必要がある。下の設定例が遅延読み込みにしていないのはそのためである。
+は `require` 無しでも動く。`ecc-global-map` はコマンドではなく変数なので、`use-package`
+の外で束縛するには先に ecc が読み込まれている必要がある。`use-package` ではこれを
+`:bind-keymap` が引き受ける。
 </details>
 
 ## 設定
@@ -115,17 +116,13 @@ git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/em
 (use-package ecc
   :ensure t
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest)
-  :demand t
-  :bind (("C-c C-v" . ecc-start))
+  ;; `ecc-global-map' はどのバッファからでも答え待ちの要求に答えるためのもの。
+  ;; 下のキー割り当てを参照。コマンドではなく変数に入ったキーマップなので
+  ;; `:bind-keymap' を使う。これならプレフィックスを最初に押した時点で ecc が
+  ;; 読み込まれ、起動時には読まれない。
+  :bind-keymap ("C-c c" . ecc-global-map)
+  :bind ("C-c C-v" . ecc-start)
   :config
-  ;; `ecc-global-map' はコマンドではなく変数に入ったキーマップなので `:bind' では
-  ;; 届かず、束縛する前に存在している必要がある。上で `:demand t' にしているのは
-  ;; そのため。どのバッファからでも答え待ちの要求に答えられる。下のキー割り当てを参照。
-  (keymap-global-set "C-c c" ecc-global-map)
-
-  ;; モードラインに " ⚠ecc:N " と、答えを待っている要求の数を出す。
-  (ecc-pending-indicator-mode 1)
-
   (setq ecc-chat-text-width 100)      ; transcript を描く桁数
   (setq ecc-notify-level 'pulse)      ; nil, `message', `pulse', `desktop'
   (setq ecc-permission-mode nil)      ; nil なら CLI 自身の既定のまま

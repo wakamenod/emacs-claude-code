@@ -105,8 +105,8 @@ git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/em
 ```
 
 `(require 'ecc)` loads every file. The commands are autoloaded, so `M-x ecc-start` works
-without it — but `ecc-global-map` is a variable and has to be loaded before it can be
-bound, which is why the configuration below loads ecc rather than deferring it.
+without it. `ecc-global-map` is a variable rather than a command, so binding it outside
+`use-package` needs ecc loaded first; `use-package` handles that with `:bind-keymap`.
 </details>
 
 ## Configuration
@@ -115,18 +115,13 @@ bound, which is why the configuration below loads ecc rather than deferring it.
 (use-package ecc
   :ensure t
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest)
-  :demand t
-  :bind (("C-c C-v" . ecc-start))
+  ;; `ecc-global-map' answers a waiting request from any buffer; see the
+  ;; key bindings below.  It is a keymap held in a variable rather than a
+  ;; command, so it wants `:bind-keymap' -- which also loads ecc the
+  ;; first time you press the prefix, rather than at startup.
+  :bind-keymap ("C-c c" . ecc-global-map)
+  :bind ("C-c C-v" . ecc-start)
   :config
-  ;; `ecc-global-map' is a keymap held in a variable, not a command, so
-  ;; `:bind' cannot reach it and it has to exist before it is bound --
-  ;; which is why this form asks for `:demand t' above.  It answers a
-  ;; waiting request from any buffer; see the key bindings below.
-  (keymap-global-set "C-c c" ecc-global-map)
-
-  ;; " ⚠ecc:N " in the mode line, counting the requests waiting for you.
-  (ecc-pending-indicator-mode 1)
-
   (setq ecc-chat-text-width 100)      ; columns the transcript is drawn across
   (setq ecc-notify-level 'pulse)      ; nil, `message', `pulse' or `desktop'
   (setq ecc-permission-mode nil)      ; nil leaves the CLI's own default
