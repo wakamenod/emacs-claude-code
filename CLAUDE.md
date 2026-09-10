@@ -20,7 +20,10 @@ code disagree, the code wins.
 - The rest is one feature per file (`ecc-perm.el`, `ecc-review.el`, `ecc-plan.el`,
   `ecc-history.el`, `ecc-mcp.el`, `ecc-tui.el`, …). `ecc-transient.el` is the menu.
 - `test/` — one `ecc-<module>-test.el` per module, plus `ecc-live-test.el`.
-- `scripts/` — the recorders that make the fixtures.
+- `scripts/` — the recorders that make the fixtures, and `screenshot.sh`, which
+  regenerates `docs/images/session.gif` and its still by walking a throwaway GUI
+  Emacs through a replayed fixture a step at a time. macOS only; it wants
+  `ffmpeg`, and the terminal needs Screen Recording permission.
 - `docs/site/` — the Astro Starlight documentation site, deployed to GitHub
   Pages by `.github/workflows/docs.yml`. English is served at the root and
   Japanese under `/ja/`, following the same rule as the two READMEs. The
