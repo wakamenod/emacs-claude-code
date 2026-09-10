@@ -402,6 +402,139 @@ the process, the sentinel and the teardown are ghostel's own."
         ;; The hand-off is kept, so the watch can take it back later.
         (should (ecc-tui-handoff-p session))))))
 
+(ert-deftest ecc-tui-test-does-not-resume-behind-a-terminal-it-started ()
+  "A terminal of this hand-off keeps the session, registry or no registry.
+The registry is the CLI's own book: a CLI that has not written itself
+into it yet, or one whose entry went missing, would let a second
+process onto the session and branch the conversation."
+  (ecc-tui-test--with-session session
+    (let ((resumed nil))
+      (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) nil))
+                ((symbol-function 'ecc-registry-live-p) (lambda (_id) nil))
+                ((symbol-function 'ecc-proc-start)
+                 (lambda (_session &optional resume _fork) (setq resumed resume))))
+        (ecc-tui-open session)
+        (should (process-live-p (plist-get (ecc-tui-state session) :process)))
+        (should-not (ecc-tui-return session))
+        (should-not resumed)
+        (should (ecc-tui-handoff-p session))))))
+
+(ert-deftest ecc-tui-test-a-terminal-that-will-not-open-undoes-the-handoff ()
+  "A hand-off whose terminal never opened is taken back off the session.
+The process was stopped to make room for it, and what takes a session
+back is the terminal ending: a hand-off left on a session that has no
+terminal is one nothing would ever end."
+  (ecc-tui-test--with-session session
+    (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) nil))
+              ((symbol-function 'ecc-tui--open-ghostel)
+               (lambda (_session) (user-error "ghostel is not installed"))))
+      (should-error (ecc-tui-open session) :type 'user-error)
+      (should-not (ecc-tui-handoff-p session))
+      (should-not (eq (ecc-session-kind session) 'handoff))
+      (should-not (ecc-tui-state session)))))
+
+(ert-deftest ecc-tui-test-the-turn-the-follow-left-open-is-closed-on-the-way-back ()
+  "The turn the follow leaves open ends when the hand-off does.
+A batch of appended lines is the middle of a turn, so the follow keeps
+it open; left open past the hand-off it would hold every prompt sent
+afterwards in the queue, and the session would take nothing said to it
+ever again."
+  (let* ((file (make-temp-file "ecc-tui-" nil ".jsonl"))
+         (lines (with-temp-buffer
+                  (let ((coding-system-for-read 'utf-8-unix))
+                    (insert-file-contents (ecc-test-history-fixture "session")))
+                  (split-string (buffer-string) "\n" t))))
+    (unwind-protect
+        (ecc-tui-test--with-session session
+          (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) file))
+                    ((symbol-function 'file-notify-add-watch) (lambda (&rest _) nil))
+                    ((symbol-function 'ecc-registry-live-p) (lambda (_id) nil))
+                    ((symbol-function 'ecc-proc-start)
+                     (lambda (session &optional _resume _fork)
+                       (ecc-model-set-state session 'idle) nil)))
+            (ecc-tui-test--write file (seq-take lines 2))
+            (ecc-tui-open session)
+            (ecc-tui-test--write file lines)
+            (should (> (ecc-tui-read-new-lines session) 0))
+            ;; While the terminal has it, the turn stays open.
+            (should (ecc-session-current-turn session))
+            (let ((process (plist-get (ecc-tui-state session) :process)))
+              (set-process-sentinel process #'ignore)
+              (delete-process process))
+            (ecc-tui-return session)
+            (should-not (ecc-session-current-turn session))
+            ;; The turn ended when the recording says it did, not when
+            ;; the terminal happened to be left.
+            (let ((turn (car (last (ecc-session-turns session)))))
+              (should (ecc-turn-end-time turn))
+              (should (time-less-p (ecc-turn-end-time turn) (current-time))))
+            ;; So a prompt sent now goes out instead of joining a queue
+            ;; nothing will ever drain.
+            (should (eq (ecc-proc-send-prompt session "and now?") 'sent))
+            (should-not (ecc-session-input-queue session))))
+      (delete-file file))))
+
+(ert-deftest ecc-tui-test-what-was-queued-before-the-handoff-goes-out-after-it ()
+  "A prompt queued behind the interrupted turn is sent when it comes back.
+What usually sends it is a turn coming to an end, and that happened in
+the terminal."
+  (ecc-tui-test--with-session session
+    (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) nil))
+              ((symbol-function 'ecc-registry-live-p) (lambda (_id) nil))
+              ((symbol-function 'ecc-proc-start) (lambda (&rest _) nil)))
+      (ecc-model-set-state session 'running)
+      (ecc-model-begin-turn session "first")
+      (ecc-model-queue-input session "queued while busy")
+      (ecc-tui-open session)
+      (let ((process (plist-get (ecc-tui-state session) :process)))
+        (set-process-sentinel process #'ignore)
+        (delete-process process))
+      (ecc-tui-return session)
+      (should-not (ecc-session-input-queue session))
+      (should (equal (ecc-turn-prompt (car (last (ecc-session-turns session))))
+                     "queued while busy")))))
+
+(ert-deftest ecc-tui-test-a-recording-joined-mid-character-does-not-drift ()
+  "The follow counts bytes, so joining a half-written character is survived.
+The position is an offset into the file.  A character the CLI was
+halfway through writing is read back as the raw bytes Emacs keeps two
+bytes apiece, and counting those would push the position past the line
+end and lose the head of a line in every batch after it."
+  (let* ((file (make-temp-file "ecc-tui-" nil ".jsonl"))
+         (line (lambda (uuid text)
+                 (format (concat "{\"parentUuid\":null,\"isSidechain\":false,"
+                                 "\"type\":\"user\",\"message\":{\"role\":\"user\","
+                                 "\"content\":\"%s\"},\"uuid\":\"%s\","
+                                 "\"timestamp\":\"2026-09-06T00:00:00.000Z\"}")
+                         text uuid))))
+    (unwind-protect
+        (ecc-tui-test--with-session session
+          (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) file))
+                    ((symbol-function 'file-notify-add-watch) (lambda (&rest _) nil)))
+            (ecc-tui-test--write file (list (funcall line "a" "ひとつめ")))
+            ;; The CLI is halfway through a multibyte character when the
+            ;; follow joins the recording.
+            (ecc-tui-test--append
+             file (substring (encode-coding-string "{\"content\":\"あ" 'utf-8) 0 -1))
+            (ecc-tui-open session)
+            ;; It finishes that character and that line, and writes
+            ;; another line.  The byte the character was missing is the
+            ;; first thing the next read sees, and it is read back as a
+            ;; raw byte because there is nothing in front of it.
+            (ecc-tui-test--append
+             file (concat (substring (encode-coding-string "あ" 'utf-8) -1) "\"}\n"))
+            (ecc-tui-test--append file (concat (funcall line "b" "ふたつめ") "\n"))
+            (ecc-tui-read-new-lines session)
+            (ecc-tui-test--append file (concat (funcall line "c" "みっつめ") "\n"))
+            (ecc-tui-read-new-lines session)
+            ;; The half-written line is not a message and is dropped;
+            ;; the two after it are read whole.
+            (should (equal (mapcar #'ecc-turn-prompt (ecc-session-turns session))
+                           '("ふたつめ" "みっつめ")))
+            (should (= (plist-get (ecc-tui-state session) :position)
+                       (file-attribute-size (file-attributes file))))))
+      (delete-file file))))
+
 (provide 'ecc-tui-test)
 
 ;;; ecc-tui-test.el ends here

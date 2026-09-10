@@ -212,15 +212,29 @@ CLI in the terminal brings up a bridge of its own."
     (when (ecc-tui-handoff-p session)
       (user-error "%s is already open in a terminal" (ecc-session-name session)))
     (ecc-tui--release session)
-    (setf (ecc-session-kind session) 'handoff)
-    (ecc-tui-follow-start session)
-    (let* ((opened (ecc-tui--open-ghostel session))
-           (buffer (car opened))
-           (process (cdr opened)))
-      (ecc-tui--put session :buffer buffer)
-      (ecc-tui--put session :process process)
-      (ecc-tui--watch-process session process))
-    (ecc-tui--start-timer session)
+    (let ((kind (ecc-session-kind session)))
+      (setf (ecc-session-kind session) 'handoff)
+      (ecc-tui-follow-start session)
+      ;; The process was stopped to make room for a terminal.  If the
+      ;; terminal then refuses to open -- ghostel is not installed, an
+      ;; earlier one is still running -- the hand-off is undone rather
+      ;; than left on a session with nothing driving it: nothing else
+      ;; would ever take it back, since what does that is the terminal
+      ;; ending.  The session is stopped either way and is started
+      ;; again with `ecc-session-resume'.
+      (condition-case error
+          (let* ((opened (ecc-tui--open-ghostel session))
+                 (buffer (car opened))
+                 (process (cdr opened)))
+            (ecc-tui--put session :buffer buffer)
+            (ecc-tui--put session :process process)
+            (ecc-tui--watch-process session process)
+            (ecc-tui--start-timer session))
+        (error
+         (ecc-tui-follow-stop session)
+         (setf (ecc-session-kind session) kind)
+         (ecc-render-refresh session)
+         (signal (car error) (cdr error)))))
     (ecc-render-refresh session)
     (message "%s is in the terminal now; it comes back when you leave it"
              (ecc-session-name session))
@@ -282,21 +296,43 @@ notification can arrive while the CLI is halfway through writing one."
      ((< size from) (ecc-tui--put session :position size) 0)
      ((= size from) 0)
      (t
-      (let* ((text (with-temp-buffer
-                     (let ((coding-system-for-read 'utf-8-unix))
-                       (insert-file-contents file nil from size))
-                     (buffer-string)))
-             (cut (string-match-p "\n[^\n]*\\'" text))
-             (whole (if cut (substring text 0 (1+ cut)) nil))
+      ;; The bytes are counted rather than the characters, and the cut
+      ;; is made among them: the position is an offset into the file,
+      ;; and a follow that joined the recording in the middle of a
+      ;; multibyte character would otherwise count that character as
+      ;; the two bytes Emacs keeps a raw byte in and drift a little
+      ;; further into every batch after it, losing the head of a line
+      ;; each time.
+      (let* ((bytes (with-temp-buffer
+                      (set-buffer-multibyte nil)
+                      (insert-file-contents-literally file nil from size)
+                      (goto-char (point-max))
+                      (and (search-backward "\n" nil t)
+                           (buffer-substring-no-properties (point-min)
+                                                           (1+ (point))))))
+             (whole (and bytes (decode-coding-string bytes 'utf-8-unix)))
              (lines (and whole (split-string whole "\n" t))))
         (if (null lines)
             0
-          (ecc-tui--put session :position (+ from (string-bytes whole)))
+          (ecc-tui--put session :position (+ from (length bytes)))
+          (ecc-tui--note-time session lines)
           (prog1 (length lines)
             ;; A batch of new lines is not a turn: it is the middle of
             ;; one, so the turn the last batch left open carries on.
             (ecc-history--replay session lines nil t)
             (ecc-render-refresh session))))))))
+
+(defun ecc-tui--note-time (session lines)
+  "Keep the time the last of LINES carries as where SESSION\='s recording is.
+It is what the turn the follow leaves open is closed at: the turn ended
+in the terminal, at a time the recording knows and the clock here does
+not."
+  (when-let* ((stamp (seq-some (lambda (line)
+                                 (when-let* ((message
+                                              (ecc-protocol-history-parse line)))
+                                   (ecc-protocol-history-timestamp message)))
+                               (reverse lines))))
+    (ecc-tui--put session :time stamp)))
 
 (defun ecc-tui-follow-stop (session)
   "Stop following the recording of SESSION and forget the hand-off."
@@ -304,7 +340,16 @@ notification can arrive while the CLI is halfway through writing one."
     (when-let* ((watch (plist-get state :watch)))
       (ignore-errors (file-notify-rm-watch watch)))
     (when-let* ((timer (plist-get state :timer)))
-      (cancel-timer timer)))
+      (cancel-timer timer))
+    ;; The follow leaves the turn it is in open, because a batch of
+    ;; appended lines is the middle of a turn rather than the end of
+    ;; one.  The hand-off ending is the end of it: a turn left open
+    ;; here holds every prompt sent afterwards in the queue, and the
+    ;; session takes nothing said to it ever again.  A live process is
+    ;; the exception -- the turn is then its own, and nobody else may
+    ;; close it.
+    (unless (process-live-p (ecc-session-process session))
+      (ecc-history--close-turn session (plist-get state :time))))
   (remhash (ecc-session-id session) ecc-tui--handoffs))
 
 ;;;; Noticing that the terminal is done
@@ -387,8 +432,13 @@ conversation."
       session)
      ;; Somebody is still writing to this session.  The hand-off is left
      ;; as it is, so that the watch keeps looking and takes it back once
-     ;; the terminal is really gone.
-     ((ecc-registry-live-p (ecc-session-id session))
+     ;; the terminal is really gone.  The terminal this hand-off started
+     ;; is asked as well as the registry: the registry is the CLI's own
+     ;; book, and a CLI that has not written itself into it yet -- or
+     ;; one whose entry went missing -- would otherwise let a second
+     ;; process onto the session and branch the conversation.
+     ((or (and (ecc-tui-handoff-p session) (not (ecc-tui-finished-p session)))
+          (ecc-registry-live-p (ecc-session-id session)))
       (message "%s is still open in a terminal" (ecc-session-name session))
       nil)
      (t
@@ -399,6 +449,10 @@ conversation."
       (require 'ecc-session)
       (ecc-session-ensure-buffer session)
       (ecc-proc-start session t)
+      ;; A prompt queued behind the turn the hand-off interrupted is
+      ;; still waiting, and what usually sends it -- a turn coming to an
+      ;; end -- has already happened, in the terminal.
+      (ecc-proc-drain-queue session)
       (message "%s is back in Emacs" (ecc-session-name session))
       session))))
 
