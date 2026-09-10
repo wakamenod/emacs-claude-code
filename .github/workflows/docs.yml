@@ -1,0 +1,50 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+    # Nothing outside the site can change what the site renders.  Revisit
+    # this the day a page is generated from the Elisp sources, or the site
+    # will quietly go stale.
+    paths: ['docs/site/**', '.github/workflows/docs.yml']
+  pull_request:
+    paths: ['docs/site/**', '.github/workflows/docs.yml']
+  workflow_dispatch:
+
+# GitHub allows one Pages deployment at a time, and cancelling one halfway
+# can leave the environment wedged.  Queue rather than cancel.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  # Runs on pull requests too, so that a broken frontmatter or a bad link is
+  # caught before it reaches main.  Only `deploy' is gated.
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Installs from docs/site/package-lock.json, runs `astro build', and
+      # uploads dist/ as the Pages artifact.
+      - uses: withastro/action@v6
+        with:
+          path: ./docs/site
+          # Keep in step with docs/site/.nvmrc.
+          node-version: 24
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

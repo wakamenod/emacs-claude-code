@@ -132,7 +132,7 @@ git clone [https://github.com/wakamenod/emacs-claude-code](https://github.com/wa
 
 ```
 
-その他の設定項目については、`M-x customize-group RET ecc` を実行するか、[設定リファレンス](https://wakamenod.github.io/emacs-claude-code/) を参照してください。
+その他の設定項目については、`M-x customize-group RET ecc` を実行するか、[設定リファレンス](https://wakamenod.github.io/emacs-claude-code/ja/reference/configuration/) を参照してください。
 
 ## クイックスタート
 
@@ -168,7 +168,7 @@ git clone [https://github.com/wakamenod/emacs-claude-code](https://github.com/wa
 | `C-c C-a` / `C-c C-d` | ツールの実行を許可 / 拒否 |
 | `C-c ?` | コマンドメニューを開く |
 
-詳細な一覧は [キーバインドリファレンス](https://wakamenod.github.io/emacs-claude-code/) を参照してください。
+詳細な一覧は [キーバインドリファレンス](https://wakamenod.github.io/emacs-claude-code/ja/reference/key-bindings/) を参照してください。
 
 ## 謝辞
 

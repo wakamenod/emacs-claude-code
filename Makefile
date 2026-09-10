@@ -4,6 +4,11 @@
 EMACS ?= emacs
 ELPA  ?= $(HOME)/.emacs.d/elpa
 
+# The documentation site.  The only part of this repository that wants Node,
+# which is why no docs- target is a prerequisite of `all' or `clean'.
+NPM  ?= npm
+SITE := docs/site
+
 SRC   := $(wildcard ecc*.el)
 TESTS := $(wildcard test/ecc-*-test.el)
 
@@ -11,7 +16,8 @@ TESTS := $(wildcard test/ecc-*-test.el)
 INIT := --eval '(progn (setq package-user-dir "$(ELPA)") (package-initialize))'
 BATCH := $(EMACS) -Q --batch $(INIT) -L . -L test
 
-.PHONY: all compile test test-live lint clean
+.PHONY: all compile test test-live lint clean \
+        docs-install docs-dev docs-build docs-preview docs-clean
 
 all: compile lint test
 
@@ -37,3 +43,22 @@ lint:
 
 clean:
 	rm -f *.elc test/*.elc
+
+# `ci' rather than `install', so that a local build cannot quietly move the
+# lockfile that the deploy workflow installs from.
+docs-install:
+	$(NPM) --prefix $(SITE) ci
+
+docs-dev:
+	$(NPM) --prefix $(SITE) run dev
+
+docs-build:
+	$(NPM) --prefix $(SITE) run build
+
+# Pagefind search exists only after a build and is served by preview, never
+# by the dev server.
+docs-preview:
+	$(NPM) --prefix $(SITE) run preview
+
+docs-clean:
+	rm -rf $(SITE)/dist $(SITE)/.astro
