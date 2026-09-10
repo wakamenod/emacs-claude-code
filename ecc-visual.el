@@ -9,10 +9,9 @@
 ;;; Commentary:
 
 ;; The movement the terminal client gets for free and a buffer of text
-;; does not (FR-OUT-11).  A spinner while a turn runs, a pulsing
-;; background under the tool that is running, a blinking line where an
-;; answer is wanted, a flash when something finishes, and an icon per
-;; tool.
+;; does not.  A spinner while a turn runs, a pulsing background under
+;; the tool that is running, a blinking line where an answer is wanted,
+;; a flash when something finishes, and an icon per tool.
 ;;
 ;; Every effect is a timer over an overlay, and every one of them can be
 ;; turned off by itself.  Two rules keep them from becoming a cost: at
@@ -31,19 +30,19 @@
 (require 'ecc-core)
 
 (defvar ecc-visual-enable-spinner t
-  "Non-nil turns the spinner of a running turn (FR-OUT-11 a).")
+  "Non-nil turns the spinner of a running turn.")
 
 (defvar ecc-visual-enable-pulse t
-  "Non-nil pulses the background of a running tool or agent (FR-OUT-11 b).")
+  "Non-nil pulses the background of a running tool or agent.")
 
 (defvar ecc-visual-enable-blink t
-  "Non-nil blinks the line of a request waiting for an answer (FR-OUT-11 c).")
+  "Non-nil blinks the line of a request waiting for an answer.")
 
 (defvar ecc-visual-enable-icons t
-  "Non-nil puts an icon in front of a tool name (FR-OUT-11 d).")
+  "Non-nil puts an icon in front of a tool name.")
 
 (defvar ecc-visual-enable-flash t
-  "Non-nil flashes a section that has just finished (FR-OUT-11 e).")
+  "Non-nil flashes a section that has just finished.")
 
 (defvar ecc-visual-max-effects 4
   "Most overlays that may be animated at one time.
@@ -83,7 +82,7 @@ A terminal that cannot name its background colour gets a plain
 highlight rather than nothing."
   :group 'ecc)
 
-;;;; The spinner (FR-OUT-11 a)
+;;;; The spinner
 
 (defvar ecc-visual--tick 0
   "Number of spinner frames shown since Emacs started.")
@@ -135,7 +134,7 @@ A buffer nobody is looking at is not worth a timer ten times a second."
     (with-current-buffer buffer
       (force-mode-line-update))))
 
-;;;; Overlay effects (FR-OUT-11 b, c)
+;;;; Overlay effects (c)
 
 (defvar ecc-visual--effects nil
   "Overlays being animated, newest first.")
@@ -222,7 +221,7 @@ at the ends."
                  (if color (list :background color) 'ecc-visual-pulse-face))))
 
 (defun ecc-visual-pulse-overlay (overlay)
-  "Pulse the background of OVERLAY while a tool runs (FR-OUT-11 b)."
+  "Pulse the background of OVERLAY while a tool runs."
   (if (not ecc-visual-enable-pulse)
       overlay
     (ecc-visual--animate overlay ecc-visual-pulse-interval
@@ -235,21 +234,21 @@ at the ends."
                     'ecc-visual-blink-face)))
 
 (defun ecc-visual-blink-overlay (overlay)
-  "Blink OVERLAY while an answer is wanted (FR-OUT-11 c)."
+  "Blink OVERLAY while an answer is wanted."
   (if (not ecc-visual-enable-blink)
       overlay
     (ecc-visual--animate overlay ecc-visual-blink-interval
                          #'ecc-visual--blink-tick)))
 
-;;;; The flash of something finishing (FR-OUT-11 e)
+;;;; The flash of something finishing
 
 (defun ecc-visual-flash-region (start end)
-  "Flash the text between START and END once (FR-OUT-11 e)."
+  "Flash the text between START and END once."
   (when (and ecc-visual-enable-flash (display-graphic-p))
     (pulse-momentary-highlight-region start end)
     t))
 
-;;;; Icons (FR-OUT-11 d)
+;;;; Icons
 
 (defvar ecc-visual-icon-alist
   '(("Read"            "nf-cod-book"          "R" ecc-icon-read-face)
@@ -308,10 +307,10 @@ of step with itself.  A tool that is not here at all gets
 
 (defun ecc-visual-icon (tool-name)
   "Return the icon of TOOL-NAME, or the empty string when icons are off.
-A nerd icon is used when the font is there and an ASCII stand-in when
-it is not, so the transcript reads the same either way (FR-OUT-11 d).
-Either one is drawn in the face of its group (`ecc-visual-icon-face\='),
-which gives it a background of its own."
+A nerd icon is used when the font is there and an ASCII stand-in when it
+is not, so the transcript reads the same either way.  Either one is
+drawn in the face of its group (`ecc-visual-icon-face\='), which gives
+it a background of its own."
   (if (not ecc-visual-enable-icons)
       ""
     (let* ((entry (ecc-visual-icon-entry tool-name))

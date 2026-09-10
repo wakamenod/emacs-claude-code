@@ -10,8 +10,8 @@
 
 ;; The buffer a conversation is read and written in, and the commands
 ;; that act on it: visiting what is at point, reviewing, and taking
-;; things out of the transcript (FR-OUT-14).  The major mode, the keys
-;; and the movement live in `ecc-chat'.
+;; things out of the transcript.  The major mode, the keys and the
+;; movement live in `ecc-chat'.
 
 ;;; Code:
 
@@ -87,32 +87,32 @@ not its buffer, so killing it does nothing."
 ;;;; Commands
 
 (defun ecc-session-refresh ()
-  "Redraw the whole transcript (FR-OUT-10)."
+  "Redraw the whole transcript."
   (interactive)
   (ecc-render-refresh (ecc-session-at-point)))
 
 (defun ecc-session-interrupt ()
-  "Interrupt the running turn (FR-SES-5)."
+  "Interrupt the running turn."
   (interactive)
   (let ((session (ecc-session-at-point)))
     (ecc-proc-interrupt session)
     (message "Interrupt requested")))
 
 (defun ecc-session-resume ()
-  "Start this session again with --resume (FR-SES-7)."
+  "Start this session again with --resume."
   (interactive)
   (require 'ecc)
   (ecc-resume (ecc-session-at-point)))
 
 (defun ecc-session-show-log ()
-  "Show the raw protocol log of this session (NFR-8)."
+  "Show the raw protocol log of this session."
   (interactive)
   (pop-to-buffer (ecc--log-buffer (ecc-session-name (ecc-session-at-point)))))
 
 (defun ecc-session-visit ()
   "Open the thing at point: a file, an agent transcript or a detail buffer.
 A question or a plan that is still waiting opens the buffer it is
-answered in (FR-PERM-5, FR-PLAN-1)."
+answered in."
   (interactive)
   (let* ((session (ecc-session-at-point))
          (node (ecc-chat-node-at-point))
@@ -140,13 +140,13 @@ answered in (FR-PERM-5, FR-PLAN-1)."
      (t (ecc-session--show-node session node)))))
 
 (defun ecc-session-review ()
-  "Open every change of this session as one diff to review (FR-DIFF-3)."
+  "Open every change of this session as one diff to review."
   (interactive)
   (require 'ecc-review)
   (ecc-review (ecc-session-at-point)))
 
 (defun ecc-session-review-file ()
-  "Open the diff of the file at point in the Files section (FR-OUT-12)."
+  "Open the diff of the file at point in the Files section."
   (interactive)
   (require 'ecc-review)
   (ecc-review (ecc-session-at-point)
@@ -163,7 +163,7 @@ The d key of the transcript does both."
     (ecc-session-review)))
 
 (defun ecc-session-allow-all-remember ()
-  "Allow every waiting request and stop asking about those tools (FR-PERM-9)."
+  "Allow every waiting request and stop asking about those tools."
   (interactive)
   (require 'ecc-perm)
   (ecc-perm-allow-all t))
@@ -211,7 +211,7 @@ BEFORE is the file as it was before the call, when known."
       (ecc-render--insert-input input ""))))
 
 (defun ecc-session-show-agent (session node)
-  "Show the transcript of the agent NODE of SESSION in its own buffer (FR-OUT-9)."
+  "Show the transcript of the agent NODE of SESSION in its own buffer."
   (let* ((input (ecc-model-node-get node 'input))
          (title (format "%s: %s"
                         (or (ecc-model-node-get node 'agent-type)
@@ -234,10 +234,10 @@ BEFORE is the file as it was before the call, when known."
                              (ecc-node-children node)))
     (pop-to-buffer buffer)))
 
-;;;; Timeline (FR-OUT-14 d)
+;;;; Timeline
 
 (defun ecc-session-timeline ()
-  "Pick a turn by its prompt and move there (FR-OUT-14 d)."
+  "Pick a turn by its prompt and move there."
   (interactive)
   (let* ((session (ecc-session-at-point))
          (turns (ecc-session-turns session))
@@ -258,7 +258,7 @@ BEFORE is the file as it was before the call, when known."
         (user-error "That turn is not drawn"))
       (ecc-render-goto-id (ecc-turn-id turn)))))
 
-;;;; Extraction (FR-OUT-14 e, f)
+;;;; Extraction (f)
 
 (defun ecc-session--code-block-around-point (id)
   "Return the fenced code block of the node ID that contains point, or nil.
@@ -284,7 +284,7 @@ stripped from every line."
                    (concat "^" (regexp-quote indent)) "" body))))))))))
 
 (defun ecc-session-copy-at-point ()
-  "Copy the code block at point, or else the whole assistant reply (FR-OUT-14 e)."
+  "Copy the code block at point, or else the whole assistant reply."
   (interactive)
   (let* ((node (ecc-chat-node-at-point))
          (text (cond
@@ -352,7 +352,7 @@ stripped from every line."
     (ecc-session-turns session) "")))
 
 (defun ecc-session-export-markdown (file)
-  "Save the transcript as Markdown in FILE (FR-OUT-14 f)."
+  "Save the transcript as Markdown in FILE."
   (interactive
    (list (read-file-name "Export to: " nil nil nil
                          (format "%s.md" (ecc-session-name (ecc-session-at-point))))))

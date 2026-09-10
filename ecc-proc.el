@@ -60,14 +60,13 @@ cannot; it normally takes a fraction of a second.  Zero kills at once.")
   "Return the model SESSION should be started with, or nil for none.
 
 Only the option of the session is asked, and there is no setting that
-answers for every session (2026-09-08, `docs/decisions.md'): the model
-of a session belongs to the Claude Code settings, which the CLI reads
-on its own.  The CLI also has no record of what a session was started
-with -- resuming without --model picks up the model of the last real
-assistant message of the recording, and passing --model overrides that
-for good (verified on 2026-09-06, `docs/verified.md'), which would undo
-every `/model' made since, in the terminal of a hand-off above all
-\(FR-TUI-4)."
+answers for every session (decided 2026-09-08): the model of a session
+belongs to the Claude Code settings, which the CLI reads on its own.
+The CLI also has no record of what a session was started with --
+resuming without --model picks up the model of the last real assistant
+message of the recording, and passing --model overrides that for
+good (verified on 2026-09-06), which would undo every `/model' made
+since, in the terminal of a hand-off above all ."
   (ecc-model-option session :model nil))
 
 (defun ecc-proc-build-command (session &optional resume fork)
@@ -87,9 +86,9 @@ a resumed one the model its recording ends on (see `ecc-proc--model')."
                  "--verbose"
                  "--permission-prompt-tool" "stdio")
            (if resume
-               ;; A fork normally resumes the session itself; `:resume-from'
-               ;; lets a new session branch off another one instead, which
-               ;; is how the inline questions of FR-INLINE-1 get a
+               ;; A fork normally resumes the session itself;
+               ;; `:resume-from' lets a new session branch off another
+               ;; one instead, which is how the inline questions get a
                ;; conversation of their own without taking over the one
                ;; they branched from.
                (append (list "--resume" (or (ecc-model-option session
@@ -168,14 +167,14 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
     (process-put process 'ecc-session-id (ecc-session-id session))
     (setf (ecc-session-process session) process)
     ;; The CLI is up as soon as `make-process' returned: it is waiting
-    ;; for a prompt, which is what idle means (FR-UI-1).  `starting' is
-    ;; left for a session whose process never came up, because
-    ;; system/init only arrives with the first turn (docs/verified.md)
-    ;; and a session that waited for it would spin for ever.
+    ;; for a prompt, which is what idle means.  `starting' is left for a
+    ;; session whose process never came up, because system/init only
+    ;; arrives with the first turn and a session that waited for it
+    ;; would spin for ever.
     (ecc-model-set-state session 'idle)
-    ;; FR-SES-8: ask for the slash commands as soon as the CLI is up.
-    ;; The answer also carries what the Claude Code settings say about
-    ;; Remote Control, which is where the bridge is turned on.
+    ;; Ask for the slash commands as soon as the CLI is up. The answer
+    ;; also carries what the Claude Code settings say about Remote
+    ;; Control, which is where the bridge is turned on.
     (ecc-proc-control session "initialize" #'ecc-proc--on-initialize 'hooks nil)
     process))
 
@@ -183,9 +182,9 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
   "Stop the CLI of SESSION if it is running, and wait for it to go.
 It is asked to stop first and only killed when it will not: a CLI that
 stops by itself removes its entry from the registry other Claude Code
-processes read, so that nothing thinks the session is still running
-\(FR-TUI-5).  The stop is noted, so that the sentinel can tell an exit
-the user asked for from one the CLI decided on (FR-SES-7)."
+processes read, so that nothing thinks the session is still running.
+The stop is noted, so that the sentinel can tell an exit the user asked
+for from one the CLI decided on."
   (let ((process (ecc-session-process session)))
     (setf (alist-get 'stop-requested (ecc-session-progress session)) t)
     (when (process-live-p process)
@@ -224,9 +223,9 @@ the user asked for from one the CLI decided on (FR-SES-7)."
   (setf (ecc-session-process session) nil)
   (setf (alist-get 'exit-status (ecc-session-progress session)) status)
   (ecc-proc--close-pending session)
-  ;; A turn the CLI was in the middle of will never get its result.
-  ;; Left open, it would hold every later prompt in the queue, and a
-  ;; resumed session would never speak again (FR-SES-7).
+  ;; A turn the CLI was in the middle of will never get its result. Left
+  ;; open, it would hold every later prompt in the queue, and a resumed
+  ;; session would never speak again.
   (when-let* ((turn (ecc-model-abort-turn session)))
     (ecc-log (ecc-session-name session) "turn %s left open by the exit; closed"
              (ecc-turn-id turn)))
@@ -234,7 +233,7 @@ the user asked for from one the CLI decided on (FR-SES-7)."
   (run-hook-with-args 'ecc-session-exited-hook session status))
 
 (defun ecc-proc--close-pending (session)
-  "Deny every unanswered request of SESSION (NFR-4).
+  "Deny every unanswered request of SESSION.
 The process is gone, so nothing can be sent; the requests are closed
 locally so that the queue does not keep stale entries."
   (ecc-model-abandon-requests session "the session ended before it was answered")
@@ -324,9 +323,9 @@ alone.")
 The CLI answers a `/model' with a local command of its own and says
 nothing else about it: the new name turns up in the next real assistant
 message and nowhere earlier, so the header line would go on naming the
-old model until the session is next spoken to (FR-HINT-3).  What is
-remembered here is the name as it was typed, `opus' rather than
-`claude-opus-5', and the next answer replaces it with the full one."
+old model until the session is next spoken to.  What is remembered here
+is the name as it was typed, `opus' rather than `claude-opus-5', and the
+next answer replaces it with the full one."
   (when (and (stringp content)
              (string-match ecc-proc--model-command-regexp content))
     (setf (ecc-session-last-model session) (match-string 1 content))))
@@ -390,7 +389,7 @@ arrive in between, since output is only read when Emacs waits for it."
   (ecc-proc-send-json session (ecc-protocol-user-message content)))
 
 (defun ecc-proc-send-prompt (session text)
-  "Send TEXT to SESSION, or queue it while a turn is running (FR-INP-6).
+  "Send TEXT to SESSION, or queue it while a turn is running.
 Returns `sent' or the position in the queue."
   (if (ecc-session-current-turn session)
       (ecc-model-queue-input session text)
@@ -405,7 +404,7 @@ Returns `sent' or the position in the queue."
     text))
 
 (defun ecc-proc-interrupt (session)
-  "Interrupt the running turn of SESSION (FR-SES-5).
+  "Interrupt the running turn of SESSION.
 A question or a permission the CLI was waiting on is closed as soon as
 it acknowledges the interrupt: it has stopped listening for the answer,
 and the `result' that ends the turn may never come while it is blocked
@@ -420,7 +419,7 @@ on the request."
                 (length abandoned))))))
 
 (defun ecc-proc-set-permission-mode (session mode &optional on-error)
-  "Ask SESSION to switch to permission MODE (FR-SES-6).
+  "Ask SESSION to switch to permission MODE.
 ON-ERROR, when given, is called with the session and what the CLI said
 if it refuses.  It does refuse: \"auto\" is only for a model that
 supports it, and \"bypassPermissions\" only where it is allowed."
@@ -439,13 +438,13 @@ supports it, and \"bypassPermissions\" only where it is allowed."
    'mode mode))
 
 
-;;;; Remote Control (docs/decisions.md, 2026-09-08)
+;;;; Remote Control
 
-;; The bridge the CLI itself offers: the session shows up in the Code tab
-;; of the Claude app and can be driven from there.  The CLI never turns it
-;; on for a stream-json client on its own -- the initialize response only
-;; advises, and the client has to ask (docs/verified.md, 2026-09-08) --
-;; so everything here hangs off that answer.
+;; The bridge the CLI itself offers: the session shows up in the Code
+;; tab of the Claude app and can be driven from there.  The CLI never
+;; turns it on for a stream-json client on its own -- the initialize
+;; response only advises, and the client has to ask (confirmed
+;; 2026-09-08) -- so everything here hangs off that answer.
 ;;
 ;; A hand-off to the terminal (`ecc-tui-open\=') stops this process, which
 ;; takes the bridge down with it; the CLI the terminal starts brings up
@@ -498,7 +497,7 @@ response; what is left is what the CLI says about Remote Control."
 (defun ecc-proc--remote-control-failed (session enabled reason)
   "Note that SESSION could not switch Remote Control to ENABLED, for REASON.
 Authentication, an organisation policy and an untrusted workspace all
-arrive this way, and none of them may be swallowed (NFR-2)."
+arrive this way, and none of them may be swallowed."
   (ecc-model-set-remote-control session 'enabled nil 'error reason)
   (ecc-log (ecc-session-name session) "remote control %s failed: %s"
            (if enabled "on" "off") reason)
@@ -544,7 +543,7 @@ nothing on screen to say where the session went."
                               (cons 'text (ecc-proc--remote-control-notice session))))
                  (run-hook-with-args 'ecc-remote-control-functions session))
                 (t
-                 ;; The answer to a switch-off is empty (docs/verified.md).
+                 ;; The answer to a switch-off is empty.
                  (ecc-model-set-remote-control session 'enabled nil 'state nil
                                                'detail nil 'session-url nil
                                                'bridge-session-id nil)

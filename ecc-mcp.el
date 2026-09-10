@@ -11,24 +11,24 @@
 ;; An MCP server listening on the loopback interface, registered with
 ;; the CLI through --mcp-config, which lets Claude ask Emacs what only
 ;; Emacs knows -- the references xref can find, the symbols imenu lists,
-;; the diagnostics flymake has (FR-MCP-1).
+;; the diagnostics flymake has.
 ;;
 ;; The transport is HTTP, and only POST is implemented: the CLI was
 ;; observed to open with server/discover, initialize and
 ;; notifications/initialized, to accept 405 for the GET it tries, and
-;; never to need Server-Sent Events (docs/verified.md, 2026-09-05,
-;; item 5).  So this is a small HTTP/1.1 reader and a JSON-RPC 2.0
-;; dispatcher, and nothing more.
+;; never to need Server-Sent Events (confirmed 2026-09-05).  So this is
+;; a small HTTP/1.1 reader and a JSON-RPC 2.0 dispatcher, and nothing
+;; more.
 ;;
 ;; A tool is an Elisp function with a name, a description and an
-;; argument specification (FR-MCP-2).  The built-in ones are registered
-;; here; `ecc-mcp-define-tool' registers any other.  Every tool runs in
-;; the project of the session that asked, which is how the URL of each
+;; argument specification.  The built-in ones are registered here;
+;; `ecc-mcp-define-tool' registers any other.  Every tool runs in the
+;; project of the session that asked, which is how the URL of each
 ;; session carries its session id.
 ;;
 ;; Emacs is busy while a tool runs, so the mode line says which one is
 ;; running, and `ecc-mcp-excluded-tools' takes a tool that turns out to
-;; be slow out of the list altogether (FR-MCP-4).
+;; be slow out of the list altogether.
 
 ;;; Code:
 
@@ -43,7 +43,7 @@
 (defcustom ecc-mcp-enabled nil
   "Non-nil registers the Emacs MCP server with every session started.
 The server is started the first time a session needs it and stopped by
-`ecc-mcp-stop' (FR-MCP-1)."
+`ecc-mcp-stop'."
   :type 'boolean
   :group 'ecc)
 
@@ -56,7 +56,7 @@ Anything but the loopback interface publishes an evaluator for your
 Emacs to the network; there is no authentication here.")
 
 (defcustom ecc-mcp-enable-execute-code nil
-  "Non-nil publishes the tool that evaluates arbitrary Elisp (FR-MCP-3).
+  "Non-nil publishes the tool that evaluates arbitrary Elisp.
 It is off by default: anything the model writes would run with the
 rights of this Emacs."
   :type 'boolean
@@ -65,7 +65,7 @@ rights of this Emacs."
 (defcustom ecc-mcp-excluded-tools nil
   "Names of tools that are not published, whatever else registered them.
 A tool that turns out to take long enough to be felt belongs here
-\(FR-MCP-4)."
+."
   :type '(repeat string)
   :group 'ecc)
 
@@ -79,7 +79,7 @@ The CLI prefixes the tools with it: `mcp__emacs__xref_find_references'.")
 (defconst ecc-mcp-protocol-version "2025-06-18"
   "Version of the MCP protocol this server answers with.")
 
-;;;; The tool registry (FR-MCP-2)
+;;;; The tool registry
 
 (cl-defstruct ecc-mcp-tool
   "One tool published to Claude."
@@ -92,7 +92,7 @@ The CLI prefixes the tools with it: `mcp__emacs__xref_find_references'.")
   "Hash of a tool name to its `ecc-mcp-tool'.")
 
 (cl-defun ecc-mcp-define-tool (&key name description args function)
-  "Publish FUNCTION to Claude as the tool called NAME (FR-MCP-2).
+  "Publish FUNCTION to Claude as the tool called NAME.
 DESCRIPTION is what the model reads to decide whether to call it.
 ARGS is a list of (ARG-NAME TYPE ARG-DESCRIPTION &optional REQUIRED),
 where TYPE is a JSON schema type such as \"string\" or \"integer\";
@@ -111,7 +111,7 @@ Registering a name again replaces what was there."
 (defun ecc-mcp-published-tools ()
   "Return the tools that are published, sorted by name.
 `ecc-mcp-excluded-tools' and `ecc-mcp-enable-execute-code' are what
-decide whether a registered tool is published (FR-MCP-3, FR-MCP-4)."
+decide whether a registered tool is published."
   (let (tools)
     (maphash (lambda (name tool)
                (unless (or (member name ecc-mcp-excluded-tools)
@@ -143,7 +143,7 @@ decide whether a registered tool is published (FR-MCP-3, FR-MCP-4)."
                         (ecc-mcp-tool-name tool)))
     (inputSchema . ,(ecc-mcp-tool-schema tool))))
 
-;;;; Running a tool (FR-MCP-4)
+;;;; Running a tool
 
 (defvar ecc-mcp--running nil
   "Name of the tool running now, or nil.")
@@ -164,7 +164,7 @@ that names no session runs where Emacs is."
       default-directory))
 
 (defmacro ecc-mcp-with-project (&rest body)
-  "Run BODY with `default-directory' at the project of the session (FR-MCP-2)."
+  "Run BODY with `default-directory' at the project of the session."
   (declare (indent 0) (debug t))
   `(let ((default-directory (ecc-mcp-directory)))
      ,@body))
@@ -185,9 +185,9 @@ the server down with it."
                                       (alist-get (intern (car arg)) arguments))
                                     (ecc-mcp-tool-args tool)))
                     ;; Nobody is at the keyboard for a tool: a question
-                    ;; asked here would stop Emacs until someone noticed.
-                    ;; Asking is made an error, which comes back to the
-                    ;; model as a failed call (FR-MCP-4).
+                    ;; asked here would stop Emacs until someone
+                    ;; noticed. Asking is made an error, which comes
+                    ;; back to the model as a failed call.
                     (inhibit-interaction t))
                 (cons nil (format "%s" (apply (ecc-mcp-tool-function tool)
                                               values))))
@@ -197,7 +197,7 @@ the server down with it."
       (force-mode-line-update t))))
 
 (defun ecc-mcp-mode-line-string ()
-  "Return what the mode line says while a tool runs (FR-MCP-4)."
+  "Return what the mode line says while a tool runs."
   (if ecc-mcp--running
       (propertize (format " MCP: %s… " ecc-mcp--running)
                   'face 'ecc-pending-face
@@ -208,7 +208,7 @@ the server down with it."
   "What `ecc-mcp-indicator-mode' adds to `global-mode-string'.")
 
 (define-minor-mode ecc-mcp-indicator-mode
-  "Say in every mode line which Emacs tool Claude is using (FR-MCP-4)."
+  "Say in every mode line which Emacs tool Claude is using."
   :global t
   :group 'ecc
   (if ecc-mcp-indicator-mode
@@ -243,8 +243,8 @@ the server down with it."
         (method (alist-get 'method request))
         (params (alist-get 'params request)))
     (pcase method
-      ;; The CLI opens with this one before initialize; it wants the same
-      ;; thing initialize answers (docs/verified.md).
+      ;; The CLI opens with this one before initialize; it wants the
+      ;; same thing initialize answers.
       ((or "initialize" "server/discover")
        (ecc-mcp--result id (ecc-mcp--server-info)))
       ((pred (lambda (m) (and (stringp m) (string-prefix-p "notifications/" m))))
@@ -320,7 +320,7 @@ The port is not looked at; a request without a Host header is refused."
 
 ;;;###autoload
 (defun ecc-mcp-start ()
-  "Start the MCP server and return the port it listens on (FR-MCP-1)."
+  "Start the MCP server and return the port it listens on."
   (interactive)
   (unless (ecc-mcp-running-p)
     (setq ecc-mcp--token (ecc--uuid))
@@ -408,8 +408,8 @@ anything else is looked at."
      ((not (ecc-mcp--target-allowed-p target))
       (ecc-log "mcp" "refused a request for %s" (car (split-string target "?")))
       (ecc-mcp--send connection 404 nil))
-     ;; Only POST is implemented; the CLI tries a GET and carries on when
-     ;; it is refused (docs/verified.md, 2026-09-05, item 5).
+     ;; Only POST is implemented; the CLI tries a GET and carries on
+     ;; when it is refused (confirmed 2026-09-05).
      ((not (equal method "POST"))
       (ecc-mcp--send connection 405 nil))
      (t
@@ -443,7 +443,7 @@ anything else is looked at."
       (process-send-string connection (concat head body)))
     body))
 
-;;;; Registering the server with a session (FR-MCP-1)
+;;;; Registering the server with a session
 
 (defun ecc-mcp-url (session)
   "Return the URL the CLI of SESSION reaches this server at.
@@ -465,7 +465,7 @@ Starts the server when it is not running yet."
 
 (setq ecc-mcp-config-function #'ecc-mcp-config)
 
-;;;; The built-in tools (FR-MCP-1)
+;;;; The built-in tools
 
 (declare-function xref-find-backend "xref" ())
 (declare-function xref-backend-references "xref" (backend identifier))
@@ -646,14 +646,14 @@ Lisp file is not answered by the backend of some other language."
      (t (format "%s: no checker is running in this buffer" file)))))
 
 (defun ecc-mcp-execute-code (code)
-  "Read and evaluate CODE in the project of the session (FR-MCP-3)."
+  "Read and evaluate CODE in the project of the session."
   (unless ecc-mcp-enable-execute-code
     (error "Evaluating Elisp is disabled; see `ecc-mcp-enable-execute-code'"))
   (ecc-mcp-with-project
     (format "%S" (eval (car (read-from-string code)) t))))
 
 (defun ecc-mcp-register-builtin-tools ()
-  "Register the tools Emacs offers out of the box (FR-MCP-1)."
+  "Register the tools Emacs offers out of the box."
   (ecc-mcp-define-tool
    :name "xref_find_references"
    :description "Find every use of a symbol in the project, with xref.  \

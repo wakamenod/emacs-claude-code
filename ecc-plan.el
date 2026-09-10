@@ -9,14 +9,13 @@
 ;;; Commentary:
 
 ;; The ExitPlanMode request carries the whole plan.  It is opened in an
-;; editable buffer where feedback is given three ways (FR-PLAN-2): a
-;; comment attached to a line, an `@claude:' marker written into the
-;; text, and a plain edit of the text.  Approving with C-c C-c looks for
-;; all three; when any is found the request is denied with a structured
-;; message that asks for a new plan, otherwise it is allowed together
-;; with the permission mode to switch to (FR-PLAN-3, FR-PLAN-4).  A plan
-;; shown again marks the lines that changed since the last one
-;; (FR-PLAN-5).
+;; editable buffer where feedback is given three ways: a comment
+;; attached to a line, an `@claude:' marker written into the text, and a
+;; plain edit of the text.  Approving with C-c C-c looks for all three;
+;; when any is found the request is denied with a structured message
+;; that asks for a new plan, otherwise it is allowed together with the
+;; permission mode to switch to.  A plan shown again marks the lines
+;; that changed since the last one.
 
 ;;; Code:
 
@@ -32,7 +31,7 @@
 (require 'ecc-window)
 
 (defvar ecc-plan-modes '("acceptEdits" "default" "bypassPermissions" "plan")
-  "Permission modes offered when a plan is approved (FR-PLAN-4).
+  "Permission modes offered when a plan is approved.
 Choosing \"plan\" sends setMode plan back with the approval; whether
 the CLI stays in plan mode after ExitPlanMode is not verified.")
 
@@ -133,7 +132,7 @@ none gives nil."
     (and (stringp path) (not (string-empty-p path)) path)))
 
 (defun ecc-plan-open (request)
-  "Return the buffer reviewing REQUEST, creating it if needed (FR-PLAN-1)."
+  "Return the buffer reviewing REQUEST, creating it if needed."
   (or (ecc-plan-buffer request)
       (let* ((session (ecc-request-session request))
              (buffer (get-buffer-create (ecc-plan-buffer-name session)))
@@ -175,7 +174,7 @@ none gives nil."
    (propertize "  ·  C-c C-c approve  C-c C-k deny  C-c c comment  C-c m mode"
                'face 'ecc-dim-face))))
 
-;;;; What changed since the last plan (FR-PLAN-5)
+;;;; What changed since the last plan
 
 (defun ecc-plan--mark-changes (previous current)
   "Mark in the current buffer the lines of CURRENT that are new since PREVIOUS.
@@ -219,7 +218,7 @@ Returns (ADDED . REMOVED)."
         (progn (goto-char (point-min)) (forward-line (1- next)))
       (user-error (if lines "No further change" "This plan was not shown before")))))
 
-;;;; Line comments (FR-PLAN-2 a)
+;;;; Line comments
 
 (defun ecc-plan-comment-at-point ()
   "Return the comment overlay on the current line, or nil."
@@ -271,7 +270,7 @@ The line is underlined and the comment shown after it."
                 (seq-filter #'overlay-buffer ecc-plan--comments))
         (lambda (a b) (< (car a) (car b)))))
 
-;;;; Feedback (FR-PLAN-2 b, c and FR-PLAN-3)
+;;;; Feedback
 
 (defun ecc-plan-markers (text)
   "Return the @claude markers in TEXT as a list of (CONTEXT . MARKER).
@@ -306,7 +305,7 @@ CONTEXT is the last non-empty line before the marker, or nil at the top."
 ORIGINAL is the plan as sent, CURRENT the text of the buffer, COMMENTS
 the list `ecc-plan-comments' returns and GENERAL a free comment.  The
 message has the sections of emacs-gravity: inline comments, @claude
-markers, the diff of the edits, and the general comment (FR-PLAN-3)."
+markers, the diff of the edits, and the general comment."
   (let* ((markers (ecc-plan-markers current))
          (diff (ecc-plan-diff-text original (ecc-plan-strip-markers current)))
          (general (and general (not (string-empty-p (string-trim general)))
@@ -366,7 +365,7 @@ markers, the diff of the edits, and the general comment (FR-PLAN-3)."
     (and (not (equal choice "(CLI default)")) choice)))
 
 (defun ecc-plan-set-mode (mode)
-  "Choose MODE as the permission mode to switch to on approval (FR-PLAN-4)."
+  "Choose MODE as the permission mode to switch to on approval."
   (interactive (list (ecc-plan--read-mode)))
   (setq ecc-plan--mode mode)
   (force-mode-line-update)
@@ -389,12 +388,12 @@ approved without opening the review buffer."
     (ecc-perm-close-buffer buffer)))
 
 (defun ecc-plan-approve (&optional mode)
-  "Approve the plan, or send the feedback found in the buffer (FR-PLAN-3).
+  "Approve the plan, or send the feedback found in the buffer.
 A line comment, an @claude marker or an edit turns the approval into a
-deny carrying the structured feedback; with none of them the request
-is allowed and the CLI is asked to switch to MODE (FR-PLAN-4).  MODE
-defaults to what `ecc-plan-set-mode' chose, then to
-`ecc-plan-default-mode'; a prefix argument asks for it."
+deny carrying the structured feedback; with none of them the request is
+allowed and the CLI is asked to switch to MODE.  MODE defaults to what
+`ecc-plan-set-mode' chose, then to `ecc-plan-default-mode'; a prefix
+argument asks for it."
   (interactive (list (and current-prefix-arg (ecc-plan--read-mode))))
   (let* ((request (or ecc-plan--request (user-error "Not a plan buffer")))
          (session (ecc-request-session request))

@@ -12,9 +12,9 @@
 ;; waiting for an answer.
 ;;
 ;; This file knows nothing about JSON, about processes or about
-;; magit-section (NFR-9).  It only stores what `ecc-dispatch' hands it
-;; and announces every change through its hooks, which is how the
-;; renderer and the rest of the user interface hear about it.
+;; magit-section.  It only stores what `ecc-dispatch' hands it and
+;; announces every change through its hooks, which is how the renderer
+;; and the rest of the user interface hear about it.
 
 ;;; Code:
 
@@ -52,8 +52,8 @@
 (defvar ecc-control-progress-hook nil
   "Functions run with a session, a request id and a progress message.
 The CLI reports on a control request of ours while it works on it; the
-side question of FR-BTW-3 is the only one that takes long enough to say
-anything.  It is not `ecc-progress-hook\', which is about the turn.")
+side question is the only one that takes long enough to say anything.
+It is not `ecc-progress-hook\', which is about the turn.")
 
 (defvar ecc-request-added-hook nil
   "Functions run with a session and a request that needs an answer.")
@@ -98,10 +98,9 @@ anything.  It is not `ecc-progress-hook\', which is about the turn.")
   cwd
   kind                  ; own | external | archived | handoff
   process
-  stream-buffer         ; line buffer for the process filter (plan 3.1
-                        ; calls this partial-line; a buffer is used so
-                        ; that a multi-megabyte line costs no repeated
-                        ; string concatenation, see plan 2.2)
+  stream-buffer         ; line buffer for the process filter; a buffer
+                        ; is used so that a multi-megabyte line costs
+                        ; no repeated string concatenation
   state                 ; starting | idle | running | waiting-permission
                         ; | waiting-question | waiting-plan | compacting
                         ; | exited
@@ -112,14 +111,13 @@ anything.  It is not `ecc-progress-hook\', which is about the turn.")
   init                  ; the latest system/init message
   last-model            ; model of the last real assistant message; the
                         ; CLI reports it on every one and a `/model'
-                        ; changes it mid-session (FR-HINT-3)
+                        ; changes it mid-session
   commands              ; commands from the initialize response
   models                ; models from the initialize response: what
                         ; /model may be given, and the name the
                         ; terminal client shows for each
   last-effort           ; effort level of the last `/effort' sent from
                         ; here; nothing in the stream reports one
-                        ; (docs/verified.md, FR-INP-5)
   permission-mode
   remote-control        ; alist of what the CLI said about Remote
                         ; Control: `available', `auto-enable',
@@ -140,28 +138,27 @@ anything.  It is not `ecc-progress-hook\', which is about the turn.")
   rate-limit
   last-result-time
   progress              ; alist of progress information for the state line
-  auto-approve-turn     ; FR-PERM-7
-  auto-approve-kinds    ; FR-PERM-9
-  input-queue           ; FR-INP-6, oldest first
+  auto-approve-turn     ; allow every request of the current turn
+  auto-approve-kinds    ; tool kinds allowed for the rest of the session
+  input-queue           ; prompts held back while a turn runs, oldest first
   sent-echoes           ; contents sent from here whose --replay echo
                         ; has not come back yet, newest first
   history-offset
   hint-state            ; alist of what the CLI told the session about
                         ; itself: the `suggestion' it last offered
-                        ; (FR-HINT-4)
   tmp-dir
-  last-plan             ; text of the last plan reviewed (FR-PLAN-5)
+  last-plan             ; text of the last plan reviewed
   plan-files            ; the files the CLI wrote the plans of this
                         ; session to, oldest first; ExitPlanMode names
-                        ; one in `planFilePath' (FR-PLAN-1)
+                        ; one in `planFilePath'
   stream-blocks         ; hash: "PARENT:INDEX" -> node being streamed
   created               ; order this session was made in.  The registry
                         ; is kept most recently used first, which is the
                         ; wrong order for a row of tabs: they would
                         ; shuffle every time one is used.  The tab line
-                        ; sorts by this instead (FR-NOTIFY-2)
+                        ; sorts by this instead
   node-counter          ; counters for the ids of nodes and turns; the
-  turn-counter)         ; ids have to be stable, see plan 9.6
+  turn-counter)         ; ids have to be stable
 
 (cl-defstruct ecc-turn
   "One prompt and everything that followed it up to the result.
@@ -193,7 +190,7 @@ Write; PATCHES holds the structuredPatch the CLI reported for each, in
 the same order, and SNAPSHOT the content of the file as last seen.
 ORIGINAL is the whole file before the first change of the session, nil
 when the file did not exist, and `unknown' until a change is recorded;
-the review of a file git does not track diffs against it (FR-DIFF-3)."
+the review of a file git does not track diffs against it."
   path reads edits writes hunks patches snapshot (added 0) (removed 0)
   (original 'unknown))
 
@@ -367,10 +364,10 @@ Something the CLI says between turns -- Remote Control reporting the
 bridge, for one -- still has to be shown, but it answers nothing.
 `ecc-model-ensure-turn\=' would open a turn for it, and that turn would
 never end: the session would look like it were running for ever, and
-every later prompt would queue behind it (FR-INP-6).  So the note joins
-the turn at hand, or the last one there was, and only when there is
-neither does it get a turn of its own -- one that is not the current
-turn and does not touch the state."
+every later prompt would queue behind it.  So the note joins the turn at
+hand, or the last one there was, and only when there is neither does it
+get a turn of its own -- one that is not the current turn and does not
+touch the state."
   (or (ecc-session-current-turn session)
       (car (last (ecc-session-turns session)))
       (let* ((state (ecc-session-state session))
@@ -390,8 +387,8 @@ spot."
 
 (defun ecc-model-ensure-turn (session)
   "Return the current turn of SESSION, starting an implicit one if needed.
-Output can arrive without Emacs having sent anything, for instance
-after a resume, and none of it may be dropped (FR-OUT-1).
+Output can arrive without Emacs having sent anything, for instance after
+a resume, and none of it may be dropped.
 
 A session on the Remote Control bridge gets this every time somebody
 prompts it from elsewhere: the CLI does not echo user messages to a
@@ -435,9 +432,9 @@ turn-wide approval nor counts as the moment the session last spoke."
   "Close the current turn of SESSION without a result, and return it.
 The CLI stopped, or could not be sent to, before the turn came to its
 end: nothing announces a finished turn, no cost is counted, and the
-turn-wide approval of FR-PERM-7 ends with it.  A prompt sent after this
-must start a turn of its own rather than wait behind a turn that will
-never finish (FR-SES-7).  Returns nil when no turn was open."
+turn-wide approval ends with it.  A prompt sent after this must start a
+turn of its own rather than wait behind a turn that will never finish.
+Returns nil when no turn was open."
   (when-let* ((turn (ecc-session-current-turn session)))
     (setf (ecc-turn-end-time turn) (current-time))
     (setf (ecc-session-current-turn session) nil)
@@ -515,7 +512,7 @@ node is registered so that a later message can find it by ID."
   "Return the step under PARENT of SESSION a new tool call belongs to.
 PARENT is a turn or an agent node.  A run of tool calls shares a step;
 assistant text or thinking ends the run, because it becomes the last
-child of PARENT instead (FR-OUT-2)."
+child of PARENT instead."
   (let ((last (car (last (ecc-model-node-children parent)))))
     (if (and last (eq (ecc-node-type last) 'step))
         last
@@ -523,9 +520,9 @@ child of PARENT instead (FR-OUT-2)."
 
 ;; The tools that are running are kept as a list on the session rather
 ;; than found by walking every node: the state line asks for the running
-;; tool on every redisplay, and a long session has thousands of nodes
-;; (NFR-1).  `ecc-dispatch' adds a tool when it starts and takes it out
-;; when its result arrives.
+;; tool on every redisplay, and a long session has thousands of nodes.
+;; `ecc-dispatch' adds a tool when it starts and takes it out when its
+;; result arrives.
 
 (defun ecc-model-running-tools (session)
   "Return the tool nodes of SESSION that are running, most recent first.
@@ -554,7 +551,7 @@ denial, is dropped when it is met."
 The most recently started one wins when several are."
   (car (ecc-model-running-tools session)))
 
-;;;; Streaming (FR-OUT-4)
+;;;; Streaming
 
 (defun ecc-model--stream-key (parent-id index)
   "Return the key of the streamed block INDEX under PARENT-ID."
@@ -622,7 +619,7 @@ node changed, so that the renderer can append rather than redraw."
           (setq counts (nconc counts (list (cons name 1)))))))
     counts))
 
-;;;; Files and tasks (FR-OUT-12, FR-OUT-13)
+;;;; Files and tasks
 
 (defun ecc-model-note-file (session path kind)
   "Record that Claude did KIND to PATH in SESSION.
@@ -725,7 +722,7 @@ Returns the task, or nil when ID is nil."
 ;;;; Requests waiting for an answer
 
 (defun ecc-model-add-request (session request)
-  "Add REQUEST to the pending queue of SESSION (FR-PERM-6)."
+  "Add REQUEST to the pending queue of SESSION."
   (setf (ecc-session-pending session)
         (nconc (ecc-session-pending session) (list request)))
   (ecc-model-set-state session
@@ -759,8 +756,8 @@ Returns the task, or nil when ID is nil."
 MESSAGE says why, and is what the transcript shows on the request.
 Nothing is sent back: the CLI has stopped listening, because it exited
 or because the turn was interrupted, and a request left pending would
-blink for an answer that can no longer go anywhere (NFR-4).  Returns
-the requests that were closed."
+blink for an answer that can no longer go anywhere.  Returns the
+requests that were closed."
   (let ((abandoned (copy-sequence (ecc-session-pending session))))
     (dolist (request abandoned)
       (when-let* ((node (ecc-request-node request)))
@@ -790,7 +787,7 @@ With PROJECT-ROOT, only the sessions of that project are looked at."
   "Return how many seconds ago REQUEST arrived."
   (float-time (time-subtract (current-time) (ecc-request-created-at request))))
 
-;;;; Usage (FR-HINT-3 groundwork)
+;;;; Usage
 
 (defun ecc-model-update-usage (session usage)
   "Store USAGE on SESSION and recompute the context size."
@@ -802,7 +799,7 @@ With PROJECT-ROOT, only the sessions of that project are looked at."
              (or (alist-get 'cache_creation_input_tokens usage) 0)))
     (run-hook-with-args 'ecc-usage-hook session)))
 
-;;;; The input queue (FR-INP-6)
+;;;; The input queue
 
 (defun ecc-model-queue-input (session text)
   "Append TEXT to the queue of prompts of SESSION and return its position."

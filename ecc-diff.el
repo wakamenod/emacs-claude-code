@@ -9,9 +9,9 @@
 ;;; Commentary:
 
 ;; Pure functions that turn the input of an Edit or a Write into unified
-;; diff text carrying the faces of `diff-mode' (FR-OUT-7, FR-DIFF-1).  No
-;; external `diff' process is run, so the result is the same in batch
-;; tests and on a machine without the tool.
+;; diff text carrying the faces of `diff-mode'.  No external `diff'
+;; process is run, so the result is the same in batch tests and on a
+;; machine without the tool.
 ;;
 ;; Three sources are handled:
 ;;
@@ -29,7 +29,7 @@
 (require 'ecc-core)
 
 (defcustom ecc-diff-context-lines 3
-  "Lines of context shown around a change (FR-DIFF-1)."
+  "Lines of context shown around a change."
   :type 'integer
   :group 'ecc)
 
@@ -247,9 +247,8 @@ CONTEXT is the number of context lines, defaulting to
 (defun ecc-diff-for-edit (old-string new-string &optional file-content context)
   "Return the diff text of replacing OLD-STRING by NEW-STRING.
 When FILE-CONTENT is given and contains OLD-STRING, the surrounding
-lines of the file are shown as context and the hunk header carries
-the real line numbers (FR-DIFF-1).  CONTEXT overrides
-`ecc-diff-context-lines'."
+lines of the file are shown as context and the hunk header carries the
+real line numbers.  CONTEXT overrides `ecc-diff-context-lines'."
   (let* ((context (or context ecc-diff-context-lines))
          (line (ecc-diff--line-of file-content old-string)))
     (if (null line)

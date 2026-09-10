@@ -26,19 +26,19 @@
 ;; current turn rather than to the length of the conversation.  The
 ;; prompt region lies after the marker `ecc-render--prompt-start', and
 ;; no redraw deletes past it, so a draft survives whatever the session
-;; does meanwhile (FR-UI-2).
+;; does meanwhile.
 ;;
-;; Every node is drawn as a heading line and a body.  The heading carries
-;; the text properties `ecc-node' (the id), `ecc-depth' and
+;; Every node is drawn as a heading line and a body.  The heading
+;; carries the text properties `ecc-node' (the id), `ecc-depth' and
 ;; `ecc-heading', the body only the first two; `ecc-render--nodes' maps
 ;; each id to the markers that bound it.  Folding is an overlay with the
-;; `invisible' property over the body (FR-OUT-3), and the keys of the
-;; transcript arrive through the `keymap' property, so that the major
-;; mode keymap is free for typing in the prompt region.
+;; `invisible' property over the body, and the keys of the transcript
+;; arrive through the `keymap' property, so that the major mode keymap
+;; is free for typing in the prompt region.
 ;;
 ;; Streamed text is not redrawn at all: each delta is appended at the
 ;; marker kept at the end of its node, thinned out by
-;; `ecc-stream-throttle' (FR-OUT-4, FR-OUT-10).
+;; `ecc-stream-throttle'.
 ;;
 ;; Font lock is off in the session buffer, so faces are applied here as
 ;; the text is inserted.
@@ -64,12 +64,12 @@
 (defvar ecc-file-section-map)
 
 (defcustom ecc-render-debounce 0.1
-  "Seconds to gather changes before redrawing the live region (FR-OUT-10)."
+  "Seconds to gather changes before redrawing the live region."
   :type 'number
   :group 'ecc)
 
 (defconst ecc-render--hidden-types '(thinking tool agent system unknown)
-  "Node types whose body starts collapsed (FR-OUT-3).
+  "Node types whose body starts collapsed.
 An agent is in the list as well: its body is a conversation of its own,
 and reading it is something one asks for rather than something the
 transcript should unroll by itself.
@@ -78,7 +78,7 @@ This is not a setting.  It was one until 2026-09-09, and a value saved
 from an older default then held a new type open for good, which is a
 puzzle nobody should have to solve; what a reader wants to see is a
 matter of the moment, and TAB, the digits and `+\=' / `-\=' say it per
-node and are remembered.  See `docs/decisions.md\='.")
+node and are remembered.")
 
 (defcustom ecc-render-result-max-lines 12
   "Lines of a tool result shown in the transcript.
@@ -88,7 +88,7 @@ The whole result is always available with RET."
 
 (defcustom ecc-render-diff-max-lines 40
   "Lines of a diff shown inside a tool or permission section.
-The whole diff is always available with RET (FR-OUT-7)."
+The whole diff is always available with RET."
   :type 'integer
   :group 'ecc)
 
@@ -98,13 +98,13 @@ The line sits at the right edge under the answer; nil leaves a turn to
 end with its last message.")
 
 (defvar ecc-render-summary-position 'bottom
-  "Where the Files and the Tasks summaries stand (FR-OUT-12, FR-OUT-13).
+  "Where the Files and the Tasks summaries stand.
 `bottom' draws them at the end of the transcript, just above the state
 line and the separator, where they stay in sight however long the
 conversation grows.  `top' draws them at the start of the buffer, where
 the phase 9 redesign first put them; the button that loads older
 messages stays there either way, because what it loads appears above
-the first turn (FR-HIST-1).")
+the first turn.")
 
 (defvar ecc-render-follow t
   "Non-nil scrolls to the end of the buffer while it is at the end.
@@ -129,7 +129,7 @@ answer do not.")
 
 (defconst ecc-render-block-types
   '(tool agent thinking permission question plan system unknown command)
-  "Node types the block movement commands stop at (FR-OUT-14 b).
+  "Node types the block movement commands stop at.
 A file row of the Files section is a block too.")
 
 (defvar ecc-render-after-draw-hook nil
@@ -153,7 +153,7 @@ never inserts at the position of a marker the turns own.")
 (defvar-local ecc-render--prompt-start nil
   "Marker where the prompt region starts, or nil in a buffer without one.
 Everything before it is drawn by this module and is read-only; what
-follows is the draft the user is writing (FR-UI-2).")
+follows is the draft the user is writing.")
 
 (defvar-local ecc-render--frozen 0
   "Number of turns that are finished and will not be drawn again.")
@@ -180,7 +180,7 @@ Their fold state is applied once the drawing is over.")
 (defvar-local ecc-render--flash-pending nil
   "Non-nil when the live region should flash after the next redraw.
 Set when a turn finishes, so that the eye is drawn to the answer that
-has just arrived (FR-OUT-11 e).")
+has just arrived.")
 
 (defvar-local ecc-render--effect-targets nil
   "Node ids noted for a visual effect while the live region was drawn.
@@ -528,7 +528,7 @@ PREDICATE is called with the id and its entry."
                     (mapcar #'ecc-turn-id (ecc-session-turns ecc-render--session)))))
     (ecc-render-node-ids (lambda (id _entry) (member id turns)))))
 
-;;;; Folding (FR-OUT-3)
+;;;; Folding
 
 (defun ecc-render--fold-overlay (id)
   "Return the fold overlay of the node ID, or nil when it is unfolded."
@@ -582,7 +582,7 @@ is folded."
   "Show on the heading of the node ID whether its body is folded.
 The mark is a `display' property over the first character, so the text
 underneath is untouched and a copy of the line still carries the mark
-the node was drawn with (FR-OUT-3)."
+the node was drawn with."
   (when-let* ((pos (ecc-render--indicator-position id)))
     (with-silent-modifications
       (if (and (ecc-render-node-foldable-p id)
@@ -762,7 +762,7 @@ The folds are overlays of their own, so their order does not matter."
 
 (defun ecc-render--insert-plans (session)
   "Insert the Plan section of SESSION, unless it made no plan file.
-The plans are listed by their file, which RET opens (FR-PLAN-1)."
+The plans are listed by their file, which RET opens."
   (let ((paths (ecc-model-plan-files session)))
     (when paths
       (let ((start (point)))
@@ -816,7 +816,7 @@ The plans are listed by their file, which RET opens (FR-PLAN-1)."
 (defun ecc-render--insert-history-button (session)
   "Insert the button that reads the page before the first turn of SESSION.
 Nothing is inserted when the whole recording has been read, or when
-there is none (FR-HIST-1)."
+there is none."
   (when (ecc-render--history-more-p session)
     (let ((start (point)))
       (insert-text-button
@@ -850,11 +850,10 @@ above the renderer."
 
 (defun ecc-render--insert-top (session)
   "Insert what stands before the first turn of SESSION.
-What the session is and what it costs is the business of the header
-line now, not of the first line of the buffer (FR-OUT-6 as revised by
-the phase 9 redesign).  What is left here is the button that pages the
-recording in, and the summaries when `ecc-render-summary-position' asks
-for them at the top."
+What the session is and what it costs is the business of the header line
+now, not of the first line of the buffer.  What is left here is the
+button that pages the recording in, and the summaries when
+`ecc-render-summary-position' asks for them at the top."
   (when (eq ecc-render-summary-position 'top)
     (ecc-render--insert-summaries session))
   (ecc-render--insert-history-button session))
@@ -915,7 +914,7 @@ The CLI reports this every thirty seconds, so a call that answers
 sooner never says how long it took -- which is the point: the mark
 appears on exactly the calls that are worth waiting for.  It is drawn
 in the face of a running session, since among dim summaries that is
-what says the line is still alive (FR-OUT-11)."
+what says the line is still alive."
   (if-let* (((eq (ecc-node-status node) 'running))
             (seconds (ecc-model-node-get node 'elapsed)))
       (propertize (format " · ⏱ %s" (ecc--duration seconds))
@@ -978,7 +977,7 @@ their own marks stay."
       id)))
 
 (defun ecc-render--note-effect (node)
-  "Remember that the heading of NODE deserves a visual effect (FR-OUT-11).
+  "Remember that the heading of NODE deserves a visual effect.
 The effects themselves are put on once the redraw is over: an overlay
 made now would be deleted with the region it sits in."
   (pcase (ecc-node-type node)
@@ -996,7 +995,7 @@ made now would be deleted with the region it sits in."
        (push (cons 'blink (ecc-node-id node)) ecc-render--effect-targets)))))
 
 (defun ecc-render--apply-effects ()
-  "Animate the lines noted while the live region was drawn (FR-OUT-11).
+  "Animate the lines noted while the live region was drawn.
 The newest line comes first, so that the limit of
 `ecc-visual-max-effects' keeps what is happening now."
   (ecc-visual-clear-effects (current-buffer))
@@ -1109,7 +1108,7 @@ is appended."
 
 (defun ecc-render--insert-tool-body (node body)
   "Insert the input and the result of the tool NODE, indented by BODY.
-An Edit or a Write shows its input as a diff (FR-OUT-7)."
+An Edit or a Write shows its input as a diff."
   (let* ((name (ecc-model-node-get node 'name))
          (input (ecc-model-node-get node 'input))
          (error-p (eq (ecc-node-status node) 'error))
@@ -1202,7 +1201,7 @@ An Edit or a Write shows its input as a diff (FR-OUT-7)."
             (ecc-render--elapsed-mark node))))
 
 (defun ecc-render--insert-agent (session node depth)
-  "Insert the agent NODE of SESSION at DEPTH, its messages nested (FR-OUT-9)."
+  "Insert the agent NODE of SESSION at DEPTH, its messages nested."
   (let ((body (concat (ecc-render--pad depth) "  ")))
     (ecc-render--insert-owned
      node depth
@@ -1233,7 +1232,7 @@ An Edit or a Write shows its input as a diff (FR-OUT-7)."
                   'ecc-dim-face))))))))))
 
 (defun ecc-render--unsaved-p (path)
-  "Return non-nil when a buffer visiting PATH has unsaved changes (FR-SYNC-2)."
+  "Return non-nil when a buffer visiting PATH has unsaved changes."
   (when-let* ((buffer (and (stringp path) (find-buffer-visiting path))))
     (buffer-modified-p buffer)))
 
@@ -1247,7 +1246,7 @@ An Edit or a Write shows its input as a diff (FR-OUT-7)."
 (defun ecc-render--request-heading (node)
   "Return the heading of the request NODE.
 A pending one carries its key hints and, for a file that is open with
-unsaved changes, a warning (FR-SYNC-2); an answered one keeps what was
+unsaved changes, a warning; an answered one keeps what was
 answered."
   (let* ((request (ecc-model-node-get node 'request))
          (name (if request (ecc-request-tool-name request) "?"))
@@ -1289,7 +1288,7 @@ answered."
 (defun ecc-render--insert-request (node depth)
   "Insert the permission, question or plan NODE at DEPTH.
 An Edit or a Write is shown as the diff it would make, with the lines
-of the file around it (FR-DIFF-1)."
+of the file around it."
   (let* ((pad (ecc-render--pad depth))
          (body (concat pad "  "))
          (request (ecc-model-node-get node 'request))
@@ -1358,10 +1357,9 @@ each question once the request was answered."
                   "\n"))))))
 
 (defun ecc-render--insert-command (node depth)
-  "Insert the local command NODE at DEPTH (FR-HIST-2).
+  "Insert the local command NODE at DEPTH.
 The command is drawn the way the user typed it, and what it printed
-follows in the dim face of something the CLI said rather than the
-model."
+follows in the dim face of something the CLI said rather than the model."
   (let ((pad (ecc-render--pad depth))
         (name (or (ecc-model-node-get node 'name) "?"))
         (args (ecc-model-node-get node 'args))
@@ -1393,7 +1391,7 @@ model."
                        ((equal result "success") "done, context reset")
                        (t result))
                  ;; What the compaction did to the context, which is
-                 ;; what the indicator of FR-HINT-3 goes back to.
+                 ;; what the context indicator goes back to.
                  (if-let* ((post (alist-get 'post_tokens metadata)))
                      (format " · %s → %s tokens"
                              (ecc-render--count-string
@@ -1465,7 +1463,7 @@ apart; the few whose shape is known say what happened as well."
                                      (concat pad "  ") 'ecc-dim-face)))))))
 
 (defun ecc-render--insert-unknown (node depth)
-  "Insert the unknown NODE at DEPTH (FR-OUT-1)."
+  "Insert the unknown NODE at DEPTH."
   (let* ((pad (ecc-render--pad depth))
          (message (or (ecc-model-node-get node 'message)
                       (ecc-model-node-get node 'block)))
@@ -1511,7 +1509,7 @@ is drawn while the turn is still running."
            (cost (ecc-turn-cost turn))
            (left (ecc-render--turn-end-mark turn))
            ;; A turn read back from a recording has no result message,
-           ;; so what it cost is not known (FR-HIST-1).
+           ;; so what it cost is not known.
            (right (cond ((and duration cost)
                          (format "%.1fs · $%.4f" duration cost))
                         (cost (format "$%.4f" cost))
@@ -1528,19 +1526,18 @@ is drawn while the turn is still running."
 
 (defun ecc-render--insert-turn (session turn)
   "Insert TURN of SESSION.
-No heading line of its own is drawn any more (FR-OUT-2 as revised by
-the phase 9 redesign): the band the prompt is drawn in is what parts
-one turn from the next, and it carries the heading of the turn, so
-that the movement commands stop once per turn rather than twice."
+No heading line of its own is drawn any more: the band the prompt is
+drawn in is what parts one turn from the next, and it carries the
+heading of the turn, so that the movement commands stop once per turn
+rather than twice."
   (let ((id (ecc-turn-id turn))
         (start (point)))
     (let ((prompt (ecc-turn-prompt turn)))
       (if prompt
           (progn
             ;; The prompt carries fenced blocks of its own: the quoted
-            ;; region and the context Emacs attached (FR-CTX-1,
-            ;; FR-INP-8), which are worth the same colouring as the
-            ;; reply (FR-OUT-15).
+            ;; region and the context Emacs attached, which are worth
+            ;; the same colouring as the reply.
             (ecc-render--insert-band (ecc-markdown-fontify prompt) "" 'ecc-user-face)
             ;; The band stands at the depth of the turn, not of the
             ;; turn's children: it is the heading of the turn, and the
@@ -1590,20 +1587,20 @@ the end of the conversation here rather than in the turns.")
 (defvar ecc-render-header-functions nil
   "Functions adding to the header line of a session buffer.
 Each is called with the session and returns a string or nil; what
-comes back is appended to the state line of FR-OUT-6.  The context
-left of FR-HINT-3 arrives this way.")
+comes back is appended to the state line.  The context left arrives
+this way.")
 
 (defun ecc-render--tail-string (session)
   "Return the state line of SESSION, or nil when there is nothing to say."
   (if (eq (ecc-session-kind session) 'handoff)
-      ;; The process is gone on purpose: the conversation is being had in
-      ;; a terminal and the buffer follows the recording (FR-TUI-3).
+      ;; The process is gone on purpose: the conversation is being had
+      ;; in a terminal and the buffer follows the recording.
       (propertize "⇄ open in the terminal; it comes back when the terminal is left"
                   'face 'ecc-pending-face)
     ;; Every other state is what the header line says all the while, in
-    ;; better words and with a spinner that actually turns (FR-OUT-6);
-    ;; `exited' alone stays, because the way back out of it is named
-    ;; nowhere else.
+    ;; better words and with a spinner that actually turns; `exited'
+    ;; alone stays, because the way back out of it is named nowhere
+    ;; else.
     (when (eq (ecc-session-state session) 'exited)
       (propertize (format "Exited with code %s; R resumes it"
                           (or (alist-get 'exit-status (ecc-session-progress session))
@@ -1654,7 +1651,7 @@ no turn, so nothing freezes them."
       (ecc-render--register "tail" start (point) 0)))
   (ecc-render--insert-separator))
 
-;;;; The state line (FR-OUT-6)
+;;;; The state line
 
 (defun ecc-render-status-line (session)
   "Return the one line summary of what SESSION is doing right now."
@@ -1715,7 +1712,7 @@ for it; `ecc-remote-control-open\=' is the way to follow it."
   "Return what the right of the header line says SESSION is, or nil.
 The Remote Control mark, and after it whatever the modules above the
 renderer add through `ecc-render-header-functions\=', which is how the
-room left in the context window arrives (FR-HINT-3).  The model and
+room left in the context window arrives.  The model and
 the permission mode are not here: the footer under the prompt names
 them both, and saying it twice on one screen is noise."
   (let* ((own (delq nil (list (ecc-render--remote-control session))))
@@ -1758,8 +1755,8 @@ together, so that the space keeps the property that aligns it."
 
 (defun ecc-render-mode-line-state (session)
   "Return the short state of SESSION for a mode line, or nil when idle.
-A request waiting for an answer is what the mode line exists to show
-\(FR-PERM-4), so it is spelled out with its kind."
+A request waiting for an answer is what the mode line exists to show,
+so it is spelled out with its kind."
   (pcase (if (eq (ecc-session-kind session) 'handoff) 'handoff
            (ecc-session-state session))
     ((or 'idle 'starting) nil)
@@ -1812,7 +1809,7 @@ in the live region of a turn that is still growing, is reading rather
 than following: it used to count as the end, and every redraw of the
 live region -- ten a second while a turn arrives -- dragged it down to
 the prompt, so that point could not be moved into a running turn at
-all (FR-UI-2)."
+all."
   (>= position (ecc-render--draw-limit)))
 
 (defun ecc-render--prompt-offset (position)
@@ -1906,7 +1903,7 @@ Only positions at or after FROM move; FROM defaults to the start of
 the buffer.  Everything the user can undo lies in the prompt region,
 and what the renderer does is kept out of the history; so when the
 transcript above the region grows or shrinks, the positions the
-history remembers are stale by exactly DELTA (FR-UI-2)."
+history remembers are stale by exactly DELTA."
   (when (and (consp buffer-undo-list) (/= delta 0))
     (let ((from (or from (point-min))))
       (setq buffer-undo-list
@@ -2014,7 +2011,7 @@ position, or nil when the node is not drawn."
 (defun ecc-render-refresh (session)
   "Draw the whole buffer of SESSION from scratch.
 The prompt region is kept: only the text before it is drawn again,
-and a point that was in it stays in it (FR-UI-2)."
+and a point that was in it stays in it."
   (when-let* ((buffer (ecc-session-buffer session)))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
@@ -2088,7 +2085,7 @@ and a point that was in it stays in it (FR-UI-2)."
 (defun ecc-render--update-spinner (session)
   "Turn the spinner of the current buffer while SESSION has work to do."
   ;; `starting' does not turn the spinner: a session waits in it only
-  ;; when its process never came up (FR-UI-1).
+  ;; when its process never came up.
   (if (memq (ecc-session-state session) '(running compacting))
       (ecc-visual-spinner-start (current-buffer))
     (ecc-visual-spinner-stop (current-buffer))))
@@ -2121,7 +2118,7 @@ Tests and interactive commands use this instead of waiting."
           (setq ecc-render--timer nil)))
       (ecc-render-update session))))
 
-;;;; Streaming (FR-OUT-4)
+;;;; Streaming
 
 (defun ecc-render--replace-heading (node depth string)
   "Replace the heading line of NODE at DEPTH with STRING, keeping its markers.
@@ -2186,7 +2183,7 @@ heading, because its body starts collapsed anyway."
     ;; Nothing is deleted here: the text goes in at a marker, so point,
     ;; the window points and the prompt region all move along with it on
     ;; their own.  Only the undo history of the draft, which records
-    ;; plain positions, is left behind (FR-UI-2).
+    ;; plain positions, is left behind.
     (when (and before (ecc-render-prompt-start))
       (ecc-render--shift-undo (- (ecc-render-prompt-start) before)))
     (force-mode-line-update)))
@@ -2198,7 +2195,7 @@ heading, because its body starts collapsed anyway."
       (ecc-render--flush-deltas))))
 
 (defun ecc-render--on-delta (session node text)
-  "Queue the streamed TEXT of NODE of SESSION for drawing (FR-OUT-10)."
+  "Queue the streamed TEXT of NODE of SESSION for drawing."
   (when-let* ((buffer (ecc-session-buffer session)))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
@@ -2224,7 +2221,7 @@ heading, because its body starts collapsed anyway."
 
 (defun ecc-render-draw-nodes (session buffer heading nodes)
   "Draw NODES of SESSION into BUFFER under HEADING as a fresh tree.
-Used for the transcript of an agent (FR-OUT-9).  BUFFER is meant to be
+Used for the transcript of an agent.  BUFFER is meant to be
 in `ecc-chat-mode'; it gets no prompt region, so the whole of it is
 read-only."
   (with-current-buffer buffer

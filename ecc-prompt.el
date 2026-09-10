@@ -9,12 +9,11 @@
 ;;; Commentary:
 
 ;; What is done with the prompt region of a session buffer (the region
-;; itself belongs to `ecc-chat'): multi-line input (FR-INP-1), slash
-;; commands with their completion and the two kinds that need care
-;; (FR-INP-2, 3, 4, 5), the queue that holds a prompt back while a turn
-;; runs (FR-INP-6), the history shared by every session (FR-INP-7), the
-;; `@' references Emacs expands before sending (FR-INP-8), pasted images
-;; (FR-INP-9) and the editor context (FR-CTX-1).
+;; itself belongs to `ecc-chat'): multi-line input, slash commands with
+;; their completion and the two kinds that need care, the queue that
+;; holds a prompt back while a turn runs, the history shared by every
+;; session, the `@' references Emacs expands before sending, pasted
+;; images and the editor context.
 
 ;;; Code:
 
@@ -36,14 +35,14 @@
 ;;;; Options
 
 (defvar ecc-prompt-history-size 200
-  "Number of prompts kept in `ecc-prompt-history' (FR-INP-7).")
+  "Number of prompts kept in `ecc-prompt-history'.")
 
 (defvar ecc-image-dir (expand-file-name "ecc-images" temporary-file-directory)
-  "Directory the images pasted into a prompt are written to (FR-INP-9).
+  "Directory the images pasted into a prompt are written to.
 Each session gets a subdirectory of its own.")
 
 (defvar ecc-image-cleanup 'on-exit
-  "What becomes of the images of a session when it ends (FR-INP-9).
+  "What becomes of the images of a session when it ends.
 `on-exit' deletes the directory of the session, `never' keeps it.  The
 recording refers to the files by path, so keeping them is what makes an
 old conversation readable again.")
@@ -54,7 +53,7 @@ old conversation readable again.")
     ("/permissions" . nil)
     ("/config" . nil)
     ("/btw" . nil))
-  "Slash commands whose argument the CLI does not spell out (FR-INP-5).
+  "Slash commands whose argument the CLI does not spell out.
 Each entry is a command name and where the argument comes from: a list
 of candidates, a function called with the session that returns one, or
 nil to ask for a string.  Sending one of these without an argument is
@@ -67,16 +66,16 @@ describe belong here.  Every command whose hint names its alternatives
 
 (defvar ecc-prompt-slash-reads-command t
   "Whether typing `/' in the prompt asks which slash command is meant.
-When this is on, a slash that opens the prompt -- the only place the
-CLI runs a command from -- opens `completing-read' with the commands
-it named, and what is chosen is written after it (FR-INP-3).  A slash
-anywhere else is only a slash; `ecc-prompt-capf\=' still completes one
-that starts a word, on TAB, so corfu and company keep working as they
-did.  Turning this off leaves them the only way.")
+When this is on, a slash that opens the prompt -- the only place the CLI
+runs a command from -- opens `completing-read' with the commands it
+named, and what is chosen is written after it.  A slash anywhere else is
+only a slash; `ecc-prompt-capf\=' still completes one that starts a
+word, on TAB, so corfu and company keep working as they did.  Turning
+this off leaves them the only way.")
 
 (defvar ecc-model-candidates
   '("default" "sonnet" "opus" "haiku" "fable")
-  "Models offered for /model until the CLI names its own (FR-INP-5).
+  "Models offered for /model until the CLI names its own.
 The initialize response carries the real catalogue in its `models\='
 array -- the value to send, a display name and a description -- and
 `ecc-prompt-models\=' offers that as soon as it has arrived, so this
@@ -84,7 +83,7 @@ list only has to serve a session whose CLI has not answered yet.")
 
 (defvar ecc-effort-candidates
   '("low" "medium" "high" "xhigh" "max" "auto")
-  "Effort levels offered for /effort until the CLI names its own (FR-INP-5).
+  "Effort levels offered for /effort until the CLI names its own.
 The argument hint of the initialize response spells them out
 \(`<low|medium|high|xhigh|max|auto>\='), and
 `ecc-prompt-effort-candidates\=' reads them from there as soon as it
@@ -94,42 +93,41 @@ not answered yet.")
 (defvar ecc-terminal-slash-commands '("doctor" "color" "reload-plugins")
   "Commands taken to belong to the terminal client until the CLI says otherwise.
 The real list is `terminal_slash_commands' of system/init, but init does
-not arrive until the first turn of a session has been sent
-\(docs/verified.md), so a session that has not spoken yet would have
-nothing to go on (FR-INP-4).  Whatever init reports replaces this for
-the rest of the Emacs session, so the list here only has to be right
-about a brand new session.
+not arrive until the first turn of a session has been sent \(confirmed
+against the CLI), so a session that has not spoken yet would have
+nothing to go on.  Whatever init reports replaces this for the rest of
+the Emacs session, so the list here only has to be right about a brand
+new session.
 
 These are the commands the CLI marks `terminalOriented' and hands to a
-headless client, measured against 2.1.266 (docs/verified.md).  The list
-is now hidden as well as annotated, so a name that does not belong here
-costs a command.")
+headless client, measured against 2.1.266.  The list is now hidden as
+well as annotated, so a name that does not belong here costs a command.")
 
 (defvar ecc-prompt-hide-terminal-commands t
-  "Non-nil keeps the terminal-only commands out of the candidates (FR-INP-4).
+  "Non-nil keeps the terminal-only commands out of the candidates.
 The CLI names them in `terminal_slash_commands' of system/init and says
-of that field: \"Subset of slash_commands whose UX is bound to the
-local terminal (e.g. exit, statusline).  Phone/remote UIs should hide
-these from command menus; desktop surfaces may keep them.\"  Emacs is
-one of the remote UIs, so it hides them.
+of that field: \"Subset of slash_commands whose UX is bound to the local
+terminal (e.g. exit, statusline).  Phone/remote UIs should hide these
+from command menus; desktop surfaces may keep them.\" Emacs is one of
+the remote UIs, so it hides them.
 
 Only the menus are affected -- completion, the question `/' asks and
 the transient menu.  A command typed out by hand is still sent, and its
-answer still drawn (FR-INP-2); `ecc-prompt-warn-terminal-commands' is
+answer still drawn; `ecc-prompt-warn-terminal-commands' is
 what says not to expect anything of it.  Nil offers them all again.")
 
 (defvar ecc-prompt-kept-terminal-commands '("/reload-plugins" "/doctor")
-  "Terminal-only commands offered all the same (FR-INP-4).
+  "Terminal-only commands offered all the same.
 A command the CLI calls terminal-oriented can still be worth having
 here.  `/reload-plugins' makes the CLI resend its command list
 \(system/commands_changed), which is Emacs's own completion being
 brought up to date, so hiding it would take away something that works
-\(docs/verified.md, 2026-09-06).  `/doctor' health-checks the setup and
-answers in plain text, which reads here as well as anywhere.  Names
-carry their slash.")
+\(confirmed 2026-09-06).  `/doctor' health-checks the setup and answers
+in plain text, which reads here as well as anywhere.  Names carry their
+slash.")
 
 (defvar ecc-prompt-warn-terminal-commands t
-  "Non-nil says so when a command belongs to the terminal client (FR-INP-4).
+  "Non-nil says so when a command belongs to the terminal client.
 What is terminal-only about these is their effect, not the sending: the
 CLI accepts them from a headless client and answers, but the answer is
 about something Emacs does not have, such as the colour of the prompt
@@ -144,7 +142,7 @@ anything to happen here.")
 `unset' means `ecc-context-attach-by-default' decides.")
 
 (defun ecc-prompt-attach-context-p ()
-  "Return non-nil when this buffer appends the editor context (FR-CTX-1)."
+  "Return non-nil when this buffer appends the editor context."
   (if (eq ecc-prompt--attach-context 'unset)
       ecc-context-attach-by-default
     ecc-prompt--attach-context))
@@ -163,7 +161,7 @@ Returns where the region starts."
       (ecc-chat-goto-prompt))
     start))
 
-;;;; History (FR-INP-7)
+;;;; History
 
 (defvar ecc-prompt-history nil
   "Prompts sent from a prompt region, most recent first.
@@ -181,7 +179,7 @@ is on.")
     (add-to-list 'savehist-additional-variables 'ecc-prompt-history)))
 
 (defun ecc-prompt-history-add (text)
-  "Put TEXT at the front of `ecc-prompt-history' (FR-INP-7)."
+  "Put TEXT at the front of `ecc-prompt-history'."
   (let ((text (string-trim text)))
     (unless (string-empty-p text)
       (setq ecc-prompt-history (cons text (delete text ecc-prompt-history)))
@@ -199,7 +197,7 @@ INDEX nil brings the draft back."
   (setq ecc-prompt--history-index index))
 
 (defun ecc-prompt-history-previous ()
-  "Replace the prompt region with the previous prompt sent (FR-INP-7)."
+  "Replace the prompt region with the previous prompt sent."
   (interactive)
   (unless ecc-prompt-history
     (user-error "No history"))
@@ -218,7 +216,7 @@ INDEX nil brings the draft back."
    (and (> ecc-prompt--history-index 0) (1- ecc-prompt--history-index))))
 
 (defun ecc-prompt-resend-last (&optional session)
-  "Send the last prompt again to SESSION (FR-INP-7)."
+  "Send the last prompt again to SESSION."
   (interactive)
   (let ((text (or (car ecc-prompt-history) (user-error "No history")))
         (session (or session ecc-render--session
@@ -227,7 +225,7 @@ INDEX nil brings the draft back."
       (ecc-proc-send-prompt session text)
       text)))
 
-;;;; Images (FR-INP-9)
+;;;; Images
 
 (defun ecc-session-image-dir (session)
   "Return the directory the images of SESSION are written to, creating it."
@@ -257,7 +255,7 @@ INDEX nil brings the draft back."
 
 (defun ecc-prompt-save-image (session data mime)
   "Write DATA, an image of type MIME, into the directory of SESSION.
-Returns the file it was written to (FR-INP-9)."
+Returns the file it was written to."
   (let ((file (expand-file-name
                (format "%s.%s"
                        (format-time-string "%Y%m%d-%H%M%S-%3N")
@@ -278,7 +276,7 @@ Point is moved into the prompt region first when it is not there."
   path)
 
 (defun ecc-prompt-yank-image (mime data)
-  "Save the pasted image DATA of type MIME and refer to it (FR-INP-9).
+  "Save the pasted image DATA of type MIME and refer to it.
 The file is passed by path rather than inline: base64 in the prompt
 would be written into the recording of the conversation."
   (let ((file (ecc-prompt-save-image (ecc-prompt-session) data mime)))
@@ -287,24 +285,24 @@ would be written into the recording of the conversation."
     file))
 
 (defun ecc-prompt-dnd-insert (url &optional _action)
-  "Insert the dropped file URL as an @ reference (FR-INP-9)."
+  "Insert the dropped file URL as an @ reference."
   (let ((file (if (fboundp 'dnd-get-local-file-name)
                   (or (dnd-get-local-file-name url t) url)
                 url)))
     (ecc-prompt-insert-reference (expand-file-name file))))
 
 (defun ecc-prompt-insert-image (file)
-  "Insert an @ reference to the image FILE (FR-INP-9)."
+  "Insert an @ reference to the image FILE."
   (interactive "fImage: ")
   (ecc-prompt-insert-reference (expand-file-name file)))
 
-;;;; Slash commands (FR-INP-2, 3, 4, 5)
+;;;; Slash commands
 
 (defun ecc-prompt-current-argument (session command)
   "Return what COMMAND has SESSION set to at the moment, or nil.
 Only the commands that set something have an answer.  The terminal
 client shows it after their description; the CLI sends a description
-that is fixed text and leaves it out (docs/verified.md)."
+that is fixed text and leaves it out."
   (when session
     (pcase command
       ("/model" (ecc-prompt-current-model session))
@@ -333,7 +331,7 @@ moment is added to it (`ecc-prompt-current-argument\=')."
 They are added to the list `ecc-prompt-commands\' returns, after
 everything the CLI reported.  `/btw\' is one: the terminal client
 catches it in its input layer, so it is in no list the CLI sends, and
-Emacs answers it itself (FR-BTW-1).")
+Emacs answers it itself.")
 
 (defun ecc-prompt-commands (session)
   "Return the slash commands of SESSION as an alist of name and description.
@@ -372,9 +370,9 @@ newest answer stands in for a session that has not heard one yet.")
 
 (defun ecc-prompt-terminal-commands (session)
   "Return the commands of SESSION that belong to the terminal client.
-The CLI names them in system/init as terminal_slash_commands (FR-INP-4);
-until that arrives, the last list any session heard is used, and failing
-that `ecc-terminal-slash-commands'."
+The CLI names them in system/init as terminal_slash_commands; until that
+arrives, the last list any session heard is used, and failing that
+`ecc-terminal-slash-commands'."
   (let* ((reported (alist-get 'terminal_slash_commands
                               (ecc-session-init session)))
          (names (if (and reported (> (length reported) 0))
@@ -385,7 +383,7 @@ that `ecc-terminal-slash-commands'."
             (seq-filter #'stringp names))))
 
 (defun ecc-prompt-hidden-commands (session)
-  "Return the commands of SESSION kept out of the menus (FR-INP-4).
+  "Return the commands of SESSION kept out of the menus.
 The terminal-only ones the CLI named, less those
 `ecc-prompt-kept-terminal-commands' asks for anyway."
   (when ecc-prompt-hide-terminal-commands
@@ -394,10 +392,10 @@ The terminal-only ones the CLI named, less those
                 (ecc-prompt-terminal-commands session))))
 
 (defun ecc-prompt-offered-commands (session)
-  "Return the slash commands of SESSION worth offering (FR-INP-3, FR-INP-4).
-`ecc-prompt-commands' is everything the CLI knows about, which is what
-a description is looked up in; this is what the menus show, and it
-leaves out `ecc-prompt-hidden-commands'."
+  "Return the slash commands of SESSION worth offering.
+`ecc-prompt-commands' is everything the CLI knows about, which is what a
+description is looked up in; this is what the menus show, and it leaves
+out `ecc-prompt-hidden-commands'."
   (let ((hidden (ecc-prompt-hidden-commands session)))
     (if (null hidden)
         (ecc-prompt-commands session)
@@ -434,7 +432,7 @@ there is only `ecc-model-candidates\='."
         (mapcar (lambda (name) (cons name "")) ecc-model-candidates))))
 
 (defun ecc-prompt-model-candidates (&optional session)
-  "Return the models offered for /model in SESSION (FR-INP-5)."
+  "Return the models offered for /model in SESSION."
   (mapcar #'car (ecc-prompt-models session)))
 
 (defun ecc-prompt-command-entry (session command)
@@ -495,22 +493,22 @@ argument hint of the initialize response is read."
   "Non-nil when COMMAND of SESSION is asked for its argument first.
 Either `ecc-prompt-interactive-commands\=' names it, or the CLI says
 in its argument hint which arguments it takes, which is as good a
-reason to offer them (FR-INP-5)."
+reason to offer them."
   (or (assoc command ecc-prompt-interactive-commands)
       (and (ecc-prompt-argument-candidates session command) t)))
 
 (defun ecc-prompt-effort-candidates (&optional session)
-  "Return the effort levels offered for /effort in SESSION (FR-INP-5)."
+  "Return the effort levels offered for /effort in SESSION."
   (or (ecc-prompt-argument-candidates session "/effort")
       ecc-effort-candidates))
 
 (defun ecc-prompt-current-effort (session)
   "Return the effort level SESSION is set to, or nil.
 Nothing in the stream reports one -- neither system/init nor an
-assistant message carries it (docs/verified.md) -- so what Emacs asked
-for is all there is: the last /effort it sent, and failing that the
---effort the session was started with.  An /effort sent from the
-terminal of a hand-off is therefore not seen."
+assistant message carries it (confirmed against the CLI) -- so what
+Emacs asked for is all there is: the last /effort it sent, and failing
+that the --effort the session was started with.  An /effort sent from
+the terminal of a hand-off is therefore not seen."
   (or (ecc-session-last-effort session)
       (ecc-model-option session :effort nil)))
 
@@ -538,10 +536,10 @@ the CLI has not sent the array yet."
         model)))
 
 (defun ecc-prompt-read-argument (command &optional session)
-  "Ask for the argument of COMMAND, an interactive slash command (FR-INP-5).
-The candidates of SESSION are offered where the command has any.  Nil
-is returned when the user leaves it empty, which sends the command as
-it was typed."
+  "Ask for the argument of COMMAND, an interactive slash command.
+The candidates of SESSION are offered where the command has any.  Nil is
+returned when the user leaves it empty, which sends the command as it
+was typed."
   (let* ((candidates (ecc-prompt-command-candidates session command))
          (current (ecc-prompt-current-argument session command))
          (prompt (if current
@@ -555,9 +553,8 @@ it was typed."
 
 (defun ecc-prompt-prepare-command (session text)
   "Return TEXT ready to send to SESSION, having dealt with its slash command.
-A command only the terminal client of SESSION can run is reported
-\(FR-INP-4), and one that opens a menu there is asked for its argument
-\(FR-INP-5)."
+A command only the terminal client of SESSION can run is reported, and
+one that opens a menu there is asked for its argument."
   (let ((command (ecc-prompt-command-name text)))
     (cond
      ((null command) text)
@@ -573,7 +570,7 @@ A command only the terminal client of SESSION can run is reported
             text)
         text)))))
 
-;;;; The @ references (FR-INP-8)
+;;;; The @ references
 
 (defconst ecc-prompt-reference-regexp
   "@\\([^][ \t\n\r\"\'`,;()]+\\)"
@@ -641,7 +638,7 @@ left alone: the CLI resolves that one itself."
       ;; The region of SOURCE if it still has one, and otherwise
       ;; whatever region is left on the screen or was last seen: the
       ;; mark of the buffer the user came from does not always live as
-      ;; far as the send (FR-CTX-1).
+      ;; far as the send.
       (when-let* ((region (or (ecc-window-buffer-region source)
                               (ecc-window-active-region)))
                   (context (ecc-context-capture
@@ -667,7 +664,7 @@ left alone: the CLI resolves that one itself."
         (ecc-prompt--block context))))))
 
 (defvar ecc-prompt-last-attachments nil
-  "Labels of the @ references the last expansion appended (FR-INP-8).")
+  "Labels of the @ references the last expansion appended.")
 
 (defvar ecc-prompt-last-skipped nil
   "Special @ references the last expansion had nothing to put in place of.
@@ -676,15 +673,15 @@ A `@region' with no active region is one: it is sent as it stands, and
 the answer.")
 
 (defun ecc-prompt-expand-references (text &optional source root)
-  "Return TEXT with its @ references expanded (FR-INP-8).
-A line range, @region, @cursor and @diagnostics are replaced by a
-short label and their content is appended as a quote block; a plain
-@path is left for the CLI to resolve.  SOURCE is the buffer to read
-the region, the cursor and the diagnostics from, and ROOT is what the
-paths of the labels are relative to.  Two references to the same thing
-share the one block.  What was appended, and which
-special reference had nothing to append, are left in
-`ecc-prompt-last-attachments' and `ecc-prompt-last-skipped'."
+  "Return TEXT with its @ references expanded.
+A line range, @region, @cursor and @diagnostics are replaced by a short
+label and their content is appended as a quote block; a plain @path is
+left for the CLI to resolve.  SOURCE is the buffer to read the region,
+the cursor and the diagnostics from, and ROOT is what the paths of the
+labels are relative to.  Two references to the same thing share the one
+block.  What was appended, and which special reference had nothing to
+append, are left in `ecc-prompt-last-attachments' and
+`ecc-prompt-last-skipped'."
   (let ((source (or source (ecc-window-last-source-buffer)))
         (blocks nil)
         (skipped nil)
@@ -717,13 +714,13 @@ special reference had nothing to append, are left in
                            (format "---\n%s\n%s" (car block) (cdr block)))
                          (nreverse blocks) "\n\n")))))
 
-;;;; Completion (FR-INP-3, FR-INP-8)
+;;;; Completion
 
 (defun ecc-prompt--annotator (commands terminal)
   "Return the function that annotates a slash command candidate.
 COMMANDS is the alist of `ecc-prompt-commands\=' and TERMINAL the list
 of `ecc-prompt-terminal-commands\='; a command only the terminal client
-can run says so (FR-INP-4), and the description of the initialize
+can run says so, and the description of the initialize
 response follows."
   (lambda (candidate)
     (let ((description (cdr (assoc candidate commands))))
@@ -737,9 +734,9 @@ response follows."
 A word is one when the slash that opens it follows whitespace or opens
 the prompt region, which is what the terminal client completes: it
 answers `please run /co\=' with `/copy\=' but leaves `src/fo\=' and
-`a/co\=' alone (docs/verified.md, 2026-09-09).  Whether the CLI would
-run it is another matter -- only the command the prompt opens with is
-run -- so this is for the completion, not for the sending."
+`a/co\=' alone (confirmed 2026-09-09).  Whether the CLI would run it is
+another matter -- only the command the prompt opens with is run -- so
+this is for the completion, not for the sending."
   (when-let* (((ecc-chat-in-prompt-p))
               (region (ecc-chat-prompt-start)))
     (save-excursion
@@ -750,11 +747,11 @@ run -- so this is for the completion, not for the sending."
           (cons (point) end))))))
 
 (defun ecc-prompt-capf ()
-  "Complete a slash command at point (FR-INP-3, FR-INP-4).
+  "Complete a slash command at point.
 A word that starts with a slash is completed wherever it stands in the
-prompt region, as the terminal client does (`ecc-prompt-command-bounds\=').
-What is offered leaves the terminal-only commands out
-\(`ecc-prompt-offered-commands\=')."
+prompt region, as the terminal client
+does (`ecc-prompt-command-bounds\=').  What is offered leaves the
+terminal-only commands out \(`ecc-prompt-offered-commands\=')."
   (when-let* ((session ecc-render--session)
               (bounds (ecc-prompt-command-bounds)))
     (let ((commands (ecc-prompt-offered-commands session)))
@@ -768,7 +765,7 @@ What is offered leaves the terminal-only commands out
   "Ask which slash command of SESSION is meant, and return it, or nil.
 The name is returned with its slash.  Nil is the answer when nothing
 was chosen -- an empty answer, a bare slash, or a `C-g\=' -- which leaves
-the slash that was typed alone (FR-INP-3).  The terminal-only commands
+the slash that was typed alone.  The terminal-only commands
 are not offered, but one typed out by hand is still accepted."
   (let* ((commands (ecc-prompt-offered-commands session))
          (annotate (ecc-prompt--annotator
@@ -793,7 +790,7 @@ are not offered, but one typed out by hand is still accepted."
   '(("@region" . "Send the region, quoted")
     ("@cursor" . "Send the line the cursor is on, with its neighbours")
     ("@diagnostics" . "Send the diagnostics of this file"))
-  "The @ references that are not files (FR-INP-8).")
+  "The @ references that are not files.")
 
 (defun ecc-prompt-project-files (session)
   "Return the files of the project of SESSION, relative to its root."
@@ -805,7 +802,7 @@ are not offered, but one typed out by hand is still accepted."
                 (project-files project))))))
 
 (defun ecc-prompt-at-capf ()
-  "Complete an @ reference at point (FR-INP-8)."
+  "Complete an @ reference at point."
   (when-let* ((session ecc-render--session)
               (region (ecc-chat-prompt-start)))
     (save-excursion
@@ -827,7 +824,7 @@ are not offered, but one typed out by hand is still accepted."
 ;;;; Sending
 
 (defun ecc-prompt-toggle-context ()
-  "Turn the editor context of this session buffer on or off (FR-CTX-1)."
+  "Turn the editor context of this session buffer on or off."
   (interactive)
   (setq ecc-prompt--attach-context (not (ecc-prompt-attach-context-p)))
   (message "Attaching the editor context is %s"
@@ -835,11 +832,10 @@ are not offered, but one typed out by hand is still accepted."
 
 (defun ecc-prompt-prepare-text (session text &optional source attach)
   "Return TEXT as it should be sent for SESSION.
-The slash command is dealt with first (FR-INP-4, 5), then the @
-references are expanded (FR-INP-8), then the editor context of SOURCE
-is appended when ATTACH is non-nil (FR-CTX-1).  The paths of the
-labels are relative to the project of SESSION, which is where the CLI
-reading them stands."
+The slash command is dealt with first, then the @ references are
+expanded, then the editor context of SOURCE is appended when ATTACH is
+non-nil.  The paths of the labels are relative to the project of
+SESSION, which is where the CLI reading them stands."
   (let* ((root (ecc-window-project-root (ecc-session-project-root session)))
          (text (ecc-prompt-expand-references
                 (ecc-prompt-prepare-command session text) source root)))
@@ -852,7 +848,7 @@ reading them stands."
 The empty string when the prompt carried none: what Emacs attached is
 worth a word, because the labels of the quote blocks are all the user
 sees of it, and a `@region' that expanded to nothing is worth more
-\(FR-INP-8)."
+."
   (concat
    (when ecc-prompt-last-attachments
      (format "; attached %s" (mapconcat #'identity ecc-prompt-last-attachments ", ")))
@@ -868,15 +864,15 @@ emptied and remembered either way, so that a typo can be brought back
 with \\[ecc-prompt-history-previous].
 
 Only a draft the CLI is not meant to see belongs here.  The side
-question of FR-BTW-1 is the one there is: `/btw\' is not a slash
+question is the one there is: `/btw\' is not a slash
 command, and sending it would put it in the conversation it is supposed
 to be asked beside.")
 
 (cl-defun ecc-prompt-send ()
-  "Send the prompt region, or queue it while a turn runs (FR-INP-1, 6).
+  "Send the prompt region, or queue it while a turn runs.
 A draft one of `ecc-prompt-intercept-functions\' takes is not sent at
-all (FR-BTW-1).  The region is emptied either way; what was sent goes
-into the history."
+all.  The region is emptied either way; what was sent goes into the
+history."
   (interactive)
   (let* ((session (ecc-prompt-session))
          (raw (string-trim (ecc-chat-draft))))
@@ -901,9 +897,9 @@ into the history."
           (message "Sent%s" (ecc-prompt--attachment-report))
         ;; A turn somebody started from a phone queues the prompt just
         ;; the same, and the reason is worth saying: nothing on screen
-        ;; would otherwise explain why this was not sent (FR-INP-6).
-        ;; The queue holds the text with its blocks already in it, so
-        ;; what was attached belongs in the same message (FR-INP-8).
+        ;; would otherwise explain why this was not sent. The queue
+        ;; holds the text with its blocks already in it, so what was
+        ;; attached belongs in the same message.
         (message "%s; queued at position %d%s"
                  (if (ecc-model-remote-turn-p (ecc-session-current-turn session))
                      "A turn started from Remote Control is running"
@@ -917,7 +913,7 @@ into the history."
   (ecc-chat-clear-draft))
 
 (defun ecc-prompt-show-queue ()
-  "Show the prompts waiting to be sent (FR-INP-6)."
+  "Show the prompts waiting to be sent."
   (interactive)
   (let ((queue (ecc-session-input-queue (ecc-prompt-session))))
     (if (null queue)

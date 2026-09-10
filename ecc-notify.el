@@ -8,12 +8,11 @@
 
 ;;; Commentary:
 
-;; Interruptions worth making (FR-NOTIFY-1).  Three events are worth an
-;; interruption: a turn that finished, a request that needs an answer,
-;; and a session whose CLI stopped on its own.  How loudly they are
-;; announced is `ecc-notify-level', and a desktop notification is held
-;; back while the Emacs frame has the focus: the user is looking at it
-;; already.
+;; Interruptions worth making.  Three events are worth an interruption:
+;; a turn that finished, a request that needs an answer, and a session
+;; whose CLI stopped on its own.  How loudly they are announced is
+;; `ecc-notify-level', and a desktop notification is held back while the
+;; Emacs frame has the focus: the user is looking at it already.
 
 ;;; Code:
 
@@ -31,7 +30,7 @@
 (defvar ecc-render--session)
 
 (defcustom ecc-notify-level 'message
-  "How much noise an event of a session makes (FR-NOTIFY-1).
+  "How much noise an event of a session makes.
 `message' writes one line in the echo area, `pulse' flashes the
 transcript as well, and `desktop' also asks the desktop to show a
 notification.  Nil says nothing at all."
@@ -42,7 +41,7 @@ notification.  Nil says nothing at all."
   :group 'ecc)
 
 (defcustom ecc-notify-events '(turn-finished request exited)
-  "Events that are announced (FR-NOTIFY-1)."
+  "Events that are announced."
   :type '(set (const :tag "A turn finished" turn-finished)
               (const :tag "A request needs an answer" request)
               (const :tag "A session stopped on its own" exited))
@@ -50,7 +49,7 @@ notification.  Nil says nothing at all."
 
 (defcustom ecc-notify-function #'ecc-notify-default
   "Function called with SESSION, EVENT and TEXT to announce something.
-Replacing it takes over notification completely (FR-NOTIFY-1)."
+Replacing it takes over notification completely."
   :type 'function
   :group 'ecc)
 
@@ -153,7 +152,7 @@ On macOS this is the name of a system sound such as \"Glass\"."
   (when (and ecc-notify-level (memq event ecc-notify-events))
     (funcall ecc-notify-function session event text)))
 
-;;;; Wiring (FR-NOTIFY-1)
+;;;; Wiring
 
 (defun ecc-notify--turn-finished (session turn)
   "Announce that TURN of SESSION finished."
@@ -173,7 +172,7 @@ not worth a notification."
                 (format "%s: the CLI exited with code %s"
                         (ecc-session-name session) status))))
 
-;;;; The tab line of the sessions (FR-NOTIFY-2)
+;;;; The tab line of the sessions
 
 ;; Every session is a tab in the tab line of a session window, coloured
 ;; by what it is doing: running, waiting for an answer, or idle.  Which
@@ -188,7 +187,7 @@ not worth a notification."
 (defvar ecc-tab-bar-state nil
   "Non-nil marks the state of the sessions in the tab bar too.
 `ecc-tab-bar-tab-name' has to be `tab-bar-tab-name-function' for this
-to have anywhere to show (FR-NOTIFY-2).")
+to have anywhere to show.")
 
 (defface ecc-tab-running-face
   '((t :inherit (ecc-running-face ecc-heading-face)))
@@ -212,7 +211,7 @@ mode line use for the same state, over the weight of a heading."
 A tab that wants something is worth more than a colour when the eye is
 on the source code.  The rhythm is `ecc-visual-blink-interval', so that
 a blinking tab and the blinking line of the request it stands for keep
-step (FR-NOTIFY-2, FR-OUT-11 c).")
+step.")
 
 (defface ecc-tab-attention-blink-face
   '((t :inherit ecc-tab-attention-face :inverse-video t))
@@ -273,7 +272,7 @@ left to `ecc-tab-current-face' alone."
      (t (list state)))))
 
 (defun ecc-tab-line-tabs ()
-  "Return the session buffers, oldest session first (FR-NOTIFY-2).
+  "Return the session buffers, oldest session first.
 This is `tab-line-tabs-function' in a session buffer.  The registry is
 kept most recently used first, which is the wrong order for a row of
 tabs -- they would move about as one works -- so the sessions are put
@@ -313,7 +312,7 @@ underneath so that the theme still decides the shape of a tab."
   "Put the tab line in every session buffer, or take it out again.
 The tabs are the ones of `tab-line-mode' itself, so that they look and
 behave like tabs: clicking one shows that session in the window the tab
-was clicked in, which is the whole point of them (FR-NOTIFY-2)."
+was clicked in, which is the whole point of them."
   (dolist (session (ecc-model-sessions))
     (when-let* ((buffer (ecc-session-buffer session)))
       (when (buffer-live-p buffer)
@@ -335,7 +334,7 @@ was clicked in, which is the whole point of them (FR-NOTIFY-2)."
   (tab-line-force-update t)
   (ecc-tab-blink-update))
 
-;;;; Blinking the tabs that want an answer (FR-NOTIFY-2, FR-OUT-11 c)
+;;;; Blinking the tabs that want an answer
 
 (defun ecc-tab--waiting-p ()
   "Return non-nil when some session is waiting for an answer."
@@ -392,7 +391,7 @@ what a tab says already goes through."
     (ecc-tab-blink-stop)))
 
 (define-minor-mode ecc-tab-line-mode
-  "List every session in the tab line of the session windows (FR-NOTIFY-2)."
+  "List every session in the tab line of the session windows."
   :global t
   :group 'ecc
   (if ecc-tab-line-mode
@@ -410,7 +409,7 @@ what a tab says already goes through."
 (defun ecc-tab-bar-tab-name ()
   "Return the name of the current tab, marked with the state of its sessions.
 Set `tab-bar-tab-name-function' to this to see in the tab bar which
-tab is waiting for an answer (FR-NOTIFY-2)."
+tab is waiting for an answer."
   (let* ((name (funcall (default-value 'tab-bar-tab-name-function)))
          (sessions (seq-filter (lambda (session)
                                  (when-let* ((buffer (ecc-session-buffer session)))
@@ -432,7 +431,7 @@ tab is waiting for an answer (FR-NOTIFY-2)."
       name)))
 
 (define-minor-mode ecc-notify-mode
-  "Announce what the sessions of this Emacs are waiting for (FR-NOTIFY-1)."
+  "Announce what the sessions of this Emacs are waiting for."
   :global t
   :group 'ecc
   (if ecc-notify-mode

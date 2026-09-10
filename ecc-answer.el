@@ -13,10 +13,9 @@
 ;; is the work this module takes away.
 ;;
 ;; Two ways of reaching a request without hunting for its session: the
-;; commands that jump to the next one (FR-INBOX-2), and the commands
-;; that answer the oldest one from wherever the user is (FR-INBOX-3).
-;; A mode line indicator says how many are waiting (FR-PERM-4), and the
-;; dashboard is where they are seen as a list (FR-DASH-4).
+;; commands that jump to the next one, and the commands that answer the
+;; oldest one from wherever the user is.  A mode line indicator says how
+;; many are waiting, and the dashboard is where they are seen as a list.
 
 ;;; Code:
 
@@ -70,7 +69,7 @@ A request for one of them has to be answered where it can be read.")
          (when-let* ((node (ecc-request-node request)))
            (ecc-render-goto-node session node))))))
 
-;;;; Going round the requests (FR-INBOX-2)
+;;;; Going round the requests
 
 (defun ecc-answer-current-request ()
   "Return the request the current buffer is about, or nil."
@@ -103,7 +102,7 @@ The order is the arrival order and it wraps around."
   (interactive)
   (ecc-next-attention (ecc-window-project-root)))
 
-;;;; Answering from anywhere (FR-INBOX-3)
+;;;; Answering from anywhere
 
 (defun ecc-answer-target (&optional kind)
   "Return the oldest waiting request that may be answered blind, or nil.
@@ -125,7 +124,7 @@ is being answered from afar."
                         (ecc-answer-summary request)))))
 
 (defun ecc-answer-allow ()
-  "Allow the oldest waiting permission request, from any buffer (FR-INBOX-3)."
+  "Allow the oldest waiting permission request, from any buffer."
   (interactive)
   (let ((request (or (ecc-answer-target 'permission)
                      (user-error "No permission request is waiting"))))
@@ -135,7 +134,7 @@ is being answered from afar."
       request)))
 
 (defun ecc-answer-deny (reason)
-  "Deny the oldest waiting request with REASON, from any buffer (FR-INBOX-3)."
+  "Deny the oldest waiting request with REASON, from any buffer."
   (interactive (list (read-string "Reason for denying (may be empty): ")))
   (let ((request (or (ecc-answer-target)
                      (user-error "No request is waiting"))))
@@ -145,7 +144,7 @@ is being answered from afar."
       request)))
 
 (defun ecc-answer-option (n)
-  "Answer the oldest waiting question with its option N (FR-INBOX-3).
+  "Answer the oldest waiting question with its option N.
 A question with a single item is sent at once; with several, the
 question buffer opens with the first one answered."
   (interactive "p")
@@ -184,7 +183,7 @@ question buffer opens with the first one answered."
   "Keymap of the commands that work from any buffer.
 Bind it to a prefix, for instance (global-set-key (kbd \"C-c c\") ecc-global-map).")
 
-;;;; The mode line indicator (FR-PERM-4)
+;;;; The mode line indicator
 
 (defun ecc-pending-mode-line-string ()
   "Return the mode line text saying how many requests are waiting."
@@ -203,7 +202,7 @@ Bind it to a prefix, for instance (global-set-key (kbd \"C-c c\") ecc-global-map
   "What `ecc-pending-indicator-mode' adds to `global-mode-string'.")
 
 (define-minor-mode ecc-pending-indicator-mode
-  "Show in every mode line how many requests are waiting (FR-PERM-4)."
+  "Show in every mode line how many requests are waiting."
   :global t
   :group 'ecc
   (if ecc-pending-indicator-mode

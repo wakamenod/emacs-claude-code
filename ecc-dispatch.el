@@ -14,11 +14,11 @@
 ;;
 ;; Nothing is dropped.  A message this file does not know, and any error
 ;; raised while handling one, ends up as an `unknown' node in the
-;; transcript and in the log (FR-OUT-1, NFR-2).
+;; transcript and in the log.
 ;;
-;; Streaming (FR-OUT-4): with --include-partial-messages every content
-;; block arrives three times, as a content_block_start, as deltas and as
-;; the complete assistant message.  The start creates a provisional node,
+;; Streaming: with --include-partial-messages every content block
+;; arrives three times, as a content_block_start, as deltas and as the
+;; complete assistant message.  The start creates a provisional node,
 ;; the deltas grow its streamed text, and the assistant message finds
 ;; that node again and fills in the final content, so that the tree has
 ;; one node per block whether or not the stream events came.
@@ -34,7 +34,7 @@
 (require 'ecc-diff)
 
 (defvar ecc-turn-approve-tools '("Edit" "Write" "NotebookEdit")
-  "Tools that a turn-wide approval covers (FR-PERM-7).")
+  "Tools that a turn-wide approval covers.")
 
 (defconst ecc-dispatch-file-tools
   '(("Read" . read) ("Edit" . edit) ("MultiEdit" . edit) ("NotebookEdit" . edit)
@@ -86,7 +86,7 @@ message this version does not understand can arrive between turns --
 `post_turn_summary' did, and opened a turn that nothing would ever
 close, which left the session running for good and every later prompt
 queued behind it (2026-09-08).  Nothing is dropped either way
-\(FR-OUT-1, NFR-2)."
+."
   (ecc-model-add-aside session
                        :type 'unknown
                        :status 'done
@@ -102,10 +102,9 @@ queued behind it (2026-09-08).  Nothing is dropped either way
   "Note in SESSION how long the call MESSAGE reports on has been running.
 The CLI sends this every thirty seconds while a tool is still working,
 under a `tool_use_id\=' of its own -- the id of the call with a
-`-heartbeat-N\=' suffix -- so the call itself is the parent
-\(2026-09-10, docs/verified.md).  A heartbeat that arrives after the
-result is ignored: the heading then says what the call cost, not how
-long it had been waiting."
+`-heartbeat-N\=' suffix -- so the call itself is the parent \(confirmed
+2026-09-10).  A heartbeat that arrives after the result is ignored: the
+heading then says what the call cost, not how long it had been waiting."
   (when-let* ((id (or (alist-get 'parent_tool_use_id message)
                       (alist-get 'tool_use_id message)))
               (node (ecc-model-node session id))
@@ -138,9 +137,9 @@ note rather than among the messages this version does not understand.")
                              (alist-get 'estimated_tokens message)))
     ('control_request_progress
      ;; Progress on a control request Emacs sent, not on the turn: the
-     ;; side question of FR-BTW-3 reports "started" and then every API
-     ;; retry.  It belongs to whoever sent the request, and putting it in
-     ;; the transcript would be noise the CLI never meant for it.
+     ;; side question reports "started" and then every API retry.  It
+     ;; belongs to whoever sent the request, and putting it in the
+     ;; transcript would be noise the CLI never meant for it.
      (run-hook-with-args 'ecc-control-progress-hook session
                          (alist-get 'request_id message) message))
     ((or 'hook_started 'hook_response)
@@ -158,7 +157,7 @@ note rather than among the messages this version does not understand.")
     ('task_summary (ecc-dispatch--task-summary session message))
     ;; What the CLI thinks the session is doing.  Only sent when
     ;; CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS is set, and ecc keeps the
-    ;; state of a session itself (FR-SES-7).
+    ;; state of a session itself.
     ('session_state_changed nil)
     ('permission_denied
      (when-let* ((node (ecc-model-node session (alist-get 'tool_use_id message))))
@@ -166,7 +165,7 @@ note rather than among the messages this version does not understand.")
        (ecc-model-note-tool-finished session node)
        (ecc-model-node-changed session node)))
     ;; /reload-plugins, /reload-skills and a plugin installed while the
-    ;; session runs send the whole list again (FR-INP-3, FR-SES-8).
+    ;; session runs send the whole list again.
     ('commands_changed
      (setf (ecc-session-commands session) (alist-get 'commands message))
      (run-hook-with-args 'ecc-commands-updated-hook session))
@@ -182,8 +181,7 @@ The CLI grows a system subtype whenever it grows a feature -- twenty of
 them can reach the stream of 2.1.265, and the list only gets longer --
 so one this version has no use for is bookkeeping rather than a fault,
 and it is not drawn in the colour of an error.  The raw message is kept
-under the note and in the log, so nothing is dropped \(FR-OUT-1,
-NFR-2)."
+under the note and in the log, so nothing is dropped."
   (ecc-log (ecc-session-name session) "system/%s is not handled"
            (or (alist-get 'subtype message) "?"))
   (ecc-model-add-aside session :type 'system :status 'done
@@ -203,7 +201,7 @@ does, so it goes there rather than into the transcript (2026-09-09)."
   "Apply the system/bridge_state MESSAGE to SESSION.
 Remote Control reports itself this way: `ready\=' once the bridge is up
 and `connected\=' when somebody is on the other end, the latter with
-the epoch of the bridge (docs/verified.md, 2026-09-08).  A `detail\='
+the epoch of the bridge (confirmed 2026-09-08).  A `detail\='
 comes with a state that needs explaining."
   (let ((state (alist-get 'state message))
         (detail (alist-get 'detail message)))
@@ -230,7 +228,7 @@ The CLI sums a turn up as it ends: which message it summarizes, a
 words, and `needs_action\=' -- empty when it does not.  The transcript
 already holds the turn it describes, so this is kept where the state
 line and the dashboard can reach it rather than drawn (measured
-2026-09-08, `docs/verified.md\=')."
+2026-09-08)."
   (let ((detail (alist-get 'status_detail message))
         (needs-action (alist-get 'needs_action message)))
     (setf (alist-get 'turn-summary (ecc-session-progress session))
@@ -258,7 +256,7 @@ updates what it is told and never rebuilds the session."
   (when-let* ((mode (alist-get 'permissionMode message)))
     (setf (ecc-session-permission-mode session) mode))
   ;; A session that never got its process up is still `starting'; init
-  ;; proves the CLI is there (FR-UI-1).
+  ;; proves the CLI is there.
   (when (eq (ecc-session-state session) 'starting)
     (ecc-model-set-state session 'idle))
   (run-hook-with-args 'ecc-session-init-hook session))
@@ -291,11 +289,11 @@ that closes the compaction itself."
                                      (cons 'error (alist-get 'compact_error message))
                                      (cons 'metadata metadata)
                                      (cons 'message message)))
-    ;; The context left starts again from what is in the window now
-    ;; (FR-HINT-5).  Only the boundary knows how much that is; a
-    ;; successful status message is followed by one, so its guess of
-    ;; zero is corrected within the same exchange.  A failed compaction
-    ;; changed nothing and must not move the estimate.
+    ;; The context left starts again from what is in the window now.
+    ;; Only the boundary knows how much that is; a successful status
+    ;; message is followed by one, so its guess of zero is corrected
+    ;; within the same exchange.  A failed compaction changed nothing
+    ;; and must not move the estimate.
     (let ((post (alist-get 'post_tokens metadata)))
       (when (or post (null result) (equal result "success"))
         (setf (ecc-session-context-tokens session) (or post 0))
@@ -308,10 +306,10 @@ that closes the compaction itself."
 (defun ecc-dispatch--task (session message)
   "Apply a task lifecycle MESSAGE to SESSION.
 The node is looked up in the session rather than in the current turn,
-because an asynchronous agent reports after the turn is over (D5).
-A tool that starts a subagent is an agent from then on (FR-OUT-9), even
-when its messages never arrive because it runs in the background; a
-task that is only a backgrounded shell command stays the tool it is."
+because an asynchronous agent reports after the turn is over (D5).  A
+tool that starts a subagent is an agent from then on, even when its
+messages never arrive because it runs in the background; a task that is
+only a backgrounded shell command stays the tool it is."
   (let* ((node (ecc-model-node session (alist-get 'tool_use_id message)))
          (patch (alist-get 'patch message))
          (status (or (alist-get 'status message) (alist-get 'status patch))))
@@ -351,8 +349,7 @@ than added again."
       (ecc-model-update-usage session
                               (alist-get 'usage (alist-get 'message message)))
       ;; The recording carries no system/init, so this is the only place
-      ;; a session read from history learns which model it talks to
-      ;; (FR-HINT-3).
+      ;; a session read from history learns which model it talks to.
       (when-let* ((model (alist-get 'model (alist-get 'message message))))
         (setf (ecc-session-last-model session) model)))
     (dolist (block (ecc-protocol-content-blocks message))
@@ -390,7 +387,7 @@ DATA describe it.  Returns the node."
       node)))
 
 (defconst ecc-dispatch-agent-tools '("Task" "Agent")
-  "Names of the tools that start a subagent (FR-OUT-9).")
+  "Names of the tools that start a subagent.")
 
 (defun ecc-dispatch--agent-task-p (task)
   "Return non-nil when the TASK lifecycle message is a subagent.
@@ -415,7 +412,7 @@ duration in its place (2026-09-09)."
   "Return the node MESSAGE belongs under in TURN of SESSION.
 A message with a parent_tool_use_id belongs to a subagent, so it goes
 under the tool node that started it, and that tool is an agent from
-then on (FR-OUT-9).  A node that starts no subagent keeps its type and
+then on.  A node that starts no subagent keeps its type and
 only takes the message as a child."
   (let ((parent-id (alist-get 'parent_tool_use_id message)))
     (or (when-let* ((node (and parent-id (ecc-model-node session parent-id))))
@@ -486,7 +483,7 @@ known."
         (ecc-file-entry-snapshot entry))))
 
 (defun ecc-dispatch--todos (session todos)
-  "Replace the task list of SESSION with the TodoWrite TODOS (FR-OUT-13)."
+  "Replace the task list of SESSION with the TodoWrite TODOS."
   (let ((n 0))
     (ecc-model-replace-tasks
      session
@@ -521,8 +518,8 @@ started with."
            (let ((text (alist-get 'text block)))
              (cond
               ;; The note the CLI writes before the record of a local
-              ;; command is addressed to the model, and is not drawn
-              ;; (FR-HIST-2); the log keeps it.
+              ;; command is addressed to the model, and is not drawn;
+              ;; the log keeps it.
               ((ecc-protocol-command-caveat-p text)
                (ecc-log (ecc-session-name session) "local command caveat skipped"))
               ((ecc-protocol-parse-command text)
@@ -574,7 +571,7 @@ and they are not anybody\='s prompt."
   "Add the local command TEXT records to SESSION under PARENT.
 A slash command the CLI answered itself is not a prompt: it opens no
 turn, and what it printed arrives after it and is put on this node
-\(FR-HIST-2)."
+."
   (let* ((fields (ecc-protocol-parse-command text))
          (node (ecc-model-add-node session :type 'command :status 'done
                                    :parent parent
@@ -590,7 +587,7 @@ turn, and what it printed arrives after it and is put on this node
 TEXT is the whole `<local-command-stdout>' element, or what
 `system/local_command' carries.  Without a command to put it on -- a
 page of a recording can start between the two lines -- it is kept as a
-system note rather than dropped (NFR-2)."
+system note rather than dropped."
   (let* ((output (or (ecc-protocol-command-output text) text))
          (id (alist-get 'command-node (ecc-session-progress session)))
          (node (and id (ecc-model-node session id))))
@@ -739,7 +736,7 @@ the patch of an Edit or a Write, the id and status of a task."
                :data (list (cons 'request request)
                            (cons 'message message)
                            ;; What the file looks like now, for the diff
-                           ;; shown before the change is allowed (FR-DIFF-1).
+                           ;; shown before the change is allowed.
                            (cons 'before
                                  (when (memq (cdr (assoc tool-name
                                                          ecc-dispatch-file-tools))
@@ -750,9 +747,8 @@ the patch of an Edit or a Write, the id and status of a task."
 
 (defun ecc-dispatch-auto-approve-p (session request)
   "Return non-nil when SESSION may allow REQUEST without asking.
-A turn wide approval covers `ecc-turn-approve-tools' (FR-PERM-7), and a
-tool the user allowed for the whole session is never asked about again
-\(FR-PERM-9)."
+A turn wide approval covers `ecc-turn-approve-tools', and a tool the
+user allowed for the whole session is never asked about again ."
   (let ((name (ecc-request-tool-name request)))
     (and (eq (ecc-request-kind request) 'permission)
          (or (and (ecc-session-auto-approve-turn session)
@@ -777,10 +773,10 @@ The CLI reports what became of a prompt it was handed: `queued\=',
 `started\=' and `completed\=', each naming the uuid of the user message
 it is about.  A prompt sent from the Remote Control bridge arrives this
 way and no other -- the text is not in the stream unless
-`ecc-replay-user-messages\=' is on (docs/verified.md, 2026-09-08) --
-which is worth knowing but not worth a line in the transcript: the
-answer that follows is the line.  It is kept in the progress
-information, where the state line can reach it, and in the log."
+`ecc-replay-user-messages\=' is on (confirmed 2026-09-08) -- which is
+worth knowing but not worth a line in the transcript: the answer that
+follows is the line.  It is kept in the progress information, where the
+state line can reach it, and in the log."
   (let ((state (alist-get 'state message))
         (uuid (alist-get 'command_uuid message)))
     (ecc-log (ecc-session-name session) "prompt %s: %s" (or uuid "?") state)
@@ -806,8 +802,8 @@ information, where the state line can reach it, and in the log."
       ;; cannot have, for one).
       (setq response (list (cons 'error (or (alist-get 'error outer) t)))))
     ;; The initialize response carries the model catalogue beside the
-    ;; commands, and /model is offered from it (FR-INP-5).  It is read
-    ;; first so that the hook below sees both.
+    ;; commands, and /model is offered from it.  It is read first so
+    ;; that the hook below sees both.
     (when (assq 'models response)
       (setf (ecc-session-models session) (alist-get 'models response)))
     (when (assq 'commands response)
@@ -836,7 +832,7 @@ so does the state line."
       (run-hook-with-args 'ecc-progress-hook session))
     ;; A control request of our own can be withdrawn too; its callback
     ;; will never be called, so it is forgotten rather than left to time
-    ;; out (NFR-4).
+    ;; out.
     (when request-id
       (ecc-proc-take-control-callback session request-id))
     request))
@@ -866,7 +862,7 @@ so does the state line."
     (ecc-proc-drain-queue session)
     turn))
 
-;;;; stream_event (FR-OUT-4)
+;;;; stream_event
 
 (defun ecc-dispatch--stream-event (session message)
   "Apply the streaming MESSAGE to SESSION.

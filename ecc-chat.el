@@ -11,10 +11,10 @@
 ;; `ecc-chat-mode' is the major mode of a session buffer: the transcript
 ;; `ecc-render' draws, and under it, after a separator, the prompt
 ;; region the user types in.  Under the region come another rule and the
-;; permission mode the session runs, which S-TAB walks through
-;; (FR-SES-6); that footer is read-only text, and the region ends where
-;; it begins rather than at the end of the buffer.  The placeholder of
-;; an empty region is ghost text.
+;; permission mode the session runs, which S-TAB walks through; that
+;; footer is read-only text, and the region ends where it begins rather
+;; than at the end of the buffer.  The placeholder of an empty region is
+;; ghost text.
 ;;
 ;; The two parts answer to different keys.  The transcript is read-only
 ;; text carrying `ecc-chat-transcript-map' as its `keymap' property, so
@@ -26,13 +26,12 @@
 ;; A request waiting for an answer is answered from the prompt region
 ;; too, without walking to it: C-c C-a allows one and C-c C-d denies
 ;; one, both through `ecc-perm-current-request', which falls back to the
-;; oldest request waiting when the point is not on one (FR-PERM-6).
+;; oldest request waiting when the point is not on one.
 ;;
 ;; Folding and movement work on the headings the renderer marked (the
 ;; `ecc-heading', `ecc-node' and `ecc-depth' text properties) and on the
 ;; node table it keeps; the commands here are the keys of magit-section
-;; the transcript used to have, written for that structure (FR-OUT-3,
-;; FR-OUT-14).
+;; the transcript used to have, written for that structure.
 
 ;;; Code:
 
@@ -91,8 +90,8 @@
 
 (defvar ecc-chat-return-sends nil
   "Non-nil makes RET send the prompt, the way the terminal client does.
-Off, RET inserts a newline and \\<ecc-chat-mode-map>\\[ecc-prompt-send] sends; on,
-\\[ecc-chat-newline] inserts the newline (FR-INP-1).
+Off, RET inserts a newline and \\<ecc-chat-mode-map>\\[ecc-prompt-send]
+sends; on, \\[ecc-chat-newline] inserts the newline.
 
 RET is a newline because that is what RET is in Emacs; a reader who
 wants the terminal habit sets this, or rebinds the two keys in
@@ -128,9 +127,9 @@ of the footer rather than into it.")
 
 (defvar ecc-chat-placeholder-functions nil
   "Functions offering a placeholder for an empty prompt region.
-Each is called with the session and returns a string or nil; the
-first string wins over `ecc-chat-placeholder'.  The suggestion of
-FR-HINT-4 arrives this way.")
+Each is called with the session and returns a string or nil; the first
+string wins over `ecc-chat-placeholder'.  The prompt suggestion arrives
+this way.")
 
 (defvar ecc-chat-show-footer t
   "Non-nil says which permission mode the session runs under the prompt.
@@ -205,7 +204,7 @@ the dim face.")
     (define-key map (kbd "C-c t") #'ecc-switch-session)
     (define-key map (kbd "C-c C-e") #'ecc-session-export-markdown)
     ;; `?' stays self-inserting in a region one writes prose in, so the
-    ;; menu is on C-c ? here and on ? in the transcript (NFR-10).
+    ;; menu is on C-c ? here and on ? in the transcript.
     (define-key map (kbd "C-c ?") #'ecc-menu)
     map)
   "Keymap of `ecc-chat-mode', in force in the prompt region.
@@ -239,7 +238,7 @@ and then offers the slash commands (`ecc-chat-slash').")
     (define-key map (kbd "a") #'ecc-perm-allow)
     (define-key map (kbd "d") #'ecc-session-review-or-deny)
     (define-key map (kbd "C-c C-k") #'ecc-session-interrupt)
-    ;; Movement and extraction (FR-OUT-14)
+    ;; Movement and extraction
     (define-key map (kbd "]") #'ecc-chat-next-block)
     (define-key map (kbd "[") #'ecc-chat-previous-block)
     (define-key map (kbd "+") #'ecc-chat-expand-all)
@@ -296,17 +295,17 @@ A key not here falls through to `ecc-chat-mode-map'.")
   ;; wanted; `text-mode' turns none on.
   (setq-local truncate-lines nil)
   (setq-local word-wrap t)
-  ;; A folded body shows as an ellipsis after its heading (FR-OUT-3).
+  ;; A folded body shows as an ellipsis after its heading.
   (add-to-invisibility-spec '(ecc-fold . t))
   ;; Markdown markup symbols are hidden by the ecc-markup spec.
   (add-to-invisibility-spec '(ecc-markup . nil))
   (setq-local completion-at-point-functions
               (list #'ecc-prompt-capf #'ecc-prompt-at-capf))
-  ;; A request waiting for an answer is what the mode line is for
-  ;; (FR-PERM-4).  What the session costs and how much room is left in
-  ;; its context are on the right of the header line instead, where
-  ;; they do not crowd the mode name; `ecc-mode-line-format\=' puts them
-  ;; back for whoever wants them there (FR-HINT-3).
+  ;; A request waiting for an answer is what the mode line is for.  What
+  ;; the session costs and how much room is left in its context are on
+  ;; the right of the header line instead, where they do not crowd the
+  ;; mode name; `ecc-mode-line-format\=' puts them back for whoever
+  ;; wants them there.
   (setq-local mode-line-process
               ;; Escaped where it is put together rather than in each
               ;; piece: what the pieces return is text for a person.
@@ -315,7 +314,7 @@ A key not here falls through to `ecc-chat-mode-map'.")
                                (if (fboundp 'ecc-hint-mode-line-string)
                                    (ecc-hint-mode-line-string)
                                  "")))))
-  ;; An image on the clipboard is worth a file reference (FR-INP-9).
+  ;; An image on the clipboard is worth a file reference.
   (when (fboundp 'yank-media-handler)
     (yank-media-handler "image/.*" #'ecc-prompt-yank-image))
   (setq-local dnd-protocol-alist
@@ -468,7 +467,7 @@ wherever it stands (`ecc-prompt-command-bounds\=')."
   "Insert a slash, and offer the slash commands when it starts one.
 N is the prefix argument, as for `self-insert-command\='.  The slash is
 inserted first, so that leaving the question with `C-g\=' keeps it
-\(FR-INP-3)."
+."
   (interactive "p")
   (self-insert-command n ?/)
   (when (and (= n 1) (progn (require 'ecc-prompt) t)
@@ -542,26 +541,26 @@ BUFFER defaults to the current one.  Returns the text shown, or nil."
         text)
        (t (ecc-chat--remove-placeholder) nil)))))
 
-;;;; The footer: which permission mode the session runs (FR-SES-6)
+;;;; The footer: which permission mode the session runs
 
 ;; Under the prompt region come a rule and one dim line naming the
 ;; permission mode, as the terminal client has them under its own
 ;; prompt.
 ;;
-;; They are read-only buffer text, and the region above them ends at
-;; the `ecc-chat--prompt-end' marker rather than at the end of the
-;; buffer.  Ghost text was tried first -- the `after-string' of an
-;; overlay, the way the placeholder is drawn -- and the cursor could
-;; not be kept out of it: a string shown after point takes the cursor
-;; with it, and the `cursor' property that is supposed to bring it back
-;; did not once the placeholder had a string at the same place
-;; (2026-09-08, `docs/decisions.md').  Text has no such question: the
-;; end of the draft is a position in the buffer like any other.
+;; They are read-only buffer text, and the region above them ends at the
+;; `ecc-chat--prompt-end' marker rather than at the end of the buffer.
+;; Ghost text was tried first -- the `after-string' of an overlay, the
+;; way the placeholder is drawn -- and the cursor could not be kept out
+;; of it: a string shown after point takes the cursor with it, and the
+;; `cursor' property that is supposed to bring it back did not once the
+;; placeholder had a string at the same place (decided 2026-09-08).
+;; Text has no such question: the end of the draft is a position in the
+;; buffer like any other.
 ;;
-;; What the renderer does is unaffected, because it draws only up to
-;; the start of the prompt region and never deletes past it (FR-UI-2).
-;; The footer is written with `with-silent-modifications', so it stays
-;; out of the undo history of the draft as the placeholder does.
+;; What the renderer does is unaffected, because it draws only up to the
+;; start of the prompt region and never deletes past it. The footer is
+;; written with `with-silent-modifications', so it stays out of the undo
+;; history of the draft as the placeholder does.
 
 (defun ecc-chat--permission-mode-label (session)
   "Return what the footer calls the permission mode SESSION runs.
@@ -678,7 +677,7 @@ goes to the first of it."
       (or (cadr (member current cycle)) (car cycle)))))
 
 (defun ecc-chat-cycle-permission-mode ()
-  "Switch the session of this buffer to the next permission mode (FR-SES-6).
+  "Switch the session of this buffer to the next permission mode.
 The modes of `ecc-chat-permission-mode-cycle\=' in order, as shift+tab
 walks through them in the terminal client.
 
@@ -769,7 +768,7 @@ The Files and Tasks rows are drawn without a node and give nil."
   "Return the id of the heading whose line the point is on, or nil."
   (get-text-property (line-beginning-position) 'ecc-heading))
 
-;;;; Folding (FR-OUT-3)
+;;;; Folding
 
 (defun ecc-chat-toggle ()
   "Fold or unfold the node at point.
@@ -814,16 +813,16 @@ and so on, the way the number keys of magit-section did."
   (ecc-chat-show-level 4))
 
 (defun ecc-chat-expand-all ()
-  "Unfold every block in the transcript (FR-OUT-14 c)."
+  "Unfold every block in the transcript."
   (interactive)
   (mapc #'ecc-render-show-node (ecc-render-block-ids)))
 
 (defun ecc-chat-collapse-all ()
-  "Fold every block in the transcript, keeping the turns open (FR-OUT-14 c)."
+  "Fold every block in the transcript, keeping the turns open."
   (interactive)
   (mapc #'ecc-render-hide-node (ecc-render-block-ids)))
 
-;;;; Movement (FR-OUT-14 a, b)
+;;;; Movement (b)
 
 (defun ecc-chat--next-heading (position)
   "Return the start of the first heading line after POSITION, or nil."
@@ -924,22 +923,22 @@ and so on, the way the number keys of magit-section did."
       (user-error (if forward "No further section" "No earlier section")))))
 
 (defun ecc-chat-next-turn ()
-  "Move to the next turn (FR-OUT-14 a)."
+  "Move to the next turn."
   (interactive)
   (ecc-chat--goto-neighbour (ecc-render-turn-ids) t))
 
 (defun ecc-chat-previous-turn ()
-  "Move to the previous turn (FR-OUT-14 a)."
+  "Move to the previous turn."
   (interactive)
   (ecc-chat--goto-neighbour (ecc-render-turn-ids) nil))
 
 (defun ecc-chat-next-block ()
-  "Move to the next tool, diff or thinking block (FR-OUT-14 b)."
+  "Move to the next tool, diff or thinking block."
   (interactive)
   (ecc-chat--goto-neighbour (ecc-render-block-ids) t))
 
 (defun ecc-chat-previous-block ()
-  "Move to the previous tool, diff or thinking block (FR-OUT-14 b)."
+  "Move to the previous tool, diff or thinking block."
   (interactive)
   (ecc-chat--goto-neighbour (ecc-render-block-ids) nil))
 

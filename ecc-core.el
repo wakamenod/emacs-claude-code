@@ -29,9 +29,9 @@
   "Name of, or path to, the Claude Code CLI executable."
   :type 'string)
 
-;; There is deliberately no `ecc-model' (2026-09-08, `docs/decisions.md').
-;; The model belongs to the Claude Code settings, and a session that wants
-;; one of its own carries it in `:model\=' among its options.
+;; There is deliberately no `ecc-model' (decided 2026-09-08). The model
+;; belongs to the Claude Code settings, and a session that wants one of
+;; its own carries it in `:model\=' among its options.
 
 (defcustom ecc-permission-mode nil
   "Initial permission mode passed with --permission-mode.
@@ -46,16 +46,16 @@ Each is called with the session and the mode the CLI acknowledged.
 The switch is a control request, so its answer arrives from the
 process filter rather than from the command that asked for it, and
 this is how what shows the mode -- the footer of `ecc-chat' -- hears
-about it (FR-SES-6).")
+about it.")
 
-;; There is deliberately no `ecc-remote-control' setting (2026-09-10,
-;; `docs/decisions.md').  Remote Control belongs to the Claude Code
-;; settings (`remoteControlAtStartup' at user scope) and this package
-;; follows them: the initialize response says whether this session should
-;; turn the bridge on, and it is obeyed.  A session that wants otherwise
+;; There is deliberately no `ecc-remote-control' setting (decided
+;; 2026-09-10).  Remote Control belongs to the Claude Code settings
+;; (`remoteControlAtStartup' at user scope) and this package follows
+;; them: the initialize response says whether this session should turn
+;; the bridge on, and it is obeyed.  A session that wants otherwise
 ;; carries `:remote-control' among its options, and
-;; `ecc-remote-control-toggle' switches a running one.  The name a session
-;; takes on the bridge is its own.
+;; `ecc-remote-control-toggle' switches a running one.  The name a
+;; session takes on the bridge is its own.
 
 (defvar ecc-remote-control-functions nil
   "Functions run when the Remote Control state of a session changes.
@@ -65,9 +65,9 @@ asked, so this is how the header line hears about it.")
 
 ;; There is deliberately no `ecc-effort', `ecc-autocompact',
 ;; `ecc-allowed-tools', `ecc-disallowed-tools' or `ecc-safe-mode'
-;; (2026-09-10, `docs/decisions.md').  All five belong to the Claude Code
-;; settings, the way the model and the budget do; a session that wants one
-;; of its own carries it among its options, as `:effort', `:autocompact',
+;; (decided 2026-09-10).  All five belong to the Claude Code settings,
+;; the way the model and the budget do; a session that wants one of its
+;; own carries it among its options, as `:effort', `:autocompact',
 ;; `:allowed-tools', `:disallowed-tools' or `:safe-mode'.  `--safe-mode'
 ;; in particular takes away the MCP servers, skills, commands and agents
 ;; this package exists to surface, so nothing here recommends it.
@@ -93,8 +93,8 @@ The CLI then echoes every user message on the output stream, marked
 what it sent -- and what is left is a prompt somebody sent from
 somewhere else: from a phone over Remote Control, above all.  Without
 this the transcript shows the answer to such a prompt with nothing in
-front of it, since the text reaches the CLI without ever passing
-through Emacs (measured 2026-09-08, `docs/verified.md\=').
+front of it, since the text reaches the CLI without ever passing through
+Emacs (measured 2026-09-08).
 
 It costs one extra line per turn and nothing else.")
 
@@ -110,11 +110,11 @@ It costs one extra line per turn and nothing else.")
 Only useful without --safe-mode, which disables hooks altogether.")
 
 (defcustom ecc-stream-throttle 0.05
-  "Seconds to gather streaming deltas before drawing them (FR-OUT-10).
-Zero draws every delta as it arrives.  Thinning by a count of deltas
-was dropped on 2026-09-10, with the requirement (`docs/decisions.md');
-a rate in seconds says what it does, and zero covers the case a count
-of one covered."
+  "Seconds to gather streaming deltas before drawing them.
+Zero draws every delta as it arrives.  Thinning by a count of deltas was
+dropped on 2026-09-10 along with the requirement behind it; a rate in
+seconds says what it does, and zero covers the case a count of one
+covered."
   :type 'number)
 
 (defvar ecc-extra-args nil
@@ -134,9 +134,9 @@ command list to run.  Nil runs the command unchanged."
   "Function returning the --mcp-config argument of a session, or nil.
 `ecc-mcp' installs itself here when it is loaded, which is how
 `ecc-proc' can register the Emacs MCP server without depending on it
-\(FR-MCP-1).")
+.")
 
-;;;; Logging (NFR-8)
+;;;; Logging
 
 (defcustom ecc-log-max-lines 5000
   "Maximum number of lines kept in a session log buffer.
@@ -435,7 +435,7 @@ Implemented locally so that no dependency on `org-id' is needed."
 ;; vectors, not lists: `json-serialize' treats a list as an object, so a
 ;; parsed array read as a list cannot be echoed back.  Echoing input
 ;; back verbatim is mandatory for the allow response, so vectors are the
-;; only shape that round-trips.  See docs/verified.md.
+;; only shape that round-trips.
 
 (defun ecc--json-read (string)
   "Parse STRING as one JSON object and return it as an alist.

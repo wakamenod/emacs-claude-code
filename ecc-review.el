@@ -8,21 +8,21 @@
 
 ;;; Commentary:
 
-;; The main way of working the requirements describe (FR-DIFF-3): let
-;; Claude change things, then open every change of the session as one
-;; diff, walk the hunks, attach a comment to the ones that need work and
-;; send all the comments as a single prompt (FR-DIFF-4, FR-DIFF-5).
+;; The main way of working the requirements describe: let Claude change
+;; things, then open every change of the session as one diff, walk the
+;; hunks, attach a comment to the ones that need work and send all the
+;; comments as a single prompt.
 ;;
 ;; The diff of a file git tracks is what `git diff' says; a file outside
 ;; a repository, or not yet added to one, is diffed against what it was
 ;; before the first change of the session (`ecc-file-entry-original').
 ;; The buffer is a read-only `diff-mode', so n, p and RET are the usual
-;; ones (FR-DIFF-6).
+;; ones.
 ;;
 ;; The same buffer reviews one proposal before it is applied: a comment
 ;; on the diff of a pending Edit or Write goes back as the message of
-;; the deny (FR-DIFF-2), and `ecc-review-edit-proposal' changes the text
-;; of the proposal and allows it with the new text (FR-DIFF-7).
+;; the deny, and `ecc-review-edit-proposal' changes the text of the
+;; proposal and allows it with the new text.
 
 ;;; Code:
 
@@ -42,11 +42,11 @@
 
 (defvar ecc-review-header
   "Review comments on the changes below.  Please act on each of them."
-  "First line of the prompt the review comments are sent as (FR-DIFF-5).")
+  "First line of the prompt the review comments are sent as.")
 
 (defvar ecc-review-proposal-header
   "Review comments on the proposal below.  Please act on each of them and propose it again."
-  "First line of the deny message built from comments on a proposal (FR-DIFF-2).")
+  "First line of the deny message built from comments on a proposal.")
 
 (defcustom ecc-review-context-lines 3
   "Lines of context around a change in a diff the review makes itself."
@@ -68,7 +68,7 @@
 (defun ecc-review-files (session &optional paths)
   "Return the file entries of SESSION that were edited or written.
 When PATHS is given only those files are returned, in the order of
-PATHS.  Entries only read are left out (FR-DIFF-3)."
+PATHS.  Entries only read are left out."
   (let ((changed (seq-filter (lambda (entry)
                                (> (+ (ecc-file-entry-edits entry)
                                      (ecc-file-entry-writes entry))
@@ -150,8 +150,7 @@ b/ prefixes on the file names relative to ROOT."
   "Return the diff of the file of ENTRY over the session, or nil.
 The whole file before the first change is compared with the file now;
 when the start is not known, the changes are shown one after the other
-from what the CLI reported for each (FR-DIFF-3, files git does not
-track)."
+from what the CLI reported for each (files git does not track)."
   (let* ((path (ecc-file-entry-path entry))
          (original (ecc-file-entry-original entry))
          (current (ecc-review--current-content entry))
@@ -415,7 +414,7 @@ being the whole hunk, and :position."
           (goto-char (max (point) (1- (cdr bounds))))))
       (nreverse hunks))))
 
-;;;; Comments (FR-DIFF-4)
+;;;; Comments
 
 (defun ecc-review-comment-overlays ()
   "Return the live comment overlays of this buffer."
@@ -458,7 +457,7 @@ being the whole hunk, and :position."
 
 (defun ecc-review-comment (text)
   "Attach the comment TEXT to the hunk at point, replacing an earlier one.
-Interactively the earlier comment is offered for editing (FR-DIFF-4)."
+Interactively the earlier comment is offered for editing."
   (interactive
    (progn
      (unless (ecc-review--hunk-bounds)
@@ -498,7 +497,7 @@ Each is the plist of `ecc-review-hunk-at' with :comment added."
           (ecc--truncate (plist-get comment :comment) 60)))
 
 (defun ecc-review-list-comments ()
-  "Pick one of the comments and move to its hunk (FR-DIFF-4)."
+  "Pick one of the comments and move to its hunk."
   (interactive)
   (let* ((comments (or (ecc-review-comments) (user-error "No comment yet")))
          (labels (mapcar #'ecc-review--comment-label comments))
@@ -506,7 +505,7 @@ Each is the plist of `ecc-review-hunk-at' with :comment added."
          (comment (nth (seq-position labels choice) comments)))
     (goto-char (plist-get comment :position))))
 
-;;;; The message (FR-DIFF-5)
+;;;; The message
 
 (defun ecc-review--fence (text)
   "Return a fence line that TEXT cannot close early."
@@ -566,9 +565,9 @@ COMMENTS are the plists of `ecc-review-comments'; HEADER replaces
   (format "*ecc-review-message: %s*" (ecc-session-name session)))
 
 (defun ecc-review-send ()
-  "Open the comments as one prompt to confirm and send (FR-DIFF-5).
+  "Open the comments as one prompt to confirm and send.
 In the review of a proposal the prompt is sent as the message of the
-deny instead (FR-DIFF-2)."
+deny instead."
   (interactive)
   (let* ((session (or ecc-review--session (user-error "Not a review buffer")))
          (text (or (ecc-review-buffer-message)
@@ -623,7 +622,7 @@ deny instead (FR-DIFF-2)."
     (when (buffer-live-p review)
       (pop-to-buffer review))))
 
-;;;; Opening a review (FR-DIFF-3)
+;;;; Opening a review
 
 (defun ecc-review-session ()
   "Return the session a review command is about, or signal an error."
@@ -646,7 +645,7 @@ file has a change to show."
 
 ;;;###autoload
 (defun ecc-review (&optional session paths)
-  "Open every change of SESSION as one diff to review (FR-DIFF-3).
+  "Open every change of SESSION as one diff to review.
 SESSION defaults to the session of the current buffer.  PATHS, given
 interactively with a prefix argument, restricts the review to those
 files."
@@ -675,7 +674,7 @@ files."
   (interactive)
   (ecc-perm-close-buffer (current-buffer)))
 
-;;;; Reviewing one proposal (FR-DIFF-2)
+;;;; Reviewing one proposal
 
 (defun ecc-review-request-diff (request &optional before)
   "Return the diff of the Edit or Write REQUEST as unified diff text.
@@ -725,7 +724,7 @@ REQUEST defaults to the one at point.  Returns the buffer."
 
 (defun ecc-review-comment-request (text)
   "Open the review of the request at point and put the comment TEXT on it.
-The way a comment is left from the transcript (FR-DIFF-2)."
+The way a comment is left from the transcript."
   (interactive (list nil))
   (let ((buffer (ecc-review-request)))
     (pop-to-buffer buffer)
@@ -759,7 +758,7 @@ The way a comment is left from the transcript (FR-DIFF-2)."
 
 (add-hook 'ecc-request-resolved-hook #'ecc-review--on-request-resolved)
 
-;;;; Editing a proposal before allowing it (FR-DIFF-7)
+;;;; Editing a proposal before allowing it
 
 (defvar ecc-review-edited-note
   "The user changed the earlier %s (%s) as follows before applying it.  Work from this from now on:"
@@ -809,7 +808,7 @@ the proposal and what was applied follows.")
          buffer)))
 
 (defun ecc-review-edit-proposal (&optional request)
-  "Edit the text the pending REQUEST proposes, to apply it changed (FR-DIFF-7).
+  "Edit the text the pending REQUEST proposes, to apply it changed.
 REQUEST defaults to the one this buffer reviews, then to the one at
 point.  Returns the buffer."
   (interactive)

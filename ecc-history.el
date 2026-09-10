@@ -11,7 +11,7 @@
 ;; The CLI keeps every conversation as one JSON object per line under
 ;; ~/.claude/projects.  This module reads such a file back into the
 ;; model of `ecc-model', so that a past session can be read in the same
-;; buffer as a live one and then resumed (FR-HIST-1 to 3).
+;; buffer as a live one and then resumed.
 ;;
 ;; The file is read from the end: opening it costs the last
 ;; `ecc-history-page-turns' turns, and the button at the top of the
@@ -43,13 +43,13 @@ It holds one subdirectory per working directory, each with one jsonl
 file per session.")
 
 (defvar ecc-history-page-turns 50
-  "Number of turns read when a recorded conversation is opened (FR-HIST-1).")
+  "Number of turns read when a recorded conversation is opened.")
 
 (defvar ecc-history-include-sidechain nil
   "Non-nil replays the subagent lines of a recorded conversation.
 The CLI of this version writes none: a subagent leaves its transcript
 beside the session file instead, so the lines are skipped and only
-counted (FR-HIST-2).  See docs/verified.md.")
+counted.")
 
 (defconst ecc-history-suppressed-hooks
   '(ecc-sync-file-changed-hook
@@ -80,8 +80,7 @@ Every character that is not a letter, a digit or a dash becomes a dash,
 which turns a path into one flat name.  The path is the one with the
 symbolic links resolved, which is what the CLI writes: a session
 started in /var/folders is recorded under /private/var/folders on
-macOS.  Checked against every recording on this machine, see
-docs/verified.md."
+macOS.  Checked against every recording on this machine."
   (let ((path (directory-file-name (file-truename (expand-file-name root)))))
     (replace-regexp-in-string "[^A-Za-z0-9-]" "-" path)))
 
@@ -119,7 +118,7 @@ which Emacs may not know, so the file is looked for by name."
 A line is only parsed when its type says it might be a prompt, which
 is what makes paging over a long recording cheap.  ABANDONED, when
 given, is the hash of uuids of a branch nobody continued; a turn of
-one of those is not a turn of this conversation (FR-HIST-1)."
+one of those is not a turn of this conversation."
   (let ((index -1) starts)
     (dolist (line lines (nreverse starts))
       (cl-incf index)
@@ -144,10 +143,10 @@ when there is no turn left to read."
   "Return the paging position of a page that starts at line FROM.
 Zero when no turn of STARTS begins before FROM: the lines left over are
 the bookkeeping the CLI writes before the first prompt, and offering to
-read them would offer nothing (FR-HIST-1)."
+read them would offer nothing."
   (if (seq-find (lambda (index) (< index from)) starts) from 0))
 
-;;;; Branches (FR-HIST-1)
+;;;; Branches
 
 ;; A recording is a tree, not a list.  Editing an earlier message in the
 ;; interactive CLI, interrupting a turn, and two processes resuming the
@@ -161,7 +160,7 @@ read them would offer nothing (FR-HIST-1)."
 ;; series.  What is left over is only dropped when it hangs off that
 ;; series: a compaction starts a fresh root, and everything before it is
 ;; a different tree, not an abandoned branch, so it stays (verified
-;; against every recording on this machine, see docs/verified.md).
+;; against every recording on this machine).
 
 (defun ecc-history--links (lines)
   "Return a hash mapping the uuid of each of LINES to that of its parent."
@@ -223,7 +222,7 @@ prompt that follows it or by the end of the page."
     turn))
 
 (defun ecc-history--note-sidechain (session count)
-  "Note in SESSION that COUNT subagent lines were skipped (FR-HIST-2)."
+  "Note in SESSION that COUNT subagent lines were skipped."
   (when (> count 0)
     (ecc-model-add-node session :type 'system :status 'done
                         :data (list (cons 'kind 'sidechain)
@@ -242,7 +241,7 @@ only place the time the CLI measured is written down."
   "Keep the recording-only system MESSAGE of SESSION as a folded note.
 The stream never sends these, so handing them to `ecc-dispatch' would
 file them among the messages this version does not understand; they are
-bookkeeping and belong out of the way (FR-HIST-2)."
+bookkeeping and belong out of the way."
   (ecc-model-add-node session :type 'system :status 'done
                       :data (list (cons 'kind 'history)
                                   (cons 'text (or (alist-get 'content message)
@@ -270,9 +269,8 @@ PROMPT is what the message opens a turn with, or nil."
   "Feed LINES of a recorded conversation to SESSION and return the turns made.
 Each prompt opens a turn, everything else goes through `ecc-dispatch'.
 ABANDONED, when given, is the hash of uuids that belong to a branch
-nobody continued; those lines are left out (FR-HIST-1).  KEEP-OPEN
-leaves the last turn open, for a caller that will bring the rest of
-it in a moment."
+nobody continued; those lines are left out.  KEEP-OPEN leaves the last
+turn open, for a caller that will bring the rest of it in a moment."
   (let ((made 0) (sidechain 0) (time nil))
     (dolist (line lines)
       (when-let* ((message (ecc-protocol-history-parse line)))
@@ -322,14 +320,14 @@ the recording says it ended, which is in the past."
         (ecc-model-set-state session state)))
     made))
 
-;;;; Loading a page (FR-HIST-1)
+;;;; Loading a page
 
 (defun ecc-history-load (session &optional n-turns file)
   "Read the last N-TURNS turns of the recording of SESSION into it.
 N-TURNS defaults to `ecc-history-page-turns' and FILE to the recording
 of the session id.  Returns the number of turns read.  The line the
 page starts at is kept as the paging position, so that the button at
-the top of the buffer can read the page before it (FR-HIST-1)."
+the top of the buffer can read the page before it."
   (let* ((file (or file (ecc-history-file (ecc-session-id session))
                    (user-error "No recorded conversation for %s"
                                (ecc-session-id session))))
@@ -348,7 +346,7 @@ the top of the buffer can read the page before it (FR-HIST-1)."
 (defun ecc-history-load-more (session &optional n-turns)
   "Read the N-TURNS turns before the ones SESSION already shows.
 The turns are put in front of the ones already there, and the buffer
-is drawn again from the top (FR-HIST-1).  Returns the number read."
+is drawn again from the top.  Returns the number read."
   (interactive (list (or (bound-and-true-p ecc-render--session)
                          (user-error "This buffer is not a session"))))
   (let* ((offset (ecc-session-history-offset session))
@@ -392,7 +390,7 @@ drawn rather than the live region alone."
   (let ((offset (ecc-session-history-offset session)))
     (and offset (> offset 0))))
 
-;;;; Opening a recorded conversation (FR-DASH-3)
+;;;; Opening a recorded conversation
 
 (defvar ecc-history-scan-head-bytes 8192
   "Bytes read from the start of a recording when it is only described.
@@ -452,7 +450,7 @@ The alist also carries `file', `session-id' and `mtime'."
 (defun ecc-history-recordings (&optional project-root)
   "Return a description of every recording, most recently used first.
 With PROJECT-ROOT, only the recordings whose working directory is under
-it.  Each is the alist of `ecc-history-scan-file' (FR-DASH-2 c)."
+it.  Each is the alist of `ecc-history-scan-file'."
   (let* ((root (and project-root
                     (file-name-as-directory
                      (file-truename (expand-file-name project-root)))))
@@ -495,7 +493,7 @@ same kind of buffer as a live conversation and resumed from there."
 
 ;;;###autoload
 (defun ecc-history-open (session-id)
-  "Show the recorded conversation SESSION-ID in a session buffer (FR-DASH-3).
+  "Show the recorded conversation SESSION-ID in a session buffer.
 Interactively the recordings are offered by name."
   (interactive
    (list (let* ((files (ecc-history-files))
@@ -518,15 +516,15 @@ Interactively the recordings are offered by name."
     (ecc-display-session session)
     session))
 
-;;;; Resuming what was read (FR-HIST-3, FR-SES-4)
+;;;; Resuming what was read
 
 ;;;###autoload
 (defun ecc-history--check-not-running (session)
-  "Refuse to resume SESSION while another process is running it (FR-TUI-5).
+  "Refuse to resume SESSION while another process is running it.
 There is no lock: a second CLI on the same session id writes into the
 same recording, and the conversation quietly grows a second branch
-\(docs/verified.md).  The way out is to stop the other one first, so
-this asks rather than deciding, and names the process."
+\(confirmed against the CLI).  The way out is to stop the other one
+first, so this asks rather than deciding, and names the process."
   (when-let* ((entry (ecc-registry-session (ecc-session-id session))))
     (unless (yes-or-no-p
              (format "%s is running as pid %s; resuming branches the conversation.  Resume anyway? "
@@ -535,11 +533,11 @@ this asks rather than deciding, and names the process."
       (user-error "Aborted"))))
 
 (defun ecc-history-resume (session &optional fork)
-  "Start SESSION again, keeping what the recording said (FR-HIST-3).
+  "Start SESSION again, keeping what the recording said.
 The turns already read stay at the top of the buffer and the stream is
 appended to them.  FORK asks the CLI for a new conversation branching
-off this one (FR-SES-4).  A session whose process is still alive is
-never resumed: the CLI would run twice on the same recording."
+off this one.  A session whose process is still alive is never resumed:
+the CLI would run twice on the same recording."
   (when (process-live-p (ecc-session-process session))
     (user-error "%s is still running" (ecc-session-name session)))
   (ecc-history--check-not-running session)

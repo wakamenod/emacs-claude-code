@@ -8,9 +8,9 @@
 
 ;;; Commentary:
 
-;; `ecc-markdown-fontify' takes the text of an assistant reply and returns
-;; it with faces for headings, list bullets, code blocks, inline code and
-;; bold (FR-OUT-8).  Apart from a table, the text itself is not changed,
+;; `ecc-markdown-fontify' takes the text of an assistant reply and
+;; returns it with faces for headings, list bullets, code blocks, inline
+;; code and bold.  Apart from a table, the text itself is not changed,
 ;; so what the model wrote is what the buffer shows and what a copy
 ;; yields.  A table is the one thing that cannot be lined up with
 ;; properties alone, and `ecc-table-format' redraws it; see
@@ -21,9 +21,9 @@
 ;; the renderer and the tests want.
 ;;
 ;; A fenced code block whose fence names a language Emacs has a major
-;; mode for is coloured with that mode (FR-OUT-15).  The mode runs in a
-;; temporary buffer and only its faces are copied out, so the session
-;; buffer still has no font lock of its own.
+;; mode for is coloured with that mode.  The mode runs in a temporary
+;; buffer and only its faces are copied out, so the session buffer still
+;; has no font lock of its own.
 
 ;;; Code:
 
@@ -42,15 +42,14 @@
     (((background dark)) :foreground "brightblue")
     (t :foreground "blue"))
   "Face for code, both fenced blocks and inline spans.
-Only the foreground is set, and it is a pale violet leaning towards
-blue -- the violet the terminal client draws with (`autoAccept\=',
-#af87ff; `docs/verified.md\=', 2026-09-08) was too strong to read a
-sentence through, so this is lighter and cooler than that.
-A band of background behind every function name broke the line up and
-was hard to read, so there is none (2026-09-09).  Inside a fenced block
-the faces of the major mode are laid on top of this one, so code that is
-highlighted keeps its own colours and only what the mode leaves alone is
-coloured here.
+Only the foreground is set, and it is a pale violet leaning towards blue
+-- the violet the terminal client draws with (`autoAccept\=', #af87ff,
+confirmed 2026-09-08) was too strong to read a sentence through, so this
+is lighter and cooler than that.  A band of background behind every
+function name broke the line up and was hard to read, so there is
+none (2026-09-09).  Inside a fenced block the faces of the major mode
+are laid on top of this one, so code that is highlighted keeps its own
+colours and only what the mode leaves alone is coloured here.
 
 The font is left alone as well, and `fixed-pitch' in particular is not
 inherited.  The transcript is already drawn in the default face, which
@@ -92,14 +91,14 @@ empty on a closing fence and on an opening one that names nothing.")
   "Regexp matching bold text.")
 
 (defvar ecc-markdown-hide-markup t
-  "Non-nil hides the markup around bold, code and headings (FR-OUT-8).
-Nil leaves the asterisks, the backquotes and the number signs in
-sight, which is what a reader who wants the source of the reply
-rather than its shape wants.")
+  "Non-nil hides the markup around bold, code and headings.
+Nil leaves the asterisks, the backquotes and the number signs in sight,
+which is what a reader who wants the source of the reply rather than its
+shape wants.")
 
 (defvar ecc-markdown-highlight-code t
   "Non-nil colours a fenced code block with the major mode of its language.
-Nil leaves every block in `ecc-markdown-code-face' (FR-OUT-15).")
+Nil leaves every block in `ecc-markdown-code-face'.")
 
 (defvar ecc-markdown-highlight-max-lines 300
   "Longest code block, in lines, that is coloured with a major mode.
@@ -260,13 +259,12 @@ text rather than only its properties."
 (defun ecc-markdown-fontify (text)
   "Return TEXT with faces for its Markdown structure.
 Every character is left as it is, a table apart; the rest is text
-properties.
-The body of a fenced code block gets the faces of the major mode its
-fence names on top of `ecc-markdown-code-face' (FR-OUT-15).  Markup
-symbols are hidden by the ecc-markup invisible property when
-`ecc-markdown-hide-markup' is non-nil (FR-OUT-8).  A pipe table is the
-one construct whose text is rewritten: `ecc-table-format' draws it with
-its columns lined up."
+properties.  The body of a fenced code block gets the faces of the major
+mode its fence names on top of `ecc-markdown-code-face'.  Markup symbols
+are hidden by the ecc-markup invisible property when
+`ecc-markdown-hide-markup' is non-nil.  A pipe table is the one
+construct whose text is rewritten: `ecc-table-format' draws it with its
+columns lined up."
   (if (or (null text) (string-empty-p text))
       (or text "")
     (with-temp-buffer

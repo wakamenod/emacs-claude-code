@@ -8,8 +8,8 @@
 
 ;;; Commentary:
 
-;; One `tabulated-list-mode' buffer showing the sessions this Emacs runs
-;; (FR-DASH-1, 3, 4, 5).
+;; One `tabulated-list-mode' buffer showing the sessions this Emacs
+;; runs.
 ;;
 ;; Only those.  A session another process runs cannot be answered or
 ;; steered from here, and a conversation that is only a recording is
@@ -19,7 +19,7 @@
 ;; ~/.claude/projects, and nothing to poll.
 ;;
 ;; The requests waiting for an answer come first, and a and d answer
-;; them without leaving the list (FR-DASH-4).
+;; them without leaving the list.
 
 ;;; Code:
 
@@ -85,7 +85,7 @@ that can be answered, so it is left out."
 (defun ecc-dashboard--sort (rows)
   "Return ROWS with the ones waiting for an answer first, then by time.
 `sort' is destructive and ROWS is freshly made here, but the sessions
-it was built from are not, so the list is copied (docs/verified.md)."
+it was built from are not, so the list is copied."
   (seq-sort (lambda (a b)
               (let ((wa (ecc-dashboard-entry-waiting a))
                     (wb (ecc-dashboard-entry-waiting b)))
@@ -135,7 +135,7 @@ project from another; the whole path is in the tooltip."
   (setq tabulated-list-entries (mapcar #'ecc-dashboard--row
                                        (ecc-dashboard-entries))))
 
-;;;; Capabilities (FR-DASH-7)
+;;;; Capabilities
 
 ;; What a session can do is spread over `system/init' (the names of the
 ;; skills, agents, commands, MCP servers and plugins) and the answer to
@@ -235,7 +235,7 @@ The descriptions are what the CLI answered `initialize' with."
 (defun ecc-capabilities (session)
   "Return everything SESSION can do, as a list of `ecc-capability'.
 The names come from the last system/init and the descriptions from the
-answer to initialize (FR-DASH-7)."
+answer to initialize."
   (let* ((init (ecc-session-init session))
          (plugins (append (alist-get 'plugins init) nil))
          (descriptions (ecc-capabilities--command-descriptions session))
@@ -316,7 +316,7 @@ answer to initialize (FR-DASH-7)."
     (not folded)))
 
 (defun ecc-capabilities-draw (session)
-  "Draw everything SESSION can do into the current buffer (FR-DASH-7)."
+  "Draw everything SESSION can do into the current buffer."
   (let ((inhibit-read-only t)
         (entries (ecc-capabilities session)))
     (erase-buffer)
@@ -371,7 +371,7 @@ which arrives with the first turn.\n"
 
 ;;;###autoload
 (defun ecc-capabilities-show (session)
-  "Show everything SESSION can do (FR-DASH-7)."
+  "Show everything SESSION can do."
   (interactive (list (ecc-capabilities--read-session)))
   (let ((buffer (get-buffer-create ecc-capabilities-buffer-name)))
     (with-current-buffer buffer
@@ -411,7 +411,7 @@ which arrives with the first turn.\n"
     (user-error "Not on a group")))
 
 (defun ecc-capabilities-visit ()
-  "Open what defines the capability at point (FR-DASH-7)."
+  "Open what defines the capability at point."
   (interactive)
   (let ((capability (get-text-property (point) 'ecc-capability)))
     (cond
@@ -454,7 +454,7 @@ which arrives with the first turn.\n"
 
 ;;;###autoload
 (defun ecc-dashboard ()
-  "Show the sessions this Emacs runs (FR-DASH-1)."
+  "Show the sessions this Emacs runs."
   (interactive)
   (let ((buffer (get-buffer-create ecc-dashboard-buffer-name)))
     (with-current-buffer buffer
@@ -494,20 +494,20 @@ which arrives with the first turn.\n"
   (ecc-dashboard-entry-session (ecc-dashboard-entry-at-point)))
 
 (defun ecc-dashboard-visit ()
-  "Show the transcript of the session at point (FR-DASH-3)."
+  "Show the transcript of the session at point."
   (interactive)
   (require 'ecc-window)
   (select-window (ecc-display-session (ecc-dashboard-session-at-point))))
 
 (defun ecc-dashboard-new (directory)
-  "Start a session in DIRECTORY (FR-DASH-5)."
+  "Start a session in DIRECTORY."
   (interactive (list (read-directory-name "Directory: " (ecc-window-project-root))))
   (require 'ecc)
   (ecc-start directory)
   (ecc-dashboard-redraw))
 
 (defun ecc-dashboard-stop ()
-  "Stop the session at point (FR-DASH-5)."
+  "Stop the session at point."
   (interactive)
   (let ((session (ecc-dashboard-session-at-point)))
     (require 'ecc)
@@ -515,7 +515,7 @@ which arrives with the first turn.\n"
     (ecc-dashboard-redraw)))
 
 (defun ecc-dashboard-delete ()
-  "Delete the recording of the session at point, after asking (FR-DASH-5)."
+  "Delete the recording of the session at point, after asking."
   (interactive)
   (let* ((entry (ecc-dashboard-entry-at-point))
          (file (or (ecc-history-file (ecc-dashboard-entry-key entry))
@@ -525,7 +525,7 @@ which arrives with the first turn.\n"
       (ecc-dashboard-refresh))))
 
 (defun ecc-dashboard-rename (name)
-  "Rename the session at point to NAME (FR-DASH-5)."
+  "Rename the session at point to NAME."
   (interactive (list (read-string "New name: ")))
   (let ((session (ecc-dashboard-session-at-point)))
     (when (string-empty-p name)
@@ -537,10 +537,10 @@ which arrives with the first turn.\n"
     (ecc-dashboard-redraw)))
 
 (defun ecc-dashboard-resume ()
-  "Resume the session at point (FR-DASH-3, FR-HIST-3)."
+  "Resume the session at point."
   (interactive)
   ;; A session another process is running is refused by
-  ;; `ecc-history-resume' unless the user insists (FR-TUI-5).
+  ;; `ecc-history-resume' unless the user insists.
   (let ((session (ecc-dashboard-session-at-point)))
     (ecc-history-resume session current-prefix-arg)
     (require 'ecc-window)
@@ -554,7 +554,7 @@ which arrives with the first turn.\n"
         (user-error "%s is not waiting for an answer" (ecc-session-name session)))))
 
 (defun ecc-dashboard-allow ()
-  "Allow the oldest waiting request of the session at point (FR-DASH-4)."
+  "Allow the oldest waiting request of the session at point."
   (interactive)
   (ecc-perm-allow-request (ecc-dashboard--request-at-point))
   (ecc-dashboard-redraw))

@@ -11,13 +11,12 @@
 ;; Everything that answers a can_use_tool request goes through
 ;; `ecc-perm-respond', so that the queue, the transcript and the CLI
 ;; never disagree about what was answered.  Deny is the default answer
-;; everywhere (NFR-4).
+;; everywhere.
 ;;
 ;; On top of allow and deny this file offers the permission suggestions
-;; of the CLI (FR-PERM-3), a turn wide approval (FR-PERM-7), allow
-;; patterns written to the project settings (FR-PERM-8), the bulk
-;; operations (FR-PERM-9), the warning about unsaved buffers (FR-SYNC-2)
-;; and the buffer an AskUserQuestion is answered in (FR-PERM-5).
+;; of the CLI, a turn wide approval, allow patterns written to the
+;; project settings, the bulk operations, the warning about unsaved
+;; buffers and the buffer an AskUserQuestion is answered in.
 
 ;;; Code:
 
@@ -45,8 +44,8 @@
 (defvar ecc-perm-remember-exclude-tools '("Bash")
   "Tools that `ecc-perm-allow-all-remember' allows once but never remembers.
 Remembering a tool allows every later call of it for the rest of the
-session without a look (FR-PERM-9); a tool that can run anything is
-not worth that shortcut.  Nil remembers every tool.")
+session without a look; a tool that can run anything is not worth that
+shortcut.  Nil remembers every tool.")
 
 (defvar ecc-perm-settings-file ".claude/settings.local.json"
   "Settings file, relative to the project root, that allow patterns go to.")
@@ -101,7 +100,7 @@ The session of the buffer wins, then the most recently used one."
   "Return the request a command should act on.
 The one at point wins, then the oldest one of this session, then the
 oldest one of any session, so that a request can be answered from
-wherever the user happens to be (FR-PERM-6)."
+wherever the user happens to be."
   (or (ecc-perm-request-at-point)
       (when-let* ((session ecc-render--session))
         (car (ecc-session-pending session)))
@@ -129,7 +128,7 @@ wherever the user happens to be (FR-PERM-6)."
   (memq (cdr (assoc (ecc-request-tool-name request) ecc-dispatch-file-tools))
         '(edit write)))
 
-;;;; Allowing, with the unsaved buffer check (FR-SYNC-2)
+;;;; Allowing, with the unsaved buffer check
 
 (defun ecc-perm--unsaved-choice (request)
   "Ask what to do when the file of REQUEST has unsaved changes.
@@ -169,7 +168,7 @@ Returns `allow', `deny', `save' or `opened'."
 ;;;; Commands
 
 (defun ecc-perm-allow ()
-  "Allow the request at point, or the oldest one waiting (FR-PERM-1)."
+  "Allow the request at point, or the oldest one waiting."
   (interactive)
   (let ((request (ecc-perm-current-request)))
     (pcase (ecc-perm-allow-request request)
@@ -179,7 +178,7 @@ Returns `allow', `deny', `save' or `opened'."
       (_ (message "Allowed: %s" (ecc-request-tool-name request))))))
 
 (defun ecc-perm-deny (&optional reason)
-  "Deny the request at point with REASON, asking for one (FR-PERM-2).
+  "Deny the request at point with REASON, asking for one.
 The request is looked up before the reason is asked for, so that a key
 pressed with nothing waiting says so instead of asking first."
   (interactive (list (progn (ecc-perm-current-request)
@@ -189,7 +188,7 @@ pressed with nothing waiting says so instead of asking first."
     (message "Denied: %s" (ecc-request-tool-name request))))
 
 (defun ecc-perm-allow-next ()
-  "Allow the oldest request waiting in this session (FR-PERM-9)."
+  "Allow the oldest request waiting in this session."
   (interactive)
   (let ((request (or (car (ecc-session-pending (or (ecc-perm-session)
                                                    (user-error "No session"))))
@@ -198,7 +197,7 @@ pressed with nothing waiting says so instead of asking first."
     (message "Allowed: %s" (ecc-request-tool-name request))))
 
 (defun ecc-perm-deny-next (&optional reason)
-  "Deny the oldest request waiting in this session with REASON (FR-PERM-9)."
+  "Deny the oldest request waiting in this session with REASON."
   (interactive (list (read-string "Reason for denying (may be empty): ")))
   (let ((request (or (car (ecc-session-pending (or (ecc-perm-session)
                                                    (user-error "No session"))))
@@ -207,7 +206,7 @@ pressed with nothing waiting says so instead of asking first."
     (message "Denied: %s" (ecc-request-tool-name request))))
 
 (defun ecc-perm-allow-all (&optional remember)
-  "Allow every permission request waiting in this session (FR-PERM-9).
+  "Allow every permission request waiting in this session.
 With REMEMBER, the tools involved are not asked about again for the
 rest of the session.  Questions and plans are left for their own
 buffers.  Returns the requests that were allowed."
@@ -244,16 +243,16 @@ buffers.  Returns the requests that were allowed."
     (nreverse allowed)))
 
 (defun ecc-perm-allow-all-remember ()
-  "Allow every waiting request and stop asking about those tools (FR-PERM-9)."
+  "Allow every waiting request and stop asking about those tools."
   (interactive)
   (ecc-perm-allow-all t))
 
-;;;; Turn wide approval (FR-PERM-7)
+;;;; Turn wide approval
 
 (defun ecc-perm-approve-turn ()
   "Allow the request at point and every `ecc-turn-approve-tools' request.
 Requests of those tools arriving until the end of the current turn are
-allowed as they come; the flag is cleared by the result (FR-PERM-7)."
+allowed as they come; the flag is cleared by the result."
   (interactive)
   (let* ((at-point (ecc-perm-request-at-point))
          (session (or (and at-point (ecc-request-session at-point))
@@ -273,7 +272,7 @@ allowed as they come; the flag is cleared by the result (FR-PERM-7)."
              allowed (string-join ecc-turn-approve-tools ", "))
     allowed))
 
-;;;; Permission suggestions (FR-PERM-3)
+;;;; Permission suggestions
 
 (defun ecc-perm-suggestion-label (suggestion)
   "Return a readable description of the permission SUGGESTION."
@@ -312,8 +311,8 @@ A single suggestion is returned without asking."
 (defun ecc-perm-allow-always ()
   "Allow the request and apply what the CLI suggested for the future.
 With a permission suggestion, such as switching to acceptEdits, it is
-sent back as updatedPermissions (FR-PERM-3).  Without one, an allow
-pattern is chosen and saved instead (FR-PERM-8)."
+sent back as updatedPermissions.  Without one, an allow pattern is
+chosen and saved instead."
   (interactive)
   (let ((request (ecc-perm-permission-request)))
     (if (null (ecc-request-suggestions request))
@@ -325,7 +324,7 @@ pattern is chosen and saved instead (FR-PERM-8)."
                             :message (ecc-perm-suggestion-label suggestion))
           (message "Allowed: %s" (ecc-perm-suggestion-label suggestion)))))))
 
-;;;; Allow patterns (FR-PERM-8)
+;;;; Allow patterns
 
 (defun ecc-perm--bash-patterns (command)
   "Return the allow patterns for the Bash COMMAND, most specific first.
@@ -373,7 +372,7 @@ with the // prefix the CLI uses for absolute rules."
                           (concat "mcp__" (nth 1 parts))))))))
 
 (defun ecc-perm-suggest-patterns (tool-name input &optional project-root)
-  "Return allow patterns for a call to TOOL-NAME with INPUT (FR-PERM-8).
+  "Return allow patterns for a call to TOOL-NAME with INPUT.
 PROJECT-ROOT makes file patterns relative.  The list goes from the
 most specific pattern to the broadest, and is never empty."
   (or (pcase tool-name
@@ -402,7 +401,7 @@ Returns the patterns that were new."
   "Save an allow pattern for the request at point, then offer to allow it.
 The patterns are made by `ecc-perm-suggest-patterns'; the chosen ones
 go to the permissions.allow list of the project settings file after a
-confirmation that names the file and the patterns (FR-PERM-8)."
+confirmation that names the file and the patterns."
   (interactive)
   (let* ((request (ecc-perm-permission-request))
          (session (ecc-request-session request))
@@ -430,7 +429,7 @@ confirmation that names the file and the patterns (FR-PERM-8)."
       (ecc-perm-allow-request request))
     chosen))
 
-;;;; AskUserQuestion (FR-PERM-5)
+;;;; AskUserQuestion
 
 ;; The questions are answered in a buffer of their own.  Every question
 ;; is listed with numbered options; the number keys choose for the
@@ -680,7 +679,7 @@ Signals a `user-error' naming the first question left unanswered."
             (ecc-question-questions ecc-question--request))))
 
 (defun ecc-question-submit ()
-  "Send the answers of this buffer to Claude (FR-PERM-5).
+  "Send the answers of this buffer to Claude.
 The questions are echoed back unchanged; only `answers' is added,
 keyed by the question text, a multiSelect answer joined by \", \"."
   (interactive)

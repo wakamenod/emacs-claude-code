@@ -10,9 +10,9 @@
 
 ;; What Emacs knows that the CLI does not.  `ecc-context-capture' reads
 ;; the file, the line and the region of the buffer the user last worked
-;; in (FR-CTX-1), formats it as a quote block the user can see before it
-;; is sent (FR-CTX-2), and the commands at the end send from a source
-;; buffer without switching to a transcript first (FR-CTX-5).
+;; in, formats it as a quote block the user can see before it is sent,
+;; and the commands at the end send from a source buffer without
+;; switching to a transcript first.
 ;;
 ;; Everything above `ecc-send' is a pure function of a buffer, so the
 ;; tests can build the block without a process or a window.
@@ -38,12 +38,12 @@
 (declare-function flycheck-error-line "flycheck" (err))
 
 (defvar ecc-context-attach-by-default nil
-  "Non-nil attaches the editor context to every prompt sent (FR-CTX-1).
+  "Non-nil attaches the editor context to every prompt sent.
 It can be turned on and off in a session buffer with
 \\<ecc-chat-mode-map>\\[ecc-prompt-toggle-context].")
 
 (defvar ecc-context-visible t
-  "Non-nil appends the context to a prompt as a quote block (FR-CTX-2).
+  "Non-nil appends the context to a prompt as a quote block.
 That is what the user sees before sending.  Nil sends the same text
 without showing it in the prompt region, which is the invisible form
 the requirement makes optional.")
@@ -64,7 +64,7 @@ Zero sends the line the cursor is on and nothing else.")
     (bash-ts-mode . "bash"))
   "Major modes whose fenced code block language is not the mode name.")
 
-;;;; Capturing (FR-CTX-1)
+;;;; Capturing
 
 (defun ecc-context-mode-for-file (file)
   "Return the major mode `auto-mode-alist' names for FILE, or nil."
@@ -112,7 +112,7 @@ land on another file of that name, which is worse than a long label."
                       (- (length lines) ecc-context-max-lines))))))
 
 (cl-defun ecc-context-capture (&key buffer region root)
-  "Return what the editor is looking at, as a plist (FR-CTX-1).
+  "Return what the editor is looking at, as a plist.
 BUFFER defaults to `ecc-window-last-source-buffer'.  The keys are
 `:path', `:line', `:end-line', `:text' and `:language'; `:text' is only
 there when a region is active, or when REGION is a cons of two
@@ -141,7 +141,7 @@ relative to, and is the project of the session the prompt goes to."
                                  "\n")))))))))
 
 (defun ecc-context-cursor (&optional buffer root)
-  "Return what the cursor of BUFFER is looking at, as a plist (FR-CTX-1).
+  "Return what the cursor of BUFFER is looking at, as a plist.
 The lines around it are `ecc-context-cursor-lines' either way, while
 `:line' is the line the cursor sits on and `:end-line' is nil: the
 label of the block points at the cursor, not at the lines that came
@@ -161,7 +161,7 @@ along with it.  ROOT is what `:path' is relative to."
                                               :root root)))
             (plist-put (plist-put context :line line) :end-line nil)))))))
 
-;;;; Formatting (FR-CTX-2)
+;;;; Formatting
 
 (defun ecc-context-location (context)
   "Return the `path L12-L20' line of CONTEXT."
@@ -173,7 +173,7 @@ along with it.  ROOT is what `:path' is relative to."
                   (t "")))))
 
 (defun ecc-context-format (context)
-  "Return CONTEXT as the quote block appended to a prompt (FR-CTX-2)."
+  "Return CONTEXT as the quote block appended to a prompt."
   (when context
     (concat "\n\n---\nCurrent context: " (ecc-context-location context)
             (when-let* ((text (plist-get context :text)))
@@ -184,7 +184,7 @@ along with it.  ROOT is what `:path' is relative to."
 ROOT is what the path of the block is relative to."
   (ecc-context-format (ecc-context-capture :buffer buffer :root root)))
 
-;;;; File ranges and diagnostics (FR-INP-8, FR-CTX-4)
+;;;; File ranges and diagnostics
 
 (defun ecc-context-file-range (path &optional start end)
   "Return lines START to END of PATH as a plist like `ecc-context-capture'.
@@ -264,13 +264,12 @@ what a checker this package does not know about leaves behind."
     (when diagnostics
       (format "```\n%s\n```" (string-join diagnostics "\n")))))
 
-;;;; Commands that send from a source buffer (FR-CTX-5)
+;;;; Commands that send from a source buffer
 
 (defun ecc-context--send (text &optional session)
   "Send TEXT to SESSION, or to the session this buffer resolves to.
-The prompt is queued when a turn is running (FR-INP-6); either way the
-user is told what happened, because the transcript may not be on
-screen."
+The prompt is queued when a turn is running; either way the user is told
+what happened, because the transcript may not be on screen."
   (let* ((session (or session (ecc-window-resolve-session current-prefix-arg)))
          (outcome (ecc-proc-send-prompt session text)))
     (if (eq outcome 'sent)
@@ -281,7 +280,7 @@ screen."
 
 ;;;###autoload
 (defun ecc-send (text &optional session)
-  "Send TEXT from the minibuffer to SESSION (FR-CTX-5 a).
+  "Send TEXT from the minibuffer to SESSION.
 A prefix argument asks which session to send to."
   (interactive (list (read-string "Claude: ")))
   (when (string-empty-p (string-trim text))
@@ -290,14 +289,14 @@ A prefix argument asks which session to send to."
 
 ;;;###autoload
 (defun ecc-send-with-context (text &optional session)
-  "Send TEXT with the file and line of the current buffer (FR-CTX-5 b).
-SESSION defaults to the one this buffer resolves to (FR-WIN-4)."
+  "Send TEXT with the file and line of the current buffer.
+SESSION defaults to the one this buffer resolves to."
   (interactive (list (read-string "Claude (with context): ")))
   (ecc-context--send (concat text (or (ecc-context-block) "")) session))
 
 ;;;###autoload
 (defun ecc-send-region (&optional beg end instruction)
-  "Send the region, or the whole buffer, to Claude (FR-CTX-5 c).
+  "Send the region, or the whole buffer, to Claude.
 BEG and END default to the region.  INSTRUCTION is asked for with a
 prefix argument and put before the quoted code."
   (interactive
@@ -315,7 +314,7 @@ prefix argument and put before the quoted code."
 
 ;;;###autoload
 (defun ecc-send-buffer-file (&optional instruction)
-  "Send the file of the current buffer as an @path reference (FR-CTX-5 d).
+  "Send the file of the current buffer as an @path reference.
 INSTRUCTION is asked for with a prefix argument."
   (interactive (list (when current-prefix-arg (read-string "Instruction: "))))
   (let ((file (or (buffer-file-name)
@@ -330,7 +329,7 @@ INSTRUCTION is asked for with a prefix argument."
 
 ;;;###autoload
 (defun ecc-fix-error-at-point (&optional instruction)
-  "Ask Claude to fix the diagnostic at point (FR-CTX-5 e, FR-CTX-4).
+  "Ask Claude to fix the diagnostic at point.
 The diagnostics on the current line are quoted with the code around
 them.  INSTRUCTION replaces the default request when given."
   (interactive (list (when current-prefix-arg (read-string "Instruction: "))))

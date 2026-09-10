@@ -11,19 +11,18 @@
 ;; The two things one wants from the source buffer rather than from a
 ;; transcript.
 ;;
-;; `ecc-inline-prompt' (FR-INLINE-1) asks a question with the region, or
-;; the file, attached, and lets the answer arrive in an overlay above
-;; point: Markdown formatted, cut to `ecc-inline-max-lines' with the rest
-;; a keystroke away.  Behind it is a session of its own -- a fork of the
-;; session of the project, or a fresh light one -- and which of the two a
-;; buffer uses is asked once and remembered.
+;; `ecc-inline-prompt' asks a question with the region, or the file,
+;; attached, and lets the answer arrive in an overlay above point:
+;; Markdown formatted, cut to `ecc-inline-max-lines' with the rest a
+;; keystroke away.  Behind it is a session of its own -- a fork of the
+;; session of the project, or a fresh light one -- and which of the two
+;; a buffer uses is asked once and remembered.
 ;;
-;; `ecc-rewrite' (FR-INLINE-2) is the other half: a region and an
-;; instruction go to one `claude -p' with a JSON schema, and what comes
-;; back is the rewritten code and nothing else.  No Edit tool is
-;; involved, so nothing is written behind Emacs's back: the overlay
-;; shows the proposal and Emacs is what replaces the text, once the user
-;; says so.
+;; `ecc-rewrite' is the other half: a region and an instruction go to
+;; one `claude -p' with a JSON schema, and what comes back is the
+;; rewritten code and nothing else.  No Edit tool is involved, so
+;; nothing is written behind Emacs's back: the overlay shows the
+;; proposal and Emacs is what replaces the text, once the user says so.
 
 ;;; Code:
 
@@ -41,11 +40,11 @@
 ;;;; Settings
 
 (defvar ecc-inline-max-lines 12
-  "Lines of an inline answer shown at once (FR-INLINE-1).
+  "Lines of an inline answer shown at once.
 The rest is scrolled to inside the overlay.")
 
 (defvar ecc-inline-binding 'ask
-  "Which session an inline question of a buffer goes to (FR-INLINE-1).
+  "Which session an inline question of a buffer goes to.
 `fork' branches the session of the project with --fork-session, so the
 answer knows the conversation so far; `light' starts a session with no
 tools, which is cheaper and knows nothing; `ask' asks the first time
@@ -57,7 +56,7 @@ The point of a light session is that it answers questions and touches
 nothing, which is what an empty tool list says.")
 
 (defvar ecc-rewrite-finished-action 'show-actions
-  "What `ecc-rewrite' does once the rewritten code arrives (FR-INLINE-2).
+  "What `ecc-rewrite' does once the rewritten code arrives.
 `show-actions' shows it in an overlay and waits; `accept' puts it in
 the buffer at once; `diff' opens the diff; `merge' leaves a conflict
 for `smerge-mode' to resolve.")
@@ -133,7 +132,7 @@ KEYMAP, when given, is what the line the overlay hangs from answers to."
   ecc-inline--overlay)
 
 (defun ecc-inline-quit ()
-  "Take the inline answer off the screen (FR-INLINE-1)."
+  "Take the inline answer off the screen."
   (interactive)
   (when (overlayp ecc-inline--overlay)
     (delete-overlay ecc-inline--overlay))
@@ -161,7 +160,7 @@ KEYMAP, when given, is what the line the overlay hangs from answers to."
   (interactive)
   (ecc-inline--rescroll (- ecc-inline--offset ecc-inline-max-lines)))
 
-;;;; The session an inline question goes to (FR-INLINE-1)
+;;;; The session an inline question goes to
 
 (defvar-local ecc-inline--session nil
   "The session the inline questions of this buffer go to.
@@ -191,7 +190,7 @@ id of its own in system/init, and the binding must survive that.")
 (defun ecc-inline-session (&optional buffer)
   "Return the session the inline questions of BUFFER go to, starting it once.
 The first question asks which kind of session to use and the answer is
-kept for the buffer, which is what FR-INLINE-1 asks for."
+kept for the buffer."
   (let ((buffer (or buffer (current-buffer))))
     (with-current-buffer buffer
       (or (and ecc-inline--session
@@ -229,10 +228,10 @@ was; the CLI hands the fork its real id in system/init."
     (ecc-proc-start session forkp forkp)
     session))
 
-;;;; Asking (FR-INLINE-1)
+;;;; Asking
 
 (defun ecc-inline-question (question &optional buffer region)
-  "Return QUESTION with the context of BUFFER attached (FR-CTX-1).
+  "Return QUESTION with the context of BUFFER attached.
 REGION, a cons of two positions, is the code to quote; without one the
 active region, or the position of point, is what goes."
   (let ((context (ecc-context-capture :buffer (or buffer (current-buffer))
@@ -243,7 +242,7 @@ active region, or the position of point, is what goes."
 
 ;;;###autoload
 (defun ecc-inline-prompt (question)
-  "Ask QUESTION about the region, or this file, and answer here (FR-INLINE-1).
+  "Ask QUESTION about the region, or this file, and answer here.
 The answer arrives in an overlay above point: `n' and `p' scroll it,
 `r' asks something else and `q' takes it away."
   (interactive "sAsk Claude: ")
@@ -283,7 +282,7 @@ The answer arrives in an overlay above point: `n' and `p' scroll it,
 (add-hook 'ecc-node-updated-hook #'ecc-inline--update)
 (add-hook 'ecc-turn-finished-hook #'ecc-inline--update)
 
-;;;; Rewrite (FR-INLINE-2)
+;;;; Rewrite
 
 (defconst ecc-rewrite-schema
   "{\"type\":\"object\",\"properties\":{\"code\":{\"type\":\"string\"}},\
@@ -291,7 +290,7 @@ The answer arrives in an overlay above point: `n' and `p' scroll it,
   "The JSON schema the rewrite asks the CLI to answer in.")
 
 (defun ecc-rewrite-command (&optional model)
-  "Return the command line of one rewrite, asking MODEL (FR-INLINE-2).
+  "Return the command line of one rewrite, asking MODEL.
 One shot, no tools, structured output: the CLI is asked for the code
 and for nothing else, and Emacs is what touches the file."
   (append (list ecc-executable "-p"
@@ -353,7 +352,7 @@ as the text of one, depending on the version.  A failure signals."
 
 ;;;###autoload
 (defun ecc-rewrite (beg end instruction)
-  "Rewrite the region between BEG and END as INSTRUCTION says (FR-INLINE-2).
+  "Rewrite the region between BEG and END as INSTRUCTION says.
 The answer is shown; nothing is written until it is accepted."
   (interactive (if (use-region-p)
                    (list (region-beginning) (region-end)
@@ -416,7 +415,7 @@ The answer is shown; nothing is written until it is accepted."
                                   (cdr ecc-rewrite--region)))
 
 (defun ecc-rewrite-accept ()
-  "Put the rewritten code in the buffer (FR-INLINE-2)."
+  "Put the rewritten code in the buffer."
   (interactive)
   (unless ecc-rewrite--code (user-error "No rewrite is waiting"))
   (let ((beg (car ecc-rewrite--region))
@@ -430,7 +429,7 @@ The answer is shown; nothing is written until it is accepted."
     (message "Rewritten; undo puts it back")))
 
 (defun ecc-rewrite-diff ()
-  "Show what the rewrite would change, as a diff (FR-INLINE-2)."
+  "Show what the rewrite would change, as a diff."
   (interactive)
   (unless ecc-rewrite--code (user-error "No rewrite is waiting"))
   (let ((diff (ecc-diff-render (ecc-rewrite--old) ecc-rewrite--code))

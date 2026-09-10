@@ -9,11 +9,10 @@
 ;;; Commentary:
 
 ;; When a tool result says Claude changed a file, the buffer visiting it
-;; is reverted so that the editor never shows stale text (FR-SYNC-1).  A
-;; buffer with unsaved changes is left alone and the user is warned, or
-;; asked, depending on `ecc-sync-modified-action'.  The same check tells
-;; `ecc-perm' to warn before a change to such a file is allowed
-;; (FR-SYNC-2).
+;; is reverted so that the editor never shows stale text.  A buffer with
+;; unsaved changes is left alone and the user is warned, or asked,
+;; depending on `ecc-sync-modified-action'.  The same check tells
+;; `ecc-perm' to warn before a change to such a file is allowed.
 
 ;;; Code:
 
@@ -65,7 +64,7 @@ buffer that visits the file under another name."
 (defun ecc-sync-revert-buffer (buffer)
   "Reload BUFFER from its file, keeping point and the windows where they were.
 Positions are kept by line and column, which survives a change above
-them better than a character offset (FR-SYNC-1).  Returns BUFFER."
+them better than a character offset.  Returns BUFFER."
   (with-current-buffer buffer
     (let ((windows (mapcar (lambda (window)
                              (cons window (ecc-sync--line-and-column

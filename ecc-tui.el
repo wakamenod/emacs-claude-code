@@ -8,22 +8,22 @@
 
 ;;; Commentary:
 
-;; Handing a conversation to the terminal client (FR-TUI-1 to 5).  The
-;; terminal client can do things this one cannot, so a conversation can
-;; be carried on there and taken back afterwards.
+;; Handing a conversation to the terminal client.  The terminal client
+;; can do things this one cannot, so a conversation can be carried on
+;; there and taken back afterwards.
 ;;
 ;; The CLI has no lock on a session: two processes resuming the same id
 ;; write into the same recording and the conversation quietly grows a
-;; second branch (docs/verified.md).  The hand-off is therefore not a
-;; second window on the session but a change of hands: the process
+;; second branch (confirmed against the CLI).  The hand-off is therefore
+;; not a second window on the session but a change of hands: the process
 ;; Emacs runs is interrupted and stopped first, and the terminal is only
-;; started once it is gone (FR-TUI-5).
+;; started once it is gone.
 ;;
 ;; While the terminal has it, the buffer follows the recording the CLI
-;; writes (FR-TUI-3): the lines the terminal appends are replayed
-;; through `ecc-history', so the transcript keeps up without a process
-;; of its own.  When the terminal is left, the session comes back
-;; headless with --resume (FR-TUI-4).
+;; writes: the lines the terminal appends are replayed through
+;; `ecc-history', so the transcript keeps up without a process of its
+;; own.  When the terminal is left, the session comes back headless with
+;; --resume.
 ;;
 ;; The terminal is ghostel, which draws the CLI's full screen interface
 ;; with the same engine Ghostty uses.  It takes the command as argv
@@ -61,10 +61,9 @@
 (defvar ecc-tui-follow t
   "Non-nil follows the recording while a session is open in a terminal.
 Not to be confused with `ecc-render-follow', which is about point
-keeping up with the end of a transcript.
-This is what keeps the transcript current during a hand-off
-\(FR-TUI-3); turning it off leaves the buffer as it was until the
-session comes back.")
+keeping up with the end of a transcript.  This is what keeps the
+transcript current during a hand-off; turning it off leaves the buffer
+as it was until the session comes back.")
 
 (defvar ecc-tui-poll-interval 2
   "Seconds between the checks made while a session is in a terminal.
@@ -73,7 +72,7 @@ runs even when the recording is being watched, and it is also what
 notices a terminal that ended without its sentinel being called.")
 
 (defvar ecc-tui-return-on-exit t
-  "Non-nil resumes a session in Emacs once its terminal is left (FR-TUI-4).")
+  "Non-nil resumes a session in Emacs once its terminal is left.")
 
 ;;;; What is being handed over
 
@@ -119,7 +118,7 @@ out (`ecc-proc--model')."
             (list "--model" model))
           ecc-tui-extra-args))
 
-;;;; Making sure nobody else has it (FR-TUI-5)
+;;;; Making sure nobody else has it
 
 (defun ecc-tui--other-process (session)
   "Return the registry entry of another process running SESSION, or nil.
@@ -137,7 +136,7 @@ A running turn is interrupted first and given `ecc-tui-interrupt-timeout'
 seconds to come to an end, because a turn stopped mid-tool leaves the
 CLI to write the result of a call that will never finish.  Signals when
 the process cannot be stopped: two processes on one session id branch
-the conversation without saying so (FR-TUI-5)."
+the conversation without saying so."
   (let ((process (ecc-session-process session)))
     (when (process-live-p process)
       (when (eq (ecc-session-state session) 'running)
@@ -152,7 +151,7 @@ the conversation without saying so (FR-TUI-5)."
       (user-error "%s could not be stopped; the terminal would branch the conversation"
                   (ecc-session-name session)))))
 
-;;;; Opening the terminal (FR-TUI-1, FR-TUI-2)
+;;;; Opening the terminal
 
 (defun ecc-tui-buffer-name (session)
   "Return the name of the terminal buffer of SESSION."
@@ -166,7 +165,7 @@ the conversation without saying so (FR-TUI-5)."
 (defun ecc-tui--open-ghostel (session)
   "Open SESSION in a ghostel buffer and return (BUFFER . PROCESS).
 The CLI is the process of the buffer, so leaving it ends the buffer
-and Emacs is told without having to ask (FR-TUI-4)."
+and Emacs is told without having to ask."
   (unless (require 'ghostel nil t)
     (user-error "ghostel is not installed; the hand-off needs it"))
   (unless (fboundp 'ghostel-exec)
@@ -195,15 +194,15 @@ and Emacs is told without having to ask (FR-TUI-4)."
 
 ;;;###autoload
 (defun ecc-tui-open (&optional session)
-  "Carry on with SESSION in the real terminal UI (FR-TUI-1).
+  "Carry on with SESSION in the real terminal UI.
 The turn in flight is interrupted, the process Emacs runs is stopped,
 and the terminal resumes the same conversation.  The transcript
 follows along and the session comes back when the terminal is left.
 
 Stopping the process takes the Remote Control bridge down with it, if
-one was up: nothing asks for `keep_session_on_exit\=' (2026-09-08,
-`docs/decisions.md\='), so the session leaves the Code tab of the phone
-until the CLI in the terminal brings up a bridge of its own."
+one was up: nothing asks for `keep_session_on_exit\=' (decided
+2026-09-08), so the session leaves the Code tab of the phone until the
+CLI in the terminal brings up a bridge of its own."
   (interactive)
   (let ((session (or session (ecc-window-resolve-session))))
     (when-let* ((entry (ecc-tui--other-process session)))
@@ -227,7 +226,7 @@ until the CLI in the terminal brings up a bridge of its own."
              (ecc-session-name session))
     session))
 
-;;;; Following the recording (FR-TUI-3)
+;;;; Following the recording
 
 (defun ecc-tui-follow-start (session)
   "Start following the recording of SESSION from where it stands now.
@@ -308,7 +307,7 @@ notification can arrive while the CLI is halfway through writing one."
       (cancel-timer timer)))
   (remhash (ecc-session-id session) ecc-tui--handoffs))
 
-;;;; Noticing that the terminal is done (FR-TUI-4)
+;;;; Noticing that the terminal is done
 
 (defun ecc-tui--start-timer (session)
   "Start the timer that watches over the hand-off of SESSION."
@@ -373,7 +372,7 @@ down the terminal's own timers and kills its buffer."
 
 ;;;###autoload
 (defun ecc-tui-return (&optional session)
-  "Take SESSION back from the terminal and run it in Emacs again (FR-TUI-4).
+  "Take SESSION back from the terminal and run it in Emacs again.
 Whatever the terminal added is read first, so that nothing is missed,
 and the session is then resumed headless.  A terminal that is still
 running keeps the session: resuming it now would branch the
@@ -388,7 +387,7 @@ conversation."
       session)
      ;; Somebody is still writing to this session.  The hand-off is left
      ;; as it is, so that the watch keeps looking and takes it back once
-     ;; the terminal is really gone (FR-TUI-5).
+     ;; the terminal is really gone.
      ((ecc-registry-live-p (ecc-session-id session))
       (message "%s is still open in a terminal" (ecc-session-name session))
       nil)

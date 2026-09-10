@@ -10,18 +10,17 @@
 
 ;; What the client says about a conversation without being asked:
 ;;
-;; - the context left (FR-HINT-3, 5).  The CLI does not tell a headless
-;;   session how full the window is -- `autocompact_state' only goes to
+;; - the context left.  The CLI does not tell a headless session how
+;;   full the window is -- `autocompact_state' only goes to
 ;;   CLAUDE_CODE_REMOTE -- so the estimate is made here out of the usage
 ;;   of the last assistant message and the window of the model in use.
 ;;   A compaction resets it.
 ;;
-;; - the prompt suggestion (FR-HINT-4), shown in the prompt region while
-;;   it is empty and taken with one key.
+;; - the prompt suggestion, shown in the prompt region while it is empty
+;;   and taken with one key.
 ;;
 ;; The suggestion costs something -- it needs the --prompt-suggestions
-;; flag -- so it has a defcustom of its own that switches it off
-;; (NFR-3).
+;; flag -- so it has a defcustom of its own that switches it off.
 
 ;;; Code:
 
@@ -55,8 +54,7 @@ A 1M window can be announced in the model name
 itself, as in \"claude-sonnet-5[1m]\", but it is not always: the
 Claude 5 models carry one under their plain names too, which the CLI
 says nowhere -- neither system/init nor the recording mentions a
-window -- so the names are listed here (see docs/decisions.md,
-2026-09-06).")
+window -- so the names are listed here (decided 2026-09-06).")
 
 (defvar ecc-hint-window-default 200000
   "Context window in tokens assumed for a model that is not listed.")
@@ -73,7 +71,7 @@ would say the threshold outright.")
   "Fraction left below which the indicator asks for a compaction.")
 
 (defcustom ecc-mode-line-format nil
-  "How a session describes itself in the mode line (FR-HINT-3).
+  "How a session describes itself in the mode line.
 Nil by default: the mode line is narrow, the same numbers are in the
 header line, and a session that repeated them in both was unreadable.
 The specifications are %n the session name, %m the model, %p the
@@ -95,7 +93,7 @@ The suggestions only arrive when the session was started with
   :type 'boolean
   :group 'ecc)
 
-;;;; The model in use and its window (FR-HINT-3)
+;;;; The model in use and its window
 
 (defun ecc-hint-model (session)
   "Return the name of the model SESSION is talking to, or nil.
@@ -145,7 +143,7 @@ the CLI gets round to compacting."
 (defun ecc-hint-context-string (session)
   "Return the context left of SESSION as a line, or nil when unknown.
 Below `ecc-hint-critical-threshold' the line says what to do about
-it (FR-HINT-3)."
+it."
   (when-let* ((left (ecc-hint-context-left session)))
     (propertize (format "context %d%% left%s"
                         (round (* 100 left))
@@ -157,13 +155,13 @@ it (FR-HINT-3)."
   "Return what the header line of SESSION says about its context.
 The right of the header line is a tight place, so this is the bare
 percentage.  What is left of the window is told by its colour --
-yellow-green, amber, red as it runs out (FR-HINT-3)."
+yellow-green, amber, red as it runs out."
   (when ecc-hint-context-indicator
     (when-let* ((left (ecc-hint-context-left session)))
       (propertize (format "%d%%" (round (* 100 left)))
                   'face (ecc-hint-context-face left)))))
 
-;;;; The rate limit (FR-HINT-3)
+;;;; The rate limit
 
 (defun ecc-hint-rate-limit (session window)
   "Return the utilization of the rate limit WINDOW of SESSION, or nil.
@@ -187,7 +185,7 @@ WINDOW is a symbol such as `five_hour' or `seven_day'."
                                    (when seven (format "7d %d%%" (round (* 100 seven))))))
                    " "))))
 
-;;;; The mode line (FR-HINT-3)
+;;;; The mode line
 
 (defun ecc-hint-token-string (tokens)
   "Return TOKENS in a form that fits a mode line."
@@ -229,7 +227,7 @@ straight into a mode line construct."
   "Set KEY of the hint state of SESSION to VALUE."
   (setf (alist-get key (ecc-session-hint-state session)) value))
 
-;;;; The prompt suggestion (FR-HINT-4)
+;;;; The prompt suggestion
 
 (defun ecc-hint-suggestion (session)
   "Return the prompt the CLI last suggested for SESSION, or nil."
@@ -241,7 +239,7 @@ straight into a mode line construct."
 (defun ecc-hint-suggestion-placeholder (session)
   "Return the suggestion of SESSION as the placeholder of its prompt region.
 The placeholder is only shown while nothing has been typed, which is
-what keeps a suggestion out of the way of a draft (FR-HINT-4)."
+what keeps a suggestion out of the way of a draft."
   (when-let* ((suggestion (and ecc-prompt-suggestion-display
                                (ecc-hint-suggestion session))))
     (format "%s   (C-c C-s to take it)" suggestion)))
@@ -249,7 +247,7 @@ what keeps a suggestion out of the way of a draft (FR-HINT-4)."
 (add-hook 'ecc-chat-placeholder-functions #'ecc-hint-suggestion-placeholder)
 
 (defun ecc-hint-show-suggestion (session)
-  "Show the suggestion of SESSION in its prompt region (FR-HINT-4).
+  "Show the suggestion of SESSION in its prompt region.
 Returns the suggestion shown, or nil when there is none or a draft is
 in the way."
   (let ((buffer (ecc-session-buffer session)))
@@ -261,7 +259,7 @@ in the way."
              (ecc-hint-suggestion session))))))
 
 (defun ecc-hint-accept-suggestion ()
-  "Write the suggested prompt into the prompt region (FR-HINT-4)."
+  "Write the suggested prompt into the prompt region."
   (interactive)
   (let* ((session (or ecc-render--session
                       (user-error "This buffer does not belong to a Claude session")))

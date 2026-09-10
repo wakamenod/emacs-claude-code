@@ -8,17 +8,17 @@
 
 ;;; Commentary:
 
-;; The `/btw' of the terminal client (FR-BTW-1..4): a question asked on
-;; the side, answered without interrupting whatever Claude is doing.
+;; The `/btw' of the terminal client: a question asked on the side,
+;; answered without interrupting whatever Claude is doing.
 ;;
 ;; It is not a slash command.  The CLI never names it in `commands' or
 ;; `slash_commands', because the terminal client catches the raw input
-;; line with a regexp of its own and never sends it as a prompt.  What it
-;; sends instead is a control request, `side_question', on the same
+;; line with a regexp of its own and never sends it as a prompt.  What
+;; it sends instead is a control request, `side_question', on the same
 ;; stream-json channel `ecc-proc' already speaks -- so ecc needs no
-;; second process and no fork of the conversation (docs/verified.md,
-;; 2026-09-09; the fork this was first designed around turned out to be
-;; the terminal panel's `f' key, not the feature).
+;; second process and no fork of the conversation (confirmed 2026-09-09;
+;; the fork this was first designed around turned out to be the terminal
+;; panel's `f' key, not the feature).
 ;;
 ;; The CLI does the hard half: the side question shares the messages of
 ;; the conversation, is answered by a separate lightweight instance with
@@ -48,7 +48,7 @@
 ;;;; Options
 
 (defcustom ecc-btw-display 'window
-  "Where the answer to a side question is shown (FR-BTW-3).
+  "Where the answer to a side question is shown.
 `window' puts the buffer in a window.  `posframe' floats it over the
 frame instead, which needs the posframe package and a graphical frame;
 without either, a window is used and the buffer is the same one."
@@ -59,7 +59,7 @@ without either, a window is used and the buffer is the same one."
 (defvar ecc-btw-history-limit 10
   "How many past exchanges go back with the next side question.
 The CLI threads nothing by itself, so this is the whole of the context
-a follow-up has (FR-BTW-4).  Nil sends none.")
+a follow-up has.  Nil sends none.")
 
 (defvar ecc-btw-timeout 120
   "Seconds to wait for the answer to a side question.
@@ -130,7 +130,7 @@ A plist of :question, :request-id, :status and :timer.")
   "Keymap of `ecc-btw-mode'.")
 
 (define-derived-mode ecc-btw-mode special-mode "Claude-Btw"
-  "Major mode showing the side questions of one session (FR-BTW-3).
+  "Major mode showing the side questions of one session.
 
 \\{ecc-btw-mode-map}"
   :interactive nil
@@ -232,9 +232,9 @@ of them is done with."
 (defun ecc-btw-show (&optional session)
   "Show what SESSION has asked on the side, where the settings say.
 Called interactively it opens the side questions of the session this
-buffer talks to (FR-WIN-4), without asking anything: the panel is worth
-looking at on its own, to read an answer again or to ask the next one
-with \\[ecc-btw-ask-again]."
+buffer talks to, without asking anything: the panel is worth looking at
+on its own, to read an answer again or to ask the next one with
+\\[ecc-btw-ask-again]."
   (interactive (list (ecc-window-resolve-session current-prefix-arg)))
   (let* ((session (or session (ecc-btw--session)))
          (buffer (ecc-btw-buffer session)))
@@ -244,7 +244,7 @@ with \\[ecc-btw-ask-again]."
       (display-buffer buffer))
     buffer))
 
-;;;; Asking (FR-BTW-1, 4)
+;;;; Asking
 
 (defun ecc-btw--history (session)
   "Return the past exchanges of SESSION as the CLI wants them.
@@ -328,7 +328,7 @@ would leave the question saying \"Answering…\" for good."
 
 ;;;###autoload
 (defun ecc-btw-ask (session question)
-  "Ask QUESTION of SESSION on the side, without interrupting it (FR-BTW-1).
+  "Ask QUESTION of SESSION on the side, without interrupting it.
 The turn that is running is left alone: the CLI answers a side question
 with a separate lightweight instance that shares the conversation but
 has no tools, and neither the question nor the answer reaches the
@@ -391,8 +391,8 @@ transcript.  Returns the request id."
 
 (defun ecc-btw-clear ()
   "Forget the side questions of this session.
-They are the whole context a follow-up has (FR-BTW-4), so this starts
-the next one afresh."
+They are the whole context a follow-up has, so this starts the next one
+afresh."
   (interactive)
   (let ((session (ecc-btw--session)))
     (remhash session ecc-btw--exchanges)
@@ -414,7 +414,7 @@ the next one afresh."
     (when-let* ((window (get-buffer-window buffer)))
       (quit-window nil window))))
 
-;;;; The way in: /btw in the prompt region (FR-BTW-1)
+;;;; The way in: /btw in the prompt region
 
 (defconst ecc-btw-command "/btw"
   "The word that turns a draft into a side question.")

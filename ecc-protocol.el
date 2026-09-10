@@ -14,7 +14,7 @@
 ;; module works on the Emacs data structures of `ecc-model'.
 ;;
 ;; Message shapes are the ones recorded from CLI 2.1.261; see
-;; test/fixtures and docs/verified.md.
+;; test/fixtures.
 
 ;;; Code:
 
@@ -75,7 +75,7 @@ already parsed input when the raw line was not kept."
   "Return the permission_suggestions of the can_use_tool MESSAGE, verbatim.
 Like `ecc-protocol-request-input', the value is re-read from the raw
 line so that a suggestion can be sent back as updatedPermissions
-without any change (FR-PERM-3).  Nil when there are none."
+without any change.  Nil when there are none."
   (let* ((raw (alist-get 'ecc-raw message))
          (suggestions (alist-get 'permission_suggestions
                                  (alist-get 'request
@@ -131,7 +131,7 @@ request object, in the order given."
   "Return a control_cancel_request alist withdrawing REQUEST-ID.
 The CLI drops the work it was doing for that request and answers it with
 an error rather than a result; a side question cancelled this way comes
-back as \"Side question cancelled\" (FR-BTW-3, measured 2026-09-09)."
+back as \"Side question cancelled\" (measured 2026-09-09)."
   `((type . "control_cancel_request")
     (request_id . ,request-id)))
 
@@ -186,7 +186,7 @@ The empty hooks object is sent as nil, which serializes to {}."
   "Return the set_permission_mode control request with REQUEST-ID.
 MODE is one of default, acceptEdits, plan, auto, bypassPermissions or
 dontAsk.  The CLI refuses one it cannot have -- auto asks for a model
-that supports it -- with an error control response (docs/verified.md,
+that supports it -- with an error control response (confirmed
 2026-09-08)."
   (ecc-protocol-control-request request-id "set_permission_mode" 'mode mode))
 
@@ -196,7 +196,7 @@ ENABLED turns the bridge on when non-nil and off otherwise; it goes out
 as t or :false, the way the CLI wants a boolean.  NAME, when given, is
 the name the session takes on the bridge.  `keep_session_on_exit\=' is
 deliberately not sent: the bridge is folded up with the session
-\(2026-09-08, `docs/decisions.md\=')."
+\(decided 2026-09-08)."
   (apply #'ecc-protocol-control-request request-id "remote_control"
          'enabled (if enabled t :false)
          (when name (list 'name name))))
@@ -222,7 +222,7 @@ the plugin stays enabled everywhere else."
   "Return one addRules permission update allowing PATTERNS of TOOL-NAME.
 PATTERNS are rule contents such as \"git push *\"; DESTINATION
 defaults to \"session\".  Unverified against the CLI, kept for the
-day it is (FR-PERM-8 writes the settings file itself instead)."
+day it is (`ecc-perm' writes the settings file itself instead)."
   `((type . "addRules")
     (rules . ,(vconcat (mapcar (lambda (pattern)
                                  `((toolName . ,tool-name)
@@ -231,7 +231,7 @@ day it is (FR-PERM-8 writes the settings file itself instead)."
     (behavior . "allow")
     (destination . ,(or destination "session"))))
 
-;;;; Session history files (FR-HIST-1, 2)
+;;;; Session history files
 
 ;; The jsonl the CLI keeps under ~/.claude/projects is not the stream:
 ;; it holds the same `user' and `assistant' messages, but wraps them in
@@ -244,7 +244,7 @@ day it is (FR-PERM-8 writes the settings file itself instead)."
   "Line types of a history file that carry conversation content.
 Everything else is bookkeeping: `attachment', `summary',
 `file-history-snapshot', `last-prompt', `mode', `permission-mode',
-`bridge-session', `ai-title', `cost-state' and the rest (FR-HIST-2).")
+`bridge-session', `ai-title', `cost-state' and the rest.")
 
 (defun ecc-protocol-history-user-line-p (line)
   "Return non-nil when LINE of a history file might be a user message.
@@ -270,7 +270,7 @@ renamed to the name the stream uses."
     (error nil)))
 
 (defun ecc-protocol-history-sidechain-p (message)
-  "Return non-nil when MESSAGE was written by a subagent (FR-HIST-2)."
+  "Return non-nil when MESSAGE was written by a subagent."
   (eq (alist-get 'isSidechain message) t))
 
 (defconst ecc-protocol-command-output-regexp "\\`[ \t\n]*<local-command-stdout>"
@@ -278,7 +278,7 @@ renamed to the name the stream uses."
 The interactive CLI writes what a local command printed back into the
 conversation as a user message; it is not a prompt and starts no turn.")
 
-;;;; Local commands (FR-HIST-2)
+;;;; Local commands
 
 ;; A slash command the CLI ran itself leaves three kinds of line in the
 ;; recording: the caveat it writes to tell the model to ignore what
@@ -286,12 +286,12 @@ conversation as a user message; it is not a prompt and starts no turn.")
 ;; what the command printed, either as `system/local_command' or as
 ;; another user message.  None of them is something the user typed at
 ;; the model, so none of them opens a turn (confirmed against the
-;; recording of session 4cc012b5, see docs/verified.md).
+;; recording of session 4cc012b5).
 
 (defconst ecc-protocol-command-caveat-regexp "\\`[ \t\n]*<local-command-caveat>"
   "Start of the note the CLI writes before the record of a local command.
 It is addressed to the model, not to the user, and the terminal client
-does not show it either, so it is not drawn (FR-HIST-2).")
+does not show it either, so it is not drawn.")
 
 (defconst ecc-protocol-command-name-regexp "\\`[ \t\n]*<command-name>"
   "Start of the user line that records a slash command the CLI ran.")
@@ -354,7 +354,7 @@ A turn starts at a `user' line whose content is text the user typed.
 A line carrying only tool results continues the turn it is in, a line
 the CLI wrote itself (`isMeta') is not a prompt at all, and neither is
 the record of a local command: neither the command, nor the caveat
-before it, nor what it printed was said to the model (FR-HIST-2)."
+before it, nor what it printed was said to the model."
   (when (and (equal (alist-get 'type message) "user")
              (not (eq (alist-get 'isMeta message) t))
              (not (ecc-protocol-history-sidechain-p message)))
@@ -401,7 +401,7 @@ later value winning.  The keys are `session-id', `cwd', `title',
   "Return (UUID . PARENT-UUID) of LINE of a history file, or nil.
 Every kind of line is looked at, bookkeeping included: an attachment
 sits in the chain between two messages, so a walk up the chain that
-skipped one would stop early (FR-HIST-1)."
+skipped one would stop early."
   (condition-case nil
       (let ((object (ecc--json-read line)))
         (when-let* ((uuid (and (consp object) (alist-get 'uuid object))))
@@ -412,7 +412,7 @@ skipped one would stop early (FR-HIST-1)."
   "Return the leaf uuid LINE of a history file names, or nil.
 The CLI writes a `last-prompt' line after every turn saying which
 message the conversation now hangs from; the last one in the file is
-the branch a resume would continue (FR-HIST-1)."
+the branch a resume would continue."
   (when (string-match-p "\"last-prompt\"" line)
     (condition-case nil
         (let ((object (ecc--json-read line)))
@@ -447,12 +447,12 @@ is what checks that the two still agree (`ecc-test-live-agents')."
         (and (vectorp agents) (append agents nil)))
     (error nil)))
 
-;;;; Settings files (FR-PERM-8)
+;;;; Settings files
 
 ;; The settings file is JSON too, so it is read and written here and not
-;; in `ecc-perm' (NFR-2).  `json-pretty-print-buffer' is used for the
-;; layout; it keeps {} and [] apart from null, which was checked on the
-;; Emacs this is developed on.
+;; in `ecc-perm'.  `json-pretty-print-buffer' is used for the layout; it
+;; keeps {} and [] apart from null, which was checked on the Emacs this
+;; is developed on.
 
 (defun ecc-protocol-read-settings-file (file)
   "Return the JSON object in FILE as an alist, or nil when FILE is absent.
@@ -508,10 +508,10 @@ nothing is written when there is none."
 
 (defun ecc-protocol-value-string (value)
   "Return VALUE, as parsed from JSON, as a string fit for display.
-Kept here because it is the only place that knows how the reader
-spells null, false and an array (NFR-2).  `json-serialize' answers with
-a unibyte string, whose UTF-8 bytes would be drawn one escape at a time,
-so the serialized shapes are decoded back to text."
+Kept here because it is the only place that knows how the reader spells
+null, false and an array.  `json-serialize' answers with a unibyte
+string, whose UTF-8 bytes would be drawn one escape at a time, so the
+serialized shapes are decoded back to text."
   (cond ((stringp value) value)
         ((null value) "null")
         ((eq value :null) "null")

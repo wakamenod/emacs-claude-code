@@ -8,10 +8,9 @@
 
 ;;; Commentary:
 
-;; Which window a transcript is shown in (FR-WIN-1), hiding and
-;; restoring them per project and per tab (FR-WIN-2, FR-WIN-5), the name
-;; a session goes by (FR-WIN-3) and the rule that decides which session
-;; a command sends to (FR-WIN-4).
+;; Which window a transcript is shown in, hiding and restoring them per
+;; project and per tab, the name a session goes by and the rule that
+;; decides which session a command sends to.
 ;;
 ;; It also keeps track of the last buffer the user worked in that is not
 ;; part of this package, which is the source `ecc-context' quotes from.
@@ -30,15 +29,15 @@
 
 (defvar ecc-window-use-side-window t
   "Non-nil shows a transcript in a side window rather than an ordinary one.
-Nil falls back to a plain `display-buffer', which gives up the roles of
-FR-WIN-1 -- main, sub-1, sub-2 -- and the tab line that goes with them.
-It is a way out rather than a supported layout.")
+Nil falls back to a plain `display-buffer', which gives up the window
+roles -- main, sub-1, sub-2 -- and the tab line that goes with them.  It
+is a way out rather than a supported layout.")
 
 (defvar ecc-window-side 'right
   "Side of the frame the transcript window is put on.
 `ecc-display-session-in-role' calls `display-buffer-in-side-window'
 outright, so `display-buffer-alist' is never consulted for a transcript
-and this is the way to move one (2026-09-10, `docs/decisions.md').")
+and this is the way to move one (decided 2026-09-10).")
 
 (defvar ecc-window-width 0.4
   "Width of the transcript side window, as a fraction or a column count.")
@@ -49,9 +48,9 @@ and this is the way to move one (2026-09-10, `docs/decisions.md').")
 (defcustom ecc-window-large-frame-min-height 80
   "Height, in lines, a frame needs before it gets a third session window.
 Below it the sessions share two windows and the tab line reaches the
-rest (FR-WIN-1).  The default tells a laptop from a large display: a
-14-inch screen holds around 58 lines and a 16-inch one around 67, while
-the display this was measured on holds 114."
+rest.  The default tells a laptop from a large display: a 14-inch screen
+holds around 58 lines and a 16-inch one around 67, while the display
+this was measured on holds 114."
   :type 'integer
   :group 'ecc)
 
@@ -67,15 +66,15 @@ Which side the other two stand on, and how wide they are, is
   :group 'ecc)
 
 (defvar ecc-window-ask-name-for-second-session t
-  "Non-nil asks for a name when a project gets a second session (FR-WIN-3).")
+  "Non-nil asks for a name when a project gets a second session.")
 
 (defvar ecc-window-remember-session-per-buffer t
-  "Non-nil remembers in a buffer which session was chosen for it (FR-WIN-4).")
+  "Non-nil remembers in a buffer which session was chosen for it.")
 
 (defvar-local ecc--bound-session-id nil
   "Id of the session this buffer sends to, once one has been chosen.")
 
-;;;; Projects and names (FR-WIN-3)
+;;;; Projects and names
 
 (defun ecc-window-project-root (&optional directory)
   "Return the root of the project of DIRECTORY, or DIRECTORY itself.
@@ -96,7 +95,7 @@ ROOT defaults to the project of the current buffer."
 (defun ecc-window-read-session-name (root)
   "Return a name for a new session in ROOT, asking when it is not the first.
 The first session of a project is named after the directory; the ones
-after it are told apart by a name the user gives (FR-WIN-3)."
+after it are told apart by a name the user gives."
   (when (and ecc-window-ask-name-for-second-session
              (ecc-window-project-sessions root))
     (let ((name (read-string
@@ -106,7 +105,7 @@ after it are told apart by a name the user gives (FR-WIN-3)."
         (string-trim name)))))
 
 (defun ecc-rename-session (session name)
-  "Rename SESSION to NAME and rename its buffers with it (FR-WIN-3)."
+  "Rename SESSION to NAME and rename its buffers with it."
   (interactive
    (let ((session (ecc-window-resolve-session current-prefix-arg)))
      (list session (read-string "New name: " (ecc-session-name session)))))
@@ -162,7 +161,7 @@ highlighted on the screen.  This is what it looked like while it lived.")
             (window-list)))
 
 (defun ecc-window-snapshot-region ()
-  "Remember the region of the buffer the user is leaving (FR-CTX-1)."
+  "Remember the region of the buffer the user is leaving."
   (when-let* ((region (or (ecc-window-buffer-region ecc-window--last-source-buffer)
                           (ecc-window--frame-region))))
     (setq ecc-window--last-region region)))
@@ -177,7 +176,7 @@ highlighted on the screen.  This is what it looked like while it lived.")
        region))))
 
 (defun ecc-window-context-buffer ()
-  "Return the buffer `@cursor' and `@diagnostics' read, or nil (FR-CTX-1).
+  "Return the buffer `@cursor' and `@diagnostics' read, or nil.
 The buffer the user last worked in first, then any ordinary buffer on
 the screen, then the one a region was last seen in.  The first of those
 is nil until `ecc-track-source-buffer-mode' has watched a buffer being
@@ -192,7 +191,7 @@ session, so the two after it are what make the references work there."
       (car (ecc-window--live-region ecc-window--last-region))))
 
 (defun ecc-window-active-region ()
-  "Return (BUFFER BEG END) for `@region' and the like, or nil (FR-CTX-1).
+  "Return (BUFFER BEG END) for `@region' and the like, or nil.
 The buffer the user last worked in is asked first, then any buffer on
 the screen, and the snapshot of `ecc-window-snapshot-region' last: a
 mark that died between choosing the region and sending the prompt is
@@ -202,7 +201,7 @@ the one failure this is here to survive."
       (ecc-window--live-region ecc-window--last-region)))
 
 (defun ecc-window-note-source-buffer (&rest _)
-  "Remember the current buffer as the source to quote from (FR-CTX-1)."
+  "Remember the current buffer as the source to quote from."
   ;; The region is taken down before the buffer is, because the buffer
   ;; being left is still the one recorded here.
   (ecc-window-snapshot-region)
@@ -213,7 +212,7 @@ the one failure this is here to survive."
       (setq ecc-window--last-source-buffer buffer))))
 
 (defun ecc-window-last-source-buffer ()
-  "Return the buffer to take file, line and region from (FR-CTX-1).
+  "Return the buffer to take file, line and region from.
 That is the current buffer when it is an ordinary one, and otherwise
 the last ordinary buffer that was selected."
   (cond ((not (ecc-window-own-buffer-p)) (current-buffer))
@@ -221,7 +220,7 @@ the last ordinary buffer that was selected."
          ecc-window--last-source-buffer)))
 
 (define-minor-mode ecc-track-source-buffer-mode
-  "Follow which ordinary buffer the user last worked in (FR-CTX-1).
+  "Follow which ordinary buffer the user last worked in.
 The commands that quote code into a prompt need it: by the time one of
 them runs, the current buffer may be a transcript or a prompt."
   :global t
@@ -233,14 +232,14 @@ them runs, the current buffer may be a transcript or a prompt."
     (remove-hook 'window-selection-change-functions #'ecc-window-note-source-buffer)
     (remove-hook 'window-buffer-change-functions #'ecc-window-note-source-buffer)))
 
-;;;; Showing and hiding (FR-WIN-1, FR-WIN-2, FR-WIN-5)
+;;;; Showing and hiding
 
 ;; This package puts three windows on the screen at the most: `main' at
 ;; the near end of the side, `sub-1' after it, and `sub-2' under the
 ;; main area of the frame -- the source code, usually -- on a frame with
 ;; the height to spare.  A session past that gets no window of its own:
 ;; it takes over a sub window, and the tab line is how the ones that are
-;; not on the screen are reached (FR-WIN-1, FR-NOTIFY-2).
+;; not on the screen are reached.
 ;;
 ;; Which window has which role is written on the window itself, in the
 ;; `ecc-window-role' parameter, rather than kept in a table here: the
@@ -258,7 +257,7 @@ them runs, the current buffer may be a transcript or a prompt."
 
 (defun ecc-window-available-roles (&optional frame)
   "Return the roles FRAME has the room for, in the order they fill.
-A frame that is not tall enough goes without `sub-2' (FR-WIN-1)."
+A frame that is not tall enough goes without `sub-2'."
   (if (ecc-window-large-frame-p frame)
       ecc-window-roles
     (remq 'sub-2 ecc-window-roles)))
@@ -294,7 +293,7 @@ into a sub window does that, in `ecc-display-session-in-role'."
     (or (cadr (memq ecc-window--last-sub subs)) (car subs))))
 
 (defun ecc-window-role-for (session &optional frame)
-  "Return the role the window of SESSION should have on FRAME (FR-WIN-1).
+  "Return the role the window of SESSION should have on FRAME.
 The window it is in already wins; then the first role standing empty;
 then a sub window, the two being taken in turn.  `main' is never taken
 from the session that holds it: only the user moves that one, by
@@ -315,7 +314,7 @@ clicking a tab or with `ecc-switch-session'."
           `((window-height . ,ecc-window-height))))))
 
 (defun ecc-window--sub-2-parameters ()
-  "Return the display action alist of the third window (FR-WIN-1).
+  "Return the display action alist of the third window.
 It is not a side window: a side window at the bottom would run the
 whole width of the frame and pass under the other two.  This one takes
 its room from the main area instead, which leaves the side alone.  It
@@ -351,7 +350,7 @@ replaced rather than a second window being opened."
        buffer (ecc-window--side-parameters role))))))
 
 (defun ecc-display-session (session)
-  "Show the buffer of SESSION and return its window (FR-WIN-1).
+  "Show the buffer of SESSION and return its window.
 The window is not selected; `ecc-window-select-session' does that."
   (require 'ecc-session)
   (if (not ecc-window-use-side-window)
@@ -361,7 +360,7 @@ The window is not selected; `ecc-window-select-session' does that."
 ;;;; Keeping a side window a side window
 
 (defun ecc-window-repair-side-windows (&optional frame)
-  "Give back the dedication a session side window lost (FR-WIN-1).
+  "Give back the dedication a session side window lost.
 Both `switch-to-buffer', which is how the tab line changes what a
 window shows, and `set-window-buffer' clear the `side' dedication of a
 side window, and an undedicated side window is the next one
@@ -376,14 +375,14 @@ FRAME is what `window-buffer-change-functions' passes."
 (defun ecc-window-select-session (session)
   "Show the buffer of SESSION, select its window and go to the prompt.
 That is where something can be typed, which is what showing a session
-is usually for (FR-WIN-1)."
+is usually for."
   (let ((window (ecc-display-session session)))
     (when (window-live-p window)
       (select-window window)
       (ecc-chat-goto-prompt))
     window))
 
-;;;; Opening a review (FR-WIN-5)
+;;;; Opening a review
 
 ;; A diff or a plan wants room, and the session windows are what there
 ;; is to take it from.  What happens is the user's to decide: whether
@@ -391,19 +390,19 @@ is usually for (FR-WIN-1)."
 
 (defvar ecc-window-hide-on-review nil
   "Whether opening a diff or a plan review hides the session windows.
-`project' hides the sessions of the project being reviewed, `all'
-hides every session, and nil leaves the windows as they are
-\(FR-WIN-5).  `ecc-toggle' brings back what was hidden.")
+`project' hides the sessions of the project being reviewed, `all' hides
+every session, and nil leaves the windows as they are.  `ecc-toggle'
+brings back what was hidden.")
 
 (defvar ecc-window-review-focus 'review
-  "Where point goes when a diff or a plan review opens (FR-WIN-5).
+  "Where point goes when a diff or a plan review opens.
 `review' selects the review, `session' leaves it in the transcript and
 nil leaves it wherever it was.")
 
 (defun ecc-window-display-review (buffer &optional session)
   "Show the review in BUFFER, of SESSION, and return its window.
 `ecc-window-hide-on-review' and `ecc-window-review-focus' decide what
-happens to the session windows and where point lands (FR-WIN-5)."
+happens to the session windows and where point lands."
   (let ((hidden (pcase ecc-window-hide-on-review
                   ('all (ecc-model-sessions))
                   ('project (if session
@@ -447,7 +446,7 @@ happens to the session windows and where point lands (FR-WIN-5)."
 (defun ecc-window--layout-key ()
   "Return the key the hidden session list is stored under.
 With `tab-bar-mode' on, every tab keeps its own layout, so the hidden
-list is per tab as well (FR-WIN-5)."
+list is per tab as well."
   (or (and (bound-and-true-p tab-bar-mode)
            (fboundp 'tab-bar--current-tab)
            (alist-get 'name (tab-bar--current-tab)))
@@ -489,7 +488,7 @@ Return the sessions that were shown."
 (defun ecc-toggle (&optional all)
   "Hide the session windows of this project, or bring back the hidden ones.
 With ALL, a prefix argument interactively, every session is toggled
-rather than the ones of the current project (FR-WIN-2)."
+rather than the ones of the current project."
   (interactive "P")
   (let* ((sessions (if all (ecc-model-sessions)
                      (ecc-window-project-sessions)))
@@ -513,11 +512,11 @@ rather than the ones of the current project (FR-WIN-2)."
 
 ;;;###autoload
 (defun ecc-toggle-all ()
-  "Hide or restore the session windows of every project (FR-WIN-2)."
+  "Hide or restore the session windows of every project."
   (interactive)
   (ecc-toggle t))
 
-;;;; Which session a command talks to (FR-WIN-4)
+;;;; Which session a command talks to
 
 (defun ecc-window-displayed-sessions (&optional frame)
   "Return the sessions with a window on FRAME."
@@ -550,7 +549,7 @@ SESSIONS defaults to every live session, most recently used first."
   (and ecc--bound-session-id (ecc-model-session ecc--bound-session-id)))
 
 (defun ecc-window-resolve-session (&optional force-ask)
-  "Return the session a command in this buffer should talk to (FR-WIN-4).
+  "Return the session a command in this buffer should talk to.
 The order is: the session of this buffer, the session this buffer was
 bound to before, the only session of this project, the only session on
 screen, the most recently used one.  FORCE-ASK, a prefix argument in
@@ -579,7 +578,7 @@ the window goes with the buffer."
       (setcdr layout (assoc-delete-all id (cdr layout))))
     (set-frame-parameter nil 'ecc-hidden-sessions alist)))
 
-;;;; Switching a window to another session (FR-WIN-1, FR-NOTIFY-2)
+;;;; Switching a window to another session
 
 (defun ecc-window--switch-target ()
   "Return the window `ecc-switch-session' should change.
@@ -592,7 +591,7 @@ command run from the source code means the session one is looking at."
 
 ;;;###autoload
 (defun ecc-switch-session (session)
-  "Show SESSION in this window, the way clicking its tab would (FR-WIN-1).
+  "Show SESSION in this window, the way clicking its tab would.
 Which session a window shows is the user's to choose: this is the same
 choice the tab line offers, for when the tabs are not to hand."
   (interactive (list (ecc-window-read-session "Switch to: ")))

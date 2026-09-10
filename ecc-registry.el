@@ -9,17 +9,16 @@
 ;;; Commentary:
 
 ;; Every running Claude Code writes a small JSON file about itself under
-;; ~/.claude/sessions, named after its process id, and deletes it when it
-;; stops.  Reading that directory is how Emacs learns about the sessions
-;; it did not start: the ones in a terminal, in another Emacs, or started
-;; in the background (FR-DASH-2 b, FR-DASH-6).
+;; ~/.claude/sessions, named after its process id, and deletes it when
+;; it stops.  Reading that directory is how Emacs learns about the
+;; sessions it did not start: the ones in a terminal, in another Emacs,
+;; or started in the background.
 ;;
 ;; `claude agents --json' reports the same thing, but as a subprocess
 ;; that costs a fifth of a second and has to be polled.  The files cost
 ;; nothing, carry more (the socket path, the tmux pane, the name), and
-;; can be watched, so this is the source and the command is not used.
-;; See docs/verified.md, and decisions.md for why the requirement's
-;; wording is not followed to the letter.
+;; can be watched, so this is the source and the command is not used,
+;; even though the requirement names the command.
 ;;
 ;; A file whose process is gone is stale.  It normally does not happen —
 ;; the CLI removes its own file — but a session killed with SIGKILL
@@ -56,7 +55,7 @@ says nothing useful.")
 (defconst ecc-registry-proc-start-format "%a %b %e %H:%M:%S %Y"
   "How the CLI writes the start time of its process, in UTC.
 The `procStart' field of a session file; checked against
-`process-attributes' on this machine, see docs/verified.md.")
+`process-attributes' on this machine.")
 
 (defun ecc-registry--alive-p (entry)
   "Return non-nil when the process of ENTRY is still running.
@@ -123,8 +122,7 @@ symbolic links resolved first: the CLI records the resolved one."
 (defconst ecc-registry-status-names '(("shell" . "busy"))
   "Statuses a session file spells differently from `claude agents --json'.
 The file says what the CLI is doing (`shell' while a shell command
-runs); the command folds that into `busy'.  Checked on 2026-09-06, see
-docs/verified.md.")
+runs); the command folds that into `busy'.  Checked on 2026-09-06.")
 
 (defun ecc-registry-display-status (status)
   "Return STATUS of a session file as `claude agents --json' would show it."
@@ -138,7 +136,7 @@ docs/verified.md.")
               (alist-get 'kind entry) "?")
           (abbreviate-file-name (or (alist-get 'cwd entry) ""))))
 
-;;;; Watching (FR-DASH-6)
+;;;; Watching
 
 (defvar ecc-registry--watch nil
   "The file notification descriptor of the registry watch, or nil.")

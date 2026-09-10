@@ -8,11 +8,10 @@
 
 ;;; Commentary:
 
-;; One place to reach the whole package from (NFR-10).  `ecc-menu'
-;; reaches every command worth a key; the slash command submenu is built
-;; from what the CLI said in its initialize answer, so it shows the
-;; skills and the plugin commands of the session at hand rather than a
-;; fixed list.
+;; One place to reach the whole package from.  `ecc-menu' reaches every
+;; command worth a key; the slash command submenu is built from what the
+;; CLI said in its initialize answer, so it shows the skills and the
+;; plugin commands of the session at hand rather than a fixed list.
 
 ;;; Code:
 
@@ -49,7 +48,7 @@
 ;;;; Commands the menu needs of its own
 
 (defun ecc-menu-session ()
-  "Return the session the menu acts on (FR-WIN-4)."
+  "Return the session the menu acts on."
   (ecc-window-resolve-session))
 
 ;;;###autoload
@@ -64,7 +63,7 @@ typed."
 
 ;;;###autoload
 (defun ecc-interrupt ()
-  "Interrupt the running turn of the session this buffer talks to (FR-SES-5)."
+  "Interrupt the running turn of the session this buffer talks to."
   (interactive)
   (let ((session (ecc-menu-session)))
     (ecc-proc-interrupt session)
@@ -128,7 +127,7 @@ or internal workspace)" (ecc-session-name session)))
 
 ;;;###autoload
 (defun ecc-set-model (model)
-  "Ask the session this buffer talks to to use MODEL (FR-INP-5).
+  "Ask the session this buffer talks to to use MODEL.
 The CLI answers a /model command even when it is driven headless, so
 the model can be changed without restarting it."
   (interactive
@@ -144,7 +143,7 @@ the model can be changed without restarting it."
 
 ;;;###autoload
 (defun ecc-show-log ()
-  "Show the raw protocol log of the session this buffer talks to (NFR-8)."
+  "Show the raw protocol log of the session this buffer talks to."
   (interactive)
   (pop-to-buffer (ecc--log-buffer (ecc-session-name (ecc-menu-session)))))
 
@@ -171,17 +170,17 @@ its buffer."
 
 ;;;###autoload
 (defun ecc-timeline ()
-  "Pick a turn of the session this buffer talks to (FR-OUT-14 d)."
+  "Pick a turn of the session this buffer talks to."
   (interactive)
   (ecc-menu--in-session #'ecc-session-timeline))
 
 ;;;###autoload
 (defun ecc-customize ()
-  "Open the customization group of this package (NFR-7)."
+  "Open the customization group of this package."
   (interactive)
   (customize-group 'ecc))
 
-;;;; The slash command submenu (NFR-10)
+;;;; The slash command submenu
 
 (defconst ecc-transient--keys
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -204,8 +203,8 @@ same suffix from one call to the next."
                                (ecc-prompt-read-argument name session)))
                    (text (if argument (concat name " " argument) name)))
               ;; The menu is another way to run what the prompt region
-              ;; runs, so a command Emacs answers itself -- /btw of
-              ;; FR-BTW-1 -- must not be sent from here either.
+              ;; runs, so a command Emacs answers itself -- /btw -- must
+              ;; not be sent from here either.
               (if (run-hook-with-args-until-success
                    'ecc-prompt-intercept-functions session text)
                   (message "%s was answered by Emacs" name)
@@ -234,7 +233,7 @@ same suffix from one call to the next."
 
 ;;;###autoload
 (defun ecc-slash-command (name)
-  "Send the slash command NAME, chosen with completion (FR-INP-2, 3)."
+  "Send the slash command NAME, chosen with completion."
   (interactive
    (let* ((session (ecc-window-resolve-session))
           (commands (ecc-prompt-offered-commands session)))
@@ -247,7 +246,7 @@ same suffix from one call to the next."
 
 ;;;###autoload (autoload 'ecc-slash-menu "ecc-transient" nil t)
 (transient-define-prefix ecc-slash-menu ()
-  "Slash commands the session at hand knows about (NFR-10)."
+  "Slash commands the session at hand knows about."
   [:description "Slash commands"
    :class transient-column
    :setup-children ecc-transient--setup-slash
@@ -255,11 +254,11 @@ same suffix from one call to the next."
   ["Other"
    ("/" "Choose with completion" ecc-slash-command)])
 
-;;;; The main menu (NFR-10)
+;;;; The main menu
 
 ;;;###autoload (autoload 'ecc-menu "ecc-transient" nil t)
 (transient-define-prefix ecc-menu ()
-  "Everything this package can do (NFR-10)."
+  "Everything this package can do."
   ["Claude Code"
    ["Session"
     ("c" "Start" ecc-start)
