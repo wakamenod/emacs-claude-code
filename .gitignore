@@ -6,11 +6,13 @@
 /dist/
 .DS_Store
 
-# Personal Claude Code settings; .claude/settings.json is the shared one
-/.claude/settings.local.json
-
-# Specification documents, kept locally but out of the repository
+# Specification documents, kept locally but out of the repository.
+# Named one by one so that the documentation site can live under /docs/.
 /REQUIREMENTS.md
 /IMPLEMENTATION_PLAN.md
-/docs/
+/docs/btw.md
+/docs/decisions.md
+/docs/defcustom-inventory.md
+/docs/phase9-ui-redesign.md
+/docs/verified.md
 /tmp
