@@ -11,6 +11,9 @@
 
 # Specification documents, kept locally but out of the repository.
 # Named one by one so that the documentation site can live under /docs/.
+# These five have nothing to do with docs/site/; do not tidy them into a
+# glob, which would hide the site source with them.  The site's own build
+# output is ignored by docs/site/.gitignore.
 /REQUIREMENTS.md
 /IMPLEMENTATION_PLAN.md
 /docs/btw.md

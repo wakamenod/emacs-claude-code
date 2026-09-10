@@ -21,6 +21,11 @@ code disagree, the code wins.
   `ecc-history.el`, `ecc-mcp.el`, `ecc-tui.el`, …). `ecc-transient.el` is the menu.
 - `test/` — one `ecc-<module>-test.el` per module, plus `ecc-live-test.el`.
 - `scripts/` — the recorders that make the fixtures.
+- `docs/site/` — the Astro Starlight documentation site, deployed to GitHub
+  Pages by `.github/workflows/docs.yml`. English is served at the root and
+  Japanese under `/ja/`, following the same rule as the two READMEs. The
+  Japanese `docs/*.md` beside it are the gitignored working documents and are
+  no part of the site.
 
 ## Commands
 
@@ -29,7 +34,17 @@ make compile     # byte-compile (warnings are errors); wipes stale .elc first
 make test        # ERT (fixture replay; no real process)
 make test-live   # ERT against the real CLI (tag live); run by hand only
 make lint        # checkdoc (+ package-lint when it is there)
+
+make docs-install  # npm ci for the documentation site
+make docs-dev      # the site's dev server
+make docs-build    # build the site into docs/site/dist
+make docs-preview  # serve the built site (search works here, not in dev)
+make docs-clean    # remove the site's build output
 ```
+
+The `docs-*` targets are the only thing in this repository that wants Node, and
+none of them is a prerequisite of `all` or `clean`: building and testing the
+Emacs package must never start needing a JavaScript toolchain.
 
 `make test` needs nothing but Emacs 29.1 or later: no network, no `claude`, no API key.
 The optional packages are optional here too — the one test that drives the real ghostel
