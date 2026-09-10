@@ -90,7 +90,7 @@ names are listed in `ecc-model-context-window'."
     (ecc-model-update-usage session '((input_tokens . 5000)))
     (should (= (ecc-hint-context-left session) 0.0))
     ;; The indicator can be switched off without switching the estimate off.
-    (let ((ecc-context-indicator nil))
+    (let ((ecc-hint-context-indicator nil))
       (should-not (ecc-hint-context-indicator session)))))
 
 (ert-deftest ecc-hint-test-context-indicator-is-in-the-header ()
@@ -163,7 +163,7 @@ names are listed in `ecc-model-context-window'."
     (setf (ecc-session-options session) '(:autocompact 19000))
     (ecc-model-begin-turn session "/compact")
     (ecc-model-update-usage session '((input_tokens . 17496)))
-    (should (< (ecc-hint-context-left session) ecc-context-critical-threshold))
+    (should (< (ecc-hint-context-left session) ecc-hint-critical-threshold))
     (should (string-search "run /compact" (ecc-hint-context-string session)))
     ;; The status message says a compaction started, the boundary how
     ;; much is left of the conversation.

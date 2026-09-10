@@ -48,17 +48,13 @@ The server is started the first time a session needs it and stopped by
   :type 'boolean
   :group 'ecc)
 
-(defcustom ecc-mcp-port 0
-  "Port the MCP server listens on.  Zero lets the system choose one."
-  :type 'integer
-  :group 'ecc)
+(defvar ecc-mcp-port 0
+  "Port the MCP server listens on.  Zero lets the system choose one.")
 
-(defcustom ecc-mcp-host "127.0.0.1"
+(defvar ecc-mcp-host "127.0.0.1"
   "Interface the MCP server listens on.
 Anything but the loopback interface publishes an evaluator for your
-Emacs to the network; there is no authentication here."
-  :type 'string
-  :group 'ecc)
+Emacs to the network; there is no authentication here.")
 
 (defcustom ecc-mcp-enable-execute-code nil
   "Non-nil publishes the tool that evaluates arbitrary Elisp (FR-MCP-3).
@@ -74,16 +70,12 @@ A tool that turns out to take long enough to be felt belongs here
   :type '(repeat string)
   :group 'ecc)
 
-(defcustom ecc-mcp-server-name "emacs"
+(defvar ecc-mcp-server-name "emacs"
   "Name the MCP server registers itself under.
-The CLI prefixes the tools with it: `mcp__emacs__xref_find_references'."
-  :type 'string
-  :group 'ecc)
+The CLI prefixes the tools with it: `mcp__emacs__xref_find_references'.")
 
-(defcustom ecc-mcp-max-results 200
-  "Most results a built-in tool returns in one answer."
-  :type 'integer
-  :group 'ecc)
+(defvar ecc-mcp-max-results 200
+  "Most results a built-in tool returns in one answer.")
 
 (defconst ecc-mcp-protocol-version "2025-06-18"
   "Version of the MCP protocol this server answers with.")

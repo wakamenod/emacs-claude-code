@@ -47,38 +47,26 @@
 (declare-function posframe-hide "posframe" (buffer))
 (declare-function posframe-poshandler-frame-center "posframe" (info))
 
-(defcustom ecc-usage-buffer-name "*ecc-usage*"
-  "Name of the buffer `ecc-usage' draws into."
-  :type 'string
-  :group 'ecc)
+(defvar ecc-usage-buffer-name "*ecc-usage*"
+  "Name of the buffer `ecc-usage' draws into.")
 
-(defcustom ecc-usage-skip-behaviors nil
+(defvar ecc-usage-skip-behaviors nil
   "Non-nil leaves out the section saying what is spending the limits.
 Working it out costs the CLI a scan of every transcript it touched in
-the last seven days, which is the slow part of the answer."
-  :type 'boolean
-  :group 'ecc)
+the last seven days, which is the slow part of the answer.")
 
-(defcustom ecc-usage-probe-args '("--tools" "" "--no-session-persistence")
+(defvar ecc-usage-probe-args '("--tools" "" "--no-session-persistence")
   "Extra arguments of the CLI started only to be asked about the usage.
 It answers one control request and is stopped again, so it needs no
-tools, and a recording of it would be an empty conversation."
-  :type '(repeat string)
-  :group 'ecc)
+tools, and a recording of it would be an empty conversation.")
 
-(defcustom ecc-usage-bar-width 20
-  "Width, in characters, of the bar drawn beside a rate limit window."
-  :type 'integer
-  :group 'ecc)
+(defvar ecc-usage-bar-width 20
+  "Width, in characters, of the bar drawn beside a rate limit window.")
 
-(defcustom ecc-usage-reset-format 'relative
+(defvar ecc-usage-reset-format 'relative
   "How the time a rate limit window resets at is written.
 `relative' says how long there is to go, the way the web client does;
-`absolute' gives the date and time; `both' gives the two of them."
-  :type '(choice (const :tag "In 17m" relative)
-                 (const :tag "09/08 23:00" absolute)
-                 (const :tag "In 17m (09/08 23:00)" both))
-  :group 'ecc)
+`absolute' gives the date and time; `both' gives the two of them.")
 
 (defcustom ecc-usage-display 'window
   "Where `ecc-usage' shows what it found.
@@ -109,15 +97,11 @@ without either, a window is used and the buffer is the same one."
   "Face for the part of a rate limit bar that is still free."
   :group 'ecc)
 
-(defcustom ecc-usage-warn-threshold 70
-  "Percentage of a window above which its bar is drawn as a warning."
-  :type 'integer
-  :group 'ecc)
+(defvar ecc-usage-warn-threshold 70
+  "Percentage of a window above which its bar is drawn as a warning.")
 
-(defcustom ecc-usage-critical-threshold 90
-  "Percentage of a window above which its bar is drawn as an error."
-  :type 'integer
-  :group 'ecc)
+(defvar ecc-usage-critical-threshold 90
+  "Percentage of a window above which its bar is drawn as an error.")
 
 ;;;; Asking
 

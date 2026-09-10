@@ -36,7 +36,7 @@
 
 ;;;; Options
 
-(defcustom ecc-model-context-window '(("[1m]" . 1000000)
+(defvar ecc-model-context-window '(("[1m]" . 1000000)
                                       ("opus-5" . 1000000)
                                       ("sonnet-5" . 1000000)
                                       ("fable-5" . 1000000)
@@ -47,7 +47,7 @@
                                       ("haiku" . 200000))
   "Context window in tokens of the models whose name matches.
 An alist of (SUBSTRING . TOKENS); the first entry whose substring
-appears in the model name wins, and `ecc-context-window-default' is
+appears in the model name wins, and `ecc-hint-window-default' is
 used when none does.  The bare names at the end are the aliases a
 `/model' is given (\"opus\", \"haiku\"), which is all that is known of
 the model between sending one and the answer that names it in full.
@@ -57,31 +57,21 @@ itself, as in \"claude-sonnet-5[1m]\", but it is not always: the
 Claude 5 models carry one under their plain names too, which the CLI
 says nowhere -- neither system/init nor the recording mentions a
 window -- so the names are listed here (see docs/decisions.md,
-2026-09-06)."
-  :type '(alist :key-type string :value-type integer)
-  :group 'ecc)
+2026-09-06).")
 
-(defcustom ecc-context-window-default 200000
-  "Context window in tokens assumed for a model that is not listed."
-  :type 'integer
-  :group 'ecc)
+(defvar ecc-hint-window-default 200000
+  "Context window in tokens assumed for a model that is not listed.")
 
-(defcustom ecc-autocompact-buffer 0.13
+(defvar ecc-autocompact-buffer 0.13
   "Fraction of the window the CLI keeps free to compact in.
 Only used when the session was started without --autocompact, which
-would say the threshold outright."
-  :type 'number
-  :group 'ecc)
+would say the threshold outright.")
 
-(defcustom ecc-context-warn-threshold 0.2
-  "Fraction of the context window left below which the indicator warns."
-  :type 'number
-  :group 'ecc)
+(defvar ecc-hint-warn-threshold 0.2
+  "Fraction of the context window left below which the indicator warns.")
 
-(defcustom ecc-context-critical-threshold 0.1
-  "Fraction left below which the indicator asks for a compaction."
-  :type 'number
-  :group 'ecc)
+(defvar ecc-hint-critical-threshold 0.1
+  "Fraction left below which the indicator asks for a compaction.")
 
 (defcustom ecc-mode-line-format nil
   "How a session describes itself in the mode line (FR-HINT-3).
@@ -94,7 +84,7 @@ the state.  Nil shows nothing."
   :type '(choice (const :tag "Nothing" nil) string)
   :group 'ecc)
 
-(defcustom ecc-context-indicator t
+(defcustom ecc-hint-context-indicator t
   "Non-nil shows the context left in the header line of a session."
   :type 'boolean
   :group 'ecc)
@@ -125,7 +115,7 @@ the recorded messages are asked first."
   (let ((model (or (ecc-hint-model session) "")))
     (or (cdr (seq-find (lambda (entry) (string-search (car entry) model))
                        ecc-model-context-window))
-        ecc-context-window-default)))
+        ecc-hint-window-default)))
 
 (defun ecc-hint-context-window (session)
   "Return how many tokens SESSION may fill before it is compacted.
@@ -149,18 +139,18 @@ the CLI gets round to compacting."
 (defun ecc-hint-context-face (left)
   "Return the face the context indicator wears with LEFT of the window free."
   (cond ((null left) 'ecc-dim-face)
-        ((<= left ecc-context-critical-threshold) 'ecc-error-face)
-        ((<= left ecc-context-warn-threshold) 'ecc-warning-face)
+        ((<= left ecc-hint-critical-threshold) 'ecc-error-face)
+        ((<= left ecc-hint-warn-threshold) 'ecc-warning-face)
         (t 'ecc-ok-face)))
 
 (defun ecc-hint-context-string (session)
   "Return the context left of SESSION as a line, or nil when unknown.
-Below `ecc-context-critical-threshold' the line says what to do about
+Below `ecc-hint-critical-threshold' the line says what to do about
 it (FR-HINT-3)."
   (when-let* ((left (ecc-hint-context-left session)))
     (propertize (format "context %d%% left%s"
                         (round (* 100 left))
-                        (if (<= left ecc-context-critical-threshold)
+                        (if (<= left ecc-hint-critical-threshold)
                             " — run /compact" ""))
                 'face (ecc-hint-context-face left))))
 
@@ -169,7 +159,7 @@ it (FR-HINT-3)."
 The right of the header line is a tight place, so this is the bare
 percentage.  What is left of the window is told by its colour --
 yellow-green, amber, red as it runs out (FR-HINT-3)."
-  (when ecc-context-indicator
+  (when ecc-hint-context-indicator
     (when-let* ((left (ecc-hint-context-left session)))
       (propertize (format "%d%%" (round (* 100 left)))
                   'face (ecc-hint-context-face left)))))
