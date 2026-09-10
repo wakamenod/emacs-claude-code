@@ -70,8 +70,9 @@ Development and testing **always** start `claude` with:
 - stream-json needs `--verbose`, `--permission-prompt-tool stdio` and
   `:connection-type 'pipe` (plan §2.1, §9).
 
-On the Elisp side `ecc-safe-mode` is nil by default. Plugins to turn off go in
-`ecc-disabled-plugins`.
+On the Elisp side there is no `ecc-safe-mode`: `--safe-mode` is passed only by a
+session that carries `:safe-mode` among its options. Plugins to turn off go in
+`ecc-disabled-plugins`, a plain variable to `setq` (2026-09-10, see below).
 
 ## Coding rules
 
@@ -88,6 +89,13 @@ On the Elisp side `ecc-safe-mode` is nil by default. Plugins to turn off go in
 - No font-lock in a session buffer. Faces are put on at insertion time.
 - Never swallow an error. A failed dispatch is left in the log and in an `unknown` node.
 - Code, comments, docstrings and user-facing messages are written in English.
+- **`defcustom` is for what a user chooses**: a taste, a difference between
+  machines (font, screen, PATH), or a judgement about safety and cost. There
+  are 30 of them, and `docs/defcustom-inventory.md` says which and why. A
+  stand-in the CLI overwrites, a sentence sent to the model, a table of the
+  CLI's own quirks and an internal constant are `defvar`, reachable with
+  `setq` and bindable in a test all the same. Adding a `defcustom` means
+  making that case.
 
 ## Tests
 
