@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Let the real CLI talk for a few turns and take the jsonl it leaves in
-# ~/.claude/projects as a fixture (for the replay tests of phase 5 /
-# FR-HIST-1..3).
+# ~/.claude/projects as a fixture, for the replay tests.
 #
 #   scripts/record-history.sh --out test/fixtures/history-session.jsonl \
 #       --prompt "hello" --prompt "hi.txt を作って"

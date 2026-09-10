@@ -14,8 +14,7 @@
 ;; with the stream-json protocol and shows the conversation in one
 ;; buffer, the transcript above and the prompt below.
 ;;
-;; Start one with \\[ecc-start].  See REQUIREMENTS.md and
-;; IMPLEMENTATION_PLAN.md in the repository for what is built when.
+;; Start one with \\[ecc-start].
 
 ;;; Code:
 
@@ -58,17 +57,17 @@
 
 (defun ecc--enable-session-modes ()
   "Turn on the global modes every session wants.
-Every way into a session comes through here, and not `ecc-start'
-alone: an Emacs that only resumed a session was left without the hook
-that follows the source buffer, and `@region' and its like then had
-nothing to read (FR-CTX-1).
+Every way into a session comes through here, and not `ecc-start' alone:
+an Emacs that only resumed a session was left without the hook that
+follows the source buffer, and `@region' and its like then had nothing
+to read.
 
-There is deliberately no setting to leave one of them off (2026-09-10,
-`docs/decisions.md'): each is what makes a session visible -- the count
-of waiting requests, the announcements, the tab line, the buffer the
-context is quoted from -- and a session that started without them was
-a session that looked broken.  A mode turned off by hand comes back
-with the next session, since this runs on every one of them."
+There is deliberately no setting to leave one of them off (decided
+2026-09-10): each is what makes a session visible -- the count of
+waiting requests, the announcements, the tab line, the buffer the
+context is quoted from -- and a session that started without them was a
+session that looked broken.  A mode turned off by hand comes back with
+the next session, since this runs on every one of them."
   (ecc-pending-indicator-mode 1)
   (ecc-notify-mode 1)
   (ecc-tab-line-mode 1)
@@ -76,7 +75,7 @@ with the next session, since this runs on every one of them."
 
 ;;;###autoload
 (defun ecc-start (&optional directory name)
-  "Start a Claude Code session in DIRECTORY under NAME (FR-SES-1, 3).
+  "Start a Claude Code session in DIRECTORY under NAME.
 Interactively the project of the current buffer is used, and a prefix
 argument asks for the directory and the name."
   (interactive
@@ -84,7 +83,7 @@ argument asks for the directory and the name."
        (list (read-directory-name "Directory: " (ecc-project-root))
              (read-string "Session name: "))
      ;; The second session of a project is told from the first by a name
-     ;; the user gives it (FR-WIN-3).
+     ;; the user gives it.
      (let ((root (ecc-project-root)))
        (list root (ecc-window-read-session-name root)))))
   (let ((session (ecc-model-create-session
@@ -100,16 +99,15 @@ argument asks for the directory and the name."
 (defun ecc-resume (session &optional fork)
   "Start SESSION again with --resume, forking it when FORK is non-nil.
 Interactively, resume the session of the current buffer; a prefix
-argument forks it into a new conversation (FR-SES-4)."
+argument forks it into a new conversation."
   (interactive (list (ecc-read-session "Resume: ") current-prefix-arg))
   ;; What the recording holds is read first, so that the stream is
-  ;; appended to the conversation rather than starting an empty one
-  ;; (FR-HIST-3).  `ecc-history-resume' refuses a live process.
+  ;; appended to the conversation rather than starting an empty one.
+  ;; `ecc-history-resume' refuses a live process.
   (ecc-history-resume session fork)
   (ecc--enable-session-modes)
   ;; Like `ecc-start': the window is selected and point put in the
-  ;; prompt, which is what a resumed session is opened to type in
-  ;; (FR-WIN-1).
+  ;; prompt, which is what a resumed session is opened to type in.
   (ecc-window-select-session session)
   session)
 
@@ -195,7 +193,7 @@ Japanese title leaves the ones after it where they are."
 The sessions of this Emacs come first, then the recordings under
 PROJECT-ROOT, most recently used first.  A session another process is
 running is labelled as such rather than hidden: it can still be read,
-and resuming it asks first (FR-TUI-5)."
+and resuming it asks first."
   (let ((seen (make-hash-table :test #'equal))
         candidates)
     (dolist (session (ecc-model-sessions))
@@ -243,7 +241,7 @@ to sort them by name or by length."
 The session of the current buffer wins.  Otherwise the sessions of this
 Emacs and the recordings of the current project are offered, and the
 recordings of every project when this one has none.  A recording that
-is picked is read back into an archived session (FR-DASH-3, FR-HIST-1)."
+is picked is read back into an archived session."
   (or ecc-render--session
       (let* ((root (ecc-project-root))
              (candidates (or (ecc--session-candidates root)
@@ -262,7 +260,7 @@ is picked is read back into an archived session (FR-DASH-3, FR-HIST-1)."
             (ecc-history-session (cdr choice))))))
 
 (defun ecc--offer-resume (session status)
-  "Offer to resume SESSION, whose CLI stopped with STATUS (FR-SES-7).
+  "Offer to resume SESSION, whose CLI stopped with STATUS.
 The state is in the buffer already; this is the offer that goes with
 it.  Only an exit the user did not ask for is offered, and only when
 there is a recording to resume from.  The offer is made from a timer:
@@ -274,11 +272,11 @@ a sentinel is no place to ask a question or start a process."
     (run-at-time 0 nil #'ecc-offer-resume-now session status)))
 
 (defun ecc-offer-resume-now (session status)
-  "Ask whether to resume SESSION, which stopped with STATUS (FR-SES-7).
-The offer is always made rather than acted on (2026-09-10,
-`docs/decisions.md'): an exit nobody asked for is worth a look before
-it is undone.  An Emacs that wants neither the question nor the offer
-takes `ecc--offer-resume' off `ecc-session-exited-hook'."
+  "Ask whether to resume SESSION, which stopped with STATUS.
+The offer is always made rather than acted on (decided 2026-09-10): an
+exit nobody asked for is worth a look before it is undone.  An Emacs
+that wants neither the question nor the offer takes `ecc--offer-resume'
+off `ecc-session-exited-hook'."
   (if (y-or-n-p (format "%s exited with code %s.  Resume it? "
                         (ecc-session-name session) status))
       (ecc-resume session)
@@ -289,7 +287,7 @@ takes `ecc--offer-resume' off `ecc-session-exited-hook'."
 
 ;;;###autoload
 (defun ecc-kill (session)
-  "Stop SESSION and forget it (FR-SES-3)."
+  "Stop SESSION and forget it."
   (interactive (list (or ecc-render--session
                          (car (ecc-model-sessions))
                          (user-error "No session to kill"))))
