@@ -3,7 +3,7 @@
 ;;; Commentary:
 
 ;; The rows of the session list, the order they come in and what the
-;; keys of the list do (FR-DASH-1, 3, 4, 5).
+;; keys of the list do.
 ;;
 ;; Every test uses two sessions of this Emacs: a dashboard with one row
 ;; hides the sorting, which is where the bugs are (CLAUDE.md).
@@ -57,7 +57,7 @@ test/fixtures sits where `ecc-history-directory' looks for it."
   "Return the names of ENTRIES, in order."
   (mapcar #'ecc-dashboard-entry-name entries))
 
-;;;; The rows (FR-DASH-1)
+;;;; The rows
 
 (ert-deftest ecc-dashboard-test-lists-only-the-sessions-of-this-emacs ()
   "The list is the model and nothing else: no registry, no recordings."
@@ -82,7 +82,7 @@ test/fixtures sits where `ecc-history-directory' looks for it."
       (should (equal "opus" (ecc-dashboard-test--model entries "test")))
       (should (equal "sonnet" (ecc-dashboard-test--model entries "other"))))))
 
-;;;; The order (FR-DASH-4)
+;;;; The order
 
 (ert-deftest ecc-dashboard-test-waiting-comes-first ()
   "A session waiting for an answer is at the top, whatever its kind."
@@ -108,7 +108,7 @@ test/fixtures sits where `ecc-history-directory' looks for it."
       (should (= 2 (length (ecc-session-pending b))))
       (ignore a))))
 
-;;;; The buffer and its keys (FR-DASH-1, 3, 4, 5)
+;;;; The buffer and its keys
 
 (defmacro ecc-dashboard-test--in-buffer (&rest body)
   "Draw the dashboard without asking the CLI and run BODY inside it."
@@ -126,7 +126,7 @@ test/fixtures sits where `ecc-history-directory' looks for it."
      (should (= 2 (count-lines (point-min) (point-max))))
      (goto-char (point-min))
      (should (equal "other" (ecc-dashboard-entry-name (tabulated-list-get-id))))
-     ;; The columns of FR-DASH-1 are all filled.
+     ;; The columns are all filled.
      (let ((row (tabulated-list-get-entry)))
        (should (equal "other" (aref row 0)))
        (should (string-search "waiting" (aref row 1)))
@@ -142,7 +142,7 @@ test/fixtures sits where `ecc-history-directory' looks for it."
      (ignore a b))))
 
 (ert-deftest ecc-dashboard-test-answers-from-the-row ()
-  "The a and d keys answer the oldest request of the row (FR-DASH-4)."
+  "The a and d keys answer the oldest request of the row."
   (ecc-dashboard-test--with-two-sessions a b
     (ecc-dashboard-test--in-buffer
      (goto-char (point-min))
@@ -176,7 +176,7 @@ test/fixtures sits where `ecc-history-directory' looks for it."
      (ignore a))))
 
 (ert-deftest ecc-dashboard-test-delete-asks-and-removes ()
-  "D deletes the recording of the row, but only after a yes (FR-DASH-5)."
+  "D deletes the recording of the row, but only after a yes."
   (ecc-dashboard-test--with-two-sessions a b
     (ecc-model-set-session-id b ecc-dashboard-test-recording)
     (ecc-dashboard-test--in-buffer
@@ -192,7 +192,7 @@ test/fixtures sits where `ecc-history-directory' looks for it."
      (ignore a b))))
 
 (ert-deftest ecc-dashboard-test-rename ()
-  "r renames a session of this Emacs and its buffer (FR-DASH-5)."
+  "r renames a session of this Emacs and its buffer."
   (ecc-dashboard-test--with-two-sessions a b
     (ecc-session-ensure-buffer b)
     (ecc-dashboard-test--in-buffer
@@ -204,7 +204,7 @@ test/fixtures sits where `ecc-history-directory' looks for it."
      (ignore a))))
 
 (ert-deftest ecc-dashboard-test-stop ()
-  "k stops the session of the row and takes it off the list (FR-DASH-5)."
+  "k stops the session of the row and takes it off the list."
   (ecc-dashboard-test--with-two-sessions a b
     (ecc-dashboard-test--in-buffer
      (goto-char (point-min))

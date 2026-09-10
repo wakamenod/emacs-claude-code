@@ -2,9 +2,8 @@
 
 ;;; Commentary:
 
-;; The command line of section 2.1, the line buffering of section 2.2 and
-;; the control request bookkeeping of section 2.4.  No test here starts a
-;; process; the live tests do that (NFR-6).
+;; The command line, the line buffering and the control request
+;; bookkeeping.  No test here starts a process; the live tests do that.
 
 ;;; Code:
 
@@ -31,13 +30,13 @@
                      "stream-json"))
       (should (equal (ecc-proc-test--flag-value command "--permission-prompt-tool")
                      "stdio"))
-      ;; The session id is ours, so that resume can find it (FR-SES-1).
+      ;; The session id is ours, so that resume can find it.
       (should (equal (ecc-proc-test--flag-value command "--session-id")
                      (ecc-session-id session)))
       (should-not (member "--resume" command)))))
 
 (ert-deftest ecc-proc-test-command-resume ()
-  "Resuming replaces --session-id and can fork (FR-SES-4)."
+  "Resuming replaces --session-id and can fork."
   (ecc-test-with-fake-session session
     (let ((command (ecc-proc-build-command session t t)))
       (should (equal (ecc-proc-test--flag-value command "--resume")
@@ -49,13 +48,13 @@
   "No setting names a model for every session (2026-09-08).
 A new session takes the model of the Claude Code settings and a resumed
 one the model of the last real assistant message of its recording
-\(2026-09-06, `docs/verified.md'), so --model is left out either way."
+\(verified 2026-09-06), so --model is left out either way."
   (ecc-test-with-fake-session session
     (should-not (member "--model" (ecc-proc-build-command session)))
     (should-not (member "--model" (ecc-proc-build-command session t)))
     ;; A model of the session's own is meant, and is passed either way:
-    ;; this is how the inline sessions of FR-INLINE-1 keep a model that
-    ;; is not the one of the session they branch from.
+    ;; this is how the inline sessions keep a model that is not the one
+    ;; of the session they branch from.
     (setf (ecc-session-options session) '(:model "opus"))
     (should (equal (ecc-proc-test--flag-value
                     (ecc-proc-build-command session) "--model")
@@ -65,7 +64,7 @@ one the model of the last real assistant message of its recording
                    "opus"))))
 
 (ert-deftest ecc-proc-test-command-options ()
-  "Session options win over the defcustoms (FR-SES-2)."
+  "Session options win over the defcustoms."
   (ecc-test-with-fake-session session
     (let ((ecc-streaming-enabled t))
       (setf (ecc-session-options session)
@@ -81,7 +80,7 @@ one the model of the last real assistant message of its recording
         (should (equal (seq-take (member "--allowedTools" command) 3)
                        '("--allowedTools" "Read" "Bash(git *)")))
         ;; Only the named plugin is switched off; --safe-mode would take
-        ;; MCP servers, skills and commands with it (docs/verified.md).
+        ;; MCP servers, skills and commands with it.
         (should (equal (ecc-proc-test--flag-value command "--settings")
                        (concat "{\"enabledPlugins\":"
                                "{\"emacs-bridge@emacs-gravity-marketplace\":false}}")))
@@ -89,14 +88,14 @@ one the model of the last real assistant message of its recording
         (should (member "--no-session-persistence" command))))))
 
 (ert-deftest ecc-proc-test-command-wrapper ()
-  "A wrapper function gets the last word on the command line (FR-SES-9)."
+  "A wrapper function gets the last word on the command line."
   (ecc-test-with-fake-session session
     (let ((ecc-command-wrapper-function
            (lambda (command root) (append (list "mise" "exec" root "--") command))))
       (should (equal (seq-take (ecc-proc-build-command session) 3)
                      (list "mise" "exec" (ecc-session-project-root session)))))))
 
-;;;; Line buffering (plan section 2.2 and 9, item 3)
+;;;; Line buffering
 
 (ert-deftest ecc-proc-test-lines-split-on-any-boundary ()
   "A chunk that stops in the middle of a line loses nothing."
@@ -133,7 +132,7 @@ one the model of the last real assistant message of its recording
       (should (equal (alist-get 'subtype (car seen)) "init")))))
 
 (ert-deftest ecc-proc-test-very-long-line ()
-  "A multi-megabyte line arrives in one piece (plan 9, item 3)."
+  "A multi-megabyte line arrives in one piece."
   (ecc-test-with-fake-session session
     (let* ((seen nil)
            (ecc-proc-message-function (lambda (_session message) (push message seen)))
@@ -147,13 +146,13 @@ one the model of the last real assistant message of its recording
       (should (= (length (alist-get 'text (car seen))) (length content))))))
 
 (ert-deftest ecc-proc-test-lines-are-logged ()
-  "Every raw line reaches the log buffer (NFR-8)."
+  "Every raw line reaches the log buffer."
   (ecc-test-with-fake-session session
     (ecc-proc-feed session "{\"type\":\"system\",\"subtype\":\"init\"}\n")
     (with-current-buffer (ecc--log-buffer (ecc-session-name session))
       (should (string-search "<< {\"type\":\"system\"" (buffer-string))))))
 
-;;;; Control requests (plan section 2.4)
+;;;; Control requests
 
 (ert-deftest ecc-proc-test-control-round-trip ()
   "A control request remembers its callback until the answer arrives."
@@ -173,12 +172,12 @@ one the model of the last real assistant message of its recording
                        request-id '((commands . [((name . "context"))]))))))
       (should answered)
       (should (= 0 (hash-table-count (ecc-session-pending-controls session))))
-      ;; The commands of the answer are what completion offers (FR-INP-3).
+      ;; The commands of the answer are what completion offers.
       (should (equal (alist-get 'name (aref (ecc-session-commands session) 0))
                      "context")))))
 
 (ert-deftest ecc-proc-test-pending-are-closed-on-exit ()
-  "Nothing stays unanswered once the process is gone (NFR-4)."
+  "Nothing stays unanswered once the process is gone."
   (ecc-test-with-fake-session session
     (let* ((node (ecc-model-add-node session :type 'permission :status 'pending))
            (request (make-ecc-request :request-id "r1" :session session
@@ -192,7 +191,7 @@ one the model of the last real assistant message of its recording
       (should (= 0 (hash-table-count (ecc-session-pending-controls session)))))))
 
 (ert-deftest ecc-proc-test-interrupt-closes-a-waiting-question ()
-  "An interrupt closes the question it was asked in the middle of (FR-SES-5).
+  "An interrupt closes the question it was asked in the middle of.
 The CLI has stopped listening for the answer, so a request left pending
 would blink for an answer that can no longer go anywhere."
   (ecc-test-with-fake-session session
@@ -241,7 +240,7 @@ finishes."
       (ecc-test-cleanup-session session))))
 
 (ert-deftest ecc-proc-test-a-slash-model-is-noted-as-it-is-sent ()
-  "A `/model' changes what the session says it runs at once (FR-HINT-3).
+  "A `/model' changes what the session says it runs at once.
 The CLI names the new model in the next real assistant message and
 nowhere earlier, so without this the header line goes on naming the old
 one until the session is next spoken to."
@@ -264,7 +263,7 @@ one until the session is next spoken to."
     (should (equal (ecc-session-last-model session) "haiku"))))
 
 (ert-deftest ecc-proc-test-exit-closes-the-open-turn ()
-  "A CLI that dies in the middle of a turn leaves no turn open (FR-SES-7).
+  "A CLI that dies in the middle of a turn leaves no turn open.
 The next prompt after a resume must be sent, not queued."
   (ecc-test-with-fake-session session
     (let ((turn (ecc-model-begin-turn session "work")))
@@ -278,7 +277,7 @@ The next prompt after a resume must be sent, not queued."
       (should (memq turn (ecc-session-turns session))))))
 
 
-;;;; Remote Control (docs/decisions.md, 2026-09-08)
+;;;; Remote Control
 
 (defun ecc-proc-test--initialize (session response)
   "Answer the initialize request of SESSION with RESPONSE.
@@ -312,12 +311,12 @@ would need is not, so the request is sent by hand."
     (remote_control_auto_enable . t)
     (remote_control_auto_on_by_default . :false))
   "An initialize response of a machine where Remote Control is on.
-The values are the ones measured on 2026-09-08 (docs/verified.md).")
+The values are the ones measured on 2026-09-08.")
 
 (ert-deftest ecc-proc-test-initialize-turns-remote-control-on ()
-  "A session follows what the initialize response says (FR-SES-2, `auto').
+  "A session follows what the initialize response says (`auto').
 The CLI only advises a stream-json client, so the bridge is asked for
-here or nowhere (docs/verified.md, 2026-09-08)."
+here or nowhere (confirmed 2026-09-08)."
   (ecc-test-with-fake-session session
     ;; Remote Control refuses a workspace that was never trusted, which
     ;; the temporary directory of the fake session is.
@@ -370,7 +369,7 @@ here or nowhere (docs/verified.md, 2026-09-08)."
 (ert-deftest ecc-proc-test-remote-control-is-asked-for-when-told-to ()
   "A session whose `:remote-control\=' is t asks whatever the CLI advises.
 The package itself only follows the advice; t is the session saying
-otherwise (2026-09-10, `docs/decisions.md\=')."
+otherwise (decided 2026-09-10)."
   (ecc-test-with-fake-session session
     (setf (ecc-session-project-root session) ecc-test-directory)
     (setf (ecc-session-options session) (list :remote-control t))
@@ -380,7 +379,7 @@ otherwise (2026-09-10, `docs/decisions.md\=')."
       (should (= 1 (length (ecc-proc-test--remote-control-requests)))))))
 
 (ert-deftest ecc-proc-test-remote-control-refusal-is-kept ()
-  "A refused bridge is left in the log and in the transcript (NFR-2).
+  "A refused bridge is left in the log and in the transcript.
 Missing authentication, an organisation policy and an untrusted
 workspace all come back as the error of a control response."
   (ecc-test-with-fake-session session
@@ -442,7 +441,7 @@ workspace all come back as the error of a control response."
   "A bridge notice does not make the session look busy.
 It answers no prompt, so a turn opened for it would never end: the
 state line would say `running' for ever and the next prompt would queue
-behind it (FR-INP-6)."
+behind it."
   (ecc-test-with-fake-session session
     (setf (ecc-session-project-root session) ecc-test-directory)
     (ecc-model-set-state session 'idle)

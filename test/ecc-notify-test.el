@@ -4,7 +4,7 @@
 
 ;; The three events worth an interruption, the levels they are announced
 ;; at, and the rule that a desktop notification is pointless while the
-;; user is looking at Emacs (FR-NOTIFY-1).
+;; user is looking at Emacs.
 
 ;;; Code:
 
@@ -25,7 +25,7 @@
        ,@body)))
 
 (ert-deftest ecc-notify-test-events-can-be-turned-off ()
-  "Only the events that were asked for are announced (FR-NOTIFY-1, NFR-3)."
+  "Only the events that were asked for are announced."
   (ecc-test-with-fake-session session
     (ecc-notify-test--collecting seen
       (let ((ecc-notify-events '(request)))
@@ -38,7 +38,7 @@
       (should-not seen))))
 
 (ert-deftest ecc-notify-test-hooks ()
-  "A finished turn and a new request reach the notifier (FR-NOTIFY-1)."
+  "A finished turn and a new request reach the notifier."
   (ecc-test-with-fake-session session
     (unwind-protect
         (ecc-notify-test--collecting seen
@@ -53,7 +53,7 @@
       (ecc-notify-mode -1))))
 
 (ert-deftest ecc-notify-test-only-an-abnormal-exit-is-announced ()
-  "A session the user stopped is not worth a notification (FR-NOTIFY-1)."
+  "A session the user stopped is not worth a notification."
   (ecc-test-with-fake-session session
     (ecc-notify-test--collecting seen
       (ecc-notify--exited session 0)
@@ -107,7 +107,7 @@
         (should (equal said "waiting"))))))
 
 
-;;;; The tab line of the sessions (FR-NOTIFY-2)
+;;;; The tab line of the sessions
 
 (ert-deftest ecc-notify-test-tab-state ()
   "A session is running, waiting, exited or idle, and shows the mark of it."
@@ -123,7 +123,7 @@
     (should (equal (ecc-tab-mark session) "⚠"))))
 
 (ert-deftest ecc-notify-test-tab-line-lists-every-session ()
-  "Every session is a tab, coloured by what it is doing (FR-NOTIFY-2)."
+  "Every session is a tab, coloured by what it is doing."
   (ecc-test-with-fake-session first
     (let ((second (ecc-model-create-session
                    :name "other" :project-root temporary-file-directory)))
@@ -165,7 +165,7 @@
         (ecc-model-remove-session second)))))
 
 (ert-deftest ecc-notify-test-tab-line-keeps-the-order-sessions-were-made-in ()
-  "Using a session does not move its tab (FR-NOTIFY-2).
+  "Using a session does not move its tab.
 The registry is most recently used first, which would shuffle the tabs
 about as one works."
   (ecc-test-with-fake-session first
@@ -278,7 +278,7 @@ Two sessions, so that the one that wants nothing is seen to stay put."
       (ecc-tab-line-mode -1))))
 
 (ert-deftest ecc-notify-test-tab-bar-name ()
-  "The tab bar carries the state only when it is asked to (FR-NOTIFY-2)."
+  "The tab bar carries the state only when it is asked to."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (cl-letf (((default-value 'tab-bar-tab-name-function) (lambda () "work"))

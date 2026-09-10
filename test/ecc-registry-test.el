@@ -2,8 +2,7 @@
 
 ;;; Commentary:
 
-;; Reading the files Claude Code keeps about the sessions it is running
-;; (FR-DASH-2 b, FR-DASH-6).
+;; Reading the files Claude Code keeps about the sessions it is running.
 ;;
 ;; test/fixtures/registry holds three files copied from ~/.claude/sessions
 ;; on this machine: two sessions of one project and one of another.
@@ -44,7 +43,7 @@ FIELDS is a plist of extra keys, whose names are used as they are."
     (with-temp-file (expand-file-name (format "%d.json" pid) directory)
       (insert (ecc--json-write entry)))))
 
-;;;; Reading (FR-DASH-2 b)
+;;;; Reading
 
 (ert-deftest ecc-registry-test-reads-every-file ()
   "Every running session is read, newest first, with what it says."
@@ -189,7 +188,7 @@ but with nothing in it, so there is no start time to confirm."
      (should (string-search "emacs-claude-code-00" line))
      (should (string-search "busy" line)))))
 
-;;;; Watching (FR-DASH-6)
+;;;; Watching
 
 (ert-deftest ecc-registry-test-watch-announces-a-change ()
   "Starting a watch announces what happens in the registry directory."

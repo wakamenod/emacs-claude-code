@@ -3,7 +3,7 @@
 ;;; Commentary:
 
 ;; Going round the waiting requests and answering the oldest one from
-;; anywhere (FR-INBOX-2, FR-INBOX-3, FR-PERM-4).
+;; anywhere.
 
 ;;; Code:
 
@@ -33,7 +33,7 @@ The request of A is a Bash call and older; the one of B is a Write."
          (delete-directory (ecc-session-project-root ,b) t)
          (ecc-test-cleanup-session ,b)))))
 
-;;;; Going round (FR-INBOX-2)
+;;;; Going round
 
 (ert-deftest ecc-answer-test-next-attention-cycles ()
   "Each call moves to the next waiting request and wraps around."
@@ -64,7 +64,7 @@ The request of A is a Bash call and older; the one of B is a Write."
       (with-temp-buffer
         (should-not (ecc-next-attention-in-project))))))
 
-;;;; Answering from anywhere (FR-INBOX-3)
+;;;; Answering from anywhere
 
 (ert-deftest ecc-answer-test-answer-allow-skips-excluded-tools ()
   "The oldest request is a Bash call, so the Write of the other session goes first."
@@ -119,12 +119,12 @@ The request of A is a Bash call and older; the one of B is a Write."
                      "{\"Which editor do you prefer?\":\"Vim\",\"Which languages do you use?\":\"Elisp\"}")))))
 
 (ert-deftest ecc-answer-test-global-map ()
-  "The global keymap carries the commands of FR-INBOX-3."
+  "The global keymap carries the answer-from-anywhere commands."
   (should (eq (lookup-key ecc-global-map (kbd "a")) #'ecc-answer-allow))
   (should (eq (lookup-key ecc-global-map (kbd "n")) #'ecc-next-attention))
   (should (eq (lookup-key ecc-global-map (kbd "4")) #'ecc-answer-option-4)))
 
-;;;; The mode line (FR-PERM-4)
+;;;; The mode line
 
 (ert-deftest ecc-answer-test-mode-line-indicator ()
   "The indicator counts the waiting requests and can be switched off."
@@ -141,7 +141,7 @@ The request of A is a Bash call and older; the one of B is a Write."
     (should-not (member ecc-pending--mode-line-construct global-mode-string))))
 
 (ert-deftest ecc-answer-test-session-mode-line-state ()
-  "The session buffer names the waiting kind in its mode line (FR-PERM-4)."
+  "The session buffer names the waiting kind in its mode line."
   (ecc-answer-test--with-two-sessions a b
     (should (equal (substring-no-properties (ecc-render-mode-line-state a)) "⚠ permission"))
     (ecc-test-add-request a "AskUserQuestion")

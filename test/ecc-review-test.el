@@ -3,9 +3,9 @@
 ;;; Commentary:
 
 ;; The message generator and the diff builders as pure functions, the
-;; review buffer driven by hand (FR-DIFF-3 to 6), the review of a
-;; proposal before it is applied (FR-DIFF-2) and the edit-and-apply
-;; flow (FR-DIFF-7).  The git cases build a throwaway repository.
+;; review buffer driven by hand, the review of a proposal before it is
+;; applied and the edit-and-apply flow.  The git cases build a throwaway
+;; repository.
 
 ;;; Code:
 
@@ -72,7 +72,7 @@ Neither is in a git repository, so both are diffed from the records."
   (should-not (ecc-review-hunk-range "--- a/x")))
 
 (ert-deftest ecc-review-test-format-message ()
-  "The prompt has the format of plan section 6.5, one block per comment."
+  "The prompt carries one block per comment."
   (let ((message (ecc-review-format-message
                   '((:path "src/a.py" :start 3 :end 5
                      :text "@@ -3,2 +3,3 @@\n a\n+b\n c" :comment "rename b")
@@ -127,7 +127,7 @@ Neither is in a git repository, so both are diffed from the records."
 ;;;; Diffs without git
 
 (ert-deftest ecc-review-test-fallback-diff ()
-  "A file outside git is diffed from what it was to what it is (FR-DIFF-3)."
+  "A file outside git is diffed from what it was to what it is."
   (ecc-test-with-fake-session session
     (let ((edited (ecc-review-test--entry session "/nowhere/a.txt"
                                           :original "one\ntwo\nthree\n"
@@ -199,7 +199,7 @@ Neither is in a git repository, so both are diffed from the records."
           (should (< (string-search "diff --git" (car diff))
                      (string-search "/dev/null" (car diff)))))))))
 
-;;;; The review buffer (FR-DIFF-4, FR-DIFF-6)
+;;;; The review buffer
 
 (ert-deftest ecc-review-test-buffer-and-comments ()
   "Hunks are walked with n, commented with c, listed, edited and removed."
@@ -215,7 +215,7 @@ Neither is in a git repository, so both are diffed from the records."
               ;; The files are named in full, so the project is the place.
               (should (equal default-directory (ecc-session-project-root session)))
               ;; The review keys win over the read-only diff keys, which
-              ;; stay available for moving around (FR-DIFF-6).
+              ;; stay available for moving around.
               (should (eq (key-binding (kbd "c")) #'ecc-review-comment))
               (should (eq (key-binding (kbd "C-c C-c")) #'ecc-review-send))
               (should (eq (key-binding (kbd "n")) #'diff-hunk-next))
@@ -251,7 +251,7 @@ Neither is in a git repository, so both are diffed from the records."
               (ecc-review-remove-comment)
               (should (= (length (ecc-review-comments)) 1))
               (should-error (ecc-review-remove-comment) :type 'user-error)
-              ;; RET goes to the file and line of the hunk (FR-DIFF-6).
+              ;; RET goes to the file and line of the hunk.
               (ecc-review-test--write (car paths) "one\n2\nthree\n")
               (goto-char (point-min))
               (diff-hunk-next)
@@ -262,7 +262,7 @@ Neither is in a git repository, so both are diffed from the records."
         (ecc-review-test--kill-review-buffers)))))
 
 (ert-deftest ecc-review-test-send ()
-  "C-c C-c shows the prompt to confirm; sending starts a turn (FR-DIFF-5)."
+  "C-c C-c shows the prompt to confirm; sending starts a turn."
   (ecc-test-with-fake-session session
     (ecc-review-test--with-directory directory
       (unwind-protect
@@ -362,7 +362,7 @@ Neither is in a git repository, so both are diffed from the records."
       (should-error (ecc-session-review-or-deny) :type 'user-error)
       (should (memq (car (ecc-session-pending session)) (ecc-session-pending session))))))
 
-;;;; Reviewing a proposal (FR-DIFF-2)
+;;;; Reviewing a proposal
 
 (defun ecc-review-test--edit-request (session)
   "Add a pending Edit of /nowhere/r.txt to SESSION, with the file known."
@@ -390,7 +390,7 @@ Neither is in a git repository, so both are diffed from the records."
                  (ecc-test-add-request session "Bash" '((command . "ls"))) nil))))
 
 (ert-deftest ecc-review-test-request-comment-denies ()
-  "Comments on a proposal go back as the message of the deny (FR-DIFF-2)."
+  "Comments on a proposal go back as the message of the deny."
   (ecc-test-with-fake-session session
     (unwind-protect
         (let* ((request (ecc-review-test--edit-request session))
@@ -435,7 +435,7 @@ Neither is in a git repository, so both are diffed from the records."
           (should-error (ecc-review-request request) :type 'user-error))
       (ecc-review-test--kill-review-buffers))))
 
-;;;; Editing a proposal before allowing it (FR-DIFF-7)
+;;;; Editing a proposal before allowing it
 
 (ert-deftest ecc-review-test-edit-proposal ()
   "The edited text replaces the proposal in the allow, and a note is queued."

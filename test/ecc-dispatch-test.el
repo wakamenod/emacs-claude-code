@@ -3,8 +3,8 @@
 ;;; Commentary:
 
 ;; The recorded fixtures are fed to a session that has no process, and
-;; the shape of the resulting model is compared against what section 4 of
-;; IMPLEMENTATION_PLAN.md says it should be.
+;; the shape of the resulting model is compared against what it should
+;; be.
 
 ;;; Code:
 
@@ -35,7 +35,7 @@
     (should (equal (alist-get 'model (ecc-session-init session))
                    "claude-haiku-4-5-20251001"))
     (should (equal (ecc-session-permission-mode session) "default"))
-    ;; The initialize response carries the slash commands (FR-SES-8).
+    ;; The initialize response carries the slash commands.
     (should (> (length (ecc-session-commands session)) 0))
     ;; rate_limit_event arrives at the top level, not inside system.
     (should (ecc-session-rate-limit session))))
@@ -63,16 +63,16 @@
         (should (eq (ecc-node-status tool) 'done))
         (should (string-prefix-p "File created successfully"
                                  (ecc-model-node-get tool 'result)))
-        ;; tool_use and tool_result found each other by id (FR-OUT-5).
+        ;; tool_use and tool_result found each other by id.
         (should (eq tool (ecc-model-node
                           session "toolu_01Hcu5xtMTxBqGiZ6MfT3XyZ")))))
-    ;; The file Claude wrote was recorded (FR-OUT-12).
+    ;; The file Claude wrote was recorded.
     (should (= 1 (hash-table-count (ecc-session-files session))))
     (let ((entry (car (hash-table-values (ecc-session-files session)))))
       (should (= (ecc-file-entry-writes entry) 1)))))
 
 (ert-deftest ecc-dispatch-test-permission-request ()
-  "A can_use_tool request queues up and waits for an answer (FR-PERM-1)."
+  "A can_use_tool request queues up and waits for an answer."
   (ecc-test-with-fake-session session
     (ecc-model-begin-turn session "hello.txt を作って")
     (dolist (line (ecc-test-fixture-lines "tool-use-write"))
@@ -97,7 +97,7 @@
                      "allow")))))
 
 (ert-deftest ecc-dispatch-test-file-changed-hook ()
-  "A successful write tells the rest of Emacs to reload the file (FR-SYNC-1)."
+  "A successful write tells the rest of Emacs to reload the file."
   (ecc-test-with-fake-session session
     (let (changed)
       (let ((ecc-sync-file-changed-hook
@@ -136,7 +136,7 @@
 ;;;; ask-user-question
 
 (ert-deftest ecc-dispatch-test-question ()
-  "AskUserQuestion is a question, not a permission (FR-PERM-5)."
+  "AskUserQuestion is a question, not a permission."
   (ecc-test-with-fake-session session
     (ecc-model-begin-turn session "質問して")
     (dolist (line (ecc-test-fixture-lines "ask-user-question"))
@@ -146,7 +146,7 @@
           (let ((request (car (ecc-session-pending session))))
             (should (eq (ecc-request-kind request) 'question))
             (should (eq (ecc-session-state session) 'waiting-question))
-            ;; Answer in the question buffer (FR-PERM-5).
+            ;; Answer in the question buffer.
             (with-current-buffer (ecc-question-open request)
               (ecc-question-choose 1)
               (ecc-question-choose 1)
@@ -157,8 +157,8 @@
                                            (car (ecc-test-sent-messages)))))
            (answers (alist-get 'answers (alist-get 'updatedInput response))))
       (should (equal (alist-get 'behavior response) "allow"))
-      ;; Every question is answered in one object keyed by its text, and a
-      ;; multiSelect answer is one comma separated string (verified.md).
+      ;; Every question is answered in one object keyed by its text, and
+      ;; a multiSelect answer is one comma separated string.
       (should (= (length answers) 2))
       (should (member '(Which\ editor\ do\ you\ prefer\? . "Emacs") answers))
       (should (seq-find (lambda (pair) (equal (cdr pair) "Elisp, Python")) answers))
@@ -230,8 +230,8 @@ screen; left pending, it would blink for an answer nobody wants."
       (should (member "success" (mapcar (lambda (n) (ecc-model-node-get n 'result))
                                         nodes))))
     ;; The estimate of what is in the window starts again from what the
-    ;; boundary says is left of the conversation (FR-HINT-5); the
-    ;; recording of this fixture compacted 17496 tokens down to 1339.
+    ;; boundary says is left of the conversation; the recording of this
+    ;; fixture compacted 17496 tokens down to 1339.
     (should (= (ecc-session-context-tokens session) 1339))))
 
 (ert-deftest ecc-dispatch-test-replay-echo-adds-nothing ()
@@ -254,7 +254,7 @@ way `ecc-proc-send-user\=' would have."
                    "Reply with exactly: TWO"))))
 
 (ert-deftest ecc-dispatch-test-subagent-nesting ()
-  "Messages of a subagent hang under the tool that started it (FR-OUT-9)."
+  "Messages of a subagent hang under the tool that started it."
   (ecc-test-with-fake-session session
     (ecc-test-dispatch session "subagent" "探して")
     (let ((agent (seq-find (lambda (node) (eq (ecc-node-type node) 'agent))
@@ -270,11 +270,11 @@ way `ecc-proc-send-user\=' would have."
       ;; agent hang under it, tools grouped in steps like a turn.
       (should (equal (ecc-test-node-shape (ecc-node-children agent))
                      '(system thinking (step tool) thinking text)))
-      ;; An agent is not a TODO item (FR-OUT-13).
+      ;; An agent is not a TODO item.
       (should (= (hash-table-count (ecc-session-tasks session)) 0)))))
 
 (ert-deftest ecc-dispatch-test-backgrounded-bash-stays-a-tool ()
-  "A backgrounded shell command is a task, but not an agent (FR-OUT-9).
+  "A backgrounded shell command is a task, but not an agent.
 Recorded from claude 2.1.265 on 2026-09-10: the CLI registers such a
 command as a task of its own, `local_bash\=', and the heading of a Bash
 drawn as an agent loses its command."
@@ -299,7 +299,7 @@ drawn as an agent loses its command."
                        "sleep 8; echo finished"))))))
 
 (ert-deftest ecc-dispatch-test-only-an-agent-tool-becomes-an-agent ()
-  "A plain tool named as a parent stays a tool (FR-OUT-9)."
+  "A plain tool named as a parent stays a tool."
   (ecc-test-with-fake-session session
     (ecc-model-begin-turn session "動かして")
     (let ((bash (ecc-model-add-node session :id "toolu_bash" :type 'tool
@@ -346,7 +346,7 @@ drawn as an agent loses its command."
                             nodes)))))
 
 (ert-deftest ecc-dispatch-test-no-fixture-line-is-unknown ()
-  "Nothing in any recording falls through the table of section 4."
+  "Nothing in any recording falls through the dispatch table."
   (dolist (name (ecc-test-fixture-names))
     (ecc-test-with-fake-session session
       (ecc-test-dispatch session name "prompt")
@@ -409,7 +409,7 @@ already has a note of its own from hook_started."
 (ert-deftest ecc-dispatch-test-bridge-state ()
   "Remote Control reports itself as system/bridge_state, not as the unknown.
 Two of them arrive, `ready' and then `connected', and only the second
-carries the epoch of the bridge (docs/verified.md, 2026-09-08)."
+carries the epoch of the bridge (confirmed 2026-09-08)."
   (ecc-test-with-fake-session session
     (let ((announced 0))
       (let ((ecc-remote-control-functions
@@ -483,7 +483,7 @@ like."
 (ert-deftest ecc-dispatch-test-a-remote-turn-queues-and-drains ()
   "A prompt typed while a remote turn runs waits for it and then goes.
 Emacs did not open that turn, so nothing local knows it is there; the
-prompt must not be lost, and it must not wait for ever (FR-INP-6)."
+prompt must not be lost, and it must not wait for ever."
   (ecc-test-with-fake-session session
     (ecc-model-set-remote-control session 'enabled t 'state "connected")
     (ecc-dispatch session '((type . "assistant")
@@ -568,7 +568,7 @@ This is the failure of 2026-09-08: `post_turn_summary' came after the
 result of a turn started from a phone, drew as an unknown node, and
 that node opened a turn nothing would ever close.  The session read
 `running' from then on and every prompt typed here queued behind a turn
-that had already ended (FR-INP-6, FR-SES-7)."
+that had already ended."
   (dolist (message '(((type . "system") (subtype . "post_turn_summary")
                       (status_category . "completed"))
                      ((type . "system") (subtype . "away_summary"))
@@ -719,7 +719,7 @@ been waiting."
                       "remote control disconnected — network lost"))
              (hash-table-values (ecc-session-nodes session))))))
 
-;;;; Robustness (NFR-2, plan section 9, item 19)
+;;;; Robustness
 
 (ert-deftest ecc-dispatch-test-unknown-message-is-kept ()
   "A message this version does not know is shown, not dropped."
@@ -742,7 +742,7 @@ been waiting."
     (with-current-buffer (ecc--log-buffer (ecc-session-name session))
       (should (string-search "dispatch error" (buffer-string))))))
 
-;;;; Automatic approval (FR-PERM-7, FR-PERM-9)
+;;;; Automatic approval
 
 (ert-deftest ecc-dispatch-test-auto-approve ()
   "A turn wide approval answers matching requests without queueing them."
@@ -764,7 +764,7 @@ been waiting."
     (should-not (ecc-dispatch-auto-approve-p
                  session (make-ecc-request :kind 'permission :tool-name "Grep")))))
 
-;;;; The input queue drains when the turn ends (FR-INP-6)
+;;;; The input queue drains when the turn ends
 
 (ert-deftest ecc-dispatch-test-queue-drains-on-result ()
   "A prompt that waited for the turn goes out as soon as the result lands."
@@ -779,7 +779,7 @@ been waiting."
       (should (equal (alist-get 'content (alist-get 'message sent)) "two")))))
 
 
-;;;; Streaming (FR-OUT-4)
+;;;; Streaming
 
 (ert-deftest ecc-dispatch-test-stream-blocks ()
   "A streamed block is one node from its start to its completion."
@@ -802,7 +802,7 @@ been waiting."
                 (should-not (ecc-model-node-get node 'input))
                 (should (eq (ecc-node-type (ecc-node-parent node)) 'step)))))))
       (setq deltas (nreverse deltas))
-      ;; 29 input deltas of which one is empty, and 17 text deltas (verified.md).
+      ;; 29 input deltas of which one is empty, and 17 text deltas.
       (should (= 28 (cl-count 'tool deltas :key #'car)))
       (should (= 17 (cl-count 'text deltas :key #'car)))
       (should (equal (apply #'concat (mapcar #'cdr (seq-filter (lambda (d) (eq (car d) 'text))
@@ -837,7 +837,7 @@ been waiting."
       (should (eq (ecc-node-status node) 'done))
       (should-not (ecc-node-streaming node)))))
 
-;;;; Files and tasks from tool_use_result (FR-OUT-12, FR-OUT-13)
+;;;; Files and tasks from tool_use_result
 
 (ert-deftest ecc-dispatch-test-edit-records-hunk-and-snapshot ()
   "An Edit keeps the patch the CLI reported and what the file became."
@@ -855,7 +855,7 @@ been waiting."
       (should (string-search "return \"hello \" + name" (ecc-file-entry-snapshot entry)))
       (should-not (string-search "return \"hi \" + name" (ecc-file-entry-snapshot entry))))
     ;; Both the tool node and the permission node knew the file before
-    ;; the change, from the Read (FR-DIFF-1).
+    ;; the change, from the Read.
     (let ((edit (seq-find (lambda (n) (and (eq (ecc-node-type n) 'tool)
                                            (equal (ecc-model-node-get n 'name) "Edit")))
                           (hash-table-values (ecc-session-nodes session))))
@@ -866,7 +866,7 @@ been waiting."
                              (ecc-model-node-get permission 'before))))))
 
 (ert-deftest ecc-dispatch-test-tasks ()
-  "TaskCreate, TaskUpdate and TaskList keep the task list (FR-OUT-13)."
+  "TaskCreate, TaskUpdate and TaskList keep the task list."
   (ecc-test-with-fake-session session
     (ecc-test-dispatch session "tasks" "タスクを作って")
     (let ((tasks (ecc-model-tasks session)))
@@ -905,7 +905,7 @@ been waiting."
       (should (= (length (ecc-file-entry-hunks entry)) 1)))))
 
 (ert-deftest ecc-dispatch-test-commands-changed ()
-  "A reloaded command list replaces the old one (FR-INP-3, FR-SES-8).
+  "A reloaded command list replaces the old one.
 The CLI sends system/commands_changed after /reload-plugins and
 /reload-skills; leaving it unhandled left the completion stale and put
 the whole list into an unknown node."
@@ -929,7 +929,7 @@ the whole list into an unknown node."
                             nodes)))))
 
 (ert-deftest ecc-dispatch-test-running-tool-is-tracked ()
-  "The running tool is known without a walk over every node (NFR-1).
+  "The running tool is known without a walk over every node.
 It is the tool that started last and has no result yet, and nothing
 once every result is in."
   (ecc-test-with-fake-session session
@@ -956,7 +956,7 @@ once every result is in."
       (should-not (ecc-model-running-tool session)))))
 
 (ert-deftest ecc-dispatch-test-local-command ()
-  "A slash command the CLI ran becomes one node, its caveat none (FR-HIST-2)."
+  "A slash command the CLI ran becomes one node, its caveat none."
   (ecc-test-with-fake-session session
     (ecc-model-begin-turn session "hello")
     (let ((user (lambda (text)

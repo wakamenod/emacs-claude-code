@@ -2,10 +2,10 @@
 
 ;;; Commentary:
 
-;; The side questions of FR-BTW-1..4.  No CLI is started: what would go
-;; out on stdin is collected by `ecc-test-with-fake-session', and the
-;; answers are the ones test/fixtures/side-question.jsonl recorded from
-;; the real 2.1.266 (scripts/record-side-question.sh).
+;; The side questions.  No CLI is started: what would go out on stdin is
+;; collected by `ecc-test-with-fake-session', and the answers are the
+;; ones test/fixtures/side-question.jsonl recorded from the real 2.1.266
+;; (scripts/record-side-question.sh).
 
 ;;; Code:
 
@@ -44,7 +44,7 @@
 ;;;; What goes out
 
 (ert-deftest ecc-btw-test-asks-with-a-control-request ()
-  "A side question is a control request, not a prompt (FR-BTW-1)."
+  "A side question is a control request, not a prompt."
   (ecc-btw-test-with-session session
     (let ((request-id (ecc-btw-ask session "この関数はどこで使われている？")))
       (should (stringp request-id))
@@ -55,14 +55,14 @@
         ;; Nothing was threaded on the first question.
         (should-not (assq 'history request)))
       ;; No prompt was sent and no turn was opened: the conversation is
-      ;; untouched (FR-BTW-2).
+      ;; untouched.
       (should-not (seq-find (lambda (message)
                               (equal (alist-get 'type message) "user"))
                             (ecc-test-sent-messages)))
       (should-not (ecc-session-current-turn session)))))
 
 (ert-deftest ecc-btw-test-an-empty-question-asks-nothing ()
-  "/btw on its own is a usage message (FR-BTW-1)."
+  "/btw on its own is a usage message."
   (ecc-btw-test-with-session session
     (should-error (ecc-btw-ask session "   ") :type 'user-error)
     (should-not (ecc-test-sent-messages))))
@@ -77,7 +77,7 @@
 ;;;; The answer
 
 (ert-deftest ecc-btw-test-the-answer-lands-in-the-buffer ()
-  "The recorded answer becomes an exchange and is drawn (FR-BTW-3)."
+  "The recorded answer becomes an exchange and is drawn."
   (ecc-btw-test-with-session session
     (let ((request-id (ecc-btw-ask session "What number did I ask you to \
 remember?")))
@@ -96,7 +96,7 @@ remember?")))
           (should-not (string-search "Answering" text)))))))
 
 (ert-deftest ecc-btw-test-a-synthetic-answer-says-so ()
-  "A model that reached for a tool answered nothing (FR-BTW-3)."
+  "A model that reached for a tool answered nothing."
   (ecc-btw-test-with-session session
     (let ((request-id (ecc-btw-ask session "read the file for me")))
       (ecc-btw-test--answer session request-id
@@ -108,7 +108,7 @@ remember?")))
                                                              (point-max)))))))
 
 (ert-deftest ecc-btw-test-a-fallback-is-named ()
-  "A side question answered by another model says which (FR-BTW-3)."
+  "A side question answered by another model says which."
   (ecc-btw-test-with-session session
     (let ((request-id (ecc-btw-ask session "why?")))
       (ecc-btw-test--answer
@@ -142,24 +142,24 @@ remember?")))
                              (buffer-substring-no-properties (point-min)
                                                              (point-max)))))))
 
-;;;; The context of a follow-up (FR-BTW-4)
+;;;; The context of a follow-up
 
 (ert-deftest ecc-btw-test-history-threads-the-follow-up ()
-  "The next question carries the answered ones as a vector (FR-BTW-4)."
+  "The next question carries the answered ones as a vector."
   (ecc-btw-test-with-session session
     (let ((request-id (ecc-btw-ask session "first")))
       (ecc-btw-test--answer session request-id
                             '((response . "one") (synthetic . :false))))
     (ecc-btw-ask session "second")
     (let ((history (alist-get 'history (ecc-btw-test--sent-request 1))))
-      ;; A vector, so that json-serialize writes an array (plan section 2.3).
+      ;; A vector, so that json-serialize writes an array.
       (should (vectorp history))
       (should (= (length history) 1))
       (should (equal (alist-get 'question (aref history 0)) "first"))
       (should (equal (alist-get 'response (aref history 0)) "one")))))
 
 (ert-deftest ecc-btw-test-history-is-capped-and-skips-failures ()
-  "Only the last few answered exchanges are threaded (FR-BTW-4)."
+  "Only the last few answered exchanges are threaded."
   (ecc-btw-test-with-session session
     (dotimes (n 4)
       (let ((request-id (ecc-btw-ask session (format "q%d" n))))
@@ -176,7 +176,7 @@ remember?")))
         (should (equal (alist-get 'question (aref history 1)) "q3"))))))
 
 (ert-deftest ecc-btw-test-clearing-forgets-the-context ()
-  "Clearing the buffer starts the next question afresh (FR-BTW-4)."
+  "Clearing the buffer starts the next question afresh."
   (ecc-btw-test-with-session session
     (let ((request-id (ecc-btw-ask session "first")))
       (ecc-btw-test--answer session request-id
@@ -187,10 +187,10 @@ remember?")))
     (ecc-btw-ask session "second")
     (should-not (assq 'history (ecc-btw-test--sent-request 1)))))
 
-;;;; Progress, cancelling and timing out (FR-BTW-3)
+;;;; Progress, cancelling and timing out
 
 (ert-deftest ecc-btw-test-progress-stays-out-of-the-transcript ()
-  "control_request_progress is not a note in the conversation (FR-BTW-2)."
+  "control_request_progress is not a note in the conversation."
   (ecc-btw-test-with-session session
     (let ((request-id (ecc-btw-ask session "waiting")))
       (ecc-dispatch
@@ -211,7 +211,7 @@ remember?")))
                                 (point-min) (point-max))))))))
 
 (ert-deftest ecc-btw-test-cancel-withdraws-the-request ()
-  "k stops waiting and tells the CLI to drop the work (FR-BTW-3)."
+  "k stops waiting and tells the CLI to drop the work."
   (ecc-btw-test-with-session session
     (let ((request-id (ecc-btw-ask session "long one")))
       (with-current-buffer (ecc-btw-buffer session)
@@ -232,10 +232,10 @@ remember?")))
     (should (string-search "No answer"
                            (plist-get (car (ecc-btw-exchanges session)) :error)))))
 
-;;;; The way in (FR-BTW-1)
+;;;; The way in
 
 (ert-deftest ecc-btw-test-intercept-takes-the-draft ()
-  "/btw in the prompt region is not sent to the CLI (FR-BTW-1)."
+  "/btw in the prompt region is not sent to the CLI."
   (ecc-btw-test-with-session session
     (should (ecc-btw-intercept session "/btw なぜこの設計にした？"))
     (should (equal (alist-get 'subtype (ecc-btw-test--sent-request 0))
@@ -244,7 +244,7 @@ remember?")))
                    "なぜこの設計にした？"))))
 
 (ert-deftest ecc-btw-test-intercept-leaves-other-drafts-alone ()
-  "Anything else goes to the CLI as it always did (FR-BTW-1)."
+  "Anything else goes to the CLI as it always did."
   (ecc-btw-test-with-session session
     (should-not (ecc-btw-intercept session "/context"))
     (should-not (ecc-btw-intercept session "by the way, what is this?"))
@@ -252,7 +252,7 @@ remember?")))
     (should-not (ecc-test-sent-messages))))
 
 (ert-deftest ecc-btw-test-intercept-of-a-bare-btw-sends-nothing ()
-  "/btw with no question opens the panel, and never sends (FR-BTW-1)."
+  "/btw with no question opens the panel, and never sends."
   (ecc-btw-test-with-session session
     ;; With nothing asked yet there is nothing to show.
     (should (ecc-btw-intercept session "/btw"))
@@ -269,13 +269,13 @@ remember?")))
     (should (= (length (ecc-test-sent-messages)) 1))))
 
 (ert-deftest ecc-btw-test-the-intercept-is-really-registered ()
-  "Loading the package puts /btw on the send path (FR-BTW-1).
+  "Loading the package puts /btw on the send path.
 The other tests bind `ecc-prompt-intercept-functions\=' themselves, so
 they would pass even if nothing ever registered."
   (should (memq 'ecc-btw-intercept ecc-prompt-intercept-functions)))
 
 (ert-deftest ecc-btw-test-send-does-not-reach-the-cli ()
-  "`ecc-prompt-send' hands /btw over and empties the region (FR-BTW-1)."
+  "`ecc-prompt-send' hands /btw over and empties the region."
   (ecc-btw-test-with-session session
     (let ((ecc-prompt-intercept-functions '(ecc-btw-intercept)))
       (ecc-session-ensure-buffer session)
@@ -291,7 +291,7 @@ they would pass even if nothing ever registered."
         (should-not (ecc-session-current-turn session))))))
 
 (ert-deftest ecc-btw-test-btw-is-offered-in-completion ()
-  "/btw is a candidate although the CLI never names it (FR-BTW-1)."
+  "/btw is a candidate although the CLI never names it."
   (ecc-btw-test-with-session session
     (setf (ecc-session-commands session)
           [((name . "context") (description . "Show context usage"))])
@@ -302,7 +302,7 @@ they would pass even if nothing ever registered."
       (should (= (length (ecc-session-commands session)) 1)))))
 
 (ert-deftest ecc-btw-test-the-panel-opens-on-its-own ()
-  "The panel can be opened without asking anything (FR-BTW-3)."
+  "The panel can be opened without asking anything."
   (ecc-btw-test-with-session session
     (should (commandp 'ecc-btw-show))
     ;; Nothing has been asked yet: it opens and says so, and sends

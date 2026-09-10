@@ -88,9 +88,9 @@
   "A percent sign written for a person survives a mode line."
   ;; What a mode line makes of these is checked by hand rather than
   ;; here: `format-mode-line' draws nothing in batch.  With a real
-  ;; frame, "context 83% left" arrives as "context 83left" and
-  ;; "printf %s" as "printf no process", which is what this doubling is
-  ;; for (measured on 2026-09-06, docs/verified.md).
+  ;; frame, "context 83% left" arrives as "context 83left" and "printf
+  ;; %s" as "printf no process", which is what this doubling is for
+  ;; (measured on 2026-09-06).
   (should (equal (ecc--mode-line-escape "context 83% left")
                  "context 83%% left"))
   (should (equal (ecc--mode-line-escape "Bash printf %s") "Bash printf %%s"))

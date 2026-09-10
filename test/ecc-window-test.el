@@ -2,10 +2,9 @@
 
 ;;; Commentary:
 
-;; Where a transcript is shown (FR-WIN-1), hiding and restoring it per
-;; project and per tab (FR-WIN-2, FR-WIN-5), the name a session goes by
-;; (FR-WIN-3) and the rule that picks the session a command talks to
-;; (FR-WIN-4).
+;; Where a transcript is shown, hiding and restoring it per project and
+;; per tab, the name a session goes by and the rule that picks the
+;; session a command talks to.
 
 ;;; Code:
 
@@ -33,17 +32,17 @@ They live in different projects; the second is the most recently used."
        (ecc-test-cleanup-session ,first)
        (ecc-test-cleanup-session ,second))))
 
-;;;; Projects and names (FR-WIN-3)
+;;;; Projects and names
 
 (ert-deftest ecc-window-test-project-sessions ()
-  "A project sees its own sessions only (FR-WIN-3)."
+  "A project sees its own sessions only."
   (ecc-window-test--with-sessions one two
     (should (equal (ecc-window-project-sessions "/tmp/project-one/") (list one)))
     (should (equal (ecc-window-project-sessions "/tmp/project-two/") (list two)))
     (should-not (ecc-window-project-sessions "/tmp/elsewhere/"))))
 
 (ert-deftest ecc-window-test-second-session-is-named ()
-  "The second session of a project is asked for a name (FR-WIN-3)."
+  "The second session of a project is asked for a name."
   (ecc-window-test--with-sessions _one _two
     (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "refactor")))
       ;; The first session of a project is named after the directory.
@@ -55,14 +54,14 @@ They live in different projects; the second is the most recently used."
       (should-not (ecc-window-read-session-name "/tmp/project-one/")))))
 
 (ert-deftest ecc-window-test-rename ()
-  "Renaming a session renames its buffers with it (FR-WIN-3)."
+  "Renaming a session renames its buffers with it."
   (ecc-window-test--with-sessions one _two
     (ecc-session-ensure-buffer one)
     (ecc-rename-session one "refactor")
     (should (equal (ecc-session-name one) "refactor"))
     (should (equal (buffer-name (ecc-session-buffer one)) "*ecc: refactor*"))))
 
-;;;; Roles and hiding (FR-WIN-1, FR-WIN-2, FR-WIN-5)
+;;;; Roles and hiding
 
 (defmacro ecc-window-test--with-frame (roomy &rest body)
   "Run BODY with a frame that has room for a third window when ROOMY.
@@ -81,7 +80,7 @@ down again."
            (delete-window window))))))
 
 (ert-deftest ecc-window-test-a-tall-frame-has-three-roles ()
-  "A frame with the height to spare gets a third window (FR-WIN-1)."
+  "A frame with the height to spare gets a third window."
   (let ((ecc-window-large-frame-min-height (frame-height)))
     (should (ecc-window-large-frame-p))
     (should (equal (ecc-window-available-roles) '(main sub-1 sub-2))))
@@ -92,7 +91,7 @@ down again."
   (should (equal ecc-window-roles '(main sub-1 sub-2))))
 
 (ert-deftest ecc-window-test-roles-fill-then-alternate ()
-  "Sessions fill the roles in order, then take the subs in turn (FR-WIN-1).
+  "Sessions fill the roles in order, then take the subs in turn.
 Two sessions are not enough to see this: the fourth is the first one
 that has to displace somebody."
   (ecc-window-test--with-sessions one two
@@ -129,7 +128,7 @@ that has to displace somebody."
             (ecc-model-remove-session session)))))))
 
 (ert-deftest ecc-window-test-a-short-frame-keeps-to-two-windows ()
-  "Without the height for a third window the subs are all one (FR-WIN-1)."
+  "Without the height for a third window the subs are all one."
   (ecc-window-test--with-sessions one two
     (ecc-window-test--with-frame nil
       (let ((three (ecc-model-create-session
@@ -147,7 +146,7 @@ that has to displace somebody."
           (ecc-model-remove-session three))))))
 
 (ert-deftest ecc-window-test-main-is-filled-again-when-it-falls-empty ()
-  "A role nobody holds is the first one the next session takes (FR-WIN-1)."
+  "A role nobody holds is the first one the next session takes."
   (ecc-window-test--with-sessions one two
     (ecc-window-test--with-frame t
       (ecc-display-session one)
@@ -156,7 +155,7 @@ that has to displace somebody."
       (should (eq (ecc-window-role-for two) 'main)))))
 
 (ert-deftest ecc-window-test-a-side-window-keeps-its-dedication ()
-  "Switching what a session window shows leaves it a side window (FR-WIN-1).
+  "Switching what a session window shows leaves it a side window.
 `switch-to-buffer' drops the `side' dedication, and an undedicated side
 window is the next one `display-buffer' takes over."
   (ecc-window-test--with-sessions one two
@@ -171,7 +170,7 @@ window is the next one `display-buffer' takes over."
         (should (eq (window-dedicated-p window) 'side))))))
 
 (ert-deftest ecc-window-test-hidden-list-is-per-tab ()
-  "What was hidden is remembered per tab, not per Emacs (FR-WIN-5)."
+  "What was hidden is remembered per tab, not per Emacs."
   (require 'tab-bar)
   (let ((frame-parameter-backup (frame-parameter nil 'ecc-hidden-sessions)))
     (unwind-protect
@@ -191,7 +190,7 @@ window is the next one `display-buffer' takes over."
       (set-frame-parameter nil 'ecc-hidden-sessions frame-parameter-backup))))
 
 (ert-deftest ecc-window-test-toggle-hides-then-restores ()
-  "Toggle puts back exactly the sessions it took away (FR-WIN-2)."
+  "Toggle puts back exactly the sessions it took away."
   (ecc-window-test--with-sessions one two
     (let ((hidden nil)
           (shown nil)
@@ -220,7 +219,7 @@ window is the next one `display-buffer' takes over."
         (should (equal (sort (mapcar #'ecc-session-name hidden) #'string<)
                        '("one" "two")))))))
 
-;;;; The source buffer (FR-CTX-1)
+;;;; The source buffer
 
 (ert-deftest ecc-window-test-source-buffer ()
   "The buffers of this package are not what a command quotes from."
@@ -245,10 +244,10 @@ window is the next one `display-buffer' takes over."
               (should (eq (ecc-window-last-source-buffer) source))))
         (kill-buffer source)))))
 
-;;;; Which session a command talks to (FR-WIN-4)
+;;;; Which session a command talks to
 
 (ert-deftest ecc-window-test-resolve-in-a-session-buffer ()
-  "A command in a session buffer talks to that session (FR-WIN-4)."
+  "A command in a session buffer talks to that session."
   (ecc-window-test--with-sessions one two
     (with-current-buffer (ecc-session-ensure-buffer two)
       (should (eq (ecc-window-resolve-session) two)))
@@ -257,7 +256,7 @@ window is the next one `display-buffer' takes over."
       (should (eq (ecc-window-resolve-session) one)))))
 
 (ert-deftest ecc-window-test-resolve-by-project-then-recency ()
-  "The project decides, and failing that the session last used (FR-WIN-4)."
+  "The project decides, and failing that the session last used."
   (ecc-window-test--with-sessions one two
     (with-temp-buffer
       (let ((default-directory "/tmp/project-one/"))
@@ -269,7 +268,7 @@ window is the next one `display-buffer' takes over."
         (should (eq (ecc-window-resolve-session) one))))))
 
 (ert-deftest ecc-window-test-resolve-by-the-only-window ()
-  "The one session on screen wins over the one used last (FR-WIN-4)."
+  "The one session on screen wins over the one used last."
   (ecc-window-test--with-sessions one two
     (with-temp-buffer
       (cl-letf (((symbol-function 'ecc-window-session-visible-p)
@@ -279,7 +278,7 @@ window is the next one `display-buffer' takes over."
           (should (eq (ecc-window-resolve-session) two)))))))
 
 (ert-deftest ecc-window-test-resolve-asks-and-remembers ()
-  "A prefix argument asks, and the answer sticks to the buffer (FR-WIN-4)."
+  "A prefix argument asks, and the answer sticks to the buffer."
   (ecc-window-test--with-sessions one two
     (with-temp-buffer
       (let ((asked 0))
@@ -298,7 +297,7 @@ window is the next one `display-buffer' takes over."
             (should (= asked 2))))))))
 
 
-;;;; Opening a review (FR-WIN-5)
+;;;; Opening a review
 
 (ert-deftest ecc-window-test-review-leaves-the-windows-alone-by-default ()
   "With the defaults a review just opens; nothing is hidden."
@@ -317,7 +316,7 @@ window is the next one `display-buffer' takes over."
         (ecc-window-hide-session session)))))
 
 (ert-deftest ecc-window-test-review-can-hide-the-session ()
-  "`ecc-window-hide-on-review' takes the session windows away (FR-WIN-5)."
+  "`ecc-window-hide-on-review' takes the session windows away."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (let ((review (generate-new-buffer "*ecc-review-test*"))

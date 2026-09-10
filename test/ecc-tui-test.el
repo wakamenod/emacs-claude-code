@@ -2,13 +2,12 @@
 
 ;;; Commentary:
 
-;; The hand-off to the terminal client: the command it is opened with
-;; (FR-TUI-1), the transcript following the recording while it is
-;; there (FR-TUI-3), the session coming back afterwards (FR-TUI-4) and
-;; the rule that only one process may have a session at a time
-;; (FR-TUI-5).  No terminal is started here; `ecc-tui--open-ghostel' is
-;; replaced by one that makes a buffer and a process of its own, which
-;; is all the hand-off asks of a terminal.
+;; The hand-off to the terminal client: the command it is opened with,
+;; the transcript following the recording while it is there, the session
+;; coming back afterwards and the rule that only one process may have a
+;; session at a time.  No terminal is started here;
+;; `ecc-tui--open-ghostel' is replaced by one that makes a buffer and a
+;; process of its own, which is all the hand-off asks of a terminal.
 
 ;;; Code:
 
@@ -71,7 +70,7 @@ The process the session would run is pretended to be alive until
                (delete-process process))
              (kill-buffer buffer)))))))
 
-;;;; The command the terminal is opened with (FR-TUI-1, FR-TUI-2)
+;;;; The command the terminal is opened with
 
 (ert-deftest ecc-tui-test-command ()
   "The terminal resumes the same session with the interactive CLI."
@@ -92,7 +91,7 @@ The process the session would run is pretended to be alive until
   "The hand-off does not name a model the session was not given.
 A resume keeps the model its recording ends on, so naming a model here
 would undo a `/model' made in Emacs on the way in, and one made in the
-terminal on the way out (FR-TUI-4)."
+terminal on the way out."
   (ecc-test-with-fake-session session
     (should-not (member "--model" (ecc-tui-arguments session)))
     ;; A model put in the options of this session is somebody's doing
@@ -101,7 +100,7 @@ terminal on the way out (FR-TUI-4)."
     (should (equal (cadr (member "--model" (ecc-tui-arguments session)))
                    "opus"))))
 
-;;;; Only one process at a time (FR-TUI-5)
+;;;; Only one process at a time
 
 (ert-deftest ecc-tui-test-stops-the-process-first ()
   "The session is interrupted and stopped before the terminal opens."
@@ -147,7 +146,7 @@ terminal on the way out (FR-TUI-4)."
       (should-error (ecc-tui-open session) :type 'user-error))
     (should-not ecc-tui-test--opened)))
 
-;;;; Following the recording while the terminal has it (FR-TUI-3)
+;;;; Following the recording while the terminal has it
 
 (defun ecc-tui-test--write (file lines)
   "Write LINES to FILE, each followed by a newline."
@@ -271,7 +270,7 @@ moment they were read to a moment in the past."
       (delete-file file))))
 
 (ert-deftest ecc-tui-test-buffer-says-where-the-session-is ()
-  "The transcript says the session is in a terminal (FR-TUI-3)."
+  "The transcript says the session is in a terminal."
   (ecc-tui-test--with-session session
     (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) nil)))
       (ecc-session-ensure-buffer session)
@@ -284,7 +283,7 @@ moment they were read to a moment in the past."
         (should (string-search "handed over to the terminal"
                                (substring-no-properties (ecc-render-header-line))))))))
 
-;;;; Coming back (FR-TUI-4)
+;;;; Coming back
 
 (ert-deftest ecc-tui-test-returns-when-the-terminal-ends ()
   "The session is resumed headless as soon as the terminal process dies."
@@ -390,7 +389,7 @@ the process, the sentinel and the teardown are ghostel's own."
           (kill-buffer buffer))))))
 
 (ert-deftest ecc-tui-test-does-not-resume-behind-a-live-terminal ()
-  "A terminal that is still running keeps the session (FR-TUI-5)."
+  "A terminal that is still running keeps the session."
   (ecc-tui-test--with-session session
     (let ((resumed nil))
       (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) nil))

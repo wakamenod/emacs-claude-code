@@ -86,7 +86,7 @@ with a snapshot is the transcript, not the placeholder or a draft."
   "Return the text of the log BUFFER without the time stamps."
   (replace-regexp-in-string "^[0-9:.]+ " "" (ecc-test-buffer-string buffer)))
 
-;;;; Sessions without a process (plan section 8)
+;;;; Sessions without a process
 
 (defvar ecc-test-sent nil
   "JSON objects the session under test sent, most recent first.")
@@ -113,10 +113,10 @@ that tests cannot see each other."
           (ecc--sessions (make-hash-table :test #'equal))
           (ecc--session-order nil)
           (ecc-render-debounce 0)
-          ;; The visual effects of FR-OUT-11 depend on what this machine
-          ;; has (a nerd font, a spinner frame at this instant), so the
-          ;; snapshots are taken without them.  `ecc-visual-test' and the
-          ;; render tests that ask for them turn them back on.
+          ;; The visual effects depend on what this machine has (a nerd
+          ;; font, a spinner frame at this instant), so the snapshots
+          ;; are taken without them.  `ecc-visual-test' and the render
+          ;; tests that ask for them turn them back on.
           (ecc-visual-enable-icons nil)
           (ecc-visual-enable-spinner nil)
           (ecc-visual-enable-pulse nil)
@@ -204,7 +204,7 @@ Returns the pending request."
   "Return the types of the children of TURN, nesting steps and tools."
   (ecc-test-node-shape (ecc-turn-children turn)))
 
-;;;; Snapshots (plan section 8)
+;;;; Snapshots
 
 (defun ecc-test-snapshot-file (name)
   "Return the absolute path of snapshot NAME."

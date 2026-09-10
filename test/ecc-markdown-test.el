@@ -2,10 +2,9 @@
 
 ;;; Commentary:
 
-;; The Markdown faces of FR-OUT-8 (plan section 8).  The text itself
-;; must come out unchanged; only faces are added.  A table is the one
-;; thing that is redrawn rather than coloured, and it is tested apart in
-;; `ecc-table-test'.
+;; The Markdown faces.  The text itself must come out unchanged; only
+;; faces are added.  A table is the one thing that is redrawn rather
+;; than coloured, and it is tested apart in `ecc-table-test'.
 
 ;;; Code:
 
@@ -26,12 +25,12 @@
 (defun ecc-markdown-test--faces-at (text needle &optional offset)
   "Return the faces at NEEDLE in TEXT as a list, OFFSET characters in.
 A span can carry several faces once a major mode has coloured a code
-block on top of `ecc-markdown-code-face' (FR-OUT-15)."
+block on top of `ecc-markdown-code-face'."
   (let ((face (ecc-markdown-test--face-at text needle offset)))
     (if (listp face) face (list face))))
 
 (ert-deftest ecc-markdown-test-text-is-unchanged ()
-  "Fontifying only adds properties (FR-OUT-8).
+  "Fontifying only adds properties.
 A table is the one construct whose text is rewritten, and there is none
 here; `ecc-table-test' covers that."
   (should (equal (substring-no-properties (ecc-markdown-fontify ecc-markdown-test-sample))
@@ -62,7 +61,7 @@ here; `ecc-table-test' covers that."
     (should (eq (ecc-markdown-test--face-at text "**not bold**") 'ecc-markdown-code-face))))
 
 (ert-deftest ecc-markdown-test-code-blocks ()
-  "Fenced blocks are found with their bodies, for copying (FR-OUT-14 e)."
+  "Fenced blocks are found with their bodies, for copying."
   (let ((blocks (ecc-markdown-code-blocks ecc-markdown-test-sample)))
     (should (= (length blocks) 1))
     (should (equal (cddr (car blocks)) "print(1)\n"))
@@ -75,7 +74,7 @@ here; `ecc-table-test' covers that."
     (should-not (ecc-markdown-code-blocks "```\nopen"))))
 
 
-;;;; Syntax highlighting of code blocks (FR-OUT-15)
+;;;; Syntax highlighting of code blocks
 
 (ert-deftest ecc-markdown-test-language-mode ()
   "A fence language is resolved to a major mode, or to nothing."
@@ -151,7 +150,7 @@ here; `ecc-table-test' covers that."
                   (ecc-markdown-test--faces-at text "defun")))))
 
 (ert-deftest ecc-markdown-test-highlighting-leaves-the-text-alone ()
-  "Colouring a block adds no characters and moves none (FR-OUT-15)."
+  "Colouring a block adds no characters and moves none."
   (let ((source "Before\n\n```elisp\n(defun foo ())\n```\n\nAfter\n"))
     (should (equal (substring-no-properties (ecc-markdown-fontify source)) source))))
 

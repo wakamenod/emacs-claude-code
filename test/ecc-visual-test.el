@@ -2,12 +2,12 @@
 
 ;;; Commentary:
 
-;; The visual effects of FR-OUT-11 (plan section 6.17).  Batch has no
-;; window, so the timers are not left to run: each tick is called
-;; directly and what it left on the overlay is inspected.  What the
-;; tests do check is that a timer stops itself when nobody is looking,
-;; that no more than `ecc-visual-max-effects' of them exist at once, and
-;; that every effect can be turned off by itself.
+;; The visual effects.  Batch has no window, so the timers are not left
+;; to run: each tick is called directly and what it left on the overlay
+;; is inspected.  What the tests do check is that a timer stops itself
+;; when nobody is looking, that no more than `ecc-visual-max-effects' of
+;; them exist at once, and that every effect can be turned off by
+;; itself.
 
 ;;; Code:
 
@@ -39,7 +39,7 @@
   (with-current-buffer buffer
     (make-overlay (point-min) (line-end-position))))
 
-;;;; The spinner (FR-OUT-11 a)
+;;;; The spinner
 
 (ert-deftest ecc-visual-test-spinner-frames ()
   "The frame follows the tick and wraps around."
@@ -76,7 +76,7 @@
     (should-not (ecc-visual-spinner-running-p buffer))))
 
 (ert-deftest ecc-visual-test-spinner-stops-when-nobody-looks ()
-  "A tick for a buffer shown in no window cancels the timer (NFR-3)."
+  "A tick for a buffer shown in no window cancels the timer."
   (ecc-visual-test-with-buffer buffer
     (ecc-visual-spinner-start buffer)
     (should (ecc-visual-spinner-running-p buffer))
@@ -85,7 +85,7 @@
     (ecc-visual--spinner-tick buffer)
     (should-not (ecc-visual-spinner-running-p buffer))))
 
-;;;; Pulsing and blinking (FR-OUT-11 b, c)
+;;;; Pulsing and blinking (c)
 
 (ert-deftest ecc-visual-test-blend ()
   "Two colours blend, and an unknown colour blends to nothing."
@@ -140,7 +140,7 @@
       (ecc-visual--blink-tick overlay)
       (should-not (overlay-get overlay 'face))
       ;; A buffer nobody is looking at stops the effect rather than
-      ;; ticking on (NFR-3).
+      ;; ticking on.
       (ecc-visual--tick-overlay overlay #'ecc-visual--blink-tick)
       (should-not (overlay-get overlay 'ecc-visual-timer)))))
 
@@ -160,7 +160,7 @@
       (should-not (ecc-visual-effects)))))
 
 (ert-deftest ecc-visual-test-effects-can-be-turned-off ()
-  "Each effect answers to its own setting (FR-OUT-11)."
+  "Each effect answers to its own setting."
   (ecc-visual-test-with-buffer buffer
     (let ((ecc-visual-enable-pulse nil)
           (ecc-visual-enable-blink nil)
@@ -172,7 +172,7 @@
         (should-not (ecc-visual-effects)))
       (should-not (ecc-visual-flash-region (point-min) (point-max))))))
 
-;;;; Icons (FR-OUT-11 d)
+;;;; Icons
 
 (ert-deftest ecc-visual-test-icons ()
   "Every tool gets an icon, and turning icons off gets nothing."
@@ -219,7 +219,7 @@
 ;;;; What the renderer does with them
 
 (ert-deftest ecc-visual-test-render-puts-an-icon-in-a-tool-heading ()
-  "The heading of a tool call carries its icon (FR-OUT-11 d)."
+  "The heading of a tool call carries its icon."
   (ecc-test-with-fake-session session
     (let ((ecc-visual-enable-icons t)
           (ecc-visual--nerd-icons nil))
@@ -230,7 +230,7 @@
                              (ecc-test-buffer-string (ecc-session-buffer session)))))))
 
 (ert-deftest ecc-visual-test-render-notes-a-waiting-request ()
-  "A request waiting for an answer is noted for the blink (FR-OUT-11 c)."
+  "A request waiting for an answer is noted for the blink."
   (ecc-test-with-fake-session session
     (let ((ecc-visual-enable-blink t)
           (ecc-visual-enable-pulse t))
@@ -259,7 +259,7 @@
       (should-not (ecc-visual-spinner-running-p (ecc-session-buffer session))))))
 
 (ert-deftest ecc-visual-test-render-asks-for-a-flash-when-a-turn-ends ()
-  "A finished turn asks the live region to flash once (FR-OUT-11 e)."
+  "A finished turn asks the live region to flash once."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (ecc-render--on-turn-finished session)

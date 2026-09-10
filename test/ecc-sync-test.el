@@ -2,8 +2,8 @@
 
 ;;; Commentary:
 
-;; Reverting the buffer of a file Claude changed (FR-SYNC-1) and telling
-;; when a buffer has unsaved changes (FR-SYNC-2).
+;; Reverting the buffer of a file Claude changed and telling when a
+;; buffer has unsaved changes.
 
 ;;; Code:
 
@@ -79,7 +79,7 @@
   (should-not (ecc-sync-unsaved-buffer nil)))
 
 (ert-deftest ecc-sync-test-tool-result-reverts-through-the-hook ()
-  "A successful Write result reloads the buffer of the file (FR-SYNC-1)."
+  "A successful Write result reloads the buffer of the file."
   (ecc-test-with-fake-session session
     (ecc-sync-test--with-file file buffer
       (ecc-model-begin-turn session "書いて")

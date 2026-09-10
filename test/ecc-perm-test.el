@@ -3,7 +3,7 @@
 ;;; Commentary:
 
 ;; Answering a can_use_tool request: what goes on the wire, what happens
-;; to the queue and what the transcript remembers (FR-PERM-1, 2, 5, 6).
+;; to the queue and what the transcript remembers.
 
 ;;; Code:
 
@@ -28,7 +28,7 @@
       (should (eq (ecc-node-status (ecc-request-node request)) 'done)))))
 
 (ert-deftest ecc-perm-test-deny-with-a-reason ()
-  "Deny sends the reason Claude will read (FR-PERM-2, 12.4)."
+  "Deny sends the reason Claude will read (12.4)."
   (ecc-test-with-fake-session session
     (let ((request (ecc-test-add-request session)))
       (ecc-perm-respond request 'deny :message "内容を hi にして")
@@ -61,7 +61,7 @@
                      "acceptEdits")))))
 
 (ert-deftest ecc-perm-test-commands-find-the-oldest ()
-  "With no request at point the oldest waiting one is answered (FR-PERM-6)."
+  "With no request at point the oldest waiting one is answered."
   (ecc-test-with-fake-session session
     (let ((first (ecc-test-add-request session))
           (second (ecc-test-add-request session "Bash")))
@@ -96,7 +96,7 @@
     ;; multiSelect stays false rather than turning into null (9.5).
     (should (eq (alist-get 'multiSelect (aref questions 0)) :false))))
 
-;;;; Allow patterns (FR-PERM-8)
+;;;; Allow patterns
 
 (ert-deftest ecc-perm-test-suggest-patterns-bash ()
   "Bash patterns go from the two word prefix to the command itself."
@@ -177,7 +177,7 @@
               (should (ecc-session-pending session))))
         (delete-directory root t)))))
 
-;;;; Permission suggestions (FR-PERM-3)
+;;;; Permission suggestions
 
 (ert-deftest ecc-perm-test-allow-always-sends-the-suggestion ()
   "A single suggestion goes back verbatim as updatedPermissions."
@@ -196,7 +196,7 @@
                                                  'outcome-message))))))
 
 (ert-deftest ecc-perm-test-allow-always-without-suggestion-saves-a-pattern ()
-  "Without a suggestion, `A' falls through to the pattern flow (FR-PERM-8)."
+  "Without a suggestion, `A' falls through to the pattern flow."
   (ecc-test-with-fake-session session
     (let ((root (make-temp-file "ecc-perm" t)))
       (unwind-protect
@@ -224,7 +224,7 @@
                           '((type . "addRules")
                             (rules . [((toolName . "Bash") (ruleContent . "git push *"))]))))))
 
-;;;; Turn wide approval (FR-PERM-7)
+;;;; Turn wide approval
 
 (ert-deftest ecc-perm-test-approve-turn ()
   "`t' allows the waiting Edit, leaves Bash, and covers the rest of the turn."
@@ -259,7 +259,7 @@
         (ecc-perm-approve-turn))
       (should-not (ecc-session-pending session)))))
 
-;;;; Bulk operations (FR-PERM-9)
+;;;; Bulk operations
 
 (ert-deftest ecc-perm-test-allow-all ()
   "Allow all answers every permission and leaves questions where they are."
@@ -308,7 +308,7 @@ not remembered: Bash is not worth a blanket approval."
       (ecc-perm-allow-next)
       (should-not (ecc-session-pending session)))))
 
-;;;; Unsaved buffers (FR-SYNC-2)
+;;;; Unsaved buffers
 
 (defmacro ecc-perm-test--with-modified-file (file buffer &rest body)
   "Run BODY with FILE a temp file visited by BUFFER that has unsaved changes."
@@ -365,14 +365,14 @@ not remembered: Bash is not worth a blanket approval."
                    (lambda (&rest _) (error "Should not ask"))))
           (should (eq (ecc-perm-allow-request request) 'allow)))))))
 
-;;;; The question buffer (FR-PERM-5)
+;;;; The question buffer
 
 (defun ecc-perm-test--question-request (session)
   "Return the AskUserQuestion request of the recording, fed to SESSION."
   (ecc-test-feed-until-request session "ask-user-question" "質問して"))
 
 (ert-deftest ecc-perm-test-question-buffer-answers ()
-  "Number keys choose, multiSelect toggles, and the answers match verified.md."
+  "Number keys choose, multiSelect toggles, and the answers match the CLI."
   (ecc-test-with-fake-session session
     (let* ((request (ecc-perm-test--question-request session))
            (buffer (ecc-question-open request)))

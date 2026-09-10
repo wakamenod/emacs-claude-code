@@ -3,7 +3,7 @@
 ;;; Commentary:
 
 ;; The feedback generator as a pure function, and the review buffer
-;; driven through the recorded ExitPlanMode request (FR-PLAN-1 to 5).
+;; driven through the recorded ExitPlanMode request.
 
 ;;; Code:
 
@@ -24,7 +24,7 @@
   (should (equal (ecc-plan-strip-markers "a\n@claude: x\nb") "a\nb")))
 
 (ert-deftest ecc-plan-test-feedback-nil-without-changes ()
-  "An untouched plan gives no feedback, so it is approved (FR-PLAN-3)."
+  "An untouched plan gives no feedback, so it is approved."
   (should-not (ecc-plan-feedback ecc-plan-test--plan ecc-plan-test--plan nil))
   (should-not (ecc-plan-feedback ecc-plan-test--plan ecc-plan-test--plan nil "  ")))
 
@@ -66,7 +66,7 @@
     request))
 
 (ert-deftest ecc-plan-test-open ()
-  "The buffer holds the plan, is editable and knows its request (FR-PLAN-1)."
+  "The buffer holds the plan, is editable and knows its request."
   (ecc-test-with-fake-session session
     (let* ((request (ecc-plan-test--request session))
            (buffer (ecc-plan-open request)))
@@ -149,7 +149,7 @@ resume too, where the permission request is not replayed."
         (should (equal (ecc-chat-heading-at-point) "plans"))))))
 
 (ert-deftest ecc-plan-test-approve-clean ()
-  "C-c C-c on an untouched plan allows and switches to acceptEdits (FR-PLAN-4)."
+  "C-c C-c on an untouched plan allows and switches to acceptEdits."
   (ecc-test-with-fake-session session
     (let* ((request (ecc-plan-test--request session))
            (buffer (ecc-plan-open request)))
@@ -230,7 +230,7 @@ resume too, where the permission request is not replayed."
       (should (string-search "rejected" (alist-get 'message (ecc-test-response 0)))))))
 
 (ert-deftest ecc-plan-test-comment-overlay-and-removal ()
-  "A comment is drawn on its line and can be taken off again (FR-PLAN-2 a)."
+  "A comment is drawn on its line and can be taken off again."
   (ecc-test-with-fake-session session
     (with-current-buffer (ecc-plan-open (ecc-plan-test--request session))
       (goto-char (point-min))
@@ -246,7 +246,7 @@ resume too, where the permission request is not replayed."
         (should-error (ecc-plan-remove-comment) :type 'user-error)))))
 
 (ert-deftest ecc-plan-test-changed-lines-since-previous ()
-  "A plan shown again marks the lines that are new (FR-PLAN-5)."
+  "A plan shown again marks the lines that are new."
   (ecc-test-with-fake-session session
     (let ((request (ecc-plan-test--request session)))
       (with-current-buffer (ecc-plan-open request)

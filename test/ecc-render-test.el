@@ -2,9 +2,9 @@
 
 ;;; Commentary:
 
-;; Replays a recording into a session buffer and compares the text of the
-;; buffer with a snapshot in test/snapshots (plan section 8).  Rewrite a
-;; snapshot after an intended change with:
+;; Replays a recording into a session buffer and compares the text of
+;; the buffer with a snapshot in test/snapshots.  Rewrite a snapshot
+;; after an intended change with:
 ;;
 ;;     ECC_UPDATE_SNAPSHOTS=1 make test
 
@@ -56,8 +56,8 @@ with the request, used in turn for the requests the recording makes."
       (should (string-prefix-p "\n〉 hello\n" text))
       (should-not (string-search "claude-haiku" text))
       ;; What it is doing is on the left of the header line, what it is
-      ;; on the right (FR-OUT-6 as revised by the phase 9 redesign).
-      ;; The model is not there: the footer under the prompt names it.
+      ;; on the right.  The model is not there: the footer under the
+      ;; prompt names it.
       (with-current-buffer (ecc-session-buffer session)
         (let ((header (substring-no-properties (ecc-render-header-line))))
           (should (string-search "○ idle" header))
@@ -65,10 +65,10 @@ with the request, used in turn for the requests the recording makes."
 
 (ert-deftest ecc-render-test-footer-follows-a-model-change ()
   "The footer names the new model as soon as `/model' is sent.
-It used to name the model of init, which the CLI never sends again, so
-a `/model' only showed once the next answer named the model it came
-back with (FR-HINT-3).  The name stands under the prompt rather than
-in the header line, next to the permission mode."
+It used to name the model of init, which the CLI never sends again, so a
+`/model' only showed once the next answer named the model it came back
+with.  The name stands under the prompt rather than in the header line,
+next to the permission mode."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (setf (ecc-session-init session) '((model . "claude-haiku-4-5-20251001")))
@@ -86,8 +86,7 @@ in the header line, next to the permission mode."
 (ert-deftest ecc-render-test-header-shows-remote-control ()
   "A session on the Remote Control bridge says so, with the URL in the tooltip.
 The header line has no room for the URL, and without it nothing on
-screen says where the session can be reached (docs/verified.md,
-2026-09-08)."
+screen says where the session can be reached (confirmed 2026-09-08)."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (with-current-buffer (ecc-session-buffer session)
@@ -211,7 +210,7 @@ narrower on the screen than it is in the text."
                                text))))))
 
 (ert-deftest ecc-render-test-unsaved-warning-in-heading ()
-  "An Edit of a file open with unsaved changes says so in its heading (FR-SYNC-2)."
+  "An Edit of a file open with unsaved changes says so in its heading."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (let* ((file (make-temp-file "ecc-render" nil ".txt" "one\n"))
@@ -241,7 +240,7 @@ narrower on the screen than it is in the text."
         (kill-buffer buffer)
         (delete-file file)))))
 
-;;;; Incremental drawing (NFR-9, plan section 5.2)
+;;;; Incremental drawing
 
 (ert-deftest ecc-render-test-finished-turns-are-left-alone ()
   "Once a turn is finished it is never drawn again."
@@ -268,7 +267,7 @@ narrower on the screen than it is in the text."
         (should (string-search "〉 again" (buffer-string)))))))
 
 (ert-deftest ecc-render-test-folding-survives-a-redraw ()
-  "Collapsing a section sticks, because node ids are stable (plan 9.6)."
+  "Collapsing a section sticks, because node ids are stable."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (ecc-model-begin-turn session "hello.txt を作って")
@@ -278,7 +277,7 @@ narrower on the screen than it is in the text."
     (with-current-buffer (ecc-session-buffer session)
       (let ((id "toolu_01Hcu5xtMTxBqGiZ6MfT3XyZ"))
         (should (ecc-render-node-bounds id))
-        ;; Tool bodies start collapsed (FR-OUT-3).
+        ;; Tool bodies start collapsed.
         (should (ecc-render-node-hidden-p id))
         (ecc-render-show-node id)
         (should-not (ecc-render-node-hidden-p id))
@@ -286,7 +285,7 @@ narrower on the screen than it is in the text."
         (should-not (ecc-render-node-hidden-p id))))))
 
 (ert-deftest ecc-render-test-refresh-rebuilds-the-same-text ()
-  "Drawing everything again gives exactly what growing it gave (FR-OUT-10)."
+  "Drawing everything again gives exactly what growing it gave."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (ecc-test-dispatch session "tool-use-write" "hello.txt を作って")
@@ -341,7 +340,7 @@ which one it was, not the red line of an error (2026-09-09)."
       (should (string-search "system/vcs_state_changed — git commit main" text))
       (should-not (string-search "unknown:" text)))))
 
-;;;; Cost of drawing (NFR-1)
+;;;; Cost of drawing
 
 (ert-deftest ecc-render-test-streaming-recording-is-fast ()
   "Replaying the streaming recording with a redraw per message stays quick."
@@ -359,7 +358,7 @@ which one it was, not the red line of an error (2026-09-09)."
       (should (< elapsed 10)))))
 
 
-;;;; Streaming (FR-OUT-4, FR-OUT-10)
+;;;; Streaming
 
 (defun ecc-render-test--stream (session name prompt stop-at)
   "Replay fixture NAME into SESSION under PROMPT until STOP-AT returns non-nil.
@@ -387,7 +386,7 @@ follow have a section to grow.  Returns the remaining lines."
          (equal (alist-get 'type (alist-get 'delta event)) type))))
 
 (ert-deftest ecc-render-test-text-grows-delta-by-delta ()
-  "Each text delta lands in the buffer without a redraw (FR-OUT-4)."
+  "Each text delta lands in the buffer without a redraw."
   (ecc-test-with-fake-session session
     (let* ((ecc-stream-throttle 0)
            (seen 0)
@@ -414,7 +413,7 @@ follow have a section to grow.  Returns the remaining lines."
         (should (string-search "  Done. Created `long.py` with 60 functions" text))
         (should (string-match-p "[0-9.]+s · \\$[0-9.]+" text))
         (should-not (ecc-model-find-stream session nil 'text)))
-      ;; A code span inside the reply got its Markdown face (FR-OUT-8).
+      ;; A code span inside the reply got its Markdown face.
       (with-current-buffer buffer
         (goto-char (point-min))
         (should (search-forward "`long.py`" nil t))
@@ -422,7 +421,7 @@ follow have a section to grow.  Returns the remaining lines."
                       (ensure-list (get-text-property (match-beginning 0) 'face))))))))
 
 (ert-deftest ecc-render-test-tool-input-streams-into-heading ()
-  "While a Write streams its input only the heading changes (FR-OUT-10)."
+  "While a Write streams its input only the heading changes."
   (ecc-test-with-fake-session session
     (let* ((ecc-stream-throttle 0)
            (seen 0))
@@ -438,7 +437,7 @@ follow have a section to grow.  Returns the remaining lines."
         (should (string-match-p "… Write · streaming [0-9]+ chars…" text))))))
 
 (ert-deftest ecc-render-test-thinking-pulses-while-it-streams ()
-  "The heading of a thinking block pulses until the block ends (FR-OUT-11 b)."
+  "The heading of a thinking block pulses until the block ends."
   (ecc-test-with-fake-session session
     (let ((ecc-visual-enable-pulse t)
           (ecc-stream-throttle 0)
@@ -522,10 +521,10 @@ heading has nothing to wait for."
     (should-not (string-search "⏱" (ecc-test-buffer-string
                                     (ecc-session-buffer session))))))
 
-;;;; Subagents (FR-OUT-9)
+;;;; Subagents
 
 (ert-deftest ecc-render-test-subagent ()
-  "An agent draws nested, with its prompt, tools and reply (FR-OUT-9)."
+  "An agent draws nested, with its prompt, tools and reply."
   (ecc-test-with-fake-session session
     (let ((text (ecc-render-test--replay session "subagent" "探して")))
       (ecc-render-test--check "subagent" text)
@@ -552,7 +551,7 @@ heading has nothing to wait for."
               (kill-buffer buffer))))))))
 
 (ert-deftest ecc-render-test-subagent-starts-folded ()
-  "The body of an agent starts folded, like a tool's (FR-OUT-3)."
+  "The body of an agent starts folded, like a tool's."
   (ecc-test-with-fake-session session
     (ecc-render-test--replay session "subagent" "探して")
     (let ((agent (seq-find (lambda (node) (eq (ecc-node-type node) 'agent))
@@ -611,7 +610,7 @@ heading has nothing to wait for."
                (length (ecc-render-tool-summary
                         "Task" `((description . ,(make-string 200 ?x)))))))))
 
-;;;; Diffs (FR-OUT-7, FR-DIFF-1)
+;;;; Diffs
 
 (ert-deftest ecc-render-test-edit-diff ()
   "An Edit is drawn as a diff with the lines of the file around it."
@@ -619,7 +618,7 @@ heading has nothing to wait for."
     (let ((text (ecc-render-test--replay session "edit-tool" "greet を直して" '(allow))))
       (ecc-render-test--check "edit-tool" text)
       ;; The permission section showed the change in place, with context
-      ;; taken from the Read that came before (FR-DIFF-1).
+      ;; taken from the Read that came before.
       (should (string-search (concat "  ✓ Permission: Edit  allowed\n"
                                      "    /private/tmp/claude-501/")
                              text))
@@ -629,7 +628,7 @@ heading has nothing to wait for."
                                      "    -    return \"hi \" + name\n"
                                      "    +    return \"hello \" + name\n")
                              text))
-      ;; The tool section shows the same diff (FR-OUT-7) ...
+      ;; The tool section shows the same diff ...
       (should (string-search "    -    return \"hi \" + name\n    +    return \"hello \" + name\n"
                              text))
       ;; ... with diff-mode faces.
@@ -638,7 +637,7 @@ heading has nothing to wait for."
         (should (search-forward "+    return \"hello \" + name" nil t))
         (should (memq 'diff-added
                       (ensure-list (get-text-property (match-beginning 0) 'face)))))
-      ;; The Files section merges the patches the CLI reported (FR-OUT-12).
+      ;; The Files section merges the patches the CLI reported.
       (should (string-search "  Files (1)\n    /private/tmp/claude-501/" text))
       (should (string-search "hello.py  R×1 E×1  +1 −1\n      @@ -1,6 +1,6 @@\n" text)))))
 
@@ -654,7 +653,7 @@ heading has nothing to wait for."
       (should (string-search "long.py  W×1  +298 −0\n" text))
       (should (string-search "    +    return 59\n" text)))))
 
-;;;; Files and Tasks (FR-OUT-12, FR-OUT-13)
+;;;; Files and Tasks
 
 (ert-deftest ecc-render-test-tasks ()
   "TaskCreate, TaskUpdate and TaskList keep the checklist current."
@@ -746,7 +745,7 @@ the cache the same way a node of the transcript does."
       (ecc-render-refresh session)
       (should (ecc-render-node-hidden-p "files")))))
 
-;;;; The state line (FR-OUT-6)
+;;;; The state line
 
 (ert-deftest ecc-render-test-status-line ()
   "The header line follows the state and names what is running."
@@ -780,7 +779,7 @@ the cache the same way a node of the transcript does."
     (with-current-buffer (ecc-session-buffer session)
       (should (string-prefix-p " ⚠ permission" (ecc-render-header-line))))))
 
-;;;; Movement and extraction (FR-OUT-14)
+;;;; Movement and extraction
 
 (defun ecc-render-test--two-turns (session)
   "Give SESSION two finished turns, the second holding a code block."
@@ -816,10 +815,9 @@ snapshot can catch this: a face is not text."
 
 (ert-deftest ecc-render-test-code-block-reaches-the-buffer ()
   "A fenced block is coloured by its mode and its fences are out of sight.
-The colouring of FR-OUT-15 has to survive the trip from
+The code block colouring has to survive the trip from
 `ecc-markdown-fontify\=' into the session buffer, and the fence lines
-have to be there for whatever searches the text while showing nothing
-\(FR-OUT-8 as revised by the phase 9 redesign)."
+have to be there for whatever searches the text while showing nothing."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (ecc-model-begin-turn session "show me code")
@@ -849,7 +847,7 @@ have to be there for whatever searches the text while showing nothing
         (should (eq (get-text-property (line-end-position) 'invisible) 'ecc-markup))))))
 
 (ert-deftest ecc-render-test-turn-movement-and-timeline ()
-  "Turns can be walked and picked by their prompt (FR-OUT-14 a, d)."
+  "Turns can be walked and picked by their prompt (d)."
   (ecc-test-with-fake-session session
     (ecc-render-test--two-turns session)
     (with-current-buffer (ecc-session-buffer session)
@@ -867,7 +865,7 @@ have to be there for whatever searches the text while showing nothing
       (should (looking-at "〉 show me code")))))
 
 (ert-deftest ecc-render-test-block-movement-and-folding ()
-  "Blocks can be walked, and all of them folded or unfolded (FR-OUT-14 b, c)."
+  "Blocks can be walked, and all of them folded or unfolded (c)."
   (ecc-test-with-fake-session session
     (ecc-render-test--replay session "edit-tool" "greet を直して" '(allow))
     (with-current-buffer (ecc-session-buffer session)
@@ -893,7 +891,7 @@ have to be there for whatever searches the text while showing nothing
         (should-not (ecc-render-node-hidden-p "turn-1"))))))
 
 (ert-deftest ecc-render-test-copy-at-point ()
-  "The code block under point is copied, or else the whole reply (FR-OUT-14 e)."
+  "The code block under point is copied, or else the whole reply."
   (ecc-test-with-fake-session session
     (ecc-render-test--two-turns session)
     (with-current-buffer (ecc-session-buffer session)
@@ -909,7 +907,7 @@ have to be there for whatever searches the text while showing nothing
         (should-error (ecc-session-copy-at-point) :type 'user-error)))))
 
 (ert-deftest ecc-render-test-export-markdown ()
-  "The transcript is saved as Markdown, one section per turn (FR-OUT-14 f)."
+  "The transcript is saved as Markdown, one section per turn."
   (ecc-test-with-fake-session session
     (ecc-render-test--two-turns session)
     (let ((file (make-temp-file "ecc-export" nil ".md")))
@@ -946,7 +944,7 @@ have to be there for whatever searches the text while showing nothing
       ;; a delta that redraws the whole live region.
       (should (< (/ elapsed count) 0.005)))))
 
-;;;; Following the end (FR-OUT-10)
+;;;; Following the end
 
 (defun ecc-render-test--answer (session text &optional uuid)
   "Give SESSION an assistant TEXT and a result, as one turn would."
@@ -965,7 +963,7 @@ have to be there for whatever searches the text while showing nothing
 The live region is deleted and drawn again on every change, and a
 point in it used to count as watching the end, so a redraw -- ten a
 second while a turn arrives -- put it back at the prompt and the
-cursor could not be moved into the answer at all (FR-UI-2)."
+cursor could not be moved into the answer at all."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (ecc-model-begin-turn session "hello")

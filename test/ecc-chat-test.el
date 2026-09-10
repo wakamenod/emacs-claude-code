@@ -2,11 +2,10 @@
 
 ;;; Commentary:
 
-;; The single session buffer of phase 9b (docs/phase9-ui-redesign.md,
-;; section 4): folding and movement over the headings the renderer
-;; marks, the keys that differ between the transcript and the prompt
-;; region, sending from the region, and the draft that no redraw may
-;; touch (FR-OUT-3, FR-OUT-14, FR-INP-1, FR-UI-2).
+;; The single session buffer of phase 9b: folding and movement over the
+;; headings the renderer marks, the keys that differ between the
+;; transcript and the prompt region, sending from the region, and the
+;; draft that no redraw may touch.
 
 ;;; Code:
 
@@ -48,7 +47,7 @@ calls in one step is what the depth ladder needs."
     (should step)
     (cons (ecc-node-id step) (ecc-node-id (car (ecc-node-children step))))))
 
-;;;; Folding (FR-OUT-3)
+;;;; Folding
 
 (ert-deftest ecc-chat-test-toggle-folds-and-unfolds ()
   "TAB on a heading hides its body and shows it again; on the body it folds."
@@ -126,7 +125,7 @@ calls in one step is what the depth ladder needs."
         (should (equal (get-text-property pos 'display)
                        ecc-render-fold-closed-mark))
         ;; The character underneath is untouched, so a copy of the line
-        ;; still says how the call went (FR-OUT-3).
+        ;; still says how the call went.
         (should (equal (char-to-string (char-after pos)) "✓"))
         (goto-char pos)
         (ecc-chat-toggle)
@@ -148,7 +147,7 @@ calls in one step is what the depth ladder needs."
         (funcall (overlay-get overlay 'isearch-open-invisible) overlay)
         (should-not (ecc-render-node-hidden-p tool))))))
 
-;;;; Movement (FR-OUT-14)
+;;;; Movement
 
 (ert-deftest ecc-chat-test-heading-movement ()
   "n and p walk the headings that are in sight; folded ones are skipped."
@@ -186,7 +185,7 @@ calls in one step is what the depth ladder needs."
       (goto-char (point-max))
       (should-error (ecc-chat-next-heading) :type 'user-error))))
 
-;;;; Keys (plan section 4.2 of the phase 9 revision)
+;;;; Keys
 
 (ert-deftest ecc-chat-test-keys-differ-by-region ()
   "A letter moves in the transcript and is a letter in the prompt region."
@@ -201,7 +200,7 @@ calls in one step is what the depth ladder needs."
       (should (eq (key-binding (kbd "n")) #'self-insert-command))
       (should (eq (key-binding (kbd "TAB")) #'ecc-chat-tab))
       ;; A slash is the one punctuation mark with a command of its own:
-      ;; it inserts itself and offers the slash commands (FR-INP-3).
+      ;; it inserts itself and offers the slash commands.
       (should (eq (key-binding (kbd "/")) #'ecc-chat-slash))
       (should (eq (key-binding (kbd "RET")) #'ecc-chat-return))
       (should (eq (key-binding (kbd "C-c C-c")) #'ecc-prompt-send))
@@ -272,7 +271,7 @@ calls in one step is what the depth ladder needs."
       (should (equal (ecc-chat-draft) ""))
       (should (equal (ecc-turn-prompt (ecc-session-current-turn session)) "one")))))
 
-;;;; Sending (FR-INP-1)
+;;;; Sending
 
 (ert-deftest ecc-chat-test-send-empties-the-region-and-opens-a-turn ()
   "Sending moves the text up into a turn and leaves the region empty."
@@ -290,7 +289,7 @@ calls in one step is what the depth ladder needs."
       (should (= (point) (ecc-chat-prompt-start)))
       (should (ecc-chat-placeholder-shown)))))
 
-;;;; The draft survives every redraw (FR-UI-2)
+;;;; The draft survives every redraw
 
 (ert-deftest ecc-chat-test-draft-survives-redraws ()
   "A draft and the point in it are kept through every kind of redraw."
@@ -525,7 +524,7 @@ prompt region."
       (should (equal (ecc-chat-test--footer-mode)
                      "⏵ manual mode (S-TAB to cycle)")))))
 
-;;;; The footer: the permission mode under the prompt (FR-SES-6)
+;;;; The footer: the permission mode under the prompt
 
 (defun ecc-chat-test--footer-line ()
   "Return the last line of the footer of this buffer, without properties."
@@ -546,7 +545,7 @@ stretched space; what is asked for here is the left of it."
   "The permission mode is shown under the prompt as read-only text.
 The prompt region ends where it begins, so the draft never sees it,
 and the draft is written in front of it and survives a redraw
-\(FR-UI-2)."
+."
   (ecc-test-with-fake-session session
     (with-current-buffer (ecc-session-ensure-buffer session)
       (ecc-chat--update-ghosts)
@@ -644,7 +643,7 @@ and the draft is written in front of it and survives a redraw
       (should (ecc-chat-update-footer)))))
 
 (ert-deftest ecc-chat-test-cycle-permission-mode ()
-  "S-TAB walks through the modes and asks the CLI to switch (FR-SES-6)."
+  "S-TAB walks through the modes and asks the CLI to switch."
   (ecc-test-with-fake-session session
     (with-current-buffer (ecc-session-ensure-buffer session)
       (should (eq (lookup-key ecc-chat-mode-map (kbd "<backtab>"))

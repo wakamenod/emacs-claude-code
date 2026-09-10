@@ -4,7 +4,7 @@
 
 ;; Reading a recorded conversation back: which lines open a turn, which
 ;; page is read first, what the tree looks like afterwards and what a
-;; replay is not allowed to do (FR-HIST-1 to 3, FR-SES-4, FR-SES-7).
+;; replay is not allowed to do.
 ;;
 ;; test/fixtures/history/session.jsonl was recorded by
 ;; scripts/record-history.sh: three turns, one Write and one Read.
@@ -55,7 +55,7 @@ one directory per working directory, the session id as the file name."
            ,@body)
        (delete-directory root t))))
 
-;;;; Finding the turns (FR-HIST-1)
+;;;; Finding the turns
 
 (ert-deftest ecc-history-test-turn-starts ()
   "Only the lines carrying a prompt open a turn."
@@ -90,7 +90,7 @@ one directory per working directory, the session id as the file name."
   (should (= 0 (ecc-history--offset '(2 14 26) 2)))
   (should (= 14 (ecc-history--offset '(2 14 26) 14))))
 
-;;;; Reading a recording back (FR-HIST-1, FR-HIST-2)
+;;;; Reading a recording back
 
 (ert-deftest ecc-history-test-load-whole-file ()
   "Every turn is read, with its prompt, its tools and its duration."
@@ -108,7 +108,7 @@ one directory per working directory, the session id as the file name."
     (should-not (seq-some #'ecc-turn-cost (ecc-session-turns session)))))
 
 (ert-deftest ecc-history-test-model-comes-from-the-recording ()
-  "A session read from history knows its model (FR-HINT-3).
+  "A session read from history knows its model.
 The recording carries no system/init, so the only place the model is
 named is the assistant messages.  Without it every session read from
 history was taken for the default window and showed no context left."
@@ -127,7 +127,7 @@ history was taken for the default window and showed no context left."
     (should (equal (ecc-hint-model session) "claude-haiku-4-5-20251001"))))
 
 (ert-deftest ecc-history-test-nothing-is-unknown ()
-  "No line of a recording falls through the dispatch table (FR-HIST-2)."
+  "No line of a recording falls through the dispatch table."
   (ecc-test-with-fake-session session
     (ecc-history-load session nil ecc-history-test-file)
     (should (equal 0 (length (seq-filter (lambda (node)
@@ -170,7 +170,7 @@ tool_use_result, so this fails if the two are not brought together."
 (ert-deftest ecc-history-test-recording-only-system-lines ()
   "A system line only a recording holds is a folded note, not an unknown.
 The duration the CLI measured closes the turn, since a recording has no
-result message to carry it (FR-HIST-2)."
+result message to carry it."
   (ecc-test-with-fake-session session
     (let ((lines (list
                   (concat "{\"type\": \"user\", \"uuid\": \"u1\","
@@ -193,7 +193,7 @@ result message to carry it (FR-HIST-2)."
                                 (hash-table-values (ecc-session-nodes session)))))))))
 
 (ert-deftest ecc-history-test-command-output-opens-no-turn ()
-  "Neither a slash command nor what it printed is a prompt (FR-HIST-2)."
+  "Neither a slash command nor what it printed is a prompt."
   (ecc-test-with-fake-session session
     (let ((lines (list
                   (concat "{\"type\": \"user\", \"uuid\": \"u1\","
@@ -214,7 +214,7 @@ result message to carry it (FR-HIST-2)."
         (should (equal (ecc-model-node-get (car nodes) 'output) "Set model"))))))
 
 (ert-deftest ecc-history-test-sidechain-is-counted-not-shown ()
-  "A subagent line is left out and its number noted (FR-HIST-2)."
+  "A subagent line is left out and its number noted."
   (ecc-test-with-fake-session session
     (let* ((line (concat "{\"type\": \"assistant\", \"isSidechain\": true,"
                          " \"uuid\": \"s1\", \"message\": {\"role\": \"assistant\","
@@ -248,7 +248,7 @@ result message to carry it (FR-HIST-2)."
   "Placeholder the replay test replaces; it must never be called."
   (error "The replay ran a hook of the outside world"))
 
-;;;; Drawing (FR-HIST-1)
+;;;; Drawing
 
 (ert-deftest ecc-history-test-snapshot ()
   "The recording is drawn as an ordinary transcript, with the paging button."
@@ -287,9 +287,9 @@ rather than recorded."
     file))
 
 (ert-deftest ecc-history-test-long-recording-reads-one-page ()
-  "A recording of 200 turns costs one page, not the whole file (FR-HIST-1).
-The threshold is the loose one of plan section 8: what matters is that
-the cost follows the page and not the file."
+  "A recording of 200 turns costs one page, not the whole file.
+The threshold is deliberately loose: what matters is that the cost
+follows the page and not the file."
   (ecc-test-with-fake-session session
     (let ((file (ecc-history-test--big-file 200)))
       (unwind-protect
@@ -317,7 +317,7 @@ fields as a string."
   "Return the recorded line saying the conversation hangs from LEAF."
   (format "{\"type\": \"last-prompt\", \"leafUuid\": \"%s\"}" leaf))
 
-;;;; Branches (FR-HIST-1)
+;;;; Branches
 
 (ert-deftest ecc-history-test-no-branch-shows-everything ()
   "A recording written by one process end to end has nothing to drop."
@@ -330,7 +330,7 @@ fields as a string."
                      (ecc-history-test--line "a1" "u1" "assistant" "two")))))
 
 (ert-deftest ecc-history-test-abandoned-branch-is-dropped ()
-  "The branch nobody continued is left out (FR-HIST-1).
+  "The branch nobody continued is left out.
 Two processes resuming the same session, and editing an earlier message
 in the interactive CLI, both hang a second reply off one parent; only
 the one the recording last pointed at is the conversation."
@@ -403,7 +403,7 @@ would otherwise hide everything said before it."
               (should (equal '("one" "two") (ecc-history-test--prompts session))))
           (delete-file file))))))
 
-;;;; Describing a recording without reading it (FR-DASH-2 c)
+;;;; Describing a recording without reading it
 
 (ert-deftest ecc-history-test-edges-read-both-ends ()
   "Only the two ends of a long recording are read."
@@ -435,7 +435,7 @@ would otherwise hide everything said before it."
     (should (equal (ecc-history-lines ecc-history-test-file)
                    (ecc-history--edges ecc-history-test-file)))))
 
-;;;; Finding and describing the files (FR-DASH-2, FR-DASH-3)
+;;;; Finding and describing the files
 
 (ert-deftest ecc-history-test-project-directory ()
   "The directory of a recording is the path with slashes and dots dashed."
@@ -529,7 +529,7 @@ inside it."
               (should (= 3 (length (ecc-session-turns session)))))
           (ecc-test-cleanup-session session))))))
 
-;;;; Resuming (FR-HIST-3, FR-SES-4)
+;;;; Resuming
 
 (ert-deftest ecc-history-test-resume-appends-to-what-was-read ()
   "Resuming reads the recording first and then starts the CLI on it."
@@ -570,7 +570,7 @@ inside it."
               (ecc--offer-resume session 1)
               (should (equal (list #'ecc-offer-resume-now session 1) (car offers)))
               ;; The offer is always made; the way to be rid of it is to
-              ;; take it off the hook (2026-09-10, `docs/decisions.md').
+              ;; take it off the hook (decided 2026-09-10).
               (should (memq #'ecc--offer-resume ecc-session-exited-hook))
               (setq offers nil)
               ;; A stop the user asked for is not a crash, whatever the
@@ -609,9 +609,9 @@ inside it."
 
 (ert-deftest ecc-history-test-local-commands ()
   "The record of a slash command is read as a command, not as a turn.
-The recording is the one of the screenshots of docs/phase9-ui-redesign.md:
-three prompts, and six local commands (/advisor, /color four times and
-/recap) that the CLI answered itself (FR-HIST-2)."
+The recording is the one of the phase 9 screenshots: three prompts, and
+six local commands (/advisor, /color four times and /recap) that the CLI
+answered itself."
   (ecc-test-with-fake-session session
     (let ((file (ecc-test-history-fixture "local-commands")))
       (should (= 3 (ecc-history-load session nil file)))
@@ -643,7 +643,7 @@ three prompts, and six local commands (/advisor, /color four times and
         (should (string-search "〉 /advisor" text))
         (should (string-search "〉 /color red" text))
         (should (string-search "  Advisor: off" text))
-        ;; The caveat is written for the model and is not shown (FR-HIST-2).
+        ;; The caveat is written for the model and is not shown.
         (should-not (string-search "local-command-caveat" text))
         (should-not (string-search "<command-name>" text))
         (should-not (string-search "local-command-stdout" text))))))

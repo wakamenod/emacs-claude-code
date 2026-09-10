@@ -2,8 +2,7 @@
 
 ;;; Commentary:
 
-;; The transcript tree, the pending queue and the input queue of section
-;; 3 of IMPLEMENTATION_PLAN.md.
+;; The transcript tree, the pending queue and the input queue.
 
 ;;; Code:
 
@@ -44,14 +43,14 @@
       (setf (ecc-session-auto-approve-turn session) t)
       (ecc-model-finish-turn session '((total_cost_usd . 0.5) (duration_ms . 1500)))
       (should-not (ecc-session-current-turn session))
-      ;; A turn wide approval lasts exactly one turn (FR-PERM-7).
+      ;; A turn wide approval lasts exactly one turn.
       (should-not (ecc-session-auto-approve-turn session))
       (should (= (ecc-session-total-cost session) 0.5))
       (should (= (ecc-model-turn-duration turn) 1.5))
       (should (equal (ecc-turn-id (ecc-model-begin-turn session "again")) "turn-2")))))
 
 (ert-deftest ecc-model-test-implicit-turn ()
-  "Output that arrives without a prompt still lands in a turn (FR-OUT-1)."
+  "Output that arrives without a prompt still lands in a turn."
   (ecc-test-with-fake-session session
     (let ((turn (ecc-model-ensure-turn session)))
       (should turn)
@@ -59,7 +58,7 @@
       (should (eq turn (ecc-model-ensure-turn session))))))
 
 (ert-deftest ecc-model-test-step-splitting ()
-  "Consecutive tool calls share a step; text starts a new one (FR-OUT-2)."
+  "Consecutive tool calls share a step; text starts a new one."
   (ecc-test-with-fake-session session
     (let ((turn (ecc-model-begin-turn session "hello")))
       (let ((step (ecc-model-step-for-tool session turn)))
@@ -80,7 +79,7 @@
                      '(("Read" . 2)))))))
 
 (ert-deftest ecc-model-test-nodes-are-addressable ()
-  "A node keeps the id a later message will look it up by (FR-OUT-5)."
+  "A node keeps the id a later message will look it up by."
   (ecc-test-with-fake-session session
     (let ((node (ecc-model-add-node session :id "toolu_1" :type 'tool
                                     :data '((name . "Write")))))
@@ -119,7 +118,7 @@
       (should (eq (ecc-session-state session) 'idle)))))
 
 (ert-deftest ecc-model-test-files-and-tasks ()
-  "What Claude read and wrote is counted per file (FR-OUT-12, 13)."
+  "What Claude read and wrote is counted per file."
   (ecc-test-with-fake-session session
     (ecc-model-note-file session "/tmp/a.txt" 'read)
     (ecc-model-note-file session "/tmp/a.txt" 'write)
@@ -144,7 +143,7 @@
     (should (= (ecc-session-context-tokens session) 115))))
 
 (ert-deftest ecc-model-test-input-queue ()
-  "Prompts wait in order while a turn runs (FR-INP-6)."
+  "Prompts wait in order while a turn runs."
   (ecc-test-with-fake-session session
     (should (= (ecc-model-queue-input session "one") 1))
     (should (= (ecc-model-queue-input session "two") 2))
@@ -153,7 +152,7 @@
     (should-not (ecc-model-pop-input session))))
 
 (ert-deftest ecc-model-test-hooks-fire ()
-  "Every change the renderer needs is announced (plan section 4.3)."
+  "Every change the renderer needs is announced."
   (ecc-test-with-fake-session session
     (let (seen)
       (cl-letf* ((watch (lambda (&rest _) (push 'x seen)))
@@ -185,7 +184,7 @@
       (should-not (ecc-model-pending-all "/nonexistent/")))))
 
 (ert-deftest ecc-model-test-created-counts-up ()
-  "Every session records the order it was made in (FR-NOTIFY-2).
+  "Every session records the order it was made in.
 The tab line reads it: the registry is most recently used first, which
 would shuffle the tabs about as one works."
   (let ((ecc--sessions (make-hash-table :test #'equal))

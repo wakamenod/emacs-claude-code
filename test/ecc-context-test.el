@@ -3,9 +3,8 @@
 ;;; Commentary:
 
 ;; What Emacs knows and the CLI does not: the file, the line and the
-;; region of the buffer the user came from (FR-CTX-1), how it is quoted
-;; (FR-CTX-2), the diagnostics (FR-CTX-4) and the commands that send from
-;; a source buffer (FR-CTX-5).
+;; region of the buffer the user came from, how it is quoted, the
+;; diagnostics and the commands that send from a source buffer.
 
 ;;; Code:
 
@@ -30,7 +29,7 @@ VAR is bound to the file name."
        (delete-file ,var))))
 
 (ert-deftest ecc-context-test-capture-line ()
-  "Without a region only the file and the line are captured (FR-CTX-1)."
+  "Without a region only the file and the line are captured."
   (ecc-context-test--with-file file "a = 1\nb = 2\nc = 3\n"
     (forward-line 1)
     (let ((context (ecc-context-capture :buffer (current-buffer))))
@@ -40,7 +39,7 @@ VAR is bound to the file name."
       (should (equal (plist-get context :language) "python")))))
 
 (ert-deftest ecc-context-test-capture-region ()
-  "A region is captured with the lines it spans (FR-CTX-1)."
+  "A region is captured with the lines it spans."
   (ecc-context-test--with-file _file "a = 1\nb = 2\nc = 3\n"
     (let* ((beg (point-min))
            (end (progn (goto-char (point-min)) (forward-line 2) (point)))
@@ -52,7 +51,7 @@ VAR is bound to the file name."
       (should (equal (plist-get context :text) "a = 1\nb = 2")))))
 
 (ert-deftest ecc-context-test-format ()
-  "The context is a quote block the user can read before sending (FR-CTX-2)."
+  "The context is a quote block the user can read before sending."
   (ecc-context-test--with-file file "a = 1\nb = 2\n"
     (let* ((context (ecc-context-capture :buffer (current-buffer)
                                          :region (cons (point-min) (point-max))))
@@ -87,7 +86,7 @@ VAR is bound to the file name."
         (should (string-search "lines omitted" (plist-get context :text)))))))
 
 (ert-deftest ecc-context-test-file-range ()
-  "A line range is read out of the file, or out of its buffer (FR-INP-8)."
+  "A line range is read out of the file, or out of its buffer."
   (ecc-context-test--with-file file "1\n2\n3\n4\n5\n"
     (let ((context (ecc-context-file-range file 2 4)))
       (should (equal (plist-get context :text) "2\n3\n4"))
@@ -109,7 +108,7 @@ VAR is bound to the file name."
                        "one\ntwo"))))))
 
 (ert-deftest ecc-context-test-diagnostics-from-flymake ()
-  "flymake is asked first for the diagnostics (FR-CTX-4)."
+  "flymake is asked first for the diagnostics."
   (with-temp-buffer
     (insert "a = 1\nb = undefined\n")
     (cl-letf (((symbol-function 'flymake-diagnostics)
@@ -130,14 +129,14 @@ VAR is bound to the file name."
     (should (equal (ecc-context-diagnostics nil (point-min) (point-max))
                    '("L1: syntax error")))))
 
-;;;; The commands (FR-CTX-5)
+;;;; The commands
 
 (defun ecc-context-test--sent-text ()
   "Return the text of the single prompt that was sent."
   (alist-get 'content (alist-get 'message (car (ecc-test-sent-messages)))))
 
 (ert-deftest ecc-context-test-send ()
-  "A line from the minibuffer reaches the session (FR-CTX-5 a)."
+  "A line from the minibuffer reaches the session."
   (ecc-test-with-fake-session session
     (with-temp-buffer
       (ecc-send "hello"))
@@ -146,7 +145,7 @@ VAR is bound to the file name."
     (should-error (ecc-send "  ") :type 'user-error)))
 
 (ert-deftest ecc-context-test-send-with-context ()
-  "The file and the line are attached to what the user typed (FR-CTX-5 b)."
+  "The file and the line are attached to what the user typed."
   (ecc-test-with-fake-session _session
     (ecc-context-test--with-file file "a = 1\nb = 2\n"
       (forward-line 1)
@@ -166,7 +165,7 @@ VAR is bound to the file name."
       (should (string-search "```python\na = 1\nb = 2\n```" text)))))
 
 (ert-deftest ecc-context-test-send-buffer-file ()
-  "The file itself is sent as an @ reference the CLI resolves (FR-CTX-5 d)."
+  "The file itself is sent as an @ reference the CLI resolves."
   (ecc-test-with-fake-session _session
     (ecc-context-test--with-file file "a = 1\n"
       (set-buffer-modified-p nil)
@@ -175,7 +174,7 @@ VAR is bound to the file name."
                                (ecc-context-test--sent-text))))))
 
 (ert-deftest ecc-context-test-fix-error-at-point ()
-  "The diagnostic at point is quoted with the code around it (FR-CTX-5 e)."
+  "The diagnostic at point is quoted with the code around it."
   (ecc-test-with-fake-session _session
     (ecc-context-test--with-file _file "a = 1\nb = undefined\nc = 3\n"
       (forward-line 1)

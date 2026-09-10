@@ -2,7 +2,7 @@
 
 ;;; Commentary:
 
-;; The pure diff functions of FR-OUT-7 and FR-DIFF-1 (plan section 8).
+;; The pure diff functions.
 
 ;;; Code:
 
@@ -57,7 +57,7 @@
                           (ecc-diff-lines "a\nb\nc\nd\n" "A\nb\nc\nD\n") 3))))))
 
 (ert-deftest ecc-diff-test-format-faces ()
-  "Every line carries the diff-mode face for its kind (FR-OUT-7)."
+  "Every line carries the diff-mode face for its kind."
   (let ((text (ecc-diff-render "a\nb\nc\n" "a\nB\nc\n" 1)))
     (should (equal (ecc-diff-test--faces text)
                    '(diff-hunk-header diff-context diff-removed diff-added
@@ -67,7 +67,7 @@
   (should-not (ecc-diff-render "same\n" "same\n")))
 
 (ert-deftest ecc-diff-test-for-edit-with-context ()
-  "An Edit shows the lines of the file around it (FR-DIFF-1)."
+  "An Edit shows the lines of the file around it."
   (let* ((file "def greet(name):\n    \"\"\"Say hi.\"\"\"\n    return \"hi \" + name\n\n\ndef farewell(name):\n    \"\"\"Say bye.\"\"\"\n    return \"bye \" + name\n")
          (text (ecc-diff-for-edit "    return \"hi \" + name"
                                   "    return \"hello \" + name" file 3)))

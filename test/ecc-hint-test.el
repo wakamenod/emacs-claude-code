@@ -2,9 +2,8 @@
 
 ;;; Commentary:
 
-;; The context left and what the mode line says about it (FR-HINT-3), the
-;; prompt suggestion (FR-HINT-4) and the reset a compaction makes
-;; (FR-HINT-5).
+;; The context left and what the mode line says about it, the prompt
+;; suggestion and the reset a compaction makes.
 
 ;;; Code:
 
@@ -16,7 +15,7 @@
 (require 'ecc-session)
 (require 'ecc-render)
 
-;;;; The context window and what is left of it (FR-HINT-3)
+;;;; The context window and what is left of it
 
 (ert-deftest ecc-hint-test-context-window ()
   "The window comes from --autocompact, or from the name of the model."
@@ -94,7 +93,7 @@ names are listed in `ecc-model-context-window'."
       (should-not (ecc-hint-context-indicator session)))))
 
 (ert-deftest ecc-hint-test-context-indicator-is-in-the-header ()
-  "The header line of a session carries the context left (FR-HINT-3)."
+  "The header line of a session carries the context left."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (setf (ecc-session-options session) '(:autocompact 1000))
@@ -110,7 +109,7 @@ names are listed in `ecc-model-context-window'."
                              (substring-no-properties
                               (ecc-hint-context-string session)))))))
 
-;;;; The mode line (FR-HINT-3)
+;;;; The mode line
 
 (ert-deftest ecc-hint-test-mode-line ()
   "The mode line says what the session costs and how full it is."
@@ -122,12 +121,12 @@ names are listed in `ecc-model-context-window'."
     (ecc-model-update-usage session '((input_tokens . 250)))
     (setf (ecc-session-total-cost session) 0.5)
     ;; Nothing is put in the mode line unless it was asked for: the
-    ;; header line carries the same numbers (FR-HINT-3).
+    ;; header line carries the same numbers.
     (should (equal (ecc-hint-mode-line-string session) ""))
     (let* ((ecc-mode-line-format " %n · %m · %p · %l · %c")
            (line (substring-no-properties (ecc-hint-mode-line-string session))))
       (should (equal line " test · claude-haiku-4-5 · acceptEdits · 75% · $0.5000")))
-    ;; Every item and the whole format are settings (FR-HINT-3, NFR-7).
+    ;; Every item and the whole format are settings.
     (let ((ecc-mode-line-format "%t %r"))
       (ecc-dispatch session (car (ecc-test-fixture-messages "compact")))
       (setf (ecc-session-rate-limit session)
@@ -154,10 +153,10 @@ names are listed in `ecc-model-context-window'."
     (should (equal (ecc-hint-rate-limit-max session) 0.18))
     (should (equal (ecc-hint-rate-limit-string session) "5h 18% 7d 15%"))))
 
-;;;; Compaction (FR-HINT-5)
+;;;; Compaction
 
 (ert-deftest ecc-hint-test-compaction-resets-the-indicator ()
-  "A compaction empties the window again and says so (FR-HINT-5)."
+  "A compaction empties the window again and says so."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (setf (ecc-session-options session) '(:autocompact 19000))
@@ -181,7 +180,7 @@ names are listed in `ecc-model-context-window'."
       (should (string-search "⟲ compact done, context reset" text))
       (should (string-search "17.5k → 1.3k tokens" text)))))
 
-;;;; The prompt suggestion (FR-HINT-4)
+;;;; The prompt suggestion
 
 (ert-deftest ecc-hint-test-suggestion ()
   "A suggestion is shown over an empty prompt region and taken with a key."
@@ -204,8 +203,8 @@ names are listed in `ecc-model-context-window'."
         (call-interactively #'ecc-hint-accept-suggestion)
         (should (equal (string-trim (ecc-chat-draft)) "Run the tests"))
         (should-not (ecc-chat-placeholder-shown)))
-      ;; It costs an API flag, so it can be left out of sight (NFR-3):
-      ;; the placeholder goes back to its plain words.
+      ;; It costs an API flag, so it can be left out of sight: the
+      ;; placeholder goes back to its plain words.
       (with-current-buffer buffer (ecc-prompt-clear))
       (let ((ecc-prompt-suggestion-display nil))
         (should-not (ecc-hint-show-suggestion session))

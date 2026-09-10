@@ -2,10 +2,9 @@
 
 ;;; Commentary:
 
-;; The inline prompt and the rewrite of FR-INLINE-1 and 2 (plan section
-;; 6.16).  No CLI is started: the inline half is driven through a fake
-;; session, and the rewrite half through the answer a `claude -p' would
-;; have written.
+;; The inline prompt and the rewrite.  No CLI is started: the inline
+;; half is driven through a fake session, and the rewrite half through
+;; the answer a `claude -p' would have written.
 
 ;;; Code:
 
@@ -26,7 +25,7 @@
            ,@body)
        (kill-buffer ,var))))
 
-;;;; The overlay (FR-INLINE-1)
+;;;; The overlay
 
 (ert-deftest ecc-inline-test-window ()
   "The overlay shows a page of the answer and says how much is left."
@@ -55,7 +54,7 @@
       (ecc-inline-scroll-up)
       (should (string-search "one\ntwo"
                              (overlay-get ecc-inline--overlay 'before-string)))
-      ;; The keys of FR-INLINE-1 are in force over the line it hangs from.
+      ;; The keys are in force over the line the overlay hangs from.
       (should (eq (lookup-key (overlay-get ecc-inline--overlay 'keymap) "q")
                   #'ecc-inline-quit))
       (should (eq (lookup-key (overlay-get ecc-inline--overlay 'keymap) "r")
@@ -66,7 +65,7 @@
                             (overlays-in (point-min) (point-max)))))))
 
 (ert-deftest ecc-inline-test-question-carries-the-region ()
-  "The question goes out with the code the user is looking at (FR-CTX-1)."
+  "The question goes out with the code the user is looking at."
   (ecc-inline-test-with-source buffer
     (let ((question (ecc-inline-question "what is this?" buffer
                                          (cons (point-min)
@@ -92,7 +91,7 @@
       (remhash session ecc-inline--targets))))
 
 (ert-deftest ecc-inline-test-binding-is-remembered ()
-  "Which session a buffer asks is decided once and kept (FR-INLINE-1)."
+  "Which session a buffer asks is decided once and kept."
   (ecc-test-with-fake-session session
     (ecc-inline-test-with-source buffer
       (let ((ecc-inline-binding 'light)
@@ -136,10 +135,10 @@
             (should (eq (ecc-model-session (ecc-session-id session)) session))
             (ecc-model-remove-session inline)))))))
 
-;;;; Rewrite (FR-INLINE-2)
+;;;; Rewrite
 
 (ert-deftest ecc-inline-test-rewrite-command ()
-  "The rewrite is one shot, with no tools and a schema (FR-INLINE-2)."
+  "The rewrite is one shot, with no tools and a schema."
   (let ((ecc-rewrite-model "haiku")
         (ecc-disabled-plugins nil))
     (let ((command (ecc-rewrite-command)))

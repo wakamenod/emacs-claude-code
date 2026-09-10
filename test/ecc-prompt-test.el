@@ -2,10 +2,9 @@
 
 ;;; Commentary:
 
-;; Sending, queueing and slash command completion (FR-INP-1, 2, 3, 6),
-;; the two kinds of slash command that need care (FR-INP-4, 5), the
-;; history (FR-INP-7), the @ references (FR-INP-8), pasted images
-;; (FR-INP-9) and the editor context (FR-CTX-1).
+;; Sending, queueing and slash command completion, the two kinds of
+;; slash command that need care, the history, the @ references, pasted
+;; images and the editor context.
 
 ;;; Code:
 
@@ -23,7 +22,7 @@
      ,@body))
 
 (ert-deftest ecc-prompt-test-send ()
-  "The buffer goes out as a user message and is emptied (FR-INP-1)."
+  "The buffer goes out as a user message and is emptied."
   (ecc-test-with-fake-session session
     (ecc-prompt-test--in-buffer session
       (insert "hello\nworld")
@@ -33,7 +32,7 @@
       (should (equal (ecc-protocol-serialize sent)
                      (ecc-protocol-serialize
                       (ecc-protocol-user-message "hello\nworld")))))
-    ;; Sending opens the turn; the CLI does not announce one (plan 4.1).
+    ;; Sending opens the turn; the CLI does not announce one.
     (should (ecc-session-current-turn session))
     (should (equal (ecc-turn-prompt (ecc-session-current-turn session))
                    "hello\nworld"))))
@@ -47,7 +46,7 @@
     (should-not (ecc-test-sent-messages))))
 
 (ert-deftest ecc-prompt-test-queue-while-running ()
-  "A prompt sent during a turn waits its turn (FR-INP-6)."
+  "A prompt sent during a turn waits its turn."
   (ecc-test-with-fake-session session
     (ecc-model-begin-turn session "first")
     (ecc-prompt-test--in-buffer session
@@ -61,7 +60,7 @@
     (should (equal (ecc-turn-prompt (ecc-session-current-turn session)) "second"))))
 
 (ert-deftest ecc-prompt-test-slash-commands-go-through ()
-  "A slash command is sent as ordinary text (FR-INP-2)."
+  "A slash command is sent as ordinary text."
   (ecc-test-with-fake-session session
     (ecc-prompt-test--in-buffer session
       (insert "/context")
@@ -71,7 +70,7 @@
                    "/context"))))
 
 (ert-deftest ecc-prompt-test-completion ()
-  "Completion offers the commands of the initialize answer (FR-INP-3)."
+  "Completion offers the commands of the initialize answer."
   (ecc-test-with-fake-session session
     (setf (ecc-session-commands session)
           [((name . "context") (description . "Show context usage")
@@ -104,7 +103,7 @@
       (ecc-prompt-clear)
       (insert "hello")
       (should-not (ecc-prompt-capf))
-      ;; Nothing is completed in the transcript (FR-INP-3).
+      ;; Nothing is completed in the transcript.
       (goto-char (point-min))
       (should-not (ecc-prompt-capf)))))
 
@@ -122,7 +121,7 @@ stands for the user pressing \\[keyboard-quit]."
        ,@body)))
 
 (ert-deftest ecc-prompt-test-slash-offers-the-commands ()
-  "The slash the prompt opens with asks which command (FR-INP-3)."
+  "The slash the prompt opens with asks which command."
   (ecc-test-with-fake-session session
     (ecc-prompt-test--init session)
     (ecc-prompt-test--in-buffer session
@@ -134,7 +133,7 @@ stands for the user pressing \\[keyboard-quit]."
         (should (member "/model" (cdar asked)))))))
 
 (ert-deftest ecc-prompt-test-slash-in-prose-is-a-slash ()
-  "Only the slash the prompt opens with asks (FR-INP-2, FR-INP-3).
+  "Only the slash the prompt opens with asks.
 The CLI runs a command written at the start of what it is sent and
 nowhere else (`ecc-prompt-command-name\='), so a slash further in is
 not offered commands that would not run."
@@ -163,8 +162,8 @@ not offered commands that would not run."
 (ert-deftest ecc-prompt-test-completion-follows-a-word-anywhere ()
   "TAB completes a word that starts with a slash wherever it stands.
 The terminal client does the same, with a dim suggestion inside the
-input rather than a list (docs/verified.md, 2026-09-09); it leaves a
-slash inside a word -- a path, a URL -- alone."
+input rather than a list (confirmed 2026-09-09); it leaves a slash
+inside a word -- a path, a URL -- alone."
   (ecc-test-with-fake-session session
     (ecc-prompt-test--init session)
     (ecc-prompt-test--in-buffer session
@@ -187,7 +186,7 @@ slash inside a word -- a path, a URL -- alone."
       (should (ecc-prompt-capf)))))
 
 (ert-deftest ecc-prompt-test-slash-quit-keeps-the-slash ()
-  "Leaving the question keeps what was typed (FR-INP-3)."
+  "Leaving the question keeps what was typed."
   (ecc-test-with-fake-session session
     (ecc-prompt-test--init session)
     (ecc-prompt-test--in-buffer session
@@ -202,7 +201,7 @@ slash inside a word -- a path, a URL -- alone."
         (should (equal (ecc-chat-draft) "/"))))))
 
 (ert-deftest ecc-prompt-test-slash-question-can-be-turned-off ()
-  "With the setting off a slash is only a slash (FR-INP-3)."
+  "With the setting off a slash is only a slash."
   (ecc-test-with-fake-session session
     (ecc-prompt-test--init session)
     (ecc-prompt-test--in-buffer session
@@ -215,7 +214,7 @@ slash inside a word -- a path, a URL -- alone."
       (should (ecc-prompt-capf)))))
 
 (ert-deftest ecc-prompt-test-slash-question-annotates-as-completion-does ()
-  "The question shows what the completion shows (FR-INP-3, FR-INP-4)."
+  "The question shows what the completion shows."
   (ecc-test-with-fake-session session
     (ecc-prompt-test--init session)
     (ecc-prompt-note-terminal-commands session)
@@ -230,7 +229,7 @@ slash inside a word -- a path, a URL -- alone."
       (should (string-search "Show context usage" (funcall annotate "/context"))))))
 
 
-;;;; Terminal only and interactive slash commands (FR-INP-4, FR-INP-5)
+;;;; Terminal only and interactive slash commands
 
 (defun ecc-prompt-test--init (session)
   "Give SESSION the command lists a system/init message carries."
@@ -244,7 +243,7 @@ slash inside a word -- a path, a URL -- alone."
           (terminal_slash_commands . ["doctor" "color" "reload-plugins"]))))
 
 (ert-deftest ecc-prompt-test-terminal-commands ()
-  "A command only the terminal client runs says so (FR-INP-4)."
+  "A command only the terminal client runs says so."
   (ecc-test-with-fake-session session
     (ecc-prompt-test--init session)
     (ecc-prompt-note-terminal-commands session)
@@ -264,7 +263,7 @@ slash inside a word -- a path, a URL -- alone."
       (should (string-search "terminal UI" (car (last messages)))))))
 
 (ert-deftest ecc-prompt-test-terminal-commands-are-not-offered ()
-  "The commands bound to the terminal stay out of the menus (FR-INP-4).
+  "The commands bound to the terminal stay out of the menus.
 The CLI says of `terminal_slash_commands\=' that a remote UI should hide
 them from its command menus, and Emacs is one."
   (ecc-test-with-fake-session session
@@ -288,7 +287,7 @@ them from its command menus, and Emacs is one."
         (should (member "/context" (cdar asked)))))))
 
 (ert-deftest ecc-prompt-test-a-kept-terminal-command-is-offered ()
-  "A terminal command worth having is offered, and still marked (FR-INP-4).
+  "A terminal command worth having is offered, and still marked.
 `/reload-plugins\=' makes the CLI resend its command list, which is what
 keeps the completion of Emacs current, and `/doctor\=' answers in plain
 text; hiding either would take away something that works here."
@@ -305,7 +304,7 @@ text; hiding either would take away something that works here."
       (should-not (member "/doctor" offered)))))
 
 (ert-deftest ecc-prompt-test-hiding-can-be-turned-off ()
-  "With the setting off every command the CLI named is offered (FR-INP-4)."
+  "With the setting off every command the CLI named is offered."
   (ecc-test-with-fake-session session
     (ecc-prompt-test--init session)
     (ecc-prompt-note-terminal-commands session)
@@ -317,7 +316,7 @@ text; hiding either would take away something that works here."
                       (mapcar #'car (ecc-prompt-offered-commands session)))))))
 
 (ert-deftest ecc-prompt-test-a-hidden-command-is-still-sent ()
-  "Hiding a command from the menus does not stop it being sent (FR-INP-2).
+  "Hiding a command from the menus does not stop it being sent.
 What is terminal-only is the effect, not the sending: the CLI answers
 it, and the answer is drawn.  Only the menus leave it out."
   (ecc-test-with-fake-session session
@@ -335,7 +334,7 @@ it, and the answer is drawn.  Only the menus leave it out."
     (should (equal (ecc-test-sent-text 0) "/color red"))))
 
 (ert-deftest ecc-prompt-test-terminal-commands-before-init ()
-  "The annotation is there before the first turn, too (FR-INP-4).
+  "The annotation is there before the first turn, too.
 system/init does not arrive until a prompt has been sent, so a session
 that has not spoken yet falls back to what the CLI said last, and
 failing that to the setting."
@@ -368,7 +367,7 @@ failing that to the setting."
   "The `models' array of an initialize response, cut down.")
 
 (ert-deftest ecc-prompt-test-models-come-from-the-initialize-answer ()
-  "/model offers what the CLI says it may be given (FR-INP-5)."
+  "/model offers what the CLI says it may be given."
   (ecc-test-with-fake-session session
     ;; Until the answer arrives there is only the setting.
     (let ((ecc-model-candidates '("default" "opus")))
@@ -387,7 +386,7 @@ failing that to the setting."
 (ert-deftest ecc-prompt-test-model-command-names-the-model-in-use ()
   "The annotation of /model says which model the session is on.
 The terminal client adds this; the description the CLI sends is fixed
-text (docs/verified.md)."
+text (confirmed against the CLI)."
   (ecc-test-with-fake-session session
     (setf (ecc-session-models session) ecc-prompt-test--models
           (ecc-session-commands session)
@@ -417,7 +416,7 @@ text (docs/verified.md)."
     (should (equal (ecc-prompt-current-model session) "claude-opus-5"))))
 
 (ert-deftest ecc-prompt-test-effort-levels-come-from-the-argument-hint ()
-  "/effort offers the levels the CLI spells out in its hint (FR-INP-5).
+  "/effort offers the levels the CLI spells out in its hint.
 The hint is the only place the set of levels appears: the models array
 says which models take an effort at all, but not that `auto' is one of
 the answers (verified on 2026-09-09, CLI 2.1.265)."
@@ -444,8 +443,8 @@ the answers (verified on 2026-09-09, CLI 2.1.265)."
       (should-not (ecc-prompt-argument-candidates session "/nonesuch")))))
 
 (ert-deftest ecc-prompt-test-every-command-with-alternatives-is-offered-them ()
-  "A command whose hint names its arguments is asked about (FR-INP-5).
-The hints are the ones CLI 2.1.265 really sends (docs/verified.md)."
+  "A command whose hint names its arguments is asked about.
+The hints are the ones CLI 2.1.265 really sends."
   (ecc-test-with-fake-session session
     (setf (ecc-session-commands session)
           [((name . "fast") (argumentHint . "[on|off]"))
@@ -483,7 +482,7 @@ The hints are the ones CLI 2.1.265 really sends (docs/verified.md)."
 (ert-deftest ecc-prompt-test-effort-command-names-the-level-in-use ()
   "The annotation of /effort says which level the session is on.
 Nothing in the stream reports one, so what was sent from here is what
-is known (docs/verified.md)."
+is known (confirmed against the CLI)."
   (ecc-test-with-fake-session session
     (setf (ecc-session-commands session)
           [((name . "effort") (description . "Set effort level for model usage")
@@ -505,7 +504,7 @@ is known (docs/verified.md)."
       (should (equal (ecc-session-last-effort session) "xhigh")))))
 
 (ert-deftest ecc-prompt-test-interactive-command-asks-for-its-argument ()
-  "A command that opens a menu in the terminal is asked about (FR-INP-5)."
+  "A command that opens a menu in the terminal is asked about."
   (ecc-test-with-fake-session session
     (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) "opus")))
       (should (equal (ecc-prompt-prepare-command session "/model") "/model opus"))
@@ -519,10 +518,10 @@ is known (docs/verified.md)."
     (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) "")))
       (should (equal (ecc-prompt-prepare-command session "/model") "/model")))))
 
-;;;; History (FR-INP-7)
+;;;; History
 
 (ert-deftest ecc-prompt-test-history ()
-  "Sending fills the history, which is walked with M-p and M-n (FR-INP-7)."
+  "Sending fills the history, which is walked with M-p and M-n."
   (ecc-test-with-fake-session session
     (let ((ecc-prompt-history nil))
       (ecc-prompt-test--in-buffer session
@@ -566,7 +565,7 @@ is known (docs/verified.md)."
     (should (equal ecc-prompt-history '("c" "a")))))
 
 (ert-deftest ecc-prompt-test-resend-last ()
-  "The last prompt can be sent again without retyping it (FR-INP-7)."
+  "The last prompt can be sent again without retyping it."
   (ecc-test-with-fake-session session
     (let ((ecc-prompt-history '("do it again")))
       (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
@@ -575,7 +574,7 @@ is known (docs/verified.md)."
                                 (alist-get 'message (car (ecc-test-sent-messages))))
                      "do it again")))))
 
-;;;; The @ references (FR-INP-8)
+;;;; The @ references
 
 (ert-deftest ecc-prompt-test-split-reference ()
   "A line range is told from a path, and a full stop is not part of one."
@@ -586,7 +585,7 @@ is known (docs/verified.md)."
   (should (equal (ecc-prompt-split-reference "@src/a.py.") '("src/a.py" nil nil))))
 
 (ert-deftest ecc-prompt-test-next-reference-stops-at-a-special ()
-  "A special reference ends at its name when a letter follows (FR-INP-8)."
+  "A special reference ends at its name when a letter follows."
   (should (equal (ecc-prompt--next-reference "\u6b21\u306e@region\u306f\u3069\u3046\u3067\u3059\u304b\uff1f" 0)
                  (list 2 9 "@region")))
   (should (equal (nth 2 (ecc-prompt--next-reference "@diagnostics\u3092\u898b\u3066" 0))
@@ -726,7 +725,7 @@ is known (docs/verified.md)."
       (kill-buffer own))))
 
 (ert-deftest ecc-prompt-test-skipped-special-is-noted ()
-  "A @region with no region is left alone and noted (FR-INP-8)."
+  "A @region with no region is left alone and noted."
   (let ((source (get-buffer-create "ecc-prompt-test-skipped")))
     (unwind-protect
         (with-current-buffer source
@@ -739,12 +738,12 @@ is known (docs/verified.md)."
       (kill-buffer source))))
 
 (ert-deftest ecc-prompt-test-plain-path-is-left-to-the-cli ()
-  "A bare @path is the CLI's own reference and is not expanded (FR-INP-8)."
+  "A bare @path is the CLI's own reference and is not expanded."
   (should (equal (ecc-prompt-expand-references "look at @src/a.py please")
                  "look at @src/a.py please")))
 
 (ert-deftest ecc-prompt-test-expand-file-range ()
-  "A line range is read out and quoted under a short label (FR-INP-8)."
+  "A line range is read out and quoted under a short label."
   (let ((file (make-temp-file "ecc-prompt" nil ".py" "1\n2\n3\n4\n5\n")))
     (unwind-protect
         (let* ((default-directory (file-name-directory file))
@@ -792,10 +791,10 @@ is known (docs/verified.md)."
                                                    :annotation-function)
                                         "@region")))))))
 
-;;;; Images (FR-INP-9)
+;;;; Images
 
 (ert-deftest ecc-prompt-test-pasted-image-becomes-a-path ()
-  "A pasted image is written to a file and referred to by path (FR-INP-9)."
+  "A pasted image is written to a file and referred to by path."
   (ecc-test-with-fake-session session
     (let ((ecc-image-dir (make-temp-file "ecc-images" t)))
       (unwind-protect
@@ -820,7 +819,7 @@ is known (docs/verified.md)."
           (delete-directory ecc-image-dir t))))))
 
 (ert-deftest ecc-prompt-test-images-can-be-kept ()
-  "With cleanup off the files outlive the session (FR-INP-9)."
+  "With cleanup off the files outlive the session."
   (ecc-test-with-fake-session session
     (let ((ecc-image-dir (make-temp-file "ecc-images" t))
           (ecc-image-cleanup 'never))
@@ -830,10 +829,10 @@ is known (docs/verified.md)."
             (should (file-exists-p file)))
         (delete-directory ecc-image-dir t)))))
 
-;;;; The editor context (FR-CTX-1)
+;;;; The editor context
 
 (ert-deftest ecc-prompt-test-context-toggle ()
-  "The context is attached only when the buffer was told to (FR-CTX-1)."
+  "The context is attached only when the buffer was told to."
   (ecc-test-with-fake-session session
     (let ((source (get-buffer-create "ecc-prompt-test-context")))
       (unwind-protect

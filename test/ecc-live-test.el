@@ -58,9 +58,9 @@ WHAT names the thing waited for in the error message."
   `(let* ((ecc--sessions (make-hash-table :test #'equal))
           (ecc--session-order nil)
           (default-directory temporary-file-directory)
-          ;; The icons and the spinner of FR-OUT-11 depend on what this
-          ;; machine has and on the instant; the tests below compare the
-          ;; text of the transcript, so they run without them.
+          ;; The icons and the spinner depend on what this machine has
+          ;; and on the instant; the tests below compare the text of the
+          ;; transcript, so they run without them.
           (ecc-visual-enable-icons nil)
           (ecc-visual-enable-spinner nil)
           (ecc-visual-enable-pulse nil)
@@ -73,9 +73,9 @@ WHAT names the thing waited for in the error message."
      (unwind-protect
          (progn
            (ecc-session-ensure-buffer ,var)
-           ;; Nothing is waited for here: system/init only arrives once a
-           ;; prompt has been sent (docs/verified.md), so a test that
-           ;; waited for it before sending would hang.
+           ;; Nothing is waited for here: system/init only arrives once
+           ;; a prompt has been sent, so a test that waited for it
+           ;; before sending would hang.
            (ecc-proc-start ,var)
            ,@body)
        (ecc-proc-stop ,var)
@@ -95,13 +95,13 @@ WHAT names the thing waited for in the error message."
   (ecc-test-live-with-session session
     ;; The CLI is up and waiting for a prompt as soon as it started; it
     ;; is not `starting' until system/init, which only comes with the
-    ;; first turn (FR-UI-1).
+    ;; first turn.
     (should (eq (ecc-session-state session) 'idle))
     (should (string-prefix-p "○ idle" (ecc-render-status-line session)))
     (ecc-proc-send-prompt session "Reply with exactly: PONG")
     (let ((turn (ecc-test-live-wait-for-result session)))
-      ;; The slash commands arrived in the initialize answer (FR-SES-8),
-      ;; and system/init came with the turn.
+      ;; The slash commands arrived in the initialize answer, and
+      ;; system/init came with the turn.
       (should (ecc-session-commands session))
       (should (ecc-session-init session))
       (should (string-search "PONG" (ecc-test-live-turn-text turn)))
@@ -115,7 +115,7 @@ WHAT names the thing waited for in the error message."
 (ert-deftest ecc-test-live-chat ()
   "One turn the way the user has it: typed in the prompt region and sent.
 The prompt moves up into the transcript, the reply flows in under it,
-and a draft typed meanwhile is untouched (phase 9b, FR-INP-1, FR-UI-2)."
+and a draft typed meanwhile is untouched (phase 9b)."
   :tags '(live)
   (ecc-test-live-with-session session
     (with-current-buffer (ecc-session-buffer session)
@@ -184,7 +184,7 @@ and a draft typed meanwhile is untouched (phase 9b, FR-INP-1, FR-UI-2)."
         (delete-directory directory t)))))
 
 (ert-deftest ecc-test-live-slash-command ()
-  "A slash command comes back as a synthetic reply (FR-INP-2, 4.2)."
+  "A slash command comes back as a synthetic reply (4.2)."
   :tags '(live)
   (ecc-test-live-with-session session
     (ecc-proc-send-prompt session "/context")
@@ -194,11 +194,11 @@ and a draft typed meanwhile is untouched (phase 9b, FR-INP-1, FR-UI-2)."
       (should text)
       (should (ecc-model-node-get text 'synthetic))
       ;; A synthetic answer costs nothing, so it must not move the
-      ;; context estimate (plan section 9, item 12).
+      ;; context estimate.
       (should (= (ecc-session-context-tokens session) 0)))))
 
 (ert-deftest ecc-test-live-interrupt ()
-  "An interrupt is answered and the turn ends (FR-SES-5)."
+  "An interrupt is answered and the turn ends."
   :tags '(live)
   (ecc-test-live-with-session session
     (let ((answer nil))
@@ -306,7 +306,7 @@ WHAT names the thing waited for in the error message."
 (ert-deftest ecc-test-live-plan ()
   "Feedback in the plan buffer sends the three sections and brings a new plan.
 A clean approval then allows and switches the session to acceptEdits
-\(the phase 3 acceptance check for FR-PLAN-1 to 5)."
+\(the phase 3 acceptance check)."
   :tags '(live)
   (ecc-test-live-with-session session
     (let ((directory (make-temp-file "ecc-live-plan" t)))
@@ -341,14 +341,14 @@ A clean approval then allows and switches the session to acceptEdits
                 (message "revised plan mentions mul: %s"
                          (and (string-search "mul" (ecc-plan-text second)) t))
                 (with-current-buffer (ecc-plan-open second)
-                  ;; FR-PLAN-5: the lines that changed are marked.
+                  ;; The lines that changed are marked.
                   (should (ecc-plan-changed-lines))
                   (should-not (ecc-plan-approve "acceptEdits")))
                 (should-not (ecc-session-pending session))
-                ;; system/status reports the switch at once (FR-PLAN-4).
-                ;; What Claude does with the approval is its own affair
-                ;; and can take minutes, so the turn is not waited for:
-                ;; it is interrupted once the switch has been seen.
+                ;; system/status reports the switch at once.  What
+                ;; Claude does with the approval is its own affair and
+                ;; can take minutes, so the turn is not waited for: it
+                ;; is interrupted once the switch has been seen.
                 (ecc-test-live-wait
                  session
                  (lambda () (equal (ecc-session-permission-mode session) "acceptEdits"))
@@ -389,8 +389,8 @@ as git status is not used: the CLI runs those without asking."
                              '("Bash(touch *)")))
               (should-not (ecc-session-pending session)))
             (ecc-test-live-wait-for-result session)
-            ;; Does the running CLI honour the new rule?  Either outcome is
-            ;; recorded; the answer goes to docs/verified.md.
+            ;; Does the running CLI honour the new rule?  Either outcome
+            ;; is recorded.
             (ecc-proc-send-prompt session "Run exactly `touch other.marker` with the Bash tool, then reply with one word.")
             (let ((asked (ecc-test-live-wait
                           session
@@ -501,9 +501,8 @@ as git status is not used: the CLI runs those without asking."
 
 (ert-deftest ecc-test-live-review ()
   "The phase 4 acceptance check: three files changed, two hunks commented,
-one prompt sent, and the files corrected the way the comments said
-\(FR-DIFF-3, 4, 5).  One file is untracked, so its diff comes from the
-records and not from git."
+one prompt sent, and the files corrected the way the comments said.  One
+file is untracked, so its diff comes from the records and not from git."
   :tags '(live)
   (skip-unless (executable-find "git"))
   (ecc-test-live-with-session session
@@ -611,7 +610,7 @@ The working directory and the recording are both removed afterwards."
        (delete-directory directory t))))
 
 (ert-deftest ecc-test-live-history-resume ()
-  "A recording is read back and the CLI carries on from it (FR-HIST-1, 3)."
+  "A recording is read back and the CLI carries on from it."
   :tags '(live)
   (ecc-test-live-with-recorded-session session
     (ecc-proc-send-prompt session "Remember the word ZARQUON.  Reply with: OK")
@@ -640,7 +639,7 @@ The working directory and the recording are both removed afterwards."
                 ;; remembers the conversation.  Nobody is running the
                 ;; session any more, so nothing may be asked: the file
                 ;; the killed CLI left in the registry is stale, and
-                ;; `ecc-registry' has to see through it (FR-TUI-5).
+                ;; `ecc-registry' has to see through it.
                 (setf (ecc-session-options archived)
                       ecc-test-live-persistent-options)
                 (should-not (ecc-registry-live-p id))
@@ -658,7 +657,7 @@ The working directory and the recording are both removed afterwards."
             (ecc-test-cleanup-session archived)))))))
 
 (ert-deftest ecc-test-live-agents ()
-  "The registry agrees with `claude agents --json' (FR-DASH-2, FR-DASH-6).
+  "The registry agrees with `claude agents --json'.
 The dashboard reads the files rather than running the command, so this
 is what keeps the two from drifting apart."
   :tags '(live)
@@ -682,14 +681,14 @@ is what keeps the two from drifting apart."
           (should entry)
           (should (equal (alist-get 'pid agent) (alist-get 'pid entry)))
           (should (equal (alist-get 'cwd agent) (alist-get 'cwd entry)))
-          ;; The file says `shell' where the command says `busy'
-          ;; (docs/verified.md); the dashboard shows the command's word.
+          ;; The file says `shell' where the command says `busy' the
+          ;; dashboard shows the command's word.
           (should (equal (alist-get 'status agent)
                          (ecc-registry-display-status (alist-get 'status entry))))
           (should (ecc-dashboard--agent-entry entry)))))))
 
 (ert-deftest ecc-test-live-context ()
-  "A region sent from a source buffer arrives quoted (FR-CTX-5 c)."
+  "A region sent from a source buffer arrives quoted."
   :tags '(live)
   (ecc-test-live-with-session session
     (with-temp-buffer
@@ -698,7 +697,7 @@ is what keeps the two from drifting apart."
       (unwind-protect
           (let ((ecc-render--session nil))
             ;; No transcript is current, so the session is the one this
-            ;; buffer resolves to (FR-WIN-4).
+            ;; buffer resolves to.
             (ecc-send-region (point-min) (point-max)
                              "この関数のバグを一語で答えて。説明は不要。")
             (let ((text (ecc-test-live-turn-text
@@ -715,7 +714,7 @@ is what keeps the two from drifting apart."
       (should (string-search "`calc.py` L1-L2" prompt)))))
 
 (ert-deftest ecc-test-live-image ()
-  "An image is passed by path and the model can see it (FR-INP-9)."
+  "An image is passed by path and the model can see it."
   :tags '(live)
   (ecc-test-live-with-session session
     (let ((file (expand-file-name "red-square.png"
@@ -738,7 +737,7 @@ is what keeps the two from drifting apart."
         (should (string-match-p "\\(?:^\\|[^a-zA-Z]\\)[Rr]ed" text))))))
 
 (ert-deftest ecc-test-live-context-left ()
-  "The context left falls as the conversation grows (FR-HINT-3)."
+  "The context left falls as the conversation grows."
   :tags '(live)
   (ecc-test-live-with-session session
     ;; The window is the one guessed from the model, since the session
@@ -757,13 +756,13 @@ is what keeps the two from drifting apart."
       (ecc-test-live-wait-for-result session)
       (should (> (ecc-session-context-tokens session) tokens))
       (should (< (ecc-hint-context-left session) first))
-      ;; The mode line says nothing unless it was asked to (FR-HINT-3).
+      ;; The mode line says nothing unless it was asked to.
       (should (equal (ecc-hint-mode-line-string session) ""))
       (let ((ecc-mode-line-format " %n · %l"))
         (should (string-match-p "%" (ecc-hint-mode-line-string session)))))))
 
 
-;;;; The Emacs MCP server (FR-MCP-1, the acceptance check of phase 8)
+;;;; The Emacs MCP server (the acceptance check of phase 8)
 
 (ert-deftest ecc-test-live-mcp ()
   "Claude uses a tool this Emacs published, and its answer comes back.
@@ -774,9 +773,9 @@ what the Elisp function returned."
   (require 'ecc-mcp)
   (let ((ecc-mcp-port 0)
         (ecc-mcp-enabled t)
-        ;; An MCP tool asks permission like any other tool; the rule for a
-        ;; whole server is its name without a suffix, which this test is
-        ;; also the check of (decision on FR-PERM-8).
+        ;; An MCP tool asks permission like any other tool; the rule for
+        ;; a whole server is its name without a suffix, which this test
+        ;; is also the check of.
         (ecc-test-live-options (append '(:allowed-tools ("mcp__emacs"))
                                        ecc-test-live-options)))
     (unwind-protect
@@ -835,7 +834,7 @@ this one costs nothing."
                               (ecc-usage-render answer))))))
 
 (ert-deftest ecc-test-live-btw ()
-  "A side question is answered beside a running turn (FR-BTW-1..4).
+  "A side question is answered beside a running turn.
 The turn is not interrupted, the answer never reaches the transcript,
 and a follow-up carrying `history\' knows what was asked before."
   :tags '(live)
@@ -871,13 +870,13 @@ and a follow-up carrying `history\' knows what was asked before."
               (should (ecc-session-current-turn session))
               (ecc-test-live-wait-for-result session)
               ;; Neither the question nor the answer became a turn or a
-              ;; node of its own (FR-BTW-2).
+              ;; node of its own.
               (should (= (length (ecc-session-turns session)) (1+ turns)))
               (should-not
                (seq-find (lambda (node)
                            (string-search "4271" (format "%s" (ecc-node-data node))))
                          (ecc-turn-children (car (last (ecc-session-turns session)))))))
-            ;; A follow-up threads what was asked before (FR-BTW-4).
+            ;; A follow-up threads what was asked before.
             (ecc-btw-ask session "What did I just ask you on the side?")
             (ecc-test-live-wait session
                                 (lambda () (cdr (ecc-btw-exchanges session)))

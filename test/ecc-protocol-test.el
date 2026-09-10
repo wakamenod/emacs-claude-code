@@ -3,8 +3,7 @@
 ;;; Commentary:
 
 ;; Phase 0 acceptance: every recorded fixture line parses, and the JSON
-;; sent back to the CLI matches section 2.3 and the appendix of
-;; IMPLEMENTATION_PLAN.md byte for byte.
+;; sent back to the CLI matches what the CLI expects byte for byte.
 
 ;;; Code:
 
@@ -57,7 +56,7 @@
 
 (ert-deftest ecc-protocol-test-parsed-input-round-trips ()
   "A parsed tool input serializes back to the same JSON.
-This is what makes the allow response of section 12.3 possible."
+This is what makes the allow response possible."
   (dolist (name '("ask-user-question" "tool-use-write" "plan-mode"))
     (let* ((request (ecc-test-find-message
                      name (lambda (m) (eq (ecc-protocol-control-subtype m) 'can_use_tool))))
@@ -74,13 +73,13 @@ This is what makes the allow response of section 12.3 possible."
     (should (= (length replays) 2))
     (should (equal (mapcar (lambda (m) (alist-get 'content (alist-get 'message m))) replays)
                    '("Reply with exactly: ONE" "Reply with exactly: TWO")))
-    ;; Every replay is a distinct message with its own uuid (plan 9.13).
+    ;; Every replay is a distinct message with its own uuid.
     (should (= 2 (length (delete-dups (mapcar (lambda (m) (alist-get 'uuid m)) replays))))))
   (let ((synthetic (seq-filter #'ecc-protocol-synthetic-p
                                (ecc-test-fixture-messages "slash-commands"))))
     (should (= (length synthetic) 4))
     ;; Synthetic replies report no usage, so they cannot drive the
-    ;; remaining-context estimate (plan 9.12).
+    ;; remaining-context estimate.
     (dolist (message synthetic)
       (let ((usage (alist-get 'usage (alist-get 'message message))))
         (should (= 0 (alist-get 'input_tokens usage)))
@@ -101,19 +100,19 @@ This is what makes the allow response of section 12.3 possible."
 ;;;; Serializing
 
 (ert-deftest ecc-protocol-test-initialize ()
-  "The initialize request matches section 12.6."
+  "The initialize request matches what the CLI expects."
   (should (equal (ecc-protocol-serialize (ecc-protocol-initialize "init-1"))
                  (concat "{\"type\":\"control_request\",\"request_id\":\"init-1\","
                          "\"request\":{\"subtype\":\"initialize\",\"hooks\":{}}}"))))
 
 (ert-deftest ecc-protocol-test-interrupt ()
-  "The interrupt request matches section 12.7."
+  "The interrupt request matches what the CLI expects."
   (should (equal (ecc-protocol-serialize (ecc-protocol-interrupt "i1"))
                  (concat "{\"type\":\"control_request\",\"request_id\":\"i1\","
                          "\"request\":{\"subtype\":\"interrupt\"}}"))))
 
 (ert-deftest ecc-protocol-test-set-permission-mode ()
-  "The set_permission_mode request matches section 12.7."
+  "The set_permission_mode request matches what the CLI expects."
   (should (equal (ecc-protocol-serialize
                   (ecc-protocol-set-permission-mode "m1" "acceptEdits"))
                  (concat "{\"type\":\"control_request\",\"request_id\":\"m1\","
@@ -121,7 +120,7 @@ This is what makes the allow response of section 12.3 possible."
                          "\"mode\":\"acceptEdits\"}}"))))
 
 (ert-deftest ecc-protocol-test-permission-deny ()
-  "The deny response matches section 12.4."
+  "The deny response matches what the CLI expects."
   (should (equal (ecc-protocol-serialize
                   (ecc-protocol-permission-deny
                    "r1" "User reviewed the diff and says: write 'hello from emacs' instead."))
@@ -131,7 +130,7 @@ This is what makes the allow response of section 12.3 possible."
                          "\"User reviewed the diff and says: write 'hello from emacs' instead.\"}}}"))))
 
 (ert-deftest ecc-protocol-test-permission-allow ()
-  "The allow response matches section 12.3 and echoes the input verbatim."
+  "The allow response matches what the CLI expects, input echoed verbatim."
   (let* ((input (ecc--json-read "{\"file_path\":\"/tmp/hello.txt\",\"content\":\"hi\"}")))
     (should (equal (ecc-protocol-serialize
                     (ecc-protocol-permission-allow "r2" :updated-input input))
@@ -141,7 +140,7 @@ This is what makes the allow response of section 12.3 possible."
                            "{\"file_path\":\"/tmp/hello.txt\",\"content\":\"hi\"}}}}")))))
 
 (ert-deftest ecc-protocol-test-permission-allow-with-mode ()
-  "The allow response can carry updatedPermissions, as in section 12.5."
+  "The allow response can carry updatedPermissions."
   (should (equal (ecc-protocol-serialize
                   (ecc-protocol-permission-allow
                    "r3"
@@ -184,8 +183,8 @@ multiSelect answers are one string joined with a comma and a space."
 
 (ert-deftest ecc-protocol-test-arrays-must-be-vectors ()
   "A JSON array given as a list is a serialization error, not silent junk.
-This is the trap of section 9, item 4; the reader returns vectors so
-that parsed values can be echoed back unchanged."
+This is the trap of `json-serialize'; the reader returns vectors so that
+parsed values can be echoed back unchanged."
   (should-error (ecc-protocol-serialize
                  `((questions . (((question . "q"))))))
                 :type 'wrong-type-argument))
@@ -232,7 +231,7 @@ that parsed values can be echoed back unchanged."
   (should (equal (ecc-protocol-settings-json '("a@m" "b@m"))
                  "{\"enabledPlugins\":{\"a@m\":false,\"b@m\":false}}")))
 
-;;;; Settings files (FR-PERM-8)
+;;;; Settings files
 
 (ert-deftest ecc-protocol-test-settings-add-allow-creates-the-file ()
   "A missing settings file is created with the permissions.allow list."
@@ -313,7 +312,7 @@ that parsed values can be echoed back unchanged."
                    "Advisor: off\nUsage: /advisor"))
     (should-not (ecc-protocol-command-output command))
     ;; None of the three is a prompt: they are what the CLI wrote about
-    ;; a command it ran itself (FR-HIST-2).
+    ;; a command it ran itself.
     (dolist (text (list command caveat stdout))
       (should-not (ecc-protocol-history-prompt
                    `((type . "user") (message . ((role . "user") (content . ,text)))))))
@@ -345,7 +344,7 @@ that parsed values can be echoed back unchanged."
     (should (string-search "\"enabled\":false"
                            (ecc-protocol-serialize
                             (ecc-protocol-remote-control "r2" nil))))
-    ;; The bridge is folded up with the session (docs/decisions.md).
+    ;; The bridge is folded up with the session.
     (dolist (request (list on off))
       (should-not (assq 'keep_session_on_exit request))
       (should-not (assq 'work_secret request))

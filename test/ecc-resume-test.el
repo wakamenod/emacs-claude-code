@@ -2,10 +2,10 @@
 
 ;;; Commentary:
 
-;; `ecc-resume' used to know only the sessions this Emacs had started, so
-;; it had nothing to offer in a fresh Emacs.  It now offers the
+;; `ecc-resume' used to know only the sessions this Emacs had started,
+;; so it had nothing to offer in a fresh Emacs.  It now offers the
 ;; recordings of the project as well, and refuses to resume a session
-;; another process is running (FR-SES-4, FR-HIST-3, FR-TUI-5).
+;; another process is running.
 
 ;;; Code:
 
@@ -42,7 +42,7 @@ that has no sessions in it."
   "Return the working directory the recording FILE was made in."
   (alist-get 'cwd (ecc-history-scan-file file)))
 
-;;;; Choosing a session (FR-SES-4)
+;;;; Choosing a session
 
 (ert-deftest ecc-resume-test-offers-the-recordings-of-the-project ()
   "With nothing running, the recordings of this project are the candidates."
@@ -210,7 +210,7 @@ most recent conversation is no longer the first one."
         (should-error (ecc-read-session) :type 'user-error)
       (delete-directory ecc-history-directory t))))
 
-;;;; Refusing to run a session twice (FR-TUI-5)
+;;;; Refusing to run a session twice
 
 (ert-deftest ecc-resume-test-refuses-a-session-another-process-runs ()
   "Resuming a session the registry says is running asks first.

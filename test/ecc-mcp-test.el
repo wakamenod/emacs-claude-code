@@ -2,10 +2,10 @@
 
 ;;; Commentary:
 
-;; The MCP server of FR-MCP-1 to 4 (plan section 6.15).  The JSON-RPC
-;; layer is tested as a pure function, and the HTTP layer against the
-;; real server: it listens on a port the system picks and a client
-;; process talks to it, which is what the CLI will do.
+;; The MCP server.  The JSON-RPC layer is tested as a pure function, and
+;; the HTTP layer against the real server: it listens on a port the
+;; system picks and a client process talks to it, which is what the CLI
+;; will do.
 
 ;;; Code:
 
@@ -87,7 +87,7 @@ The answer comes back as (STATUS . BODY-STRING)."
                                    (ecc--json-write object))))
     (cons status (if (string-empty-p body) nil (ecc--json-read body)))))
 
-;;;; The registry (FR-MCP-2)
+;;;; The registry
 
 (ert-deftest ecc-mcp-test-define-tool ()
   "A tool is registered with its name, description and schema."
@@ -122,12 +122,12 @@ The answer comes back as (STATUS . BODY-STRING)."
     (pcase-let ((`(,failed . ,text) (ecc-mcp-call-tool "boom" nil)))
       (should failed)
       (should (string-search "boom failed" text)))
-    ;; And the mode line is clean again afterwards (FR-MCP-4).
+    ;; And the mode line is clean again afterwards.
     (should-not ecc-mcp--running)
     (should (equal (ecc-mcp-mode-line-string) ""))))
 
 (ert-deftest ecc-mcp-test-mode-line-says-what-is-running ()
-  "While a tool runs the mode line says so (FR-MCP-4)."
+  "While a tool runs the mode line says so."
   (ecc-mcp-test-with-registry
     (let ((seen nil))
       (ecc-mcp-define-tool
@@ -137,7 +137,7 @@ The answer comes back as (STATUS . BODY-STRING)."
       (should (string-search "MCP: watch" seen)))))
 
 (ert-deftest ecc-mcp-test-excluded-tools-are-not-published ()
-  "`ecc-mcp-excluded-tools' takes a tool out of the list (FR-MCP-4)."
+  "`ecc-mcp-excluded-tools' takes a tool out of the list."
   (ecc-mcp-test-with-registry
     (ecc-mcp-define-tool :name "slow" :description "." :args nil
                          :function #'ignore)
@@ -150,7 +150,7 @@ The answer comes back as (STATUS . BODY-STRING)."
                      '("quick"))))))
 
 (ert-deftest ecc-mcp-test-execute-code-is-off-by-default ()
-  "The evaluator is neither published nor callable unless turned on (FR-MCP-3)."
+  "The evaluator is neither published nor callable unless turned on."
   (should-not (seq-find (lambda (tool) (equal (ecc-mcp-tool-name tool) "execute_code"))
                         (ecc-mcp-published-tools)))
   (let ((ecc-mcp-enable-execute-code nil))
@@ -161,7 +161,7 @@ The answer comes back as (STATUS . BODY-STRING)."
     (should (equal (cdr (ecc-mcp-call-tool "execute_code" '((code . "(+ 1 2)"))))
                    "3"))))
 
-;;;; JSON-RPC (plan section 6.15)
+;;;; JSON-RPC
 
 (ert-deftest ecc-mcp-test-initialize ()
   "Both openings the CLI uses are answered with what the server is."
@@ -209,7 +209,7 @@ The answer comes back as (STATUS . BODY-STRING)."
                    (params . ((name . "no_such_tool")))))))
     (should (equal (alist-get 'code (alist-get 'error answer)) -32602))))
 
-;;;; HTTP, against the real server (FR-MCP-1)
+;;;; HTTP, against the real server
 
 (ert-deftest ecc-mcp-test-http-post ()
   "The server answers a POST of JSON-RPC with JSON."
@@ -325,7 +325,7 @@ That is what a page in a browser sends when it talks to this port."
       (should (equal (alist-get 'code (alist-get 'error (ecc--json-read answer)))
                      -32700)))))
 
-;;;; The session a request belongs to (FR-MCP-1, FR-MCP-2)
+;;;; The session a request belongs to
 
 (ert-deftest ecc-mcp-test-url-carries-the-session ()
   "The URL of a session names it, and a request that names it runs there."
@@ -358,7 +358,7 @@ That is what a page in a browser sends when it talks to this port."
               (should (equal (alist-get 'type (alist-get 'emacs servers)) "http"))
               (should (string-prefix-p "http://127.0.0.1:"
                                        (alist-get 'url (alist-get 'emacs servers)))))
-            ;; And the command line carries it (FR-MCP-1).
+            ;; And the command line carries it.
             (let ((command (ecc-proc-build-command session)))
               (should (member "--mcp-config" command))
               (should (member config command))))
@@ -368,7 +368,7 @@ That is what a page in a browser sends when it talks to this port."
       (should-not (ecc-mcp-config session))
       (should-not (member "--mcp-config" (ecc-proc-build-command session))))))
 
-;;;; The built-in tools (FR-MCP-1)
+;;;; The built-in tools
 
 (defmacro ecc-mcp-test-with-file (var content &rest body)
   "Run BODY with VAR bound to a temporary Elisp file holding CONTENT.
