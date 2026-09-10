@@ -425,8 +425,12 @@ conversation."
   (interactive)
   (let ((session (or session (ecc-window-resolve-session))))
     (cond
-     ;; Already back.
+     ;; Already back: something else started a process while the
+     ;; terminal had it.  What the terminal wrote is still read, or the
+     ;; transcript would be missing its last lines for good.
      ((process-live-p (ecc-session-process session))
+      (when (and (ecc-tui-handoff-p session) ecc-tui-follow)
+        (ecc-tui-read-new-lines session))
       (ecc-tui-follow-stop session)
       (setf (ecc-session-kind session) 'own)
       session)

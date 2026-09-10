@@ -505,10 +505,11 @@ reason to offer them."
 (defun ecc-prompt-current-effort (session)
   "Return the effort level SESSION is set to, or nil.
 Nothing in the stream reports one -- neither system/init nor an
-assistant message carries it (confirmed against the CLI) -- so what
-Emacs asked for is all there is: the last /effort it sent, and failing
-that the --effort the session was started with.  An /effort sent from
-the terminal of a hand-off is therefore not seen."
+assistant message carries it (confirmed against the CLI) -- so it is
+the last /effort Emacs sent, and failing that the --effort the session
+was started with.  A recorded assistant line does carry one, so an
+/effort typed in the terminal of a hand-off is picked up as soon as
+the follow replays an answer that was given under it."
   (or (ecc-session-last-effort session)
       (ecc-model-option session :effort nil)))
 

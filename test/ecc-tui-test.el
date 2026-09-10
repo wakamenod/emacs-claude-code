@@ -16,6 +16,7 @@
 (require 'ecc-tui)
 (require 'ecc-session)
 (require 'ecc-render)
+(require 'ecc-prompt)
 
 (defvar ecc-tui-test--opened nil
   "What the fake terminal was asked to open.")
@@ -363,7 +364,6 @@ the process, the sentinel and the teardown are ghostel's own."
                     ((symbol-function 'ecc-proc-start)
                      (lambda (_session &optional resume _fork) (setq resumed resume))))
             (let ((ecc-executable script)
-                  (ecc-tui-terminal 'ghostel)
                   (ecc-tui--handoffs (make-hash-table :test #'equal)))
               (ecc-tui-open session)
               (let* ((state (ecc-tui-state session))
@@ -533,6 +533,65 @@ end and lose the head of a line in every batch after it."
                            '("ふたつめ" "みっつめ")))
             (should (= (plist-get (ecc-tui-state session) :position)
                        (file-attribute-size (file-attributes file))))))
+      (delete-file file))))
+
+(ert-deftest ecc-tui-test-an-effort-set-in-the-terminal-is-picked-up ()
+  "What the terminal was told about the model and the effort is heard here.
+Neither `/model' nor `/effort' says anything in the stream, but the
+recording carries the model and the effort of every answer, and the
+follow replays them."
+  (let ((file (make-temp-file "ecc-tui-" nil ".jsonl")))
+    (unwind-protect
+        (ecc-tui-test--with-session session
+          (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) file))
+                    ((symbol-function 'file-notify-add-watch) (lambda (&rest _) nil)))
+            (ecc-tui-test--write file nil)
+            (ecc-tui-open session)
+            (should-not (ecc-prompt-current-effort session))
+            ;; The user typed /effort xhigh and /model opus in the
+            ;; terminal, and the answer that followed was given under
+            ;; both.
+            (ecc-tui-test--append
+             file (concat "{\"parentUuid\":null,\"isSidechain\":false,"
+                          "\"type\":\"assistant\",\"effort\":\"xhigh\","
+                          "\"message\":{\"id\":\"msg_1\",\"role\":\"assistant\","
+                          "\"model\":\"claude-opus-5\",\"content\":"
+                          "[{\"type\":\"text\",\"text\":\"はい\"}]},"
+                          "\"uuid\":\"a1\","
+                          "\"timestamp\":\"2026-09-06T00:00:00.000Z\"}\n"))
+            (should (= (ecc-tui-read-new-lines session) 1))
+            (should (equal (ecc-prompt-current-effort session) "xhigh"))
+            (should (equal (ecc-session-last-model session) "claude-opus-5"))))
+      (delete-file file))))
+
+(ert-deftest ecc-tui-test-a-session-that-came-back-by-itself-gets-the-last-lines ()
+  "A hand-off ended by something else still reads what the terminal wrote.
+The transcript would otherwise be missing its last lines for good: the
+follow is stopped and nothing ever reads that far again."
+  (let* ((file (make-temp-file "ecc-tui-" nil ".jsonl"))
+         (lines (with-temp-buffer
+                  (let ((coding-system-for-read 'utf-8-unix))
+                    (insert-file-contents (ecc-test-history-fixture "session")))
+                  (split-string (buffer-string) "\n" t))))
+    (unwind-protect
+        (ecc-tui-test--with-session session
+          (cl-letf (((symbol-function 'ecc-history-file) (lambda (_id) file))
+                    ((symbol-function 'file-notify-add-watch) (lambda (&rest _) nil)))
+            (ecc-tui-test--write file nil)
+            (ecc-tui-open session)
+            (ecc-tui-test--write file lines)
+            ;; A process is running again -- something started one while
+            ;; the terminal had the session -- so the hand-off is over,
+            ;; and the lines nobody read yet are read now.
+            (setq alive t)
+            (should (ecc-tui-return session))
+            (should-not (ecc-tui-handoff-p session))
+            (should (eq (ecc-session-kind session) 'own))
+            (should (equal (mapcar #'ecc-turn-prompt (ecc-session-turns session))
+                           ;; the three prompts of the recording
+                           '("hello とだけ答えて"
+                             "hi.txt というファイルを作って。中身は hi の 1 行だけ"
+                             "hi.txt を読んで、中身をそのまま教えて")))))
       (delete-file file))))
 
 (provide 'ecc-tui-test)
