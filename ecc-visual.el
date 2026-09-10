@@ -8,11 +8,11 @@
 
 ;;; Commentary:
 
-;; Section 6.17 of IMPLEMENTATION_PLAN.md: the movement the terminal
-;; client gets for free and a buffer of text does not (FR-OUT-11).  A
-;; spinner while a turn runs, a pulsing background under the tool that
-;; is running, a blinking line where an answer is wanted, a flash when
-;; something finishes, and an icon per tool.
+;; The movement the terminal client gets for free and a buffer of text
+;; does not (FR-OUT-11).  A spinner while a turn runs, a pulsing
+;; background under the tool that is running, a blinking line where an
+;; answer is wanted, a flash when something finishes, and an icon per
+;; tool.
 ;;
 ;; Every effect is a timer over an overlay, and every one of them can be
 ;; turned off by itself.  Two rules keep them from becoming a cost: at

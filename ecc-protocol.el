@@ -8,10 +8,10 @@
 
 ;;; Commentary:
 
-;; Turns one line of the CLI stream-json output into an alist, and builds
-;; the JSON objects sent back on stdin.  Together with `ecc-proc' this is
-;; the only place that is allowed to touch JSON; every other module works
-;; on the Emacs data structures of section 3 of IMPLEMENTATION_PLAN.md.
+;; Turns one line of the CLI stream-json output into an alist, and
+;; builds the JSON objects sent back on stdin.  Together with `ecc-proc'
+;; this is the only place that is allowed to touch JSON; every other
+;; module works on the Emacs data structures of `ecc-model'.
 ;;
 ;; Message shapes are the ones recorded from CLI 2.1.261; see
 ;; test/fixtures and docs/verified.md.
@@ -106,7 +106,7 @@ A plain string content is returned as a single text block."
 ;;;; Sending
 
 ;; `json-serialize' reads a list as an object, so every JSON array built
-;; here must be a vector (plan section 9, item 4).
+;; here must be a vector.
 
 (defun ecc-protocol-user-message (content)
   "Return a user message alist carrying CONTENT.
@@ -233,12 +233,12 @@ day it is (FR-PERM-8 writes the settings file itself instead)."
 
 ;;;; Session history files (FR-HIST-1, 2)
 
-;; The jsonl the CLI keeps under ~/.claude/projects is not the stream: it
-;; holds the same `user' and `assistant' messages, but wraps them in its
-;; own bookkeeping and spells the structured tool result `toolUseResult'
-;; rather than `tool_use_result'.  Both shapes are read here, so that
-;; `ecc-history' can hand a recorded line to `ecc-dispatch' unchanged
-;; (plan section 6.8).
+;; The jsonl the CLI keeps under ~/.claude/projects is not the stream:
+;; it holds the same `user' and `assistant' messages, but wraps them in
+;; its own bookkeeping and spells the structured tool result
+;; `toolUseResult' rather than `tool_use_result'.  Both shapes are read
+;; here, so that `ecc-history' can hand a recorded line to
+;; `ecc-dispatch' unchanged.
 
 (defconst ecc-protocol-history-types '("user" "assistant" "system")
   "Line types of a history file that carry conversation content.
@@ -374,8 +374,8 @@ before it, nor what it printed was said to the model (FR-HIST-2)."
   "Fold LINE of a history file into the summary alist INFO.
 Only the keys a line actually carries are set, so that INFO can be
 built from the first lines of a file and then from the last ones, the
-later value winning (plan section 6.7).  The keys are `session-id',
-`cwd', `title', `prompt', `cost', `model' and `time'."
+later value winning.  The keys are `session-id', `cwd', `title',
+`prompt', `cost', `model' and `time'."
   (condition-case nil
       (let* ((object (ecc--json-read line))
              (type (and (consp object) (alist-get 'type object)))
@@ -458,7 +458,7 @@ is what checks that the two still agree (`ecc-test-live-agents')."
   "Return the JSON object in FILE as an alist, or nil when FILE is absent.
 An empty file counts as an empty object.  A file that does not parse,
 or whose top level is not an object, signals an error: it is never
-written over (plan section 9, item 16)."
+written over."
   (when (file-exists-p file)
     (let ((text (with-temp-buffer
                   (insert-file-contents file)

@@ -27,7 +27,7 @@ ap.add_argument("--disable-plugin", action="append",
                 default=["emacs-bridge@emacs-gravity-marketplace"],
                 help="plugin to turn off for this session only.  Unlike "
                      "--safe-mode this keeps MCP, skills and commands "
-                     "(D2 in docs/verified.md)")
+                     "as well")
 ap.add_argument("--model", default="haiku")
 ap.add_argument("--budget", default="0.5")
 ap.add_argument("extra", nargs="*", help="more claude options, after the --")

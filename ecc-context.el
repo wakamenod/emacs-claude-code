@@ -8,12 +8,11 @@
 
 ;;; Commentary:
 
-;; Section 6.10 of IMPLEMENTATION_PLAN.md: what Emacs knows that the CLI
-;; does not.  `ecc-context-capture' reads the file, the line and the
-;; region of the buffer the user last worked in (FR-CTX-1), formats it as
-;; a quote block the user can see before it is sent (FR-CTX-2), and the
-;; commands at the end send from a source buffer without switching to a
-;; transcript first (FR-CTX-5).
+;; What Emacs knows that the CLI does not.  `ecc-context-capture' reads
+;; the file, the line and the region of the buffer the user last worked
+;; in (FR-CTX-1), formats it as a quote block the user can see before it
+;; is sent (FR-CTX-2), and the commands at the end send from a source
+;; buffer without switching to a transcript first (FR-CTX-5).
 ;;
 ;; Everything above `ecc-send' is a pure function of a buffer, so the
 ;; tests can build the block without a process or a window.

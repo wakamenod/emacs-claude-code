@@ -8,8 +8,8 @@
 
 ;;; Commentary:
 
-;; Section 6.7 of IMPLEMENTATION_PLAN.md: one `tabulated-list-mode'
-;; buffer showing the sessions this Emacs runs (FR-DASH-1, 3, 4, 5).
+;; One `tabulated-list-mode' buffer showing the sessions this Emacs runs
+;; (FR-DASH-1, 3, 4, 5).
 ;;
 ;; Only those.  A session another process runs cannot be answered or
 ;; steered from here, and a conversation that is only a recording is
@@ -144,9 +144,9 @@ project from another; the whole path is in the tooltip."
 ;; one is given the file that defines it so RET can open it.
 ;;
 ;; The tree folds without magit-section, which only `ecc-render' is
-;; allowed to require (plan section 0): a heading carries the key of its
-;; group, TAB adds or removes that key from the set of folded groups and
-;; the buffer is drawn again.  It is a page of a few hundred lines.
+;; allowed to require: a heading carries the key of its group, TAB adds
+;; or removes that key from the set of folded groups and the buffer is
+;; drawn again.  It is a page of a few hundred lines.
 
 (defconst ecc-capabilities-buffer-name "*ecc-capabilities*"
   "Name of the Capabilities buffer.")

@@ -8,13 +8,13 @@
 
 ;;; Commentary:
 
-;; `ecc-dispatch' implements the table of section 4 of
-;; IMPLEMENTATION_PLAN.md: it looks at the type and subtype of a parsed
-;; message, updates the model and lets the model announce the change.
+;; `ecc-dispatch' is the table the CLI stream is read through: it looks
+;; at the type and subtype of a parsed message, updates the model and
+;; lets the model announce the change.
 ;;
 ;; Nothing is dropped.  A message this file does not know, and any error
 ;; raised while handling one, ends up as an `unknown' node in the
-;; transcript and in the log (FR-OUT-1, NFR-2, plan section 9, item 19).
+;; transcript and in the log (FR-OUT-1, NFR-2).
 ;;
 ;; Streaming (FR-OUT-4): with --include-partial-messages every content
 ;; block arrives three times, as a content_block_start, as deltas and as
@@ -272,7 +272,7 @@ updates what it is told and never rebuilds the session."
     (when (equal status "compacting")
       (ecc-model-set-state session 'compacting)))
   ;; The key is present with a null value on the closing message, so ask
-  ;; for the cell rather than the value (plan section 12.8).
+  ;; for the cell rather than the value.
   (when (assq 'compact_result message)
     (ecc-dispatch--compacted session message (alist-get 'compact_result message)))
   (run-hook-with-args 'ecc-status-hook session)
@@ -345,9 +345,8 @@ than added again."
          (parent-id (alist-get 'parent_tool_use_id message))
          (index -1))
     ;; A synthetic reply reports no tokens, so it must not move the
-    ;; context estimate (plan section 9, item 12).  An agent talks in a
-    ;; context of its own, so neither its tokens nor its model belong to
-    ;; the session.
+    ;; context estimate.  An agent talks in a context of its own, so
+    ;; neither its tokens nor its model belong to the session.
     (unless (or synthetic parent-id)
       (ecc-model-update-usage session
                               (alist-get 'usage (alist-get 'message message)))
@@ -872,9 +871,9 @@ so does the state line."
 (defun ecc-dispatch--stream-event (session message)
   "Apply the streaming MESSAGE to SESSION.
 A content_block_start opens a provisional node, the deltas grow it, and
-the assistant message that follows completes it (plan section 5.2,
-item 4).  A content_block_stop that comes without an assistant message
-closes the node with what was streamed."
+the assistant message that follows completes it.  A content_block_stop
+that comes without an assistant message closes the node with what was
+streamed."
   (let* ((event (alist-get 'event message))
          (parent-id (alist-get 'parent_tool_use_id message))
          (index (alist-get 'index event)))

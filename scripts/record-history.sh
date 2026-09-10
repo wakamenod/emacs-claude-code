@@ -31,7 +31,7 @@ session_id = str(uuid.uuid4())
 cwd = tempfile.mkdtemp(prefix="ecc-history-")
 projects = pathlib.Path.home() / ".claude" / "projects"
 # The directory name is the cwd (with symlinks resolved) with everything
-# but letters, digits and hyphens replaced by - (docs/verified.md).
+# but letters, digits and hyphens replaced by - (confirmed against the CLI).
 cwd = os.path.realpath(cwd)
 encoded = re.sub(r"[^A-Za-z0-9-]", "-", cwd.rstrip("/"))
 

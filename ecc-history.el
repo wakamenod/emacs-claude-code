@@ -9,15 +9,14 @@
 ;;; Commentary:
 
 ;; The CLI keeps every conversation as one JSON object per line under
-;; ~/.claude/projects.  This module reads such a file back into the model
-;; of section 3, so that a past session can be read in the same buffer as
-;; a live one and then resumed (FR-HIST-1 to 3, section 6.8 of
-;; IMPLEMENTATION_PLAN.md).
+;; ~/.claude/projects.  This module reads such a file back into the
+;; model of `ecc-model', so that a past session can be read in the same
+;; buffer as a live one and then resumed (FR-HIST-1 to 3).
 ;;
 ;; The file is read from the end: opening it costs the last
 ;; `ecc-history-page-turns' turns, and the button at the top of the
 ;; buffer adds the page before that.  Only the lines of the page are
-;; parsed; the rest is walked as text (plan section 9, item 14).
+;; parsed; the rest is walked as text.
 ;;
 ;; Recorded lines go through `ecc-dispatch' exactly like live ones, with
 ;; the hooks that act on the world switched off: a replay must not revert
@@ -106,7 +105,7 @@ which Emacs may not know, so the file is looked for by name."
             (expand-file-name (format "*/%s.jsonl" session-id)
                               (expand-file-name ecc-history-directory))))))
 
-;;;; Reading the file (plan section 9, item 14)
+;;;; Reading the file
 
 (defun ecc-history-lines (file)
   "Return the non-empty lines of FILE as a list of strings."
@@ -212,7 +211,7 @@ which case every line is shown in the order it was written."
          links)
         (and (> (hash-table-count abandoned) 0) abandoned)))))
 
-;;;; Replaying (plan section 6.8)
+;;;; Replaying
 
 (defun ecc-history--close-turn (session time)
   "Close the turn SESSION is in at TIME, without counting a cost.
@@ -437,9 +436,8 @@ two ranges cut through is dropped rather than guessed at."
 
 (defun ecc-history-scan-file (file)
   "Return what FILE says about itself, without reading all of it.
-The first lines say where the session ran, the last ones how it ended
-\(plan section 6.7).  The alist also carries `file', `session-id' and
-`mtime'."
+The first lines say where the session ran, the last ones how it ended.
+The alist also carries `file', `session-id' and `mtime'."
   (let ((info (list (cons 'file file)
                     (cons 'mtime (file-attribute-modification-time
                                   (file-attributes file))))))

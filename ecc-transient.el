@@ -8,10 +8,11 @@
 
 ;;; Commentary:
 
-;; Section 6.18 of IMPLEMENTATION_PLAN.md (NFR-10).  `ecc-menu' reaches
-;; every command worth a key; the slash command submenu is built from
-;; what the CLI said in its initialize answer, so it shows the skills and
-;; the plugin commands of the session at hand rather than a fixed list.
+;; One place to reach the whole package from (NFR-10).  `ecc-menu'
+;; reaches every command worth a key; the slash command submenu is built
+;; from what the CLI said in its initialize answer, so it shows the
+;; skills and the plugin commands of the session at hand rather than a
+;; fixed list.
 
 ;;; Code:
 

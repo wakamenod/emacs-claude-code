@@ -5,7 +5,7 @@
 #
 # The side question is the /btw of the terminal client.  It is not a slash
 # command: it is a control request the SDK sends over the same stream-json
-# channel ecc already speaks (docs/btw.md).  This script settles what the
+# channel ecc already speaks.  This script settles what the
 # binary only suggested:
 #
 #   1. a plain turn, so that there is a conversation to ask about

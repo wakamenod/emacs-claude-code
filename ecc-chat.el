@@ -9,12 +9,12 @@
 ;;; Commentary:
 
 ;; `ecc-chat-mode' is the major mode of a session buffer: the transcript
-;; `ecc-render' draws, and under it, after a separator, the prompt region
-;; the user types in (docs/phase9-ui-redesign.md, section 4).  Under the
-;; region come another rule and the permission mode the session runs,
-;; which S-TAB walks through (FR-SES-6); that footer is read-only text,
-;; and the region ends where it begins rather than at the end of the
-;; buffer.  The placeholder of an empty region is ghost text.
+;; `ecc-render' draws, and under it, after a separator, the prompt
+;; region the user types in.  Under the region come another rule and the
+;; permission mode the session runs, which S-TAB walks through
+;; (FR-SES-6); that footer is read-only text, and the region ends where
+;; it begins rather than at the end of the buffer.  The placeholder of
+;; an empty region is ghost text.
 ;;
 ;; The two parts answer to different keys.  The transcript is read-only
 ;; text carrying `ecc-chat-transcript-map' as its `keymap' property, so
@@ -265,7 +265,7 @@ A key not here falls through to `ecc-chat-mode-map'.")
     (define-key map (kbd "c") #'ecc-review-comment-request)
     (define-key map (kbd "e") #'ecc-review-edit-proposal)
     map)
-  "Keymap of a node that is waiting for an answer (plan section 6.3).")
+  "Keymap of a node that is waiting for an answer.")
 
 (defvar ecc-file-section-map
   (let ((map (make-sparse-keymap)))
@@ -292,13 +292,13 @@ A key not here falls through to `ecc-chat-mode-map'.")
 
 \\{ecc-chat-mode-map}"
   :interactive nil
-  ;; Faces are applied when text is inserted, so no font lock is wanted
-  ;; (plan section 9, item 7); `text-mode' turns none on.
+  ;; Faces are applied when text is inserted, so no font lock is
+  ;; wanted; `text-mode' turns none on.
   (setq-local truncate-lines nil)
   (setq-local word-wrap t)
   ;; A folded body shows as an ellipsis after its heading (FR-OUT-3).
   (add-to-invisibility-spec '(ecc-fold . t))
-  ;; Markdown markup symbols are hidden by the ecc-markup invisible spec (§3.3).
+  ;; Markdown markup symbols are hidden by the ecc-markup spec.
   (add-to-invisibility-spec '(ecc-markup . nil))
   (setq-local completion-at-point-functions
               (list #'ecc-prompt-capf #'ecc-prompt-at-capf))
@@ -480,12 +480,12 @@ inserted first, so that leaving the question with `C-g\=' keeps it
 
 ;; The placeholder is ghost text: the `after-string' of an empty overlay
 ;; at the start of the prompt region, dim, and shown while nothing has
-;; been typed (docs/phase9-ui-redesign.md, section 4).  It is not buffer
-;; text, so the cursor cannot walk into it, nothing has to be read-only,
-;; and neither the undo history nor `ecc-chat-draft' ever sees it.  Its
-;; first character carries the `cursor' property, which is what draws the
-;; cursor on it rather than behind the whole string when point is at the
-;; end of the buffer.  Anything typed in the region takes it away.
+;; been typed.  It is not buffer text, so the cursor cannot walk into
+;; it, nothing has to be read-only, and neither the undo history nor
+;; `ecc-chat-draft' ever sees it.  Its first character carries the
+;; `cursor' property, which is what draws the cursor on it rather than
+;; behind the whole string when point is at the end of the buffer.
+;; Anything typed in the region takes it away.
 
 (defun ecc-chat-placeholder-string ()
   "Return the placeholder of this buffer, or nil when it has none."

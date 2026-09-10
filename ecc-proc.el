@@ -9,13 +9,12 @@
 ;;; Commentary:
 
 ;; Builds the command line, starts the CLI, splits its output into lines
-;; and sends JSON back.  Sections 2.1, 2.2, 2.4 and 2.5 of
-;; IMPLEMENTATION_PLAN.md.
+;; and sends JSON back.
 ;;
 ;; Together with `ecc-protocol' this is the only place that touches the
 ;; wire format.  Parsed messages leave through
-;; `ecc-proc-message-function', which `ecc-dispatch' sets; this file never
-;; calls upwards by name (plan section 1.3).
+;; `ecc-proc-message-function', which `ecc-dispatch' sets; this file
+;; never calls upwards by name.
 
 ;;; Code:
 
@@ -55,7 +54,7 @@ cannot; it normally takes a fraction of a second.  Zero kills at once.")
   "Return the standard error buffer of SESSION, creating it if needed."
   (get-buffer-create (format "*ecc-stderr: %s*" (ecc-session-name session))))
 
-;;;; The command line (plan section 2.1)
+;;;; The command line
 
 (defun ecc-proc--model (session)
   "Return the model SESSION should be started with, or nil for none.
@@ -136,7 +135,7 @@ a resumed one the model its recording ends on (see `ecc-proc--model')."
                  (ecc-session-project-root session))
       command)))
 
-;;;; Starting and stopping (plan sections 2.1 and 2.5)
+;;;; Starting and stopping
 
 (defun ecc-proc-session (process)
   "Return the session PROCESS belongs to, or nil."
@@ -241,7 +240,7 @@ locally so that the queue does not keep stale entries."
   (ecc-model-abandon-requests session "the session ended before it was answered")
   (clrhash (ecc-session-pending-controls session)))
 
-;;;; Receiving (plan section 2.2)
+;;;; Receiving
 
 (defun ecc-proc--filter (process chunk)
   "Feed CHUNK of PROCESS output into the session line buffer."
@@ -271,7 +270,7 @@ megabytes, so the leftover is kept in a buffer rather than a string."
   (ecc-log-raw (ecc-session-name session) 'recv line)
   (funcall ecc-proc-message-function session (ecc-protocol-parse-line line)))
 
-;;;; Sending (plan sections 2.3 and 2.4)
+;;;; Sending
 
 (defun ecc-proc-send-json (session object)
   "Serialize OBJECT and send it to the CLI of SESSION as one line."
@@ -386,7 +385,7 @@ arrive in between, since output is only read when Emacs waits for it."
     (ecc-model-begin-turn session (if (stringp content) content ""))))
 
 (defun ecc-proc-send-transient (session content)
-  "Send CONTENT to SESSION without opening a turn (plan section 9, item 11)."
+  "Send CONTENT to SESSION without opening a turn."
   (ecc-proc--note-sent session content)
   (ecc-proc-send-json session (ecc-protocol-user-message content)))
 

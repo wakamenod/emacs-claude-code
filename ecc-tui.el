@@ -8,7 +8,7 @@
 
 ;;; Commentary:
 
-;; Section 6.14 of IMPLEMENTATION_PLAN.md (FR-TUI-1 to FR-TUI-5).  The
+;; Handing a conversation to the terminal client (FR-TUI-1 to 5).  The
 ;; terminal client can do things this one cannot, so a conversation can
 ;; be carried on there and taken back afterwards.
 ;;

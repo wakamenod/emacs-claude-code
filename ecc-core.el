@@ -11,8 +11,7 @@
 ;; Customization group, launch options, logging, UUID generation and the
 ;; thin JSON wrappers shared by every other `ecc-' module.
 ;;
-;; This file must not depend on any other `ecc-' module.  See section 1.3
-;; of IMPLEMENTATION_PLAN.md for the module dependency order.
+;; This file must not depend on any other `ecc-' module.
 
 ;;; Code:
 
@@ -24,7 +23,7 @@
   :group 'tools
   :prefix "ecc-")
 
-;;;; Launch options (plan section 2.1)
+;;;; Launch options
 
 (defcustom ecc-executable "claude"
   "Name of, or path to, the Claude Code CLI executable."
@@ -135,7 +134,7 @@ command list to run.  Nil runs the command unchanged."
   "Function returning the --mcp-config argument of a session, or nil.
 `ecc-mcp' installs itself here when it is loaded, which is how
 `ecc-proc' can register the Emacs MCP server without depending on it
-\(FR-MCP-1, plan section 1.3).")
+\(FR-MCP-1).")
 
 ;;;; Logging (NFR-8)
 
@@ -216,10 +215,10 @@ the one it stands next to, so a face is not broken in the middle."
       (push (substring string start) result)
       (apply #'concat (nreverse result)))))
 
-;;;; Faces (plan section 5.3)
+;;;; Faces
 
-;; The session buffer does not use font-lock (plan section 9, item 7), so
-;; every face below is applied when the text is inserted.
+;; The session buffer does not use font-lock, so every face below is
+;; applied when the text is inserted.
 
 (defface ecc-user-face
   '((((background dark))  :extend t :background "#3b5329")
@@ -434,9 +433,9 @@ Implemented locally so that no dependency on `org-id' is needed."
 
 ;; The CLI protocol is one JSON object per line.  Arrays are read as
 ;; vectors, not lists: `json-serialize' treats a list as an object, so a
-;; parsed array read as a list cannot be echoed back.  Echoing input back
-;; verbatim is mandatory for the allow response (plan section 12.3), so
-;; vectors are the only shape that round-trips.  See docs/verified.md.
+;; parsed array read as a list cannot be echoed back.  Echoing input
+;; back verbatim is mandatory for the allow response, so vectors are the
+;; only shape that round-trips.  See docs/verified.md.
 
 (defun ecc--json-read (string)
   "Parse STRING as one JSON object and return it as an alist.

@@ -13,7 +13,7 @@
 ;; buffer with unsaved changes is left alone and the user is warned, or
 ;; asked, depending on `ecc-sync-modified-action'.  The same check tells
 ;; `ecc-perm' to warn before a change to such a file is allowed
-;; (FR-SYNC-2).  Section 6.9 of IMPLEMENTATION_PLAN.md.
+;; (FR-SYNC-2).
 
 ;;; Code:
 

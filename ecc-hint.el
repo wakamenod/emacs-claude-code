@@ -8,14 +8,13 @@
 
 ;;; Commentary:
 
-;; What the client says about a conversation without being asked
-;; (section 6.11 of IMPLEMENTATION_PLAN.md):
+;; What the client says about a conversation without being asked:
 ;;
 ;; - the context left (FR-HINT-3, 5).  The CLI does not tell a headless
 ;;   session how full the window is -- `autocompact_state' only goes to
-;;   CLAUDE_CODE_REMOTE (REQUIREMENTS section 7) -- so the estimate is
-;;   made here out of the usage of the last assistant message and the
-;;   window of the model in use.  A compaction resets it.
+;;   CLAUDE_CODE_REMOTE -- so the estimate is made here out of the usage
+;;   of the last assistant message and the window of the model in use.
+;;   A compaction resets it.
 ;;
 ;; - the prompt suggestion (FR-HINT-4), shown in the prompt region while
 ;;   it is empty and taken with one key.

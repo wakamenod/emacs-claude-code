@@ -29,8 +29,8 @@
 (require 'ecc-window)
 
 (declare-function ecc-plan-open "ecc-plan" (request))
-;; Autoloaded commands of modules that require this one; the keymap
-;; only names them (plan section 1.3).
+;; Autoloaded commands of modules that require this one; the keymap only
+;; names them.
 (declare-function ecc-dashboard "ecc-dashboard" ())
 (declare-function ecc-history-open "ecc-history" (session-id))
 

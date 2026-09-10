@@ -9,12 +9,11 @@
 ;;; Commentary:
 
 ;; What is done with the prompt region of a session buffer (the region
-;; itself belongs to `ecc-chat').  Section 6.2 of IMPLEMENTATION_PLAN.md
-;; as revised by docs/phase9-ui-redesign.md: multi-line input (FR-INP-1), slash commands
-;; with their completion and the two kinds that need care (FR-INP-2, 3,
-;; 4, 5), the queue that holds a prompt back while a turn runs
-;; (FR-INP-6), the history shared by every session (FR-INP-7), the `@'
-;; references Emacs expands before sending (FR-INP-8), pasted images
+;; itself belongs to `ecc-chat'): multi-line input (FR-INP-1), slash
+;; commands with their completion and the two kinds that need care
+;; (FR-INP-2, 3, 4, 5), the queue that holds a prompt back while a turn
+;; runs (FR-INP-6), the history shared by every session (FR-INP-7), the
+;; `@' references Emacs expands before sending (FR-INP-8), pasted images
 ;; (FR-INP-9) and the editor context (FR-CTX-1).
 
 ;;; Code:

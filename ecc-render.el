@@ -8,11 +8,10 @@
 
 ;;; Commentary:
 
-;; Draws the model of `ecc-model' into the session buffer.  Section 5 of
-;; IMPLEMENTATION_PLAN.md as revised by docs/phase9-ui-redesign.md: the
+;; Draws the model of `ecc-model' into the session buffer.  The
 ;; transcript and the prompt share one buffer, so the tree is drawn with
-;; text properties and overlays of its own rather than with magit-section
-;; (phase 9b).
+;; text properties and overlays of its own rather than with
+;; magit-section (phase 9b).
 ;;
 ;; The buffer is laid out as a top region (the button that pages the
 ;; recording in), a newline that anchors it, the turns that are
@@ -21,13 +20,13 @@
 ;; prompt region, which is the only part of the buffer the user may
 ;; edit.  The summaries stand at the end because at the start of a long
 ;; conversation they scroll out of sight; `ecc-render-summary-position'
-;; puts them back at the top.  Finished turns are never
-;; touched again: a redraw deletes the live region and builds it anew,
-;; and the top region is replaced in place, which keeps the cost
-;; proportional to the current turn rather than to the length of the
-;; conversation (plan section 5.2).  The prompt region lies after the
-;; marker `ecc-render--prompt-start', and no redraw deletes past it, so a
-;; draft survives whatever the session does meanwhile (FR-UI-2).
+;; puts them back at the top.  Finished turns are never touched again: a
+;; redraw deletes the live region and builds it anew, and the top region
+;; is replaced in place, which keeps the cost proportional to the
+;; current turn rather than to the length of the conversation.  The
+;; prompt region lies after the marker `ecc-render--prompt-start', and
+;; no redraw deletes past it, so a draft survives whatever the session
+;; does meanwhile (FR-UI-2).
 ;;
 ;; Every node is drawn as a heading line and a body.  The heading carries
 ;; the text properties `ecc-node' (the id), `ecc-depth' and
@@ -42,7 +41,7 @@
 ;; `ecc-stream-throttle' (FR-OUT-4, FR-OUT-10).
 ;;
 ;; Font lock is off in the session buffer, so faces are applied here as
-;; the text is inserted (plan section 9, item 7).
+;; the text is inserted.
 
 ;;; Code:
 
@@ -162,7 +161,7 @@ follows is the draft the user is writing (FR-UI-2).")
 (defvar-local ecc-render--visibility-cache nil
   "Hash mapping a node id to whether the user left it collapsed.
 Only the nodes the user folded or unfolded are in it; the others
-follow `ecc-render--hidden-types' (plan section 9, item 6).")
+follow `ecc-render--hidden-types'.")
 
 (defvar-local ecc-render--timer nil
   "Debounce timer of this buffer, or nil.")
@@ -529,7 +528,7 @@ PREDICATE is called with the id and its entry."
                     (mapcar #'ecc-turn-id (ecc-session-turns ecc-render--session)))))
     (ecc-render-node-ids (lambda (id _entry) (member id turns)))))
 
-;;;; Folding (FR-OUT-3, plan section 9, item 6)
+;;;; Folding (FR-OUT-3)
 
 (defun ecc-render--fold-overlay (id)
   "Return the fold overlay of the node ID, or nil when it is unfolded."
@@ -839,7 +838,7 @@ there is none (FR-HIST-1)."
 (defun ecc-render--history-more-p (session)
   "Return non-nil when SESSION has an older page of its recording left.
 The paging position is a slot of the session, so this asks no module
-above the renderer (plan section 1.3)."
+above the renderer."
   (let ((offset (ecc-session-history-offset session)))
     (and offset (> offset 0))))
 
@@ -1016,7 +1015,7 @@ The newest line comes first, so that the limit of
 (defun ecc-render--insert-stream-text (node text prefix face)
   "Insert the streamed TEXT of NODE with PREFIX after each newline.
 A marker at the end of the text, kept on NODE, is where the next delta
-is appended (plan section 5.2, item 4)."
+is appended."
   (insert (propertize (concat prefix (ecc-render--stream-string text prefix))
                       'face face
                       'wrap-prefix (ecc-render--wrap-prefix prefix)))
@@ -1586,8 +1585,7 @@ that the movement commands stop once per turn rather than twice."
   "Functions adding a line under the state line at the end of a transcript.
 Each is called with the session and returns a string without a final
 newline, or nil.  The modules above the renderer put what belongs at
-the end of the conversation here rather than in the turns (plan
-section 5.2).")
+the end of the conversation here rather than in the turns.")
 
 (defvar ecc-render-header-functions nil
   "Functions adding to the header line of a session buffer.
@@ -2123,7 +2121,7 @@ Tests and interactive commands use this instead of waiting."
           (setq ecc-render--timer nil)))
       (ecc-render-update session))))
 
-;;;; Streaming (FR-OUT-4, plan section 5.2, item 4)
+;;;; Streaming (FR-OUT-4)
 
 (defun ecc-render--replace-heading (node depth string)
   "Replace the heading line of NODE at DEPTH with STRING, keeping its markers.

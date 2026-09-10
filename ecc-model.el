@@ -9,12 +9,12 @@
 ;;; Commentary:
 
 ;; The session, the Turn > Step > Tool tree and the queue of requests
-;; waiting for an answer.  Section 3 of IMPLEMENTATION_PLAN.md.
+;; waiting for an answer.
 ;;
 ;; This file knows nothing about JSON, about processes or about
-;; magit-section (NFR-9).  It only stores what `ecc-dispatch' hands it and
-;; announces every change through the hooks of section 4.3, which is how
-;; the renderer and the rest of the user interface hear about it.
+;; magit-section (NFR-9).  It only stores what `ecc-dispatch' hands it
+;; and announces every change through its hooks, which is how the
+;; renderer and the rest of the user interface hear about it.
 
 ;;; Code:
 
@@ -22,7 +22,7 @@
 (require 'seq)
 (require 'ecc-core)
 
-;;;; Hooks (plan section 4.3)
+;;;; Hooks
 
 ;; All of these are abnormal hooks.  The first argument is always the
 ;; session; a second argument, where there is one, is the node or the
@@ -88,7 +88,7 @@ anything.  It is not `ecc-progress-hook\', which is about the turn.")
 (defvar ecc-tasks-updated-hook nil
   "Functions run with a session when its task list changed.")
 
-;;;; Structures (plan section 3)
+;;;; Structures
 
 (cl-defstruct (ecc-session (:constructor ecc-session--make) (:copier nil))
   "One Claude Code conversation and everything Emacs knows about it."
@@ -168,7 +168,7 @@ anything.  It is not `ecc-progress-hook\', which is about the turn.")
 TRANSIENT marks a turn Emacs opened for something it asked on its own:
 the CLI answers it like any other prompt, but it is not part of the
 conversation the user is reading, so it is kept out of the
-transcript (plan section 9, item 11)."
+transcript."
   id start-time end-time prompt children result cost transient
   label)        ; heading of a turn nobody prompted, see
                 ; `ecc-model-aside-turn'
@@ -328,7 +328,7 @@ response said."
 (defun ecc-model-begin-turn (session prompt)
   "Start a turn in SESSION for PROMPT and return it.
 The CLI does not announce the start of a turn, so Emacs decides it
-when the prompt goes out (plan section 4.1)."
+when the prompt goes out."
   (let ((turn (make-ecc-turn
                :id (format "turn-%d" (cl-incf (ecc-session-turn-counter session)))
                :start-time (current-time)
@@ -437,8 +437,7 @@ The CLI stopped, or could not be sent to, before the turn came to its
 end: nothing announces a finished turn, no cost is counted, and the
 turn-wide approval of FR-PERM-7 ends with it.  A prompt sent after this
 must start a turn of its own rather than wait behind a turn that will
-never finish (plan section 2.5, FR-SES-7).  Returns nil when no turn
-was open."
+never finish (FR-SES-7).  Returns nil when no turn was open."
   (when-let* ((turn (ecc-session-current-turn session)))
     (setf (ecc-turn-end-time turn) (current-time))
     (setf (ecc-session-current-turn session) nil)
@@ -723,7 +722,7 @@ Returns the task, or nil when ID is nil."
                 (string< (ecc-task-id a) (ecc-task-id b))
               (< x y))))))
 
-;;;; Requests waiting for an answer (plan section 3.4)
+;;;; Requests waiting for an answer
 
 (defun ecc-model-add-request (session request)
   "Add REQUEST to the pending queue of SESSION (FR-PERM-6)."

@@ -17,8 +17,8 @@
 ;; `ecc-table.el'.
 ;;
 ;; This is deliberately small.  `markdown-mode' is not used: the session
-;; buffer has no font lock (plan section 9, item 7), and a pure function
-;; over a string is what the renderer and the tests want.
+;; buffer has no font lock, and a pure function over a string is what
+;; the renderer and the tests want.
 ;;
 ;; A fenced code block whose fence names a language Emacs has a major
 ;; mode for is coloured with that mode (FR-OUT-15).  The mode runs in a

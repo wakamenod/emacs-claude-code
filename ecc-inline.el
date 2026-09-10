@@ -8,8 +8,8 @@
 
 ;;; Commentary:
 
-;; Section 6.16 of IMPLEMENTATION_PLAN.md, the two things one wants from
-;; the source buffer rather than from a transcript.
+;; The two things one wants from the source buffer rather than from a
+;; transcript.
 ;;
 ;; `ecc-inline-prompt' (FR-INLINE-1) asks a question with the region, or
 ;; the file, attached, and lets the answer arrive in an overlay above

@@ -8,11 +8,10 @@
 
 ;;; Commentary:
 
-;; Section 6.15 of IMPLEMENTATION_PLAN.md: an MCP server listening on
-;; the loopback interface, registered with the CLI through --mcp-config,
-;; which lets Claude ask Emacs what only Emacs knows -- the references
-;; xref can find, the symbols imenu lists, the diagnostics flymake has
-;; (FR-MCP-1).
+;; An MCP server listening on the loopback interface, registered with
+;; the CLI through --mcp-config, which lets Claude ask Emacs what only
+;; Emacs knows -- the references xref can find, the symbols imenu lists,
+;; the diagnostics flymake has (FR-MCP-1).
 ;;
 ;; The transport is HTTP, and only POST is implemented: the CLI was
 ;; observed to open with server/discover, initialize and
@@ -266,7 +265,7 @@ the server down with it."
                    (isError . ,(if failed t :false))))))))
       (_ (ecc-mcp--error id -32601 (format "Unknown method: %s" method))))))
 
-;;;; HTTP (plan section 6.15: POST only)
+;;;; HTTP (POST only)
 
 (defvar ecc-mcp--server nil
   "The listening process, or nil.")

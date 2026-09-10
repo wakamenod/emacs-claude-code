@@ -8,12 +8,12 @@
 
 ;;; Commentary:
 
-;; Section 6.12 of IMPLEMENTATION_PLAN.md (FR-NOTIFY-1).  Three events
-;; are worth an interruption: a turn that finished, a request that needs
-;; an answer, and a session whose CLI stopped on its own.  How loudly
-;; they are announced is `ecc-notify-level', and a desktop notification
-;; is held back while the Emacs frame has the focus: the user is looking
-;; at it already.
+;; Interruptions worth making (FR-NOTIFY-1).  Three events are worth an
+;; interruption: a turn that finished, a request that needs an answer,
+;; and a session whose CLI stopped on its own.  How loudly they are
+;; announced is `ecc-notify-level', and a desktop notification is held
+;; back while the Emacs frame has the focus: the user is looking at it
+;; already.
 
 ;;; Code:
 

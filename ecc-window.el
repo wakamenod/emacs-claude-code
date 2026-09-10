@@ -8,10 +8,10 @@
 
 ;;; Commentary:
 
-;; Section 6.13 of IMPLEMENTATION_PLAN.md: which window a transcript is
-;; shown in (FR-WIN-1), hiding and restoring them per project and per tab
-;; (FR-WIN-2, FR-WIN-5), the name a session goes by (FR-WIN-3) and the
-;; rule that decides which session a command sends to (FR-WIN-4).
+;; Which window a transcript is shown in (FR-WIN-1), hiding and
+;; restoring them per project and per tab (FR-WIN-2, FR-WIN-5), the name
+;; a session goes by (FR-WIN-3) and the rule that decides which session
+;; a command sends to (FR-WIN-4).
 ;;
 ;; It also keeps track of the last buffer the user worked in that is not
 ;; part of this package, which is the source `ecc-context' quotes from.
@@ -79,7 +79,7 @@ Which side the other two stand on, and how wide they are, is
 
 (defun ecc-window-project-root (&optional directory)
   "Return the root of the project of DIRECTORY, or DIRECTORY itself.
-DIRECTORY defaults to `default-directory' (plan section 6.13)."
+DIRECTORY defaults to `default-directory'."
   (let ((default-directory (or directory default-directory)))
     (or (when-let* ((project (project-current nil)))
           (file-name-as-directory (expand-file-name (project-root project))))

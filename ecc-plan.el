@@ -16,7 +16,7 @@
 ;; message that asks for a new plan, otherwise it is allowed together
 ;; with the permission mode to switch to (FR-PLAN-3, FR-PLAN-4).  A plan
 ;; shown again marks the lines that changed since the last one
-;; (FR-PLAN-5).  Section 6.4 of IMPLEMENTATION_PLAN.md.
+;; (FR-PLAN-5).
 
 ;;; Code:
 

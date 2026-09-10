@@ -9,9 +9,9 @@
 ;;; Commentary:
 
 ;; Everything that answers a can_use_tool request goes through
-;; `ecc-perm-respond' (section 6.3 of IMPLEMENTATION_PLAN.md), so that
-;; the queue, the transcript and the CLI never disagree about what was
-;; answered.  Deny is the default answer everywhere (NFR-4).
+;; `ecc-perm-respond', so that the queue, the transcript and the CLI
+;; never disagree about what was answered.  Deny is the default answer
+;; everywhere (NFR-4).
 ;;
 ;; On top of allow and deny this file offers the permission suggestions
 ;; of the CLI (FR-PERM-3), a turn wide approval (FR-PERM-7), allow

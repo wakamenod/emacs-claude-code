@@ -23,7 +23,6 @@
 ;; on the diff of a pending Edit or Write goes back as the message of
 ;; the deny (FR-DIFF-2), and `ecc-review-edit-proposal' changes the text
 ;; of the proposal and allows it with the new text (FR-DIFF-7).
-;; Section 6.5 of IMPLEMENTATION_PLAN.md.
 
 ;;; Code:
 
@@ -517,7 +516,7 @@ Each is the plist of `ecc-review-hunk-at' with :comment added."
     fence))
 
 (defun ecc-review-format-message (comments &optional header)
-  "Return the prompt carrying COMMENTS, in the format of plan section 6.5.
+  "Return the prompt carrying COMMENTS as one block each.
 COMMENTS are the plists of `ecc-review-comments'; HEADER replaces
 `ecc-review-header'."
   (concat

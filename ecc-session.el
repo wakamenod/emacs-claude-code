@@ -10,9 +10,8 @@
 
 ;; The buffer a conversation is read and written in, and the commands
 ;; that act on it: visiting what is at point, reviewing, and taking
-;; things out of the transcript (FR-OUT-14).  Section 6.1 of
-;; IMPLEMENTATION_PLAN.md as revised by docs/phase9-ui-redesign.md.  The
-;; major mode, the keys and the movement live in `ecc-chat'.
+;; things out of the transcript (FR-OUT-14).  The major mode, the keys
+;; and the movement live in `ecc-chat'.
 
 ;;; Code:
 
@@ -39,10 +38,10 @@
 
 (defun ecc-session--forget-on-kill ()
   "Stop and forget the session when its buffer is killed.
-Killing the buffer is taken as killing the session (plan 9, item 10):
-the CLI is stopped, the session leaves the list, and its line buffer
-goes with it, so that nothing lingers in the dashboard as an exited
-session with no buffer.  An agent transcript shares the session but is
+Killing the buffer is taken as killing the session: the CLI is
+stopped, the session leaves the list, and its line buffer goes with
+it, so that nothing lingers in the dashboard as an exited session with
+no buffer.  An agent transcript shares the session but is
 not its buffer, so killing it does nothing."
   (when-let* ((session ecc-render--session))
     (when (and (eq (current-buffer) (ecc-session-buffer session))
@@ -156,7 +155,7 @@ answered in (FR-PERM-5, FR-PLAN-1)."
 
 (defun ecc-session-review-or-deny ()
   "Deny the request at point, or open the review when not on one.
-The d key of the transcript does both (plan sections 6.3 and 6.5)."
+The d key of the transcript does both."
   (interactive)
   (require 'ecc-perm)
   (if (ecc-perm-request-at-point)

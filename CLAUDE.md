@@ -2,27 +2,23 @@
 
 This repository builds `ecc`, a package that drives the Claude Code CLI from Emacs.
 
-## Read these first
+## The source of truth is the code
 
-1. `REQUIREMENTS.md` — the requirements of record (110 of them: the original 106, plus FR-OUT-15, the FR-UI pair of phase 9 and the four FR-BTW of 2026-09-09, less FR-TUI-2 which was dropped on 2026-09-06 and the FR-HINT pair withdrawn on 2026-09-09 — the automatic `/recap`, implementation and all). Refer to them by id (FR-xxx-N, NFR-N).
-2. `IMPLEMENTATION_PLAN.md` — the implementation plan. Follow the instructions of §0 and the phase order of §7.
-3. `docs/verified.md` — CLI behaviour confirmed against the real thing. Add to it whenever something open in §10 is settled.
-4. `docs/decisions.md` — the record of findings that clash with the requirements, and what was decided.
-5. `docs/phase9-ui-redesign.md` — the phase 9 revision of the transcript and prompt UI. It
-   overrides §5.2, §5.3 of `REQUIREMENTS.md` and §5, §6.1, §6.2 of the plan; where they
-   disagree, it wins. **Phase 9 is done in full** (9a; 9b: one buffer, `ecc-chat-mode`,
-   no magit-section; 9c: the visual finish, 9c-1..9c-7, confirmed on a real frame
-   2026-09-08).
+The implementation is the record.  Read the source, the tests and this file; when
+something is unclear the answer is in `ecc-*.el` and `test/`, not in a document.
 
-Those five documents live in the working directory but are not in the repository: they
-are listed in `.gitignore`, and a clone does not carry them. They are written in Japanese
-and stay that way; the code, the tests and this file are in English.
+`REQUIREMENTS.md`, `IMPLEMENTATION_PLAN.md` and `docs/` live in the working directory as
+the history of how the package was built.  They are listed in `.gitignore`, a clone does
+not carry them, and parts of them no longer match what was built.  Read them for the
+reasoning behind a design if you want it, but where they and the code disagree **the code
+wins**, and do not edit them to fit.  They are written in Japanese; the code, the tests
+and this file are in English.
 
 ## Environment
 
 - Emacs: `emacs` is not on PATH. It is `/opt/homebrew/Cellar/emacs-plus@32/32.0.50/Emacs.app/Contents/MacOS/Emacs` (the Emacs 32 development build), already named by the `EMACS` variable of `Makefile`.
 - The dependencies live in `~/.emacs.d/elpa` (markdown-mode, nerd-icons, spinner, ghostel; posframe is optional and only `ecc-usage-display` uses it); `transient` ships with Emacs itself. magit-section is no longer used (phase 9b). `package-initialize` finds them. `package-lint` is not installed, and lint skips it on its own.
-- The terminal of the hand-off is **ghostel** (libghostty-vt), and the only one: neither vterm nor a terminal outside Emacs is supported (see `docs/decisions.md`). ghostel loads and runs in batch, so `ecc-tui-test` drives the real backend.
+- The terminal of the hand-off is **ghostel** (libghostty-vt), and the only one: neither vterm nor a terminal outside Emacs is supported. ghostel loads and runs in batch, so `ecc-tui-test` drives the real backend.
 - Claude Code CLI: `claude` 2.1.265.
 
 ## Commands
@@ -54,12 +50,11 @@ Development and testing **always** start `claude` with:
   out of the recording. It is per session, so the user's own interactive sessions are
   unaffected.
 - **Never use `--safe-mode`.** It drops MCP servers, skills, custom commands and agents
-  altogether, which takes away the very things this package wants to show (`/` completion
-  of FR-INP-1..3, the agents of FR-DASH, FR-MCP). See D2 in `docs/verified.md`.
-- **Cost belongs in the Claude Code settings, not here** (2026-09-06, see
-  `docs/decisions.md`).  `ecc` has no budget option, and no rule says to force a model
-  on it: `scripts/record-*.sh` pass a cheap model and a cap of their own, and the live
-  tests pass theirs in `:extra-args`.
+  altogether, which takes away the very things this package wants to show: `/` completion,
+  the agent list, the MCP tools.
+- **Cost belongs in the Claude Code settings, not here** (decided 2026-09-06).  `ecc` has
+  no budget option, and no rule says to force a model on it: `scripts/record-*.sh` pass a
+  cheap model and a cap of their own, and the live tests pass theirs in `:extra-args`.
 - **There is no setting that names a model, and `--model` is passed only for a session
   that carries one.**  The model comes from the Claude Code settings for a new session,
   and from the last real assistant message of its recording for a resumed one; passing
@@ -68,7 +63,7 @@ Development and testing **always** start `claude` with:
   `:model` option, which is passed either way (`ecc-proc--model`; 2026-09-06, revised
   2026-09-08 when `ecc-model` was removed).
 - stream-json needs `--verbose`, `--permission-prompt-tool stdio` and
-  `:connection-type 'pipe` (plan §2.1, §9).
+  `:connection-type 'pipe`.
 
 On the Elisp side there is no `ecc-safe-mode`: `--safe-mode` is passed only by a
 session that carries `:safe-mode` among its options. Plugins to turn off go in
@@ -81,25 +76,24 @@ session that carries `:safe-mode` among its options. Plugins to turn off go in
   to a process of their own, `ecc-mcp.el` and `ecc-inline.el`). The transcript is drawn
   by `ecc-render.el` alone, with text properties (`ecc-node`, `ecc-depth`,
   `ecc-heading`, `keymap`, `read-only`) and fold overlays; `ecc-chat.el` holds the
-  major mode, the keymaps and the movement. The model never sees the buffer (plan §0,
-  NFR-9). The prompt region lives after `ecc-render--prompt-start` in the same buffer,
-  and no redraw deletes past it (FR-UI-2).
+  major mode, the keymaps and the movement. The model never sees the buffer. The prompt
+  region lives after `ecc-render--prompt-start` in the same buffer, and no redraw deletes
+  past it.
 - Arrays for `json-serialize` are vectors. `nil` is `{}`. `null` is `:null` and false is
-  `:false` (plan §2.3).
+  `:false`.
 - No font-lock in a session buffer. Faces are put on at insertion time.
 - Never swallow an error. A failed dispatch is left in the log and in an `unknown` node.
 - Code, comments, docstrings and user-facing messages are written in English.
 - **`defcustom` is for what a user chooses**: a taste, a difference between
   machines (font, screen, PATH), or a judgement about safety and cost. There
-  are 30 of them, and `docs/defcustom-inventory.md` says which and why. A
-  stand-in the CLI overwrites, a sentence sent to the model, a table of the
-  CLI's own quirks and an internal constant are `defvar`, reachable with
-  `setq` and bindable in a test all the same. Adding a `defcustom` means
-  making that case.
+  are 30 of them. A stand-in the CLI overwrites, a sentence sent to the
+  model, a table of the CLI's own quirks and an internal constant are
+  `defvar`, reachable with `setq` and bindable in a test all the same.
+  Adding a `defcustom` means making that case.
 
 ## Tests
 
-- Each phase gets the ERT of plan §8. A phase is not done until `make test` passes.
+- New behaviour gets an ERT of its own. Nothing is done until `make test` passes.
 - Fixtures are `test/fixtures/*.jsonl`, recorded from the real CLI by
   `scripts/record-fixture.sh`.
 - Session registry fixtures are `test/fixtures/registry/*.json`, copied from
@@ -117,7 +111,7 @@ session that carries `:safe-mode` among its options. Plugins to turn off go in
 - Japanese prompts in the tests are input data. They match what the fixtures recorded, and
   they cover multibyte text, so leave them in Japanese.
 
-## Where a session lives (from the phase 5 investigation; details in docs/verified.md)
+## Where a session lives
 
 - Live sessions: `~/.claude/sessions/<pid>.json`, read by `ecc-registry.el`. Headless ones
   are there too. `claude agents --json` is not used: it returns the same thing through a
@@ -131,9 +125,9 @@ session that carries `:safe-mode` among its options. Plugins to turn off go in
 
 ## How the work goes
 
-- One phase per session, roughly. Report once the acceptance criteria of the phase are met,
+- One piece of work per session, roughly. Report once it is done and `make test` passes,
   and get the user's word before moving on.
-- Commit in meaningful steps within a phase too. Messages follow Conventional Commits
-  (`feat(proc): ...`, `fix(render): ...`, `test: ...`, `docs: ...`).
-- A finding that clashes with the requirements goes in `docs/decisions.md` and to the user.
-  Never change a requirement on your own.
+- Commit in meaningful steps rather than one lump at the end. Messages follow Conventional
+  Commits (`feat(proc): ...`, `fix(render): ...`, `test: ...`, `docs: ...`).
+- Something learned about the CLI that the code has to work around belongs in a comment
+  next to the workaround, with the date it was confirmed. Tell the user too.
