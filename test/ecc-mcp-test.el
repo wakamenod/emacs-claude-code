@@ -374,10 +374,16 @@ That is what a page in a browser sends when it talks to this port."
   "Run BODY with VAR bound to a temporary Elisp file holding CONTENT.
 The file lives in a directory that looks like a Git checkout, so that
 project.el finds a project rather than asking for one: a tool must
-never reach the minibuffer."
+never reach the minibuffer.  The project list it remembers goes in that
+directory too, so that nothing outside it is written."
   (declare (indent 2) (debug (symbolp form body)))
   `(let* ((directory (make-temp-file "ecc-mcp-test" t))
-          (,var (expand-file-name "sample.el" directory)))
+          (,var (expand-file-name "sample.el" directory))
+          ;; `project-current' with a prompt remembers what it found,
+          ;; which writes `project-list-file'.  On a machine without a
+          ;; ~/.emacs.d that fails, and on one with it the test would
+          ;; write into the project list of whoever is running it.
+          (project-list-file (expand-file-name "projects" directory)))
      (make-directory (expand-file-name ".git" directory))
      (with-temp-file ,var (insert ,content))
      (unwind-protect

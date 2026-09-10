@@ -20,10 +20,32 @@
 (require 'ecc-proc)
 (require 'ecc-visual)
 
+(defmacro ecc-render-test--with-recorded-home (&rest body)
+  "Run BODY with HOME set to the one the fixtures were recorded under.
+A path under the home directory is drawn with `abbreviate-file-name',
+and the recordings carry /Users/jun, so a machine whose home is
+somewhere else (a Linux CI runner) would draw the whole path and miss
+the snapshot.  It is bound around the drawing alone: a test that starts
+a process needs the home this machine really has."
+  (declare (indent 0) (debug t))
+  `(unwind-protect
+       (let ((process-environment (cons "HOME=/Users/jun" process-environment))
+             (abbreviated-home-dir nil))
+         ,@body)
+     ;; The cache remembers which home it was made for, and one made for
+     ;; the wrong one turns the abbreviation off for the rest of the run.
+     (setq abbreviated-home-dir nil)))
+
 (defun ecc-render-test--replay (session name prompt &optional answers)
   "Replay fixture NAME into SESSION under PROMPT and draw it.
 ANSWERS is a list of `allow', `(deny . REASON)' or a function called
 with the request, used in turn for the requests the recording makes."
+  (ecc-render-test--with-recorded-home
+   (ecc-render-test--replay-1 session name prompt answers)))
+
+(defun ecc-render-test--replay-1 (session name prompt answers)
+  "Do the work of `ecc-render-test--replay' for SESSION.
+NAME, PROMPT and ANSWERS are as there."
   (ecc-session-ensure-buffer session)
   (ecc-model-begin-turn session prompt)
   (dolist (line (ecc-test-fixture-lines name))

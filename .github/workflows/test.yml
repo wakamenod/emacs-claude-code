@@ -1,0 +1,47 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    # 29.1 is the minimum the package claims; snapshot is the early warning.
+    strategy:
+      fail-fast: false
+      matrix:
+        emacs_version: ['29.1', '29.4', '30.1', 'snapshot']
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.emacs_version == 'snapshot' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: purcell/setup-emacs@master
+        with:
+          version: ${{ matrix.emacs_version }}
+
+      # `make test' needs no dependency of its own: everything it requires
+      # is either in Emacs (transient, cl-lib) or optional (`require' with
+      # NOERROR).  ELPA points at an empty directory so that nothing on the
+      # runner can leak in.
+      - name: compile
+        run: make compile ELPA=$PWD/.elpa
+
+      - name: test
+        run: make test ELPA=$PWD/.elpa
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: purcell/setup-emacs@master
+        with:
+          version: '30.1'
+
+      # checkdoc prints its findings and exits 0; this job is here to be read,
+      # not to gate.  package-lint is not installed, and the Makefile skips it.
+      - name: lint
+        run: make lint ELPA=$PWD/.elpa
