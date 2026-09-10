@@ -17,7 +17,7 @@
 #
 # Every line of stdout goes to OUT as it is.  As the development rules
 # (CLAUDE.md) require, --model haiku and --max-budget-usd are always passed
-# and the emacs-gravity hooks are turned off with --settings.  Persistence
+# and any plugin named with --disable-plugin is turned off.  Persistence
 # is on by default here, unlike record-fixture.sh: whether the answer
 # reaches ~/.claude/projects is one of the things being measured.
 set -euo pipefail
@@ -33,7 +33,7 @@ ap.add_argument("--no-persist", action="store_true",
                 help="pass --no-session-persistence; without it the recording "
                      "in ~/.claude/projects can be diffed afterwards")
 ap.add_argument("--disable-plugin", action="append",
-                default=["emacs-bridge@emacs-gravity-marketplace"])
+                default=[])
 ap.add_argument("extra", nargs="*")
 args = ap.parse_args()
 

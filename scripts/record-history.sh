@@ -9,8 +9,8 @@
 # without the history file there is nothing to record.  The working
 # directory is a fresh temporary one, removed after the recording.  As the
 # development rules (CLAUDE.md) require, --model haiku and --max-budget-usd
-# are always passed, and the emacs-gravity hooks are turned off with
-# --settings.
+# are always passed, and any plugin named with --disable-plugin is turned
+# off.
 set -euo pipefail
 exec python3 - "$@" <<'EOF'
 import argparse, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time, uuid
@@ -20,7 +20,7 @@ ap.add_argument("--out", required=True)
 ap.add_argument("--prompt", action="append", required=True)
 ap.add_argument("--timeout", type=float, default=300.0)
 ap.add_argument("--disable-plugin", action="append",
-                default=["emacs-bridge@emacs-gravity-marketplace"])
+                default=[])
 ap.add_argument("--model", default="haiku")
 ap.add_argument("--budget", default="0.5")
 ap.add_argument("--keep-cwd", action="store_true", help="keep the working directory")

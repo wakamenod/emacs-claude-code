@@ -8,9 +8,9 @@
 ;;     make test-live
 ;;
 ;; Every session started here follows the rules of CLAUDE.md: the cheap
-;; model, a spending cap, and the emacs-gravity plugin switched off so
-;; that its hooks stay out of the recording.  Nothing is persisted, so
-;; the sessions cannot be resumed afterwards and leave nothing behind.
+;; model and a spending cap.  Nothing is persisted, so the sessions
+;; cannot be resumed afterwards and leave nothing behind.  A plugin of
+;; your own whose hooks would get in the way goes in `:disabled-plugins'.
 
 ;;; Code:
 
@@ -25,7 +25,6 @@
 (defconst ecc-test-live-options
   '(:model "haiku"
     :streaming nil
-    :disabled-plugins ("emacs-bridge@emacs-gravity-marketplace")
     :extra-args ("--no-session-persistence" "--max-budget-usd" "0.5"))
   "Launch options every live test uses.")
 
@@ -576,7 +575,6 @@ file is untracked, so its diff comes from the records and not from git."
 (defconst ecc-test-live-persistent-options
   '(:model "haiku"
     :streaming nil
-    :disabled-plugins ("emacs-bridge@emacs-gravity-marketplace")
     :extra-args ("--max-budget-usd" "0.5"))
   "Launch options for a live test that needs the CLI to keep a recording.
 The same as `ecc-test-live-options' without --no-session-persistence:

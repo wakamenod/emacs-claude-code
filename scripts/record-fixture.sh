@@ -7,7 +7,7 @@
 # Every line of stdout goes to OUT as it is.  Control requests
 # (can_use_tool) are answered the way --policy says.  As the development
 # rules (CLAUDE.md) require, --model haiku and --max-budget-usd are always
-# passed, and the emacs-gravity hooks are turned off with --settings.
+# passed, and any plugin named with --disable-plugin is turned off.
 set -euo pipefail
 exec python3 - "$@" <<'EOF'
 import argparse, json, subprocess, sys, time, uuid
@@ -24,7 +24,7 @@ ap.add_argument("--answer-sep", default=", ",
 ap.add_argument("--initialize", action="store_true", help="send initialize first")
 ap.add_argument("--timeout", type=float, default=300.0)
 ap.add_argument("--disable-plugin", action="append",
-                default=["emacs-bridge@emacs-gravity-marketplace"],
+                default=[],
                 help="plugin to turn off for this session only.  Unlike "
                      "--safe-mode this keeps MCP, skills and commands "
                      "as well")
