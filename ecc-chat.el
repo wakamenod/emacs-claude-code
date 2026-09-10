@@ -96,6 +96,23 @@ Off, RET inserts a newline and \\<ecc-chat-mode-map>\\[ecc-prompt-send] sends; o
   :type 'boolean
   :group 'ecc)
 
+(defcustom ecc-chat-line-spacing 0.15
+  "Extra room under every line of a session buffer, or nil for none.
+Read as `line-spacing\=' reads it: a float is a fraction of the height
+of the line.  A conversation is prose, and prose set solid is harder
+to read than the same prose given a little air."
+  :type '(choice (const :tag "None" nil) number)
+  :group 'ecc)
+
+(defcustom ecc-chat-text-width 100
+  "Most columns the text of a session buffer is drawn across, or nil.
+A line too long is one the eye loses its way back along, and a session
+buffer is often given a whole wide frame.  The extra width is put in
+the right margin of the window rather than taken off it, so that
+whatever else the window holds is unaffected."
+  :type '(choice (const :tag "The whole window" nil) integer)
+  :group 'ecc)
+
 (defcustom ecc-chat-placeholder "Ask Claude… (C-c ? for the menu)"
   "What an empty prompt region says, in a dim face."
   :type 'string
@@ -310,8 +327,34 @@ A key not here falls through to `ecc-chat-mode-map'.")
     (yank-media-handler "image/.*" #'ecc-prompt-yank-image))
   (setq-local dnd-protocol-alist
               (cons '("^file:" . ecc-prompt-dnd-insert) dnd-protocol-alist))
+  (setq-local line-spacing ecc-chat-line-spacing)
+  ;; The margin is set per window rather than per buffer, so it is
+  ;; redone whenever a window showing the buffer changes size.
+  (add-hook 'window-size-change-functions #'ecc-chat--set-margins nil t)
+  (ecc-chat--set-margins (selected-frame))
   (add-hook 'post-command-hook #'ecc-chat--post-command nil t)
   (add-hook 'after-change-functions #'ecc-chat--after-change nil t))
+
+(defun ecc-chat--set-margins (frame-or-window)
+  "Hold the text of a session window to `ecc-chat-text-width\=' columns.
+FRAME-OR-WINDOW is what `window-size-change-functions\=' was called
+with.  Whatever the window has over that width goes in its right
+margin; a window narrower than that, and a nil width, leave it alone."
+  (dolist (window (cond ((windowp frame-or-window) (list frame-or-window))
+                        ((framep frame-or-window)
+                         (window-list frame-or-window 'no-minibuffer))
+                        (t nil)))
+    (when (and (window-live-p window)
+               (derived-mode-p 'ecc-chat-mode)
+               (eq (window-buffer window) (current-buffer)))
+      (let* ((margin (nth 1 (window-margins window)))
+             (width (+ (window-body-width window) (or margin 0)))
+             (want (if ecc-chat-text-width
+                       (max 0 (- width ecc-chat-text-width))
+                     0)))
+        (unless (eql want (or margin 0))
+          (set-window-margins window (car (window-margins window))
+                              (and (> want 0) want)))))))
 
 ;;;; The prompt region
 
