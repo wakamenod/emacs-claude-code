@@ -49,7 +49,7 @@
     No tests requested; verification is a quick manual call to both functions in a Python shell.
 
   Plan approved. Ready to implement when you give the word.
-   10.3s · $0.1342
+ 10.3s · $0.1342
 
   Files (1)
     ~/.claude/plans/plan-do-not-implement-inherited-platypus.md  W×1  +6 −0

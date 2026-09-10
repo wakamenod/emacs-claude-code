@@ -301,15 +301,6 @@ own, so that the eye finds where a turn begins."
   "Face for a tool name in a heading."
   :group 'ecc)
 
-;; A turn is a tall thing: what the assistant said, the tools it ran and
-;; whatever a subagent of its own said, one under the other.  A rail down
-;; the left of all of it says where the turn begins and ends, which the
-;; two columns of indentation alone were too faint to say.
-(defface ecc-rail-face
-  '((t :inherit shadow))
-  "Face for the rail drawn down the left of a turn."
-  :group 'ecc)
-
 ;; The prose is what is read; the tool calls are what is skimmed.  Drawing
 ;; the calls a little smaller lets the eye pass over them.
 (defface ecc-tool-line-face

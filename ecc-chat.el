@@ -328,6 +328,13 @@ A key not here falls through to `ecc-chat-mode-map'.")
   (setq-local dnd-protocol-alist
               (cons '("^file:" . ecc-prompt-dnd-insert) dnd-protocol-alist))
   (setq-local line-spacing ecc-chat-line-spacing)
+  ;; A wrapped line lines up under the line that began it now, which
+  ;; says it continues one plainly enough; the curly arrows the fringes
+  ;; would put on either end of it say the same thing again, in the
+  ;; corner of the eye, on every long paragraph.
+  (setq-local fringe-indicator-alist
+              (cons '(continuation nil nil)
+                    (default-value 'fringe-indicator-alist)))
   ;; The margin is set per window rather than per buffer, so it is
   ;; redone whenever a window showing the buffer changes size.
   (add-hook 'window-size-change-functions #'ecc-chat--set-margins nil t)

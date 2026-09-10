@@ -122,12 +122,6 @@ that tests cannot see each other."
           (ecc-visual-enable-pulse nil)
           (ecc-visual-enable-blink nil)
           (ecc-visual-enable-flash nil)
-          ;; The rail of `ecc-render-rail' takes the first column of
-          ;; every indentation, which every snapshot below would have to
-          ;; spell.  The snapshots are taken without it, so that they go
-          ;; on reading as the plain indentation they are about;
-          ;; `ecc-render-test-rail' is what watches the rail itself.
-          (ecc-render-rail nil)
           (,var (ecc-model-create-session
                  :name "test"
                  :project-root temporary-file-directory)))

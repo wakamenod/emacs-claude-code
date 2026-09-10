@@ -9,7 +9,7 @@ Load older messages
     → File created successfully at: /private/var/folders/4v/6r7_g65n4jz15_y1z350h0340000gn/T/ecc-history-2m0x5w0z/hi.txt (file state is current in your context — no need to Read it back)
 
   完了しました。`hi.txt` ファイルを作成しました。中身は `hi` です。
-   6.0s
+ 6.0s
 
 〉 hi.txt を読んで、中身をそのまま教えて
 
@@ -18,7 +18,7 @@ Load older messages
     → 1	hi
 
   hi
-   3.0s
+ 3.0s
 
   Files (1)
     /private/var/folders/4v/6r7_g65n4jz15_y1z350h0340000gn/T/ecc-history-2m0x5w0z/hi.txt  R×1 W×1  +1 −0

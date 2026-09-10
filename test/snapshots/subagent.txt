@@ -21,6 +21,6 @@
   - `long.py` (in the current directory)
   
   This matches what we saw in the git status earlier, which showed `?? long.py` as an untracked file.
-   9.9s · $0.0279
+ 9.9s · $0.0279
 
  

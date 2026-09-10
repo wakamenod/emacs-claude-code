@@ -125,24 +125,6 @@ transcript, is reading, and a redraw leaves it where it was."
   "Face of the line between the transcript and the prompt region."
   :group 'ecc)
 
-(defcustom ecc-render-rail "▏"
-  "The character drawn down the left of a turn, or nil for none.
-Everything the assistant says in one turn -- its text, what it thought,
-the tools it ran, whatever a subagent of its own said -- is indented
-under the band of the prompt that asked for it.  The rail takes the
-first of those columns and makes the extent of the turn plain; set this
-to nil to go back to plain spaces."
-  :type '(choice (const :tag "None" nil) string)
-  :group 'ecc)
-
-(defcustom ecc-render-wrap-hang 2
-  "Columns a line that wrapped hangs past the line that began it.
-A wrapped line lines up under its own indentation rather than at the
-left edge of the window, and this hangs it a little further still, so
-that it is not read as a line of its own."
-  :type 'integer
-  :group 'ecc)
-
 (defconst ecc-render-user-mark "〉 "
   "What every line of a user prompt is prefixed with.
 A turn read back from a recording is drawn with the same mark as one
@@ -224,29 +206,15 @@ Each entry is (KIND . ID); see `ecc-render--apply-effects'.")
 ;;;; Text helpers
 
 (defun ecc-render--pad (depth)
-  "Return the indentation string for DEPTH.
-Every depth past the first opens with `ecc-render-rail\=', so that one
-turn reads as one thing; the rail takes a column the indentation was
-using anyway, and the width of the whole is unchanged."
-  (cond ((<= depth 0) "")
-        ((null ecc-render-rail) (make-string (* 2 depth) ?\s))
-        (t (concat (propertize ecc-render-rail 'face 'ecc-rail-face)
-                   (make-string (- (* 2 depth)
-                                   (string-width ecc-render-rail))
-                                ?\s)))))
+  "Return the indentation string for DEPTH."
+  (make-string (* 2 depth) ?\s))
 
 (defun ecc-render--wrap-prefix (prefix)
   "Return what a line that wrapped past PREFIX lines up under.
-The rail PREFIX opens with is kept, because a wrapped line is still
-inside the turn; everything after it is blanked, because a mark, an
-arrow or a key of an input says its piece once.  `ecc-render-wrap-hang\='
-is added on the end, to tell a wrapped line from one of its own."
-  (let* ((rail (if (and ecc-render-rail
-                        (string-prefix-p ecc-render-rail prefix))
-                   (propertize ecc-render-rail 'face 'ecc-rail-face)
-                 ""))
-         (rest (- (string-width prefix) (string-width rail))))
-    (concat rail (make-string (max 0 (+ rest ecc-render-wrap-hang)) ?\s))))
+The width of PREFIX, in blanks: a wrapped line stands under the line
+that began it rather than at the left edge of the window, and a mark,
+an arrow or the key of an input says its piece once."
+  (make-string (string-width prefix) ?\s))
 
 (defun ecc-render--hang (string prefix)
   "Return STRING, wrapping under PREFIX rather than at the left edge.
@@ -310,16 +278,12 @@ the left edge (`ecc-render--wrap-prefix\=')."
        (memq (ecc-node-type previous) ecc-render-cluster-types)
        (memq (ecc-node-type next) ecc-render-cluster-types)))
 
-(defun ecc-render--insert-gap (&optional depth)
+(defun ecc-render--insert-gap ()
   "Insert the blank line that parts one block of a turn from the next.
 It is under no node, so it takes the keymap of the transcript by hand;
-the seal that follows makes it read-only along with everything else.
-
-DEPTH, when it is given, draws the rail of `ecc-render--pad\=' on the
-line: a gap inside a turn is still inside it, and a rail broken at
-every gap would say the opposite."
+the seal that follows makes it read-only along with everything else."
   (let ((start (point)))
-    (insert (if depth (string-trim-right (ecc-render--pad depth)) "") "\n")
+    (insert "\n")
     (put-text-property start (point) 'keymap
                        (ecc-render--map 'ecc-chat-transcript-map))))
 
@@ -1538,8 +1502,6 @@ is drawn while the turn is still running."
                         (cost (format "$%.4f" cost))
                         (duration (format "%.1fs" duration)))))
       (when (or left right)
-        ;; The line closes the turn, so it stands inside it, on the rail.
-        (insert (ecc-render--pad 1))
         (when left (insert left))
         (when right
           (insert (propertize
@@ -1593,7 +1555,7 @@ that the movement commands stop once per turn rather than twice."
       (dolist (child (ecc-turn-children turn))
         (unless (ecc-render--skip-p child)
           (unless (ecc-render--cluster-p previous child)
-            (ecc-render--insert-gap 1))
+            (ecc-render--insert-gap))
           (ecc-render--insert-node session child 1)
           (setq previous child))))
     (ecc-render--insert-turn-end-line turn)

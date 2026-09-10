@@ -18,6 +18,6 @@
       → Elisp, Python
 
   Got it—you're an Emacs user working with Elisp and Python.
-   5.5s · $0.0157
+ 5.5s · $0.0157
 
  
