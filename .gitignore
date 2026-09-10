@@ -6,6 +6,9 @@
 /dist/
 .DS_Store
 
+# Personal Claude Code settings; .claude/settings.json is the shared one
+/.claude/settings.local.json
+
 # Specification documents, kept locally but out of the repository
 /REQUIREMENTS.md
 /IMPLEMENTATION_PLAN.md
