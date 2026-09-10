@@ -533,6 +533,14 @@ line."
   (let ((fitted (ecc--fit string width)))
     (concat fitted (make-string (max 0 (- width (string-width fitted))) ?\s))))
 
+(defun ecc--duration (seconds)
+  "Return SECONDS as a short duration, such as \"9s\" or \"2m05s\".
+Minutes are spelled out above a minute, because \"90s\" is read twice."
+  (let ((seconds (round seconds)))
+    (if (>= seconds 60)
+        (format "%dm%02ds" (/ seconds 60) (% seconds 60))
+      (format "%ds" seconds))))
+
 ;;;; Naming a session in a list
 
 (defconst ecc--session-time-units

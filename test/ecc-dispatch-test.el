@@ -660,6 +660,53 @@ only reaches the progress information and the log."
                           (hash-table-values (ecc-session-nodes session))))
     (should-not (ecc-session-turns session))))
 
+(ert-deftest ecc-dispatch-test-tool-progress-times-a-running-call ()
+  "The heartbeat of a running tool is known, and times the call.
+It carries a `tool_use_id\=' of its own -- the id of the call with a
+`-heartbeat-N\=' suffix -- so the call it reports on is the parent."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "run something slow")
+    (ecc-dispatch session
+                  '((type . "assistant") (uuid . "u1")
+                    (message . ((role . "assistant")
+                                (content . [((type . "tool_use") (id . "t1")
+                                             (name . "Bash")
+                                             (input . ((command . "sleep 90"))))])))))
+    (ecc-dispatch session '((type . "tool_progress")
+                            (tool_use_id . "t1-heartbeat-0")
+                            (tool_name . "Bash")
+                            (parent_tool_use_id . "t1")
+                            (elapsed_time_seconds . 30)
+                            (heartbeat . t)))
+    (should (equal 30 (ecc-model-node-get (ecc-model-node session "t1") 'elapsed)))
+    (should-not (seq-find (lambda (node) (eq (ecc-node-type node) 'unknown))
+                          (hash-table-values (ecc-session-nodes session))))))
+
+(ert-deftest ecc-dispatch-test-tool-progress-after-the-result-is-ignored ()
+  "A heartbeat behind the result leaves the finished call alone.
+What the heading says then is what the call cost, not how long it had
+been waiting."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "run something slow")
+    (ecc-dispatch session
+                  '((type . "assistant") (uuid . "u1")
+                    (message . ((role . "assistant")
+                                (content . [((type . "tool_use") (id . "t1")
+                                             (name . "Bash")
+                                             (input . ((command . "sleep 90"))))])))))
+    (ecc-dispatch session '((type . "tool_progress")
+                            (parent_tool_use_id . "t1")
+                            (elapsed_time_seconds . 30)))
+    (ecc-dispatch session
+                  '((type . "user") (uuid . "u2")
+                    (message . ((role . "user")
+                                (content . [((type . "tool_result") (tool_use_id . "t1")
+                                             (content . "done"))])))))
+    (ecc-dispatch session '((type . "tool_progress")
+                            (parent_tool_use_id . "t1")
+                            (elapsed_time_seconds . 60)))
+    (should (equal 30 (ecc-model-node-get (ecc-model-node session "t1") 'elapsed)))))
+
 (ert-deftest ecc-dispatch-test-bridge-state-detail ()
   "A state that needs explaining brings a detail, and it is shown."
   (ecc-test-with-fake-session session

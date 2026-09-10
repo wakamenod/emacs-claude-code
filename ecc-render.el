@@ -859,6 +859,19 @@ is two columns wide and does not sit tight against the tool name."
     ('pending "⚠")
     (_ "✓")))
 
+(defun ecc-render--elapsed-mark (node)
+  "Return how long the running NODE has been working, or an empty string.
+The CLI reports this every thirty seconds, so a call that answers
+sooner never says how long it took -- which is the point: the mark
+appears on exactly the calls that are worth waiting for.  It is drawn
+in the face of a running session, since among dim summaries that is
+what says the line is still alive (FR-OUT-11)."
+  (if-let* (((eq (ecc-node-status node) 'running))
+            (seconds (ecc-model-node-get node 'elapsed)))
+      (propertize (format " · ⏱ %s" (ecc--duration seconds))
+                  'face 'ecc-running-face)
+    ""))
+
 (defun ecc-render--node-map (node)
   "Return the keymap the text of NODE answers to."
   (pcase (ecc-node-type node)
@@ -1035,7 +1048,8 @@ is appended (plan section 5.2, item 4)."
             (propertize name 'face (if error-p 'ecc-error-face 'ecc-tool-face))
             (if (string-empty-p summary)
                 ""
-              (propertize (concat " · " summary) 'face 'ecc-dim-face)))))
+              (propertize (concat " · " summary) 'face 'ecc-dim-face))
+            (ecc-render--elapsed-mark node))))
 
 (defun ecc-render--insert-tool-body (node body)
   "Insert the input and the result of the tool NODE, indented by BODY.
@@ -1122,7 +1136,8 @@ An Edit or a Write shows its input as a diff (FR-OUT-7)."
                        (concat " · " description))
                      (format " · %d tools" tools)
                      (if duration (format " · %.1fs" (/ duration 1000.0)) ""))
-             'face 'ecc-dim-face))))
+             'face 'ecc-dim-face)
+            (ecc-render--elapsed-mark node))))
 
 (defun ecc-render--insert-agent (session node depth)
   "Insert the agent NODE of SESSION at DEPTH, its messages nested (FR-OUT-9)."

@@ -74,6 +74,7 @@ Errors are caught: an unreadable message must never stop the stream."
      (setf (ecc-session-rate-limit session) (alist-get 'rate_limit_info message))
      (run-hook-with-args 'ecc-usage-hook session))
     ('command_lifecycle (ecc-dispatch--command-lifecycle session message))
+    ('tool_progress (ecc-dispatch--tool-progress session message))
     ('prompt_suggestion
      (setf (alist-get 'suggestion (ecc-session-hint-state session))
            (alist-get 'prompt_suggestion message))
@@ -98,6 +99,22 @@ queued behind it (2026-09-08).  Nothing is dropped either way
   "Set KEY of the progress information of SESSION to VALUE and announce it."
   (setf (alist-get key (ecc-session-progress session)) value)
   (run-hook-with-args 'ecc-progress-hook session))
+
+(defun ecc-dispatch--tool-progress (session message)
+  "Note in SESSION how long the call MESSAGE reports on has been running.
+The CLI sends this every thirty seconds while a tool is still working,
+under a `tool_use_id\=' of its own -- the id of the call with a
+`-heartbeat-N\=' suffix -- so the call itself is the parent
+\(2026-09-10, docs/verified.md).  A heartbeat that arrives after the
+result is ignored: the heading then says what the call cost, not how
+long it had been waiting."
+  (when-let* ((id (or (alist-get 'parent_tool_use_id message)
+                      (alist-get 'tool_use_id message)))
+              (node (ecc-model-node session id))
+              (seconds (alist-get 'elapsed_time_seconds message))
+              ((eq (ecc-node-status node) 'running)))
+    (ecc-model-node-put node 'elapsed seconds)
+    (ecc-model-node-changed session node)))
 
 ;;;; system
 

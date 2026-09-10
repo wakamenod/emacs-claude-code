@@ -370,10 +370,7 @@ when the CLI graded it itself; the rest is dim."
   "Return MS milliseconds as a short duration."
   (if (not (numberp ms))
       "—"
-    (let ((seconds (round (/ ms 1000.0))))
-      (if (>= seconds 60)
-          (format "%dm%02ds" (/ seconds 60) (% seconds 60))
-        (format "%ds" seconds)))))
+    (ecc--duration (/ ms 1000.0))))
 
 (defun ecc-usage--tokens (n)
   "Return the token count N with thousands separated."

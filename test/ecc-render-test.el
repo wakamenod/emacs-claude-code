@@ -468,6 +468,48 @@ follow have a section to grow.  Returns the remaining lines."
                    '(thinking (step tool) permission thinking text result)))
     (should (= 0 (hash-table-count (ecc-session-stream-blocks session))))))
 
+;;;; How long a call has been running (tool_progress)
+
+(ert-deftest ecc-render-test-running-tool-says-how-long ()
+  "A call the CLI is still working on shows the elapsed time it reports.
+The mark goes only while the call runs: once the result is in, the
+heading has nothing to wait for."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "run something slow")
+    (ecc-dispatch session
+                  '((type . "assistant") (uuid . "u1")
+                    (message . ((role . "assistant")
+                                (content . [((type . "tool_use") (id . "t1")
+                                             (name . "Bash")
+                                             (input . ((command . "sleep 90"))))])))))
+    (ecc-render-flush session)
+    ;; Nothing is said before the first heartbeat: a call that answers
+    ;; inside thirty seconds never needs a clock.
+    (should-not (string-search "⏱" (ecc-test-buffer-string
+                                    (ecc-session-buffer session))))
+    (ecc-dispatch session '((type . "tool_progress")
+                            (parent_tool_use_id . "t1")
+                            (elapsed_time_seconds . 30)))
+    (ecc-render-flush session)
+    (should (string-search "Bash · sleep 90 · ⏱ 30s"
+                           (ecc-test-buffer-string (ecc-session-buffer session))))
+    ;; Above a minute it is read as minutes and seconds.
+    (ecc-dispatch session '((type . "tool_progress")
+                            (parent_tool_use_id . "t1")
+                            (elapsed_time_seconds . 150)))
+    (ecc-render-flush session)
+    (should (string-search "⏱ 2m30s"
+                           (ecc-test-buffer-string (ecc-session-buffer session))))
+    (ecc-dispatch session
+                  '((type . "user") (uuid . "u2")
+                    (message . ((role . "user")
+                                (content . [((type . "tool_result") (tool_use_id . "t1")
+                                             (content . "done"))])))))
+    (ecc-render-flush session)
+    (should-not (string-search "⏱" (ecc-test-buffer-string
+                                    (ecc-session-buffer session))))))
+
 ;;;; Subagents (FR-OUT-9)
 
 (ert-deftest ecc-render-test-subagent ()
