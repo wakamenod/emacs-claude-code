@@ -11,8 +11,8 @@
 ;; The session, the Turn > Step > Tool tree and the queue of requests
 ;; waiting for an answer.
 ;;
-;; This file knows nothing about JSON, about processes or about
-;; magit-section.  It only stores what `ecc-dispatch' hands it and
+;; This file knows nothing about JSON, about processes or about how any
+;; of it is drawn.  It only stores what `ecc-dispatch' hands it and
 ;; announces every change through its hooks, which is how the renderer
 ;; and the rest of the user interface hear about it.
 

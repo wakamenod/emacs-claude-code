@@ -143,10 +143,10 @@ project from another; the whole path is in the tooltip."
 ;; together, sorted by what they are and where they come from, and each
 ;; one is given the file that defines it so RET can open it.
 ;;
-;; The tree folds without magit-section, which only `ecc-render' is
-;; allowed to require: a heading carries the key of its group, TAB adds
-;; or removes that key from the set of folded groups and the buffer is
-;; drawn again.  It is a page of a few hundred lines.
+;; The tree folds without a section library: a heading carries the key
+;; of its group, TAB adds or removes that key from the set of folded
+;; groups and the buffer is drawn again.  It is a page of a few hundred
+;; lines, so drawing it whole costs nothing.
 
 (defconst ecc-capabilities-buffer-name "*ecc-capabilities*"
   "Name of the Capabilities buffer.")
