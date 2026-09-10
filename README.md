@@ -4,7 +4,7 @@
 
 # ecc
 
-An Emacs client for the Claude Code CLI. The conversation lives in an ordinary Emacs buffer.
+An Emacs client for the Claude Code CLI. Conversations run directly inside ordinary Emacs buffers.
 
 ![Emacs 29.1+](https://img.shields.io/badge/Emacs-29.1%2B-7F5AB6)
 ![Claude Code CLI](https://img.shields.io/badge/Claude%20Code-CLI-D97757)
@@ -13,52 +13,47 @@ An Emacs client for the Claude Code CLI. The conversation lives in an ordinary E
 
 **Documentation:** <https://wakamenod.github.io/emacs-claude-code/> *(in progress)*
 
-## What ecc is
+## Overview
 
-ecc runs `claude` headless, reads its stream-json protocol over a pipe, and draws the
-conversation into one Emacs buffer: a read-only transcript above, an editable prompt
-below, a rule between them. It is ordinary buffer text. You can search it, `occur` it,
-narrow it, yank from it and export it to Markdown, and the faces are put on at insertion
-time, so `customize` reaches them.
+ecc runs `claude` in headless mode, communicates over pipes using its stream-json protocol, and renders the session in a standard Emacs buffer (a read-only transcript at the top, an editable prompt at the bottom, separated by a divider). 
 
-That has a price, and it is worth saying plainly. ecc does not reproduce the CLI's
-terminal interface; when you want the real thing, `ecc-tui-open` hands the live session
-over to it and takes it back afterwards. It speaks the Claude Code protocol, so it is a
-Claude Code client and only that. Its Markdown, its tables and its diffs are ecc's own
-reading of them rather than full implementations. It needs Emacs 29.1 and the `claude`
-CLI. That is the whole list.
+Because the transcript is standard buffer text, you can use regular Emacs workflows: search, `occur`, narrowing, copying, and exporting to Markdown. Buffer faces are applied on insertion and can be customized with `M-x customize`.
 
-Speaking the CLI's own protocol means what you see is what the CLI said. Permission
-requests are its real requests, the usage figures come from its `get_usage`, and past
-conversations are read back out of its recordings. Nothing here is a guess.
+### Scope and Trade-offs
 
-The work around a session is first-class. Review every change a session made as one
-`diff-mode` buffer, attach comments to the hunks and send them all as a single prompt.
-Read a proposed edit before it is applied, and edit the proposal before allowing it. Work
-through a plan in a buffer you can write in. Answer a waiting request from whatever buffer
-you happen to be in. Run several sessions at once and keep them straight from a dashboard.
-Deny is the default answer everywhere, the Emacs MCP server stays off until you turn it
-on, and the tool that evaluates Elisp needs a second decision of its own. It is a Claude
-Code client for people who would rather stay in Emacs.
+- **No terminal emulation:** ecc does not replicate the CLI's terminal UI. Use `ecc-tui-open` to hand off a live session to a terminal and pull it back when finished.
+- **Claude Code only:** ecc speaks the Claude Code protocol directly; it is not a general-purpose LLM frontend.
+- **Lightweight renderers:** Markdown, tables, and diffs are rendered using ecc's built-in parsers rather than full-featured external implementations.
+- **Direct protocol reflection:** Permission requests, usage data (`get_usage`), and conversation logs come directly from the CLI without guesswork.
+
+### Key Features
+
+- **Diff reviews:** Inspect all changes made during a session in a single `diff-mode` buffer. Add inline comments to hunks and submit them as a single prompt.
+- **Interactive edits:** Review and modify proposed file edits before approving them.
+- **Plan mode:** Work through proposed execution plans in a writable buffer.
+- **Global access:** Approve or deny pending tool requests from any buffer.
+- **Session management:** Manage multiple concurrent sessions from a dashboard.
+- **Safe defaults:** Permission prompts default to deny. The built-in loopback MCP server is disabled by default, and evaluating Elisp requires explicit opt-in.
 
 ## Requirements
 
-- **Emacs 29.1 or later.** `transient` ships with Emacs; there is nothing else to install.
-- **The [Claude Code CLI](https://docs.claude.com/en/docs/claude-code)** on `PATH`, or
-  named by `ecc-executable`.
+- **Emacs 29.1+** (`transient` is built-in; no required external packages)
+- **[Claude Code CLI](https://docs.claude.com/en/docs/claude-code)** on `PATH` or configured via `ecc-executable`
 
-Four packages are used when they are there and skipped when they are not:
-[ghostel](https://github.com/dakra/ghostel) for handing a session to the terminal,
-[posframe](https://github.com/tumashu/posframe) for the `/btw` and usage popups,
-[nerd-icons](https://github.com/rainstormstudio/nerd-icons.el) for the tool icons, and
-[markdown-mode](https://github.com/jrblevin/markdown-mode) as the parent mode of the plan
-and review buffers. Without them ecc falls back rather than fails.
+### Optional Dependencies
+
+These packages enhance functionality when available, but ecc falls back gracefully if they are absent:
+
+- [ghostel](https://github.com/dakra/ghostel) — Hands off sessions to a terminal.
+- [posframe](https://github.com/tumashu/posframe) — Displays `/btw` and usage popups.
+- [nerd-icons](https://github.com/rainstormstudio/nerd-icons.el) — Adds tool icons.
+- [markdown-mode](https://github.com/jrblevin/markdown-mode) — Serves as the major mode for plan and review buffers.
 
 ## Installation
 
-ecc is not on MELPA. Install it from this repository.
+ecc is not on MELPA. Install it directly from this repository.
 
-**Emacs 30 and later**, with `use-package` and `:vc`:
+### Emacs 30+ (`use-package` with `:vc`)
 
 ```elisp
 (use-package ecc
@@ -66,22 +61,20 @@ ecc is not on MELPA. Install it from this repository.
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest))
 ```
 
-The `:vc` keyword arrived in Emacs 30. At 0.1.0 you may prefer to pin a commit with
-`:rev "<sha>"` rather than track the branch.
+*Note: You can pin a specific commit by passing `:rev "<commit-sha>"`.*
 
-**Emacs 29**, with `package-vc-install`:
+### Emacs 29 (`package-vc-install`)
 
 ```
 M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 ```
 
-then a plain `use-package` form with no `:vc`.
+Then configure it with a standard `use-package` declaration (without `:vc`).
 
 <details>
-<summary>straight.el, Elpaca, or a manual clone</summary>
+<summary>straight.el, Elpaca, or manual clone</summary>
 
-The repository is named `emacs-claude-code` and the package is named `ecc`, so the recipe
-has to say `ecc` explicitly — the name cannot be taken from the repository.
+Because the repository name is `emacs-claude-code` while the package name is `ecc`, recipes must declare the package name explicitly:
 
 ```elisp
 ;; straight.el
@@ -93,7 +86,7 @@ has to say `ecc` explicitly — the name cannot be taken from the repository.
   :ensure (ecc :host github :repo "wakamenod/emacs-claude-code"))
 ```
 
-Or by hand:
+Manual clone:
 
 ```sh
 git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/emacs-claude-code
@@ -104,9 +97,7 @@ git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/em
 (require 'ecc)
 ```
 
-`(require 'ecc)` loads every file. The commands are autoloaded, so `M-x ecc-start` works
-without it. `ecc-global-map` is a variable rather than a command, so binding it outside
-`use-package` needs ecc loaded first; `use-package` handles that with `:bind-keymap`.
+`M-x ecc-start` is autoloaded. To bind `ecc-global-map` outside `use-package`, ensure ecc is loaded first or use `use-package` with `:bind-keymap`.
 </details>
 
 ## Configuration
@@ -115,108 +106,93 @@ without it. `ecc-global-map` is a variable rather than a command, so binding it 
 (use-package ecc
   :ensure t
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest)
-  ;; `ecc-global-map' answers a waiting request from any buffer; see the
-  ;; key bindings below.  It is a keymap held in a variable rather than a
-  ;; command, so it wants `:bind-keymap' -- which also loads ecc the
-  ;; first time you press the prefix, rather than at startup.
+  ;; `ecc-global-map' allows answering prompts from any buffer.
+  ;; `:bind-keymap' defers loading ecc until the prefix is pressed.
   :bind-keymap ("C-c c" . ecc-global-map)
   :bind ("C-c C-v" . ecc-start)
   :config
-  (setq ecc-chat-text-width 100)      ; columns the transcript is drawn across
-  (setq ecc-notify-level 'pulse)      ; nil, `message', `pulse' or `desktop'
-  (setq ecc-permission-mode nil)      ; nil leaves the CLI's own default
+  (setq ecc-chat-text-width 100)      ; Transcript width in columns
+  (setq ecc-notify-level 'pulse)      ; nil, 'message, 'pulse, or 'desktop
+  (setq ecc-permission-mode nil)      ; nil keeps the CLI default
 
-  ;; RET inserts a newline and C-c C-c sends.  Set this to make RET send,
-  ;; the way the terminal client does.
+  ;; Set to t to make RET send messages (like the CLI).
+  ;; When nil, RET inserts a newline and C-c C-c sends.
   (setq ecc-chat-return-sends nil)
 
-  ;; Let Claude ask this Emacs what only Emacs knows -- xref, imenu,
-  ;; tree-sitter, project and diagnostics -- over a loopback MCP server
-  ;; registered with each session.  Off by default.
+  ;; Loopback MCP server (exposes xref, imenu, tree-sitter, project, diagnostics).
+  ;; Disabled by default.
   ;; (setq ecc-mcp-enabled t)
-  ;; Evaluating arbitrary Elisp in your Emacs is a separate decision.
+  ;; Elisp evaluation tool requires separate activation:
   ;; (setq ecc-mcp-enable-execute-code t)
   )
 ```
 
-The rest — thirty `defcustom`s in all — are in `M-x customize-group RET ecc`. Anything
-that is not a `defcustom` is a plain `defvar` that `setq` still reaches; see the
-[configuration reference](https://wakamenod.github.io/emacs-claude-code/).
+For all other settings, run `M-x customize-group RET ecc` or check the [configuration reference](https://wakamenod.github.io/emacs-claude-code/).
 
-## Your first session
+## Quickstart
 
-1. `M-x ecc-start` starts a session for the project of the current buffer.
-2. Type in the prompt region, below the rule.
-3. `C-c C-c` sends it. `RET` inserts a newline.
-4. When Claude asks to use a tool, `C-c C-a` allows it and `C-c C-d` denies it. **Deny is
-   the default**: nothing runs because you looked away.
-5. `C-c ?` opens the menu with everything else on it.
+1. Run `M-x ecc-start` in a project buffer to start a session.
+2. Type your message in the bottom prompt region.
+3. Press `C-c C-c` to send (`RET` inserts a newline).
+4. When Claude requests tool permissions, press `C-c C-a` to allow or `C-c C-d` to deny. **Prompts default to deny.**
+5. Press `C-c ?` to open the command menu.
 
-## Key bindings
+## Key Bindings
 
-`ecc-global-map`, bound above to `C-c c`, works from any buffer:
+### Global Map (`C-c c`)
 
-| Key | Command | |
+Usable from any buffer:
+
+| Key | Command | Action |
 |---|---|---|
-| `a` | `ecc-answer-allow` | allow the oldest waiting request |
-| `d` | `ecc-answer-deny` | deny it |
-| `1`–`4` | `ecc-answer-option-N` | answer a question with option N |
-| `n` | `ecc-next-attention` | go to the session that is waiting |
-| `N` | `ecc-next-attention-in-project` | the same, within this project |
-| `D` | `ecc-dashboard` | list the sessions |
-| `h` | `ecc-history-open` | open a past conversation |
+| `a` | `ecc-answer-allow` | Allow oldest waiting request |
+| `d` | `ecc-answer-deny` | Deny oldest waiting request |
+| `1`–`4` | `ecc-answer-option-N` | Select response option N |
+| `n` | `ecc-next-attention` | Switch to waiting session |
+| `N` | `ecc-next-attention-in-project` | Switch to waiting session in current project |
+| `D` | `ecc-dashboard` | Open sessions dashboard |
+| `h` | `ecc-history-open` | Open past conversation |
 
-In a session buffer:
+### Session Buffer
 
-| Key | |
+| Key | Action |
 |---|---|
-| `C-c C-c` | send the prompt |
-| `S-RET` | newline |
-| `TAB` | complete in the prompt; fold and unfold in the transcript |
-| `C-c C-a` / `C-c C-d` | allow / deny |
-| `C-c ?` | the menu |
+| `C-c C-c` | Send prompt |
+| `S-RET` | Insert newline |
+| `TAB` | Completion in prompt; fold/unfold in transcript |
+| `C-c C-a` / `C-c C-d` | Allow / Deny tool permission |
+| `C-c ?` | Open command menu |
 
-The other forty or so are in the
-[key binding reference](https://wakamenod.github.io/emacs-claude-code/).
+See the [key binding reference](https://wakamenod.github.io/emacs-claude-code/) for full listings.
 
 ## Acknowledgements
 
-ecc began by reading four projects, and owes each of them something:
+ecc builds on ideas from:
 
-- **[claude-code-ide.el](https://github.com/manzaltu/claude-code-ide.el)** — for showing
-  what a full IDE-side integration with the CLI looks like.
-- **[claude-code.el](https://github.com/stevemolitor/claude-code.el)** — for the
-  conveniences that make a session feel like part of Emacs rather than a guest in it.
-- **[eca-emacs](https://github.com/editor-code-assistant/eca-emacs)** — for rendering the
-  conversation as a real Emacs buffer, and for the shape of an inline overlay chat.
-- **[emacs-gravity](https://github.com/gdanov/emacs-gravity)** — for treating the
-  conversation as a navigable structure, and for plan review and permission patterns.
-
-Thank you to their authors.
+- **[claude-code-ide.el](https://github.com/manzaltu/claude-code-ide.el)** — IDE-side CLI integration patterns.
+- **[claude-code.el](https://github.com/stevemolitor/claude-code.el)** — Terminal-buffer ergonomics in Emacs.
+- **[eca-emacs](https://github.com/editor-code-assistant/eca-emacs)** — Buffer-based chat formatting and inline overlays.
+- **[emacs-gravity](https://github.com/gdanov/emacs-gravity)** — Structured tree navigation, plan reviews, and approval workflows.
 
 ## Comparison
 
-Five defensible designs. This table records what each one chose, not who won. It is
-accurate as far as I know in September 2026 and may already be out of date — if a row
-about your project is wrong, please open an issue and I will fix it.
+Comparison of Emacs packages for Claude Code:
 
-| Project | How it talks to Claude | Display | Beyond Emacs and the CLI | Emacs | Availability |
+| Project | Protocol / Transport | UI Type | Dependencies | Emacs Version | Source |
 |---|---|---|---|---|---|
-| [claude-code-ide.el](https://github.com/manzaltu/claude-code-ide.el) | the CLI's TUI in a terminal buffer, plus a WebSocket MCP server inside Emacs | terminal emulator | `websocket`, `transient`, `web-server` | 28.1 | MELPA |
-| [claude-code.el](https://github.com/stevemolitor/claude-code.el) | the CLI's TUI in a terminal buffer | terminal emulator | `transient`, `inheritenv` | 30 | MELPA |
-| [eca-emacs](https://github.com/editor-code-assistant/eca-emacs) | JSON-RPC to a separate `eca` server | Markdown chat buffer and inline overlays | `dash`, `s`, `f`, `markdown-mode`, `compat`, the `eca` binary | 28.1 | MELPA |
-| [emacs-gravity](https://github.com/gdanov/emacs-gravity) | Claude Code plugin hooks, a Node shim, a socket server | magit-section turn tree | `magit-section`, `transient`, Node.js | 27.1 | GitHub |
-| **ecc** | `claude` headless, stream-json over a pipe | one Emacs buffer: transcript and prompt | none | 29.1 | GitHub, 0.1.0 |
+| [claude-code-ide.el](https://github.com/manzaltu/claude-code-ide.el) | CLI TUI + WebSocket MCP server | Terminal emulator | `websocket`, `transient`, `web-server` | 28.1 | MELPA |
+| [claude-code.el](https://github.com/stevemolitor/claude-code.el) | CLI TUI | Terminal emulator | `transient`, `inheritenv` | 30 | MELPA |
+| [eca-emacs](https://github.com/editor-code-assistant/eca-emacs) | JSON-RPC via standalone `eca` binary | Markdown buffer + overlays | `dash`, `s`, `f`, `markdown-mode`, `compat`, `eca` | 28.1 | MELPA |
+| [emacs-gravity](https://github.com/gdanov/emacs-gravity) | Plugin hooks + Node shim + socket | Magit-section tree | `magit-section`, `transient`, Node.js | 27.1 | GitHub |
+| **ecc** | Headless `claude` stream-json via pipe | Standard buffer (transcript + prompt) | None | 29.1 | GitHub |
 
-Where each of them is stronger:
+### Architectural Focus
 
-- **claude-code-ide.el** is mature and on MELPA, and gives you the real TUI together with
-  a full IDE-side MCP integration.
-- **claude-code.el** is the lightest way to get Claude Code into Emacs, and its terminal
-  fidelity is exact, because it is the terminal.
-- **eca-emacs** is not tied to one vendor, so it survives a change of model provider.
-- **emacs-gravity** works from plugin hooks, so it sees sessions this Emacs did not start,
-  and it reaches outside Emacs to tmux and a menu-bar app.
+- **claude-code-ide.el:** Preserves the native TUI in a terminal buffer while providing full IDE-side MCP integration.
+- **claude-code.el:** Lightweight wrapper running the native CLI TUI directly in an Emacs terminal buffer.
+- **eca-emacs:** Provider-agnostic architecture backed by an external server binary.
+- **emacs-gravity:** Deep hook-based integration capturing external sessions across Emacs, tmux, and system trays.
+- **ecc:** Converts CLI streams into standard editable Emacs text buffers without running a terminal emulator.
 
 ## License
 
