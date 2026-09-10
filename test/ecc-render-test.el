@@ -126,6 +126,25 @@ screen says where the session can be reached (docs/verified.md,
       (let ((wrap (get-text-property (line-beginning-position) 'wrap-prefix)))
         (should (equal "  " wrap))))))
 
+(ert-deftest ecc-render-test-a-list-item-wraps-under-itself ()
+  "A line that opens a list item wraps under the item, not its bullet.
+What is measured is the bullet as it is drawn: `ecc-markdown-fontify'
+puts a one-column bullet over the marker, so a numbered marker is
+narrower on the screen than it is in the text."
+  (with-temp-buffer
+    (ecc-render--insert-lines
+     (ecc-markdown-fontify "- ひとつめ\n1. ふたつめ\nふつうの段落\n")
+     "  " 'ecc-assistant-face)
+    (goto-char (point-min))
+    (let ((wraps nil))
+      (while (not (eobp))
+        (push (get-text-property (line-beginning-position) 'wrap-prefix) wraps)
+        (forward-line 1))
+      ;; "  " + "- " for the first, "  " + the bullet drawn over "1." and
+      ;; the blank after it for the second, and the bare indentation for
+      ;; the paragraph, which opens no item.
+      (should (equal '("    " "    " "  ") (nreverse wraps))))))
+
 (ert-deftest ecc-render-test-tool-use ()
   "A lone tool draws as a tool line and the permission that allowed it."
   (ecc-test-with-fake-session session

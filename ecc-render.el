@@ -216,6 +216,23 @@ that began it rather than at the left edge of the window, and a mark,
 an arrow or the key of an input says its piece once."
   (make-string (string-width prefix) ?\s))
 
+(defun ecc-render--marker-width (line)
+  "Return the columns the list marker of LINE takes, or nil when it has none.
+What is measured is what is drawn rather than what is written:
+`ecc-markdown-fontify\=' puts a `display\=' bullet over the marker of a
+list item, and a numbered marker is wider in the text than the bullet
+drawn in its place."
+  (when (string-match ecc-markdown-bullet-regexp line)
+    (let* ((from (match-beginning 1))
+           (to (match-end 1))
+           (shown (get-text-property from 'display line)))
+      (+ (string-width (substring-no-properties line 0 from))
+         (if (stringp shown)
+             (string-width shown)
+           (string-width (substring-no-properties line from to)))
+         ;; The blanks between the marker and the text of the item.
+         (- (match-end 0) to)))))
+
 (defun ecc-render--hang (string prefix)
   "Return STRING, wrapping under PREFIX rather than at the left edge.
 A heading is built as one string and inserted whole, so it takes its
@@ -259,14 +276,23 @@ with it; drawn plainly they would leave an empty row where the fence
 was.
 
 A line too long for the window wraps under PREFIX rather than back to
-the left edge (`ecc-render--wrap-prefix\=')."
-  (let ((body (string-trim-right (or text "") "[\n]+"))
-        (wrap (ecc-render--wrap-prefix prefix)))
+the left edge (`ecc-render--wrap-prefix\='), and a line that opens a
+list item wraps under the item rather than under its bullet."
+  (let* ((body (string-trim-right (or text "") "[\n]+"))
+         (wrap (ecc-render--wrap-prefix prefix))
+         ;; A body runs to a handful of indentations at most, so the
+         ;; strings are made once each and handed out again.
+         (wraps (list (cons (length wrap) wrap))))
     (dolist (line (split-string body "\n"))
-      (let ((hidden (ecc-render--hidden-line-p line))
-            (string (concat prefix line)))
+      (let* ((hidden (ecc-render--hidden-line-p line))
+             (string (concat prefix line))
+             (marker (ecc-render--marker-width line))
+             (width (+ (length wrap) (or marker 0)))
+             (hang (or (alist-get width wraps)
+                       (setf (alist-get width wraps)
+                             (make-string width ?\s)))))
         (add-face-text-property 0 (length string) face t string)
-        (put-text-property 0 (length string) 'wrap-prefix wrap string)
+        (put-text-property 0 (length string) 'wrap-prefix hang string)
         (when hidden
           (put-text-property 0 (length string) 'invisible 'ecc-markup string))
         (insert string)
