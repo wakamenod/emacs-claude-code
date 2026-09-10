@@ -131,3 +131,7 @@ session that carries `:safe-mode` among its options. Plugins to turn off go in
   Commits (`feat(proc): ...`, `fix(render): ...`, `test: ...`, `docs: ...`).
 - Something learned about the CLI that the code has to work around belongs in a comment
   next to the workaround, with the date it was confirmed. Tell the user too.
+- `README.md` is the source of record and `README.ja.md` follows it. A change to the
+  English one is not done until the Japanese one matches. The code blocks, the command
+  and `defcustom` names and the factual cells of the comparison table are identical in
+  both; only the prose, the table headings and the code comments are translated.
