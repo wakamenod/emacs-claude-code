@@ -131,7 +131,7 @@ the recorded messages are asked first."
   "Return how many tokens SESSION may fill before it is compacted.
 --autocompact says it outright; otherwise the window of the model less
 the room the CLI keeps to compact in (`ecc-autocompact-buffer')."
-  (let ((threshold (ecc-model-option session :autocompact ecc-autocompact)))
+  (let ((threshold (ecc-model-option session :autocompact nil)))
     (if (and (numberp threshold) (> threshold 0))
         threshold
       (round (* (ecc-hint-model-window session) (- 1.0 ecc-autocompact-buffer))))))

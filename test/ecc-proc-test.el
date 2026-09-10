@@ -348,9 +348,8 @@ here or nowhere (docs/verified.md, 2026-09-08)."
                         (hash-table-values (ecc-session-nodes session)))))))
 
 (ert-deftest ecc-proc-test-remote-control-stays-off-when-it-should ()
-  "Nothing asks for the bridge unless the setting, the CLI and the workspace agree."
-  (dolist (case '((nil . "the setting says no")
-                  (auto-off . "the CLI advises against it")
+  "Nothing asks for the bridge unless the CLI, the workspace and the session agree."
+  (dolist (case '((auto-off . "the CLI advises against it")
                   (unavailable . "the CLI cannot offer it")
                   (temporary . "the workspace was never trusted")
                   (option . "the session opted out")))
@@ -359,8 +358,7 @@ here or nowhere (docs/verified.md, 2026-09-08)."
         (setf (ecc-session-project-root session) ecc-test-directory))
       (when (eq (car case) 'option)
         (setf (ecc-session-options session) (list :remote-control nil)))
-      (let ((ecc-remote-control (if (eq (car case) nil) nil 'auto))
-            (response (copy-alist ecc-proc-test--initialize-response)))
+      (let ((response (copy-alist ecc-proc-test--initialize-response)))
         (pcase (car case)
           ('auto-off (setf (alist-get 'remote_control_auto_enable response) :false))
           ('unavailable (setf (alist-get 'remote_control_available response) :false)))
@@ -370,11 +368,13 @@ here or nowhere (docs/verified.md, 2026-09-08)."
                              (length (ecc-proc-test--remote-control-requests)))))))))
 
 (ert-deftest ecc-proc-test-remote-control-is-asked-for-when-told-to ()
-  "`t' asks wherever the CLI says it can offer it, advice or none."
+  "A session whose `:remote-control\=' is t asks whatever the CLI advises.
+The package itself only follows the advice; t is the session saying
+otherwise (2026-09-10, `docs/decisions.md\=')."
   (ecc-test-with-fake-session session
     (setf (ecc-session-project-root session) ecc-test-directory)
-    (let ((ecc-remote-control t)
-          (response (copy-alist ecc-proc-test--initialize-response)))
+    (setf (ecc-session-options session) (list :remote-control t))
+    (let ((response (copy-alist ecc-proc-test--initialize-response)))
       (setf (alist-get 'remote_control_auto_enable response) :false)
       (ecc-proc-test--initialize session response)
       (should (= 1 (length (ecc-proc-test--remote-control-requests)))))))

@@ -472,25 +472,6 @@ follow have a section to grow.  Returns the remaining lines."
                                          (overlay-end overlay)))))
              (ecc-visual-effects))))
 
-(ert-deftest ecc-render-test-throttle-by-count ()
-  "Counting deltas draws every Nth one and nothing in between."
-  (ecc-test-with-fake-session session
-    (let ((ecc-stream-throttle-method 'count)
-          (ecc-stream-throttle-count 2)
-          (seen 0))
-      (ecc-render-test--stream
-       session "partial-messages" "長いファイルを書いて"
-       (lambda (message)
-         (when (ecc-render-test--delta-p message "text_delta")
-           (cl-incf seen))
-         (= seen 3)))
-      ;; Two deltas were drawn, the third waits.
-      (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
-        (should (string-search "\n  Done.\n" text)))
-      (ecc-render-flush-deltas session)
-      (should (string-search "\n  Done. Created\n"
-                             (ecc-test-buffer-string (ecc-session-buffer session)))))))
-
 (ert-deftest ecc-render-test-streamed-tree-matches-unstreamed ()
   "The stream events add nothing to the tree the assistant messages build."
   (ecc-test-with-fake-session session

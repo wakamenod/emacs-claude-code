@@ -118,13 +118,13 @@ a resumed one the model its recording ends on (see `ecc-proc--model')."
              (list "--model" model))
            (when-let* ((mode (funcall opt :permission-mode ecc-permission-mode)))
              (list "--permission-mode" mode))
-           (when-let* ((effort (funcall opt :effort ecc-effort)))
+           (when-let* ((effort (funcall opt :effort nil)))
              (list "--effort" effort))
-           (when-let* ((autocompact (funcall opt :autocompact ecc-autocompact)))
+           (when-let* ((autocompact (funcall opt :autocompact nil)))
              (list "--autocompact" (format "%s" autocompact)))
-           (when-let* ((tools (funcall opt :allowed-tools ecc-allowed-tools)))
+           (when-let* ((tools (funcall opt :allowed-tools nil)))
              (cons "--allowedTools" tools))
-           (when-let* ((tools (funcall opt :disallowed-tools ecc-disallowed-tools)))
+           (when-let* ((tools (funcall opt :disallowed-tools nil)))
              (cons "--disallowedTools" tools))
            (when-let* ((config (and ecc-mcp-config-function
                                     (funcall ecc-mcp-config-function session))))
@@ -133,7 +133,7 @@ a resumed one the model its recording ends on (see `ecc-proc--model')."
                                  (funcall opt :disabled-plugins
                                           ecc-disabled-plugins))))
              (list "--settings" settings))
-           (and (funcall opt :safe-mode ecc-safe-mode) (list "--safe-mode"))
+           (and (funcall opt :safe-mode nil) (list "--safe-mode"))
            (funcall opt :extra-args ecc-extra-args))))
     (if ecc-command-wrapper-function
         (funcall ecc-command-wrapper-function command
@@ -458,9 +458,7 @@ supports it, and \"bypassPermissions\" only where it is allowed."
 
 (defun ecc-proc--remote-control-name (session)
   "Return the name to give SESSION on the bridge."
-  (if ecc-remote-control-name-function
-      (funcall ecc-remote-control-name-function session)
-    (ecc-session-name session)))
+  (ecc-session-name session))
 
 (defun ecc-proc-remote-control-offerable-p (session)
   "Return non-nil when SESSION may be put on the bridge at all.
@@ -480,7 +478,7 @@ session of the user\='s own opts out."
 `auto\=', the default, follows `remote_control_auto_enable\=' of the
 initialize response, which is the Claude Code settings resolved against
 the organisation policy; t asks wherever the CLI says it can offer it."
-  (let ((setting (ecc-model-option session :remote-control ecc-remote-control)))
+  (let ((setting (ecc-model-option session :remote-control 'auto)))
     (and setting
          (ecc-model-remote-control session 'available)
          (ecc-proc-remote-control-offerable-p session)
@@ -571,7 +569,7 @@ user\='s say-so, and so does this."
           (if-let* ((url (ecc-model-remote-control session 'session-url)))
               (concat " · " url) "")
           (if (and (ecc-model-remote-control session 'auto-on-by-default)
-                   (eq (ecc-model-option session :remote-control ecc-remote-control)
+                   (eq (ecc-model-option session :remote-control 'auto)
                        'auto))
               " (turned on by your organisation or a rollout, not by a setting of yours)"
             "")))

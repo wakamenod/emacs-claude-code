@@ -538,7 +538,7 @@ for is all there is: the last /effort it sent, and failing that the
 --effort the session was started with.  An /effort sent from the
 terminal of a hand-off is therefore not seen."
   (or (ecc-session-last-effort session)
-      (ecc-model-option session :effort ecc-effort)))
+      (ecc-model-option session :effort nil)))
 
 (defun ecc-prompt-current-model (session)
   "Return the display name of the model SESSION talks to, or nil.

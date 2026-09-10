@@ -49,32 +49,14 @@ process filter rather than from the command that asked for it, and
 this is how what shows the mode -- the footer of `ecc-chat' -- hears
 about it (FR-SES-6).")
 
-(defcustom ecc-remote-control 'auto
-  "Whether to reach a session of this package from claude.ai/code.
-
-Remote Control is the bridge the CLI itself offers: with it on, the
-session shows up in the Code tab of the Claude app and can be driven
-from there.  The switch belongs to the Claude Code settings
-\(`remoteControlAtStartup\=' at user scope), and this package follows
-them rather than writing settings of its own (2026-09-08,
-`docs/decisions.md\=').
-
-`auto\=' does what the CLI would do: the initialize response says
-whether this session should turn the bridge on, and it is obeyed.  A
-stream-json client is only advised, never switched on for it, so
-nothing happens unless this package asks (docs/verified.md,
-2026-09-08).  `t\=' turns it on wherever the CLI can offer it, and nil
-never does.  One session can say otherwise with the `:remote-control\='
-launch option."
-  :type '(choice (const :tag "Follow the Claude Code settings" auto)
-                 (const :tag "Always, where it is available" t)
-                 (const :tag "Never" nil)))
-
-(defcustom ecc-remote-control-name-function nil
-  "Function returning the name to give a session on the bridge, or nil.
-It is called with the session; nil, the default, sends the name of the
-session itself."
-  :type '(choice (const :tag "The session name" nil) function))
+;; There is deliberately no `ecc-remote-control' setting (2026-09-10,
+;; `docs/decisions.md').  Remote Control belongs to the Claude Code
+;; settings (`remoteControlAtStartup' at user scope) and this package
+;; follows them: the initialize response says whether this session should
+;; turn the bridge on, and it is obeyed.  A session that wants otherwise
+;; carries `:remote-control' among its options, and
+;; `ecc-remote-control-toggle' switches a running one.  The name a session
+;; takes on the bridge is its own.
 
 (defvar ecc-remote-control-functions nil
   "Functions run when the Remote Control state of a session changes.
@@ -82,30 +64,16 @@ Each is called with the session.  Like the permission mode, the answer
 arrives from the process filter rather than from the command that
 asked, so this is how the header line hears about it.")
 
-(defcustom ecc-effort nil
-  "Reasoning effort passed with --effort, or nil for the CLI default."
-  :type '(choice (const :tag "CLI default" nil) string))
+;; There is deliberately no `ecc-effort', `ecc-autocompact',
+;; `ecc-allowed-tools', `ecc-disallowed-tools' or `ecc-safe-mode'
+;; (2026-09-10, `docs/decisions.md').  All five belong to the Claude Code
+;; settings, the way the model and the budget do; a session that wants one
+;; of its own carries it among its options, as `:effort', `:autocompact',
+;; `:allowed-tools', `:disallowed-tools' or `:safe-mode'.  `--safe-mode'
+;; in particular takes away the MCP servers, skills, commands and agents
+;; this package exists to surface, so nothing here recommends it.
 
-(defcustom ecc-autocompact nil
-  "Threshold passed with --autocompact, or nil to leave it unset."
-  :type '(choice (const :tag "CLI default" nil) integer))
-
-(defcustom ecc-allowed-tools nil
-  "Tool patterns passed with --allowedTools."
-  :type '(repeat string))
-
-(defcustom ecc-disallowed-tools nil
-  "Tool patterns passed with --disallowedTools."
-  :type '(repeat string))
-
-(defcustom ecc-safe-mode nil
-  "Non-nil passes --safe-mode, which disables every customization.
-That includes MCP servers, skills, custom commands and agents, which
-this package exists to surface, so it is off by default.  To silence a
-single misbehaving plugin use `ecc-disabled-plugins' instead."
-  :type 'boolean)
-
-(defcustom ecc-disabled-plugins nil
+(defvar ecc-disabled-plugins nil
   "Plugin identifiers to disable for the sessions this package starts.
 Each entry looks like \"name@marketplace\" and is passed through
 --settings, so the plugin stays enabled in the terminal client.
@@ -114,14 +82,12 @@ Hooks written for the terminal client cannot do their job behind a
 headless one; a well behaved one answers no_capable_terminal and steps
 aside, but it still costs a round trip and can inject settings of its
 own.  Disabling the plugin that installs it is enough, and unlike
-`ecc-safe-mode' it leaves MCP servers and commands alone."
-  :type '(repeat string))
+`--safe-mode' it leaves MCP servers and commands alone.")
 
-(defcustom ecc-streaming-enabled t
-  "Non-nil passes --include-partial-messages for incremental rendering."
-  :type 'boolean)
+(defvar ecc-streaming-enabled t
+  "Non-nil passes --include-partial-messages for incremental rendering.")
 
-(defcustom ecc-replay-user-messages t
+(defvar ecc-replay-user-messages t
   "Non-nil passes --replay-user-messages, so that prompts come back.
 The CLI then echoes every user message on the output stream, marked
 `isReplay\='.  The ones this package sent are dropped again -- it knows
@@ -131,41 +97,33 @@ this the transcript shows the answer to such a prompt with nothing in
 front of it, since the text reaches the CLI without ever passing
 through Emacs (measured 2026-09-08, `docs/verified.md\=').
 
-It costs one extra line per turn and nothing else."
-  :type 'boolean)
+It costs one extra line per turn and nothing else.")
 
-(defcustom ecc-subagent-text-enabled t
-  "Non-nil passes --forward-subagent-text to receive subagent output."
-  :type 'boolean)
+(defvar ecc-subagent-text-enabled t
+  "Non-nil passes --forward-subagent-text to receive subagent output.")
 
 (defcustom ecc-prompt-suggestions-enabled nil
   "Non-nil passes --prompt-suggestions."
   :type 'boolean)
 
-(defcustom ecc-hook-events-enabled nil
+(defvar ecc-hook-events-enabled nil
   "Non-nil passes --include-hook-events.
-Only useful when `ecc-safe-mode' is nil, since safe mode disables hooks."
-  :type 'boolean)
+Only useful without --safe-mode, which disables hooks altogether.")
 
 (defcustom ecc-stream-throttle 0.05
   "Seconds to gather streaming deltas before drawing them (FR-OUT-10).
-Zero draws every delta as it arrives.  Only used when
-`ecc-stream-throttle-method' is `time'."
+Zero draws every delta as it arrives.  Thinning by a count of deltas
+was dropped on 2026-09-10, with the requirement (`docs/decisions.md');
+a rate in seconds says what it does, and zero covers the case a count
+of one covered."
   :type 'number)
 
-(defcustom ecc-stream-throttle-method 'time
-  "How streaming deltas are thinned out before drawing (FR-OUT-10).
-`time' draws at most once per `ecc-stream-throttle' seconds; `count'
-draws every `ecc-stream-throttle-count' deltas."
-  :type '(choice (const time) (const count)))
-
-(defcustom ecc-stream-throttle-count 1
-  "Deltas gathered before drawing when thinning by count."
-  :type 'integer)
-
-(defcustom ecc-extra-args nil
-  "Extra arguments appended to every CLI invocation."
-  :type '(repeat string))
+(defvar ecc-extra-args nil
+  "Extra arguments appended to every CLI invocation.
+This is the way to pass a flag this package has no setting for, such as
+--effort or --safe-mode.  Nothing checks what goes in: an argument that
+overrides one this package relies on -- --verbose, --output-format,
+--input-format or --print -- breaks the session rather than the flag.")
 
 (defcustom ecc-command-wrapper-function nil
   "Function that rewrites the CLI command line before it is run.

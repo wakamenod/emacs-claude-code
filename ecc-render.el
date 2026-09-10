@@ -200,9 +200,6 @@ Each entry is (KIND . ID); see `ecc-render--apply-effects'.")
 (defvar-local ecc-render--delta-timer nil
   "Timer that will draw the pending deltas, or nil.")
 
-(defvar-local ecc-render--delta-count 0
-  "Deltas received since the pending ones were last drawn.")
-
 ;;;; Text helpers
 
 (defun ecc-render--pad (depth)
@@ -2000,8 +1997,7 @@ position, or nil when the node is not drawn."
 
 (defun ecc-render--reset-deltas ()
   "Forget the streamed text waiting to be drawn; a redraw drew it."
-  (setq ecc-render--pending-deltas nil
-        ecc-render--delta-count 0)
+  (setq ecc-render--pending-deltas nil)
   (when ecc-render--delta-timer
     (cancel-timer ecc-render--delta-timer)
     (setq ecc-render--delta-timer nil)))
@@ -2192,8 +2188,7 @@ heading, because its body starts collapsed anyway."
     (setq ecc-render--delta-timer nil))
   (let ((pending (nreverse ecc-render--pending-deltas))
         (before (ecc-render-prompt-start)))
-    (setq ecc-render--pending-deltas nil
-          ecc-render--delta-count 0)
+    (setq ecc-render--pending-deltas nil)
     (with-silent-modifications
       (dolist (pair pending)
         (ecc-render--append-delta (car pair) (cdr pair))))
@@ -2220,18 +2215,12 @@ heading, because its body starts collapsed anyway."
           (if cell
               (setcdr cell (concat (cdr cell) text))
             (push (cons node text) ecc-render--pending-deltas)))
-        (cl-incf ecc-render--delta-count)
-        (pcase ecc-stream-throttle-method
-          ('count
-           (when (>= ecc-render--delta-count (max 1 ecc-stream-throttle-count))
-             (ecc-render--flush-deltas)))
-          (_
-           (if (<= ecc-stream-throttle 0)
-               (ecc-render--flush-deltas)
-             (unless ecc-render--delta-timer
-               (setq ecc-render--delta-timer
-                     (run-at-time ecc-stream-throttle nil
-                                  #'ecc-render--delta-timer-fired buffer))))))))))
+        (if (<= ecc-stream-throttle 0)
+            (ecc-render--flush-deltas)
+          (unless ecc-render--delta-timer
+            (setq ecc-render--delta-timer
+                  (run-at-time ecc-stream-throttle nil
+                               #'ecc-render--delta-timer-fired buffer))))))))
 
 (defun ecc-render-flush-deltas (session)
   "Draw the streamed text of SESSION that is waiting, at once."

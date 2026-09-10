@@ -87,7 +87,7 @@ typed."
   "Turn Remote Control on or off for the session this buffer talks to.
 With it on the session shows up in the Code tab of the Claude app and
 can be driven from there; whether it starts that way is up to the
-Claude Code settings, which `ecc-remote-control\=' follows."
+Claude Code settings, which this package follows."
   (interactive)
   (let* ((session (ecc-menu-session))
          (on (ecc-model-remote-control session 'enabled)))
