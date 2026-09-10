@@ -52,53 +52,27 @@
 (require 'ecc-tui)
 (require 'ecc-transient)
 
-(defcustom ecc-resume-on-abnormal-exit 'ask
-  "What to do when the CLI of a session stops on its own (FR-SES-7).
-`ask' offers to resume it, `auto' resumes it without asking and nil
-only leaves the state in the buffer.  An exit the user asked for, and
-an exit with status zero, are never resumed."
-  :type '(choice (const :tag "Offer to resume" ask)
-                 (const :tag "Resume at once" auto)
-                 (const :tag "Say nothing" nil))
-  :group 'ecc)
-
-(defcustom ecc-pending-indicator t
-  "Non-nil shows the number of requests waiting in every mode line.
-`ecc-pending-indicator-mode' is turned on by the first session started
-\(FR-PERM-4)."
-  :type 'boolean
-  :group 'ecc)
-
-(defcustom ecc-notify-on-start t
-  "Non-nil turns `ecc-notify-mode' on with the first session (FR-NOTIFY-1)."
-  :type 'boolean
-  :group 'ecc)
-
-(defcustom ecc-track-source-buffer t
-  "Non-nil follows the buffer the user last worked in (FR-CTX-1).
-That is what `ecc-send-region' and the `@region' reference quote from
-when the current buffer is a transcript or a prompt."
-  :type 'boolean
-  :group 'ecc)
-
 (defun ecc-project-root ()
   "Return the root of the project of the current buffer, or its directory."
   (ecc-window-project-root))
 
 (defun ecc--enable-session-modes ()
-  "Turn on the global modes a session wants, as the options ask.
+  "Turn on the global modes every session wants.
 Every way into a session comes through here, and not `ecc-start'
 alone: an Emacs that only resumed a session was left without the hook
 that follows the source buffer, and `@region' and its like then had
-nothing to read (FR-CTX-1)."
-  (when ecc-pending-indicator
-    (ecc-pending-indicator-mode 1))
-  (when ecc-notify-on-start
-    (ecc-notify-mode 1))
-  (when ecc-tab-line
-    (ecc-tab-line-mode 1))
-  (when ecc-track-source-buffer
-    (ecc-track-source-buffer-mode 1)))
+nothing to read (FR-CTX-1).
+
+There is deliberately no setting to leave one of them off (2026-09-10,
+`docs/decisions.md'): each is what makes a session visible -- the count
+of waiting requests, the announcements, the tab line, the buffer the
+context is quoted from -- and a session that started without them was
+a session that looked broken.  A mode turned off by hand comes back
+with the next session, since this runs on every one of them."
+  (ecc-pending-indicator-mode 1)
+  (ecc-notify-mode 1)
+  (ecc-tab-line-mode 1)
+  (ecc-track-source-buffer-mode 1))
 
 ;;;###autoload
 (defun ecc-start (&optional directory name)
@@ -169,7 +143,7 @@ from a recording -- falls back to when its recording was last written."
   "Face for the icon of a conversation that is only a recording."
   :group 'ecc)
 
-(defcustom ecc-session-status-icons
+(defvar ecc-session-status-icons
   '((running "nf-cod-triangle_right" ">" ecc-session-running-face)
     (own "nf-cod-circle_small_filled" "*" ecc-session-own-face)
     (elsewhere "nf-cod-broadcast" "@" ecc-session-elsewhere-face)
@@ -180,17 +154,12 @@ session this Emacs is running, `own' one it holds that has stopped,
 `elsewhere' one another process is running, and `recorded' a
 conversation that is only a recording.  The nerd icon is used when
 `nerd-icons' is installed and the ASCII stand-in otherwise, as in
-`ecc-visual-icon-alist'."
-  :type '(alist :key-type symbol
-                :value-type (list string string face))
-  :group 'ecc)
+`ecc-visual-icon-alist'.")
 
-(defcustom ecc-session-icon-height 0.8
+(defvar ecc-session-icon-height 0.8
   "How tall the icon of a session is, as a share of the normal height.
 Only a graphical display scales an icon; on a terminal it is one cell
-whatever this says."
-  :type 'number
-  :group 'ecc)
+whatever this says.")
 
 (declare-function nerd-icons-codicon "nerd-icons" (name &rest args))
 
@@ -298,18 +267,20 @@ The state is in the buffer already; this is the offer that goes with
 it.  Only an exit the user did not ask for is offered, and only when
 there is a recording to resume from.  The offer is made from a timer:
 a sentinel is no place to ask a question or start a process."
-  (when (and ecc-resume-on-abnormal-exit
-             (integerp status)
+  (when (and (integerp status)
              (/= status 0)
              (not (ecc-proc-stopped-on-request-p session))
              (ecc-history-file (ecc-session-id session)))
     (run-at-time 0 nil #'ecc-offer-resume-now session status)))
 
 (defun ecc-offer-resume-now (session status)
-  "Ask whether to resume SESSION, which stopped with STATUS (FR-SES-7)."
-  (if (or (eq ecc-resume-on-abnormal-exit 'auto)
-          (y-or-n-p (format "%s exited with code %s.  Resume it? "
-                            (ecc-session-name session) status)))
+  "Ask whether to resume SESSION, which stopped with STATUS (FR-SES-7).
+The offer is always made rather than acted on (2026-09-10,
+`docs/decisions.md'): an exit nobody asked for is worth a look before
+it is undone.  An Emacs that wants neither the question nor the offer
+takes `ecc--offer-resume' off `ecc-session-exited-hook'."
+  (if (y-or-n-p (format "%s exited with code %s.  Resume it? "
+                        (ecc-session-name session) status))
       (ecc-resume session)
     (message "%s: R, or M-x ecc-resume, starts it again"
              (ecc-session-name session))))

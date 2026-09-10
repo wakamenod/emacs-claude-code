@@ -569,11 +569,10 @@ inside it."
               ;; A crash offers to resume, once Emacs is out of the sentinel.
               (ecc--offer-resume session 1)
               (should (equal (list #'ecc-offer-resume-now session 1) (car offers)))
-              ;; Turning the offer off leaves the state line to say it.
+              ;; The offer is always made; the way to be rid of it is to
+              ;; take it off the hook (2026-09-10, `docs/decisions.md').
+              (should (memq #'ecc--offer-resume ecc-session-exited-hook))
               (setq offers nil)
-              (let ((ecc-resume-on-abnormal-exit nil))
-                (ecc--offer-resume session 1)
-                (should-not offers))
               ;; A stop the user asked for is not a crash, whatever the
               ;; status the signal left behind.
               (ecc-proc-stop session)

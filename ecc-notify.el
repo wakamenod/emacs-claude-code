@@ -187,13 +187,6 @@ not worth a notification."
 ;; here: that is where the look of a tab, the scrolling and the
 ;; click come from.  Only what a tab says, and its colour, are ours.
 
-(defcustom ecc-tab-line t
-  "Non-nil lists every session in the tab line of a session window.
-`ecc-tab-line-mode' is turned on by the first session started
-\(FR-NOTIFY-2)."
-  :type 'boolean
-  :group 'ecc)
-
 (defcustom ecc-tab-bar-state nil
   "Non-nil marks the state of the sessions in the tab bar too.
 `ecc-tab-bar-tab-name' has to be `tab-bar-tab-name-function' for this
