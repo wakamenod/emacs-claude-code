@@ -64,6 +64,8 @@
 
 (defcustom ecc-tui-follow t
   "Non-nil follows the recording while a session is open in a terminal.
+Not to be confused with `ecc-render-follow', which is about point
+keeping up with the end of a transcript.
 This is what keeps the transcript current during a hand-off
 \(FR-TUI-3); turning it off leaves the buffer as it was until the
 session comes back."

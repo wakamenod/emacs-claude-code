@@ -28,25 +28,23 @@
 (declare-function ecc-session-buffer-name "ecc-session" (name))
 (declare-function ecc-chat-goto-prompt "ecc-chat" ())
 
-(defcustom ecc-window-use-side-window t
-  "Non-nil shows a transcript in a side window rather than an ordinary one."
-  :type 'boolean
-  :group 'ecc)
+(defvar ecc-window-use-side-window t
+  "Non-nil shows a transcript in a side window rather than an ordinary one.
+Nil falls back to a plain `display-buffer', which gives up the roles of
+FR-WIN-1 -- main, sub-1, sub-2 -- and the tab line that goes with them.
+It is a way out rather than a supported layout.")
 
-(defcustom ecc-window-side 'right
-  "Side of the frame the transcript window is put on."
-  :type '(choice (const left) (const right) (const top) (const bottom))
-  :group 'ecc)
+(defvar ecc-window-side 'right
+  "Side of the frame the transcript window is put on.
+`ecc-display-session-in-role' calls `display-buffer-in-side-window'
+outright, so `display-buffer-alist' is never consulted for a transcript
+and this is the way to move one (2026-09-10, `docs/decisions.md').")
 
-(defcustom ecc-window-width 0.4
-  "Width of the transcript side window, as a fraction or a column count."
-  :type 'number
-  :group 'ecc)
+(defvar ecc-window-width 0.4
+  "Width of the transcript side window, as a fraction or a column count.")
 
-(defcustom ecc-window-height 0.4
-  "Height of the transcript side window when it is put on top or bottom."
-  :type 'number
-  :group 'ecc)
+(defvar ecc-window-height 0.4
+  "Height of the transcript side window when it is put on top or bottom.")
 
 (defcustom ecc-window-large-frame-min-height 80
   "Height, in lines, a frame needs before it gets a third session window.
@@ -60,19 +58,19 @@ the display this was measured on holds 114."
 (defcustom ecc-window-sub-height 0.33
   "Height of the third session window, as a fraction or a line count.
 It is taken from the main area of the frame -- the source code, usually
--- rather than from the side the other two are on."
+-- rather than from the side the other two are on.
+
+Which side the other two stand on, and how wide they are, is
+`ecc-window-side' and `ecc-window-width'; both are plain variables to
+`setq' rather than settings."
   :type 'number
   :group 'ecc)
 
-(defcustom ecc-window-ask-name-for-second-session t
-  "Non-nil asks for a name when a project gets a second session (FR-WIN-3)."
-  :type 'boolean
-  :group 'ecc)
+(defvar ecc-window-ask-name-for-second-session t
+  "Non-nil asks for a name when a project gets a second session (FR-WIN-3).")
 
-(defcustom ecc-window-remember-session-per-buffer t
-  "Non-nil remembers in a buffer which session was chosen for it (FR-WIN-4)."
-  :type 'boolean
-  :group 'ecc)
+(defvar ecc-window-remember-session-per-buffer t
+  "Non-nil remembers in a buffer which session was chosen for it (FR-WIN-4).")
 
 (defvar-local ecc--bound-session-id nil
   "Id of the session this buffer sends to, once one has been chosen.")
@@ -391,24 +389,16 @@ is usually for (FR-WIN-1)."
 ;; is to take it from.  What happens is the user's to decide: whether
 ;; the session windows step aside, and where point ends up.
 
-(defcustom ecc-window-hide-on-review nil
+(defvar ecc-window-hide-on-review nil
   "Whether opening a diff or a plan review hides the session windows.
 `project' hides the sessions of the project being reviewed, `all'
 hides every session, and nil leaves the windows as they are
-\(FR-WIN-5).  `ecc-toggle' brings back what was hidden."
-  :type '(choice (const :tag "Leave them alone" nil)
-                 (const :tag "The sessions of this project" project)
-                 (const :tag "Every session" all))
-  :group 'ecc)
+\(FR-WIN-5).  `ecc-toggle' brings back what was hidden.")
 
-(defcustom ecc-window-review-focus 'review
+(defvar ecc-window-review-focus 'review
   "Where point goes when a diff or a plan review opens (FR-WIN-5).
 `review' selects the review, `session' leaves it in the transcript and
-nil leaves it wherever it was."
-  :type '(choice (const :tag "The review" review)
-                 (const :tag "The transcript" session)
-                 (const :tag "Wherever it was" nil))
-  :group 'ecc)
+nil leaves it wherever it was.")
 
 (defun ecc-window-display-review (buffer &optional session)
   "Show the review in BUFFER, of SESSION, and return its window.

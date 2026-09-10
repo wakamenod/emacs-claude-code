@@ -65,10 +65,8 @@ On macOS this is the name of a system sound such as \"Glass\"."
   :type 'boolean
   :group 'ecc)
 
-(defcustom ecc-notify-title "Claude Code"
-  "Title of a desktop notification."
-  :type 'string
-  :group 'ecc)
+(defvar ecc-notify-title "Claude Code"
+  "Title of a desktop notification.")
 
 ;;;; What is announced
 
@@ -187,12 +185,10 @@ not worth a notification."
 ;; here: that is where the look of a tab, the scrolling and the
 ;; click come from.  Only what a tab says, and its colour, are ours.
 
-(defcustom ecc-tab-bar-state nil
+(defvar ecc-tab-bar-state nil
   "Non-nil marks the state of the sessions in the tab bar too.
 `ecc-tab-bar-tab-name' has to be `tab-bar-tab-name-function' for this
-to have anywhere to show (FR-NOTIFY-2)."
-  :type 'boolean
-  :group 'ecc)
+to have anywhere to show (FR-NOTIFY-2).")
 
 (defface ecc-tab-running-face
   '((t :inherit (ecc-running-face ecc-heading-face)))
@@ -211,14 +207,12 @@ mode line use for the same state, over the weight of a heading."
   "Face of the tab of a session with nothing to do."
   :group 'ecc)
 
-(defcustom ecc-tab-blink t
+(defvar ecc-tab-blink t
   "Non-nil blinks the tab of a session that is waiting for an answer.
 A tab that wants something is worth more than a colour when the eye is
 on the source code.  The rhythm is `ecc-visual-blink-interval', so that
 a blinking tab and the blinking line of the request it stands for keep
-step (FR-NOTIFY-2, FR-OUT-11 c)."
-  :type 'boolean
-  :group 'ecc)
+step (FR-NOTIFY-2, FR-OUT-11 c).")
 
 (defface ecc-tab-attention-blink-face
   '((t :inherit ecc-tab-attention-face :inverse-video t))

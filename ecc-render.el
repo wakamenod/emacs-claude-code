@@ -93,32 +93,25 @@ The whole diff is always available with RET (FR-OUT-7)."
   :type 'integer
   :group 'ecc)
 
-(defcustom ecc-render-show-result-line t
+(defvar ecc-render-show-result-line t
   "Non-nil closes every finished turn with what it cost and how long it took.
 The line sits at the right edge under the answer; nil leaves a turn to
-end with its last message."
-  :type 'boolean
-  :group 'ecc)
+end with its last message.")
 
-(defcustom ecc-render-summary-position 'bottom
+(defvar ecc-render-summary-position 'bottom
   "Where the Files and the Tasks summaries stand (FR-OUT-12, FR-OUT-13).
 `bottom' draws them at the end of the transcript, just above the state
 line and the separator, where they stay in sight however long the
 conversation grows.  `top' draws them at the start of the buffer, where
 the phase 9 redesign first put them; the button that loads older
 messages stays there either way, because what it loads appears above
-the first turn (FR-HIST-1)."
-  :type '(choice (const :tag "Above the prompt" bottom)
-                 (const :tag "At the start of the buffer" top))
-  :group 'ecc)
+the first turn (FR-HIST-1).")
 
-(defcustom ecc-render-follow t
+(defvar ecc-render-follow t
   "Non-nil scrolls to the end of the buffer while it is at the end.
 The prompt region is the end: a window whose point is there keeps
 looking at what arrives.  A window whose point is above it, in the
-transcript, is reading, and a redraw leaves it where it was."
-  :type 'boolean
-  :group 'ecc)
+transcript, is reading, and a redraw leaves it where it was.")
 
 (defface ecc-separator-face
   '((t :inherit shadow :underline t))
