@@ -1,5 +1,4 @@
-```python
-content_ja = """[English](README.md) | **日本語**
+[English](README.md) | **日本語**
 
 ---
 
@@ -61,20 +60,20 @@ ecc は MELPA に登録されていません。本リポジトリから直接イ
 ```elisp
 (use-package ecc
   :ensure t
-  :vc (:url "[https://github.com/wakamenod/emacs-claude-code](https://github.com/wakamenod/emacs-claude-code)" :rev :newest))
-
+  :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest))
 ```
 
 *※ 特定のコミットに固定したい場合は `:rev "<commit-sha>"` を指定してください。*
 
 ### Emacs 29（`package-vc-install`）
-
 ```
-M-x package-vc-install RET [https://github.com/wakamenod/emacs-claude-code](https://github.com/wakamenod/emacs-claude-code) RET
-
+M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 ```
 
 その後、通常の `use-package` 宣言（`:vc` なし）で設定します。
+
+<details>
+<summary>straight.el、Elpaca、手動クローン</summary>
 
 リポジトリ名が `emacs-claude-code` でパッケージ名が `ecc` であるため、レシピ内でパッケージ名を明示的に指定する必要があります。
 
@@ -86,30 +85,28 @@ M-x package-vc-install RET [https://github.com/wakamenod/emacs-claude-code](http
 ;; Elpaca
 (use-package ecc
   :ensure (ecc :host github :repo "wakamenod/emacs-claude-code"))
-
 ```
 
 手動クローンの場合：
 
 ```sh
-git clone [https://github.com/wakamenod/emacs-claude-code](https://github.com/wakamenod/emacs-claude-code) ~/.emacs.d/site-lisp/emacs-claude-code
-
+git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/emacs-claude-code
 ```
 
 ```elisp
 (add-to-list 'load-path "~/.emacs.d/site-lisp/emacs-claude-code")
 (require 'ecc)
-
 ```
 
 `M-x ecc-start` は自動ロードされます。`ecc-global-map` を `use-package` の外部でバインドする場合は、事前に ecc がロードされていることを確認するか、`use-package` の `:bind-keymap` を使用してください。
+</details>
 
 ## 設定例
 
 ```elisp
 (use-package ecc
   :ensure t
-  :vc (:url "[https://github.com/wakamenod/emacs-claude-code](https://github.com/wakamenod/emacs-claude-code)" :rev :newest)
+  :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest)
   ;; `ecc-global-map' により、任意のバッファからプロンプトに応答可能
   ;; `:bind-keymap' により、プレフィックスキー入力時に初めて ecc がロードされる
   :bind-keymap ("C-c c" . ecc-global-map)
@@ -129,7 +126,6 @@ git clone [https://github.com/wakamenod/emacs-claude-code](https://github.com/wa
   ;; Elisp 評価ツールの有効化には個別の設定が必要
   ;; (setq ecc-mcp-enable-execute-code t)
   )
-
 ```
 
 その他の設定項目については、`M-x customize-group RET ecc` を実行するか、[設定リファレンス](https://wakamenod.github.io/emacs-claude-code/ja/reference/configuration/) を参照してください。
