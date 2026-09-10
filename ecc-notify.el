@@ -202,8 +202,18 @@ to have anywhere to show (FR-NOTIFY-2)."
   :group 'ecc)
 
 (defface ecc-tab-running-face
-  '((t :inherit ecc-heading-face))
-  "Face of the tab of a session that is working."
+  '((((class color) (min-colors 88) (background dark))
+     :inherit ecc-heading-face :foreground "#a6e22e")
+    (((class color) (min-colors 88) (background light))
+     :inherit ecc-heading-face :foreground "#4e8f00")
+    (((class color))
+     :inherit ecc-heading-face :foreground "green")
+    (t :inherit ecc-heading-face))
+  "Face of the tab of a session that is working.
+A yellow green, which says the session is moving on its own without
+asking for anything -- the one state that is neither a warning nor
+something to read.  A light background takes a darker shade of it,
+since the bright one is not readable there."
   :group 'ecc)
 
 (defface ecc-tab-attention-face
