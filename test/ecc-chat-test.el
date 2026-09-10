@@ -753,6 +753,31 @@ pressed."
                   (should (string-prefix-p "✓ Bash" (ecc-chat-test--line))))
               (kill-buffer buffer))))))))
 
+(ert-deftest ecc-chat-test-margins-survive-a-second-resize ()
+  "Setting the margin twice keeps working, and settles on one value.
+`window-margins\=' answers the cons (LEFT . RIGHT), so once a right
+margin is set the answer is a dotted pair.  Reading it with `nth\=' took
+the car of a number and signalled, which meant every resize after the
+first one threw out of `window-size-change-functions\='."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (let ((ecc-chat-text-width 40)
+          (window (selected-window)))
+      (set-frame-width nil 100)
+      (with-current-buffer (ecc-session-buffer session)
+        (set-window-buffer window (current-buffer))
+        (ecc-chat--set-margins window)
+        (let ((first (cdr (window-margins window))))
+          (should (integerp first))
+          ;; The second call is the one that used to signal.
+          (ecc-chat--set-margins window)
+          (should (equal first (cdr (window-margins window))))
+          ;; A nil width means the text takes the whole window, and the
+          ;; margin has to come back off -- also a second call.
+          (let ((ecc-chat-text-width nil))
+            (ecc-chat--set-margins window)
+            (should-not (cdr (window-margins window)))))))))
+
 (provide 'ecc-chat-test)
 
 ;;; ecc-chat-test.el ends here

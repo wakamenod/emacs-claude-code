@@ -346,7 +346,10 @@ margin; a window narrower than that, and a nil width, leave it alone."
     (when (and (window-live-p window)
                (derived-mode-p 'ecc-chat-mode)
                (eq (window-buffer window) (current-buffer)))
-      (let* ((margin (nth 1 (window-margins window)))
+      ;; `window-margins' returns the cons (LEFT . RIGHT), not a list:
+      ;; once a right margin is set it is a dotted pair, and `nth' would
+      ;; take the car of a number (confirmed 2026-09-10).
+      (let* ((margin (cdr (window-margins window)))
              (width (+ (window-body-width window) (or margin 0)))
              (want (if ecc-chat-text-width
                        (max 0 (- width ecc-chat-text-width))
