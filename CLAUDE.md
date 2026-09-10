@@ -54,7 +54,10 @@ The optional packages are optional here too — the one test that drives the rea
 backend is behind a `skip-unless`.
 
 `EMACS` names the Emacs to use, and defaults to the one on `PATH`:
-`make test EMACS=/Applications/Emacs.app/Contents/MacOS/Emacs`. `ELPA` names the package
+`make test EMACS=/Applications/Emacs.app/Contents/MacOS/Emacs`. On a machine where `emacs`
+is not on `PATH`, `$EMACS` is already exported into the environment by the gitignored
+`.claude/settings.local.json` and `make test` picks it up on its own, so read `$EMACS`
+before concluding there is no Emacs here. `ELPA` names the package
 directory the dependencies are read from, and defaults to `~/.emacs.d/elpa`.
 
 `make test-live` starts real sessions. It takes a few minutes and a little under $1 for

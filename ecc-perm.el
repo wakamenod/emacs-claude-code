@@ -42,7 +42,7 @@
   "Message sent to Claude when a change is refused because of unsaved edits.")
 
 (defvar ecc-perm-remember-exclude-tools '("Bash")
-  "Tools that `ecc-perm-allow-all-remember' allows once but never remembers.
+  "Tools that `ecc-perm-allow-all' allows once but never remembers.
 Remembering a tool allows every later call of it for the rest of the
 session without a look; a tool that can run anything is not worth that
 shortcut.  Nil remembers every tool.")
@@ -241,11 +241,6 @@ buffers.  Returns the requests that were allowed."
                  (format " (%d questions and plans left alone)" skipped)
                ""))
     (nreverse allowed)))
-
-(defun ecc-perm-allow-all-remember ()
-  "Allow every waiting request and stop asking about those tools."
-  (interactive)
-  (ecc-perm-allow-all t))
 
 ;;;; Turn wide approval
 
