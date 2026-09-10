@@ -127,7 +127,7 @@ git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/em
   )
 ```
 
-For all other settings, run `M-x customize-group RET ecc` or check the [configuration reference](https://wakamenod.github.io/emacs-claude-code/).
+For all other settings, run `M-x customize-group RET ecc` or check the [configuration reference](https://wakamenod.github.io/emacs-claude-code/reference/configuration/).
 
 ## Quickstart
 
@@ -163,7 +163,7 @@ Usable from any buffer:
 | `C-c C-a` / `C-c C-d` | Allow / Deny tool permission |
 | `C-c ?` | Open command menu |
 
-See the [key binding reference](https://wakamenod.github.io/emacs-claude-code/) for full listings.
+See the [key binding reference](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/) for full listings.
 
 ## Acknowledgements
 
