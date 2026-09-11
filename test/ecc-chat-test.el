@@ -546,11 +546,18 @@ the cursor cannot walk into it; anything written takes it away."
 (ert-deftest ecc-chat-test-kill-line-stays-in-the-prompt ()
   "C-k kills within the draft and leaves the footer under it alone.
 The newline that ends the last line of the draft belongs to the
-footer, which is read-only, so `kill-line' has to be kept inside the
-prompt region."
+footer, which is read-only, so the kill has to be kept inside the
+prompt region.
+
+The kill is done here by logical line.  `vertical-motion\=' does not
+move in batch -- there is no redisplay to ask -- so `end-of-visual-line\='
+walks backwards and `kill-visual-line\=' kills the character behind
+point (confirmed 2026-09-11).  What the visual branch is for is
+`ecc-chat-test-kill-line-follows-the-visual-line\='."
   (ecc-test-with-fake-session session
     (with-current-buffer (ecc-session-ensure-buffer session)
       (ecc-chat--update-ghosts)
+      (setq-local visual-line-mode nil)
       (should (eq (key-binding (kbd "C-k")) #'ecc-chat-kill-line))
       (ecc-chat-set-draft "one\ntwo")
       ;; From the middle of the first line: the rest of the line goes,
@@ -572,6 +579,76 @@ prompt region."
       (should (equal (ecc-chat-draft) ""))
       (should (equal (ecc-chat-test--footer-mode)
                      "⏵ manual mode (S-TAB to cycle)")))))
+
+(defun ecc-chat-test--mwim ()
+  "Stand in for a command a user has put on a movement key, as mwim does."
+  (interactive)
+  (user-error "This binding should not have been reached"))
+
+(ert-deftest ecc-chat-test-movement-follows-the-visual-line ()
+  "The buffer moves by what is on the screen, not by the logical line.
+Every line of the transcript is a paragraph that wraps, so C-n has to
+step to the next row.  `line-move-visual\=' is what decides that, and a
+user who has turned it off globally must not get logical movement
+here, so `ecc-chat-mode\=' turns on `visual-line-mode\=', which binds it
+buffer-locally."
+  (let ((line-move-visual nil)
+        (truncate-lines t)
+        (word-wrap nil))
+    (ecc-test-with-fake-session session
+      (with-current-buffer (ecc-session-ensure-buffer session)
+        (should visual-line-mode)
+        (should line-move-visual)
+        (should (local-variable-p 'line-move-visual))
+        (should word-wrap)
+        (should-not truncate-lines)
+        ;; C-a, C-e and C-k go by the visual line even for a user who
+        ;; has put their own command on them.  The remaps of
+        ;; `visual-line-mode' would not: a remap is a lookup on the
+        ;; command the key resolves to, and mwim's never resolves to
+        ;; `move-beginning-of-line'.  So the mode binds them by name,
+        ;; and its map beats the global one.
+        (let ((global (current-global-map)))
+          (unwind-protect
+              (let ((map (copy-keymap global)))
+                (define-key map (kbd "C-a") #'ecc-chat-test--mwim)
+                (define-key map (kbd "C-e") #'ecc-chat-test--mwim)
+                (define-key map (kbd "C-k") #'ecc-chat-test--mwim)
+                (use-global-map map)
+                (should (eq (key-binding (kbd "C-a"))
+                            #'beginning-of-visual-line))
+                (should (eq (key-binding (kbd "C-e")) #'end-of-visual-line))
+                (should (eq (key-binding (kbd "C-k")) #'ecc-chat-kill-line)))
+            (use-global-map global)))
+        ;; The fringes stay bare: `visual-line-mode\=' sets the same
+        ;; entry, and the mode body puts its own back after it.
+        (should (equal (cdr (assq 'continuation fringe-indicator-alist))
+                       '(nil nil)))))))
+
+(ert-deftest ecc-chat-test-kill-line-follows-the-visual-line ()
+  "C-k kills the visual line, as C-a and C-e move by it.
+C-k is bound to `ecc-chat-kill-line\=' by name, and the remap
+`visual-line-mode\=' puts on `kill-line\=' is a lookup on the key, so it
+never reaches this command and the choice is made in the code.  Only
+the choice is checked: `kill-visual-line\=' itself needs a redisplay
+that batch has not got."
+  (ecc-test-with-fake-session session
+    (with-current-buffer (ecc-session-ensure-buffer session)
+      (should visual-line-mode)
+      (let ((called nil))
+        (cl-letf (((symbol-function 'kill-visual-line)
+                   (lambda (&optional arg) (setq called (list 'visual arg))))
+                  ((symbol-function 'kill-line)
+                   (lambda (&optional arg) (setq called (list 'logical arg)))))
+          (ecc-chat-set-draft "one two")
+          (goto-char (ecc-chat-prompt-start))
+          (ecc-chat-kill-line)
+          (should (equal called '(visual nil)))
+          (ecc-chat-kill-line 2)
+          (should (equal called '(visual 2)))
+          (setq-local visual-line-mode nil)
+          (ecc-chat-kill-line)
+          (should (equal called '(logical nil))))))))
 
 ;;;; The footer: the permission mode under the prompt
 
