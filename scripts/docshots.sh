@@ -67,10 +67,16 @@ want() {
 }
 
 # Start a new animation; the frames of each live in a directory of their own.
+# The frame is asked where it is first, as it is before a still: the
+# position read at startup can be stale by the time a scene runs -- the
+# corner the frame is placed in is settled by the window system, not by
+# Emacs -- and every frame of the animation would then be cut off on one
+# side (confirmed 2026-09-11).
 scene() {
     scene=$1
     n=0
     mkdir -p "$frames/$scene"
+    regeom
 }
 
 # Capture one frame, $1 times (repeat to hold a moment longer).
@@ -149,7 +155,8 @@ fi
 
 # The four scenes below are answered by the model, so they need a session
 # that really runs.  It is started once, whichever of them is being taken.
-if want send-region || want fix-error || want inline || want rewrite; then
+if want send-region || want fix-error || want inline || want rewrite \
+       || want at-cursor || want image || want context || want suggestion; then
     e '(shot-start-live)'               ; sleep 4
 fi
 
@@ -219,6 +226,62 @@ if want rewrite; then
     gif
 fi
 
+if want at-cursor; then
+    # An @ reference: the point stands in the source, the prompt says
+    # @cursor, and what is sent carries the line it was on.
+    scene at-cursor
+    e '(shot-scene-cursor-point 7)'          ; snap 2
+    e '(shot-prompt-type "What does ")'      ; snap
+    e '(shot-prompt-type "@cursor")'         ; snap
+    e '(shot-prompt-type " return?")'        ; snap 2
+    e '(shot-prompt-send)'                   ; snap 2
+    for _ in $(seq 1 12); do sleep 1; snap; done
+    gif
+fi
+
+if want context; then
+    # The editor context, attached to every prompt while it is on.
+    scene context
+    e '(shot-scene-cursor-point 3)'                                  ; snap 2
+    e '(shot-prompt-command (quote ecc-prompt-toggle-context))'      ; snap 3
+    e '(shot-prompt-type "Where am I?")'                             ; snap 2
+    e '(shot-prompt-send)'                                           ; snap 2
+    for _ in $(seq 1 12); do sleep 1; snap; done
+    e '(shot-prompt-command (quote ecc-prompt-toggle-context))'      ; snap 2
+    gif
+fi
+
+if want image; then
+    # An image in a prompt: it is written to disk and referenced by path.
+    scene image
+    e '(shot-scene-insert-image)'                 ; snap 3
+    e '(shot-prompt-type "What is in this image?")'; snap 2
+    e '(shot-prompt-send)'                        ; snap 2
+    for _ in $(seq 1 14); do sleep 1; snap; done
+    gif
+fi
+
+if want suggestion; then
+    # The prompt the CLI offers, and C-c C-s taking it.  A suggestion
+    # arrives when the CLI feels like offering one, so this asks until
+    # there is one rather than sleeping a fixed time.
+    e '(shot-prompt-type "Name one thing to test here. One line.")'
+    e '(shot-prompt-send)'
+    for _ in $(seq 1 40); do
+        sleep 2
+        if "$emacsclient" -s ecc-docshot -e '(shot-suggestion-p)' 2>/dev/null | grep -q t; then
+            break
+        fi
+    done
+    scene suggestion
+    e '(shot-scene-cursor-point 1)'   ; snap
+    e '(shot-prompt-command (quote ecc-chat-goto-prompt))' ; snap 3
+    e '(shot-prompt-command (quote ecc-hint-accept-suggestion))' ; snap 4
+    e '(shot-prompt-send)'            ; snap 2
+    for _ in $(seq 1 10); do sleep 1; snap; done
+    gif
+fi
+
 if want capabilities; then
     # What the session can do: the list the CLI reported in system/init.
     scene capabilities
@@ -261,6 +324,27 @@ if want prompt; then
     e '(shot-scene-slash)'   ; sleep 3; still "$outdir/slash.png"
     e '(shot-scene-quit)'    ; sleep 1
     e '(shot-scene-clear-prompt)'
+fi
+
+# Two answers, both replayed: the recording is stopped where it asks,
+# answered here as a user would, and played to its end afterwards.
+if want permission; then
+    scene permission
+    e '(shot-scene-permission)'        ; sleep 1; snap 3
+    e '(shot-scene-permission-allow)'  ; snap 2
+    e '(shot-scene-permission-finish)' ; sleep 1; snap 4
+    gif
+fi
+
+if want question; then
+    scene question
+    e '(shot-scene-question)'            ; sleep 1; snap 3
+    e '(shot-scene-question-open)'       ; sleep 1; snap 3
+    e '(shot-scene-question-choose 1)'   ; snap 2
+    e '(shot-scene-question-choose 1)'   ; snap 2
+    e '(shot-scene-question-choose 2)'   ; snap 3
+    e '(shot-scene-question-submit)'     ; sleep 1; snap 4
+    gif
 fi
 
 if want handover; then

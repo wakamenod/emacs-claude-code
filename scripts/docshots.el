@@ -67,6 +67,11 @@
 (defconst shot-root "/tmp/greet"
   "The demo project.  The fixture's sandbox paths are rewritten to it.")
 
+(defconst shot-repository default-directory
+  "The repository this was started in.
+The wrapper starts Emacs with --chdir there, and the scenes change
+`default-directory' as they go, so it is kept while it is still true.")
+
 (defconst shot-file (expand-file-name "hello.py" shot-root))
 
 (defconst shot-broken-file (expand-file-name "parse.py" shot-root)
@@ -241,6 +246,10 @@ name of the project rather than `greet<2>'."
                    ;; claude.ai URL across it.
                    :options '(:model "haiku"
                               :remote-control nil
+                              ;; The CLI offers a prompt only when it is
+                              ;; asked to; the scene that takes one waits
+                              ;; for it to arrive.
+                              :prompt-suggestions t
                               :extra-args ("--max-budget-usd" "0.30"))))
   (ecc-session-ensure-buffer shot-live)
   (ecc-proc-start shot-live)
@@ -263,6 +272,74 @@ of them is there because `shot-show' put it there."
       (unless (eq (window-buffer window) buffer)
         (switch-to-buffer buffer)))
     window))
+
+;;;; Typing in the prompt region of a live session
+
+(defun shot-prompt-window ()
+  "Return the window the live session is shown in, or nil."
+  (get-buffer-window (ecc-session-buffer shot-live)))
+
+(defun shot-prompt-type (text)
+  "Type TEXT into the prompt region, as a person would.
+The draft is buffer text, so this is an insertion rather than a key
+fed to a read loop."
+  (when-let* ((window (shot-prompt-window)))
+    (with-selected-window window
+      (ecc-chat-goto-prompt)
+      (goto-char (ecc-chat-prompt-end))
+      (insert text)
+      (ecc-chat-update-placeholder)
+      (redisplay t))))
+
+(defun shot-prompt-send ()
+  "Send what is in the prompt region."
+  (when-let* ((window (shot-prompt-window)))
+    (with-selected-window window
+      (call-interactively #'ecc-prompt-send)
+      (redisplay t))))
+
+(defun shot-prompt-command (command)
+  "Run COMMAND in the prompt region, as a key under the prefix would."
+  (when-let* ((window (shot-prompt-window)))
+    (with-selected-window window
+      (ecc-chat-goto-prompt)
+      (call-interactively command)
+      (redisplay t))))
+
+(defun shot-scene-cursor-point (line)
+  "Put the point on LINE of the demo source, with nothing marked.
+`@cursor' reads the buffer the user last worked in, which is this one."
+  (with-selected-window (shot-source-window)
+    (deactivate-mark)
+    (goto-char (point-min))
+    (forward-line (1- line))
+    (back-to-indentation))
+  (redisplay t))
+
+(defun shot-scene-image-file ()
+  "Return the demo image, putting it in the project the session runs in.
+A picture the model can say something about, and one that is already in
+this repository rather than made for the occasion."
+  (let ((file (expand-file-name "session.png" shot-root)))
+    (unless (file-exists-p file)
+      (copy-file (expand-file-name "docs/images/session.png" shot-repository)
+                 file t))
+    file))
+
+(defun shot-scene-insert-image ()
+  "Insert the demo image into the prompt, as C-c C-i does."
+  (when-let* ((window (shot-prompt-window)))
+    (with-selected-window window
+      (ecc-chat-goto-prompt)
+      (ecc-prompt-insert-image (shot-scene-image-file))
+      (ecc-chat-update-placeholder)
+      (redisplay t))))
+
+(defun shot-suggestion-p ()
+  "Return non-nil once the CLI has suggested a prompt.
+The wrapper asks until it has one: a suggestion arrives when the CLI
+feels like offering one, not on a schedule."
+  (and shot-live (ecc-hint-suggestion shot-live) t))
 
 (defun shot-scene-send-region-point ()
   "Put the point at the top of the source buffer, with nothing marked."
@@ -636,6 +713,79 @@ The recording the rest of the scene shows is left alone."
        (insert "/")
        (ecc-chat-update-placeholder)
        (ecc-prompt-read-command ecc-render--session)))))
+
+;;;; Answering what is waiting
+
+;; Both scenes are replayed into the session `shot-prepare' already
+;; made, so the conversation goes on rather than starting again: the
+;; recording is stopped where it asks, answered here as a user would,
+;; and then played to its end.
+
+(defun shot-pending-request ()
+  "Return the request the main session is waiting on, or nil."
+  (car (ecc-session-pending shot-main)))
+
+(defun shot-scene-permission ()
+  "Replay a turn up to the permission it asks for, and go to it."
+  (shot-show shot-main)
+  (shot-play shot-main "tool-use-write" 1 8)
+  (when-let* ((request (shot-pending-request)))
+    (ecc-answer-goto-request request))
+  (redisplay t))
+
+(defun shot-scene-permission-allow ()
+  "Answer it with `a', which is the transcript's own key for it."
+  (with-selected-window (get-buffer-window (ecc-session-buffer shot-main))
+    (call-interactively #'ecc-perm-allow)
+    (redisplay t)))
+
+(defun shot-scene-permission-finish ()
+  "Play the rest of that recording, now that the tool may run."
+  (shot-play shot-main "tool-use-write" 9)
+  (with-selected-window (get-buffer-window (ecc-session-buffer shot-main))
+    (goto-char (point-max))
+    (recenter -1)
+    (redisplay t)))
+
+(defun shot-question-window ()
+  "Return the window of the question buffer, selecting it."
+  (when-let* ((buffer (get-buffer (ecc-question-buffer-name shot-main)))
+              (window (get-buffer-window buffer)))
+    (select-window window)
+    window))
+
+(defun shot-scene-question ()
+  "Replay a turn that asks a question, and stop where it waits."
+  (shot-show shot-main)
+  (shot-play shot-main "ask-user-question" 1 7)
+  (when-let* ((request (shot-pending-request)))
+    (ecc-render-goto-node shot-main (ecc-request-node request)))
+  (redisplay t))
+
+(defun shot-scene-question-open ()
+  "Open the buffer the question is answered in, as RET on the node does."
+  (with-selected-window (get-buffer-window (ecc-session-buffer shot-main))
+    (call-interactively #'ecc-session-visit))
+  (shot-question-window)
+  (redisplay t))
+
+(defun shot-scene-question-choose (n)
+  "Choose option N of the question at point."
+  (when (shot-question-window)
+    (let ((last-command-event (+ ?0 n)))
+      (call-interactively #'ecc-question-choose))
+    (redisplay t)))
+
+(defun shot-scene-question-submit ()
+  "Send the answers, and play the rest of the recording."
+  (when (shot-question-window)
+    (call-interactively #'ecc-question-submit))
+  (shot-play shot-main "ask-user-question" 8)
+  (when-let* ((window (get-buffer-window (ecc-session-buffer shot-main))))
+    (with-selected-window window
+      (goto-char (point-max))
+      (recenter -1)))
+  (redisplay t))
 
 (defun shot-scene-clear-prompt ()
   "Empty the prompt region again after the slash scene.
