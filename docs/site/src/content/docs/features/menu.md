@@ -14,29 +14,10 @@ and it lists every command in ecc.
 Each line is a key and the command it runs; `C-g` closes the menu. A line
 starting with `-` is a switch, which applies to the command run after it.
 
-Outside a session buffer the menu is `M-x ecc-menu`, or `?` in `ecc-global-map`.
-
-`ecc-global-map` is a prefix keymap holding the handful of keys worth having
-everywhere; bind it where you like, and the README suggests `C-c c`:
-
-```elisp
-(use-package ecc
-  :bind-keymap ("C-c c" . ecc-global-map))
-```
-
-| Key | What it does |
-|---|---|
-| `c` / `r` / `R` | Start a session, resume one, rename one |
-| `v` / `i` / `t` | Go to its prompt, interrupt the turn, hand it to the terminal |
-| `a` / `d` | Allow or deny the oldest request waiting |
-| `1`–`4` | Answer the oldest question with that option |
-| `n` / `N` | Next request waiting, anywhere or in this project |
-| `b` / `D` / `h` / `U` | Dashboard, diff, a recorded conversation, usage |
-| `?` | Open the menu |
-
-Every letter means in the menu what it means here, so one key carries one
-meaning wherever it is pressed. `?` is the exception, being what opens the menu
-— and the only way to reach it from a buffer that is not a session.
+Outside a session buffer the menu is `M-x ecc-menu`, or `?` in `ecc-global-map`,
+the prefix keymap of the
+[keys that work from any buffer](/emacs-claude-code/reference/key-bindings/).
+A key means the same in both.
 
 :::note[Which session the menu acts on]
 The session of the current buffer, or else the only session of this project,

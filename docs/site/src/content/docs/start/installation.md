@@ -69,7 +69,7 @@ one thing worth adding is the keymap:
 `ecc-global-map` answers a permission, jumps to the session that is waiting and
 opens the dashboard — from any buffer, so a session that stops does not make
 you go and find it first. Every key it holds is on the
-[menu page](/emacs-claude-code/features/menu/).
+[key binding reference](/emacs-claude-code/reference/key-bindings/).
 
 ## Turning on the MCP server
 
