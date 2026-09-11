@@ -13,6 +13,8 @@ Claude Code CLI 向けの Emacs クライアントです。通常の Emacs バ�
 
 **ドキュメント:** <https://wakamenod.github.io/emacs-claude-code/ja/>
 
+> **1.0 未満です。** ecc はまだ安定版ではなく、破壊的変更が入る可能性が高い段階です。コマンド、キーバインド、設定はリリースをまたいで変更・削除されることがあります。更新する前に [CHANGELOG.md](CHANGELOG.md) を確認してください。
+
 ## 概要
 
 ecc は `claude` をヘッドレスモードで実行し、パイプ経由で stream-json プロトコルを用いて通信を行うことで、
