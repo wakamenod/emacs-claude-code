@@ -21,21 +21,57 @@
   (should (commandp 'ecc-customize)))
 
 (defun ecc-transient-test--menu-keys ()
-  "Return an alist of the key and command of every suffix of `ecc-menu'."
-  (let (out)
+  "Return an alist of the key and command of every suffix of `ecc-menu'.
+Read out of the source rather than out of `transient--layout'.  That
+property is transient's own business: its shape has changed between
+versions, and the copy Emacs 29 ships stores it in a shape this walk
+reads as empty -- which let the whole check pass by asserting nothing.
+The declaration is also the right level to test: what is being fixed
+here is which key the menu gives a command, not how transient files it.
+
+Infix specifications, whose last element is the argument string rather
+than a command, are left out."
+  (let ((file (locate-library "ecc-transient.el" t))
+        (out nil)
+        (menu nil))
+    (unless file (error "Cannot find ecc-transient.el to read"))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (while (and (not menu) (not (eobp)))
+        (let ((form (ignore-errors (read (current-buffer)))))
+          (cond ((null form) (goto-char (point-max)))
+                ((and (consp form)
+                      (eq (car form) 'transient-define-prefix)
+                      (eq (cadr form) 'ecc-menu))
+                 (setq menu form))))))
+    (unless menu (error "No `ecc-menu' prefix in ecc-transient.el"))
     (letrec ((walk
               (lambda (node)
-                (cond ((vectorp node) (mapc walk (append node nil)))
-                      ((and (consp node) (plist-member (cdr node) :key))
-                       (push (cons (plist-get (cdr node) :key)
-                                   (plist-get (cdr node) :command))
-                             out))
-                      ((consp node)
-                       (mapc (lambda (x)
-                               (when (or (vectorp x) (consp x)) (funcall walk x)))
-                             node))))))
-      (funcall walk (get 'ecc-menu 'transient--layout)))
+                (cond
+                 ((vectorp node) (mapc walk (append node nil)))
+                 ((and (consp node) (stringp (car node)))
+                  (let ((last (car (last node))))
+                    (when (and (symbolp last) last)
+                      (push (cons (car node) last) out))))
+                 ((consp node) (mapc (lambda (x)
+                                       (when (or (consp x) (vectorp x))
+                                         (funcall walk x)))
+                                     node))))))
+      ;; Past the name, the arglist and the docstring lie the groups, and
+      ;; only those: a bare string here is the docstring, which starts with
+      ;; a string the way a suffix does.
+      (dolist (group (cdddr menu))
+        (when (vectorp group) (funcall walk group))))
     (nreverse out)))
+
+(ert-deftest ecc-transient-test-menu-keys-were-read ()
+  "The menu could be read at all.
+`ecc-transient-test--menu-keys' asserting nothing is the failure mode
+worth guarding: an empty list satisfies both checks below."
+  (let ((keys (ecc-transient-test--menu-keys)))
+    (should (> (length keys) 30))
+    (should (eq (cdr (assoc "c" keys)) 'ecc-start))))
 
 (ert-deftest ecc-transient-test-menu-keys-are-unique ()
   "A key opens one command in the menu."
