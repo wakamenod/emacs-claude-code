@@ -154,6 +154,12 @@ What it knows, and what is worth not learning again:
   anything starts — macOS `open` passes the environment on, and
   `CLAUDE_CODE_CHILD_SESSION` puts "Transcript saving is off" across the top of
   the picture.
+- **The picture the image scene asks about is a chart**, kept beside the
+  script in `scripts/docshots-image.png`. It was a screenshot of Emacs first,
+  and a screenshot of Emacs inside a screenshot of Emacs reads as nothing: the
+  model answers about the thing the reader is already looking at. An image is
+  sent by path, so the file is opened in the window beside the session too, or
+  the scene is one line of text appearing in the prompt region.
 - **Do not put a real session's capabilities in a picture.** They are the
   skills, agents and plugins of whoever runs this. The capabilities scene
   replays a fixture, which carries a recorded one.

@@ -258,13 +258,11 @@ name of the project rather than `greet<2>'."
 
 (defun shot-start-live-default ()
   "Start a real session on the model the Claude Code settings name.
-Two scenes need one rather than the haiku every other live scene asks
-for.  Haiku sends no `prompt_suggestion\=' at all, while the default
-model offers one after a turn or two (confirmed 2026-09-11, both with
---prompt-suggestions and --include-partial-messages); and haiku read
-the screenshot of the image scene as \"a Python IDE running tests\",
-which is not what a picture in the documentation should say.  The
-budget is larger to match, and still a budget."
+The suggestion scene needs one rather than the haiku every other live
+scene asks for: haiku sends no `prompt_suggestion\=' at all, while the
+default model offers one after a turn or two (confirmed 2026-09-11,
+with --prompt-suggestions and --include-partial-messages both passed
+either way).  The budget is larger to match, and still a budget."
   (dolist (session (ecc-model-sessions))
     (ecc-kill session))
   (setq shot-live (ecc-model-create-session
@@ -340,16 +338,15 @@ fed to a read loop."
 
 (defun shot-scene-image-file ()
   "Return the demo image, putting it in the project the session runs in.
-A picture that is already in this repository rather than one made for
-the occasion, scaled down to something that fits beside a session: the
-point of the scene is that the picture and the answer about it are on
-the screen together, and the original is wider than the frame."
-  (let ((file (expand-file-name "session.png" shot-root)))
+A plain chart, kept in scripts/ beside this file: a screenshot of Emacs
+inside a screenshot of Emacs is not a picture anyone can read, and the
+model then answers about the very thing the reader is already looking
+at.  It is sized to fit the window beside the session."
+  (let ((file (expand-file-name "coffee.png" shot-root)))
     (unless (file-exists-p file)
-      (call-process "ffmpeg" nil nil nil "-hide_banner" "-loglevel" "error" "-y"
-                    "-i" (expand-file-name "docs/images/session.png"
-                                           shot-repository)
-                    "-vf" "scale=420:-1" file))
+      (copy-file (expand-file-name "scripts/docshots-image.png"
+                                   shot-repository)
+                 file t))
     file))
 
 (defun shot-scene-image-open ()

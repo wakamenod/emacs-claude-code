@@ -156,7 +156,7 @@ fi
 # The four scenes below are answered by the model, so they need a session
 # that really runs.  It is started once, whichever of them is being taken.
 if want send-region || want fix-error || want inline || want rewrite \
-       || want at-cursor || want context; then
+       || want at-cursor || want context || want image; then
     e '(shot-start-live)'               ; sleep 4
 fi
 
@@ -255,8 +255,6 @@ if want image; then
     # An image in a prompt.  It goes by path rather than inline, so the
     # picture is opened beside the session first: without it the scene
     # is one line of text appearing in the prompt region.  The session
-    # is the one on the settings' model: haiku misread the picture.
-    e '(shot-start-live-default)' ; sleep 5
     scene image
     e '(shot-scene-image-open)'                             ; snap 3
     e '(shot-scene-insert-image)'                           ; snap 3
