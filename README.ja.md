@@ -150,6 +150,7 @@ git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/em
 | `b` | `ecc-dashboard` | セッションダッシュボードを開く |
 | `D` | `ecc-review` | セッション中の変更すべてを 1 つの diff として開く |
 | `h` | `ecc-history-open` | 過去の会話を開く |
+| `/` | `ecc-search` | 発言内容から過去のセッションを探す |
 | `U` | `ecc-usage` | 使用量と上限を表示 |
 | `?` | `ecc-menu` | コマンドメニューを開く |
 

@@ -149,6 +149,7 @@ Accessible from any buffer:
 | `b` | `ecc-dashboard` | Open sessions dashboard |
 | `D` | `ecc-review` | Review changes as unified diff |
 | `h` | `ecc-history-open` | Open past conversation history |
+| `/` | `ecc-search` | Find a past session by what was said in it |
 | `U` | `ecc-usage` | Check usage and rate limits |
 | `?` | `ecc-menu` | Open transient menu |
 

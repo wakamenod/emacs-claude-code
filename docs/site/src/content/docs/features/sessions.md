@@ -30,6 +30,37 @@ Session recordings are stored by Claude Code under `~/.claude/projects`, meaning
 
 `h` inspects a recording without launching a process, and `r` from within that buffer resumes it. If a CLI process terminates unexpectedly, ecc prompts to resume it.
 
+## Searching past conversations
+
+If you remember what was discussed rather than the session name, you can search past conversations by their message text. Press `/` in the transient menu, `C-c c /`, or run `M-x ecc-search`. Matching conversations in the current project are displayed newest first, showing matching lines and context; press `RET` or `o` to open the conversation at point. Providing a prefix argument (`C-u`) searches across all projects instead of just the current one.
+
+```
+3 sessions said permission prompt in ~/Projects/emacs-claude-code/
+
+Permission prompt rendering  2026-09-08 14:07  2d4f54c9  2 hits
+    › how does the permission prompt decide which diff to show?
+    ‹ …the block is drawn by `ecc-perm.el`, and a permission prompt keeps the tool input…
+
+Dashboard columns  2026-09-06 10:22  f6743727  1 hit
+    ‹ …an idle row is dimmed, and a permission prompt puts `!` in the gutter…
+```
+
+`›` marks user prompts, and `‹` marks Claude's responses. Each block's header displays the conversation title, last modified date and time, the abbreviated session ID, and the total match count.
+
+| Key | Action |
+|---|---|
+| `RET` / `o` | Open the recorded conversation at point |
+| `n` / `p` | Move to the next or previous session |
+| `g` | Re-run search |
+
+Search queries match against conversation text—specifically user prompts and assistant responses. Tool results, raw tool-call JSON, and file contents read by the model are excluded so searches do not match every session that happened to inspect a given file. Searches are case-insensitive literal string matches, not regular expressions.
+
+To keep searches fast across session recordings that may contain tens of thousands of messages, ecc first uses `rg` or `grep` to identify candidate recording files, then parses only the matching lines within those files. Even across projects with a hundred session recordings totaling over 100 MB, queries complete in well under a second. If neither search tool is available on `PATH`, ecc falls back to reading each recording directly, which produces identical results at a slower speed.
+
+:::note[Abandoned conversation branches are also searched]
+Determining which messages belong to the active line of conversation requires parsing the entire recording, which would defeat fast search pre-filtering. As a result, matches in conversation branches that were rewound or abandoned will still appear in results and open the corresponding session.
+:::
+
 ## The dashboard
 
 Open the dashboard with `b` in the transient menu, `C-c c b`, or `M-x ecc-dashboard`.
