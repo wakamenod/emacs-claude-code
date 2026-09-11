@@ -17,11 +17,14 @@
   "Every menu is reachable with \\[execute-extended-command]."
   (should (commandp 'ecc-menu))
   (should (commandp 'ecc-slash-menu))
+  (should (commandp 'ecc-resume-menu))
+  (should (commandp 'ecc-allow-all-menu))
   (should (commandp 'ecc-slash-command))
   (should (commandp 'ecc-customize)))
 
-(defun ecc-transient-test--menu-keys ()
-  "Return an alist of the key and command of every suffix of `ecc-menu'.
+(defun ecc-transient-test--menu-keys (&optional prefix)
+  "Return an alist of the key and command of every suffix of PREFIX.
+PREFIX defaults to `ecc-menu\='.
 Read out of the source rather than out of `transient--layout'.  That
 property is transient's own business: its shape has changed between
 versions, and the copy Emacs 29 ships stores it in a shape this walk
@@ -29,9 +32,10 @@ reads as empty -- which let the whole check pass by asserting nothing.
 The declaration is also the right level to test: what is being fixed
 here is which key the menu gives a command, not how transient files it.
 
-Infix specifications, whose last element is the argument string rather
-than a command, are left out."
-  (let ((file (locate-library "ecc-transient.el" t))
+An infix, whose last element is the argument string rather than a
+command, comes back with that string as its cdr."
+  (let ((prefix (or prefix 'ecc-menu))
+        (file (locate-library "ecc-transient.el" t))
         (out nil)
         (menu nil))
     (unless file (error "Cannot find ecc-transient.el to read"))
@@ -43,16 +47,16 @@ than a command, are left out."
           (cond ((null form) (goto-char (point-max)))
                 ((and (consp form)
                       (eq (car form) 'transient-define-prefix)
-                      (eq (cadr form) 'ecc-menu))
+                      (eq (cadr form) prefix))
                  (setq menu form))))))
-    (unless menu (error "No `ecc-menu' prefix in ecc-transient.el"))
+    (unless menu (error "No `%s' prefix in ecc-transient.el" prefix))
     (letrec ((walk
               (lambda (node)
                 (cond
                  ((vectorp node) (mapc walk (append node nil)))
                  ((and (consp node) (stringp (car node)))
                   (let ((last (car (last node))))
-                    (when (and (symbolp last) last)
+                    (when (or (stringp last) (and (symbolp last) last))
                       (push (cons (car node) last) out))))
                  ((consp node) (mapc (lambda (x)
                                        (when (or (consp x) (vectorp x))
@@ -72,6 +76,25 @@ worth guarding: an empty list satisfies both checks below."
   (let ((keys (ecc-transient-test--menu-keys)))
     (should (> (length keys) 30))
     (should (eq (cdr (assoc "c" keys)) 'ecc-start))))
+
+(ert-deftest ecc-transient-test-arguments-belong-to-their-own-prefix ()
+  "A switch sits in a prefix whose every suffix reads it.
+In transient an argument belongs to the prefix, not to a suffix, so a
+switch in `ecc-menu\=' reads as though its whole column obeyed it while
+only one command looks at it.  --fork and --remember each have a prefix
+of their own instead, reached by the key the command had in `ecc-menu\='."
+  (let ((menu (ecc-transient-test--menu-keys)))
+    (should-not (seq-find (lambda (cell) (string-prefix-p "-" (car cell))) menu))
+    (should (eq (cdr (assoc "r" menu)) 'ecc-resume-menu))
+    (should (eq (cdr (assoc "A" menu)) 'ecc-allow-all-menu)))
+  (dolist (case '((ecc-resume-menu "-f" "--fork" "r" ecc-menu-resume)
+                  (ecc-allow-all-menu "-r" "--remember" "A" ecc-menu-allow-all)))
+    (seq-let (prefix switch argument key command) case
+      (let ((keys (ecc-transient-test--menu-keys prefix)))
+        (should (equal (cdr (assoc switch keys)) argument))
+        (should (eq (cdr (assoc key keys)) command))
+        ;; Nothing else, so the switch cannot be read as applying wider.
+        (should (= (length keys) 2))))))
 
 (ert-deftest ecc-transient-test-menu-keys-are-unique ()
   "A key opens one command in the menu."
