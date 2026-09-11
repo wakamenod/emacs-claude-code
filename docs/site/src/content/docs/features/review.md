@@ -1,43 +1,36 @@
 ---
 title: Review and plan mode
-description: Reading a change before it is allowed, every change of a session at once, and the plan behind them.
+description: Review proposed changes, inspect unified diffs across a session, and interact with plan mode.
 sidebar:
   order: 4
 ---
 
-Let Claude change things, then read every change as one diff, comment on the hunks that
-need work, and send the comments as one prompt. The same buffer reviews a single proposal
-before it is applied, and a plan is read and sent back the same way.
+Review all modifications made during a session as a unified diff, attach comments to specific hunks, and submit your feedback in a single prompt. The same diff buffer can also inspect individual file proposals before approval, and review plans created in plan mode.
 
-## Reviewing what changed
+## Reviewing session changes
 
-`D` on the menu, `C-c c D`, or `M-x ecc-review`. A prefix argument asks which files.
+Press `D` in the transient menu, `C-c c D`, or run `M-x ecc-review`. A prefix argument (`C-u D`) prompts for specific files.
 
 ![Every change of the session as one diff: a comment attached to a hunk, and the prompt it becomes shown before it goes](../../../assets/review.gif)
 
-A file git tracks is diffed with `git diff` — **so your own uncommitted changes to that
-file are in it too**. A file outside a repository, or not yet added to one, is diffed
-against what it was before the session's first change.
+Files tracked by Git are diffed using `git diff` — **including any uncommitted local changes**. Untracked files or files outside a Git repository are diffed against their state prior to the session's first modification.
 
 | Key | Action |
 |---|---|
-| `c` | Comment on the hunk at point |
-| `l` | Pick one of the comments and go to its hunk |
-| `d` | Remove the comment on this hunk |
-| `e` | Edit the proposal (in the review of one) |
-| `C-c C-c` | Send the comments |
-| `C-c C-k` | Close the review, dropping the comments |
-| `g` | Read the changes again |
-| `q` | Bury the buffer |
+| `c` | Comment on hunk at point |
+| `l` | Jump to a previously added comment |
+| `d` | Remove comment on this hunk |
+| `e` | Edit proposed file content (when reviewing a single proposal) |
+| `C-c C-c` | Send comments as prompt |
+| `C-c C-k` | Cancel review and discard comments |
+| `g` | Refresh diff |
+| `q` | Bury review buffer |
 
-The buffer is a read-only `diff-mode`, so `n`, `p` and `RET` move by hunk and visit the
-source as they do in any diff.
+The buffer uses read-only `diff-mode`, so standard navigation keys (`n`, `p`, `RET`) move between hunks and jump to source files.
 
-A comment is attached to its hunk: the header of that hunk goes bold, the comment stands
-under it, and the header line counts them. `c` on a commented hunk offers what you wrote
-before.
+Comments are attached directly to hunks: the hunk header is highlighted in bold, the comment appears immediately below it, and the header line displays the total comment count. Pressing `c` on an already commented hunk lets you edit your previous comment.
 
-`C-c C-c` collects them into one prompt, a block per comment:
+Pressing `C-c C-c` compiles all comments into a single prompt buffer for final review:
 
 ````
 ## hello.py  L1-L6
@@ -50,83 +43,66 @@ before.
 Comment: the docstring still says hi
 ````
 
-It is shown in a buffer first and can be edited there: `C-c C-c` sends it, `C-c C-k` goes
-back to the diff.
+You can edit this prompt before submitting: press `C-c C-c` to send, or `C-c C-k` to return to the diff without sending.
 
-## Reviewing a proposal before it is applied
+## Reviewing proposals before approval
 
 ![The text of a proposed Write, changed in a buffer and then allowed with the change](../../../assets/proposal.gif)
 
-On a request waiting in the transcript, `c` opens the same buffer for that one change and
-asks for the comment; `e` opens the text it proposes. Both are keys of the node — see
-[Prompt and transcript](/emacs-claude-code/features/prompt/#on-a-node-waiting-for-an-answer).
+When a tool permission request is pending in the transcript, `c` opens the review buffer for that specific modification, while `e` opens the proposed file content for direct editing. Both keys are available directly on the request node (see [Prompt and transcript](/emacs-claude-code/features/prompt/#on-a-pending-request-node)).
 
-A comment here goes back as the **reason of the deny**, so Claude proposes again rather
-than being told after the change is made.
+Comments submitted here are sent as the **reason for rejection**, prompting Claude to generate an updated proposal rather than correcting mistakes after writing.
 
-`e` opens the proposed text in the file's own major mode. `C-c C-c` allows the request
-with your text in place of Claude's, `C-c C-k` leaves it waiting. When you changed
-something, the next message carries a diff saying what was applied instead.
+`e` opens the proposed buffer in the target file's major mode. `C-c C-c` approves the change using your edited buffer instead of Claude's proposal; `C-c C-k` leaves the request pending. If you modify the text, ecc automatically sends a diff showing what was applied.
 
 ## Plan mode
 
-The CLI asks to leave plan mode with a request carrying the whole plan. ecc opens it in a
-buffer you can edit, by itself while the session is on screen.
+When exiting plan mode, the CLI submits a request containing the full plan. ecc opens this plan in an editable buffer alongside the active session.
 
 ![A plan opened in its own buffer, the permission mode chosen, and the plan approved](../../../assets/plan.gif)
 
-There are three ways to say what should change, and approving looks for all three:
+There are three ways to provide feedback on a plan:
 
-| Feedback | How |
+| Feedback method | How to use |
 |---|---|
-| A comment on a line | `C-c C-a`; `C-c C-r` takes it off |
-| A marker in the text | write `@claude: …` on a line |
-| An edit of the plan | type in the buffer; `C-c C-d` shows what you changed |
+| Line comment | Press `C-c C-a` to add a comment (`C-c C-r` to remove) |
+| Inline marker | Write `@claude: …` on any line |
+| Direct edit | Edit the plan text directly; press `C-c C-d` to diff changes |
 
-With any of them, `C-c C-c` sends the plan back instead of approving it — one message
-with a section per kind of feedback — and asks for the plan again. With none of them it
-approves, and asks the CLI to switch permission mode: `C-c C-p` chooses which,
-`ecc-plan-default-mode` (`acceptEdits`) is what it is otherwise.
+If any feedback is present, `C-c C-c` returns the plan with your comments and edits instead of approving it, requesting an updated plan. If no feedback is entered, `C-c C-c` approves the plan and requests a permission mode switch: press `C-c C-p` to choose a mode, otherwise defaulting to `ecc-plan-default-mode` (`"acceptEdits"`).
 
 | Key | Action |
 |---|---|
-| `C-c C-c` | Approve, or send the feedback the buffer holds |
-| `C-c C-k` | Send it back with a reason, carrying the rest of the feedback |
-| `C-c C-a` / `C-c C-r` | Add or remove a comment on this line |
-| `C-c C-d` | Show what you changed in the plan |
-| `C-c C-p` | Choose the permission mode to approve into |
-| `C-c C-n` | Next line that changed since the previous plan |
+| `C-c C-c` | Approve plan, or send feedback if edits/comments exist |
+| `C-c C-k` | Reject plan with a reason, including any feedback |
+| `C-c C-a` / `C-c C-r` | Add or remove comment on current line |
+| `C-c C-d` | Diff your edits against the proposed plan |
+| `C-c C-p` | Select permission mode for approval |
+| `C-c C-n` | Jump to next line modified since previous plan |
 
-A plan shown again marks in the margin the lines that are new since the last one, and the
-header line says `+N −N`.
+When an updated plan arrives, modified lines are highlighted in the margin, and the header line displays `+N −N` change statistics.
 
 ## The Files section
 
 ![The Files section: a file unfolded to its diff, then reviewed on its own](../../../assets/files.gif)
 
-Every file the session touched stands at the end of the transcript: the path, what was
-done to it (`R×n E×n W×n`) and the lines changed (`+n −n`). `TAB` unfolds the merged diff
-of every change to that file, `RET` visits the file, and `d` reviews that file alone.
+A summary of all files touched during the session appears at the bottom of the transcript, displaying the file path, operations performed (`R×n` reads, `E×n` edits, `W×n` writes), and net lines changed (`+n −n`). Press `TAB` to expand the cumulative diff for a file, `RET` to visit the file, and `d` to review that file individually in diff-mode.
 
-`f` in the transcript, or `F` on the menu, goes there.
-`ecc-render-summary-position` puts the section at the top instead.
+Press `f` in the transcript (or `F` in the menu) to jump to this section. Set `ecc-render-summary-position` to `'top` to place the section at the top instead.
 
 ## The Timeline
 
-`T` lists the turns of the session by the prompt each started with, and moves to the one
-picked. `C-c C-n` and `C-c C-p` step turn by turn.
+Press `T` in the transcript to display a prompt history picker and jump directly to any turn. `C-c C-n` and `C-c C-p` move forward and backward turn by turn.
 
 ![The turn picker, listing the turns of the session by their prompts](../../../assets/timeline.png)
 
-## Where the review opens
+## Window placement for reviews
 
-A diff or a plan needs room, and the session windows are what there is to take it from.
-Two variables decide what happens:
+Reviewing diffs or plans requires screen space. Two variables control window behavior during review:
 
-| Variable | What it does |
+| Variable | Description |
 |---|---|
-| `ecc-window-hide-on-review` | `project` hides the sessions of the project being reviewed, `all` hides every session, nil leaves the windows alone |
-| `ecc-window-review-focus` | `review` selects the review, `session` leaves point in the transcript, nil leaves it where it was |
+| `ecc-window-hide-on-review` | `'project` hides sessions of the current project, `'all` hides all sessions, and `nil` keeps windows intact |
+| `ecc-window-review-focus` | `'review` focuses the review buffer, `'session` retains point in the transcript, and `nil` preserves current focus |
 
-`ecc-toggle` brings back what was hidden. The rest of the settings are on the
-[configuration reference](/emacs-claude-code/reference/configuration/).
+`ecc-toggle` restores any hidden session windows. Additional settings are documented in the [configuration reference](/emacs-claude-code/reference/configuration/).

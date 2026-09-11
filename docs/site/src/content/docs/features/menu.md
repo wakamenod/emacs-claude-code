@@ -1,128 +1,103 @@
 ---
 title: Transient menu
-description: The menu opened with C-c ?, and the commands in its Session group.
+description: Access all ecc commands via the C-c ? transient menu.
 sidebar:
   order: 1
 ---
 
-`C-c ?` opens the menu. It is a
-[transient](https://magit.vc/manual/transient/), the kind of menu magit uses,
-and it lists every command in ecc.
+Pressing `C-c ?` opens the transient menu (built using [transient](https://magit.vc/manual/transient/), the same menu library used by Magit). It provides discoverable access to every command in ecc.
 
 ![The transient menu open under a session, showing its six groups: Session, Send, Review, Respond, View and Config](../../../assets/menu.png)
 
-Each line is a key and the command it runs; `C-g` closes the menu. A line
-starting with `-` is a switch, which applies to the command run after it.
+Each line displays a key and its command; press `C-g` to close the menu. Prefix switches (lines starting with `-`) toggle options for subsequent commands.
 
-Outside a session buffer the menu is `M-x ecc-menu`, or `?` in `ecc-global-map`,
-the prefix keymap of the
-[keys that work from any buffer](/emacs-claude-code/reference/key-bindings/).
-A key means the same in both.
+Outside session buffers, open the menu via `M-x ecc-menu` or `?` in `ecc-global-map` (see [Global key bindings](/emacs-claude-code/reference/key-bindings/)). Keys have identical meanings in both contexts.
 
-:::note[Which session the menu acts on]
-The session of the current buffer, or else the only session of this project,
-the only one on screen, or the most recently used. It asks only when none of
-those settles it, and remembers the answer for that buffer.
+:::note[Target session resolution]
+The menu targets the session associated with the current buffer. If none is associated, it targets the sole session for the project, the only session on screen, or the most recently active session. If ambiguous, it prompts once and remembers your choice for that buffer.
 :::
 
 ## Session
 
 ### `c` — Start
 
-Starts a session in the project of the current buffer, named after that
-directory. A second session in the same project asks for a name; `C-u c` asks
-for the directory too.
+Starts a session in the current buffer's project, named after that directory. Starting another session in the same project prompts for a name; `C-u c` prompts for both directory and name.
 
 ### `r` — Resume
 
-Lists the conversations that can be picked up again.
+Lists conversations available to resume.
 
 ![The resume picker, listing five conversations, each with an icon for its state](../../../assets/resume.png)
 
 | Icon | State |
 |---|---|
-| ▶ | A session this Emacs is running |
-| ● | A session this Emacs holds whose process has stopped |
-| ◉ | A conversation another process is running |
-| ↺ | A conversation that is only a recording |
+| ▶ | Active session running in this Emacs instance |
+| ● | Terminated session buffer in this Emacs instance |
+| ◉ | Active conversation running in another process |
+| ↺ | Recorded conversation on disk |
 
-Then the name, when it was last worked in, and the directory or, for a
-recording, its first prompt. The `-f` switch branches a new conversation from
-the one picked instead of continuing it.
+Each entry shows its name, last active time, and directory (or initial prompt for recordings). Use the `-f` switch to branch a new conversation from the selected one instead of continuing it.
 
-:::caution[Resuming a live session branches the conversation]
-Two processes on one session id write into the same recording, and the CLI has
-no lock against it. That is what ◉ marks; ecc asks before resuming one.
+:::caution[Resuming an active session branches history]
+If two processes write to the same session ID simultaneously, the recording can become corrupted since the CLI does not use file locking. This state is indicated by ◉; ecc asks for confirmation before resuming.
 :::
 
 ### `k` — Kill
 
-Stops the process and kills the session's buffers. The recording stays on
-disk, so `r` still lists the conversation.
+Stops the process and kills the session's buffers. The recording remains on disk so `r` can still resume it later.
 
 ### `R` — Rename
 
-Renames the session and its buffers. The name is what the tabs, the mode line
-and the pickers show.
+Renames the session and its buffers. The new name updates across tabs, the mode line, and selection menus.
 
-### `v` — Go to the prompt
+### `v` — Focus prompt
 
-Shows the session's window and puts point in the prompt region.
+Displays the session window and moves point to the prompt input area.
 
-### `w` — Hide or restore windows
+### `w` — Toggle windows
 
-Hides the session windows of this project, or shows them again. `C-u w`
-applies to every project. A hidden session goes on running.
+Hides or restores session windows for the current project. `C-u w` toggles session windows across all projects. Background sessions continue running while hidden.
 
-### `S` — Switch this window to another session
+### `S` — Switch session in window
 
-A session window carries a tab per session. `S` changes which one the window
-shows, in place.
+Session windows feature tabs for each active session. `S` switches the current window to display another session in place.
 
 ![The session window changing from one session to another: the selected tab moves from greet to notes and the transcript is replaced](../../../assets/switch.gif)
 
-In a session buffer, `C-c C-t` is the same command.
+Inside session buffers, `C-c C-t` performs the same action.
 
 ### `i` — Interrupt
 
-Interrupts the running turn. What is already done is kept.
+Interrupts the running turn while preserving work completed so far.
 
-### `t` — Hand over to the terminal
+### `t` — Hand over to terminal
 
-Continues the conversation in [ghostel](https://github.com/dakra/ghostel),
-which draws the CLI's own interface in an Emacs buffer.
+Hands off the conversation to [ghostel](https://github.com/dakra/ghostel), which renders the CLI's native interface inside an Emacs buffer.
 
 ![A session handed over: the CLI's own interface takes the window, with the conversation resumed](../../../assets/handover.gif)
 
-The turn is interrupted and the process Emacs started is stopped before the
-terminal resumes the conversation, because two processes would branch the
-recording. The transcript follows the terminal while it has the session.
+The turn is interrupted and the Emacs process is stopped before the terminal resumes the session to prevent branching history. The transcript continues tracking terminal activity while active.
 
-### `u` — Take it back
+### `u` — Reclaim session
 
-Reads what the terminal added, then resumes the session headless in Emacs. If
-the terminal is still running the session stays with it, and comes back when
-the terminal exits.
+Imports new exchanges from the terminal session and resumes it headless in Emacs. If the terminal is still running, the session remains there and returns automatically when the terminal exits.
 
 ## Send
 
-These are meant to be used from your own source buffers, not from the
-transcript. Each sends to the session the menu resolves to and says in the echo
-area which one it went to; while a turn is running the prompt is queued rather
-than interrupting it.
+These commands are intended to be run from source code buffers, sending context directly to the resolved session without interrupting active turns (subsequent prompts are queued).
 
 ### `s` `x` `g` `f` — Sending from a buffer
 
-| Key | Sends |
+| Key | Description |
 |---|---|
-| `s` | A line typed in the minibuffer, and nothing else |
-| `x` | That line, and where you are: the file and the line |
-| `g` | The region, quoted, or the whole buffer when nothing is marked |
-| `f` | The file itself, as an `@path` reference the CLI reads |
+| `s` | Send a single line typed in the minibuffer |
+| `x` | Send a line along with current file and line position |
+| `g` | Send the active region (or entire buffer if unselected) in a quoted block |
+| `f` | Send the file path as an `@path` reference for the CLI to read |
 
 ![Sending the region: the marked code and the question arrive in the transcript, and the answer streams back](../../../assets/send-region.gif)
 
-What `x` and `g` append is a block you can read before it goes:
+Context appended by `x` and `g` appears in a formatted block:
 
 ````
 ---
@@ -133,52 +108,39 @@ def greet(name):
 ```
 ````
 
-A prefix argument asks for an instruction to put before the code (`C-u g`), or,
-for `s`, which session to send to. `f` offers to save the buffer first, because
-the CLI reads the file from disk.
+A prefix argument prompts for an instruction to prepend to the code (`C-u g`), or prompts for the target session (`C-u s`). `f` offers to save the buffer first, ensuring the CLI reads the latest changes from disk.
 
-### `e` — Fix the error at point
+### `e` — Fix error at point
 
-Sends the diagnostics on the current line with the few lines of code around
-them. flymake is asked first, then flycheck, then the help text of whatever
-overlay is at point.
+Sends diagnostics on the current line alongside surrounding context code. Queries Flymake first, then Flycheck, and finally any overlay help text at point.
 
 ![The checker marks a line, the diagnostic is sent, and the fix comes back as an edit waiting to be allowed](../../../assets/fix-error.gif)
 
 ### `l` — Ask inline
 
-Asks about the region, or the file, and puts the answer in an overlay above
-point rather than in the transcript. `n` and `p` scroll it, `r` asks something
-else, `q` takes it away.
+Asks a question about the region or file and displays the response in an overlay directly above point rather than in the transcript. Press `n` and `p` to scroll, `r` to ask a follow-up, and `q` to dismiss.
 
 ![A question typed in the minibuffer, and the answer appearing in an overlay over the code](../../../assets/inline.gif)
 
-The question goes to a session of its own: a fork of the project's session, or
-a fresh light one. Which of the two is asked once and remembered for that
-buffer.
+The question runs in a dedicated lightweight or forked session (selected once and remembered per buffer).
 
-### `W` — Rewrite the region
+### `W` — Rewrite region
 
-Rewrites the marked code as an instruction says. The answer is shown where the
-code is, and nothing is written until it is accepted.
+Rewrites selected code according to an instruction. The proposed replacement is shown in place, and changes are applied to the buffer only after confirmation with `RET`.
 
 ![The rewritten code shown above the original, then accepted with RET and written into the buffer](../../../assets/rewrite.gif)
 
-It is one shot with no tools: the CLI is asked for the code and for nothing
-else, and Emacs is what touches the buffer.
+This is a single-shot operation without tool access: the CLI provides replacement code and Emacs updates the buffer directly.
 
 ## Review
 
-`D` opens every change of the session as one diff, `F` and `P` move to the
-Files and the Plan sections of the transcript, and `T` picks a turn to jump to.
+`D` opens all modifications made during the session as a unified diff. `F` and `P` navigate to the Files and Plan sections, and `T` jumps to a specific turn.
 
 See [Review and plan mode](/emacs-claude-code/features/review/).
 
 ## Respond
 
-`a` and `d` answer the oldest request waiting, `A` answers every one of them,
-`n` and `N` jump to the next session that is waiting, and `1`–`4` answer a
-question with one of its options.
+`a` and `d` allow or deny the oldest pending request, `A` allows all pending requests, `n` and `N` jump to next waiting sessions, and `1`–`4` select question options.
 
 See [Prompt and transcript](/emacs-claude-code/features/prompt/).
 
@@ -186,56 +148,39 @@ See [Prompt and transcript](/emacs-claude-code/features/prompt/).
 
 ### `b` — Dashboard
 
-Every session this Emacs runs, in one list.
+View all active sessions in a single overview.
 See [Session management](/emacs-claude-code/features/sessions/).
 
 ### `y` — Capabilities
 
-What the session can actually do: its skills, agents, slash commands, MCP
-servers and plugins.
+Inspect active skills, subagents, slash commands, MCP servers, and plugins.
 See [Other features](/emacs-claude-code/features/other/#capabilities).
 
 ### `h` — History
 
-Opens a conversation the CLI recorded under `~/.claude/projects`, in an
-ordinary session buffer. It reads like a live one, and `r` resumes it from
-there. Conversations held in the terminal are there too, not only the ones
-started here.
+Open a past conversation recorded under `~/.claude/projects` in a standard session buffer. Past conversations can be inspected read-only, or resumed with `r`.
 
 ### `U` — Usage
 
-How much of the Claude Code plan has been used.
-See [Other features](/emacs-claude-code/features/other/).
+Check current plan usage and rate limits.
+See [Other features](/emacs-claude-code/features/other/#usage).
 
 ### `L` — Log
 
-The raw protocol log of this session: every line in and out, stamped with the
-time, `<<` for what came in and `>>` for what went out. It is the first place
-to look when something behaves oddly, and what a bug report should carry.
+View raw JSON protocol logs with timestamps (`<<` for incoming messages, `>>` for outgoing). This is the primary diagnostic buffer for troubleshooting and bug reports.
 
 ## Config
 
 ### `m` — Model
 
-Asks the session to use another model, without restarting it. This is why
-there is no setting that names one.
+Change the active model for the running session without restarting.
 
 ### `p` — Permission mode
 
-Asks the session to switch permission mode. `S-TAB` in a session cycles the
-modes without going through the menu, and the footer under the prompt says
-which one is in force.
+Switch the permission mode for the running session. (In session buffers, press `S-TAB` to cycle modes directly).
 
-### `o` `O` `K` — Remote control
+### `o` `O` `K` — Remote Control
 
-`o` turns Remote Control on or off for this session. With it on, the session
-appears in the Code tab of the Claude app and can be driven from there;
-whether it starts that way is up to your Claude Code settings, which ecc
-follows.
+`o` toggles Remote Control for this session, allowing it to be driven from the Claude web or desktop app. `O` opens the session in your browser at claude.ai/code, and `K` copies that URL to the kill ring. Both require the session to be connected to the bridge.
 
-`O` opens that session at claude.ai/code in your browser, and `K` puts the
-same URL in the kill ring. Both need the session to be on the bridge.
-
-Every setting is on the
-[configuration reference](/emacs-claude-code/reference/configuration/), and
-`M-x customize-group RET ecc` opens the same list in Emacs.
+All configuration variables can be customized via `M-x customize-group RET ecc` or viewed in the [configuration reference](/emacs-claude-code/reference/configuration/).

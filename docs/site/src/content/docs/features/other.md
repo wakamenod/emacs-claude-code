@@ -1,42 +1,32 @@
 ---
 title: Other features
-description: "The rest: what a session can do, and what the plan has been spent on."
+description: Inspect session capabilities, tool configurations, and Claude Code plan usage.
 sidebar:
   order: 5
 ---
 
 ## Capabilities
 
-`y` on the menu, or `C` in the dashboard. What the session can actually do, as the CLI
-reported it in `system/init`: skills, agents, slash commands, MCP servers and plugins,
-each grouped by where it comes from — the project, your global settings, a plugin, or the
-CLI itself.
+Press `y` in the transient menu or `C` in the dashboard to inspect active session capabilities reported by the CLI during `system/init`: skills, subagents, slash commands, MCP servers, and plugins. Items are grouped by origin (project, user configuration, plugin, or built-in).
 
 ![The capabilities buffer, its groups folded and unfolded](../../../assets/capabilities.gif)
 
-`TAB` folds a group, `RET` visits what is at point, and `g` reads it again. Before the
-first turn there is nothing to show, and the buffer says so.
+Press `TAB` to expand or collapse groups, `RET` to inspect the item at point, and `g` to refresh. The buffer indicates when no capabilities have been initialized yet prior to the first turn.
 
 ## Usage
 
-`U` on the menu, `C-c c U`, or `M-x ecc-usage`: how much of the Claude Code plan has been
-used.
+Press `U` in the transient menu, `C-c c U`, or run `M-x ecc-usage` to view Claude Code plan usage and rate limit status.
 
 ![The usage report floating over the frame: the rate limit windows, what this session cost, and what has been spending the limits](../../../assets/usage.png)
 
-The numbers are the CLI's own — the same ones the web client shows under Settings →
-Usage — so nothing here is estimated. With no session running, one is started for the
-question alone and stopped again; no prompt is sent, so asking costs nothing.
+Metrics come directly from the CLI — identical to what appears under Settings → Usage in the web client — without local estimation. If no session is currently active, ecc launches a temporary CLI query and stops it immediately; no prompt is sent, so querying incurs no token cost.
 
 | Key | Action |
 |---|---|
-| `g` | Ask again |
-| `b` | Show or hide what has been spending the limits |
-| `q` | Take it away |
+| `g` | Refresh usage metrics |
+| `b` | Toggle breakdown of rate limit consumption |
+| `q` | Dismiss report |
 
-`ecc-usage-display` floats the report over the frame, as above, or puts it in a window.
-What has been spending the limits is a scan of the sessions on **this machine**, so it
-says nothing about another device or claude.ai.
+`ecc-usage-display` controls whether the report floats over the frame (using posframe) or appears in an ordinary window. The breakdown scans session activity recorded on **this machine**; activity on other devices or claude.ai is not included.
 
-Every setting is on the
-[configuration reference](/emacs-claude-code/reference/configuration/).
+All configuration options are listed in the [configuration reference](/emacs-claude-code/reference/configuration/).

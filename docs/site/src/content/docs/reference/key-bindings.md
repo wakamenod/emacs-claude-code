@@ -1,13 +1,11 @@
 ---
 title: Key bindings
-description: The keys that work from any buffer, and how to bind them.
+description: Global keybindings accessible from any buffer, and configuration instructions.
 sidebar:
   order: 1
 ---
 
-`ecc-global-map` is a prefix keymap holding the handful of keys worth having
-everywhere — a session that stops for a permission does not make you go and
-find it first. Bind it where you like; the README suggests `C-c c`:
+`ecc-global-map` is a prefix keymap containing commands you frequently need while editing other files — allowing you to respond to permission prompts and switch to active sessions without navigating to their buffers first. Bind it to any convenient prefix; the README recommends `C-c c`:
 
 ```elisp
 (use-package ecc
@@ -20,21 +18,16 @@ Or, without `use-package`:
 (global-set-key (kbd "C-c c") ecc-global-map)
 ```
 
-| Key | What it does |
+| Key | Action |
 |---|---|
-| `c` / `r` / `R` | Start a session, resume one, rename one |
-| `v` / `i` / `t` | Go to its prompt, interrupt the turn, hand it to the terminal |
-| `a` / `d` | Allow or deny the oldest request waiting |
-| `1`–`4` | Answer the oldest question with that option |
-| `n` / `N` | Next request waiting, anywhere or in this project |
-| `b` / `D` / `h` / `U` | Dashboard, diff, a recorded conversation, usage |
-| `?` | Open the menu |
+| `c` / `r` / `R` | Start session / resume / rename |
+| `v` / `i` / `t` | Focus prompt / interrupt turn / hand over to terminal |
+| `a` / `d` | Allow or deny oldest pending request |
+| `1`–`4` | Select corresponding option for pending question |
+| `n` / `N` | Jump to next pending request (globally or within current project) |
+| `b` / `D` / `h` / `U` | Open dashboard / review diffs / view history / check usage |
+| `?` | Open transient menu |
 
-Every letter means in the [menu](/emacs-claude-code/features/menu/) what it
-means here, so one key carries one meaning wherever it is pressed. `?` is the
-exception, being what opens that menu — and the only way to reach it from a
-buffer that is not a session.
+Keybindings correspond directly to commands in the [transient menu](/emacs-claude-code/features/menu/), ensuring consistent mnemonic shortcuts across Emacs. `?` opens the transient menu itself, providing quick access to all ecc commands from outside a session buffer.
 
-The keys inside a session buffer are on
-[Prompt and transcript](/emacs-claude-code/features/prompt/); the menu reaches
-every command there is.
+For buffer-local bindings inside session buffers, see [Prompt and transcript](/emacs-claude-code/features/prompt/).

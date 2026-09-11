@@ -3,9 +3,7 @@ title: ecc
 description: Claude Code CLI の Emacs クライアント。
 template: splash
 hero:
-  # Hero action links are used verbatim: Starlight does not prepend `base`
-  # to them the way it does for sidebar and slug links.
-  tagline: Claude Code CLI の Emacs クライアント。会話は普通の Emacs バッファの中で進みます。
+  tagline: Claude Code CLI の Emacs クライアント。会話は通常の Emacs バッファ内で完結します。
   actions:
     - text: はじめる
       link: /emacs-claude-code/ja/start/overview/
@@ -20,11 +18,6 @@ hero:
       variant: minimal
 ---
 
-ecc は `claude` をヘッドレスで動かし、その stream-json プロトコルでパイプ越しに
-やりとりし、会話を普通の Emacs バッファのテキストとして描きます。ターミナルエミュ
-レータは使いません。権限リクエストも diff もプランも、トランスクリプトから、ある
-いは今編集しているどのバッファからでも、キー一つで答えられます。
+ecc は `claude` をヘッドレスで動かし、stream-json プロトコルを用いてパイプ経由で通信し、会話を通常の Emacs バッファに直接描画します。ターミナルエミュレータは不要です。権限リクエストや diff、プランの確認も、トランスクリプト上や現在編集中の任意のバッファから、キー入力ひとつで応答できます。
 
-まず[概要](/emacs-claude-code/ja/start/overview/)を読み、
-[インストール](/emacs-claude-code/ja/start/installation/)してください。
-リファレンスにはコマンド、設定、キーの全件があります。
+まずは[概要](/emacs-claude-code/ja/start/overview/)をご覧ください。続いて[インストール手順](/emacs-claude-code/ja/start/installation/)をご確認いただけます。リファレンスにはすべてのコマンド、設定項目、キーバインドを掲載しています。

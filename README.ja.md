@@ -2,7 +2,7 @@
 
 ---
 
-# Emacs client for the Claude Code
+# Emacs Client for Claude Code
 
 Claude Code CLI 向けの Emacs クライアントです。通常の Emacs バッファ内で直接対話を行うことができます。
 
@@ -11,7 +11,7 @@ Claude Code CLI 向けの Emacs クライアントです。通常の Emacs バ�
 
 ![セッション：プロンプトを送り、Edit を許可すると、左のソースバッファが変更を取り込む](docs/images/session.gif)
 
-**ドキュメント:** <https://wakamenod.github.io/emacs-claude-code/> *(準備中)*
+**ドキュメント:** <https://wakamenod.github.io/emacs-claude-code/ja/> *(準備中)*
 
 ## 概要
 
@@ -110,9 +110,7 @@ git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/em
   ;; `ecc-global-map' により、任意のバッファからプロンプトに応答可能
   ;; `:bind-keymap' により、プレフィックスキー入力時に初めて ecc がロードされる
   :bind-keymap ("C-c c" . ecc-global-map)
-  ;; メニューは `C-c c ?' でも開けるが、よく開くなら打鍵が多い。
-  ;; C-' は GUI 用のキーで、端末からは送れないので、端末で使う場合は
-  ;; 別のキーを割り当てること
+  ;; 頻出コマンド向けの専用ショートカット設定例:
   :bind (("C-c C-'" . ecc-menu)
          ("C-c C-v" . ecc-start))
   :config

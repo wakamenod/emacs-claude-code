@@ -1,15 +1,11 @@
 ---
 title: Prompt and transcript
-description: What the two regions of a session buffer can do.
+description: How to interact with the prompt input area and transcript in a session buffer.
 sidebar:
   order: 3
 ---
 
-A session buffer holds the transcript at the top and, under a divider, the prompt you
-type in; under that comes a footer. The transcript is read-only text carrying a keymap of
-its own as a text property, so single letters act on it. The prompt has no such property
-and obeys the mode map, which binds only `RET`, `TAB`, movement keys and keys under
-`C-c C-`, so a letter stays a letter.
+A session buffer contains the transcript at the top, a prompt input area below a divider, and a footer at the bottom. The transcript is read-only text with its own local keymap attached via text properties, allowing single keys to trigger commands. The prompt area has no such property and follows the major mode map (binding only `RET`, `TAB`, movement keys, and `C-c C-` prefixes), so normal character typing is preserved.
 
 ## The prompt region
 
@@ -17,206 +13,169 @@ and obeys the mode map, which binds only `RET`, `TAB`, movement keys and keys un
 
 | Key | Action |
 |---|---|
-| `RET` | A newline — or send, when `ecc-chat-return-sends` is on |
-| `S-RET`, `C-j` | A newline |
-| `C-c C-c` | Send |
-| `C-c C-k` | Empty the region |
-| `C-k` | Kill the visual line, stopping at the end of the region |
-| `C-a` / `C-e` | The ends of the visual line |
-| `TAB` | Complete a slash command or an `@` reference |
-| `/` | Insert a slash, and offer the commands when it opens the prompt |
+| `RET` | Insert newline (or send, if `ecc-chat-return-sends` is enabled) |
+| `S-RET`, `C-j` | Insert newline |
+| `C-c C-c` | Send prompt |
+| `C-c C-k` | Clear prompt area |
+| `C-k` | Kill visual line (bounded by prompt area) |
+| `C-a` / `C-e` | Move to beginning / end of visual line |
+| `TAB` | Complete slash command or `@` reference |
+| `/` | Insert slash (shows commands when pressed at an empty prompt) |
 
-### Saying it again
+### Prompt history and suggestions
 
 | Key | Action |
 |---|---|
-| `M-p` / `M-n`, `C-<up>` / `C-<down>` | The previous or next prompt from the history |
-| `C-c C-r` | Send the last prompt again |
-| `C-c C-s` | Accept the prompt the CLI suggested |
+| `M-p` / `M-n`, `C-<up>` / `C-<down>` | Previous or next prompt from history |
+| `C-c C-r` | Resend last prompt |
+| `C-c C-s` | Accept CLI prompt suggestion |
 
-The history is one list shared by every session, so a prompt typed in one is there in
-the next.
+Prompt history is shared across all sessions, so a prompt typed in one session is immediately available in another.
 
-The CLI offers a prompt of its own after a turn or two. It stands in the empty prompt
-region as ghost text, and `C-c C-s` makes it a draft.
+The CLI may suggest a follow-up prompt after a turn or two. Suggestions appear in the empty prompt area as ghost text; press `C-c C-s` to accept it as an editable draft.
 
 ![A suggestion standing in the empty prompt region, taken with C-c C-s and sent](../../../assets/suggestion.gif)
 
-Suggestions arrive only when `ecc-prompt-suggestions-enabled` is on, which passes
-`--prompt-suggestions` to the CLI, and not every model offers them.
+Suggestions appear only when `ecc-prompt-suggestions-enabled` is non-nil (which passes `--prompt-suggestions` to the CLI). Note that not all models support suggestions.
 
-### Under the prefix
+### Prefix keybindings (C-c C-)
 
 | Key | Action |
 |---|---|
-| `C-c C-q` | Show what is queued |
-| `C-c C-g` | Interrupt the running turn |
-| `C-c C-x` | Attach or detach the editor's context |
-| `C-c C-i` | Insert an image |
-| `C-c C-a` / `C-c C-d` | Allow or deny the request waiting |
-| `C-c C-n` / `C-c C-p` | Next or previous turn |
-| `C-c C-b` | Show the side questions asked with `/btw` |
-| `C-c C-t` | Show another session in this window |
-| `C-c C-e` | Export the conversation as Markdown |
-| `S-TAB` | Cycle the permission mode |
-| `C-c ?` | Open the menu |
+| `C-c C-q` | Show queued prompts |
+| `C-c C-g` | Interrupt running turn |
+| `C-c C-x` | Toggle editor context attachment |
+| `C-c C-i` | Insert image |
+| `C-c C-a` / `C-c C-d` | Allow or deny pending request |
+| `C-c C-n` / `C-c C-p` | Move to next / previous turn |
+| `C-c C-b` | Show `/btw` side-queries |
+| `C-c C-t` | Switch window to another session |
+| `C-c C-e` | Export conversation as Markdown |
+| `S-TAB` | Cycle permission mode |
+| `C-c ?` | Open transient menu |
 
-`C-c C-a` and `C-c C-d` answer without leaving the prompt: the request at point if there
-is one, else the oldest of this session, else the oldest anywhere.
+`C-c C-a` and `C-c C-d` allow responding without leaving the prompt area: they answer the request at point if one exists, otherwise the oldest pending request in this session, or finally the oldest across all sessions.
 
 ### `@` references
 
 ![A prompt with @cursor in it: the reference becomes the file and the line the point was on, and the code goes with it](../../../assets/at-cursor.gif)
 
-`@` in a prompt names something for Claude to read. `TAB` completes them — the three
-below, and the files of the project.
+`@` in a prompt references context for Claude to read. `TAB` completes available references — including those listed below, as well as project files.
 
-| Reference | What is sent |
+| Reference | Description |
 |---|---|
-| `@region` | The region, quoted |
-| `@cursor` | The line the cursor is on, with its neighbours |
-| `@diagnostics` | The diagnostics of that file |
-| `@path:10-40` | Those lines of that file |
-| `@path` | Left as it is, for the CLI to resolve |
+| `@region` | Active region, formatted as a quoted code block |
+| `@cursor` | Current line at point, including surrounding context lines |
+| `@diagnostics` | Diagnostics (Flymake/Flycheck) for the current buffer |
+| `@path:10-40` | Specific lines (e.g. 10–40) of the named file |
+| `@path` | File path reference resolved directly by the CLI |
 
-Emacs expands the first four before sending: the reference is replaced by a short label
-and what it stands for is appended as one quoted block under a rule, two references to
-the same thing sharing one block. The echo area names what was attached, and says when a
-`@region` had no region to send and went as it stands.
+Emacs expands the first four references before sending: each reference is replaced by a short label in the prompt, and the referenced content is appended in a quoted block below a divider (duplicate references share a single block). The echo area confirms attached content and warns if `@region` was used without an active selection.
 
-The region, the cursor and the diagnostics are read from the buffer you last worked in,
-which is not the session buffer you are typing in.
+The region, cursor, and diagnostics are captured from the buffer you were editing before switching to the session buffer.
 
 ### Slash commands
 
 ![The slash command list open over a session, each command with the description the CLI gave it](../../../assets/slash.png)
 
-A `/` that opens the prompt offers the list; `TAB` completes one wherever it stands. The
-description beside each is the CLI's own.
+Typing `/` at the beginning of the prompt displays the command menu; `TAB` completes slash commands anywhere in the prompt. Each command includes its description from the CLI.
 
-`/model`, `/effort`, `/permissions`, `/config` and `/btw` are asked for their argument
-first, because the CLI answers them bare with a usage message. Commands only the terminal
-client can run are left out of the list, and still sent if you type one out.
+`/model`, `/effort`, `/permissions`, `/config`, and `/btw` prompt for their argument first, as the CLI responds with usage instructions when invoked without arguments. Terminal-only commands are omitted from the completion list, though you can still run them by typing the full command.
 
-### Asking on the side with `/btw`
+### Side questions with `/btw`
 
-`/btw <question>` never reaches the conversation. It is caught in Emacs and asked beside
-whatever Claude is doing: the CLI answers it with a separate lightweight instance that
-shares the messages so far but has no tools, and neither the question nor the answer goes
-into the transcript or the recording.
+Sending `/btw <question>` runs a side-query without adding to the main conversation. Emacs intercepts the command and invokes a lightweight CLI instance that shares earlier context but runs without tool access. Neither the question nor the answer is recorded in the transcript or session history.
 
 ![A turn still running while a side question is asked and answered beside it](../../../assets/btw.gif)
 
-The turn is left alone — the answer above arrives while the one in the transcript is
-still being written. `C-c C-b` shows the side questions of this session again, and there
-`a` asks another, `c` copies the answer, `k` cancels one still being answered, `x`
-clears them and `q` hides the buffer. `ecc-btw-display` floats them over the frame, as
-above, or puts them in a window.
+The active turn is not interrupted: the `/btw` response arrives in a separate view while the transcript continues streaming. Press `C-c C-b` to review session side-queries: `a` asks another question, `c` copies the answer, `k` cancels an in-flight query, `x` clears the list, and `q` dismisses the buffer. `ecc-btw-display` controls whether responses appear in a floating popup (via posframe) or an ordinary window.
 
-It is one shot: a follow-up carries the last few exchanges with it
-(`ecc-btw-history-limit`) and nothing else.
+`/btw` queries are single-shot: follow-up questions include only the last few exchanges (`ecc-btw-history-limit`).
 
 ### While a turn runs
 
-A prompt sent while Claude is working is queued rather than interrupting it, and the echo
-area says at what position. `C-c C-q` lists the queue. A turn somebody started from
-Remote Control queues it the same way, and says which it was.
+Prompts sent while Claude is working are queued rather than interrupting the turn; the echo area reports the queue position. Press `C-c C-q` to view the queue. Turns initiated via Remote Control are queued the same way and identified in notifications.
 
-### Images and the editor context
+### Images and editor context
 
-An image pasted, dropped on the buffer or inserted with `C-c C-i` is written under
-`ecc-image-dir` and referenced by its path, so the CLI reads it from disk.
-`ecc-image-cleanup` decides whether a session's images go with it.
+Images pasted, dragged into the buffer, or inserted with `C-c C-i` are saved under `ecc-image-dir` and passed to the CLI as file paths. `ecc-image-cleanup` determines whether session images are deleted when the session ends.
 
 ![The picture open beside the session, inserted into the prompt as a path, and described in the answer](../../../assets/image.gif)
 
-`C-c C-x` turns the editor's context on or off for this buffer: with it on, where you are
-goes with every prompt.
+`C-c C-x` toggles editor context for the buffer: when enabled, the current file and line number are automatically included with each prompt.
 
 ![C-c C-x turning the context on, and the next prompt carrying the file and line with it](../../../assets/context.gif)
 
 ### The footer
 
-Under the region stand a rule, the permission mode on the left and the model on the
-right. `S-TAB` walks through `default`, `acceptEdits`, `plan` and `auto` —
-`bypassPermissions` is left out, since a key pressed by mistake should not turn it on;
-`ecc-set-permission-mode` still reaches it. An empty region shows a placeholder, which is
-drawn over the buffer rather than written into it.
+Below the prompt area sits a horizontal divider, showing the current permission mode on the left and the active model on the right. `S-TAB` cycles through `default`, `acceptEdits`, `plan`, and `auto`. (`bypassPermissions` is omitted from the cycle to avoid accidental activation; use `ecc-set-permission-mode` to select it). An empty prompt area displays placeholder text rendered via overlays rather than buffer text.
 
 ## The transcript
 
 ![The transcript folding: everything collapsed, then opened a level at a time, then one node folded and unfolded with TAB](../../../assets/fold.gif)
 
-It is ordinary read-only buffer text, so `isearch`, `occur`, narrowing and `M-w` work on
-it as they do anywhere else.
+The transcript is standard read-only buffer text, so `isearch`, `occur`, narrowing, and `M-w` work just as they do anywhere in Emacs.
 
 ### Folding
 
 | Key | Action |
 |---|---|
-| `TAB` | Fold or unfold the node at point |
-| `1`–`4` | Show the tree to that depth |
-| `+` / `-` | Expand or collapse everything |
+| `TAB` | Fold or unfold node at point |
+| `1`–`4` | Expand tree to specified depth |
+| `+` / `-` | Expand or collapse all nodes |
 
-### Moving
+### Navigation
 
 | Key | Action |
 |---|---|
 | `n` / `p` | Next or previous heading |
-| `M-n` / `M-p` | Next or previous sibling at the same depth |
-| `^` | Up to the parent heading |
+| `M-n` / `M-p` | Next or previous sibling at current depth |
+| `^` | Up to parent heading |
 | `]` / `[` | Next or previous block |
-| `T` | Pick a turn by its prompt |
-| `f` / `P` | The Files section, the Plan section |
-| `SPC` / `DEL` | Scroll |
-| `i` | Go to the prompt |
+| `T` | Jump to turn by prompt |
+| `f` / `P` | Jump to Files section / Plan section |
+| `SPC` / `DEL` | Scroll down / up |
+| `i` | Move point to prompt area |
 
-### Acting on what is at point
+### Acting on items at point
 
 | Key | Action |
 |---|---|
-| `RET` | Visit it — the file, the agent transcript, the whole result |
-| `w` | Copy the code block at point, or the whole reply |
-| `a` | Allow the request waiting |
-| `d` | Deny the request at point, or open the diff when not on one |
-| `g` | Draw it again |
-| `L` | The raw protocol log |
-| `t` / `R` | Hand over to the terminal, resume |
-| `C-c C-k` | Interrupt the running turn |
-| `S-TAB` | Cycle the permission mode |
-| `q` | Bury the buffer |
-| `?` | Open the menu |
+| `RET` | Visit item at point (file, subagent transcript, or full tool result) |
+| `w` | Copy code block at point (or entire response) |
+| `a` | Allow pending request |
+| `d` | Deny request at point (or view diff if not on a request) |
+| `g` | Redraw transcript |
+| `L` | View raw protocol log |
+| `t` / `R` | Hand over to terminal client / resume session |
+| `C-c C-k` | Interrupt running turn |
+| `S-TAB` | Cycle permission mode |
+| `q` | Bury buffer |
+| `?` | Open transient menu |
 
-### On a node waiting for an answer
+### On a pending request node
 
-A node that is waiting carries a keymap of its own, in force with point inside it.
+Nodes awaiting user input have an active local keymap when point is inside them:
 
 ![A permission to write a file, allowed with a, and the turn finishing](../../../assets/permission.gif)
 
 | Key | Action |
 |---|---|
-| `RET` | Visit what is proposed — a question opens the buffer it is answered in |
-| `a` / `d` | Allow it once, deny it |
-| `A` | Allow it, and every one like it from now on |
-| `u` | Allow everything until the turn ends |
-| `r` | Allow by a rule — a pattern you give, saved to the project settings |
-| `c` / `e` | Comment on the proposal, or edit it before allowing it |
+| `RET` | Inspect proposal (opens an answer buffer for questions) |
+| `a` / `d` | Allow once / deny |
+| `A` | Always allow this tool for the session |
+| `u` | Allow all requests until current turn finishes |
+| `r` | Allow matching rule (saves pattern to project settings) |
+| `c` / `e` | Comment on proposal / edit before allowing |
 
-These are keys the transcript leaves free; none of them gives an existing key a new
-meaning. Point is what selects the map, and point is easy to misjudge, so a letter that
-meant one thing a line earlier would fire the wrong command with no warning. `c` and `e`
-are on [Review and plan mode](/emacs-claude-code/features/review/).
+These bindings use keys unassigned elsewhere in the transcript so existing commands are never shadowed. Because point position selects the active keymap, commands are strictly scoped to avoid accidental triggers. See [Review and plan mode](/emacs-claude-code/features/review/) for details on `c` and `e`.
 
-A question is answered in a buffer of its own, opened with `RET`: `1`–`9` choose,
-`SPC` toggles an option of a question that takes several, `o` writes an answer of your
-own, and `C-c C-c` sends.
+Questions are answered in a dedicated buffer opened with `RET`: press `1`–`9` to choose an option, `SPC` to toggle multiple-choice items, `o` to type a custom answer, and `C-c C-c` to send.
 
 ![A question with two questions: one option chosen, two toggled on the second, and the answers sent](../../../assets/question.gif)
 
-### On a file in the Files section
+### Files section
 
-`RET` visits the file and `d` reviews its changes. `TAB` still folds and `SPC` still
-scrolls.
+`RET` visits the selected file and `d` reviews its modifications in diff-mode. `TAB` toggles folding and `SPC` scrolls.
 
-Everything reached from outside this buffer is on the
-[menu](/emacs-claude-code/features/menu/).
+All commands accessible outside the session buffer are documented in the [transient menu reference](/emacs-claude-code/features/menu/).
