@@ -19,6 +19,8 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'lisp-mnt)
+(require 'package)
 (require 'ecc-core)
 (require 'ecc-protocol)
 (require 'ecc-model)
@@ -50,6 +52,53 @@
 (require 'ecc-btw)
 (require 'ecc-tui)
 (require 'ecc-transient)
+
+;; The version is written once, in the Version header above, because that
+;; is the one package.el and `package-vc-install' read.  Repeating it in a
+;; constant here would mean a release that says two different things, so
+;; it is read back instead: from the package descriptor when ecc was
+;; installed, and from the header of ecc.el itself when it was only put on
+;; `load-path'.
+(defconst ecc-version
+  (or (ignore-errors (package-get-version))
+      (ignore-errors
+        (let ((file (expand-file-name
+                     "ecc.el"
+                     (file-name-directory (or load-file-name
+                                              buffer-file-name
+                                              default-directory)))))
+          (and (file-readable-p file)
+               (with-temp-buffer
+                 (insert-file-contents file nil 0 4096)
+                 (lm-header "version")))))
+      "unknown")
+  "The version of ecc that is loaded, as its Version header says.")
+
+;;;###autoload
+(defun ecc-version (&optional here)
+  "Show which ecc, Emacs and Claude Code CLI are running.
+With a prefix argument HERE, insert the line at point instead.  It is
+what a bug report has to open with: nearly everything this package works
+around belongs to one version of the CLI, and the CLI is the piece that
+moves without anybody upgrading anything."
+  (interactive "P")
+  (let* ((cli (or (ecc--cli-version) "not found"))
+         (line (format "ecc %s, Emacs %s, Claude Code CLI %s"
+                       ecc-version emacs-version cli)))
+    (if here (insert line) (message "%s" line))))
+
+(defun ecc--cli-version ()
+  "Return what `ecc-executable' says its version is, or nil.
+The CLI prints something like \"2.1.268 (Claude Code)\"; only the number
+is kept.  A missing or silent executable is a nil, not an error: the
+point of `ecc-version' is to report on a machine that is already broken."
+  (ignore-errors
+    (with-temp-buffer
+      (when (and (executable-find ecc-executable)
+                 (eq 0 (call-process ecc-executable nil t nil "--version")))
+        (goto-char (point-min))
+        (when (re-search-forward "[0-9][^ \t\n]*" nil t)
+          (match-string 0))))))
 
 (defun ecc-project-root ()
   "Return the root of the project of the current buffer, or its directory."
