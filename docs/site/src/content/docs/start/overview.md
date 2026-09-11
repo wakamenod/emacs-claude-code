@@ -25,4 +25,4 @@ A few things worth knowing before you start:
   the CLI's own interface, and `ecc-tui-return` takes it back.
 
 [Install it](/emacs-claude-code/start/installation/), and the
-[command reference](/emacs-claude-code/reference/commands/) has the rest.
+[menu](/emacs-claude-code/features/menu/) has every command there is.

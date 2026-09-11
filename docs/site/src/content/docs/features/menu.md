@@ -14,9 +14,9 @@ and it lists every command in ecc.
 Each line is a key and the command it runs; `C-g` closes the menu. A line
 starting with `-` is a switch, which applies to the command run after it.
 
-Outside a session buffer the menu is `M-x ecc-menu`, or `?` in
-[`ecc-global-map`](/emacs-claude-code/reference/key-bindings/#from-any-buffer).
-A key means the same in both.
+Outside a session buffer the menu is `M-x ecc-menu`, or `?` in `ecc-global-map`,
+the prefix keymap of the keys that work from any buffer. A key means the same
+in both.
 
 :::note[Which session the menu acts on]
 The session of the current buffer, or else the only session of this project,

@@ -24,5 +24,5 @@ narrowing、`M-w` が他の場所と同じように効きます。ここには�
 - **CLI 本来のインターフェースが要るときは `ecc-tui-open`** が本物のターミナルク
   ライアントにセッションを渡し、`ecc-tui-return` が引き取ります。
 
-[インストール](/emacs-claude-code/ja/start/installation/)へ。あとは
-[コマンドリファレンス](/emacs-claude-code/ja/reference/commands/)にあります。
+[インストール](/emacs-claude-code/ja/start/installation/)へ。コマンドは
+[メニュー](/emacs-claude-code/ja/features/menu/)にすべて載っています。

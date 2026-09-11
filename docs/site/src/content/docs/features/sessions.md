@@ -119,9 +119,7 @@ and then red as it runs out.
 - The tabs, above.
 
 `n` and `N` go to the next request waiting, across every session or only this project's.
-Both work from any buffer through
-[`ecc-global-map`](/emacs-claude-code/reference/key-bindings/#from-any-buffer), as do `a`,
-`d` and `1`–`4`.
+Both work from any buffer through `ecc-global-map`, as do `a`, `d` and `1`–`4`.
 
 All three are turned on by every session and there is no setting to leave one off: a
 session that started without them looked broken.

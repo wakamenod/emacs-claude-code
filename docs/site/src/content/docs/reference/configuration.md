@@ -12,18 +12,6 @@ All of them are in the `ecc` customization group:
 M-x customize-group RET ecc
 ```
 
-## What is a setting, and what is not
-
-A `defcustom` in ecc is reserved for something a user chooses: a taste, a
-difference between machines (font, screen, `PATH`), or a judgement about safety
-and cost. There are thirty of them, and they are all below.
-
-Everything else is a plain `defvar`: a stand-in the CLI overwrites, a sentence
-sent to the model, a table of the CLI's own quirks, an internal constant. Those
-are still reachable with `setq` and still bindable in a test — a variable
-missing from `customize` is not a variable you cannot change. A few of the
-useful ones are listed at the [end of this page](#useful-variables-that-are-not-settings).
-
 ## The CLI and the session
 
 | Variable | Default | What it decides |
