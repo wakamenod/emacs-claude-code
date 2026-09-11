@@ -291,6 +291,7 @@ lives in `ecc-resume-menu\=', which opening this way always shows."
                      (transient-args 'ecc-resume-menu)))
   (ecc-resume session (and (member "--fork" args) t)))
 
+;;;###autoload (autoload 'ecc-resume-menu "ecc-transient" nil t)
 (transient-define-prefix ecc-resume-menu ()
   "Resume a session, forking the conversation or not.
 A prefix of its own for the reason `ecc-allow-all-menu\=' is: --fork sat

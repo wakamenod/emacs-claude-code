@@ -32,8 +32,14 @@
 ;; names them.
 (declare-function ecc-dashboard "ecc-dashboard" ())
 (declare-function ecc-history-open "ecc-history" (session-id))
+(declare-function ecc-interrupt "ecc-transient" ())
 (declare-function ecc-menu "ecc-transient" ())
+(declare-function ecc-resume-menu "ecc-transient" ())
 (declare-function ecc-review "ecc-review" (&optional session paths))
+(declare-function ecc-show-session "ecc-transient" ())
+(declare-function ecc-start "ecc" (&optional directory name))
+(declare-function ecc-tui-open "ecc-tui" (&optional session))
+(declare-function ecc-usage "ecc-usage" ())
 
 (defvar ecc-answer-confirm t
   "Non-nil asks before a request is answered from another buffer.")
@@ -183,20 +189,35 @@ question buffer opens with the first one answered."
 ;;;###autoload (autoload 'ecc-global-map "ecc-answer" nil t 'keymap)
 (defvar ecc-global-map
   (let ((map (make-sparse-keymap)))
+    ;; The session.
+    (define-key map (kbd "c") #'ecc-start)
+    (define-key map (kbd "r") #'ecc-resume-menu)
+    (define-key map (kbd "R") #'ecc-rename-session)
+    (define-key map (kbd "v") #'ecc-show-session)
+    (define-key map (kbd "i") #'ecc-interrupt)
+    (define-key map (kbd "t") #'ecc-tui-open)
+    ;; Answering what is waiting.
     (define-key map (kbd "a") #'ecc-answer-allow)
     (define-key map (kbd "d") #'ecc-answer-deny)
     (define-key map (kbd "n") #'ecc-next-attention)
     (define-key map (kbd "N") #'ecc-next-attention-in-project)
-    (define-key map (kbd "b") #'ecc-dashboard)
-    (define-key map (kbd "D") #'ecc-review)
-    (define-key map (kbd "h") #'ecc-history-open)
     (define-key map (kbd "1") #'ecc-answer-option-1)
     (define-key map (kbd "2") #'ecc-answer-option-2)
     (define-key map (kbd "3") #'ecc-answer-option-3)
     (define-key map (kbd "4") #'ecc-answer-option-4)
+    ;; Looking around.
+    (define-key map (kbd "b") #'ecc-dashboard)
+    (define-key map (kbd "D") #'ecc-review)
+    (define-key map (kbd "h") #'ecc-history-open)
+    (define-key map (kbd "U") #'ecc-usage)
     (define-key map (kbd "?") #'ecc-menu)
     map)
   "Keymap of the commands that work from any buffer.
+What is here is the handful worth a key of its own, not everything the
+package can do: `C-c c\=' is the user\='s own key, and a map of forty
+commands leaves no room beside it and no listing anyone can read.  The
+rest is reached through `ecc-menu\='.
+
 Bind the symbol, not the value, to a prefix key:
 
     (global-set-key (kbd \"C-c c\") \='ecc-global-map)
