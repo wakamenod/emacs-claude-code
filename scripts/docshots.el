@@ -360,6 +360,31 @@ except SyntaxError as error:
     (call-interactively #'ecc-fix-error-at-point))
   (redisplay t))
 
+(defun shot-scene-allow ()
+  "Allow the request waiting, the way `a' in the transcript does.
+`ecc-answer-allow', the one for answering from another buffer, asks to
+confirm first -- rightly, since the user is not looking at what they
+are allowing -- and a question asked while a server request is being
+served never lets that request answer.
+
+The scene runs to the end on purpose: a permission left waiting goes on
+blinking, and every picture taken after it would have that in the
+corner."
+  (shot-later
+   (lambda ()
+     (with-current-buffer (ecc-session-buffer shot-live)
+       (call-interactively #'ecc-perm-allow)))))
+
+(defun shot-scene-recheck ()
+  "Read the file back and run the checker again, now that it is fixed."
+  (with-selected-window (shot-source-window shot-broken-file)
+    (revert-buffer t t t)
+    (flymake-mode 1)
+    (flymake-start)
+    (goto-char (point-min))
+    (forward-line 1)
+    (redisplay t)))
+
 ;;;; The inline question and the rewrite
 
 (defun shot-scene-accept ()

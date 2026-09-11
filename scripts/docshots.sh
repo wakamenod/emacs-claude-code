@@ -156,7 +156,14 @@ scene fix-error
 e '(shot-scene-fix-error-open)'     ; sleep 3; snap 3
 e '(shot-scene-fix-error-point)'    ; snap 2
 e '(shot-scene-fix-error)'          ; snap 2
-for _ in 1 2 3 4 5 6 7 8 9 10; do sleep 1; snap; done
+for _ in $(seq 1 10); do sleep 1; snap; done
+# Allowing it is part of the scene: the edit is made, the buffer picks
+# it up, and the checker has nothing left to complain about.  It also
+# leaves nothing waiting, which would blink through every picture taken
+# after this one.
+e '(shot-scene-allow)'              ; sleep 1; snap 2
+for _ in $(seq 1 8); do sleep 1; snap; done
+e '(shot-scene-recheck)'            ; sleep 2; snap 4
 gif
 
 # 5. Asking about the region and being answered where the code is.
