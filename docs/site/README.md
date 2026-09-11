@@ -62,6 +62,25 @@ page body. Both must carry the base by hand:
 Japanese headings make Japanese anchors — `## 最初の設定` becomes
 `#最初の設定`, and that is what a link to it must say.
 
+## Writing a page
+
+Plain statements, in the order a reader meets the thing. What the key does,
+then the one consequence worth knowing. No sentence about what is worth
+knowing, what earns its place, or what the point is; no building to an effect.
+One or two sentences a section is usually enough, and a table beats a
+paragraph whenever the content is a list.
+
+Say what happens, not how the reader should feel about it. "Shows the
+session's window and moves point to the prompt region", not "the way back from
+wherever you have wandered to".
+
+A page that documents a group of commands links to the page that covers them
+in full rather than explaining twice.
+
+The Japanese page follows the English one and is written once the English has
+settled. Until it exists, Starlight serves the English page at the Japanese
+URL, so a missing translation is not a broken link.
+
 ## Two warnings that are not problems
 
 `make docs-build` prints these every time and exits 0:
@@ -84,26 +103,58 @@ was written.
 
 There are two generators, and neither takes a picture by hand.
 
-`scripts/docshots.sh` makes the site's own pictures, into `src/assets`:
-`menu.png`, `resume.png`, `switch.gif` and `handover.gif`. It opens a
-throwaway GUI Emacs in the bottom right corner of the screen, walks it
-through a scene and captures the frame. Four things it knows that are worth
-not learning again:
+`scripts/docshots.sh` makes the site's own pictures, into `src/assets`. It
+opens a throwaway GUI Emacs in the bottom right corner of the screen — the
+rest of the screen stays yours — walks it through a scene and captures the
+frame.
 
-- a server request that opens a minibuffer never answers -- the recursive edit
-  starts before the reply is sent -- so a scene that reads from the minibuffer
-  schedules it on a timer and lets `emacsclient' return first, and keys are
-  left on `unread-command-events' rather than fed with `execute-kbd-macro';
-- the frame is asked where it is again before every picture: the menu resizes
-  it, and a frame that would grow past the bottom of the screen is moved;
-- the title bar is left out of the rectangle, because macOS writes the new
-  size into it when a frame is resized and nothing in Emacs clears that;
-- the hand-off scene runs the **real** CLI, so it needs a conversation the CLI
-  can `--resume` (recorded into `/tmp/greet` on the first run and kept), the
-  demo folder trusted in `~/.claude.json`, and every `CLAUDE*` variable unset
-  before anything starts -- macOS `open` passes the environment on, and
-  `CLAUDE_CODE_CHILD_SESSION` puts "Transcript saving is off" across the top
-  of the picture.
+Take one scene rather than all of them: taking all runs the real CLI four
+times and takes about five minutes.
+
+```
+SCENES="menu resume" scripts/docshots.sh
+```
+
+The scenes are `switch`, `menu`, `capabilities`, `send-region`, `fix-error`,
+`inline`, `rewrite`, `handover` and `resume`.
+
+What it knows, and what is worth not learning again:
+
+- **A scene that reads from the minibuffer is scheduled inside Emacs**, as one
+  chain of timers (`shot-script`), not driven a keystroke at a time from the
+  wrapper. Emacs does not reliably answer the server while a recursive edit is
+  running: the same scene worked three times and hung the fourth. Keys are left
+  on `unread-command-events` rather than fed with `execute-kbd-macro`, which
+  quits there. Every step is behind a 25s timeout, so a scene that does hang
+  spoils one picture rather than the run.
+- **Anything that asks a question blocks the same way.** `ecc-answer-allow`
+  confirms before answering, so the scene that allows an edit uses
+  `ecc-perm-allow`, the transcript's own `a`.
+- **The frame is asked where it is again before every picture**: the menu
+  resizes it, and a frame that would grow past the bottom of the screen is
+  moved. The title bar is left out of the rectangle, because macOS writes the
+  new size into it when a frame is resized and nothing in Emacs clears that.
+  The echo area is cleared before a still, or an early one carries Emacs's own
+  greeting.
+- **A scene runs to the end.** A permission left waiting goes on blinking, and
+  every picture taken after it has a blinking corner.
+- **The demo layout is made with ecc's own window commands**, not with
+  `split-window-right`: a session window carries a role, and the commands that
+  move a session between windows look for it. `ecc--enable-session-modes` is
+  called too, or the pictures have no tab line — which every real session has.
+- **The scenes that need an answer run the real CLI**, with `--model haiku` and
+  a budget. The hand-off one needs a conversation the CLI can `--resume`
+  (recorded into `/tmp/greet` on the first run and kept), the demo folder
+  trusted in `~/.claude.json`, and every `CLAUDE*` variable unset before
+  anything starts — macOS `open` passes the environment on, and
+  `CLAUDE_CODE_CHILD_SESSION` puts "Transcript saving is off" across the top of
+  the picture.
+- **Do not put a real session's capabilities in a picture.** They are the
+  skills, agents and plugins of whoever runs this. The capabilities scene
+  replays a fixture, which carries a recorded one.
+- **Hold each state for one or two frames, and keep changing.** Repeated frames
+  are merged into one long frame when Astro converts the animation, and a scene
+  held four ways becomes a slideshow that reads as a still.
 
 `docs/images/session.gif` and `session.png`, the ones README.md carries, are
 generated by `scripts/screenshot.sh`, not taken by hand. It opens a throwaway GUI Emacs,
