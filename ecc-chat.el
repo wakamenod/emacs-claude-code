@@ -175,6 +175,15 @@ the dim face.")
     (define-key map (kbd "TAB") #'ecc-chat-tab)
     (define-key map (kbd "/") #'ecc-chat-slash)
     (define-key map (kbd "C-k") #'ecc-chat-kill-line)
+    ;; The line of this buffer is the one on the screen, and these three
+    ;; are bound by name rather than left to the remaps of
+    ;; `visual-line-mode', because a remap is a lookup on the command the
+    ;; key already resolves to.  A user who has put their own command on
+    ;; \`C-a' -- mwim, crux, a hand-written bounce -- never resolves to
+    ;; `move-beginning-of-line', so the remap does not fire and the key
+    ;; keeps walking the logical line (confirmed 2026-09-11).
+    (define-key map (kbd "C-a") #'beginning-of-visual-line)
+    (define-key map (kbd "C-e") #'end-of-visual-line)
     (define-key map (kbd "<backtab>") #'ecc-chat-cycle-permission-mode)
     (define-key map (kbd "S-<tab>") #'ecc-chat-cycle-permission-mode)
     (define-key map (kbd "C-c C-c") #'ecc-prompt-send)
@@ -201,9 +210,9 @@ the dim face.")
     (define-key map (kbd "C-c ?") #'ecc-menu)
     map)
   "Keymap of `ecc-chat-mode', in force in the prompt region.
-Everything here is RET, TAB or a key under the mode prefix, so that a
-letter is a letter.  The one exception is `/', which inserts itself
-and then offers the slash commands (`ecc-chat-slash').
+Everything here is RET, TAB, a movement key or a key under the mode
+prefix, so that a letter is a letter.  The one exception is `/', which
+inserts itself and then offers the slash commands (`ecc-chat-slash').
 
 Under the prefix the key is always \\`C-c C-<letter>', never
 \\`C-c <letter>': the Emacs Lisp manual reserves \\`C-c <letter>' for
@@ -302,8 +311,16 @@ row.  TAB folds, on this row as on every other.")
   :interactive nil
   ;; Faces are applied when text is inserted, so no font lock is
   ;; wanted; `text-mode' turns none on.
-  (setq-local truncate-lines nil)
-  (setq-local word-wrap t)
+  ;; The buffer is wrapped prose, so a line on the screen is the line a
+  ;; reader means.  `visual-line-mode' is what makes C-n, C-p, C-a and
+  ;; C-e agree with that: it turns on `word-wrap', clears
+  ;; `truncate-lines', and -- the part that matters most here -- binds
+  ;; `line-move-visual' to t buffer-locally, so C-n in the middle of a
+  ;; wrapped paragraph steps to the next row rather than over the whole
+  ;; paragraph to the next one.  The default of `line-move-visual' is t,
+  ;; but a user who has turned it off globally means that for files, not
+  ;; for a transcript that has no lines of its own (confirmed 2026-09-11).
+  (visual-line-mode 1)
   ;; A folded body shows as an ellipsis after its heading.
   (add-to-invisibility-spec '(ecc-fold . t))
   ;; Markdown markup symbols are hidden by the ecc-markup spec.
@@ -332,7 +349,10 @@ row.  TAB folds, on this row as on every other.")
   ;; A wrapped line lines up under the line that began it now, which
   ;; says it continues one plainly enough; the curly arrows the fringes
   ;; would put on either end of it say the same thing again, in the
-  ;; corner of the eye, on every long paragraph.
+  ;; corner of the eye, on every long paragraph.  This comes after
+  ;; `visual-line-mode', which sets the same entry from
+  ;; `visual-line-fringe-indicators' and would otherwise put back the
+  ;; arrows of whoever has customized that.
   (setq-local fringe-indicator-alist
               (cons '(continuation nil nil)
                     (default-value 'fringe-indicator-alist)))
@@ -433,19 +453,30 @@ sits on the first character of the ghost text."
   (newline))
 
 (defun ecc-chat-kill-line (&optional arg)
-  "Kill to the end of the line, staying inside the prompt region.
+  "Kill to the end of the visual line, staying inside the prompt region.
 The footer under the region is read-only text of its own, and the
 newline that ends the last line of the draft is the first character of
-it, so a plain `kill-line\=' at the end of the draft is refused rather
-than killing the line.  Narrowing to the region keeps ARG,
-`kill-whole-line\=' and everything else about `kill-line\=' as they are
-anywhere else, and ends the draft where the region ends."
+it, so a plain kill at the end of the draft is refused rather than
+killing the line.  Narrowing to the region keeps ARG,
+`kill-whole-line\=' and everything else as they are anywhere else, and
+ends the draft where the region ends.
+
+The line killed is the visual one, because `ecc-chat-mode\=' turns on
+`visual-line-mode\=', and \\`C-a' and \\`C-e' are bound to the ends of
+the visual line beside it.  None of the three can be left to the
+remaps of that mode: a remap is a lookup on the command the key
+resolves to, and these keys resolve to commands of their own."
   (interactive "P")
   (if-let* ((start (and (ecc-chat-in-prompt-p) (ecc-chat-prompt-start))))
       (save-restriction
         (narrow-to-region start (ecc-chat-prompt-end))
-        (kill-line arg))
-    (kill-line arg)))
+        (ecc-chat--kill-line arg))
+    (ecc-chat--kill-line arg)))
+
+(defun ecc-chat--kill-line (arg)
+  "Kill a line forward, by visual line where the buffer wraps.
+ARG is passed on as `kill-line\=' takes it."
+  (if visual-line-mode (kill-visual-line arg) (kill-line arg)))
 
 (defun ecc-chat-tab ()
   "Complete in the prompt region, or fold in the transcript."
