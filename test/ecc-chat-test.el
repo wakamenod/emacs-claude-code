@@ -49,6 +49,27 @@ calls in one step is what the depth ladder needs."
 
 ;;;; Folding
 
+(ert-deftest ecc-chat-test-node-maps-do-not-change-a-transcript-key ()
+  "A key of the transcript keeps its meaning on a node that overrides it.
+The node maps are reached by moving point, not by a different gesture,
+so a letter that means one thing in the transcript and another on a
+node fires the wrong command with no warning -- `t\=' opened the
+terminal in the transcript and allowed every tool for the rest of the
+turn on a request, without asking.  A node may add a key the transcript
+leaves free; it may not repurpose one.
+
+`d\=' is the exception, and only because the two agree:
+`ecc-session-review-or-deny\=' sends it to `ecc-perm-deny\=' as soon as
+point is on a request, which is what the node map binds it to."
+  (dolist (map (list ecc-request-section-map ecc-file-section-map))
+    (map-keymap
+     (lambda (event command)
+       (let* ((key (vector event))
+              (inherited (lookup-key ecc-chat-transcript-map key)))
+         (when (and (commandp inherited) (not (eq inherited command)))
+           (should (memq command '(ecc-perm-deny ecc-session-review-file))))))
+     map)))
+
 (ert-deftest ecc-chat-test-no-plain-c-c-letter-bindings ()
   "No keymap of a session buffer takes a \\`C-c <letter>' key.
 The Emacs Lisp manual reserves those for users, and they are the only
@@ -238,7 +259,7 @@ belongs in `ecc-menu' instead."
       (goto-char (point-max))
       (search-backward "Permission: Bash")
       (should (eq (key-binding (kbd "d")) #'ecc-perm-deny))
-      (should (eq (key-binding (kbd "p")) #'ecc-perm-add-pattern))
+      (should (eq (key-binding (kbd "r")) #'ecc-perm-add-pattern))
       (should (eq (key-binding (kbd "n")) #'ecc-chat-next-heading)))))
 
 (ert-deftest ecc-chat-test-answering-from-the-prompt-region ()

@@ -720,7 +720,7 @@ heading has nothing to wait for."
                      '("Tasks (0/1)" "Tasks (0/2)" "Tasks (1/2)"))))))
 
 (ert-deftest ecc-render-test-files-section-folds-and-visits ()
-  "A file row starts folded, toggles with SPC and opens the file with RET."
+  "A file row starts folded, toggles with TAB and opens the file with RET."
   (ecc-test-with-fake-session session
     (ecc-render-test--replay session "edit-tool" "greet を直して" '(allow))
     (with-current-buffer (ecc-session-buffer session)
@@ -734,7 +734,10 @@ heading has nothing to wait for."
         (should (equal (ecc-chat-file-at-point) path))
         (should-not (ecc-render-node-hidden-p id))
         (should-not (ecc-render-node-hidden-p "files"))
-        (should (eq (lookup-key ecc-file-section-map (kbd "SPC")) #'ecc-chat-toggle))
+        ;; TAB folds here as everywhere else in the transcript; SPC is
+        ;; left to scroll, which is what it does off the row.
+        (should (eq (lookup-key ecc-file-section-map (kbd "TAB")) #'ecc-chat-toggle))
+        (should (eq (lookup-key ecc-file-section-map (kbd "SPC")) #'scroll-up-command))
         (ecc-chat-toggle)
         (should (ecc-render-node-hidden-p id))
         (ecc-chat-toggle)

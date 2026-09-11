@@ -131,14 +131,21 @@ Single letters, because nothing here is being typed into.
 A node that is waiting carries a keymap of its own, which inherits the
 transcript map above. These keys are live only with point inside that node.
 
+A node adds keys the transcript leaves free; it does not give an existing one
+a new meaning. Point is what selects these maps, and point is easy to
+misjudge, so a letter that meant one thing a line earlier would fire the wrong
+command with no warning. `d` is the exception, and only because the two agree:
+`ecc-session-review-or-deny` sends it to `ecc-perm-deny` as soon as point is
+on a request.
+
 | Key | Command | Action |
 |---|---|---|
 | `RET` | `ecc-session-visit` | Visit what is proposed |
 | `a` | `ecc-perm-allow` | Allow it, once |
 | `d` | `ecc-perm-deny` | Deny it |
 | `A` | `ecc-perm-allow-always` | Allow it, and every one like it from now on |
-| `t` | `ecc-perm-approve-turn` | Allow everything for the rest of this turn |
-| `p` | `ecc-perm-add-pattern` | Allow by a pattern you give |
+| `u` | `ecc-perm-approve-turn` | Allow everything until the turn ends |
+| `r` | `ecc-perm-add-pattern` | Allow by a rule — a pattern you give, saved to the project settings |
 | `c` | `ecc-review-comment-request` | Comment on what is proposed |
 | `e` | `ecc-review-edit-proposal` | Edit the proposal before allowing it |
 
@@ -147,8 +154,10 @@ transcript map above. These keys are live only with point inside that node.
 | Key | Command | Action |
 |---|---|---|
 | `RET` | `ecc-session-visit` | Visit the file |
-| `SPC` | `ecc-chat-toggle` | Fold or unfold it |
 | `d` | `ecc-session-review-file` | Review this file's changes |
+
+`TAB` folds the row, as it does everywhere else in the transcript, and `SPC`
+scrolls.
 
 ## The buffers a session opens
 
