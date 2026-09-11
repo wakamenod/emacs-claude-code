@@ -49,6 +49,7 @@
 (declare-function ecc-chat-goto-plans "ecc-chat" ())
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-history-open "ecc-history" (session-id))
+(declare-function ecc-search "ecc-search" (query &optional everywhere))
 (declare-function ecc-tui-open "ecc-tui" (&optional session))
 (declare-function ecc-tui-return "ecc-tui" (&optional session))
 
@@ -346,6 +347,7 @@ it too."
     ("b" "Dashboard" ecc-dashboard)
     ("y" "Capabilities" ecc-capabilities-show)
     ("h" "History" ecc-history-open)
+    ("/" "Search past sessions" ecc-search)
     ("U" "Usage" ecc-usage)
     ("L" "Log" ecc-show-log)]
    ["Config"
