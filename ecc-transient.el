@@ -28,14 +28,21 @@
 
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-resume "ecc" (session &optional fork))
+(declare-function ecc-read-session "ecc" (&optional prompt))
 (declare-function ecc-kill "ecc" (session))
 (declare-function ecc-dashboard "ecc-dashboard" ())
 (declare-function ecc-capabilities-show "ecc-dashboard" (session))
 (declare-function ecc-inline-prompt "ecc-inline" (question))
 (declare-function ecc-rewrite "ecc-inline" (beg end instruction))
 (declare-function ecc-next-attention "ecc-answer" (&optional project-root))
+(declare-function ecc-next-attention-in-project "ecc-answer" ())
+(declare-function ecc-answer-option-1 "ecc-answer" ())
+(declare-function ecc-answer-option-2 "ecc-answer" ())
+(declare-function ecc-answer-option-3 "ecc-answer" ())
+(declare-function ecc-answer-option-4 "ecc-answer" ())
 (declare-function ecc-answer-allow "ecc-answer" ())
 (declare-function ecc-answer-deny "ecc-answer" (reason))
+(declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
 (declare-function ecc-review "ecc-review" (&optional session paths))
 (declare-function ecc-session-timeline "ecc-session" ())
 (declare-function ecc-chat-goto-files "ecc-chat" ())
@@ -254,6 +261,24 @@ same suffix from one call to the next."
   ["Other"
    ("/" "Choose with completion" ecc-slash-command)])
 
+(transient-define-suffix ecc-menu-allow-all (args)
+  "Allow every request waiting in this session.
+With --remember among ARGS the tools involved are not asked about again
+for the rest of the session."
+  :description "Allow every waiting request"
+  (interactive (list (transient-args 'ecc-menu)))
+  (require 'ecc-perm)
+  (ecc-perm-allow-all (and (member "--remember" args) t)))
+
+(transient-define-suffix ecc-menu-resume (session args)
+  "Resume SESSION, forking it when --fork is among ARGS.
+Forking is a switch rather than a prefix argument because it is the
+choice worth seeing before it is made: a second process on a live
+session forks the conversation with no lock to stop it."
+  :description "Resume"
+  (interactive (list (ecc-read-session "Resume: ") (transient-args 'ecc-menu)))
+  (ecc-resume session (and (member "--fork" args) t)))
+
 ;;;; The main menu
 
 ;;;###autoload (autoload 'ecc-menu "ecc-transient" nil t)
@@ -261,8 +286,9 @@ same suffix from one call to the next."
   "Everything this package can do."
   ["Claude Code"
    ["Session"
+    ("-f" "Fork the conversation" "--fork")
     ("c" "Start" ecc-start)
-    ("r" "Resume" ecc-resume)
+    ("r" ecc-menu-resume)
     ("k" "Kill" ecc-kill)
     ("R" "Rename" ecc-rename-session)
     ("v" "Go to the prompt" ecc-show-session)
@@ -281,15 +307,22 @@ same suffix from one call to the next."
     ("W" "Rewrite the region" ecc-rewrite)
     ("/" "Slash command" ecc-slash-menu)]
    ["Review"
-    ("d" "Diff review" ecc-review)
+    ("D" "Diff review" ecc-review)
     ("F" "Files" ecc-goto-files)
     ("P" "Plan" ecc-goto-plan)
     ("T" "Timeline" ecc-timeline)]]
   ["Respond and look around"
    ["Respond"
+    ("-r" "Remember the tools" "--remember")
     ("a" "Allow the oldest request" ecc-answer-allow)
-    ("D" "Deny the oldest request" ecc-answer-deny)
-    ("n" "Next request" ecc-next-attention)]
+    ("A" ecc-menu-allow-all)
+    ("d" "Deny the oldest request" ecc-answer-deny)
+    ("n" "Next request" ecc-next-attention)
+    ("N" "Next request in this project" ecc-next-attention-in-project)
+    ("1" "Answer with option 1" ecc-answer-option-1)
+    ("2" "Answer with option 2" ecc-answer-option-2)
+    ("3" "Answer with option 3" ecc-answer-option-3)
+    ("4" "Answer with option 4" ecc-answer-option-4)]
    ["View"
     ("b" "Dashboard" ecc-dashboard)
     ("y" "Capabilities" ecc-capabilities-show)

@@ -162,12 +162,6 @@ The d key of the transcript does both."
       (call-interactively #'ecc-perm-deny)
     (ecc-session-review)))
 
-(defun ecc-session-allow-all-remember ()
-  "Allow every waiting request and stop asking about those tools."
-  (interactive)
-  (require 'ecc-perm)
-  (ecc-perm-allow-all t))
-
 (defun ecc-session--show-node (session node)
   "Show every detail of NODE of SESSION in a buffer."
   (let ((buffer (get-buffer-create

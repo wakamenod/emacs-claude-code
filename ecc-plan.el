@@ -95,12 +95,18 @@ session running in the background does not grab the window.")
     (define-key map (kbd "C-c C-c") #'ecc-plan-approve)
     (define-key map (kbd "C-c C-k") #'ecc-plan-deny)
     (define-key map (kbd "C-c C-d") #'ecc-plan-show-diff)
-    (define-key map (kbd "C-c c") #'ecc-plan-comment)
-    (define-key map (kbd "C-c x") #'ecc-plan-remove-comment)
-    (define-key map (kbd "C-c m") #'ecc-plan-set-mode)
+    (define-key map (kbd "C-c C-a") #'ecc-plan-comment)
+    (define-key map (kbd "C-c C-r") #'ecc-plan-remove-comment)
+    (define-key map (kbd "C-c C-p") #'ecc-plan-set-mode)
     (define-key map (kbd "C-c C-n") #'ecc-plan-next-change)
     map)
-  "Keymap of `ecc-plan-mode'.")
+  "Keymap of `ecc-plan-mode\='.
+The plan is edited here, so a letter has to stay a letter and every
+command sits under \\`C-c C-\='.  Not \\`C-c <letter>\=': the Emacs Lisp
+manual reserves that for users.  \\`C-c C-m\=' is unusable as well,
+because a terminal cannot tell it from \\`C-c RET\='.  `a\=' adds a note
+and `r\=' removes it; `p\=' is the permission mode, as it is in
+`ecc-menu\='.")
 
 (define-derived-mode ecc-plan-mode ecc-plan--parent-mode "Claude-Plan"
   "Major mode of the buffer a plan is reviewed in.

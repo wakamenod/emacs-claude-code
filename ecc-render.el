@@ -1505,7 +1505,8 @@ property over the figures themselves would show a blank in their
 place.  An end that was not a plain one is named on the left.  Nothing
 is drawn while the turn is still running."
   (when (and ecc-render-show-result-line (ecc-turn-end-time turn))
-    (let* ((duration (ecc-model-turn-duration turn))
+    (let* ((line-start (point))
+           (duration (ecc-model-turn-duration turn))
            (cost (ecc-turn-cost turn))
            (left (ecc-render--turn-end-mark turn))
            ;; A turn read back from a recording has no result message,
@@ -1522,7 +1523,16 @@ is drawn while the turn is still running."
                    (list 'space :align-to
                          (list '- 'right (1+ (string-width right)))))
                   (propertize right 'face 'ecc-dim-face)))
-        (insert "\n")))))
+        (insert "\n")
+        ;; The transcript keymap, and that alone: the line belongs to no
+        ;; node, so it gets neither `ecc-node' nor `ecc-depth' and the
+        ;; movement and folding commands still pass over it.  Without
+        ;; this the whole transcript keymap died wherever point sat on
+        ;; the figures -- not only `i', but `n', `p', TAB, `a', `d', `q'
+        ;; and `g' too (found 2026-09-11).
+        (add-text-properties
+         line-start (point)
+         (list 'keymap (ecc-render--map 'ecc-chat-transcript-map)))))))
 
 (defun ecc-render--insert-turn (session turn)
   "Insert TURN of SESSION.

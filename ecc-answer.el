@@ -32,6 +32,8 @@
 ;; names them.
 (declare-function ecc-dashboard "ecc-dashboard" ())
 (declare-function ecc-history-open "ecc-history" (session-id))
+(declare-function ecc-menu "ecc-transient" ())
+(declare-function ecc-review "ecc-review" (&optional session paths))
 
 (defvar ecc-answer-confirm t
   "Non-nil asks before a request is answered from another buffer.")
@@ -77,6 +79,7 @@ A request for one of them has to be answered where it can be read.")
       (bound-and-true-p ecc-plan--request)
       (ecc-perm-request-at-point)))
 
+;;;###autoload
 (defun ecc-next-attention (&optional project-root)
   "Jump to the next request waiting for an answer, across sessions.
 With PROJECT-ROOT, only the sessions of that project are visited.
@@ -97,6 +100,7 @@ The order is the arrival order and it wraps around."
                (ecc-answer-summary next)))
     next))
 
+;;;###autoload
 (defun ecc-next-attention-in-project ()
   "Jump to the next request waiting in a session of the current project."
   (interactive)
@@ -123,6 +127,7 @@ is being answered from afar."
                         (ecc-session-name (ecc-request-session request))
                         (ecc-answer-summary request)))))
 
+;;;###autoload
 (defun ecc-answer-allow ()
   "Allow the oldest waiting permission request, from any buffer."
   (interactive)
@@ -133,6 +138,7 @@ is being answered from afar."
       (message "Allowed: %s" (ecc-answer-summary request))
       request)))
 
+;;;###autoload
 (defun ecc-answer-deny (reason)
   "Deny the oldest waiting request with REASON, from any buffer."
   (interactive (list (read-string "Reason for denying (may be empty): ")))
@@ -173,15 +179,21 @@ question buffer opens with the first one answered."
     (define-key map (kbd "d") #'ecc-answer-deny)
     (define-key map (kbd "n") #'ecc-next-attention)
     (define-key map (kbd "N") #'ecc-next-attention-in-project)
-    (define-key map (kbd "D") #'ecc-dashboard)
+    (define-key map (kbd "b") #'ecc-dashboard)
+    (define-key map (kbd "D") #'ecc-review)
     (define-key map (kbd "h") #'ecc-history-open)
     (define-key map (kbd "1") #'ecc-answer-option-1)
     (define-key map (kbd "2") #'ecc-answer-option-2)
     (define-key map (kbd "3") #'ecc-answer-option-3)
     (define-key map (kbd "4") #'ecc-answer-option-4)
+    (define-key map (kbd "?") #'ecc-menu)
     map)
   "Keymap of the commands that work from any buffer.
-Bind it to a prefix, for instance (global-set-key (kbd \"C-c c\") ecc-global-map).")
+Bind it to a prefix, for instance (global-set-key (kbd \"C-c c\") ecc-global-map).
+
+Every key here means in `ecc-menu' what it means here, so that one letter
+carries one meaning wherever it is pressed; `?' opens that menu, which is
+the only way to reach it from a buffer that is not a session.")
 
 ;;;; The mode line indicator
 

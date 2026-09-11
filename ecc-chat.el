@@ -66,7 +66,6 @@
 (declare-function ecc-session-review "ecc-session" ())
 (declare-function ecc-session-review-file "ecc-session" ())
 (declare-function ecc-session-review-or-deny "ecc-session" ())
-(declare-function ecc-session-allow-all-remember "ecc-session" ())
 (declare-function ecc-session-timeline "ecc-session" ())
 (declare-function ecc-session-copy-at-point "ecc-session" ())
 (declare-function ecc-session-export-markdown "ecc-session" (file))
@@ -190,18 +189,12 @@ the dim face.")
     (define-key map (kbd "M-n") #'ecc-prompt-history-next)
     (define-key map (kbd "C-<up>") #'ecc-prompt-history-previous)
     (define-key map (kbd "C-<down>") #'ecc-prompt-history-next)
-    (define-key map (kbd "C-c i") #'ecc-chat-goto-prompt)
     (define-key map (kbd "C-c C-n") #'ecc-chat-next-turn)
     (define-key map (kbd "C-c C-p") #'ecc-chat-previous-turn)
-    (define-key map (kbd "C-c d") #'ecc-session-review)
     (define-key map (kbd "C-c C-a") #'ecc-perm-allow)
     (define-key map (kbd "C-c C-d") #'ecc-perm-deny)
-    (define-key map (kbd "C-c a") #'ecc-perm-allow-all)
-    (define-key map (kbd "C-c A") #'ecc-session-allow-all-remember)
-    (define-key map (kbd "C-c D") #'ecc-dashboard)
-    (define-key map (kbd "C-c n") #'ecc-next-attention)
-    (define-key map (kbd "C-c b") #'ecc-btw-show)
-    (define-key map (kbd "C-c t") #'ecc-switch-session)
+    (define-key map (kbd "C-c C-b") #'ecc-btw-show)
+    (define-key map (kbd "C-c C-t") #'ecc-switch-session)
     (define-key map (kbd "C-c C-e") #'ecc-session-export-markdown)
     ;; `?' stays self-inserting in a region one writes prose in, so the
     ;; menu is on C-c ? here and on ? in the transcript.
@@ -210,7 +203,13 @@ the dim face.")
   "Keymap of `ecc-chat-mode', in force in the prompt region.
 Everything here is RET, TAB or a key under the mode prefix, so that a
 letter is a letter.  The one exception is `/', which inserts itself
-and then offers the slash commands (`ecc-chat-slash').")
+and then offers the slash commands (`ecc-chat-slash').
+
+Under the prefix the key is always \\`C-c C-<letter>', never
+\\`C-c <letter>': the Emacs Lisp manual reserves \\`C-c <letter>' for
+users, and it is the only space reserved for them, so a mode that takes
+one blocks the only keys its user is entitled to.  A command that finds
+no \\`C-c C-<letter>' free goes to `ecc-menu' rather than taking one.")
 
 (defvar ecc-chat-transcript-map
   (let ((map (make-sparse-keymap)))
@@ -259,21 +258,31 @@ A key not here falls through to `ecc-chat-mode-map'.")
     (define-key map (kbd "a") #'ecc-perm-allow)
     (define-key map (kbd "d") #'ecc-perm-deny)
     (define-key map (kbd "A") #'ecc-perm-allow-always)
-    (define-key map (kbd "t") #'ecc-perm-approve-turn)
-    (define-key map (kbd "p") #'ecc-perm-add-pattern)
+    (define-key map (kbd "u") #'ecc-perm-approve-turn)
+    (define-key map (kbd "r") #'ecc-perm-add-pattern)
     (define-key map (kbd "c") #'ecc-review-comment-request)
     (define-key map (kbd "e") #'ecc-review-edit-proposal)
     map)
-  "Keymap of a node that is waiting for an answer.")
+  "Keymap of a node that is waiting for an answer.
+The keys of `ecc-chat-transcript-map\=' keep their meaning here, so that
+one letter is one thing wherever point is: the allow that widens to a
+whole turn is `u\=' (until the turn ends) rather than `t\=', which opens
+the terminal everywhere else and answered permissions here without
+asking; the pattern is `r\=' (rule) rather than `p\=', which moves to the
+previous heading everywhere else.  `a\=' and `d\=' are the exception
+worth having: `ecc-session-review-or-deny\=' already sends `d\=' to
+`ecc-perm-deny\=' on a request, so both spellings agree.")
 
 (defvar ecc-file-section-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map ecc-chat-transcript-map)
     (define-key map (kbd "RET") #'ecc-session-visit)
-    (define-key map (kbd "SPC") #'ecc-chat-toggle)
     (define-key map (kbd "d") #'ecc-session-review-file)
     map)
-  "Keymap of a file row in the Files section.")
+  "Keymap of a file row in the Files section.
+`SPC\=' is not taken back for folding here: it scrolls the transcript
+everywhere else, and a key held down to read with should not stop at a
+row.  TAB folds, on this row as on every other.")
 
 (defvar ecc-chat-button-map
   (let ((map (make-sparse-keymap)))

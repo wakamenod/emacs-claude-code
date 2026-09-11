@@ -12,6 +12,13 @@
 (require 'cl-lib)
 (require 'ert)
 (require 'ecc-test-helpers)
+(require 'ecc-review)
+(require 'ecc-plan)
+(require 'ecc-dashboard)
+(require 'ecc-usage)
+(require 'ecc-btw)
+(require 'ecc-inline)
+(require 'ecc-perm)
 (require 'ecc-chat)
 (require 'ecc-session)
 (require 'ecc-prompt)
@@ -48,6 +55,48 @@ calls in one step is what the depth ladder needs."
     (cons (ecc-node-id step) (ecc-node-id (car (ecc-node-children step))))))
 
 ;;;; Folding
+
+(ert-deftest ecc-chat-test-node-maps-do-not-change-a-transcript-key ()
+  "A key of the transcript keeps its meaning on a node that overrides it.
+The node maps are reached by moving point, not by a different gesture,
+so a letter that means one thing in the transcript and another on a
+node fires the wrong command with no warning -- `t\=' opened the
+terminal in the transcript and allowed every tool for the rest of the
+turn on a request, without asking.  A node may add a key the transcript
+leaves free; it may not repurpose one.
+
+`d\=' is the exception, and only because the two agree:
+`ecc-session-review-or-deny\=' sends it to `ecc-perm-deny\=' as soon as
+point is on a request, which is what the node map binds it to."
+  (dolist (map (list ecc-request-section-map ecc-file-section-map))
+    (map-keymap
+     (lambda (event command)
+       (let* ((key (vector event))
+              (inherited (lookup-key ecc-chat-transcript-map key)))
+         (when (and (commandp inherited) (not (eq inherited command)))
+           (should (memq command '(ecc-perm-deny ecc-session-review-file))))))
+     map)))
+
+(ert-deftest ecc-chat-test-no-plain-c-c-letter-bindings ()
+  "No keymap of this package takes a \\`C-c <letter>' key.
+The Emacs Lisp manual reserves those for users, and they are the only
+keys reserved for them, so a mode that takes one blocks the only keys
+its user is entitled to.  A command with no \\`C-c C-<letter>' free
+belongs in `ecc-menu', or on a bare letter where the buffer is
+read-only.
+
+Every keymap of the package is checked, not only the session buffer's:
+the reservation is about leaving the user room in each mode, and has
+nothing to do with whether two maps are ever live at once."
+  (dolist (map (list ecc-chat-mode-map ecc-chat-transcript-map
+                     ecc-request-section-map ecc-file-section-map
+                     ecc-global-map ecc-review-mode-map ecc-plan-mode-map
+                     ecc-question-mode-map ecc-dashboard-mode-map
+                     ecc-usage-mode-map ecc-btw-mode-map
+                     ecc-capabilities-mode-map ecc-inline-map ecc-rewrite-map))
+    (dolist (letter (append (number-sequence ?a ?z) (number-sequence ?A ?Z)))
+      (let ((key (vconcat (kbd "C-c") (vector letter))))
+        (should-not (commandp (lookup-key map key)))))))
 
 (ert-deftest ecc-chat-test-toggle-folds-and-unfolds ()
   "TAB on a heading hides its body and shows it again; on the body it folds."
@@ -226,7 +275,7 @@ calls in one step is what the depth ladder needs."
       (goto-char (point-max))
       (search-backward "Permission: Bash")
       (should (eq (key-binding (kbd "d")) #'ecc-perm-deny))
-      (should (eq (key-binding (kbd "p")) #'ecc-perm-add-pattern))
+      (should (eq (key-binding (kbd "r")) #'ecc-perm-add-pattern))
       (should (eq (key-binding (kbd "n")) #'ecc-chat-next-heading)))))
 
 (ert-deftest ecc-chat-test-answering-from-the-prompt-region ()
