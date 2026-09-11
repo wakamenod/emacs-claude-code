@@ -1170,6 +1170,43 @@ turn again and looked as though nothing had arrived."
   ;; Nothing to read falls back to the first value rather than erroring.
   (should (equal (ecc-render-tool-summary "AskUserQuestion" nil) "")))
 
+;;;; What a redraw remembers
+
+(ert-deftest ecc-render-test-files-summary-reuses-diffs ()
+  "The Files section diffs a file again only when it changed again.
+The section is drawn with every redraw of the live region, and it used
+to diff every hunk of every file each time."
+  (ecc-test-with-fake-session session
+    (let ((diffs 0)
+          (olds nil))
+      (cl-letf* ((real (symbol-function #'ecc-diff-lines))
+                 ((symbol-function #'ecc-diff-lines)
+                  (lambda (old new)
+                    (cl-incf diffs)
+                    (push old olds)
+                    (funcall real old new))))
+        (ecc-session-ensure-buffer session)
+        (ecc-model-begin-turn session "edit two files")
+        (ecc-model-note-file session "/nowhere/a.txt" 'edit)
+        (ecc-model-note-hunk session "/nowhere/a.txt" "one\n" "1\n" nil "one\ntwo\n")
+        (ecc-model-note-file session "/nowhere/b.txt" 'edit)
+        (ecc-model-note-hunk session "/nowhere/b.txt" "two\n" "2\n" nil "one\ntwo\n")
+        (ecc-render-flush session)
+        (let ((first diffs))
+          (should (> first 0))
+          ;; Nothing changed: nothing is diffed.
+          (ecc-render-flush session)
+          (should (= diffs first))
+          ;; One more hunk on a: both hunks of a are diffed again, for
+          ;; the counts and for the text; b is not touched.
+          (setq olds nil)
+          (ecc-model-note-hunk session "/nowhere/a.txt" "1\n" "uno\n" nil "1\ntwo\n")
+          (ecc-render-flush session)
+          (should (= diffs (+ first 4)))
+          (should-not (member "two\n" olds))
+          (should (string-search "+uno" (ecc-test-buffer-string
+                                         (ecc-session-buffer session)))))))))
+
 (provide 'ecc-render-test)
 
 ;;; ecc-render-test.el ends here

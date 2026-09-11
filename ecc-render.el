@@ -163,6 +163,9 @@ follows is the draft the user is writing.")
 Only the nodes the user folded or unfolded are in it; the others
 follow `ecc-render--hidden-types'.")
 
+(defvar-local ecc-render--file-cache nil
+  "Hash of a path to what `ecc-render--file-summary' last made of its entry.")
+
 (defvar-local ecc-render--timer nil
   "Debounce timer of this buffer, or nil.")
 
@@ -670,7 +673,7 @@ The folds are overlays of their own, so their order does not matter."
 
 ;;;; The top region: header, Files, Tasks
 
-(defun ecc-render--file-counts (entry)
+(defun ecc-render--file-counts-1 (entry)
   "Return (ADDED . REMOVED) over every change of the file ENTRY."
   (let ((added 0) (removed 0)
         (patches (ecc-file-entry-patches entry)))
@@ -683,7 +686,7 @@ The folds are overlays of their own, so their order does not matter."
       (setq patches (cdr patches)))
     (cons added removed)))
 
-(defun ecc-render--file-diff (entry)
+(defun ecc-render--file-diff-1 (entry)
   "Return the merged diff text of every change of the file ENTRY."
   (let ((patches (ecc-file-entry-patches entry))
         (parts nil))
@@ -696,6 +699,34 @@ The folds are overlays of their own, so their order does not matter."
             parts)
       (setq patches (cdr patches)))
     (string-join (nreverse parts) "")))
+
+(defun ecc-render--file-summary (entry)
+  "Return (COUNTS . DIFF) of the file ENTRY, computing them once per change.
+The Files section is drawn again with every redraw of the live region,
+and diffing every hunk of every file the session touched each time
+grew with the session rather than with what changed: half of the
+section's redraw, 10 ms for 60 files of 3 hunks (measured 2026-09-12).
+The hunks and the patches of an entry only ever grow
+\(`ecc-model-note-hunk'), so how many there are says whether the
+answer kept for it still holds."
+  (let* ((path (ecc-file-entry-path entry))
+         (stamp (cons (length (ecc-file-entry-hunks entry))
+                      (length (ecc-file-entry-patches entry))))
+         (known (gethash path ecc-render--file-cache)))
+    (if (and known (equal (car known) stamp))
+        (cdr known)
+      (cdr (puthash path
+                    (cons stamp (cons (ecc-render--file-counts-1 entry)
+                                      (ecc-render--file-diff-1 entry)))
+                    ecc-render--file-cache)))))
+
+(defun ecc-render--file-counts (entry)
+  "Return (ADDED . REMOVED) over every change of the file ENTRY."
+  (car (ecc-render--file-summary entry)))
+
+(defun ecc-render--file-diff (entry)
+  "Return the merged diff text of every change of the file ENTRY."
+  (cdr (ecc-render--file-summary entry)))
 
 (defun ecc-render--file-heading (entry)
   "Return the heading of the file ENTRY."
@@ -2027,6 +2058,8 @@ position, or nil when the node is not drawn."
     (setq ecc-render--visibility-cache (make-hash-table :test #'equal)))
   (unless ecc-render--nodes
     (setq ecc-render--nodes (make-hash-table :test #'equal)))
+  (unless ecc-render--file-cache
+    (setq ecc-render--file-cache (make-hash-table :test #'equal)))
   (unless ecc-render--live-start
     (setq ecc-render--live-start (make-marker)))
   (unless ecc-render--top-end
@@ -2282,6 +2315,7 @@ read-only."
     (setq ecc-render--session session
           ecc-render--visibility-cache (make-hash-table :test #'equal)
           ecc-render--nodes (make-hash-table :test #'equal)
+          ecc-render--file-cache (make-hash-table :test #'equal)
           ecc-render--frozen 0
           ecc-render--top-end (make-marker)
           ecc-render--live-start (make-marker)
