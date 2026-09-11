@@ -46,67 +46,28 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 
 その後は `:vc` の無い普通の `use-package` で設定します。
 
-### straight.el と Elpaca
+### straight.el
 
 ```elisp
-;; straight.el
 (use-package ecc
   :straight (ecc :type git :host github :repo "wakamenod/emacs-claude-code"))
-
-;; Elpaca
-(use-package ecc
-  :ensure (ecc :host github :repo "wakamenod/emacs-claude-code"))
-```
-
-### 手でクローンする
-
-```sh
-git clone https://github.com/wakamenod/emacs-claude-code \
-  ~/.emacs.d/site-lisp/emacs-claude-code
-```
-
-```elisp
-(add-to-list 'load-path "~/.emacs.d/site-lisp/emacs-claude-code")
-(require 'ecc)
 ```
 
 ## 最初の設定
 
-`M-x ecc-start` は autoload なので、設定ゼロでも ecc は動きます。それでも初日に
-決めておく価値のあるものが二つあります。
+`M-x ecc-start` は autoload なので、設定ゼロでも ecc は動きます。足す価値がある
+のはキーマップ一つです。
 
 ```elisp
 (use-package ecc
   :ensure t
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest)
-  ;; `ecc-global-map' はプレフィックスキーマップ。権限に答える、待っている
-  ;; セッションに飛ぶ、ダッシュボードを開く -- どのバッファからでも。
-  ;; `:bind-keymap' は、プレフィックスが初めて押されるまで ecc の読み込みを
-  ;; 遅らせます。
-  :bind-keymap ("C-c c" . ecc-global-map)
-  :bind ("C-c C-v" . ecc-start)
-  :config
-  (setq ecc-chat-text-width 100)   ; トランスクリプトの幅（桁数）
-  (setq ecc-notify-level 'pulse)   ; nil, `message', `pulse', `desktop'
-  (setq ecc-permission-mode nil)   ; nil は CLI 側の既定をそのままにする
-
-  ;; t にするとターミナルクライアントと同じく RET が送信になります。
-  ;; nil（既定）なら RET は改行で、送信は C-c C-c です。
-  (setq ecc-chat-return-sends nil))
+  :bind-keymap ("C-c c" . ecc-global-map))
 ```
 
-効くのはキーマップのほうです。セッションはあなたの一言が要るその瞬間に止まりま
-す。`ecc-global-map` は、どのセッションだったかを探しに行かずに答えるためのもの
-です。
-
-:::note[モデルは設定項目ではありません]
-モデルを名指しする変数は、意図的にありません。新しいセッションは Claude Code の
-設定からモデルを取り、再開したセッションは記録の最後にあるモデルを引き継ぎます。
-`--model` を渡すとそのどちらも恒久的に上書きしてしまい、それ以降の `/model` を
-すべて無かったことにします。動いているセッションのモデルを変えるには
-`ecc-set-model` を使ってください。コストについても同じで、これは ecc ではなく
-Claude Code の設定の話です。
-:::
+`ecc-global-map` は、権限に答える、待っているセッションに飛ぶ、ダッシュボードを
+開く、をどのバッファからでもできるようにします。止まったセッションを探しに行かず
+に済みます。
 
 ## MCP サーバーを有効にする
 

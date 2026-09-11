@@ -31,7 +31,6 @@ must never start needing a JavaScript toolchain. A fresh checkout has no
 src/content/docs/
   index.mdx              the English landing page (template: splash)
   start/                 Start here
-  explanation/           Understanding ecc
   reference/             Reference
   ja/                    the same tree, in Japanese
 ```

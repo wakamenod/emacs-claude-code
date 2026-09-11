@@ -47,71 +47,34 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 
 Then configure it with an ordinary `use-package` form, without `:vc`.
 
-### straight.el and Elpaca
+### straight.el
 
 ```elisp
-;; straight.el
 (use-package ecc
   :straight (ecc :type git :host github :repo "wakamenod/emacs-claude-code"))
-
-;; Elpaca
-(use-package ecc
-  :ensure (ecc :host github :repo "wakamenod/emacs-claude-code"))
-```
-
-### A manual clone
-
-```sh
-git clone https://github.com/wakamenod/emacs-claude-code \
-  ~/.emacs.d/site-lisp/emacs-claude-code
-```
-
-```elisp
-(add-to-list 'load-path "~/.emacs.d/site-lisp/emacs-claude-code")
-(require 'ecc)
 ```
 
 ## The first configuration
 
-`M-x ecc-start` is autoloaded, so ecc works with no configuration at all. Two
-things are worth setting on the first day anyway.
+`M-x ecc-start` is autoloaded, so ecc works with no configuration at all. The
+one thing worth adding is the keymap:
 
 ```elisp
 (use-package ecc
   :ensure t
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest)
-  ;; `ecc-global-map' is a prefix keymap: answering a permission, jumping to
-  ;; the session that is waiting, opening the dashboard -- from any buffer.
-  ;; `:bind-keymap' defers loading ecc until the prefix is first pressed.
-  :bind-keymap ("C-c c" . ecc-global-map)
-  :bind ("C-c C-v" . ecc-start)
-  :config
-  (setq ecc-chat-text-width 100)   ; transcript width, in columns
-  (setq ecc-notify-level 'pulse)   ; nil, `message', `pulse' or `desktop'
-  (setq ecc-permission-mode nil)   ; nil leaves the CLI's own default alone
-
-  ;; t makes RET send, as the terminal client does.
-  ;; nil (the default) makes RET a newline and C-c C-c the send.
-  (setq ecc-chat-return-sends nil))
+  :bind-keymap ("C-c c" . ecc-global-map))
 ```
 
-The keymap is the half that matters. A session stops the moment it needs a word
-from you, and `ecc-global-map` is what lets you answer without first going to
-find which session it was.
-
-:::note[The model is not a setting]
-There is no variable naming a model, on purpose. A new session takes the model
-from your Claude Code settings, and a resumed one takes the model its recording
-ends on. Passing `--model` would override both for good, undoing every `/model`
-made since. `ecc-set-model` changes the model of a running session instead.
-Cost is likewise a matter for the Claude Code settings, not for ecc.
-:::
+`ecc-global-map` answers a permission, jumps to the session that is waiting and
+opens the dashboard — from any buffer, so a session that stops does not make
+you go and find it first.
 
 ## Turning on the MCP server
 
 The loopback MCP server lets Claude ask Emacs for what only Emacs knows: the
 references `xref` finds, the symbols `imenu` lists, the diagnostics `flymake`
-holds. It is off until you say otherwise, and evaluating Elisp needs a second
+holds. It is off until you turn it on, and evaluating Elisp needs a second
 opt-in:
 
 ```elisp

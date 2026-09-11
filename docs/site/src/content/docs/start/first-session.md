@@ -143,8 +143,6 @@ resuming it. `ecc-history-resume` asks first.
 
 ## Where to go next
 
-- [How it works](/emacs-claude-code/explanation/how-it-works/) — what happens
-  between the CLI and the buffer.
 - [Key binding reference](/emacs-claude-code/reference/key-bindings/) — every
   key, in every buffer ecc opens.
 - [Command reference](/emacs-claude-code/reference/commands/) — including the

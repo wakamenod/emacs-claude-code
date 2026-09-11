@@ -143,8 +143,6 @@ Edit や Write なら、`RET` は決める前に変更を diff で見せます�
 
 ## 次に読むもの
 
-- [仕組み](/emacs-claude-code/ja/explanation/how-it-works/) — CLI とバッファの間で
-  何が起きているか。
 - [キーバインドリファレンス](/emacs-claude-code/ja/reference/key-bindings/) — ecc
   が開くすべてのバッファの、すべてのキー。
 - [コマンドリファレンス](/emacs-claude-code/ja/reference/commands/) — トランスク
