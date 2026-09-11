@@ -37,6 +37,14 @@ and obeys the mode map, which binds only `RET`, `TAB`, movement keys and keys un
 The history is one list shared by every session, so a prompt typed in one is there in
 the next.
 
+The CLI offers a prompt of its own after a turn or two. It stands in the empty prompt
+region as ghost text, and `C-c C-s` makes it a draft.
+
+![A suggestion standing in the empty prompt region, taken with C-c C-s and sent](../../../assets/suggestion.gif)
+
+Suggestions arrive only when `ecc-prompt-suggestions-enabled` is on, which passes
+`--prompt-suggestions` to the CLI, and not every model offers them.
+
 ### Under the prefix
 
 | Key | Action |

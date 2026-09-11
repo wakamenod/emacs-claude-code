@@ -256,6 +256,26 @@ name of the project rather than `greet<2>'."
   (ecc--enable-session-modes)
   (shot-show shot-live))
 
+(defun shot-start-live-suggestions ()
+  "Start a real session that will be offered prompt suggestions.
+The model is the one the Claude Code settings name rather than haiku:
+haiku sends no `prompt_suggestion' at all, while the default model
+sends one after a turn or two (confirmed 2026-09-11, both with
+--prompt-suggestions and --include-partial-messages).  The budget is
+larger to match, and still a budget."
+  (dolist (session (ecc-model-sessions))
+    (ecc-kill session))
+  (setq shot-live (ecc-model-create-session
+                   :project-root shot-root
+                   :name "greet"
+                   :options '(:remote-control nil
+                              :prompt-suggestions t
+                              :extra-args ("--max-budget-usd" "0.50"))))
+  (ecc-session-ensure-buffer shot-live)
+  (ecc-proc-start shot-live)
+  (ecc--enable-session-modes)
+  (shot-show shot-live))
+
 (defun shot-source-window (&optional file)
   "Return the window showing FILE, or the demo source, selecting it.
 A file that is not on screen yet is put in the window that is not a

@@ -156,7 +156,7 @@ fi
 # The four scenes below are answered by the model, so they need a session
 # that really runs.  It is started once, whichever of them is being taken.
 if want send-region || want fix-error || want inline || want rewrite \
-       || want at-cursor || want image || want context || want suggestion; then
+       || want at-cursor || want image || want context; then
     e '(shot-start-live)'               ; sleep 4
 fi
 
@@ -262,23 +262,29 @@ if want image; then
 fi
 
 if want suggestion; then
-    # The prompt the CLI offers, and C-c C-s taking it.  A suggestion
-    # arrives when the CLI feels like offering one, so this asks until
-    # there is one rather than sleeping a fixed time.
-    e '(shot-prompt-type "Name one thing to test here. One line.")'
+    # The prompt the CLI offers, and C-c C-s taking it.  This one has a
+    # session of its own: the model the settings name sends suggestions
+    # and haiku does not, so the other scenes' session cannot be used.
+    e '(shot-start-live-suggestions)' ; sleep 5
+    # Two turns: no suggestion came after one of them, and the CLI
+    # offered one after the second (confirmed 2026-09-11).
+    e '(shot-prompt-type "Read hello.py and say in one line what it does.")'
+    e '(shot-prompt-send)'  ; sleep 30
+    e '(shot-prompt-type "Good. What next?")'
     e '(shot-prompt-send)'
-    for _ in $(seq 1 40); do
+    # A suggestion arrives when the CLI has one to offer, so this asks
+    # until it does rather than sleeping a fixed time.
+    for _ in $(seq 1 45); do
         sleep 2
         if "$emacsclient" -s ecc-docshot -e '(shot-suggestion-p)' 2>/dev/null | grep -q t; then
             break
         fi
     done
     scene suggestion
-    e '(shot-scene-cursor-point 1)'   ; snap
-    e '(shot-prompt-command (quote ecc-chat-goto-prompt))' ; snap 3
+    snap 3
     e '(shot-prompt-command (quote ecc-hint-accept-suggestion))' ; snap 4
-    e '(shot-prompt-send)'            ; snap 2
-    for _ in $(seq 1 10); do sleep 1; snap; done
+    e '(shot-prompt-send)'                                       ; snap 2
+    for _ in $(seq 1 14); do sleep 1; snap; done
     gif
 fi
 
