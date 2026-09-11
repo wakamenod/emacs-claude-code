@@ -36,6 +36,21 @@ display, so the `defface' spec is read instead."
                               (member '(background dark) display)))))
                  (get face 'face-defface-spec))))
 
+(ert-deftest ecc-notify-test-a-turn-that-went-well-is-not-an-error ()
+  "Only a turn whose result says so is announced as an error.
+The CLI sends `is_error\\=' false on every turn that went well, and JSON
+false is read as `:false\\=', which is a symbol and therefore true to
+Emacs: asking for the value itself called every finished turn an error."
+  (ecc-test-with-fake-session session
+    (let ((turn (ecc-model-begin-turn session "hello")))
+      (ecc-model-finish-turn session '((duration_ms . 1500) (is_error . :false)))
+      (should (equal (ecc-notify-turn-text session turn)
+                     (format "%s: done (1.5s)" (ecc-session-name session)))))
+    (let ((turn (ecc-model-begin-turn session "again")))
+      (ecc-model-finish-turn session '((duration_ms . 2000) (is_error . t)))
+      (should (equal (ecc-notify-turn-text session turn)
+                     (format "%s: done (2.0s, error)" (ecc-session-name session)))))))
+
 (ert-deftest ecc-notify-test-events-can-be-turned-off ()
   "Only the events that were asked for are announced."
   (ecc-test-with-fake-session session

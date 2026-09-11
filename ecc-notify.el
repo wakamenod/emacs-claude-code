@@ -76,7 +76,11 @@ On macOS this is the name of a system sound such as \"Glass\"."
             (ecc-session-name session)
             (if-let* ((duration (ecc-model-turn-duration turn)))
                 (format " (%.1fs%s)" duration
-                        (if (and result (alist-get 'is_error result)) ", error" ""))
+                        ;; `is_error' is false on every turn that went
+                        ;; well, and JSON false reads as `:false', which
+                        ;; is true to Emacs.
+                        (if (ecc--json-true-p (alist-get 'is_error result))
+                            ", error" ""))
               ""))))
 
 (defun ecc-notify-request-text (session request)
