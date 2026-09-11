@@ -87,14 +87,18 @@
 
 ;;;; Options
 
-(defvar ecc-chat-return-sends nil
+(defcustom ecc-chat-return-sends nil
   "Non-nil makes RET send the prompt, the way the terminal client does.
 Off, RET inserts a newline and \\<ecc-chat-mode-map>\\[ecc-prompt-send]
 sends; on, \\[ecc-chat-newline] inserts the newline.
 
 RET is a newline because that is what RET is in Emacs; a reader who
 wants the terminal habit sets this, or rebinds the two keys in
-`ecc-chat-mode-map' outright.")
+`ecc-chat-mode-map' outright.  Which of the two it is is a taste, which
+is what makes this a setting rather than a variable (decided
+2026-09-11)."
+  :type 'boolean
+  :group 'ecc)
 
 (defcustom ecc-chat-line-spacing 0.15
   "Extra room under every line of a session buffer, or nil for none.

@@ -2,7 +2,7 @@
 
 ---
 
-# Emacs client for the Claude Code
+# Emacs Client for Claude Code
 
 An Emacs client for the Claude Code CLI. Conversations run directly inside ordinary Emacs buffers.
 
@@ -11,7 +11,7 @@ An Emacs client for the Claude Code CLI. Conversations run directly inside ordin
 
 ![A session: a prompt is sent, the Edit is allowed, and the source buffer on the left picks up the change](docs/images/session.gif)
 
-**Documentation:** <https://wakamenod.github.io/emacs-claude-code/> *(in progress)*
+**Documentation:** <https://wakamenod.github.io/emacs-claude-code/>
 
 ## Overview
 
@@ -21,18 +21,18 @@ Because the transcript is standard buffer text, you can use regular Emacs workfl
 
 ### Scope and Trade-offs
 
-- **No terminal emulation:** ecc does not replicate the CLI's terminal UI. Use `ecc-tui-open` to hand off a live session to a terminal and pull it back when finished.
+- **No terminal emulation:** ecc does not replicate the CLI's terminal UI. Use `ecc-tui-open` to hand off a live session to a terminal and bring it back when finished.
 - **Claude Code only:** ecc speaks the Claude Code protocol directly; it is not a general-purpose LLM frontend.
-- **Lightweight renderers:** Markdown, tables, and diffs are rendered using ecc's built-in parsers rather than full-featured external implementations.
-- **Direct protocol reflection:** Permission requests, usage data (`get_usage`), and conversation logs come directly from the CLI without guesswork.
+- **Built-in renderers:** Markdown, tables, and diffs are rendered using ecc's lightweight built-in parsers rather than heavyweight external dependencies.
+- **Direct protocol reflection:** Permission requests, usage metrics (`get_usage`), and conversation logs come directly from the CLI without guesswork.
 
 ### Key Features
 
-- **Diff reviews:** Inspect all changes made during a session in a single `diff-mode` buffer. Add inline comments to hunks and submit them as a single prompt.
-- **Interactive edits:** Review and modify proposed file edits before approving them.
-- **Plan mode:** Work through proposed execution plans in a writable buffer.
-- **Global access:** Approve or deny pending tool requests from any buffer.
-- **Session management:** Manage multiple concurrent sessions from a dashboard.
+- **[Diff reviews](https://wakamenod.github.io/emacs-claude-code/features/review/):** Inspect all changes made during a session in a single `diff-mode` buffer. Add inline comments to hunks and submit them as a single prompt.
+- **[Interactive edits](https://wakamenod.github.io/emacs-claude-code/features/review/#reviewing-a-proposal-before-it-is-applied):** Review and modify proposed file edits before approving them.
+- **[Plan mode](https://wakamenod.github.io/emacs-claude-code/features/review/#plan-mode):** Work through proposed execution plans in a writable buffer.
+- **[Global access](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/):** Approve or deny pending tool requests from any buffer.
+- **[Session management](https://wakamenod.github.io/emacs-claude-code/features/sessions/):** Manage multiple concurrent sessions from a dashboard.
 - **Safe defaults:** Permission prompts default to deny. The built-in loopback MCP server is disabled by default, and evaluating Elisp requires explicit opt-in.
 
 ## Requirements
@@ -44,14 +44,14 @@ Because the transcript is standard buffer text, you can use regular Emacs workfl
 
 These packages enhance functionality when available, but ecc falls back gracefully if they are absent:
 
-- [ghostel](https://github.com/dakra/ghostel) — Hands off sessions to a terminal.
-- [posframe](https://github.com/tumashu/posframe) — Displays `/btw` and usage popups.
-- [nerd-icons](https://github.com/rainstormstudio/nerd-icons.el) — Adds tool icons.
-- [markdown-mode](https://github.com/jrblevin/markdown-mode) — Serves as the major mode for plan and review buffers.
+- [ghostel](https://github.com/dakra/ghostel) — Terminal emulator for sessions handed over by `ecc-tui-open`.
+- [posframe](https://github.com/tumashu/posframe) — Floating popups for `/btw` side-queries and usage reports.
+- [nerd-icons](https://github.com/rainstormstudio/nerd-icons.el) — Icons for tool calls in the transcript.
+- [markdown-mode](https://github.com/jrblevin/markdown-mode) — Major mode for plan and review buffers.
 
 ## Installation
 
-ecc is not on MELPA. Install it directly from this repository.
+ecc is not currently on MELPA; install it directly from this repository.
 
 ### Emacs 30+ (`use-package` with `:vc`)
 
@@ -74,7 +74,7 @@ Then configure it with a standard `use-package` declaration (without `:vc`).
 <details>
 <summary>straight.el, Elpaca, or manual clone</summary>
 
-Because the repository name is `emacs-claude-code` while the package name is `ecc`, recipes must declare the package name explicitly:
+Because the repository name is `emacs-claude-code` while the package name is `ecc`, package managers that infer the package name from the repository URL must declare it explicitly:
 
 ```elisp
 ;; straight.el
@@ -106,29 +106,15 @@ git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/em
 (use-package ecc
   :ensure t
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest)
-  ;; `ecc-global-map' allows answering prompts from any buffer.
+  ;; `ecc-global-map' lets you respond to pending requests from any buffer.
   ;; `:bind-keymap' defers loading ecc until the prefix is pressed.
   :bind-keymap ("C-c c" . ecc-global-map)
-  ;; The menu is `C-c c ?', which is a lot of keys for something opened
-  ;; often; a key of its own is shorter.  C-' is a GUI key: a terminal
-  ;; cannot send it, so bind something a terminal can there.
-  :bind (("C-c C-'" . ecc-menu)
-         ("C-c C-v" . ecc-start))
-  :config
-  (setq ecc-chat-text-width 100)      ; Transcript width in columns
-  (setq ecc-notify-level 'pulse)      ; nil, 'message, 'pulse, or 'desktop
-  (setq ecc-permission-mode nil)      ; nil keeps the CLI default
-
-  ;; Set to t to make RET send messages (like the CLI).
-  ;; When nil, RET inserts a newline and C-c C-c sends.
-  (setq ecc-chat-return-sends nil)
-
-  ;; Loopback MCP server (exposes xref, imenu, tree-sitter, project, diagnostics).
-  ;; Disabled by default.
-  ;; (setq ecc-mcp-enabled t)
-  ;; Elisp evaluation tool requires separate activation:
-  ;; (setq ecc-mcp-enable-execute-code t)
-  )
+  :custom
+  (ecc-permission-mode "auto")            ; nil keeps the CLI default
+  (ecc-notify-level 'pulse)               ; nil, 'message, 'pulse, or 'desktop
+  (ecc-usage-display 'posframe)           ; needs posframe; 'window otherwise
+  (ecc-btw-display 'posframe)
+  (ecc-prompt-suggestions-enabled t))
 ```
 
 For all other settings, run `M-x customize-group RET ecc` or check the [configuration reference](https://wakamenod.github.io/emacs-claude-code/reference/configuration/).
@@ -145,26 +131,26 @@ For all other settings, run `M-x customize-group RET ecc` or check the [configur
 
 ### Global Map (`C-c c`)
 
-Usable from any buffer:
+Accessible from any buffer:
 
 | Key | Command | Action |
 |---|---|---|
 | `c` | `ecc-start` | Start a session |
 | `r` | `ecc-resume-menu` | Resume a session |
 | `R` | `ecc-rename-session` | Rename a session |
-| `v` | `ecc-show-session` | Go to the session prompt |
-| `i` | `ecc-interrupt` | Interrupt the running turn |
-| `t` | `ecc-tui-open` | Hand the session over to the terminal |
-| `a` | `ecc-answer-allow` | Allow oldest waiting request |
-| `d` | `ecc-answer-deny` | Deny oldest waiting request |
+| `v` | `ecc-show-session` | Focus session prompt |
+| `i` | `ecc-interrupt` | Interrupt running turn |
+| `t` | `ecc-tui-open` | Hand session over to terminal |
+| `a` | `ecc-answer-allow` | Allow oldest pending request |
+| `d` | `ecc-answer-deny` | Deny oldest pending request |
 | `1`–`4` | `ecc-answer-option-N` | Select response option N |
-| `n` | `ecc-next-attention` | Switch to waiting session |
-| `N` | `ecc-next-attention-in-project` | Switch to waiting session in current project |
+| `n` | `ecc-next-attention` | Switch to next waiting session |
+| `N` | `ecc-next-attention-in-project` | Switch to next waiting session in project |
 | `b` | `ecc-dashboard` | Open sessions dashboard |
-| `D` | `ecc-review` | Open every change as one diff |
-| `h` | `ecc-history-open` | Open past conversation |
-| `U` | `ecc-usage` | Show usage and limits |
-| `?` | `ecc-menu` | Open the command menu |
+| `D` | `ecc-review` | Review changes as unified diff |
+| `h` | `ecc-history-open` | Open past conversation history |
+| `U` | `ecc-usage` | Check usage and rate limits |
+| `?` | `ecc-menu` | Open transient menu |
 
 ### Session Buffer
 
@@ -174,9 +160,12 @@ Usable from any buffer:
 | `S-RET` | Insert newline |
 | `TAB` | Completion in prompt; fold/unfold in transcript |
 | `C-c C-a` / `C-c C-d` | Allow / Deny tool permission |
-| `C-c ?` | Open command menu |
+| `C-c ?` | Open transient menu |
 
-See the [key binding reference](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/) for full listings.
+For prompt and transcript keybindings, see
+[Prompt and transcript](https://wakamenod.github.io/emacs-claude-code/features/prompt/).
+For global keybindings accessible from any buffer, see the
+[keybindings reference](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/).
 
 ## Acknowledgements
 

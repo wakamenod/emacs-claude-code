@@ -1,150 +1,113 @@
 ---
-title: Configuration reference
-description: Every setting ecc offers, grouped by what it decides.
+title: Configuration
+description: Complete reference of all customize settings and variables in ecc.
 sidebar:
   order: 2
 ---
 
-Every `defcustom` in ecc is listed here, with its default and what it decides.
-All of them are in the `ecc` customization group:
+Every `defcustom` in ecc is listed below, organized by functional area. All settings belong to the `ecc` customization group:
 
 ```
 M-x customize-group RET ecc
 ```
 
-## What is a setting, and what is not
-
-A `defcustom` in ecc is reserved for something a user chooses: a taste, a
-difference between machines (font, screen, `PATH`), or a judgement about safety
-and cost. There are thirty of them, and they are all below.
-
-Everything else is a plain `defvar`: a stand-in the CLI overwrites, a sentence
-sent to the model, a table of the CLI's own quirks, an internal constant. Those
-are still reachable with `setq` and still bindable in a test — a variable
-missing from `customize` is not a variable you cannot change. A few of the
-useful ones are listed at the [end of this page](#useful-variables-that-are-not-settings).
-
 ## The CLI and the session
 
-| Variable | Default | What it decides |
+| Variable | Default | Description |
 |---|---|---|
-| `ecc-executable` | `"claude"` | Name of, or path to, the Claude Code CLI executable |
-| `ecc-permission-mode` | `nil` | Initial mode passed with `--permission-mode`. `nil` leaves the CLI default in place; the rest are `"default"`, `"acceptEdits"`, `"plan"`, `"auto"` and `"bypassPermissions"` |
-| `ecc-plan-default-mode` | `"acceptEdits"` | Permission mode switched to when a plan is approved without choosing one. `nil` approves without asking for a change, which the CLI answers by leaving plan mode for the default mode |
-| `ecc-prompt-suggestions-enabled` | `nil` | Non-nil passes `--prompt-suggestions` |
-| `ecc-command-wrapper-function` | `nil` | Function that rewrites the CLI command line before it is run. Called with the command list and the project root, and must return the command list to run. `nil` runs the command unchanged |
+| `ecc-executable` | `"claude"` | Path to, or name of, the Claude Code CLI executable |
+| `ecc-permission-mode` | `nil` | Initial mode passed via `--permission-mode`. When `nil`, the CLI default is preserved. Supported values: `"default"`, `"acceptEdits"`, `"plan"`, `"auto"`, and `"bypassPermissions"` |
+| `ecc-plan-default-mode` | `"acceptEdits"` | Permission mode switched to when a plan is approved without explicitly selecting a target mode. When `nil`, approvals do not request a mode change (causing the CLI to return to default mode) |
+| `ecc-prompt-suggestions-enabled` | `nil` | When non-nil, passes `--prompt-suggestions` to the CLI to enable follow-up suggestions |
+| `ecc-command-wrapper-function` | `nil` | Hook function to transform the CLI command invocation before execution. Receives `(command-list project-root)` and returns the modified command list. When `nil`, commands run unchanged |
+| `ecc-disabled-plugins` | `nil` | List of plugin identifiers (`"name@marketplace"`) to disable for sessions started by ecc. Applied per session, so plugins stay enabled in the terminal client |
 
-There is deliberately **no setting that names a model**. The model comes from
-your Claude Code settings for a new session, and from the last real assistant
-message of its recording for a resumed one. Passing `--model` would override
-that for good, undoing every `/model` made since. Use `ecc-set-model` to change
-the model of a running session instead.
+There is deliberately **no setting for the default model**. The model is determined by your Claude Code settings for new sessions, and by the last assistant turn for resumed sessions. Passing `--model` unconditionally would override user selections permanently, undoing in-session `/model` changes. Use `ecc-set-model` (or `m` in the menu) to change the model for a running session instead.
 
-There is likewise no budget setting: cost belongs in the Claude Code settings.
+Similarly, there is no setting for session cost budgets; budgets belong in Claude Code settings.
 
 ## The transcript
 
-| Variable | Default | What it decides |
+| Variable | Default | Description |
 |---|---|---|
-| `ecc-chat-text-width` | `100` | Most columns the text is drawn across, or `nil` for the whole window. The surplus is put in the right margin rather than taken off the window, so whatever else the window holds is unaffected |
-| `ecc-chat-line-spacing` | `0.15` | Extra room under every line, read as `line-spacing` reads it: a float is a fraction of the line height. `nil` for none |
-| `ecc-render-result-max-lines` | `12` | Lines of a tool result shown. The whole result is always available with `RET` |
-| `ecc-render-diff-max-lines` | `40` | Lines of a diff shown inside a tool or permission section. The whole diff is always available with `RET` |
-| `ecc-diff-context-lines` | `3` | Lines of context shown around a change in the transcript |
-| `ecc-review-context-lines` | `3` | Lines of context around a change in a diff the review makes itself |
-| `ecc-stream-throttle` | `0.05` | Seconds to gather streaming deltas before drawing them. Zero draws every delta as it arrives |
-| `ecc-render-debounce` | `0.1` | Seconds to gather changes before redrawing the live region |
+| `ecc-chat-return-sends` | `nil` | When `nil` (default), `RET` inserts a newline and `C-c C-c` sends. When `t`, `RET` sends immediately (matching the terminal client) |
+| `ecc-chat-text-width` | `100` | Maximum line width for rendered text, or `nil` to use full window width. Surplus space is padded into the right margin so adjacent window layouts remain unaffected |
+| `ecc-chat-line-spacing` | `0.15` | Additional line spacing below each line, following standard `line-spacing` semantics (e.g., float value represents a fraction of line height). `nil` disables added spacing |
+| `ecc-render-result-max-lines` | `12` | Maximum lines displayed for a tool result preview. The full result is always accessible with `RET` |
+| `ecc-render-diff-max-lines` | `40` | Maximum lines displayed for inline diffs in tool and permission blocks. The full diff is always accessible with `RET` |
+| `ecc-diff-context-lines` | `3` | Lines of context displayed around modifications in the transcript |
+| `ecc-review-context-lines` | `3` | Lines of context displayed around modifications in review diffs generated by ecc |
+| `ecc-stream-throttle` | `0.05` | Interval in seconds to buffer streaming deltas before redrawing. Zero renders each delta immediately |
+| `ecc-render-debounce` | `0.1` | Debounce delay in seconds before redrawing the active transcript region |
 
-## The header line and the mode line
+## Header line and mode line
 
-| Variable | Default | What it decides |
+| Variable | Default | Description |
 |---|---|---|
-| `ecc-hint-context-indicator` | `t` | Non-nil shows the context left in the header line of a session |
-| `ecc-prompt-suggestion-display` | `t` | Non-nil shows the suggestion the CLI offers in the prompt region. Suggestions only arrive when the session was started with `--prompt-suggestions`, which `ecc-prompt-suggestions-enabled` controls |
-| `ecc-mode-line-format` | `nil` | How a session describes itself in the mode line. `nil` shows nothing |
+| `ecc-hint-context-indicator` | `t` | When non-nil, displays remaining context capacity in the session header line |
+| `ecc-prompt-suggestion-display` | `t` | When non-nil, displays ghost text suggestions from the CLI in the prompt area. Requires `ecc-prompt-suggestions-enabled` |
+| `ecc-mode-line-format` | `nil` | Format string for session status in the mode line. `nil` disables mode line display |
 
-`ecc-mode-line-format` is `nil` by default because the mode line is narrow, the
-same numbers are already in the header line, and a session that repeated them
-in both was unreadable. If you want it anyway, it takes a format string:
+`ecc-mode-line-format` is `nil` by default because mode line space is limited, the same metrics are already visible in the header line, and duplicating them across both clutters the interface. If desired, configure it with the following format specifiers:
 
 | Spec | Meaning |
 |---|---|
-| `%n` | The session name |
-| `%m` | The model |
-| `%p` | The permission mode |
-| `%l` | The context left, as a percentage |
-| `%t` | The tokens in the context |
-| `%c` | The cost so far |
-| `%r` | The rate limit utilization |
-| `%s` | The state |
+| `%n` | Session name |
+| `%m` | Active model |
+| `%p` | Permission mode |
+| `%l` | Remaining context capacity (percentage) |
+| `%t` | Total tokens in context window |
+| `%c` | Cumulative cost |
+| `%r` | Rate limit utilization |
+| `%s` | Session state |
 
 ## Notifications
 
-| Variable | Default | What it decides |
+| Variable | Default | Description |
 |---|---|---|
-| `ecc-notify-level` | `'message` | How much noise an event makes. `message` writes one line in the echo area, `pulse` flashes the transcript as well, `desktop` also asks the desktop to show a notification, and `nil` says nothing at all |
-| `ecc-notify-events` | `'(turn-finished request exited)` | Which events are announced: a turn that finished, a request that needs an answer, a session that stopped on its own |
-| `ecc-notify-suppress-when-focused` | `t` | Non-nil holds desktop notifications back while Emacs has the focus |
-| `ecc-notify-sound` | `nil` | Name of the sound a desktop notification plays, or `nil` for silence. On macOS this is a system sound name such as `"Glass"` |
-| `ecc-notify-function` | `#'ecc-notify-default` | Function called with SESSION, EVENT and TEXT. Replacing it takes over notification completely |
+| `ecc-notify-level` | `'message` | Notification verbosity: `'message` logs a single echo-area message, `'pulse` also flashes the transcript, `'desktop` sends a desktop system notification, and `nil` disables notifications |
+| `ecc-notify-events` | `'(turn-finished request exited)` | List of events triggering notifications: turn completion, pending requests, or process exits |
+| `ecc-notify-suppress-when-focused` | `t` | When non-nil, suppresses desktop notifications while Emacs has input focus |
+| `ecc-notify-sound` | `nil` | System sound name played with desktop notifications, or `nil` for silence (e.g. `"Glass"` on macOS) |
+| `ecc-notify-function` | `#'ecc-notify-default` | Custom notification dispatch function with signature `(SESSION EVENT TEXT)`. Overriding this replaces default notification handling entirely |
 
 ## Windows
 
-| Variable | Default | What it decides |
+| Variable | Default | Description |
 |---|---|---|
-| `ecc-window-large-frame-min-height` | `80` | Height, in lines, a frame needs before it gets a third session window. Below it the sessions share two windows and the tab line reaches the rest |
-| `ecc-window-sub-height` | `0.33` | Height of the third session window, as a fraction or a line count. It is taken from the main area of the frame — the source code, usually — rather than from the side the other two are on |
+| `ecc-window-large-frame-min-height` | `80` | Minimum frame height (in lines) required before allocating a third session window. Below this threshold, sessions share two windows and the tab line provides navigation |
+| `ecc-window-sub-height` | `0.33` | Height of the third session window (as a fraction or line count). Taken from the primary frame area (typically code buffers) rather than the side session column |
 
-The default of `ecc-window-large-frame-min-height` tells a laptop from a large
-display: a 14-inch screen holds around 58 lines and a 16-inch one around 67,
-while the display this was measured on holds 114.
+The default value of `ecc-window-large-frame-min-height` (80 lines) is calibrated to differentiate laptop screens from larger external displays: a 14-inch screen typically fits ~58 lines and a 16-inch screen ~67 lines, whereas standard desktop monitors accommodate 110+ lines.
 
-## Buffers shown to one side
+## Side buffers and popups
 
-| Variable | Default | What it decides |
+| Variable | Default | Description |
 |---|---|---|
-| `ecc-btw-display` | `'window` | Where the answer to a `/btw` side question is shown |
-| `ecc-usage-display` | `'window` | Where `ecc-usage` shows what it found |
+| `ecc-btw-display` | `'window` | Display mode for `/btw` side-queries (`'window` or `'posframe`) |
+| `ecc-usage-display` | `'window` | Display mode for `ecc-usage` reports (`'window` or `'posframe`) |
 
-Both take `window` or `posframe`. `posframe` floats the buffer over the frame,
-which needs the [posframe](https://github.com/tumashu/posframe) package and a
-graphical frame; without either, a window is used and the buffer is the same one.
+Both options accept `'window` or `'posframe`. `'posframe` renders the buffer as a floating popup over the frame (requires the [posframe](https://github.com/tumashu/posframe) package and a graphical frame). If posframe is unavailable, ecc falls back to standard window splits.
 
 ## The MCP server
 
-ecc can run an MCP server on the loopback interface and register it with each
-session, which lets Claude ask Emacs what only Emacs knows: xref, imenu,
-tree-sitter, project and diagnostics.
+ecc can run an in-process MCP server on the loopback interface and register it with each session, allowing Claude to query Emacs for editor context: `xref`, `imenu`, `tree-sitter`, project metadata, and diagnostics.
 
-| Variable | Default | What it decides |
+| Variable | Default | Description |
 |---|---|---|
-| `ecc-mcp-enabled` | `nil` | Non-nil registers the server with every session started. The server starts the first time a session needs it, and is stopped by `ecc-mcp-stop` |
-| `ecc-mcp-enable-execute-code` | `nil` | Non-nil publishes the tool that evaluates arbitrary Elisp |
-| `ecc-mcp-excluded-tools` | `nil` | Names of tools that are not published, whatever else registered them. A tool that turns out to take long enough to be felt belongs here |
+| `ecc-mcp-enabled` | `nil` | When non-nil, registers the built-in MCP server with every session started. Starts on first use and stops via `ecc-mcp-stop` |
+| `ecc-mcp-enable-execute-code` | `nil` | When non-nil, exposes the MCP tool allowing Claude to evaluate arbitrary Elisp |
+| `ecc-mcp-excluded-tools` | `nil` | List of tool names to exclude from MCP registration. Exclude any tools that introduce noticeable latency here |
 
-:::caution[Two separate decisions]
-`ecc-mcp-enable-execute-code` is deliberately not implied by `ecc-mcp-enabled`.
-Anything the model writes through that tool would run with the rights of this
-Emacs, so turning the server on and letting it evaluate Elisp are asked
-separately.
+:::caution[Two independent decisions]
+`ecc-mcp-enable-execute-code` is not enabled by `ecc-mcp-enabled`. Because code executed via this tool runs with full user permissions in Emacs, server activation and code execution require separate explicit opt-ins.
 :::
 
 ## Logging
 
-| Variable | Default | What it decides |
+| Variable | Default | Description |
 |---|---|---|
-| `ecc-log-max-lines` | `5000` | Maximum number of lines kept in a session log buffer. `nil` keeps every line |
-| `ecc-debug` | `nil` | Non-nil logs internal diagnostics in addition to raw protocol lines |
+| `ecc-log-max-lines` | `5000` | Maximum lines retained in session log buffers. `nil` keeps unlimited log history |
+| `ecc-debug` | `nil` | When non-nil, logs internal diagnostic traces alongside raw protocol messages |
 
-`ecc-show-log` opens the raw protocol log of the session the current buffer
-talks to. A failed dispatch is never swallowed: it is left in the log and in an
-`unknown` node in the transcript.
-
-## Useful variables that are not settings
-
-These are `defvar`s, so they are absent from `customize` — `setq` them.
-
-| Variable | Default | What it decides |
-|---|---|---|
-| `ecc-chat-return-sends` | `nil` | `nil`: `RET` inserts a newline and `C-c C-c` sends. `t`: `RET` sends, the way the terminal client does |
-| `ecc-disabled-plugins` | `nil` | `"name@marketplace"` entries switched off for the sessions ecc starts. Per session, so your own interactive sessions are unaffected |
+`ecc-show-log` displays the raw protocol log for the session associated with the current buffer. Failed dispatches are never dropped silently: they remain visible in the log and appear as `unknown` nodes in the transcript.

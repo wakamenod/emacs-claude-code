@@ -177,7 +177,9 @@ none gives nil."
                                    (car ecc-plan--changes) (cdr ecc-plan--changes))
                          ""))
                'face 'ecc-dim-face)
-   (propertize "  ·  C-c C-c approve  C-c C-k deny  C-c c comment  C-c m mode"
+   ;; The keys `ecc-plan-mode-map' really binds.  This named two that
+   ;; are not bound at all (fixed 2026-09-11).
+   (propertize "  ·  C-c C-c approve  C-c C-k deny  C-c C-a comment  C-c C-p mode"
                'face 'ecc-dim-face))))
 
 ;;;; What changed since the last plan

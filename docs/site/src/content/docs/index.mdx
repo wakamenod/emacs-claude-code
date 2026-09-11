@@ -1,21 +1,40 @@
 ---
-title: ecc
-description: An Emacs client for the Claude Code CLI.
+title: Emacs Client for Claude Code
+description: Run the Claude Code CLI inside Emacs. Conversations, permission prompts, diffs, and plans live in ordinary Emacs buffers — no terminal emulator required.
 template: splash
+head:
+  # Without this the page title is "ecc | ecc".
+  - tag: title
+    content: Emacs Client for Claude Code — ecc
+  - tag: meta
+    attrs:
+      property: og:title
+      content: Emacs Client for Claude Code — ecc
+  - tag: script
+    attrs:
+      type: application/ld+json
+    content: |
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareSourceCode",
+        "name": "ecc",
+        "description": "An Emacs client for the Claude Code CLI: conversations, permission prompts, diffs, and plans in ordinary Emacs buffers.",
+        "url": "https://wakamenod.github.io/emacs-claude-code/",
+        "codeRepository": "https://github.com/wakamenod/emacs-claude-code",
+        "programmingLanguage": "Emacs Lisp",
+        "runtimePlatform": "GNU Emacs 29.1",
+        "license": "https://www.gnu.org/licenses/gpl-3.0.html"
+      }
 hero:
   # Hero action links are used verbatim: Starlight does not prepend `base`
   # to them the way it does for sidebar and slug links.
-  tagline: An Emacs client for the Claude Code CLI. Conversations run directly inside ordinary Emacs buffers.
+  tagline: An Emacs client for the Claude Code CLI. Conversations run directly in ordinary Emacs buffers — no terminal emulator required.
   actions:
-    - text: Command reference
-      link: /emacs-claude-code/reference/commands/
+    - text: Get started
+      link: /emacs-claude-code/start/overview/
       icon: right-arrow
-    - text: Configuration reference
-      link: /emacs-claude-code/reference/configuration/
-      icon: right-arrow
-      variant: minimal
-    - text: Key binding reference
-      link: /emacs-claude-code/reference/key-bindings/
+    - text: Features
+      link: /emacs-claude-code/features/menu/
       icon: right-arrow
       variant: minimal
     - text: View on GitHub
@@ -24,7 +43,47 @@ hero:
       variant: minimal
 ---
 
-The reference section is complete: every command, every setting and every key
-ecc binds. The guides that walk through a workflow are still to be written; for
-those, the [README](https://github.com/wakamenod/emacs-claude-code) remains the
-better introduction.
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+ecc runs `claude` headless, communicates over pipes using its stream-json protocol,
+and renders the conversation directly in ordinary Emacs buffers. The transcript is
+read-only text, so `isearch`, `occur`, and `M-w` work just as they do anywhere in Emacs.
+Permission requests, diffs, and plans can be answered with a single keystroke, either
+from the transcript or from whatever file you are editing.
+
+<CardGrid>
+  <Card title="Answer from any buffer">
+    Pending permission requests appear in every mode line, and `C-c c a` lets you allow
+    them without switching buffers.
+    [Global keybindings](/emacs-claude-code/reference/key-bindings/)
+  </Card>
+  <Card title="Review the change, not the claim">
+    Review all session changes in a unified diff, add comments hunk by hunk, and send
+    them back as a single prompt.
+    [Review and plan mode](/emacs-claude-code/features/review/)
+  </Card>
+  <Card title="Send editor context">
+    `@region`, `@cursor`, and `@diagnostics` are expanded before the prompt is sent,
+    and answers can appear in an overlay directly above your code.
+    [Prompt and transcript](/emacs-claude-code/features/prompt/)
+  </Card>
+  <Card title="Manage multiple sessions">
+    Track multiple concurrent tasks with a unified dashboard, per-session tabs,
+    and clear indicators for sessions awaiting your response.
+    [Session management](/emacs-claude-code/features/sessions/)
+  </Card>
+  <Card title="Hand off to the terminal">
+    `ecc-tui-open` hands off the conversation to the CLI's native interface, and
+    `ecc-tui-return` brings it back.
+    [Transient menu](/emacs-claude-code/features/menu/)
+  </Card>
+  <Card title="Safe by default">
+    Permission prompts default to deny, the loopback MCP server is disabled by default,
+    and evaluating Elisp requires explicit opt-in.
+    [Configuration](/emacs-claude-code/reference/configuration/)
+  </Card>
+</CardGrid>
+
+Emacs 29.1+ and the `claude` CLI are the only requirements; no external packages are needed.
+Start with the [overview](/emacs-claude-code/start/overview/), then check the
+[installation guide](/emacs-claude-code/start/installation/).

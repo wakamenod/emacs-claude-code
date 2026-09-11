@@ -1,21 +1,38 @@
 ---
-title: ecc
-description: Claude Code CLI の Emacs クライアント。
+title: Claude Code の Emacs クライアント
+description: Claude Code CLI を Emacs の中で動かします。会話も、権限の確認も、差分もプランも、通常の Emacs バッファの中で完結します。ターミナルエミュレータは不要です。
 template: splash
+head:
+  # これがないとページタイトルが「ecc | ecc」になる。
+  - tag: title
+    content: Claude Code の Emacs クライアント — ecc
+  - tag: meta
+    attrs:
+      property: og:title
+      content: Claude Code の Emacs クライアント — ecc
+  - tag: script
+    attrs:
+      type: application/ld+json
+    content: |
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareSourceCode",
+        "name": "ecc",
+        "description": "Claude Code CLI の Emacs クライアント。会話・権限確認・差分・プランを通常の Emacs バッファで扱います。",
+        "url": "https://wakamenod.github.io/emacs-claude-code/ja/",
+        "codeRepository": "https://github.com/wakamenod/emacs-claude-code",
+        "programmingLanguage": "Emacs Lisp",
+        "runtimePlatform": "GNU Emacs 29.1",
+        "license": "https://www.gnu.org/licenses/gpl-3.0.html"
+      }
 hero:
-  # Hero action links are used verbatim: Starlight does not prepend `base`
-  # to them the way it does for sidebar and slug links.
-  tagline: Claude Code CLI の Emacs クライアント。会話は普通の Emacs バッファの中で進みます。
+  tagline: Claude Code CLI の Emacs クライアント。会話は通常の Emacs バッファ内で完結し、ターミナルエミュレータは不要です。
   actions:
-    - text: コマンドリファレンス
-      link: /emacs-claude-code/ja/reference/commands/
+    - text: はじめる
+      link: /emacs-claude-code/ja/start/overview/
       icon: right-arrow
-    - text: 設定リファレンス
-      link: /emacs-claude-code/ja/reference/configuration/
-      icon: right-arrow
-      variant: minimal
-    - text: キーバインドリファレンス
-      link: /emacs-claude-code/ja/reference/key-bindings/
+    - text: 機能一覧
+      link: /emacs-claude-code/ja/features/menu/
       icon: right-arrow
       variant: minimal
     - text: GitHub で見る
@@ -24,7 +41,36 @@ hero:
       variant: minimal
 ---
 
-リファレンスは揃っています。ecc のコマンド、設定、キーバインドの全件です。
-ワークフローをたどるガイドはこれからで、そちらについては
-[README](https://github.com/wakamenod/emacs-claude-code/blob/main/README.ja.md)
-のほうがよい入り口になっています。
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+ecc は `claude` をヘッドレスで起動し、stream-json プロトコルを用いてパイプ経由で通信し、会話を通常の Emacs バッファに描画します。トランスクリプトは読み取り専用テキストなので、`isearch` や `occur`、`M-w` など Emacs 標準の操作がそのまま利用できます。権限リクエストや diff、プランの確認も、トランスクリプト上や編集中の任意のファイルからキーひとつで応答できます。
+
+<CardGrid>
+  <Card title="どのバッファからでも応答">
+    保留中の承認リクエストはすべてのモードラインに通知され、`C-c c a` を押せばバッファを離れることなくその場で許可できます。
+    [キーバインド一覧](/emacs-claude-code/ja/reference/key-bindings/)
+  </Card>
+  <Card title="変更内容を diff で正確に把握">
+    セッション内で行われたすべての変更を 1 つの diff にまとめ、ハンクごとにインラインコメントを付けて 1 つのプロンプトとして差し戻せます。
+    [レビューとプランモード](/emacs-claude-code/ja/features/review/)
+  </Card>
+  <Card title="エディタの文脈を直接送信">
+    `@region`・`@cursor`・`@diagnostics` はプロンプト送信前に自動展開されます。回答をコードの直上にオーバーレイ表示することも可能です。
+    [プロンプトとトランスクリプト](/emacs-claude-code/ja/features/prompt/)
+  </Card>
+  <Card title="複数セッションを並行管理">
+    統合ダッシュボード、セッションごとのタブライン、応答待ちセッションの視覚的インジケーターで、複数のタスクをスムーズに並行管理できます。
+    [セッション管理](/emacs-claude-code/ja/features/sessions/)
+  </Card>
+  <Card title="ターミナルへの一時引き渡し">
+    `ecc-tui-open` で同じ会話を CLI 本来の TUI インターフェースへ引き渡し、完了後は `ecc-tui-return` で Emacs へ復帰できます。
+    [Transient メニュー](/emacs-claude-code/ja/features/menu/)
+  </Card>
+  <Card title="安全性を最優先にした設計">
+    権限リクエストはデフォルトで拒否、ループバック MCP サーバーは初期状態で無効、Elisp の評価には明示的な個別許可が必要です。
+    [設定リファレンス](/emacs-claude-code/ja/reference/configuration/)
+  </Card>
+</CardGrid>
+
+動作に必要なのは Emacs 29.1 以降と `claude` CLI のみで、必須の外部パッケージはありません。
+まずは[概要](/emacs-claude-code/ja/start/overview/)をご覧ください。続いて[インストール手順](/emacs-claude-code/ja/start/installation/)をご確認いただけます。

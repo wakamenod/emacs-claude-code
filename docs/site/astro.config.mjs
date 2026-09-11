@@ -13,7 +13,41 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'ecc',
-			description: 'An Emacs client for the Claude Code CLI.',
+			description:
+				'Run the Claude Code CLI inside Emacs. Conversations, permission prompts, diffs, and plans live in ordinary Emacs buffers — no terminal emulator required.',
+
+			// Starlight writes og:title, og:description and a summary_large_image
+			// twitter:card by itself, but no image; without one the card is an
+			// empty box.  The picture is in public/, so the URL carries the base
+			// and has to be absolute here.
+			head: [
+				{
+					tag: 'meta',
+					attrs: {
+						property: 'og:image',
+						content:
+							'https://wakamenod.github.io/emacs-claude-code/og.png',
+					},
+				},
+				{ tag: 'meta', attrs: { property: 'og:image:width', content: '1200' } },
+				{ tag: 'meta', attrs: { property: 'og:image:height', content: '630' } },
+				{
+					tag: 'meta',
+					attrs: {
+						property: 'og:image:alt',
+						content:
+							'An ecc session in Emacs: source code on the left, transcript with an approved edit on the right',
+					},
+				},
+				{
+					tag: 'meta',
+					attrs: {
+						name: 'twitter:image',
+						content:
+							'https://wakamenod.github.io/emacs-claude-code/og.png',
+					},
+				},
+			],
 
 			// English lives at the root and Japanese under /ja/, which mirrors
 			// README.md and README.ja.md: the English one is the source of
@@ -42,6 +76,16 @@ export default defineConfig({
 			lastUpdated: true,
 
 			sidebar: [
+				{
+					label: 'Start here',
+					translations: { ja: 'はじめに' },
+					items: [{ autogenerate: { directory: 'start' } }],
+				},
+				{
+					label: 'Features',
+					translations: { ja: '機能' },
+					items: [{ autogenerate: { directory: 'features' } }],
+				},
 				{
 					label: 'Reference',
 					translations: { ja: 'リファレンス' },

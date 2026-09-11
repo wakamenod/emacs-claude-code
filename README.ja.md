@@ -2,7 +2,7 @@
 
 ---
 
-# Emacs client for the Claude Code
+# Emacs Client for Claude Code
 
 Claude Code CLI 向けの Emacs クライアントです。通常の Emacs バッファ内で直接対話を行うことができます。
 
@@ -11,7 +11,7 @@ Claude Code CLI 向けの Emacs クライアントです。通常の Emacs バ�
 
 ![セッション：プロンプトを送り、Edit を許可すると、左のソースバッファが変更を取り込む](docs/images/session.gif)
 
-**ドキュメント:** <https://wakamenod.github.io/emacs-claude-code/> *(準備中)*
+**ドキュメント:** <https://wakamenod.github.io/emacs-claude-code/ja/>
 
 ## 概要
 
@@ -30,11 +30,11 @@ faceはテキスト挿入時に適用されるため、`M-x customize` による
 
 ### 主な機能
 
-- **Diff レビュー:** セッション中に行われたすべての変更を1つの `diff-mode` バッファで確認できます。ハンク（変更ブロック）にインラインコメントを付けて、まとめて1つのプロンプトとして送信可能です。
-- **インタラクティブな編集:** 提案されたファイル編集を適用前に確認・修正できます。
-- **プランモード:** 提案された実行計画を、編集可能なバッファ内で確認・調整しながら進められます。
-- **グローバル操作:** どのバッファからでも保留中のツール実行リクエストを許可・拒否できます。
-- **セッション管理:** ダッシュボードから複数の同時並行セッションを整理・管理できます。
+- **[Diff レビュー](https://wakamenod.github.io/emacs-claude-code/ja/features/review/):** セッション中に行われたすべての変更を 1 つの `diff-mode` バッファで確認できます。ハンク（変更ブロック）にインラインコメントを付けて、まとめて 1 つのプロンプトとして送信可能です。
+- **[インタラクティブな編集](https://wakamenod.github.io/emacs-claude-code/ja/features/review/#適用前の提案をレビューする):** 提案されたファイル編集を適用前に確認・修正できます。
+- **[プランモード](https://wakamenod.github.io/emacs-claude-code/ja/features/review/#プランモード):** 提案された実行計画を、編集可能なバッファ内で確認・調整しながら進められます。
+- **[グローバル操作](https://wakamenod.github.io/emacs-claude-code/ja/reference/key-bindings/):** どのバッファからでも保留中のツール実行リクエストを許可・拒否できます。
+- **[セッション管理](https://wakamenod.github.io/emacs-claude-code/ja/features/sessions/):** ダッシュボードから複数の同時並行セッションを整理・管理できます。
 - **安全なデフォルト設定:** 権限プロンプトはデフォルトで「拒否」に設定されています。内蔵のループバック MCP サーバーはデフォルトで無効化されており、Elisp の評価ツールも明示的な有効化が必要です。
 
 ## 動作要件
@@ -107,29 +107,15 @@ git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/em
 (use-package ecc
   :ensure t
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest)
-  ;; `ecc-global-map' により、任意のバッファからプロンプトに応答可能
-  ;; `:bind-keymap' により、プレフィックスキー入力時に初めて ecc がロードされる
+  ;; `ecc-global-map' により、任意のバッファから保留中のリクエストに応答可能
+  ;; `:bind-keymap' により、プレフィックスキー入力時まで ecc の読み込みを遅延
   :bind-keymap ("C-c c" . ecc-global-map)
-  ;; メニューは `C-c c ?' でも開けるが、よく開くなら打鍵が多い。
-  ;; C-' は GUI 用のキーで、端末からは送れないので、端末で使う場合は
-  ;; 別のキーを割り当てること
-  :bind (("C-c C-'" . ecc-menu)
-         ("C-c C-v" . ecc-start))
-  :config
-  (setq ecc-chat-text-width 100)      ; 履歴表示の列幅
-  (setq ecc-notify-level 'pulse)      ; nil, 'message, 'pulse, 'desktop
-  (setq ecc-permission-mode nil)      ; nil の場合は CLI のデフォルト設定を維持
-
-  ;; RET でメッセージを送信したい場合（CLI と同様の挙動）は t に設定
-  ;; nil の場合、RET は改行を挿入し、C-c C-c で送信
-  (setq ecc-chat-return-sends nil)
-
-  ;; ループバック MCP サーバー（xref, imenu, tree-sitter, project, diagnostics へのアクセスを提供）
-  ;; デフォルトは無効
-  ;; (setq ecc-mcp-enabled t)
-  ;; Elisp 評価ツールの有効化には個別の設定が必要
-  ;; (setq ecc-mcp-enable-execute-code t)
-  )
+  :custom
+  (ecc-permission-mode "auto")            ; nil なら CLI のデフォルトを維持
+  (ecc-notify-level 'pulse)               ; nil, 'message, 'pulse, 'desktop
+  (ecc-usage-display 'posframe)           ; posframe が必要（未導入時は 'window）
+  (ecc-btw-display 'posframe)
+  (ecc-prompt-suggestions-enabled t))
 ```
 
 その他の設定項目については、`M-x customize-group RET ecc` を実行するか、[設定リファレンス](https://wakamenod.github.io/emacs-claude-code/ja/reference/configuration/) を参照してください。
@@ -177,7 +163,10 @@ git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/em
 | `C-c C-a` / `C-c C-d` | ツールの実行を許可 / 拒否 |
 | `C-c ?` | コマンドメニューを開く |
 
-詳細な一覧は [キーバインドリファレンス](https://wakamenod.github.io/emacs-claude-code/ja/reference/key-bindings/) を参照してください。
+プロンプト領域やトランスクリプト固有のキーバインドは
+[プロンプトとトランスクリプト](https://wakamenod.github.io/emacs-claude-code/ja/features/prompt/) を、
+任意のバッファから利用できるグローバルキーバインドは
+[キーバインド一覧](https://wakamenod.github.io/emacs-claude-code/ja/reference/key-bindings/) を参照してください。
 
 ## 謝辞
 

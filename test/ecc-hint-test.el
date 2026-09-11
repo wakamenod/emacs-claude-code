@@ -186,8 +186,12 @@ names are listed in `ecc-model-context-window'."
   "A suggestion is shown over an empty prompt region and taken with a key."
   (ecc-test-with-fake-session session
     (let ((buffer (ecc-session-ensure-buffer session)))
+      ;; The shape the CLI really sends: the text is in `suggestion',
+      ;; beside the type (confirmed 2026-09-11).
       (ecc-dispatch session '((type . "prompt_suggestion")
-                              (prompt_suggestion . "Run the tests")))
+                              (suggestion . "Run the tests")
+                              (uuid . "8f2c1a64")
+                              (session_id . "fcf59d6e")))
       (should (equal (ecc-hint-suggestion session) "Run the tests"))
       (should (equal (ecc-hint-show-suggestion session) "Run the tests"))
       (with-current-buffer buffer
@@ -210,6 +214,13 @@ names are listed in `ecc-model-context-window'."
         (should-not (ecc-hint-show-suggestion session))
         (with-current-buffer buffer
           (should (equal (ecc-chat-placeholder-shown) ecc-chat-placeholder)))))))
+
+(ert-deftest ecc-hint-test-suggestion-old-spelling ()
+  "A suggestion named after its own message type is still taken."
+  (ecc-test-with-fake-session session
+    (ecc-dispatch session '((type . "prompt_suggestion")
+                            (prompt_suggestion . "Run the tests")))
+    (should (equal (ecc-hint-suggestion session) "Run the tests"))))
 
 (provide 'ecc-hint-test)
 

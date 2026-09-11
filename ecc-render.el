@@ -1241,7 +1241,7 @@ An Edit or a Write shows its input as a diff."
   (pcase kind
     ('question "   RET: answer  d: deny")
     ('plan "   RET: review  a: approve  d: deny")
-    (_ "   a: allow  d: deny  A: always  t: turn  p: pattern  c: comment  e: edit")))
+    (_ "   a: allow  d: deny  A: always  u: turn  r: rule  c: comment  e: edit")))
 
 (defun ecc-render--request-heading (node)
   "Return the heading of the request NODE.

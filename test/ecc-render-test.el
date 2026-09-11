@@ -68,6 +68,35 @@ NAME, PROMPT and ANSWERS are as there."
 
 ;;;; Snapshots
 
+(ert-deftest ecc-render-test-request-hints-name-the-keys-that-do-it ()
+  "A key in the hints runs the command its word promises.
+The hints are a string, and the keymap moved under it once already:
+`t\\=' and `p\\=' became `u\\=' and `r\\=', and the line on screen went on
+offering `t\\=', which everywhere else hands the session to a terminal.
+Asking only whether the key is bound would not have caught that -- it
+was bound, to the wrong thing."
+  (let ((commands '(("allow" . ecc-perm-allow)
+                    ("deny" . ecc-perm-deny)
+                    ("always" . ecc-perm-allow-always)
+                    ("turn" . ecc-perm-approve-turn)
+                    ("rule" . ecc-perm-add-pattern)
+                    ("comment" . ecc-review-comment-request)
+                    ("edit" . ecc-review-edit-proposal)
+                    ("answer" . ecc-session-visit)
+                    ("review" . ecc-session-visit)
+                    ("approve" . ecc-perm-allow))))
+    (dolist (kind '(question plan nil))
+      (let ((hints (ecc-render--request-hints kind))
+            (start 0))
+        (while (string-match "\\([A-Za-z]+\\): \\([a-z]+\\)" hints start)
+          (setq start (match-end 0))
+          (let* ((key (match-string 1 hints))
+                 (word (match-string 2 hints))
+                 (wanted (alist-get word commands nil nil #'equal)))
+            (should wanted)
+            (should (eq (lookup-key ecc-request-section-map (kbd key))
+                        wanted))))))))
+
 (ert-deftest ecc-render-test-basic-turn ()
   "A plain question and answer draw as one turn with a result line."
   (ecc-test-with-fake-session session
@@ -245,7 +274,7 @@ narrower on the screen than it is in the text."
       (ecc-model-add-request session request)
       (ecc-render-flush session)
       (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
-        (should (string-search "⚠ Permission: Bash  ls   a: allow  d: deny  A: always  t: turn  p: pattern"
+        (should (string-search "⚠ Permission: Bash  ls   a: allow  d: deny  A: always  u: turn  r: rule"
                                text))))))
 
 (ert-deftest ecc-render-test-unsaved-warning-in-heading ()

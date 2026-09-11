@@ -24,6 +24,11 @@
 (require 'seq)
 (require 'crm)
 (require 'rmc)
+;; `url-host' and `url-generic-parse-url', for the domain an allow
+;; pattern of a WebFetch is written against.  Without this the native
+;; compiler says `url-host' is not known to be defined, and says it in a
+;; window that opens over whatever the user was looking at.
+(require 'url-parse)
 (require 'ecc-core)
 (require 'ecc-protocol)
 (require 'ecc-model)
