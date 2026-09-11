@@ -26,6 +26,7 @@ Or, without `use-package`:
 | `1`–`4` | Select corresponding option for pending question |
 | `n` / `N` | Jump to next pending request (globally or within current project) |
 | `b` / `D` / `h` / `U` | Open dashboard / review diffs / view history / check usage |
+| `/` | Search past conversations by message content |
 | `?` | Open transient menu |
 
 Keybindings correspond directly to commands in the [transient menu](/emacs-claude-code/features/menu/), ensuring consistent mnemonic shortcuts across Emacs. `?` opens the transient menu itself, providing quick access to all ecc commands from outside a session buffer.

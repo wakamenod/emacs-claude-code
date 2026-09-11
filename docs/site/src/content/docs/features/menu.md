@@ -160,6 +160,11 @@ See [Other features](/emacs-claude-code/features/other/#capabilities).
 
 Open a past conversation recorded under `~/.claude/projects` in a standard session buffer. Past conversations can be inspected read-only, or resumed with `r`.
 
+### `/` — Search
+
+Search past conversations in the current project by prompt and response text, and jump directly to matching sessions.
+See [Session management](/emacs-claude-code/features/sessions/#searching-past-conversations).
+
 ### `U` — Usage
 
 Check current plan usage and rate limits.
