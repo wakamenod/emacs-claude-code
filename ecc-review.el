@@ -236,16 +236,21 @@ is one."
 (defvar ecc-review-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "c") #'ecc-review-comment)
-    (define-key map (kbd "C-c l") #'ecc-review-list-comments)
-    (define-key map (kbd "C-c e") #'ecc-review-comment)
-    (define-key map (kbd "C-c d") #'ecc-review-remove-comment)
+    (define-key map (kbd "l") #'ecc-review-list-comments)
+    (define-key map (kbd "d") #'ecc-review-remove-comment)
     (define-key map (kbd "C-c C-c") #'ecc-review-send)
     (define-key map (kbd "C-c C-k") #'ecc-review-quit)
     (define-key map (kbd "e") #'ecc-review-edit-proposal)
     (define-key map (kbd "g") #'ecc-review-refresh)
     (define-key map (kbd "q") #'quit-window)
     map)
-  "Keymap of `ecc-review-mode'.")
+  "Keymap of `ecc-review-mode\='.
+The buffer is read-only, so a letter is free to be a command, and these
+come before `diff-mode-shared-map\=' -- which uses only k, K, n, N, o,
+p and P.  Nothing here takes a \\`C-c <letter>\=' key: the Emacs Lisp
+manual reserves those for users.  \\`C-c C-c\=' and \\`C-c C-k\=' shadow
+`diff-mode\=', deliberately: finishing and aborting are what those two
+mean everywhere in Emacs.")
 
 (define-derived-mode ecc-review-mode diff-mode "Claude-Review"
   "Major mode of the buffer the changes of a session are reviewed in.

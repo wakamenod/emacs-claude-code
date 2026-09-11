@@ -164,13 +164,15 @@ scrolls.
 ### Diff review (`ecc-review-mode`)
 
 Every change of the session as one `diff-mode` buffer. Comments are collected
-hunk by hunk and sent as a single prompt.
+hunk by hunk and sent as a single prompt. The buffer is read-only, so a letter
+is free to be a command; these keys come before `diff-mode`'s own, which use
+only `k`, `K`, `n`, `N`, `o`, `p` and `P`.
 
 | Key | Command | Action |
 |---|---|---|
-| `c`, `C-c e` | `ecc-review-comment` | Comment on the hunk at point |
-| `C-c l` | `ecc-review-list-comments` | List the comments so far |
-| `C-c d` | `ecc-review-remove-comment` | Remove the comment at point |
+| `c` | `ecc-review-comment` | Comment on the hunk at point |
+| `l` | `ecc-review-list-comments` | List the comments so far |
+| `d` | `ecc-review-remove-comment` | Remove the comment at point |
 | `e` | `ecc-review-edit-proposal` | Edit the proposal |
 | `C-c C-c` | `ecc-review-send` | Send every comment as one prompt |
 | `C-c C-k` | `ecc-review-quit` | Quit without sending |
@@ -182,16 +184,18 @@ The prompt is shown for confirmation before it goes: `C-c C-c` sends it,
 
 ### Plan review (`ecc-plan-mode`)
 
-The plan from an ExitPlanMode request, in a writable buffer.
+The plan from an ExitPlanMode request, in a writable buffer. The plan is
+edited here, so a letter has to stay a letter and every command sits under
+`C-c C-`.
 
 | Key | Command | Action |
 |---|---|---|
 | `C-c C-c` | `ecc-plan-approve` | Approve the plan |
 | `C-c C-k` | `ecc-plan-deny` | Deny it |
-| `C-c c` | `ecc-plan-comment` | Comment on the line at point |
-| `C-c x` | `ecc-plan-remove-comment` | Remove that comment |
+| `C-c C-a` | `ecc-plan-comment` | Add a note on the line at point |
+| `C-c C-r` | `ecc-plan-remove-comment` | Remove that note |
 | `C-c C-d` | `ecc-plan-show-diff` | Show what you changed in the plan |
-| `C-c m` | `ecc-plan-set-mode` | Choose the permission mode to approve into |
+| `C-c C-p` | `ecc-plan-set-mode` | Choose the permission mode to approve into |
 | `C-c C-n` | `ecc-plan-next-change` | Next change |
 
 Feedback reaches the model three ways: a comment on a line, an edit to the plan

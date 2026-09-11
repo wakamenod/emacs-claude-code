@@ -162,13 +162,15 @@ sidebar:
 ### diff レビュー（`ecc-review-mode`）
 
 セッション中の変更すべてを 1 つの `diff-mode` バッファにしたものです。コメント
-は hunk ごとに集められ、1 つのプロンプトとして送られます。
+は hunk ごとに集められ、1 つのプロンプトとして送られます。このバッファは読み取り
+専用なので、文字をそのままコマンドに使えます。ここのキーは `diff-mode` 自身のキー
+より先に見られます（あちらが使うのは `k` `K` `n` `N` `o` `p` `P` だけです）。
 
 | キー | コマンド | 動作 |
 |---|---|---|
-| `c`, `C-c e` | `ecc-review-comment` | ポイント位置の hunk にコメントする |
-| `C-c l` | `ecc-review-list-comments` | ここまでのコメントを一覧する |
-| `C-c d` | `ecc-review-remove-comment` | ポイント位置のコメントを削除する |
+| `c` | `ecc-review-comment` | ポイント位置の hunk にコメントする |
+| `l` | `ecc-review-list-comments` | ここまでのコメントを一覧する |
+| `d` | `ecc-review-remove-comment` | ポイント位置のコメントを削除する |
 | `e` | `ecc-review-edit-proposal` | 提案を編集する |
 | `C-c C-c` | `ecc-review-send` | すべてのコメントを 1 つのプロンプトとして送る |
 | `C-c C-k` | `ecc-review-quit` | 送らずに終える |
@@ -181,15 +183,17 @@ sidebar:
 ### プランレビュー（`ecc-plan-mode`）
 
 ExitPlanMode リクエストが運んできたプランを、書き換え可能なバッファで開きます。
+ここではプランを編集するので、文字は文字のままにしておく必要があり、コマンドは
+すべて `C-c C-` の下に置かれています。
 
 | キー | コマンド | 動作 |
 |---|---|---|
 | `C-c C-c` | `ecc-plan-approve` | プランを承認する |
 | `C-c C-k` | `ecc-plan-deny` | 拒否する |
-| `C-c c` | `ecc-plan-comment` | ポイント位置の行にコメントする |
-| `C-c x` | `ecc-plan-remove-comment` | そのコメントを削除する |
+| `C-c C-a` | `ecc-plan-comment` | ポイント位置の行に注記を加える（add） |
+| `C-c C-r` | `ecc-plan-remove-comment` | その注記を削除する（remove） |
 | `C-c C-d` | `ecc-plan-show-diff` | プランに加えた変更を表示する |
-| `C-c m` | `ecc-plan-set-mode` | 承認後に移る権限モードを選ぶ |
+| `C-c C-p` | `ecc-plan-set-mode` | 承認後に移る権限モードを選ぶ |
 | `C-c C-n` | `ecc-plan-next-change` | 次の変更 |
 
 フィードバックは 3 通りの道でモデルに届きます。行へのコメント、プラン本文そのも

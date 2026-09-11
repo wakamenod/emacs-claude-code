@@ -12,6 +12,13 @@
 (require 'cl-lib)
 (require 'ert)
 (require 'ecc-test-helpers)
+(require 'ecc-review)
+(require 'ecc-plan)
+(require 'ecc-dashboard)
+(require 'ecc-usage)
+(require 'ecc-btw)
+(require 'ecc-inline)
+(require 'ecc-perm)
 (require 'ecc-chat)
 (require 'ecc-session)
 (require 'ecc-prompt)
@@ -71,13 +78,22 @@ point is on a request, which is what the node map binds it to."
      map)))
 
 (ert-deftest ecc-chat-test-no-plain-c-c-letter-bindings ()
-  "No keymap of a session buffer takes a \\`C-c <letter>' key.
+  "No keymap of this package takes a \\`C-c <letter>' key.
 The Emacs Lisp manual reserves those for users, and they are the only
 keys reserved for them, so a mode that takes one blocks the only keys
 its user is entitled to.  A command with no \\`C-c C-<letter>' free
-belongs in `ecc-menu' instead."
+belongs in `ecc-menu', or on a bare letter where the buffer is
+read-only.
+
+Every keymap of the package is checked, not only the session buffer's:
+the reservation is about leaving the user room in each mode, and has
+nothing to do with whether two maps are ever live at once."
   (dolist (map (list ecc-chat-mode-map ecc-chat-transcript-map
-                     ecc-request-section-map ecc-file-section-map))
+                     ecc-request-section-map ecc-file-section-map
+                     ecc-global-map ecc-review-mode-map ecc-plan-mode-map
+                     ecc-question-mode-map ecc-dashboard-mode-map
+                     ecc-usage-mode-map ecc-btw-mode-map
+                     ecc-capabilities-mode-map ecc-inline-map ecc-rewrite-map))
     (dolist (letter (append (number-sequence ?a ?z) (number-sequence ?A ?Z)))
       (let ((key (vconcat (kbd "C-c") (vector letter))))
         (should-not (commandp (lookup-key map key)))))))
