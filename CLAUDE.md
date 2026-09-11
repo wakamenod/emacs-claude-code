@@ -158,3 +158,34 @@ the whole set at the model it pins. To run a single one, narrow it with a select
   English one is not done until the Japanese one matches. The code blocks, the command
   and `defcustom` names and the factual cells of the comparison table are identical in
   both; only the prose, the table headings and the code comments are translated.
+
+## How a release goes
+
+The version is written in exactly one place, the `Version:` header of `ecc.el`: that is
+what `package.el` and `package-vc-install` read. No other `ecc-*.el` carries one, and
+there is no hand-written `ecc-pkg.el` — `package-vc` generates that, and a second copy
+of the number is a release that says two different things. `ecc-version` reads the
+number back rather than repeating it.
+
+Below 1.0, a breaking change — a command or key binding that goes away, a `defcustom`
+that changes its meaning — bumps the minor number; everything else bumps the patch
+number. Both READMEs say so, under the documentation link.
+
+```
+make all                       # autoloads, compile, lint, test — all green first
+$EDITOR ecc.el                 # ;; Version: 0.2.0
+$EDITOR CHANGELOG.md           # move Unreleased into a [0.2.0] section, dated,
+                               # naming the claude CLI version it was verified against
+git commit -am "chore(release): 0.2.0"
+git tag -a v0.2.0 -m "ecc 0.2.0"
+git push --follow-tags
+```
+
+The tag is the release. `.github/workflows/release.yml` runs on `v*` and refuses to
+publish if the header and the tag disagree or `CHANGELOG.md` has no section for the
+version; it then runs `make test` and creates the GitHub release with that section as
+the notes. Tag the merge commit on `main`, not a branch.
+
+A release entry names the `claude` version it was verified against (`claude --version`,
+which is what `ecc-version` reports too). Almost everything this package works around
+belongs to one version of the CLI, and the CLI moves without anybody upgrading ecc.
