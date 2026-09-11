@@ -95,13 +95,15 @@ running.
 
 ### `S` — Switch this window to another session
 
-Shows another session in the current window. It is the same choice as clicking
-that session's tab.
+A session window carries a tab for every session ecc is running. `S` changes
+which of them the window shows, without going to the tab line for it.
 
-![A window being switched from one session to another](../../../assets/switch.gif)
+![The session window changing from one session to another: the selected tab moves from greet to notes and the transcript is replaced](../../../assets/switch.gif)
 
-The window it changes is the current one when that belongs to ecc, and the
-main session window otherwise.
+The window keeps its place; only what it shows changes. The window it changes
+is the current one when that belongs to ecc, and the main session window
+otherwise, so running `S` from your source code changes the transcript beside
+it.
 
 ### `i` — Interrupt
 

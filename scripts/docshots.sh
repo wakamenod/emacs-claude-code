@@ -110,10 +110,10 @@ mkdir -p "$outdir"
 
 # 1. Switching a window from one session to another, as an animation.
 scene switch
-e '(shot-scene-switch-start)'   ; snap 4
-e '(shot-scene-switch-pick)'    ; sleep 2; snap 4
-e '(shot-scene-type "not")'     ; sleep 1; snap 3
-e '(shot-scene-return)'         ; sleep 1; snap 6
+e '(shot-scene-switch-start)'   ; snap 6
+e '(shot-scene-switch-pick)'    ; sleep 2; snap 5
+e '(shot-scene-type "not")'     ; sleep 1; snap 4
+e '(shot-scene-return)'         ; sleep 1; snap 8
 gif
 
 # 2. The menu, open over a session.

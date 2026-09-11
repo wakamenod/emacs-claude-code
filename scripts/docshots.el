@@ -125,30 +125,40 @@ FROM and TO, 1-based and inclusive, narrow it to part of the recording."
   (shot-play shot-main "edit-tool" 1 11)
   (shot-allow shot-main)
   (shot-play shot-main "edit-tool" 12)
-  (shot-play shot-other "basic-turn"))
+  ;; The second session is there to be switched to, so it has to look
+  ;; different from the first at a glance.
+  (shot-play shot-other "tasks")
+  ;; What every way into a session turns on: the count of waiting
+  ;; requests, the announcements, the tab line.  The scenes here make
+  ;; their sessions through the model rather than through `ecc-start',
+  ;; so without this the pictures would be missing the tabs that are on
+  ;; the screen of anyone actually using the package.
+  (ecc--enable-session-modes))
 
 (defun shot-show (session)
-  "Show the source on the left and SESSION on the right, scrolled to the end.
-The session buffer is narrower than the frame, so a frame wide enough
-for the menu would otherwise be half empty; and the source beside it is
-what a session is actually looked at next to."
+  "Show the source in the frame and SESSION in the window ecc gives it.
+The layout is made with ecc's own window commands rather than by
+splitting the frame here: a session window carries a role, and the
+commands that move a session between windows look for that role.  A
+hand-made split has none of it, and the pictures would show something
+no user has."
   ;; A scene before this one may have left the point somewhere that is
   ;; not an ordinary window -- a minibuffer, the child frame the
   ;; completion list is drawn in -- and window commands run from there
   ;; fail rather than act on the frame.
   (select-window (frame-first-window (selected-frame)))
-  ;; It may also have left the side windows ecc puts a dashboard or a
-  ;; diff in, and a side window refuses to become the only window
-  ;; unless its parameters are ignored.
+  ;; It may also have left the side windows ecc puts a session in, and a
+  ;; side window refuses to become the only window unless its
+  ;; parameters are ignored.
   (let ((ignore-window-parameters t))
     (delete-other-windows))
   (find-file shot-file)
-  (split-window-right 40)
-  (other-window 1)
-  (switch-to-buffer (ecc-session-buffer session))
-  (ecc-chat--set-margins (selected-window))
-  (goto-char (point-max))
-  (recenter -1)
+  (let ((window (ecc-window-select-session session)))
+    (when (window-live-p window)
+      (with-selected-window window
+        (ecc-chat--set-margins window)
+        (goto-char (point-max))
+        (recenter -1))))
   (redisplay t))
 
 ;;;; The invented recordings of the resume picker
