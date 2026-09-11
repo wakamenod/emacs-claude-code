@@ -104,6 +104,7 @@ after it are told apart by a name the user gives."
       (unless (string-empty-p (string-trim name))
         (string-trim name)))))
 
+;;;###autoload
 (defun ecc-rename-session (session name)
   "Rename SESSION to NAME and rename its buffers with it."
   (interactive

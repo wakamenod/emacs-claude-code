@@ -120,6 +120,15 @@ The request of A is a Bash call and older; the one of B is a Write."
 
 (ert-deftest ecc-answer-test-global-map ()
   "The global keymap carries the answer-from-anywhere commands."
+  ;; And the entry points used often enough to be worth a key of their
+  ;; own, spelled as `ecc-menu\=' spells them.
+  (should (eq (lookup-key ecc-global-map (kbd "c")) #'ecc-start))
+  (should (eq (lookup-key ecc-global-map (kbd "r")) #'ecc-resume-menu))
+  (should (eq (lookup-key ecc-global-map (kbd "R")) #'ecc-rename-session))
+  (should (eq (lookup-key ecc-global-map (kbd "v")) #'ecc-show-session))
+  (should (eq (lookup-key ecc-global-map (kbd "i")) #'ecc-interrupt))
+  (should (eq (lookup-key ecc-global-map (kbd "t")) #'ecc-tui-open))
+  (should (eq (lookup-key ecc-global-map (kbd "U")) #'ecc-usage))
   (should (eq (lookup-key ecc-global-map (kbd "a")) #'ecc-answer-allow))
   (should (eq (lookup-key ecc-global-map (kbd "d")) #'ecc-answer-deny))
   (should (eq (lookup-key ecc-global-map (kbd "n")) #'ecc-next-attention))
