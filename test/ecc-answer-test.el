@@ -120,6 +120,15 @@ The request of A is a Bash call and older; the one of B is a Write."
 
 (ert-deftest ecc-answer-test-global-map ()
   "The global keymap carries the answer-from-anywhere commands."
+  ;; And the entry points used often enough to be worth a key of their
+  ;; own, spelled as `ecc-menu\=' spells them.
+  (should (eq (lookup-key ecc-global-map (kbd "c")) #'ecc-start))
+  (should (eq (lookup-key ecc-global-map (kbd "r")) #'ecc-resume-menu))
+  (should (eq (lookup-key ecc-global-map (kbd "R")) #'ecc-rename-session))
+  (should (eq (lookup-key ecc-global-map (kbd "v")) #'ecc-show-session))
+  (should (eq (lookup-key ecc-global-map (kbd "i")) #'ecc-interrupt))
+  (should (eq (lookup-key ecc-global-map (kbd "t")) #'ecc-tui-open))
+  (should (eq (lookup-key ecc-global-map (kbd "U")) #'ecc-usage))
   (should (eq (lookup-key ecc-global-map (kbd "a")) #'ecc-answer-allow))
   (should (eq (lookup-key ecc-global-map (kbd "d")) #'ecc-answer-deny))
   (should (eq (lookup-key ecc-global-map (kbd "n")) #'ecc-next-attention))
@@ -129,6 +138,56 @@ The request of A is a Bash call and older; the one of B is a Write."
   (should (eq (lookup-key ecc-global-map (kbd "b")) #'ecc-dashboard))
   ;; The only way to the menu from a buffer that is not a session.
   (should (eq (lookup-key ecc-global-map (kbd "?")) #'ecc-menu)))
+
+(ert-deftest ecc-answer-test-global-map-is-a-prefix-command ()
+  "The symbol carries the keymap too, so it can be bound as a prefix.
+Bound to the value, `C-c c\=' is a complete key sequence running a
+command: `C-h\=' and `which-key\=' have no prefix to list, so neither
+offers what follows it.  Bound to the symbol, it is a prefix key."
+  (should (keymapp (symbol-function 'ecc-global-map)))
+  (should (eq (symbol-function 'ecc-global-map) ecc-global-map))
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c c") 'ecc-global-map)
+    (should (keymapp (lookup-key map (kbd "C-c c"))))
+    (should (eq (lookup-key map (kbd "C-c c a")) #'ecc-answer-allow))))
+
+(ert-deftest ecc-answer-test-global-map-is-autoloaded ()
+  "`make autoloads' writes out everything an init needs to bind the map.
+A checkout used straight from `load-path\=' has nobody to turn the
+`;;;###autoload\=' cookies into autoloads, so an init that points at one
+loads ecc-autoloads.el instead of naming every command by hand.  What it
+must find there is the keymap autoload -- the kind that makes the symbol
+a prefix command before the package is loaded -- and an autoload for
+every command the map binds from another file.  Reaching a key loads
+ecc-answer.el and nothing else, so the commands defined there need no
+cookie of their own, and the ones defined elsewhere do."
+  (require 'loaddefs-gen)
+  (let* ((dir (file-name-directory (locate-library "ecc-answer.el" t)))
+         ;; Into a directory of its own: `loaddefs-generate' scrapes only
+         ;; what is newer than the output file, so writing over one that
+         ;; already exists would scrape nothing and assert nothing.
+         (tmp (make-temp-file "ecc-autoloads" t))
+         (out (expand-file-name "ecc-autoloads.el" tmp))
+         (commands nil))
+    (unwind-protect
+        (progn
+          (let ((inhibit-message t))
+            (loaddefs-generate dir out))
+          (map-keymap (lambda (_event command)
+                        (when (symbolp command) (push command commands)))
+                      ecc-global-map)
+          (should commands)
+          (with-temp-buffer
+            (insert-file-contents out)
+            (should (search-forward
+                     "(autoload 'ecc-global-map \"ecc-answer\" nil t 'keymap)"
+                     nil t))
+            (dolist (command commands)
+              (unless (equal (file-name-base (or (symbol-file command 'defun) ""))
+                             "ecc-answer")
+                (goto-char (point-min))
+                (should (search-forward (format "(autoload '%s " command) nil t))))))
+      (delete-directory tmp t))))
 
 ;;;; The mode line
 
