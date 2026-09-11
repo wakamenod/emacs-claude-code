@@ -105,17 +105,9 @@ the keyboard. The `x` stops the session, and asks first.
 `ecc-tab-bar-state` marks the tab bar with the same `⚠` and `▶`, once
 `tab-bar-tab-name-function` is `ecc-tab-bar-tab-name`.
 
-## What the header line says
-
-Under the tabs, a session says what it is doing on the left and, on the right, how much
-of its context window is still free — what it may fill before the CLI compacts it, which
-is the model's window less the room the CLI keeps to compact in, or the `--autocompact`
-threshold when the session was started with one. The figure is yellow-green, then amber,
-then red as it runs out, and under a tenth it asks for `/compact`.
-`ecc-hint-context-indicator` takes it away.
-
-The mode line of a session says nothing by default, because it would be the same numbers
-twice; `ecc-mode-line-format` is what puts them there.
+Under the tabs, the header line says what the session is doing on the left and, on the
+right, how much of its context window is left before the CLI compacts it. It goes amber
+and then red as it runs out.
 
 ## Knowing which session wants something
 
