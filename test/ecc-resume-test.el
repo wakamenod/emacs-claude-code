@@ -259,6 +259,78 @@ grows a second branch, so this may not happen by accident."
             (should (equal (list session t nil) started)))
         (ecc-test-cleanup-session session)))))
 
+;;;; A session that is already running
+
+(defmacro ecc-resume-test--with-running-session (var &rest body)
+  "Run BODY with VAR bound to a session that has a live process.
+The process is a real one -- `sleep\' -- so that `process-live-p\'
+answers for itself and nothing has to be pretended to."
+  (declare (indent 1))
+  `(ecc-test-with-fake-session ,var
+     (let ((process (start-process "ecc-resume-test" nil "sleep" "60")))
+       (setf (ecc-session-process ,var) process)
+       (unwind-protect (progn ,@body)
+         (delete-process process)))))
+
+(ert-deftest ecc-resume-test-a-running-session-is-gone-to ()
+  "Picking a session that is running selects it instead of resuming it.
+It used to be offered in the list and then refused by
+`ecc-history-resume\', which is the worst of both."
+  (ecc-resume-test--with-running-session session
+    (let (selected)
+      (cl-letf (((symbol-function 'ecc-history-resume)
+                 (lambda (&rest _) (error "It tried to resume a live session")))
+                ((symbol-function 'ecc--enable-session-modes) #'ignore)
+                ((symbol-function 'ecc-window-select-session)
+                 (lambda (s) (setq selected s))))
+        (should (eq session (ecc-resume session)))
+        (should (eq session selected))))))
+
+(ert-deftest ecc-resume-test-forking-a-running-session-is-refused ()
+  "--fork on a running session says so rather than guessing.
+Forking a live conversation is a real thing to want, but it is not the
+same thing as going to the session, so it is not done by accident."
+  (ecc-resume-test--with-running-session session
+    (cl-letf (((symbol-function 'ecc--enable-session-modes) #'ignore)
+              ((symbol-function 'ecc-window-select-session)
+               (lambda (&rest _) (error "It went there anyway"))))
+      (should-error (ecc-resume session t) :type 'user-error))))
+
+(ert-deftest ecc-resume-test-a-live-buffer-still-asks ()
+  "Inside a running session the choice is asked for, not skipped.
+The session of the buffer wins only once it has stopped -- the R
+offered after an exit.  While it runs, the other sessions have to be
+reachable from inside it."
+  (ecc-resume-test--with-running-session session
+    (with-temp-buffer
+      (let ((ecc-render--session session)
+            (ecc-history-directory (make-temp-file "ecc-resume-live" t))
+            asked)
+        (unwind-protect
+            (cl-letf (((symbol-function 'completing-read)
+                       (lambda (_prompt table &rest _)
+                         (setq asked (all-completions "" table))
+                         (car asked))))
+              ;; One more session, so that there is a choice to ask about.
+              (let ((other (ecc-model-create-session
+                            :name "other"
+                            :project-root temporary-file-directory)))
+                (unwind-protect
+                    (progn
+                      (should (ecc-session-p (ecc-read-session)))
+                      (should (= 2 (length asked))))
+                  (ecc-test-cleanup-session other))))
+          (delete-directory ecc-history-directory t))))))
+
+(ert-deftest ecc-resume-test-a-stopped-buffer-does-not-ask ()
+  "Inside a session that has stopped, R resumes it without a question."
+  (ecc-test-with-fake-session session
+    (with-temp-buffer
+      (let ((ecc-render--session session))
+        (cl-letf (((symbol-function 'completing-read)
+                   (lambda (&rest _) (error "It asked in a stopped session"))))
+          (should (eq session (ecc-read-session))))))))
+
 (provide 'ecc-resume-test)
 
 ;;; ecc-resume-test.el ends here

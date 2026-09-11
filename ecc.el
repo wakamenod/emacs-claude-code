@@ -98,17 +98,33 @@ argument asks for the directory and the name."
 ;;;###autoload
 (defun ecc-resume (session &optional fork)
   "Start SESSION again with --resume, forking it when FORK is non-nil.
-Interactively, resume the session of the current buffer; a prefix
-argument forks it into a new conversation."
+A SESSION that is already running is not resumed but gone to: what the
+user asked for is that conversation, and whether a process happens to
+be alive under it is the package\='s business, not theirs.  Its window is
+selected as a resumed one\='s is, and nothing else is touched.  FORK on a
+running session is refused for now rather than guessed at: a second
+process on a live recording forks the conversation, which is a real
+thing to want but not the same thing as this.
+
+Interactively, the session of the current buffer is resumed when it has
+stopped -- that is the R offered after an exit -- and a choice is asked
+for otherwise.  A prefix argument forks it into a new conversation."
   (interactive (list (ecc-read-session "Resume: ") current-prefix-arg))
-  ;; What the recording holds is read first, so that the stream is
-  ;; appended to the conversation rather than starting an empty one.
-  ;; `ecc-history-resume' refuses a live process.
-  (ecc-history-resume session fork)
-  (ecc--enable-session-modes)
-  ;; Like `ecc-start': the window is selected and point put in the
-  ;; prompt, which is what a resumed session is opened to type in.
-  (ecc-window-select-session session)
+  (if (process-live-p (ecc-session-process session))
+      (progn
+        (when fork
+          (user-error "Cannot fork %s while it is running"
+                      (ecc-session-name session)))
+        (ecc--enable-session-modes)
+        (ecc-window-select-session session))
+    ;; What the recording holds is read first, so that the stream is
+    ;; appended to the conversation rather than starting an empty one.
+    ;; `ecc-history-resume' refuses a live process.
+    (ecc-history-resume session fork)
+    (ecc--enable-session-modes)
+    ;; Like `ecc-start': the window is selected and point put in the
+    ;; prompt, which is what a resumed session is opened to type in.
+    (ecc-window-select-session session))
   session)
 
 (defun ecc--session-time (session)
@@ -238,11 +254,17 @@ to sort them by name or by length."
 
 (defun ecc-read-session (&optional prompt)
   "Return a session to work on, asking with PROMPT when there is a choice.
-The session of the current buffer wins.  Otherwise the sessions of this
-Emacs and the recordings of the current project are offered, and the
-recordings of every project when this one has none.  A recording that
-is picked is read back into an archived session."
-  (or ecc-render--session
+The session of the current buffer wins, but only once it has stopped:
+that is the R pressed on an exit, and asking there would be a question
+with one answer.  A buffer whose session is still running is asked in
+like any other, so that the other sessions can be reached from inside
+one.  Otherwise the sessions of this Emacs and the recordings of the
+current project are offered, and the recordings of every project when
+this one has none.  A recording that is picked is read back into an
+archived session."
+  (or (and ecc-render--session
+           (not (process-live-p (ecc-session-process ecc-render--session)))
+           ecc-render--session)
       (let* ((root (ecc-project-root))
              (candidates (or (ecc--session-candidates root)
                              (ecc--session-candidates)))
