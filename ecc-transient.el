@@ -325,8 +325,7 @@ it too."
     ("f" "Send this file" ecc-send-buffer-file)
     ("e" "Fix the error at point" ecc-fix-error-at-point)
     ("l" "Ask inline" ecc-inline-prompt)
-    ("W" "Rewrite the region" ecc-rewrite)
-    ("/" "Slash command" ecc-slash-menu)]
+    ("W" "Rewrite the region" ecc-rewrite)]
    ["Review"
     ("D" "Diff review" ecc-review)
     ("F" "Files" ecc-goto-files)
