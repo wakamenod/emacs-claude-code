@@ -140,6 +140,13 @@ a resumed one the model its recording ends on (see `ecc-proc--model')."
   "Return the session PROCESS belongs to, or nil."
   (and (processp process) (ecc-model-session (process-get process 'ecc-session-id))))
 
+(defun ecc-proc-environment (session)
+  "Return the environment the CLI of SESSION is started with.
+`ecc-extra-environment', or the :extra-environment of SESSION, goes in
+front of `process-environment', which is what `make-process' reads."
+  (append (ecc-model-option session :extra-environment ecc-extra-environment)
+          process-environment))
+
 (defun ecc-proc-start (session &optional resume fork)
   "Start the CLI for SESSION and return the process.
 RESUME and FORK are passed to `ecc-proc-build-command'."
@@ -147,6 +154,7 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
     (error "Session %s is already running" (ecc-session-name session)))
   (let* ((command (ecc-proc-build-command session resume fork))
          (default-directory (or (ecc-session-project-root session) default-directory))
+         (process-environment (ecc-proc-environment session))
          process)
     (ecc-log (ecc-session-name session) "start: %s"
              (mapconcat #'shell-quote-argument command " "))

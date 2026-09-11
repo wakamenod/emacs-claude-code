@@ -87,6 +87,25 @@ one the model of the last real assistant message of its recording
         (should-not (member "--safe-mode" command))
         (should (member "--no-session-persistence" command))))))
 
+(ert-deftest ecc-proc-test-environment ()
+  "The CLI environment carries the extras in front of the inherited one.
+The default opts back into the Artifact tool, which the CLI otherwise
+withholds from the SDK entrypoint this package starts it under."
+  (ecc-test-with-fake-session session
+    (let ((process-environment '("PATH=/usr/bin")))
+      (should (equal (ecc-proc-environment session)
+                     '("CLAUDE_CODE_ARTIFACT=1" "PATH=/usr/bin")))
+      (should (member "CLAUDE_CODE_ARTIFACT=1" ecc-extra-environment))
+      ;; A session of its own says what it wants instead.
+      (setf (ecc-session-options session)
+            (list :extra-environment '("CLAUDE_CODE_ARTIFACT=0")))
+      (should (equal (ecc-proc-environment session)
+                     '("CLAUDE_CODE_ARTIFACT=0" "PATH=/usr/bin")))
+      ;; And nil leaves the environment as Emacs has it.
+      (let ((ecc-extra-environment nil))
+        (setf (ecc-session-options session) nil)
+        (should (equal (ecc-proc-environment session) '("PATH=/usr/bin")))))))
+
 (ert-deftest ecc-proc-test-command-wrapper ()
   "A wrapper function gets the last word on the command line."
   (ecc-test-with-fake-session session

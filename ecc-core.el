@@ -124,6 +124,23 @@ This is the way to pass a flag this package has no setting for, such as
 overrides one this package relies on -- --verbose, --output-format,
 --input-format or --print -- breaks the session rather than the flag.")
 
+(defvar ecc-extra-environment '("CLAUDE_CODE_ARTIFACT=1")
+  "Extra \"NAME=VALUE\" entries put in the environment of every CLI.
+They are prepended to `process-environment', so they win over what
+Emacs inherited.  A session can carry its own list in
+:extra-environment instead.
+
+CLAUDE_CODE_ARTIFACT is here because the CLI hides the Artifact tool
+from a session it considers to be driven by an SDK, and this package
+drives it over stream-json, which is exactly that: the CLI turns its
+own CLAUDE_CODE_ENTRYPOINT from \"cli\" into \"sdk-cli\" when it is
+started the way this package starts it, and then withholds the tool
+with the reason sdk_default_off unless CLAUDE_CODE_ARTIFACT is set to
+a true value (1, true, yes or on).  Setting it opts back in; it does
+not turn anything on that the terminal does not already have, since
+the feature flag and the account policy are read separately
+\(confirmed against 2.1.267 on 2026-09-11).")
+
 (defcustom ecc-command-wrapper-function nil
   "Function that rewrites the CLI command line before it is run.
 Called with the command list and the project root; it must return the
