@@ -20,6 +20,7 @@ M-x customize-group RET ecc
 | `ecc-plan-default-mode` | `"acceptEdits"` | Permission mode switched to when a plan is approved without explicitly selecting a target mode. When `nil`, approvals do not request a mode change (causing the CLI to return to default mode) |
 | `ecc-prompt-suggestions-enabled` | `nil` | When non-nil, passes `--prompt-suggestions` to the CLI to enable follow-up suggestions |
 | `ecc-command-wrapper-function` | `nil` | Hook function to transform the CLI command invocation before execution. Receives `(command-list project-root)` and returns the modified command list. When `nil`, commands run unchanged |
+| `ecc-disabled-plugins` | `nil` | List of plugin identifiers (`"name@marketplace"`) to disable for sessions started by ecc. Applied per session, so plugins stay enabled in the terminal client |
 
 There is deliberately **no setting for the default model**. The model is determined by your Claude Code settings for new sessions, and by the last assistant turn for resumed sessions. Passing `--model` unconditionally would override user selections permanently, undoing in-session `/model` changes. Use `ecc-set-model` (or `m` in the menu) to change the model for a running session instead.
 
@@ -29,6 +30,7 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 
 | Variable | Default | Description |
 |---|---|---|
+| `ecc-chat-return-sends` | `nil` | When `nil` (default), `RET` inserts a newline and `C-c C-c` sends. When `t`, `RET` sends immediately (matching the terminal client) |
 | `ecc-chat-text-width` | `100` | Maximum line width for rendered text, or `nil` to use full window width. Surplus space is padded into the right margin so adjacent window layouts remain unaffected |
 | `ecc-chat-line-spacing` | `0.15` | Additional line spacing below each line, following standard `line-spacing` semantics (e.g., float value represents a fraction of line height). `nil` disables added spacing |
 | `ecc-render-result-max-lines` | `12` | Maximum lines displayed for a tool result preview. The full result is always accessible with `RET` |
@@ -109,12 +111,3 @@ ecc can run an in-process MCP server on the loopback interface and register it w
 | `ecc-debug` | `nil` | When non-nil, logs internal diagnostic traces alongside raw protocol messages |
 
 `ecc-show-log` displays the raw protocol log for the session associated with the current buffer. Failed dispatches are never dropped silently: they remain visible in the log and appear as `unknown` nodes in the transcript.
-
-## Additional variables
-
-These are `defvar` variables (not available in `customize`); set them with `setq`.
-
-| Variable | Default | Description |
-|---|---|---|
-| `ecc-chat-return-sends` | `nil` | When `nil` (default), `RET` inserts a newline and `C-c C-c` sends. When `t`, `RET` sends immediately (matching the terminal client) |
-| `ecc-disabled-plugins` | `nil` | List of plugin identifiers (`"name@marketplace"`) to disable for sessions started by ecc. Configured per-session without modifying global CLI settings |

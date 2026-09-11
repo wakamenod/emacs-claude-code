@@ -72,7 +72,7 @@ asked, so this is how the header line hears about it.")
 ;; in particular takes away the MCP servers, skills, commands and agents
 ;; this package exists to surface, so nothing here recommends it.
 
-(defvar ecc-disabled-plugins nil
+(defcustom ecc-disabled-plugins nil
   "Plugin identifiers to disable for the sessions this package starts.
 Each entry looks like \"name@marketplace\" and is passed through
 --settings, so the plugin stays enabled in the terminal client.
@@ -81,7 +81,11 @@ Hooks written for the terminal client cannot do their job behind a
 headless one; a well behaved one answers no_capable_terminal and steps
 aside, but it still costs a round trip and can inject settings of its
 own.  Disabling the plugin that installs it is enough, and unlike
-`--safe-mode' it leaves MCP servers and commands alone.")
+`--safe-mode' it leaves MCP servers and commands alone.
+
+Which plugins are installed is a difference between machines, which is
+what makes this a setting rather than a variable (decided 2026-09-11)."
+  :type '(repeat string))
 
 (defvar ecc-streaming-enabled t
   "Non-nil passes --include-partial-messages for incremental rendering.")
