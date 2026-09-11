@@ -1,6 +1,6 @@
 ---
 title: Other features
-description: "The rest: what a session can do, what the plan has been spent on, and the smaller things."
+description: "The rest: what a session can do, and what the plan has been spent on."
 sidebar:
   order: 5
 ---
@@ -37,15 +37,6 @@ question alone and stopped again; no prompt is sent, so asking costs nothing.
 `ecc-usage-display` floats the report over the frame, as above, or puts it in a window.
 What has been spending the limits is a scan of the sessions on **this machine**, so it
 says nothing about another device or claude.ai.
-
-## The smaller things
-
-| What | How |
-|---|---|
-| The transcript of a subagent | `RET` on an agent in the transcript opens the conversation it had, on its own |
-| The conversation as Markdown | `C-c C-e` in a session writes it out |
-| The raw protocol log | `L` — every line in and out, stamped; what a bug report should carry |
-| Remote Control | `o`, `O` and `K` on the [menu](/emacs-claude-code/features/menu/#o-o-k--remote-control) |
 
 Every setting is on the
 [configuration reference](/emacs-claude-code/reference/configuration/).
