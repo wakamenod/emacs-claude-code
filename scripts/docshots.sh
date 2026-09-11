@@ -240,6 +240,29 @@ if want sessions; then
     e '(shot-scene-sessions-end)' ; sleep 1
 fi
 
+if want prompt; then
+    # The transcript folding, and the point walking the headings.  No
+    # minibuffer here, so each step is one call and one frame.  It comes
+    # first because the scene after it leaves a picker on the screen.
+    scene fold
+    e '(shot-scene-fold-start)'                         ; snap 2
+    e '(shot-scene-fold (quote ecc-chat-collapse-all))' ; snap 3
+    e '(shot-scene-fold (quote ecc-chat-show-level-2))' ; snap 2
+    e '(shot-scene-fold (quote ecc-chat-show-level-3))' ; snap 2
+    e '(shot-scene-fold (quote ecc-chat-next-heading))' ; snap
+    e '(shot-scene-fold (quote ecc-chat-next-heading))' ; snap
+    e '(shot-scene-fold (quote ecc-chat-toggle))'       ; snap 3
+    e '(shot-scene-fold (quote ecc-chat-toggle))'       ; snap 3
+    e '(shot-scene-fold (quote ecc-chat-expand-all))'   ; snap 3
+    gif
+
+    # The slash command list, open over a session.  Like the resume
+    # picker, it stays on the screen until it is dismissed.
+    e '(shot-scene-slash)'   ; sleep 3; still "$outdir/slash.png"
+    e '(shot-scene-quit)'    ; sleep 1
+    e '(shot-scene-clear-prompt)'
+fi
+
 if want handover; then
     # 7. Handing a session over to the terminal.  The CLI is the real one,
     # resuming a conversation recorded in the demo project, so this scene

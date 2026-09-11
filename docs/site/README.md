@@ -120,7 +120,7 @@ SCENES="menu resume" scripts/docshots.sh
 ```
 
 The scenes are `switch`, `menu`, `capabilities`, `send-region`, `fix-error`,
-`inline`, `rewrite`, `sessions`, `handover` and `resume`.
+`inline`, `rewrite`, `sessions`, `prompt`, `handover` and `resume`.
 
 What it knows, and what is worth not learning again:
 

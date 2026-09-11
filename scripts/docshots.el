@@ -18,6 +18,7 @@
 ;;   menu     `ecc-menu' open over a session
 ;;   resume   the session picker of `ecc-resume', with an icon per state
 ;;   sessions the tab line and the dashboard, over four sessions at once
+;;   prompt   the slash command list, and the transcript being folded
 ;;
 ;; The recordings the resume picker offers are invented here.  The real
 ;; ones are the conversations of whoever runs this, and their titles and
@@ -611,6 +612,55 @@ picture rather than once at the start."
 (defun shot-scene-handover ()
   "Hand that session over to the terminal."
   (shot-later (lambda () (ecc-tui-open shot-handover))))
+
+;;;; The prompt and the transcript
+
+(defun shot-scene-slash ()
+  "Open the slash command list from the prompt region.
+The names and their descriptions are a fixture's, not the skills and
+commands of whoever runs this: the first line of `basic-turn' is the
+initialize response the CLI answers with, and it is what carries them.
+The recording the rest of the scene shows is left alone."
+  (shot-play shot-main "basic-turn" 1 1)
+  (shot-show shot-main)
+  ;; What `/' does, rather than the key itself: a key left on
+  ;; `unread-command-events' from a timer is read by whatever loop is
+  ;; running, and at top level there is none, so the slash was never
+  ;; typed at all.  The picker is opened the way `shot-scene-resume'
+  ;; opens its own, from a timer, once this server request has been
+  ;; answered.
+  (shot-later
+   (lambda ()
+     (with-selected-window (get-buffer-window (ecc-session-buffer shot-main))
+       (ecc-chat-goto-prompt)
+       (insert "/")
+       (ecc-chat-update-placeholder)
+       (ecc-prompt-read-command ecc-render--session)))))
+
+(defun shot-scene-clear-prompt ()
+  "Empty the prompt region again after the slash scene.
+The slash it typed stays there when the picker is dismissed, and the
+scenes after this one are of a session nobody has typed into."
+  (with-selected-window (get-buffer-window (ecc-session-buffer shot-main))
+    (ecc-chat-clear-draft)
+    (ecc-chat-update-placeholder)
+    (redisplay t)))
+
+(defun shot-scene-fold-start ()
+  "Show the transcript with the point on its first heading."
+  (shot-show shot-main)
+  (with-selected-window (get-buffer-window (ecc-session-buffer shot-main))
+    (goto-char (point-min))
+    (ecc-chat-next-heading)
+    (redisplay t)))
+
+(defun shot-scene-fold (command)
+  "Run COMMAND in the transcript of the session being shown.
+The folding commands take no argument and read nothing, so the wrapper
+drives this one step at a time and takes a frame after each."
+  (with-selected-window (get-buffer-window (ecc-session-buffer shot-main))
+    (call-interactively command)
+    (redisplay t)))
 
 ;;;; The dashboard and the tab line
 
