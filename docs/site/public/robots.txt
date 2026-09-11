@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://wakamenod.github.io/emacs-claude-code/sitemap-index.xml
