@@ -539,6 +539,10 @@ it out from under the rectangle being captured."
 Opening the menu, or a minibuffer with a list under it, resizes the
 frame and can move it, so the rectangle is asked for again before every
 picture rather than once at the start."
+  ;; Whatever was last said in the echo area would be in the picture,
+  ;; and for a still taken early in a run that is Emacs's own greeting.
+  (unless (active-minibuffer-window)
+    (message nil))
   (redisplay t)
   ;; `frame-position' is the outer window, title bar included, while
   ;; `frame-pixel-height' is only the text area -- capturing that

@@ -55,6 +55,17 @@ e() {
     fi
 }
 
+# Which scenes to take.  All of them, unless SCENES names some:
+#
+#   SCENES="menu resume" scripts/docshots.sh
+#
+# Retaking one picture is the common case -- a key changes, a colour
+# changes -- and taking all of them runs the real CLI four times.
+want() {
+    [ -z "${SCENES:-}" ] && return 0
+    case " $SCENES " in *" $1 "*) return 0 ;; *) return 1 ;; esac
+}
+
 # Start a new animation; the frames of each live in a directory of their own.
 scene() {
     scene=$1
@@ -117,96 +128,118 @@ read -r X Y W H _cols _lines < "$geom" || true
 
 mkdir -p "$outdir"
 
-# 1. Switching a window from one session to another, as an animation.
-# Frames that repeat are merged into one long frame by the time the site
-# has converted the animation, so a scene has to keep changing: type a
-# letter at a time, and go back the way it came rather than holding the
-# last picture.
-scene switch
-e '(shot-scene-switch-start)'      ; snap 2
-e '(shot-scene-switch-sequence)'
-for _ in $(seq 1 22); do sleep 0.5; snap; done
-gif
+if want switch; then
+    # 1. Switching a window from one session to another, as an animation.
+    # Frames that repeat are merged into one long frame by the time the site
+    # has converted the animation, so a scene has to keep changing: type a
+    # letter at a time, and go back the way it came rather than holding the
+    # last picture.
+    scene switch
+    e '(shot-scene-switch-start)'      ; snap 2
+    e '(shot-scene-switch-sequence)'
+    for _ in $(seq 1 22); do sleep 0.5; snap; done
+    gif
+fi
 
-# 2. The menu, open over a session.
-e '(shot-scene-menu)'           ; sleep 3; still "$outdir/menu.png"
-e '(shot-scene-quit)'           ; sleep 1
+if want menu; then
+    # 2. The menu, open over a session.
+    e '(shot-scene-menu)'           ; sleep 3; still "$outdir/menu.png"
+    e '(shot-scene-quit)'           ; sleep 1
+fi
 
-# 3. Sending the region from a source buffer.  This one runs the real
-# CLI: the point of the picture is the answer coming back.
-scene send-region
-e '(shot-start-live)'               ; sleep 4
-e '(shot-scene-send-region-point)'  ; snap 2
-e '(shot-scene-send-region-mark)'   ; snap
-e '(shot-scene-send-region-extend)' ; snap
-e '(shot-scene-send-region-extend)' ; snap
-e '(shot-scene-send-region-extend)' ; snap 2
-e '(shot-scene-send-region-sequence)'
-# The typing and then the answer streaming in are the motion, so the
-# frames are taken while they happen rather than after.
-for _ in $(seq 1 10); do sleep 0.5; snap; done
-for _ in $(seq 1 12); do sleep 1; snap; done
-gif
-e '(shot-dump-live-log)'
+# The four scenes below are answered by the model, so they need a session
+# that really runs.  It is started once, whichever of them is being taken.
+if want send-region || want fix-error || want inline || want rewrite; then
+    e '(shot-start-live)'               ; sleep 4
+fi
 
-# 4. Fixing the error a checker found.  The file really is broken and
-# the checker really is run; only the checker is the standard library
-# rather than something installed.
-scene fix-error
-e '(shot-scene-fix-error-open)'     ; sleep 3; snap 3
-e '(shot-scene-fix-error-point)'    ; snap 2
-e '(shot-scene-fix-error)'          ; snap 2
-for _ in $(seq 1 10); do sleep 1; snap; done
-# Allowing it is part of the scene: the edit is made, the buffer picks
-# it up, and the checker has nothing left to complain about.  It also
-# leaves nothing waiting, which would blink through every picture taken
-# after this one.
-e '(shot-scene-allow)'              ; sleep 1; snap 2
-for _ in $(seq 1 8); do sleep 1; snap; done
-e '(shot-scene-recheck)'            ; sleep 2; snap 4
-gif
+if want send-region; then
+    # 3. Sending the region from a source buffer.  This one runs the real
+    # CLI: the point of the picture is the answer coming back.
+    scene send-region
+    e '(shot-scene-send-region-point)'  ; snap 2
+    e '(shot-scene-send-region-mark)'   ; snap
+    e '(shot-scene-send-region-extend)' ; snap
+    e '(shot-scene-send-region-extend)' ; snap
+    e '(shot-scene-send-region-extend)' ; snap 2
+    e '(shot-scene-send-region-sequence)'
+    # The typing and then the answer streaming in are the motion, so the
+    # frames are taken while they happen rather than after.
+    for _ in $(seq 1 10); do sleep 0.5; snap; done
+    for _ in $(seq 1 12); do sleep 1; snap; done
+    gif
+    e '(shot-dump-live-log)'
+fi
 
-# 5. Asking about the region and being answered where the code is.
-scene inline
-e '(shot-scene-send-region-point)'  ; snap
-e '(shot-scene-send-region-mark)'   ; snap
-e '(shot-scene-send-region-extend)' ; snap
-e '(shot-scene-send-region-extend)' ; snap
-e '(shot-scene-send-region-extend)' ; snap 2
-e '(shot-scene-inline-sequence)'
-for _ in $(seq 1 8); do sleep 0.5; snap; done
-for _ in $(seq 1 12); do sleep 1; snap; done
-gif
+if want fix-error; then
+    # 4. Fixing the error a checker found.  The file really is broken and
+    # the checker really is run; only the checker is the standard library
+    # rather than something installed.
+    scene fix-error
+    e '(shot-scene-fix-error-open)'     ; sleep 3; snap 3
+    e '(shot-scene-fix-error-point)'    ; snap 2
+    e '(shot-scene-fix-error)'          ; snap 2
+    for _ in $(seq 1 10); do sleep 1; snap; done
+    # Allowing it is part of the scene: the edit is made, the buffer picks
+    # it up, and the checker has nothing left to complain about.  It also
+    # leaves nothing waiting, which would blink through every picture taken
+    # after this one.
+    e '(shot-scene-allow)'              ; sleep 1; snap 2
+    for _ in $(seq 1 8); do sleep 1; snap; done
+    e '(shot-scene-recheck)'            ; sleep 2; snap 4
+    gif
+fi
 
-# 6. Rewriting the region, and accepting what comes back.
-scene rewrite
-e '(shot-scene-send-region-point)'  ; snap
-e '(shot-scene-send-region-mark)'   ; snap
-e '(shot-scene-send-region-extend)' ; snap
-e '(shot-scene-send-region-extend)' ; snap
-e '(shot-scene-send-region-extend)' ; snap 2
-e '(shot-scene-rewrite-sequence)'
-for _ in $(seq 1 8); do sleep 0.5; snap; done
-for _ in $(seq 1 10); do sleep 1; snap; done
-e '(shot-scene-accept)'             ; sleep 1; snap 4
-gif
+if want inline; then
+    # 5. Asking about the region and being answered where the code is.
+    scene inline
+    e '(shot-scene-send-region-point)'  ; snap
+    e '(shot-scene-send-region-mark)'   ; snap
+    e '(shot-scene-send-region-extend)' ; snap
+    e '(shot-scene-send-region-extend)' ; snap
+    e '(shot-scene-send-region-extend)' ; snap 2
+    e '(shot-scene-inline-sequence)'
+    for _ in $(seq 1 8); do sleep 0.5; snap; done
+    for _ in $(seq 1 12); do sleep 1; snap; done
+    gif
+fi
 
-# 7. Handing a session over to the terminal.  The CLI is the real one,
-# resuming a conversation recorded in the demo project, so this scene
-# needs `claude' and a recording it can find.
-e '(shot-scene-quit)'           ; sleep 1
+if want rewrite; then
+    # 6. Rewriting the region, and accepting what comes back.
+    scene rewrite
+    e '(shot-scene-send-region-point)'  ; snap
+    e '(shot-scene-send-region-mark)'   ; snap
+    e '(shot-scene-send-region-extend)' ; snap
+    e '(shot-scene-send-region-extend)' ; snap
+    e '(shot-scene-send-region-extend)' ; snap 2
+    e '(shot-scene-rewrite-sequence)'
+    for _ in $(seq 1 8); do sleep 0.5; snap; done
+    for _ in $(seq 1 10); do sleep 1; snap; done
+    e '(shot-scene-accept)'             ; sleep 1; snap 4
+    gif
+fi
 
-scene handover
-e '(shot-scene-handover-start)' ; sleep 1; snap 3
-e '(shot-scene-handover)'       ; snap
-# The CLI drawing itself is the motion here, so the frames are taken
-# while it comes up rather than after.
-for _ in 1 2 3 4 5 6 7 8 9 10; do sleep 1; snap; done
-gif
+if want handover; then
+    # 7. Handing a session over to the terminal.  The CLI is the real one,
+    # resuming a conversation recorded in the demo project, so this scene
+    # needs `claude' and a recording it can find.
+    e '(shot-scene-quit)'           ; sleep 1
 
-# The picker of `ecc-resume' is last: it stays on screen, and a
-# minibuffer with a completion UI over it does not reliably take a `C-g'
-# fed to it from the server.
-e '(shot-scene-resume)'         ; sleep 3; still "$outdir/resume.png"
+    scene handover
+    e '(shot-scene-handover-start)' ; sleep 1; snap 3
+    e '(shot-scene-handover)'       ; snap
+    # The CLI drawing itself is the motion here, so the frames are taken
+    # while it comes up rather than after.
+    for _ in 1 2 3 4 5 6 7 8 9 10; do sleep 1; snap; done
+    gif
+fi
+
+if want resume; then
+    # The picker of `ecc-resume' is last: it stays on screen, and a
+    # minibuffer with a completion UI over it does not reliably take a `C-g'
+    # fed to it from the server.
+    e '(shot-scene-resume)'         ; sleep 3; still "$outdir/resume.png"
+
+fi
 
 echo "wrote $outdir/switch.gif, $outdir/handover.gif, $outdir/menu.png and $outdir/resume.png"

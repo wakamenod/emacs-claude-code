@@ -353,8 +353,7 @@ it too."
     ("p" "Permission mode" ecc-set-permission-mode)
     ("o" "Remote control" ecc-remote-control-toggle)
     ("O" "Open remotely" ecc-remote-control-open)
-    ("K" "Copy the remote URL" ecc-remote-control-copy-url)
-    ("C" "Customize" ecc-customize)]])
+    ("K" "Copy the remote URL" ecc-remote-control-copy-url)]])
 
 (provide 'ecc-transient)
 

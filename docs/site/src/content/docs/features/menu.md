@@ -237,7 +237,6 @@ follows.
 `O` opens that session at claude.ai/code in your browser, and `K` puts the
 same URL in the kill ring. Both need the session to be on the bridge.
 
-### `C` — Customize
-
-Opens the `ecc` customization group. Everything in it is listed on the
-[configuration reference](/emacs-claude-code/reference/configuration/).
+Every setting is on the
+[configuration reference](/emacs-claude-code/reference/configuration/), and
+`M-x customize-group RET ecc` opens the same list in Emacs.
