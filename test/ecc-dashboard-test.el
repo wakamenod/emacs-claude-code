@@ -118,13 +118,21 @@ test/fixtures sits where `ecc-history-directory' looks for it."
            (with-current-buffer buffer ,@body)
          (kill-buffer buffer)))))
 
+(defun ecc-dashboard-test--first-row ()
+  "Go to the first row, which is the line after the column header.
+The header line carries the summary, so the names of the columns are a
+line of the buffer and the list starts below them."
+  (goto-char (point-min))
+  (ecc-dashboard--first-row))
+
 (ert-deftest ecc-dashboard-test-buffer-lists-every-row ()
   "The buffer holds one line per session, the waiting one first."
   (ecc-dashboard-test--with-two-sessions a b
     (ecc-dashboard-test--in-buffer
      (should (derived-mode-p 'ecc-dashboard-mode))
-     (should (= 2 (count-lines (point-min) (point-max))))
-     (goto-char (point-min))
+     ;; The column header, and a line per session under it.
+     (should (= 3 (count-lines (point-min) (point-max))))
+     (ecc-dashboard-test--first-row)
      (should (equal "other" (ecc-dashboard-entry-name (tabulated-list-get-id))))
      ;; The columns are all filled.
      (let ((row (tabulated-list-get-entry)))
@@ -145,13 +153,13 @@ test/fixtures sits where `ecc-history-directory' looks for it."
   "The a and d keys answer the oldest request of the row."
   (ecc-dashboard-test--with-two-sessions a b
     (ecc-dashboard-test--in-buffer
-     (goto-char (point-min))
+     (ecc-dashboard-test--first-row)
      (ecc-dashboard-allow)
      (should-not (ecc-session-pending b))
      (should (equal "allow" (alist-get 'behavior (ecc-test-response 0))))
      ;; The row of a session that is not waiting says so rather than
      ;; answering something else.
-     (goto-char (point-min))
+     (ecc-dashboard-test--first-row)
      (should-error (ecc-dashboard-allow) :type 'user-error)
      (ignore a))))
 
@@ -164,7 +172,7 @@ test/fixtures sits where `ecc-history-directory' looks for it."
        (cl-letf (((symbol-function 'ecc-display-session)
                   (lambda (session) (setq shown session) nil))
                  ((symbol-function 'select-window) #'ignore))
-         (goto-char (point-min))
+         (ecc-dashboard-test--first-row)
          (ecc-dashboard-visit)
          (should (eq shown b))
          ;; R starts the CLI on the recording of that session.
@@ -180,7 +188,7 @@ test/fixtures sits where `ecc-history-directory' looks for it."
   (ecc-dashboard-test--with-two-sessions a b
     (ecc-model-set-session-id b ecc-dashboard-test-recording)
     (ecc-dashboard-test--in-buffer
-     (goto-char (point-min))
+     (ecc-dashboard-test--first-row)
      (let ((file (ecc-history-file ecc-dashboard-test-recording)))
        (should (file-exists-p file))
        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil)))
@@ -196,7 +204,7 @@ test/fixtures sits where `ecc-history-directory' looks for it."
   (ecc-dashboard-test--with-two-sessions a b
     (ecc-session-ensure-buffer b)
     (ecc-dashboard-test--in-buffer
-     (goto-char (point-min))
+     (ecc-dashboard-test--first-row)
      (ecc-dashboard-rename "renamed")
      (should (equal "renamed" (ecc-session-name b)))
      (should (get-buffer "*ecc: renamed*"))
@@ -207,11 +215,98 @@ test/fixtures sits where `ecc-history-directory' looks for it."
   "k stops the session of the row and takes it off the list."
   (ecc-dashboard-test--with-two-sessions a b
     (ecc-dashboard-test--in-buffer
-     (goto-char (point-min))
+     (ecc-dashboard-test--first-row)
      (ecc-dashboard-stop)
      (should-not (ecc-model-session (ecc-session-id b)))
      (should (member "test" (ecc-dashboard-test--names (ecc-dashboard-entries))))
      (ignore a))))
+
+;;;; What the list looks like
+
+(ert-deftest ecc-dashboard-test-state-cell-says-what-it-is-doing ()
+  "The State cell carries a mark, the word, and the colour of the state."
+  (ecc-dashboard-test--with-two-sessions a b
+    (let* ((entries (ecc-dashboard-entries))
+           (waiting (car entries))
+           (idle (cadr entries)))
+      (should (eq b (ecc-dashboard-entry-session waiting)))
+      (let ((cell (ecc-dashboard--state-cell waiting)))
+        (should (string-search "waiting" cell))
+        (should (eq 'ecc-pending-face (get-text-property 0 'face cell))))
+      (let ((cell (ecc-dashboard--state-cell idle)))
+        (should (string-search "idle" cell))
+        (should (eq 'ecc-dim-face (get-text-property 0 'face cell))))
+      ;; More than one request waiting is counted.
+      (ecc-test-add-request b "Bash")
+      (should (string-search "×2" (ecc-dashboard--state-cell
+                                   (car (ecc-dashboard-entries)))))
+      ;; A session that runs turns a spinner in place of a mark, and
+      ;; wears a plain one where the spinner is turned off.
+      (ecc-model-set-state a 'running)
+      (let* ((running (lambda ()
+                        (ecc-dashboard--state-cell
+                         (seq-find (lambda (entry)
+                                     (eq a (ecc-dashboard-entry-session entry)))
+                                   (ecc-dashboard-entries)))))
+             (cell (let ((ecc-visual-enable-spinner t)) (funcall running))))
+        (should (string-search "running" cell))
+        (should (member (substring-no-properties cell 0 1)
+                        (append ecc-visual-spinner-frames nil)))
+        (let ((ecc-visual-enable-spinner nil))
+          (should (string-prefix-p "▶ running"
+                                   (substring-no-properties
+                                    (funcall running)))))))))
+
+(ert-deftest ecc-dashboard-test-quiet-rows-are-dimmed ()
+  "A row that is neither working nor waiting has its detail dimmed."
+  (ecc-dashboard-test--with-two-sessions a b
+    (setf (ecc-session-total-cost a) 1.5)
+    (setf (ecc-session-total-cost b) 0.25)
+    (let* ((rows (mapcar #'ecc-dashboard--row (ecc-dashboard-entries)))
+           (waiting (cadr (car rows)))
+           (idle (cadr (cadr rows))))
+      (should (equal "$1.50" (substring-no-properties (aref idle 6))))
+      (should (eq 'ecc-dim-face (get-text-property 0 'face (aref idle 6))))
+      (should-not (get-text-property 0 'face (aref waiting 6))))))
+
+(ert-deftest ecc-dashboard-test-summary-counts-what-there-is ()
+  "The summary above the list counts the rows and adds their cost up.
+`format-mode-line' says nothing in batch, so the function behind the
+header line is called itself."
+  (ecc-dashboard-test--with-two-sessions a b
+    (setf (ecc-session-total-cost a) 1.5)
+    (setf (ecc-session-total-cost b) 0.25)
+    (let ((summary (ecc-dashboard--summary (ecc-dashboard-entries))))
+      (should (string-search "1 waiting" summary))
+      (should (string-search "1 idle" summary))
+      (should-not (string-search "running" summary))
+      (should (string-search "$1.75" summary)))
+    (ecc-model-set-state a 'running)
+    (should (string-search "1 running" (ecc-dashboard--summary
+                                        (ecc-dashboard-entries))))
+    ;; The rate limit the sessions are closest to is drawn as a bar,
+    ;; and the header line doubles the percent sign it ends with.
+    (setf (ecc-session-rate-limit b)
+          '((unifiedWindows . ((five_hour . ((utilization . 0.61)))))))
+    (let ((summary (ecc-dashboard--summary (ecc-dashboard-entries))))
+      (should (string-search "61%" summary))
+      (should (string-search "61%%" (ecc-dashboard--header-line))))))
+
+(ert-deftest ecc-dashboard-test-summary-of-an-empty-list ()
+  "With nothing to list the summary says how to start something."
+  (should (string-search "+ starts one" (ecc-dashboard--summary nil))))
+
+(ert-deftest ecc-dashboard-test-gutter-marks-the-rows ()
+  "The gutter marks a row waiting for an answer, and one on screen."
+  (ecc-dashboard-test--with-two-sessions a b
+    (let ((entries (ecc-dashboard-entries)))
+      (should (equal "!" (substring-no-properties
+                          (ecc-dashboard--tag (car entries)))))
+      (should-not (ecc-dashboard--tag (cadr entries))))
+    (ecc-dashboard-test--in-buffer
+     (ecc-dashboard-test--first-row)
+     (should (equal "!" (buffer-substring-no-properties (point) (1+ (point)))))
+     (ignore a b))))
 
 (provide 'ecc-dashboard-test)
 

@@ -125,6 +125,13 @@ One timer per buffer; asking again while it turns changes nothing."
   "Return non-nil when the spinner of BUFFER is turning."
   (and (gethash buffer ecc-visual--spinner-timers) t))
 
+(defun ecc-visual-spinner-advance ()
+  "Move the spinner on to its next frame.
+The frame is the same wherever it is drawn, so whoever turns it -- the
+timer of a session buffer, or the dashboard drawing its list again --
+moves every spinner on screen along with it."
+  (cl-incf ecc-visual--tick))
+
 (defun ecc-visual--spinner-tick (buffer)
   "Advance the spinner and redraw BUFFER, or stop when there is no point.
 A buffer nobody is looking at is not worth a timer ten times a second."
