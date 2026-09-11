@@ -356,6 +356,56 @@ if want question; then
     gif
 fi
 
+if want review; then
+    # Every change of the session as one diff, a comment on a hunk, and
+    # the prompt that would go out.
+    scene review
+    e '(shot-scene-review)'        ; sleep 1; snap 3
+    e '(shot-scene-review-comment (list "the docstring " "still says hi"))'
+    for _ in $(seq 1 8); do sleep 0.6; snap; done
+    e '(shot-scene-review-hunk)'   ; snap 3
+    e '(shot-scene-review-send)'   ; sleep 1; snap 5
+    gif
+fi
+
+if want proposal; then
+    # The text of a proposal, changed before it is allowed.
+    scene proposal
+    e '(shot-scene-proposal)'       ; sleep 1; snap 3
+    e '(shot-scene-proposal-edit)'  ; sleep 1; snap 3
+    e '(shot-scene-proposal-type " and ")'     ; snap
+    e '(shot-scene-proposal-type "hello")'     ; snap 3
+    e '(shot-scene-proposal-apply)' ; sleep 1; snap 4
+    gif
+fi
+
+if want plan; then
+    # A plan, the mode it is approved into, and the approval.
+    scene plan
+    e '(shot-scene-plan)'               ; sleep 1; snap 4
+    e '(shot-scene-plan-mode-sequence)'
+    for _ in $(seq 1 6); do sleep 0.6; snap; done
+    e '(shot-scene-plan-approve)'       ; sleep 1; snap 4
+    gif
+fi
+
+if want files; then
+    # The Files section: a row unfolded, then reviewed on its own.
+    scene files
+    e '(shot-scene-files)'                                  ; sleep 1; snap 3
+    e '(shot-scene-files-key (quote ecc-chat-next-heading))'; snap 2
+    e '(shot-scene-files-key (quote ecc-chat-toggle))'      ; snap 4
+    e '(shot-scene-files-key (quote ecc-session-review-file))' ; sleep 1; snap 4
+    gif
+fi
+
+if want timeline; then
+    # The turn picker.  Last of the replayed scenes: it leaves a
+    # minibuffer on the screen, as the resume picker does.
+    e '(shot-scene-timeline)' ; sleep 3; still "$outdir/timeline.png"
+    e '(shot-scene-quit)'     ; sleep 1
+fi
+
 if want handover; then
     # 7. Handing a session over to the terminal.  The CLI is the real one,
     # resuming a conversation recorded in the demo project, so this scene

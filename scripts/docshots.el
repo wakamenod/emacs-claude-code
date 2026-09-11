@@ -19,6 +19,7 @@
 ;;   resume   the session picker of `ecc-resume', with an icon per state
 ;;   sessions the tab line and the dashboard, over four sessions at once
 ;;   prompt   the slash command list, and the transcript being folded
+;;   review   the diff, a proposal, a plan, the Files section, the turns
 ;;
 ;; The recordings the resume picker offers are invented here.  The real
 ;; ones are the conversations of whoever runs this, and their titles and
@@ -722,6 +723,203 @@ picture rather than once at the start."
 (defun shot-scene-handover ()
   "Hand that session over to the terminal."
   (shot-later (lambda () (ecc-tui-open shot-handover))))
+
+;;;; Reviewing what changed, a proposal and a plan
+
+(defun shot-reset-main ()
+  "Build the main session again from its recording, so a scene starts clean.
+The scenes share one Emacs and a session keeps what an earlier one
+replayed into it: the Files section grew a plan file and a second
+write, and a scene that had ended mid-turn left the state line saying
+so.  The second session is left alone, so the tab line still has one."
+  (when shot-main
+    (when (ecc-model-session (ecc-session-id shot-main))
+      (ecc-model-remove-session shot-main))
+    (when (buffer-live-p (ecc-session-buffer shot-main))
+      (kill-buffer (ecc-session-buffer shot-main))))
+  (with-temp-file shot-file (insert shot-before))
+  (setq shot-main (ecc-model-create-session :name "greet"
+                                            :project-root shot-root))
+  (ecc-session-ensure-buffer shot-main)
+  (shot-play shot-main "edit-tool" 1 11)
+  (shot-allow shot-main)
+  (shot-play shot-main "edit-tool" 12)
+  shot-main)
+
+(defun shot-play-write (session)
+  "Replay the recording that writes a file into SESSION, permission and all.
+Played straight through it ends with the permission nobody answered,
+which the renderer rightly draws as denied -- a failure in a picture
+that is not about one."
+  (shot-play session "tool-use-write" 1 8)
+  (dolist (request (copy-sequence (ecc-session-pending session)))
+    (ecc-perm-allow-request request))
+  (shot-play session "tool-use-write" 9))
+
+
+(defun shot-review-window ()
+  "Return the window of the review buffer of the main session, selecting it."
+  (when-let* ((buffer (get-buffer (ecc-review-buffer-name shot-main)))
+              (window (get-buffer-window buffer)))
+    (select-window window)
+    window))
+
+(defun shot-scene-review ()
+  "Open every change of the session as one diff.
+A second file is replayed in first, so that the diff has more than one
+hunk to walk."
+  (shot-reset-main)
+  (shot-show shot-main)
+  (shot-play-write shot-main)
+  (ecc-review shot-main)
+  (when-let* ((window (shot-review-window)))
+    (with-selected-window window
+      (goto-char (point-min))
+      (ignore-errors (diff-hunk-next))
+      (redisplay t))))
+
+(defun shot-scene-review-hunk ()
+  "Move to the next hunk, as n does."
+  (when-let* ((window (shot-review-window)))
+    (with-selected-window window
+      (ignore-errors (diff-hunk-next))
+      (redisplay t))))
+
+(defun shot-scene-review-comment (chunks)
+  "Comment on the hunk at point, typing CHUNKS into the minibuffer."
+  (let ((typing (shot-typing-steps 1.0 chunks)))
+    (shot-script
+     (append (list (cons 0.5 (lambda ()
+                               (with-selected-window (shot-review-window)
+                                 (call-interactively #'ecc-review-comment)))))
+             typing
+             (list (cons (+ 0.8 (car (car (last typing))))
+                         (lambda () (shot-keys "RET"))))))))
+
+(defun shot-scene-review-send ()
+  "Ask to send the comments, which shows the prompt before it goes."
+  (when-let* ((window (shot-review-window)))
+    (with-selected-window window
+      (call-interactively #'ecc-review-send)))
+  (when-let* ((buffer (get-buffer (ecc-review-message-buffer-name shot-main)))
+              (window (get-buffer-window buffer)))
+    (select-window window)
+    (goto-char (point-min)))
+  (redisplay t))
+
+(defun shot-scene-proposal ()
+  "Stop a recording at the file it asks to write, and go to the request."
+  (shot-reset-main)
+  (shot-show shot-main)
+  (shot-play shot-main "tool-use-write" 1 8)
+  (when-let* ((request (shot-pending-request)))
+    (ecc-answer-goto-request request))
+  (redisplay t))
+
+(defun shot-proposal-window ()
+  "Return the window the proposal is edited in, selecting it."
+  (when-let* ((buffer (get-buffer (ecc-review-proposal-buffer-name shot-main)))
+              (window (get-buffer-window buffer)))
+    (select-window window)
+    window))
+
+(defun shot-scene-proposal-edit ()
+  "Open the text of the proposal, as e does in the transcript."
+  (with-selected-window (get-buffer-window (ecc-session-buffer shot-main))
+    (call-interactively #'ecc-review-edit-proposal))
+  (when-let* ((window (shot-proposal-window)))
+    (with-selected-window window
+      (goto-char (point-max))
+      (redisplay t))))
+
+(defun shot-scene-proposal-type (text)
+  "Type TEXT into the proposal, the way it would be edited by hand."
+  (when-let* ((window (shot-proposal-window)))
+    (with-selected-window window
+      (goto-char (point-max))
+      (insert text)
+      (redisplay t))))
+
+(defun shot-scene-proposal-apply ()
+  "Allow the proposal with what the buffer now says."
+  (when-let* ((window (shot-proposal-window)))
+    (with-selected-window window
+      (call-interactively #'ecc-review-proposal-apply)))
+  (with-selected-window (get-buffer-window (ecc-session-buffer shot-main))
+    (goto-char (point-max))
+    (recenter -1)
+    (redisplay t)))
+
+(defun shot-plan-window ()
+  "Return the window the plan is reviewed in, selecting it."
+  (when-let* ((buffer (get-buffer (ecc-plan-buffer-name shot-main)))
+              (window (get-buffer-window buffer)))
+    (select-window window)
+    window))
+
+(defun shot-scene-plan ()
+  "Replay a turn that ends in plan mode; the plan buffer opens by itself."
+  (shot-reset-main)
+  (shot-show shot-main)
+  (shot-play shot-main "plan-mode" 1 13)
+  (when-let* ((window (shot-plan-window)))
+    (with-selected-window window
+      (goto-char (point-min))
+      (redisplay t))))
+
+(defun shot-scene-plan-mode-sequence ()
+  "Choose the permission mode the approval switches to."
+  (shot-script
+   (list (cons 0.5 (lambda ()
+                     (with-selected-window (shot-plan-window)
+                       (call-interactively #'ecc-plan-set-mode))))
+         (cons 2.0 (lambda () (shot-keys "RET"))))))
+
+(defun shot-scene-plan-approve ()
+  "Approve the plan, which allows the request and switches the mode."
+  (when-let* ((window (shot-plan-window)))
+    (with-selected-window window
+      (call-interactively #'ecc-plan-approve)))
+  (when-let* ((window (get-buffer-window (ecc-session-buffer shot-main))))
+    (with-selected-window window
+      (goto-char (point-max))
+      (recenter -1)))
+  (redisplay t))
+
+;;;; The Files section and the Timeline
+
+(defun shot-scene-files ()
+  "Go to the Files section of the transcript."
+  (shot-reset-main)
+  (shot-show shot-main)
+  (shot-play-write shot-main)
+  (with-selected-window (get-buffer-window (ecc-session-buffer shot-main))
+    (call-interactively #'ecc-chat-goto-files)
+    (recenter 2)
+    (redisplay t)))
+
+(defun shot-scene-files-key (command)
+  "Run COMMAND in the transcript, as a key of the Files section would."
+  (with-selected-window (get-buffer-window (ecc-session-buffer shot-main))
+    (call-interactively command)
+    (redisplay t)))
+
+(defun shot-scene-timeline ()
+  "Open the turn picker over a session whose turns carry their prompts.
+A replayed turn has none: the prompt is the client's and never comes
+back over the stream (`shot-turn-prompt')."
+  (shot-reset-main)
+  (shot-show shot-main)
+  (shot-play-write shot-main)
+  (let ((prompts '("Make greet return \"hello \" instead of \"hi \""
+                   "Write hello.txt with \"hi\" in it")))
+    (dolist (turn (ecc-session-turns shot-main))
+      (when prompts
+        (setf (ecc-turn-prompt turn) (pop prompts)))))
+  (shot-later
+   (lambda ()
+     (with-selected-window (get-buffer-window (ecc-session-buffer shot-main))
+       (call-interactively #'ecc-session-timeline)))))
 
 ;;;; The prompt and the transcript
 
