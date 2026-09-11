@@ -242,7 +242,7 @@ fi
 if want context; then
     # The editor context, attached to every prompt while it is on.
     scene context
-    e '(shot-scene-cursor-point 3)'                                  ; snap 2
+    e '(shot-scene-cursor-point 6)'                                  ; snap 2
     e '(shot-prompt-command (quote ecc-prompt-toggle-context))'      ; snap 3
     e '(shot-prompt-type "Where am I?")'                             ; snap 2
     e '(shot-prompt-send)'                                           ; snap 2

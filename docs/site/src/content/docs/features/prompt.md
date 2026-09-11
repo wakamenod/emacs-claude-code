@@ -47,7 +47,7 @@ the next.
 | `C-c C-i` | Insert an image |
 | `C-c C-a` / `C-c C-d` | Allow or deny the request waiting |
 | `C-c C-n` / `C-c C-p` | Next or previous turn |
-| `C-c C-b` | Show the side questions |
+| `C-c C-b` | Show the side questions asked with `/btw` |
 | `C-c C-t` | Show another session in this window |
 | `C-c C-e` | Export the conversation as Markdown |
 | `S-TAB` | Cycle the permission mode |
@@ -57,6 +57,8 @@ the next.
 is one, else the oldest of this session, else the oldest anywhere.
 
 ### `@` references
+
+![A prompt with @cursor in it: the reference becomes the file and the line the point was on, and the code goes with it](../../../assets/at-cursor.gif)
 
 `@` in a prompt names something for Claude to read. `TAB` completes them — the three
 below, and the files of the project.
@@ -103,8 +105,12 @@ An image pasted, dropped on the buffer or inserted with `C-c C-i` is written und
 `ecc-image-dir` and referenced by its path, so the CLI reads it from disk.
 `ecc-image-cleanup` decides whether a session's images go with it.
 
-`C-c C-x` turns the editor's context on or off for this buffer: with it on, what you are
-looking at goes with every prompt.
+![An image inserted into the prompt as a path, sent, and described in the answer](../../../assets/image.gif)
+
+`C-c C-x` turns the editor's context on or off for this buffer: with it on, where you are
+goes with every prompt.
+
+![C-c C-x turning the context on, and the next prompt carrying the file and line with it](../../../assets/context.gif)
 
 ### The footer
 
@@ -162,9 +168,11 @@ it as they do anywhere else.
 
 A node that is waiting carries a keymap of its own, in force with point inside it.
 
+![A permission to write a file, allowed with a, and the turn finishing](../../../assets/permission.gif)
+
 | Key | Action |
 |---|---|
-| `RET` | Visit what is proposed |
+| `RET` | Visit what is proposed — a question opens the buffer it is answered in |
 | `a` / `d` | Allow it once, deny it |
 | `A` | Allow it, and every one like it from now on |
 | `u` | Allow everything until the turn ends |
@@ -175,6 +183,12 @@ These are keys the transcript leaves free; none of them gives an existing key a 
 meaning. Point is what selects the map, and point is easy to misjudge, so a letter that
 meant one thing a line earlier would fire the wrong command with no warning. `c` and `e`
 are on [Review](/emacs-claude-code/features/review/).
+
+A question is answered in a buffer of its own, opened with `RET`: `1`–`9` choose,
+`SPC` toggles an option of a question that takes several, `o` writes an answer of your
+own, and `C-c C-c` sends.
+
+![A question with two questions: one option chosen, two toggled on the second, and the answers sent](../../../assets/question.gif)
 
 ### On a file in the Files section
 
