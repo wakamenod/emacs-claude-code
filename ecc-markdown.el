@@ -10,7 +10,7 @@
 
 ;; `ecc-markdown-fontify' takes the text of an assistant reply and
 ;; returns it with faces for headings, list bullets, code blocks, inline
-;; code and bold.  Apart from a table, the text itself is not changed,
+;; code, bold and links.  Apart from a table, the text itself is not changed,
 ;; so what the model wrote is what the buffer shows and what a copy
 ;; yields.  A table is the one thing that cannot be lined up with
 ;; properties alone, and `ecc-table-format' redraws it; see
@@ -72,6 +72,11 @@ fixed-pitch' back."
   "Face for bold text."
   :group 'ecc)
 
+(defface ecc-markdown-link-face
+  '((t :inherit link))
+  "Face for a URL, and for the text a Markdown link puts in front of one."
+  :group 'ecc)
+
 (defconst ecc-markdown-fence-regexp
   "^[ \t]*\\(```\\|~~~\\)[ \t]*\\([^ \t\n`]*\\)"
   "Regexp matching the line that opens or closes a fenced code block.
@@ -90,11 +95,33 @@ empty on a closing fence and on an opening one that names nothing.")
 (defconst ecc-markdown-bold-regexp "\\*\\*\\([^*\n]+\\)\\*\\*"
   "Regexp matching bold text.")
 
+(defconst ecc-markdown-url-regexp
+  "\\(?:https?\\|ftp\\)://[[:alnum:]][^ \t\n\"'`<>]*"
+  "Regexp matching a bare URL.
+Only the schemes worth following are matched, and the character after
+the scheme must be alphanumeric, so that a bare `http://' in a sentence
+about the scheme is not one.  Where the URL ends is decided by
+`ecc-markdown--url-end\=' rather than here: the run of characters this
+matches swallows the full stop that ends the sentence as well.")
+
+(defconst ecc-markdown-link-regexp
+  (concat "\\[\\([^][\n]+\\)\\](\\(" ecc-markdown-url-regexp "\\))")
+  "Regexp matching a Markdown inline link to a URL.
+Group 1 is the text and group 2 the URL.  A link to anything but a URL
+is left as it is written: a relative path in a reply is as often an
+example as it is a file here.")
+
 (defvar ecc-markdown-hide-markup t
   "Non-nil hides the markup around bold, code and headings.
 Nil leaves the asterisks, the backquotes and the number signs in sight,
 which is what a reader who wants the source of the reply rather than its
 shape wants.")
+
+(defvar ecc-markdown-linkify-urls t
+  "Non-nil makes a URL in the transcript a link that can be followed.
+Nil leaves it as plain text.  A Markdown link is drawn as its text
+alone when this and `ecc-markdown-hide-markup\=' are both non-nil, and
+as it was written when either is nil.")
 
 (defvar ecc-markdown-highlight-code t
   "Non-nil colours a fenced code block with the major mode of its language.
@@ -211,6 +238,79 @@ when `ecc-markdown-highlight-code' is nil."
       (pcase-dolist (`(,from ,to . ,face) (ecc-markdown--mode-faces text mode))
         (add-face-text-property (+ start from) (+ start to) face nil)))))
 
+(defun ecc-markdown--code-p (pos)
+  "Return non-nil when POS has been coloured as code already.
+A fenced block is never reached here, so this catches an inline span:
+a URL written between backquotes is being shown rather than offered."
+  (let ((face (get-text-property pos 'face)))
+    (if (listp face)
+        (memq 'ecc-markdown-code-face face)
+      (eq face 'ecc-markdown-code-face))))
+
+(defun ecc-markdown--url-end (beg end)
+  "Return END pulled back over the punctuation that ends the sentence.
+BEG is where the URL starts.
+`ecc-markdown-url-regexp\=' runs to the first space, so a URL that ends
+a sentence takes the full stop with it, and one inside brackets takes
+the bracket.  A closing parenthesis is only given up when the URL has
+no opening one, because plenty carry a matched pair."
+  (let ((paired (string-search "(" (buffer-substring-no-properties beg end))))
+    (while (and (> end beg)
+                (let ((c (char-before end)))
+                  (or (memq c '(?. ?, ?\; ?: ?! ?? ?\]))
+                      (and (eq c ?\)) (not paired)))))
+      (setq end (1- end)))
+    end))
+
+(defun ecc-markdown--mark-link (start end url)
+  "Make the text between START and END a link to URL.
+No keymap is put on: the transcript already answers RET with
+`ecc-session-visit\=', which asks `ecc-markdown-url-at-point\=' first,
+and `mouse-face\=' is what tells `follow-link\=' that the first mouse
+button has something to follow here."
+  (ecc-markdown--add-face start end 'ecc-markdown-link-face)
+  (add-text-properties start end
+                       (list 'mouse-face 'highlight
+                             'help-echo url)))
+
+(defun ecc-markdown--linkify (start end)
+  "Turn the URLs between START and END into links.
+A Markdown link is drawn as its text alone, with the brackets and the
+URL hidden like any other markup; a bare URL is drawn as it stands.
+The `ecc-url\=' property covers the whole of a Markdown link, hidden
+parts and all, so that the pass over bare URLs does not find the one
+inside it a second time."
+  (when ecc-markdown-linkify-urls
+    (save-excursion
+      (goto-char start)
+      (while (re-search-forward ecc-markdown-link-regexp end t)
+        (let ((from (match-beginning 0))
+              (to (match-end 0))
+              (text-start (match-beginning 1))
+              (text-end (match-end 1))
+              (url (match-string-no-properties 2)))
+          (unless (ecc-markdown--code-p from)
+            (put-text-property from to 'ecc-url url)
+            (ecc-markdown--hide-markup from text-start)
+            (ecc-markdown--hide-markup text-end to)
+            (ecc-markdown--mark-link text-start text-end url))))
+      (goto-char start)
+      (while (re-search-forward ecc-markdown-url-regexp end t)
+        (let ((from (match-beginning 0)))
+          (unless (or (get-text-property from 'ecc-url)
+                      (ecc-markdown--code-p from))
+            (let* ((to (ecc-markdown--url-end from (match-end 0)))
+                   (url (buffer-substring-no-properties from to)))
+              (put-text-property from to 'ecc-url url)
+              (ecc-markdown--mark-link from to url)
+              (goto-char to))))))))
+
+(defun ecc-markdown-url-at-point (&optional pos)
+  "Return the URL of the link at POS, the point by default, or nil.
+The hidden half of a Markdown link carries the property too, so a
+search that opened it leaves the point somewhere that still answers."
+  (get-text-property (or pos (point)) 'ecc-url))
+
 (defun ecc-markdown--fontify-inline (start end)
   "Add the faces of inline code and bold between START and END."
   (save-excursion
@@ -225,7 +325,9 @@ when `ecc-markdown-highlight-code' is nil."
       (ecc-markdown--add-face (match-beginning 0) (match-end 0)
                               'ecc-markdown-bold-face)
       (ecc-markdown--hide-markup (match-beginning 0) (+ (match-beginning 0) 2))
-      (ecc-markdown--hide-markup (- (match-end 0) 2) (match-end 0)))))
+      (ecc-markdown--hide-markup (- (match-end 0) 2) (match-end 0)))
+    ;; Last, so that a URL already shown as code is left alone.
+    (ecc-markdown--linkify start end)))
 
 (defun ecc-markdown--fontify-table (start)
   "Lay out the table beginning at START, and return where its last line does.
@@ -264,7 +366,12 @@ mode its fence names on top of `ecc-markdown-code-face'.  Markup symbols
 are hidden by the ecc-markup invisible property when
 `ecc-markdown-hide-markup' is non-nil.  A pipe table is the one
 construct whose text is rewritten: `ecc-table-format' draws it with its
-columns lined up."
+columns lined up.
+
+A URL is given `ecc-url\=', which is what `ecc-session-visit\=' follows;
+a Markdown link keeps its text in sight and hides the rest.  No keymap
+is put on, so nothing here has to know which keymap the transcript is
+drawn with."
   (if (or (null text) (string-empty-p text))
       (or text "")
     (with-temp-buffer

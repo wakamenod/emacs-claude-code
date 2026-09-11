@@ -154,6 +154,86 @@ here; `ecc-table-test' covers that."
   (let ((source "Before\n\n```elisp\n(defun foo ())\n```\n\nAfter\n"))
     (should (equal (substring-no-properties (ecc-markdown-fontify source)) source))))
 
+;;;; Links
+
+(defun ecc-markdown-test--url-at (text needle &optional offset)
+  "Return the `ecc-url' property at NEEDLE in TEXT, OFFSET characters in."
+  (let ((pos (string-search needle text)))
+    (should pos)
+    (get-text-property (+ pos (or offset 0)) 'ecc-url text)))
+
+(defun ecc-markdown-test--visible (text)
+  "Return TEXT without the characters the markup hid."
+  (let ((out ""))
+    (dotimes (i (length text))
+      (unless (get-text-property i 'invisible text)
+        (setq out (concat out (substring-no-properties text i (1+ i))))))
+    out))
+
+(ert-deftest ecc-markdown-test-a-bare-url-becomes-a-link ()
+  "A URL in prose carries the URL, the link face and a mouse-face.
+The mouse-face is what `follow-link\=' reads, so it is the difference
+between a link and the rest of the line; nothing carries a keymap."
+  (let* ((source "See https://example.com/a for the rest.\n")
+         (text (ecc-markdown-fontify source)))
+    (should (equal (substring-no-properties text) source))
+    (should (equal (ecc-markdown-test--url-at text "https://example.com/a")
+                   "https://example.com/a"))
+    (should (eq (ecc-markdown-test--face-at text "https://example.com/a")
+                'ecc-markdown-link-face))
+    (should (eq (get-text-property (string-search "https://" text) 'mouse-face text)
+                'highlight))
+    (should-not (get-text-property (string-search "https://" text) 'keymap text))
+    ;; The word before the URL is not part of it.
+    (should-not (ecc-markdown-test--url-at text "See "))))
+
+(ert-deftest ecc-markdown-test-a-url-stops-before-the-full-stop ()
+  "The punctuation that ends the sentence is not part of the URL.
+A parenthesis is given up the same way, unless the URL opened one of
+its own."
+  (let ((text (ecc-markdown-fontify "See https://example.com/a.\n")))
+    (should (equal (ecc-markdown-test--url-at text "https://") "https://example.com/a"))
+    (should-not (ecc-markdown-test--url-at text ".\n")))
+  (let ((text (ecc-markdown-fontify "(see https://example.com/a)\n")))
+    (should (equal (ecc-markdown-test--url-at text "https://") "https://example.com/a")))
+  (let* ((url "https://en.wikipedia.org/wiki/Emacs_(editor)")
+         (text (ecc-markdown-fontify (concat "At " url ".\n"))))
+    (should (equal (ecc-markdown-test--url-at text "https://") url))))
+
+(ert-deftest ecc-markdown-test-a-markdown-link-shows-its-text ()
+  "The brackets and the URL are hidden; the text stands where they were.
+The property covers the hidden half as well, so the point does not fall
+off the link wherever a search leaves it."
+  (let* ((source "Read [the manual](https://example.com/m) first.\n")
+         (text (ecc-markdown-fontify source)))
+    (should (equal (substring-no-properties text) source))
+    (should (equal (ecc-markdown-test--visible text) "Read the manual first.\n"))
+    (should (equal (ecc-markdown-test--url-at text "the manual")
+                   "https://example.com/m"))
+    (should (equal (ecc-markdown-test--url-at text "](https")
+                   "https://example.com/m"))
+    (should (eq (ecc-markdown-test--face-at text "the manual")
+                'ecc-markdown-link-face))
+    ;; The URL inside the link is not linkified a second time, so the
+    ;; hidden half carries no face and no mouse-face of its own.
+    (should-not (get-text-property (string-search "](https" text) 'mouse-face text))))
+
+(ert-deftest ecc-markdown-test-a-url-shown-as-code-is-left-alone ()
+  "A URL in a code span or a fence is text being shown, not a link."
+  (let ((text (ecc-markdown-fontify "Write `https://example.com/a` there.\n")))
+    (should-not (ecc-markdown-test--url-at text "https://")))
+  (let ((text (ecc-markdown-fontify "```\nhttps://example.com/a\n```\n")))
+    (should-not (ecc-markdown-test--url-at text "https://"))))
+
+(ert-deftest ecc-markdown-test-links-can-be-turned-off ()
+  "With `ecc-markdown-linkify-urls' nil nothing is a link.
+A Markdown link is then drawn as it was written, brackets and all."
+  (let* ((ecc-markdown-linkify-urls nil)
+         (source "Read [the manual](https://example.com/m) and https://example.com/a.\n")
+         (text (ecc-markdown-fontify source)))
+    (should-not (ecc-markdown-test--url-at text "https://example.com/a"))
+    (should (equal (ecc-markdown-test--visible text) source))))
+
 (provide 'ecc-markdown-test)
 
 ;;; ecc-markdown-test.el ends here

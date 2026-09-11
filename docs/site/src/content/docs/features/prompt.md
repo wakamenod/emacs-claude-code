@@ -141,7 +141,8 @@ The transcript is standard read-only buffer text, so `isearch`, `occur`, narrowi
 
 | Key | Action |
 |---|---|
-| `RET` | Visit item at point (file, subagent transcript, or full tool result) |
+| `RET` | Visit item at point (link, file, subagent transcript, or full tool result) |
+| `mouse-1` / `mouse-2` | Follow the link that was clicked |
 | `w` | Copy code block at point (or entire response) |
 | `a` | Allow pending request |
 | `d` | Deny request at point (or view diff if not on a request) |

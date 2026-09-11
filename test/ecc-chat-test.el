@@ -904,6 +904,36 @@ first one threw out of `window-size-change-functions\='."
             (ecc-chat--set-margins window)
             (should-not (cdr (window-margins window)))))))))
 
+(ert-deftest ecc-chat-test-ret-follows-a-link ()
+  "RET on a URL in the transcript opens it, and mouse-1 follows it too.
+The link carries no keymap of its own: RET is the `ecc-session-visit\='
+the whole transcript answers with, and mouse-1 reaches the link through
+the `follow-link\=' entry, which reads the `mouse-face\=' only a link
+carries."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "hello")
+    (ecc-model-add-node session :type 'text
+                        :data (list (cons 'text "See https://example.com/a now.")))
+    (ecc-render-flush session)
+    (with-current-buffer (ecc-session-buffer session)
+      (goto-char (point-min))
+      (should (search-forward "https://example.com/a" nil t))
+      (goto-char (match-beginning 0))
+      (should (equal (ecc-markdown-url-at-point) "https://example.com/a"))
+      (should (eq (key-binding (kbd "RET")) #'ecc-session-visit))
+      (let (opened)
+        (cl-letf (((symbol-function 'browse-url)
+                   (lambda (url &rest _) (setq opened url))))
+          (ecc-session-visit))
+        (should (equal opened "https://example.com/a")))
+      ;; Off the link the same key goes back to showing the node.
+      (goto-char (point-min))
+      (should-not (ecc-markdown-url-at-point))
+      (should (eq (lookup-key ecc-chat-transcript-map [mouse-2])
+                  #'ecc-chat-follow-link))
+      (should (eq (lookup-key ecc-chat-transcript-map [follow-link]) 'mouse-face)))))
+
 (provide 'ecc-chat-test)
 
 ;;; ecc-chat-test.el ends here
