@@ -48,6 +48,11 @@ export default defineConfig({
 					items: [{ autogenerate: { directory: 'start' } }],
 				},
 				{
+					label: 'Features',
+					translations: { ja: '機能' },
+					items: [{ autogenerate: { directory: 'features' } }],
+				},
+				{
 					label: 'Reference',
 					translations: { ja: 'リファレンス' },
 					items: [{ autogenerate: { directory: 'reference' } }],
