@@ -43,6 +43,11 @@ export default defineConfig({
 
 			sidebar: [
 				{
+					label: 'Understanding ecc',
+					translations: { ja: '仕組み' },
+					items: [{ autogenerate: { directory: 'explanation' } }],
+				},
+				{
 					label: 'Reference',
 					translations: { ja: 'リファレンス' },
 					items: [{ autogenerate: { directory: 'reference' } }],
