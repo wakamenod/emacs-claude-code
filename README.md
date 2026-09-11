@@ -13,6 +13,8 @@ An Emacs client for the Claude Code CLI. Conversations run directly inside ordin
 
 **Documentation:** <https://wakamenod.github.io/emacs-claude-code/>
 
+> **Pre-1.0.** ecc is not stable yet, and breaking changes are likely: commands, key bindings and settings can change or go away from one release to the next. Read [CHANGELOG.md](CHANGELOG.md) before upgrading.
+
 ## Overview
 
 ecc runs `claude` in headless mode, communicates over pipes using its stream-json protocol, and renders the session in a standard Emacs buffer.

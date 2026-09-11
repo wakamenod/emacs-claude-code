@@ -37,6 +37,7 @@ make compile     # byte-compile (warnings are errors); wipes stale .elc first
 make test        # ERT (fixture replay; no real process)
 make test-live   # ERT against the real CLI (tag live); run by hand only
 make lint        # checkdoc (+ package-lint when it is there)
+make release VERSION=0.2.0   # bump, commit and tag a release (see below)
 
 make docs-install  # npm ci for the documentation site
 make docs-dev      # the site's dev server
@@ -158,3 +159,38 @@ the whole set at the model it pins. To run a single one, narrow it with a select
   English one is not done until the Japanese one matches. The code blocks, the command
   and `defcustom` names and the factual cells of the comparison table are identical in
   both; only the prose, the table headings and the code comments are translated.
+
+## How a release goes
+
+The version is written in exactly one place, the `Version:` header of `ecc.el`: that is
+what `package.el` and `package-vc-install` read. No other `ecc-*.el` carries one, and
+there is no hand-written `ecc-pkg.el` — `package-vc` generates that, and a second copy
+of the number is a release that says two different things. `ecc-version` reads the
+number back rather than repeating it.
+
+Below 1.0, a breaking change — a command or key binding that goes away, a `defcustom`
+that changes its meaning — bumps the minor number; everything else bumps the patch
+number. Both READMEs say so, under the documentation link.
+
+```
+git switch main && git pull       # a release is tagged on main
+$EDITOR CHANGELOG.md              # move Unreleased into a dated [0.2.0] section,
+                                  # naming the claude CLI it was verified against
+make release VERSION=0.2.0        # checks, then autoloads+compile+lint+test,
+                                  # then the header, the commit and the tag
+git push --follow-tags            # this is what publishes it
+```
+
+`make release` writes nothing but the `Version:` header: the prose of the release is the
+`CHANGELOG.md` section, and it wants that written first. It refuses to go on unless it is
+on `main`, the tree holds nothing but that `CHANGELOG.md` edit, the section for the
+version is there and the tag is not. `make release-check` is those checks alone.
+
+The tag is the release. `.github/workflows/release.yml` runs on `v*` and refuses to
+publish if the header and the tag disagree or `CHANGELOG.md` has no section for the
+version; it then runs `make test` and creates the GitHub release with that section as
+the notes. Tag the merge commit on `main`, not a branch.
+
+A release entry names the `claude` version it was verified against (`claude --version`,
+which is what `ecc-version` reports too). Almost everything this package works around
+belongs to one version of the CLI, and the CLI moves without anybody upgrading ecc.

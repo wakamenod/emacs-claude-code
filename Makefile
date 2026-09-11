@@ -19,7 +19,7 @@ TESTS := $(wildcard test/ecc-*-test.el)
 INIT := --eval '(progn (setq package-user-dir "$(ELPA)") (package-initialize))'
 BATCH := $(EMACS) -Q --batch $(INIT) -L . -L test
 
-.PHONY: all autoloads compile test test-live lint clean \
+.PHONY: all autoloads compile test test-live lint clean release release-check \
         docs-install docs-dev docs-build docs-preview docs-clean
 
 all: autoloads compile lint test
@@ -57,6 +57,38 @@ test-live: autoloads compile
 lint:
 	$(BATCH) --eval '(progn (require (quote checkdoc)) (dolist (f (list $(foreach f,$(SRC),"$(f)"))) (checkdoc-file f)))'
 	$(BATCH) --eval '(if (require (quote package-lint) nil t) (progn (setq command-line-args-left (list $(foreach f,$(SRC),"$(f)"))) (package-lint-batch-and-exit)) (message "package-lint not installed; skipping"))'
+
+# A release is a tag, and the one thing it can get silently wrong is the
+# Version header of ecc.el disagreeing with it: package-vc then reports the
+# old number and nobody notices.  Write the CHANGELOG.md section first --
+# nothing here writes prose -- and then
+#   make release VERSION=0.2.0
+# which checks, bumps the header, commits the two files and tags.  Pushing
+# is left to you, because pushing the tag is what publishes the release:
+#   git push --follow-tags
+release: release-check all
+	sed -e 's/^;; Version: .*/;; Version: $(VERSION)/' ecc.el > ecc.el.new
+	mv ecc.el.new ecc.el
+	git commit -m "chore(release): $(VERSION)" ecc.el CHANGELOG.md
+	git tag -a "v$(VERSION)" -m "ecc $(VERSION)"
+	@echo
+	@echo "tagged v$(VERSION).  Publish it with: git push --follow-tags"
+
+# Everything that has to be true before a release, checked ahead of `all'
+# so that a missing VERSION does not cost a test run first.
+release-check:
+	@test -n "$(VERSION)" || { echo "usage: make release VERSION=0.2.0"; exit 1; }
+	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' \
+	  || { echo "VERSION must look like 0.2.0"; exit 1; }
+	@branch=$$(git rev-parse --abbrev-ref HEAD); test "$$branch" = main \
+	  || { echo "a release is tagged on main, not on $$branch"; exit 1; }
+	@test -z "$$(git status --porcelain | grep -v CHANGELOG.md)" \
+	  || { echo "the working tree has changes other than CHANGELOG.md"; exit 1; }
+	@grep -q '^## \[$(VERSION)\]' CHANGELOG.md \
+	  || { echo "CHANGELOG.md has no '## [$(VERSION)]' section"; exit 1; }
+	@! git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null \
+	  || { echo "v$(VERSION) is already tagged"; exit 1; }
+
 
 clean:
 	rm -f *.elc test/*.elc $(AUTOLOADS)
