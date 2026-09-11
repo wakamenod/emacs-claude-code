@@ -1,6 +1,6 @@
 ---
-title: Review
-description: Seeing a change before it is allowed, and reviewing every change of a session at once.
+title: Review and plan mode
+description: Reading a change before it is allowed, every change of a session at once, and the plan behind them.
 sidebar:
   order: 4
 ---
