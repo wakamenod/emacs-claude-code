@@ -724,6 +724,55 @@ picture rather than once at the start."
   "Hand that session over to the terminal."
   (shot-later (lambda () (ecc-tui-open shot-handover))))
 
+;;;; What the plan has been used for, and a question asked on the side
+
+(defun shot-scene-usage ()
+  "Show the usage report, floating over the frame.
+The numbers are a fixture's, not this machine's: the real answer
+carries the plan of whoever runs this, what it has cost and which of
+their projects has been spending it."
+  (shot-show shot-main)
+  (setq ecc-usage-display 'posframe)
+  (let* ((message (car (shot-fixture "usage")))
+         (response (alist-get 'response (alist-get 'response message)))
+         (buffer (get-buffer-create ecc-usage-buffer-name)))
+    (with-current-buffer buffer
+      (unless (derived-mode-p 'ecc-usage-mode)
+        (ecc-usage-mode))
+      (setq ecc-usage--data response))
+    (ecc-usage--draw (ecc-usage-render response nil))
+    (ecc-usage--show-posframe buffer)
+    (redisplay t)
+    buffer))
+
+(defun shot-scene-usage-hide ()
+  "Take the usage away again."
+  (ecc-usage-hide)
+  (redisplay t))
+
+(defun shot-scene-btw-turn ()
+  "Send a prompt long enough to still be running when the side question goes.
+The point of a side question is that it does not interrupt the turn, so
+the turn has to be there to watch: a short one had answered before the
+question was typed."
+  (shot-prompt-type
+   "List 12 edge cases worth testing in greet and farewell, one short line each.")
+  (shot-prompt-send))
+
+(defun shot-scene-btw-sequence (chunks)
+  "Ask a side question, typing CHUNKS into the minibuffer.
+`ecc-btw-ask' reads its question there, so the whole thing is
+scheduled inside Emacs."
+  (setq ecc-btw-display 'posframe)
+  (let ((typing (shot-typing-steps 1.0 chunks)))
+    (shot-script
+     (append (list (cons 0.5 (lambda ()
+                               (with-selected-window (shot-prompt-window)
+                                 (call-interactively #'ecc-btw-ask)))))
+             typing
+             (list (cons (+ 0.8 (car (car (last typing))))
+                         (lambda () (shot-keys "RET"))))))))
+
 ;;;; Reviewing what changed, a proposal and a plan
 
 (defun shot-reset-main ()

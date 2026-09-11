@@ -156,7 +156,7 @@ fi
 # The four scenes below are answered by the model, so they need a session
 # that really runs.  It is started once, whichever of them is being taken.
 if want send-region || want fix-error || want inline || want rewrite \
-       || want at-cursor || want context || want image; then
+       || want at-cursor || want context || want image || want btw; then
     e '(shot-start-live)'               ; sleep 4
 fi
 
@@ -291,6 +291,18 @@ if want suggestion; then
     gif
 fi
 
+if want btw; then
+    # A question asked beside a turn that is running, answered without
+    # interrupting it.
+    scene btw
+    e '(shot-scene-btw-turn)'   ; snap 2
+    for _ in $(seq 1 3); do sleep 1; snap; done
+    e '(shot-scene-btw-sequence (list "what does " "farewell " "return?"))'
+    for _ in $(seq 1 8); do sleep 0.8; snap; done
+    for _ in $(seq 1 10); do sleep 1; snap; done
+    gif
+fi
+
 if want capabilities; then
     # What the session can do: the list the CLI reported in system/init.
     scene capabilities
@@ -404,6 +416,13 @@ if want timeline; then
     # minibuffer on the screen, as the resume picker does.
     e '(shot-scene-timeline)' ; sleep 3; still "$outdir/timeline.png"
     e '(shot-scene-quit)'     ; sleep 1
+fi
+
+if want usage; then
+    # What the plan has been used for.  The answer is a fixture's, so
+    # nobody's own numbers go into it.
+    e '(shot-scene-usage)'      ; sleep 2; still "$outdir/usage.png"
+    e '(shot-scene-usage-hide)' ; sleep 1
 fi
 
 if want handover; then

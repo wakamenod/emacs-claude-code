@@ -98,8 +98,23 @@ description beside each is the CLI's own.
 first, because the CLI answers them bare with a usage message. Commands only the terminal
 client can run are left out of the list, and still sent if you type one out.
 
-`/btw` never reaches the conversation: it is caught in Emacs and asked beside the turn
-that is running, which is what `C-c C-b` shows.
+### Asking on the side with `/btw`
+
+`/btw <question>` never reaches the conversation. It is caught in Emacs and asked beside
+whatever Claude is doing: the CLI answers it with a separate lightweight instance that
+shares the messages so far but has no tools, and neither the question nor the answer goes
+into the transcript or the recording.
+
+![A turn still running while a side question is asked and answered beside it](../../../assets/btw.gif)
+
+The turn is left alone — the answer above arrives while the one in the transcript is
+still being written. `C-c C-b` shows the side questions of this session again, and there
+`a` asks another, `c` copies the answer, `k` cancels one still being answered, `x`
+clears them and `q` hides the buffer. `ecc-btw-display` floats them over the frame, as
+above, or puts them in a window.
+
+It is one shot: a follow-up carries the last few exchanges with it
+(`ecc-btw-history-limit`) and nothing else.
 
 ### While a turn runs
 

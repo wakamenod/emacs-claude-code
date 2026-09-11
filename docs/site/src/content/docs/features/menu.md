@@ -190,14 +190,9 @@ See [Session management](/emacs-claude-code/features/sessions/).
 
 ### `y` — Capabilities
 
-What the session can actually do, as the CLI reported it in `system/init`:
-skills, agents, slash commands, MCP servers and plugins, each grouped by where
-it comes from — the project, your global settings, a plugin, or the CLI itself.
-
-![The capabilities buffer, its groups folded and unfolded](../../../assets/capabilities.gif)
-
-`TAB` folds a group, `RET` visits what is at point, and `g` reads it again.
-Before the first turn there is nothing to show, and the buffer says so.
+What the session can actually do: its skills, agents, slash commands, MCP
+servers and plugins.
+See [Other features](/emacs-claude-code/features/other/#capabilities).
 
 ### `h` — History
 
