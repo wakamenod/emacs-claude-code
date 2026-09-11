@@ -1,5 +1,5 @@
 ---
-title: 設定リファレンス
+title: 設定
 description: ecc の設定項目を、何を決めるものかで分類して全件掲載します。
 sidebar:
   order: 2

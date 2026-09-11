@@ -1,5 +1,5 @@
 ---
-title: Configuration reference
+title: Configuration
 description: Every setting ecc offers, grouped by what it decides.
 sidebar:
   order: 2
