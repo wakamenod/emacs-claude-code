@@ -79,6 +79,7 @@ A request for one of them has to be answered where it can be read.")
       (bound-and-true-p ecc-plan--request)
       (ecc-perm-request-at-point)))
 
+;;;###autoload
 (defun ecc-next-attention (&optional project-root)
   "Jump to the next request waiting for an answer, across sessions.
 With PROJECT-ROOT, only the sessions of that project are visited.
@@ -99,6 +100,7 @@ The order is the arrival order and it wraps around."
                (ecc-answer-summary next)))
     next))
 
+;;;###autoload
 (defun ecc-next-attention-in-project ()
   "Jump to the next request waiting in a session of the current project."
   (interactive)
@@ -125,6 +127,7 @@ is being answered from afar."
                         (ecc-session-name (ecc-request-session request))
                         (ecc-answer-summary request)))))
 
+;;;###autoload
 (defun ecc-answer-allow ()
   "Allow the oldest waiting permission request, from any buffer."
   (interactive)
@@ -135,6 +138,7 @@ is being answered from afar."
       (message "Allowed: %s" (ecc-answer-summary request))
       request)))
 
+;;;###autoload
 (defun ecc-answer-deny (reason)
   "Deny the oldest waiting request with REASON, from any buffer."
   (interactive (list (read-string "Reason for denying (may be empty): ")))
