@@ -1,138 +1,125 @@
 ---
 title: Transient menu
-description: One menu that reaches every command ecc has, opened with a single key.
+description: The menu opened with C-c ?, and the commands in its Session group.
 sidebar:
   order: 1
 ---
 
-`C-c ?` in a session opens the menu. It is a
-[transient](https://magit.vc/manual/transient/) — the same kind of menu magit
-is driven by — and it reaches every command in the package.
+`C-c ?` opens the menu in a session buffer. It is a
+[transient](https://magit.vc/manual/transient/), the kind of menu magit uses,
+and it lists every command in ecc.
 
-![The transient menu open under a session, its six groups: Session, Send, Review, Respond, View and Config](../../../assets/menu.png)
+![The transient menu open under a session, showing its six groups: Session, Send, Review, Respond, View and Config](../../../assets/menu.png)
 
-Each line is a key and what it does. Press the key and the command runs; press
-`C-g` and the menu goes away. A line beginning with `-` is a switch instead: it
-is turned on first and stays on the screen, and the command run after it sees
-it.
+Each line shows a key and the command it runs. Pressing the key runs the
+command and closes the menu; `C-g` closes it without running anything. A line
+that starts with `-` is a switch: it is toggled on, stays on screen, and
+applies to the command run after it.
 
-The menu can also be opened from a buffer that is not a session — `M-x
-ecc-menu`, or `?` in [`ecc-global-map`](/emacs-claude-code/reference/key-bindings/#from-any-buffer).
-That matters for the Send group, whose commands are meant to be used from your
-own source files. A key means the same thing in the menu as it does in the
-global map.
+From a buffer that is not a session, the menu is `M-x ecc-menu`, or `?` in
+[`ecc-global-map`](/emacs-claude-code/reference/key-bindings/#from-any-buffer).
+The Send group is meant to be used that way, from a source file. A key means
+the same in the menu as it does in the global map.
 
-:::note[Which session does it act on?]
-The menu does not ask, unless it has to. It takes the session of the current
-buffer; failing that the one this buffer last talked to, the only session of
-this project, the only one on screen, or the most recently used. Only when
-none of those settles it are you asked, and the answer is remembered for that
-buffer.
+:::note[Which session the menu acts on]
+The session of the current buffer. Failing that, in order: the session this
+buffer last talked to, the only session of this project, the only session on
+screen, the most recently used session. If none of those applies, the menu
+asks, and remembers the answer for that buffer.
 :::
 
 ## Session
 
 Ten commands: starting a conversation, picking one up again, and moving the
-window around.
+window.
 
 ### `c` — Start
 
 Starts a session in the project of the current buffer, named after that
-directory. A second session in the same project asks for a name to tell it
-from the first.
+directory. Starting a second session in the same project asks for a name.
 
-`C-u c` asks for both the directory and the name.
+`C-u c` asks for the directory and the name.
 
-`ecc-start` is autoloaded, so `M-x ecc-start` works before ecc has been loaded.
+`ecc-start` is autoloaded, so `M-x ecc-start` works before ecc is loaded.
 
 ### `r` — Resume
 
-Opens a submenu with the list of everything there is to pick up again.
+Opens a submenu listing the conversations that can be picked up again.
 
-![The resume picker: five conversations, each with an icon for its state](../../../assets/resume.png)
+![The resume picker, listing five conversations, each with an icon for its state](../../../assets/resume.png)
 
-The icon at the head of each line is the point of the list — it says what the
-conversation *is* before you read its name:
+Each line begins with an icon for the state of the conversation:
 
-| Icon | What it is |
+| Icon | State |
 |---|---|
-| ▶ | A session this Emacs is running right now |
+| ▶ | A session this Emacs is running |
 | ● | A session this Emacs holds whose process has stopped |
 | ◉ | A conversation another process is running — a terminal, another Emacs |
 | ↺ | A conversation that is only a recording |
 
-After the name come when it was last worked in and, for a recording, the
-prompt it opened with. The sessions of this Emacs come first, then the
-recordings of this project, most recently used first; when the project has
-none, every recording is offered.
+After the icon come the name, when it was last worked in, and the working
+directory or, for a recording, the prompt it opened with. The sessions of this
+Emacs are listed first, then the recordings of the current project, most
+recently used first. When the project has no recordings, every recording is
+listed.
 
-The `-f` switch in the submenu forks: instead of carrying the conversation on,
-it branches a new one from it.
+The `-f` switch forks: a new conversation branches from the one picked instead
+of continuing it.
 
-:::caution[Resuming a live session forks it]
+:::caution[Resuming a live session branches the conversation]
 Two processes resuming the same session id write into the same recording, and
-the conversation quietly grows a second branch — the CLI has no lock to stop
-it. That is what the ◉ icon is warning about. Resuming one asks first.
+the conversation grows a second branch. The CLI has no lock against this. The
+◉ icon marks the conversations it applies to, and ecc asks before resuming
+one.
 :::
 
 ### `k` — Kill
 
-Stops the session and forgets it: the process is stopped, the session leaves
-the model, and its buffers are killed. The recording stays on disk, so `r`
-still finds the conversation afterwards.
+Stops the process, removes the session from the model, and kills its buffers.
+The recording is left on disk, so `r` still lists the conversation.
 
 ### `R` — Rename
 
-Renames the session and its buffers with it. The name is what the tab line,
-the mode line and every picker show, so this is how two sessions in one
-project stop being "the other one".
+Renames the session and its buffers. The name is what the tab line, the mode
+line and the session pickers show.
 
 ### `v` — Go to the prompt
 
-Brings the session's window back and puts the point in the prompt region,
-ready to type. It is the way back from wherever you have wandered to.
+Shows the session's window and moves point to the prompt region.
 
 ### `w` — Hide or restore windows
 
-Hides the session windows of this project, or brings the hidden ones back if
-they are already hidden. `C-u w` does it for every project rather than this
-one.
-
-The transcript is not closed, only put away: the session goes on running and
-answering while it is out of sight.
+Hides the session windows of the current project, or shows them again if they
+are already hidden. `C-u w` applies to every project. A hidden session goes on
+running.
 
 ### `S` — Switch this window to another session
 
-Shows another session in this window — the same choice clicking its tab would
-make, for when the tabs are not to hand.
+Shows another session in the current window. It is the same choice as clicking
+that session's tab.
 
-![Switching the window from one session to another and back](../../../assets/switch.gif)
+![A window being switched from one session to another](../../../assets/switch.gif)
 
-The window that changes is the one you are in when it is one of ecc's;
-otherwise it is the main session window, so running this from your source code
-changes the transcript you were looking at.
+The window it changes is the current one when that belongs to ecc, and the
+main session window otherwise.
 
 ### `i` — Interrupt
 
-Interrupts the turn that is running. What has already been done stays done;
-the model stops where it is and the session goes back to waiting for you.
+Interrupts the running turn. What has already been done is kept.
 
 ### `t` — Hand over to the terminal
 
-Carries the conversation on in the real terminal client, which can do things
-this one cannot.
+Continues the conversation in the terminal client.
 
-It is a change of hands, not a second window: the turn in flight is
-interrupted and the process Emacs runs is stopped *before* the terminal
-resumes the same conversation. That order is the whole point — two processes
-on one session would fork the recording. The transcript in Emacs follows along
-while the terminal has it.
+The running turn is interrupted and the process Emacs started is stopped
+before the terminal resumes the conversation, because two processes on one
+session would branch the recording. While the terminal has the session, the
+transcript in Emacs follows it.
 
 ### `u` — Take it back
 
-Takes the session back from the terminal and runs it headless in Emacs again.
-Whatever the terminal added is read first, so the transcript misses nothing.
+Reads what the terminal added, then resumes the session headless in Emacs.
 
-A terminal that is still running keeps the session: taking it back then would
-branch the conversation, so the hand-off is left alone and the session returns
-on its own once the terminal is really gone.
+If the terminal is still running, the session stays with it: resuming it now
+would branch the conversation. The hand-off is left in place, and the session
+comes back when the terminal exits.
