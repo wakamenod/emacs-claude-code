@@ -62,6 +62,23 @@
 
 (defconst shot-file (expand-file-name "hello.py" shot-root))
 
+(defconst shot-broken-file (expand-file-name "parse.py" shot-root)
+  "A file with a real syntax error, for the scene about fixing one.")
+
+(defconst shot-broken "\
+def parse(line):
+    fields = line.split(\",\"
+    return [field.strip() for field in fields]
+
+
+def first(line):
+    return parse(line)[0]
+"
+  "The broken file.  The error is inside a line rather than at its end:
+a diagnostic that flymake anchors on the newline belongs to the region
+of neither line, and the command that reads the line under the point
+would find nothing.")
+
 (defconst shot-before "\
 def greet(name):
     \"\"\"Say hi.\"\"\"
@@ -71,10 +88,12 @@ def greet(name):
 def farewell(name):
     \"\"\"Say bye.\"\"\"
     return \"bye \" + name
-")
+"
+  "The demo source before the recorded session edits it.")
 
 (defconst shot-after
-  (replace-regexp-in-string "return \"hi \"" "return \"hello \"" shot-before t t))
+  (replace-regexp-in-string "return \"hi \"" "return \"hello \"" shot-before t t)
+  "The same file after the edit the recording makes.")
 
 (defvar shot-main nil "The session the pictures are taken of.")
 (defvar shot-other nil "The second session, so that switching has somewhere to go.")
@@ -221,11 +240,21 @@ name of the project rather than `greet<2>'."
   (ecc--enable-session-modes)
   (shot-show shot-live))
 
-(defun shot-source-window ()
-  "Return the window showing the source file, selecting it."
-  (let ((window (get-buffer-window (find-file-noselect shot-file))))
+(defun shot-source-window (&optional file)
+  "Return the window showing FILE, or the demo source, selecting it.
+A file that is not on screen yet is put in the window that is not a
+session window: the scenes open more than one file, and only the first
+of them is there because `shot-show' put it there."
+  (let* ((buffer (find-file-noselect (or file shot-file)))
+         (window (or (get-buffer-window buffer)
+                     (seq-find (lambda (window)
+                                 (not (window-parameter window
+                                                        'ecc-window-role)))
+                               (window-list nil 'no-minibuffer)))))
     (when (window-live-p window)
-      (select-window window))
+      (select-window window)
+      (unless (eq (window-buffer window) buffer)
+        (switch-to-buffer buffer)))
     window))
 
 (defun shot-scene-send-region-point ()
@@ -252,14 +281,92 @@ holding on to."
     (activate-mark))
   (redisplay t))
 
-(defun shot-scene-send-region-ask ()
-  "Run `ecc-send-region' with a prefix, which asks for the instruction.
-The scene then types the question into the minibuffer, as a user does."
-  (shot-later
-   (lambda ()
-     (with-selected-window (shot-source-window)
-       (let ((current-prefix-arg '(4)))
-         (call-interactively #'ecc-send-region))))))
+(defun shot-typing-steps (start chunks)
+  "Return timer steps that type CHUNKS, the first at START seconds."
+  (let ((time start))
+    (mapcar (lambda (chunk)
+              (setq time (+ time 0.6))
+              (cons time (lambda () (shot-scene-type chunk))))
+            chunks)))
+
+(defun shot-ask-sequence (command chunks &optional prefix)
+  "Return the steps that run COMMAND and answer its minibuffer with CHUNKS.
+COMMAND is run in the window the source is in, because what these ask
+about is the region marked there.  PREFIX is its prefix argument."
+  (let* ((typing (shot-typing-steps 1.0 chunks))
+         (end (+ 0.8 (car (car (last typing))))))
+    (append (list (cons 0.5
+                        (lambda ()
+                          (with-selected-window (shot-source-window)
+                            (let ((current-prefix-arg prefix))
+                              (call-interactively command))))))
+            typing
+            (list (cons end (lambda () (shot-keys "RET")))))))
+
+(defun shot-scene-send-region-sequence ()
+  "Ask for an instruction and send the marked region with it.
+The prefix argument is what makes `ecc-send-region' ask for one."
+  (shot-script
+   (shot-ask-sequence #'ecc-send-region
+                      '("What could " "go wrong " "with this " "function?")
+                      '(4))))
+
+(defun shot-scene-inline-sequence ()
+  "Ask a question about the marked code, answered where the code is."
+  (shot-script
+   (shot-ask-sequence #'ecc-inline-prompt '("Why is this " "fragile?"))))
+
+(defun shot-scene-rewrite-sequence ()
+  "Ask for the marked code to be rewritten."
+  (shot-script
+   (shot-ask-sequence #'ecc-rewrite '("add a type " "hint"))))
+
+;;;; Fixing the error at point
+
+;; `ecc-fix-error-at-point' sends what a checker said, so the scene
+;; needs a checker.  There is no pyflakes on the machine this is made
+;; on, and the standard library can answer the question: `ast.parse'
+;; reports a syntax error with a line, a column and a message, which is
+;; the shape python-mode's flymake backend already reads.
+
+(defconst shot-python-checker "\
+import ast, sys
+try:
+    ast.parse(sys.stdin.read())
+except SyntaxError as error:
+    print('stdin:%d:%d: %s' % (error.lineno or 1, error.offset or 1, error.msg))
+")
+
+(defun shot-scene-fix-error-open ()
+  "Open the broken file with flymake on, and wait for it to report."
+  (with-temp-file shot-broken-file (insert shot-broken))
+  (setq python-flymake-command (list "python3" "-c" shot-python-checker))
+  (with-selected-window (shot-source-window shot-broken-file)
+    (flymake-mode 1)
+    (flymake-start)
+    (goto-char (point-min))
+    (redisplay t)))
+
+(defun shot-scene-fix-error-point ()
+  "Put the point on the line the checker complained about."
+  (with-selected-window (shot-source-window shot-broken-file)
+    (goto-char (point-min))
+    (forward-line 1)
+    (redisplay t)))
+
+(defun shot-scene-fix-error ()
+  "Ask Claude to fix the diagnostic the checker found."
+  (with-selected-window (shot-source-window shot-broken-file)
+    (call-interactively #'ecc-fix-error-at-point))
+  (redisplay t))
+
+;;;; The inline question and the rewrite
+
+(defun shot-scene-accept ()
+  "Accept what is waiting to be accepted."
+  (with-selected-window (shot-source-window)
+    (call-interactively #'ecc-rewrite-accept))
+  (redisplay t))
 
 ;;;; The hand-off
 
@@ -277,6 +384,17 @@ the demo project the first time it is needed, and it stays there.")
   "The frame showing the first session, before anything is switched."
   (shot-show shot-main))
 
+(defun shot-script (steps)
+  "Run STEPS, a list of (SECONDS . FUNCTION), each at SECONDS from now.
+A scene that reads from the minibuffer is scheduled whole rather than
+driven a step at a time from the wrapper: Emacs does not always answer
+the server while a recursive edit is running, and a scene that needed
+an answer for every keystroke hung the run.  Timers keep firing in
+there, so the whole interaction can be laid out in advance and the
+wrapper left to take frames on a clock."
+  (dolist (step steps)
+    (run-at-time (car step) nil (cdr step))))
+
 (defun shot-later (function)
   "Run FUNCTION once this server request has been answered.
 A command that reads from the minibuffer enters a recursive edit, and
@@ -288,6 +406,19 @@ what keeps the two apart."
 (defun shot-scene-switch-pick ()
   "Open the picker of `ecc-switch-session' and leave it on screen."
   (shot-later (lambda () (call-interactively #'ecc-switch-session))))
+
+(defun shot-scene-switch-sequence ()
+  "Switch to the other session and back, typing the names."
+  (shot-script
+   (list (cons 0.5 (lambda () (call-interactively #'ecc-switch-session)))
+         (cons 2.0 (lambda () (shot-keys "n")))
+         (cons 2.6 (lambda () (shot-keys "o")))
+         (cons 3.2 (lambda () (shot-keys "t")))
+         (cons 4.2 (lambda () (shot-keys "RET")))
+         (cons 6.0 (lambda () (call-interactively #'ecc-switch-session)))
+         (cons 7.5 (lambda () (shot-keys "g")))
+         (cons 8.1 (lambda () (shot-keys "r")))
+         (cons 9.1 (lambda () (shot-keys "RET"))))))
 
 (defun shot-keys (keys)
   "Feed KEYS, a `kbd' string, to whatever is reading input.
@@ -430,6 +561,12 @@ picture rather than once at the start."
   (shot-place-frame-bottom-right)
   (raise-frame)
   (x-focus-frame nil)
+  ;; A light inline session and a rewrite each run a CLI of their own,
+  ;; and both are asked for the cheap model, as this file's sessions are.
+  (setq ecc-inline-binding 'light
+        ecc-inline-light-args '("--tools" "" "--model" "haiku"
+                                "--max-budget-usd" "0.10")
+        ecc-rewrite-model "haiku")
   ;; The candidates are worth seeing as a list.
   (cond
    ((featurep 'vertico)

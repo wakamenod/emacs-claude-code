@@ -142,11 +142,15 @@ Sends the diagnostics on the current line with the few lines of code around
 them. flymake is asked first, then flycheck, then the help text of whatever
 overlay is at point.
 
+![The checker marks a line, the diagnostic is sent, and the fix comes back as an edit waiting to be allowed](../../../assets/fix-error.gif)
+
 ### `l` — Ask inline
 
 Asks about the region, or the file, and puts the answer in an overlay above
 point rather than in the transcript. `n` and `p` scroll it, `r` asks something
 else, `q` takes it away.
+
+![A question typed in the minibuffer, and the answer appearing in an overlay over the code](../../../assets/inline.gif)
 
 The question goes to a session of its own: a fork of the project's session, or
 a fresh light one. Which of the two is asked once and remembered for that
@@ -156,6 +160,8 @@ buffer.
 
 Rewrites the marked code as an instruction says. The answer is shown where the
 code is, and nothing is written until it is accepted.
+
+![The rewritten code shown above the original, then accepted with RET and written into the buffer](../../../assets/rewrite.gif)
 
 It is one shot with no tools: the CLI is asked for the code and for nothing
 else, and Emacs is what touches the buffer.

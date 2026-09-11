@@ -123,16 +123,9 @@ mkdir -p "$outdir"
 # letter at a time, and go back the way it came rather than holding the
 # last picture.
 scene switch
-e '(shot-scene-switch-start)'   ; snap 2
-e '(shot-scene-switch-pick)'    ; sleep 2; snap 2
-e '(shot-scene-type "n")'       ; snap
-e '(shot-scene-type "o")'       ; snap
-e '(shot-scene-type "t")'       ; snap 2
-e '(shot-scene-return)'         ; sleep 1; snap 3
-e '(shot-scene-switch-pick)'    ; sleep 2; snap 2
-e '(shot-scene-type "g")'       ; snap
-e '(shot-scene-type "r")'       ; snap 2
-e '(shot-scene-return)'         ; sleep 1; snap 3
+e '(shot-scene-switch-start)'      ; snap 2
+e '(shot-scene-switch-sequence)'
+for _ in $(seq 1 22); do sleep 0.5; snap; done
 gif
 
 # 2. The menu, open over a session.
@@ -148,19 +141,50 @@ e '(shot-scene-send-region-mark)'   ; snap
 e '(shot-scene-send-region-extend)' ; snap
 e '(shot-scene-send-region-extend)' ; snap
 e '(shot-scene-send-region-extend)' ; snap 2
-e '(shot-scene-send-region-ask)'    ; sleep 1; snap 2
-e '(shot-scene-type "What could ")' ; snap
-e '(shot-scene-type "go wrong ")'   ; snap
-e '(shot-scene-type "with this ")'  ; snap
-e '(shot-scene-type "function?")'   ; snap 2
-e '(shot-scene-return)'             ; snap 2
-# The answer streaming in is the motion, so the frames are taken while
-# it arrives rather than after it has.
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do sleep 1; snap; done
+e '(shot-scene-send-region-sequence)'
+# The typing and then the answer streaming in are the motion, so the
+# frames are taken while they happen rather than after.
+for _ in $(seq 1 10); do sleep 0.5; snap; done
+for _ in $(seq 1 12); do sleep 1; snap; done
 gif
 e '(shot-dump-live-log)'
 
-# 4. Handing a session over to the terminal.  The CLI is the real one,
+# 4. Fixing the error a checker found.  The file really is broken and
+# the checker really is run; only the checker is the standard library
+# rather than something installed.
+scene fix-error
+e '(shot-scene-fix-error-open)'     ; sleep 3; snap 3
+e '(shot-scene-fix-error-point)'    ; snap 2
+e '(shot-scene-fix-error)'          ; snap 2
+for _ in 1 2 3 4 5 6 7 8 9 10; do sleep 1; snap; done
+gif
+
+# 5. Asking about the region and being answered where the code is.
+scene inline
+e '(shot-scene-send-region-point)'  ; snap
+e '(shot-scene-send-region-mark)'   ; snap
+e '(shot-scene-send-region-extend)' ; snap
+e '(shot-scene-send-region-extend)' ; snap
+e '(shot-scene-send-region-extend)' ; snap 2
+e '(shot-scene-inline-sequence)'
+for _ in $(seq 1 8); do sleep 0.5; snap; done
+for _ in $(seq 1 12); do sleep 1; snap; done
+gif
+
+# 6. Rewriting the region, and accepting what comes back.
+scene rewrite
+e '(shot-scene-send-region-point)'  ; snap
+e '(shot-scene-send-region-mark)'   ; snap
+e '(shot-scene-send-region-extend)' ; snap
+e '(shot-scene-send-region-extend)' ; snap
+e '(shot-scene-send-region-extend)' ; snap 2
+e '(shot-scene-rewrite-sequence)'
+for _ in $(seq 1 8); do sleep 0.5; snap; done
+for _ in $(seq 1 10); do sleep 1; snap; done
+e '(shot-scene-accept)'             ; sleep 1; snap 4
+gif
+
+# 7. Handing a session over to the terminal.  The CLI is the real one,
 # resuming a conversation recorded in the demo project, so this scene
 # needs `claude' and a recording it can find.
 e '(shot-scene-quit)'           ; sleep 1
