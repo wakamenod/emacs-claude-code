@@ -117,8 +117,14 @@ Those recordings are trees, not lists: editing, interrupting and resuming all
 grow branches. Abandoned branches are folded away, except that `/compact`
 starts a new root and is never treated as abandoned.
 
-The dashboard sees headless sessions too, because it reads the same files the
-CLI writes about itself under `~/.claude/sessions`.
+The dashboard lists the sessions **this Emacs runs**, and only those: it is
+read from the model, so it is always current and there is nothing to poll. A
+session another process runs cannot be answered or steered from here, and a
+conversation that is only a recording is not running at all; both are reached
+through `ecc-history-open` and `ecc-resume`, which offer every recording there
+is. The files the CLI writes about itself under `~/.claude/sessions` are read
+by `ecc-registry`, which is how ecc knows a session is still alive before
+resuming it.
 
 ## Config
 
