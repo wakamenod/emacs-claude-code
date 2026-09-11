@@ -3,7 +3,7 @@
 #
 #   scripts/docshots.sh [outdir]
 #
-# Writes menu.png, resume.png and switch.gif into
+# Writes the stills and the short animations the site points at into
 # docs/site/src/assets (or into the directory given).
 #
 # Opens a throwaway GUI Emacs, walks it through each scene and captures
@@ -230,6 +230,16 @@ if want capabilities; then
     gif
 fi
 
+if want sessions; then
+    # The dashboard and the tab line, over four sessions in four states.
+    # It replays fixtures, so it costs nothing; it is placed before the
+    # scenes that follow because it leaves a permission waiting, which
+    # `shot-scene-sessions-end' then answers.
+    e '(shot-scene-sessions)'     ; sleep 2; still "$outdir/tabs.png"
+    e '(shot-scene-dashboard)'    ; sleep 2; still "$outdir/dashboard.png"
+    e '(shot-scene-sessions-end)' ; sleep 1
+fi
+
 if want handover; then
     # 7. Handing a session over to the terminal.  The CLI is the real one,
     # resuming a conversation recorded in the demo project, so this scene
@@ -253,4 +263,4 @@ if want resume; then
 
 fi
 
-echo "wrote $outdir/switch.gif, $outdir/handover.gif, $outdir/menu.png and $outdir/resume.png"
+echo "wrote the pictures of ${SCENES:-every scene} into $outdir"

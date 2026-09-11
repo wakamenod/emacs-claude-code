@@ -17,6 +17,7 @@
 ;;   switch   two sessions, the picker, and the window changing hands
 ;;   menu     `ecc-menu' open over a session
 ;;   resume   the session picker of `ecc-resume', with an icon per state
+;;   sessions the tab line and the dashboard, over four sessions at once
 ;;
 ;; The recordings the resume picker offers are invented here.  The real
 ;; ones are the conversations of whoever runs this, and their titles and
@@ -610,6 +611,120 @@ picture rather than once at the start."
 (defun shot-scene-handover ()
   "Hand that session over to the terminal."
   (shot-later (lambda () (ecc-tui-open shot-handover))))
+
+;;;; The dashboard and the tab line
+
+;; Both pictures want the same thing: several sessions at once, each in a
+;; different state, so that a mark, a colour and a column can be read
+;; against one another.  Two of the four are replayed sessions that are
+;; already there; the other two are made here and taken away again by
+;; `shot-scene-sessions-end'.
+
+(defvar shot-waiting nil "The session left waiting for an answer.")
+(defvar shot-exited nil "The session whose CLI has stopped.")
+
+(defun shot-turn-prompt (session prompt)
+  "Put PROMPT on the last turn of SESSION.
+What was asked is the client's, not the stream's: the CLI is told the
+prompt and never says it back, so `ecc-model-begin-turn' is where a
+turn gets one and a replayed turn has none.  The dashboard has a column
+for it, so the prompt each fixture was really recorded with is written
+back here."
+  (when-let* ((turn (car (last (ecc-session-turns session)))))
+    (setf (ecc-turn-prompt turn) prompt)))
+
+(defun shot-scene-sessions ()
+  "Put four sessions into four states and show the tab line over them.
+`greet' is working, `notes' has nothing to do, a third is waiting for
+an answer and a fourth has stopped.  The states are set here rather
+than arrived at: a picture of a dashboard with one idle row in it says
+nothing about what the columns are for."
+  ;; The waiting one stops where its recording asks to write a file: the
+  ;; first eight messages are the turn up to the permission.
+  (setq shot-waiting (ecc-model-create-session :name "api"
+                                               :project-root shot-root))
+  (ecc-session-ensure-buffer shot-waiting)
+  (shot-play shot-waiting "tool-use-write" 1 8)
+  (setq shot-exited (ecc-model-create-session :name "docs"
+                                              :project-root shot-root))
+  (ecc-session-ensure-buffer shot-exited)
+  (shot-play shot-exited "basic-turn")
+  (ecc-model-set-state shot-exited 'exited)
+  ;; `sleep' is only there to be a live process: a session whose process
+  ;; has died is drawn as one that stopped, whatever its state says.
+  (setf (ecc-session-process shot-main) (start-process "shot-alive" nil "sleep" "600"))
+  (ecc-model-set-state shot-main 'running)
+  (ecc-model-set-state shot-other 'idle)
+  (shot-turn-prompt shot-main "Make greet return \"hello \" instead of \"hi \"")
+  (shot-turn-prompt shot-waiting "Write hello.txt with \"hi\" in it")
+  (shot-turn-prompt shot-other "Create two tasks, start the first and finish it")
+  (shot-turn-prompt shot-exited "Say hello from Emacs")
+  ;; Every session answered a moment ago, which makes every Updated cell
+  ;; say "just now"; spreading them out shows the column doing its work.
+  (setf (ecc-session-last-result-time shot-main) (current-time))
+  (setf (ecc-session-last-result-time shot-waiting)
+        (time-subtract (current-time) (* 4 60)))
+  (setf (ecc-session-last-result-time shot-other)
+        (time-subtract (current-time) (* 26 60)))
+  (setf (ecc-session-last-result-time shot-exited)
+        (time-subtract (current-time) (* 95 60)))
+  ;; The tab of a session waiting for an answer blinks, and a still
+  ;; taken on the dark beat shows it inverse-video -- which is the
+  ;; blink, not the colour the page is about.
+  (ecc-tab-blink-stop)
+  (setq ecc-tab--blink-phase nil)
+  (shot-show shot-main)
+  (ecc-tab--force-update)
+  (redisplay t))
+
+(defun shot-scene-dashboard ()
+  "Open the dashboard over those four sessions, filling the frame.
+The list is seven columns wide, and in the window `display-buffer'
+gives it beside a session everything after Project falls off the right
+edge -- which is most of what the picture is for."
+  ;; The seven columns and the gutter want more than the 112 the other
+  ;; scenes are framed at, and the height is cut to what four rows and
+  ;; the summary above them need, so that the list is the picture.  The frame is put back in the corner
+  ;; afterwards, because it grows to the right and would leave the screen.
+  (set-frame-size (selected-frame) 150 12)
+  (shot-place-frame-bottom-right)
+  (ecc-dashboard)
+  (when-let* ((window (get-buffer-window ecc-dashboard-buffer-name)))
+    (select-window window)
+    ;; A session window is a side window, and a side window refuses to
+    ;; become the only window unless its parameters are ignored.
+    (let ((ignore-window-parameters t))
+      (delete-other-windows))
+    (goto-char (point-min))
+    (ecc-dashboard--first-row))
+  (ecc-tab-blink-stop)
+  (setq ecc-tab--blink-phase nil)
+  (redisplay t))
+
+(defun shot-scene-sessions-end ()
+  "Answer what was left waiting and take the two invented sessions away.
+A scene runs to the end: a permission nobody answered goes on blinking,
+and every picture taken after it has a blinking corner."
+  (dolist (request (copy-sequence (ecc-session-pending shot-waiting)))
+    (ecc-perm-allow-request request))
+  ;; The session leaves the model first, so that the hook on the buffer
+  ;; -- which stops the CLI and forgets the session -- finds nothing left
+  ;; to do.
+  (dolist (session (list shot-waiting shot-exited))
+    (when session
+      (ecc-model-remove-session session)
+      (when (buffer-live-p (ecc-session-buffer session))
+        (kill-buffer (ecc-session-buffer session)))))
+  (setq shot-waiting nil shot-exited nil)
+  ;; The dashboard still widened the frame; the scenes after this one are
+  ;; framed the way `shot-setup-frame' left it.
+  (set-frame-size (selected-frame) 112 44)
+  (shot-place-frame-bottom-right)
+  (when-let* ((process (ecc-session-process shot-main)))
+    (when (process-live-p process) (delete-process process)))
+  (setf (ecc-session-process shot-main) nil)
+  (ecc-model-set-state shot-main 'idle)
+  (shot-show shot-main))
 
 (defun shot-setup-frame ()
   "Size and dress the frame, then write its geometry out for capture."
