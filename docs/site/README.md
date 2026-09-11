@@ -108,8 +108,12 @@ opens a throwaway GUI Emacs in the bottom right corner of the screen — the
 rest of the screen stays yours — walks it through a scene and captures the
 frame.
 
+What is captured is a rectangle of the screen, not the window, so leave that
+corner alone while it runs — a window of your own crossing it lands in the
+picture, and a frame that comes up empty stops the animation dead.
+
 Take one scene rather than all of them: taking all runs the real CLI four
-times and takes about five minutes.
+times and takes about five minutes, which is five minutes of that corner.
 
 ```
 SCENES="menu resume" scripts/docshots.sh
