@@ -190,7 +190,7 @@ A node that is waiting carries a keymap of its own, in force with point inside i
 These are keys the transcript leaves free; none of them gives an existing key a new
 meaning. Point is what selects the map, and point is easy to misjudge, so a letter that
 meant one thing a line earlier would fire the wrong command with no warning. `c` and `e`
-are on [Review](/emacs-claude-code/features/review/).
+are on [Review and plan mode](/emacs-claude-code/features/review/).
 
 A question is answered in a buffer of its own, opened with `RET`: `1`–`9` choose,
 `SPC` toggles an option of a question that takes several, `o` writes an answer of your

@@ -171,7 +171,7 @@ else, and Emacs is what touches the buffer.
 `D` opens every change of the session as one diff, `F` and `P` move to the
 Files and the Plan sections of the transcript, and `T` picks a turn to jump to.
 
-See [Review](/emacs-claude-code/features/review/).
+See [Review and plan mode](/emacs-claude-code/features/review/).
 
 ## Respond
 
