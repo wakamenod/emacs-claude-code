@@ -20,17 +20,26 @@
 ;;
 ;; The requests waiting for an answer come first, and a and d answer
 ;; them without leaving the list.
+;;
+;; What the list is drawn to show at a glance: the header line sums the
+;; sessions up and draws the rate limit they are closest to, the State
+;; column carries a mark and turns a spinner while a session works, the
+;; gutter marks what waits on the user (!) and what is on screen (▶),
+;; and a row that is doing nothing has its detail dimmed.
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'seq)
+(require 'hl-line)
 (require 'tabulated-list)
 (require 'ecc-core)
 (require 'ecc-protocol)
 (require 'ecc-model)
 (require 'ecc-proc)
 (require 'ecc-render)
+(require 'ecc-visual)
+(require 'ecc-hint)
 (require 'ecc-perm)
 (require 'ecc-answer)
 (require 'ecc-history)
@@ -102,6 +111,181 @@ it was built from are not, so the list is copied."
           (ta t)
           (t nil))))
 
+;;;; What a row says it is doing
+
+(defconst ecc-dashboard-state-marks
+  '((starting . ("◌" . ecc-dim-face))
+    (idle . ("○" . ecc-dim-face))
+    (compacting . ("⟲" . ecc-running-face))
+    (exited . ("✗" . ecc-error-face)))
+  "The mark and the face of each state, for the State column.
+`running' turns a spinner in place of a mark, and a session with a
+request waiting for an answer says so whatever its state is.")
+
+(defun ecc-dashboard--state-cell (entry)
+  "Return the State cell of ENTRY: a mark, and what the session is doing.
+What waits on the user comes first, because a session can be waiting
+for an answer while its state still says that it runs."
+  (let ((waiting (ecc-dashboard-entry-waiting entry))
+        (state (or (ecc-dashboard-entry-state entry) "")))
+    (cond
+     ((> waiting 0)
+      (propertize (format "⚠ waiting%s"
+                          (if (> waiting 1) (format " ×%d" waiting) ""))
+                  'face 'ecc-pending-face))
+     ((equal state "running")
+      (let ((frame (ecc-visual-spinner-string 'ecc-running-face)))
+        (concat (if (string-empty-p frame) "▶" frame)
+                (propertize " running" 'face 'ecc-running-face))))
+     (t
+      (let ((mark (alist-get (intern state) ecc-dashboard-state-marks)))
+        (propertize (format "%s %s" (or (car mark) "·") state)
+                    'face (or (cdr mark) 'ecc-dim-face)))))))
+
+(defun ecc-dashboard--quiet-p (entry)
+  "Return non-nil when ENTRY is neither working nor waiting on the user.
+The detail of such a row is dimmed, so that the few rows worth looking
+at are the ones that carry the colour."
+  (and (zerop (ecc-dashboard-entry-waiting entry))
+       (not (member (ecc-dashboard-entry-state entry) '("running" "compacting")))))
+
+(defun ecc-dashboard--detail (string quiet)
+  "Return STRING as a cell of secondary detail, dimmed when QUIET."
+  (if quiet (propertize string 'face 'ecc-dim-face) string))
+
+;;;; The spinner of the list
+
+;; One timer for the whole list: the State column of every running
+;; session turns the same frame, which `ecc-visual' counts.  It runs
+;; only while something runs and the list is on screen, and the tick
+;; stops it as soon as either stops being true.
+
+(defvar ecc-dashboard-spinner-interval 0.2
+  "Seconds between two frames of the spinner in the State column.
+Slower than `ecc-visual-spinner-interval': the whole list is drawn
+again at every frame, and what the spinner has to say here is only
+that something is moving.")
+
+(defvar ecc-dashboard--spinner-timer nil
+  "The timer turning the spinner of the list, or nil.")
+
+(defun ecc-dashboard--running-p ()
+  "Return non-nil when a session of this Emacs is working."
+  (seq-some (lambda (session) (eq (ecc-session-state session) 'running))
+            (ecc-model-sessions)))
+
+(defun ecc-dashboard--spinner-stop ()
+  "Stop the spinner of the list."
+  (when ecc-dashboard--spinner-timer
+    (cancel-timer ecc-dashboard--spinner-timer)
+    (setq ecc-dashboard--spinner-timer nil)))
+
+(defun ecc-dashboard--spinner-update ()
+  "Turn the spinner while something runs where it can be seen."
+  (if (and ecc-visual-enable-spinner
+           (ecc-dashboard--running-p)
+           (get-buffer-window ecc-dashboard-buffer-name t))
+      (unless ecc-dashboard--spinner-timer
+        (setq ecc-dashboard--spinner-timer
+              (run-at-time ecc-dashboard-spinner-interval
+                           ecc-dashboard-spinner-interval
+                           #'ecc-dashboard--spinner-tick)))
+    (ecc-dashboard--spinner-stop)))
+
+(defun ecc-dashboard--spinner-tick ()
+  "Turn the spinner one frame, or stop when there is nothing to turn.
+A list nobody is looking at is not worth a timer."
+  (if (and (get-buffer-window ecc-dashboard-buffer-name t)
+           (ecc-dashboard--running-p))
+      (progn (ecc-visual-spinner-advance)
+             (ecc-dashboard-redraw))
+    (ecc-dashboard--spinner-stop)))
+
+;;;; The summary above the list
+
+(defun ecc-dashboard--limit-cell (entries)
+  "Return the rate limit the sessions of ENTRIES are closest to, as a bar.
+Nobody is asked anything: the CLI tells a session what is left of its
+limits, and the highest of what the sessions were told is what is
+drawn.  Nil when none of them has been told yet."
+  (when-let* ((worst (car (sort (delq nil
+                                      (mapcar
+                                       (lambda (entry)
+                                         (ecc-hint-rate-limit-max
+                                          (ecc-dashboard-entry-session entry)))
+                                       entries))
+                                #'>))))
+    (let ((percent (* 100 worst))
+          (ecc-usage-bar-width 10))
+      (concat (ecc-usage--bar percent)
+              (propertize (format " %d%%" (round percent))
+                          'face (ecc-usage--percent-face percent nil))))))
+
+(defun ecc-dashboard--summary (entries)
+  "Return the line drawn above the list, summing ENTRIES up.
+The counts come first, then what the sessions have cost, then the rate
+limit they are closest to.  A count of zero is left out: the line says
+what there is, not what there is not."
+  (if (null entries)
+      (propertize " No session yet — + starts one" 'face 'ecc-dim-face)
+    (let ((waiting 0) (running 0) (quiet 0) (cost 0))
+      (dolist (entry entries)
+        (cond ((> (ecc-dashboard-entry-waiting entry) 0) (cl-incf waiting))
+              ((member (ecc-dashboard-entry-state entry) '("running" "compacting"))
+               (cl-incf running))
+              (t (cl-incf quiet)))
+        (when (numberp (ecc-dashboard-entry-cost entry))
+          (cl-incf cost (ecc-dashboard-entry-cost entry))))
+      (concat
+       " "
+       (string-join
+        (delq nil
+              (list
+               (when (> waiting 0)
+                 (propertize (format "⚠ %d waiting" waiting)
+                             'face 'ecc-pending-face))
+               (when (> running 0)
+                 (propertize (format "▶ %d running" running)
+                             'face 'ecc-running-face))
+               (when (> quiet 0)
+                 (propertize (format "○ %d idle" quiet) 'face 'ecc-dim-face))
+               (when (> cost 0)
+                 (propertize (format "$%.2f" cost) 'face 'ecc-dim-face))
+               (ecc-dashboard--limit-cell entries)))
+        "   ")))))
+
+(defun ecc-dashboard--header-line ()
+  "Return the summary of the list, for `header-line-format\='."
+  (ecc--mode-line-escape (ecc-dashboard--summary (ecc-dashboard-entries))))
+
+;;;; The gutter
+
+(defun ecc-dashboard--shown-p (session)
+  "Return non-nil when a window somewhere shows the buffer of SESSION."
+  (let ((buffer (ecc-session-buffer session)))
+    (and (buffer-live-p buffer) (get-buffer-window buffer t) t)))
+
+(defun ecc-dashboard--tag (entry)
+  "Return the mark the gutter of ENTRY carries, or nil for none.
+A session waiting for an answer is marked before one that is merely on
+screen: the gutter has room for one mark, and that is the one to spend
+it on."
+  (cond ((> (ecc-dashboard-entry-waiting entry) 0)
+         (propertize "!" 'face 'ecc-pending-face))
+        ((ecc-dashboard--shown-p (ecc-dashboard-entry-session entry))
+         (propertize "▶" 'face 'ecc-running-face))))
+
+(defun ecc-dashboard--tag-rows ()
+  "Put the mark of every row in the gutter `tabulated-list-padding' leaves."
+  (save-excursion
+    (goto-char (point-min))
+    (while (not (eobp))
+      (let ((entry (tabulated-list-get-id)))
+        (when (ecc-dashboard-entry-p entry)
+          (when-let* ((tag (ecc-dashboard--tag entry)))
+            (tabulated-list-put-tag tag))))
+      (forward-line 1))))
+
 ;;;; Drawing
 
 (defun ecc-dashboard--project-cell (cwd)
@@ -115,20 +299,36 @@ project from another; the whole path is in the tooltip."
 
 (defun ecc-dashboard--row (entry)
   "Return the `tabulated-list-entries' row of ENTRY."
-  (list entry
-        (vector
-         (ecc--truncate (or (ecc-dashboard-entry-name entry) "") 24)
-         (let ((state (or (ecc-dashboard-entry-state entry) "")))
-           (if (> (ecc-dashboard-entry-waiting entry) 0)
-               (propertize state 'face 'ecc-pending-face)
-             state))
-         (ecc-dashboard--project-cell (ecc-dashboard-entry-cwd entry))
-         (or (ecc-dashboard-entry-model entry) "")
-         (ecc--truncate (or (ecc-dashboard-entry-prompt entry) "") 60)
-         (ecc--session-time-label (ecc-dashboard-entry-time entry))
-         (if (ecc-dashboard-entry-cost entry)
-             (format "$%.2f" (ecc-dashboard-entry-cost entry))
-           ""))))
+  (let ((quiet (ecc-dashboard--quiet-p entry)))
+    (list entry
+          (vector
+           (ecc--truncate (or (ecc-dashboard-entry-name entry) "") 24)
+           (ecc-dashboard--state-cell entry)
+           (ecc-dashboard--detail
+            (ecc-dashboard--project-cell (ecc-dashboard-entry-cwd entry)) quiet)
+           (ecc-dashboard--detail (or (ecc-dashboard-entry-model entry) "") quiet)
+           (ecc-dashboard--detail
+            (ecc--truncate (or (ecc-dashboard-entry-prompt entry) "") 60) quiet)
+           (ecc-dashboard--detail
+            (ecc--session-time-label (ecc-dashboard-entry-time entry)) quiet)
+           (ecc-dashboard--detail
+            (if (ecc-dashboard-entry-cost entry)
+                (format "$%.2f" (ecc-dashboard-entry-cost entry))
+              "")
+            quiet)))))
+
+(defun ecc-dashboard--print (&optional remember)
+  "Draw the list, mark its gutter and see to the spinner.
+REMEMBER is passed to `tabulated-list-print'."
+  (tabulated-list-print remember)
+  (ecc-dashboard--tag-rows)
+  (ecc-dashboard--first-row)
+  (ecc-dashboard--spinner-update))
+
+(defun ecc-dashboard--first-row ()
+  "Move off the column header, which is a line of the buffer and holds no row."
+  (when (and (null (tabulated-list-get-id)) (not (eobp)))
+    (forward-line 1)))
 
 (defun ecc-dashboard--collect ()
   "Fill `tabulated-list-entries' for the dashboard."
@@ -447,9 +647,15 @@ which arrives with the first turn.\n"
   (setq tabulated-list-format [("Name" 24 t) ("State" 18 t)
                                ("Project" 20 t) ("Model" 8 t) ("Last prompt" 40 t)
                                ("Updated" 14 t) ("Cost" 8 t)])
-  (setq tabulated-list-padding 1)
+  ;; The header line carries the summary, so the column header is a
+  ;; line of the buffer; `ecc-dashboard--first-row' keeps point off it.
+  (setq tabulated-list-use-header-line nil)
+  (setq tabulated-list-padding 2)
   (setq tabulated-list-sort-key nil)
+  (setq header-line-format '(:eval (ecc-dashboard--header-line)))
+  (hl-line-mode 1)
   (add-hook 'tabulated-list-revert-hook #'ecc-dashboard--collect nil t)
+  (add-hook 'kill-buffer-hook #'ecc-dashboard--spinner-stop nil t)
   (tabulated-list-init-header))
 
 ;;;###autoload
@@ -461,8 +667,10 @@ which arrives with the first turn.\n"
       (unless (derived-mode-p 'ecc-dashboard-mode)
         (ecc-dashboard-mode))
       (ecc-dashboard--collect)
-      (tabulated-list-print t))
+      (ecc-dashboard--print t))
     (pop-to-buffer buffer)
+    ;; The spinner wants a window, and there is one only now.
+    (with-current-buffer buffer (ecc-dashboard--spinner-update))
     buffer))
 
 (defun ecc-dashboard-redraw ()
@@ -472,8 +680,9 @@ which arrives with the first turn.\n"
       (with-current-buffer buffer
         (let ((point (point)))
           (ecc-dashboard--collect)
-          (tabulated-list-print t)
-          (goto-char (min point (point-max))))))))
+          (ecc-dashboard--print t)
+          (goto-char (min point (point-max)))
+          (ecc-dashboard--first-row))))))
 
 (defun ecc-dashboard-refresh ()
   "Draw the dashboard again."

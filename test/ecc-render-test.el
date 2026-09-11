@@ -379,6 +379,40 @@ which one it was, not the red line of an error (2026-09-09)."
       (should (string-search "system/vcs_state_changed — git commit main" text))
       (should-not (string-search "unknown:" text)))))
 
+(ert-deftest ecc-render-test-long-system-note-is-summarised ()
+  "A note the CLI writes into the conversation is a heading of its first
+line and a folded body, the way a tool call is.  Invoking a Skill puts
+the whole of its instructions in as one such note, which used to be
+drawn entire (2026-09-11)."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "hello")
+    (ecc-dispatch
+     session
+     `((type . "user")
+       (message
+        . ((role . "user")
+           (content . ,(concat "Approach this as the design lead at a small"
+                               " studio known for their versatility.\n"
+                               "\n## Read the request first\n"
+                               "\nBOTTOM of the skill."))))))
+    (ecc-render-flush session)
+    (with-current-buffer (ecc-session-buffer session)
+      (let ((note (seq-find (lambda (id)
+                              (let ((node (ecc-model-node session id)))
+                                (and node (eq (ecc-node-type node) 'system))))
+                            (ecc-render-block-ids))))
+        (should note)
+        (goto-char (car (ecc-render-node-bounds note)))
+        (let ((line (buffer-substring-no-properties (line-beginning-position)
+                                                    (line-end-position))))
+          (should (string-search "Approach this as the design lead" line))
+          (should (string-suffix-p "…" line))
+          (should-not (string-search "BOTTOM" line)))
+        ;; The rest of it is drawn, but folded away under the heading.
+        (should (ecc-render-node-hidden-p note))
+        (should (string-search "BOTTOM" (ecc-test-buffer-string)))))))
+
 ;;;; Cost of drawing
 
 (ert-deftest ecc-render-test-streaming-recording-is-fast ()
