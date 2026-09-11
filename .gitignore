@@ -13,6 +13,11 @@
 # Personal Claude Code settings; .claude/settings.json is the shared one
 /.claude/settings.local.json
 
+# Worktrees Claude Code checks out here.  They are checkouts of this very
+# repository, so `git clean' skips them as repositories of their own even
+# with -x; only -ff takes one away, which is as true without this line.
+/.claude/worktrees/
+
 # Specification documents, kept locally but out of the repository.
 # Named one by one so that the documentation site can live under /docs/.
 # These five have nothing to do with docs/site/; do not tidy them into a
