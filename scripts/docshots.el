@@ -132,9 +132,14 @@ FROM and TO, 1-based and inclusive, narrow it to part of the recording."
 The session buffer is narrower than the frame, so a frame wide enough
 for the menu would otherwise be half empty; and the source beside it is
 what a session is actually looked at next to."
-  ;; A scene before this one may have left the side windows ecc puts a
-  ;; dashboard or a diff in, and a side window refuses to become the
-  ;; only window unless its parameters are ignored.
+  ;; A scene before this one may have left the point somewhere that is
+  ;; not an ordinary window -- a minibuffer, the child frame the
+  ;; completion list is drawn in -- and window commands run from there
+  ;; fail rather than act on the frame.
+  (select-window (frame-first-window (selected-frame)))
+  ;; It may also have left the side windows ecc puts a dashboard or a
+  ;; diff in, and a side window refuses to become the only window
+  ;; unless its parameters are ignored.
   (let ((ignore-window-parameters t))
     (delete-other-windows))
   (find-file shot-file)
@@ -170,6 +175,16 @@ what a session is actually looked at next to."
   "Say that only `shot-elsewhere-id' is running in another process."
   (and (equal session-id shot-elsewhere-id)
        '((pid . 4271) (sessionId . "8f2c1a64-elsewhere"))))
+
+;;;; The hand-off
+
+(defconst shot-handover-id "7c3d9e21-4b5a-4f18-9c62-1d0e8a7f5b34"
+  "The conversation the hand-off scene carries into the terminal.
+`ecc-tui-open' runs the interactive CLI with --resume, so this has to
+be a conversation the CLI can really find: the wrapper records it in
+the demo project the first time it is needed, and it stays there.")
+
+(defvar shot-handover nil "The session read back from that recording.")
 
 ;;;; The scenes the wrapper calls
 
@@ -211,8 +226,8 @@ transient.  `execute-kbd-macro' there quits; leaving the events on
   (shot-show shot-main)
   (shot-later (lambda () (call-interactively #'ecc-menu))))
 
-(defun shot-scene-menu-quit ()
-  "Close the menu again."
+(defun shot-scene-quit ()
+  "Close whatever the last scene left open -- a menu, a picker."
   (shot-keys "C-g"))
 
 (defun shot-scene-resume ()
@@ -280,6 +295,17 @@ picture rather than once at the start."
                       (- (or (cdr size) (frame-pixel-height)) title-bar)
                       (frame-width) (frame-height))
               "\n"))))
+
+(defun shot-scene-handover-start ()
+  "Read the recorded conversation back and show it, as a session would be."
+  (setq shot-handover (ecc-history-session shot-handover-id))
+  (ecc-session-ensure-buffer shot-handover)
+  (ecc-render-refresh shot-handover)
+  (shot-show shot-handover))
+
+(defun shot-scene-handover ()
+  "Hand that session over to the terminal."
+  (shot-later (lambda () (ecc-tui-open shot-handover))))
 
 (defun shot-setup-frame ()
   "Size and dress the frame, then write its geometry out for capture."

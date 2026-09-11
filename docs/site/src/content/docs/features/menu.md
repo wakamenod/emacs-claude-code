@@ -109,7 +109,11 @@ Interrupts the running turn. What has already been done is kept.
 
 ### `t` — Hand over to the terminal
 
-Continues the conversation in the terminal client.
+Continues the conversation in the terminal client. The terminal is
+[ghostel](https://github.com/dakra/ghostel), which draws the CLI's full screen
+interface in an Emacs buffer, so this stays inside Emacs.
+
+![A session handed over: the CLI's own interface takes the window, with the conversation resumed](../../../assets/handover.gif)
 
 The running turn is interrupted and the process Emacs started is stopped
 before the terminal resumes the conversation, because two processes on one
