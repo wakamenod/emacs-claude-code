@@ -239,6 +239,12 @@ no \\`C-c C-<letter>' free goes to `ecc-menu' rather than taking one.")
     (define-key map (kbd "3") #'ecc-chat-show-level-3)
     (define-key map (kbd "4") #'ecc-chat-show-level-4)
     (define-key map (kbd "RET") #'ecc-session-visit)
+    ;; A link is drawn with `mouse-face\=' and nothing else, so
+    ;; `follow-link\=' reading that property is what keeps mouse-1 from
+    ;; following anywhere a link was not drawn.  No link carries a keymap
+    ;; of its own: these two are the whole of the mouse side.
+    (define-key map [mouse-2] #'ecc-chat-follow-link)
+    (define-key map [follow-link] 'mouse-face)
     (define-key map (kbd "SPC") #'scroll-up-command)
     (define-key map (kbd "DEL") #'scroll-down-command)
     (define-key map (kbd "i") #'ecc-chat-goto-prompt)
@@ -814,6 +820,14 @@ The Files and Tasks rows are drawn without a node and give nil."
 (defun ecc-chat-heading-at-point ()
   "Return the id of the heading whose line the point is on, or nil."
   (get-text-property (line-beginning-position) 'ecc-heading))
+
+(defun ecc-chat-follow-link (event)
+  "Open what was clicked on in the transcript.
+The point goes where EVENT was, and `ecc-session-visit\=' decides what
+is there, so a click and a RET do the one thing."
+  (interactive "e")
+  (mouse-set-point event)
+  (ecc-session-visit))
 
 ;;;; Folding
 

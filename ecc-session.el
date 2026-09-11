@@ -110,16 +110,24 @@ not its buffer, so killing it does nothing."
   (pop-to-buffer (ecc--log-buffer (ecc-session-name (ecc-session-at-point)))))
 
 (defun ecc-session-visit ()
-  "Open the thing at point: a file, an agent transcript or a detail buffer.
+  "Open the thing at point: a URL, a file, an agent transcript or a buffer.
 A question or a plan that is still waiting opens the buffer it is
-answered in."
+answered in.
+
+A URL comes first, and before the node the point is in: the point is
+only on one where a link was drawn, which is narrow enough to say what
+RET does there without a rule of its own.  It is the same key that
+follows a link everywhere else in Emacs, and the same one the transcript
+already opens things with."
   (interactive)
   (let* ((session (ecc-session-at-point))
          (node (ecc-chat-node-at-point))
+         (url (ecc-markdown-url-at-point))
          (path (or (ecc-chat-file-at-point) (ecc-chat-plan-file-at-point)))
          (request (and node (ecc-model-node-get node 'request)))
          (pending (and request (memq request (ecc-session-pending session)))))
     (cond
+     (url (browse-url url))
      (path (find-file-other-window path))
      ((null node) (user-error "Nothing to show here"))
      ((eq (ecc-node-type node) 'agent) (ecc-session-show-agent session node))
