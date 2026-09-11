@@ -11,12 +11,6 @@ its own as a text property, so single letters act on it. The prompt has no such 
 and obeys the mode map, which binds only `RET`, `TAB`, movement keys and keys under
 `C-c C-`, so a letter stays a letter.
 
-:::note[Why there is no `C-c <letter>` here]
-The Emacs Lisp manual reserves `C-c <letter>` for users and says it is the only space
-reserved for them, so a mode that takes one blocks the only keys its user is entitled to.
-A command that finds no `C-c C-<letter>` free goes to the menu instead.
-:::
-
 ## The prompt region
 
 ### Writing and sending
