@@ -11,7 +11,7 @@ An Emacs client for the Claude Code CLI. Conversations run directly inside ordin
 
 ![A session: a prompt is sent, the Edit is allowed, and the source buffer on the left picks up the change](docs/images/session.gif)
 
-**Documentation:** <https://wakamenod.github.io/emacs-claude-code/> *(in progress)*
+**Documentation:** <https://wakamenod.github.io/emacs-claude-code/>
 
 ## Overview
 
@@ -28,11 +28,11 @@ Because the transcript is standard buffer text, you can use regular Emacs workfl
 
 ### Key Features
 
-- **Diff reviews:** Inspect all changes made during a session in a single `diff-mode` buffer. Add inline comments to hunks and submit them as a single prompt.
-- **Interactive edits:** Review and modify proposed file edits before approving them.
-- **Plan mode:** Work through proposed execution plans in a writable buffer.
-- **Global access:** Approve or deny pending tool requests from any buffer.
-- **Session management:** Manage multiple concurrent sessions from a dashboard.
+- **[Diff reviews](https://wakamenod.github.io/emacs-claude-code/features/review/):** Inspect all changes made during a session in a single `diff-mode` buffer. Add inline comments to hunks and submit them as a single prompt.
+- **[Interactive edits](https://wakamenod.github.io/emacs-claude-code/features/review/#reviewing-a-proposal-before-it-is-applied):** Review and modify proposed file edits before approving them.
+- **[Plan mode](https://wakamenod.github.io/emacs-claude-code/features/review/#plan-mode):** Work through proposed execution plans in a writable buffer.
+- **[Global access](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/):** Approve or deny pending tool requests from any buffer.
+- **[Session management](https://wakamenod.github.io/emacs-claude-code/features/sessions/):** Manage multiple concurrent sessions from a dashboard.
 - **Safe defaults:** Permission prompts default to deny. The built-in loopback MCP server is disabled by default, and evaluating Elisp requires explicit opt-in.
 
 ## Requirements
@@ -106,27 +106,15 @@ git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/em
 (use-package ecc
   :ensure t
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest)
-  ;; `ecc-global-map' allows answering prompts from any buffer.
+  ;; `ecc-global-map' lets you respond to pending requests from any buffer.
   ;; `:bind-keymap' defers loading ecc until the prefix is pressed.
   :bind-keymap ("C-c c" . ecc-global-map)
-  ;; Optional dedicated shortcuts for frequent commands:
-  :bind (("C-c C-'" . ecc-menu)
-         ("C-c C-v" . ecc-start))
-  :config
-  (setq ecc-chat-text-width 100)      ; Transcript width in columns
-  (setq ecc-notify-level 'pulse)      ; nil, 'message, 'pulse, or 'desktop
-  (setq ecc-permission-mode nil)      ; nil keeps the CLI default
-
-  ;; Set to t to make RET send messages (like the CLI).
-  ;; When nil, RET inserts a newline and C-c C-c sends.
-  (setq ecc-chat-return-sends nil)
-
-  ;; Loopback MCP server (exposes xref, imenu, tree-sitter, project, diagnostics).
-  ;; Disabled by default.
-  ;; (setq ecc-mcp-enabled t)
-  ;; Elisp evaluation tool requires separate activation:
-  ;; (setq ecc-mcp-enable-execute-code t)
-  )
+  :custom
+  (ecc-permission-mode "auto")            ; nil keeps the CLI default
+  (ecc-notify-level 'pulse)               ; nil, 'message, 'pulse, or 'desktop
+  (ecc-usage-display 'posframe)           ; needs posframe; 'window otherwise
+  (ecc-btw-display 'posframe)
+  (ecc-prompt-suggestions-enabled t))
 ```
 
 For all other settings, run `M-x customize-group RET ecc` or check the [configuration reference](https://wakamenod.github.io/emacs-claude-code/reference/configuration/).
@@ -174,7 +162,10 @@ Accessible from any buffer:
 | `C-c C-a` / `C-c C-d` | Allow / Deny tool permission |
 | `C-c ?` | Open transient menu |
 
-See the [key binding reference](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/) for full listings.
+For prompt and transcript keybindings, see
+[Prompt and transcript](https://wakamenod.github.io/emacs-claude-code/features/prompt/).
+For global keybindings accessible from any buffer, see the
+[keybindings reference](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/).
 
 ## Acknowledgements
 
