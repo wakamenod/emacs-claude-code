@@ -1,0 +1,66 @@
+name: release
+
+# A tag is the release.  This runs on the tag alone, so that the one thing
+# a release can get silently wrong -- a Version header left behind, which
+# `package-vc-install' then reports as the old version -- cannot reach
+# anybody.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The tag to check
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: purcell/setup-emacs@master
+        with:
+          version: '30.1'
+
+      # The Version header of ecc.el is what package.el reads, and the tag
+      # is what everybody else reads.  They have to be the same number.
+      - name: version
+        run: |
+          tag='${{ github.event.inputs.tag || github.ref_name }}'
+          header=$(sed -n 's/^;; Version: *//p' ecc.el)
+          echo "tag=$tag header=$header"
+          if [ "v$header" != "$tag" ]; then
+            echo "::error::ecc.el says $header, the tag says $tag"
+            exit 1
+          fi
+          if ! grep -q "^## \[$header\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no section for $header"
+            exit 1
+          fi
+
+      - name: test
+        run: make test ELPA=$PWD/.elpa
+
+      # The notes are the section of CHANGELOG.md for this version: from
+      # its heading to the next one.
+      - name: notes
+        run: |
+          header=$(sed -n 's/^;; Version: *//p' ecc.el)
+          awk -v v="## \\[$header\\]" '
+            $0 ~ v {found = 1; next}
+            found && /^## / {exit}
+            found {print}
+          ' CHANGELOG.md > notes.md
+          cat notes.md
+
+      - name: publish
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "ecc $GITHUB_REF_NAME" --notes-file notes.md
