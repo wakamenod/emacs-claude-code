@@ -20,9 +20,13 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # A dispatch run works on the tag it was given, not on main: the
+      # version it checks and the notes it publishes are the ones that were
+      # released, whatever main has moved on to since.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - uses: purcell/setup-emacs@master
         with:
@@ -48,19 +52,33 @@ jobs:
         run: make test ELPA=$PWD/.elpa
 
       # The notes are the section of CHANGELOG.md for this version: from
-      # its heading to the next one.
+      # its heading to the next one.  The heading is matched with index()
+      # rather than as a regular expression: awk -v works the escapes out
+      # of its value, so a "\\[" written here reaches the program as a "[",
+      # the brackets become a character class and the section is silently
+      # empty -- which is how v0.1.0 was published with no notes at all
+      # (2026-09-12).
       - name: notes
         run: |
           header=$(sed -n 's/^;; Version: *//p' ecc.el)
-          awk -v v="## \\[$header\\]" '
-            $0 ~ v {found = 1; next}
+          awk -v h="## [$header]" '
+            index($0, h) == 1 {found = 1; next}
             found && /^## / {exit}
             found {print}
           ' CHANGELOG.md > notes.md
           cat notes.md
+          test -s notes.md || { echo "::error::no notes for $header in CHANGELOG.md"; exit 1; }
 
+      # Create the release, or set the notes of one that is already there:
+      # a dispatch run is how a release published with the wrong notes is
+      # repaired, and it has to be able to finish the job.
       - name: publish
-        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --title "ecc $GITHUB_REF_NAME" --notes-file notes.md
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "ecc $TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" --title "ecc $TAG" --notes-file notes.md
+          fi
