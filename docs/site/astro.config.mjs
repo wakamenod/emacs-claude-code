@@ -43,6 +43,11 @@ export default defineConfig({
 
 			sidebar: [
 				{
+					label: 'Start here',
+					translations: { ja: 'はじめに' },
+					items: [{ autogenerate: { directory: 'start' } }],
+				},
+				{
 					label: 'Understanding ecc',
 					translations: { ja: '仕組み' },
 					items: [{ autogenerate: { directory: 'explanation' } }],

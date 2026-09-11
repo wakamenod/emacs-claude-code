@@ -7,15 +7,15 @@ hero:
   # to them the way it does for sidebar and slug links.
   tagline: An Emacs client for the Claude Code CLI. Conversations run directly inside ordinary Emacs buffers.
   actions:
-    - text: Command reference
-      link: /emacs-claude-code/reference/commands/
+    - text: Get started
+      link: /emacs-claude-code/start/overview/
       icon: right-arrow
-    - text: Configuration reference
-      link: /emacs-claude-code/reference/configuration/
+    - text: How it works
+      link: /emacs-claude-code/explanation/how-it-works/
       icon: right-arrow
       variant: minimal
-    - text: Key binding reference
-      link: /emacs-claude-code/reference/key-bindings/
+    - text: Reference
+      link: /emacs-claude-code/reference/commands/
       icon: right-arrow
       variant: minimal
     - text: View on GitHub
@@ -24,7 +24,12 @@ hero:
       variant: minimal
 ---
 
-The reference section is complete: every command, every setting and every key
-ecc binds. The guides that walk through a workflow are still to be written; for
-those, the [README](https://github.com/wakamenod/emacs-claude-code) remains the
-better introduction.
+ecc runs `claude` headless, talks to it over pipes in its stream-json protocol,
+and draws the conversation as ordinary Emacs buffer text — no terminal
+emulator. Permission requests, diffs and plans are answered with a keystroke,
+from the transcript or from whatever buffer you happen to be editing.
+
+Start with [what ecc is](/emacs-claude-code/start/overview/), then
+[install it](/emacs-claude-code/start/installation/) and
+[work through a session](/emacs-claude-code/start/first-session/). The
+reference section lists every command, setting and key.

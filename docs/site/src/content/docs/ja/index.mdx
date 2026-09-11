@@ -7,15 +7,15 @@ hero:
   # to them the way it does for sidebar and slug links.
   tagline: Claude Code CLI の Emacs クライアント。会話は普通の Emacs バッファの中で進みます。
   actions:
-    - text: コマンドリファレンス
-      link: /emacs-claude-code/ja/reference/commands/
+    - text: はじめる
+      link: /emacs-claude-code/ja/start/overview/
       icon: right-arrow
-    - text: 設定リファレンス
-      link: /emacs-claude-code/ja/reference/configuration/
+    - text: 仕組み
+      link: /emacs-claude-code/ja/explanation/how-it-works/
       icon: right-arrow
       variant: minimal
-    - text: キーバインドリファレンス
-      link: /emacs-claude-code/ja/reference/key-bindings/
+    - text: リファレンス
+      link: /emacs-claude-code/ja/reference/commands/
       icon: right-arrow
       variant: minimal
     - text: GitHub で見る
@@ -24,7 +24,12 @@ hero:
       variant: minimal
 ---
 
-リファレンスは揃っています。ecc のコマンド、設定、キーバインドの全件です。
-ワークフローをたどるガイドはこれからで、そちらについては
-[README](https://github.com/wakamenod/emacs-claude-code/blob/main/README.ja.md)
-のほうがよい入り口になっています。
+ecc は `claude` をヘッドレスで動かし、その stream-json プロトコルでパイプ越しに
+やりとりし、会話を普通の Emacs バッファのテキストとして描きます。ターミナルエミュ
+レータは使いません。権限リクエストも diff もプランも、トランスクリプトから、ある
+いは今編集しているどのバッファからでも、キー一つで答えられます。
+
+まず [ecc とは](/emacs-claude-code/ja/start/overview/)を読み、
+[インストール](/emacs-claude-code/ja/start/installation/)して、
+[セッションを一つ通してみて](/emacs-claude-code/ja/start/first-session/)ください。
+リファレンスにはコマンド、設定、キーの全件があります。
