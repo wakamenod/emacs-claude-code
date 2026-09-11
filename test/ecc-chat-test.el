@@ -49,6 +49,18 @@ calls in one step is what the depth ladder needs."
 
 ;;;; Folding
 
+(ert-deftest ecc-chat-test-no-plain-c-c-letter-bindings ()
+  "No keymap of a session buffer takes a \\`C-c <letter>' key.
+The Emacs Lisp manual reserves those for users, and they are the only
+keys reserved for them, so a mode that takes one blocks the only keys
+its user is entitled to.  A command with no \\`C-c C-<letter>' free
+belongs in `ecc-menu' instead."
+  (dolist (map (list ecc-chat-mode-map ecc-chat-transcript-map
+                     ecc-request-section-map ecc-file-section-map))
+    (dolist (letter (append (number-sequence ?a ?z) (number-sequence ?A ?Z)))
+      (let ((key (vconcat (kbd "C-c") (vector letter))))
+        (should-not (commandp (lookup-key map key)))))))
+
 (ert-deftest ecc-chat-test-toggle-folds-and-unfolds ()
   "TAB on a heading hides its body and shows it again; on the body it folds."
   (ecc-test-with-fake-session session

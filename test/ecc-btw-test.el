@@ -316,8 +316,10 @@ they would pass even if nothing ever registered."
                                (buffer-substring-no-properties (point-min)
                                                                (point-max))))))
     (should-not (ecc-test-sent-messages))
-    ;; And it is on a key of the prompt region.
-    (should (eq (lookup-key ecc-chat-mode-map (kbd "C-c b")) 'ecc-btw-show))))
+    ;; And it is on a key of the prompt region.  `C-c C-b\=', not
+    ;; `C-c b\=': `C-c <letter>\=' is reserved for the user.
+    (should (eq (lookup-key ecc-chat-mode-map (kbd "C-c C-b")) 'ecc-btw-show))
+    (should-not (lookup-key ecc-chat-mode-map (kbd "C-c b")))))
 
 ;;;; More than one session (CLAUDE.md: anything that spans sessions)
 

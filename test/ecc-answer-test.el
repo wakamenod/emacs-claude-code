@@ -121,8 +121,14 @@ The request of A is a Bash call and older; the one of B is a Write."
 (ert-deftest ecc-answer-test-global-map ()
   "The global keymap carries the answer-from-anywhere commands."
   (should (eq (lookup-key ecc-global-map (kbd "a")) #'ecc-answer-allow))
+  (should (eq (lookup-key ecc-global-map (kbd "d")) #'ecc-answer-deny))
   (should (eq (lookup-key ecc-global-map (kbd "n")) #'ecc-next-attention))
-  (should (eq (lookup-key ecc-global-map (kbd "4")) #'ecc-answer-option-4)))
+  (should (eq (lookup-key ecc-global-map (kbd "4")) #'ecc-answer-option-4))
+  ;; Dashboard is `b\=', not `D\=', because `d\=' belongs to deny and the
+  ;; menu spells dashboard the same way.
+  (should (eq (lookup-key ecc-global-map (kbd "b")) #'ecc-dashboard))
+  ;; The only way to the menu from a buffer that is not a session.
+  (should (eq (lookup-key ecc-global-map (kbd "?")) #'ecc-menu)))
 
 ;;;; The mode line
 

@@ -11,6 +11,7 @@
 (require 'ert)
 (require 'ecc-test-helpers)
 (require 'ecc-transient)
+(require 'ecc-answer)
 
 (ert-deftest ecc-transient-test-menu-is-a-command ()
   "Every menu is reachable with \\[execute-extended-command]."
@@ -18,6 +19,41 @@
   (should (commandp 'ecc-slash-menu))
   (should (commandp 'ecc-slash-command))
   (should (commandp 'ecc-customize)))
+
+(defun ecc-transient-test--menu-keys ()
+  "Return an alist of the key and command of every suffix of `ecc-menu'."
+  (let (out)
+    (letrec ((walk
+              (lambda (node)
+                (cond ((vectorp node) (mapc walk (append node nil)))
+                      ((and (consp node) (plist-member (cdr node) :key))
+                       (push (cons (plist-get (cdr node) :key)
+                                   (plist-get (cdr node) :command))
+                             out))
+                      ((consp node)
+                       (mapc (lambda (x)
+                               (when (or (vectorp x) (consp x)) (funcall walk x)))
+                             node))))))
+      (funcall walk (get 'ecc-menu 'transient--layout)))
+    (nreverse out)))
+
+(ert-deftest ecc-transient-test-menu-keys-are-unique ()
+  "A key opens one command in the menu."
+  (let ((keys (mapcar #'car (ecc-transient-test--menu-keys))))
+    (should (equal keys (seq-uniq keys)))))
+
+(ert-deftest ecc-transient-test-menu-mirrors-the-global-map ()
+  "Every key of `ecc-global-map' runs the same command in `ecc-menu'.
+One letter carries one meaning wherever it is pressed, so a command
+reachable both ways is reachable by the same key both ways.  `?' is the
+exception: it opens the menu, so the menu cannot hold it."
+  (let ((menu (ecc-transient-test--menu-keys)))
+    (map-keymap
+     (lambda (event command)
+       (let ((key (key-description (vector event))))
+         (unless (eq command 'ecc-menu)
+           (should (eq command (cdr (assoc key menu)))))))
+     ecc-global-map)))
 
 (ert-deftest ecc-transient-test-slash-suffixes ()
   "The submenu is built from the commands of the session."
