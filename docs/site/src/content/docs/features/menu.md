@@ -5,127 +5,100 @@ sidebar:
   order: 1
 ---
 
-`C-c ?` opens the menu in a session buffer. It is a
+`C-c ?` opens the menu. It is a
 [transient](https://magit.vc/manual/transient/), the kind of menu magit uses,
 and it lists every command in ecc.
 
 ![The transient menu open under a session, showing its six groups: Session, Send, Review, Respond, View and Config](../../../assets/menu.png)
 
-Each line shows a key and the command it runs. Pressing the key runs the
-command and closes the menu; `C-g` closes it without running anything. A line
-that starts with `-` is a switch: it is toggled on, stays on screen, and
-applies to the command run after it.
+Each line is a key and the command it runs; `C-g` closes the menu. A line
+starting with `-` is a switch, which applies to the command run after it.
 
-From a buffer that is not a session, the menu is `M-x ecc-menu`, or `?` in
+Outside a session buffer the menu is `M-x ecc-menu`, or `?` in
 [`ecc-global-map`](/emacs-claude-code/reference/key-bindings/#from-any-buffer).
-The Send group is meant to be used that way, from a source file. A key means
-the same in the menu as it does in the global map.
+A key means the same in both.
 
 :::note[Which session the menu acts on]
-The session of the current buffer. Failing that, in order: the session this
-buffer last talked to, the only session of this project, the only session on
-screen, the most recently used session. If none of those applies, the menu
-asks, and remembers the answer for that buffer.
+The session of the current buffer, or else the only session of this project,
+the only one on screen, or the most recently used. It asks only when none of
+those settles it, and remembers the answer for that buffer.
 :::
 
 ## Session
 
-Ten commands: starting a conversation, picking one up again, and moving the
-window.
-
 ### `c` — Start
 
 Starts a session in the project of the current buffer, named after that
-directory. Starting a second session in the same project asks for a name.
-
-`C-u c` asks for the directory and the name.
-
-`ecc-start` is autoloaded, so `M-x ecc-start` works before ecc is loaded.
+directory. A second session in the same project asks for a name; `C-u c` asks
+for the directory too.
 
 ### `r` — Resume
 
-Opens a submenu listing the conversations that can be picked up again.
+Lists the conversations that can be picked up again.
 
 ![The resume picker, listing five conversations, each with an icon for its state](../../../assets/resume.png)
-
-Each line begins with an icon for the state of the conversation:
 
 | Icon | State |
 |---|---|
 | ▶ | A session this Emacs is running |
 | ● | A session this Emacs holds whose process has stopped |
-| ◉ | A conversation another process is running — a terminal, another Emacs |
+| ◉ | A conversation another process is running |
 | ↺ | A conversation that is only a recording |
 
-After the icon come the name, when it was last worked in, and the working
-directory or, for a recording, the prompt it opened with. The sessions of this
-Emacs are listed first, then the recordings of the current project, most
-recently used first. When the project has no recordings, every recording is
-listed.
-
-The `-f` switch forks: a new conversation branches from the one picked instead
-of continuing it.
+Then the name, when it was last worked in, and the directory or, for a
+recording, its first prompt. The `-f` switch branches a new conversation from
+the one picked instead of continuing it.
 
 :::caution[Resuming a live session branches the conversation]
-Two processes resuming the same session id write into the same recording, and
-the conversation grows a second branch. The CLI has no lock against this. The
-◉ icon marks the conversations it applies to, and ecc asks before resuming
-one.
+Two processes on one session id write into the same recording, and the CLI has
+no lock against it. That is what ◉ marks; ecc asks before resuming one.
 :::
 
 ### `k` — Kill
 
-Stops the process, removes the session from the model, and kills its buffers.
-The recording is left on disk, so `r` still lists the conversation.
+Stops the process and kills the session's buffers. The recording stays on
+disk, so `r` still lists the conversation.
 
 ### `R` — Rename
 
-Renames the session and its buffers. The name is what the tab line, the mode
-line and the session pickers show.
+Renames the session and its buffers. The name is what the tabs, the mode line
+and the pickers show.
 
 ### `v` — Go to the prompt
 
-Shows the session's window and moves point to the prompt region.
+Shows the session's window and puts point in the prompt region.
 
 ### `w` — Hide or restore windows
 
-Hides the session windows of the current project, or shows them again if they
-are already hidden. `C-u w` applies to every project. A hidden session goes on
-running.
+Hides the session windows of this project, or shows them again. `C-u w`
+applies to every project. A hidden session goes on running.
 
 ### `S` — Switch this window to another session
 
-A session window carries a tab for every session ecc is running. `S` changes
-which of them the window shows, without going to the tab line for it.
+A session window carries a tab per session. `S` changes which one the window
+shows, in place.
 
 ![The session window changing from one session to another: the selected tab moves from greet to notes and the transcript is replaced](../../../assets/switch.gif)
 
-The window keeps its place; only what it shows changes. The window it changes
-is the current one when that belongs to ecc, and the main session window
-otherwise, so running `S` from your source code changes the transcript beside
-it.
+In a session buffer, `C-c C-t` is the same command.
 
 ### `i` — Interrupt
 
-Interrupts the running turn. What has already been done is kept.
+Interrupts the running turn. What is already done is kept.
 
 ### `t` — Hand over to the terminal
 
-Continues the conversation in the terminal client. The terminal is
-[ghostel](https://github.com/dakra/ghostel), which draws the CLI's full screen
-interface in an Emacs buffer, so this stays inside Emacs.
+Continues the conversation in [ghostel](https://github.com/dakra/ghostel),
+which draws the CLI's own interface in an Emacs buffer.
 
 ![A session handed over: the CLI's own interface takes the window, with the conversation resumed](../../../assets/handover.gif)
 
-The running turn is interrupted and the process Emacs started is stopped
-before the terminal resumes the conversation, because two processes on one
-session would branch the recording. While the terminal has the session, the
-transcript in Emacs follows it.
+The turn is interrupted and the process Emacs started is stopped before the
+terminal resumes the conversation, because two processes would branch the
+recording. The transcript follows the terminal while it has the session.
 
 ### `u` — Take it back
 
-Reads what the terminal added, then resumes the session headless in Emacs.
-
-If the terminal is still running, the session stays with it: resuming it now
-would branch the conversation. The hand-off is left in place, and the session
-comes back when the terminal exits.
+Reads what the terminal added, then resumes the session headless in Emacs. If
+the terminal is still running the session stays with it, and comes back when
+the terminal exits.
