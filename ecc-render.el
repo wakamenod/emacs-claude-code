@@ -1408,7 +1408,21 @@ follows in the dim face of something the CLI said rather than the model."
                                                             "?")))
                        (_ ""))))
       ('notice (ecc-render--system-notice-heading message))
-      (_ (or (ecc-model-node-get node 'text) (format "%s" kind))))))
+      (_ (if-let* ((text (ecc-model-node-get node 'text)))
+             (ecc--truncate text ecc-render-summary-width)
+           (format "%s" kind))))))
+
+(defun ecc-render--system-note-body (node)
+  "Return the text of the system NODE that its heading had to cut, or nil.
+A note the CLI writes into the conversation can be as long as a whole
+document: invoking a Skill puts its instructions in as one user text
+message, `isMeta' and all (confirmed 2026-09-11).  The heading takes
+the first `ecc-render-summary-width' characters of it, the way a Bash
+call is summarised by its command, and the rest waits under the fold."
+  (let ((text (ecc-model-node-get node 'text)))
+    (and (stringp text)
+         (> (length (ecc-render--one-line text)) ecc-render-summary-width)
+         text)))
 
 (defun ecc-render--system-notice-heading (message)
   "Return the heading of a system MESSAGE this version does not handle.
@@ -1455,6 +1469,13 @@ apart; the few whose shape is known say what happened as well."
                                       'face 'ecc-dim-face))
                   (concat pad "  "))
                  "\n")))
+      (when-let* ((text (ecc-render--system-note-body node)))
+        (ecc-render--insert-owned
+         node (1+ depth)
+         (lambda ()
+           (ecc-render--insert-lines
+            (ecc-render--clip text ecc-render-result-max-lines)
+            (concat pad "  ") 'ecc-dim-face))))
       (when-let* ((message (ecc-model-node-get node 'message)))
         (ecc-render--insert-owned
          node (1+ depth)
