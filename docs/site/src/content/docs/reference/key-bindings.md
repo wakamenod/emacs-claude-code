@@ -29,6 +29,12 @@ that stops for a permission does not make you go and find it first.
 
 | Key | Command | Action |
 |---|---|---|
+| `c` | `ecc-start` | Start a session in the project of this buffer |
+| `r` | `ecc-resume-menu` | Resume a session, forking the conversation or not |
+| `R` | `ecc-rename-session` | Rename a session and its buffers with it |
+| `v` | `ecc-show-session` | Bring the session back and land on its prompt |
+| `i` | `ecc-interrupt` | Interrupt the running turn |
+| `t` | `ecc-tui-open` | Hand the session over to the terminal |
 | `a` | `ecc-answer-allow` | Allow the oldest waiting request |
 | `d` | `ecc-answer-deny` | Deny the oldest waiting request, asking for a reason |
 | `1`–`4` | `ecc-answer-option-N` | Answer the oldest question with option N |
@@ -37,7 +43,20 @@ that stops for a permission does not make you go and find it first.
 | `b` | `ecc-dashboard` | Show the sessions this Emacs runs |
 | `D` | `ecc-review` | Open every change of the session as one diff |
 | `h` | `ecc-history-open` | Open a recorded conversation |
+| `U` | `ecc-usage` | Show what has been used and what the limits are |
 | `?` | `ecc-menu` | Open the menu |
+
+The menu is `?` here, so `C-c c ?` from anywhere. That is four keys for
+something opened often, and `ecc-menu` is a command like any other, so give it
+a key of its own as well:
+
+```elisp
+(use-package ecc
+  :bind ("C-c C-'" . ecc-menu))
+```
+
+`C-'` is a GUI key: a terminal cannot encode control with a punctuation mark,
+so on a terminal Emacs pick something a terminal can send, such as `C-c m`.
 
 Every key here means in the menu what it means here, so one letter carries
 one meaning wherever it is pressed. `?` is the exception, because it is what

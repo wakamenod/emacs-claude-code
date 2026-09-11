@@ -109,7 +109,11 @@ git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/em
   ;; `ecc-global-map' allows answering prompts from any buffer.
   ;; `:bind-keymap' defers loading ecc until the prefix is pressed.
   :bind-keymap ("C-c c" . ecc-global-map)
-  :bind ("C-c C-v" . ecc-start)
+  ;; The menu is `C-c c ?', which is a lot of keys for something opened
+  ;; often; a key of its own is shorter.  C-' is a GUI key: a terminal
+  ;; cannot send it, so bind something a terminal can there.
+  :bind (("C-c C-'" . ecc-menu)
+         ("C-c C-v" . ecc-start))
   :config
   (setq ecc-chat-text-width 100)      ; Transcript width in columns
   (setq ecc-notify-level 'pulse)      ; nil, 'message, 'pulse, or 'desktop
@@ -145,13 +149,22 @@ Usable from any buffer:
 
 | Key | Command | Action |
 |---|---|---|
+| `c` | `ecc-start` | Start a session |
+| `r` | `ecc-resume-menu` | Resume a session |
+| `R` | `ecc-rename-session` | Rename a session |
+| `v` | `ecc-show-session` | Go to the session prompt |
+| `i` | `ecc-interrupt` | Interrupt the running turn |
+| `t` | `ecc-tui-open` | Hand the session over to the terminal |
 | `a` | `ecc-answer-allow` | Allow oldest waiting request |
 | `d` | `ecc-answer-deny` | Deny oldest waiting request |
 | `1`–`4` | `ecc-answer-option-N` | Select response option N |
 | `n` | `ecc-next-attention` | Switch to waiting session |
 | `N` | `ecc-next-attention-in-project` | Switch to waiting session in current project |
-| `D` | `ecc-dashboard` | Open sessions dashboard |
+| `b` | `ecc-dashboard` | Open sessions dashboard |
+| `D` | `ecc-review` | Open every change as one diff |
 | `h` | `ecc-history-open` | Open past conversation |
+| `U` | `ecc-usage` | Show usage and limits |
+| `?` | `ecc-menu` | Open the command menu |
 
 ### Session Buffer
 

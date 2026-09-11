@@ -110,7 +110,11 @@ git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/em
   ;; `ecc-global-map' により、任意のバッファからプロンプトに応答可能
   ;; `:bind-keymap' により、プレフィックスキー入力時に初めて ecc がロードされる
   :bind-keymap ("C-c c" . ecc-global-map)
-  :bind ("C-c C-v" . ecc-start)
+  ;; メニューは `C-c c ?' でも開けるが、よく開くなら打鍵が多い。
+  ;; C-' は GUI 用のキーで、端末からは送れないので、端末で使う場合は
+  ;; 別のキーを割り当てること
+  :bind (("C-c C-'" . ecc-menu)
+         ("C-c C-v" . ecc-start))
   :config
   (setq ecc-chat-text-width 100)      ; 履歴表示の列幅
   (setq ecc-notify-level 'pulse)      ; nil, 'message, 'pulse, 'desktop
@@ -146,13 +150,22 @@ git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/em
 
 | キー | コマンド | 操作 |
 | --- | --- | --- |
+| `c` | `ecc-start` | セッションを開始 |
+| `r` | `ecc-resume-menu` | セッションを再開 |
+| `R` | `ecc-rename-session` | セッションの名前を変更 |
+| `v` | `ecc-show-session` | セッションのプロンプトへ移動 |
+| `i` | `ecc-interrupt` | 実行中のターンを中断 |
+| `t` | `ecc-tui-open` | セッションを端末へ引き渡す |
 | `a` | `ecc-answer-allow` | 最も古い待機中リクエストを許可 |
 | `d` | `ecc-answer-deny` | 最も古い待機中リクエストを拒否 |
 | `1`–`4` | `ecc-answer-option-N` | 選択肢 N を選んで応答 |
 | `n` | `ecc-next-attention` | 応答待ちのセッションへ切り替え |
 | `N` | `ecc-next-attention-in-project` | 現在のプロジェクト内で応答待ちのセッションへ切り替え |
-| `D` | `ecc-dashboard` | セッションダッシュボードを開く |
+| `b` | `ecc-dashboard` | セッションダッシュボードを開く |
+| `D` | `ecc-review` | セッション中の変更すべてを 1 つの diff として開く |
 | `h` | `ecc-history-open` | 過去の会話を開く |
+| `U` | `ecc-usage` | 使用量と上限を表示 |
+| `?` | `ecc-menu` | コマンドメニューを開く |
 
 ### セッションバッファ内
 
