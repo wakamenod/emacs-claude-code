@@ -219,6 +219,17 @@ if want rewrite; then
     gif
 fi
 
+if want capabilities; then
+    # What the session can do: the list the CLI reported in system/init.
+    scene capabilities
+    e '(shot-scene-capabilities)'                        ; sleep 1; snap 4
+    e '(shot-scene-capabilities-toggle "Slash commands")'; snap 3
+    e '(shot-scene-capabilities-toggle "Skills")'        ; snap 3
+    e '(shot-scene-capabilities-toggle "Agents")'        ; snap 3
+    e '(shot-scene-capabilities-toggle "Skills")'        ; snap 4
+    gif
+fi
+
 if want handover; then
     # 7. Handing a session over to the terminal.  The CLI is the real one,
     # resuming a conversation recorded in the demo project, so this scene

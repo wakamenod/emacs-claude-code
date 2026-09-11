@@ -50,6 +50,11 @@
 
 (load-theme 'modus-vivendi t)
 
+;; A warning opens a window of its own over the scene.  There should be
+;; none left, but a picture is not the place to find out.
+(setq native-comp-async-report-warnings-errors 'silent
+      warning-minimum-level :error)
+
 (setq ecc-render-debounce 0
       ecc-visual-enable-icons t
       ecc-visual-enable-spinner nil
@@ -320,6 +325,36 @@ The prefix argument is what makes `ecc-send-region' ask for one."
   "Ask for the marked code to be rewritten."
   (shot-script
    (shot-ask-sequence #'ecc-rewrite '("add a type " "hint"))))
+
+;;;; What a session can do
+
+(defun shot-capabilities-window ()
+  "Return the window the capabilities buffer is in, selecting it."
+  (let ((window (get-buffer-window ecc-capabilities-buffer-name)))
+    (when (window-live-p window)
+      (select-window window))
+    window))
+
+(defun shot-scene-capabilities ()
+  "Open the capabilities of the replayed session.
+The list is what the CLI reported in system/init, and the fixture
+carries a real one, so this scene needs no process."
+  (shot-show shot-main)
+  (ecc-capabilities-show shot-main)
+  (shot-capabilities-window)
+  (goto-char (point-min))
+  (redisplay t))
+
+(defun shot-scene-capabilities-toggle (heading)
+  "Put the point on HEADING and fold or unfold it.
+The groups are found by name rather than by counting lines, because
+folding one moves every line under it."
+  (with-selected-window (shot-capabilities-window)
+    (goto-char (point-min))
+    (when (search-forward heading nil t)
+      (beginning-of-line)
+      (call-interactively #'ecc-capabilities-toggle))
+    (redisplay t)))
 
 ;;;; Fixing the error at point
 
