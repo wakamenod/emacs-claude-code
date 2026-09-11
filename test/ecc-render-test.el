@@ -85,6 +85,23 @@ NAME, PROMPT and ANSWERS are as there."
           (should (string-search "○ idle" header))
           (should-not (string-search "haiku" header)))))))
 
+(ert-deftest ecc-render-test-turn-end-line-answers-the-transcript-keys ()
+  "The figures closing a turn carry the transcript keymap.
+They used to carry a face and nothing else, so point sitting on them
+killed the whole transcript keymap -- not only `i\=', but `n\=', `p\=',
+TAB, `a\=', `d\=', `q\=' and `g\=' too."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--replay session "basic-turn" "hello")
+    (with-current-buffer (ecc-session-buffer session)
+      (let ((gaps 0))
+        (goto-char (point-min))
+        (while (< (point) ecc-render--prompt-start)
+          (unless (get-text-property (point) 'keymap)
+            (setq gaps (1+ gaps)))
+          (forward-char 1))
+        ;; Every character of the transcript answers to the map.
+        (should (= gaps 0))))))
+
 (ert-deftest ecc-render-test-footer-follows-a-model-change ()
   "The footer names the new model as soon as `/model' is sent.
 It used to name the model of init, which the CLI never sends again, so a
