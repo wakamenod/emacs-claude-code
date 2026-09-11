@@ -158,6 +158,20 @@ follows is the draft the user is writing.")
 (defvar-local ecc-render--frozen 0
   "Number of turns that are finished and will not be drawn again.")
 
+(defvar-local ecc-render--frozen-blocks 0
+  "How many leading blocks of the first live turn lie before the live region.
+A block is a child of the turn: a step, a text, a request.  Once a
+block can no longer change (`ecc-render--settled-p') the live region
+starts after it, so that a turn of hundreds of calls is not drawn
+again whole every time one more arrives (2026-09-12).  Reset to zero
+whenever `ecc-render--frozen' moves on to the next turn.")
+
+(defvar-local ecc-render--rewind nil
+  "Where the next redraw has to start again, or nil for the live region.
+A cons (TURN-INDEX . BLOCK-INDEX) naming a block that was frozen and
+has changed since: `ecc-render-update' moves the live region back to
+it before drawing.")
+
 (defvar-local ecc-render--visibility-cache nil
   "Hash mapping a node id to whether the user left it collapsed.
 Only the nodes the user folded or unfolded are in it; the others
@@ -181,9 +195,9 @@ dropped as soon as the region it lies in is redrawn.")
 Their fold state is applied once the drawing is over.")
 
 (defvar-local ecc-render--flash-pending nil
-  "Non-nil when the live region should flash after the next redraw.
+  "The id of the turn to flash after the next redraw, or nil.
 Set when a turn finishes, so that the eye is drawn to the answer that
-has just arrived.")
+has just arrived.  Any other non-nil value flashes the live region.")
 
 (defvar-local ecc-render--effect-targets nil
   "Node ids noted for a visual effect while the live region was drawn.
@@ -1586,47 +1600,31 @@ is drawn while the turn is still running."
          line-start (point)
          (list 'keymap (ecc-render--map 'ecc-chat-transcript-map)))))))
 
-(defun ecc-render--insert-turn (session turn)
-  "Insert TURN of SESSION.
+(defun ecc-render--insert-turn (session turn &optional from)
+  "Insert TURN of SESSION, or from its child FROM on when FROM is given.
 No heading line of its own is drawn any more: the band the prompt is
 drawn in is what parts one turn from the next, and it carries the
 heading of the turn, so that the movement commands stop once per turn
-rather than twice."
-  (let ((id (ecc-turn-id turn))
-        (start (point)))
-    (let ((prompt (ecc-turn-prompt turn)))
-      (if prompt
-          (progn
-            ;; The prompt carries fenced blocks of its own: the quoted
-            ;; region and the context Emacs attached, which are worth
-            ;; the same colouring as the reply.
-            (ecc-render--insert-band (ecc-markdown-fontify prompt) "" 'ecc-user-face)
-            ;; The band stands at the depth of the turn, not of the
-            ;; turn's children: it is the heading of the turn, and the
-            ;; movement commands lean on that to tell a turn's children
-            ;; from what lies outside it.
-            (let ((prompt-id (concat id "/prompt")))
-              (ecc-render--mark start (point) prompt-id 0)
-              (ecc-render--register prompt-id start (point) 0)))
-        ;; A turn resumed from a recording has no prompt of its own,
-        ;; and neither has one holding what the CLI said between turns
-        ;; (`ecc-model-aside-turn', which labels its own).  It still
-        ;; needs a line to part it from the turn before and to hang its
-        ;; heading on, but not the mark of a user band: nobody said
-        ;; this.
-        (insert (ecc-render--hang
-                 (concat (ecc-render--fold-cell)
-                         (propertize (or (ecc-turn-label turn) "(resumed)")
-                                     'face 'ecc-dim-face))
-                 "  ")
-                "\n")
-        (ecc-render--mark start (point) id 0))
-      (ecc-render--mark-heading start id))
+rather than twice.
+
+With FROM, the band and the children before FROM are already in the
+buffer and stay there: only the rest is drawn, and the turn keeps the
+start it was registered with."
+  (let* ((id (ecc-turn-id turn))
+         (from (or from 0))
+         (start (if (> from 0)
+                    (car (ecc-render-node-bounds id))
+                  (point))))
+    (when (= from 0)
+      (ecc-render--insert-turn-band turn id start))
     ;; The band, and then each block of the answer, stand a blank line
     ;; apart, so that a turn reads as a few things rather than one wall
-    ;; of text; a run of tool calls stays together inside that.
-    (let ((previous nil))
-      (dolist (child (ecc-turn-children turn))
+    ;; of text; a run of tool calls stays together inside that.  What
+    ;; stands before FROM still decides whether the first block drawn
+    ;; clusters with it.
+    (let ((previous (seq-find (lambda (child) (not (ecc-render--skip-p child)))
+                              (reverse (seq-take (ecc-turn-children turn) from)))))
+      (dolist (child (seq-drop (ecc-turn-children turn) from))
         (unless (ecc-render--skip-p child)
           (unless (ecc-render--cluster-p previous child)
             (ecc-render--insert-gap))
@@ -1639,6 +1637,37 @@ rather than twice."
     ;; children carry their own `ecc-node' and `keymap', and marking
     ;; over them would take both away (see `ecc-render--mark').
     (ecc-render--register id start (point) 0 t)))
+
+(defun ecc-render--insert-turn-band (turn id start)
+  "Insert the band that opens TURN, whose id is ID, at START."
+  (let ((prompt (ecc-turn-prompt turn)))
+    (if prompt
+        (progn
+          ;; The prompt carries fenced blocks of its own: the quoted
+          ;; region and the context Emacs attached, which are worth
+          ;; the same colouring as the reply.
+          (ecc-render--insert-band (ecc-markdown-fontify prompt) "" 'ecc-user-face)
+          ;; The band stands at the depth of the turn, not of the
+          ;; turn's children: it is the heading of the turn, and the
+          ;; movement commands lean on that to tell a turn's children
+          ;; from what lies outside it.
+          (let ((prompt-id (concat id "/prompt")))
+            (ecc-render--mark start (point) prompt-id 0)
+            (ecc-render--register prompt-id start (point) 0)))
+      ;; A turn resumed from a recording has no prompt of its own,
+      ;; and neither has one holding what the CLI said between turns
+      ;; (`ecc-model-aside-turn', which labels its own).  It still
+      ;; needs a line to part it from the turn before and to hang its
+      ;; heading on, but not the mark of a user band: nobody said
+      ;; this.
+      (insert (ecc-render--hang
+               (concat (ecc-render--fold-cell)
+                       (propertize (or (ecc-turn-label turn) "(resumed)")
+                                   'face 'ecc-dim-face))
+               "  ")
+              "\n")
+      (ecc-render--mark start (point) id 0))
+    (ecc-render--mark-heading start id)))
 
 (defvar ecc-render-tail-functions nil
   "Functions adding a line under the state line at the end of a transcript.
@@ -1701,8 +1730,10 @@ the top, then the state line, whatever `ecc-render-tail-functions' add,
 and the separator before the prompt region.  The summaries are redrawn
 with the live region, which is what keeps them current: they belong to
 no turn, so nothing freezes them."
-  (dolist (turn (seq-drop (ecc-session-turns session) ecc-render--frozen))
-    (ecc-render--insert-turn session turn))
+  (let ((from ecc-render--frozen-blocks))
+    (dolist (turn (seq-drop (ecc-session-turns session) ecc-render--frozen))
+      (ecc-render--insert-turn session turn from)
+      (setq from 0)))
   (unless (eq ecc-render-summary-position 'top)
     (ecc-render--insert-summaries session))
   (when-let* ((lines (ecc-render--tail-lines session)))
@@ -1991,7 +2022,10 @@ history remembers are stale by exactly DELTA."
 ;;;; Drawing
 
 (defun ecc-render--freeze (session)
-  "Move the live region past every turn of SESSION that is finished."
+  "Move the live region past every turn of SESSION that is finished.
+Then past the leading blocks of the first unfinished turn that are
+settled, so that what is drawn again next time is the block still
+changing and what follows it, not the whole turn."
   (let ((turns (seq-drop (ecc-session-turns session) ecc-render--frozen))
         (done t))
     (while (and turns done)
@@ -2002,7 +2036,101 @@ history remembers are stale by exactly DELTA."
             (setq done nil)
           (set-marker ecc-render--live-start (cdr bounds))
           (cl-incf ecc-render--frozen)
-          (setq turns (cdr turns)))))))
+          (setq ecc-render--frozen-blocks 0)
+          (setq turns (cdr turns)))))
+    (when turns
+      (ecc-render--freeze-blocks (car turns)))))
+
+(defun ecc-render--settled-p (node)
+  "Return non-nil when NODE and everything under it can no longer change.
+Streaming text grows, a running call gets its result, a pending
+request its answer; a step has no status of its own and is settled
+when its calls are.  Anything settled that changes after all is
+caught by `ecc-render--rewind'."
+  (and (not (ecc-node-streaming node))
+       (or (eq (ecc-node-type node) 'step)
+           (not (memq (ecc-node-status node) '(running pending))))
+       (seq-every-p #'ecc-render--settled-p (ecc-node-children node))))
+
+(defun ecc-render--block-bounds (node)
+  "Return (START . END) of the block NODE in this buffer, or nil.
+A step over a single call is drawn through (`ecc-render--insert-node'),
+so its call is what has bounds."
+  (or (ecc-render-node-bounds (ecc-node-id node))
+      (and (eq (ecc-node-type node) 'step)
+           (= (length (ecc-node-children node)) 1)
+           (ecc-render--block-bounds (car (ecc-node-children node))))))
+
+(defun ecc-render--freeze-blocks (turn)
+  "Move the live region past the settled leading blocks of TURN.
+The last block is never frozen: it is where the turn grows, a step
+taking one more call or a streamed text being replaced by the message
+that completes it."
+  (let ((rest (nthcdr ecc-render--frozen-blocks (ecc-turn-children turn)))
+        (count 0)
+        (end nil))
+    (while (and (cdr rest) (ecc-render--settled-p (car rest)))
+      (when-let* ((bounds (ecc-render--block-bounds (car rest))))
+        (setq end (cdr bounds)))
+      (cl-incf count)
+      (setq rest (cdr rest)))
+    ;; Blocks that drew nothing (an empty thinking) count only once a
+    ;; drawn one stands among them: the live region must move past the
+    ;; band of the turn, or the next redraw would delete the band and
+    ;; then look for its bounds.
+    (when end
+      (cl-incf ecc-render--frozen-blocks count)
+      (set-marker ecc-render--live-start end))))
+
+(defun ecc-render--block-of (session node)
+  "Return (TURN-INDEX . BLOCK-INDEX) of the block NODE of SESSION lies in.
+Nil when NODE hangs under no turn of SESSION."
+  (let ((child node)
+        (parent (ecc-node-parent node)))
+    (while (and parent (not (ecc-turn-p parent)))
+      (setq child parent
+            parent (ecc-node-parent parent)))
+    (when-let* ((parent parent)
+                (turn-index (seq-position (ecc-session-turns session) parent #'eq))
+                (block-index (seq-position (ecc-turn-children parent) child #'eq)))
+      (cons turn-index block-index))))
+
+(defun ecc-render--note-rewind (session node)
+  "Ask the next redraw of SESSION to start at the block of NODE if it is frozen."
+  (when-let* ((block (ecc-render--block-of session node)))
+    (when (and (or (< (car block) ecc-render--frozen)
+                   (and (= (car block) ecc-render--frozen)
+                        (< (cdr block) ecc-render--frozen-blocks)))
+               (or (null ecc-render--rewind)
+                   (< (car block) (car ecc-render--rewind))
+                   (and (= (car block) (car ecc-render--rewind))
+                        (< (cdr block) (cdr ecc-render--rewind)))))
+      (setq ecc-render--rewind block))))
+
+(defun ecc-render--apply-rewind (session)
+  "Move the live region of SESSION back to where `ecc-render--rewind' says.
+The blocks before it keep their text and markers; from it on, the
+turn is drawn again."
+  (when ecc-render--rewind
+    (pcase-let ((`(,turn-index . ,block-index) ecc-render--rewind))
+      (setq ecc-render--rewind nil
+            ecc-render--frozen turn-index
+            ecc-render--frozen-blocks block-index)
+      (let* ((turn (nth turn-index (ecc-session-turns session)))
+             (start (and (> block-index 0)
+                         (seq-some #'ecc-render--block-bounds
+                                   (reverse (seq-take (ecc-turn-children turn)
+                                                      block-index)))))
+             (bounds (ecc-render-node-bounds (ecc-turn-id turn))))
+        (cond (start (set-marker ecc-render--live-start (cdr start)))
+              (bounds (setq ecc-render--frozen-blocks 0)
+                      (set-marker ecc-render--live-start (car bounds)))
+              ;; A turn that was never drawn: draw from the top of it
+              ;; all, which is where the anchor of the transcript ends.
+              (t (setq ecc-render--frozen 0
+                       ecc-render--frozen-blocks 0)
+                 (set-marker ecc-render--live-start
+                             (1+ (marker-position ecc-render--top-end)))))))))
 
 (defun ecc-render-goto-id (id)
   "Move point to the heading of the node ID in this buffer and unfold it.
@@ -2088,6 +2216,8 @@ and a point that was in it stays in it."
               (clrhash ecc-render--nodes)
               (ecc-render--reset-deltas)
               (setq ecc-render--frozen 0
+                    ecc-render--frozen-blocks 0
+                    ecc-render--rewind nil
                     ecc-render--drawn nil)
               (goto-char (point-min))
               (ecc-render--insert-top session)
@@ -2126,6 +2256,7 @@ and a point that was in it stays in it."
               (setq ecc-render--drawn nil)
               (ecc-render--update-top session)
               (ecc-render--reset-deltas)
+              (ecc-render--apply-rewind session)
               (let ((pos (marker-position ecc-render--live-start))
                     (limit (ecc-render--draw-limit)))
                 (ecc-render--drop-from pos)
@@ -2141,9 +2272,16 @@ and a point that was in it stays in it."
               (ecc-render--freeze session))
             (ecc-render--restore-points noted)
             (when ecc-render--flash-pending
-              (setq ecc-render--flash-pending nil)
-              (ecc-visual-flash-region (marker-position ecc-render--live-start)
-                                       (ecc-render--draw-limit)))
+              ;; The turn that finished, whole: the live region has
+              ;; moved past it by now, and while it ran it covered no
+              ;; more than its last block.
+              (let ((bounds (and (stringp ecc-render--flash-pending)
+                                 (ecc-render-node-bounds ecc-render--flash-pending))))
+                (setq ecc-render--flash-pending nil)
+                (if bounds
+                    (ecc-visual-flash-region (car bounds) (cdr bounds))
+                  (ecc-visual-flash-region (marker-position ecc-render--live-start)
+                                           (ecc-render--draw-limit)))))
             (ecc-render--finish-draw session)))))))
 
 (defun ecc-render--update-spinner (session)
@@ -2325,8 +2463,16 @@ read-only."
 
 ;;;; Wiring (the model announces, the renderer listens)
 
-(defun ecc-render--on-change (session &rest _)
-  "Schedule a redraw of SESSION."
+(defun ecc-render--on-change (session &rest args)
+  "Schedule a redraw of SESSION.
+When the change is to a node, ARGS carry it; a node in a block the live
+region has left behind pulls the region back to that block."
+  (when-let* ((node (and (ecc-node-p (car args)) (car args)))
+              (buffer (ecc-session-buffer session)))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (when ecc-render--nodes
+          (ecc-render--note-rewind session node)))))
   (ecc-render-schedule session))
 
 (dolist (hook '(ecc-node-added-hook
@@ -2344,12 +2490,13 @@ read-only."
                 ecc-tasks-updated-hook))
   (add-hook hook #'ecc-render--on-change))
 
-(defun ecc-render--on-turn-finished (session &rest _)
-  "Ask for a flash of the live region of SESSION after the next redraw."
+(defun ecc-render--on-turn-finished (session &optional turn)
+  "Ask for a flash of TURN of SESSION after the next redraw.
+Without TURN the live region flashes instead."
   (when-let* ((buffer (ecc-session-buffer session)))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
-        (setq ecc-render--flash-pending t)))))
+        (setq ecc-render--flash-pending (if turn (ecc-turn-id turn) t))))))
 
 (add-hook 'ecc-turn-finished-hook #'ecc-render--on-turn-finished)
 (add-hook 'ecc-stream-delta-hook #'ecc-render--on-delta)

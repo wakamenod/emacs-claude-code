@@ -23,7 +23,9 @@ code disagree, the code wins.
 - `scripts/` — the recorders that make the fixtures, and `screenshot.sh`, which
   regenerates `docs/images/session.gif` and its still by walking a throwaway GUI
   Emacs through a replayed fixture a step at a time. macOS only; it wants
-  `ffmpeg`, and the terminal needs Screen Recording permission.
+  `ffmpeg`, and the terminal needs Screen Recording permission. `bench-render.el`
+  times a redraw on synthetic turns; run it before and after touching the
+  renderer (`$(BATCH) -l test/ecc-test-helpers.el -l scripts/bench-render.el`).
 - `docs/site/` — the Astro Starlight documentation site, deployed to GitHub
   Pages by `.github/workflows/docs.yml`. English is served at the root and
   Japanese under `/ja/`, following the same rule as the two READMEs. The

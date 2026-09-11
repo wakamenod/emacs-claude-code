@@ -13,6 +13,17 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 ## [Unreleased]
 
+### Changed
+
+- A running turn is redrawn from the block that is still changing, not from
+  its start.  Every change used to delete and draw the whole turn again, ten
+  times a second while it arrived, so a turn of hundreds of tool calls
+  stuttered: one redraw of an 800-call turn took 81 ms without redisplay,
+  and takes 0.2 ms now.  A block that changes after all (an agent that ends
+  long after its turn did) is drawn again, which it was not before.
+- The Files summary diffs a file again only when it changed again, rather
+  than every hunk of every file on every redraw.
+
 ## [0.1.0] - 2026-09-11
 
 The first release.  Verified against **Claude Code CLI 2.1.268** and
