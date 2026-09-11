@@ -16,7 +16,7 @@ The menu key is given for each command, so `C-c ?` then `c` starts a session.
 | Key | Command | What it does |
 |---|---|---|
 | `c` | `ecc-start` | Start a session in a directory, under a name. Autoloaded — `M-x ecc-start` works before ecc is loaded |
-| `r` | `ecc-resume` | Start a session again with `--resume`. The `-f` switch forks it |
+| `r` | `ecc-resume-menu` | Start a session again with `--resume`. Opens a menu of its own, where `-f` forks the conversation and `r` resumes |
 | `k` | `ecc-kill` | Stop a session and forget it |
 | `R` | `ecc-rename-session` | Rename a session, and its buffers with it |
 | `v` | `ecc-show-session` | Show the session this buffer talks to, and go to its prompt |
@@ -84,18 +84,21 @@ letter, so it works from any buffer at all. See the
 | Key | Command | What it does |
 |---|---|---|
 | `a` | `ecc-answer-allow` | Allow the oldest waiting request |
-| `A` | `ecc-perm-allow-all` | Allow every request waiting in this session |
+| `A` | `ecc-allow-all-menu` | Allow every request waiting in this session. Opens a menu of its own, where `-r` also stops the tools involved being asked about again and `A` allows |
 | `d` | `ecc-answer-deny` | Deny the oldest waiting request, with a reason |
 | `n` | `ecc-next-attention` | Jump to the next request waiting, across sessions |
 | `N` | `ecc-next-attention-in-project` | The same, restricted to the current project |
 | `1`–`4` | `ecc-answer-option-N` | Answer the oldest question with option N |
 
-Two of these carry a switch, which is what the `-f` and `-r` lines in the menu
-are: `-r` turns `A` into "allow everything waiting **and stop asking about
-those tools**", and `-f` turns `r` in the Session group into a fork. A switch
-is set before the command is run and shows its state on screen, which suits
-forking in particular — a second process resuming a live session forks the
-conversation, with no lock to stop it.
+Two commands carry a switch, and each has a menu of its own to carry it: `r`
+in the Session group opens one holding `-f` (fork the conversation), and `A`
+here opens one holding `-r` (stop asking about the tools involved). In
+transient a switch belongs to the menu it sits in rather than to one command,
+so a switch shown beside a column of commands reads as though the whole column
+obeyed it. Given its own menu, a switch can only mean the command next to it.
+A switch is still set before the command runs and shows its state on screen,
+which suits forking in particular — a second process resuming a live session
+forks the conversation, with no lock to stop it.
 
 Permission prompts **default to deny**. Inside a session, `ecc-perm-allow` and
 `ecc-perm-deny` answer the request at point, and `ecc-perm-allow-always`,

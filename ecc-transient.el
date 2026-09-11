@@ -266,18 +266,39 @@ same suffix from one call to the next."
 With --remember among ARGS the tools involved are not asked about again
 for the rest of the session."
   :description "Allow every waiting request"
-  (interactive (list (transient-args 'ecc-menu)))
+  (interactive (list (transient-args 'ecc-allow-all-menu)))
   (require 'ecc-perm)
   (ecc-perm-allow-all (and (member "--remember" args) t)))
+
+(transient-define-prefix ecc-allow-all-menu ()
+  "Allow every request waiting in this session, remembering the tools or not.
+A prefix of its own rather than a switch in `ecc-menu\=', because in
+transient an argument belongs to the prefix and not to a suffix: sitting
+in the Respond column, --remember read as though it applied to every
+allow and deny there, when only this one command looks at it."
+  ["Allow every waiting request"
+   ("-r" "Remember the tools" "--remember")
+   ("A" ecc-menu-allow-all)])
 
 (transient-define-suffix ecc-menu-resume (session args)
   "Resume SESSION, forking it when --fork is among ARGS.
 Forking is a switch rather than a prefix argument because it is the
 choice worth seeing before it is made: a second process on a live
-session forks the conversation with no lock to stop it."
+session forks the conversation with no lock to stop it.  The switch
+lives in `ecc-resume-menu\=', which opening this way always shows."
   :description "Resume"
-  (interactive (list (ecc-read-session "Resume: ") (transient-args 'ecc-menu)))
+  (interactive (list (ecc-read-session "Resume: ")
+                     (transient-args 'ecc-resume-menu)))
   (ecc-resume session (and (member "--fork" args) t)))
+
+(transient-define-prefix ecc-resume-menu ()
+  "Resume a session, forking the conversation or not.
+A prefix of its own for the reason `ecc-allow-all-menu\=' is: --fork sat
+at the head of the Session column and read as though Start and Kill took
+it too."
+  ["Resume"
+   ("-f" "Fork the conversation" "--fork")
+   ("r" ecc-menu-resume)])
 
 ;;;; The main menu
 
@@ -286,9 +307,8 @@ session forks the conversation with no lock to stop it."
   "Everything this package can do."
   ["Claude Code"
    ["Session"
-    ("-f" "Fork the conversation" "--fork")
     ("c" "Start" ecc-start)
-    ("r" ecc-menu-resume)
+    ("r" "Resume" ecc-resume-menu)
     ("k" "Kill" ecc-kill)
     ("R" "Rename" ecc-rename-session)
     ("v" "Go to the prompt" ecc-show-session)
@@ -313,9 +333,8 @@ session forks the conversation with no lock to stop it."
     ("T" "Timeline" ecc-timeline)]]
   ["Respond and look around"
    ["Respond"
-    ("-r" "Remember the tools" "--remember")
     ("a" "Allow the oldest request" ecc-answer-allow)
-    ("A" ecc-menu-allow-all)
+    ("A" "Allow every waiting request" ecc-allow-all-menu)
     ("d" "Deny the oldest request" ecc-answer-deny)
     ("n" "Next request" ecc-next-attention)
     ("N" "Next request in this project" ecc-next-attention-in-project)
