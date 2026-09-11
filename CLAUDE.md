@@ -37,6 +37,7 @@ make compile     # byte-compile (warnings are errors); wipes stale .elc first
 make test        # ERT (fixture replay; no real process)
 make test-live   # ERT against the real CLI (tag live); run by hand only
 make lint        # checkdoc (+ package-lint when it is there)
+make release VERSION=0.2.0   # bump, commit and tag a release (see below)
 
 make docs-install  # npm ci for the documentation site
 make docs-dev      # the site's dev server
@@ -172,14 +173,18 @@ that changes its meaning — bumps the minor number; everything else bumps the p
 number. Both READMEs say so, under the documentation link.
 
 ```
-make all                       # autoloads, compile, lint, test — all green first
-$EDITOR ecc.el                 # ;; Version: 0.2.0
-$EDITOR CHANGELOG.md           # move Unreleased into a [0.2.0] section, dated,
-                               # naming the claude CLI version it was verified against
-git commit -am "chore(release): 0.2.0"
-git tag -a v0.2.0 -m "ecc 0.2.0"
-git push --follow-tags
+git switch main && git pull       # a release is tagged on main
+$EDITOR CHANGELOG.md              # move Unreleased into a dated [0.2.0] section,
+                                  # naming the claude CLI it was verified against
+make release VERSION=0.2.0        # checks, then autoloads+compile+lint+test,
+                                  # then the header, the commit and the tag
+git push --follow-tags            # this is what publishes it
 ```
+
+`make release` writes nothing but the `Version:` header: the prose of the release is the
+`CHANGELOG.md` section, and it wants that written first. It refuses to go on unless it is
+on `main`, the tree holds nothing but that `CHANGELOG.md` edit, the section for the
+version is there and the tag is not. `make release-check` is those checks alone.
 
 The tag is the release. `.github/workflows/release.yml` runs on `v*` and refuses to
 publish if the header and the tag disagree or `CHANGELOG.md` has no section for the
