@@ -1,49 +1,100 @@
-# Starlight Starter Kit: Basics
+# The ecc documentation site
 
-[![Built with Starlight](https://astro.badg.es/v2/built-with-starlight/tiny.svg)](https://starlight.astro.build)
+Astro Starlight, deployed to GitHub Pages by `.github/workflows/docs.yml`.
+English is served at the root and Japanese under `/ja/`, following the same
+rule as the two READMEs: `README.md` is the source of record and `README.ja.md`
+follows it.
+
+This file is the working note. What is written down here was learned the slow
+way; read it before changing the site.
+
+## Commands
+
+Run them from the repository root, not from here:
 
 ```
-npm create astro@latest -- --template starlight
+make docs-install   # npm ci
+make docs-dev       # dev server
+make docs-build     # build into docs/site/dist
+make docs-preview   # serve the build (search only works here, not in dev)
+make docs-clean     # remove the build output
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+These are the only targets in the repository that want Node, and none of them
+is a prerequisite of `all` or `clean`: building and testing the Emacs package
+must never start needing a JavaScript toolchain. A fresh checkout has no
+`node_modules`, so `make docs-install` comes first.
 
-## 🚀 Project Structure
-
-Inside of your Astro + Starlight project, you'll see the following folders and files:
+## Where the pages are
 
 ```
-.
-├── public/
-├── src/
-│   ├── assets/
-│   ├── content/
-│   │   └── docs/
-│   └── content.config.ts
-├── astro.config.mjs
-├── package.json
-└── tsconfig.json
+src/content/docs/
+  index.mdx              the English landing page (template: splash)
+  start/                 Start here
+  explanation/           Understanding ecc
+  reference/             Reference
+  ja/                    the same tree, in Japanese
 ```
 
-Starlight looks for `.md` or `.mdx` files in the `src/content/docs/` directory. Each file is exposed as a route based on its file name.
+Each directory is one sidebar group, declared in `astro.config.mjs`. A group is
+an object with a `label`, a `translations: { ja: … }` for the Japanese label,
+and `items: [{ autogenerate: { directory: '<dir>' } }]` — the autogenerate goes
+**inside** `items`, not beside it. Within a group the order comes from each
+page's `sidebar.order` frontmatter.
 
-Images can be added to `src/assets/` and embedded in Markdown with a relative link.
+The Japanese pages are part of the site. The `docs/*.md` files one level up are
+gitignored working documents, and are no part of it.
 
-Static assets, like favicons, can be placed in the `public/` directory.
+## `base` is not prepended to every link
 
-## 🧞 Commands
+The site is a GitHub project page, so `site` is the user site and `base` is
+`/emacs-claude-code` (leading slash, no trailing one; get that wrong and the
+HTML still loads while every asset 404s).
 
-All commands are run from the root of the project, from a terminal:
+Starlight prepends `base` to sidebar and slug links. It does **not** prepend it
+to hero action links in `index.mdx`, nor to a plain Markdown link written in a
+page body. Both must carry the base by hand:
 
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
+```md
+[Configuration reference](/emacs-claude-code/reference/configuration/)
+[設定リファレンス](/emacs-claude-code/ja/reference/configuration/)
+```
 
-## 👀 Want to learn more?
+Japanese headings make Japanese anchors — `## 最初の設定` becomes
+`#最初の設定`, and that is what a link to it must say.
 
-Check out [Starlight’s docs](https://starlight.astro.build/), read [the Astro documentation](https://docs.astro.build), or jump into the [Astro Discord server](https://astro.build/chat).
+## Two warnings that are not problems
+
+`make docs-build` prints these every time and exits 0:
+
+```
+[WARN] [content] The collection "i18n" does not exist or is empty.
+[WARN] [content] Entry docs → 404 was not found.
+```
+
+There is no `i18n` collection because the site has no UI string overrides, and
+no `404.md` because Starlight's built-in 404 page is fine. Do not chase them.
+
+A page missing from `ja/` is not an error either: Starlight falls back to the
+English page at the Japanese URL, so `/ja/start/overview/` exists the moment
+`start/overview.md` does. It is a fallback, not a translation — the build
+output listing a `/ja/` route proves nothing about whether the Japanese page
+was written.
+
+## The images in the README
+
+`docs/images/session.gif` and `session.png` are generated by
+`scripts/screenshot.sh`, not taken by hand. It opens a throwaway GUI Emacs,
+replays recorded fixtures through the real dispatch and renderer, and drives
+the frame through `emacsclient` one step at a time, capturing a frame after
+each. No CLI, no network, and the same output every time.
+
+It is macOS only. It needs `ffmpeg`, and the terminal running it needs Screen
+Recording permission (System Settings → Privacy & Security → Screen Recording);
+without that, `screencapture` says "could not create image from display" and
+the frames come out empty.
+
+Those images live outside the Astro project, so the site does not reference
+them. Putting one on a page means either copying it into `src/assets/` (Astro
+optimises it and adds the base) or into `public/` (one more path with a
+hand-written base). Neither has been done; the site is text.
