@@ -102,3 +102,60 @@ recording. The transcript follows the terminal while it has the session.
 Reads what the terminal added, then resumes the session headless in Emacs. If
 the terminal is still running the session stays with it, and comes back when
 the terminal exits.
+
+## Send
+
+These are meant to be used from your own source buffers, not from the
+transcript. Each sends to the session the menu resolves to and says in the echo
+area which one it went to; while a turn is running the prompt is queued rather
+than interrupting it.
+
+### `s` `x` `g` `f` — Sending from a buffer
+
+| Key | Sends |
+|---|---|
+| `s` | A line typed in the minibuffer, and nothing else |
+| `x` | That line, and where you are: the file and the line |
+| `g` | The region, quoted, or the whole buffer when nothing is marked |
+| `f` | The file itself, as an `@path` reference the CLI reads |
+
+![Sending the region: the marked code and the question arrive in the transcript, and the answer streams back](../../../assets/send-region.gif)
+
+What `x` and `g` append is a block you can read before it goes:
+
+````
+---
+Current context: hello.py L1-L3
+```python
+def greet(name):
+    return "hello " + name
+```
+````
+
+A prefix argument asks for an instruction to put before the code (`C-u g`), or,
+for `s`, which session to send to. `f` offers to save the buffer first, because
+the CLI reads the file from disk.
+
+### `e` — Fix the error at point
+
+Sends the diagnostics on the current line with the few lines of code around
+them. flymake is asked first, then flycheck, then the help text of whatever
+overlay is at point.
+
+### `l` — Ask inline
+
+Asks about the region, or the file, and puts the answer in an overlay above
+point rather than in the transcript. `n` and `p` scroll it, `r` asks something
+else, `q` takes it away.
+
+The question goes to a session of its own: a fork of the project's session, or
+a fresh light one. Which of the two is asked once and remembered for that
+buffer.
+
+### `W` — Rewrite the region
+
+Rewrites the marked code as an instruction says. The answer is shown where the
+code is, and nothing is written until it is accepted.
+
+It is one shot with no tools: the CLI is asked for the code and for nothing
+else, and Emacs is what touches the buffer.

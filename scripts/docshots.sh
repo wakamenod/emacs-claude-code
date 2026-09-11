@@ -44,7 +44,16 @@ done
 cleanup() { pkill -f 'scripts/docshots.el' 2>/dev/null || true; rm -rf "$frames"; }
 trap cleanup EXIT
 
-e() { "$emacsclient" -s ecc-docshot -e "$1" >/dev/null; }
+# A step that opens a minibuffer can leave `emacsclient' waiting for an
+# answer that only comes when the minibuffer does -- the scenes are
+# written not to, but a wait here would hang the whole run rather than
+# spoil one picture.
+e() {
+    echo "-- $1" >&2
+    if ! timeout 25 "$emacsclient" -s ecc-docshot -e "$1" >/dev/null; then
+        echo "   (no answer in 25s)" >&2
+    fi
+}
 
 # Start a new animation; the frames of each live in a directory of their own.
 scene() {
@@ -109,19 +118,47 @@ read -r X Y W H _cols _lines < "$geom" || true
 mkdir -p "$outdir"
 
 # 1. Switching a window from one session to another, as an animation.
+# Frames that repeat are merged into one long frame by the time the site
+# has converted the animation, so a scene has to keep changing: type a
+# letter at a time, and go back the way it came rather than holding the
+# last picture.
 scene switch
-e '(shot-scene-switch-start)'   ; snap 6
-e '(shot-scene-switch-pick)'    ; sleep 2; snap 5
-e '(shot-scene-type "not")'     ; sleep 1; snap 4
-e '(shot-scene-return)'         ; sleep 1; snap 8
+e '(shot-scene-switch-start)'   ; snap 2
+e '(shot-scene-switch-pick)'    ; sleep 2; snap 2
+e '(shot-scene-type "n")'       ; snap
+e '(shot-scene-type "o")'       ; snap
+e '(shot-scene-type "t")'       ; snap 2
+e '(shot-scene-return)'         ; sleep 1; snap 3
+e '(shot-scene-switch-pick)'    ; sleep 2; snap 2
+e '(shot-scene-type "g")'       ; snap
+e '(shot-scene-type "r")'       ; snap 2
+e '(shot-scene-return)'         ; sleep 1; snap 3
 gif
 
 # 2. The menu, open over a session.
 e '(shot-scene-menu)'           ; sleep 3; still "$outdir/menu.png"
 e '(shot-scene-quit)'           ; sleep 1
 
-# 3. The session picker of resume, one icon per state.
-e '(shot-scene-resume)'         ; sleep 3; still "$outdir/resume.png"
+# 3. Sending the region from a source buffer.  This one runs the real
+# CLI: the point of the picture is the answer coming back.
+scene send-region
+e '(shot-start-live)'               ; sleep 4
+e '(shot-scene-send-region-point)'  ; snap 2
+e '(shot-scene-send-region-mark)'   ; snap
+e '(shot-scene-send-region-extend)' ; snap
+e '(shot-scene-send-region-extend)' ; snap
+e '(shot-scene-send-region-extend)' ; snap 2
+e '(shot-scene-send-region-ask)'    ; sleep 1; snap 2
+e '(shot-scene-type "What could ")' ; snap
+e '(shot-scene-type "go wrong ")'   ; snap
+e '(shot-scene-type "with this ")'  ; snap
+e '(shot-scene-type "function?")'   ; snap 2
+e '(shot-scene-return)'             ; snap 2
+# The answer streaming in is the motion, so the frames are taken while
+# it arrives rather than after it has.
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do sleep 1; snap; done
+gif
+e '(shot-dump-live-log)'
 
 # 4. Handing a session over to the terminal.  The CLI is the real one,
 # resuming a conversation recorded in the demo project, so this scene
@@ -129,9 +166,16 @@ e '(shot-scene-resume)'         ; sleep 3; still "$outdir/resume.png"
 e '(shot-scene-quit)'           ; sleep 1
 
 scene handover
-e '(shot-scene-handover-start)' ; sleep 1; snap 4
-e '(shot-scene-handover)'       ; sleep 4; snap 2
-sleep 3; snap 6
+e '(shot-scene-handover-start)' ; sleep 1; snap 3
+e '(shot-scene-handover)'       ; snap
+# The CLI drawing itself is the motion here, so the frames are taken
+# while it comes up rather than after.
+for _ in 1 2 3 4 5 6 7 8 9 10; do sleep 1; snap; done
 gif
+
+# The picker of `ecc-resume' is last: it stays on screen, and a
+# minibuffer with a completion UI over it does not reliably take a `C-g'
+# fed to it from the server.
+e '(shot-scene-resume)'         ; sleep 3; still "$outdir/resume.png"
 
 echo "wrote $outdir/switch.gif, $outdir/handover.gif, $outdir/menu.png and $outdir/resume.png"

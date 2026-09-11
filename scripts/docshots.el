@@ -111,7 +111,13 @@ FROM and TO, 1-based and inclusive, narrow it to part of the recording."
   (with-temp-file shot-file (insert shot-before))
   (setq ecc--sessions (make-hash-table :test #'equal)
         ecc--session-order nil)
-  (advice-add 'ecc-proc-send-json :override (lambda (&rest _) nil))
+  ;; The replayed sessions have no process to talk to.  A session that
+  ;; really is running -- the ones the Send scenes start -- is left
+  ;; alone.
+  (advice-add 'ecc-proc-send-json :around
+              (lambda (original session &rest arguments)
+                (when (process-live-p (ecc-session-process session))
+                  (apply original session arguments))))
   (setq shot-main (ecc-model-create-session :name "greet"
                                             :project-root shot-root))
   (setq shot-other (ecc-model-create-session :name "notes"
@@ -186,6 +192,75 @@ no user has."
   (and (equal session-id shot-elsewhere-id)
        '((pid . 4271) (sessionId . "8f2c1a64-elsewhere"))))
 
+;;;; A session that really runs, for the Send scenes
+
+;; `ecc-send-region' and the rest are answered by the model, so these
+;; scenes need the real CLI.  It is asked for haiku and given a budget,
+;; as scripts/record-*.sh are.
+
+(defvar shot-live nil "The session the Send scenes send to.")
+
+(defun shot-start-live ()
+  "Start a real session in the demo project and show it.
+The replayed sessions are killed first, so that this one can have the
+name of the project rather than `greet<2>'."
+  (dolist (session (ecc-model-sessions))
+    (ecc-kill session))
+  (setq shot-live (ecc-model-create-session
+                   :project-root shot-root
+                   :name "greet"
+                   ;; Remote Control off: it is on in the Claude Code
+                   ;; settings of the machine this was made on, and the
+                   ;; transcript then opens with the session's own
+                   ;; claude.ai URL across it.
+                   :options '(:model "haiku"
+                              :remote-control nil
+                              :extra-args ("--max-budget-usd" "0.30"))))
+  (ecc-session-ensure-buffer shot-live)
+  (ecc-proc-start shot-live)
+  (ecc--enable-session-modes)
+  (shot-show shot-live))
+
+(defun shot-source-window ()
+  "Return the window showing the source file, selecting it."
+  (let ((window (get-buffer-window (find-file-noselect shot-file))))
+    (when (window-live-p window)
+      (select-window window))
+    window))
+
+(defun shot-scene-send-region-point ()
+  "Put the point at the top of the source buffer, with nothing marked."
+  (with-selected-window (shot-source-window)
+    (deactivate-mark)
+    (goto-char (point-min)))
+  (redisplay t))
+
+(defun shot-scene-send-region-mark ()
+  "Set the mark where the point is."
+  (with-selected-window (shot-source-window)
+    (push-mark (point) t t)
+    (activate-mark))
+  (redisplay t))
+
+(defun shot-scene-send-region-extend ()
+  "Take the selection down one more line.
+The mark is activated again on every step: between two requests the
+command loop has run, and it deactivates a region that nothing is
+holding on to."
+  (with-selected-window (shot-source-window)
+    (forward-line 1)
+    (activate-mark))
+  (redisplay t))
+
+(defun shot-scene-send-region-ask ()
+  "Run `ecc-send-region' with a prefix, which asks for the instruction.
+The scene then types the question into the minibuffer, as a user does."
+  (shot-later
+   (lambda ()
+     (with-selected-window (shot-source-window)
+       (let ((current-prefix-arg '(4)))
+         (call-interactively #'ecc-send-region))))))
+
 ;;;; The hand-off
 
 (defconst shot-handover-id "7c3d9e21-4b5a-4f18-9c62-1d0e8a7f5b34"
@@ -224,8 +299,12 @@ transient.  `execute-kbd-macro' there quits; leaving the events on
         (append (listify-key-sequence (kbd keys)) unread-command-events)))
 
 (defun shot-scene-type (text)
-  "Type TEXT into whatever is reading from the minibuffer."
-  (shot-keys (mapconcat #'string text " ")))
+  "Type TEXT into whatever is reading from the minibuffer.
+`kbd' reads a space as the separator between two keys, so a space in
+the text has to be spelled."
+  (shot-keys (mapconcat (lambda (character)
+                          (if (eq character ?\s) "SPC" (string character)))
+                        text " ")))
 
 (defun shot-scene-return ()
   "Answer the minibuffer with what is typed."
@@ -237,8 +316,28 @@ transient.  `execute-kbd-macro' there quits; leaving the events on
   (shot-later (lambda () (call-interactively #'ecc-menu))))
 
 (defun shot-scene-quit ()
-  "Close whatever the last scene left open -- a menu, a picker."
-  (shot-keys "C-g"))
+  "Close whatever the last scene left open -- a menu, a picker.
+A minibuffer is left by aborting its recursive edit from a timer: the
+`C-g' a transient wants is read as a key, but a minibuffer reading with
+a completion UI over it does not always get to read one."
+  (shot-keys "C-g")
+  (shot-later
+   (lambda ()
+     (when-let* ((window (active-minibuffer-window)))
+       (with-selected-window window
+         (abort-recursive-edit))))))
+
+(defun shot-dump-log (session file)
+  "Write the protocol log of SESSION to FILE, for looking at afterwards."
+  (when-let* ((buffer (get-buffer (ecc-log-buffer-name
+                                   (ecc-session-name session)))))
+    (with-current-buffer buffer
+      (write-region (point-min) (point-max) file nil 'quiet))))
+
+(defun shot-dump-live-log ()
+  "Write the log of the live session out."
+  (when shot-live
+    (shot-dump-log shot-live "/tmp/ecc-docshot-live.log")))
 
 (defun shot-scene-resume ()
   "Open the session picker of `ecc-resume', over invented recordings."
