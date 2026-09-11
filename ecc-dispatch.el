@@ -74,8 +74,16 @@ Errors are caught: an unreadable message must never stop the stream."
     ('command_lifecycle (ecc-dispatch--command-lifecycle session message))
     ('tool_progress (ecc-dispatch--tool-progress session message))
     ('prompt_suggestion
+     ;; The text is in `suggestion', beside the type, and not in a
+     ;; `prompt_suggestion' field of its own:
+     ;;   {"type":"prompt_suggestion","suggestion":"add a test for greet"}
+     ;; Reading the field this message is named after found nothing, and
+     ;; the suggestion never reached the prompt region (confirmed
+     ;; 2026-09-11 against claude with --prompt-suggestions).  The older
+     ;; spelling is still taken, in case some version sends it.
      (setf (alist-get 'suggestion (ecc-session-hint-state session))
-           (alist-get 'prompt_suggestion message))
+           (or (alist-get 'suggestion message)
+               (alist-get 'prompt_suggestion message)))
      (run-hook-with-args 'ecc-progress-hook session))
     (_ (ecc-dispatch--unknown session message nil))))
 
