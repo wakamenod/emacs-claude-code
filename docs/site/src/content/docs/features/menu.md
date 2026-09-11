@@ -165,3 +165,79 @@ code is, and nothing is written until it is accepted.
 
 It is one shot with no tools: the CLI is asked for the code and for nothing
 else, and Emacs is what touches the buffer.
+
+## Review
+
+`D` opens every change of the session as one diff, `F` and `P` move to the
+Files and the Plan sections of the transcript, and `T` picks a turn to jump to.
+
+See [Review](/emacs-claude-code/features/review/).
+
+## Respond
+
+`a` and `d` answer the oldest request waiting, `A` answers every one of them,
+`n` and `N` jump to the next session that is waiting, and `1`–`4` answer a
+question with one of its options.
+
+See [Prompt and transcript](/emacs-claude-code/features/prompt/).
+
+## View
+
+### `b` — Dashboard
+
+Every session this Emacs runs, in one list.
+See [Session management](/emacs-claude-code/features/sessions/).
+
+### `y` — Capabilities
+
+What the session can actually do, as the CLI reported it in `system/init`:
+skills, agents, slash commands, MCP servers and plugins, each grouped by where
+it comes from — the project, your global settings, a plugin, or the CLI itself.
+
+Before the first turn there is nothing to show, and the buffer says so.
+
+### `h` — History
+
+Opens a conversation the CLI recorded under `~/.claude/projects`, in an
+ordinary session buffer. It reads like a live one, and `r` resumes it from
+there. Conversations held in the terminal are there too, not only the ones
+started here.
+
+### `U` — Usage
+
+How much of the Claude Code plan has been used.
+See [Other features](/emacs-claude-code/features/other/).
+
+### `L` — Log
+
+The raw protocol log of this session: every line in and out, stamped with the
+time, `<<` for what came in and `>>` for what went out. It is the first place
+to look when something behaves oddly, and what a bug report should carry.
+
+## Config
+
+### `m` — Model
+
+Asks the session to use another model, without restarting it. This is why
+there is no setting that names one.
+
+### `p` — Permission mode
+
+Asks the session to switch permission mode. `S-TAB` in a session cycles the
+modes without going through the menu, and the footer under the prompt says
+which one is in force.
+
+### `o` `O` `K` — Remote control
+
+`o` turns Remote Control on or off for this session. With it on, the session
+appears in the Code tab of the Claude app and can be driven from there;
+whether it starts that way is up to your Claude Code settings, which ecc
+follows.
+
+`O` opens that session at claude.ai/code in your browser, and `K` puts the
+same URL in the kill ring. Both need the session to be on the bridge.
+
+### `C` — Customize
+
+Opens the `ecc` customization group. Everything in it is listed on the
+[configuration reference](/emacs-claude-code/reference/configuration/).
