@@ -173,6 +173,14 @@ question buffer opens with the first one answered."
 (defun ecc-answer-option-3 () "Answer the oldest question with option 3." (interactive) (ecc-answer-option 3))
 (defun ecc-answer-option-4 () "Answer the oldest question with option 4." (interactive) (ecc-answer-option 4))
 
+;; The symbol carries the keymap in its function cell as well as its value,
+;; so that it is a prefix command and not only a variable.  A prefix command
+;; is what `C-h', `which-key' and the rest read a prefix key through: bound to
+;; the value, `C-c c' is a complete key sequence running a command, and
+;; nothing offers to list what follows it.  The autoload form below is the
+;; keymap kind, so the binding works before this file is loaded and loads it
+;; when the key -- or the listing of that key -- asks for what is inside.
+;;;###autoload (autoload 'ecc-global-map "ecc-answer" nil t 'keymap)
 (defvar ecc-global-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "a") #'ecc-answer-allow)
@@ -189,11 +197,21 @@ question buffer opens with the first one answered."
     (define-key map (kbd "?") #'ecc-menu)
     map)
   "Keymap of the commands that work from any buffer.
-Bind it to a prefix, for instance (global-set-key (kbd \"C-c c\") ecc-global-map).
+Bind the symbol, not the value, to a prefix key:
+
+    (global-set-key (kbd \"C-c c\") \='ecc-global-map)
+
+which makes `ecc-global-map\=' a prefix command, so that
+`describe-prefix-bindings\=' and `which-key\=' can say what follows it.
+With an autoload form of the keymap kind -- generated from this file, or
+written by hand where nothing generates one -- the binding can be made
+before ecc is loaded.
 
 Every key here means in `ecc-menu' what it means here, so that one letter
 carries one meaning wherever it is pressed; `?' opens that menu, which is
 the only way to reach it from a buffer that is not a session.")
+
+(fset 'ecc-global-map ecc-global-map)
 
 ;;;; The mode line indicator
 
