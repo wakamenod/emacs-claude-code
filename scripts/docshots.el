@@ -256,13 +256,15 @@ name of the project rather than `greet<2>'."
   (ecc--enable-session-modes)
   (shot-show shot-live))
 
-(defun shot-start-live-suggestions ()
-  "Start a real session that will be offered prompt suggestions.
-The model is the one the Claude Code settings name rather than haiku:
-haiku sends no `prompt_suggestion' at all, while the default model
-sends one after a turn or two (confirmed 2026-09-11, both with
---prompt-suggestions and --include-partial-messages).  The budget is
-larger to match, and still a budget."
+(defun shot-start-live-default ()
+  "Start a real session on the model the Claude Code settings name.
+Two scenes need one rather than the haiku every other live scene asks
+for.  Haiku sends no `prompt_suggestion\=' at all, while the default
+model offers one after a turn or two (confirmed 2026-09-11, both with
+--prompt-suggestions and --include-partial-messages); and haiku read
+the screenshot of the image scene as \"a Python IDE running tests\",
+which is not what a picture in the documentation should say.  The
+budget is larger to match, and still a budget."
   (dolist (session (ecc-model-sessions))
     (ecc-kill session))
   (setq shot-live (ecc-model-create-session
@@ -338,13 +340,27 @@ fed to a read loop."
 
 (defun shot-scene-image-file ()
   "Return the demo image, putting it in the project the session runs in.
-A picture the model can say something about, and one that is already in
-this repository rather than made for the occasion."
+A picture that is already in this repository rather than one made for
+the occasion, scaled down to something that fits beside a session: the
+point of the scene is that the picture and the answer about it are on
+the screen together, and the original is wider than the frame."
   (let ((file (expand-file-name "session.png" shot-root)))
     (unless (file-exists-p file)
-      (copy-file (expand-file-name "docs/images/session.png" shot-repository)
-                 file t))
+      (call-process "ffmpeg" nil nil nil "-hide_banner" "-loglevel" "error" "-y"
+                    "-i" (expand-file-name "docs/images/session.png"
+                                           shot-repository)
+                    "-vf" "scale=420:-1" file))
     file))
+
+(defun shot-scene-image-open ()
+  "Show the demo image itself in the window beside the session.
+Without it the scene is a path appearing in the prompt: ecc sends an
+image by reference, so nothing of the picture is otherwise on screen."
+  (with-selected-window (shot-source-window (shot-scene-image-file))
+    (when (fboundp 'image-transform-fit-to-window)
+      (ignore-errors (image-transform-fit-to-window)))
+    (goto-char (point-min)))
+  (redisplay t))
 
 (defun shot-scene-insert-image ()
   "Insert the demo image into the prompt, as C-c C-i does."

@@ -113,7 +113,7 @@ An image pasted, dropped on the buffer or inserted with `C-c C-i` is written und
 `ecc-image-dir` and referenced by its path, so the CLI reads it from disk.
 `ecc-image-cleanup` decides whether a session's images go with it.
 
-![An image inserted into the prompt as a path, sent, and described in the answer](../../../assets/image.gif)
+![The picture open beside the session, inserted into the prompt as a path, and described in the answer](../../../assets/image.gif)
 
 `C-c C-x` turns the editor's context on or off for this buffer: with it on, where you are
 goes with every prompt.

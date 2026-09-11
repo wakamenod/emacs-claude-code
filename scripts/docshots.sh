@@ -156,7 +156,7 @@ fi
 # The four scenes below are answered by the model, so they need a session
 # that really runs.  It is started once, whichever of them is being taken.
 if want send-region || want fix-error || want inline || want rewrite \
-       || want at-cursor || want image || want context; then
+       || want at-cursor || want context; then
     e '(shot-start-live)'               ; sleep 4
 fi
 
@@ -252,12 +252,17 @@ if want context; then
 fi
 
 if want image; then
-    # An image in a prompt: it is written to disk and referenced by path.
+    # An image in a prompt.  It goes by path rather than inline, so the
+    # picture is opened beside the session first: without it the scene
+    # is one line of text appearing in the prompt region.  The session
+    # is the one on the settings' model: haiku misread the picture.
+    e '(shot-start-live-default)' ; sleep 5
     scene image
-    e '(shot-scene-insert-image)'                 ; snap 3
-    e '(shot-prompt-type "What is in this image?")'; snap 2
-    e '(shot-prompt-send)'                        ; snap 2
-    for _ in $(seq 1 14); do sleep 1; snap; done
+    e '(shot-scene-image-open)'                             ; snap 3
+    e '(shot-scene-insert-image)'                           ; snap 3
+    e '(shot-prompt-type "What is in this image? One line.")'; snap 2
+    e '(shot-prompt-send)'                                  ; snap 2
+    for _ in $(seq 1 12); do sleep 1; snap; done
     gif
 fi
 
@@ -265,7 +270,7 @@ if want suggestion; then
     # The prompt the CLI offers, and C-c C-s taking it.  This one has a
     # session of its own: the model the settings name sends suggestions
     # and haiku does not, so the other scenes' session cannot be used.
-    e '(shot-start-live-suggestions)' ; sleep 5
+    e '(shot-start-live-default)' ; sleep 5
     # Two turns: no suggestion came after one of them, and the CLI
     # offered one after the second (confirmed 2026-09-11).
     e '(shot-prompt-type "Read hello.py and say in one line what it does.")'
