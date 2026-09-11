@@ -24,5 +24,5 @@ A few things worth knowing before you start:
 - **`ecc-tui-open` hands a session to the real terminal client** when you want
   the CLI's own interface, and `ecc-tui-return` takes it back.
 
-[Install it](/emacs-claude-code/start/installation/), then
-[work through a session](/emacs-claude-code/start/first-session/).
+[Install it](/emacs-claude-code/start/installation/), and the
+[command reference](/emacs-claude-code/reference/commands/) has the rest.

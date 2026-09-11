@@ -94,5 +94,5 @@ If the CLI cannot be started, the session's log buffer — `C-c ?` then `L`, or
 came back on the pipe.
 
 Every other setting is in `M-x customize-group RET ecc` and on the
-[configuration reference](/emacs-claude-code/reference/configuration/).
-Next: [your first session](/emacs-claude-code/start/first-session/).
+[configuration reference](/emacs-claude-code/reference/configuration/). `C-c ?`
+in a session opens the menu, which reaches every command and shows its key.

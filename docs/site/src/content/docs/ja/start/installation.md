@@ -94,4 +94,5 @@ CLI が起動できないときは、セッションのログバッファ（`C-c
 
 他の設定はすべて `M-x customize-group RET ecc` と
 [設定リファレンス](/emacs-claude-code/ja/reference/configuration/)にあります。
-次は[最初のセッション](/emacs-claude-code/ja/start/first-session/)へ。
+セッション内の `C-c ?` がメニューを開きます。メニューはすべてのコマンドに届き、
+そのキーを表示します。
