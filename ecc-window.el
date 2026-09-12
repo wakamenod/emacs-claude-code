@@ -444,11 +444,7 @@ happens to the session windows and where point lands."
                                  (ecc-session-project-root session))
                               (ecc-window-project-sessions)))
                   (_ nil))))
-    (when hidden
-      (let ((visible (seq-filter #'ecc-window-session-visible-p hidden)))
-        (when visible
-          (ecc-window-set-hidden-sessions (ecc-window--hidden-entries visible))
-          (mapc #'ecc-window-hide-session visible))))
+    (ecc-window-hide-sessions hidden)
     (let ((window (display-buffer buffer)))
       (pcase ecc-window-review-focus
         ('review (when (window-live-p window) (select-window window)))
@@ -506,6 +502,22 @@ the window it came from, rather than dealing them out again."
             (cons (ecc-session-id session) (ecc-window--session-role session)))
           sessions))
 
+(defun ecc-window-hide-sessions (sessions)
+  "Take down the windows of the SESSIONS that are on screen, and say which.
+Where each one was is remembered so that `ecc-toggle\=' can put it back
+in the window it came from.  The entries join the ones already hidden
+rather than replacing them: `ecc-focus-project\=' hides several projects
+at once and `ecc-toggle\=' one after it, and both groups have to come
+back."
+  (when-let* ((visible (seq-filter #'ecc-window-session-visible-p sessions)))
+    (let ((entries (ecc-window--hidden-entries visible)))
+      (ecc-window-set-hidden-sessions
+       (append entries
+               (seq-remove (lambda (old) (assoc (car old) entries))
+                           (ecc-window-hidden-sessions)))))
+    (mapc #'ecc-window-hide-session visible)
+    visible))
+
 (defun ecc-window--restore-hidden (entries)
   "Show again the sessions of ENTRIES, each in the role it had.
 Return the sessions that were shown."
@@ -522,25 +534,30 @@ Return the sessions that were shown."
 (defun ecc-toggle (&optional all)
   "Hide the session windows of this project, or bring back the hidden ones.
 With ALL, a prefix argument interactively, every session is toggled
-rather than the ones of the current project."
+rather than the ones of the current project.
+
+What comes back is what this project had hidden, and the rest stays
+where it is: `ecc-focus-project\=' hides every other project at once, and
+a toggle of this one would otherwise undo the whole of it.
+`ecc-toggle-all\=' is the way to bring every project back."
   (interactive "P")
   (let* ((sessions (if all (ecc-model-sessions)
                      (ecc-window-project-sessions)))
          (visible (seq-filter #'ecc-window-session-visible-p sessions)))
     (cond
      (visible
-      (ecc-window-set-hidden-sessions (ecc-window--hidden-entries visible))
-      (mapc #'ecc-window-hide-session visible)
+      (ecc-window-hide-sessions visible)
       (message "Hid %d sessions" (length visible)))
      (t
-      (let* ((entries (or (ecc-window-hidden-sessions)
-                          (mapcar (lambda (session)
-                                    (cons (ecc-session-id session) nil))
-                                  sessions)))
-             (shown (ecc-window--restore-hidden entries)))
+      (let* ((ids (mapcar #'ecc-session-id sessions))
+             (hidden (ecc-window-hidden-sessions))
+             (mine (or (seq-filter (lambda (entry) (member (car entry) ids)) hidden)
+                       (mapcar (lambda (id) (cons id nil)) ids)))
+             (shown (ecc-window--restore-hidden mine)))
         (if (null shown)
             (message "No session to show")
-          (ecc-window-set-hidden-sessions nil)
+          (ecc-window-set-hidden-sessions
+           (seq-remove (lambda (entry) (member (car entry) ids)) hidden))
           (message "Showing %d sessions" (length shown)))
         shown)))))
 

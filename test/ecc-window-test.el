@@ -296,6 +296,54 @@ window is the next one `display-buffer' takes over."
         (should (equal (sort (mapcar #'ecc-session-name hidden) #'string<)
                        '("one" "two")))))))
 
+(ert-deftest ecc-window-test-hide-sessions-keeps-earlier-entries ()
+  "Hiding one group after another leaves both of them to come back.
+The list used to be replaced rather than added to, so the group hidden
+first was forgotten and never came back."
+  (ecc-window-test--with-sessions one two
+    (set-frame-parameter nil 'ecc-hidden-sessions nil)
+    (cl-letf (((symbol-function 'ecc-window-session-visible-p)
+               (lambda (&rest _) t))
+              ((symbol-function 'ecc-window-hide-session) #'ignore))
+      (ecc-window-hide-sessions (list one))
+      (ecc-window-hide-sessions (list two))
+      (should (equal (sort (mapcar #'car (ecc-window-hidden-sessions)) #'string<)
+                     (sort (list (ecc-session-id one) (ecc-session-id two))
+                           #'string<)))
+      ;; A session hidden twice is remembered once.
+      (ecc-window-hide-sessions (list one))
+      (should (= 2 (length (ecc-window-hidden-sessions)))))))
+
+(ert-deftest ecc-window-test-toggle-restores-only-its-own-project ()
+  "A toggle brings back its own project and leaves the rest hidden.
+It used to restore every entry, whichever project had hidden it, so a
+toggle after `ecc-focus-project\=' undid the whole of the focus."
+  (ecc-window-test--with-sessions one two
+    (let ((shown nil)
+          (visible (list one two)))
+      (set-frame-parameter nil 'ecc-hidden-sessions nil)
+      (cl-letf (((symbol-function 'ecc-window-session-visible-p)
+                 (lambda (session &optional _frame) (memq session visible)))
+                ((symbol-function 'ecc-window-hide-session)
+                 (lambda (session) (setq visible (delq session visible))))
+                ((symbol-function 'ecc-display-session)
+                 (lambda (session) (push session shown) (push session visible))))
+        ;; Both projects go into hiding, one after the other.
+        (ecc-window-hide-sessions (list one))
+        (ecc-window-hide-sessions (list two))
+        (should (= 2 (length (ecc-window-hidden-sessions))))
+        ;; A toggle in the first project brings back that one alone.
+        (let ((default-directory "/tmp/project-one/"))
+          (ecc-toggle))
+        (should (equal shown (list one)))
+        (should (equal (mapcar #'car (ecc-window-hidden-sessions))
+                       (list (ecc-session-id two))))
+        ;; And the other is still there to come back to.
+        (let ((default-directory "/tmp/project-two/"))
+          (ecc-toggle))
+        (should (equal shown (list two one)))
+        (should-not (ecc-window-hidden-sessions))))))
+
 ;;;; The source buffer
 
 (ert-deftest ecc-window-test-source-buffer ()
