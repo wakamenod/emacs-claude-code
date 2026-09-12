@@ -84,12 +84,45 @@ DIRECTORY defaults to `default-directory'."
           (file-name-as-directory (expand-file-name (project-root project))))
         (file-name-as-directory (expand-file-name default-directory)))))
 
+(defvar ecc-window--project-root-cache (make-hash-table :test #'equal)
+  "Hash of a directory to the project root above it.
+`project-current\=' walks the directories above a root, and the tab line
+asks which project a session is in on every redisplay.  A directory
+rarely stops belonging to a project inside one Emacs, so the answer is
+kept rather than worked out again; a test binds a fresh hash.")
+
+(defun ecc-window-project-key (directory)
+  "Return the project DIRECTORY belongs to, as the key its sessions group under.
+Two sessions are in the same project when this says the same of them,
+so everything that groups them goes through here: the root that comes
+back is `project.el\='s, which is what makes a session started in a
+subdirectory group with the tree it is part of rather than stand alone."
+  (if (or (null directory) (equal directory ""))
+      ""
+    (or (gethash directory ecc-window--project-root-cache)
+        (puthash directory (ecc-window-project-root directory)
+                 ecc-window--project-root-cache))))
+
+(defun ecc-window-session-project (session)
+  "Return the project SESSION belongs to.
+The directory the CLI says it works in is asked first and the root the
+session was made with second: a `/cd\=' moves the one and leaves the
+other, and what the user means by the project is where the CLI is."
+  (ecc-window-project-key (or (ecc-session-cwd session)
+                              (ecc-session-project-root session))))
+
+(defun ecc-window-session-projects ()
+  "Return the projects that have a session, most recently used first."
+  (seq-uniq (mapcar #'ecc-window-session-project (ecc-model-sessions))))
+
 (defun ecc-window-project-sessions (&optional root)
   "Return the sessions whose project is ROOT, most recently used first.
-ROOT defaults to the project of the current buffer."
-  (let ((root (or root (ecc-window-project-root))))
+ROOT defaults to the project of the current buffer.  It is matched as a
+project rather than as a path, so a session started in a subdirectory
+of ROOT is one of them."
+  (let ((key (ecc-window-project-key (or root default-directory))))
     (seq-filter (lambda (session)
-                  (equal (ecc-session-project-root session) root))
+                  (equal (ecc-window-session-project session) key))
                 (ecc-model-sessions))))
 
 (defun ecc-window-read-session-name (root)

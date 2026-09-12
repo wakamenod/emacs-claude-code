@@ -32,6 +32,26 @@ They live in different projects; the second is the most recently used."
        (ecc-test-cleanup-session ,first)
        (ecc-test-cleanup-session ,second))))
 
+(defmacro ecc-window-test--with-projects (roots &rest body)
+  "Run BODY with each directory in ROOTS answering as a project of its own.
+The file system is never asked: `project-current\=' is told that a
+directory under one of ROOTS belongs to a transient project rooted
+there, which `project.el\=' already knows how to take the root of.  The
+caches that would otherwise carry an answer between tests are made
+fresh."
+  (declare (indent 1))
+  `(let ((ecc-window--project-root-cache (make-hash-table :test #'equal))
+         (ecc-window--project-source-buffers nil))
+     (cl-letf (((symbol-function 'project-current)
+                (lambda (&rest _)
+                  (let ((directory (expand-file-name default-directory)))
+                    (when-let* ((root (seq-find
+                                       (lambda (root)
+                                         (string-prefix-p root directory))
+                                       ,roots)))
+                      (cons 'transient root))))))
+       ,@body)))
+
 ;;;; Projects and names
 
 (ert-deftest ecc-window-test-project-sessions ()
@@ -40,6 +60,63 @@ They live in different projects; the second is the most recently used."
     (should (equal (ecc-window-project-sessions "/tmp/project-one/") (list one)))
     (should (equal (ecc-window-project-sessions "/tmp/project-two/") (list two)))
     (should-not (ecc-window-project-sessions "/tmp/elsewhere/"))))
+
+(ert-deftest ecc-window-test-project-key-groups-subdirectories ()
+  "A session started in a subdirectory is a session of the whole project.
+It used to be a project of its own, because the root was matched as a
+string: a session started by mistake one directory down was then
+nowhere to be found among its siblings."
+  (ecc-window-test--with-projects '("/tmp/project-one/")
+    (ecc-window-test--with-sessions one _two
+      (let ((deep (ecc-model-create-session
+                    :name "deep" :project-root "/tmp/project-one/src/")))
+        (unwind-protect
+            (progn
+              (should (equal (ecc-window-session-project deep)
+                             (ecc-window-session-project one)))
+              ;; Either directory names the same group, and both
+              ;; sessions are in it.
+              (dolist (root '("/tmp/project-one/" "/tmp/project-one/src/"))
+                (should (equal (sort (mapcar #'ecc-session-name
+                                             (ecc-window-project-sessions root))
+                                     #'string<)
+                               '("deep" "one")))))
+          (ecc-test-cleanup-session deep)
+          (ecc-model-remove-session deep))))))
+
+(ert-deftest ecc-window-test-session-project-follows-the-cli-cwd ()
+  "The project of a session is where the CLI works, not where it started.
+A `/cd\=' moves the one and leaves the other."
+  (ecc-window-test--with-projects '("/tmp/project-one/" "/tmp/project-two/")
+    (ecc-window-test--with-sessions one two
+      (should-not (equal (ecc-window-session-project one)
+                         (ecc-window-session-project two)))
+      (setf (ecc-session-cwd one) "/tmp/project-two/src/")
+      (should (equal (ecc-window-session-project one)
+                     (ecc-window-session-project two)))
+      (should (equal (sort (mapcar #'ecc-session-name
+                                   (ecc-window-project-sessions "/tmp/project-two/"))
+                           #'string<)
+                     '("one" "two"))))))
+
+(ert-deftest ecc-window-test-session-projects-are-distinct ()
+  "The projects with a session are listed once each, most recent first."
+  (ecc-window-test--with-projects '("/tmp/project-one/" "/tmp/project-two/")
+    (ecc-window-test--with-sessions one two
+      (let ((third (ecc-model-create-session
+                     :name "three" :project-root "/tmp/project-one/lib/")))
+        (unwind-protect
+            (progn
+              ;; Three sessions, two projects, and the one last made
+              ;; heads the list.
+              (should (equal (ecc-window-session-projects)
+                             (list (ecc-window-session-project third)
+                                   (ecc-window-session-project two))))
+              (ecc-model-touch one)
+              (should (equal (car (ecc-window-session-projects))
+                             (ecc-window-session-project one))))
+          (ecc-test-cleanup-session third)
+          (ecc-model-remove-session third))))))
 
 (ert-deftest ecc-window-test-second-session-is-named ()
   "The second session of a project is asked for a name."
