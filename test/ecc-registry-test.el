@@ -118,6 +118,38 @@ mean the same project."
     (let ((ecc-registry-check-process nil))
       (should (= 2 (length (ecc-registry-sessions)))))))
 
+(ert-deftest ecc-registry-test-a-drifting-start-time-is-still-alive ()
+  "A process table that dates the same process a second out is believed.
+On GNU/Linux `process-attributes' works the start time out from the
+uptime it reads on each call, so it moves under its own feet; a live
+session was called dead whenever that crossed a second boundary.  This
+is what failed on a CI runner and never on macOS, where the start time
+is read out of the kernel."
+  (ecc-registry-test--with-temp-registry directory
+    (let* ((start (alist-get 'start (process-attributes (emacs-pid))))
+           (recorded (ecc-registry-test--proc-start (emacs-pid))))
+      (ecc-registry-test--write directory (emacs-pid) "alive" 'name "alive"
+                                'procStart recorded)
+      ;; A second either way, which is all the drift ever amounts to.
+      (dolist (drift '(-1 1))
+        (cl-letf (((symbol-function 'process-attributes)
+                   (lambda (_pid) `((start . ,(time-add start drift))))))
+          (should (equal '("alive")
+                         (mapcar (lambda (e) (alist-get 'name e))
+                                 (ecc-registry-sessions))))))
+      ;; A process that really started at another time is still somebody
+      ;; else: the slack is seconds, not minutes.
+      (cl-letf (((symbol-function 'process-attributes)
+                 (lambda (_pid) `((start . ,(time-add start 600))))))
+        (should-not (ecc-registry-sessions))))))
+
+(ert-deftest ecc-registry-test-an-unreadable-start-time-is-not-believed ()
+  "A `procStart' that is no date at all is not taken as a match."
+  (ecc-registry-test--with-temp-registry directory
+    (ecc-registry-test--write directory (emacs-pid) "junk" 'name "junk"
+                              'procStart "the other day")
+    (should-not (ecc-registry-sessions))))
+
 (ert-deftest ecc-registry-test-drops-a-reused-process-id ()
   "An id that now belongs to something else is not the old session.
 A session killed outright leaves its file behind; the start time the

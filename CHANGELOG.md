@@ -38,6 +38,16 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 - The Files summary diffs a file again only when it changed again, rather
   than every hunk of every file on every redraw.
 
+### Fixed
+
+- A running session is no longer dropped from the dashboard and the session
+  list on GNU/Linux.  The registry checks a session's recorded `procStart`
+  against the process table, and on Linux `process-attributes` works the start
+  time out from the uptime it reads on each call, so it dates the same process
+  a little either side of itself; comparing the two as text called a live
+  session dead whenever that crossed a second boundary.  The times are now
+  compared as times, with two seconds of slack.
+
 ## [0.1.0] - 2026-09-11
 
 The first release.  Verified against **Claude Code CLI 2.1.268** and
