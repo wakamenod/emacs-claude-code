@@ -9,6 +9,8 @@ An Emacs client for the Claude Code CLI. Conversations run directly inside ordin
 ![Emacs 29.1+](https://img.shields.io/badge/Emacs-29.1%2B-7F5AB6)
 ![Claude Code CLI](https://img.shields.io/badge/Claude%20Code-CLI-D97757)
 
+![A whole session: two prompts, the tools each one ran, the diffs they were allowed to make, and the answers](docs/images/overview.png)
+
 ![A session: a prompt is sent, the Edit is allowed, and the source buffer on the left picks up the change](docs/images/session.gif)
 
 **Documentation:** <https://wakamenod.github.io/emacs-claude-code/>

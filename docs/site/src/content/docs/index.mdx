@@ -3,6 +3,16 @@ title: Emacs Client for Claude Code
 description: Run the Claude Code CLI inside Emacs. Conversations, permission prompts, diffs, and plans live in ordinary Emacs buffers — no terminal emulator required.
 template: splash
 head:
+  # The hero image is a screenshot, not a logo: Starlight renders an
+  # image under src/assets at 400x400, which squashes it, and gives the
+  # hero's right column a quarter of the page.  Raw HTML over a file in
+  # public/ keeps the shape, and this widens the column it sits in.
+  - tag: style
+    content: |
+      @media (min-width: 50rem) {
+        .hero { grid-template-columns: 5fr 6fr; }
+        .hero > .hero-html { width: 100%; }
+      }
   # Without this the page title is "ecc | ecc".
   - tag: title
     content: Emacs Client for Claude Code — ecc
@@ -29,6 +39,10 @@ hero:
   # Hero action links are used verbatim: Starlight does not prepend `base`
   # to them the way it does for sidebar and slug links.
   tagline: An Emacs client for the Claude Code CLI. Conversations run directly in ordinary Emacs buffers — no terminal emulator required.
+  image:
+    html: |
+      <img src="/emacs-claude-code/overview.png" alt="A whole session: the source on the left, and on the right two prompts, the tools each one ran, the diffs they were allowed to make, and the answers"
+           style="width:100%;height:auto;border-radius:0.5rem" />
   actions:
     - text: Get started
       link: /emacs-claude-code/start/overview/

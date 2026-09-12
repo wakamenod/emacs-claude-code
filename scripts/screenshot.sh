@@ -49,8 +49,8 @@ done
 [ -f "$geom" ] || { echo "the frame never reported its geometry" >&2; exit 1; }
 read -r X Y W H _cols _lines < "$geom" || true
 
-# `frame-position' on macOS is the outer window, title bar included, so
-# the frame rectangle is exactly what should be captured.
+# The geometry is the frame's outer edges, title bar included, which is
+# the rectangle to capture.
 snap 3                                     # the session, idle
 
 # Typing, a few characters at a time.

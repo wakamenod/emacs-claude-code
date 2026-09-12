@@ -301,6 +301,9 @@ if want btw; then
     for _ in $(seq 1 8); do sleep 0.8; snap; done
     for _ in $(seq 1 10); do sleep 1; snap; done
     gif
+    # The answer floats in a posframe, and a posframe outlives every
+    # window command: without this it lies over every scene after it.
+    e '(shot-scene-btw-end)'
 fi
 
 if want capabilities; then
@@ -392,9 +395,13 @@ if want proposal; then
 fi
 
 if want plan; then
-    # A plan, the mode it is approved into, and the approval.
+    # A plan, a comment on one of its lines, the mode it is approved
+    # into, and the approval.
     scene plan
     e '(shot-scene-plan)'               ; sleep 1; snap 4
+    e '(shot-scene-plan-comment 3 (list "add a " "docstring " "to each"))'
+    for _ in $(seq 1 8); do sleep 0.6; snap; done
+    snap 2
     e '(shot-scene-plan-mode-sequence)'
     for _ in $(seq 1 6); do sleep 0.6; snap; done
     e '(shot-scene-plan-approve)'       ; sleep 1; snap 4
@@ -446,6 +453,22 @@ if want resume; then
     # fed to it from the server.
     e '(shot-scene-resume)'         ; sleep 3; still "$outdir/resume.png"
 
+fi
+
+# Last, because it is the one scene that changes the type and the size
+# of the frame.  Both the site's front page and README.md carry it, and
+# README.md reads it from docs/images like the other two there.
+if want overview; then
+    # This one goes to two fixed places rather than into $outdir: the
+    # site's front page carries it in its hero, where Starlight would
+    # squash an image under src/assets into a 400x400 square, so it is
+    # served from public/ as it is; README.md reads the copy in
+    # docs/images beside the other two.
+    e '(shot-scene-overview)' ; sleep 2
+    mkdir -p "$root/docs/site/public" "$root/docs/images"
+    still "$root/docs/site/public/overview.png"
+    cp "$root/docs/site/public/overview.png" "$root/docs/images/overview.png"
+    e '(shot-scene-overview-end)'
 fi
 
 echo "wrote the pictures of ${SCENES:-every scene} into $outdir"

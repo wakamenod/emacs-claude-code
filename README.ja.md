@@ -9,6 +9,8 @@ Claude Code CLI 向けの Emacs クライアントです。通常の Emacs バ�
 ![Emacs 29.1+](https://img.shields.io/badge/Emacs-29.1%2B-7F5AB6)
 ![Claude Code CLI](https://img.shields.io/badge/Claude%20Code-CLI-D97757)
 
+![セッション全体：2 つのプロンプト、それぞれが走らせたツール、許可された差分、そして返ってきた答え](docs/images/overview.png)
+
 ![セッション：プロンプトを送り、Edit を許可すると、左のソースバッファが変更を取り込む](docs/images/session.gif)
 
 **ドキュメント:** <https://wakamenod.github.io/emacs-claude-code/ja/>

@@ -51,7 +51,28 @@
 (require 'vertico nil t)
 (require 'vertico-posframe nil t)
 
-(load-theme 'modus-vivendi t)
+;; The site's pictures are dressed the same way as the README's one, in
+;; scripts/screenshot.el: a dark theme and a modern monospace, so that
+;; the documentation looks like one set rather than two.  None of this is
+;; loaded by `ecc' itself.
+(setq doom-themes-enable-bold t
+      doom-themes-enable-italic t)
+(load-theme 'doom-tokyo-night t)
+(require 'doom-modeline)
+(setq doom-modeline-icon t
+      doom-modeline-buffer-encoding nil
+      doom-modeline-height 28
+      doom-modeline-bar-width 4
+      doom-modeline-buffer-file-name-style 'file-name)
+(doom-modeline-mode 1)
+;; doom-modeline right-aligns to the last pixel of the window, and with
+;; this font the closing bracket of the process segment lands half off
+;; the edge; a mode line of its own, ending in two spaces, is the least
+;; invasive way back.
+(doom-modeline-def-modeline 'shot-main-line
+  '(bar modals buffer-info buffer-position selection-info)
+  '(misc-info major-mode process "  "))
+(doom-modeline-set-modeline 'shot-main-line t)
 
 ;; A warning opens a window of its own over the scene.  There should be
 ;; none left, but a picture is not the place to find out.
@@ -759,6 +780,21 @@ question was typed."
    "List 12 edge cases worth testing in greet and farewell, one short line each.")
   (shot-prompt-send))
 
+(defun shot-scene-btw-end ()
+  "Take the side question off the screen, and put the display back.
+The answer is shown in a posframe, which is a child frame rather than
+a window: `shot-show\=' deletes the windows of the frame and the
+posframe stays where it is, floating over every picture taken after
+this scene -- the tab line, the slash picker, the folding and the
+capabilities all came out with it across them (confirmed 2026-09-12)."
+  (when-let* ((buffer (get-buffer (ecc-btw-buffer-name shot-main))))
+    (when (featurep 'posframe)
+      (posframe-hide buffer))
+    (when-let* ((window (get-buffer-window buffer)))
+      (quit-window nil window)))
+  (setq ecc-btw-display 'window)
+  (redisplay t))
+
 (defun shot-scene-btw-sequence (chunks)
   "Ask a side question, typing CHUNKS into the minibuffer.
 `ecc-btw-ask' reads its question there, so the whole thing is
@@ -781,11 +817,17 @@ The scenes share one Emacs and a session keeps what an earlier one
 replayed into it: the Files section grew a plan file and a second
 write, and a scene that had ended mid-turn left the state line saying
 so.  The second session is left alone, so the tab line still has one."
-  (when shot-main
-    (when (ecc-model-session (ecc-session-id shot-main))
-      (ecc-model-remove-session shot-main))
-    (when (buffer-live-p (ecc-session-buffer shot-main))
-      (kill-buffer (ecc-session-buffer shot-main))))
+  ;; Every session of this name goes, not only the one `shot-main' holds:
+  ;; one left behind in the model makes `ecc-model-unique-name' call the
+  ;; new one greet<2>, and the tab line, the mode line and the plan
+  ;; buffer all said so (confirmed 2026-09-12).
+  (dolist (session (ecc-model-sessions))
+    (when (string-prefix-p "greet" (ecc-session-name session))
+      (ecc-model-remove-session session)
+      (when (buffer-live-p (ecc-session-buffer session))
+        (kill-buffer (ecc-session-buffer session)))))
+  (when (and shot-main (buffer-live-p (ecc-session-buffer shot-main)))
+    (kill-buffer (ecc-session-buffer shot-main)))
   (with-temp-file shot-file (insert shot-before))
   (setq shot-main (ecc-model-create-session :name "greet"
                                             :project-root shot-root))
@@ -911,10 +953,32 @@ hunk to walk."
   (shot-reset-main)
   (shot-show shot-main)
   (shot-play shot-main "plan-mode" 1 13)
+  ;; The plan opens under the source, which leaves it a third of the
+  ;; frame high and half of it wide, and every line of the plan was cut
+  ;; off on the right: the picture showed a plan nobody could read.  The
+  ;; source has no part in this scene, so it goes.
+  (when-let* ((window (get-buffer-window (get-file-buffer shot-file))))
+    (let ((ignore-window-parameters t))
+      (ignore-errors (delete-window window))))
   (when-let* ((window (shot-plan-window)))
     (with-selected-window window
       (goto-char (point-min))
       (redisplay t))))
+
+(defun shot-scene-plan-comment (line chunks)
+  "Comment on LINE of the plan, typing CHUNKS into the minibuffer.
+`ecc-plan-comment\=' reads the comment there, so this is scheduled
+inside Emacs like the other scenes that answer a prompt."
+  (let ((typing (shot-typing-steps 1.0 chunks)))
+    (shot-script
+     (append (list (cons 0.5 (lambda ()
+                               (with-selected-window (shot-plan-window)
+                                 (goto-char (point-min))
+                                 (forward-line (1- line))
+                                 (call-interactively #'ecc-plan-comment)))))
+             typing
+             (list (cons (+ 0.8 (car (car (last typing))))
+                         (lambda () (shot-keys "RET"))))))))
 
 (defun shot-scene-plan-mode-sequence ()
   "Choose the permission mode the approval switches to."
@@ -1206,13 +1270,88 @@ and every picture taken after it has a blinking corner."
   (ecc-model-set-state shot-main 'idle)
   (shot-show shot-main))
 
+(defun shot-scene-overview ()
+  "One picture of a whole session, for the front page and for README.md.
+Smaller type and as much of the screen as the capture can safely have,
+so that several turns are in view at once rather than the tail of one."
+  (set-frame-font "JetBrains Mono 10" nil t)
+  ;; The source keeps a narrow column on the left and the transcript has
+  ;; the rest, drawn wider than the 64 columns the other scenes use.
+  (setq ecc-chat-text-width 88)
+  (shot-reset-main)
+  (shot-turn-prompt shot-main "Make greet say hello instead of hi.")
+  ;; A second turn, so the picture shows a conversation rather than an
+  ;; exchange: the edit `shot-reset-main\=' replays, then the write.
+  (shot-play-write shot-main)
+  (shot-turn-prompt shot-main "Write hello.txt with \"hi\" in it")
+  ;; A turn draws its heading from the prompt, and a replayed one has
+  ;; none until the line above puts it back -- without which both turns
+  ;; of this picture would be headed "(resumed)".
+  (ecc-render-refresh shot-main)
+  ;; Wide, and as tall as the conversation is.  Sized to the screen
+  ;; instead, the bottom two thirds of the picture came out empty.
+  ;; This one stands at the top of the screen and takes nearly all of its
+  ;; height: nothing here opens a minibuffer, so it does not need the
+  ;; room `shot-place-frame-bottom-right\=' keeps for one, and the whole
+  ;; conversation only fits in the picture with that room spent on it.
+  (let* ((area (frame-monitor-workarea))
+         (columns (min 132 (/ (- (nth 2 area) 48) (frame-char-width))))
+         (limit (/ (- (nth 3 area) 40) (frame-char-height))))
+    (set-frame-size (selected-frame) columns limit)
+    (shot-show shot-main)
+    ;; The demo file is nine lines long, so the source is given a narrow
+    ;; column: half the frame of empty space beside the conversation is
+    ;; what this picture must not be.
+    (when-let* ((window (get-buffer-window (get-file-buffer shot-file))))
+      (ignore-errors (window-resize window (- 34 (window-width window)) t)))
+    (when-let* ((window (get-buffer-window (ecc-session-buffer shot-main))))
+      (ecc-chat--set-margins window)
+      ;; Grow until the first line of the conversation is in view, or
+      ;; until the screen runs out.  Counting the lines instead is
+      ;; wrong: the transcript folds, and what is folded away is not
+      ;; drawn but is still there to count.
+      (set-frame-size (selected-frame) columns 30)
+      (while (and (< (frame-height) limit)
+                  (progn (with-selected-window window
+                           (goto-char (point-max))
+                           (recenter -1))
+                         (redisplay t)
+                         (not (pos-visible-in-window-p (point-min) window))))
+        (set-frame-size (selected-frame) columns
+                        (min limit (+ 4 (frame-height)))))))
+  (let ((area (frame-monitor-workarea)))
+    (set-frame-position (selected-frame)
+                        (max (nth 0 area)
+                             (- (+ (nth 0 area) (nth 2 area))
+                                (frame-pixel-width) 24))
+                        (+ (nth 1 area) 12)))
+  (when-let* ((window (get-buffer-window (ecc-session-buffer shot-main))))
+    (with-selected-window window
+      (goto-char (point-max))
+      (recenter -1)))
+  (message nil)
+  ;; The frame was resized and moved a moment ago, and the capture is of
+  ;; the screen: without this the picture came out with the old contents
+  ;; drawn again below the new ones.
+  (redraw-display)
+  (redisplay t))
+
+(defun shot-scene-overview-end ()
+  "Put the frame back to the type and the size every other scene wants."
+  (setq ecc-chat-text-width 64)
+  (set-frame-font "JetBrains Mono 13" nil t)
+  (set-frame-size (selected-frame) 112 44)
+  (shot-place-frame-bottom-right)
+  (redisplay t))
+
 (defun shot-setup-frame ()
   "Size and dress the frame, then write its geometry out for capture."
   (tool-bar-mode -1)
   (scroll-bar-mode -1)
   (set-fringe-mode 8)
   (blink-cursor-mode -1)
-  (set-frame-font "Menlo 13" nil t)
+  (set-frame-font "JetBrains Mono 13" nil t)
+  (setq-default line-spacing 0.1)
   ;; Tall enough for `ecc-menu', which is two rows of columns and the
   ;; longest of them has ten lines.
   (set-frame-size (selected-frame) 112 44)

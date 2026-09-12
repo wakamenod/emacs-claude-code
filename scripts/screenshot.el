@@ -38,9 +38,30 @@
 (require 'ecc-test-helpers)
 (require 'server)
 
-(load-theme 'modus-vivendi t)
+;; The demo is dressed up on purpose: the documentation's picture is the
+;; first thing anybody sees of this package, and a plain -Q frame makes it
+;; look older than it is.  None of this is loaded by `ecc' itself.
+(setq doom-themes-enable-bold t
+      doom-themes-enable-italic t)
+(load-theme 'doom-tokyo-night t)
+(require 'doom-modeline)
+(setq doom-modeline-icon t
+      doom-modeline-buffer-encoding nil
+      doom-modeline-height 28
+      doom-modeline-bar-width 4
+      doom-modeline-buffer-file-name-style 'file-name)
+(doom-modeline-mode 1)
+;; doom-modeline right-aligns to the last pixel of the window, and with
+;; this font the closing bracket of the process segment lands half off
+;; the edge; a mode line of its own, ending in two spaces, is the least
+;; invasive way back.
+(doom-modeline-def-modeline 'shot-main
+  '(bar modals buffer-info buffer-position selection-info)
+  '(misc-info major-mode process "  "))
+(doom-modeline-set-modeline 'shot-main t)
 
-(setq ecc-render-debounce 0
+(setq inhibit-startup-echo-area-message (user-login-name)
+      ecc-render-debounce 0
       ecc-visual-enable-icons t
       ecc-visual-enable-spinner nil
       ecc-chat-text-width 64
@@ -105,6 +126,9 @@ def farewell(name):
     (with-selected-window window
       (goto-char (point-max))
       (recenter -1)))
+  ;; The startup blurb sits in the echo area until something replaces it,
+  ;; and the capture includes that line.
+  (message nil)
   (redisplay t))
 
 ;;;; The steps the wrapper calls, in order
@@ -117,6 +141,7 @@ def farewell(name):
   (other-window 1)
   (switch-to-buffer (ecc-session-buffer shot-session))
   (ecc-chat--set-margins (selected-window))
+  (message nil)
   (redisplay t))
 
 (defun shot-step-type (text)
@@ -127,6 +152,7 @@ def farewell(name):
     (ecc-chat-goto-prompt)
     (goto-char (ecc-chat-prompt-end))
     (insert text)
+    (message nil)
     (redisplay t)))
 
 (defun shot-step-send ()
@@ -151,6 +177,7 @@ def farewell(name):
   "Show the source buffer picking the change up."
   (with-current-buffer (find-file-noselect shot-file)
     (revert-buffer t t t))
+  (message nil)
   (redisplay t))
 
 (defun shot-setup-frame ()
@@ -159,24 +186,35 @@ On macOS the GUI frame is only created at the very end of startup, so
 none of this can run while the file loads."
   (tool-bar-mode -1)
   (scroll-bar-mode -1)
-  (set-fringe-mode 8)
+  (set-fringe-mode 12)
   (blink-cursor-mode -1)
-  (set-frame-font "Menlo 13" nil t)
+  (set-frame-font "JetBrains Mono 13" nil t)
+  (setq-default line-spacing 0.1)
+  ;; A light macOS title bar over a dark theme is the one part of the
+  ;; picture that still looks like 2010; these two make it the frame's
+  ;; own background instead.
+  (set-frame-parameter nil 'ns-transparent-titlebar t)
+  (set-frame-parameter nil 'ns-appearance 'dark)
   (set-frame-size (selected-frame) 104 26)
   (set-frame-position (selected-frame) 220 140)
   (raise-frame)
   (x-focus-frame nil)
   (shot-prepare)
   (shot-step-idle)
+  (message nil)
   (setq server-name "ecc-shot")
   (server-start)
   (redisplay t)
-  (with-temp-file shot-geometry-file
-    (insert (format "%d %d %d %d %d %d"
-                    (car (frame-position)) (cdr (frame-position))
-                    (frame-pixel-width) (frame-pixel-height)
-                    (frame-width) (frame-height))
-            "\n")))
+  ;; `frame-pixel-height' leaves the title bar out while `frame-position'
+  ;; counts it, so the two together cut the mode line off the bottom of
+  ;; every capture.  The outer edges are the whole window, title bar and
+  ;; all, which is exactly the rectangle to hand to screencapture.
+  (pcase-let ((`(,left ,top ,right ,bottom) (frame-edges nil 'outer-edges)))
+    (with-temp-file shot-geometry-file
+      (insert (format "%d %d %d %d %d %d"
+                      left top (- right left) (- bottom top)
+                      (frame-width) (frame-height))
+              "\n"))))
 
 (add-hook 'window-setup-hook
           (lambda ()
