@@ -3,6 +3,16 @@ title: Claude Code の Emacs クライアント
 description: Claude Code CLI を Emacs の中で動かします。会話も、権限の確認も、差分もプランも、通常の Emacs バッファの中で完結します。ターミナルエミュレータは不要です。
 template: splash
 head:
+  # The hero image is a screenshot, not a logo: Starlight renders an
+  # image under src/assets at 400x400, which squashes it, and gives the
+  # hero's right column a quarter of the page.  Raw HTML over a file in
+  # public/ keeps the shape, and this widens the column it sits in.
+  - tag: style
+    content: |
+      @media (min-width: 50rem) {
+        .hero { grid-template-columns: 5fr 6fr; }
+        .hero > .hero-html { width: 100%; }
+      }
   # これがないとページタイトルが「ecc | ecc」になる。
   - tag: title
     content: Claude Code の Emacs クライアント — ecc
@@ -27,6 +37,10 @@ head:
       }
 hero:
   tagline: Claude Code CLI の Emacs クライアント。会話は通常の Emacs バッファ内で完結し、ターミナルエミュレータは不要です。
+  image:
+    html: |
+      <img src="/emacs-claude-code/overview.png" alt="セッション全体：左にソース、右に 2 つのプロンプト、それぞれが走らせたツール、許可された差分、そして返ってきた答え"
+           style="width:100%;height:auto;border-radius:0.5rem" />
   actions:
     - text: はじめる
       link: /emacs-claude-code/ja/start/overview/
