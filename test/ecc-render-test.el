@@ -1077,7 +1077,7 @@ cursor could not be moved into the answer at all."
                           :data `((text . ,(format "paragraph %d" i)))))
     (ecc-render-flush session)
     (with-current-buffer (ecc-session-buffer session)
-      (goto-char (marker-position ecc-render--live-start))
+      (goto-char (point-min))
       (should (search-forward "paragraph 3" nil t))
       (goto-char (match-beginning 0))
       (let ((line (ecc-render-test--line)))
@@ -1089,7 +1089,7 @@ cursor could not be moved into the answer at all."
         ;; And a flush of streamed text, which arrives far more often.
         (let ((node (ecc-model-add-node session :type 'text :data '((text . "")))))
           (ecc-render-flush session)
-          (goto-char (marker-position ecc-render--live-start))
+          (goto-char (point-min))
           (should (search-forward "paragraph 3" nil t))
           (goto-char (match-beginning 0))
           (ecc-render--on-delta session node "streamed")
@@ -1169,6 +1169,172 @@ turn again and looked as though nothing had arrived."
                    "一つ目 / 二つ目")))
   ;; Nothing to read falls back to the first value rather than erroring.
   (should (equal (ecc-render-tool-summary "AskUserQuestion" nil) "")))
+
+;;;; What a redraw leaves alone
+
+(defun ecc-render-test--turn-of-blocks (session)
+  "Give SESSION a running turn of four settled blocks and return their nodes.
+A step with one call, a text, another such step and a text."
+  (ecc-model-begin-turn session "do four things")
+  (let ((turn (ecc-session-current-turn session))
+        (nodes nil))
+    (dotimes (i 2)
+      (push (ecc-model-add-node
+             session :type 'tool :status 'done
+             :parent (ecc-model-step-for-tool session turn)
+             :data `((name . "Read")
+                     (input . ((file_path . ,(format "/nowhere/%d.txt" i))))
+                     (result . ,(format "contents of %d" i))))
+            nodes)
+      (push (ecc-model-add-node session :type 'text :status 'done
+                                :data `((text . ,(format "paragraph %d" i))))
+            nodes))
+    (dolist (node nodes) (ecc-model-node-changed session node))
+    (nreverse nodes)))
+
+(ert-deftest ecc-render-test-live-region-starts-at-last-block ()
+  "Once drawn, the settled blocks of a running turn are not drawn again.
+The live region starts after the last of them, and their entries keep
+their very markers through the redraws that follow; only the last
+block, where the turn grows, is drawn again."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (let ((nodes (ecc-render-test--turn-of-blocks session)))
+      (ecc-render-flush session)
+      (with-current-buffer (ecc-session-buffer session)
+        (should (= ecc-render--frozen 0))
+        (should (= ecc-render--frozen-blocks 3))
+        ;; The third block is a step drawn through to its one call.
+        (should (= (marker-position ecc-render--live-start)
+                   (cdr (ecc-render-node-bounds (ecc-node-id (nth 2 nodes))))))
+        (let ((entry (ecc-render-node-entry (ecc-node-id (car nodes))))
+              (last (ecc-render-node-entry (ecc-node-id (nth 3 nodes)))))
+          (ecc-model-node-changed
+           session (ecc-model-add-node session :type 'text :status 'done
+                                       :data '((text . "paragraph 4"))))
+          (ecc-render-flush session)
+          (should (= ecc-render--frozen-blocks 4))
+          (should (eq entry (ecc-render-node-entry (ecc-node-id (car nodes)))))
+          (should-not (eq last (ecc-render-node-entry (ecc-node-id (nth 3 nodes)))))
+          (should (string-search "paragraph 4" (buffer-string))))))))
+
+(ert-deftest ecc-render-test-change-behind-live-start-is-drawn ()
+  "A block the live region has left behind is drawn again when it changes.
+So is a turn that was finished: an agent that ends long after its turn
+did used to stay as it was until a refresh."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-test-dispatch session "basic-turn" "hello")
+    (let ((nodes (ecc-render-test--turn-of-blocks session)))
+      (ecc-render-flush session)
+      (with-current-buffer (ecc-session-buffer session)
+        (should (= ecc-render--frozen 1))
+        (should (= ecc-render--frozen-blocks 3))
+        ;; The first call of the running turn gets a new result.
+        (ecc-model-node-put (car nodes) 'result "a result that came late")
+        (ecc-model-node-changed session (car nodes))
+        (should (equal ecc-render--rewind '(1 . 0)))
+        (ecc-render-flush session)
+        (should (string-search "a result that came late" (buffer-string)))
+        (should-not ecc-render--rewind)
+        (should (= ecc-render--frozen-blocks 3))
+        ;; A node of the finished first turn changes.
+        (let ((old (car (ecc-turn-children (car (ecc-session-turns session))))))
+          (ecc-model-node-put old 'text "what the first turn says now")
+          (ecc-model-node-changed session old)
+          (should (equal ecc-render--rewind '(0 . 0)))
+          (ecc-render-flush session)
+          (should (string-search "what the first turn says now" (buffer-string)))
+          (should (string-search "a result that came late" (buffer-string)))
+          (should (= ecc-render--frozen 1))
+          (should (= ecc-render--frozen-blocks 3)))))))
+
+(defun ecc-render-test--replay-each (session name prompt answers)
+  "Replay fixture NAME into SESSION under PROMPT, drawing after every message.
+ANSWERS are as for `ecc-render-test--replay'.  Streamed text is drawn
+as it arrives too.  Returns the text of the buffer."
+  (ecc-render-test--with-recorded-home
+    (let ((ecc-stream-throttle 0))
+      (ecc-session-ensure-buffer session)
+      (ecc-model-begin-turn session prompt)
+      (dolist (line (ecc-test-fixture-lines name))
+        (let ((message (ecc-protocol-parse-line line)))
+          (ecc-dispatch session message)
+          (when (and answers (eq (ecc-protocol-control-subtype message) 'can_use_tool))
+            (let ((request (car (ecc-session-pending session)))
+                  (answer (pop answers)))
+              (cond ((functionp answer) (funcall answer request))
+                    ((eq answer 'allow) (ecc-perm-respond request 'allow))
+                    (t (ecc-perm-respond request 'deny :message (cdr answer))))))
+          (ecc-render-flush session)))
+      (ecc-test-buffer-string (ecc-session-buffer session)))))
+
+(defun ecc-render-test--without-clocks (text)
+  "Return TEXT with every duration blanked, for comparing two replays."
+  (replace-regexp-in-string "[0-9]+\\(\\.[0-9]+\\)?s" "Ns" text))
+
+(ert-deftest ecc-render-test-flush-per-message-matches-flush-once ()
+  "Drawing after every message ends with the text of drawing once at the end.
+This is what holds the incremental drawing to the full one: the frozen
+turns, the frozen blocks, the streamed deltas and the rewinds may take
+any route as long as they arrive at the same buffer."
+  (pcase-dolist (`(,name ,prompt ,answers)
+                 '(("basic-turn" "hello" nil)
+                   ("tool-use-write" "hello.txt を作って" (allow))
+                   ("permission-deny-retry" "hello.txt を作って"
+                    ((deny . "内容を hi にして") allow))
+                   ("subagent" "探して" nil)
+                   ("edit-tool" "greet を直して" (allow))
+                   ("partial-messages" "長いファイルを書いて" (allow))
+                   ("tasks" "タスクを作って" nil)))
+    (let ((once (ecc-test-with-fake-session session
+                  (ecc-render-test--replay session name prompt answers)))
+          (each (ecc-test-with-fake-session session
+                  (ecc-render-test--replay-each session name prompt answers))))
+      (should (> (length once) 0))
+      (unless (equal (ecc-render-test--without-clocks once)
+                     (ecc-render-test--without-clocks each))
+        (ert-fail (format "%s: drawn after every message it differs:\n%s" name
+                          (with-temp-buffer
+                            (insert each)
+                            (buffer-string))))))))
+
+;;;; What a redraw remembers
+
+(ert-deftest ecc-render-test-files-summary-reuses-diffs ()
+  "The Files section diffs a file again only when it changed again.
+The section is drawn with every redraw of the live region, and it used
+to diff every hunk of every file each time."
+  (ecc-test-with-fake-session session
+    (let ((diffs 0)
+          (olds nil))
+      (cl-letf* ((real (symbol-function #'ecc-diff-lines))
+                 ((symbol-function #'ecc-diff-lines)
+                  (lambda (old new)
+                    (cl-incf diffs)
+                    (push old olds)
+                    (funcall real old new))))
+        (ecc-session-ensure-buffer session)
+        (ecc-model-begin-turn session "edit two files")
+        (ecc-model-note-file session "/nowhere/a.txt" 'edit)
+        (ecc-model-note-hunk session "/nowhere/a.txt" "one\n" "1\n" nil "one\ntwo\n")
+        (ecc-model-note-file session "/nowhere/b.txt" 'edit)
+        (ecc-model-note-hunk session "/nowhere/b.txt" "two\n" "2\n" nil "one\ntwo\n")
+        (ecc-render-flush session)
+        (let ((first diffs))
+          (should (> first 0))
+          ;; Nothing changed: nothing is diffed.
+          (ecc-render-flush session)
+          (should (= diffs first))
+          ;; One more hunk on a: both hunks of a are diffed again, for
+          ;; the counts and for the text; b is not touched.
+          (setq olds nil)
+          (ecc-model-note-hunk session "/nowhere/a.txt" "1\n" "uno\n" nil "1\ntwo\n")
+          (ecc-render-flush session)
+          (should (= diffs (+ first 4)))
+          (should-not (member "two\n" olds))
+          (should (string-search "+uno" (ecc-test-buffer-string
+                                         (ecc-session-buffer session)))))))))
 
 (provide 'ecc-render-test)
 
