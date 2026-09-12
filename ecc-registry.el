@@ -30,6 +30,7 @@
 (require 'cl-lib)
 (require 'seq)
 (require 'filenotify)
+(require 'parse-time)
 (require 'ecc-core)
 (require 'ecc-protocol)
 
@@ -57,14 +58,38 @@ says nothing useful.")
 The `procStart' field of a session file; checked against
 `process-attributes' on this machine.")
 
+(defvar ecc-registry-proc-start-slack 2
+  "Seconds the recorded start time of a process may be out by.
+One of them is `procStart' itself, which carries whole seconds and so is
+a truncation of the real time.  The other is the process table: on
+GNU/Linux `process-attributes' works the start time out from the uptime
+it reads on each call, so the same process is dated a little either side
+of itself from one call to the next, and a session that was running was
+called dead whenever that crossed a second boundary (confirmed on a
+Linux CI runner, 2026-09-12; macOS reads the real start time out of the
+kernel and never moves).
+
+Two seconds is far below the gap that tells a reused process id apart:
+the id has to have been handed out again, which takes a wrap of the
+whole id space.")
+
+(defun ecc-registry--proc-start (string)
+  "Return the time STRING names, read as UTC, or nil.
+STRING is a `procStart' as `ecc-registry-proc-start-format' writes it."
+  (ignore-errors
+    (let ((parsed (parse-time-string string)))
+      (when (nth 5 parsed)
+        (setf (nth 8 parsed) 0)
+        (encode-time parsed)))))
+
 (defun ecc-registry--alive-p (entry)
   "Return non-nil when the process of ENTRY is still running.
 The process id alone is not enough: a session killed outright leaves
 its file behind, and its id is handed to something else soon after.
-When the CLI recorded when it started, that has to match, and it is
-only believed when the process table really says so — a process that
-has just been killed is still in the table for a moment, but with
-nothing in it to confirm."
+When the CLI recorded when it started, that has to match to within
+`ecc-registry-proc-start-slack', and it is only believed when the
+process table really says so — a process that has just been killed is
+still in the table for a moment, but with nothing in it to confirm."
   (or (not ecc-registry-check-process)
       (when-let* ((pid (alist-get 'pid entry))
                   ((integerp pid))
@@ -73,10 +98,10 @@ nothing in it to confirm."
         (let ((recorded (alist-get 'procStart entry))
               (start (alist-get 'start attributes)))
           (if (stringp recorded)
-              (and start
-                   (equal recorded
-                          (format-time-string ecc-registry-proc-start-format
-                                              start t)))
+              (when-let* ((start)
+                          (then (ecc-registry--proc-start recorded)))
+                (<= (abs (float-time (time-subtract then start)))
+                    ecc-registry-proc-start-slack))
             ;; The file says nothing about when it started, so the id is
             ;; all there is to go on.
             t)))))

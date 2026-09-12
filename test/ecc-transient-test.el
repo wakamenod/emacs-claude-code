@@ -126,10 +126,12 @@ exception: it opens the menu, so the menu cannot hold it."
     (let* ((suffixes (ecc-transient-slash-suffixes session))
            (keys (mapcar #'car suffixes))
            (descriptions (mapcar #'cadr suffixes)))
-      ;; The two of the session, and the /btw Emacs answers itself: it
-      ;; is in no list the CLI sends.
-      (should (= (length suffixes) 3))
-      (should (string-search "/btw" (nth 2 descriptions)))
+      ;; The two of the session, then everything Emacs answers itself:
+      ;; those are in no list the CLI sends.
+      (should (= (length suffixes) (+ 2 (length ecc-prompt-local-commands))))
+      (dolist (local ecc-prompt-local-commands)
+        (should (seq-some (lambda (d) (string-search (car local) d))
+                          (nthcdr 2 descriptions))))
       ;; A key is handed out once.
       (should (equal keys (seq-uniq keys)))
       (should (string-search "/context" (nth 0 descriptions)))

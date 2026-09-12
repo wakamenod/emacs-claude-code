@@ -51,6 +51,7 @@
 (require 'ecc-mcp)
 (require 'ecc-inline)
 (require 'ecc-btw)
+(require 'ecc-auth)
 (require 'ecc-tui)
 (require 'ecc-transient)
 
