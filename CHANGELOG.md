@@ -29,6 +29,15 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 ### Changed
 
+- The header line of a session names the project it runs in, right after the
+  state: `○ idle  emacs-claude-code`.  The name is the one `project.el`
+  gives the tree above the directory the CLI works in, so a session started
+  in a subdirectory says the name of the whole project; a directory in no
+  project says its own name.  Several sessions look alike from a distance,
+  and a window with no mode line shows the buffer name nowhere.  What the
+  header line holds is parted by spaces rather than by `·`, on the right of
+  it too: the marks carry symbols of their own, and a row of separators on
+  top of those read as noise.
 - A running turn is redrawn from the block that is still changing, not from
   its start.  Every change used to delete and draw the whole turn again, ten
   times a second while it arrived, so a turn of hundreds of tool calls
