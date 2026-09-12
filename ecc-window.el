@@ -126,6 +126,20 @@ of ROOT is one of them."
                   (equal (ecc-window-session-project session) key))
                 (ecc-model-sessions))))
 
+(defun ecc-window-context-project-root ()
+  "Return the project a new session should start in.
+The current buffer when there is a file or a directory behind it, then
+the last buffer the user worked in that had one, and `default-directory'
+last.  A buffer with nothing behind it -- the scratch buffer, a
+transcript, the dashboard, a help window -- says nothing about which
+project was meant, and a session started from one of those used to land
+wherever that buffer happened to be, which is how a session ends up in
+a project nobody asked for."
+  (ecc-window-project-key
+   (or (ecc-window-buffer-directory (current-buffer))
+       (ecc-window-buffer-directory ecc-window--last-source-buffer)
+       default-directory)))
+
 (defun ecc-window-read-session-name (root)
   "Return a name for a new session in ROOT, asking when it is not the first.
 The first session of a project is named after the directory; the ones
