@@ -195,6 +195,7 @@ question buffer opens with the first one answered."
     (define-key map (kbd "r") #'ecc-resume-menu)
     (define-key map (kbd "R") #'ecc-rename-session)
     (define-key map (kbd "v") #'ecc-show-session)
+    (define-key map (kbd "j") #'ecc-focus-project)
     (define-key map (kbd "i") #'ecc-interrupt)
     (define-key map (kbd "t") #'ecc-tui-open)
     ;; Answering what is waiting.

@@ -369,6 +369,116 @@ toggle after `ecc-focus-project\=' undid the whole of the focus."
               (should (eq (ecc-window-last-source-buffer) source))))
         (kill-buffer source)))))
 
+;;;; Focusing one project
+
+(defun ecc-window-test--file-buffer (path)
+  "Return a fresh buffer pretending to visit PATH, without touching the disk."
+  (let ((buffer (generate-new-buffer (file-name-nondirectory path))))
+    (with-current-buffer buffer
+      (setq buffer-file-name path
+            default-directory (file-name-directory path)))
+    buffer))
+
+(ert-deftest ecc-window-test-source-buffer-is-remembered-per-project ()
+  "The buffer last worked in is remembered for its own project.
+A buffer with no file behind it is not: the scratch buffer and a
+compilation log are not the source a project should come back to."
+  (ecc-window-test--with-projects '("/tmp/project-one/" "/tmp/project-two/")
+    (let ((one (ecc-window-test--file-buffer "/tmp/project-one/src/a.el"))
+          (two (ecc-window-test--file-buffer "/tmp/project-two/b.el"))
+          (scratch (generate-new-buffer "*notes*")))
+      (unwind-protect
+          (progn
+            (dolist (buffer (list one two scratch))
+              (with-current-buffer buffer
+                (cl-letf (((symbol-function 'selected-window)
+                           (lambda (&rest _) nil))
+                          ((symbol-function 'window-buffer)
+                           (lambda (&rest _) buffer)))
+                  (ecc-window-note-source-buffer))))
+            ;; Each project remembers its own, and the file in a
+            ;; subdirectory counts as the project's.
+            (should (eq one (ecc-window-project-source-buffer
+                             "/tmp/project-one/" '())))
+            (should (eq two (ecc-window-project-source-buffer
+                             "/tmp/project-two/" '())))
+            ;; The buffer with no file behind it was never recorded.
+            (should (= 2 (length ecc-window--project-source-buffers)))
+            ;; A buffer that has been killed is dropped rather than
+            ;; offered again.
+            (kill-buffer one)
+            (should-not (ecc-window-project-source-buffer
+                         "/tmp/project-one/" '()))
+            (should (= 1 (length ecc-window--project-source-buffers))))
+        (dolist (buffer (list one two scratch))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
+(ert-deftest ecc-window-test-source-buffer-prefers-what-is-on-screen ()
+  "A buffer of the project already on the screen is left where it is."
+  (ecc-window-test--with-projects '("/tmp/project-one/")
+    (let ((shown (ecc-window-test--file-buffer "/tmp/project-one/shown.el"))
+          (remembered (ecc-window-test--file-buffer "/tmp/project-one/old.el")))
+      (unwind-protect
+          (progn
+            (setf (alist-get (ecc-window-project-key "/tmp/project-one/")
+                             ecc-window--project-source-buffers nil nil #'equal)
+                  remembered)
+            (should (eq shown (ecc-window-project-source-buffer
+                               "/tmp/project-one/" (list shown))))
+            ;; With nothing of the project on the screen, the one last
+            ;; worked in there answers.
+            (should (eq remembered (ecc-window-project-source-buffer
+                                    "/tmp/project-one/" '()))))
+        (dolist (buffer (list shown remembered))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
+(ert-deftest ecc-window-test-source-window-skips-the-session-windows ()
+  "The source belongs in a window that is neither a side window nor ours.
+`window-main-window' is no use: with a third session window open the
+main area is split and what comes back is the internal window."
+  (ecc-window-test--with-sessions one two
+    (ecc-window-test--with-frame t
+      (ecc-display-session one)
+      (ecc-display-session two)
+      (let ((window (ecc-window--source-window)))
+        (should (window-live-p window))
+        (should-not (window-parameter window 'ecc-window-role))
+        (should-not (window-parameter window 'window-side))))))
+
+(ert-deftest ecc-window-test-focus-project-hides-the-others ()
+  "Focusing a project takes the other projects off the screen, and no more.
+Nothing is killed: the hidden list names them, so a toggle brings them
+back."
+  (ecc-window-test--with-projects '("/tmp/project-one/" "/tmp/project-two/")
+    (ecc-window-test--with-sessions one two
+      (let ((placed nil)
+            (hidden nil)
+            (visible (list one two)))
+        (set-frame-parameter nil 'ecc-hidden-sessions nil)
+        (cl-letf (((symbol-function 'ecc-window-session-visible-p)
+                   (lambda (session &optional _frame) (memq session visible)))
+                  ((symbol-function 'ecc-window-hide-session)
+                   (lambda (session) (push session hidden)
+                     (setq visible (delq session visible))))
+                  ((symbol-function 'ecc-window-available-roles)
+                   (lambda (&optional _frame) ecc-window-roles))
+                  ((symbol-function 'ecc-display-session-in-role)
+                   (lambda (session role) (push (cons session role) placed)))
+                  ((symbol-function 'ecc-window-focus-source)
+                   (lambda (&rest _) nil)))
+          (ecc-focus-project "/tmp/project-one/")
+          ;; The other project is off the screen and remembered.
+          (should (equal hidden (list two)))
+          (should (equal (mapcar #'car (ecc-window-hidden-sessions))
+                         (list (ecc-session-id two))))
+          ;; This one is in the main window, and is not in the hidden
+          ;; list even though it was on the screen already.
+          (should (equal placed (list (cons one 'main))))
+          ;; A project with no session is refused rather than emptying
+          ;; the frame.
+          (should-error (ecc-focus-project "/tmp/elsewhere/")
+                        :type 'user-error))))))
+
 ;;;; Which session a command talks to
 
 (ert-deftest ecc-window-test-resolve-in-a-session-buffer ()
