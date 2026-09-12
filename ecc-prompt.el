@@ -326,12 +326,24 @@ moment is added to it (`ecc-prompt-current-argument\=')."
       description)))
 
 (defvar ecc-prompt-local-commands
-  '(("/btw" . "Ask a side question without interrupting the running turn"))
+  '(("/btw" . "Ask a side question without interrupting the running turn")
+    ("/login" . "Sign in to the CLI, in a terminal of its own")
+    ("/logout" . "Sign the CLI out")
+    ("/auth-status" . "Say who the CLI is signed in as"))
   "Commands Emacs offers that the CLI does not name.
 They are added to the list `ecc-prompt-commands\' returns, after
 everything the CLI reported.  `/btw\' is one: the terminal client
 catches it in its input layer, so it is in no list the CLI sends, and
-Emacs answers it itself.")
+Emacs answers it itself.
+
+The three of `ecc-auth\' are there for the same reason: `slash_commands\'
+carries neither `login\' nor `logout\', and `terminal_slash_commands\'
+does not either (confirmed against 2.1.268, 2026-09-12), so the terminal
+client is catching those in its input layer too.  What the CLI offers a
+program instead is `claude auth login|logout|status\', which is what
+Emacs runs.  `/auth-status\' rather than the terminal client\\='s
+`/status\': the CLI names a `/status\' of its own, and shadowing it
+would cost a command.")
 
 (defun ecc-prompt-commands (session)
   "Return the slash commands of SESSION as an alist of name and description.

@@ -13,6 +13,20 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 ## [Unreleased]
 
+### Added
+
+- `/login`, `/logout` and `/auth-status` in the prompt region, and
+  `ecc-auth-login`, `ecc-auth-logout` and `ecc-auth-show-status` as commands.
+  The CLI names neither `login` nor `logout` in `slash_commands`, nor in
+  `terminal_slash_commands`: the terminal client catches them in its own input
+  layer, so a headless client is told nothing about them and `/login` typed
+  into a prompt would have gone to the model as a sentence (confirmed against
+  **Claude Code CLI 2.1.268**). Emacs answers them itself, on the `claude auth
+  login|logout|status` subcommands. `/login` hands the OAuth flow to a terminal
+  — ghostel when it is installed, `term` otherwise — and offers afterwards to
+  restart the sessions still running on the credentials they started with
+  (`ecc-auth-restart-sessions`).
+
 ### Changed
 
 - A running turn is redrawn from the block that is still changing, not from
