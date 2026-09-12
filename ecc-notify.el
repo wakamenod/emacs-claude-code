@@ -23,6 +23,7 @@
 (require 'ecc-model)
 (require 'ecc-proc)
 (require 'ecc-visual)
+(require 'ecc-window)
 
 (declare-function notifications-notify "notifications" (&rest params))
 (declare-function ecc-window-session-visible-p "ecc-window" (session &optional frame))
@@ -292,16 +293,39 @@ tab in front of you."
      (current (list state 'ecc-tab-current-face))
      (t (list state)))))
 
+(defvar ecc-tab-line-scope 'project
+  "Which sessions the tab line of a session window lists.
+`project' lists the sessions of that window's own project, so that a
+row of tabs is the handful one is working among rather than every
+session this Emacs has open; `all' lists them all.
+
+A session outside the scope is still there and still reached:
+`ecc-switch-session', the dashboard and `ecc-next-attention' all cross
+projects.  What is given up is that its tab is not on the screen to
+blink when it wants an answer -- the count in the mode line and
+`ecc-notify-mode' are what say so then.")
+
 (defun ecc-tab-line-tabs ()
-  "Return the session buffers, oldest session first.
-This is `tab-line-tabs-function' in a session buffer.  The registry is
-kept most recently used first, which is the wrong order for a row of
-tabs -- they would move about as one works -- so the sessions are put
-back into the order they were made in."
-  (let ((sessions (sort (copy-sequence (ecc-model-sessions))
-                        (lambda (a b)
-                          (< (or (ecc-session-created a) 0)
-                             (or (ecc-session-created b) 0))))))
+  "Return the session buffers of this window, oldest session first.
+This is `tab-line-tabs-function' in a session buffer, and redisplay
+evaluates it in the buffer of the window being drawn, which is how the
+tabs of one window come to be the sessions of its own project.
+`ecc-tab-line-scope' widens that to every session, and so does being
+called anywhere but in a session buffer.
+
+The registry is kept most recently used first, which is the wrong
+order for a row of tabs -- they would move about as one works -- so the
+sessions are put back into the order they were made in."
+  (let* ((session (and (eq ecc-tab-line-scope 'project)
+                       (ecc-window-buffer-session)))
+         (sessions (if session
+                       (ecc-window-project-sessions
+                        (ecc-window-session-project session))
+                     (ecc-model-sessions)))
+         (sessions (sort (copy-sequence sessions)
+                         (lambda (a b)
+                           (< (or (ecc-session-created a) 0)
+                              (or (ecc-session-created b) 0))))))
     (seq-filter #'buffer-live-p (mapcar #'ecc-session-buffer sessions))))
 
 (defun ecc-tab-line-tab-name (buffer &optional _tabs)

@@ -212,6 +212,32 @@ about as one works."
         (ecc-test-cleanup-session second)
         (ecc-model-remove-session second)))))
 
+(ert-deftest ecc-notify-test-tab-line-shows-only-this-project ()
+  "The tabs of a window are the sessions of that window's own project.
+Every session used to be a tab in every window, so a row of tabs was
+every session this Emacs had open rather than the ones being worked
+among."
+  (ecc-test-with-fake-session first
+    (let ((ecc-window--project-root-cache (make-hash-table :test #'equal))
+          (second (ecc-model-create-session
+                   :name "other" :project-root "/tmp/ecc-other-project/")))
+      (unwind-protect
+          (progn
+            (ecc-session-ensure-buffer first)
+            (ecc-session-ensure-buffer second)
+            (with-current-buffer (ecc-session-buffer first)
+              (should (equal (ecc-tab-line-tabs)
+                             (list (ecc-session-buffer first))))
+              ;; The other project is a tab in its own window.
+              (with-current-buffer (ecc-session-buffer second)
+                (should (equal (ecc-tab-line-tabs)
+                               (list (ecc-session-buffer second)))))
+              ;; And the scope is the way back to every session.
+              (let ((ecc-tab-line-scope 'all))
+                (should (= 2 (length (ecc-tab-line-tabs)))))))
+        (ecc-test-cleanup-session second)
+        (ecc-model-remove-session second)))))
+
 (ert-deftest ecc-notify-test-tab-line-mode-installs-and-removes ()
   "The mode turns `tab-line-mode' on in the session buffers, and off again."
   (ecc-test-with-fake-session session
