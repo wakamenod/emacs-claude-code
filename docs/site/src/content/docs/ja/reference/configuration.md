@@ -36,7 +36,6 @@ M-x customize-group RET ecc
 | `ecc-render-result-max-lines` | `12` | ツール実行結果のプレビュー表示行数。全文はいつでも `RET` で確認できます |
 | `ecc-render-diff-max-lines` | `40` | ツールや権限ブロック内にインライン表示する diff の最大行数。全文はいつでも `RET` で確認できます |
 | `ecc-diff-context-lines` | `3` | トランスクリプト内の変更箇所の前後に表示する文脈行数 |
-| `ecc-review-context-lines` | `3` | ecc が生成するレビュー用 diff で、変更の前後に含める文脈行数 |
 | `ecc-stream-throttle` | `0.05` | ストリーミング差分を描画前にバッファリングする秒数。0 を指定すると受信した差分を即座に描画します |
 | `ecc-render-debounce` | `0.1` | アクティブなトランスクリプト領域を再描画するまでのデバウンス待機時間（秒） |
 

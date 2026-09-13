@@ -35,6 +35,22 @@ that CLI, and the CLI moves without anybody upgrading ecc.
   there is no Stats tab rather than a tab of something else wearing its name;
   what one plugin brings and costs is on `RET`.
 
+- `ecc-review-worktree` (`G` in the menu) reviews the git diff of the whole
+  project, not only the files the session touched: every uncommitted change,
+  staged or not, plus the untracked files `.gitignore` does not exclude. A
+  prefix argument asks what to diff against, so `main...HEAD` reviews a branch.
+  The hunks are commented and sent as one prompt the way `ecc-review` does, and
+  the two live in separate buffers.  It is on `C-c c G` as well as on the menu,
+  because the buffer it is meant to be run from is a file of the project, not a
+  transcript: the project is the one of that buffer, and the comments go to a
+  session of that project, which is started when there is none.  An untracked
+  file that is binary, or larger than `ecc-review-untracked-max-bytes`, is named
+  rather than printed: git compares a new file against /dev/null, and an empty
+  side is text, so without the check the bytes of a PNG land in the review
+  buffer (confirmed with git 2.51).  A revision git refuses -- a typo in the
+  range -- says so instead of showing a tree that looks clean but for its
+  untracked files.
+
 - `/login`, `/logout` and `/auth-status` in the prompt region, and
   `ecc-auth-login`, `ecc-auth-logout` and `ecc-auth-show-status` as commands.
   The CLI names neither `login` nor `logout` in `slash_commands`, nor in
@@ -59,6 +75,19 @@ that CLI, and the CLI moves without anybody upgrading ecc.
   `ecc-toggle` brings back one project and `ecc-toggle-all` all of them.
 
 ### Changed
+
+- `ecc-review-context-lines` now reaches the diffs git makes for a review as
+  well as the ones ecc builds itself: it is passed as `-U`.  It is an argument
+  of the git ecc runs, not a `git config`: nothing outside the review changes.
+
+- **Breaking:** `ecc-review-context-lines` is a `defvar` rather than a
+  `defcustom`, and its default is 0 rather than 3.  A comment on a review is
+  attached to a whole hunk, so the hunks want to be the size of the change and
+  no larger; a `setq` still widens them for reading.  A `custom-set-variables`
+  entry for it keeps working, but it is no longer in the Customize interface.
+  The review of one proposal is not part of this: it keeps three lines through
+  `ecc-review-proposal-context-lines`, because allowing a change is a judgement
+  about what it overwrites as much as about the change.
 
 - A session window's tab line lists the sessions of that window's own project
   rather than every session this Emacs has open. Working in several projects
