@@ -1,0 +1,14 @@
+[
+  {
+    "name": "claude-plugins-official",
+    "source": "github",
+    "repo": "anthropics/claude-plugins-official",
+    "installLocation": "/home/u/.claude/plugins/marketplaces/claude-plugins-official"
+  },
+  {
+    "name": "emacs-gravity-marketplace",
+    "source": "github",
+    "repo": "gdanov/emacs-gravity",
+    "installLocation": "/home/u/.claude/plugins/marketplaces/emacs-gravity-marketplace"
+  }
+]

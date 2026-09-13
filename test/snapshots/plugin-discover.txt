@@ -1,0 +1,12 @@
+ Discover   Installed   Marketplaces   Errors  
+⌕ Search with s
+
+Discover plugins (4)
+
+  ◯ context7  claude-plugins-official · 446.3K installs
+      Upstash Context7 MCP server for up-to-date documentation lookup. Connec…
+  ● frontend-design  claude-plugins-official · 1.2.0 · 1.2M installs  on
+      Create distinctive, production-grade frontend interfaces with high desi…
+  ◯ superpowers  claude-plugins-official · 1.1M installs
+      Superpowers teaches Claude brainstorming, subagent driven development w…
+  ● emacs-bridge  emacs-gravity-marketplace · 4.6.2  off

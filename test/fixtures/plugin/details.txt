@@ -1,0 +1,13 @@
+emacs-bridge 4.6.2
+  Description: Structured Claude Code UI for Emacs
+  Source: emacs-bridge@emacs-gravity-marketplace
+
+Component inventory
+  Skills (0)
+  Agents (0)
+  Hooks (11)  SessionStart, SessionEnd, Stop, UserPromptSubmit, SubagentStart, SubagentStop, Notification, PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest  (harness-only — no model context cost)
+  MCP servers (0)
+  LSP servers (0)
+
+Projected token cost
+  Always-on:   ~0 tok   added to every session
