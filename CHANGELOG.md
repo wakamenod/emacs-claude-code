@@ -199,6 +199,48 @@ that CLI, and the CLI moves without anybody upgrading ecc.
   session dead whenever that crossed a second boundary.  The times are now
   compared as times, with two seconds of slack.
 
+- Typing in another buffer while a session streams is no longer held up by
+  the session's bookkeeping.  Every line the CLI sent was written to the
+  session's log buffer and the buffer then trimmed to `ecc-log-max-lines`,
+  which walked back over all 5000 kept lines and moved the whole buffer down
+  by one line each time: 88% of what a streamed delta cost once a session
+  had been running a while, and paid whether or not the session was on
+  screen.  The log now grows a fifth past the limit and is cut back once.
+  The text of a streaming block was also joined again on every delta, so a
+  long reply copied itself thousands of times over and made ten garbage
+  collections -- each of which stops every buffer, not just the session's.
+  The deltas are kept as they come and joined when the block is redrawn.
+  One reply of 8000 deltas went from 1260 ms with 11 collections to 69 ms
+  with one (measured 2026-09-13).
+
+- A session that Remote Control announced itself in before the first prompt
+  no longer redraws its whole transcript on every change.  Those notes go
+  under a turn that has no prompt and never ends, and the renderer judged a
+  turn finished by its end time alone, so the live region -- the part drawn
+  again whenever a block starts or stops or a tool returns -- began at the
+  top of the transcript for the life of the session: in one of 380 KB,
+  every redraw took 30 to 60 ms and left 1.6 MB of garbage, which is what
+  typing in another buffer felt as a stutter every couple of seconds.  A
+  turn that is not the current one and has nothing running under it is
+  finished too.
+
+- A redraw of the live region no longer lays the Files summary out again
+  line by line, nor fontifies a reply again that stands behind a call still
+  running.  The diff of each file is now kept as it is drawn, with its
+  prefix and wrap, until the file changes again, and the Markdown of a
+  reply, a prompt and a plan is fontified once per node while its text
+  stays the same.  In a session with three edited files a redraw went from
+  5.7 ms to 1.5 ms (measured 2026-09-13); `scripts/bench-render.el` puts the
+  Files summary of 60 files at 3.6 ms, from 5.3.
+
+- A redraw that fails half way no longer leaves the transcript inside the
+  prompt region.  The live region is deleted before it is drawn again, and
+  the marker that opens the prompt region collapses onto the deletion; a
+  draw that signalled before moving it past what it drew left that text in
+  the prompt region, where the next send took it for the draft.  The
+  markers are now moved whether the draw finishes or not; the error itself
+  still reaches the log.
+
 ## [0.1.0] - 2026-09-11
 
 The first release.  Verified against **Claude Code CLI 2.1.268** and

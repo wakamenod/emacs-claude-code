@@ -64,17 +64,45 @@
       (kill-buffer buffer))))
 
 (ert-deftest ecc-core-test-log-trims ()
-  "The log buffer is trimmed to `ecc-log-max-lines' from the end."
+  "The log buffer is cut back to `ecc-log-max-lines' once it grows past them.
+The cut waits until the buffer is a fifth over, so what is kept is the
+newest lines, never fewer than the limit and never much more."
   (let* ((name (format "test-%s" (ecc--uuid)))
          (buffer (ecc--log-buffer name))
          (ecc-log-max-lines 10))
     (unwind-protect
-        (progn
-          (dotimes (i 50) (ecc-log name "line %d" i))
-          (let ((text (ecc-test-log-string buffer)))
-            (should (= (length (split-string text "\n" t)) 10))
-            (should (string-prefix-p "-- line 40" text))
-            (should (string-suffix-p "-- line 49\n" text))))
+        (let (counts)
+          (dotimes (i 50)
+            (ecc-log name "line %d" i)
+            (push (length (split-string (ecc-test-log-string buffer) "\n" t)) counts))
+          (should (<= 10 (apply #'max counts) 12))
+          ;; 50 lines went in; the cut at 13 lines leaves 10, so the
+          ;; buffer holds the newest 10 to 12 lines, in order.
+          (let* ((text (ecc-test-log-string buffer))
+                 (lines (split-string text "\n" t)))
+            (should (<= 10 (length lines) 12))
+            (should (string-prefix-p "-- line 3" (car lines)))
+            (should (equal (car (last lines)) "-- line 49"))
+            (should (equal lines (seq-sort-by (lambda (l) (string-to-number (substring l 8)))
+                                              #'< lines)))))
+      (kill-buffer buffer))))
+
+(ert-deftest ecc-core-test-log-trim-is-not-paid-per-line ()
+  "Past the limit, most lines go in without a cut.
+Trimming on every line walked back over every kept line and moved the
+whole buffer down by one, which was most of what a delta cost."
+  (let* ((name (format "test-%s" (ecc--uuid)))
+         (buffer (ecc--log-buffer name))
+         (ecc-log-max-lines 100)
+         (cuts 0))
+    (unwind-protect
+        (cl-letf* ((delete-region (symbol-function #'delete-region))
+                   ((symbol-function #'delete-region)
+                    (lambda (start end) (cl-incf cuts) (funcall delete-region start end))))
+          (dotimes (i 1000) (ecc-log name "line %d" i))
+          ;; 1000 lines over a limit of 100 with a slack of 20 is 45 cuts.
+          (should (< cuts 60))
+          (should (<= 100 (length (split-string (ecc-test-log-string buffer) "\n" t)) 120)))
       (kill-buffer buffer))))
 
 (ert-deftest ecc-core-test-truncate ()

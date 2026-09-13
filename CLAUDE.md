@@ -26,6 +26,10 @@ code disagree, the code wins.
   `ffmpeg`, and the terminal needs Screen Recording permission. `bench-render.el`
   times a redraw on synthetic turns; run it before and after touching the
   renderer (`$(BATCH) -l test/ecc-test-helpers.el -l scripts/bench-render.el`).
+  `bench-stream.el` is the other half: it streams a synthetic turn into a
+  session in a GUI Emacs at the CLI's pace and reports what the rest of Emacs
+  pays -- each timer, the redisplay, GC, and how late a 10 ms heartbeat fires
+  -- with the session shown and hidden (the invocation is in its header).
 - `docs/site/` — the Astro Starlight documentation site, deployed to GitHub
   Pages by `.github/workflows/docs.yml`. English is served at the root and
   Japanese under `/ja/`, following the same rule as the two READMEs. The

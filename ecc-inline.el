@@ -263,7 +263,7 @@ The answer arrives in an overlay above point: `n' and `p' scroll it,
     (string-join
      (delq nil (mapcar (lambda (node)
                          (when (eq (ecc-node-type node) 'text)
-                           (or (ecc-node-streaming-text node)
+                           (or (ecc-model-streaming-text node)
                                (ecc-model-node-get node 'text))))
                        (and turn (ecc-turn-children turn))))
      "")))

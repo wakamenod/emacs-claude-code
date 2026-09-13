@@ -200,6 +200,47 @@ would shuffle the tabs about as one works."
       (should (eq (car (ecc-model-sessions)) a))
       (should (< (ecc-session-created a) (ecc-session-created b))))))
 
+;;;; Streaming text
+
+(ert-deftest ecc-model-test-streamed-text-is-joined-on-demand ()
+  "Deltas are kept as they come and joined when the text is asked for."
+  (ecc-test-with-fake-session session
+    (let* ((turn (ecc-model-begin-turn session "x"))
+           (node (ecc-model-add-node session :type 'text :parent turn
+                                     :status 'running :data (list (cons 'text "")))))
+      (ecc-model-open-stream session nil 0 node)
+      (should (equal (ecc-model-streaming-text node) ""))
+      (should (= (ecc-node-streaming-length node) 0))
+      (ecc-model-append-stream session node "Done")
+      (ecc-model-append-stream session node ".")
+      (should (= (ecc-node-streaming-length node) 5))
+      (should (equal (ecc-model-streaming-text node) "Done."))
+      ;; Joined once, then grown again: the join is a prefix, not lost.
+      (ecc-model-append-stream session node " Created")
+      (should (equal (ecc-model-streaming-text node) "Done. Created"))
+      (should (= (ecc-node-streaming-length node) 13))
+      (ecc-model-forget-stream-text node)
+      (should (null (ecc-model-streaming-text node)))
+      (should (null (ecc-node-streaming-length node))))))
+
+(ert-deftest ecc-model-test-streamed-text-makes-little-garbage ()
+  "A long block streamed in small deltas does not copy itself per delta.
+Joining on every delta was quadratic: 8000 deltas of one reply made
+ten collections, and a collection stops every buffer, not just this one
+(measured 2026-09-13)."
+  (ecc-test-with-fake-session session
+    (let* ((turn (ecc-model-begin-turn session "x"))
+           (node (ecc-model-add-node session :type 'text :parent turn
+                                     :status 'running :data (list (cons 'text ""))))
+           (delta (make-string 8 ?a)))
+      (ecc-model-open-stream session nil 0 node)
+      (garbage-collect)
+      (let ((before gcs-done))
+        (dotimes (_ 8000) (ecc-model-append-stream session node delta))
+        (should (<= (- gcs-done before) 1)))
+      (should (= (ecc-node-streaming-length node) 64000))
+      (should (= (length (ecc-model-streaming-text node)) 64000)))))
+
 (provide 'ecc-model-test)
 
 ;;; ecc-model-test.el ends here

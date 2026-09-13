@@ -377,6 +377,33 @@ narrower on the screen than it is in the text."
           (should (equal text (buffer-substring-no-properties (car bounds) (cdr bounds)))))
         (should (string-search "〉 again" (buffer-string)))))))
 
+(ert-deftest ecc-render-test-aside-turn-at-the-head-is-frozen ()
+  "A turn of notes that came before any prompt does not pin the live region.
+Remote Control announces itself before the first prompt, and those notes
+go under a turn that never ends.  Judged by its end time it was never
+finished, so the live region began at the top of the transcript and
+every redraw drew the whole session again."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-add-aside session :type 'system :status 'done
+                         :data '((kind . remote-control) (text . "remote control ready")))
+    (ecc-render-flush session)
+    (ecc-test-dispatch session "basic-turn" "hello")
+    (ecc-render-flush session)
+    (with-current-buffer (ecc-session-buffer session)
+      ;; The aside turn and the finished one are both behind the live region.
+      (should (= ecc-render--frozen 2))
+      (should (equal (ecc-turn-label (car (ecc-session-turns session))) "(session)"))
+      (let ((entry (ecc-render-node-entry "turn-1"))
+            (bounds (ecc-render-node-bounds "turn-2")))
+        (should (>= (marker-position ecc-render--live-start) (cdr bounds)))
+        ;; Another note between turns joins the last turn, not the first;
+        ;; a new prompt redraws neither.
+        (ecc-model-begin-turn session "again")
+        (ecc-render-flush session)
+        (should (eq entry (ecc-render-node-entry "turn-1")))
+        (should (= ecc-render--frozen 2))))))
+
 (ert-deftest ecc-render-test-folding-survives-a-redraw ()
   "Collapsing a section sticks, because node ids are stable."
   (ecc-test-with-fake-session session
@@ -546,7 +573,7 @@ follow have a section to grow.  Returns the remaining lines."
       (should (string-search "\n  Done. Created\n" (ecc-test-buffer-string buffer)))
       (let ((node (ecc-model-find-stream session nil 'text)))
         (should node)
-        (should (equal (ecc-node-streaming-text node) "Done. Created")))
+        (should (equal (ecc-model-streaming-text node) "Done. Created")))
       ;; Feed the rest: the complete message replaces the streamed text
       ;; with the formatted one, and it is there exactly once.
       (dolist (line lines)
@@ -1106,6 +1133,43 @@ have to be there for whatever searches the text while showing nothing."
   "Return the line point stands on, without its properties."
   (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
 
+(ert-deftest ecc-render-test-a-failed-draw-keeps-the-prompt-region ()
+  "A redraw that fails half way leaves the prompt region after what it drew.
+The live region is deleted before it is drawn again, and the marker
+that opens the prompt region collapses onto the deletion; a draw that
+signalled before moving it left the transcript inside the prompt
+region, where the next send took it for the draft.  The error itself
+is not swallowed."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-test-dispatch session "basic-turn" "hello")
+    (ecc-render-flush session)
+    (let ((buffer (ecc-session-buffer session)))
+      (with-current-buffer buffer
+        (goto-char (ecc-chat-prompt-end))
+        (insert "my draft"))
+      (ecc-model-begin-turn session "again")
+      (cl-letf* ((real (symbol-function #'ecc-render--insert-turn))
+                 ((symbol-function #'ecc-render--insert-turn)
+                  (lambda (session turn from)
+                    (funcall real session turn from)
+                    (when (equal (ecc-turn-prompt turn) "again")
+                      (error "drawing failed on purpose")))))
+        (should-error (ecc-render-flush session)))
+      (with-current-buffer buffer
+        ;; What was drawn stands before the prompt region; the draft
+        ;; is still the whole of it.
+        (should (< (string-search "〉 again" (buffer-string))
+                   (ecc-render-prompt-start)))
+        (should (equal (buffer-substring-no-properties (ecc-chat-prompt-start)
+                                                       (ecc-chat-prompt-end))
+                       "my draft"))
+        ;; The next draw goes through and finds its markers where it left them.
+        (ecc-render-flush session)
+        (should (equal (buffer-substring-no-properties (ecc-chat-prompt-start)
+                                                       (ecc-chat-prompt-end))
+                       "my draft"))))))
+
 (ert-deftest ecc-render-test-point-stays-in-a-running-turn ()
   "Point in a turn that is still growing is not dragged to the prompt.
 The live region is deleted and drawn again on every change, and a
@@ -1343,6 +1407,57 @@ any route as long as they arrive at the same buffer."
                             (buffer-string))))))))
 
 ;;;; What a redraw remembers
+
+(ert-deftest ecc-render-test-files-summary-reuses-drawn-bodies ()
+  "The lines under a file row are laid out once per change, not per redraw."
+  (ecc-test-with-fake-session session
+    (let ((laid-out 0))
+      (cl-letf* ((real (symbol-function #'ecc-render--file-body-1))
+                 ((symbol-function #'ecc-render--file-body-1)
+                  (lambda (diff) (cl-incf laid-out) (funcall real diff))))
+        (ecc-session-ensure-buffer session)
+        (ecc-model-begin-turn session "edit two files")
+        (ecc-model-note-file session "/nowhere/a.txt" 'edit)
+        (ecc-model-note-hunk session "/nowhere/a.txt" "one\n" "1\n" nil "one\ntwo\n")
+        (ecc-model-note-file session "/nowhere/b.txt" 'edit)
+        (ecc-model-note-hunk session "/nowhere/b.txt" "two\n" "2\n" nil "one\ntwo\n")
+        (ecc-render-flush session)
+        (should (= laid-out 2))
+        (ecc-render-flush session)
+        (should (= laid-out 2))
+        (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+          (should (string-search "-one\n" text))
+          (should (string-search "+2\n" text)))
+        ;; One more hunk on a: a is laid out again, b is not.
+        (ecc-model-note-hunk session "/nowhere/a.txt" "two\n" "2\n" nil "1\ntwo\n")
+        (ecc-render-flush session)
+        (should (= laid-out 3))))))
+
+(ert-deftest ecc-render-test-reply-is-fontified-once-while-a-call-runs ()
+  "A reply behind a running call is not fontified again on every redraw."
+  (ecc-test-with-fake-session session
+    (let ((fontified nil))
+      (cl-letf* ((real (symbol-function #'ecc-markdown-fontify))
+                 ((symbol-function #'ecc-markdown-fontify)
+                  (lambda (text) (push text fontified) (funcall real text))))
+        (ecc-session-ensure-buffer session)
+        (let ((turn (ecc-model-begin-turn session "run it")))
+          (ecc-model-node-changed
+           session (ecc-model-add-node session :type 'tool :status 'running :parent turn
+                                       :data '((name . "Bash") (input . ((command . "sleep 60"))))))
+          (ecc-model-node-changed
+           session (ecc-model-add-node session :type 'text :status 'done :parent turn
+                                       :data '((text . "Started.  Here is `why`:\n\n```elisp\n(+ 1 2)\n```")))))
+        (ecc-render-flush session)
+        (let ((count (seq-count (lambda (text) (string-prefix-p "Started." text)) fontified)))
+          (should (= count 1))
+          ;; The live region starts at the running call, so the reply
+          ;; is drawn again; it is not fontified again.
+          (ecc-render-flush session)
+          (ecc-render-flush session)
+          (should (= (seq-count (lambda (text) (string-prefix-p "Started." text)) fontified)
+                     count))
+          (should (string-search "(+ 1 2)" (ecc-test-buffer-string (ecc-session-buffer session)))))))))
 
 (ert-deftest ecc-render-test-files-summary-reuses-diffs ()
   "The Files section diffs a file again only when it changed again.
