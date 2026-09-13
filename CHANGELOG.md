@@ -96,6 +96,34 @@ that CLI, and the CLI moves without anybody upgrading ecc.
   buffer (confirmed with git 2.51).  A revision git refuses -- a typo in the
   range -- says so instead of showing a tree that looks clean but for its
   untracked files.
+- `ecc-hooks-show`, on `/hooks` in the prompt region, lists every Claude Code
+  hook that would run for a project: the managed settings,
+  `~/.claude/settings.json`, `.claude/settings.json`,
+  `.claude/settings.local.json` and the `hooks.json` of every plugin
+  `enabledPlugins` leaves on, grouped by the event that fires them and marked
+  with where each came from. What stops hooks from running is said at the top:
+  managed settings in force, or `disableAllHooks`. `RET` opens the file a hook
+  is defined in, `a` adds a command hook, `k` removes one and `t` switches one
+  off and on again. The CLI's own `/hooks` is declared ink-only, so it is in
+  neither `slash_commands` nor `terminal_slash_commands` and a headless client
+  is never offered it; Emacs answers the name itself, the way it answers `/btw`
+  and `/plugins`. That menu is read-only besides — "To add or modify hooks,
+  edit settings.json directly or ask Claude" (confirmed against **Claude Code
+  CLI 2.1.270**).
+
+  Nothing is written without a confirmation naming the command, the event, the
+  matcher and the file, and the file offered first is the one that is not
+  committed. Matchers are read one at a time until an empty answer ends the
+  list, and written as the `|` list the CLI reads. The CLI has no field for a hook that is there but switched off, so
+  switching one off takes the entry out of its settings file and keeps it whole
+  in `~/.claude/ecc-disabled-hooks.json`; switching it on again puts it back. A
+  settings file the CLI reads never carries anything ecc invented. Hooks from a
+  plugin and from managed settings are listed and never edited.
+
+  A session already running keeps the hooks it started with: the CLI watches
+  only the directories that held a settings file when it started, so an edit
+  here takes effect the next time that session is started. Every message says
+  so.
 
 - `/login`, `/logout` and `/auth-status` in the prompt region, and
   `ecc-auth-login`, `ecc-auth-logout` and `ecc-auth-show-status` as commands.
@@ -121,6 +149,28 @@ that CLI, and the CLI moves without anybody upgrading ecc.
   `ecc-toggle` brings back one project and `ecc-toggle-all` all of them.
 
 ### Changed
+
+- `ecc-hook-events-enabled` is now `ecc-show-hook-events`, and a `defcustom`.
+  The old name read as though it decided whether hooks ran at all; what it
+  decides is whether the transcript draws them. A session's hooks run either
+  way, and one that leaves with exit 2 blocks its tool call either way. The old
+  name still works as an obsolete alias.
+
+- A slash command Emacs answers itself and that needs no argument runs the
+  moment it is chosen from the `/` question: `/hooks`, `/skills` and `/plugins`
+  open their buffer, and neither the name nor the slash is left in the prompt
+  region. `/btw` and `/login`, whose argument is the point of them, are written
+  out as before (`ecc-prompt-immediate-commands`).
+
+- In the Hooks buffer, `RET`, `a`, `k`, `t` and `TAB` answer to the line point
+  is on rather than to the character under it, and the keys are listed under
+  the title.
+
+- A hook event in the transcript shows what the hook printed, rather than the
+  raw message cut at 400 characters: the event, the exit code, and stdout and
+  stderr, the latter in the face that means something went wrong. The heading
+  carries the exit code when it is not zero, since exit 2 is the one that
+  blocks a tool call. Turn hook events on with `ecc-show-hook-events`.
 
 - `ecc-review-context-lines` now reaches the diffs git makes for a review as
   well as the ones ecc builds itself: it is passed as `-U`.  It is an argument
