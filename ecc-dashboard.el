@@ -38,6 +38,7 @@
 (require 'ecc-model)
 (require 'ecc-proc)
 (require 'ecc-render)
+(require 'ecc-capability)
 (require 'ecc-visual)
 (require 'ecc-hint)
 (require 'ecc-perm)
@@ -354,9 +355,6 @@ REMEMBER is passed to `tabulated-list-print'."
 (defconst ecc-capabilities-buffer-name "*ecc-capabilities*"
   "Name of the Capabilities buffer.")
 
-(defvar ecc-capabilities-directory "~/.claude/"
-  "Directory holding the skills, agents and commands of every project.")
-
 (cl-defstruct ecc-capability
   "One thing a session can do."
   kind          ; skill | agent | command | mcp | plugin
@@ -371,52 +369,6 @@ REMEMBER is passed to `tabulated-list-print'."
   '((skill . "Skills") (agent . "Agents") (command . "Slash commands")
     (mcp . "MCP servers") (plugin . "Plugins"))
   "The five kinds of capability, in the order they are shown.")
-
-(defconst ecc-capabilities-scopes
-  '((project . "project") (global . "global") (plugin . "plugin")
-    (builtin . "built in"))
-  "The scopes a capability can come from, in the order they are shown.")
-
-(defun ecc-capabilities--kind-directory (kind)
-  "Return the subdirectory KIND is defined in, under a settings directory."
-  (pcase kind ('skill "skills/") ('agent "agents/") ('command "commands/")))
-
-(defun ecc-capabilities--file-in (directory kind name)
-  "Return the file defining the KIND called NAME under DIRECTORY, or nil."
-  (when-let* ((subdirectory (ecc-capabilities--kind-directory kind)))
-    (let* ((base (expand-file-name subdirectory (expand-file-name directory)))
-           (candidates (if (eq kind 'skill)
-                           (list (expand-file-name (concat name "/SKILL.md") base))
-                         (list (expand-file-name (concat name ".md") base)))))
-      (seq-find #'file-readable-p candidates))))
-
-(defun ecc-capabilities--locate (kind name session plugins)
-  "Return (SCOPE ORIGIN . FILE) for the KIND called NAME.
-The project of SESSION is looked in first, then the settings directory
-of the user, then each of the PLUGINS.  A name that is defined nowhere
-Emacs can see is `builtin'."
-  (or (when-let* ((root (ecc-session-project-root session))
-                  (file (ecc-capabilities--file-in
-                         (expand-file-name ".claude/" root) kind name)))
-        (cl-list* 'project nil file))
-      (when-let* ((file (ecc-capabilities--file-in
-                         ecc-capabilities-directory kind name)))
-        (cl-list* 'global nil file))
-      (seq-some (lambda (plugin)
-                  (when-let* ((path (alist-get 'path plugin))
-                              (file (ecc-capabilities--file-in path kind name)))
-                    (cl-list* 'plugin (alist-get 'name plugin) file)))
-                plugins)
-      (list 'builtin nil)))
-
-(defun ecc-capabilities--command-descriptions (session)
-  "Return a hash of a command name to its description for SESSION.
-The descriptions are what the CLI answered `initialize' with."
-  (let ((table (make-hash-table :test #'equal)))
-    (seq-doseq (command (or (ecc-session-commands session) []))
-      (when-let* ((name (alist-get 'name command)))
-        (puthash name (alist-get 'description command) table)))
-    table))
 
 (defun ecc-capabilities--mcp-tool-count (init name)
   "Return how many tools the MCP server NAME published, from INIT."

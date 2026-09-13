@@ -42,6 +42,7 @@
 (require 'ecc-registry)
 (require 'ecc-history)
 (require 'ecc-search)
+(require 'ecc-capability)
 (require 'ecc-dashboard)
 (require 'ecc-window)
 (require 'ecc-context)
