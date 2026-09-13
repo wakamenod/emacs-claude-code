@@ -84,10 +84,14 @@
         (should capf)
         (should (= (nth 0 capf) (line-beginning-position)))
         (should (= (nth 1 capf) (point)))
-        (should (member "/context" (nth 2 capf)))
-        (should (member "/compact" (nth 2 capf)))
-        ;; A command only system/init knows about is offered too.
-        (should (member "/review" (nth 2 capf)))
+        ;; The candidates come as a completion table rather than a plain
+        ;; list: the table is what carries the metadata that keeps the
+        ;; skills at the top (`ecc-prompt--completion-metadata\=').
+        (let ((candidates (all-completions "" (nth 2 capf))))
+          (should (member "/context" candidates))
+          (should (member "/compact" candidates))
+          ;; A command only system/init knows about is offered too.
+          (should (member "/review" candidates)))
         ;; The description is what the completion user interface shows.
         (should (string-search "Show context usage"
                                (funcall (plist-get (nthcdr 3 capf)
@@ -172,7 +176,7 @@ inside a word -- a path, a URL -- alone."
         (should capf)
         (should (equal (buffer-substring-no-properties (nth 0 capf) (nth 1 capf))
                        "/co"))
-        (should (member "/context" (nth 2 capf))))
+        (should (member "/context" (all-completions "" (nth 2 capf)))))
       ;; A slash inside a word is part of the word.
       (ecc-prompt-clear)
       (insert "see src/fo")
@@ -276,7 +280,7 @@ them from its command menus, and Emacs is one."
       (should (member "/color" (mapcar #'car (ecc-prompt-commands session)))))
     (ecc-prompt-test--in-buffer session
       (insert "/co")
-      (let ((candidates (nth 2 (ecc-prompt-capf))))
+      (let ((candidates (all-completions "" (nth 2 (ecc-prompt-capf)))))
         (should-not (member "/color" candidates))
         (should (member "/context" candidates)))
       ;; The question `/\=' asks does not offer them either.

@@ -455,6 +455,28 @@ supports it, and \"bypassPermissions\" only where it is allowed."
               (run-hook-with-args 'ecc-permission-mode-functions session mode)))))
    'mode mode))
 
+(defun ecc-proc-get-settings (session callback)
+  "Ask SESSION for the Claude Code settings it is running under.
+CALLBACK is called with the session and the `sources\=' of the answer:
+a vector of objects carrying a `source\=' -- userSettings,
+projectSettings or localSettings -- and the `settings\=' of that file as
+it stands, unmerged.  The answer also holds the resolved view under
+`effective\=', which is not what a caller that means to edit one file
+wants.  A refusal calls CALLBACK with nil (confirmed against Claude
+Code 2.1.270, 2026-09-13).
+
+There is no way back: `update_settings\=' takes the localSettings source
+alone, and in it the key `outputStyle\=' alone, with a string for a
+value.  Anything else is answered with \"update_settings keys not
+allowed\", so a setting this package changes is written to the file
+itself."
+  (ecc-proc-control
+   session "get_settings"
+   (lambda (session response)
+     (funcall callback session
+              (unless (alist-get 'error response)
+                (alist-get 'sources response))))))
+
 
 ;;;; Remote Control
 

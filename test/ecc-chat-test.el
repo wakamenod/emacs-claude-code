@@ -12,6 +12,7 @@
 (require 'cl-lib)
 (require 'ert)
 (require 'ecc-test-helpers)
+(require 'ecc-skill)
 (require 'ecc-review)
 (require 'ecc-plan)
 (require 'ecc-dashboard)
@@ -93,7 +94,8 @@ nothing to do with whether two maps are ever live at once."
                      ecc-global-map ecc-review-mode-map ecc-plan-mode-map
                      ecc-question-mode-map ecc-dashboard-mode-map
                      ecc-usage-mode-map ecc-btw-mode-map
-                     ecc-capabilities-mode-map ecc-inline-map ecc-rewrite-map))
+                     ecc-capabilities-mode-map ecc-skill-mode-map
+                     ecc-inline-map ecc-rewrite-map))
     (dolist (letter (append (number-sequence ?a ?z) (number-sequence ?A ?Z)))
       (let ((key (vconcat (kbd "C-c") (vector letter))))
         (should-not (commandp (lookup-key map key)))))))

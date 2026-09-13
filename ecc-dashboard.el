@@ -335,6 +335,9 @@ REMEMBER is passed to `tabulated-list-print'."
   (setq tabulated-list-entries (mapcar #'ecc-dashboard--row
                                        (ecc-dashboard-entries))))
 
+(declare-function ecc-skill-show "ecc-skill" (&optional session))
+(declare-function ecc-skill-override-for "ecc-skill" (session name))
+
 ;;;; Capabilities
 
 ;; What a session can do is spread over `system/init' (the names of the
@@ -497,9 +500,21 @@ answer to initialize."
   "Return the key of the group of KIND and SCOPE."
   (if scope (format "%s/%s" kind scope) (format "%s" kind)))
 
+(defun ecc-capabilities--skill-override (capability)
+  "Return what CAPABILITY is set to, when it is a skill that is not on.
+`ecc-skill\=' owns the skill settings and is not required here, so this
+answers nil until that module is loaded."
+  (when (and (eq (ecc-capability-kind capability) 'skill)
+             (fboundp 'ecc-skill-override-for)
+             ecc-capabilities--session)
+    (ecc-skill-override-for ecc-capabilities--session
+                            (ecc-capability-name capability))))
+
 (defun ecc-capabilities--label (capability)
   "Return the line describing CAPABILITY, without its indentation."
   (concat (propertize (ecc-capability-name capability) 'face 'ecc-tool-face)
+          (when-let* ((override (ecc-capabilities--skill-override capability)))
+            (propertize (format "  [%s]" override) 'face 'ecc-warning-face))
           (when-let* ((detail (ecc-capability-detail capability)))
             (propertize (format "  (%s)" detail) 'face 'ecc-dim-face))
           (when-let* ((description (ecc-capability-description capability)))
@@ -635,6 +650,7 @@ which arrives with the first turn.\n"
     (define-key map (kbd "d") #'ecc-dashboard-deny)
     (define-key map (kbd "g") #'ecc-dashboard-refresh)
     (define-key map (kbd "C") #'ecc-capabilities-show)
+    (define-key map (kbd "S") #'ecc-skill-show)
     (define-key map (kbd "U") #'ecc-usage)
     map)
   "Keymap of `ecc-dashboard-mode'.")

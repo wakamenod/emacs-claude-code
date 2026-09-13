@@ -52,6 +52,7 @@
 (require 'ecc-plugin)
 (require 'ecc-inline)
 (require 'ecc-btw)
+(require 'ecc-skill)
 (require 'ecc-auth)
 (require 'ecc-tui)
 (require 'ecc-transient)
