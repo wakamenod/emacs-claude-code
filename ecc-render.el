@@ -2064,6 +2064,21 @@ history remembers are stale by exactly DELTA."
 
 ;;;; Drawing
 
+(defun ecc-render--turn-finished-p (session turn)
+  "Return non-nil when TURN of SESSION will not change again.
+A turn that ended has its end time.  One that never began -- the turn
+`ecc-model-aside-turn\=' makes for what the CLI says before any prompt,
+Remote Control announcing itself for one -- has none, and is finished
+when it is not the current turn and everything under it is settled;
+a note that joins it after all is caught by `ecc-render--rewind\='.
+Judged by its end time alone, such a turn at the head of a session
+pinned the live region at the top of the transcript for good, and
+every redraw drew the whole session again: 380 KB, 30 to 60 ms and
+1.6 MB of garbage on every block start and stop (found 2026-09-13)."
+  (or (ecc-turn-end-time turn)
+      (and (not (eq turn (ecc-session-current-turn session)))
+           (seq-every-p #'ecc-render--settled-p (ecc-turn-children turn)))))
+
 (defun ecc-render--freeze (session)
   "Move the live region past every turn of SESSION that is finished.
 Then past the leading blocks of the first unfinished turn that are
@@ -2073,7 +2088,7 @@ changing and what follows it, not the whole turn."
         (done t))
     (while (and turns done)
       (let* ((turn (car turns))
-             (bounds (and (ecc-turn-end-time turn)
+             (bounds (and (ecc-render--turn-finished-p session turn)
                           (ecc-render-node-bounds (ecc-turn-id turn)))))
         (if (null bounds)
             (setq done nil)

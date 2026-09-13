@@ -377,6 +377,33 @@ narrower on the screen than it is in the text."
           (should (equal text (buffer-substring-no-properties (car bounds) (cdr bounds)))))
         (should (string-search "〉 again" (buffer-string)))))))
 
+(ert-deftest ecc-render-test-aside-turn-at-the-head-is-frozen ()
+  "A turn of notes that came before any prompt does not pin the live region.
+Remote Control announces itself before the first prompt, and those notes
+go under a turn that never ends.  Judged by its end time it was never
+finished, so the live region began at the top of the transcript and
+every redraw drew the whole session again."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-add-aside session :type 'system :status 'done
+                         :data '((kind . remote-control) (text . "remote control ready")))
+    (ecc-render-flush session)
+    (ecc-test-dispatch session "basic-turn" "hello")
+    (ecc-render-flush session)
+    (with-current-buffer (ecc-session-buffer session)
+      ;; The aside turn and the finished one are both behind the live region.
+      (should (= ecc-render--frozen 2))
+      (should (equal (ecc-turn-label (car (ecc-session-turns session))) "(session)"))
+      (let ((entry (ecc-render-node-entry "turn-1"))
+            (bounds (ecc-render-node-bounds "turn-2")))
+        (should (>= (marker-position ecc-render--live-start) (cdr bounds)))
+        ;; Another note between turns joins the last turn, not the first;
+        ;; a new prompt redraws neither.
+        (ecc-model-begin-turn session "again")
+        (ecc-render-flush session)
+        (should (eq entry (ecc-render-node-entry "turn-1")))
+        (should (= ecc-render--frozen 2))))))
+
 (ert-deftest ecc-render-test-folding-survives-a-redraw ()
   "Collapsing a section sticks, because node ids are stable."
   (ecc-test-with-fake-session session

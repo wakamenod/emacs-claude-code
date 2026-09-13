@@ -210,6 +210,17 @@ that CLI, and the CLI moves without anybody upgrading ecc.
   One reply of 8000 deltas went from 1260 ms with 11 collections to 69 ms
   with one (measured 2026-09-13).
 
+- A session that Remote Control announced itself in before the first prompt
+  no longer redraws its whole transcript on every change.  Those notes go
+  under a turn that has no prompt and never ends, and the renderer judged a
+  turn finished by its end time alone, so the live region -- the part drawn
+  again whenever a block starts or stops or a tool returns -- began at the
+  top of the transcript for the life of the session: in one of 380 KB,
+  every redraw took 30 to 60 ms and left 1.6 MB of garbage, which is what
+  typing in another buffer felt as a stutter every couple of seconds.  A
+  turn that is not the current one and has nothing running under it is
+  finished too.
+
 ## [0.1.0] - 2026-09-11
 
 The first release.  Verified against **Claude Code CLI 2.1.268** and
