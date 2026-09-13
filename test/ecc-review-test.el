@@ -138,6 +138,10 @@ Neither is in a git repository, so both are diffed from the records."
           (same (ecc-review-test--entry session "/nowhere/c.txt"
                                         :original "x\n" :snapshot "x\n" :edits 1)))
       (should (equal (ecc-review-fallback-diff edited)
+                     "--- /nowhere/a.txt\n+++ /nowhere/a.txt\n@@ -2,1 +2,1 @@\n-two\n+2\n"))
+      ;; The context is `ecc-review-context-lines', 0 by default.
+      (should (equal (let ((ecc-review-context-lines 3))
+                       (ecc-review-fallback-diff edited))
                      "--- /nowhere/a.txt\n+++ /nowhere/a.txt\n@@ -1,3 +1,3 @@\n one\n-two\n+2\n three\n"))
       (should (equal (ecc-review-fallback-diff created)
                      "--- /dev/null\n+++ /nowhere/b.txt\n@@ -0,0 +1,2 @@\n+hello\n+world\n"))
@@ -199,6 +203,172 @@ Neither is in a git repository, so both are diffed from the records."
           (should (< (string-search "diff --git" (car diff))
                      (string-search "/dev/null" (car diff)))))))))
 
+(ert-deftest ecc-review-test-worktree ()
+  "The working tree review shows every change of the repository."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((unstaged (concat directory "x.txt"))
+                (staged (concat directory "y.txt"))
+                (untracked (concat directory "new.txt")))
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (ecc-review-test--write unstaged "one\ntwo\nthree\n")
+            (ecc-review-test--write staged "alpha\n")
+            (ecc-review-test--git directory "add" "x.txt" "y.txt")
+            (ecc-review-test--git directory "commit" "-q" "-m" "init")
+            (ecc-review-test--write unstaged "one\n2\nthree\n")
+            (ecc-review-test--write staged "beta\n")
+            (ecc-review-test--git directory "add" "y.txt")
+            (ecc-review-test--write untracked "hello\n")
+            (setf (ecc-session-project-root session) directory)
+            ;; The session changed nothing, so the review of the session
+            ;; refuses and this one still has everything to show.
+            (should-error (ecc-review-buffer session) :type 'user-error)
+            (let ((buffer (ecc-review-worktree-buffer session)))
+              (with-current-buffer buffer
+                (should (derived-mode-p 'ecc-review-mode))
+                (should (equal (buffer-name) "*ecc-review: test (HEAD)*"))
+                (should (equal ecc-review--range "HEAD"))
+                (should (equal default-directory (ecc-review-git-root directory)))
+                (let ((text (buffer-string)))
+                  ;; Unstaged, staged and untracked, none of them the
+                  ;; session\='s own work.
+                  (should (string-search "\n-two\n+2\n" text))
+                  (should (string-search "\n-alpha\n+beta\n" text))
+                  (should (string-search "+hello\n" text)))
+                ;; A comment goes to the session the review belongs to.
+                (goto-char (point-min))
+                (diff-hunk-next)
+                (ecc-review-comment "rename this")
+                (should (string-search "rename this" (ecc-review-buffer-message)))))
+            ;; Without a revision only what is not staged is shown.
+            (let ((buffer (ecc-review-worktree-buffer session "")))
+              (with-current-buffer buffer
+                (should (equal (buffer-name) "*ecc-review: test (unstaged)*"))
+                (should (string-search "\n-two\n+2\n" (buffer-string)))
+                (should-not (string-search "-alpha" (buffer-string))))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-worktree-untracked-binary-is-named ()
+  "A binary or oversized untracked file is named, not printed."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((binary (concat directory "photo.png"))
+                (big (concat directory "dump.sql"))
+                (small (concat directory "notes.txt")))
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (ecc-review-test--write small "keep me\n")
+            (with-temp-file binary
+              (set-buffer-multibyte nil)
+              (insert "\211PNG\r\n\032\n" (make-string 64 0) "\377\330\377"))
+            (ecc-review-test--write big (make-string 200 ?x))
+            (setf (ecc-session-project-root session) directory)
+            (let* ((ecc-review-untracked-max-bytes 100)
+                   (text (ecc-review-git-untracked (ecc-review-git-root directory))))
+              (should (string-search "Binary files /dev/null and b/photo.png differ" text))
+              (should (string-search "Files /dev/null and b/dump.sql differ" text))
+              (should (string-search "not shown" text))
+              (should (string-search "+keep me" text))
+              ;; Nothing of either file leaked into the buffer.
+              (should-not (string-search "PNG" text))
+              (should-not (string-search "xxxxx" text))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-worktree-session-is-the-project-s ()
+  "The comments go to the session of the project, not to whichever is current."
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (ecc-review-test--with-directory other
+        ;; The project of a session is its cwd first, so both are moved.
+        (setf (ecc-session-cwd session) other
+              (ecc-session-project-root session) other)
+        (let ((mine (ecc-model-create-session :name "mine" :project-root directory)))
+          (unwind-protect
+              (progn
+                (should (eq (ecc-review-worktree-session directory) mine))
+                (should (eq (ecc-review-worktree-session other) session)))
+            (ecc-test-cleanup-session mine)))))))
+
+(ert-deftest ecc-review-test-worktree-offers-a-session ()
+  "A project with no session offers to start one, and takes no for an answer."
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (ecc-review-test--with-directory other
+        (setf (ecc-session-cwd session) other
+              (ecc-session-project-root session) other)
+        (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
+          (should-error (ecc-review-worktree-session directory) :type 'user-error))
+        (let ((started nil))
+          (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                    ((symbol-function 'ecc-start)
+                     (lambda (root &optional _name) (setq started root) session)))
+            (should (eq (ecc-review-worktree-session directory) session))
+            (should (equal started directory))))))))
+
+(ert-deftest ecc-review-test-worktree-context-lines ()
+  "`ecc-review-context-lines' is passed to git, splitting the hunks."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((path (concat directory "x.txt")))
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (ecc-review-test--write path "1\n2\n3\n4\n5\n6\n7\n")
+            (ecc-review-test--git directory "add" "x.txt")
+            (ecc-review-test--git directory "commit" "-q" "-m" "init")
+            ;; Two changes four lines apart: one hunk at three lines of
+            ;; context, two at none.
+            (ecc-review-test--write path "one\n2\n3\n4\n5\n6\nseven\n")
+            (setf (ecc-session-project-root session) directory)
+            (let ((ecc-review-context-lines 3))
+              (with-current-buffer (ecc-review-worktree-buffer session)
+                (should (= (length (ecc-review-hunks)) 1))))
+            (let ((ecc-review-context-lines 0))
+              (with-current-buffer (ecc-review-worktree-buffer session)
+                (should (= (length (ecc-review-hunks)) 2))
+                ;; No context line came with them.
+                (should-not (string-search "\n 2\n" (buffer-string))))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-worktree-unknown-revision ()
+  "A revision git refuses is said so, not shown as a tree with no change."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (progn
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (ecc-review-test--write (concat directory "x.txt") "one\n")
+            (ecc-review-test--git directory "add" "x.txt")
+            (ecc-review-test--git directory "commit" "-q" "-m" "init")
+            ;; An untracked file would otherwise fill the buffer on its
+            ;; own and hide that git never answered.
+            (ecc-review-test--write (concat directory "new.txt") "hello\n")
+            (setf (ecc-session-project-root session) directory)
+            (let ((error (should-error (ecc-review-worktree-buffer session "nope...HEAD")
+                                       :type 'user-error)))
+              (should (string-search "nope...HEAD" (error-message-string error)))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-worktree-needs-git ()
+  "A project outside git says so rather than showing an empty diff."
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (setf (ecc-session-project-root session) directory)
+      (cl-letf (((symbol-function 'ecc-review-git-root) (lambda (_path) nil)))
+        (should-error (ecc-review-worktree-buffer session) :type 'user-error)))))
+
 ;;;; The review buffer
 
 (ert-deftest ecc-review-test-buffer-and-comments ()
@@ -206,7 +376,10 @@ Neither is in a git repository, so both are diffed from the records."
   (ecc-test-with-fake-session session
     (ecc-review-test--with-directory directory
       (unwind-protect
-          (let* ((paths (ecc-review-test--two-files session directory))
+          ;; Three lines of context, so that a hunk has lines around the
+          ;; change for the walking and the source jump to land on.
+          (let* ((ecc-review-context-lines 3)
+                 (paths (ecc-review-test--two-files session directory))
                  (buffer (ecc-review-buffer session)))
             (with-current-buffer buffer
               (should (derived-mode-p 'ecc-review-mode 'diff-mode))
@@ -317,7 +490,10 @@ Neither is in a git repository, so both are diffed from the records."
   (ecc-test-with-fake-session session
     (ecc-review-test--with-directory directory
       (unwind-protect
-          (let* ((paths (ecc-review-test--two-files session directory))
+          ;; Three lines of context, so that a hunk has lines around the
+          ;; change for the walking and the source jump to land on.
+          (let* ((ecc-review-context-lines 3)
+                 (paths (ecc-review-test--two-files session directory))
                  (buffer (ecc-review-buffer session)))
             (with-current-buffer buffer
               (diff-hunk-next)
@@ -372,6 +548,20 @@ Neither is in a git repository, so both are diffed from the records."
                                          (new_string . "2")))))
     (ecc-model-node-put (ecc-request-node request) 'before "one\ntwo\nthree\n")
     request))
+
+(ert-deftest ecc-review-test-proposal-keeps-its-context ()
+  "The proposal diff has its own context, unchanged by the review's."
+  (ecc-test-with-fake-session session
+    (let ((request (ecc-review-test--edit-request session))
+          (before "one\ntwo\nthree\n"))
+      (let ((ecc-review-context-lines 0))
+        (should (equal (ecc-review-request-diff request before)
+                       (concat "--- /nowhere/r.txt\n+++ /nowhere/r.txt\n"
+                               "@@ -1,3 +1,3 @@\n one\n-two\n+2\n three\n"))))
+      (let ((ecc-review-proposal-context-lines 0))
+        (should (equal (ecc-review-request-diff request before)
+                       (concat "--- /nowhere/r.txt\n+++ /nowhere/r.txt\n"
+                               "@@ -2,1 +2,1 @@\n-two\n+2\n")))))))
 
 (ert-deftest ecc-review-test-request-diff ()
   "A proposal is shown as a hunk of the file, or on its own without one."

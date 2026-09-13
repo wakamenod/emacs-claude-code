@@ -36,6 +36,7 @@
 (declare-function ecc-menu "ecc-transient" ())
 (declare-function ecc-resume-menu "ecc-transient" ())
 (declare-function ecc-review "ecc-review" (&optional session paths))
+(declare-function ecc-review-worktree "ecc-review" (&optional session range root))
 (declare-function ecc-search "ecc-search" (query &optional everywhere))
 (declare-function ecc-show-session "ecc-transient" ())
 (declare-function ecc-start "ecc" (&optional directory name))
@@ -213,6 +214,9 @@ question buffer opens with the first one answered."
     ;; Looking around.
     (define-key map (kbd "b") #'ecc-dashboard)
     (define-key map (kbd "D") #'ecc-review)
+    ;; `G' is next to `D' because the two are one question asked twice:
+    ;; what changed here, by Claude or by hand.
+    (define-key map (kbd "G") #'ecc-review-worktree)
     (define-key map (kbd "h") #'ecc-history-open)
     (define-key map (kbd "/") #'ecc-search)
     (define-key map (kbd "U") #'ecc-usage)
