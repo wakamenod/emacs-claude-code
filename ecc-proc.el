@@ -457,13 +457,16 @@ supports it, and \"bypassPermissions\" only where it is allowed."
 
 (defun ecc-proc-get-settings (session callback)
   "Ask SESSION for the Claude Code settings it is running under.
-CALLBACK is called with the session and the `sources\=' of the answer:
-a vector of objects carrying a `source\=' -- userSettings,
-projectSettings or localSettings -- and the `settings\=' of that file as
-it stands, unmerged.  The answer also holds the resolved view under
-`effective\=', which is not what a caller that means to edit one file
-wants.  A refusal calls CALLBACK with nil (confirmed against Claude
-Code 2.1.270, 2026-09-13).
+CALLBACK is called with the session and the answer, which carries
+`effective\=' -- the resolved view, the one the CLI itself reads a
+setting out of -- and `sources\=', a vector of objects carrying a
+`source\=' (userSettings, projectSettings, localSettings, and the
+policySettings and flagSettings that override rather than merge) with
+the `settings\=' of that file as it stands, unmerged.  A caller that
+means to know what a setting is asks `effective\='; one that means to
+know who said it, or to edit the file that did, reads `sources\='.  A
+refusal calls CALLBACK with nil (confirmed against Claude Code 2.1.270,
+2026-09-13).
 
 There is no way back: `update_settings\=' takes the localSettings source
 alone, and in it the key `outputStyle\=' alone, with a string for a
@@ -474,8 +477,7 @@ itself."
    session "get_settings"
    (lambda (session response)
      (funcall callback session
-              (unless (alist-get 'error response)
-                (alist-get 'sources response))))))
+              (unless (alist-get 'error response) response)))))
 
 
 ;;;; Remote Control

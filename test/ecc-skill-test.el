@@ -120,31 +120,77 @@ that is not drawn cannot be turned back on."
 
 ;;;; The settings
 
-(ert-deftest ecc-skill-test-overrides-are-read-per-source ()
-  "The more specific settings file wins, whatever order the answer is in.
-The terminal client reads localSettings, then projectSettings, then
-userSettings, and takes the first that names the skill."
-  (should (equal (ecc-skill-sources-overrides
-                  (ecc-skill-test--sources
-                   '("localSettings" . ((dataviz . "name-only")))
-                   '("userSettings" . ((dataviz . "off") (run . "off")))
-                   '("projectSettings" . ((dataviz . "on")))))
+(ert-deftest ecc-skill-test-the-setting-is-the-cli-s-own-resolved-one ()
+  "What a skill is set to is read out of `effective\=', not merged here.
+That is the view the CLI reads it out of itself, so the merging of the
+settings files -- and whatever a flag or a policy added -- is its
+answer rather than a rule copied into Emacs."
+  (should (equal (ecc-skill-answer-overrides
+                  '((effective . ((skillOverrides . ((dataviz . "name-only")
+                                                     (run . "off")))))
+                    (sources . [])))
                  '(("dataviz" . "name-only") ("run" . "off"))))
-  ;; A source that says nothing about skills is not an answer.
-  (should-not (ecc-skill-sources-overrides
-               (vector '((source . "userSettings")
-                         (settings . ((model . "opus"))))))))
+  ;; An answer that says nothing about skills is not an answer.
+  (should-not (ecc-skill-answer-overrides
+               '((effective . ((model . "opus")))))))
+
+(ert-deftest ecc-skill-test-the-files-are-read-least-specific-first ()
+  "With no session to ask, the files are read the way the CLI merges them.
+The last file that names a skill has it, and where it came from is
+carried along."
+  (let* ((dir (make-temp-file "ecc-skill-test" t))
+         (user (expand-file-name "user.json" dir))
+         (project (expand-file-name "project.json" dir))
+         (local (expand-file-name "local.json" dir)))
+    (unwind-protect
+        (progn
+          (ecc-skill-write-settings-file
+           user '((skillOverrides . ((dataviz . "off") (run . "off")))))
+          (ecc-skill-write-settings-file
+           project '((skillOverrides . ((dataviz . "on")))))
+          (ecc-skill-write-settings-file
+           local '((skillOverrides . ((dataviz . "name-only")))))
+          (let ((overrides (ecc-skill-file-overrides (list user project local))))
+            (should (equal (car (alist-get "dataviz" overrides nil nil #'equal))
+                           "name-only"))
+            (should (equal (cdr (alist-get "dataviz" overrides nil nil #'equal))
+                           local))
+            (should (equal (car (alist-get "run" overrides nil nil #'equal))
+                           "off"))
+            (should (equal (cdr (alist-get "run" overrides nil nil #'equal))
+                           user))))
+      (delete-directory dir t))))
 
 (ert-deftest ecc-skill-test-a-policy-is-a-lock-not-an-override ()
-  "What a policy or a flag says about a skill cannot be toggled away."
+  "What a policy or a flag says about a skill cannot be toggled away.
+The value still comes through `effective\=' like any other; what the
+sources add is who settled it."
   (let ((sources (ecc-skill-test--sources
                   '("policySettings" . ((dataviz . "off")))
                   '("userSettings" . ((run . "off"))))))
     (should (equal (ecc-skill-sources-locks sources)
                    '(("dataviz" . "policySettings"))))
-    ;; It is not merged into the ordinary overrides.
-    (should (equal (ecc-skill-sources-overrides sources)
-                   '(("run" . "off"))))))
+    (should-not (ecc-skill-sources-locks
+                 (ecc-skill-test--sources
+                  '("userSettings" . ((run . "off"))))))))
+
+(ert-deftest ecc-skill-test-a-settings-file-that-is-not-json-is-read-as-nothing ()
+  "One typo in a settings file does not take the list of skills with it.
+Writing is the other way round: a file that could not be read is not
+written over, because what could not be read would be lost."
+  (let ((file (make-temp-file "ecc-skill-test" nil ".json")))
+    (unwind-protect
+        (progn
+          (with-temp-file file (insert "{ oops"))
+          (should-not (ecc-skill-read-settings-file file))
+          (should-error (ecc-skill-set-overrides-in-file
+                         file '(("dataviz" . "off"))))
+          ;; The file is as it was.
+          (should (equal (with-temp-buffer
+                           (insert-file-contents file)
+                           (buffer-string))
+                         "{ oops")))
+      (delete-file file))))
 
 (ert-deftest ecc-skill-test-the-override-goes-where-the-cli-puts-it ()
   "A toggle writes the settings file the terminal client saves to."
@@ -163,7 +209,8 @@ userSettings, and takes the first that names the skill."
     (should (eq (ecc-skill-settings-state session) 'unread))
     (ecc-skill-test--answer
      session (alist-get 'request_id (car (ecc-test-sent-messages)))
-     `((sources . ,(ecc-skill-test--sources
+     `((effective . ((skillOverrides . ((dataviz . "off")))))
+       (sources . ,(ecc-skill-test--sources
                     '("userSettings" . ((dataviz . "off")))))))
     (should (eq (ecc-skill-settings-state session) 'read))
     (should (equal (ecc-skill-override-for session "dataviz") "off"))))

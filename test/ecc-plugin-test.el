@@ -360,9 +360,15 @@ one user skill in it."
   `(let* ((root (make-temp-file "ecc-plugin" t))
           (skills (expand-file-name "skills" root))
           (ecc-plugin-user-skills-directory skills)
-          (ecc-plugin-user-settings-file
-           (expand-file-name "settings.json" root))
-          (project (expand-file-name "project" root)))
+          ;; `ecc-skill' owns the settings now, and reads the user file
+          ;; under this directory; the browser writes the project's
+          ;; local settings, as the terminal client does.
+          (ecc-capabilities-directory root)
+          (ecc-skill-settings-file nil)
+          (user-settings (expand-file-name "settings.json" root))
+          (project (expand-file-name "project" root))
+          (local-settings (expand-file-name ".claude/settings.local.json"
+                                            project)))
      (unwind-protect
          (progn
            (make-directory (expand-file-name "explain-diff-html" skills) t)
@@ -414,25 +420,26 @@ one user skill in it."
 (ert-deftest ecc-plugin-test-an-override-turns-a-skill-off ()
   "`skillOverrides' in the settings is what says a skill is off."
   (ecc-plugin-test-with-skills
-    (with-temp-file ecc-plugin-user-settings-file
+    (with-temp-file user-settings
       (insert "{\"skillOverrides\":{\"explain-diff-html\":\"off\"},\"model\":null}"))
     (let ((skill (ecc-plugin-test-skill (ecc-plugin-skills project)
                                         "explain-diff-html")))
       (should (equal (ecc-plugin-skill-state skill) "off"))
       (should-not (ecc-plugin-skill-on-p skill)))))
 
-(ert-deftest ecc-plugin-test-the-most-restrictive-scope-wins ()
-  "A project that turns a skill off is not undone by the user settings.
-The CLI merges the scopes by taking the most restrictive of them, not
-the nearest one (2.1.270)."
+(ert-deftest ecc-plugin-test-the-most-specific-scope-wins ()
+  "The nearest settings file has the skill, not the most restrictive one.
+The CLI reads a skill out of its resolved settings, where the more
+specific file has overwritten the rest; the restrictiveness it ranks
+values by is for a policy and a flag alone (`iQt\=' of 2.1.270)."
   (ecc-plugin-test-with-skills
-    (with-temp-file ecc-plugin-user-settings-file
-      (insert "{\"skillOverrides\":{\"local-notes\":\"name-only\"}}"))
-    (with-temp-file (expand-file-name ".claude/settings.json" project)
+    (with-temp-file user-settings
       (insert "{\"skillOverrides\":{\"local-notes\":\"off\"}}"))
+    (with-temp-file (expand-file-name ".claude/settings.json" project)
+      (insert "{\"skillOverrides\":{\"local-notes\":\"name-only\"}}"))
     (let ((skill (ecc-plugin-test-skill (ecc-plugin-skills project)
                                         "local-notes")))
-      (should (equal (ecc-plugin-skill-state skill) "off"))
+      (should (equal (ecc-plugin-skill-state skill) "name-only"))
       (should (equal (ecc-plugin-skill-from skill)
                      (expand-file-name ".claude/settings.json" project))))))
 
@@ -442,11 +449,11 @@ A JSON null must come back as null: the ordinary reader turns it into
 nil, which serializes back as an empty object and would rewrite the
 model setting into one."
   (ecc-plugin-test-with-skills
-    (with-temp-file ecc-plugin-user-settings-file
+    (with-temp-file user-settings
       (insert "{\"model\":\"opus\",\"env\":{},\"cleanupPeriodDays\":null,"
               "\"permissions\":{\"allow\":[\"Bash(ls:*)\"]}}"))
     (ecc-plugin-set-skill-state "explain-diff-html" "off")
-    (let ((settings (ecc-plugin--read-settings ecc-plugin-user-settings-file)))
+    (let ((settings (ecc-skill-read-settings-file user-settings)))
       (should (equal (alist-get 'model settings) "opus"))
       (should (eq (alist-get 'cleanupPeriodDays settings) :null))
       (should (equal (alist-get 'allow (alist-get 'permissions settings))
@@ -456,7 +463,7 @@ model setting into one."
                      "off")))
     ;; And turning it back on takes the entry away again.
     (ecc-plugin-set-skill-state "explain-diff-html" nil)
-    (let ((settings (ecc-plugin--read-settings ecc-plugin-user-settings-file)))
+    (let ((settings (ecc-skill-read-settings-file user-settings)))
       (should-not (alist-get 'explain-diff-html
                              (alist-get 'skillOverrides settings)))
       (should (equal (alist-get 'model settings) "opus")))))
@@ -466,16 +473,38 @@ model setting into one."
 The file belongs to the user and to the CLI; it should not come back
 reordered, nor carrying an empty object neither of them wrote."
   (ecc-plugin-test-with-skills
-    (with-temp-file ecc-plugin-user-settings-file
+    (with-temp-file user-settings
       (insert "{\"model\":\"opus\",\"theme\":\"dark\"}"))
     (ecc-plugin-set-skill-state "explain-diff-html" "name-only")
-    (should (equal (mapcar #'car (ecc-plugin--read-settings
-                                  ecc-plugin-user-settings-file))
+    (should (equal (mapcar #'car (ecc-skill-read-settings-file
+                                  user-settings))
                    '(model theme skillOverrides)))
     (ecc-plugin-set-skill-state "explain-diff-html" nil)
-    (should (equal (mapcar #'car (ecc-plugin--read-settings
-                                  ecc-plugin-user-settings-file))
+    (should (equal (mapcar #'car (ecc-skill-read-settings-file
+                                  user-settings))
                    '(model theme)))))
+
+(ert-deftest ecc-plugin-test-an-override-goes-where-the-skills-buffer-puts-it ()
+  "The browser and the Skills buffer write one file, not two.
+Both go through `ecc-skill\=', so a skill turned off in either is off
+in the other; before that the browser wrote the settings of the user
+and the Skills buffer those of the project."
+  (ecc-plugin-test-with-skills
+    (let ((ecc-plugin--project project))
+      (should (equal (ecc-plugin-set-skill-state "explain-diff-html" "off")
+                     (expand-file-name local-settings)))
+      (should (equal (ecc-skill-settings-file-in project)
+                     (expand-file-name local-settings)))
+      (should (equal (alist-get 'explain-diff-html
+                                (alist-get 'skillOverrides
+                                           (ecc-skill-read-settings-file
+                                            local-settings)))
+                     "off"))
+      ;; And the browser reads it back as the CLI would.
+      (should (equal (ecc-plugin-skill-state
+                      (ecc-plugin-test-skill (ecc-plugin-skills project)
+                                             "explain-diff-html"))
+                     "off")))))
 
 (ert-deftest ecc-plugin-test-every-state-can-be-set ()
   "A skill takes the four states the CLI knows, not just on and off."
@@ -513,7 +542,7 @@ reordered, nor carrying an empty object neither of them wrote."
 (ert-deftest ecc-plugin-test-a-settings-file-that-is-not-json-is-not-fatal ()
   "A settings file Emacs cannot read leaves the skills on."
   (ecc-plugin-test-with-skills
-    (with-temp-file ecc-plugin-user-settings-file (insert "{ oops"))
+    (with-temp-file user-settings (insert "{ oops"))
     (should (ecc-plugin-skill-on-p
              (ecc-plugin-test-skill (ecc-plugin-skills project)
                                     "explain-diff-html")))))
