@@ -43,7 +43,8 @@ make compile     # byte-compile (warnings are errors); wipes stale .elc first
 make test        # ERT (fixture replay; no real process)
 make test-live   # ERT against the real CLI (tag live); run by hand only
 make lint        # checkdoc (+ package-lint when it is there)
-make release VERSION=0.2.0   # bump, commit and tag a release (see below)
+make release VERSION=0.2.0       # bump and commit a release (see below)
+make release-tag VERSION=0.2.0   # tag it, once that commit is on main
 
 make docs-install  # npm ci for the documentation site
 make docs-dev      # the site's dev server
@@ -179,23 +180,49 @@ that changes its meaning — bumps the minor number; everything else bumps the p
 number. Both READMEs say so, under the documentation link.
 
 ```
-git switch main && git pull       # a release is tagged on main
+git switch main && git pull       # a release is prepared on main
 $EDITOR CHANGELOG.md              # move Unreleased into a dated [0.2.0] section,
                                   # naming the claude CLI it was verified against
+$EDITOR release-notes/0.2.0.md    # the release page: the same release, summarised
 make release VERSION=0.2.0        # checks, then autoloads+compile+lint+test,
-                                  # then the header, the commit and the tag
-git push --follow-tags            # this is what publishes it
+                                  # then the header and the commit
+git switch -c release/0.2.0 && git push -u origin release/0.2.0
+gh pr create && gh pr merge        # main takes no direct push
+git switch main && git pull
+make release-tag VERSION=0.2.0    # tags the main origin has
+git push origin v0.2.0            # this is what publishes it
 ```
 
-`make release` writes nothing but the `Version:` header: the prose of the release is the
-`CHANGELOG.md` section, and it wants that written first. It refuses to go on unless it is
-on `main`, the tree holds nothing but that `CHANGELOG.md` edit, the section for the
-version is there and the tag is not. `make release-check` is those checks alone.
+**It is two steps because `main` takes no direct push.** A repository ruleset on the
+default branch requires a pull request, and nobody can bypass it (`bypass_actors` is
+empty; confirmed 2026-09-14). Tags are not covered by it, so the tag is pushed
+straight -- but it has to name a commit `main` can reach, which is why it is made
+after the merge, not before.
+
+`make release` writes nothing but the `Version:` header: both pieces of prose are
+written by hand first. It refuses to go on unless it is on `main`, the tree holds
+nothing but those two files, the `CHANGELOG.md` section is there,
+`release-notes/<version>.md` is there and not empty, and the tag is not taken.
+`make release-tag` makes the tag, and refuses unless `main` is exactly what origin
+has and the `Version:` header of that `main` is the version being tagged. The
+working tree is not asked about there: what is tagged is a commit origin already
+has. `make release-check` and `make release-tag-check` are those checks alone.
+
+**The two are written for different readers.** The `CHANGELOG.md` section is the
+record: every change, in the detail somebody debugging a year from now needs.
+`release-notes/<version>.md` is the release page, read by somebody deciding whether
+to upgrade -- the headline changes grouped by what they are for, the breaking ones
+named, and the rest left to the CHANGELOG, which it points at. Keep it to a screen
+or two; the 0.2.0 CHANGELOG section is 281 lines, which is why the notes stopped
+being that section (2026-09-14).
 
 The tag is the release. `.github/workflows/release.yml` runs on `v*` and refuses to
-publish if the header and the tag disagree or `CHANGELOG.md` has no section for the
-version; it then runs `make test` and creates the GitHub release with that section as
-the notes. Tag the merge commit on `main`, not a branch.
+publish if the header and the tag disagree, `CHANGELOG.md` has no section for the
+version, or `release-notes/<version>.md` is missing or empty; it then runs `make test`
+and creates the GitHub release with that file as the notes. A release published with
+the wrong notes is repaired by editing the file and re-running the workflow by hand on
+the tag (`workflow_dispatch`), which sets the notes of the release that is already
+there. Tag the merge commit on `main`, not a branch.
 
 A release entry names the `claude` version it was verified against (`claude --version`,
 which is what `ecc-version` reports too). Almost everything this package works around

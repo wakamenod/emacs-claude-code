@@ -11,7 +11,9 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
-## [Unreleased]
+## [0.2.0] - 2026-09-14
+
+Verified against **Claude Code CLI 2.1.270**.
 
 ### Added
 
@@ -325,5 +327,6 @@ Emacs 29.1, 29.4 and 30.1.
   notifications, and a `transient` menu on `ecc-global-map`.
 - `ecc-version` reports the ecc, Emacs and CLI versions a bug report needs.
 
-[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.2.0
 [0.1.0]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.1.0
