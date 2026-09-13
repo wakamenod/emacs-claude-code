@@ -106,7 +106,7 @@ a resumed one the model its recording ends on (see `ecc-proc--model')."
                 (list "--replay-user-messages"))
            (and (funcall opt :prompt-suggestions ecc-prompt-suggestions-enabled)
                 (list "--prompt-suggestions"))
-           (and (funcall opt :hook-events ecc-hook-events-enabled)
+           (and (funcall opt :hook-events ecc-show-hook-events)
                 (list "--include-hook-events"))
            (when-let* ((model (ecc-proc--model session)))
              (list "--model" model))

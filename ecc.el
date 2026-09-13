@@ -35,6 +35,7 @@
 (require 'ecc-session)
 (require 'ecc-prompt)
 (require 'ecc-perm)
+(require 'ecc-hooks)
 (require 'ecc-plan)
 (require 'ecc-review)
 (require 'ecc-sync)

@@ -331,7 +331,8 @@ moment is added to it (`ecc-prompt-current-argument\=')."
     ("/skills" . "List the skills of this session, run one, turn one off")
     ("/login" . "Sign in to the CLI, in a terminal of its own")
     ("/logout" . "Sign the CLI out")
-    ("/auth-status" . "Say who the CLI is signed in as"))
+    ("/auth-status" . "Say who the CLI is signed in as")
+    ("/hooks" . "Show the hooks that would run for this project"))
   "Commands Emacs offers that the CLI does not name.
 They are added to the list `ecc-prompt-commands\' returns, after
 everything the CLI reported.  `/btw\' is one: the terminal client
@@ -358,7 +359,12 @@ would cost a command.
 
 `/plugins\' is the same story again (2.1.270): it is a screen the
 terminal client draws for itself, named in neither list, and
-`ecc-plugin\' is what Emacs opens instead.")
+`ecc-plugin\' is what Emacs opens instead.
+
+`/hooks\' is that story once more and shadows nothing: the CLI\\='s
+command of that name is declared `requires: {ink: true}\', a terminal
+menu a headless client cannot open, so it appears in neither list
+system/init sends (confirmed against 2.1.270, 2026-09-13).")
 
 (defun ecc-prompt-commands (session)
   "Return the slash commands of SESSION as an alist of name and description.
@@ -941,6 +947,26 @@ Only a draft the CLI is not meant to see belongs here.  The side
 question is the one there is: `/btw\' is not a slash
 command, and sending it would put it in the conversation it is supposed
 to be asked beside.")
+
+(defvar ecc-prompt-immediate-commands nil
+  "Slash commands that run the moment they are chosen from the `/\=' question.
+A command Emacs answers itself and that needs no argument -- `/hooks\=',
+`/skills\=', `/plugins\=' -- has nothing to say to the CLI, so writing its
+name into the prompt only to send it is a step with no purpose: it is
+run there and then, and the slash that opened the question is taken
+back.  Each module puts its own command here, next to the interceptor
+that answers it (`ecc-prompt-intercept-functions\=').
+
+A command whose argument is the point of it stays out: `/btw <question>\='
+and `/login <account>\=' are typed, not chosen.")
+
+(defun ecc-prompt-run-immediately (session command)
+  "Answer COMMAND for SESSION at once when it is one that runs as it is chosen.
+COMMAND carries its slash.  Returns non-nil when it was answered, which
+is what says the prompt region should be left as it was."
+  (and (member command ecc-prompt-immediate-commands)
+       (run-hook-with-args-until-success 'ecc-prompt-intercept-functions
+                                         session command)))
 
 (cl-defun ecc-prompt-send ()
   "Send the prompt region, or queue it while a turn runs.

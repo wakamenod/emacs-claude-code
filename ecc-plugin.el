@@ -61,6 +61,7 @@
 
 (declare-function ecc-window-project-root "ecc-window" (&optional directory))
 (declare-function ecc-prompt-command-name "ecc-prompt" (text))
+(defvar ecc-prompt-immediate-commands)
 (declare-function ecc-prompt-command-argument "ecc-prompt" (text))
 
 ;;;; Options
@@ -1423,7 +1424,10 @@ the plugins that mention MCP.  This is on
     t))
 
 (with-eval-after-load 'ecc-prompt
-  (add-hook 'ecc-prompt-intercept-functions #'ecc-plugin-intercept))
+  (add-hook 'ecc-prompt-intercept-functions #'ecc-plugin-intercept)
+  ;; What follows it only narrows the rows, which the browser does as
+  ;; well, so choosing it in the prompt region is the whole of it.
+  (add-to-list 'ecc-prompt-immediate-commands (car ecc-plugin-commands)))
 
 (provide 'ecc-plugin)
 

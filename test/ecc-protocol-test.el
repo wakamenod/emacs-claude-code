@@ -280,6 +280,168 @@ parsed values can be echoed back unchanged."
                          "{not json")))
       (delete-file file))))
 
+(defmacro ecc-protocol-test--with-settings (var text &rest body)
+  "Bind VAR to a settings file holding TEXT and run BODY, then delete it.
+TEXT nil leaves the file absent, which is what a machine with no hooks
+of its own looks like."
+  (declare (indent 2))
+  `(let ((,var (if ,text
+                   (make-temp-file "ecc-hooks" nil ".json" ,text)
+                 (expand-file-name (format "ecc-hooks-%s.json" (random 100000))
+                                   temporary-file-directory))))
+     (unwind-protect (progn ,@body)
+       (when (file-exists-p ,var) (delete-file ,var)))))
+
+(ert-deftest ecc-protocol-test-hook-entries-carry-their-address ()
+  "Every hook of a settings file is read out with the address of its entry."
+  (let ((object (ecc--json-read-verbatim "
+{\"hooks\": {\"PreToolUse\": [{\"matcher\": \"Write|Edit\",
+                             \"hooks\": [{\"type\": \"command\", \"command\": \"a\"},
+                                        {\"type\": \"command\", \"command\": \"b\"}]},
+                            {\"hooks\": [{\"type\": \"command\", \"command\": \"c\"}]}],
+             \"Stop\": [{\"matcher\": \"\",
+                        \"hooks\": [{\"type\": \"command\", \"command\": \"d\"}]}]}}")))
+    (let ((entries (ecc-protocol-settings-hook-entries object)))
+      (should (equal (mapcar (lambda (e) (list (plist-get e :event)
+                                               (plist-get e :matcher)
+                                               (plist-get e :group-index)
+                                               (plist-get e :hook-index)
+                                               (alist-get 'command (plist-get e :entry))))
+                             entries)
+                     '(("PreToolUse" "Write|Edit" 0 0 "a")
+                       ("PreToolUse" "Write|Edit" 0 1 "b")
+                       ;; A group with no matcher, and one whose matcher
+                       ;; is the empty string, both match everything.
+                       ("PreToolUse" nil 1 0 "c")
+                       ("Stop" nil 0 0 "d")))))))
+
+(ert-deftest ecc-protocol-test-hook-entries-skips-what-it-cannot-read ()
+  "A hooks block of an unexpected shape yields nothing, and never signals."
+  (dolist (text '("{}" "{\"hooks\": {}}" "{\"hooks\": []}"
+                  "{\"hooks\": {\"Stop\": {}}}"
+                  "{\"hooks\": {\"Stop\": [{\"hooks\": {}}]}}"))
+    (should-not (ecc-protocol-settings-hook-entries
+                 (ecc--json-read-verbatim text)))))
+
+(ert-deftest ecc-protocol-test-add-hook-creates-the-file ()
+  "A missing settings file is created with the hook, indented."
+  (ecc-protocol-test--with-settings file nil
+    (should (equal (ecc-protocol-settings-add-hook
+                    file "PreToolUse" "Write"
+                    '((type . "command") (command . "echo hi")))
+                   '(0 . 0)))
+    (should (equal (with-temp-buffer (insert-file-contents file) (buffer-string))
+                   "{\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\n        \"matcher\": \"Write\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"echo hi\"\n          }\n        ]\n      }\n    ]\n  }\n}\n"))))
+
+(ert-deftest ecc-protocol-test-add-hook-joins-a-matcher-group ()
+  "A second hook for the same matcher joins the group instead of making one."
+  (ecc-protocol-test--with-settings file "{}"
+    (ecc-protocol-settings-add-hook file "PreToolUse" "Write"
+                                    '((type . "command") (command . "a")))
+    (should (equal (ecc-protocol-settings-add-hook
+                    file "PreToolUse" "Write" '((type . "command") (command . "b")))
+                   '(0 . 1)))
+    ;; A different matcher, and no matcher at all, are groups of their own.
+    (should (equal (ecc-protocol-settings-add-hook
+                    file "PreToolUse" "Read" '((type . "command") (command . "c")))
+                   '(1 . 0)))
+    (should (equal (ecc-protocol-settings-add-hook
+                    file "PreToolUse" nil '((type . "command") (command . "d")))
+                   '(2 . 0)))
+    (should (equal (mapcar (lambda (e) (list (plist-get e :matcher)
+                                             (alist-get 'command (plist-get e :entry))))
+                           (ecc-protocol-settings-hook-entries
+                            (ecc-protocol-read-settings-file file)))
+                   '(("Write" "a") ("Write" "b") ("Read" "c") (nil "d"))))))
+
+(ert-deftest ecc-protocol-test-add-hook-keeps-other-keys ()
+  "Everything else in the file survives a hook being added, null included."
+  (ecc-protocol-test--with-settings file
+      "{\"permissions\":{\"allow\":[\"A\"]},\"flag\":false,\"nothing\":null}"
+    (ecc-protocol-settings-add-hook file "Stop" nil
+                                    '((type . "command") (command . "a")))
+    (let ((object (ecc-protocol-read-settings-file file)))
+      (should (equal (ecc-protocol-settings-allow-list object) '("A")))
+      (should (eq (alist-get 'flag object) :false))
+      (should (eq (alist-get 'nothing object) :null)))
+    ;; The keys that were there keep their order and the new one goes
+    ;; last: an edit to the hooks must not shuffle the whole file.
+    (let ((text (with-temp-buffer (insert-file-contents file) (buffer-string))))
+      (should (< (string-search "\"permissions\"" text)
+                 (string-search "\"nothing\"" text)
+                 (string-search "\"hooks\"" text))))))
+
+(ert-deftest ecc-protocol-test-add-hook-refuses-a-broken-file ()
+  "A file that does not parse is reported and never written over."
+  (ecc-protocol-test--with-settings file "{not json"
+    (should-error (ecc-protocol-settings-add-hook
+                   file "Stop" nil '((type . "command") (command . "a"))))
+    (should (equal (with-temp-buffer (insert-file-contents file) (buffer-string))
+                   "{not json"))))
+
+(ert-deftest ecc-protocol-test-remove-hook-folds-what-it-empties ()
+  "Removing the last hook takes its group, its event and the block with it."
+  (ecc-protocol-test--with-settings file "{\"permissions\":{\"allow\":[\"A\"]}}"
+    (ecc-protocol-settings-add-hook file "PreToolUse" "Write"
+                                    '((type . "command") (command . "a")))
+    (ecc-protocol-settings-add-hook file "PreToolUse" "Write"
+                                    '((type . "command") (command . "b")))
+    (ecc-protocol-settings-add-hook file "Stop" nil
+                                    '((type . "command") (command . "c")))
+    ;; The entry comes back, so that the caller can stash it.
+    (should (equal (alist-get 'command
+                              (ecc-protocol-settings-remove-hook file "PreToolUse" 0 0))
+                   "a"))
+    (should (equal (mapcar (lambda (e) (alist-get 'command (plist-get e :entry)))
+                           (ecc-protocol-settings-hook-entries
+                            (ecc-protocol-read-settings-file file)))
+                   '("b" "c")))
+    (ecc-protocol-settings-remove-hook file "PreToolUse" 0 0)
+    (should-not (alist-get 'PreToolUse
+                           (alist-get 'hooks (ecc-protocol-read-settings-file file))))
+    (ecc-protocol-settings-remove-hook file "Stop" 0 0)
+    (let ((object (ecc-protocol-read-settings-file file)))
+      (should-not (assq 'hooks object))
+      (should (equal (ecc-protocol-settings-allow-list object) '("A"))))))
+
+(ert-deftest ecc-protocol-test-remove-hook-refuses-an-address-that-names-nothing ()
+  "An address no longer in the file signals rather than removing something else."
+  (ecc-protocol-test--with-settings file "{}"
+    (ecc-protocol-settings-add-hook file "Stop" nil
+                                    '((type . "command") (command . "a")))
+    (should-error (ecc-protocol-settings-remove-hook file "Stop" 0 1))
+    (should-error (ecc-protocol-settings-remove-hook file "Stop" 1 0))
+    (should-error (ecc-protocol-settings-remove-hook file "PostToolUse" 0 0))
+    (should (equal (length (ecc-protocol-settings-hook-entries
+                            (ecc-protocol-read-settings-file file)))
+                   1))))
+
+(ert-deftest ecc-protocol-test-stash-round-trip ()
+  "A hook taken out of a settings file comes back out of the stash unchanged."
+  (ecc-protocol-test--with-settings stash nil
+    (let ((entry '((type . "command") (command . "echo hi") (timeout . 60))))
+      (should-not (ecc-protocol-stash-entries stash))
+      (should (equal (ecc-protocol-stash-add stash "/s.json" "PreToolUse" "Write" entry)
+                     0))
+      (should (equal (ecc-protocol-stash-add stash "/s.json" "PreToolUse" nil entry)
+                     1))
+      (let ((entries (ecc-protocol-stash-entries stash)))
+        (should (equal (mapcar (lambda (e) (list (plist-get e :settings-file)
+                                                 (plist-get e :event)
+                                                 (plist-get e :matcher)
+                                                 (plist-get e :index)))
+                               entries)
+                       '(("/s.json" "PreToolUse" "Write" 0)
+                         ("/s.json" "PreToolUse" nil 1))))
+        (should (equal (plist-get (car entries) :entry) entry)))
+      ;; Taking one out leaves the other, and emptying the stash leaves
+      ;; neither the event nor the file behind.
+      (should (equal (ecc-protocol-stash-remove stash "/s.json" "PreToolUse" 0) entry))
+      (should (equal (length (ecc-protocol-stash-entries stash)) 1))
+      (ecc-protocol-stash-remove stash "/s.json" "PreToolUse" 0)
+      (should-not (ecc-protocol-stash-entries stash))
+      (should-error (ecc-protocol-stash-remove stash "/s.json" "PreToolUse" 0)))))
+
 (ert-deftest ecc-protocol-test-request-suggestions-verbatim ()
   "Suggestions come back exactly as sent, or nil when absent."
   (let ((edit (ecc-test-find-message
