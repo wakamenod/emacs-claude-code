@@ -39,6 +39,7 @@ faceはテキスト挿入時に適用されるため、`M-x customize` による
 - **[プランモード](https://wakamenod.github.io/emacs-claude-code/ja/features/review/#プランモード):** 提案された実行計画を、編集可能なバッファ内で確認・調整しながら進められます。
 - **[グローバル操作](https://wakamenod.github.io/emacs-claude-code/ja/reference/key-bindings/):** どのバッファからでも保留中のツール実行リクエストを許可・拒否できます。
 - **[セッション管理](https://wakamenod.github.io/emacs-claude-code/ja/features/sessions/):** ダッシュボードから複数の同時並行セッションを整理・管理できます。
+- **[プロジェクト単位の表示](https://wakamenod.github.io/emacs-claude-code/ja/features/sessions/#focusing-one-project):** `ecc-focus-project` でフレーム全体を 1 つのプロジェクトに絞り込みます。ウィンドウのタブにはそのプロジェクトのセッションだけが表示されます。
 - **安全なデフォルト設定:** 権限プロンプトはデフォルトで「拒否」に設定されています。内蔵のループバック MCP サーバーはデフォルトで無効化されており、Elisp の評価ツールも明示的な有効化が必要です。
 
 ## 動作要件
@@ -144,6 +145,8 @@ git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/em
 | `r` | `ecc-resume-menu` | セッションを再開 |
 | `R` | `ecc-rename-session` | セッションの名前を変更 |
 | `v` | `ecc-show-session` | セッションのプロンプトへ移動 |
+| `j` | `ecc-focus-project` | 1 つのプロジェクトのセッションとソースだけを表示 |
+| `w` | `ecc-toggle` | このプロジェクトのセッションウィンドウを隠す／戻す |
 | `i` | `ecc-interrupt` | 実行中のターンを中断 |
 | `t` | `ecc-tui-open` | セッションを端末へ引き渡す |
 | `a` | `ecc-answer-allow` | 最も古い待機中リクエストを許可 |

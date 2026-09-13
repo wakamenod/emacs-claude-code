@@ -769,7 +769,14 @@ requests that were closed."
 
 (defun ecc-model-pending-all (&optional project-root)
   "Return the pending requests of every session, oldest first.
-With PROJECT-ROOT, only the sessions of that project are looked at."
+With PROJECT-ROOT, only the sessions of that project are looked at.
+
+The root is matched as a path, not as a project: a session started in a
+subdirectory of PROJECT-ROOT is not one of them, though
+`ecc-window-project-sessions\=' counts it as one.  Telling them apart
+needs `project.el\=', and this file is the model -- it knows nothing of
+windows, and asking the file system here would put a directory walk
+under every count of what is waiting."
   ;; `append' shares the last list it is given and `sort' is destructive,
   ;; so the queue of a session must never be sorted in place.
   (seq-sort (lambda (a b) (time-less-p (ecc-request-created-at a)

@@ -147,6 +147,25 @@ if want switch; then
     gif
 fi
 
+if want focus; then
+    # Two projects crowding one frame, then `ecc-focus-project' picking
+    # one of them: the other project's window goes, this project's other
+    # session takes its place, and the source on the left changes with
+    # them.  It replays fixtures, so it costs nothing.
+    scene focus
+    # The scene rearranges the whole frame, and screencapture can still
+    # hand back the frame as it was a moment ago; the pause is what
+    # keeps the crowded "before" out of the first four frames.
+    e '(shot-scene-focus-start)'      ; sleep 1.5; snap 4
+    e '(shot-scene-focus-sequence)'
+    for _ in $(seq 1 18); do sleep 0.5; snap; done
+    snap 3                            # hold the tidied frame
+    gif
+    # The scenes below list every session there is, so the second
+    # project has to go before them.
+    e '(shot-scene-focus-end)'        ; sleep 1
+fi
+
 if want menu; then
     # 2. The menu, open over a session.
     e '(shot-scene-menu)'           ; sleep 3; still "$outdir/menu.png"

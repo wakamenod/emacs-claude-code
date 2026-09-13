@@ -47,6 +47,7 @@
 
 (require 'cl-lib)
 (require 'seq)
+(require 'project)
 (require 'ecc-core)
 (require 'ecc-protocol)
 (require 'ecc-model)
@@ -1779,6 +1780,42 @@ no turn, so nothing freezes them."
                      "▶ running")
                    'face 'ecc-running-face)))))
 
+(defvar-local ecc-render--project-cache nil
+  "Cons of the directory last asked about and the project name it gave.
+`ecc-render--project-name\=' is called from the header line, which
+redisplay evaluates again on every command, and `project-current\=' walks
+the directories above looking for a root: once per directory is enough,
+and the directory only changes when the CLI says it did.")
+
+(defun ecc-render--project-name (session)
+  "Return the name of the project SESSION runs in, for the header line.
+The project is the one `project.el\=' finds above the directory the CLI
+works in, so that a session started in a subdirectory says the name of
+the whole tree rather than the leaf; a directory in no project falls
+back to its own name, and so does a session that has no directory yet.
+It stands next to the state, on the left of the header line: several
+sessions look alike from a distance, and the buffer name is not on the
+screen when the window has no mode line."
+  (when-let* ((directory (or (ecc-session-cwd session)
+                             (ecc-session-project-root session)))
+              (name (if (equal (car ecc-render--project-cache) directory)
+                        (cdr ecc-render--project-cache)
+                      (let ((name (ecc-render--project-name-1 directory)))
+                        (setq ecc-render--project-cache (cons directory name))
+                        name))))
+    (propertize name 'face 'ecc-dim-face)))
+
+(defun ecc-render--project-name-1 (directory)
+  "Return the name `project.el\=' gives DIRECTORY, or the name of DIRECTORY.
+A remote directory is never asked about: `project-current\=' would go
+over the wire for it, and the header line is drawn on every command."
+  (or (and (not (file-remote-p directory))
+           (ignore-errors
+             (when-let* ((project (let ((default-directory directory))
+                                    (project-current nil))))
+               (project-name project))))
+      (file-name-nondirectory (directory-file-name directory))))
+
 (defun ecc-render--model-name (session)
   "Return the short name of the model SESSION runs, or nil.
 The CLI names a model in full, `claude-sonnet-4-5-20250929\='; the
@@ -1819,23 +1856,29 @@ them both, and saying it twice on one screen is noise."
                               ecc-render-header-functions)))
          (parts (append own added)))
     (when parts
-      (string-join parts (propertize " · " 'face 'ecc-dim-face)))))
+      ;; Two spaces part them, not a dot: the header line already holds
+      ;; the dots inside the marks themselves, and a row of separators
+      ;; on top of those reads as noise.
+      (string-join parts "  "))))
 
 (defun ecc-render-header-line ()
   "Return the header line of the session buffer, for `header-line-format\='.
-What the session is doing stands on the left and what it is on the
-right, a stretched space between them.  The property that stretches it
-sits on that space alone: over the text it would show a blank in its
-place.  Each side is made fit for a header line before they are put
-together, so that the space keeps the property that aligns it."
+What the session is doing stands on the left, the project it runs in
+after it, and what it is on the right, a stretched space between
+them.  The property that stretches it sits on that space alone: over
+the text it would show a blank in its place.  Each side is made fit
+for a header line before they are put together, so that the space
+keeps the property that aligns it."
   (when ecc-render--session
     (let* ((session ecc-render--session)
+           (project (ecc-render--project-name session))
            (left (ecc--mode-line-escape
                   (concat " "
                           (if (ecc-visual-spinner-running-p (current-buffer))
                               (concat (ecc-visual-spinner-string) " ")
                             "")
-                          (ecc-render-status-line session))))
+                          (ecc-render-status-line session)
+                          (if project (concat "  " project) ""))))
            (right (ecc-render--header-right session)))
       (if right
           (let ((right (ecc--mode-line-escape right)))

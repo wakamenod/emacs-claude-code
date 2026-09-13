@@ -105,4 +105,4 @@ Reviewing diffs or plans requires screen space. Two variables control window beh
 | `ecc-window-hide-on-review` | `'project` hides sessions of the current project, `'all` hides all sessions, and `nil` keeps windows intact |
 | `ecc-window-review-focus` | `'review` focuses the review buffer, `'session` retains point in the transcript, and `nil` preserves current focus |
 
-`ecc-toggle` restores any hidden session windows. Additional settings are documented in the [configuration reference](/emacs-claude-code/reference/configuration/).
+`ecc-toggle` restores hidden session windows for the current project, and `ecc-toggle-all` restores them for all projects. Additional settings are documented in the [configuration reference](/emacs-claude-code/reference/configuration/).

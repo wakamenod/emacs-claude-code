@@ -105,4 +105,4 @@ diff やプランのレビューには十分な画面スペースが必要です
 | `ecc-window-hide-on-review` | `'project` で現在レビュー中のプロジェクトのセッションを非表示、`'all` で全セッションを非表示、`nil` でウィンドウをそのまま維持 |
 | `ecc-window-review-focus` | `'review` でレビューバッファにフォーカスを移動、`'session` でトランスクリプト側にポイントを維持、`nil` で元のフォーカスを維持 |
 
-非表示になったセッションウィンドウは `ecc-toggle` でいつでも再表示できます。その他の設定項目は [設定リファレンス](/emacs-claude-code/ja/reference/configuration/) をご覧ください。
+`ecc-toggle` はカレントプロジェクトの非表示セッションウィンドウを再表示し、`ecc-toggle-all` は全プロジェクトのものを再表示します。その他の設定項目は [設定リファレンス](/emacs-claude-code/ja/reference/configuration/) をご覧ください。

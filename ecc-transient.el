@@ -334,6 +334,7 @@ it too."
     ("k" "Kill" ecc-kill)
     ("R" "Rename" ecc-rename-session)
     ("v" "Go to the prompt" ecc-show-session)
+    ("j" "Focus one project" ecc-focus-project)
     ("w" "Hide or restore windows" ecc-toggle)
     ("S" "Switch this window to another session" ecc-switch-session)
     ("i" "Interrupt" ecc-interrupt)

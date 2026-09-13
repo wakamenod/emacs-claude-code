@@ -640,6 +640,91 @@ the text has to be spelled."
   (shot-show shot-main)
   (shot-later (lambda () (call-interactively #'ecc-menu))))
 
+(defconst shot-other-root "/tmp/api-server"
+  "A second project, so that a frame can be crowded with two of them.
+`ecc-focus-project' is about several projects at once, which is the one
+thing a demo living in a single directory cannot show.")
+
+(defconst shot-other-file (expand-file-name "server.py" shot-other-root))
+
+(defconst shot-other-source "\
+def handler(request):
+    \"\"\"Answer a request.\"\"\"
+    return {\"status\": 200, \"body\": \"ok\"}
+"
+  "The source of the second project, so its buffer is telling at a glance.")
+
+(defvar shot-foreign nil "A session of the second project.")
+
+(defun shot-scene-focus-start ()
+  "Crowd the frame: two projects, a session of each, and the wrong source.
+This is the state the command is for.  The source on the left belongs
+to one project and the session in the main window to the other, which
+is what working in several projects at once leaves behind."
+  (make-directory shot-other-root t)
+  (unless (file-exists-p shot-other-file)
+    (with-temp-file shot-other-file (insert shot-other-source)))
+  (unless shot-foreign
+    (setq shot-foreign (ecc-model-create-session :name "api-server"
+                                                 :project-root shot-other-root))
+    (ecc-session-ensure-buffer shot-foreign)
+    ;; Not the fixture `notes' was replayed from: a recording carries
+    ;; the session id it was made under, the dispatch puts the session
+    ;; in the registry under it, and two sessions replaying one
+    ;; recording means the second quietly evicts the first (confirmed
+    ;; 2026-09-13).
+    (shot-play shot-foreign "tool-use-write")
+    ;; Every fixture was recorded in one sandbox and every sandbox path
+    ;; is rewritten to the demo project, so the init message of the
+    ;; recording puts this session back in it -- which is where a
+    ;; session's project comes from.  Saying so again afterwards is what
+    ;; makes this a second project rather than a second name for the
+    ;; first (confirmed 2026-09-13).
+    (setf (ecc-session-cwd shot-foreign)
+          (file-name-as-directory shot-other-root)))
+  (select-window (frame-first-window (selected-frame)))
+  (let ((ignore-window-parameters t))
+    (delete-other-windows))
+  ;; The source of the other project, so that the main window changing
+  ;; is part of what the picture shows.
+  (find-file shot-other-file)
+  ;; The foreign session takes the main window and this project's takes
+  ;; the one beside it: the frame is holding two projects at once, and
+  ;; neither row of tabs is the other's.
+  (ecc-window-select-session shot-foreign)
+  (ecc-window-select-session shot-main)
+  (select-window (get-buffer-window (get-file-buffer shot-other-file)))
+  (message nil)
+  (redisplay t))
+
+(defun shot-scene-focus-sequence ()
+  "Pick the demo project out of the two, and let the frame tidy itself."
+  (shot-script
+   (list (cons 0.5 (lambda () (call-interactively #'ecc-focus-project)))
+         (cons 2.5 (lambda () (shot-keys "g")))
+         (cons 3.1 (lambda () (shot-keys "r")))
+         (cons 3.7 (lambda () (shot-keys "e")))
+         (cons 5.0 (lambda () (shot-keys "RET")))
+         ;; The echo area says what was done; the frame is the answer.
+         (cons 6.0 (lambda () (redisplay t))))))
+
+(defun shot-scene-focus-end ()
+  "Take the second project away again.
+The scenes after this one photograph the dashboard and the tab line,
+which list every session there is: a project left over from here would
+be in both of them."
+  (when shot-foreign
+    (ecc-window-hide-session shot-foreign)
+    (ecc-model-remove-session shot-foreign)
+    (when (buffer-live-p (ecc-session-buffer shot-foreign))
+      (let ((kill-buffer-query-functions nil))
+        (kill-buffer (ecc-session-buffer shot-foreign))))
+    (setq shot-foreign nil))
+  (when-let* ((buffer (get-file-buffer shot-other-file)))
+    (kill-buffer buffer))
+  (set-frame-parameter nil 'ecc-hidden-sessions nil)
+  (shot-show shot-main))
+
 (defun shot-scene-quit ()
   "Close whatever the last scene left open -- a menu, a picker.
 A minibuffer is left by aborting its recursive edit from a timer: the

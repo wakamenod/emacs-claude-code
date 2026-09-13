@@ -54,9 +54,13 @@ Renames the session and its buffers. The new name updates across tabs, the mode 
 
 Displays the session window and moves point to the prompt input area.
 
+### `j` — Focus one project
+
+Focuses the whole frame on one project. Pick a project with sessions: every other project's session windows come off the screen, this project's sessions are dealt into the window roles, and the main window switches to its source. `C-u j` asks which buffer the main window should show. Nothing is killed, and `w` and `C-u w` bring the hidden sessions back. See [Focusing one project](/emacs-claude-code/features/sessions/#focusing-one-project).
+
 ### `w` — Toggle windows
 
-Hides or restores session windows for the current project. `C-u w` toggles session windows across all projects. Background sessions continue running while hidden.
+Hides or restores session windows for the current project, leaving other projects as they are. `C-u w` toggles session windows across all projects, which undoes a focus. Background sessions continue running while hidden.
 
 ### `S` — Switch session in window
 

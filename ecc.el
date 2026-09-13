@@ -127,24 +127,37 @@ the next session, since this runs on every one of them."
 ;;;###autoload
 (defun ecc-start (&optional directory name)
   "Start a Claude Code session in DIRECTORY under NAME.
-Interactively the project of the current buffer is used, and a prefix
-argument asks for the directory and the name."
-  (interactive
-   (if current-prefix-arg
-       (list (read-directory-name "Directory: " (ecc-project-root))
-             (read-string "Session name: "))
-     ;; The second session of a project is told from the first by a name
-     ;; the user gives it.
-     (let ((root (ecc-project-root)))
-       (list root (ecc-window-read-session-name root)))))
+Interactively the project of the buffer the user is working in is used,
+and a prefix argument asks for the directory and the name.  Where the
+session started is said in the echo area either way: it is the moment a
+session in the wrong project can be caught, and the alternative is
+finding it later among all the others."
+  (interactive (ecc-start--read-arguments))
   (let ((session (ecc-model-create-session
-                  :project-root (or directory (ecc-project-root))
+                  :project-root (or directory (ecc-window-context-project-root))
                   :name (and name (not (string-empty-p name)) name))))
     (ecc-session-ensure-buffer session)
     (ecc-proc-start session)
     (ecc--enable-session-modes)
     (ecc-window-select-session session)
+    (message "Started %s in %s" (ecc-session-name session)
+             (abbreviate-file-name (ecc-session-project-root session)))
     session))
+
+(defun ecc-start--read-arguments ()
+  "Return the (DIRECTORY NAME) a new session should be started with.
+This is the interactive form of `ecc-start\=', out here where a test can
+reach it.  The directory comes from the buffer the user is working in
+rather than from whichever buffer happens to be current: `ecc-start\=' is
+run from a transcript, the dashboard or the scratch buffer as often as
+from a file, and none of those says which project was meant."
+  (let ((root (ecc-window-context-project-root)))
+    (if current-prefix-arg
+        (list (read-directory-name "Directory: " root)
+              (read-string "Session name: "))
+      ;; The second session of a project is told from the first by a name
+      ;; the user gives it.
+      (list root (ecc-window-read-session-name root)))))
 
 ;;;###autoload
 (defun ecc-resume (session &optional fork)

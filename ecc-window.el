@@ -26,6 +26,7 @@
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-session-buffer-name "ecc-session" (name))
 (declare-function ecc-chat-goto-prompt "ecc-chat" ())
+(declare-function ecc-render--project-name-1 "ecc-render" (directory))
 
 (defvar ecc-window-use-side-window t
   "Non-nil shows a transcript in a side window rather than an ordinary one.
@@ -84,13 +85,60 @@ DIRECTORY defaults to `default-directory'."
           (file-name-as-directory (expand-file-name (project-root project))))
         (file-name-as-directory (expand-file-name default-directory)))))
 
+(defvar ecc-window--project-root-cache (make-hash-table :test #'equal)
+  "Hash of a directory to the project root above it.
+`project-current\=' walks the directories above a root, and the tab line
+asks which project a session is in on every redisplay.  A directory
+rarely stops belonging to a project inside one Emacs, so the answer is
+kept rather than worked out again; a test binds a fresh hash.")
+
+(defun ecc-window-project-key (directory)
+  "Return the project DIRECTORY belongs to, as the key its sessions group under.
+Two sessions are in the same project when this says the same of them,
+so everything that groups them goes through here: the root that comes
+back is `project.el\='s, which is what makes a session started in a
+subdirectory group with the tree it is part of rather than stand alone."
+  (if (or (null directory) (equal directory ""))
+      ""
+    (or (gethash directory ecc-window--project-root-cache)
+        (puthash directory (ecc-window-project-root directory)
+                 ecc-window--project-root-cache))))
+
+(defun ecc-window-session-project (session)
+  "Return the project SESSION belongs to.
+The directory the CLI says it works in is asked first and the root the
+session was made with second: a `/cd\=' moves the one and leaves the
+other, and what the user means by the project is where the CLI is."
+  (ecc-window-project-key (or (ecc-session-cwd session)
+                              (ecc-session-project-root session))))
+
+(defun ecc-window-session-projects ()
+  "Return the projects that have a session, most recently used first."
+  (seq-uniq (mapcar #'ecc-window-session-project (ecc-model-sessions))))
+
 (defun ecc-window-project-sessions (&optional root)
   "Return the sessions whose project is ROOT, most recently used first.
-ROOT defaults to the project of the current buffer."
-  (let ((root (or root (ecc-window-project-root))))
+ROOT defaults to the project of the current buffer.  It is matched as a
+project rather than as a path, so a session started in a subdirectory
+of ROOT is one of them."
+  (let ((key (ecc-window-project-key (or root default-directory))))
     (seq-filter (lambda (session)
-                  (equal (ecc-session-project-root session) root))
+                  (equal (ecc-window-session-project session) key))
                 (ecc-model-sessions))))
+
+(defun ecc-window-context-project-root ()
+  "Return the project a new session should start in.
+The current buffer when there is a file or a directory behind it, then
+the last buffer the user worked in that had one, and `default-directory'
+last.  A buffer with nothing behind it -- the scratch buffer, a
+transcript, the dashboard, a help window -- says nothing about which
+project was meant, and a session started from one of those used to land
+wherever that buffer happened to be, which is how a session ends up in
+a project nobody asked for."
+  (ecc-window-project-key
+   (or (ecc-window-buffer-directory (current-buffer))
+       (ecc-window-buffer-directory ecc-window--last-source-buffer)
+       default-directory)))
 
 (defun ecc-window-read-session-name (root)
   "Return a name for a new session in ROOT, asking when it is not the first.
@@ -125,6 +173,13 @@ after it are told apart by a name the user gives."
 
 (defvar ecc-window--last-source-buffer nil
   "The last buffer selected that does not belong to this package.")
+
+(defvar ecc-window--project-source-buffers nil
+  "Alist of a project root to the last buffer of it the user worked in.
+Only a buffer behind a file or a directory is here: what
+`ecc-focus-project\=' puts back in the main window is the source, and the
+compilation log or the scratch buffer of a project is not that.  A
+buffer that has since been killed is dropped when the list is read.")
 
 (defun ecc-window-buffer-session (&optional buffer)
   "Return the session BUFFER belongs to, or nil."
@@ -201,6 +256,20 @@ the one failure this is here to survive."
       (ecc-window--frame-region)
       (ecc-window--live-region ecc-window--last-region)))
 
+(defun ecc-window-buffer-directory (&optional buffer)
+  "Return the directory BUFFER stands for, or nil.
+That is the directory of the file it visits, or the one a Dired buffer
+lists.  A buffer behind neither -- the scratch buffer, a compilation
+log, a transcript -- says nothing about which project the user is in,
+which is the whole use of this."
+  (when-let* ((buffer (or buffer (current-buffer)))
+              ((buffer-live-p buffer))
+              ((not (ecc-window-own-buffer-p buffer))))
+    (if-let* ((file (buffer-file-name buffer)))
+        (file-name-directory file)
+      (with-current-buffer buffer
+        (and (derived-mode-p 'dired-mode) default-directory)))))
+
 (defun ecc-window-note-source-buffer (&rest _)
   "Remember the current buffer as the source to quote from."
   ;; The region is taken down before the buffer is, because the buffer
@@ -210,7 +279,13 @@ the one failure this is here to survive."
     (unless (or (ecc-window-own-buffer-p buffer)
                 (minibufferp buffer)
                 (string-prefix-p " " (buffer-name buffer)))
-      (setq ecc-window--last-source-buffer buffer))))
+      (setq ecc-window--last-source-buffer buffer)
+      ;; And which project it was, so that a focus on that project
+      ;; later can put this buffer back rather than guess.
+      (when-let* ((directory (ecc-window-buffer-directory buffer))
+                  (key (ecc-window-project-key directory)))
+        (setf (alist-get key ecc-window--project-source-buffers nil nil #'equal)
+              buffer)))))
 
 (defun ecc-window-last-source-buffer ()
   "Return the buffer to take file, line and region from.
@@ -411,11 +486,7 @@ happens to the session windows and where point lands."
                                  (ecc-session-project-root session))
                               (ecc-window-project-sessions)))
                   (_ nil))))
-    (when hidden
-      (let ((visible (seq-filter #'ecc-window-session-visible-p hidden)))
-        (when visible
-          (ecc-window-set-hidden-sessions (ecc-window--hidden-entries visible))
-          (mapc #'ecc-window-hide-session visible))))
+    (ecc-window-hide-sessions hidden)
     (let ((window (display-buffer buffer)))
       (pcase ecc-window-review-focus
         ('review (when (window-live-p window) (select-window window)))
@@ -473,6 +544,22 @@ the window it came from, rather than dealing them out again."
             (cons (ecc-session-id session) (ecc-window--session-role session)))
           sessions))
 
+(defun ecc-window-hide-sessions (sessions)
+  "Take down the windows of the SESSIONS that are on screen, and say which.
+Where each one was is remembered so that `ecc-toggle\=' can put it back
+in the window it came from.  The entries join the ones already hidden
+rather than replacing them: `ecc-focus-project\=' hides several projects
+at once and `ecc-toggle\=' one after it, and both groups have to come
+back."
+  (when-let* ((visible (seq-filter #'ecc-window-session-visible-p sessions)))
+    (let ((entries (ecc-window--hidden-entries visible)))
+      (ecc-window-set-hidden-sessions
+       (append entries
+               (seq-remove (lambda (old) (assoc (car old) entries))
+                           (ecc-window-hidden-sessions)))))
+    (mapc #'ecc-window-hide-session visible)
+    visible))
+
 (defun ecc-window--restore-hidden (entries)
   "Show again the sessions of ENTRIES, each in the role it had.
 Return the sessions that were shown."
@@ -489,27 +576,183 @@ Return the sessions that were shown."
 (defun ecc-toggle (&optional all)
   "Hide the session windows of this project, or bring back the hidden ones.
 With ALL, a prefix argument interactively, every session is toggled
-rather than the ones of the current project."
+rather than the ones of the current project.
+
+What comes back is what this project had hidden, and the rest stays
+where it is: `ecc-focus-project\=' hides every other project at once, and
+a toggle of this one would otherwise undo the whole of it.
+`ecc-toggle-all\=' is the way to bring every project back."
   (interactive "P")
   (let* ((sessions (if all (ecc-model-sessions)
                      (ecc-window-project-sessions)))
          (visible (seq-filter #'ecc-window-session-visible-p sessions)))
     (cond
      (visible
-      (ecc-window-set-hidden-sessions (ecc-window--hidden-entries visible))
-      (mapc #'ecc-window-hide-session visible)
+      (ecc-window-hide-sessions visible)
       (message "Hid %d sessions" (length visible)))
      (t
-      (let* ((entries (or (ecc-window-hidden-sessions)
-                          (mapcar (lambda (session)
-                                    (cons (ecc-session-id session) nil))
-                                  sessions)))
-             (shown (ecc-window--restore-hidden entries)))
+      (let* ((ids (mapcar #'ecc-session-id sessions))
+             (hidden (ecc-window-hidden-sessions))
+             (mine (or (seq-filter (lambda (entry) (member (car entry) ids)) hidden)
+                       (mapcar (lambda (id) (cons id nil)) ids)))
+             (shown (ecc-window--restore-hidden mine)))
         (if (null shown)
             (message "No session to show")
-          (ecc-window-set-hidden-sessions nil)
+          (ecc-window-set-hidden-sessions
+           (seq-remove (lambda (entry) (member (car entry) ids)) hidden))
           (message "Showing %d sessions" (length shown)))
         shown)))))
+
+;;;; Focusing one project
+
+;; Several projects at once is what this package is for, and it is also
+;; what fills a frame with windows and tabs that have nothing to do with
+;; what is being worked on.  Focusing puts the frame back to one project:
+;; the rest is taken off the screen without being killed, so `ecc-toggle'
+;; and `ecc-toggle-all' bring it back.
+
+(defun ecc-window--buffer-in-project-p (buffer key)
+  "Return non-nil when BUFFER belongs to the project KEY.
+The project of the buffer is worked out the same way the project of a
+session is, rather than the path being matched: the two normalisations
+differ -- `/var' against `/private/var' on macOS -- and a buffer in a
+subdirectory belongs to the project all the same."
+  (when-let* ((directory (ecc-window-buffer-directory buffer)))
+    (equal (ecc-window-project-key directory) key)))
+
+(defun ecc-window-project-source-buffer (root &optional on-screen)
+  "Return the buffer the main window should show for ROOT, or nil.
+A buffer of the project that is on the screen already comes first:
+moving it would be taking away what the user is looking at.  Then the
+one last worked in there, then the most recently used buffer of the
+project, `buffer-list' being in that order already.  ON-SCREEN is the
+buffers to count as shown, for a test that has no windows."
+  (let ((key (ecc-window-project-key root)))
+    (or (seq-find (lambda (buffer) (ecc-window--buffer-in-project-p buffer key))
+                  (or on-screen (mapcar #'window-buffer (window-list))))
+        (let ((remembered (alist-get key ecc-window--project-source-buffers
+                                     nil nil #'equal)))
+          (if (buffer-live-p remembered)
+              remembered
+            ;; A buffer that has been killed is dropped rather than
+            ;; offered again.
+            (setf (alist-get key ecc-window--project-source-buffers
+                             nil 'remove #'equal)
+                  nil)
+            nil))
+        (seq-find (lambda (buffer) (ecc-window--buffer-in-project-p buffer key))
+                  (buffer-list)))))
+
+(defun ecc-window--source-window ()
+  "Return the window the source code belongs in, or nil.
+The largest window that is neither a side window nor one of ours.
+`window-main-window' is no use here: with a third session window open
+the main area is split, and what comes back is the internal window
+above the two."
+  (car (sort (seq-remove (lambda (window)
+                           (or (window-parameter window 'window-side)
+                               (window-parameter window 'ecc-window-role)))
+                         (window-list nil 'no-minibuffer))
+             (lambda (a b) (> (window-body-height a) (window-body-height b))))))
+
+(defun ecc-window--read-project-buffer (root)
+  "Ask which buffer of the project ROOT the main window should show."
+  (let* ((key (ecc-window-project-key root))
+         (buffers (seq-filter (lambda (buffer)
+                                (ecc-window--buffer-in-project-p buffer key))
+                              (buffer-list))))
+    (if (null buffers)
+        (ecc-window-project-source-buffer root)
+      (get-buffer (completing-read "Show: " (mapcar #'buffer-name buffers)
+                                   nil t nil nil
+                                   (buffer-name (car buffers)))))))
+
+(defun ecc-window-focus-source (root &optional choose)
+  "Show the source of the project ROOT in the main window, and select it.
+CHOOSE asks which buffer rather than taking the likeliest.  A project
+with no buffer open is listed instead: a directory is a fair answer to
+where the source is, and it is somewhere to start reading.
+
+Selecting the window is not a flourish.  Every command that takes no
+prefix argument -- `ecc-toggle', `ecc-start', `ecc-next-attention-in-project',
+`ecc-window-resolve-session' -- reads the project off the current
+buffer, so leaving point here is what makes the whole package agree
+about which project one is in."
+  (require 'dired)
+  (let ((window (ecc-window--source-window))
+        (buffer (or (if choose
+                        (ecc-window--read-project-buffer root)
+                      (ecc-window-project-source-buffer root))
+                    (dired-noselect root))))
+    (when (and (window-live-p window) (buffer-live-p buffer))
+      (set-window-buffer window buffer)
+      (select-window window)
+      window)))
+
+(defun ecc-window-project-label (root sessions)
+  "Return the line the project ROOT with SESSIONS is offered under."
+  (format "%-24s  %-11s %s"
+          (ecc--truncate (ecc-render--project-name-1 root) 24)
+          (format "%d session%s" (length sessions)
+                  (if (= 1 (length sessions)) "" "s"))
+          (abbreviate-file-name root)))
+
+(defun ecc-window-read-project (&optional prompt)
+  "Ask which of the projects that have a session to use, with PROMPT.
+A single project answers for itself: there is nothing to choose."
+  (require 'ecc-render)
+  (let ((projects (ecc-window-session-projects)))
+    (cond
+     ((null projects) (user-error "No session is running"))
+     ((null (cdr projects)) (car projects))
+     (t (let* ((labels (mapcar (lambda (root)
+                                 (cons (ecc-window-project-label
+                                        root (ecc-window-project-sessions root))
+                                       root))
+                               projects))
+               (choice (completing-read (or prompt "Project: ")
+                                        (mapcar #'car labels) nil t)))
+          (cdr (assoc choice labels)))))))
+
+;;;###autoload
+(defun ecc-focus-project (root &optional choose)
+  "Show the sessions of ROOT alone, and its source in the main window.
+The session windows of every other project are taken off the screen;
+nothing is killed and no process is stopped, so `ecc-toggle-all' brings
+them all back and `ecc-toggle' brings back one project.  CHOOSE, a
+prefix argument interactively, asks which buffer of ROOT to show
+instead of taking the likeliest.
+
+The sessions of ROOT are dealt into the window roles in the order they
+were last used, so the one worked in last is the one in the main
+window."
+  (interactive (list (ecc-window-read-project "Focus project: ")
+                     current-prefix-arg))
+  (let* ((key (ecc-window-project-key root))
+         (mine (ecc-window-project-sessions key)))
+    (unless mine
+      (user-error "No session in %s" (abbreviate-file-name key)))
+    (let ((hidden (ecc-window-hide-sessions
+                   (seq-remove (lambda (session) (memq session mine))
+                               (ecc-window-displayed-sessions)))))
+      (when ecc-window-use-side-window
+        ;; The roles are dealt out again from nothing, so a window one of
+        ;; these sessions already holds comes down first.  Moving a
+        ;; session from one role to another otherwise leaves the window
+        ;; it came from showing it as well, and the frame ends up with
+        ;; the same transcript twice (confirmed 2026-09-13).
+        (mapc #'ecc-window-hide-session mine)
+        (cl-mapc (lambda (session role)
+                   (ecc-display-session-in-role session role)
+                   ;; It is on the screen now, so the note that it was
+                   ;; hidden would put it back a second time.
+                   (ecc-window-forget-session session))
+                 mine (ecc-window-available-roles)))
+      (ecc-window-focus-source key choose)
+      (message "Focused %s: %d session%s, %d hidden"
+               (ecc--project-label key) (length mine)
+               (if (= 1 (length mine)) "" "s") (length hidden))
+      mine)))
 
 ;;;###autoload
 (defun ecc-toggle-all ()

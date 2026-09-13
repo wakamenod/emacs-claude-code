@@ -151,6 +151,49 @@ next to the permission mode."
         (should (string-suffix-p " opus" footer))
         (should-not (string-search "haiku" footer))))))
 
+(ert-deftest ecc-render-test-header-names-the-project ()
+  "The project stands on the left of the header line, after the state.
+It is the project `project.el\=' finds above the directory the CLI works
+in, so that a session started in a subdirectory says the name of the
+whole tree.  Several sessions look alike from a distance, and a window
+with no mode line shows the buffer name nowhere."
+  (ecc-test-with-fake-session session
+    (let* ((root (file-name-as-directory
+                  (make-temp-file "ecc-project" t)))
+           (inner (expand-file-name "src/deep/" root)))
+      (unwind-protect
+          (progn
+            (make-directory (expand-file-name ".git" root))
+            (make-directory inner t)
+            (setf (ecc-session-cwd session) inner)
+            (ecc-session-ensure-buffer session)
+            (setf (ecc-session-state session) 'idle)
+            (with-current-buffer (ecc-session-buffer session)
+              (let ((name (file-name-nondirectory
+                           (directory-file-name root))))
+                (should (string-search (concat "○ idle  " name)
+                                       (substring-no-properties
+                                        (ecc-render-header-line))))
+                ;; It stands by the state, wherever the state goes.
+                (setf (ecc-session-state session) 'running)
+                (should (string-search (concat "▶ running  " name)
+                                       (substring-no-properties
+                                        (ecc-render-header-line))))
+                ;; A directory in no project says its own name, and the
+                ;; answer follows the directory when the CLI moves.
+                (let ((elsewhere (file-name-as-directory
+                                  (make-temp-file "ecc-plain" t))))
+                  (unwind-protect
+                      (progn
+                        (setf (ecc-session-cwd session) elsewhere)
+                        (should (string-search
+                                 (concat "  " (file-name-nondirectory
+                                               (directory-file-name elsewhere)))
+                                 (substring-no-properties
+                                  (ecc-render-header-line)))))
+                    (delete-directory elsewhere t))))))
+        (delete-directory root t)))))
+
 (ert-deftest ecc-render-test-header-shows-remote-control ()
   "A session on the Remote Control bridge says so, with the URL in the tooltip.
 The header line has no room for the URL, and without it nothing on

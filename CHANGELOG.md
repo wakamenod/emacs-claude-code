@@ -27,8 +27,46 @@ that CLI, and the CLI moves without anybody upgrading ecc.
   restart the sessions still running on the credentials they started with
   (`ecc-auth-restart-sessions`).
 
+- `ecc-toggle` is on `C-c c w`, next to the `C-c c j` that makes hiding worth
+  undoing. It was reachable only through the menu before.
+- `ecc-focus-project`, on `C-c c j` and `j` in the menu, puts the frame back to
+  one project: the session windows of every other project come off the screen,
+  the sessions of the chosen one are dealt into the window roles in the order
+  they were last used, and the main window switches to that project's source
+  (a buffer of it already on the screen, else the one last worked in there,
+  else the most recently used buffer of the project, else Dired on the root; a
+  prefix argument asks). Nothing is killed and no process is stopped:
+  `ecc-toggle` brings back one project and `ecc-toggle-all` all of them.
+
 ### Changed
 
+- A session window's tab line lists the sessions of that window's own project
+  rather than every session this Emacs has open. Working in several projects
+  at once -- which is what this package is for -- filled every row of tabs
+  with sessions that had nothing to do with what was on the screen. Set
+  `ecc-tab-line-scope` to `all` for the old behaviour. A session outside the
+  scope is still reached by `ecc-switch-session`, the dashboard and
+  `ecc-next-attention`; what is given up is its tab blinking when it wants an
+  answer, which the mode line count and the notifications still report.
+- Which sessions belong to a project is decided by `project.el` rather than by
+  comparing the root as a string, so a session started in a subdirectory is
+  grouped with the rest of the tree instead of standing alone. This is what
+  `ecc-toggle`, `ecc-next-attention-in-project` and the tab line all go by.
+- `ecc-start` takes its directory from the buffer the user is working in --
+  the current one when it visits a file or a directory, and the last one that
+  did otherwise -- rather than from whichever buffer happens to be current. A
+  session started from a transcript, the dashboard or the scratch buffer used
+  to land wherever that buffer stood. Where the session started is now
+  reported in the echo area, prefix argument or not.
+- The header line of a session names the project it runs in, right after the
+  state: `○ idle  emacs-claude-code`.  The name is the one `project.el`
+  gives the tree above the directory the CLI works in, so a session started
+  in a subdirectory says the name of the whole project; a directory in no
+  project says its own name.  Several sessions look alike from a distance,
+  and a window with no mode line shows the buffer name nowhere.  What the
+  header line holds is parted by spaces rather than by `·`, on the right of
+  it too: the marks carry symbols of their own, and a row of separators on
+  top of those read as noise.
 - A running turn is redrawn from the block that is still changing, not from
   its start.  Every change used to delete and draw the whole turn again, ten
   times a second while it arrived, so a turn of hundreds of tool calls
@@ -39,6 +77,13 @@ that CLI, and the CLI moves without anybody upgrading ecc.
   than every hunk of every file on every redraw.
 
 ### Fixed
+
+- `ecc-focus-project` no longer leaves the same session in two windows. The
+  roles are dealt out from nothing, so a session that already held one was
+  drawn in its new role while the window it came from went on showing it.
+- `ecc-toggle` no longer brings back session windows that another toggle hid.
+  The list of hidden sessions was replaced rather than added to, and the
+  restore side put back every entry in it whatever project had asked for it.
 
 - The menus work in an Emacs where nothing of ecc has been loaded yet.
   `ecc-menu`, `ecc-resume-menu` and `ecc-slash-menu` are autoloaded, which
