@@ -32,7 +32,6 @@
 (declare-function ecc-kill "ecc" (session))
 (declare-function ecc-dashboard "ecc-dashboard" ())
 (declare-function ecc-capabilities-show "ecc-dashboard" (session))
-(declare-function ecc-plugin "ecc-plugin" ())
 (declare-function ecc-inline-prompt "ecc-inline" (question))
 (declare-function ecc-rewrite "ecc-inline" (beg end instruction))
 (declare-function ecc-next-attention "ecc-answer" (&optional project-root))
@@ -368,7 +367,6 @@ it too."
    ["View"
     ("b" "Dashboard" ecc-dashboard)
     ("y" "Capabilities" ecc-capabilities-show)
-    ("I" "Plugins" ecc-plugin)
     ("h" "History" ecc-history-open)
     ("/" "Search past sessions" ecc-search)
     ("U" "Usage" ecc-usage)

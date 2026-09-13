@@ -64,18 +64,18 @@
 
 ;;;; Options
 
-(defcustom ecc-plugin-reload-sessions 'ask
+(defvar ecc-plugin-reload-sessions 'ask
   "What running sessions are told after the plugins have changed.
 The CLI reads its plugins when it starts and when it is asked to reload
 them, so a session that was already running carries on with the ones it
 started with.  `ask' offers to send `/reload-plugins\\=' to the running
 sessions, nil leaves them alone without a word, and t sends it without
 asking.  The command is queued behind a turn that is running, so nothing
-is interrupted."
-  :type '(choice (const :tag "Ask" ask)
-                 (const :tag "Always" t)
-                 (const :tag "Never" nil))
-  :group 'ecc)
+is interrupted.
+
+A `defvar' and not a `defcustom': asking before interrupting a session
+is what this should do, and the other two values are for a test and for
+somebody who has already decided.  `setq' reaches it all the same.")
 
 (defvar ecc-plugin-buffer-name "*claude-plugins*"
   "Name of the buffer the plugins are browsed in.")

@@ -87,7 +87,6 @@ The default value of `ecc-window-large-frame-min-height` (80 lines) is calibrate
 |---|---|---|
 | `ecc-btw-display` | `'window` | Display mode for `/btw` side-queries (`'window` or `'posframe`) |
 | `ecc-usage-display` | `'window` | Display mode for `ecc-usage` reports (`'window` or `'posframe`) |
-| `ecc-plugin-reload-sessions` | `'ask` | What running sessions are told after the plugins have changed: `'ask` offers to send `/reload-plugins`, `t` sends it without asking, `nil` leaves them alone |
 
 Both options accept `'window` or `'posframe`. `'posframe` renders the buffer as a floating popup over the frame (requires the [posframe](https://github.com/tumashu/posframe) package and a graphical frame). If posframe is unavailable, ecc falls back to standard window splits.
 

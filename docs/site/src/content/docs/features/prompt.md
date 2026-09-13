@@ -82,7 +82,7 @@ Typing `/` at the beginning of the prompt displays the command menu; `TAB` compl
 
 `/model`, `/effort`, `/permissions`, `/config`, and `/btw` prompt for their argument first, as the CLI responds with usage instructions when invoked without arguments. Terminal-only commands are omitted from the completion list, though you can still run them by typing the full command.
 
-A few commands the CLI never names are answered by Emacs itself and never reach the model: `/btw`, `/plugins` (see [Plugins](/emacs-claude-code/features/other/#plugins)), and `/login`, `/logout` and `/auth-status`.
+A few commands that the CLI doesn't list are handled directly by Emacs and never reach the model: `/btw`, `/plugins`, `/login`, `/logout`, and `/auth-status`.
 
 ### Side questions with `/btw`
 
