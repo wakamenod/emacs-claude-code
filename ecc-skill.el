@@ -52,9 +52,10 @@
 (require 'ecc-proc)
 (require 'json)
 (require 'ecc-window)
-(require 'ecc-dashboard)
+(require 'ecc-capability)
 
 (declare-function ecc-prompt-command-name "ecc-prompt" (text))
+(declare-function ecc-dashboard-session-at-point "ecc-dashboard" ())
 (declare-function ecc-prompt-command-argument "ecc-prompt" (text))
 
 ;;;; Options
@@ -196,20 +197,41 @@ is asked to scan again.")
                               (alist-get 'settings source))))
             (or sources [])))
 
-(defun ecc-skill-sources-overrides (sources)
-  "Return the skillOverrides of SOURCES as an alist of name and value.
-SOURCES is what `ecc-proc-get-settings' hands back: one entry per
-settings file, unmerged.  They are read in the order of
-`ecc-skill-settings-sources', least specific first, so that the file
-the terminal client reads first has the last word here too.  A file
-the answer does not carry is simply not read."
+(defun ecc-skill--overrides-alist (object)
+  "Return the skillOverrides OBJECT as an alist of name and value."
   (let ((overrides nil))
-    (dolist (name ecc-skill-settings-sources)
-      (pcase-dolist (`(,skill . ,value)
-                     (ecc-skill--source-overrides sources name))
-        (when (stringp value)
-          (setf (alist-get (symbol-name skill) overrides nil nil #'equal)
-                value))))
+    (pcase-dolist (`(,skill . ,value) object)
+      (when (stringp value)
+        (push (cons (symbol-name skill) value) overrides)))
+    (nreverse overrides)))
+
+(defun ecc-skill-answer-overrides (answer)
+  "Return the skillOverrides of ANSWER as an alist of name and value.
+ANSWER is what `ecc-proc-get-settings\=' hands back, and what is read
+out of it is `effective\=', the CLI\='s own resolved view.  That is what
+the CLI reads a skill\='s setting out of itself -- the per-source
+objects are merged into it, and it carries what a flag or a policy
+added as well -- so there is nothing here to merge and nothing to get
+wrong (`w_e\=' of 2.1.270, 2026-09-13)."
+  (ecc-skill--overrides-alist
+   (alist-get ecc-skill-settings-key (alist-get 'effective answer))))
+
+(defun ecc-skill-file-overrides (files)
+  "Return the skillOverrides of FILES as an alist of name and (VALUE . FILE).
+For a caller with no session to ask: the files are read in the order
+they are given, least specific first, and the last that names a skill
+has it -- which is how the CLI merges the sources into the `effective\='
+view `ecc-skill-answer-overrides\=' reads when there is a session.  The
+file is carried along so that a caller can say where a value came from."
+  (let ((overrides nil))
+    (dolist (file files)
+      (let ((file (expand-file-name file)))
+        (pcase-dolist (`(,name . ,value)
+                       (ecc-skill--overrides-alist
+                        (alist-get ecc-skill-settings-key
+                                   (ecc-skill-read-settings-file file))))
+          (setf (alist-get name overrides nil nil #'equal)
+                (cons value file)))))
     (nreverse overrides)))
 
 (defun ecc-skill-sources-locks (sources)
@@ -343,52 +365,78 @@ and what was read last is better than nothing."
       (when callback (funcall callback session))
     (ecc-proc-get-settings
      session
-     (lambda (session sources)
-       (if (null sources)
+     (lambda (session answer)
+       (if (null answer)
            (puthash session 'failed ecc-skill--settings-state)
-         (puthash session (ecc-skill-sources-overrides sources)
+         (puthash session (ecc-skill-answer-overrides answer)
                   ecc-skill--overrides)
-         (puthash session (ecc-skill-sources-locks sources) ecc-skill--locks)
+         (puthash session (ecc-skill-sources-locks (alist-get 'sources answer))
+                  ecc-skill--locks)
          (puthash session 'read ecc-skill--settings-state))
        (ecc-skill--redraw session)
        (when callback (funcall callback session))))))
 
 ;;;; Writing the settings
 
-(defun ecc-skill-settings-file (&optional session)
-  "Return the file a skill of SESSION is turned on and off in.
-`.claude/settings.local.json' of the project unless
+(defun ecc-skill-settings-file-in (&optional root)
+  "Return the file a skill of the project at ROOT is turned on and off in.
+`.claude/settings.local.json' of that project unless
 `ecc-skill-settings-file' names another, because that is where the
-terminal client saves its own /skills.  A session with no project root
--- there is no project to write into -- falls back to the settings of
-the user."
+terminal client saves: all three of its own write sites -- the two of
+the plugin screen and the one of /skills -- write the localSettings
+source (read out of 2.1.270, 2026-09-13).  With no project to write
+into, the settings of the user."
   (or ecc-skill-settings-file
-      (when-let* ((root (and session (ecc-session-project-root session))))
-        (expand-file-name ".claude/settings.local.json" root))
+      (when root (expand-file-name ".claude/settings.local.json" root))
       (expand-file-name "settings.json"
                         (expand-file-name ecc-capabilities-directory))))
 
+(defun ecc-skill-settings-file (&optional session)
+  "Return the file a skill of SESSION is turned on and off in."
+  (ecc-skill-settings-file-in (and session
+                                   (ecc-session-project-root session))))
+
+(defun ecc-skill-settings-files-in (&optional root)
+  "Return the settings files a skill of the project at ROOT can be set in.
+Least specific first, which is the order they are read in
+\(`ecc-skill-file-overrides\=')."
+  (delq nil
+        (list (expand-file-name "settings.json"
+                                (expand-file-name ecc-capabilities-directory))
+              (when root (expand-file-name ".claude/settings.json" root))
+              (when root (expand-file-name ".claude/settings.local.json" root)))))
+
 (defun ecc-skill-settings-files (session)
   "Return the settings files SESSION could be given an override in.
-In the order the CLI reads them, the one that wins first."
-  (let ((root (ecc-session-project-root session)))
-    (delq nil
-          (list (when root (expand-file-name ".claude/settings.local.json" root))
-                (when root (expand-file-name ".claude/settings.json" root))
-                (expand-file-name "settings.json"
-                                  (expand-file-name ecc-capabilities-directory))))))
+The one the CLI reads last comes first, since that is the one to offer."
+  (reverse (ecc-skill-settings-files-in
+            (ecc-session-project-root session))))
 
-(defun ecc-skill-read-settings-file (file)
+(defun ecc-skill-read-settings-file (file &optional strict)
   "Return the settings in FILE as an alist, or nil when there are none.
 Null is kept as `:null' so that a value this package does not touch
 goes back as it was: `ecc--json-read' would turn it into nil, which
-writes as an empty object."
+writes as an empty object.
+
+A file that is not JSON -- a settings file edited by hand and left
+half-written -- is logged and read as nothing, so that one typo does
+not take the list of skills with it.  With STRICT the error is raised
+instead, which is what a caller about to write the file wants: writing
+over a file that could not be read would take the rest of its settings
+away."
   (when (file-readable-p file)
     (let ((text (with-temp-buffer
-                  (insert-file-contents file)
+                  (let ((coding-system-for-read 'utf-8))
+                    (insert-file-contents file))
                   (string-trim (buffer-string)))))
       (unless (string-empty-p text)
-        (ecc--json-read-verbatim text)))))
+        (condition-case error
+            (ecc--json-read-verbatim text)
+          (error
+           (when strict (signal (car error) (cdr error)))
+           (ecc-log "settings" "%s is not JSON: %s" file
+                    (error-message-string error))
+           nil))))))
 
 (defun ecc-skill-settings-with-override (settings name value)
   "Return SETTINGS with the skill NAME set to VALUE.
@@ -411,10 +459,11 @@ what the default already says."
   "Write SETTINGS into FILE as indented JSON, and return FILE."
   (make-directory (file-name-directory file) t)
   (with-temp-file file
-    (insert (ecc--json-write settings))
-    (json-pretty-print-buffer)
-    (goto-char (point-max))
-    (unless (bolp) (insert "\n")))
+    (let ((coding-system-for-write 'utf-8))
+      (insert (ecc--json-write settings))
+      (json-pretty-print-buffer)
+      (goto-char (point-max))
+      (unless (bolp) (insert "\n"))))
   file)
 
 (defun ecc-skill-set-override-in-file (file name value)
@@ -434,7 +483,7 @@ skill back to the default.  The file is read once here rather than
 taken from what was read for the buffer -- the terminal client edits
 the same file, and so does the user -- and written once, so that a
 handful of skills settled in one go leave one change on disk."
-  (let ((settings (ecc-skill-read-settings-file file)))
+  (let ((settings (ecc-skill-read-settings-file file 'strict)))
     (pcase-dolist (`(,name . ,value) changes)
       (setq settings (ecc-skill-settings-with-override settings name value)))
     (ecc-skill-write-settings-file file settings)))
@@ -774,7 +823,8 @@ column the description happens to reach."
 (defun ecc-skill--read-session ()
   "Return the session the skills should be shown of."
   (or ecc-skill--session
-      (ecc-dashboard-session-at-point)
+      (and (fboundp 'ecc-dashboard-session-at-point)
+           (ecc-dashboard-session-at-point))
       ecc-render--session
       (car (ecc-model-sessions))
       (user-error "No session to look at")))

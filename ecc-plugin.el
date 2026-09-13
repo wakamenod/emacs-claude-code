@@ -57,6 +57,7 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
+(require 'ecc-skill)
 
 (declare-function ecc-window-project-root "ecc-window" (&optional directory))
 (declare-function ecc-prompt-command-name "ecc-prompt" (text))
@@ -228,24 +229,25 @@ and has to be manageable."
 (defvar ecc-plugin-user-skills-directory "~/.claude/skills/"
   "Where the skills of this machine live, one directory each.")
 
-(defvar ecc-plugin-user-settings-file "~/.claude/settings.json"
-  "The settings file of this machine, which holds `skillOverrides'.")
-
-(defvar ecc-plugin-project-settings-files
-  '(".claude/settings.json" ".claude/settings.local.json")
-  "The settings files of a project, relative to its root.")
-
-(defvar ecc-plugin-skill-states '("on" "name-only" "user-invocable-only" "off")
+(defvar ecc-plugin-skill-states nil
   "What a skill can be set to, least restrictive first.
-The values of `skillOverrides' in the settings (2.1.270): `name-only'
-lists the skill without its description, `user-invocable-only' hides it
-from the model but keeps `/name', and `off' hides it from both.  A skill
-no override names is on.
+Nil means `ecc-skill-override-values', which is where the four the CLI
+takes are written down: `name-only\=' lists the skill without its
+description, `user-invocable-only\=' hides it from the model but keeps
+`/name\=', and `off\=' hides it from both.  A skill no override names is
+on.
 
-The order is the one the CLI ranks them by.  An override is merged
-across the settings scopes by taking the most restrictive of them, not
-the nearest one, so a project that turns a skill off cannot be undone by
-turning it on in the user settings.")
+This is left as a variable so that a caller can narrow what the
+browser offers; the settings themselves -- reading them, writing them,
+and which file is written -- belong to `ecc-skill\=', so that this
+screen and the Skills buffer cannot say two different things about the
+same skill.
+
+The order is the one the CLI ranks them by.")
+
+(defun ecc-plugin-skill-states ()
+  "Return what a skill can be set to."
+  (or ecc-plugin-skill-states (mapcar #'car ecc-skill-override-values)))
 
 (cl-defstruct (ecc-plugin-skill (:constructor ecc-plugin-skill-create)
                                 (:copier nil))
@@ -258,52 +260,23 @@ turning it on in the user settings.")
   state         ; one of `ecc-plugin-skill-states'
   from)         ; the settings file the state came from, or nil
 
-(defun ecc-plugin--read-settings (file)
-  "Return the JSON of FILE as an alist, or nil when there is none.
-Read verbatim: a settings file is written back out again, and the
-ordinary reader turns a JSON null into nil, which serializes back as an
-empty object."
-  (let ((file (expand-file-name file)))
-    (when (file-readable-p file)
-      (condition-case error
-          (ecc--json-read-verbatim
-           (with-temp-buffer
-             (let ((coding-system-for-read 'utf-8))
-               (insert-file-contents file))
-             (buffer-string)))
-        (error (ecc-log ecc-plugin-log-name "%s is not JSON: %s" file
-                        (error-message-string error))
-               nil)))))
+(defvar ecc-plugin--project)            ; the project the browser is about
 
 (defun ecc-plugin-settings-files (&optional project)
-  "Return the settings files that can hold an override, user file first.
-PROJECT is the directory whose settings are read besides the user ones."
-  (cons ecc-plugin-user-settings-file
-        (when project
-          (mapcar (lambda (name) (expand-file-name name project))
-                  ecc-plugin-project-settings-files))))
-
-(defun ecc-plugin--restrictiveness (state)
-  "Return how restrictive STATE is, as a number."
-  (or (seq-position ecc-plugin-skill-states state) 0))
+  "Return the settings files that can hold an override, least specific first.
+PROJECT is the directory whose settings are read besides the user ones.
+`ecc-skill\=' owns the list: the browser and the Skills buffer read the
+same files in the same order, or the two would disagree about a skill
+they both show."
+  (ecc-skill-settings-files-in project))
 
 (defun ecc-plugin-skill-overrides (&optional project)
-  "Return the effective skill overrides as an alist of name and (STATE . FILE).
-Every settings file of PROJECT and of the user is read, and the most
-restrictive value of them wins, which is how the CLI merges them."
-  (let ((merged nil))
-    (dolist (file (ecc-plugin-settings-files project))
-      (pcase-dolist (`(,name . ,state)
-                     (alist-get 'skillOverrides (ecc-plugin--read-settings file)))
-        (let* ((name (format "%s" name))
-               (known (cdr (assoc name merged))))
-          (when (and (stringp state)
-                     (or (null known)
-                         (> (ecc-plugin--restrictiveness state)
-                            (ecc-plugin--restrictiveness (car known)))))
-            (setf (alist-get name merged nil nil #'equal)
-                  (cons state (expand-file-name file)))))))
-    merged))
+  "Return the skill overrides as an alist of name and (STATE . FILE).
+The settings files of PROJECT and of the user are read in the order the
+CLI reads them, the last that names a skill having it
+\(`ecc-skill-file-overrides\=').  It is read from the files rather than
+asked of a session because this screen is opened without one."
+  (ecc-skill-file-overrides (ecc-plugin-settings-files project)))
 
 (defun ecc-plugin--skill-description (directory)
   "Return the description in the frontmatter of the SKILL.md in DIRECTORY."
@@ -376,34 +349,16 @@ unpacked.  The bundled skills come from a running session."
   (equal (ecc-plugin-skill-state skill) "on"))
 
 (defun ecc-plugin-set-skill-state (name state &optional file)
-  "Write STATE for the skill NAME into FILE, the user settings by default.
+  "Write STATE for the skill NAME into FILE, and return the file.
 STATE nil removes the override, which is what turns a skill back on.
-The file is rewritten as JSON, so it comes back formatted rather than as
-it was written by hand."
-  (let* ((file (expand-file-name (or file ecc-plugin-user-settings-file)))
-         (settings (ecc-plugin--read-settings file))
-         (overrides (alist-get 'skillOverrides settings))
-         (key (intern name)))
-    (cond
-     ((and state (assq key overrides)) (setf (alist-get key overrides) state))
-     (state (setq overrides (append overrides (list (cons key state)))))
-     (t (setq overrides (assq-delete-all key overrides))))
-    ;; A key is put at the end and taken away when it empties: the file
-    ;; belongs to the user and to the CLI, and comes back reordered or
-    ;; carrying an empty object neither of them wrote otherwise.
-    (cond
-     ((and overrides (assq 'skillOverrides settings))
-      (setf (alist-get 'skillOverrides settings) overrides))
-     (overrides
-      (setq settings (append settings (list (cons 'skillOverrides overrides)))))
-     (t (setq settings (assq-delete-all 'skillOverrides settings))))
-    (make-directory (file-name-directory file) t)
-    (with-temp-file file
-      (let ((coding-system-for-write 'utf-8))
-        (insert (ecc--json-write settings))
-        (json-pretty-print-buffer)
-        (goto-char (point-max))
-        (unless (bolp) (insert "\n"))))
+FILE defaults to the one the terminal client writes,
+`.claude/settings.local.json' of the project
+\(`ecc-skill-settings-file-in\=').  The writing itself belongs to
+`ecc-skill\=', so that a skill turned off here and one turned off in
+the Skills buffer land in the same file."
+  (let ((file (expand-file-name
+               (or file (ecc-skill-settings-file-in ecc-plugin--project)))))
+    (ecc-skill-set-overrides-in-file file (list (cons name state)))
     (ecc-log ecc-plugin-log-name "skillOverrides %s = %s in %s"
              name (or state "on") file)
     file))
@@ -1197,28 +1152,28 @@ a marketplace declares (2.1.270)."
                    t))
 
 (defun ecc-plugin-apply-skill-state (skill state)
-  "Set SKILL to STATE, one of `ecc-plugin-skill-states\='.
+  "Set SKILL to STATE, one of the four `ecc-plugin-skill-states\=' returns.
 There is no subcommand for this: a skill is listed, restricted or hidden
 by an entry in `skillOverrides\=' of the settings, which is what is
-written.  `on\=' is the absence of an entry, so it takes the entry out
-of the user settings -- and a project settings file that restricts the
-same skill still wins, because the CLI merges the scopes by taking the
-most restrictive of them.  That is said rather than hidden."
+written, and `on\=' is the absence of an entry, so it takes the entry
+out.  The file is the one the terminal client writes, the
+`.claude/settings.local.json\=' of the project, and a more specific file
+that says something else about the same skill still wins; that is said
+rather than hidden."
   (let* ((name (ecc-plugin-skill-name skill))
          (on (equal state "on"))
-         (user-file (expand-file-name ecc-plugin-user-settings-file)))
-    (ecc-plugin-set-skill-state name (unless on state))
+         (file (ecc-plugin-set-skill-state name (unless on state))))
     (ecc-plugin-refresh)
     (let* ((now (seq-find (lambda (other)
                             (equal (ecc-plugin-skill-name other) name))
                           ecc-plugin--skills))
            (reached (if now (ecc-plugin-skill-state now) state))
            (from (and now (ecc-plugin-skill-from now))))
-      (if (and (not (equal reached state)) from)
+      (if (and (not (equal reached state)) from (not (equal from file)))
           (message "%s is %s in %s, but %s makes it %s"
-                   name (or state "on") user-file from reached)
+                   name (or state "on") file from reached)
         (message "%s is %s%s" name reached
-                 (if on "" (format " (skillOverrides in %s)" user-file)))))))
+                 (if on "" (format " (skillOverrides in %s)" file)))))))
 
 (defun ecc-plugin-toggle-skill (skill)
   "Turn the SKILL off if it is on, and on if it is off."
@@ -1245,7 +1200,7 @@ both."
        (completing-read (format "%s is %s; set to: "
                                 (ecc-plugin-skill-name skill)
                                 (ecc-plugin-skill-state skill))
-                        ecc-plugin-skill-states nil t))
+                        (ecc-plugin-skill-states) nil t))
     (let* ((entry (ecc-plugin-entry-at-point))
            (was (if (ecc-plugin-entry-enabled entry) "on" "off"))
            (state (completing-read (format "%s is %s; set to: "
