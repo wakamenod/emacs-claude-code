@@ -15,6 +15,27 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 ### Added
 
+- A plugin browser, on `/plugins` in the prompt region, `I` in the menu and
+  `M-x ecc-plugin`. The CLI's
+  `/plugins` is a screen the terminal client draws for itself: it is named
+  neither in `slash_commands` nor in `terminal_slash_commands`, so there is
+  nothing to send over stream-json (confirmed against **Claude Code CLI
+  2.1.270**). ecc reads and acts through the `claude plugin` subcommands
+  instead, and draws four tabs itself: Discover, Installed, Marketplaces and
+  Errors. Plugins can be installed at user, project or local scope, turned on
+  and off, updated and removed, and marketplaces added, updated and removed.
+  Installed lists the skills beside the plugins, as the real screen does, and
+  turns them on and off through `skillOverrides` in the settings, which is what
+  the CLI reads and what it offers no subcommand for. `s` filters the rows as
+  it is typed and `/` jumps to one by completion, which is the better way
+  through a marketplace of 297. A change offers the running sessions `/reload-plugins`, since a
+  session keeps the plugins it started with (`ecc-plugin-reload-sessions`).
+  Nothing exports the plugin load errors of the real Errors tab, so that tab
+  holds what Emacs can see itself. The real screen's fifth tab, Stats, counts
+  skill tokens over a week of local sessions and is not exported at all, so
+  there is no Stats tab rather than a tab of something else wearing its name;
+  what one plugin brings and costs is on `RET`.
+
 - `/login`, `/logout` and `/auth-status` in the prompt region, and
   `ecc-auth-login`, `ecc-auth-logout` and `ecc-auth-show-status` as commands.
   The CLI names neither `login` nor `logout` in `slash_commands`, nor in

@@ -160,6 +160,12 @@ See [Session management](/emacs-claude-code/features/sessions/).
 Inspect active skills, subagents, slash commands, MCP servers, and plugins.
 See [Other features](/emacs-claude-code/features/other/#capabilities).
 
+### `I` — Plugins
+
+Browse and manage plugins: discover what the marketplaces offer, install, enable,
+update and remove, and manage the marketplaces themselves.
+See [Other features](/emacs-claude-code/features/other/#plugins).
+
 ### `h` — History
 
 Open a past conversation recorded under `~/.claude/projects` in a standard session buffer. Past conversations can be inspected read-only, or resumed with `r`.

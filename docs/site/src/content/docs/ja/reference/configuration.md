@@ -87,6 +87,7 @@ M-x customize-group RET ecc
 |---|---|---|
 | `ecc-btw-display` | `'window` | `/btw` サイドクエリの回答を表示する形式（`'window` または `'posframe`） |
 | `ecc-usage-display` | `'window` | `ecc-usage` レポートを表示する形式（`'window` または `'posframe`） |
+| `ecc-plugin-reload-sessions` | `'ask` | プラグイン変更後、実行中のセッションに対する挙動。`'ask` は `/reload-plugins` を送るか確認、`t` は確認せず送信、`nil` は何もしません |
 
 どちらも `'window` または `'posframe` を指定できます。`'posframe` はバッファをフレーム上に浮かぶポップアップとして表示します（[posframe](https://github.com/tumashu/posframe) パッケージと GUI 環境が必要です）。posframe が利用できない環境では自動的に通常のウィンドウ分割にフォールバックします。
 
