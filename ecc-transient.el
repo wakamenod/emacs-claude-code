@@ -53,6 +53,20 @@
 (declare-function ecc-tui-open "ecc-tui" (&optional session))
 (declare-function ecc-tui-return "ecc-tui" (&optional session))
 
+;;;; Loading the rest of the package
+
+;; A menu is the front door of the package, and the autoload of a prefix
+;; brings in this file alone: the suffixes live all over the other modules,
+;; and nothing requires `ecc' itself, because `ecc' requires this file.  A
+;; menu opened from a cold Emacs therefore ran into a suffix whose command
+;; was void -- `C-c c r r' found `ecc-read-session' undefined (2026-09-13).
+;; The require is made when a menu is opened instead, which is the one
+;; moment every suffix behind it has to be there.
+
+(defun ecc-transient--load ()
+  "Load the whole package, which the suffixes of the menus are spread over."
+  (require 'ecc))
+
 ;;;; Commands the menu needs of its own
 
 (defun ecc-menu-session ()
@@ -260,7 +274,10 @@ same suffix from one call to the next."
    :setup-children ecc-transient--setup-slash
    :pad-keys t]
   ["Other"
-   ("/" "Choose with completion" ecc-slash-command)])
+   ("/" "Choose with completion" ecc-slash-command)]
+  (interactive)
+  (ecc-transient--load)
+  (transient-setup 'ecc-slash-menu))
 
 (transient-define-suffix ecc-menu-allow-all (args)
   "Allow every request waiting in this session.
@@ -300,7 +317,10 @@ at the head of the Session column and read as though Start and Kill took
 it too."
   ["Resume"
    ("-f" "Fork the conversation" "--fork")
-   ("r" ecc-menu-resume)])
+   ("r" ecc-menu-resume)]
+  (interactive)
+  (ecc-transient--load)
+  (transient-setup 'ecc-resume-menu))
 
 ;;;; The main menu
 
@@ -355,7 +375,10 @@ it too."
     ("p" "Permission mode" ecc-set-permission-mode)
     ("o" "Remote control" ecc-remote-control-toggle)
     ("O" "Open remotely" ecc-remote-control-open)
-    ("K" "Copy the remote URL" ecc-remote-control-copy-url)]])
+    ("K" "Copy the remote URL" ecc-remote-control-copy-url)]]
+  (interactive)
+  (ecc-transient--load)
+  (transient-setup 'ecc-menu))
 
 (provide 'ecc-transient)
 
