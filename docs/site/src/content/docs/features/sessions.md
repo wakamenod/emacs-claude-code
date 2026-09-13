@@ -7,6 +7,12 @@ sidebar:
 
 A session consists of a running `claude` process, its transcript buffer, and its session name. The initial session in a project is automatically named after the project directory; subsequent sessions prompt for a name. Killing a session buffer terminates the CLI process, but the conversation history remains saved on disk.
 
+## Where a session starts
+
+`C-c c c` (`ecc-start`) starts a session in the project of your current buffer. It uses the buffer's file or directory, or falls back to the last buffer that visited one. Starting from a transcript, the dashboard, a help window, or the scratch buffer uses that same fallback. A prefix argument (`C-u C-c c c`) prompts for a directory, offering that project as the default.
+
+Check where your session starts: **a session's directory is fixed when the CLI starts** and cannot be changed afterwards. If you start in the wrong project, you must kill the session and start over. The echo area reports the starting directory, and the header line displays the project name for the life of the session.
+
 ## Resuming conversations
 
 Press `r` in the [transient menu](/emacs-claude-code/features/menu/#r--resume) or run `M-x ecc-resume-menu`. The picker lists active sessions in this Emacs instance first, followed by recorded conversations in this project, sorted by most recent activity.
@@ -98,7 +104,7 @@ Waiting sessions appear at the top, followed by remaining sessions sorted by rec
 
 ## The tab line
 
-Every session appears as a tab in the session window's tab line.
+Each session appears as a tab in the tab line of its project's session windows.
 
 ![A session window whose tab line carries four tabs, each coloured by what its session is doing](../../../assets/tabs.png)
 
@@ -115,7 +121,23 @@ Tabs remain in creation order so their positions remain stable. Clicking a tab w
 
 To show session state in the global Emacs tab bar, set `ecc-tab-bar-state` and use `tab-bar-tab-name-function #'ecc-tab-bar-tab-name`.
 
-Under the tab line, the header line displays the session's current status on the left and remaining context window capacity on the right (turning amber and red as capacity diminishes).
+A window's tabs list only that window's own project's sessions. Two session windows side by side in different projects show separate rows, and neither lists the other's sessions. Set `ecc-tab-line-scope` to `'all` to list every session in a single row.
+
+You can still reach a session outside the scope with `S` (`ecc-switch-session`), the dashboard (`C-c c b`), and `C-c c n` (`ecc-next-attention`). But because its tab is not on screen, it cannot blink when waiting for an answer. The mode line `⚠ecc:N` count and notifications still report it.
+
+Under the tab line, the header line displays the session's current status on the left, the project name beside it, and the remaining context window capacity on the right (turning amber and red as capacity diminishes).
+
+## Focusing one project
+
+`C-c c j` (`ecc-focus-project`) resets the frame to show only one project:
+
+![Two projects crowding one frame; picking one of them takes the other's window away, brings this project's second session in beside it, and changes the source on the left](../../../assets/focus.gif)
+
+- Session windows from every other project leave the screen. `ecc-focus-project` kills nothing and stops no processes. `C-c c w` (`ecc-toggle`) brings back one project, and `C-u C-c c w` (`ecc-toggle-all`) brings back all of them.
+- Sessions of the chosen project fill the window roles in order of recent use, placing the session you worked in last into the main window.
+- The main window switches to that project's source. It chooses a visible project buffer first, then the last buffer you edited there, then the most recently used buffer in the project, or Dired on the project root. A prefix argument (`C-u C-c c j`) prompts for a buffer instead.
+
+A project is matched as a project, not as a path, so a subdirectory session groups with the tree.
 
 ## Pending request indicators
 

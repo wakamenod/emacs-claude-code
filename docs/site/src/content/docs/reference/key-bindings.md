@@ -22,6 +22,7 @@ Or, without `use-package`:
 |---|---|
 | `c` / `r` / `R` | Start session / resume / rename |
 | `v` / `i` / `t` | Focus prompt / interrupt turn / hand over to terminal |
+| `j` / `w` | Focus one project / hide or restore its session windows (`C-u w` for every project) |
 | `a` / `d` | Allow or deny oldest pending request |
 | `1`–`4` | Select corresponding option for pending question |
 | `n` / `N` | Jump to next pending request (globally or within current project) |

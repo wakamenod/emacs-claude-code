@@ -77,6 +77,7 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 |---|---|---|
 | `ecc-window-large-frame-min-height` | `80` | Minimum frame height (in lines) required before allocating a third session window. Below this threshold, sessions share two windows and the tab line provides navigation |
 | `ecc-window-sub-height` | `0.33` | Height of the third session window (as a fraction or line count). Taken from the primary frame area (typically code buffers) rather than the side session column |
+| `ecc-tab-line-scope` | `'project` | Scope of sessions shown in a session window's tab line. `'project` lists sessions for that window's own project; `'all` lists all open sessions in Emacs |
 
 The default value of `ecc-window-large-frame-min-height` (80 lines) is calibrated to differentiate laptop screens from larger external displays: a 14-inch screen typically fits ~58 lines and a 16-inch screen ~67 lines, whereas standard desktop monitors accommodate 110+ lines.
 

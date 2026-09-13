@@ -37,6 +37,7 @@ Because the transcript is standard buffer text, you can use regular Emacs workfl
 - **[Plan mode](https://wakamenod.github.io/emacs-claude-code/features/review/#plan-mode):** Work through proposed execution plans in a writable buffer.
 - **[Global access](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/):** Approve or deny pending tool requests from any buffer.
 - **[Session management](https://wakamenod.github.io/emacs-claude-code/features/sessions/):** Manage multiple concurrent sessions from a dashboard.
+- **[One project at a time](https://wakamenod.github.io/emacs-claude-code/features/sessions/#focusing-one-project):** `ecc-focus-project` focuses the whole frame on a single project. Window tabs show only that project's sessions.
 - **Safe defaults:** Permission prompts default to deny. The built-in loopback MCP server is disabled by default, and evaluating Elisp requires explicit opt-in.
 
 ## Requirements
@@ -143,6 +144,8 @@ Accessible from any buffer:
 | `r` | `ecc-resume-menu` | Resume a session |
 | `R` | `ecc-rename-session` | Rename a session |
 | `v` | `ecc-show-session` | Focus session prompt |
+| `j` | `ecc-focus-project` | Show only one project's sessions and source |
+| `w` | `ecc-toggle` | Hide or restore this project's session windows |
 | `i` | `ecc-interrupt` | Interrupt running turn |
 | `t` | `ecc-tui-open` | Hand session over to terminal |
 | `a` | `ecc-answer-allow` | Allow oldest pending request |
