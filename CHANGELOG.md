@@ -196,6 +196,20 @@ that CLI, and the CLI moves without anybody upgrading ecc.
   session dead whenever that crossed a second boundary.  The times are now
   compared as times, with two seconds of slack.
 
+- Typing in another buffer while a session streams is no longer held up by
+  the session's bookkeeping.  Every line the CLI sent was written to the
+  session's log buffer and the buffer then trimmed to `ecc-log-max-lines`,
+  which walked back over all 5000 kept lines and moved the whole buffer down
+  by one line each time: 88% of what a streamed delta cost once a session
+  had been running a while, and paid whether or not the session was on
+  screen.  The log now grows a fifth past the limit and is cut back once.
+  The text of a streaming block was also joined again on every delta, so a
+  long reply copied itself thousands of times over and made ten garbage
+  collections -- each of which stops every buffer, not just the session's.
+  The deltas are kept as they come and joined when the block is redrawn.
+  One reply of 8000 deltas went from 1260 ms with 11 collections to 69 ms
+  with one (measured 2026-09-13).
+
 ## [0.1.0] - 2026-09-11
 
 The first release.  Verified against **Claude Code CLI 2.1.268** and

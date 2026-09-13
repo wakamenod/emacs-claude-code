@@ -181,7 +181,9 @@ transcript."
   data          ; alist, the keys depend on TYPE
   status        ; pending | running | done | error | denied
   streaming     ; non-nil while stream events are still feeding the node
-  streaming-text
+  streaming-text   ; the streamed text, joined; nil while pieces are pending
+  streaming-pieces ; deltas not yet joined, newest first
+  streaming-length ; how many characters have streamed in
   marker-start marker-end)              ; owned by the renderer
 
 (cl-defstruct ecc-file-entry
@@ -561,8 +563,9 @@ The most recently started one wins when several are."
 (defun ecc-model-open-stream (session parent-id index node)
   "Remember in SESSION that NODE receives block INDEX under PARENT-ID."
   (setf (ecc-node-streaming node) t)
-  (unless (ecc-node-streaming-text node)
-    (setf (ecc-node-streaming-text node) ""))
+  (unless (ecc-model-streaming-text node)
+    (setf (ecc-node-streaming-text node) ""
+          (ecc-node-streaming-length node) 0))
   (puthash (ecc-model--stream-key parent-id index) node
            (ecc-session-stream-blocks session))
   node)
@@ -591,15 +594,38 @@ block was drawn into, so that nothing is drawn twice."
              (ecc-session-stream-blocks session))
     found))
 
+(defun ecc-model-streaming-text (node)
+  "Return what has streamed into NODE so far, or nil when nothing is open.
+The deltas are kept as they came and joined here, on demand: joining
+on every delta copied the whole block each time, and the garbage of
+that was ten collections over one long reply (measured 2026-09-13).
+The renderer appends each delta as it comes and asks for the whole
+only when it redraws the block."
+  (or (ecc-node-streaming-text node)
+      (when-let* ((pieces (ecc-node-streaming-pieces node)))
+        (setf (ecc-node-streaming-pieces node) nil
+              (ecc-node-streaming-text node) (apply #'concat (nreverse pieces))))))
+
 (defun ecc-model-append-stream (session node text)
   "Append TEXT to the streamed text of NODE of SESSION.
 Announces the delta through `ecc-stream-delta-hook' without marking the
 node changed, so that the renderer can append rather than redraw."
   (when (and text (not (string-empty-p text)))
-    (setf (ecc-node-streaming-text node)
-          (concat (or (ecc-node-streaming-text node) "") text))
+    (when-let* ((joined (ecc-node-streaming-text node)))
+      (unless (string-empty-p joined)
+        (push joined (ecc-node-streaming-pieces node)))
+      (setf (ecc-node-streaming-text node) nil))
+    (push text (ecc-node-streaming-pieces node))
+    (setf (ecc-node-streaming-length node)
+          (+ (or (ecc-node-streaming-length node) 0) (length text)))
     (run-hook-with-args 'ecc-stream-delta-hook session node text))
   node)
+
+(defun ecc-model-forget-stream-text (node)
+  "Drop what streamed into NODE: its final form has arrived."
+  (setf (ecc-node-streaming-text node) nil
+        (ecc-node-streaming-pieces node) nil
+        (ecc-node-streaming-length node) nil))
 
 (defun ecc-model-close-stream (session node)
   "Stop streaming into NODE of SESSION and forget its block."

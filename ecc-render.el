@@ -1083,7 +1083,7 @@ is appended."
      node depth
      (lambda ()
        (if (ecc-node-streaming node)
-           (ecc-render--insert-stream-text node (ecc-node-streaming-text node) pad face)
+           (ecc-render--insert-stream-text node (ecc-model-streaming-text node) pad face)
          (ecc-render--insert-lines (ecc-markdown-fontify (ecc-model-node-get node 'text))
                                    pad face))))))
 
@@ -1103,7 +1103,7 @@ is appended."
      node (1+ depth)
      (lambda ()
        (if (ecc-node-streaming node)
-           (ecc-render--insert-stream-text node (ecc-node-streaming-text node)
+           (ecc-render--insert-stream-text node (ecc-model-streaming-text node)
                                            (concat pad "  ") 'ecc-thinking-face)
          (ecc-render--insert-lines (ecc-model-node-get node 'text)
                                    (concat pad "  ") 'ecc-thinking-face))))))
@@ -1134,7 +1134,7 @@ is appended."
                    ((ecc-node-streaming node)
                     (format "streaming %s chars…"
                             (ecc-render--count-string
-                             (length (ecc-node-streaming-text node)))))
+                             (or (ecc-node-streaming-length node) 0))))
                    ;; The question is read in the Question block below;
                    ;; saying it here as well only doubles it.
                    ((equal name "AskUserQuestion") "")
@@ -1162,7 +1162,7 @@ An Edit or a Write shows its input as a diff."
                                              (ecc-model-node-get node 'before)))))
     (cond
      ((ecc-node-streaming node)
-      (ecc-render--insert-lines (ecc-render--clip (ecc-node-streaming-text node)
+      (ecc-render--insert-lines (ecc-render--clip (ecc-model-streaming-text node)
                                                   ecc-render-result-max-lines)
                                 body 'ecc-dim-face))
      (diff

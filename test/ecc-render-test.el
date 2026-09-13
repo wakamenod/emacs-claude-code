@@ -546,7 +546,7 @@ follow have a section to grow.  Returns the remaining lines."
       (should (string-search "\n  Done. Created\n" (ecc-test-buffer-string buffer)))
       (let ((node (ecc-model-find-stream session nil 'text)))
         (should node)
-        (should (equal (ecc-node-streaming-text node) "Done. Created")))
+        (should (equal (ecc-model-streaming-text node) "Done. Created")))
       ;; Feed the rest: the complete message replaces the streamed text
       ;; with the formatted one, and it is there exactly once.
       (dolist (line lines)

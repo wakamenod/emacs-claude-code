@@ -397,8 +397,8 @@ DATA describe it.  Returns the node."
         (ecc-model-add-node session :id id :type type :status 'done
                             :parent parent :data data)
       (setf (ecc-node-data node) data
-            (ecc-node-status node) 'done
-            (ecc-node-streaming-text node) nil)
+            (ecc-node-status node) 'done)
+      (ecc-model-forget-stream-text node)
       (ecc-model-close-stream session node)
       (ecc-model-node-changed session node)
       node)))
@@ -468,7 +468,7 @@ File tools are noted in the Files summary and, for an Edit or a Write,
 what the file looks like before the call is kept for the diff."
   (let ((name (ecc-model-node-get node 'name)))
     (ecc-model-node-put node 'input input)
-    (setf (ecc-node-streaming-text node) nil)
+    (ecc-model-forget-stream-text node)
     (ecc-dispatch--progress session 'running-tool
                             (cons name (alist-get 'file_path input)))
     ;; The Files summary counts a call once its result says it happened
@@ -948,7 +948,7 @@ came in."
       (ecc-model-append-stream session node text)
       (setf (alist-get 'streaming (ecc-session-progress session))
             (cons (ecc-node-type node)
-                  (length (ecc-node-streaming-text node)))))))
+                  (ecc-node-streaming-length node))))))
 
 (defun ecc-dispatch--block-stop (session node)
   "Close the streamed NODE of SESSION with the text it received.
@@ -956,10 +956,10 @@ The complete assistant message normally arrives first and replaces
 the streamed text; this is the fallback when it did not."
   (pcase (ecc-node-type node)
     ((or 'text 'thinking)
-     (ecc-model-node-put node 'text (or (ecc-node-streaming-text node) ""))
+     (ecc-model-node-put node 'text (or (ecc-model-streaming-text node) ""))
      (setf (ecc-node-status node) 'done))
     (_ nil))
-  (setf (ecc-node-streaming-text node) nil)
+  (ecc-model-forget-stream-text node)
   (ecc-model-close-stream session node)
   (ecc-model-node-changed session node))
 
