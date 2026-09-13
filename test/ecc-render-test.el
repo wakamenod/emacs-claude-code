@@ -1133,6 +1133,43 @@ have to be there for whatever searches the text while showing nothing."
   "Return the line point stands on, without its properties."
   (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
 
+(ert-deftest ecc-render-test-a-failed-draw-keeps-the-prompt-region ()
+  "A redraw that fails half way leaves the prompt region after what it drew.
+The live region is deleted before it is drawn again, and the marker
+that opens the prompt region collapses onto the deletion; a draw that
+signalled before moving it left the transcript inside the prompt
+region, where the next send took it for the draft.  The error itself
+is not swallowed."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-test-dispatch session "basic-turn" "hello")
+    (ecc-render-flush session)
+    (let ((buffer (ecc-session-buffer session)))
+      (with-current-buffer buffer
+        (goto-char (ecc-chat-prompt-end))
+        (insert "my draft"))
+      (ecc-model-begin-turn session "again")
+      (cl-letf* ((real (symbol-function #'ecc-render--insert-turn))
+                 ((symbol-function #'ecc-render--insert-turn)
+                  (lambda (session turn from)
+                    (funcall real session turn from)
+                    (when (equal (ecc-turn-prompt turn) "again")
+                      (error "drawing failed on purpose")))))
+        (should-error (ecc-render-flush session)))
+      (with-current-buffer buffer
+        ;; What was drawn stands before the prompt region; the draft
+        ;; is still the whole of it.
+        (should (< (string-search "〉 again" (buffer-string))
+                   (ecc-render-prompt-start)))
+        (should (equal (buffer-substring-no-properties (ecc-chat-prompt-start)
+                                                       (ecc-chat-prompt-end))
+                       "my draft"))
+        ;; The next draw goes through and finds its markers where it left them.
+        (ecc-render-flush session)
+        (should (equal (buffer-substring-no-properties (ecc-chat-prompt-start)
+                                                       (ecc-chat-prompt-end))
+                       "my draft"))))))
+
 (ert-deftest ecc-render-test-point-stays-in-a-running-turn ()
   "Point in a turn that is still growing is not dragged to the prompt.
 The live region is deleted and drawn again on every change, and a

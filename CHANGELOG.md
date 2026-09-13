@@ -230,6 +230,14 @@ that CLI, and the CLI moves without anybody upgrading ecc.
   5.7 ms to 1.5 ms (measured 2026-09-13); `scripts/bench-render.el` puts the
   Files summary of 60 files at 3.6 ms, from 5.3.
 
+- A redraw that fails half way no longer leaves the transcript inside the
+  prompt region.  The live region is deleted before it is drawn again, and
+  the marker that opens the prompt region collapses onto the deletion; a
+  draw that signalled before moving it past what it drew left that text in
+  the prompt region, where the next send took it for the draft.  The
+  markers are now moved whether the draw finishes or not; the error itself
+  still reaches the log.
+
 ## [0.1.0] - 2026-09-11
 
 The first release.  Verified against **Claude Code CLI 2.1.268** and

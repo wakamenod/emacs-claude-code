@@ -2346,11 +2346,14 @@ and a point that was in it stays in it."
                 (put-text-property anchor (point) 'keymap
                                    (ecc-render--map 'ecc-chat-transcript-map)))
               (set-marker ecc-render--live-start (point))
-              (ecc-render--insert-live session)
-              (ecc-render--seal (point-min) (point))
-              (if (ecc-render-prompt-start)
-                  (set-marker ecc-render--prompt-start (point))
-                (setq ecc-render--prompt-start (copy-marker (point))))
+              ;; The prompt region begins where the drawing ends, even
+              ;; a drawing that failed half way (see `ecc-render-update').
+              (unwind-protect
+                  (ecc-render--insert-live session)
+                (ecc-render--seal (point-min) (point))
+                (if (ecc-render-prompt-start)
+                    (set-marker ecc-render--prompt-start (point))
+                  (setq ecc-render--prompt-start (copy-marker (point)))))
               (ecc-render--apply-visibility)
               (ecc-render--freeze session)))
           (ecc-render--restore-points noted)
@@ -2378,12 +2381,17 @@ and a point that was in it stays in it."
                 (ecc-render--drop-from pos)
                 (delete-region pos limit)
                 (goto-char pos)
-                (ecc-render--insert-live session)
-                (ecc-render--seal pos (point))
                 ;; Both markers collapsed onto the deletion and stayed
-                ;; put in front of what was inserted.
-                (set-marker ecc-render--prompt-start (point))
-                (set-marker ecc-render--live-start pos))
+                ;; put in front of what was inserted.  They are moved
+                ;; past it even when the drawing fails half way: the
+                ;; error goes on to the log, but a prompt region that
+                ;; began before the transcript would take what was
+                ;; drawn for the draft, and send it (found 2026-09-13).
+                (unwind-protect
+                    (ecc-render--insert-live session)
+                  (ecc-render--seal pos (point))
+                  (set-marker ecc-render--prompt-start (point))
+                  (set-marker ecc-render--live-start pos)))
               (ecc-render--apply-visibility)
               (ecc-render--freeze session))
             (ecc-render--restore-points noted)
