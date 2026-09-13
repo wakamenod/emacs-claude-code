@@ -47,27 +47,26 @@ jobs:
             echo "::error::CHANGELOG.md has no section for $header"
             exit 1
           fi
+          if [ ! -s "release-notes/$header.md" ]; then
+            echo "::error::release-notes/$header.md is missing or empty"
+            exit 1
+          fi
 
       - name: test
         run: make test ELPA=$PWD/.elpa
 
-      # The notes are the section of CHANGELOG.md for this version: from
-      # its heading to the next one.  The heading is matched with index()
-      # rather than as a regular expression: awk -v works the escapes out
-      # of its value, so a "\\[" written here reaches the program as a "[",
-      # the brackets become a character class and the section is silently
-      # empty -- which is how v0.1.0 was published with no notes at all
-      # (2026-09-12).
+      # The notes are release-notes/<version>.md, written by hand: a
+      # release page is read by somebody deciding whether to upgrade, and
+      # the CHANGELOG section it used to be pasted from is the full record
+      # -- 281 lines of it for 0.2.0 -- which is the wrong length for that
+      # (2026-09-14).  The file is required rather than fallen back on, so
+      # that forgetting to write it fails the release instead of publishing
+      # the record again by accident.
       - name: notes
         run: |
           header=$(sed -n 's/^;; Version: *//p' ecc.el)
-          awk -v h="## [$header]" '
-            index($0, h) == 1 {found = 1; next}
-            found && /^## / {exit}
-            found {print}
-          ' CHANGELOG.md > notes.md
+          cp "release-notes/$header.md" notes.md
           cat notes.md
-          test -s notes.md || { echo "::error::no notes for $header in CHANGELOG.md"; exit 1; }
 
       # Create the release, or set the notes of one that is already there:
       # a dispatch run is how a release published with the wrong notes is

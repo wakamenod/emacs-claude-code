@@ -20,6 +20,7 @@ INIT := --eval '(progn (setq package-user-dir "$(ELPA)") (package-initialize))'
 BATCH := $(EMACS) -Q --batch $(INIT) -L . -L test
 
 .PHONY: all autoloads compile test test-live lint clean release release-check \
+        release-tag release-tag-check version-check \
         docs-install docs-dev docs-build docs-preview docs-clean
 
 all: autoloads compile lint test
@@ -60,34 +61,66 @@ lint:
 
 # A release is a tag, and the one thing it can get silently wrong is the
 # Version header of ecc.el disagreeing with it: package-vc then reports the
-# old number and nobody notices.  Write the CHANGELOG.md section first --
-# nothing here writes prose -- and then
-#   make release VERSION=0.2.0
-# which checks, bumps the header, commits the two files and tags.  Pushing
-# is left to you, because pushing the tag is what publishes the release:
-#   git push --follow-tags
+# old number and nobody notices.  It takes two steps, because main takes no
+# direct push -- a repository ruleset requires a pull request, and nobody
+# can bypass it (confirmed 2026-09-14).  Write the two pieces of prose
+# first -- nothing here writes any -- the CHANGELOG.md section and
+# release-notes/$(VERSION).md, which is what the GitHub release says; then
+#   make release VERSION=0.2.0     # on main: checks, bumps, commits
+#   ... open the pull request and merge it ...
+#   git switch main && git pull
+#   make release-tag VERSION=0.2.0 # tags what main became
+#   git push origin v0.2.0         # this is what publishes the release
 release: release-check all
 	sed -e 's/^;; Version: .*/;; Version: $(VERSION)/' ecc.el > ecc.el.new
 	mv ecc.el.new ecc.el
-	git commit -m "chore(release): $(VERSION)" ecc.el CHANGELOG.md
+	git add ecc.el CHANGELOG.md release-notes/$(VERSION).md
+	git commit -m "chore(release): $(VERSION)" \
+	  ecc.el CHANGELOG.md release-notes/$(VERSION).md
+	@echo
+	@echo "committed $(VERSION).  Put it on main through a pull request, then:"
+	@echo "  git switch main && git pull && make release-tag VERSION=$(VERSION)"
+
+# The tag, once the pull request is merged.  It goes on the main that
+# origin has, so that the tag cannot name a commit nobody else can see, and
+# it is refused unless the header of that main is the version being tagged.
+release-tag: release-tag-check
 	git tag -a "v$(VERSION)" -m "ecc $(VERSION)"
 	@echo
-	@echo "tagged v$(VERSION).  Publish it with: git push --follow-tags"
+	@echo "tagged v$(VERSION).  Publish it with: git push origin v$(VERSION)"
 
-# Everything that has to be true before a release, checked ahead of `all'
-# so that a missing VERSION does not cost a test run first.
-release-check:
+# The checks that are the same whether the release is being committed or
+# tagged: the number, the two pieces of prose, and the tag not being taken.
+version-check:
 	@test -n "$(VERSION)" || { echo "usage: make release VERSION=0.2.0"; exit 1; }
 	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' \
 	  || { echo "VERSION must look like 0.2.0"; exit 1; }
-	@branch=$$(git rev-parse --abbrev-ref HEAD); test "$$branch" = main \
-	  || { echo "a release is tagged on main, not on $$branch"; exit 1; }
-	@test -z "$$(git status --porcelain | grep -v CHANGELOG.md)" \
-	  || { echo "the working tree has changes other than CHANGELOG.md"; exit 1; }
 	@grep -q '^## \[$(VERSION)\]' CHANGELOG.md \
 	  || { echo "CHANGELOG.md has no '## [$(VERSION)]' section"; exit 1; }
+	@test -s release-notes/$(VERSION).md \
+	  || { echo "release-notes/$(VERSION).md is missing or empty -- that file is the release notes"; exit 1; }
 	@! git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null \
 	  || { echo "v$(VERSION) is already tagged"; exit 1; }
+
+# Everything that has to be true before the release commit, checked ahead
+# of `all' so that a missing VERSION does not cost a test run first.
+release-check: version-check
+	@branch=$$(git rev-parse --abbrev-ref HEAD); test "$$branch" = main \
+	  || { echo "a release is committed on main, not on $$branch"; exit 1; }
+	@test -z "$$(git status --porcelain --untracked-files=all \
+	    | grep -v 'CHANGELOG.md$$' | grep -v 'release-notes/$(VERSION).md$$')" \
+	  || { echo "the working tree has changes besides the CHANGELOG and the notes"; exit 1; }
+
+# Everything that has to be true before the tag.  The working tree is not
+# asked about: what is tagged is a commit origin already has.
+release-tag-check: version-check
+	@branch=$$(git rev-parse --abbrev-ref HEAD); test "$$branch" = main \
+	  || { echo "a release is tagged on main, not on $$branch"; exit 1; }
+	git fetch -q origin main
+	@test "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" \
+	  || { echo "main is not what origin has -- merge the pull request and pull"; exit 1; }
+	@header=$$(sed -n 's/^;; Version: *//p' ecc.el); test "$$header" = "$(VERSION)" \
+	  || { echo "ecc.el on main says $$header, not $(VERSION)"; exit 1; }
 
 
 clean:
