@@ -44,6 +44,7 @@
 (declare-function ecc-answer-deny "ecc-answer" (reason))
 (declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
 (declare-function ecc-review "ecc-review" (&optional session paths))
+(declare-function ecc-review-worktree "ecc-review" (&optional session range))
 (declare-function ecc-session-timeline "ecc-session" ())
 (declare-function ecc-chat-goto-files "ecc-chat" ())
 (declare-function ecc-chat-goto-plans "ecc-chat" ())
@@ -350,6 +351,7 @@ it too."
     ("W" "Rewrite the region" ecc-rewrite)]
    ["Review"
     ("D" "Diff review" ecc-review)
+    ("G" "Working tree diff" ecc-review-worktree)
     ("F" "Files" ecc-goto-files)
     ("P" "Plan" ecc-goto-plan)
     ("T" "Timeline" ecc-timeline)]]

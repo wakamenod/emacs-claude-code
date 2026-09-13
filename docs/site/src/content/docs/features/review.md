@@ -45,6 +45,18 @@ Comment: the docstring still says hi
 
 You can edit this prompt before submitting: press `C-c C-c` to send, or `C-c C-k` to return to the diff without sending.
 
+## Reviewing the working tree
+
+`ecc-review` only covers what the session itself edited or wrote. To review changes you made yourself — work already in progress before Claude was asked anything — press `G` in the transient menu, `C-c c G`, or run `M-x ecc-review-worktree`.
+
+This diffs the whole repository of the session's project against `HEAD`, so it shows every uncommitted change, staged or not, plus the files Git does not track yet (what `.gitignore` excludes is left out; an untracked file that is binary or larger than `ecc-review-untracked-max-bytes` is named rather than printed). A prefix argument (`C-u G`) asks what to diff against: a revision such as `HEAD`, a range such as `main...HEAD` for a whole branch, or nothing for what is not staged yet.
+
+The project is the one of the buffer you run it from, not of whichever session happens to be current — a review of one project handed to a session running in another would tell Claude to change files it is not looking at. The comments go to a session of that project; when it has none, starting one is offered, which is the usual way in: run `C-c c G` from a file of the project you have been working on and say yes.
+
+Comments attach to a whole hunk, so the review asks git for no context at all: every run of changed lines is a hunk of its own, and a comment carries only the lines it is about. To read a change in its surroundings instead, raise `ecc-review-context-lines` — a variable, `(setq ecc-review-context-lines 3)` — which is passed to git as `-U`. It is an argument of the git ecc runs for the review: no `git config` is read or written, and git on the command line is unaffected. The review of a single proposal keeps three lines either way — it has `ecc-review-proposal-context-lines` of its own, because what a change is about to overwrite is half of the decision to allow it.
+
+Everything else works as above: comment on the hunks, then `C-c C-c` sends the comments to the session as one prompt. The two reviews live in separate buffers, so a working-tree review does not replace the review of what the session changed.
+
 ## Reviewing proposals before approval
 
 ![The text of a proposed Write, changed in a buffer and then allowed with the change](../../../assets/proposal.gif)
