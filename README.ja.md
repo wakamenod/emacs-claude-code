@@ -78,7 +78,7 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 その後、通常の `use-package` 宣言（`:vc` なし）で設定します。
 
 <details>
-<summary>straight.el、Elpaca、手動クローン</summary>
+<summary>straight.el、Elpaca</summary>
 
 リポジトリ名が `emacs-claude-code` でパッケージ名が `ecc` であるため、レシピ内でパッケージ名を明示的に指定する必要があります。
 
@@ -91,19 +91,6 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 (use-package ecc
   :ensure (ecc :host github :repo "wakamenod/emacs-claude-code"))
 ```
-
-手動クローンの場合：
-
-```sh
-git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/emacs-claude-code
-```
-
-```elisp
-(add-to-list 'load-path "~/.emacs.d/site-lisp/emacs-claude-code")
-(require 'ecc)
-```
-
-`M-x ecc-start` は自動ロードされます。`ecc-global-map` を `use-package` の外部でバインドする場合は、事前に ecc がロードされていることを確認するか、`use-package` の `:bind-keymap` を使用してください。
 </details>
 
 ## 設定例
@@ -112,64 +99,26 @@ git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/em
 (use-package ecc
   :ensure t
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest)
-  ;; `ecc-global-map' により、任意のバッファから保留中のリクエストに応答可能
-  ;; `:bind-keymap' により、プレフィックスキー入力時まで ecc の読み込みを遅延
   :bind-keymap ("C-c c" . ecc-global-map)
   :custom
-  (ecc-permission-mode "auto")            ; nil なら CLI のデフォルトを維持
-  (ecc-notify-level 'pulse)               ; nil, 'message, 'pulse, 'desktop
-  (ecc-usage-display 'posframe)           ; posframe が必要（未導入時は 'window）
+  (ecc-permission-mode "auto")
+  (ecc-notify-level 'pulse)
+  (ecc-usage-display 'posframe)
   (ecc-btw-display 'posframe)
   (ecc-prompt-suggestions-enabled t))
 ```
 
-その他の設定項目については、`M-x customize-group RET ecc` を実行するか、[設定リファレンス](https://wakamenod.github.io/emacs-claude-code/ja/reference/configuration/) を参照してください。
+その他の設定項目については、[設定リファレンス](https://wakamenod.github.io/emacs-claude-code/ja/reference/configuration/) を参照してください。
 
 ## クイックスタート
 
 1. プロジェクト内のバッファで `M-x ecc-start` を実行してセッションを開始します。
 2. 画面下部のプロンプト領域にメッセージを入力します。
 3. `C-c C-c` で送信します（`RET` は改行）。
-4. Claude がツール実行の権限を求めてきたら、`C-c C-a` で許可、`C-c C-d` で拒否します。**デフォルトは拒否です。**
+4. Claude がツール実行の権限を求めてきたら、`C-c C-a` で許可、`C-c C-d` で拒否します。
 5. `C-c ?` でコマンドメニューを開きます。
 
 ## キーバインド
-
-### グローバルマップ (`C-c c`)
-
-どのバッファからでも利用可能です：
-
-| キー | コマンド | 操作 |
-| --- | --- | --- |
-| `c` | `ecc-start` | セッションを開始 |
-| `r` | `ecc-resume-menu` | セッションを再開 |
-| `R` | `ecc-rename-session` | セッションの名前を変更 |
-| `v` | `ecc-show-session` | セッションのプロンプトへ移動 |
-| `j` | `ecc-focus-project` | 1 つのプロジェクトのセッションとソースだけを表示 |
-| `w` | `ecc-toggle` | このプロジェクトのセッションウィンドウを隠す／戻す |
-| `i` | `ecc-interrupt` | 実行中のターンを中断 |
-| `t` | `ecc-tui-open` | セッションを端末へ引き渡す |
-| `a` | `ecc-answer-allow` | 最も古い待機中リクエストを許可 |
-| `d` | `ecc-answer-deny` | 最も古い待機中リクエストを拒否 |
-| `1`–`4` | `ecc-answer-option-N` | 選択肢 N を選んで応答 |
-| `n` | `ecc-next-attention` | 応答待ちのセッションへ切り替え |
-| `N` | `ecc-next-attention-in-project` | 現在のプロジェクト内で応答待ちのセッションへ切り替え |
-| `b` | `ecc-dashboard` | セッションダッシュボードを開く |
-| `D` | `ecc-review` | セッション中の変更すべてを 1 つの diff として開く |
-| `h` | `ecc-history-open` | 過去の会話を開く |
-| `/` | `ecc-search` | 発言内容から過去のセッションを探す |
-| `U` | `ecc-usage` | 使用量と上限を表示 |
-| `?` | `ecc-menu` | コマンドメニューを開く |
-
-### セッションバッファ内
-
-| キー | 操作 |
-| --- | --- |
-| `C-c C-c` | プロンプトを送信 |
-| `S-RET` | 改行を挿入 |
-| `TAB` | プロンプト内での補完、履歴部分での折りたたみ／展開 |
-| `C-c C-a` / `C-c C-d` | ツールの実行を許可 / 拒否 |
-| `C-c ?` | コマンドメニューを開く |
 
 プロンプト領域やトランスクリプト固有のキーバインドは
 [プロンプトとトランスクリプト](https://wakamenod.github.io/emacs-claude-code/ja/features/prompt/) を、

@@ -28,12 +28,40 @@ trap cleanup EXIT
 
 e() { "$emacsclient" -s ecc-shot -e "$1" >/dev/null; }
 
-# Capture one frame, $1 times (repeat to hold a moment longer).
-snap() {
-    local repeat=${1:-1}
-    for _ in $(seq 1 "$repeat"); do
+# How many frames a second the animation is captured and played at.
+# `screencapture' takes about 80ms a frame on this machine (20 frames in
+# 1.635s, measured 2026-09-13), so 10 is close to what a capture loop can
+# really sustain.  It is also a whole 10 centiseconds of delay, which is
+# what the GIF format stores: a delay is an integer of 1/100s, so only
+# the rates 100/n exist at all -- 15fps is not one of them, and is
+# written out as 16.66.
+fps=10
+
+# "1.5" -> 1500.  Bash has no decimals, and the holds below are written
+# in seconds because that is what the demo is thinking in.
+ms_of() {
+    local whole=${1%%.*} frac=${1#*.}
+    [ "$frac" = "$1" ] && frac=0
+    frac=$(printf '%-3s' "${frac:0:3}" | tr ' ' 0)
+    echo $((10#$whole * 1000 + 10#$frac))
+}
+
+now_ms() { local t=${EPOCHREALTIME/[.,]/}; echo $((10#${t:0:${#t}-3})); }
+
+# Capture frames for $1 seconds at $fps.  Every frame is a real capture:
+# writing the same frame out twice to hold a state makes the animation no
+# smoother, and only makes it longer.
+hold() {
+    local end frame next left
+    frame=$((1000 / fps))
+    end=$(( $(now_ms) + $(ms_of "$1") ))
+    while :; do
+        next=$(( $(now_ms) + frame ))
         n=$((n + 1))
-        screencapture -x -R"$X,$Y,$W,$H" "$(printf '%s/%03d.png' "$frames" "$n")"
+        screencapture -x -R"$X,$Y,$W,$H" "$(printf '%s/%04d.png' "$frames" "$n")"
+        [ "$(now_ms)" -ge "$end" ] && break
+        left=$(( next - $(now_ms) ))
+        [ "$left" -gt 0 ] && sleep "0.$(printf '%03d' "$left")"
     done
 }
 
@@ -51,32 +79,32 @@ read -r X Y W H _cols _lines < "$geom" || true
 
 # The geometry is the frame's outer edges, title bar included, which is
 # the rectangle to capture.
-snap 3                                     # the session, idle
+hold 1                                     # the session, idle
 
 # Typing, a few characters at a time.
 for part in 'Make ' 'greet ' 'say ' 'hello ' 'instead ' 'of ' 'hi.'; do
     e "(shot-step-type \"$part\")"
-    snap
+    hold 0.33
 done
-snap 2
+hold 0.67
 
 # The fixture, once the one sentence is dropped, runs:
 #   1-5 system  6 thinking  7 Read  8 result  9 thinking  10 Edit
 #   11 permission  12 result  13-14 system  15 thinking  16 text  17 done
-e '(shot-step-send)'                       ; snap 2   # the turn opens
-e '(shot-feed 1 8)'                        ; snap 2   # thinking, then Read
-e '(shot-feed 9 11)'                       ; snap 4   # Edit, and the request waits
-e '(shot-step-allow)'                      ; snap 3   # allowed, the diff appears
+e '(shot-step-send)'                       ; hold 0.67   # the turn opens
+e '(shot-feed 1 8)'                        ; hold 0.67   # thinking, then Read
+e '(shot-feed 9 11)'                       ; hold 1.33   # Edit, and the request waits
+e '(shot-step-allow)'                      ; hold 1   # allowed, the diff appears
 still=$n                                   # the still is this moment
-e '(shot-feed 12 17)'                      ; snap 2   # the result and the summary
-e '(shot-step-reread)'                     ; snap 5   # the source buffer catches up
+e '(shot-feed 12 17)'                      ; hold 0.67   # the result and the summary
+e '(shot-step-reread)'                     ; hold 1.67   # the source buffer catches up
 
 mkdir -p "$outdir"
 # The still is the frame where the diff has just been allowed.
-cp "$(printf '%s/%03d.png' "$frames" "$still")" "$outdir/session.png"
+cp "$(printf '%s/%04d.png' "$frames" "$still")" "$outdir/session.png"
 
 ffmpeg -hide_banner -loglevel error -y \
-    -framerate 3 -pattern_type glob -i "$frames/*.png" \
+    -framerate "$fps" -pattern_type glob -i "$frames/*.png" \
     -vf "scale=900:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=bayer" \
     -loop 0 "$outdir/session.gif"
 
