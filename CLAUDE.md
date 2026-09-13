@@ -110,7 +110,7 @@ the whole set at the model it pins. To run a single one, narrow it with a select
 - Code, comments, docstrings and user-facing messages are written in English.
 - **`defcustom` is for what a user chooses**: a taste, a difference between
   machines (font, screen, PATH), or a judgement about safety and cost. There
-  are 32 of them. A stand-in the CLI overwrites, a sentence sent to the
+  are 31 of them. A stand-in the CLI overwrites, a sentence sent to the
   model, a table of the CLI's own quirks and an internal constant are
   `defvar`, reachable with `setq` and bindable in a test all the same.
   Adding a `defcustom` means making that case.

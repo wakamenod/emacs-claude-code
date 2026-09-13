@@ -26,7 +26,7 @@ Or, without `use-package`:
 | `a` / `d` | Allow or deny oldest pending request |
 | `1`–`4` | Select corresponding option for pending question |
 | `n` / `N` | Jump to next pending request (globally or within current project) |
-| `b` / `D` / `h` / `U` | Open dashboard / review diffs / view history / check usage |
+| `b` / `D` / `G` / `h` / `U` | Open dashboard / review the session's diffs / review the working tree / view history / check usage |
 | `/` | Search past conversations by message content |
 | `?` | Open transient menu |
 
