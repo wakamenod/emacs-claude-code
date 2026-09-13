@@ -50,7 +50,8 @@ that CLI, and the CLI moves without anybody upgrading ecc.
   Skills group of their own.
 
   A change is written to the project's `.claude/settings.local.json`, the file
-  the client saves to: `update_settings` takes the localSettings source alone
+  the client saves to -- from the Skills buffer and from the plugin browser
+  alike, as in the CLI, where the plugin screen and `/skills` share one write: `update_settings` takes the localSettings source alone
   and, in it, the key `outputStyle` alone, so the file is written directly. A
   prefix argument to the save offers the project and user settings instead,
   which is the one thing the client cannot do. The session is then sent
@@ -68,7 +69,9 @@ that CLI, and the CLI moves without anybody upgrading ecc.
   and off, updated and removed, and marketplaces added, updated and removed.
   Installed lists the skills beside the plugins, as the real screen does, and
   turns them on and off through `skillOverrides` in the settings, which is what
-  the CLI reads and what it offers no subcommand for. `s` filters the rows as
+  the CLI reads and what it offers no subcommand for; the reading and the
+  writing are `ecc-skill`'s, so the browser and the Skills buffer cannot say
+  two different things about the same skill. `s` filters the rows as
   it is typed and `/` jumps to one by completion, which is the better way
   through a marketplace of 297. A change offers the running sessions `/reload-plugins`, since a
   session keeps the plugins it started with (`ecc-plugin-reload-sessions`).
