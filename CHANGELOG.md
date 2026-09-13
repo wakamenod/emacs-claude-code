@@ -40,6 +40,17 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 ### Fixed
 
+- The menus work in an Emacs where nothing of ecc has been loaded yet.
+  `ecc-menu`, `ecc-resume-menu` and `ecc-slash-menu` are autoloaded, which
+  brings in `ecc-transient.el` alone, while the commands they run live all
+  over the package and nothing required `ecc` itself: `C-c c r r` from a
+  fresh Emacs answered `Symbol's function definition is void:
+  ecc-read-session`, and the menus worked only once some other ecc command
+  had loaded the package.  Each menu now loads the package on its way to
+  the buffer it draws.  `ecc-tui-open` called from `M-x` in the same cold
+  Emacs was void for the same reason, and `ecc-tui.el` now requires
+  `ecc-window.el` rather than only declaring what it takes from it.
+
 - A running session is no longer dropped from the dashboard and the session
   list on GNU/Linux.  The registry checks a session's recorded `procStart`
   against the process table, and on Linux `process-attributes` works the start

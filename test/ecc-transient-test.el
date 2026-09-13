@@ -114,6 +114,49 @@ exception: it opens the menu, so the menu cannot hold it."
            (should (eq command (cdr (assoc key menu)))))))
      ecc-global-map)))
 
+(ert-deftest ecc-transient-test-menu-loads-the-package ()
+  "Opening a menu in a cold Emacs defines every command behind it.
+The autoload of a prefix brings in `ecc-transient' alone, while the
+suffixes live all over the package and nothing requires `ecc' itself:
+`C-c c r r' found `ecc-read-session' void until the menus required it
+themselves (2026-09-13).  A second Emacs is what the check needs,
+because this one has the whole package loaded already and would pass
+whatever the menus do."
+  (let* ((commands (seq-filter #'symbolp
+                               (mapcar #'cdr
+                                       (mapcan #'ecc-transient-test--menu-keys
+                                               (list 'ecc-menu 'ecc-resume-menu
+                                                     'ecc-allow-all-menu
+                                                     'ecc-slash-menu)))))
+         (emacs (expand-file-name invocation-name invocation-directory))
+         (script (make-temp-file "ecc-cold" nil ".el")))
+    (should commands)
+    (unwind-protect
+        (progn
+          (with-temp-file script
+            (insert ";;; -*- lexical-binding: t -*-\n")
+            (prin1 `(progn
+                      (setq load-path ',load-path)
+                      (require 'seq)
+                      (require 'transient)
+                      ;; The menu cannot be drawn in batch, and what it
+                      ;; draws is not the point: what matters is what the
+                      ;; prefix loads on its way there.
+                      (advice-add 'transient-setup :override #'ignore)
+                      (load "ecc-autoloads" nil t)
+                      (dolist (menu '(ecc-menu ecc-resume-menu ecc-slash-menu))
+                        (command-execute menu))
+                      (princ (format "%S" (seq-remove #'fboundp ',commands))))
+                   (current-buffer)))
+          (with-temp-buffer
+            (should (= 0 (call-process emacs nil t nil "-Q" "--batch" "-l" script)))
+            ;; The last line: what the second Emacs printed, past anything
+            ;; its startup had to say.
+            (should (equal (car (last (split-string (string-trim (buffer-string))
+                                                    "\n")))
+                           "nil"))))
+      (delete-file script))))
+
 (ert-deftest ecc-transient-test-slash-suffixes ()
   "The submenu is built from the commands of the session."
   (ecc-test-with-fake-session session
