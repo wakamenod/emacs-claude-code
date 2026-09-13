@@ -445,6 +445,44 @@ main area is split and what comes back is the internal window."
         (should-not (window-parameter window 'ecc-window-role))
         (should-not (window-parameter window 'window-side))))))
 
+(ert-deftest ecc-window-test-focus-project-moves-rather-than-copies ()
+  "A session dealt into another role leaves the window it came from.
+The roles are dealt out again from nothing, so a session that already
+had a window used to be drawn in both of them and the frame held the
+same transcript twice."
+  (ecc-window-test--with-projects '("/tmp/project-one/")
+    (ecc-window-test--with-sessions one _two
+      (let ((deep (ecc-model-create-session
+                    :name "deep" :project-root "/tmp/project-one/src/"))
+            (taken nil)
+            (placed nil))
+        (unwind-protect
+            (cl-letf (((symbol-function 'ecc-window-session-visible-p)
+                       (lambda (&rest _) t))
+                      ((symbol-function 'ecc-window-hide-session)
+                       (lambda (session) (push session taken)))
+                      ((symbol-function 'ecc-window-available-roles)
+                       (lambda (&optional _frame) ecc-window-roles))
+                      ((symbol-function 'ecc-display-session-in-role)
+                       (lambda (session role) (push (cons session role) placed)))
+                      ((symbol-function 'ecc-window-focus-source)
+                       (lambda (&rest _) nil)))
+              (set-frame-parameter nil 'ecc-hidden-sessions nil)
+              (ecc-focus-project "/tmp/project-one/")
+              ;; Both sessions of the project are taken down before
+              ;; either is put back, so neither is left behind in the
+              ;; role it used to have.  The third is the other project,
+              ;; which is taken down because it is being hidden.
+              (should (equal (sort (mapcar #'ecc-session-name taken) #'string<)
+                             '("deep" "one" "two")))
+              (should (equal (mapcar #'cdr (reverse placed)) '(main sub-1)))
+              ;; Only the other project is remembered as hidden: these
+              ;; two are back on the screen.
+              (should (equal (mapcar #'car (ecc-window-hidden-sessions))
+                             (list (ecc-session-id _two)))))
+          (ecc-test-cleanup-session deep)
+          (ecc-model-remove-session deep))))))
+
 (ert-deftest ecc-window-test-focus-project-hides-the-others ()
   "Focusing a project takes the other projects off the screen, and no more.
 Nothing is killed: the hidden list names them, so a toggle brings them
@@ -467,8 +505,9 @@ back."
                   ((symbol-function 'ecc-window-focus-source)
                    (lambda (&rest _) nil)))
           (ecc-focus-project "/tmp/project-one/")
-          ;; The other project is off the screen and remembered.
-          (should (equal hidden (list two)))
+          ;; The other project is off the screen and remembered; this
+          ;; one comes down too, but only to be dealt out again.
+          (should (memq two hidden))
           (should (equal (mapcar #'car (ecc-window-hidden-sessions))
                          (list (ecc-session-id two))))
           ;; This one is in the main window, and is not in the hidden

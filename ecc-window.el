@@ -736,6 +736,12 @@ window."
                    (seq-remove (lambda (session) (memq session mine))
                                (ecc-window-displayed-sessions)))))
       (when ecc-window-use-side-window
+        ;; The roles are dealt out again from nothing, so a window one of
+        ;; these sessions already holds comes down first.  Moving a
+        ;; session from one role to another otherwise leaves the window
+        ;; it came from showing it as well, and the frame ends up with
+        ;; the same transcript twice (confirmed 2026-09-13).
+        (mapc #'ecc-window-hide-session mine)
         (cl-mapc (lambda (session role)
                    (ecc-display-session-in-role session role)
                    ;; It is on the screen now, so the note that it was
