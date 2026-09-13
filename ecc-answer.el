@@ -196,6 +196,9 @@ question buffer opens with the first one answered."
     (define-key map (kbd "R") #'ecc-rename-session)
     (define-key map (kbd "v") #'ecc-show-session)
     (define-key map (kbd "j") #'ecc-focus-project)
+    ;; `w' is here for `j': focusing a project hides the rest, and the
+    ;; way back has to be as near to hand as the way in was.
+    (define-key map (kbd "w") #'ecc-toggle)
     (define-key map (kbd "i") #'ecc-interrupt)
     (define-key map (kbd "t") #'ecc-tui-open)
     ;; Answering what is waiting.
