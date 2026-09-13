@@ -82,7 +82,7 @@ sidebar:
 
 `/model`、`/effort`、`/permissions`、`/config`、`/btw` は引数を必要とするため、選択時にまず引数の入力を求められます（CLI が引数なしの呼び出しに対して使い方メッセージを返す仕様のためです）。ターミナル環境専用のコマンドは補完候補から除外されていますが、直接フルスペルを入力すれば送信可能です。
 
-CLI が一覧に含めないコマンドのうちいくつかは Emacs 側が処理し、モデルには送信されません: `/btw`、`/plugins`（[プラグイン](/emacs-claude-code/ja/features/other/#プラグイン-plugins) を参照）、および `/login`、`/logout`、`/auth-status` です。
+CLI の一覧に含まれないコマンドのうち、`/btw`、`/plugins`、`/login`、`/logout`、`/auth-status` は Emacs 側で処理され、モデルには送信されません。
 
 ### `/btw` によるサイドクエリ
 

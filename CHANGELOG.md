@@ -15,8 +15,7 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 ### Added
 
-- A plugin browser, on `/plugins` in the prompt region, `I` in the menu and
-  `M-x ecc-plugin`. The CLI's
+- A plugin browser, on `/plugins` in the prompt region and `M-x ecc-plugin`. The CLI's
   `/plugins` is a screen the terminal client draws for itself: it is named
   neither in `slash_commands` nor in `terminal_slash_commands`, so there is
   nothing to send over stream-json (confirmed against **Claude Code CLI
