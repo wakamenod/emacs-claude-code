@@ -96,7 +96,7 @@ Waiting sessions appear at the top, followed by remaining sessions sorted by rec
 | `r` | Rename session |
 | `R` | Resume session |
 | `a` / `d` | Allow or deny oldest pending request |
-| `C` | View session capabilities |
+| `C` / `S` | View session capabilities / skills |
 | `U` | View usage and rate limits |
 | `g` | Refresh dashboard |
 

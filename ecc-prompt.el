@@ -328,6 +328,7 @@ moment is added to it (`ecc-prompt-current-argument\=')."
 (defvar ecc-prompt-local-commands
   '(("/btw" . "Ask a side question without interrupting the running turn")
     ("/plugins" . "Browse and manage the plugins")
+    ("/skills" . "List the skills of this session, run one, turn one off")
     ("/login" . "Sign in to the CLI, in a terminal of its own")
     ("/logout" . "Sign the CLI out")
     ("/auth-status" . "Say who the CLI is signed in as"))
@@ -336,6 +337,15 @@ They are added to the list `ecc-prompt-commands\' returns, after
 everything the CLI reported.  `/btw\' is one: the terminal client
 catches it in its input layer, so it is in no list the CLI sends, and
 Emacs answers it itself.
+
+`/skills\' is there for a different reason: the CLI has a command of
+that name but does not offer it to a headless client -- it is dispatched
+back to the client, as a control request of its own, and is in
+neither `commands\' nor `slash_commands\' (confirmed against 2.1.270,
+2026-09-13) -- so Emacs both names it and answers it (`ecc-skill\').
+The singular `/skill\' is answered as well but is not offered: one
+command reached by two names is two rows of the same thing in every
+menu.
 
 The three of `ecc-auth\' are there for the same reason: `slash_commands\'
 carries neither `login\' nor `logout\', and `terminal_slash_commands\'
@@ -734,6 +744,45 @@ append, are left in `ecc-prompt-last-attachments' and
 
 ;;;; Completion
 
+(declare-function ecc-skill-names "ecc-skill" (session))
+
+(defvar ecc-prompt-group-commands t
+  "Non-nil marks the skills apart from the commands when one is offered.
+The terminal client puts the skills of the session at the top of the
+menu `/\=' opens, where they are the first thing seen.  Emacs hands the
+candidates to whatever completion the user runs, and most of them sort
+the list themselves, so the order alone does not survive: the group of
+a candidate is what says which is which, and the order the CLI sent is
+asked for as well.  Nil leaves both to the completion in use.")
+
+(defun ecc-prompt--skill-p (session name)
+  "Return non-nil when the slash command NAME of SESSION is a skill.
+NAME carries its slash.  `ecc-skill\=' is what knows; a session it has
+not been loaded for has no skills as far as this is concerned."
+  (and (fboundp 'ecc-skill-names)
+       (member (string-remove-prefix "/" name) (ecc-skill-names session))
+       t))
+
+(defun ecc-prompt--grouper (session)
+  "Return the function that groups the slash commands of SESSION."
+  (lambda (candidate transform)
+    (if transform
+        candidate
+      (if (ecc-prompt--skill-p session candidate) "Skills" "Commands"))))
+
+(defun ecc-prompt--completion-metadata (session annotate)
+  "Return the completion metadata for the slash commands of SESSION.
+ANNOTATE is the annotation function."
+  (append `(metadata (category . ecc-slash-command)
+                     (annotation-function . ,annotate))
+          (when ecc-prompt-group-commands
+            `((group-function . ,(ecc-prompt--grouper session))
+              ;; The CLI names the skills first and Emacs keeps that
+              ;; order; a completion that sorts alphabetically would
+              ;; bury them among sixty commands.
+              (display-sort-function . identity)
+              (cycle-sort-function . identity)))))
+
 (defun ecc-prompt--annotator (commands terminal)
   "Return the function that annotates a slash command candidate.
 COMMANDS is the alist of `ecc-prompt-commands\=' and TERMINAL the list
@@ -773,7 +822,15 @@ terminal-only commands out \(`ecc-prompt-offered-commands\=')."
   (when-let* ((session ecc-render--session)
               (bounds (ecc-prompt-command-bounds)))
     (let ((commands (ecc-prompt-offered-commands session)))
-      (list (car bounds) (cdr bounds) (mapcar #'car commands)
+      (list (car bounds) (cdr bounds)
+            (let ((annotate (ecc-prompt--annotator
+                             commands
+                             (ecc-prompt-terminal-commands session)))
+                  (names (mapcar #'car commands)))
+              (lambda (string predicate action)
+                (if (eq action 'metadata)
+                    (ecc-prompt--completion-metadata session annotate)
+                  (complete-with-action action names string predicate))))
             :exclusive 'no
             :annotation-function
             (ecc-prompt--annotator
@@ -790,8 +847,7 @@ are not offered, but one typed out by hand is still accepted."
                     commands (ecc-prompt-terminal-commands session)))
          (table (lambda (string predicate action)
                   (if (eq action 'metadata)
-                      `(metadata (category . ecc-slash-command)
-                                 (annotation-function . ,annotate))
+                      (ecc-prompt--completion-metadata session annotate)
                     (complete-with-action action (mapcar #'car commands)
                                           string predicate))))
          ;; A command the CLI has not named is still worth sending, so

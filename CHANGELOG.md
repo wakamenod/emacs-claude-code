@@ -15,6 +15,49 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 ### Added
 
+- The skills of a session, in a buffer of their own: `/skills` in the prompt
+  region or `S` in the dashboard lists them with what each is for and where it
+  came from. `RET` and `SPC` cycle what a skill is set to --
+  `on`, `name-only`, `user-invocable-only`, `off` -- `o` opens its `SKILL.md`,
+  `a` lists the skills the CLI came with as well, `g` reads the settings again,
+  `r` asks the session to scan, and `q` writes the changes and buries the
+  buffer.
+
+  The CLI answers none of this for a headless client. `/skills` is its own
+  command but is dispatched back to the client and is named in neither
+  `commands` nor `slash_commands` -- 57 commands in the initialize answer,
+  `reload-skills` and `skill-doctor` among them and no `skills` -- so Emacs
+  names the command itself and draws the list. The singular `/skill` is
+  answered as well but is not offered: one command under two names is two rows
+  in every menu.
+
+  What the terminal client's own dialog does is what this does, measured
+  against **Claude Code CLI 2.1.270**. It lists the skills that came from a
+  folder -- the project, the user, a plugin, claude.ai -- and leaves out the
+  CLI's own bundled skills and its dynamic workflows, which are twenty of the
+  twenty-one on a plain setup; those are counted in the header and drawn when
+  `a` asks. It works from the commands of the initialize answer as well as from
+  the `skills` of `system/init`, so the list is there before the first turn.
+  The settings are read localSettings, projectSettings, userSettings, the most
+  specific winning, and a skill settled by a policy, a flag or a plugin is
+  locked rather than overridden. `RET` walks the four settings and nothing is
+  written until `q`, which writes them in one edit and asks the session to scan
+  once, however many were made. The state is drawn in the client's marks and
+  colours -- `✔ on`, `● name-only`, `◯ user-only`, `✘ off`, `🔒` for one settled
+  elsewhere -- in front of the name, where it puts them. A skill is not run
+  from the buffer, because that dialog runs none; `/<name>` from the prompt is
+  what runs one, and the skills of the session now come first there, in a
+  Skills group of their own.
+
+  A change is written to the project's `.claude/settings.local.json`, the file
+  the client saves to: `update_settings` takes the localSettings source alone
+  and, in it, the key `outputStyle` alone, so the file is written directly. A
+  prefix argument to the save offers the project and user settings instead,
+  which is the one thing the client cannot do. The session is then sent
+  `/reload-skills`, which it answers with a `system/commands_changed` that no
+  longer names the skill; since a skill that is off is named nowhere the CLI
+  reports, the list keeps a row for every name the settings mention.
+
 - A plugin browser, on `/plugins` in the prompt region and `M-x ecc-plugin`. The CLI's
   `/plugins` is a screen the terminal client draws for itself: it is named
   neither in `slash_commands` nor in `terminal_slash_commands`, so there is

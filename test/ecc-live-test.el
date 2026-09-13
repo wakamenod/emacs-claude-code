@@ -21,6 +21,7 @@
 (require 'ecc-registry)
 (require 'ecc-dashboard)
 (require 'ecc-btw)
+(require 'ecc-skill)
 
 (defconst ecc-test-live-options
   '(:model "haiku"
@@ -882,6 +883,81 @@ and a follow-up carrying `history\' knows what was asked before."
             (should-not (plist-get (cadr (ecc-btw-exchanges session)) :error)))
         (when-let* ((buffer (get-buffer (ecc-btw-buffer-name session))))
           (kill-buffer buffer))))))
+
+(ert-deftest ecc-test-live-skills ()
+  "The skills of a session: read from the CLI, then one turned off.
+A project of its own is made for this, with one skill in it, so that
+nothing of the machine running the test is changed.  What is checked is
+the whole round trip: the CLI names the skill, `get_settings' says what
+the settings hold, turning it off writes the project settings file, and
+/reload-skills makes the CLI stop offering it."
+  :tags '(live)
+  (let* ((root (make-temp-file "ecc-live-skill" t))
+         (skill-dir (expand-file-name ".claude/skills/ecc-live-skill/" root))
+         (settings (expand-file-name ".claude/settings.json" root))
+         (ecc-skill--overrides (make-hash-table :test #'eq))
+         (ecc-skill--settings-state (make-hash-table :test #'eq))
+         (ecc-skill-settings-file settings))
+    (make-directory skill-dir t)
+    (with-temp-file (expand-file-name "SKILL.md" skill-dir)
+      (insert "---\nname: ecc-live-skill\n"
+              "description: A skill made by the live test.\n---\n\nDo nothing.\n"))
+    (with-temp-file settings (insert "{}\n"))
+    (unwind-protect
+        (let* ((ecc--sessions (make-hash-table :test #'equal))
+               (ecc--session-order nil)
+               (default-directory root)
+               (session (ecc-model-create-session
+                         :name "live-skill"
+                         :project-root root
+                         :options ecc-test-live-options)))
+          (unwind-protect
+              (progn
+                (ecc-session-ensure-buffer session)
+                (ecc-proc-start session)
+                (ecc-proc-send-prompt session "Reply with exactly: PONG")
+                (ecc-test-live-wait-for-result session)
+                ;; The CLI named it, and Emacs found the file that defines it.
+                (should (member "ecc-live-skill" (ecc-skill-names session)))
+                (let ((skill (seq-find (lambda (skill)
+                                         (equal (ecc-skill-name skill)
+                                                "ecc-live-skill"))
+                                       (ecc-skill-list session))))
+                  (should (eq (ecc-skill-scope skill) 'project))
+                  (should (equal (ecc-skill-file skill)
+                                 (expand-file-name "SKILL.md" skill-dir))))
+                ;; The settings come back per source, unmerged.
+                (ecc-skill-read-settings session)
+                (ecc-test-live-wait
+                 session
+                 (lambda () (eq (ecc-skill-settings-state session) 'read))
+                 "the settings")
+                ;; Turning it off writes the file and tells the session.
+                (ecc-skill-set-override session "ecc-live-skill" "off")
+                (should (equal (alist-get 'ecc-live-skill
+                                          (alist-get 'skillOverrides
+                                                     (ecc-skill-read-settings-file
+                                                      settings)))
+                               "off"))
+                (ecc-test-live-wait-for-result session)
+                (ecc-test-live-wait
+                 session
+                 (lambda ()
+                   (not (seq-find (lambda (command)
+                                    (equal (alist-get 'name command)
+                                           "ecc-live-skill"))
+                                  (ecc-session-commands session))))
+                 "the CLI to stop offering the skill")
+                (ecc-test-live-wait
+                 session
+                 (lambda () (equal (ecc-skill-override-for session "ecc-live-skill")
+                                   "off"))
+                 "the override to be read back")
+                ;; It is still listed here, or it could never come back.
+                (should (member "ecc-live-skill" (ecc-skill-names session))))
+            (ecc-proc-stop session)
+            (ecc-test-cleanup-session session)))
+      (delete-directory root t))))
 
 (provide 'ecc-live-test)
 
