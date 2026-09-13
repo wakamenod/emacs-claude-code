@@ -109,9 +109,26 @@ It costs one extra line per turn and nothing else.")
   "Non-nil passes --prompt-suggestions."
   :type 'boolean)
 
-(defvar ecc-hook-events-enabled nil
-  "Non-nil passes --include-hook-events.
-Only useful without --safe-mode, which disables hooks altogether.")
+(define-obsolete-variable-alias 'ecc-hook-events-enabled
+  'ecc-show-hook-events "0.2.0")
+
+(defcustom ecc-show-hook-events nil
+  "Non-nil shows each hook of a session firing, in the transcript.
+This is about what is drawn, not about what runs: the hooks of a
+session run whether or not this is on, and one that leaves with exit 2
+blocks its tool call either way.  What it decides is whether the CLI is
+asked to report them at all (--include-hook-events), which it does with
+a pair of messages per firing -- one when the hook starts and one with
+its exit code, its stdout and its stderr.
+
+A project whose plugins define hooks on every tool call pays for that
+in lines, which is why it is off; turn it on while writing a hook, and
+see `ecc-hooks-show\=' for the ones that would run.
+
+Read when a session starts, so a session already running keeps what it
+started with."
+  :type 'boolean)
+
 
 (defcustom ecc-stream-throttle 0.05
   "Seconds to gather streaming deltas before drawing them.

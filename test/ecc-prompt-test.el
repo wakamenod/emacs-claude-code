@@ -136,6 +136,37 @@ stands for the user pressing \\[keyboard-quit]."
         ;; system/init names /model and nothing else does; it is offered.
         (should (member "/model" (cdar asked)))))))
 
+(ert-deftest ecc-prompt-test-a-command-answered-here-runs-as-it-is-chosen ()
+  "A command Emacs answers itself leaves nothing in the prompt region."
+  (ecc-test-with-fake-session session
+    (ecc-prompt-test--init session)
+    (ecc-prompt-test--in-buffer session
+      (let* ((answered nil)
+             (ecc-prompt-immediate-commands '("/hooks"))
+             (ecc-prompt-intercept-functions
+              (list (lambda (_session text)
+                      (setq answered text)
+                      t))))
+        (ecc-prompt-test--reading-command "/hooks" _asked
+          (ecc-chat-slash 1))
+        ;; It ran, and neither the name nor the slash was written.
+        (should (equal answered "/hooks"))
+        (should (equal (ecc-chat-draft) ""))
+        ;; One that is not answered here is still written out to be sent.
+        (setq answered nil)
+        (ecc-prompt-test--reading-command "/context" _asked
+          (ecc-chat-slash 1))
+        (should-not answered)
+        (should (equal (ecc-chat-draft) "/context"))))))
+
+(ert-deftest ecc-prompt-test-the-commands-answered-here-are-registered ()
+  "The three that need no argument run as they are chosen."
+  (dolist (command '("/hooks" "/skills" "/plugins"))
+    (should (member command ecc-prompt-immediate-commands)))
+  ;; The ones whose argument is the point of them are not.
+  (dolist (command '("/btw" "/login"))
+    (should-not (member command ecc-prompt-immediate-commands))))
+
 (ert-deftest ecc-prompt-test-slash-in-prose-is-a-slash ()
   "Only the slash the prompt opens with asks.
 The CLI runs a command written at the start of what it is sent and

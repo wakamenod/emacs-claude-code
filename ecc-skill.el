@@ -55,6 +55,7 @@
 (require 'ecc-capability)
 
 (declare-function ecc-prompt-command-name "ecc-prompt" (text))
+(defvar ecc-prompt-immediate-commands)
 (declare-function ecc-dashboard-session-at-point "ecc-dashboard" ())
 (declare-function ecc-prompt-command-argument "ecc-prompt" (text))
 
@@ -1042,7 +1043,11 @@ being sent.  This is on `ecc-prompt-intercept-functions'."
   (ecc-skill--redraw session))
 
 (with-eval-after-load 'ecc-prompt
-  (add-hook 'ecc-prompt-intercept-functions #'ecc-skill-intercept))
+  (add-hook 'ecc-prompt-intercept-functions #'ecc-skill-intercept)
+  ;; A bare /skills opens the buffer, and the buffer is where a skill
+  ;; is run from, so choosing it in the prompt region is the whole of
+  ;; it.  A skill by name is still typed out and sent.
+  (add-to-list 'ecc-prompt-immediate-commands (car ecc-skill-commands)))
 
 (add-hook 'ecc-session-init-hook #'ecc-skill--on-session-change)
 (add-hook 'ecc-commands-updated-hook #'ecc-skill--on-session-change)

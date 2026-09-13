@@ -55,6 +55,8 @@
 (declare-function ecc-prompt-at-capf "ecc-prompt" ())
 (declare-function ecc-prompt-read-command "ecc-prompt" (session))
 (defvar ecc-prompt-slash-reads-command)
+(defvar ecc-prompt-immediate-commands)
+(declare-function ecc-prompt-run-immediately "ecc-prompt" (session command))
 (declare-function ecc-prompt-yank-image "ecc-prompt" (mime data))
 (declare-function ecc-prompt-dnd-insert "ecc-prompt" (url &optional action))
 (declare-function ecc-switch-session "ecc-window" (session))
@@ -519,14 +521,23 @@ wherever it stands (`ecc-prompt-command-bounds\=')."
 (defun ecc-chat-slash (n)
   "Insert a slash, and offer the slash commands when it starts one.
 N is the prefix argument, as for `self-insert-command\='.  The slash is
-inserted first, so that leaving the question with `C-g\=' keeps it
-."
+inserted first, so that leaving the question with `C-g\=' keeps it.
+
+A command Emacs answers itself and that takes no argument runs as soon
+as it is chosen (`ecc-prompt-immediate-commands\='), and the slash goes
+with it: there is nothing to send, so there is nothing to write."
   (interactive "p")
   (self-insert-command n ?/)
   (when (and (= n 1) (progn (require 'ecc-prompt) t)
              (ecc-chat--slash-opens-commands-p))
-    (when-let* ((command (ecc-prompt-read-command ecc-render--session)))
-      (insert (string-remove-prefix "/" command)))))
+    (when-let* ((session ecc-render--session)
+                (command (ecc-prompt-read-command session)))
+      (if (member command ecc-prompt-immediate-commands)
+          ;; Take the slash back before running it: what it opens is a
+          ;; buffer of its own, and point is no longer here afterwards.
+          (progn (delete-char -1)
+                 (ecc-prompt-run-immediately session command))
+        (insert (string-remove-prefix "/" command))))))
 
 ;;;; The placeholder
 

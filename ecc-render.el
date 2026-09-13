@@ -1504,8 +1504,16 @@ follows in the dim face of something the CLI said rather than the model."
                      (alist-get 'hook_name message)
                      (pcase (alist-get 'subtype message)
                        ("hook_started" " started")
-                       ("hook_response" (format " → %s" (or (alist-get 'outcome message)
-                                                            "?")))
+                       ("hook_response"
+                        (let ((exit (alist-get 'exit_code message)))
+                          (format " → %s%s"
+                                  (or (alist-get 'outcome message) "?")
+                                  ;; Exit 2 is the one that means
+                                  ;; something: it blocks the tool call
+                                  ;; and feeds stderr back to the model.
+                                  (if (and (numberp exit) (not (zerop exit)))
+                                      (format ", exit %d" exit)
+                                    ""))))
                        (_ ""))))
       ('notice (ecc-render--system-notice-heading message))
       (_ (if-let* ((text (ecc-model-node-get node 'text)))
@@ -1580,8 +1588,36 @@ apart; the few whose shape is known say what happened as well."
         (ecc-render--insert-owned
          node (1+ depth)
          (lambda ()
-           (ecc-render--insert-lines (ecc--truncate (format "%S" message) 400)
-                                     (concat pad "  ") 'ecc-dim-face)))))))
+           (if (eq kind 'hook)
+               (ecc-render--insert-hook-body message (concat pad "  "))
+             (ecc-render--insert-lines (ecc--truncate (format "%S" message) 400)
+                                       (concat pad "  ") 'ecc-dim-face))))))))
+
+(defun ecc-render--insert-hook-body (message prefix)
+  "Insert what the hook MESSAGE printed, every line behind PREFIX.
+A hook_started has only the event it fired on to show.  A hook_response
+has what the command printed, which is the reason to open one at all: a
+hook that failed says why on stderr, and one that blocked a tool call
+did it by leaving with exit 2.  `output' is not drawn, because the CLI
+sends the same text twice, once there and once as `stdout' (2.1.270,
+2026-09-13)."
+  (when-let* ((event (alist-get 'hook_event message)))
+    (ecc-render--insert-lines (format "event %s" event) prefix 'ecc-dim-face))
+  (let ((exit (alist-get 'exit_code message))
+        (stdout (alist-get 'stdout message))
+        (stderr (alist-get 'stderr message)))
+    (when (numberp exit)
+      (ecc-render--insert-lines
+       (format "exit %d" exit) prefix
+       (if (zerop exit) 'ecc-dim-face 'ecc-error-face)))
+    (dolist (stream (list (cons stdout 'ecc-dim-face)
+                          (cons stderr 'ecc-error-face)))
+      (when (and (stringp (car stream))
+                 (not (string-empty-p (string-trim (car stream)))))
+        (ecc-render--insert-lines
+         (ecc-render--clip (string-trim-right (car stream))
+                           ecc-render-result-max-lines)
+         prefix (cdr stream))))))
 
 (defun ecc-render--insert-unknown (node depth)
   "Insert the unknown NODE at DEPTH."

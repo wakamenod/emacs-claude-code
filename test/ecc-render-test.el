@@ -97,6 +97,63 @@ was bound, to the wrong thing."
             (should (eq (lookup-key ecc-request-section-map (kbd key))
                         wanted))))))))
 
+(ert-deftest ecc-render-test-hook-heading-says-how-it-went ()
+  "A hook that failed says so in its heading, exit code and all."
+  (let ((started '((subtype . "hook_started") (hook_name . "PreToolUse:Write")
+                   (hook_event . "PreToolUse")))
+        (blocked '((subtype . "hook_response") (hook_name . "PreToolUse:Write")
+                   (hook_event . "PreToolUse") (outcome . "blocked")
+                   (exit_code . 2)))
+        (fine '((subtype . "hook_response") (hook_name . "Stop")
+                (hook_event . "Stop") (outcome . "success") (exit_code . 0))))
+    (cl-flet ((heading (message)
+                (ecc-render--system-heading
+                 (make-ecc-node :type 'system
+                                :data (list (cons 'kind 'hook)
+                                            (cons 'message message))))))
+      (should (equal (heading started) "hook PreToolUse:Write started"))
+      (should (equal (heading blocked) "hook PreToolUse:Write → blocked, exit 2"))
+      ;; Nothing to report is not worth the room.
+      (should (equal (heading fine) "hook Stop → success")))))
+
+(ert-deftest ecc-render-test-hook-body-is-what-the-hook-printed ()
+  "Under the fold is the event, the exit code and both streams."
+  (with-temp-buffer
+    (ecc-render--insert-hook-body
+     '((subtype . "hook_response") (hook_event . "PostToolUse")
+       (outcome . "blocked") (exit_code . 2)
+       (output . "on stdout\n") (stdout . "on stdout\n")
+       (stderr . "why it blocked\n"))
+     "  ")
+    (let ((text (buffer-string)))
+      (should (string-search "event PostToolUse" text))
+      (should (string-search "exit 2" text))
+      (should (string-search "on stdout" text))
+      (should (string-search "why it blocked" text))
+      ;; `output' repeats `stdout'; drawing both would say it twice.
+      (should-not (string-search "on stdout" text
+                                 (1+ (string-search "on stdout" text))))
+      ;; stderr is marked as the thing that went wrong.
+      (should (eq (get-text-property (string-search "why it blocked" text)
+                                     'face (buffer-string))
+                  'ecc-error-face))))
+  ;; A hook that has not answered yet has only its event to show.
+  (with-temp-buffer
+    (ecc-render--insert-hook-body
+     '((subtype . "hook_started") (hook_event . "SessionStart")) "  ")
+    (should (equal (string-trim (buffer-string)) "event SessionStart"))))
+
+(ert-deftest ecc-render-test-hook-events-are-drawn-from-the-recording ()
+  "The recorded hook events draw what each hook printed, not a raw alist."
+  (ecc-test-with-fake-session session
+    (let ((text (ecc-render-test--replay session "hook-events" "hello")))
+      (should (string-search "hook SessionStart:startup started" text))
+      (should (string-search "hook SessionStart:startup → success" text))
+      (should (string-search "emacs-gravity: connected" text))
+      (should (string-search "exit 0" text))
+      ;; The alist itself is no longer dumped under the fold.
+      (should-not (string-search "(hook_id . " text)))))
+
 (ert-deftest ecc-render-test-basic-turn ()
   "A plain question and answer draw as one turn with a result line."
   (ecc-test-with-fake-session session

@@ -506,6 +506,222 @@ nothing is written when there is none."
       (ecc-protocol-write-settings-file file object))
     new))
 
+;;;; Hooks in a settings file
+
+;; A settings file spells its hooks as
+;;
+;;   {"hooks": {"PreToolUse": [{"matcher": "Write|Edit",
+;;                              "hooks": [{"type": "command", ...}]}]}}
+;;
+;; so one hook is addressed by four things: the file, the event, which
+;; matcher group it is in and where it sits in that group.  The reader
+;; below hands that address out with every entry and the writers take it
+;; back; `ecc-hooks' never sees the JSON.
+;;
+;; An entry is left exactly as it was parsed.  The CLI knows five kinds
+;; of them (command, prompt, agent, mcp_tool, http) and more fields than
+;; this package has any business editing, so nothing is rebuilt: an
+;; entry written back is the one that was read (CLI 2.1.270, 2026-09-13).
+
+(defun ecc-protocol--hook-matcher (group)
+  "Return the matcher of the hook GROUP, or nil when it matches everything.
+The CLI treats an absent matcher and an empty one alike, so both are
+nil here."
+  (let ((matcher (alist-get 'matcher group)))
+    (and (stringp matcher) (not (string-empty-p matcher)) matcher)))
+
+(defun ecc-protocol--alist-put (alist key value)
+  "Return ALIST with KEY set to VALUE, and return where it now is.
+A key that is already there keeps its place; a new one goes to the end
+rather than the front, because this order is the order of the keys in
+the file that is written back, and a settings file should not have its
+keys shuffled by an edit to one of them."
+  (if (assq key alist)
+      (progn (setf (alist-get key alist) value) alist)
+    (append alist (list (cons key value)))))
+
+(defun ecc-protocol-settings-hook-entries (object)
+  "Return the hooks of the settings OBJECT, one plist each.
+The plist is (:event :matcher :entry :group-index :hook-index): the
+event as a string, the matcher as a string or nil, the entry as it was
+parsed, and the address the writers below take.  Anything shaped
+unexpectedly is skipped rather than signalled: the file belongs to the
+CLI, which has more keys than this package knows."
+  (let ((hooks (alist-get 'hooks object))
+        (entries nil))
+    (when (and hooks (listp hooks))
+      (pcase-dolist (`(,event . ,groups) hooks)
+        (when (vectorp groups)
+          (seq-do-indexed
+           (lambda (group group-index)
+             (when (listp group)
+               (let ((matcher (ecc-protocol--hook-matcher group))
+                     (of-group (alist-get 'hooks group)))
+                 (when (vectorp of-group)
+                   (seq-do-indexed
+                    (lambda (entry hook-index)
+                      (push (list :event (symbol-name event)
+                                  :matcher matcher
+                                  :entry entry
+                                  :group-index group-index
+                                  :hook-index hook-index)
+                            entries))
+                    of-group)))))
+           groups))))
+    (nreverse entries)))
+
+(defun ecc-protocol-settings-add-hook (file event matcher entry)
+  "Add ENTRY to the hooks of EVENT in the settings FILE, under MATCHER.
+MATCHER is a string, or nil for an event that takes none.  The group of
+MATCHER is used when the file already has one and made when it does
+not; other keys of the file are kept.  Returns the address the entry
+was written to, as (GROUP-INDEX . HOOK-INDEX)."
+  (let* ((object (ecc-protocol-read-settings-file file))
+         (hooks (alist-get 'hooks object))
+         (key (intern event)))
+    (unless (listp hooks)
+      (error "Hooks in %s is not an object" (abbreviate-file-name file)))
+    (let* ((groups (append (alist-get key hooks) nil))
+           (group-index (seq-position
+                         groups matcher
+                         (lambda (group m)
+                           (equal (ecc-protocol--hook-matcher group) m))))
+           (group (cond (group-index (nth group-index groups))
+                        (matcher (list (cons 'matcher matcher)
+                                       (cons 'hooks [])))
+                        (t (list (cons 'hooks [])))))
+           (of-group (append (alist-get 'hooks group) nil))
+           (hook-index (length of-group)))
+      (setf (alist-get 'hooks group) (vconcat of-group (list entry)))
+      (if group-index
+          (setf (nth group-index groups) group)
+        (setq groups (append groups (list group))
+              group-index (1- (length groups))))
+      (setq hooks (ecc-protocol--alist-put hooks key (vconcat groups)))
+      (setq object (ecc-protocol--alist-put object 'hooks hooks))
+      (ecc-protocol-write-settings-file file object)
+      (cons group-index hook-index))))
+
+(defun ecc-protocol-settings-remove-hook (file event group-index hook-index)
+  "Remove one hook of EVENT from the settings FILE, and return its entry.
+GROUP-INDEX and HOOK-INDEX are the address
+`ecc-protocol-settings-hook-entries' gave out.  A group left with no
+hooks, an event left with no groups and a hooks object left with no
+events are taken out with it, so that removing the last hook leaves the
+file as it would have been written by hand.  Signals when the address
+names nothing."
+  (let* ((object (ecc-protocol-read-settings-file file))
+         (hooks (alist-get 'hooks object))
+         (key (intern event))
+         (groups (append (and (listp hooks) (alist-get key hooks)) nil))
+         (group (nth group-index groups))
+         (of-group (append (alist-get 'hooks group) nil))
+         (entry (nth hook-index of-group)))
+    (unless (and group entry)
+      (error "No hook %s[%s][%s] in %s" event group-index hook-index
+             (abbreviate-file-name file)))
+    (setq of-group (append (seq-take of-group hook-index)
+                           (seq-drop of-group (1+ hook-index))))
+    (if of-group
+        (progn (setf (alist-get 'hooks group) (vconcat of-group))
+               (setf (nth group-index groups) group))
+      (setq groups (append (seq-take groups group-index)
+                           (seq-drop groups (1+ group-index)))))
+    (if groups
+        (setf (alist-get key hooks) (vconcat groups))
+      (setq hooks (assq-delete-all key hooks)))
+    (if hooks
+        (setf (alist-get 'hooks object) hooks)
+      (setq object (assq-delete-all 'hooks object)))
+    (ecc-protocol-write-settings-file file object)
+    entry))
+
+;;;; The hooks this package has taken out of a settings file
+
+;; The CLI has no way of saying that a hook is there but switched off:
+;; an entry either sits in the file and runs, or it is gone (checked
+;; against the settings schema of CLI 2.1.270, 2026-09-13).  Turning one
+;; off therefore means taking it out, and somewhere has to hold it until
+;; it is put back.  That somewhere is a file of this package's own, so
+;; that nothing this package invented is ever written into a settings
+;; file the CLI reads -- least of all one a team shares.
+;;
+;;   {"version": 1,
+;;    "disabled": {"/abs/path/settings.json":
+;;                   {"PreToolUse": [{"matcher": "Write", "hook": {...}}]}}}
+
+(defun ecc-protocol-stash-entries (file)
+  "Return the hooks stashed in FILE, one plist each.
+The plist is (:settings-file :event :matcher :entry :index), where the
+index addresses the entry within its event for
+`ecc-protocol-stash-remove'.  A stash that is absent or unreadable is
+no stash at all: nil is returned rather than an error."
+  (let ((disabled (alist-get 'disabled (ecc-protocol-read-json-file file)))
+        (entries nil))
+    (pcase-dolist (`(,settings-file . ,events) disabled)
+      (when (listp events)
+        (pcase-dolist (`(,event . ,stashed) events)
+          (when (vectorp stashed)
+            (seq-do-indexed
+             (lambda (one index)
+               (when (listp one)
+                 (push (list :settings-file (symbol-name settings-file)
+                             :event (symbol-name event)
+                             :matcher (ecc-protocol--hook-matcher one)
+                             :entry (alist-get 'hook one)
+                             :index index)
+                       entries)))
+             stashed)))))
+    (nreverse entries)))
+
+(defun ecc-protocol-stash-add (file settings-file event matcher entry)
+  "Stash ENTRY in FILE as the hook of EVENT that SETTINGS-FILE no longer has.
+MATCHER is kept with it so that the entry can go back where it came
+from.  Returns the index the entry was stashed at."
+  (let* ((object (or (ecc-protocol-read-json-file file)
+                     (list (cons 'version 1))))
+         (disabled (alist-get 'disabled object))
+         (file-key (intern settings-file))
+         (events (alist-get file-key disabled))
+         (event-key (intern event))
+         (stashed (append (alist-get event-key events) nil))
+         (one (if matcher
+                  (list (cons 'matcher matcher) (cons 'hook entry))
+                (list (cons 'hook entry))))
+         (index (length stashed)))
+    (setf (alist-get event-key events) (vconcat stashed (list one)))
+    (setf (alist-get file-key disabled) events)
+    (setf (alist-get 'disabled object) disabled)
+    (ecc-protocol-write-settings-file file object)
+    index))
+
+(defun ecc-protocol-stash-remove (file settings-file event index)
+  "Take the hook of EVENT at INDEX for SETTINGS-FILE out of the stash FILE.
+Returns the entry that was stashed, so that the caller can put it back.
+An emptied event and an emptied file are taken out with it.  Signals
+when the address names nothing."
+  (let* ((object (ecc-protocol-read-json-file file))
+         (disabled (alist-get 'disabled object))
+         (file-key (intern settings-file))
+         (events (alist-get file-key disabled))
+         (event-key (intern event))
+         (stashed (append (alist-get event-key events) nil))
+         (one (nth index stashed)))
+    (unless one
+      (error "No stashed %s hook at %s for %s" event index
+             (abbreviate-file-name settings-file)))
+    (setq stashed (append (seq-take stashed index)
+                          (seq-drop stashed (1+ index))))
+    (if stashed
+        (setf (alist-get event-key events) (vconcat stashed))
+      (setq events (assq-delete-all event-key events)))
+    (if events
+        (setf (alist-get file-key disabled) events)
+      (setq disabled (assq-delete-all file-key disabled)))
+    (setf (alist-get 'disabled object) disabled)
+    (ecc-protocol-write-settings-file file object)
+    (alist-get 'hook one)))
+
 (defun ecc-protocol-value-string (value)
   "Return VALUE, as parsed from JSON, as a string fit for display.
 Kept here because it is the only place that knows how the reader spells
