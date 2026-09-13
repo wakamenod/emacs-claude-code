@@ -221,6 +221,15 @@ that CLI, and the CLI moves without anybody upgrading ecc.
   turn that is not the current one and has nothing running under it is
   finished too.
 
+- A redraw of the live region no longer lays the Files summary out again
+  line by line, nor fontifies a reply again that stands behind a call still
+  running.  The diff of each file is now kept as it is drawn, with its
+  prefix and wrap, until the file changes again, and the Markdown of a
+  reply, a prompt and a plan is fontified once per node while its text
+  stays the same.  In a session with three edited files a redraw went from
+  5.7 ms to 1.5 ms (measured 2026-09-13); `scripts/bench-render.el` puts the
+  Files summary of 60 files at 3.6 ms, from 5.3.
+
 ## [0.1.0] - 2026-09-11
 
 The first release.  Verified against **Claude Code CLI 2.1.268** and

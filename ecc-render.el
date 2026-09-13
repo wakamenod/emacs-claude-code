@@ -181,6 +181,15 @@ follow `ecc-render--hidden-types'.")
 (defvar-local ecc-render--file-cache nil
   "Hash of a path to what `ecc-render--file-summary' last made of its entry.")
 
+(defvar-local ecc-render--markdown-cache nil
+  "Hash of a key to (TEXT . FONTIFIED), what `ecc-render--fontify' made of TEXT.
+The key names the node, turn or request the text belongs to.")
+
+(defvar-local ecc-render--markdown-used nil
+  "The keys `ecc-render--fontify' was asked for during the draw at hand.
+What was not asked for lies behind the live region and will not be
+drawn again; its entry is dropped when the draw ends.")
+
 (defvar-local ecc-render--timer nil
   "Debounce timer of this buffer, or nil.")
 
@@ -688,6 +697,34 @@ The folds are overlays of their own, so their order does not matter."
 
 ;;;; The top region: header, Files, Tasks
 
+(defun ecc-render--fontify (key text)
+  "Return TEXT fontified as Markdown, once per KEY while TEXT stays the same.
+The live region is drawn again whenever a block of it starts or stops,
+and a reply that stands in it -- behind a call still running, a
+background task for one -- was fontified again each time, code fences
+and all, which is a temporary buffer and a major mode per fence: the
+whole of a long reply on every redraw (measured 2026-09-13).  A buffer
+without the cache, the transcript of an agent, fontifies each time."
+  (if (null ecc-render--markdown-cache)
+      (ecc-markdown-fontify text)
+    (push key ecc-render--markdown-used)
+    (let ((known (gethash key ecc-render--markdown-cache)))
+      (if (and known (equal (car known) text))
+          (cdr known)
+        (cdr (puthash key (cons text (ecc-markdown-fontify text))
+                      ecc-render--markdown-cache))))))
+
+(defun ecc-render--sweep-fontified ()
+  "Drop what `ecc-render--fontify' keeps for keys the last draw did not ask for."
+  (when ecc-render--markdown-cache
+    (let (stale)
+      (maphash (lambda (key _)
+                 (unless (member key ecc-render--markdown-used)
+                   (push key stale)))
+               ecc-render--markdown-cache)
+      (dolist (key stale) (remhash key ecc-render--markdown-cache)))
+    (setq ecc-render--markdown-used nil)))
+
 (defun ecc-render--file-counts-1 (entry)
   "Return (ADDED . REMOVED) over every change of the file ENTRY."
   (let ((added 0) (removed 0)
@@ -715,33 +752,48 @@ The folds are overlays of their own, so their order does not matter."
       (setq patches (cdr patches)))
     (string-join (nreverse parts) "")))
 
+(defun ecc-render--file-body-1 (diff)
+  "Return the lines of DIFF as they are drawn under a file row."
+  (with-temp-buffer
+    (ecc-render--insert-lines diff "      " 'ecc-dim-face)
+    (buffer-string)))
+
 (defun ecc-render--file-summary (entry)
-  "Return (COUNTS . DIFF) of the file ENTRY, computing them once per change.
+  "Return (COUNTS DIFF BODY) of the file ENTRY, computing them once per change.
 The Files section is drawn again with every redraw of the live region,
 and diffing every hunk of every file the session touched each time
 grew with the session rather than with what changed: half of the
 section's redraw, 10 ms for 60 files of 3 hunks (measured 2026-09-12).
 The hunks and the patches of an entry only ever grow
 \(`ecc-model-note-hunk'), so how many there are says whether the
-answer kept for it still holds."
+answer kept for it still holds.  BODY is the diff as drawn, line by
+line with its prefix and wrap: laying that out again for every file on
+every redraw was the other half, and 90% of a redraw in a session with
+three edited files (measured 2026-09-13)."
   (let* ((path (ecc-file-entry-path entry))
          (stamp (cons (length (ecc-file-entry-hunks entry))
                       (length (ecc-file-entry-patches entry))))
          (known (gethash path ecc-render--file-cache)))
     (if (and known (equal (car known) stamp))
         (cdr known)
-      (cdr (puthash path
-                    (cons stamp (cons (ecc-render--file-counts-1 entry)
-                                      (ecc-render--file-diff-1 entry)))
-                    ecc-render--file-cache)))))
+      (let ((diff (ecc-render--file-diff-1 entry)))
+        (cdr (puthash path
+                      (cons stamp (list (ecc-render--file-counts-1 entry)
+                                        diff
+                                        (ecc-render--file-body-1 diff)))
+                      ecc-render--file-cache))))))
 
 (defun ecc-render--file-counts (entry)
   "Return (ADDED . REMOVED) over every change of the file ENTRY."
-  (car (ecc-render--file-summary entry)))
+  (nth 0 (ecc-render--file-summary entry)))
 
 (defun ecc-render--file-diff (entry)
   "Return the merged diff text of every change of the file ENTRY."
-  (cdr (ecc-render--file-summary entry)))
+  (nth 1 (ecc-render--file-summary entry)))
+
+(defun ecc-render--file-body (entry)
+  "Return the diff of the file ENTRY as it is drawn under its row."
+  (nth 2 (ecc-render--file-summary entry)))
 
 (defun ecc-render--file-heading (entry)
   "Return the heading of the file ENTRY."
@@ -775,7 +827,7 @@ answer kept for it still holds."
     (ecc-render--mark-heading start id)
     (when (ecc-file-entry-hunks entry)
       (let ((body (point)))
-        (ecc-render--insert-lines (ecc-render--file-diff entry) "      " 'ecc-dim-face)
+        (insert (ecc-render--file-body entry))
         (ecc-render--mark body (point) id 2 map)))
     (ecc-render--register id start (point) 1
                           (and (ecc-file-entry-hunks entry) t) t)))
@@ -1084,7 +1136,8 @@ is appended."
      (lambda ()
        (if (ecc-node-streaming node)
            (ecc-render--insert-stream-text node (ecc-model-streaming-text node) pad face)
-         (ecc-render--insert-lines (ecc-markdown-fontify (ecc-model-node-get node 'text))
+         (ecc-render--insert-lines (ecc-render--fontify (ecc-node-id node)
+                                                        (ecc-model-node-get node 'text))
                                    pad face))))))
 
 (defun ecc-render--insert-thinking (node depth)
@@ -1358,7 +1411,8 @@ of the file around it."
                                        (ecc-model-node-get node 'answers)))
         ((eq (ecc-request-kind request) 'plan)
          (ecc-render--insert-lines
-          (ecc-render--clip (ecc-markdown-fontify
+          (ecc-render--clip (ecc-render--fontify
+                             (concat (ecc-node-id node) "/plan")
                              (or (alist-get 'plan (ecc-request-input request)) ""))
                             ecc-render-diff-max-lines)
           body 'ecc-assistant-face))
@@ -1647,7 +1701,8 @@ start it was registered with."
           ;; The prompt carries fenced blocks of its own: the quoted
           ;; region and the context Emacs attached, which are worth
           ;; the same colouring as the reply.
-          (ecc-render--insert-band (ecc-markdown-fontify prompt) "" 'ecc-user-face)
+          (ecc-render--insert-band (ecc-render--fontify (concat id "/prompt") prompt)
+                                   "" 'ecc-user-face)
           ;; The band stands at the depth of the turn, not of the
           ;; turn's children: it is the heading of the turn, and the
           ;; movement commands lean on that to tell a turn's children
@@ -2246,6 +2301,8 @@ position, or nil when the node is not drawn."
     (setq ecc-render--nodes (make-hash-table :test #'equal)))
   (unless ecc-render--file-cache
     (setq ecc-render--file-cache (make-hash-table :test #'equal)))
+  (unless ecc-render--markdown-cache
+    (setq ecc-render--markdown-cache (make-hash-table :test #'equal)))
   (unless ecc-render--live-start
     (setq ecc-render--live-start (make-marker)))
   (unless ecc-render--top-end
@@ -2253,6 +2310,7 @@ position, or nil when the node is not drawn."
 
 (defun ecc-render--finish-draw (session)
   "Do what every draw of SESSION ends with: effects, the spinner, the hook."
+  (ecc-render--sweep-fontified)
   (ecc-render--apply-effects)
   (ecc-render--update-spinner session)
   (run-hooks 'ecc-render-after-draw-hook)
@@ -2512,6 +2570,7 @@ read-only."
           ecc-render--visibility-cache (make-hash-table :test #'equal)
           ecc-render--nodes (make-hash-table :test #'equal)
           ecc-render--file-cache (make-hash-table :test #'equal)
+          ecc-render--markdown-cache (make-hash-table :test #'equal)
           ecc-render--frozen 0
           ecc-render--top-end (make-marker)
           ecc-render--live-start (make-marker)

@@ -1371,6 +1371,57 @@ any route as long as they arrive at the same buffer."
 
 ;;;; What a redraw remembers
 
+(ert-deftest ecc-render-test-files-summary-reuses-drawn-bodies ()
+  "The lines under a file row are laid out once per change, not per redraw."
+  (ecc-test-with-fake-session session
+    (let ((laid-out 0))
+      (cl-letf* ((real (symbol-function #'ecc-render--file-body-1))
+                 ((symbol-function #'ecc-render--file-body-1)
+                  (lambda (diff) (cl-incf laid-out) (funcall real diff))))
+        (ecc-session-ensure-buffer session)
+        (ecc-model-begin-turn session "edit two files")
+        (ecc-model-note-file session "/nowhere/a.txt" 'edit)
+        (ecc-model-note-hunk session "/nowhere/a.txt" "one\n" "1\n" nil "one\ntwo\n")
+        (ecc-model-note-file session "/nowhere/b.txt" 'edit)
+        (ecc-model-note-hunk session "/nowhere/b.txt" "two\n" "2\n" nil "one\ntwo\n")
+        (ecc-render-flush session)
+        (should (= laid-out 2))
+        (ecc-render-flush session)
+        (should (= laid-out 2))
+        (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+          (should (string-search "-one\n" text))
+          (should (string-search "+2\n" text)))
+        ;; One more hunk on a: a is laid out again, b is not.
+        (ecc-model-note-hunk session "/nowhere/a.txt" "two\n" "2\n" nil "1\ntwo\n")
+        (ecc-render-flush session)
+        (should (= laid-out 3))))))
+
+(ert-deftest ecc-render-test-reply-is-fontified-once-while-a-call-runs ()
+  "A reply behind a running call is not fontified again on every redraw."
+  (ecc-test-with-fake-session session
+    (let ((fontified nil))
+      (cl-letf* ((real (symbol-function #'ecc-markdown-fontify))
+                 ((symbol-function #'ecc-markdown-fontify)
+                  (lambda (text) (push text fontified) (funcall real text))))
+        (ecc-session-ensure-buffer session)
+        (let ((turn (ecc-model-begin-turn session "run it")))
+          (ecc-model-node-changed
+           session (ecc-model-add-node session :type 'tool :status 'running :parent turn
+                                       :data '((name . "Bash") (input . ((command . "sleep 60"))))))
+          (ecc-model-node-changed
+           session (ecc-model-add-node session :type 'text :status 'done :parent turn
+                                       :data '((text . "Started.  Here is `why`:\n\n```elisp\n(+ 1 2)\n```")))))
+        (ecc-render-flush session)
+        (let ((count (seq-count (lambda (text) (string-prefix-p "Started." text)) fontified)))
+          (should (= count 1))
+          ;; The live region starts at the running call, so the reply
+          ;; is drawn again; it is not fontified again.
+          (ecc-render-flush session)
+          (ecc-render-flush session)
+          (should (= (seq-count (lambda (text) (string-prefix-p "Started." text)) fontified)
+                     count))
+          (should (string-search "(+ 1 2)" (ecc-test-buffer-string (ecc-session-buffer session)))))))))
+
 (ert-deftest ecc-render-test-files-summary-reuses-diffs ()
   "The Files section diffs a file again only when it changed again.
 The section is drawn with every redraw of the live region, and it used
