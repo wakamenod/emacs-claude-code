@@ -79,21 +79,52 @@ scene() {
     regeom
 }
 
-# Capture one frame, $1 times (repeat to hold a moment longer).
-snap() {
-    local repeat=${1:-1}
-    for _ in $(seq 1 "$repeat"); do
+# How many frames a second the animations are captured and played at.
+# `screencapture' takes about 80ms a frame on this machine (20 frames in
+# 1.635s, measured 2026-09-13), so 10 is close to what a capture loop can
+# really sustain.  It is also a whole 10 centiseconds of delay, which is
+# what the GIF format stores: a delay is an integer of 1/100s, so only
+# the rates 100/n exist at all -- 15fps is not one of them, and is
+# written out as 16.66.
+fps=10
+
+# "1.5" -> 1500.  Bash has no decimals, and the holds below are written
+# in seconds because that is what the scene is thinking in.
+ms_of() {
+    local whole=${1%%.*} frac=${1#*.}
+    [ "$frac" = "$1" ] && frac=0
+    frac=$(printf '%-3s' "${frac:0:3}" | tr ' ' 0)
+    echo $((10#$whole * 1000 + 10#$frac))
+}
+
+now_ms() { local t=${EPOCHREALTIME/[.,]/}; echo $((10#${t:0:${#t}-3})); }
+
+# Capture frames for $1 seconds at $fps.  Every frame is a real capture:
+# writing the same frame out twice to hold a state makes the animation no
+# smoother, and the site's converter merges the repeats back into one
+# long frame anyway.  A step that settles -- a window rearranging, a
+# posframe arriving -- is then actually seen settling.
+hold() {
+    local end frame next left
+    frame=$((1000 / fps))
+    end=$(( $(now_ms) + $(ms_of "$1") ))
+    while :; do
+        next=$(( $(now_ms) + frame ))
         n=$((n + 1))
-        screencapture -x -R"$X,$Y,$W,$H" "$(printf '%s/%s/%03d.png' "$frames" "$scene" "$n")"
+        screencapture -x -R"$X,$Y,$W,$H" "$(printf '%s/%s/%04d.png' "$frames" "$scene" "$n")"
+        [ "$(now_ms)" -ge "$end" ] && break
+        left=$(( next - $(now_ms) ))
+        [ "$left" -gt 0 ] && sleep "0.$(printf '%03d' "$left")"
     done
 }
 
 # Assemble the frames of the current scene into an animation.
 gif() {
     ffmpeg -hide_banner -loglevel error -y \
-        -framerate 3 -pattern_type glob -i "$frames/$scene/*.png" \
+        -framerate "$fps" -pattern_type glob -i "$frames/$scene/*.png" \
         -vf "scale=900:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=bayer" \
         -loop 0 "$outdir/$scene.gif"
+    rm -rf "${frames:?}/$scene"
 }
 
 # Ask the frame where it is now.  The menu and the minibuffer resize it,
@@ -139,11 +170,12 @@ if want switch; then
     # Frames that repeat are merged into one long frame by the time the site
     # has converted the animation, so a scene has to keep changing: type a
     # letter at a time, and go back the way it came rather than holding the
-    # last picture.
+    # last picture.  Capturing at 10fps does not change that -- a state
+    # that sits still is still one frame once it is converted.
     scene switch
-    e '(shot-scene-switch-start)'      ; snap 2
+    e '(shot-scene-switch-start)'      ; hold 0.67
     e '(shot-scene-switch-sequence)'
-    for _ in $(seq 1 22); do sleep 0.5; snap; done
+    hold 11
     gif
 fi
 
@@ -155,11 +187,11 @@ if want focus; then
     scene focus
     # The scene rearranges the whole frame, and screencapture can still
     # hand back the frame as it was a moment ago; the pause is what
-    # keeps the crowded "before" out of the first four frames.
-    e '(shot-scene-focus-start)'      ; sleep 1.5; snap 4
+    # keeps the crowded "before" out of the opening frames.
+    e '(shot-scene-focus-start)'      ; sleep 1.5; hold 1.33
     e '(shot-scene-focus-sequence)'
-    for _ in $(seq 1 18); do sleep 0.5; snap; done
-    snap 3                            # hold the tidied frame
+    hold 9
+    hold 1                            # hold the tidied frame
     gif
     # The scenes below list every session there is, so the second
     # project has to go before them.
@@ -183,16 +215,16 @@ if want send-region; then
     # 3. Sending the region from a source buffer.  This one runs the real
     # CLI: the point of the picture is the answer coming back.
     scene send-region
-    e '(shot-scene-send-region-point)'  ; snap 2
-    e '(shot-scene-send-region-mark)'   ; snap
-    e '(shot-scene-send-region-extend)' ; snap
-    e '(shot-scene-send-region-extend)' ; snap
-    e '(shot-scene-send-region-extend)' ; snap 2
+    e '(shot-scene-send-region-point)'  ; hold 0.67
+    e '(shot-scene-send-region-mark)'   ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.67
     e '(shot-scene-send-region-sequence)'
     # The typing and then the answer streaming in are the motion, so the
     # frames are taken while they happen rather than after.
-    for _ in $(seq 1 10); do sleep 0.5; snap; done
-    for _ in $(seq 1 12); do sleep 1; snap; done
+    hold 5
+    hold 12
     gif
     e '(shot-dump-live-log)'
 fi
@@ -202,46 +234,46 @@ if want fix-error; then
     # the checker really is run; only the checker is the standard library
     # rather than something installed.
     scene fix-error
-    e '(shot-scene-fix-error-open)'     ; sleep 3; snap 3
-    e '(shot-scene-fix-error-point)'    ; snap 2
-    e '(shot-scene-fix-error)'          ; snap 2
-    for _ in $(seq 1 10); do sleep 1; snap; done
+    e '(shot-scene-fix-error-open)'     ; sleep 3; hold 1
+    e '(shot-scene-fix-error-point)'    ; hold 0.67
+    e '(shot-scene-fix-error)'          ; hold 0.67
+    hold 10
     # Allowing it is part of the scene: the edit is made, the buffer picks
     # it up, and the checker has nothing left to complain about.  It also
     # leaves nothing waiting, which would blink through every picture taken
     # after this one.
-    e '(shot-scene-allow)'              ; sleep 1; snap 2
-    for _ in $(seq 1 8); do sleep 1; snap; done
-    e '(shot-scene-recheck)'            ; sleep 2; snap 4
+    e '(shot-scene-allow)'              ; sleep 1; hold 0.67
+    hold 8
+    e '(shot-scene-recheck)'            ; sleep 2; hold 1.33
     gif
 fi
 
 if want inline; then
     # 5. Asking about the region and being answered where the code is.
     scene inline
-    e '(shot-scene-send-region-point)'  ; snap
-    e '(shot-scene-send-region-mark)'   ; snap
-    e '(shot-scene-send-region-extend)' ; snap
-    e '(shot-scene-send-region-extend)' ; snap
-    e '(shot-scene-send-region-extend)' ; snap 2
+    e '(shot-scene-send-region-point)'  ; hold 0.33
+    e '(shot-scene-send-region-mark)'   ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.67
     e '(shot-scene-inline-sequence)'
-    for _ in $(seq 1 8); do sleep 0.5; snap; done
-    for _ in $(seq 1 12); do sleep 1; snap; done
+    hold 4
+    hold 12
     gif
 fi
 
 if want rewrite; then
     # 6. Rewriting the region, and accepting what comes back.
     scene rewrite
-    e '(shot-scene-send-region-point)'  ; snap
-    e '(shot-scene-send-region-mark)'   ; snap
-    e '(shot-scene-send-region-extend)' ; snap
-    e '(shot-scene-send-region-extend)' ; snap
-    e '(shot-scene-send-region-extend)' ; snap 2
+    e '(shot-scene-send-region-point)'  ; hold 0.33
+    e '(shot-scene-send-region-mark)'   ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.67
     e '(shot-scene-rewrite-sequence)'
-    for _ in $(seq 1 8); do sleep 0.5; snap; done
-    for _ in $(seq 1 10); do sleep 1; snap; done
-    e '(shot-scene-accept)'             ; sleep 1; snap 4
+    hold 4
+    hold 10
+    e '(shot-scene-accept)'             ; sleep 1; hold 1.33
     gif
 fi
 
@@ -249,24 +281,24 @@ if want at-cursor; then
     # An @ reference: the point stands in the source, the prompt says
     # @cursor, and what is sent carries the line it was on.
     scene at-cursor
-    e '(shot-scene-cursor-point 7)'          ; snap 2
-    e '(shot-prompt-type "What does ")'      ; snap
-    e '(shot-prompt-type "@cursor")'         ; snap
-    e '(shot-prompt-type " return?")'        ; snap 2
-    e '(shot-prompt-send)'                   ; snap 2
-    for _ in $(seq 1 12); do sleep 1; snap; done
+    e '(shot-scene-cursor-point 7)'          ; hold 0.67
+    e '(shot-prompt-type "What does ")'      ; hold 0.33
+    e '(shot-prompt-type "@cursor")'         ; hold 0.33
+    e '(shot-prompt-type " return?")'        ; hold 0.67
+    e '(shot-prompt-send)'                   ; hold 0.67
+    hold 12
     gif
 fi
 
 if want context; then
     # The editor context, attached to every prompt while it is on.
     scene context
-    e '(shot-scene-cursor-point 6)'                                  ; snap 2
-    e '(shot-prompt-command (quote ecc-prompt-toggle-context))'      ; snap 3
-    e '(shot-prompt-type "Where am I?")'                             ; snap 2
-    e '(shot-prompt-send)'                                           ; snap 2
-    for _ in $(seq 1 12); do sleep 1; snap; done
-    e '(shot-prompt-command (quote ecc-prompt-toggle-context))'      ; snap 2
+    e '(shot-scene-cursor-point 6)'                                  ; hold 0.67
+    e '(shot-prompt-command (quote ecc-prompt-toggle-context))'      ; hold 1
+    e '(shot-prompt-type "Where am I?")'                             ; hold 0.67
+    e '(shot-prompt-send)'                                           ; hold 0.67
+    hold 12
+    e '(shot-prompt-command (quote ecc-prompt-toggle-context))'      ; hold 0.67
     gif
 fi
 
@@ -275,11 +307,11 @@ if want image; then
     # picture is opened beside the session first: without it the scene
     # is one line of text appearing in the prompt region.  The session
     scene image
-    e '(shot-scene-image-open)'                             ; snap 3
-    e '(shot-scene-insert-image)'                           ; snap 3
-    e '(shot-prompt-type "What is in this image? One line.")'; snap 2
-    e '(shot-prompt-send)'                                  ; snap 2
-    for _ in $(seq 1 12); do sleep 1; snap; done
+    e '(shot-scene-image-open)'                             ; hold 1
+    e '(shot-scene-insert-image)'                           ; hold 1
+    e '(shot-prompt-type "What is in this image? One line.")'; hold 0.67
+    e '(shot-prompt-send)'                                  ; hold 0.67
+    hold 12
     gif
 fi
 
@@ -303,10 +335,10 @@ if want suggestion; then
         fi
     done
     scene suggestion
-    snap 3
-    e '(shot-prompt-command (quote ecc-hint-accept-suggestion))' ; snap 4
-    e '(shot-prompt-send)'                                       ; snap 2
-    for _ in $(seq 1 14); do sleep 1; snap; done
+    hold 1
+    e '(shot-prompt-command (quote ecc-hint-accept-suggestion))' ; hold 1.33
+    e '(shot-prompt-send)'                                       ; hold 0.67
+    hold 14
     gif
 fi
 
@@ -314,11 +346,11 @@ if want btw; then
     # A question asked beside a turn that is running, answered without
     # interrupting it.
     scene btw
-    e '(shot-scene-btw-turn)'   ; snap 2
-    for _ in $(seq 1 3); do sleep 1; snap; done
+    e '(shot-scene-btw-turn)'   ; hold 0.67
+    hold 3
     e '(shot-scene-btw-sequence (list "what does " "farewell " "return?"))'
-    for _ in $(seq 1 8); do sleep 0.8; snap; done
-    for _ in $(seq 1 10); do sleep 1; snap; done
+    hold 6.4
+    hold 10
     gif
     # The answer floats in a posframe, and a posframe outlives every
     # window command: without this it lies over every scene after it.
@@ -328,11 +360,11 @@ fi
 if want capabilities; then
     # What the session can do: the list the CLI reported in system/init.
     scene capabilities
-    e '(shot-scene-capabilities)'                        ; sleep 1; snap 4
-    e '(shot-scene-capabilities-toggle "Slash commands")'; snap 3
-    e '(shot-scene-capabilities-toggle "Skills")'        ; snap 3
-    e '(shot-scene-capabilities-toggle "Agents")'        ; snap 3
-    e '(shot-scene-capabilities-toggle "Skills")'        ; snap 4
+    e '(shot-scene-capabilities)'                        ; sleep 1; hold 1.33
+    e '(shot-scene-capabilities-toggle "Slash commands")'; hold 1
+    e '(shot-scene-capabilities-toggle "Skills")'        ; hold 1
+    e '(shot-scene-capabilities-toggle "Agents")'        ; hold 1
+    e '(shot-scene-capabilities-toggle "Skills")'        ; hold 1.33
     gif
 fi
 
@@ -348,18 +380,19 @@ fi
 
 if want prompt; then
     # The transcript folding, and the point walking the headings.  No
-    # minibuffer here, so each step is one call and one frame.  It comes
-    # first because the scene after it leaves a picker on the screen.
+    # minibuffer here, so each step is one call and a hold of its own.
+    # It comes first because the scene after it leaves a picker on the
+    # screen.
     scene fold
-    e '(shot-scene-fold-start)'                         ; snap 2
-    e '(shot-scene-fold (quote ecc-chat-collapse-all))' ; snap 3
-    e '(shot-scene-fold (quote ecc-chat-show-level-2))' ; snap 2
-    e '(shot-scene-fold (quote ecc-chat-show-level-3))' ; snap 2
-    e '(shot-scene-fold (quote ecc-chat-next-heading))' ; snap
-    e '(shot-scene-fold (quote ecc-chat-next-heading))' ; snap
-    e '(shot-scene-fold (quote ecc-chat-toggle))'       ; snap 3
-    e '(shot-scene-fold (quote ecc-chat-toggle))'       ; snap 3
-    e '(shot-scene-fold (quote ecc-chat-expand-all))'   ; snap 3
+    e '(shot-scene-fold-start)'                         ; hold 0.67
+    e '(shot-scene-fold (quote ecc-chat-collapse-all))' ; hold 1
+    e '(shot-scene-fold (quote ecc-chat-show-level-2))' ; hold 0.67
+    e '(shot-scene-fold (quote ecc-chat-show-level-3))' ; hold 0.67
+    e '(shot-scene-fold (quote ecc-chat-next-heading))' ; hold 0.33
+    e '(shot-scene-fold (quote ecc-chat-next-heading))' ; hold 0.33
+    e '(shot-scene-fold (quote ecc-chat-toggle))'       ; hold 1
+    e '(shot-scene-fold (quote ecc-chat-toggle))'       ; hold 1
+    e '(shot-scene-fold (quote ecc-chat-expand-all))'   ; hold 1
     gif
 
     # The slash command list, open over a session.  Like the resume
@@ -373,20 +406,20 @@ fi
 # answered here as a user would, and played to its end afterwards.
 if want permission; then
     scene permission
-    e '(shot-scene-permission)'        ; sleep 1; snap 3
-    e '(shot-scene-permission-allow)'  ; snap 2
-    e '(shot-scene-permission-finish)' ; sleep 1; snap 4
+    e '(shot-scene-permission)'        ; sleep 1; hold 1
+    e '(shot-scene-permission-allow)'  ; hold 0.67
+    e '(shot-scene-permission-finish)' ; sleep 1; hold 1.33
     gif
 fi
 
 if want question; then
     scene question
-    e '(shot-scene-question)'            ; sleep 1; snap 3
-    e '(shot-scene-question-open)'       ; sleep 1; snap 3
-    e '(shot-scene-question-choose 1)'   ; snap 2
-    e '(shot-scene-question-choose 1)'   ; snap 2
-    e '(shot-scene-question-choose 2)'   ; snap 3
-    e '(shot-scene-question-submit)'     ; sleep 1; snap 4
+    e '(shot-scene-question)'            ; sleep 1; hold 1
+    e '(shot-scene-question-open)'       ; sleep 1; hold 1
+    e '(shot-scene-question-choose 1)'   ; hold 0.67
+    e '(shot-scene-question-choose 1)'   ; hold 0.67
+    e '(shot-scene-question-choose 2)'   ; hold 1
+    e '(shot-scene-question-submit)'     ; sleep 1; hold 1.33
     gif
 fi
 
@@ -394,22 +427,22 @@ if want review; then
     # Every change of the session as one diff, a comment on a hunk, and
     # the prompt that would go out.
     scene review
-    e '(shot-scene-review)'        ; sleep 1; snap 3
+    e '(shot-scene-review)'        ; sleep 1; hold 1
     e '(shot-scene-review-comment (list "the docstring " "still says hi"))'
-    for _ in $(seq 1 8); do sleep 0.6; snap; done
-    e '(shot-scene-review-hunk)'   ; snap 3
-    e '(shot-scene-review-send)'   ; sleep 1; snap 5
+    hold 4.8
+    e '(shot-scene-review-hunk)'   ; hold 1
+    e '(shot-scene-review-send)'   ; sleep 1; hold 1.67
     gif
 fi
 
 if want proposal; then
     # The text of a proposal, changed before it is allowed.
     scene proposal
-    e '(shot-scene-proposal)'       ; sleep 1; snap 3
-    e '(shot-scene-proposal-edit)'  ; sleep 1; snap 3
-    e '(shot-scene-proposal-type " and ")'     ; snap
-    e '(shot-scene-proposal-type "hello")'     ; snap 3
-    e '(shot-scene-proposal-apply)' ; sleep 1; snap 4
+    e '(shot-scene-proposal)'       ; sleep 1; hold 1
+    e '(shot-scene-proposal-edit)'  ; sleep 1; hold 1
+    e '(shot-scene-proposal-type " and ")'     ; hold 0.33
+    e '(shot-scene-proposal-type "hello")'     ; hold 1
+    e '(shot-scene-proposal-apply)' ; sleep 1; hold 1.33
     gif
 fi
 
@@ -417,23 +450,23 @@ if want plan; then
     # A plan, a comment on one of its lines, the mode it is approved
     # into, and the approval.
     scene plan
-    e '(shot-scene-plan)'               ; sleep 1; snap 4
+    e '(shot-scene-plan)'               ; sleep 1; hold 1.33
     e '(shot-scene-plan-comment 3 (list "add a " "docstring " "to each"))'
-    for _ in $(seq 1 8); do sleep 0.6; snap; done
-    snap 2
+    hold 4.8
+    hold 0.67
     e '(shot-scene-plan-mode-sequence)'
-    for _ in $(seq 1 6); do sleep 0.6; snap; done
-    e '(shot-scene-plan-approve)'       ; sleep 1; snap 4
+    hold 3.6
+    e '(shot-scene-plan-approve)'       ; sleep 1; hold 1.33
     gif
 fi
 
 if want files; then
     # The Files section: a row unfolded, then reviewed on its own.
     scene files
-    e '(shot-scene-files)'                                  ; sleep 1; snap 3
-    e '(shot-scene-files-key (quote ecc-chat-next-heading))'; snap 2
-    e '(shot-scene-files-key (quote ecc-chat-toggle))'      ; snap 4
-    e '(shot-scene-files-key (quote ecc-session-review-file))' ; sleep 1; snap 4
+    e '(shot-scene-files)'                                  ; sleep 1; hold 1
+    e '(shot-scene-files-key (quote ecc-chat-next-heading))'; hold 0.67
+    e '(shot-scene-files-key (quote ecc-chat-toggle))'      ; hold 1.33
+    e '(shot-scene-files-key (quote ecc-session-review-file))' ; sleep 1; hold 1.33
     gif
 fi
 
@@ -458,11 +491,11 @@ if want handover; then
     e '(shot-scene-quit)'           ; sleep 1
 
     scene handover
-    e '(shot-scene-handover-start)' ; sleep 1; snap 3
-    e '(shot-scene-handover)'       ; snap
+    e '(shot-scene-handover-start)' ; sleep 1; hold 1
+    e '(shot-scene-handover)'       ; hold 0.33
     # The CLI drawing itself is the motion here, so the frames are taken
     # while it comes up rather than after.
-    for _ in 1 2 3 4 5 6 7 8 9 10; do sleep 1; snap; done
+    hold 10
     gif
 fi
 
