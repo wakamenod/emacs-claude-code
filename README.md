@@ -77,7 +77,7 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 Then configure it with a standard `use-package` declaration (without `:vc`).
 
 <details>
-<summary>straight.el, Elpaca, or manual clone</summary>
+<summary>straight.el or Elpaca</summary>
 
 Because the repository name is `emacs-claude-code` while the package name is `ecc`, package managers that infer the package name from the repository URL must declare it explicitly:
 
@@ -90,19 +90,6 @@ Because the repository name is `emacs-claude-code` while the package name is `ec
 (use-package ecc
   :ensure (ecc :host github :repo "wakamenod/emacs-claude-code"))
 ```
-
-Manual clone:
-
-```sh
-git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/emacs-claude-code
-```
-
-```elisp
-(add-to-list 'load-path "~/.emacs.d/site-lisp/emacs-claude-code")
-(require 'ecc)
-```
-
-`M-x ecc-start` is autoloaded. To bind `ecc-global-map` outside `use-package`, ensure ecc is loaded first or use `use-package` with `:bind-keymap`.
 </details>
 
 ## Configuration
@@ -111,64 +98,26 @@ git clone https://github.com/wakamenod/emacs-claude-code ~/.emacs.d/site-lisp/em
 (use-package ecc
   :ensure t
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest)
-  ;; `ecc-global-map' lets you respond to pending requests from any buffer.
-  ;; `:bind-keymap' defers loading ecc until the prefix is pressed.
   :bind-keymap ("C-c c" . ecc-global-map)
   :custom
-  (ecc-permission-mode "auto")            ; nil keeps the CLI default
-  (ecc-notify-level 'pulse)               ; nil, 'message, 'pulse, or 'desktop
-  (ecc-usage-display 'posframe)           ; needs posframe; 'window otherwise
+  (ecc-permission-mode "auto")
+  (ecc-notify-level 'pulse)
+  (ecc-usage-display 'posframe)
   (ecc-btw-display 'posframe)
   (ecc-prompt-suggestions-enabled t))
 ```
 
-For all other settings, run `M-x customize-group RET ecc` or check the [configuration reference](https://wakamenod.github.io/emacs-claude-code/reference/configuration/).
+For all other settings, check the [configuration reference](https://wakamenod.github.io/emacs-claude-code/reference/configuration/).
 
 ## Quickstart
 
 1. Run `M-x ecc-start` in a project buffer to start a session.
 2. Type your message in the bottom prompt region.
 3. Press `C-c C-c` to send (`RET` inserts a newline).
-4. When Claude requests tool permissions, press `C-c C-a` to allow or `C-c C-d` to deny. **Prompts default to deny.**
+4. When Claude requests tool permissions, press `C-c C-a` to allow or `C-c C-d` to deny.
 5. Press `C-c ?` to open the command menu.
 
 ## Key Bindings
-
-### Global Map (`C-c c`)
-
-Accessible from any buffer:
-
-| Key | Command | Action |
-|---|---|---|
-| `c` | `ecc-start` | Start a session |
-| `r` | `ecc-resume-menu` | Resume a session |
-| `R` | `ecc-rename-session` | Rename a session |
-| `v` | `ecc-show-session` | Focus session prompt |
-| `j` | `ecc-focus-project` | Show only one project's sessions and source |
-| `w` | `ecc-toggle` | Hide or restore this project's session windows |
-| `i` | `ecc-interrupt` | Interrupt running turn |
-| `t` | `ecc-tui-open` | Hand session over to terminal |
-| `a` | `ecc-answer-allow` | Allow oldest pending request |
-| `d` | `ecc-answer-deny` | Deny oldest pending request |
-| `1`–`4` | `ecc-answer-option-N` | Select response option N |
-| `n` | `ecc-next-attention` | Switch to next waiting session |
-| `N` | `ecc-next-attention-in-project` | Switch to next waiting session in project |
-| `b` | `ecc-dashboard` | Open sessions dashboard |
-| `D` | `ecc-review` | Review changes as unified diff |
-| `h` | `ecc-history-open` | Open past conversation history |
-| `/` | `ecc-search` | Find a past session by what was said in it |
-| `U` | `ecc-usage` | Check usage and rate limits |
-| `?` | `ecc-menu` | Open transient menu |
-
-### Session Buffer
-
-| Key | Action |
-|---|---|
-| `C-c C-c` | Send prompt |
-| `S-RET` | Insert newline |
-| `TAB` | Completion in prompt; fold/unfold in transcript |
-| `C-c C-a` / `C-c C-d` | Allow / Deny tool permission |
-| `C-c ?` | Open transient menu |
 
 For prompt and transcript keybindings, see
 [Prompt and transcript](https://wakamenod.github.io/emacs-claude-code/features/prompt/).
