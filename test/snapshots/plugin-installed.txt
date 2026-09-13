@@ -1,0 +1,12 @@
+ Discover   Installed   Marketplaces   Errors  
+⌕ Search with s
+
+Installed (2)
+
+▾ Project (1)
+  ● frontend-design  Plugin · claude-plugins-official · 1.2.0 · project  on
+
+▾ Show disabled (1)
+  ▾ User (1)
+  ◯ emacs-bridge  Plugin · emacs-gravity-marketplace · 4.6.2 · user  off
+

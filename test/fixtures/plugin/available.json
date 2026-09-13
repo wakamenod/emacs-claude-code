@@ -1,0 +1,52 @@
+{
+  "installed": [
+    {
+      "id": "emacs-bridge@emacs-gravity-marketplace",
+      "version": "4.6.2",
+      "scope": "user",
+      "enabled": false,
+      "installPath": "/home/u/.claude/plugins/cache/emacs-gravity-marketplace/emacs-bridge/4.6.2",
+      "installedAt": "2026-09-01T13:33:35.849Z",
+      "lastUpdated": "2026-09-01T13:33:35.849Z"
+    },
+    {
+      "id": "frontend-design@claude-plugins-official",
+      "version": "1.2.0",
+      "scope": "project",
+      "enabled": true,
+      "installPath": "/home/u/.claude/plugins/cache/claude-plugins-official/frontend-design/1.2.0",
+      "installedAt": "2026-09-10T09:00:00.000Z",
+      "lastUpdated": "2026-09-10T09:00:00.000Z"
+    }
+  ],
+  "available": [
+    {
+      "pluginId": "context7@claude-plugins-official",
+      "name": "context7",
+      "description": "Upstash Context7 MCP server for up-to-date documentation lookup. Connects to Context7's hosted remote MCP server (https://mcp.context7.com/mcp) \u2014 no local Node.js or npx required \u2014 to pull version-specific documentation and code examples directly from source repositories into your LLM context. Works anonymously out of the box; set CONTEXT7_API_KEY for higher rate limits.",
+      "marketplaceName": "claude-plugins-official",
+      "source": "./external_plugins/context7",
+      "installCount": 446283
+    },
+    {
+      "pluginId": "frontend-design@claude-plugins-official",
+      "name": "frontend-design",
+      "description": "Create distinctive, production-grade frontend interfaces with high design quality. Generates creative, polished code that avoids generic AI aesthetics.",
+      "marketplaceName": "claude-plugins-official",
+      "source": "./plugins/frontend-design",
+      "installCount": 1245390
+    },
+    {
+      "pluginId": "superpowers@claude-plugins-official",
+      "name": "superpowers",
+      "description": "Superpowers teaches Claude brainstorming, subagent driven development with built in code review, systematic debugging, and red/green TDD. Additionally, it teaches Claude how to author and test new skills.",
+      "marketplaceName": "claude-plugins-official",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/obra/superpowers.git",
+        "sha": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797"
+      },
+      "installCount": 1112404
+    }
+  ]
+}

@@ -49,6 +49,7 @@
 (require 'ecc-hint)
 (require 'ecc-usage)
 (require 'ecc-mcp)
+(require 'ecc-plugin)
 (require 'ecc-inline)
 (require 'ecc-btw)
 (require 'ecc-auth)

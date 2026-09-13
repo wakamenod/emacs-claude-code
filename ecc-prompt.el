@@ -327,6 +327,7 @@ moment is added to it (`ecc-prompt-current-argument\=')."
 
 (defvar ecc-prompt-local-commands
   '(("/btw" . "Ask a side question without interrupting the running turn")
+    ("/plugins" . "Browse and manage the plugins")
     ("/login" . "Sign in to the CLI, in a terminal of its own")
     ("/logout" . "Sign the CLI out")
     ("/auth-status" . "Say who the CLI is signed in as"))
@@ -343,7 +344,11 @@ client is catching those in its input layer too.  What the CLI offers a
 program instead is `claude auth login|logout|status\', which is what
 Emacs runs.  `/auth-status\' rather than the terminal client\\='s
 `/status\': the CLI names a `/status\' of its own, and shadowing it
-would cost a command.")
+would cost a command.
+
+`/plugins\' is the same story again (2.1.270): it is a screen the
+terminal client draws for itself, named in neither list, and
+`ecc-plugin\' is what Emacs opens instead.")
 
 (defun ecc-prompt-commands (session)
   "Return the slash commands of SESSION as an alist of name and description.

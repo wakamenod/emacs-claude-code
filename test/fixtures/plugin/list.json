@@ -1,0 +1,20 @@
+[
+  {
+    "id": "emacs-bridge@emacs-gravity-marketplace",
+    "version": "4.6.2",
+    "scope": "user",
+    "enabled": false,
+    "installPath": "/home/u/.claude/plugins/cache/emacs-gravity-marketplace/emacs-bridge/4.6.2",
+    "installedAt": "2026-09-01T13:33:35.849Z",
+    "lastUpdated": "2026-09-01T13:33:35.849Z"
+  },
+  {
+    "id": "frontend-design@claude-plugins-official",
+    "version": "1.2.0",
+    "scope": "project",
+    "enabled": true,
+    "installPath": "/home/u/.claude/plugins/cache/claude-plugins-official/frontend-design/1.2.0",
+    "installedAt": "2026-09-10T09:00:00.000Z",
+    "lastUpdated": "2026-09-10T09:00:00.000Z"
+  }
+]

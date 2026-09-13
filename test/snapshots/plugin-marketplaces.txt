@@ -1,0 +1,11 @@
+ Discover   Installed   Marketplaces   Errors  
+⌕ Search with s
+
+Marketplaces (2)
+
+  + Add a marketplace
+
+  ● claude-plugins-official
+      anthropics/claude-plugins-official (github)
+  ● emacs-gravity-marketplace
+      gdanov/emacs-gravity (github)
