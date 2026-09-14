@@ -664,7 +664,8 @@ that batch has not got."
 The model stands on the right of the same line, held apart by a
 stretched space; what is asked for here is the left of it."
   (when-let* ((line (ecc-chat-test--footer-line)))
-    (let ((tail (concat " " (ecc-render--model-name ecc-render--session))))
+    (let ((tail (concat " " (substring-no-properties
+                             (or (ecc-chat--footer-model ecc-render--session) "")))))
       (if (string-suffix-p tail line)
           (substring line 0 (- (length line) (length tail)))
         line))))
@@ -756,6 +757,30 @@ and the draft is written in front of it and survives a redraw
       (ecc-chat--update-ghosts)
       (should (equal (ecc-chat-test--footer-mode)
                      "somethingElse (S-TAB to cycle)")))))
+
+(ert-deftest ecc-chat-test-footer-names-the-model-before-the-first-answer ()
+  "The footer names the model the session would be started with.
+The CLI says which model answered and says it no earlier, so a session
+that has not answered yet had nothing on the right of its footer -- at
+the one moment the model is worth knowing, before the first prompt is
+sent."
+  (ecc-test-with-fake-session session
+    (with-current-buffer (ecc-session-ensure-buffer session)
+      ;; The settings of the machine running this say nothing (see
+      ;; `ecc-test-with-fake-session'), so neither does the footer.
+      (ecc-chat--update-ghosts)
+      (should (equal (ecc-chat-test--footer-line)
+                     "⏵ manual mode (S-TAB to cycle)"))
+      ;; A session given a model of its own names it before it starts.
+      (setf (ecc-session-options session) '(:model "claude-opus-5"))
+      (ecc-chat-update-footer)
+      (should (equal (ecc-chat-test--footer-line)
+                     "⏵ manual mode (S-TAB to cycle) opus"))
+      ;; What the CLI answers with takes the place of the guess.
+      (setf (ecc-session-init session) '((model . "claude-haiku-4-5-20251001")))
+      (ecc-chat-update-footer)
+      (should (equal (ecc-chat-test--footer-line)
+                     "⏵ manual mode (S-TAB to cycle) haiku")))))
 
 (ert-deftest ecc-chat-test-footer-can-be-turned-off ()
   "`ecc-chat-show-footer' nil leaves nothing under the prompt."

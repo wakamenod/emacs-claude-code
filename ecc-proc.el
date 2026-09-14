@@ -69,6 +69,56 @@ good (verified on 2026-09-06), which would undo every `/model' made
 since, in the terminal of a hand-off above all ."
   (ecc-model-option session :model nil))
 
+(defvar ecc-proc--settings-model-cache (make-hash-table :test #'equal)
+  "What the settings of a project root last said the model was.
+Each entry is ((FILES . MODIFICATION-TIMES) . MODEL).  The footer under
+the prompt asks for the model after every command and the answer lies
+in files, so they are stat\\='ed to see whether one has been written and
+read again only when one has.  The files are part of what is compared
+because they are not fixed: a test moves them elsewhere.")
+
+(defun ecc-proc--settings-model (session)
+  "Return the model the Claude Code settings would give SESSION, or nil.
+A remote project root is asked about as if it had none: its settings
+live on the other machine, and reading them would go over the wire
+after every command."
+  (let* ((root (let ((root (ecc-session-project-root session)))
+                 (and root (not (file-remote-p root)) root)))
+         (files (mapcar #'cdr (ecc-protocol-settings-files root)))
+         (stamp (cons files
+                      (mapcar (lambda (file)
+                                (file-attribute-modification-time
+                                 (file-attributes file)))
+                              files)))
+         (entry (gethash root ecc-proc--settings-model-cache)))
+    (if (and entry (equal (car entry) stamp))
+        (cdr entry)
+      (cdr (puthash root (cons stamp (ecc-protocol-settings-model root))
+                    ecc-proc--settings-model-cache)))))
+
+(defun ecc-proc-startup-model (session)
+  "Return the model SESSION would run before it has said which, or nil.
+What the CLI is about to be given, in the order it resolves it: the
+model of the session itself, which is the one --model would carry, then
+ANTHROPIC_MODEL in the environment it is started with, then the `model\\='
+of the Claude Code settings.  Nil leaves the CLI to its own default,
+which nothing here can name.
+
+ANTHROPIC_MODEL beats a `model\\=' in the settings files, which is the
+other way round from what the precedence of the settings suggests
+\(verified on 2026-09-14, CLI 2.1.270: ANTHROPIC_MODEL=haiku against a
+settings file naming opus ran haiku).
+
+This is what the session would start with and not what it ran: a
+resumed session picks up the model its recording ends on, and every
+`/model\\=' since is in there too.  As soon as the CLI says which model
+answered, `ecc-hint-model\\=' has the truth and this is not asked."
+  (or (ecc-proc--model session)
+      (let* ((process-environment (ecc-proc-environment session))
+             (model (getenv "ANTHROPIC_MODEL")))
+        (and model (not (string-empty-p model)) model))
+      (ecc-proc--settings-model session)))
+
 (defun ecc-proc-build-command (session &optional resume fork)
   "Return the command list that starts the CLI for SESSION.
 With RESUME non-nil the session id is passed to --resume instead of

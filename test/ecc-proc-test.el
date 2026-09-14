@@ -296,6 +296,86 @@ The next prompt after a resume must be sent, not queued."
       (should (memq turn (ecc-session-turns session))))))
 
 
+;;;; The model a session would start with
+
+(ert-deftest ecc-proc-test-startup-model-is-read-from-the-settings ()
+  "What a session would run before it has answered.
+Nothing in the stream names a model until the first answer, so the
+model of a session about to be started is the one the CLI is about to
+resolve: its own option, then ANTHROPIC_MODEL, then the settings files,
+narrowest scope first with the managed settings above all of them."
+  (ecc-test-with-fake-session session
+    (let* ((home (make-temp-file "ecc-home" t))
+           (root (make-temp-file "ecc-root" t))
+           (managed (expand-file-name "managed-settings.json" home))
+           (ecc-protocol-user-directory home)
+           (ecc-protocol-managed-files nil)
+           (ecc-proc--settings-model-cache (make-hash-table :test #'equal)))
+      (unwind-protect
+          (progn
+            (setf (ecc-session-project-root session) root)
+            ;; No file names one: the CLI falls back to a default that
+            ;; nothing here can name, so nothing is said.
+            (should-not (ecc-proc-startup-model session))
+            (ecc-protocol-write-settings-file
+             (expand-file-name "settings.json" home) '((model . "opus")))
+            (should (equal (ecc-proc-startup-model session) "opus"))
+            ;; The settings of the project are nearer than the user's,
+            ;; and the file beside them that is not committed nearer
+            ;; still.
+            (ecc-protocol-write-settings-file
+             (expand-file-name ".claude/settings.json" root) '((model . "sonnet")))
+            (should (equal (ecc-proc-startup-model session) "sonnet"))
+            (ecc-protocol-write-settings-file
+             (expand-file-name ".claude/settings.local.json" root)
+             '((model . "haiku")))
+            (should (equal (ecc-proc-startup-model session) "haiku"))
+            ;; An administrator's settings are above every one of them.
+            (ecc-protocol-write-settings-file managed '((model . "claude-opus-5")))
+            (let ((ecc-protocol-managed-files (list managed)))
+              (should (equal (ecc-proc-startup-model session) "claude-opus-5")))
+            ;; ANTHROPIC_MODEL beats the settings files.
+            (let ((process-environment
+                   (cons "ANTHROPIC_MODEL=fable" process-environment)))
+              (should (equal (ecc-proc-startup-model session) "fable")))
+            ;; A session given a model of its own carries it on the
+            ;; command line, which beats all of it.
+            (setf (ecc-session-options session) '(:model "sonnet[1m]"))
+            (should (equal (ecc-proc-startup-model session) "sonnet[1m]")))
+        (delete-directory home t)
+        (delete-directory root t)))))
+
+(ert-deftest ecc-proc-test-startup-model-is-read-again-when-a-file-changes ()
+  "The settings are cached, and a file written to is read again.
+The footer asks after every command, so the files are stat\\='ed rather
+than read; a `/model' written into the settings has to show up all the
+same."
+  (ecc-test-with-fake-session session
+    (let* ((home (make-temp-file "ecc-home" t))
+           (file (expand-file-name "settings.json" home))
+           (ecc-protocol-user-directory home)
+           (ecc-protocol-managed-files nil)
+           (ecc-proc--settings-model-cache (make-hash-table :test #'equal))
+           (root (make-temp-file "ecc-root" t))
+           (reads 0))
+      (setf (ecc-session-project-root session) root)
+      (unwind-protect
+          (cl-letf* ((read (symbol-function #'ecc-protocol-read-settings-file))
+                     ((symbol-function #'ecc-protocol-read-settings-file)
+                      (lambda (f) (cl-incf reads) (funcall read f))))
+            (ecc-protocol-write-settings-file file '((model . "opus")))
+            (should (equal (ecc-proc-startup-model session) "opus"))
+            (let ((after-first reads))
+              (should (equal (ecc-proc-startup-model session) "opus"))
+              (should (= reads after-first)))
+            ;; The timestamp has to move for the change to be seen, and
+            ;; two writes in the same instant would not move it.
+            (ecc-protocol-write-settings-file file '((model . "haiku")))
+            (set-file-times file (time-add (current-time) 10))
+            (should (equal (ecc-proc-startup-model session) "haiku")))
+        (delete-directory home t)
+        (delete-directory root t)))))
+
 ;;;; Remote Control
 
 (defun ecc-proc-test--initialize (session response)

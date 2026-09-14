@@ -103,22 +103,17 @@ read back (2.1.270, 2026-09-13).")
 
 ;;;; Where the hooks of a project come from
 
-(defvar ecc-hooks-user-directory "~/.claude/"
-  "Directory holding the settings file that applies to every project.")
-
-(defvar ecc-hooks-managed-files
-  '("/Library/Application Support/ClaudeCode/managed-settings.json"
-    "/etc/claude-code/managed-settings.json")
-  "Where an administrator's settings live, above every other scope.
-When one of these carries hooks, the CLI runs those and nothing else:
-\"Only hooks from managed settings can run\" (2.1.270).")
+;; Where the settings files are belongs to `ecc-protocol'
+;; (`ecc-protocol-settings-files'); what is here is what only the hooks
+;; need.  When the managed settings carry hooks, the CLI runs those and
+;; nothing else: "Only hooks from managed settings can run" (2.1.270).
 
 (defvar ecc-hooks-plugin-directory "~/.claude/plugins/"
   "Directory holding the installed plugins and the list of them.")
 
 (defvar ecc-hooks-disabled-file nil
   "File holding the hooks this package has switched off.
-nil means ecc-disabled-hooks.json in `ecc-hooks-user-directory'.")
+nil means ecc-disabled-hooks.json in `ecc-protocol-user-directory'.")
 
 (defconst ecc-hooks-scopes
   '((managed . "managed") (user . "user") (project . "project")
@@ -142,21 +137,7 @@ nil means ecc-disabled-hooks.json in `ecc-hooks-user-directory'.")
 (defun ecc-hooks-disabled-file ()
   "Return the file holding the hooks this package has switched off."
   (or ecc-hooks-disabled-file
-      (expand-file-name "ecc-disabled-hooks.json" ecc-hooks-user-directory)))
-
-(defun ecc-hooks-settings-files (root)
-  "Return the settings files that decide the hooks of ROOT.
-Each is (SCOPE . FILE), in the order the CLI reads them: the managed
-settings of the machine, then the user\\='s own, then the project\\='s
-and the one beside it that is not committed.  ROOT nil leaves out the
-two that belong to a project."
-  (append (mapcar (lambda (file) (cons 'managed file)) ecc-hooks-managed-files)
-          (list (cons 'user (expand-file-name "settings.json"
-                                              ecc-hooks-user-directory)))
-          (when root
-            (list (cons 'project (expand-file-name ".claude/settings.json" root))
-                  (cons 'local (expand-file-name ".claude/settings.local.json"
-                                                 root))))))
+      (expand-file-name "ecc-disabled-hooks.json" ecc-protocol-user-directory)))
 
 (defun ecc-hooks--plugin-hook-files ()
   "Return the hooks file of every plugin whose hooks would run.
@@ -179,7 +160,7 @@ and no CLI in reach."
                    'enabledPlugins
                    (ecc-protocol-read-json-file
                     (expand-file-name "settings.json"
-                                      ecc-hooks-user-directory))))
+                                      ecc-protocol-user-directory))))
          (files nil))
     (pcase-dolist (`(,id . ,installs) installed)
       (unless (eq (alist-get id enabled) :false)
@@ -255,24 +236,24 @@ plugins, then what this package has switched off."
   (append
    (seq-mapcat (lambda (source)
                  (ecc-hooks--from-file (cdr source) (car source)))
-               (ecc-hooks-settings-files root))
+               (ecc-protocol-settings-files root))
    (seq-mapcat (lambda (plugin)
                  (ecc-hooks--from-file (cdr plugin) 'plugin (car plugin)))
                (ecc-hooks--plugin-hook-files))
    (seq-filter (lambda (hook)
                  (member (ecc-hook-source hook)
-                         (mapcar #'cdr (ecc-hooks-settings-files root))))
+                         (mapcar #'cdr (ecc-protocol-settings-files root))))
                (ecc-hooks--stashed))))
 
 (defun ecc-hooks-restrictions (root)
   "Return what stops the hooks of ROOT from running, as a list of strings.
 Empty when nothing does."
   (let ((notes nil))
-    (when-let* ((managed (seq-find #'file-readable-p ecc-hooks-managed-files)))
+    (when-let* ((managed (seq-find #'file-readable-p ecc-protocol-managed-files)))
       (push (format "Managed settings are in force (%s): only their hooks run."
                     (abbreviate-file-name managed))
             notes))
-    (pcase-dolist (`(,_scope . ,file) (ecc-hooks-settings-files root))
+    (pcase-dolist (`(,_scope . ,file) (ecc-protocol-settings-files root))
       (when (ecc--json-true-p
              (alist-get 'disableAllHooks
                         (ignore-errors (ecc-protocol-read-settings-file file))))
@@ -488,7 +469,7 @@ with until it is started again" (abbreviate-file-name file) what))
 The one that is not committed comes first: a hook is a command that
 runs on this machine, and offering to put it in a file the whole team
 shares should take a deliberate answer."
-  (let ((files (ecc-hooks-settings-files root)))
+  (let ((files (ecc-protocol-settings-files root)))
     (delq nil
           (mapcar (lambda (scope)
                     (when-let* ((file (alist-get scope files)))

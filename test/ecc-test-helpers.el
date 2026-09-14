@@ -122,6 +122,14 @@ that tests cannot see each other."
           (ecc-visual-enable-pulse nil)
           (ecc-visual-enable-blink nil)
           (ecc-visual-enable-flash nil)
+          ;; What model a session would start with is read from the
+          ;; Claude Code settings of the machine, and the footer says
+          ;; it: a test reads a directory that holds none instead, and
+          ;; ANTHROPIC_MODEL is emptied for the same reason.
+          (ecc-protocol-user-directory
+           (expand-file-name "ecc-test-no-settings/" temporary-file-directory))
+          (ecc-protocol-managed-files nil)
+          (process-environment (cons "ANTHROPIC_MODEL=" process-environment))
           (,var (ecc-model-create-session
                  :name "test"
                  :project-root temporary-file-directory)))

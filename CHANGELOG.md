@@ -11,6 +11,41 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.270**.
+
+### Added
+
+- The footer under the prompt names the model before the session has answered.
+  The CLI says which model ran on every assistant message and says it nowhere
+  earlier, so a session that had just been started -- the one moment the model
+  is worth knowing, before the first prompt goes out -- had nothing on the
+  right of its footer. What the CLI is about to resolve is worked out here
+  instead: the `:model` of the session, then `ANTHROPIC_MODEL` in the
+  environment it is started with, then the `model` of the Claude Code settings
+  files -- the project's uncommitted file, then the project's, then the user's,
+  with the managed settings of the machine above all three. The first answer
+  replaces it, as a `/model` does.
+
+  `ANTHROPIC_MODEL` beats a `model` in the settings files, which is the other
+  way round from what the precedence of the settings suggests (verified on
+  2026-09-14: `ANTHROPIC_MODEL=haiku` against a settings file naming `opus` ran
+  haiku).
+
+  The footer is drawn after every command and the answer lies in files, so the
+  settings files are stat'ed and read again only when one has been written to.
+  A remote project root is left out: its settings are on the other machine.
+
+### Changed
+
+- Where the Claude Code settings files live moved from `ecc-hooks` to
+  `ecc-protocol`, which is what reads and writes them:
+  `ecc-hooks-settings-files`, `ecc-hooks-user-directory` and
+  `ecc-hooks-managed-files` are now `ecc-protocol-settings-files`,
+  `ecc-protocol-user-directory` and `ecc-protocol-managed-files`. Nothing a
+  user sets changes name.
+
 ## [0.2.0] - 2026-09-14
 
 Verified against **Claude Code CLI 2.1.270**.
