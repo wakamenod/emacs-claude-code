@@ -168,6 +168,16 @@ arriving, so reading those by name would lose them."
     (should (string-match-p "started for this question alone" text))
     (should (string-match-p "Current session" text))))
 
+(ert-deftest ecc-usage-test-the-floating-buffer-keeps-its-own-q ()
+  "The keys lent to the frame below take `q' rather than let it through.
+In a transcript `q' is `quit-window', which would take the usage away
+and change which session that window shows."
+  (let ((map (ecc-usage--transient-map)))
+    (should (eq (lookup-key map (kbd "q")) #'ecc-usage-hide))
+    (should (eq (lookup-key map (kbd "C-g")) #'ecc-usage-hide))
+    (should (eq (lookup-key map (kbd "g")) #'ecc-usage-refresh))
+    (should (eq (lookup-key map (kbd "b")) #'ecc-usage-toggle-behaviors))))
+
 (provide 'ecc-usage-test)
 
 ;;; ecc-usage-test.el ends here
