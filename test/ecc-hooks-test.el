@@ -7,8 +7,8 @@
 ;; package is allowed to edit.
 ;;
 ;; Everything happens in a temporary directory that stands in for the
-;; machine: `ecc-hooks-user-directory', `ecc-hooks-plugin-directory',
-;; `ecc-hooks-managed-files' and `ecc-hooks-disabled-file' are all
+;; machine: `ecc-protocol-user-directory', `ecc-hooks-plugin-directory',
+;; `ecc-protocol-managed-files' and `ecc-hooks-disabled-file' are all
 ;; variables so that a test can put them there, and nothing here reads
 ;; or writes the settings of the person running it.
 
@@ -65,11 +65,11 @@ command hooks.  MATCHER nil writes no matcher at all."
                                 (make-temp-file "ecc-hooks-home" t)))
           (ecc-hooks-test-root (file-name-as-directory
                                 (make-temp-file "ecc-hooks-root" t)))
-          (ecc-hooks-user-directory ecc-hooks-test-home)
+          (ecc-protocol-user-directory ecc-hooks-test-home)
           (ecc-hooks-plugin-directory (expand-file-name "plugins/"
                                                         ecc-hooks-test-home))
           ;; No administrator on a test machine, unless the test says so.
-          (ecc-hooks-managed-files nil)
+          (ecc-protocol-managed-files nil)
           (ecc-hooks-disabled-file (expand-file-name "ecc-disabled-hooks.json"
                                                      ecc-hooks-test-home)))
      (unwind-protect (progn ,@body)
@@ -125,7 +125,7 @@ command hooks.  MATCHER nil writes no matcher at all."
     (let ((managed (expand-file-name "managed-settings.json" ecc-hooks-test-home)))
       (ecc-hooks-test--write managed (ecc-hooks-test--hooks-json
                                       '("PreToolUse" "Bash" "policy")))
-      (let ((ecc-hooks-managed-files (list managed)))
+      (let ((ecc-protocol-managed-files (list managed)))
         (should (equal (ecc-hooks-test--summaries
                         (ecc-hooks-collect ecc-hooks-test-root))
                        '(("PreToolUse" "Bash" "policy" managed nil))))
@@ -399,7 +399,7 @@ happily land in the heading or in the line of keys at the top."
   "A plugin's hook and an administrator's are read-only."
   (ecc-hooks-test--with-machine
     (let* ((managed (expand-file-name "managed-settings.json" ecc-hooks-test-home))
-           (ecc-hooks-managed-files (list managed)))
+           (ecc-protocol-managed-files (list managed)))
       (ecc-hooks-test--write managed (ecc-hooks-test--hooks-json
                                       '("Stop" nil "policy")))
       (ecc-hooks-test--in-buffer

@@ -452,7 +452,59 @@ is what checks that the two still agree (`ecc-test-live-agents')."
 ;; The settings file is JSON too, so it is read and written here and not
 ;; in `ecc-perm'.  `json-pretty-print-buffer' is used for the layout; it
 ;; keeps {} and [] apart from null, which was checked on the Emacs this
-;; is developed on.
+;; is developed on.  Where those files live is here for the same reason:
+;; every module that wants one -- the hooks buffer, the permission
+;; rules, the model a session would start with -- reads it through this
+;; file.
+
+(defvar ecc-protocol-user-directory "~/.claude/"
+  "Directory holding the settings file that applies to every project.")
+
+(defvar ecc-protocol-managed-files
+  '("/Library/Application Support/ClaudeCode/managed-settings.json"
+    "/etc/claude-code/managed-settings.json")
+  "Where an administrator's settings live, above every other scope.
+They override every other file: the CLI takes what they say and no
+setting below them can undo it (2.1.270).")
+
+(defun ecc-protocol-settings-files (root)
+  "Return the settings files that apply to ROOT.
+Each is (SCOPE . FILE), in the order the CLI reads them: the managed
+settings of the machine, then the user\\='s own, then the project\\='s
+and the one beside it that is not committed.  ROOT nil leaves out the
+two that belong to a project.
+
+The order is the one to read a list of things in -- the hooks of every
+scope run.  For a single value the narrowest scope wins instead, which
+is the reverse of this, with managed above all of them."
+  (append (mapcar (lambda (file) (cons 'managed file)) ecc-protocol-managed-files)
+          (list (cons 'user (expand-file-name "settings.json"
+                                              ecc-protocol-user-directory)))
+          (when root
+            (list (cons 'project (expand-file-name ".claude/settings.json" root))
+                  (cons 'local (expand-file-name ".claude/settings.local.json"
+                                                 root))))))
+
+(defun ecc-protocol-settings-model (root)
+  "Return the model the Claude Code settings name for ROOT, or nil.
+The `model\\=' key of the settings files, which is what a session
+started without --model runs: the local file of the project first, then
+the project\\='s own, then the user\\='s, with the managed settings above
+all three.  Nil when no file names one, which is the CLI\\='s own default.
+
+A file that does not parse is passed over rather than signalled about:
+this answers a footer drawn on every command, and the CLI has the same
+file to complain about."
+  (let ((managed nil) (model nil))
+    (pcase-dolist (`(,scope . ,file) (ecc-protocol-settings-files root))
+      (when-let* ((object (ignore-errors (ecc-protocol-read-settings-file file)))
+                  (value (alist-get 'model object))
+                  ((stringp value))
+                  ((not (string-empty-p value))))
+        (if (eq scope 'managed)
+            (unless managed (setq managed value))
+          (setq model value))))
+    (or managed model)))
 
 (defun ecc-protocol-read-settings-file (file)
   "Return the JSON object in FILE as an alist, or nil when FILE is absent.
