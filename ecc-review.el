@@ -396,8 +396,8 @@ what the session changed."
    (propertize (format "  ·  comments: %d" (length (ecc-review-comment-overlays)))
                'face 'ecc-dim-face)
    (propertize (if ecc-review--request
-                   "  ·  c comment  e edit and apply  C-c C-c send as deny  n/p hunk  RET source"
-                 "  ·  c comment  l list  d delete  C-c C-c send  n/p hunk  RET source")
+                   "  ·  c comment  e edit and apply  C-c C-c send as deny (C-u edits)  n/p hunk  RET source"
+                 "  ·  c comment  l list  d delete  C-c C-c send (C-u edits)  n/p hunk  RET source")
                'face 'ecc-dim-face))))
 
 (defun ecc-review--fill (buffer session text root &optional request paths range)
@@ -676,26 +676,52 @@ COMMENTS are the plists of `ecc-review-comments'; HEADER replaces
   "Return the name of the confirmation buffer of SESSION."
   (format "*ecc-review-message: %s*" (ecc-session-name session)))
 
-(defun ecc-review-send ()
-  "Open the comments as one prompt to confirm and send.
-In the review of a proposal the prompt is sent as the message of the
-deny instead."
-  (interactive)
+(defun ecc-review--deliver (session text request)
+  "Send TEXT to SESSION, as a prompt or as the refusal of REQUEST.
+REQUEST non-nil makes TEXT the message of the deny of that proposal
+instead of a prompt of its own.  Signals a `user-error\=' when there is
+nothing to send or the proposal has been answered already."
+  (when (string-empty-p text)
+    (user-error "The message is empty"))
+  (cond
+   (request
+    (unless (memq request (ecc-session-pending session))
+      (user-error "This proposal was answered already"))
+    (ecc-perm-respond request 'deny :message text)
+    (message "Denied with comments: %s" (ecc-request-tool-name request)))
+   (t
+    (let ((outcome (ecc-proc-send-prompt session text)))
+      (if (eq outcome 'sent)
+          (message "Review comments sent")
+        (message "A turn is running; queued at position %d" outcome))))))
+
+(defun ecc-review-send (&optional edit)
+  "Send the comments of this review as one prompt and close it.
+In the review of a proposal they are sent as the message of the deny
+instead.  With a prefix argument EDIT the prompt is opened in a buffer
+of its own first, to be read over and changed before it goes: the
+comments are the prompt, so the common case is to send them as they
+stand, and the key that says send sends."
+  (interactive "P")
   (let* ((session (or ecc-review--session (user-error "Not a review buffer")))
          (text (or (ecc-review-buffer-message)
                    (user-error "No comment to send; put one on a hunk with c")))
-         (review (current-buffer))
-         (buffer (get-buffer-create (ecc-review-message-buffer-name session))))
-    (with-current-buffer buffer
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (ecc-review-message-mode)
-        (insert text)
-        (setq ecc-render--session session
-              ecc-review-message--review review)
-        (set-buffer-modified-p nil)
-        (goto-char (point-min))))
-    (pop-to-buffer buffer)))
+         (review (current-buffer)))
+    (if (not edit)
+        (progn (ecc-review--deliver session text ecc-review--request)
+               (ecc-perm-close-buffer review)
+               text)
+      (let ((buffer (get-buffer-create (ecc-review-message-buffer-name session))))
+        (with-current-buffer buffer
+          (let ((inhibit-read-only t))
+            (erase-buffer)
+            (ecc-review-message-mode)
+            (insert text)
+            (setq ecc-render--session session
+                  ecc-review-message--review review)
+            (set-buffer-modified-p nil)
+            (goto-char (point-min))))
+        (pop-to-buffer buffer)))))
 
 (defun ecc-review-message-send ()
   "Send the text of this buffer and close the review it came from."
@@ -706,19 +732,7 @@ deny instead."
          (request (and (buffer-live-p review)
                        (buffer-local-value 'ecc-review--request review)))
          (message-buffer (current-buffer)))
-    (when (string-empty-p text)
-      (user-error "The message is empty"))
-    (cond
-     (request
-      (unless (memq request (ecc-session-pending session))
-        (user-error "This proposal was answered already"))
-      (ecc-perm-respond request 'deny :message text)
-      (message "Denied with comments: %s" (ecc-request-tool-name request)))
-     (t
-      (let ((outcome (ecc-proc-send-prompt session text)))
-        (if (eq outcome 'sent)
-            (message "Review comments sent")
-          (message "A turn is running; queued at position %d" outcome)))))
+    (ecc-review--deliver session text request)
     (set-buffer-modified-p nil)
     (ecc-perm-close-buffer message-buffer)
     (when (buffer-live-p review)

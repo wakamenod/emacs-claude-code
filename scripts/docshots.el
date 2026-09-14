@@ -973,10 +973,12 @@ hunk to walk."
                          (lambda () (shot-keys "RET"))))))))
 
 (defun shot-scene-review-send ()
-  "Ask to send the comments, which shows the prompt before it goes."
+  "Ask to send the comments, which shows the prompt before it goes.
+The prefix argument is what opens that buffer; plain \`C-c C-c\=' sends."
   (when-let* ((window (shot-review-window)))
     (with-selected-window window
-      (call-interactively #'ecc-review-send)))
+      (let ((current-prefix-arg '(4)))
+        (call-interactively #'ecc-review-send))))
   (when-let* ((buffer (get-buffer (ecc-review-message-buffer-name shot-main)))
               (window (get-buffer-window buffer)))
     (select-window window)

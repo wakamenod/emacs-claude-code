@@ -555,7 +555,7 @@ file is untracked, so its diff comes from the records and not from git."
               (ecc-review-comment "Use the word hey instead of hi.")
               (should (equal (mapcar (lambda (c) (plist-get c :path)) (ecc-review-comments))
                              '("farewell.txt" "greeting.txt")))
-              (ecc-review-send)
+              (ecc-review-send t)
               (with-current-buffer (ecc-review-message-buffer-name session)
                 (let ((text (buffer-string)))
                   (should (string-prefix-p ecc-review-header text))

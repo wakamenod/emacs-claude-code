@@ -39,6 +39,15 @@ Verified against **Claude Code CLI 2.1.270**.
 
 ### Changed
 
+- `C-c C-c` in a review sends the comments instead of opening a buffer to
+  confirm them in.  The comments are the prompt -- each one carries the hunk it
+  sits on and the sentence written about it -- so what stood in between was a
+  second `C-c C-c` over a text nobody had anything to add to, while the header
+  line said `send` and did not send.  `C-u C-c C-c` opens that buffer,
+  unchanged, for the times there is something to say about the change as a
+  whole, and the header line says which key does which.  `ecc-review-send`
+  takes the prefix argument as its optional EDIT.
+
 - Where the Claude Code settings files live moved from `ecc-hooks` to
   `ecc-protocol`, which is what reads and writes them:
   `ecc-hooks-settings-files`, `ecc-hooks-user-directory` and

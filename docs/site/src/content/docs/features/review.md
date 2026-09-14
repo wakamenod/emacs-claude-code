@@ -21,14 +21,14 @@ Files tracked by Git are diffed with `git diff`, **uncommitted local changes inc
 | `l` | Jump to a comment |
 | `d` | Remove the comment on this hunk |
 | `e` | Edit the proposed content (reviewing one proposal) |
-| `C-c C-c` | Send the comments as a prompt |
+| `C-c C-c` | Send the comments as a prompt (`C-u C-c C-c` to edit it first) |
 | `C-c C-k` | Drop the review and its comments |
 | `g` | Read the diff again |
 | `q` | Bury the buffer |
 
 The buffer uses read-only `diff-mode`, so `n`, `p`, and `RET` move between hunks and jump to source. A commented hunk displays a bold header, the comment below it, and the count in the header line.
 
-`C-c C-c` collects the comments into a single prompt to confirm:
+`C-c C-c` collects the comments into a single prompt and sends it, closing the review. The comments are the prompt, so there is usually nothing to add; `C-u C-c C-c` opens it in a buffer of its own first:
 
 ````
 ## hello.py  L1-L6
@@ -41,7 +41,7 @@ The buffer uses read-only `diff-mode`, so `n`, `p`, and `RET` move between hunks
 Comment: the docstring still says hi
 ````
 
-Edit it if you like; `C-c C-c` sends the prompt, while `C-c C-k` returns to the diff.
+There, `C-c C-c` sends the prompt as it stands, while `C-c C-k` returns to the diff.
 
 ## Reviewing the working tree
 
