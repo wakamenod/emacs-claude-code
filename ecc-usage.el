@@ -522,6 +522,19 @@ whose own cost and tokens are zero and say nothing."
     (when-let* ((window (get-buffer-window buffer)))
       (quit-window nil window))))
 
+(defun ecc-usage--transient-map ()
+  "Return the keys the floating usage buffer lends to the frame below it.
+`q' and \\`C-g' are among them rather than left to fall through: the
+buffer underneath is usually a transcript, where `q' is `quit-window'
+and taking the usage away would also send that window to another
+session (confirmed 2026-09-14)."
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "g") #'ecc-usage-refresh)
+    (define-key map (kbd "b") #'ecc-usage-toggle-behaviors)
+    (define-key map (kbd "q") #'ecc-usage-hide)
+    (define-key map (kbd "C-g") #'ecc-usage-hide)
+    map))
+
 (defun ecc-usage--show-posframe (buffer)
   "Float BUFFER over the frame and read one key for it.
 A child frame takes no focus of its own, so the keys of the usage
@@ -535,10 +548,7 @@ is done with."
                  :accept-focus nil
                  :hidehandler nil)
   (set-transient-map
-   (let ((map (make-sparse-keymap)))
-     (define-key map (kbd "g") #'ecc-usage-refresh)
-     (define-key map (kbd "b") #'ecc-usage-toggle-behaviors)
-     map)
+   (ecc-usage--transient-map)
    ;; Stay up while g and b are being used; the first other key both
    ;; takes it away and does what it was going to do.
    (lambda () (memq this-command '(ecc-usage-refresh ecc-usage-toggle-behaviors)))
