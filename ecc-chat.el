@@ -639,8 +639,16 @@ The label and the face come from `ecc-chat-permission-mode-labels\='."
   "Return the model SESSION runs, for the right of the footer, or nil.
 The header line used to name it; it belongs next to the permission
 mode, since both say what the session is rather than what it is
-doing."
-  (when-let* ((model (ecc-render--model-name session)))
+doing.
+
+Until the CLI has named one -- the seconds before system/init, and a
+session opened but not started -- the model it would be started with
+stands in (`ecc-proc-startup-model\\='): the moment to change the model
+is before the first prompt, and a footer that says nothing until the
+first answer is of no use then."
+  (when-let* ((model (or (ecc-render--model-name session)
+                         (ecc--short-model-name
+                          (ecc-proc-startup-model session)))))
     (propertize model 'face 'ecc-dim-face)))
 
 (defun ecc-chat-footer-string ()
