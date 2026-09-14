@@ -4,155 +4,93 @@ This repository builds `ecc`, a package that drives the Claude Code CLI from Ema
 `README.md` says what it is and how to use it; this file is for working on it.
 
 The implementation is the record. Read the source and the tests; where a comment and the
-code disagree, the code wins.
+code disagree, the code wins. This file carries only what the code, the Makefile and the
+CHANGELOG cannot say for themselves: a rule whose reason belongs next to a mechanism goes
+in a comment there, and this file names the rule alone.
 
 ## Layout
 
-- `ecc.el` — the entry points (`ecc-start`, `ecc-resume`, `ecc-kill`) and the requires.
-- `ecc-core.el` — the customization group, the launch options and the log buffers. It
-  depends on no other `ecc-` module.
-- `ecc-protocol.el`, `ecc-proc.el` — the CLI: one line of stream-json in, an alist out,
-  and the JSON sent back.
-- `ecc-model.el` — the session, the Turn > Step > Tool tree, the pending-request queue,
-  and the hooks everything else listens on. It knows nothing of JSON, processes or drawing.
-- `ecc-render.el`, `ecc-chat.el` — the buffer: what is drawn, and the major mode that
-  holds the keymaps and the movement.
-- The rest is one feature per file (`ecc-perm.el`, `ecc-review.el`, `ecc-plan.el`,
-  `ecc-history.el`, `ecc-mcp.el`, `ecc-tui.el`, …). `ecc-transient.el` is the menu.
-- `test/` — one `ecc-<module>-test.el` per module, plus `ecc-live-test.el`.
-- `scripts/` — the recorders that make the fixtures, and `screenshot.sh`, which
-  regenerates `docs/images/session.gif` and its still by walking a throwaway GUI
-  Emacs through a replayed fixture a step at a time. macOS only; it wants
-  `ffmpeg`, and the terminal needs Screen Recording permission. `bench-render.el`
-  times a redraw on synthetic turns; run it before and after touching the
-  renderer (`$(BATCH) -l test/ecc-test-helpers.el -l scripts/bench-render.el`).
-  `bench-stream.el` is the other half: it streams a synthetic turn into a
-  session in a GUI Emacs at the CLI's pace and reports what the rest of Emacs
-  pays -- each timer, the redisplay, GC, and how late a 10 ms heartbeat fires
-  -- with the session shown and hidden (the invocation is in its header).
-- `docs/site/` — the Astro Starlight documentation site, deployed to GitHub
-  Pages by `.github/workflows/docs.yml`. English is served at the root and
-  Japanese under `/ja/`, following the same rule as the two READMEs. The
-  Japanese `docs/*.md` beside it are the gitignored working documents and are
-  no part of the site.
+One feature per file, `ecc-<feature>.el`, with `test/ecc-<module>-test.el` beside it.
+`ecc.el` holds the entry points, `ecc-transient.el` the menu. The boundaries that are
+rules:
+
+- `ecc-core.el` depends on no other `ecc-` module.
+- JSON is touched only by `ecc-protocol.el` and `ecc-proc.el`, plus the two that speak to
+  a process of their own (`ecc-mcp.el`, `ecc-inline.el`).
+- `ecc-model.el` — the session, the Turn > Step > Tool tree, the pending-request queue
+  and the hooks — knows nothing of JSON, processes or drawing, and never sees the buffer.
+- `ecc-render.el` alone draws the transcript; `ecc-chat.el` holds the major mode, the
+  keymaps and the movement. The prompt region lives after `ecc-render--prompt-start` in
+  the same buffer, and no redraw deletes past it.
+
+Each script in `scripts/` says in its own header what it is and how to run it. Run
+`scripts/bench-render.el` before and after touching the renderer. The documentation site
+is `docs/site/`, documented by `docs/site/README.md`; the `docs/*.md` beside it are
+gitignored working documents.
 
 ## Commands
 
-```
-make compile     # byte-compile (warnings are errors); wipes stale .elc first
-make test        # ERT (fixture replay; no real process)
-make test-live   # ERT against the real CLI (tag live); run by hand only
-make lint        # checkdoc (+ package-lint when it is there)
-make release VERSION=0.2.0       # bump and commit a release (see below)
-make release-tag VERSION=0.2.0   # tag it, once that commit is on main
+The Makefile's comments document the targets and the `EMACS`/`ELPA` variables. What they
+do not say:
 
-make docs-install  # npm ci for the documentation site
-make docs-dev      # the site's dev server
-make docs-build    # build the site into docs/site/dist
-make docs-preview  # serve the built site (search works here, not in dev)
-make docs-clean    # remove the site's build output
-```
-
-The `docs-*` targets are the only thing in this repository that wants Node, and
-none of them is a prerequisite of `all` or `clean`: building and testing the
-Emacs package must never start needing a JavaScript toolchain.
-
-`make test` needs nothing but Emacs 29.1 or later: no network, no `claude`, no API key.
-The optional packages are optional here too — the one test that drives the real ghostel
-backend is behind a `skip-unless`.
-
-`EMACS` names the Emacs to use, and defaults to the one on `PATH`:
-`make test EMACS=/Applications/Emacs.app/Contents/MacOS/Emacs`. On a machine where `emacs`
-is not on `PATH`, `$EMACS` is already exported into the environment by the gitignored
-`.claude/settings.local.json` and `make test` picks it up on its own, so read `$EMACS`
-before concluding there is no Emacs here. `ELPA` names the package
-directory the dependencies are read from, and defaults to `~/.emacs.d/elpa`.
-
-`make test-live` starts real sessions. It takes a few minutes and a little under $1 for
-the whole set at the model it pins. To run a single one, narrow it with a selector:
-`$(BATCH) -l test/ecc-test-helpers.el -l test/ecc-live-test.el --eval '(ert-run-tests-batch-and-exit (quote ecc-test-live-plan))'`
+- `make test` needs nothing but Emacs 29.1 or later: no network, no `claude`, no API key.
+- On a machine where `emacs` is not on `PATH`, `$EMACS` is already exported into the
+  environment by the gitignored `.claude/settings.local.json` and `make test` picks it up
+  on its own, so read `$EMACS` before concluding there is no Emacs here.
+- `make test-live` starts real sessions: a few minutes and a little under $1 for the whole
+  set. To run one, narrow it with a selector:
+  `$(BATCH) -l test/ecc-test-helpers.el -l test/ecc-live-test.el --eval '(ert-run-tests-batch-and-exit (quote ecc-test-live-plan))'`
+- Building and testing the Emacs package must never start needing a JavaScript toolchain:
+  the `docs-*` targets are the only thing here that wants Node.
 
 ## Rules for starting the CLI
 
-- **Never use `--safe-mode`.** It drops MCP servers, skills, custom commands and agents
-  altogether, which takes away the very things this package wants to show: `/` completion,
-  the agent list, the MCP tools. There is no `ecc-safe-mode`; `--safe-mode` is passed only
-  by a session that carries `:safe-mode` among its options.
-- **Cost belongs in the Claude Code settings, not here** (decided 2026-09-06). `ecc` has
-  no budget option: `scripts/record-*.sh` pass a cheap model and a cap of their own, and
-  the live tests pass theirs in `:extra-args`.
-- **There is no setting that names a model, and `--model` is passed only for a session
-  that carries one.** The model comes from the Claude Code settings for a new session,
-  and from the last real assistant message of its recording for a resumed one; passing
-  `--model` overrides that for good, which would undo every `/model` made since -- in the
-  terminal of a hand-off above all. A model that belongs to one session goes in its
-  `:model` option, which is passed either way (`ecc-proc--model`; 2026-09-06, revised
-  2026-09-08 when `ecc-model` was removed).
+- **Never use `--safe-mode`**: it takes away the MCP servers, skills, commands and agents
+  this package exists to show. There is no `ecc-safe-mode`, nor a setting that names a
+  model, an effort or a budget — all of them belong to the Claude Code settings, and a
+  session that wants its own carries it among its options (`ecc-core.el`, and
+  `ecc-proc--model` for why `--model` is never passed on its own account).
 - stream-json needs `--verbose`, `--permission-prompt-tool stdio` and
   `:connection-type 'pipe`.
-- **Plugins whose hooks would land in a recording are turned off while recording.** A
-  plugin installed on the machine fires its hooks into the session, which puts hook
-  events, a second or two of delay, and its own MCP servers and system prompt into a
-  fixture that is supposed to show the CLI alone. `scripts/record-*.sh` take
-  `--disable-plugin name@marketplace` for this, and it is per session, so your own
-  interactive sessions are unaffected. On the Elisp side the same list is
-  `ecc-disabled-plugins`, a plain variable to `setq`, or a session's `:disabled-plugins`.
+- **Plugins whose hooks would land in a recording are turned off while recording**: a
+  plugin on the machine fires its hooks into the session and puts its events, its delay
+  and its own MCP servers into a fixture meant to show the CLI alone. `scripts/record-*.sh`
+  take `--disable-plugin name@marketplace`; the Elisp side is the `ecc-disabled-plugins`
+  setting, or a session's `:disabled-plugins`.
 
 ## Coding rules
 
 - `lexical-binding: t`. The prefix is `ecc-`, and internal functions are `ecc--`.
-- JSON is touched only by `ecc-protocol.el` and `ecc-proc.el` (plus the two that speak
-  to a process of their own, `ecc-mcp.el` and `ecc-inline.el`). The transcript is drawn
-  by `ecc-render.el` alone, with text properties (`ecc-node`, `ecc-depth`,
-  `ecc-heading`, `keymap`, `read-only`) and fold overlays; `ecc-chat.el` holds the
-  major mode, the keymaps and the movement. The model never sees the buffer. The prompt
-  region lives after `ecc-render--prompt-start` in the same buffer, and no redraw deletes
-  past it.
 - Arrays for `json-serialize` are vectors. `nil` is `{}`. `null` is `:null` and false is
   `:false`.
 - No font-lock in a session buffer. Faces are put on at insertion time.
 - Never swallow an error. A failed dispatch is left in the log and in an `unknown` node.
 - Code, comments, docstrings and user-facing messages are written in English.
-- **`defcustom` is for what a user chooses**: a taste, a difference between
-  machines (font, screen, PATH), or a judgement about safety and cost. There
-  are 31 of them. A stand-in the CLI overwrites, a sentence sent to the
-  model, a table of the CLI's own quirks and an internal constant are
-  `defvar`, reachable with `setq` and bindable in a test all the same.
-  Adding a `defcustom` means making that case.
+- **`defcustom` is for what a user chooses**: a taste, a difference between machines
+  (font, screen, PATH), or a judgement about safety and cost. A stand-in the CLI
+  overwrites, a sentence sent to the model, a table of the CLI's own quirks and an
+  internal constant are `defvar`, reachable with `setq` and bindable in a test all the
+  same. Adding a `defcustom` means making that case.
 
 ## Tests
 
+`test/ecc-test-helpers.el` says where the fixtures live, what each kind is and which
+recorder makes it. Beyond that:
+
 - New behaviour gets an ERT of its own. Nothing is done until `make test` passes.
-- Fixtures are `test/fixtures/*.jsonl`, recorded from the real CLI by
-  `scripts/record-fixture.sh`.
-- Session registry fixtures are `test/fixtures/registry/*.json`, copied from
-  `~/.claude/sessions`.
-- History fixtures (the jsonl of `~/.claude/projects`) are `test/fixtures/history/*.jsonl`,
-  recorded by `scripts/record-history.sh`: it talks for a few turns with persistence on and
-  takes the jsonl that was written. Do not put them in the same directory as the stream
-  fixtures, because `ecc-dispatch-test-no-fixture-line-is-unknown` feeds every fixture
-  through as a stream.
 - A recording carries the paths and session names of the machine it was made on. Look at
   a new fixture before committing it.
 - Keep rendering snapshots to the main cases.
-- Anything that spans sessions (the dashboard, answering from anywhere) is tested with two sessions or
-  more: the destructive sort in `ecc-model-pending-all` did not show up with one.
-- `format-mode-line` returns an empty string in batch. Check the `:eval` of a mode-line by
-  calling its function directly.
+- Anything that spans sessions (the dashboard, answering from anywhere) is tested with
+  two sessions or more: a bug in `ecc-model-pending-all` did not show up with one.
 - Japanese prompts in the tests are input data. They match what the fixtures recorded, and
   they cover multibyte text, so leave them in Japanese.
 
 ## Where a session lives
 
-- Live sessions: `~/.claude/sessions/<pid>.json`, read by `ecc-registry.el`. Headless ones
-  are there too. `claude agents --json` is not used: it returns the same thing through a
-  subprocess.
-- The recording: `~/.claude/projects/<cwd with every non-alphanumeric turned into ->/<session-id>.jsonl`.
-- The recording is a tree. Editing, interrupting and resuming twice all grow branches, so
-  `ecc-history-abandoned` drops only the branches hanging off the current line (`/compact`
-  starts a new root, and must not be dropped).
-- **A second process running `--resume` on a live session forks the conversation, with no
-  lock to stop it.** Stop it before resuming; `ecc-history-resume` asks first.
+The Commentary of `ecc-registry.el` describes the live sessions, and `ecc-history.el`
+the recording and its branches. The one rule to carry in: **a second process running
+`--resume` on a live session forks the conversation, and there is no lock to stop it.**
 
 ## How the work goes
 
@@ -169,61 +107,16 @@ the whole set at the model it pins. To run a single one, narrow it with a select
 
 ## How a release goes
 
-The version is written in exactly one place, the `Version:` header of `ecc.el`: that is
-what `package.el` and `package-vc-install` read. No other `ecc-*.el` carries one, and
-there is no hand-written `ecc-pkg.el` — `package-vc` generates that, and a second copy
-of the number is a release that says two different things. `ecc-version` reads the
-number back rather than repeating it.
+The sequence and every check are in the `Makefile` header and the `release*-check`
+targets; the version rule and the rule that an entry names the CLI it was verified
+against are in the `CHANGELOG.md` header; the tag is the release, and what refuses a
+bad one is `.github/workflows/release.yml`. Two things none of them says:
 
-Below 1.0, a breaking change — a command or key binding that goes away, a `defcustom`
-that changes its meaning — bumps the minor number; everything else bumps the patch
-number. Both READMEs say so, under the documentation link.
-
-```
-git switch main && git pull       # a release is prepared on main
-$EDITOR CHANGELOG.md              # move Unreleased into a dated [0.2.0] section,
-                                  # naming the claude CLI it was verified against
-$EDITOR release-notes/0.2.0.md    # the release page: the same release, summarised
-make release VERSION=0.2.0        # checks, then autoloads+compile+lint+test,
-                                  # then the header and the commit
-git switch -c release/0.2.0 && git push -u origin release/0.2.0
-gh pr create && gh pr merge        # main takes no direct push
-git switch main && git pull
-make release-tag VERSION=0.2.0    # tags the main origin has
-git push origin v0.2.0            # this is what publishes it
-```
-
-**It is two steps because `main` takes no direct push.** A repository ruleset on the
-default branch requires a pull request, and nobody can bypass it (`bypass_actors` is
-empty; confirmed 2026-09-14). Tags are not covered by it, so the tag is pushed
-straight -- but it has to name a commit `main` can reach, which is why it is made
-after the merge, not before.
-
-`make release` writes nothing but the `Version:` header: both pieces of prose are
-written by hand first. It refuses to go on unless it is on `main`, the tree holds
-nothing but those two files, the `CHANGELOG.md` section is there,
-`release-notes/<version>.md` is there and not empty, and the tag is not taken.
-`make release-tag` makes the tag, and refuses unless `main` is exactly what origin
-has and the `Version:` header of that `main` is the version being tagged. The
-working tree is not asked about there: what is tagged is a commit origin already
-has. `make release-check` and `make release-tag-check` are those checks alone.
-
-**The two are written for different readers.** The `CHANGELOG.md` section is the
-record: every change, in the detail somebody debugging a year from now needs.
-`release-notes/<version>.md` is the release page, read by somebody deciding whether
-to upgrade -- the headline changes grouped by what they are for, the breaking ones
-named, and the rest left to the CHANGELOG, which it points at. Keep it to a screen
-or two; the 0.2.0 CHANGELOG section is 281 lines, which is why the notes stopped
-being that section (2026-09-14).
-
-The tag is the release. `.github/workflows/release.yml` runs on `v*` and refuses to
-publish if the header and the tag disagree, `CHANGELOG.md` has no section for the
-version, or `release-notes/<version>.md` is missing or empty; it then runs `make test`
-and creates the GitHub release with that file as the notes. A release published with
-the wrong notes is repaired by editing the file and re-running the workflow by hand on
-the tag (`workflow_dispatch`), which sets the notes of the release that is already
-there. Tag the merge commit on `main`, not a branch.
-
-A release entry names the `claude` version it was verified against (`claude --version`,
-which is what `ecc-version` reports too). Almost everything this package works around
-belongs to one version of the CLI, and the CLI moves without anybody upgrading ecc.
+- The version is written in exactly one place, the `Version:` header of `ecc.el`.
+  `ecc-version` reads it back, and there is no hand-written `ecc-pkg.el` — a second copy
+  of the number is a release that says two different things.
+- `CHANGELOG.md` and `release-notes/<version>.md` are written for different readers. The
+  CHANGELOG section is the record: every change, in the detail somebody debugging a year
+  from now needs. The release note is the release page, read by somebody deciding whether
+  to upgrade — the headline changes grouped by what they are for, the breaking ones named,
+  the rest left to the CHANGELOG. A screen or two (2026-09-14).
