@@ -230,6 +230,43 @@ Neither is in a git repository, so both are diffed from the records."
       ;; Nothing was stashed on the way.
       (should (string-empty-p (ecc-review-test--git directory "stash" "list"))))))
 
+(ert-deftest ecc-review-test-snapshot-reads-a-file-as-old-as-the-index ()
+  "A file whose stat is as new as the index is read, not trusted.
+The stat cache the snapshot copies in is what makes it fast, and it is
+also what would lose a file the CLI wrote in the same second as the
+last commit and to the same length.  git re-reads such a file when the
+index it was given is no newer than the file; the copy therefore has to
+carry the time of the index it was made from."
+  (skip-unless (executable-find "git"))
+  (ecc-review-test--with-directory directory
+    (ecc-review-test--git directory "init" "-q")
+    (ecc-review-test--git directory "config" "user.email" "t@example.com")
+    (ecc-review-test--git directory "config" "user.name" "t")
+    (ecc-review-test--write (concat directory "x.txt") "one\n")
+    (ecc-review-test--git directory "add" "x.txt")
+    (ecc-review-test--git directory "commit" "-q" "-m" "init")
+    ;; git ignores the change time here, the way a write in the same second
+    ;; leaves it saying nothing: a `set-file-times' can put back the
+    ;; modification time of a file, and nothing can put back its change time.
+    (ecc-review-test--git directory "config" "core.trustctime" "false")
+    (let* ((root (ecc-review-git-root directory))
+           (file (expand-file-name "x.txt" root))
+           (index (expand-file-name ".git/index" root))
+           ;; A moment ago, so that a copy of the index stamped now would be
+           ;; the newer of the two and every cached stat would look sound.
+           (moment (time-subtract (current-time) 5)))
+      ;; Teach the index that stat while the content still agrees with it.
+      (set-file-times file moment)
+      (ecc-review-test--git directory "update-index" "--refresh")
+      ;; Now the file changes, to the same number of bytes and back to the
+      ;; stat the index holds: only its content says it changed at all.
+      (ecc-review-test--write file "two\n")
+      (set-file-times file moment)
+      (set-file-times index moment)
+      (should (assoc "x.txt"
+                     (ecc-review--numstat root (ecc-review--head-tree root)
+                                          (ecc-review-snapshot root) nil))))))
+
 (ert-deftest ecc-review-test-snapshot-no-add-is-the-index ()
   "With NO-ADD the snapshot is the index: what is staged and nothing else."
   (skip-unless (executable-find "git"))
