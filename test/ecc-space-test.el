@@ -190,12 +190,19 @@ sidebar would be changing the layout behind their back."
     ;; A Space with nothing running in it is shown rather than refused:
     ;; `ecc-focus-project' has no windows to deal out there.
     (let ((ecc-layout 'classic)
+          (ecc-space-test--started nil)
           (shown nil))
       (cl-letf (((symbol-function 'ecc-window-focus-source)
-                 (lambda (root &rest _) (setq shown root))))
+                 (lambda (root &rest _) (setq shown root)))
+                ((symbol-function 'ecc-start)
+                 (lambda (&optional root &rest _)
+                   (push root ecc-space-test--started))))
         (ecc-space-select (make-ecc-space :key "/tmp/empty/" :root "/tmp/empty/"
                                           :name "empty"))
-        (should (equal shown "/tmp/empty/"))))))
+        (should (equal shown "/tmp/empty/"))
+        ;; And `classic' starts nothing: the automatic session belongs
+        ;; to the tab, which `classic' does not make.
+        (should-not ecc-space-test--started)))))
 
 (ert-deftest ecc-space-test-select-makes-a-tab-then-reuses-it ()
   "A Space gets one tab, named after it, and is found again by that name."
@@ -400,6 +407,50 @@ and `ecc-toggle' bring it back."
                        (ecc-session-name
                         (ecc-window-buffer-session
                          (window-buffer (car (ecc-space--session-windows))))))))))) 
+
+(ert-deftest ecc-space-test-an-empty-space-gets-a-session ()
+  "Going to a Space with nothing running starts one there.
+A tab with a file in it and no way to say anything is a Space that
+looks broken."
+  (ecc-space-test--with-sessions `(("two" . ,ecc-space-test--two))
+    (ecc-space-test--with-tab-bar
+      (let ((root (file-name-as-directory (make-temp-file "ecc-space" t))))
+        (unwind-protect
+            (progn
+              (ecc-space-select (ecc-space-of-root root))
+              (should (equal ecc-space-test--started
+                             (list (ecc-space-root (ecc-space-of-root root)))))
+              ;; The Space that has one is left alone.
+              (setq ecc-space-test--started nil)
+              (ecc-space-select (ecc-space-of-root ecc-space-test--two))
+              (should-not ecc-space-test--started))
+          (delete-directory root t))))))
+
+(ert-deftest ecc-space-test-the-automatic-session-does-not-loop ()
+  "Starting a session shows it, and showing it selects the Space again.
+Without a guard the second turn of that circle starts another session:
+`ecc-model-create-session' has registered nothing at the moment the
+first one asks for a window."
+  (ecc-space-test--with-sessions nil
+    (ecc-space-test--with-tab-bar
+      (let* ((root (file-name-as-directory (make-temp-file "ecc-space" t)))
+             (space (ecc-space-of-root root))
+             (calls 0))
+        (unwind-protect
+            (cl-letf (((symbol-function 'ecc-start)
+                       (lambda (&optional directory &rest _)
+                         (cl-incf calls)
+                         ;; What `ecc-start' does, in the order it does
+                         ;; it: the session is made, and then shown.
+                         (let ((session (ecc-model-create-session
+                                         :name "auto" :project-root directory)))
+                           (ecc-space-display-session session)
+                           session))))
+              (ecc-space-select space)
+              (should (= 1 calls))
+              (should (= 1 (length (ecc-space-sessions space)))))
+          (mapc #'ecc-test-cleanup-session (ecc-space-sessions space))
+          (delete-directory root t))))))
 
 (ert-deftest ecc-space-test-going-to-a-request-goes-to-its-space ()
   "`ecc-next-attention' takes the Space of the session with it.

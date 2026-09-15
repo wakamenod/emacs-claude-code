@@ -49,6 +49,7 @@
 (declare-function ecc-render--project-name-1 "ecc-render" (directory))
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-kill "ecc" (session))
+(declare-function ecc-start "ecc" (&optional directory name))
 (declare-function dired-noselect "dired" (dir-or-list &optional switches))
 (declare-function ecc-sidebar-show "ecc-sidebar" ())
 
@@ -287,8 +288,37 @@ refusing is no answer to somebody who asked to be taken there."
           (float-time))
     nil))
 
+(defvar ecc-space--starting nil
+  "Keys of the Spaces whose automatic session is being started.
+Starting a session shows it, showing it selects its Space, and selecting
+a Space with nothing in it is what starts one.  The first turn of that
+circle has not registered its session yet when the second comes round,
+so the key is held here instead.")
+
+(defun ecc-space--ensure-session (space)
+  "Start a session in SPACE when nothing of it is running.
+Going to a Space is asking to work there, and a Space with nothing
+running is a tab with a file in it and no way to say anything.  There is
+no setting: a Space that lands empty is one that looks broken.
+
+Failing to start is not failing to go there -- the tab is made and the
+message says what happened -- and a checkout that is gone is left alone
+rather than started in a directory that does not exist."
+  (when (and (not ecc-space--laying-out)
+             (not (member (ecc-space-key space) ecc-space--starting))
+             (null (ecc-space-sessions space))
+             (file-directory-p (ecc-space-root space)))
+    (let ((ecc-space--starting (cons (ecc-space-key space) ecc-space--starting)))
+      (require 'ecc)
+      (condition-case error
+          (ecc-start (ecc-space-root space))
+        (error (message "%s: nothing started: %s" (ecc-space-name space)
+                        (error-message-string error)))))))
+
 (defun ecc-space--select-tab (space)
-  "Show SPACE in its tab, making the tab when it has none."
+  "Show SPACE in its tab, making the tab when it has none.
+A Space with nothing running in it gets a session; see
+`ecc-space--ensure-session\='."
   (unless (bound-and-true-p tab-bar-mode)
     (tab-bar-mode 1))
   (let ((name (ecc-space-tab space)))
@@ -302,6 +332,7 @@ refusing is no answer to somebody who asked to be taken there."
       (ecc-space--lay-out space))
     (setf (alist-get (ecc-space-key space) ecc-space--used nil nil #'equal)
           (float-time))
+    (ecc-space--ensure-session space)
     name))
 
 (defun ecc-space-current-key ()

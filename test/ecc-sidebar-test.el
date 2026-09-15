@@ -66,7 +66,10 @@ when BODY runs, and everything is put back afterwards."
                             (t "master"))))
                    ((symbol-function 'ecc-worktree-ahead-behind)
                     (lambda (root)
-                      (and (equal root ecc-sidebar-test--one) '(2 . 0)))))
+                      (and (equal root ecc-sidebar-test--one) '(2 . 0))))
+                   ;; Going to a Space with nothing running starts a
+                   ;; session there, and no test runs a CLI.
+                   ((symbol-function 'ecc-start) (lambda (&rest _) nil)))
            (dolist (session sessions) (ecc-model-set-state session 'idle))
            (with-current-buffer (get-buffer-create ecc-sidebar-buffer-name)
              (unless (derived-mode-p 'ecc-sidebar-mode) (ecc-sidebar-mode))
