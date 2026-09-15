@@ -373,6 +373,14 @@ it too."
     ("/" "Search past sessions" ecc-search)
     ("U" "Usage" ecc-usage)
     ("L" "Log" ecc-show-log)]
+   ["Spaces"
+    ("J" "Go to a Space" ecc-space-goto)
+    ("B" "Sidebar" ecc-sidebar-focus)
+    ("z" "Zoom this window" ecc-space-zoom)
+    ("X" "Close this Space" ecc-space-close)
+    ("C" "New worktree" ecc-start-worktree)
+    ("E" "Open a worktree" ecc-start-in-worktree)
+    ("M" "Remove a worktree" ecc-remove-worktree)]
    ["Config"
     ("m" "Model" ecc-set-model)
     ("p" "Permission mode" ecc-set-permission-mode)

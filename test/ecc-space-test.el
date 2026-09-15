@@ -344,6 +344,32 @@ read, and the session that lost its window goes on running without one."
               (should-not (get-buffer-window (ecc-session-buffer second)))
               (should (get-buffer-window (ecc-session-buffer first))))))))))
 
+(ert-deftest ecc-space-test-going-to-a-request-goes-to-its-space ()
+  "`ecc-next-attention' takes the Space of the session with it.
+A question and a plan open a buffer of their own, and that buffer used
+to be popped into whichever Space the user was in, leaving the session
+it belongs to behind in another tab."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--two))
+    (ecc-space-test--with-tab-bar
+      (let ((there (nth 1 sessions))
+            (opened nil))
+        (unwind-protect
+            (dolist (tool '("Write" "AskUserQuestion"))
+              ;; Stand in the first Space, with the request in the second.
+              (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+              (should (equal (ecc-space-current-key) ecc-space-test--one))
+              (let ((request (ecc-test-add-request there tool)))
+                (ecc-next-attention)
+                (should (equal (ecc-space-current-key) ecc-space-test--two))
+                (when-let* ((buffer (get-buffer
+                                     (format "*ecc-question: %s*"
+                                             (ecc-session-name there)))))
+                  (push buffer opened))
+                (ignore request)
+                (setf (ecc-session-pending there) nil)))
+          (mapc (lambda (b) (when (buffer-live-p b) (kill-buffer b))) opened))))))
+
 (ert-deftest ecc-space-test-zoom-goes-back ()
   "Zooming leaves one window and zooming again brings the others back."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one))

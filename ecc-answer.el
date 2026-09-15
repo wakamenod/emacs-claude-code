@@ -38,6 +38,10 @@
 (declare-function ecc-review "ecc-review" (&optional session paths))
 (declare-function ecc-review-worktree "ecc-review" (&optional session range root))
 (declare-function ecc-search "ecc-search" (query &optional everywhere))
+(declare-function ecc-sidebar-focus "ecc-sidebar" ())
+(declare-function ecc-space-goto "ecc-space" (space))
+(declare-function ecc-space-zoom "ecc-space" ())
+(declare-function ecc-start-worktree "ecc-worktree" (branch))
 (declare-function ecc-show-session "ecc-transient" ())
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-tui-open "ecc-tui" (&optional session))
@@ -69,9 +73,18 @@ A request for one of them has to be answered where it can be read.")
 
 (defun ecc-answer-goto-request (request)
   "Show where REQUEST is answered: its section, question or plan buffer."
+  ;; A question and a plan open a buffer of their own, so the Space of
+  ;; the session has to be gone to first; a permission request is
+  ;; answered in the transcript, and `ecc-display-session' goes there
+  ;; on its own.
   (pcase (ecc-request-kind request)
-    ('question (pop-to-buffer (ecc-question-open request)))
-    ('plan (require 'ecc-plan) (pop-to-buffer (ecc-plan-open request)))
+    ('question
+     (ecc-window-visit-session-space (ecc-request-session request))
+     (pop-to-buffer (ecc-question-open request)))
+    ('plan
+     (require 'ecc-plan)
+     (ecc-window-visit-session-space (ecc-request-session request))
+     (pop-to-buffer (ecc-plan-open request)))
     (_ (let* ((session (ecc-request-session request))
               (window (ecc-display-session session)))
          (when (window-live-p window)
@@ -202,6 +215,15 @@ question buffer opens with the first one answered."
     (define-key map (kbd "w") #'ecc-toggle)
     (define-key map (kbd "i") #'ecc-interrupt)
     (define-key map (kbd "t") #'ecc-tui-open)
+    ;; The Spaces, in capitals beside the lower-case key of the nearest
+    ;; thing: `j' focuses a project and `J' goes to a Space, `c' starts a
+    ;; session here and `C' starts one in a worktree of its own, `b' opens
+    ;; the dashboard and `B' the sidebar, which is the dashboard that
+    ;; stays.  `z' is herdr's zoom.
+    (define-key map (kbd "J") #'ecc-space-goto)
+    (define-key map (kbd "B") #'ecc-sidebar-focus)
+    (define-key map (kbd "z") #'ecc-space-zoom)
+    (define-key map (kbd "C") #'ecc-start-worktree)
     ;; Answering what is waiting.
     (define-key map (kbd "a") #'ecc-answer-allow)
     (define-key map (kbd "d") #'ecc-answer-deny)
