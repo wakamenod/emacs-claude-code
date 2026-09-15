@@ -1347,13 +1347,16 @@ An Edit or a Write shows its input as a diff."
     (pcase (ecc-node-status node)
       ('running (insert (propertize (concat body "…") 'face 'ecc-dim-face) "\n"))
       ('denied (insert (propertize (concat body "denied") 'face 'ecc-error-face) "\n"))
-      (_ (when (ecc-model-node-get node 'result)
-           (ecc-render--insert-lines
-            (ecc-render--clip (ecc-render--result-text
-                               (ecc-model-node-get node 'result))
-                              ecc-render-result-max-lines)
-            (concat body "→ ")
-            (if error-p 'ecc-error-face 'ecc-dim-face)))))
+      (_ (let ((text (ecc-render--result-text
+                      (ecc-model-node-get node 'result))))
+           ;; A result of nothing but an image has no text left once the
+           ;; image has been taken out of it, and an empty one would be
+           ;; drawn as a bare arrow pointing at nothing.
+           (unless (string-empty-p (string-trim text))
+             (ecc-render--insert-lines
+              (ecc-render--clip text ecc-render-result-max-lines)
+              (concat body "→ ")
+              (if error-p 'ecc-error-face 'ecc-dim-face))))))
     ;; The pictures come after the clip, never through it: a result of
     ;; thirteen lines must not be what decides whether a screenshot is
     ;; seen.

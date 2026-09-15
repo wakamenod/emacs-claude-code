@@ -83,6 +83,17 @@ NAME, PROMPT and ANSWERS are as there."
     (source . ((type . "base64") (media_type . "image/png")
                (data . ,(base64-encode-string (ecc-test-image-bytes) t))))))
 
+(ert-deftest ecc-render-test-image-result-snapshot ()
+  "The recording of a Read of a .png, drawn."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--with-images session
+      (ecc-render-test--check
+       "image-result"
+       (ecc-render-test--replay
+        session "image-result"
+        "Read test/fixtures/red-square.png and say its colour in one English word."
+        nil)))))
+
 (defun ecc-render-test--read-with-image (session)
   "Feed SESSION a Read of a .png answered with the image itself."
   (ecc-dispatch session
@@ -1621,7 +1632,10 @@ any route as long as they arrive at the same buffer."
                    ("subagent" "探して" nil)
                    ("edit-tool" "greet を直して" (allow))
                    ("partial-messages" "長いファイルを書いて" (allow))
-                   ("tasks" "タスクを作って" nil)))
+                   ("tasks" "タスクを作って" nil)
+                   ("image-result"
+                    "Read test/fixtures/red-square.png and say its colour in one English word."
+                    nil)))
     (let ((once (ecc-test-with-fake-session session
                   (ecc-render-test--replay session name prompt answers)))
           (each (ecc-test-with-fake-session session
