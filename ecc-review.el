@@ -44,6 +44,7 @@
 (require 'ecc-window)
 
 (declare-function ecc-start "ecc" (&optional directory name))
+(declare-function ediff-recenter "ediff-util" (&optional no-rehighlight))
 
 (defvar ecc-review-git-executable "git"
   "The git program the review runs for `git diff'.")
@@ -503,6 +504,28 @@ The string is what git is given: \"HEAD\" for everything uncommitted,
 (defvar-local ecc-review--comments nil
   "Overlays of the hunk comments, in no particular order.")
 
+;; A review is a buffer that holds comments and is closed when they have
+;; been sent.  How it holds them and how it closes are its own: the diff
+;; buffer keeps overlays on hunks and is killed, an ediff review keeps
+;; them against difference numbers in a control buffer and is quit
+;; through ediff so that the windows come back.  Everything between --
+;; C-c C-c, the prompt shown to be confirmed, C-c C-k -- is the same
+;; code for both, because only these two slots differ.
+
+(defvar-local ecc-review--comments-function #'ecc-review-comments
+  "How this review buffer lists its comments.
+Called with no argument in the review buffer; returns the plists
+`ecc-review-format-message\=' takes.")
+
+(defvar-local ecc-review--close-function #'ecc-perm-close-buffer
+  "How this review buffer is closed once its comments have been sent.
+Called with the review buffer.")
+
+(defun ecc-review--close (review)
+  "Close the review buffer REVIEW the way it asks to be closed."
+  (when (buffer-live-p review)
+    (funcall (buffer-local-value 'ecc-review--close-function review) review)))
+
 (defvar ecc-review-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "c") #'ecc-review-comment)
@@ -817,7 +840,7 @@ COMMENTS are the plists of `ecc-review-comments'; HEADER replaces
 
 (defun ecc-review-buffer-message ()
   "Return the prompt for the comments of the current review buffer, or nil."
-  (when-let* ((comments (ecc-review-comments)))
+  (when-let* ((comments (funcall ecc-review--comments-function)))
     (ecc-review-format-message comments
                                (and ecc-review--request ecc-review-proposal-header))))
 
@@ -883,7 +906,7 @@ stand, and the key that says send sends."
          (review (current-buffer)))
     (if (not edit)
         (progn (ecc-review--deliver session text ecc-review--request)
-               (ecc-perm-close-buffer review)
+               (ecc-review--close review)
                text)
       (let ((buffer (get-buffer-create (ecc-review-message-buffer-name session))))
         (with-current-buffer buffer
@@ -909,8 +932,7 @@ stand, and the key that says send sends."
     (ecc-review--deliver session text request)
     (set-buffer-modified-p nil)
     (ecc-perm-close-buffer message-buffer)
-    (when (buffer-live-p review)
-      (ecc-perm-close-buffer review))
+    (ecc-review--close review)
     text))
 
 (defun ecc-review-message-cancel ()
@@ -920,7 +942,11 @@ stand, and the key that says send sends."
     (set-buffer-modified-p nil)
     (ecc-perm-close-buffer (current-buffer))
     (when (buffer-live-p review)
-      (pop-to-buffer review))))
+      (pop-to-buffer review)
+      ;; An ediff review has no window of its own to pop to: the control
+      ;; buffer is one of three, and only ediff can lay them out again.
+      (when (derived-mode-p 'ediff-mode)
+        (ediff-recenter)))))
 
 ;;;; Opening a review
 
@@ -1115,7 +1141,7 @@ what is not staged yet."
 (defun ecc-review-quit ()
   "Close the review buffer, dropping its comments."
   (interactive)
-  (ecc-perm-close-buffer (current-buffer)))
+  (ecc-review--close (current-buffer)))
 
 ;;;; Reviewing one proposal
 
