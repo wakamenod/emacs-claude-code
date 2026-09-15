@@ -35,6 +35,7 @@
 
 (declare-function ecc-render-refresh "ecc-render" (session))
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
+(declare-function ecc-review-take-baseline "ecc-review" (session))
 (declare-function ecc-display-session "ecc-window" (session))
 
 (defvar ecc-history-directory "~/.claude/projects/"
@@ -547,6 +548,10 @@ the CLI would run twice on the same recording."
   (setf (ecc-session-kind session) 'own)
   (require 'ecc-session)
   (ecc-session-ensure-buffer session)
+  ;; The review starts again from here: what came before was the work of
+  ;; the session that made it, and was reviewed under that one.
+  (require 'ecc-review)
+  (ecc-review-take-baseline session)
   (ecc-proc-start session t fork)
   session)
 

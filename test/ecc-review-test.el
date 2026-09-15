@@ -203,6 +203,136 @@ Neither is in a git repository, so both are diffed from the records."
           (should (< (string-search "diff --git" (car diff))
                      (string-search "/dev/null" (car diff)))))))))
 
+;;;; The baseline a session is reviewed against
+
+(ert-deftest ecc-review-test-snapshot-leaves-the-repository-alone ()
+  "A snapshot writes a tree and touches neither the index nor the tree."
+  (skip-unless (executable-find "git"))
+  (ecc-review-test--with-directory directory
+    (ecc-review-test--git directory "init" "-q")
+    (ecc-review-test--git directory "config" "user.email" "t@example.com")
+    (ecc-review-test--git directory "config" "user.name" "t")
+    (ecc-review-test--write (concat directory "x.txt") "one\n")
+    (ecc-review-test--git directory "add" "x.txt")
+    (ecc-review-test--git directory "commit" "-q" "-m" "init")
+    (ecc-review-test--write (concat directory "x.txt") "two\n")
+    (ecc-review-test--write (concat directory "new.txt") "hello\n")
+    (let ((root (ecc-review-git-root (concat directory "x.txt")))
+          (before (ecc-review-test--git directory "status" "--porcelain")))
+      (let ((tree (ecc-review-snapshot root)))
+        (should (stringp tree))
+        ;; The untracked file is in the tree, which is the point: it is
+        ;; how a file that was already there stops reading as new.
+        (should (string-search "new.txt"
+                               (ecc-review-test--git root "ls-tree" "-r"
+                                                     "--name-only" tree))))
+      (should (equal before (ecc-review-test--git directory "status" "--porcelain")))
+      ;; Nothing was stashed on the way.
+      (should (string-empty-p (ecc-review-test--git directory "stash" "list"))))))
+
+(ert-deftest ecc-review-test-baseline-excludes-what-came-before ()
+  "The session review shows what changed after the baseline, not before it."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (progn
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (ecc-review-test--write (concat directory "x.txt") "one\n")
+            (ecc-review-test--git directory "add" "x.txt")
+            (ecc-review-test--git directory "commit" "-q" "-m" "init")
+            ;; Work of the user's own, before the session starts.
+            (ecc-review-test--write (concat directory "x.txt") "mine\n")
+            (ecc-review-test--write (concat directory "was-here.txt") "already\n")
+            (setf (ecc-session-project-root session) directory)
+            (should (ecc-review-take-baseline session))
+            ;; Now the session works, by no particular tool.
+            (ecc-review-test--write (concat directory "x.txt") "theirs\n")
+            (ecc-review-test--write (concat directory "made.txt") "new\n")
+            (let ((buffer (ecc-review-buffer session)))
+              (with-current-buffer buffer
+                (let ((text (buffer-string)))
+                  ;; The change the session made, from where it found it.
+                  (should (string-search "\n-mine\n+theirs\n" text))
+                  (should-not (string-search "-one\n" text))
+                  ;; The file it created, and not the one already there.
+                  (should (string-search "made.txt" text))
+                  (should-not (string-search "was-here.txt" text))))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-baseline-spans-a-commit ()
+  "Work the session committed is still shown; `git diff HEAD' would lose it."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (progn
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (ecc-review-test--write (concat directory "x.txt") "one\n")
+            (ecc-review-test--git directory "add" "x.txt")
+            (ecc-review-test--git directory "commit" "-q" "-m" "init")
+            (setf (ecc-session-project-root session) directory)
+            (should (ecc-review-take-baseline session))
+            ;; The session changes a file and commits it, as the project
+            ;; asks for: meaningful steps rather than one lump.
+            (ecc-review-test--write (concat directory "x.txt") "two\n")
+            (ecc-review-test--git directory "add" "x.txt")
+            (ecc-review-test--git directory "commit" "-q" "-m" "step")
+            (ecc-review-test--write (concat directory "y.txt") "later\n")
+            ;; Against HEAD the committed step is gone.
+            (let ((buffer (ecc-review-worktree-buffer session)))
+              (with-current-buffer buffer
+                (should-not (string-search "-one\n" (buffer-string)))))
+            ;; Against the baseline it is still there, with the rest.
+            (let ((buffer (ecc-review-buffer session)))
+              (with-current-buffer buffer
+                (let ((text (buffer-string)))
+                  (should (string-search "\n-one\n+two\n" text))
+                  (should (string-search "+later\n" text))))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-baseline-names-an-oversized-file ()
+  "A file too large to read is named rather than printed."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((ecc-review-max-bytes 100))
+            (ecc-review-test--git directory "init" "-q")
+            (setf (ecc-session-project-root session) directory)
+            (should (ecc-review-take-baseline session))
+            (ecc-review-test--write (concat directory "lock.json")
+                                    (make-string 400 ?x))
+            (ecc-review-test--write (concat directory "small.txt") "fine\n")
+            (let ((buffer (ecc-review-buffer session)))
+              (with-current-buffer buffer
+                (let ((text (buffer-string)))
+                  (should (string-search "not shown" text))
+                  (should-not (string-search "xxxxxxxx" text))
+                  (should (string-search "+fine\n" text))))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-baseline-outside-git-uses-the-records ()
+  "A project outside git is still reviewed from what the session recorded."
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((file (concat directory "a.txt")))
+            (ecc-review-test--write file "after\n")
+            (ecc-review-test--entry session file :original "before\n"
+                                    :snapshot "after\n" :edits 1)
+            (setf (ecc-session-project-root session) directory)
+            ;; No repository, so no baseline and nothing to diff trees with.
+            (should-not (ecc-review-take-baseline session))
+            (let ((buffer (ecc-review-buffer session)))
+              (with-current-buffer buffer
+                (should (string-search "\n-before\n+after\n" (buffer-string))))))
+        (ecc-review-test--kill-review-buffers)))))
+
 (ert-deftest ecc-review-test-worktree ()
   "The working tree review shows every change of the repository."
   (skip-unless (executable-find "git"))
@@ -224,9 +354,12 @@ Neither is in a git repository, so both are diffed from the records."
             (ecc-review-test--git directory "add" "y.txt")
             (ecc-review-test--write untracked "hello\n")
             (setf (ecc-session-project-root session) directory)
-            ;; The session changed nothing, so the review of the session
-            ;; refuses and this one still has everything to show.
-            (should-error (ecc-review-buffer session) :type 'user-error)
+            ;; This session never had a baseline taken, so the review of
+            ;; the session falls back to HEAD and shows what this one
+            ;; shows, rather than refusing for want of a record.
+            (let ((buffer (ecc-review-buffer session)))
+              (with-current-buffer buffer
+                (should (string-search "\n-two\n+2\n" (buffer-string)))))
             (let ((buffer (ecc-review-worktree-buffer session)))
               (with-current-buffer buffer
                 (should (derived-mode-p 'ecc-review-mode))

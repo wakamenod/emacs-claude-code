@@ -32,7 +32,7 @@ Because the transcript is standard buffer text, you can use regular Emacs workfl
 
 ### Key Features
 
-- **[Diff reviews](https://wakamenod.github.io/emacs-claude-code/features/review/):** Inspect all changes made during a session in a single `diff-mode` buffer. Add inline comments to hunks and submit them as a single prompt.
+- **[Diff reviews](https://wakamenod.github.io/emacs-claude-code/features/review/):** Inspect all changes made during a session in a single `diff-mode` buffer, however they were made — an edit, a shell command or a script all read alike. Add inline comments to hunks and submit them as a single prompt.
 - **[Interactive edits](https://wakamenod.github.io/emacs-claude-code/features/review/#reviewing-a-proposal-before-it-is-applied):** Review and modify proposed file edits before approving them.
 - **[Plan mode](https://wakamenod.github.io/emacs-claude-code/features/review/#plan-mode):** Work through proposed execution plans in a writable buffer.
 - **[Global access](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/):** Approve or deny pending tool requests from any buffer.

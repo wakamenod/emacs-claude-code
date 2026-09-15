@@ -141,6 +141,9 @@ finding it later among all the others."
                   :project-root (or directory (ecc-window-context-project-root))
                   :name (and name (not (string-empty-p name)) name))))
     (ecc-session-ensure-buffer session)
+    ;; What the tree held before the CLI could touch it: `ecc-review'
+    ;; diffs against this, so it is taken before the process starts.
+    (ecc-review-take-baseline session)
     (ecc-proc-start session)
     (ecc--enable-session-modes)
     (ecc-window-select-session session)

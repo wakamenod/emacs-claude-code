@@ -7,13 +7,26 @@ sidebar:
 
 Review changes as a single diff, comment on hunks that need work, and send all comments in a single prompt. The same buffer reviews what a session changed, the working tree it modified, or a single proposal before it is applied.
 
+`D` and `G` are the same review with a different base:
+
+- `D` — against **where the session started**, so work committed during the session is still shown.
+- `G` — against **the last commit (`HEAD`)**, so only what is uncommitted.
+
+Neither cares how a file was changed: an edit, a shell command and a script all show alike.
+
 ## Reviewing session changes
 
 Press `D` in the transient menu, type `C-c c D`, or run `M-x ecc-review`. A prefix argument (`C-u D`) prompts for specific files.
 
 ![Every change of the session as one diff: a comment attached to a hunk, and the prompt it becomes shown before it goes](../../../assets/review.gif)
 
-Files tracked by Git are diffed with `git diff`, **uncommitted local changes included**. Untracked files and files outside a repository are diffed against their state before the session's first change.
+When the session starts, ecc records what the working tree held — a Git tree object written through a throwaway index, so nothing is stashed and neither the real index nor your files are touched. The review compares the tree as it stands now against that baseline. Work you had in progress before the session started is therefore left out, and a change is shown whether the CLI made it with an edit tool, a shell command or a script.
+
+Because the base is a moment rather than a commit, changes the session committed along the way are still shown; `G` would have lost them. A resumed session takes a fresh baseline, since what came before was the work of the session that made it.
+
+Two caveats worth knowing. The base is a time, not an author, so another session working in the same directory shows up here too — separate Git worktrees keep them apart. And a file larger than `ecc-review-max-bytes` (200,000 by default) is named rather than printed, which is what usually happens to a lock file a package manager rewrote.
+
+Outside a Git repository there is no tree to compare against, so files are diffed against what the CLI reported them holding before the session's first change — the only place the old behaviour remains.
 
 | Key | Action |
 |---|---|
@@ -45,9 +58,9 @@ Edit it if you like; `C-c C-c` sends the prompt, while `C-c C-k` returns to the 
 
 ## Reviewing the working tree
 
-`ecc-review` covers only what the session edited or wrote. For changes you made yourself, press `G` in the menu, type `C-c c G`, or run `M-x ecc-review-worktree`.
+Where `ecc-review` starts from the moment the session began, this starts from the last commit. Press `G` in the menu, type `C-c c G`, or run `M-x ecc-review-worktree`.
 
-This diffs the project's entire repository against `HEAD` — every uncommitted change, staged or unstaged, plus the untracked files (those `.gitignore` excludes are left out; a binary file, or one larger than `ecc-review-untracked-max-bytes`, is named rather than printed). `C-u G` prompts for what to diff against: a revision, a range such as `main...HEAD`, or nothing for unstaged changes.
+This diffs the project's entire repository against `HEAD` — every uncommitted change, staged or unstaged, plus the untracked files (those `.gitignore` excludes are left out; a binary file, or one larger than `ecc-review-max-bytes`, is named rather than printed). A repository with no commit yet is compared against the empty tree, so the first code written in a project can be reviewed before it is committed. `C-u G` prompts for what to diff against: a revision, a range such as `main...HEAD`, or nothing for unstaged changes.
 
 The project is determined by the current buffer, and comments go to that project's session. If none exists, ecc offers to start one, which is the usual entry point. Commenting and sending work as described above, and the two reviews use separate buffers.
 

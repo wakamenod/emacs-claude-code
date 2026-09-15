@@ -46,6 +46,35 @@ Verified against **Claude Code CLI 2.1.270**.
   `ecc-protocol-user-directory` and `ecc-protocol-managed-files`. Nothing a
   user sets changes name.
 
+- **Breaking:** `ecc-review` (`C-c c D`) reviews everything that changed since the
+  session started, rather than the files the CLI reported editing or writing. The
+  old review read the tool stream, so a file changed by a shell command, a script
+  or anything else that is not an Edit or a Write was not in it -- and that is now
+  most of what a session does, which left the review empty in the sessions that had
+  the most to show. What the working tree held is recorded when the session starts
+  (and again when one is resumed, since what came before belongs to the session that
+  made it), and the review compares the tree as it stands against that. A change is
+  shown whatever made it.
+
+  The two reviews are now one review with one argument between them: `D` against
+  where the session started, `G` against the last commit. So `D` still shows work
+  the session committed along the way, which `G` loses, and neither cares how a file
+  was changed.
+
+  The base is a moment rather than an author, so work in progress from before the
+  session is left out, but another session working in the same directory is not --
+  separate git worktrees keep those apart. A project outside git has no tree to
+  compare against and is reviewed from the session's own record, as before.
+
+  The baseline is a git tree written through a throwaway index: no stash entry is
+  made, `refs/stash` is not touched, and neither is the real index or any file. It
+  costs about 25 ms over 206 files (measured 2026-09-15).
+
+- `ecc-review-untracked-max-bytes` is now `ecc-review-max-bytes`, since the limit
+  covers the files a session changed as well as the untracked ones -- a lock file a
+  package manager wrote again is the usual one. The old name still works as an
+  obsolete alias.
+
 ### Fixed
 
 - `ecc-review-worktree` opens in a repository that has no commit yet, which is
