@@ -210,6 +210,33 @@ NAME, PROMPT and ANSWERS are as there."
       (should (string-search "… 3 more images (RET)"
                              (ecc-test-buffer-string (ecc-session-buffer session)))))))
 
+(ert-deftest ecc-render-test-a-prompt-shows-what-it-attached ()
+  "An image sent as an @ path is drawn under the band that says it."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session
+                          (format "@%s この画像の色は？" (ecc-test-image-file)))
+    (ecc-render-flush session)
+    (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+      (should (string-search "image · red-square.png" text))
+      ;; Under the band, not inside it: the band ends with the question.
+      (should (< (string-search "この画像の色は？" text)
+                 (string-search "image · red-square.png" text))))))
+
+(ert-deftest ecc-render-test-prompt-images-are-the-readable-ones ()
+  "Only an @ reference that names an image on disk is drawn."
+  (let ((file (ecc-test-image-file)))
+    (should (equal (ecc-render--prompt-images (format "見て @%s" file))
+                   (list file)))
+    ;; Twice named is drawn once.
+    (should (equal (ecc-render--prompt-images (format "@%s と @%s" file file))
+                   (list file)))
+    (should-not (ecc-render--prompt-images "@region と @diagnostics"))
+    (should-not (ecc-render--prompt-images "@/nonexistent/a.png"))
+    (should-not (ecc-render--prompt-images (format "@%s" (expand-file-name
+                                                          "ecc-image.el"))))
+    (should-not (ecc-render--prompt-images nil))))
+
 ;;;; Snapshots
 
 (ert-deftest ecc-render-test-request-hints-name-the-keys-that-do-it ()

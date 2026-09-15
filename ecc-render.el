@@ -429,6 +429,26 @@ link it is, and RET opens it in a browser."
                           'face 'ecc-dim-face)
               "\n"))))
 
+(defconst ecc-render--reference-regexp "@\\([^][ \t\n\r\"\'`,;()]+\\)"
+  "Regexp matching an @ reference in a prompt.
+The same expression as `ecc-prompt-reference-regexp\=', written again
+because `ecc-prompt\=' sits above this module and cannot be required
+here.  A path with a space in it is missed by both.")
+
+(defun ecc-render--prompt-images (prompt)
+  "Return the image files PROMPT attached, in the order it named them.
+An image pasted, dropped or inserted into the prompt region is sent as
+a path (`ecc-prompt-insert-reference\='), so what the CLI saw is what is
+drawn back here."
+  (let ((start 0) (paths nil))
+    (while (string-match ecc-render--reference-regexp (or prompt "") start)
+      (setq start (match-end 0))
+      (let ((path (expand-file-name (match-string 1 prompt))))
+        (when (and (ecc-image-file-p path) (file-readable-p path)
+                   (not (member path paths)))
+          (push path paths))))
+    (nreverse paths)))
+
 (defun ecc-render--result-images (result name)
   "Return the images of a tool RESULT as (PATH BYTES NAME), in order.
 `ecc-dispatch--result-content\=' put them there; nothing is decoded here.
@@ -1855,6 +1875,11 @@ start it was registered with."
           ;; turn's children: it is the heading of the turn, and the
           ;; movement commands lean on that to tell a turn's children
           ;; from what lies outside it.
+          ;; What was attached is shown under the band rather than in
+          ;; it: the band carries a background that runs to the edge of
+          ;; the window, and a picture in it would sit on that colour.
+          (dolist (path (ecc-render--prompt-images prompt))
+            (ecc-render--insert-image path "  "))
           (let ((prompt-id (concat id "/prompt")))
             (ecc-render--mark start (point) prompt-id 0)
             (ecc-render--register prompt-id start (point) 0)))
