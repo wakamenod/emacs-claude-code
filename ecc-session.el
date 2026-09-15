@@ -19,6 +19,7 @@
 (require 'seq)
 (require 'ecc-core)
 (require 'ecc-model)
+(require 'ecc-image)
 (require 'ecc-proc)
 (require 'ecc-render)
 (require 'ecc-chat)
@@ -34,7 +35,6 @@
 (declare-function ecc-review "ecc-review" (&optional session paths))
 (declare-function ecc-perm-request-at-point "ecc-perm" ())
 (declare-function ecc-window-forget-session "ecc-window" (session))
-(declare-function ecc-image-cleanup-session "ecc-prompt" (session))
 
 (defun ecc-session--forget-on-kill ()
   "Stop and forget the session when its buffer is killed.
@@ -52,8 +52,7 @@ not its buffer, so killing it does nothing."
       (ecc-model-remove-session session)
       (when (fboundp 'ecc-window-forget-session)
         (ecc-window-forget-session session))
-      (when (fboundp 'ecc-image-cleanup-session)
-        (ecc-image-cleanup-session session))
+      (ecc-image-cleanup-session session)
       (let ((buffer (ecc-session-stream-buffer session)))
         (when (buffer-live-p buffer)
           (kill-buffer buffer))))))
