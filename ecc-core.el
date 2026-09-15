@@ -174,6 +174,30 @@ command list to run.  Nil runs the command unchanged."
 `ecc-proc' can register the Emacs MCP server without depending on it
 .")
 
+;;;; Layout
+
+(defcustom ecc-layout 'classic
+  "How the windows of the sessions are laid out.
+
+`classic' is what this package has always done: a transcript goes into
+a side window with a role -- main, sub-1, sub-2 -- the roles are dealt
+out as sessions arrive, and `ecc-focus-project' deals them again for
+one project.
+
+`spaces' gives each project a tab of the tab bar instead, and leaves
+the windows inside it alone: a transcript is opened as an ordinary
+window beside the source and is then the user's to split, move and
+enlarge, and selecting the project brings its whole window
+arrangement back the way it was left.  A worktree is a project of its
+own here, under the repository it came from.
+
+It is a setting because it is a taste in how a screen should be laid
+out, and the two are not halfway compatible: everything follows the
+one that is chosen."
+  :type '(choice (const :tag "Side windows with fixed roles" classic)
+                 (const :tag "One tab per project, free windows" spaces))
+  :group 'ecc)
+
 ;;;; Logging
 
 (defcustom ecc-log-max-lines 5000

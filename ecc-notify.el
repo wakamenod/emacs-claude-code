@@ -254,15 +254,40 @@ step.")
    ((eq (ecc-session-state session) 'exited) 'exited)
    (t 'idle)))
 
-(defun ecc-tab-mark (session)
-  "Return the character that stands for the state of SESSION.
-A session with nothing to say gets no mark: a row of tabs is quieter
-when only the ones that want something are marked."
-  (pcase (ecc-tab-state session)
+(defun ecc-tab-state-roll-up (sessions)
+  "Return the one state that stands for SESSIONS, or nil when there are none.
+The loudest wins: a session waiting for an answer speaks for the
+group, then one that is working, then one that has died.  Whatever
+draws a group of sessions under a single mark -- a tab of the tab bar,
+a Space in the sidebar -- folds them with this, so that they all agree
+about what the mark means."
+  (cond
+   ((null sessions) nil)
+   ((seq-find (lambda (s) (eq (ecc-tab-state s) 'attention)) sessions) 'attention)
+   ((seq-find (lambda (s) (eq (ecc-tab-state s) 'running)) sessions) 'running)
+   ((seq-find (lambda (s) (eq (ecc-tab-state s) 'exited)) sessions) 'exited)
+   (t 'idle)))
+
+(defun ecc-tab-mark-of-state (state)
+  "Return the character that stands for STATE.
+A state with nothing to say gets no mark: a row of tabs is quieter
+when only the ones that want something are marked.  Somewhere with
+room to line the marks up -- the sidebar -- puts its own character in
+for the empty one."
+  (pcase state
     ('attention "⚠") ('running "▶") ('exited "✗") (_ "")))
+
+(defun ecc-tab-mark (session)
+  "Return the character that stands for the state of SESSION."
+  (ecc-tab-mark-of-state (ecc-tab-state session)))
 
 (defun ecc-tab-faces (session current)
   "Return the faces to lay over the tab of SESSION, the telling one first.
+CURRENT says the window is showing this session."
+  (ecc-tab-faces-of-state (ecc-tab-state session) current))
+
+(defun ecc-tab-faces-of-state (state current)
+  "Return the faces for STATE, the telling one first.
 CURRENT says the window is showing this session.  The state comes
 first so that its colour wins, and `ecc-tab-current-face' follows to
 add what it alone says -- the weight and the underline that mark the
@@ -273,10 +298,9 @@ left to `ecc-tab-current-face' alone.  A running tab that is not the
 current one takes the quieter `ecc-tab-running-dim-face': the full
 green, bold, was bright enough elsewhere in the row to be read as the
 tab in front of you."
-  (let ((state (if (and ecc-tab--blink-phase
-                        (eq (ecc-tab-state session) 'attention))
+  (let ((state (if (and ecc-tab--blink-phase (eq state 'attention))
                    'ecc-tab-attention-blink-face
-                 (pcase (ecc-tab-state session)
+                 (pcase state
                    ('attention 'ecc-tab-attention-face)
                    ('running (if current
                                  'ecc-tab-running-face
@@ -360,6 +384,7 @@ Emacs -- it stops the CLI and forgets the transcript -- so it asks
 first.")
 
 (declare-function ecc-kill "ecc" (session))
+(declare-function ecc-worktree-kill-session "ecc-worktree" (session))
 
 (defun ecc-tab-close (buffer)
   "Stop the session of BUFFER (`tab-line-close-tab-function').
@@ -376,7 +401,10 @@ about first.  A buffer with no session behind it is only killed."
      ((and ecc-tab-close-confirm
            (not (y-or-n-p (format "Stop %s? " (ecc-session-name session)))))
       (message "Left %s running" (ecc-session-name session)))
-     (t (ecc-kill session)))))
+     ;; Not `ecc-kill': closing the tab of the last session of a worktree
+     ;; is the moment to be asked whether the checkout goes too.
+     (t (require 'ecc-worktree)
+        (ecc-worktree-kill-session session)))))
 
 ;; `tab-line-force-update' is Emacs 30 and later (confirmed 2026-09-10 on
 ;; the CI matrix, which builds on 29.1).  What it does is what the blink
@@ -451,7 +479,14 @@ show the same tabs over again."
     (setq ecc-tab--blink-timer nil))
   (when ecc-tab--blink-phase
     (setq ecc-tab--blink-phase nil)
-    (ecc-tab--blink-redisplay)))
+    (ecc-tab--blink-redisplay)
+    (run-hooks 'ecc-tab-blink-functions)))
+
+(defvar ecc-tab-blink-functions nil
+  "Functions run on every beat of the blink, and once when it stops.
+Whatever draws the waiting sessions somewhere other than the tab line
+-- the sidebar -- puts itself here, so that everything on the screen
+blinks on the same beat rather than each on a timer of its own.")
 
 (defun ecc-tab--blink-tick ()
   "Turn the waiting tabs on or off, and stop once nothing is waiting."
@@ -460,7 +495,8 @@ show the same tabs over again."
     (setq ecc-tab--blink-phase (not ecc-tab--blink-phase))
     ;; A session with no window costs only this: there is nothing on the
     ;; screen to draw again.
-    (ecc-tab--blink-redisplay)))
+    (ecc-tab--blink-redisplay)
+    (run-hooks 'ecc-tab-blink-functions)))
 
 (defun ecc-tab-blink-update ()
   "Blink the tabs while a session waits for an answer, and stop after.
@@ -498,15 +534,10 @@ tab is waiting for an answer."
                                  (when-let* ((buffer (ecc-session-buffer session)))
                                    (get-buffer-window buffer)))
                                (ecc-model-sessions)))
-         (state (cond ((null sessions) nil)
-                      ((seq-find (lambda (session)
-                                   (eq (ecc-tab-state session) 'attention))
-                                 sessions)
-                       'attention)
-                      ((seq-find (lambda (session)
-                                   (eq (ecc-tab-state session) 'running))
-                                 sessions)
-                       'running))))
+         ;; Only the two states that ask for something are drawn here:
+         ;; a tab is not the place to be told that a session finished.
+         (state (car (memq (ecc-tab-state-roll-up sessions)
+                           '(attention running)))))
     (if (and ecc-tab-bar-state state)
         (format "%s %s"
                 (pcase state ('attention "⚠") (_ "▶"))

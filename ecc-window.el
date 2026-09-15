@@ -27,6 +27,13 @@
 (declare-function ecc-session-buffer-name "ecc-session" (name))
 (declare-function ecc-chat-goto-prompt "ecc-chat" ())
 (declare-function ecc-render--project-name-1 "ecc-render" (directory))
+;; `ecc-space' is above this file and is loaded where `ecc-layout' says
+;; `spaces', the way `ecc-display-session' loads `ecc-session'.  Nothing
+;; here requires it: the dependency runs the other way.
+(declare-function ecc-space-of-root "ecc-space" (root))
+(declare-function ecc-space-select "ecc-space" (space))
+(declare-function ecc-space-display-session "ecc-space" (session))
+(declare-function ecc-space-current-key "ecc-space" ())
 
 (defvar ecc-window-use-side-window t
   "Non-nil shows a transcript in a side window rather than an ordinary one.
@@ -134,11 +141,36 @@ last.  A buffer with nothing behind it -- the scratch buffer, a
 transcript, the dashboard, a help window -- says nothing about which
 project was meant, and a session started from one of those used to land
 wherever that buffer happened to be, which is how a session ends up in
-a project nobody asked for."
+a project nobody asked for.
+
+With `spaces' the tab that is showing comes second: the user chose that
+Space, and choosing one is as plain a statement of which project is
+meant as the buffer in front of them."
   (ecc-window-project-key
    (or (ecc-window-buffer-directory (current-buffer))
+       (ecc-window--space-root)
        (ecc-window-buffer-directory ecc-window--last-source-buffer)
        default-directory)))
+
+(defun ecc-window-visit-session-space (session)
+  "Bring the Space of SESSION to the screen, and return its tab name.
+Nil under `classic', which has no Spaces to go to.
+
+Whatever opens a buffer of its own for a request -- a question, a plan
+-- calls this before showing it, so that the buffer opens where the
+session lives.  Without it the question of a session in another Space
+was popped into whichever Space the user happened to be in, leaving
+the session itself behind (reported 2026-09-15)."
+  (when (eq ecc-layout 'spaces)
+    (require 'ecc-space)
+    (ecc-space-select (ecc-space-of-root (ecc-window-session-project session)))))
+
+(defun ecc-window--space-root ()
+  "Return the root of the Space of the current tab, or nil.
+Nil under `classic', where there are no Spaces to ask about."
+  (when (eq ecc-layout 'spaces)
+    (require 'ecc-space)
+    (ecc-space-current-key)))
 
 (defun ecc-window-read-session-name (root)
   "Return a name for a new session in ROOT, asking when it is not the first.
@@ -429,9 +461,14 @@ replaced rather than a second window being opened."
   "Show the buffer of SESSION and return its window.
 The window is not selected; `ecc-window-select-session' does that."
   (require 'ecc-session)
-  (if (not ecc-window-use-side-window)
-      (display-buffer (ecc-session-ensure-buffer session))
-    (ecc-display-session-in-role session (ecc-window-role-for session))))
+  (pcase ecc-layout
+    ('spaces
+     (require 'ecc-space)
+     (ecc-space-display-session session))
+    (_
+     (if (not ecc-window-use-side-window)
+         (display-buffer (ecc-session-ensure-buffer session))
+       (ecc-display-session-in-role session (ecc-window-role-for session))))))
 
 ;;;; Keeping a side window a side window
 
@@ -733,34 +770,46 @@ instead of taking the likeliest.
 
 The sessions of ROOT are dealt into the window roles in the order they
 were last used, so the one worked in last is the one in the main
-window."
+window.
+
+With `spaces' there is nothing to deal and nothing to hide: the Space
+of ROOT is a tab, and going to it brings back the windows the user
+arranged there.  CHOOSE has no meaning then, the buffers of the tab
+being whatever they were left as."
   (interactive (list (ecc-window-read-project "Focus project: ")
                      current-prefix-arg))
   (let* ((key (ecc-window-project-key root))
          (mine (ecc-window-project-sessions key)))
-    (unless mine
-      (user-error "No session in %s" (abbreviate-file-name key)))
-    (let ((hidden (ecc-window-hide-sessions
-                   (seq-remove (lambda (session) (memq session mine))
-                               (ecc-window-displayed-sessions)))))
-      (when ecc-window-use-side-window
-        ;; The roles are dealt out again from nothing, so a window one of
-        ;; these sessions already holds comes down first.  Moving a
-        ;; session from one role to another otherwise leaves the window
-        ;; it came from showing it as well, and the frame ends up with
-        ;; the same transcript twice (confirmed 2026-09-13).
-        (mapc #'ecc-window-hide-session mine)
-        (cl-mapc (lambda (session role)
-                   (ecc-display-session-in-role session role)
-                   ;; It is on the screen now, so the note that it was
-                   ;; hidden would put it back a second time.
-                   (ecc-window-forget-session session))
-                 mine (ecc-window-available-roles)))
-      (ecc-window-focus-source key choose)
-      (message "Focused %s: %d session%s, %d hidden"
-               (ecc--project-label key) (length mine)
-               (if (= 1 (length mine)) "" "s") (length hidden))
-      mine)))
+    (if (eq ecc-layout 'spaces)
+        (progn
+          (require 'ecc-space)
+          (ecc-space-select (ecc-space-of-root key))
+          (message "%s: %d session%s" (ecc--project-label key) (length mine)
+                   (if (= 1 (length mine)) "" "s"))
+          mine)
+      (unless mine
+        (user-error "No session in %s" (abbreviate-file-name key)))
+      (let ((hidden (ecc-window-hide-sessions
+                     (seq-remove (lambda (session) (memq session mine))
+                                 (ecc-window-displayed-sessions)))))
+        (when ecc-window-use-side-window
+          ;; The roles are dealt out again from nothing, so a window one
+          ;; of these sessions already holds comes down first.  Moving a
+          ;; session from one role to another otherwise leaves the window
+          ;; it came from showing it as well, and the frame ends up with
+          ;; the same transcript twice (confirmed 2026-09-13).
+          (mapc #'ecc-window-hide-session mine)
+          (cl-mapc (lambda (session role)
+                     (ecc-display-session-in-role session role)
+                     ;; It is on the screen now, so the note that it was
+                     ;; hidden would put it back a second time.
+                     (ecc-window-forget-session session))
+                   mine (ecc-window-available-roles)))
+        (ecc-window-focus-source key choose)
+        (message "Focused %s: %d session%s, %d hidden"
+                 (ecc--project-label key) (length mine)
+                 (if (= 1 (length mine)) "" "s") (length hidden))
+        mine))))
 
 ;;;###autoload
 (defun ecc-toggle-all ()
