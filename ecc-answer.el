@@ -214,8 +214,9 @@ question buffer opens with the first one answered."
     ;; Looking around.
     (define-key map (kbd "b") #'ecc-dashboard)
     (define-key map (kbd "D") #'ecc-review)
-    ;; `G' is next to `D' because the two are one question asked twice:
-    ;; what changed here, by Claude or by hand.
+    ;; `G' is next to `D' because the two are one review with one
+    ;; argument between them: what changed since the session started,
+    ;; and what changed since the last commit.
     (define-key map (kbd "G") #'ecc-review-worktree)
     (define-key map (kbd "h") #'ecc-history-open)
     (define-key map (kbd "/") #'ecc-search)

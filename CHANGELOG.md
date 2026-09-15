@@ -46,6 +46,53 @@ Verified against **Claude Code CLI 2.1.270**.
   `ecc-protocol-user-directory` and `ecc-protocol-managed-files`. Nothing a
   user sets changes name.
 
+- **Breaking:** `ecc-review` (`C-c c D`) reviews everything that changed since the
+  session started, rather than the files the CLI reported editing or writing. The
+  old review read the tool stream, so a file changed by a shell command, a script
+  or anything else that is not an Edit or a Write was not in it -- and that is now
+  most of what a session does, which left the review empty in the sessions that had
+  the most to show. What the working tree held is recorded when the session starts
+  (and again when one is resumed, since what came before belongs to the session that
+  made it), and the review compares the tree as it stands against that. A change is
+  shown whatever made it.
+
+  The two reviews are now one review with one argument between them: `D` against
+  where the session started, `G` against the last commit. So `D` still shows work
+  the session committed along the way, which `G` loses, and neither cares how a file
+  was changed.
+
+  The base is a moment rather than an author, so work in progress from before the
+  session is left out, but another session working in the same directory is not --
+  separate git worktrees keep those apart. A project outside git has no tree to
+  compare against and is reviewed from the session's own record, as before.
+
+  The baseline is a git tree written through a throwaway index: no stash entry is
+  made, `refs/stash` is not touched, and neither is the real index or any file. It
+  costs about 25 ms over 206 files (measured 2026-09-15).
+
+- `ecc-review-untracked-max-bytes` is now `ecc-review-max-bytes`, since the limit
+  covers the files a session changed as well as the untracked ones -- a lock file a
+  package manager wrote again is the usual one. The old name still works as an
+  obsolete alias.
+
+### Fixed
+
+- `ecc-review-worktree` opens in a repository that has no commit yet, which is
+  where the first code of a project is written and the moment there is most to
+  read. It diffs against `HEAD`, and git calls an unborn `HEAD` a bad revision
+  rather than an empty diff, so the command stopped at `Git cannot diff against
+  "HEAD" (exit 128)` three lines before the half that lists the files git does
+  not track -- which on its own would have shown the whole project. When
+  `HEAD` names nothing, the diff is taken against the empty tree instead: a
+  file already added shows as a new file and the untracked ones follow, as
+  they always did. Only the bare `HEAD` stands in this way; `main...HEAD` in
+  such a repository really is unresolvable and still says so. The empty tree
+  is asked of git rather than written out, because a repository whose object
+  format is SHA-256 does not have the 4b825dc of every SHA-1 one. What the
+  buffer is named and what its header line says are unchanged, and the test is
+  made afresh on every draw, so the first commit puts the real `HEAD` back
+  without a refresh having to know anything about it.
+
 ## [0.2.0] - 2026-09-14
 
 Verified against **Claude Code CLI 2.1.270**.

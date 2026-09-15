@@ -148,6 +148,11 @@ It is not `ecc-progress-hook\', which is about the turn.")
   hint-state            ; alist of what the CLI told the session about
                         ; itself: the `suggestion' it last offered
   tmp-dir
+  baseline              ; git tree naming the working tree as it stood
+                        ; when the session started, which `ecc-review'
+                        ; diffs against.  Taken by `ecc-review.el': the
+                        ; model runs no process, and a session outside
+                        ; git never has one
   last-plan             ; text of the last plan reviewed
   plan-files            ; the files the CLI wrote the plans of this
                         ; session to, oldest first; ExitPlanMode names
