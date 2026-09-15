@@ -34,7 +34,7 @@ faceはテキスト挿入時に適用されるため、`M-x customize` による
 
 ### 主な機能
 
-- **[Diff レビュー](https://wakamenod.github.io/emacs-claude-code/ja/features/review/):** セッション中に行われたすべての変更を 1 つの `diff-mode` バッファで確認できます。編集・シェルコマンド・スクリプトのいずれで行われた変更も同じように表示されます。ハンク（変更ブロック）にインラインコメントを付けて、まとめて 1 つのプロンプトとして送信可能です。
+- **[Diff レビュー](https://wakamenod.github.io/emacs-claude-code/ja/features/review/):** セッション中に行われたすべての変更を 1 つの `diff-mode` バッファで確認できます。編集・シェルコマンド・スクリプトのいずれによる変更も同じように表示されます。ハンクにインラインコメントを付け、まとめて 1 つのプロンプトとして送信できます。`ecc-review-style` を設定すると、同じレビューを ediff で開き、全ファイルを 1 つのセッションで左右に並べて表示できます。
 - **[インタラクティブな編集](https://wakamenod.github.io/emacs-claude-code/ja/features/review/#適用前の提案をレビューする):** 提案されたファイル編集を適用前に確認・修正できます。
 - **[プランモード](https://wakamenod.github.io/emacs-claude-code/ja/features/review/#プランモード):** 提案された実行計画を、編集可能なバッファ内で確認・調整しながら進められます。
 - **[グローバル操作](https://wakamenod.github.io/emacs-claude-code/ja/reference/key-bindings/):** どのバッファからでも保留中のツール実行リクエストを許可・拒否できます。

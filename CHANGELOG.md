@@ -17,6 +17,45 @@ Verified against **Claude Code CLI 2.1.270**.
 
 ### Added
 
+- `ecc-review-style` opens `ecc-review` (`D`) and `ecc-review-worktree` (`G`)
+  in ediff instead of the one `diff-mode` buffer. `'diff`, the default, is
+  what both did before; `'ediff` lays what the files held on the left and what
+  they hold now on the right.
+
+  Every file of the review is in one ediff session, not one session per file:
+  the two sides are concatenated, each file under the same `═══ path ═══`
+  separator line with a blank line in front of it, so `n` and `p` walk every
+  difference of the review across the file boundaries.  The two sides are put
+  left and right rather than one above the other: `ediff-split-window-function`
+  is set in the control buffer of the review alone, which is where ediff reads
+  it from, so no other ediff is touched, and the windows are laid out again
+  there and then -- ediff runs a session's startup hooks after it has already
+  set the windows up, so the review would otherwise open in ediff's own layout
+  and turn into this one at the first keystroke.  Both are `defvar`s --
+  `ecc-review-ediff-split-window-function` (nil leaves ediff's own layout) and
+  `ecc-review-ediff-file-spacing`.  Where the control panel goes is ediff's own
+  `ediff-window-setup-function`, which this package does not touch. A binary file, or one larger than `ecc-review-max-bytes`, is
+  its separator line alone, saying why, and is no difference at all. ediff's own
+  session groups were not used: they walk files rather than differences, and
+  reach for internal functions, file names and a non-recursive directory scan.
+
+  Both sides are read-only, and so `a` and `b` -- ediff's own copy commands --
+  do nothing. A review reads, comments and sends; what changes the files is
+  Claude, from the prompt the comments go out as.
+
+  The comments are the same comments. `c`, `d` and `l` sit on differences
+  rather than hunks, but they carry the same file and the same line numbers
+  inside it, and `C-c C-c`, `C-u C-c C-c` and `C-c C-k` are the same commands
+  sending the same prompt. Quitting -- by `q`, by `C-c C-k` or by sending --
+  puts back the windows that were on the screen before the review opened.
+  There is no `g`; quit and open the review again.
+
+  Both reviews now always compare two git trees: the session's baseline, or
+  `HEAD`, against a snapshot of the working tree, and for a range the two trees
+  of the history. `ecc-review-snapshot` takes a `no-add` argument for the one
+  side that is neither, the index, which is what a review of what is not staged
+  yet compares against.
+
 - The footer under the prompt names the model before the session has answered.
   The CLI says which model ran on every assistant message and says it nowhere
   earlier, so a session that had just been started -- the one moment the model
@@ -86,6 +125,19 @@ Verified against **Claude Code CLI 2.1.270**.
   obsolete alias.
 
 ### Fixed
+
+- A file the CLI wrote in the same second as the last commit, and to the same
+  number of bytes, could drop out of the review. The snapshot the review
+  compares against copies the repository's index in for its stat cache, and it
+  copied it with the time of the copy rather than the time of the index. git
+  re-reads a file whose cached stat is no older than the index holding it --
+  the case a stat one second wide cannot settle -- and trusts the stat
+  otherwise; an index stamped now is newer than every stat in it, so nothing
+  was ever re-read and a same-second, same-length change read as no change at
+  all. The copy now carries the time of the index it was made from. Measured on
+  2026-09-15 (macOS, git 2.x): 7 misses in 900 runs of write-then-snapshot
+  before, none in 900 after. It was also what made a test fail about once in
+  sixty runs.
 
 - `ecc-review-worktree` opens in a repository that has no commit yet, which is
   where the first code of a project is written and the moment there is most to

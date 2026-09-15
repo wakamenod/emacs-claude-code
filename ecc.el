@@ -38,6 +38,7 @@
 (require 'ecc-hooks)
 (require 'ecc-plan)
 (require 'ecc-review)
+(require 'ecc-review-ediff)
 (require 'ecc-sync)
 (require 'ecc-answer)
 (require 'ecc-registry)

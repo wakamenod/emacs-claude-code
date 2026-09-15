@@ -475,27 +475,35 @@ brings back what was hidden.")
 `review' selects the review, `session' leaves it in the transcript and
 nil leaves it wherever it was.")
 
+(defun ecc-window-hide-for-review (&optional session)
+  "Take the session windows `ecc-window-hide-on-review\=' asks for off the screen.
+SESSION is the session being reviewed, which decides what `project'
+means.  This is the half of opening a review that a review shown by
+something other than `display-buffer\=' -- ediff lays out its own
+windows -- still wants."
+  (ecc-window-hide-sessions
+   (pcase ecc-window-hide-on-review
+     ('all (ecc-model-sessions))
+     ('project (if session
+                   (ecc-window-project-sessions
+                    (ecc-session-project-root session))
+                 (ecc-window-project-sessions)))
+     (_ nil))))
+
 (defun ecc-window-display-review (buffer &optional session)
   "Show the review in BUFFER, of SESSION, and return its window.
 `ecc-window-hide-on-review' and `ecc-window-review-focus' decide what
 happens to the session windows and where point lands."
-  (let ((hidden (pcase ecc-window-hide-on-review
-                  ('all (ecc-model-sessions))
-                  ('project (if session
-                                (ecc-window-project-sessions
-                                 (ecc-session-project-root session))
-                              (ecc-window-project-sessions)))
-                  (_ nil))))
-    (ecc-window-hide-sessions hidden)
-    (let ((window (display-buffer buffer)))
-      (pcase ecc-window-review-focus
-        ('review (when (window-live-p window) (select-window window)))
-        ('session
-         (when-let* ((buffer (and session (ecc-session-buffer session)))
-                     (session-window (and (buffer-live-p buffer)
-                                          (get-buffer-window buffer))))
-           (select-window session-window))))
-      window)))
+  (ecc-window-hide-for-review session)
+  (let ((window (display-buffer buffer)))
+    (pcase ecc-window-review-focus
+      ('review (when (window-live-p window) (select-window window)))
+      ('session
+       (when-let* ((buffer (and session (ecc-session-buffer session)))
+                   (session-window (and (buffer-live-p buffer)
+                                        (get-buffer-window buffer))))
+         (select-window session-window))))
+    window))
 
 (defun ecc-window-session-buffers (session)
   "Return the live buffers of SESSION that are shown in a window of their own."
