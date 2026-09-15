@@ -113,7 +113,8 @@ not its buffer, so killing it does nothing."
 A question or a plan that is still waiting opens the buffer it is
 answered in.
 
-A URL comes first, and before the node the point is in: the point is
+A picture drawn in the transcript opens as itself.  A URL comes
+first, and before the node the point is in: the point is
 only on one where a link was drawn, which is narrow enough to say what
 RET does there without a rule of its own.  It is the same key that
 follows a link everywhere else in Emacs, and the same one the transcript
@@ -123,10 +124,16 @@ already opens things with."
          (node (ecc-chat-node-at-point))
          (url (ecc-markdown-url-at-point))
          (path (or (ecc-chat-file-at-point) (ecc-chat-plan-file-at-point)))
+         (picture (ecc-image-at-point))
          (request (and node (ecc-model-node-get node 'request)))
          (pending (and request (memq request (ecc-session-pending session)))))
     (cond
      (url (browse-url url))
+     ;; A still opens in `image-mode\=', which zooms and scrolls; a video
+     ;; is something Emacs cannot play, so the machine plays it.
+     (picture (if (ecc-image-video-p picture)
+                  (ecc-image-open-externally picture)
+                (find-file-other-window picture)))
      (path (find-file-other-window path))
      ((null node) (user-error "Nothing to show here"))
      ((eq (ecc-node-type node) 'agent) (ecc-session-show-agent session node))

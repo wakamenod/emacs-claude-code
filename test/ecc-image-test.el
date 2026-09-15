@@ -133,6 +133,86 @@
       (with-temp-file path (insert "not a png"))
       (should-not (ecc-image-descriptor path 400 400)))))
 
+
+;;;; Videos
+
+(ert-deftest ecc-image-test-no-ffmpeg-no-thumbnail ()
+  "Without ffmpeg there is no first frame and nothing is started."
+  (ecc-test-with-fake-session session
+    (ecc-image-test--with-dir
+      (let ((ecc-image-ffmpeg-program "ecc-no-such-ffmpeg")
+            (ecc-image--ffmpeg 'unset))
+        (should-not (ecc-image-ffmpeg))
+        (should-not (ecc-image-thumbnail session (ecc-test-image-file)))))))
+
+(ert-deftest ecc-image-test-a-video-ffmpeg-cannot-read-is-tried-once ()
+  "A video that yields no frame is asked for once, not on every redraw."
+  (ecc-test-with-fake-session session
+    (ecc-image-test--with-dir
+      (let* ((video (expand-file-name "broken.mp4" ecc-image-dir))
+             (started 0)
+             (ecc-image--ffmpeg "/bin/false")
+             (ecc-image--thumbnails (make-hash-table :test 'equal)))
+        (with-temp-file video (insert "not a video"))
+        (cl-letf (((symbol-function 'ecc-image--start-thumbnail)
+                   (lambda (_video file _ready)
+                     (cl-incf started)
+                     (puthash file 'failed ecc-image--thumbnails))))
+          (should-not (ecc-image-thumbnail session video))
+          (should-not (ecc-image-thumbnail session video))
+          (should-not (ecc-image-thumbnail session video))
+          (should (= started 1)))))))
+
+(ert-deftest ecc-image-test-a-thumbnail-already-made-is-reused ()
+  "A first frame on disk is returned without starting anything."
+  (ecc-test-with-fake-session session
+    (ecc-image-test--with-dir
+      (let* ((video (expand-file-name "clip.mp4" ecc-image-dir))
+             (ecc-image--ffmpeg "/bin/false")
+             (ecc-image--thumbnails (make-hash-table :test 'equal)))
+        (with-temp-file video (insert "x"))
+        (let ((thumb (ecc-image--thumbnail-file session video)))
+          (copy-file (ecc-test-image-file) thumb)
+          (cl-letf (((symbol-function 'ecc-image--start-thumbnail)
+                     (lambda (&rest _) (error "Should not be started"))))
+            (should (equal (ecc-image-thumbnail session video) thumb))))))))
+
+(ert-deftest ecc-image-test-a-video-is-drawn-by-its-first-frame ()
+  "The string of a video names the video and shows the frame."
+  (let ((video "/tmp/clip.mp4"))
+    (should (equal (substring-no-properties
+                    (ecc-image-string video 400 400 nil (ecc-test-image-file)))
+                   "video · clip.mp4"))
+    ;; And the file RET reaches is the video, not the still.
+    (should (equal (get-text-property
+                    0 'ecc-image-file
+                    (ecc-image-string video 400 400 nil (ecc-test-image-file)))
+                   video))))
+
+;;;; Looking at one
+
+(ert-deftest ecc-image-test-view-picks-by-kind ()
+  "A video goes outside Emacs and a still opens in a buffer."
+  (let (outside inside)
+    (cl-letf (((symbol-function 'ecc-image-open-externally)
+               (lambda (path) (setq outside path)))
+              ((symbol-function 'find-file-other-window)
+               (lambda (path) (setq inside path))))
+      (with-temp-buffer
+        (insert (propertize "clip" 'ecc-image-file "/tmp/clip.mp4"))
+        (goto-char (point-min))
+        (ecc-image-view-at-point)
+        (should (equal outside "/tmp/clip.mp4")))
+      (with-temp-buffer
+        (insert (propertize "shot" 'ecc-image-file "/tmp/shot.png"))
+        (goto-char (point-min))
+        (ecc-image-view-at-point)
+        (should (equal inside "/tmp/shot.png")))
+      (with-temp-buffer
+        (insert "plain text")
+        (goto-char (point-min))
+        (should-error (ecc-image-view-at-point) :type 'user-error)))))
+
 (provide 'ecc-image-test)
 
 ;;; ecc-image-test.el ends here

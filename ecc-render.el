@@ -394,8 +394,25 @@ Not through `ecc-render--insert-lines\=': that splits on newlines and
 hangs a wrap prefix on every one of them, and an image is one glyph
 that must not be broken."
   (let* ((width (ecc-render--image-width (string-width prefix)))
-         (string (ecc-image-string path width ecc-image-max-height bytes name)))
+         (preview (and (ecc-image-video-p path) (ecc-render--video-preview path)))
+         (string (ecc-image-string path width ecc-image-max-height
+                                   bytes preview name)))
     (insert prefix string "\n")))
+
+(defun ecc-render--video-preview (path)
+  "Return the first frame of the video PATH, or nil while there is none.
+Pulling it is a subprocess, so it is asked for and not waited for; the
+line naming the file stands until the frame lands, and the redraw that
+shows it is scheduled from the sentinel."
+  (when-let* ((session ecc-render--session))
+    (let ((buffer (current-buffer)))
+      (ecc-image-thumbnail
+       session path
+       (lambda ()
+         (when (buffer-live-p buffer)
+           (with-current-buffer buffer
+             (when ecc-render--session
+               (ecc-render-refresh ecc-render--session)))))))))
 
 (defun ecc-render--insert-image-node (node depth)
   "Insert the image NODE at DEPTH.
@@ -2758,6 +2775,16 @@ Without TURN the live region flashes instead."
 (add-hook 'ecc-stream-delta-hook #'ecc-render--on-delta)
 (add-hook 'ecc-progress-hook #'ecc-render--on-progress)
 (add-hook 'ecc-remote-control-functions #'ecc-render--on-progress)
+
+(defun ecc-render--redraw-every-session ()
+  "Redraw every live session from scratch.
+Turning the images off has to reach the turns that are frozen as well,
+and those are never redrawn by a change to the model."
+  (dolist (session (ecc-model-sessions))
+    (when (buffer-live-p (ecc-session-buffer session))
+      (ecc-render-refresh session))))
+
+(add-hook 'ecc-image-inline-changed-hook #'ecc-render--redraw-every-session)
 
 (provide 'ecc-render)
 

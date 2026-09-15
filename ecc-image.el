@@ -115,6 +115,91 @@ the library for one type still has the others."
        (when-let* ((type (ecc-image-type path)))
          (image-type-available-p type))))
 
+;;;; The first frame of a video
+
+(defcustom ecc-image-ffmpeg-program "ffmpeg"
+  "Program that pulls the first frame out of a video.
+A video cannot be drawn in a buffer, so a still of it is drawn instead
+where this can be found; where it cannot, the line naming the file is
+all there is, and RET still plays it."
+  :type 'string
+  :group 'ecc)
+
+(defvar ecc-image--ffmpeg 'unset
+  "The ffmpeg found on PATH, nil when there is none, `unset\=' before looking.
+`executable-find\=' walks PATH and this is asked once per redraw.")
+
+(defvar ecc-image--thumbnails (make-hash-table :test 'equal)
+  "What became of each thumbnail asked for: `running\=' or `failed\='.
+A video ffmpeg cannot read must be tried once and not ten times a
+second for the rest of the session.  A thumbnail that was made is on
+disk and is not in here.")
+
+(defun ecc-image-ffmpeg ()
+  "Return the ffmpeg to use, or nil."
+  (when (eq ecc-image--ffmpeg 'unset)
+    (setq ecc-image--ffmpeg (executable-find ecc-image-ffmpeg-program)))
+  ecc-image--ffmpeg)
+
+(defun ecc-image--thumbnail-file (session video)
+  "Return the file the first frame of VIDEO is kept in for SESSION.
+The name carries the time the video was last written, so that a video
+replaced under the same name is not shown by its old first frame."
+  (expand-file-name
+   (format "thumb-%s.png"
+           (sha1 (format "%s:%s" video
+                         (float-time (file-attribute-modification-time
+                                      (file-attributes video))))))
+   (ecc-session-image-dir session)))
+
+(defun ecc-image-thumbnail (session video &optional on-ready)
+  "Return the first frame of VIDEO for SESSION, or nil while there is none.
+Where the frame has not been pulled yet, ffmpeg is started and ON-READY
+is called once it has.  It is never waited for: this is called from the
+middle of a redraw, and a redraw runs on a tenth of a second."
+  (when (and (ecc-image-ffmpeg) (file-readable-p video))
+    (let ((file (ecc-image--thumbnail-file session video)))
+      (cond
+       ((file-exists-p file) file)
+       ((gethash file ecc-image--thumbnails) nil)
+       (t (puthash file 'running ecc-image--thumbnails)
+          (ecc-image--start-thumbnail video file on-ready)
+          nil)))))
+
+(defun ecc-image--start-thumbnail (video file on-ready)
+  "Start ffmpeg pulling the first frame of VIDEO into FILE, then ON-READY."
+  (let ((process
+         (make-process
+          :name "ecc-thumbnail"
+          :noquery t
+          :connection-type 'pipe
+          :buffer nil
+          :command (list (ecc-image-ffmpeg) "-nostdin" "-loglevel" "error"
+                         "-y" "-i" video "-frames:v" "1" file))))
+    (set-process-sentinel
+     process
+     (lambda (process _event)
+       (unless (process-live-p process)
+         (if (and (eq (process-status process) 'exit)
+                  (zerop (process-exit-status process))
+                  (file-exists-p file))
+             (progn (remhash file ecc-image--thumbnails)
+                    (when on-ready (funcall on-ready)))
+           (puthash file 'failed ecc-image--thumbnails)
+           (ecc-log "image" "no first frame of %s (ffmpeg %s)"
+                    video (process-exit-status process))))))
+    process))
+
+;;;; Opening one outside the transcript
+
+(defun ecc-image-open-externally (path)
+  "Hand PATH to whatever the machine plays or shows it with."
+  (if (eq system-type 'darwin)
+      ;; The same shape as `ecc-notify-desktop\=': an argument vector, so
+      ;; a path the model chose reaches no shell.
+      (start-process "ecc-open" nil "open" path)
+    (browse-url-of-file path)))
+
 ;;;; Where they live
 
 (defun ecc-session-image-dir (session)
@@ -207,7 +292,13 @@ same recording."
   "Return the image descriptor for PATH, at most WIDTH by HEIGHT pixels.
 Returns nil when PATH cannot be drawn.  A file that is not the image it
 claims to be leaves a line in the log and the label in its place; a
-signal here would take the whole redraw down with it."
+signal here would take the whole redraw down with it.
+
+It is built again on every redraw and not kept: `create-image\=' conses
+a list and reads nothing, at about a third of a microsecond a call
+\(measured 2026-09-16), and two equal descriptors share one entry of
+the image cache Emacs keeps of its own, so the pixels are decoded
+once whatever this does."
   (when (and (ecc-image-available-p path) (file-readable-p path))
     (condition-case err
         (create-image path (ecc-image-type path) nil
@@ -215,9 +306,10 @@ signal here would take the whole redraw down with it."
       (error (ecc-log "image" "%s: %s" path (error-message-string err))
              nil))))
 
-(defun ecc-image-string (path width height &optional bytes name)
+(defun ecc-image-string (path width height &optional bytes preview name)
   "Return the string PATH is drawn as, at most WIDTH by HEIGHT pixels.
-NAME is passed to the label.
+PREVIEW, when given, is the file actually drawn -- the first frame of a
+video, where PATH is the video itself.  NAME is passed to the label.
 The text of it is `ecc-image-label\=', so that a copy of the region, a
 search through it and a snapshot of it all find the name of the file.
 The picture rides on top in a `display\=' property, and is simply absent
@@ -232,10 +324,51 @@ Nothing is inserted here.  `ecc-render\=' is what draws."
                              'help-echo (if (ecc-image-video-p path)
                                             "RET plays it outside Emacs"
                                           "RET opens it, v views it")))
-         (image (ecc-image-descriptor path width height)))
+         (image (ecc-image-descriptor (or preview path) width height)))
     (when image
       (put-text-property 0 (length string) 'display image string))
     string))
+
+(defvar ecc-image-animate-seconds 30
+  "Seconds a GIF started by hand keeps moving.
+It is finite on purpose: a redraw deletes the text the timer is
+animating, and a loop with no end would go on turning the frames of a
+picture nobody can see.")
+
+(defun ecc-image-at-point (&optional position)
+  "Return the file drawn at POSITION, or nil."
+  (get-text-property (or position (point)) 'ecc-image-file))
+
+(defun ecc-image-view-at-point ()
+  "Look at the image or the video at point.
+A GIF starts moving where it sits, a video goes to whatever the
+machine plays one with, and a still opens in `image-mode', which has a
+zoom of its own."
+  (interactive)
+  (let ((path (ecc-image-at-point)))
+    (unless path (user-error "No image here"))
+    (pcase (ecc-image-kind path)
+      ('animated (ecc-image--animate-at-point))
+      ('video (ecc-image-open-externally path))
+      (_ (find-file-other-window path)))))
+
+(defun ecc-image--animate-at-point ()
+  "Start the GIF drawn at point, for `ecc-image-animate-seconds'."
+  (let ((image (get-text-property (point) 'display)))
+    (unless (and (consp image) (image-multi-frame-p image))
+      (user-error "Nothing here is moving"))
+    (image-animate image nil ecc-image-animate-seconds)))
+
+(defun ecc-image-toggle-inline ()
+  "Turn the drawing of images in a transcript on or off, and redraw."
+  (interactive)
+  (setq ecc-image-inline (not ecc-image-inline))
+  (run-hooks 'ecc-image-inline-changed-hook)
+  (message "Images are %s" (if ecc-image-inline "drawn" "named")))
+
+(defvar ecc-image-inline-changed-hook nil
+  "Run after `ecc-image-toggle-inline'.
+The renderer sits above this module and hangs the redraw here.")
 
 (provide 'ecc-image)
 
