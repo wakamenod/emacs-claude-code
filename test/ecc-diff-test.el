@@ -124,6 +124,21 @@
           (should-not (ecc-diff-file-content nil)))
       (delete-file file))))
 
+(ert-deftest ecc-diff-test-a-binary-file-has-no-content ()
+  "A binary file is not read: there is nothing to diff and a lot to draw."
+  (let ((png (expand-file-name "red-square.png"
+                               (expand-file-name "fixtures" ecc-test-directory)))
+        (text (make-temp-file "ecc-diff-text" nil ".txt" "hello\n")))
+    (unwind-protect
+        (progn
+          (should (ecc-diff-binary-p png))
+          (should-not (ecc-diff-file-content png))
+          (should-not (ecc-diff-binary-p text))
+          (should (equal (ecc-diff-file-content text) "hello\n"))
+          ;; An unreadable path counts as binary rather than as text.
+          (should (ecc-diff-binary-p "/nonexistent/x")))
+      (delete-file text))))
+
 (provide 'ecc-diff-test)
 
 ;;; ecc-diff-test.el ends here
