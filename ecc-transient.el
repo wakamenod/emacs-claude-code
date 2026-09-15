@@ -337,6 +337,7 @@ it too."
     ("v" "Go to the prompt" ecc-show-session)
     ("j" "Focus one project" ecc-focus-project)
     ("w" "Hide or restore windows" ecc-toggle)
+    ("V" "Show this project's source" ecc-window-focus-source)
     ("S" "Switch this window to another session" ecc-switch-session)
     ("i" "Interrupt" ecc-interrupt)
     ("t" "Hand over to the terminal" ecc-tui-open)

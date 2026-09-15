@@ -712,17 +712,32 @@ above the two."
                                    nil t nil nil
                                    (buffer-name (car buffers)))))))
 
+;;;###autoload
 (defun ecc-window-focus-source (root &optional choose)
   "Show the source of the project ROOT in the main window, and select it.
-CHOOSE asks which buffer rather than taking the likeliest.  A project
-with no buffer open is listed instead: a directory is a fair answer to
-where the source is, and it is somewhere to start reading.
+CHOOSE, a prefix argument interactively, asks which buffer rather than
+taking the likeliest.  A project with no buffer open is listed instead:
+a directory is a fair answer to where the source is, and it is somewhere
+to start reading.
+
+Interactively ROOT is the Space showing, and the project of the buffer
+being worked in where there are no Spaces.  This is the way to put the
+code back in front of you when the window that held it went somewhere
+else: the windows of a Space are the user\='s, so nothing moves them on
+its own, and `ecc-focus-project\' there only goes to the tab.  The Space
+comes first here, unlike everywhere else -- a window of this tab
+showing another project\='s file is the case the command is for, and
+reading the project off that file would answer with the very project
+being asked about.
 
 Selecting the window is not a flourish.  Every command that takes no
 prefix argument -- `ecc-toggle', `ecc-start', `ecc-next-attention-in-project',
 `ecc-window-resolve-session' -- reads the project off the current
 buffer, so leaving point here is what makes the whole package agree
 about which project one is in."
+  (interactive (list (or (ecc-window--space-root)
+                         (ecc-window-context-project-root))
+                     current-prefix-arg))
   (require 'dired)
   (let ((window (ecc-window--source-window))
         (buffer (or (if choose

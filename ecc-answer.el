@@ -213,6 +213,12 @@ question buffer opens with the first one answered."
     ;; `w' is here for `j': focusing a project hides the rest, and the
     ;; way back has to be as near to hand as the way in was.
     (define-key map (kbd "w") #'ecc-toggle)
+    ;; `v' goes to the prompt of a session and `V' to the code of the
+    ;; project, which is the pair the day is spent between.  It is worth
+    ;; a key because nothing else puts the code back: under `spaces' the
+    ;; windows of a tab are the user's, so `j' goes to the Space and
+    ;; leaves them where they are.
+    (define-key map (kbd "V") #'ecc-window-focus-source)
     (define-key map (kbd "i") #'ecc-interrupt)
     (define-key map (kbd "t") #'ecc-tui-open)
     ;; The Spaces, in capitals beside the lower-case key of the nearest

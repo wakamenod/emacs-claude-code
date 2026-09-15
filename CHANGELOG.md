@@ -253,6 +253,24 @@ Verified against **Claude Code CLI 2.1.270**.
 
 ### Fixed
 
+- A Space whose tab had nothing but transcripts left in it comes up with a
+  window for the code again. Under `spaces` the windows of a tab are the
+  user's and are left where they were put, which is the point of laying the
+  sessions out that way -- but `delete-other-windows` on a transcript leaves a
+  tab that is nobody's arrangement, and going to that Space brought back a tab
+  with nowhere to read the code and no command to say so (reported
+  2026-09-16). A window pointed at another project's file is still left alone:
+  that one is the user's doing, and `ecc-window-focus-source` is the way back.
+
+- `ecc-window-focus-source` is a command, on `C-c c V` and in the menu. It
+  shows the source of this project in the main window, and asks which buffer
+  with a prefix argument. Under `spaces` it is the only thing that puts the
+  code back: `ecc-focus-project` (`C-c c j`) goes to the Space and leaves its
+  windows alone, so a source window given to something else had no way back
+  short of `M-x`. Interactively it asks the Space showing which project is
+  meant, rather than the buffer in front of the user -- that buffer is the
+  very thing being complained about.
+
 - A file the CLI wrote in the same second as the last commit, and to the same
   number of bytes, could drop out of the review. The snapshot the review
   compares against copies the repository's index in for its stat cache, and it

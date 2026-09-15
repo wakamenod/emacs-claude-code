@@ -397,6 +397,103 @@ with the transcripts hidden was one the user had to unpack by hand."
                      (nth 0 (window-edges
                              (car (ecc-space--session-windows)))))))))))
 
+(ert-deftest ecc-space-test-a-tab-with-no-window-for-the-code-gets-one ()
+  "Going to a Space whose tab has only transcripts in it puts the code back.
+The windows of a tab are the user\='s and are left where they were put.
+A tab with nothing but transcripts is the one case that is nobody\='s
+arrangement -- `delete-other-windows\=' on a transcript leaves it -- and
+nothing brought that window back on its own (reported 2026-09-16)."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--two))
+    (ecc-space-test--with-tab-bar
+      (let* ((one (ecc-space-of-root ecc-space-test--one))
+             (two (ecc-space-of-root ecc-space-test--two))
+             (ecc-window-width 20)
+             (ecc-space-session-min-width 10)
+             ;; A file of the project to read: these roots are names
+             ;; rather than directories, so there is none to list either.
+             (code (get-buffer-create "code.el")))
+        (with-current-buffer code
+          (setq buffer-file-name (expand-file-name "code.el" ecc-space-test--one)))
+        (ecc-space-select one)
+        ;; The source window is given to a transcript and everything
+        ;; else is put away, the way C-x 1 on a transcript leaves it.
+        (let ((session (car (ecc-window-project-sessions ecc-space-test--one))))
+          (set-window-buffer (ecc-window--source-window)
+                             (ecc-session-ensure-buffer session))
+          (delete-other-windows
+           (get-buffer-window (ecc-session-buffer session)))
+          (should-not (ecc-space--source-window)))
+        ;; Away and back: the tab has a window for the code again, and
+        ;; the transcript that took it over is still there.
+        (ecc-space-select two)
+        (ecc-space-select one)
+        (let ((window (ecc-space--source-window)))
+          (should window)
+          (should (ecc-window--buffer-in-project-p
+                   (window-buffer window)
+                   (ecc-window-project-key ecc-space-test--one)))
+          (should (ecc-space--session-windows))
+          ;; To the left of the transcript, where a Space keeps it.
+          (should (< (nth 0 (window-edges window))
+                     (nth 0 (window-edges
+                             (car (ecc-space--session-windows))))))))
+      (when-let* ((code (get-buffer "code.el")))
+        (with-current-buffer code (set-buffer-modified-p nil))
+        (kill-buffer code)))))
+
+(ert-deftest ecc-space-test-a-tab-that-has-a-source-window-is-left-alone ()
+  "A window pointed at another project is the user\='s doing and stays.
+`ecc-window-focus-source\=' is the way back, and it is a command with a
+key of its own for that reason; going to the Space is not."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--two))
+    (ecc-space-test--with-tab-bar
+      (let ((one (ecc-space-of-root ecc-space-test--one))
+            (two (ecc-space-of-root ecc-space-test--two))
+            (ecc-window-width 20)
+            (ecc-space-session-min-width 10))
+        (ecc-space-select one)
+        (let* ((stranger (get-buffer-create "stranger.txt"))
+               (window (ecc-space--source-window))
+               (before (length (window-list nil 'no-minibuffer))))
+          (set-window-buffer window stranger)
+          (ecc-space-select two)
+          (ecc-space-select one)
+          (should (eq (window-buffer (ecc-space--source-window)) stranger))
+          (should (= before (length (window-list nil 'no-minibuffer))))
+          (kill-buffer stranger))))))
+
+(ert-deftest ecc-space-test-focus-source-puts-the-code-of-this-space-back ()
+  "`ecc-window-focus-source\=' is the way back, and it asks the Space first.
+Everywhere else the project is read off the buffer in front of the
+user.  Here that buffer is the very thing being complained about -- a
+window of this tab showing another project -- so the Space showing is
+what the command means by \"this project\"."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--two))
+    (ecc-space-test--with-tab-bar
+      (let* ((one (ecc-space-of-root ecc-space-test--one))
+             (ecc-window-width 20)
+             (ecc-space-session-min-width 10)
+             (code (get-buffer-create "code.el"))
+             (stranger (get-buffer-create "stranger.el")))
+        (with-current-buffer code
+          (setq buffer-file-name (expand-file-name "code.el" ecc-space-test--one)))
+        (with-current-buffer stranger
+          (setq buffer-file-name (expand-file-name "other.el" ecc-space-test--two)))
+        (should (commandp 'ecc-window-focus-source))
+        (ecc-space-select one)
+        (set-window-buffer (ecc-space--source-window) stranger)
+        ;; Run from the window that holds the stranger, the way the user
+        ;; would be sitting in it.
+        (with-current-buffer stranger
+          (call-interactively #'ecc-window-focus-source))
+        (should (eq (window-buffer (ecc-space--source-window)) code))
+        (dolist (buffer (list code stranger))
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer))))))
+
 (ert-deftest ecc-space-test-a-new-tab-stops-when-the-row-is-full ()
   "The lay-out stops at the edge of the row rather than taking a window over.
 A session that does not fit goes on running without one; the sidebar

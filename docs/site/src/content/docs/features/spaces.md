@@ -51,6 +51,7 @@ The tab line inside each session window is unchanged: it switches between the se
 | `C-c c J` | `ecc-space-goto` | Go to a Space, by name — including a project you have only recordings of |
 | `C-c c j` | `ecc-focus-project` | The same thing for the project of this buffer |
 | `C-c c z` | `ecc-space-zoom` | Fill the tab with this window; the same key puts the windows back |
+| `C-c c V` | `ecc-window-focus-source` | Show this Space's source in the main window |
 | `C-c c ?` then `X` | `ecc-space-close` | Close this Space and stop what is running in it |
 | — | `ecc-space-jump` | Go to the Nth Space, as numbered in the sidebar |
 
@@ -58,6 +59,8 @@ Going to a session takes you to its Space, whichever command asked: `C-c c n`
 (`ecc-next-attention`), `C-c c v`, the sidebar's `RET`, the dashboard. A question
 or a plan opens its own buffer, and that buffer opens in the Space of the session
 it belongs to rather than in the one you happened to be standing in.
+
+The windows of a tab are yours, so nothing rearranges them behind your back. That cuts both ways: a window you pointed at another project's file keeps that file, and going to the Space again does not undo it. `C-c c V` (`ecc-window-focus-source`) is the way back — it shows this Space's source in the main window, and asks which buffer with `C-u`. The one exception is a tab with nothing but transcripts left in it, which is nobody's arrangement: going to that Space opens a window for the code again, to the left of the transcripts.
 
 Closing a Space does not touch the checkout of a worktree. Closing its tab by hand stops nothing: the sessions go on running with no window, and `C-c c w` (`ecc-toggle`) or the sidebar brings them back.
 

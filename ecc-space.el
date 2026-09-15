@@ -238,21 +238,24 @@ the Space brings them back as they were left."
         (unless (ecc-space-display-session session t)
           (throw 'full nil))))))
 
+(defun ecc-space--source-buffer (space)
+  "Return the buffer the source window of SPACE should hold, or nil."
+  (let ((root (ecc-space-root space)))
+    (or (ecc-window-project-source-buffer root)
+        ;; A directory is a fair answer to where the source is, but only
+        ;; if it is still there: a worktree whose checkout was removed
+        ;; under a Space that is still open would otherwise take the tab
+        ;; down with an error instead of opening it empty.
+        (and (file-directory-p root)
+             (progn (require 'dired) (dired-noselect root))))))
+
 (defun ecc-space--lay-out (space)
   "Fill the new tab of SPACE with the source of the project and its sessions.
 One window with the code in it, which is what the user is looking at
 when they ask for a project, and the sessions of the Space beside it:
 going to a Space is asking to work there, and a tab that comes up with
 the transcripts hidden is one the user has to unpack by hand."
-  (let* ((root (ecc-space-root space))
-         (buffer (or (ecc-window-project-source-buffer root)
-                     ;; A directory is a fair answer to where the source
-                     ;; is, but only if it is still there: a worktree
-                     ;; whose checkout was removed under a Space that is
-                     ;; still open would otherwise take the tab down with
-                     ;; an error instead of opening it empty.
-                     (and (file-directory-p root)
-                          (progn (require 'dired) (dired-noselect root))))))
+  (let ((buffer (ecc-space--source-buffer space)))
     (when (buffer-live-p buffer)
       (set-window-buffer (selected-window) buffer))
     ;; A tab carries its own windows, so the sidebar has to be put in
@@ -262,6 +265,41 @@ the transcripts hidden is one the user has to unpack by hand."
     (require 'ecc-sidebar)
     (ecc-sidebar-show)
     (ecc-space--lay-out-sessions space)))
+
+(defun ecc-space--source-window ()
+  "Return a window of this tab the code can be read in, or nil.
+Not `ecc-window--source-window\=', which answers with the largest window
+whatever is in it: a tab whose source window was given to a transcript
+still has windows, and none of them is a window to read the code in."
+  (seq-find (lambda (window)
+              (and (not (window-parameter window 'window-side))
+                   (not (ecc-window-own-buffer-p (window-buffer window)))))
+            (window-list nil 'no-minibuffer)))
+
+(defun ecc-space--ensure-source (space)
+  "Put the source of SPACE back when its tab has no window to read it in.
+The windows of a tab are the user\='s and are left where they were put:
+that is what a Space is for, and a source window showing another
+project\='s file is a window the user pointed there.  A tab with nothing
+but transcripts in it is the one case that is nobody\='s arrangement --
+`delete-other-windows\=' on a transcript leaves it, and going to the
+Space used to bring back a tab with no code in it and no way to say so.
+
+The source opens to the left of the leftmost window, which is where a
+Space puts it, and takes half of what it divides."
+  (unless (ecc-space--source-window)
+    (when-let* ((buffer (ecc-space--source-buffer space))
+                ((buffer-live-p buffer))
+                (windows (seq-remove (lambda (window)
+                                       (window-parameter window 'window-side))
+                                     (window-list nil 'no-minibuffer)))
+                (leftmost (car (sort windows
+                                     (lambda (a b)
+                                       (< (nth 0 (window-edges a))
+                                          (nth 0 (window-edges b))))))))
+      (ecc-space--display-beside buffer leftmost
+                                 (/ (window-total-width leftmost) 2)
+                                 'left))))
 
 (defun ecc-space-select (space)
   "Show SPACE and return the name of its tab, or nil under `classic'.
@@ -325,7 +363,8 @@ A Space with nothing running in it gets a session; see
     (tab-bar-mode 1))
   (let ((name (ecc-space-tab space)))
     (if name
-        (tab-bar-select-tab-by-name name)
+        (progn (tab-bar-select-tab-by-name name)
+               (ecc-space--ensure-source space))
       (setq name (ecc-space--unique-tab-name (ecc-space-name space)))
       (tab-bar-new-tab)
       (tab-bar-rename-tab name)
@@ -388,8 +427,9 @@ holds however the row was arranged."
         (window-resize right (- room (window-total-width right)) t t)))
     (and (>= (window-total-width right) room) right)))
 
-(defun ecc-space--display-beside (buffer window width)
-  "Show BUFFER in a new window WIDTH columns wide, to the right of WINDOW."
+(defun ecc-space--display-beside (buffer window width &optional direction)
+  "Show BUFFER in a new window WIDTH columns wide, beside WINDOW.
+DIRECTION is which side of WINDOW it goes on, `right\=' by default."
   ;; `split-width-threshold' is 160 by default and is how `display-buffer'
   ;; guesses whether a window is wide enough to be worth dividing.  The
   ;; guess is not wanted here: the layout has already decided, and the
@@ -402,7 +442,7 @@ holds however the row was arranged."
   (let ((split-width-threshold (* 2 (max ecc-space-session-min-width
                                          window-min-width))))
     (display-buffer-in-direction
-     buffer `((direction . right)
+     buffer `((direction . ,(or direction 'right))
               (window . ,window)
               (window-width . ,width)))))
 
