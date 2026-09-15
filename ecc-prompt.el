@@ -332,7 +332,8 @@ moment is added to it (`ecc-prompt-current-argument\=')."
     ("/login" . "Sign in to the CLI, in a terminal of its own")
     ("/logout" . "Sign the CLI out")
     ("/auth-status" . "Say who the CLI is signed in as")
-    ("/hooks" . "Show the hooks that would run for this project"))
+    ("/hooks" . "Show the hooks that would run for this project")
+    ("/resume" . "Carry this window on with another conversation of this project"))
   "Commands Emacs offers that the CLI does not name.
 They are added to the list `ecc-prompt-commands\' returns, after
 everything the CLI reported.  `/btw\' is one: the terminal client
@@ -942,6 +943,12 @@ The first one to return non-nil takes the draft: nothing is sent to the
 CLI, and `ecc-prompt-send\' returns `intercepted\'.  The draft is
 emptied and remembered either way, so that a typo can be brought back
 with \\[ecc-prompt-history-previous].
+
+`/resume\' is ours outright: the CLI names no resume in
+`slash_commands\' and none in `terminal_slash_commands\' (checked
+against 2.1.270).  The terminal client draws that picker for itself,
+and what it does there is take the conversation over in place, which is
+what Emacs does to the window it is typed in.
 
 Only a draft the CLI is not meant to see belongs here.  The side
 question is the one there is: `/btw\' is not a slash

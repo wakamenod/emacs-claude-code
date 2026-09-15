@@ -691,6 +691,115 @@ when the head range stopped short of it."
         (should (equal (alist-get 'cwd info)
                        "/private/var/folders/4v/6r7_g65n4jz15_y1z350h0340000gn/T/ecc-history-2m0x5w0z"))))))
 
+(defmacro ecc-history-test--with-take-over (var &rest body)
+  "Run BODY with VAR a session that can be carried on with another recording.
+Nothing is started and nothing is stopped: `ecc-proc-release' and
+`ecc-proc-start' are stood in for, and what they were asked is in
+`released' and `resumed'."
+  (declare (indent 1) (debug (symbolp body)))
+  `(ecc-test-with-fake-session ,var
+     (let ((released nil)
+           (resumed nil))
+       (ignore released resumed)
+       (cl-letf (((symbol-function 'ecc-proc-release)
+                  (lambda (session &rest _) (setq released session)))
+                 ((symbol-function 'ecc-proc-start)
+                  (lambda (session &rest args) (setq resumed (cons session args))))
+                 ((symbol-function 'ecc-review-ensure-baseline) #'ignore)
+                 ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+         ,@body))))
+
+(ert-deftest ecc-history-test-take-over-swaps-the-conversation ()
+  "`/resume' carries the window on with another recording, in place.
+The buffer, the name and the review baseline are the ones it had; the
+id, the turns and what the CLI said are the recording's."
+  (ecc-history-test--with-directory file
+    (ecc-history-test--with-take-over session
+      (setf (ecc-session-baseline session) "deadbeef")
+      (let ((was (ecc-session-id session))
+            (name (ecc-session-name session))
+            (buffer (ecc-session-ensure-buffer session))
+            (info (ecc-history-scan-file file)))
+        (ecc-history-take-over session info)
+        (should (eq released session))
+        (should (equal (list session t) (seq-take resumed 2)))
+        ;; The recording is the conversation now.
+        (should (equal (alist-get 'session-id info) (ecc-session-id session)))
+        (should (equal ecc-history-test-prompts
+                       (ecc-history-test--prompts session)))
+        (should (eq session (ecc-model-session (ecc-session-id session))))
+        (should-not (ecc-model-session was))
+        ;; And the window the user is looking at did not move.
+        (should (eq buffer (ecc-session-buffer session)))
+        (should (equal name (ecc-session-name session)))
+        (should (equal "deadbeef" (ecc-session-baseline session)))
+        (should (eq (ecc-session-kind session) 'own))))))
+
+(ert-deftest ecc-history-test-take-over-asks-before-leaving-turns ()
+  "A conversation with something in it is not left without a question."
+  (ecc-history-test--with-directory file
+    (ecc-history-test--with-take-over session
+      (ecc-model-begin-turn session "something said")
+      (ecc-model-finish-turn session nil)
+      (let ((was (ecc-session-id session))
+            (info (ecc-history-scan-file file)))
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil)))
+          (should-error (ecc-history-take-over session info) :type 'user-error))
+        ;; Nothing moved.
+        (should (equal was (ecc-session-id session)))
+        (should (= 1 (length (ecc-session-turns session))))
+        (should-not released)))))
+
+(ert-deftest ecc-history-test-take-over-does-not-ask-about-the-session-note ()
+  "A session that has only said what the CLI said is carried on without a word.
+A session started a moment ago already holds the turn the CLI opens for
+itself -- the \"(session)\" note the Remote Control lines hang from -- and
+asking about that one would mean asking every time, which is the case
+`/resume' exists for."
+  (ecc-history-test--with-directory file
+    (ecc-history-test--with-take-over session
+      (ecc-model-add-aside session :type 'text :status 'done
+                           :data (list (cons 'text "remote control ready")))
+      (should (= 1 (length (ecc-session-turns session))))
+      (let ((asked nil))
+        (cl-letf (((symbol-function 'yes-or-no-p)
+                   (lambda (&rest _) (setq asked t) t)))
+          (ecc-history-take-over session (ecc-history-scan-file file)))
+        (should-not asked))
+      (should (equal ecc-history-test-prompts
+                     (ecc-history-test--prompts session))))))
+
+(ert-deftest ecc-history-test-take-over-refuses-one-running-elsewhere ()
+  "A recording another process is running is refused before anything moves."
+  (ecc-history-test--with-directory file
+    (ecc-history-test--with-take-over session
+      (let ((info (ecc-history-scan-file file))
+            (was (ecc-session-id session)))
+        (cl-letf (((symbol-function 'ecc-registry-session)
+                   (lambda (id)
+                     (and (equal id (alist-get 'session-id info))
+                          '((pid . 4242) (name . "elsewhere")))))
+                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) nil)))
+          (should-error (ecc-history-take-over session info) :type 'user-error))
+        (should-not released)
+        (should (equal was (ecc-session-id session)))))))
+
+(ert-deftest ecc-history-test-resume-is-intercepted ()
+  "`/resume' never reaches the CLI: Emacs answers it."
+  (ecc-history-test--with-directory file
+    (ecc-history-test--with-take-over session
+      (let ((info (ecc-history-scan-file file))
+            (asked nil))
+        (cl-letf (((symbol-function 'ecc-history-read-recording)
+                   (lambda (&rest _) (setq asked t) info)))
+          (should (ecc-history-resume-intercept session "/resume"))
+          (should asked)
+          (should (equal (alist-get 'session-id info) (ecc-session-id session))))
+        ;; Nothing was sent, and a prompt that is not the command is
+        ;; left to the CLI.
+        (should-not ecc-test-sent)
+        (should-not (ecc-history-resume-intercept session "resume please"))))))
+
 (provide 'ecc-history-test)
 
 ;;; ecc-history-test.el ends here

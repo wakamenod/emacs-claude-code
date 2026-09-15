@@ -37,6 +37,9 @@
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-review-ensure-baseline "ecc-review" (session))
 (declare-function ecc-display-session "ecc-window" (session))
+(defvar ecc-prompt-immediate-commands)
+(declare-function ecc-prompt-command-name "ecc-prompt" (text))
+(declare-function ecc-prompt-command-argument "ecc-prompt" (text))
 
 (defvar ecc-history-directory "~/.claude/projects/"
   "Directory the CLI keeps its recorded conversations in.
@@ -608,18 +611,23 @@ Interactively the recordings are offered by name."
 ;;;; Resuming what was read
 
 ;;;###autoload
-(defun ecc-history--check-not-running (session)
-  "Refuse to resume SESSION while another process is running it.
+(defun ecc-history--check-id-not-running (session-id name)
+  "Refuse to resume SESSION-ID, called NAME, while another process runs it.
 There is no lock: a second CLI on the same session id writes into the
 same recording, and the conversation quietly grows a second branch
 \(confirmed against the CLI).  The way out is to stop the other one
 first, so this asks rather than deciding, and names the process."
-  (when-let* ((entry (ecc-registry-session (ecc-session-id session))))
+  (when-let* ((entry (ecc-registry-session session-id)))
     (unless (yes-or-no-p
              (format "%s is running as pid %s; resuming branches the conversation.  Resume anyway? "
-                     (or (alist-get 'name entry) (ecc-session-name session))
+                     (or (alist-get 'name entry) name)
                      (or (alist-get 'pid entry) "?")))
       (user-error "Aborted"))))
+
+(defun ecc-history--check-not-running (session)
+  "Refuse to resume SESSION while another process is running it."
+  (ecc-history--check-id-not-running (ecc-session-id session)
+                                     (ecc-session-name session)))
 
 (defun ecc-history-resume (session &optional fork)
   "Start SESSION again, keeping what the recording said.
@@ -643,6 +651,135 @@ the CLI would run twice on the same recording."
   (ecc-review-ensure-baseline session)
   (ecc-proc-start session t fork)
   session)
+
+
+;;;; Carrying a session on with another conversation
+
+(defun ecc-history-recording-label (info)
+  "Return the line the recording INFO describes is offered on."
+  (format "%s  %s  %s"
+          (ecc--column (or (alist-get 'title info)
+                           (alist-get 'prompt info)
+                           (alist-get 'session-id info))
+                       46)
+          (ecc--column (ecc--session-time-label (or (alist-get 'time info)
+                                                    (alist-get 'mtime info)))
+                       14)
+          (ecc--fit (or (alist-get 'prompt info) "") 50)))
+
+(defun ecc-history-read-recording (session &optional prompt)
+  "Ask, with PROMPT, which conversation of the project of SESSION to take.
+Only the recordings of that project are offered, and the one SESSION is
+in already is left out: `/resume\=' is for going somewhere else.  They
+come newest first and are kept in that order."
+  (let* ((infos (seq-remove (lambda (info)
+                              (equal (alist-get 'session-id info)
+                                     (ecc-session-id session)))
+                            (ecc-history-recordings
+                             (or (ecc-session-cwd session)
+                                 (ecc-session-project-root session)))))
+         (labels (mapcar (lambda (info)
+                           (cons (ecc-history-recording-label info) info))
+                         infos)))
+    (unless labels
+      (user-error "No other conversation was recorded in this project"))
+    (let ((choice (completing-read
+                   (or prompt "Carry on with: ")
+                   (lambda (string predicate action)
+                     (if (eq action 'metadata)
+                         `(metadata (display-sort-function . identity)
+                                    (cycle-sort-function . identity))
+                       (complete-with-action action (mapcar #'car labels)
+                                             string predicate)))
+                   nil t)))
+      (cdr (assoc choice labels)))))
+
+(defun ecc-history-take-over (session info)
+  "Carry SESSION on with the conversation INFO describes.
+The window, the tab, the buffer, the name and the review baseline are
+the ones it already had: what changes is which conversation is in them.
+This is the terminal client\='s own `/resume\=', which takes the
+conversation over in place rather than opening a second one.
+
+The CLI Emacs was running is stopped first, because two processes on
+one session id branch a recording without saying so; the conversation
+it was in is left exactly where it is, and `ecc-history-open\=' reads it
+again."
+  (let ((id (alist-get 'session-id info))
+        (file (alist-get 'file info))
+        (was (ecc-session-id session)))
+    (unless id
+      (user-error "That recording has no session id"))
+    (when (eq (ecc-session-kind session) 'handoff)
+      (user-error "%s is open in a terminal" (ecc-session-name session)))
+    ;; Refused before anything moves.
+    (ecc-history--check-id-not-running id (ecc-session-name session))
+    ;; Only the turns somebody prompted count.  A session that has just
+    ;; been started already holds one the CLI opened for itself -- the
+    ;; "(session)" note Remote Control and the like hang from
+    ;; (`ecc-model-aside-turn\=') -- and asking about that one would mean
+    ;; asking every time, which is the case `/resume\=' exists for
+    ;; (measured 2026-09-15, on a session started by going to a Space).
+    (let ((spoken (seq-filter #'ecc-turn-prompt (ecc-session-turns session))))
+      (when spoken
+        (unless (yes-or-no-p
+                 (format "%s holds %d turn%s; carrying it on elsewhere leaves %s.  Go on? "
+                         (ecc-session-name session) (length spoken)
+                         (if (= 1 (length spoken)) "" "s")
+                         (if (= 1 (length spoken)) "it" "them")))
+          (user-error "Left alone"))))
+    (when (ecc-session-input-queue session)
+      (unless (yes-or-no-p
+               (format "%d prompt%s waiting to be sent would be dropped.  Go on? "
+                       (length (ecc-session-input-queue session))
+                       (if (= 1 (length (ecc-session-input-queue session))) "" "s")))
+        (user-error "Left alone")))
+    (ecc-proc-release session)
+    ;; The sentinel does both of these, but it runs when it runs; they
+    ;; are idempotent, so doing them here costs nothing and means the
+    ;; session is not carried on with a turn still open.
+    (ecc-proc--close-pending session)
+    (ecc-model-abort-turn session)
+    (ecc-model-reset-conversation session)
+    (ecc-model-set-session-id session id)
+    (when file
+      (puthash id file ecc-history--files))
+    (require 'ecc-render)
+    (ecc-render-refresh session)
+    (ecc-history-resume session)
+    (message "%s is now %s; %s was left where it was"
+             (ecc-session-name session)
+             (ecc--truncate (or (alist-get 'title info) id) 40)
+             was)
+    session))
+
+(defconst ecc-history-resume-command "/resume"
+  "The command that carries a session on with another conversation.
+Ours outright: the CLI names no resume in `slash_commands\=' and none in
+`terminal_slash_commands\=' (checked against 2.1.270).  The terminal
+client draws that picker for itself, and what it does there is take the
+conversation over in place, which is what this does to the window it is
+typed in.")
+
+(defun ecc-history-resume-intercept (session text)
+  "Take TEXT for SESSION as a request to carry on with another conversation.
+Returns non-nil when it did, which is what keeps the draft from being
+sent as a prompt.  This is on `ecc-prompt-intercept-functions\='."
+  (when (equal (ecc-prompt-command-name text) ecc-history-resume-command)
+    (let* ((argument (ecc-prompt-command-argument text))
+           (argument (and argument (string-trim argument)))
+           (info (if (and argument (not (string-empty-p argument)))
+                     (or (seq-find (lambda (info)
+                                     (equal (alist-get 'session-id info) argument))
+                                   (ecc-history-recordings))
+                         (user-error "No recording with the id %s" argument))
+                   (ecc-history-read-recording session))))
+      (ecc-history-take-over session info))
+    t))
+
+(with-eval-after-load 'ecc-prompt
+  (add-hook 'ecc-prompt-intercept-functions #'ecc-history-resume-intercept)
+  (add-to-list 'ecc-prompt-immediate-commands ecc-history-resume-command))
 
 (provide 'ecc-history)
 
