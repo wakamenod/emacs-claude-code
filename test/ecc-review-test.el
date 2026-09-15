@@ -361,6 +361,72 @@ Neither is in a git repository, so both are diffed from the records."
               (should (string-search "nope...HEAD" (error-message-string error)))))
         (ecc-review-test--kill-review-buffers)))))
 
+(ert-deftest ecc-review-test-worktree-without-commits ()
+  "A repository with no commit yet reviews the code written in it."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (progn
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--write (concat directory "x.txt") "one\ntwo\n")
+            (setf (ecc-session-project-root session) directory)
+            (should (ecc-review--unborn-p (ecc-review-git-root directory)))
+            (let ((buffer (ecc-review-worktree-buffer session)))
+              (with-current-buffer buffer
+                (should (derived-mode-p 'ecc-review-mode))
+                ;; The range is still HEAD to the eye: only what git was
+                ;; asked was changed, so a refresh reads the same tree and
+                ;; the first commit puts the real HEAD back on its own.
+                (should (equal (buffer-name) "*ecc-review: test (HEAD)*"))
+                (should (equal ecc-review--range "HEAD"))
+                (let ((text (buffer-string)))
+                  (should (string-search "x.txt" text))
+                  (should (string-search "+one\n" text))
+                  (should (string-search "+two\n" text))))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-worktree-without-commits-staged ()
+  "Before the first commit a staged file is shown once, beside the untracked."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (progn
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--write (concat directory "staged.txt") "alpha\n")
+            (ecc-review-test--write (concat directory "new.txt") "hello\n")
+            (ecc-review-test--git directory "add" "staged.txt")
+            (setf (ecc-session-project-root session) directory)
+            (let ((buffer (ecc-review-worktree-buffer session)))
+              (with-current-buffer buffer
+                (let ((text (buffer-string)))
+                  ;; The staged file comes from the diff against the empty
+                  ;; tree, the untracked one from `ecc-review-git-untracked'.
+                  (should (string-search "+alpha\n" text))
+                  (should (string-search "+hello\n" text))
+                  ;; git stopped calling the staged file untracked when it
+                  ;; was added, so the two halves cannot both claim it.
+                  (should (= 1 (cl-count "diff --git a/staged.txt b/staged.txt"
+                                         (split-string text "\n")
+                                         :test #'equal)))))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-worktree-without-commits-bad-range ()
+  "Only the bare HEAD stands in for the empty tree; a bad range still errors."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (progn
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--write (concat directory "new.txt") "hello\n")
+            (setf (ecc-session-project-root session) directory)
+            (let ((error (should-error (ecc-review-worktree-buffer session "nope...HEAD")
+                                       :type 'user-error)))
+              (should (string-search "nope...HEAD" (error-message-string error)))))
+        (ecc-review-test--kill-review-buffers)))))
+
 (ert-deftest ecc-review-test-worktree-needs-git ()
   "A project outside git says so rather than showing an empty diff."
   (ecc-test-with-fake-session session

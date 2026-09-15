@@ -226,6 +226,23 @@ printed."
        (let ((text (string-join (nreverse texts) "")))
          (and (not (string-empty-p text)) text))))))
 
+(defun ecc-review--unborn-p (root)
+  "Return non-nil when the repository at ROOT has no commit yet."
+  (pcase (ecc-review--git root "rev-parse" "--verify" "--quiet" "HEAD")
+    (`(0 . ,_) nil)
+    (_ t)))
+
+(defun ecc-review--empty-tree (root)
+  "Return the hash of the empty tree of the repository at ROOT, or nil.
+Asked of git rather than written out: the 4b825dc everybody knows is the
+SHA-1 one, and a repository whose object format is SHA-256 has another.
+`ecc-review--git\=' gives git no stdin, so --stdin reads nothing and git
+names the tree of nothing."
+  (pcase (ecc-review--git root "hash-object" "-t" "tree" "--stdin")
+    (`(0 . ,output)
+     (let ((hash (string-trim output)))
+       (and (not (string-empty-p hash)) hash)))))
+
 ;;;; A diff made from what the session recorded
 
 (defun ecc-review--current-content (entry)
@@ -816,7 +833,18 @@ a git repository or has nothing to show."
          (root (or (ecc-review-git-root directory)
                    (user-error "%s is not in a git repository"
                                (abbreviate-file-name directory))))
-         (tracked (pcase (ecc-review--git-diff root nil range)
+         ;; A repository with no commit has no HEAD to diff against, and
+         ;; git calls that a bad revision rather than an empty diff.  The
+         ;; empty tree is what HEAD would mean there, so the first code
+         ;; written in a project can be reviewed before it is committed.
+         ;; Only the bare "HEAD" is substituted: "main...HEAD" in such a
+         ;; repository really is unresolvable, and still says so.  The
+         ;; test is made afresh every time, so the first commit puts the
+         ;; real HEAD back without anything having to be invalidated.
+         (effective (if (and (equal range "HEAD") (ecc-review--unborn-p root))
+                        (or (ecc-review--empty-tree root) range)
+                      range))
+         (tracked (pcase (ecc-review--git-diff root nil effective)
                     (`(0 . ,output) output)
                     ;; An unknown revision is not "no change": without
                     ;; this the buffer would quietly show the untracked

@@ -46,6 +46,24 @@ Verified against **Claude Code CLI 2.1.270**.
   `ecc-protocol-user-directory` and `ecc-protocol-managed-files`. Nothing a
   user sets changes name.
 
+### Fixed
+
+- `ecc-review-worktree` opens in a repository that has no commit yet, which is
+  where the first code of a project is written and the moment there is most to
+  read. It diffs against `HEAD`, and git calls an unborn `HEAD` a bad revision
+  rather than an empty diff, so the command stopped at `Git cannot diff against
+  "HEAD" (exit 128)` three lines before the half that lists the files git does
+  not track -- which on its own would have shown the whole project. When
+  `HEAD` names nothing, the diff is taken against the empty tree instead: a
+  file already added shows as a new file and the untracked ones follow, as
+  they always did. Only the bare `HEAD` stands in this way; `main...HEAD` in
+  such a repository really is unresolvable and still says so. The empty tree
+  is asked of git rather than written out, because a repository whose object
+  format is SHA-256 does not have the 4b825dc of every SHA-1 one. What the
+  buffer is named and what its header line says are unchanged, and the test is
+  made afresh on every draw, so the first commit puts the real `HEAD` back
+  without a refresh having to know anything about it.
+
 ## [0.2.0] - 2026-09-14
 
 Verified against **Claude Code CLI 2.1.270**.
