@@ -633,8 +633,8 @@ Neither is in a git repository, so both are diffed from the records."
                 (kill-buffer (nth 0 location)))))
         (ecc-review-test--kill-review-buffers)))))
 
-(ert-deftest ecc-review-test-send ()
-  "C-c C-c shows the prompt to confirm; sending starts a turn."
+(ert-deftest ecc-review-test-send-editing-first ()
+  "C-u C-c C-c shows the prompt to confirm; sending starts a turn."
   (ecc-test-with-fake-session session
     (ecc-review-test--with-directory directory
       (unwind-protect
@@ -645,7 +645,7 @@ Neither is in a git repository, so both are diffed from the records."
               (diff-hunk-next)
               (ecc-review-comment "use a word")
               (let ((expected (ecc-review-format-message (ecc-review-comments))))
-                (ecc-review-send)
+                (ecc-review-send t)
                 (let ((message-buffer (get-buffer "*ecc-review-message: test*")))
                   (should message-buffer)
                   (with-current-buffer message-buffer
@@ -664,6 +664,28 @@ Neither is in a git repository, so both are diffed from the records."
                   (should (ecc-session-current-turn session))))))
         (ecc-review-test--kill-review-buffers)))))
 
+(ert-deftest ecc-review-test-send ()
+  "C-c C-c without a prefix sends the comments and closes the review."
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((buffer (progn (ecc-review-test--two-files session directory)
+                               (ecc-review-buffer session))))
+            (with-current-buffer buffer
+              (diff-hunk-next)
+              (ecc-review-comment "use a word")
+              (let ((expected (ecc-review-format-message (ecc-review-comments))))
+                (ecc-review-send)
+                ;; No buffer to confirm in, and the review is done with.
+                (should-not (get-buffer "*ecc-review-message: test*"))
+                (should-not (buffer-live-p buffer))
+                (let ((sent (car (ecc-test-sent-messages))))
+                  (should (equal (alist-get 'type sent) "user"))
+                  (should (equal (alist-get 'content (alist-get 'message sent))
+                                 expected)))
+                (should (ecc-session-current-turn session)))))
+        (ecc-review-test--kill-review-buffers)))))
+
 (ert-deftest ecc-review-test-send-queues-while-running ()
   "During a turn the prompt joins the queue instead of interrupting."
   (ecc-test-with-fake-session session
@@ -675,9 +697,7 @@ Neither is in a git repository, so both are diffed from the records."
             (with-current-buffer (ecc-review-buffer session)
               (diff-hunk-next)
               (ecc-review-comment "later")
-              (ecc-review-send)
-              (with-current-buffer "*ecc-review-message: test*"
-                (ecc-review-message-send)))
+              (ecc-review-send))
             (should-not ecc-test-sent)
             (should (= (length (ecc-session-input-queue session)) 1))
             (should (string-search "Comment: later"
@@ -790,7 +810,7 @@ Neither is in a git repository, so both are diffed from the records."
             (should (string-search "-two\n+2\n" (buffer-string)))
             (diff-hunk-next)
             (ecc-review-comment "spell it out")
-            (ecc-review-send)
+            (ecc-review-send t)
             (with-current-buffer "*ecc-review-message: test*"
               (should (string-prefix-p ecc-review-proposal-header (buffer-string)))
               (should (string-search "## /nowhere/r.txt  L1-L3\n```diff\n@@ -1,3 +1,3 @@\n one\n-two\n+2\n three\n```\nComment: spell it out"
@@ -805,6 +825,25 @@ Neither is in a git repository, so both are diffed from the records."
           (should (eq (ecc-node-status (ecc-request-node request)) 'denied)))
       (ecc-review-test--kill-review-buffers))))
 
+(ert-deftest ecc-review-test-request-comment-denies-at-once ()
+  "Without a prefix the comments on a proposal go straight out as the deny."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (let* ((request (ecc-review-test--edit-request session))
+               (buffer (ecc-review-request request)))
+          (with-current-buffer buffer
+            (diff-hunk-next)
+            (ecc-review-comment "spell it out")
+            (ecc-review-send))
+          (should-not (get-buffer "*ecc-review-message: test*"))
+          (should-not (buffer-live-p buffer))
+          (let ((response (ecc-test-response 0)))
+            (should (equal (alist-get 'behavior response) "deny"))
+            (should (string-search "Comment: spell it out"
+                                   (alist-get 'message response))))
+          (should-not (ecc-session-pending session)))
+      (ecc-review-test--kill-review-buffers))))
+
 (ert-deftest ecc-review-test-request-answered-elsewhere ()
   "A proposal answered from the transcript takes its review buffers away."
   (ecc-test-with-fake-session session
@@ -814,7 +853,7 @@ Neither is in a git repository, so both are diffed from the records."
           (with-current-buffer buffer
             (diff-hunk-next)
             (ecc-review-comment "x")
-            (ecc-review-send))
+            (ecc-review-send t))
           (should (get-buffer "*ecc-review-message: test*"))
           (with-temp-buffer
             (ecc-perm-respond request 'allow))
