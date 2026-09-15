@@ -70,6 +70,12 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 | `ecc-notify-sound` | `nil` | System sound name played with desktop notifications, or `nil` for silence (e.g. `"Glass"` on macOS) |
 | `ecc-notify-function` | `#'ecc-notify-default` | Custom notification dispatch function with signature `(SESSION EVENT TEXT)`. Overriding this replaces default notification handling entirely |
 
+## Reviews
+
+| Variable | Default | Description |
+|---|---|---|
+| `ecc-review-style` | `'diff` | How `ecc-review` and `ecc-review-worktree` show changes. `'diff` uses a single read-only `diff-mode` buffer, while `'ediff` displays every file in the review side by side in a single ediff session. Both are read-only and send the same prompt |
+
 ## Windows
 
 | Variable | Default | Description |

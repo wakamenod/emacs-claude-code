@@ -70,6 +70,12 @@ M-x customize-group RET ecc
 | `ecc-notify-sound` | `nil` | デスクトップ通知時に再生するシステムサウンド名（macOS では `"Glass"` など）。`nil` で無音 |
 | `ecc-notify-function` | `#'ecc-notify-default` | `(SESSION EVENT TEXT)` を引数に呼び出されるカスタム通知関数。設定するとデフォルトの通知処理を完全に置き換えます |
 
+## レビュー
+
+| 変数 | 既定値 | 説明 |
+|---|---|---|
+| `ecc-review-style` | `'diff` | `ecc-review` と `ecc-review-worktree` での変更の表示方法。`'diff` は 1 つの読み取り専用 `diff-mode` バッファを使い、`'ediff` はレビュー対象の全ファイルを 1 つの ediff セッションで左右に並べて表示します。どちらも読み取り専用で、送信されるプロンプトは同一です |
+
 ## ウィンドウ分割
 
 | 変数 | 既定値 | 説明 |

@@ -66,6 +66,31 @@ The project is determined by the current buffer, and comments go to that project
 
 Hunks are as small as the change itself, since a comment includes the entire hunk it annotates. Setting `(setq ecc-review-context-lines 3)` widens them: the value is passed to git as `-U` when ecc runs it, so no `git config` is read or written. Proposals retain three lines of context either way via `ecc-review-proposal-context-lines`.
 
+## Opening the review in ediff
+
+`ecc-review-style` controls how `D` and `G` show what changed. The default, `'diff`, uses the single `diff-mode` buffer described above. Setting it to `'ediff` shows the files side by side instead:
+
+```elisp
+(setq ecc-review-style 'ediff)
+```
+
+All files in the review open in a single ediff session rather than one session per file. The original contents are concatenated into the left buffer, and the new contents are concatenated into the right buffer. A separator line like `═══ path ═══` marks each file, preceded by a blank line so files do not run together. Because all changes live in one session, `n` and `p` move through every difference across the entire review, crossing directly from one file into the next. Any file git considers binary, or any file larger than `ecc-review-max-bytes`, appears only as a separator line, such as `═══ photo.png (binary, not shown) ═══`, and contains no differences.
+
+The two buffers appear side by side. `ecc` sets `ediff-split-window-function` only in the review control buffer, so all other ediff sessions keep your configured window layout.
+
+Both buffers are read-only, so ediff's `a` and `b` copy commands do nothing here. You read, comment, and send. Claude then updates the files on disk using the prompt generated from your comments.
+
+| Key | Action |
+|---|---|
+| `c` | Comment on the difference ediff is on (again to edit it) |
+| `l` | Jump to a comment |
+| `d` | Remove the comment on this difference |
+| `C-c C-c` | Send the comments as a prompt (`C-u C-c C-c` to edit it first) |
+| `C-c C-k` | Drop the review and its comments |
+| `q` | Quit the review |
+
+Comments work the same way here as they do in the diff buffer. They carry the file name and the line numbers inside it, and the prompt sent to the session is identical. Sending comments, pressing `C-c C-k`, or pressing `q` restores the window configuration you had before opening the review. There is no `g` command here; to refresh the review, quit and open it again.
+
 ## Reviewing proposals before approval
 
 ![The text of a proposed Write, changed in a buffer and then allowed with the change](../../../assets/proposal.gif)
