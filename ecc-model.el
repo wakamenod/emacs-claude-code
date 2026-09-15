@@ -298,6 +298,50 @@ Resuming with --fork-session hands back an id we did not choose."
   (remhash (ecc-session-id session) ecc--sessions)
   (setq ecc--session-order (delete (ecc-session-id session) ecc--session-order)))
 
+(defun ecc-model-reset-conversation (session)
+  "Empty SESSION of the conversation it was in, keeping the session itself.
+What goes is everything that describes one conversation: the turns and
+their nodes, the queue, the costs, what the CLI said about itself when
+it started.  What stays is what the user has: the id -- the caller\='s
+business, and `ecc-model-set-session-id\=' is how it moves -- the name,
+the buffers, the launch options and the review baseline.
+
+`ecc-history-take-over\=' is what this is for: the window carries on with
+another conversation, and the session is the window.  No hook is run
+and no buffer is touched; the caller redraws with
+`ecc-render-refresh\='."
+  (setf (ecc-session-turns session) nil
+        (ecc-session-current-turn session) nil
+        (ecc-session-node-counter session) 0
+        (ecc-session-turn-counter session) 0
+        (ecc-session-pending session) nil
+        (ecc-session-input-queue session) nil
+        (ecc-session-sent-echoes session) nil
+        (ecc-session-history-offset session) nil
+        (ecc-session-init session) nil
+        (ecc-session-commands session) nil
+        (ecc-session-models session) nil
+        (ecc-session-last-model session) nil
+        (ecc-session-last-effort session) nil
+        (ecc-session-usage session) nil
+        (ecc-session-context-tokens session) 0
+        (ecc-session-total-cost session) 0
+        (ecc-session-rate-limit session) nil
+        (ecc-session-last-result-time session) nil
+        (ecc-session-progress session) nil
+        (ecc-session-hint-state session) nil
+        (ecc-session-auto-approve-turn session) nil
+        (ecc-session-last-plan session) nil
+        (ecc-session-plan-files session) nil
+        ;; The bridge belongs to the process that is going away.
+        (ecc-session-remote-control session) nil)
+  (clrhash (ecc-session-nodes session))
+  (clrhash (ecc-session-stream-blocks session))
+  (clrhash (ecc-session-files session))
+  (clrhash (ecc-session-tasks session))
+  (clrhash (ecc-session-pending-controls session))
+  session)
+
 (defun ecc-model-option (session key default)
   "Return the launch option KEY of SESSION, or DEFAULT when it has none."
   (let ((options (ecc-session-options session)))

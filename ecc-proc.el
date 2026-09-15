@@ -278,6 +278,35 @@ for from one the CLI decided on."
   "Return non-nil when the CLI of SESSION was stopped from Emacs."
   (and (alist-get 'stop-requested (ecc-session-progress session)) t))
 
+(defvar ecc-proc-interrupt-timeout 10
+  "Seconds a running turn is given to end before the CLI is stopped.")
+
+(defun ecc-proc-release (session &optional timeout)
+  "Stop the CLI of SESSION, so that something else may have the conversation.
+A running turn is interrupted first and given TIMEOUT seconds -- default
+`ecc-proc-interrupt-timeout\=' -- to come to an end, because a turn stopped
+mid-tool leaves the CLI to write the result of a call that will never
+finish.  Signals when the process cannot be stopped: two processes on
+one session id branch the conversation without saying so.
+
+What comes next is the caller\='s: a terminal takes the conversation over
+\(`ecc-tui-open\='), or this Emacs carries on with another one
+\(`ecc-history-take-over\=')."
+  (let ((process (ecc-session-process session))
+        (timeout (or timeout ecc-proc-interrupt-timeout)))
+    (when (process-live-p process)
+      (when (eq (ecc-session-state session) 'running)
+        (ecc-proc-interrupt session)
+        (let ((deadline (+ (float-time) timeout)))
+          (while (and (eq (ecc-session-state session) 'running)
+                      (process-live-p process)
+                      (< (float-time) deadline))
+            (accept-process-output process 0.2))))
+      (ecc-proc-stop session))
+    (when (process-live-p (ecc-session-process session))
+      (user-error "%s could not be stopped; two processes would branch the conversation"
+                  (ecc-session-name session)))))
+
 (defun ecc-proc--sentinel (process event)
   "Handle EVENT for PROCESS: close the session down cleanly."
   (let ((session (ecc-proc-session process)))

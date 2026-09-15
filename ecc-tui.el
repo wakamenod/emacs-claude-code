@@ -132,24 +132,9 @@ The process this Emacs runs is not another process."
 
 (defun ecc-tui--release (session)
   "Stop the process Emacs runs for SESSION, so a terminal may have it.
-A running turn is interrupted first and given `ecc-tui-interrupt-timeout'
-seconds to come to an end, because a turn stopped mid-tool leaves the
-CLI to write the result of a call that will never finish.  Signals when
-the process cannot be stopped: two processes on one session id branch
-the conversation without saying so."
-  (let ((process (ecc-session-process session)))
-    (when (process-live-p process)
-      (when (eq (ecc-session-state session) 'running)
-        (ecc-proc-interrupt session)
-        (let ((deadline (+ (float-time) ecc-tui-interrupt-timeout)))
-          (while (and (eq (ecc-session-state session) 'running)
-                      (process-live-p process)
-                      (< (float-time) deadline))
-            (accept-process-output process 0.2))))
-      (ecc-proc-stop session))
-    (when (process-live-p (ecc-session-process session))
-      (user-error "%s could not be stopped; the terminal would branch the conversation"
-                  (ecc-session-name session)))))
+The waiting and the refusal are `ecc-proc-release\='s; the timeout is this
+module\='s, a hand-off being the one place a turn is worth waiting out."
+  (ecc-proc-release session ecc-tui-interrupt-timeout))
 
 ;;;; Opening the terminal
 

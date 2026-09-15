@@ -241,6 +241,44 @@ ten collections, and a collection stops every buffer, not just this one
       (should (= (ecc-node-streaming-length node) 64000))
       (should (= (length (ecc-model-streaming-text node)) 64000)))))
 
+(ert-deftest ecc-model-test-reset-conversation ()
+  "A session emptied of its conversation is still the user's session.
+`ecc-history-take-over' carries a window on with another recording: the
+turns, the queue and the costs go, the name, the buffers, the options
+and the review baseline stay."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-options session) '(:model "opus")
+          (ecc-session-baseline session) "deadbeef"
+          (ecc-session-init session) '((cwd . "/tmp/"))
+          (ecc-session-total-cost session) 1.5
+          (ecc-session-context-tokens session) 4200)
+    (let ((turn (ecc-model-begin-turn session "one")))
+      (ecc-model-add-node session :type 'text :parent turn :status 'done
+                          :data (list (cons 'text "hello")))
+      (ecc-model-finish-turn session nil))
+    (ecc-model-queue-input session "held back")
+    (puthash "x" #'ignore (ecc-session-pending-controls session))
+    (let ((id (ecc-session-id session))
+          (name (ecc-session-name session))
+          (buffer (ecc-session-buffer session)))
+      (ecc-model-reset-conversation session)
+      (should-not (ecc-session-turns session))
+      (should-not (ecc-session-current-turn session))
+      (should-not (ecc-session-input-queue session))
+      (should-not (ecc-session-init session))
+      (should (= 0 (hash-table-count (ecc-session-nodes session))))
+      (should (= 0 (hash-table-count (ecc-session-pending-controls session))))
+      (should (= 0 (ecc-session-total-cost session)))
+      (should (= 0 (ecc-session-context-tokens session)))
+      ;; What the user has stays.
+      (should (equal id (ecc-session-id session)))
+      (should (equal name (ecc-session-name session)))
+      (should (eq buffer (ecc-session-buffer session)))
+      (should (equal '(:model "opus") (ecc-session-options session)))
+      (should (equal "deadbeef" (ecc-session-baseline session)))
+      ;; And it is still the session that id resolves to.
+      (should (eq session (ecc-model-session id))))))
+
 (provide 'ecc-model-test)
 
 ;;; ecc-model-test.el ends here
