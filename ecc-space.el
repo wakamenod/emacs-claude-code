@@ -216,11 +216,31 @@ sidebar bring back."
 
 (add-hook 'tab-bar-tab-pre-close-functions #'ecc-space--forget-tab)
 
+(defvar ecc-space--laying-out nil
+  "Non-nil while a Space is being dealt its windows for the first time.")
+
+(defun ecc-space--lay-out-sessions (space)
+  "Stand the sessions of SPACE side by side in the tab just made.
+Most recently used first, to the right of the source, until the row has
+no room for another column of `ecc-space-session-min-width\='.  The ones
+that do not fit go on running with no window, which the sidebar and
+`ecc-toggle\=' bring back.
+
+A tab is a window arrangement and this is the only moment there is none
+to keep: from here on the windows are the user\='s, and coming back to
+the Space brings them back as they were left."
+  (let ((ecc-space--laying-out t))
+    (catch 'full
+      (dolist (session (ecc-space-sessions space))
+        (unless (ecc-space-display-session session t)
+          (throw 'full nil))))))
+
 (defun ecc-space--lay-out (space)
-  "Fill the new tab of SPACE with the source of the project.
+  "Fill the new tab of SPACE with the source of the project and its sessions.
 One window with the code in it, which is what the user is looking at
-when they ask for a project; the sessions come in beside it as they
-are shown."
+when they ask for a project, and the sessions of the Space beside it:
+going to a Space is asking to work there, and a tab that comes up with
+the transcripts hidden is one the user has to unpack by hand."
   (let* ((root (ecc-space-root space))
          (buffer (or (ecc-window-project-source-buffer root)
                      ;; A directory is a fair answer to where the source
@@ -237,7 +257,8 @@ are shown."
     ;; sidebar is built on the Spaces, so the dependency runs the other
     ;; way.
     (require 'ecc-sidebar)
-    (ecc-sidebar-show)))
+    (ecc-sidebar-show)
+    (ecc-space--lay-out-sessions space)))
 
 (defun ecc-space-select (space)
   "Show SPACE and return the name of its tab, or nil under `classic'.
@@ -367,7 +388,7 @@ worked in for longest hands its window over."
     (car (sort (copy-sequence windows)
                (lambda (a b) (< (age a) (age b)))))))
 
-(defun ecc-space-display-session (session)
+(defun ecc-space-display-session (session &optional no-reuse)
   "Show SESSION in the Space of its project and return its window.
 The sessions of a Space stand side by side: the first goes beside the
 source, to the right, and every one after it divides the rightmost of
@@ -379,6 +400,11 @@ Nothing is ever stacked.  A row with no room left for a column of
 window of the session used longest ago shows the new session instead,
 and the one it held goes on running with no window, which the sidebar
 and `ecc-toggle' bring back.
+
+NO-REUSE says the caller would rather show nothing than take a window
+away from another session: nil comes back instead, and the session goes
+on running without a window.  That is how `ecc-space--lay-out\=' fills a
+row and knows where to stop.
 
 A session already on the screen of this tab is left where it is rather
 than opened a second time."
@@ -395,9 +421,10 @@ than opened a second time."
                   ;; wide transcript (measured 2026-09-15).
                   (ecc-space--display-beside
                    buffer beside (/ (window-total-width beside) 2)))
-                (let ((window (ecc-space--window-to-reuse windows)))
-                  (set-window-buffer window buffer)
-                  window))
+                (unless no-reuse
+                  (let ((window (ecc-space--window-to-reuse windows)))
+                    (set-window-buffer window buffer)
+                    window)))
           ;; Told which window to split, so that the sidebar on the left
           ;; is not what gets divided (verified 2026-09-14).
           (ecc-space--display-beside

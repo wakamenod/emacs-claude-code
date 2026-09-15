@@ -141,17 +141,29 @@ project of its own and the Space tables are fresh."
 
 ;;;; The tabs
 
+(defvar ecc-space-test--started nil
+  "Roots `ecc-start' was asked for, newest first.")
+
 (defmacro ecc-space-test--with-tab-bar (&rest body)
   "Run BODY with a tab bar, closing whatever tabs it opened afterwards.
 `tab-bar-new-tab' does work in batch, with no tab bar drawn anywhere
 \(verified 2026-09-14), so the tab side is tested for real rather than
 by watching which function is called.  `ecc-layout' is `spaces'
-throughout: `ecc-space-select' makes no tab under `classic'."
+throughout: `ecc-space-select' makes no tab under `classic'.
+
+`ecc-start' is stood in for: going to a Space with nothing running
+starts a session there, and no test in this file is allowed to run a
+CLI.  What it was asked for is in `ecc-space-test--started'."
   (declare (indent 0))
   `(let ((was tab-bar-mode)
-         (ecc-layout 'spaces))
+         (ecc-layout 'spaces)
+         (ecc-space-test--started nil))
      (unwind-protect
-         (progn (tab-bar-mode 1) ,@body)
+         (cl-letf (((symbol-function 'ecc-start)
+                    (lambda (&optional root &rest _)
+                      (push root ecc-space-test--started)
+                      nil)))
+           (tab-bar-mode 1) ,@body)
        (dolist (tab (funcall tab-bar-tabs-function))
          (unless (eq (car tab) 'current-tab)
            (tab-bar-close-tab-by-name (alist-get 'name tab))))
@@ -343,6 +355,51 @@ read, and the session that lost its window goes on running without one."
               (should (eq (window-buffer window) (ecc-session-buffer third)))
               (should-not (get-buffer-window (ecc-session-buffer second)))
               (should (get-buffer-window (ecc-session-buffer first))))))))))
+
+(ert-deftest ecc-space-test-a-new-tab-stands-the-sessions-side-by-side ()
+  "The tab of a Space comes up with its sessions already on the screen.
+Most recently used first, to the right of the source.  A tab that opened
+with the transcripts hidden was one the user had to unpack by hand."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (let ((ecc-window-width 60)
+            (ecc-space-session-min-width 10))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (let ((row (mapcar (lambda (window)
+                             (ecc-session-name
+                              (ecc-window-buffer-session (window-buffer window))))
+                           (ecc-space--session-windows))))
+          ;; `ecc-model-sessions' is most recently used first, and the
+          ;; sessions were made oldest first.
+          (should (equal row '("two" "one")))
+          ;; One row: nothing was stacked.
+          (should (apply #'= (mapcar (lambda (w) (nth 1 (window-edges w)))
+                                     (ecc-space--session-windows))))
+          ;; And the source is still there, to the left of them.
+          (should (< (nth 0 (window-edges (ecc-window--source-window)))
+                     (nth 0 (window-edges
+                             (car (ecc-space--session-windows)))))))))))
+
+(ert-deftest ecc-space-test-a-new-tab-stops-when-the-row-is-full ()
+  "The lay-out stops at the edge of the row rather than taking a window over.
+A session that does not fit goes on running without one; the sidebar
+and `ecc-toggle' bring it back."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one)
+                                   ("three" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      ;; Wider than the frame: one session fits and nothing else can.
+      (let ((ecc-window-width 60)
+            (ecc-space-session-min-width (frame-width)))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (should (= 1 (length (ecc-space--session-windows))))
+        ;; The one on the screen is the most recently used, and the
+        ;; other two kept their own buffers rather than being swapped in.
+        (should (equal "three"
+                       (ecc-session-name
+                        (ecc-window-buffer-session
+                         (window-buffer (car (ecc-space--session-windows))))))))))) 
 
 (ert-deftest ecc-space-test-going-to-a-request-goes-to-its-space ()
   "`ecc-next-attention' takes the Space of the session with it.
