@@ -26,7 +26,9 @@
 ;; never a difference themselves; each one's line number is remembered
 ;; in `ecc-review-ediff--sections', which is how a difference is
 ;; traced back to a file and a line in it without searching the buffer
-;; for text that the content itself could hold.
+;; for text that the content itself could hold.  A blank line in front
+;; of each separator (`ecc-review-ediff-file-spacing') keeps one file
+;; from running into the next.
 ;;
 ;; Both buffers are read-only, and that is the whole of it: a review
 ;; reads, comments and sends, and writes nothing.  ediff's a and b say
@@ -165,13 +167,38 @@ SIDE is `base' for what the files held and `now' for what they hold."
   "Return the line that opens PATH in both buffers, saying NOTE if any."
   (format "═══ %s ═══" (if note (format "%s (%s)" path note) path)))
 
+(defvar ecc-review-ediff-split-window-function #'split-window-horizontally
+  "How an ediff review splits the window between its two sides.
+Left and right by default: a review is read line against line, and
+ediff\='s own default of one above the other puts a screen of air
+between the two halves of a change.  It is set in the control buffer of
+the review alone, so the ediff of anything else keeps the layout
+`ediff-split-window-function\=' asks for; nil here leaves the review
+with that layout too.
+
+Where the control panel goes is `ediff-window-setup-function\=', which
+this package does not touch: a graphical Emacs gives it a small frame
+of its own, a terminal a window of the same frame, and
+`ediff-toggle-multiframe\=' switches between the two.")
+
+(defvar ecc-review-ediff-file-spacing 1
+  "Blank lines put in front of each file but the first of an ediff review.
+The separator line alone runs the files together where one ends and the
+next begins; a line of air says at a glance that this is another file.
+The blank lines are the same on both sides, so they are no difference of
+their own, and they belong to the file above -- a deletion at the end of
+one still reads against that file and not the next.")
+
 (defun ecc-review-ediff--insert (buffer separator text)
   "Append SEPARATOR and TEXT to BUFFER and return the line of SEPARATOR.
-TEXT is given a closing newline when it lacks one, so that the next
-separator starts a line of its own."
+`ecc-review-ediff-file-spacing\=' blank lines go in front of it unless
+BUFFER is still empty.  TEXT is given a closing newline when it lacks
+one, so that what follows starts a line of its own."
   (with-current-buffer buffer
     (let ((inhibit-read-only t))
       (goto-char (point-max))
+      (unless (= (point-min) (point-max))
+        (insert (make-string (max 0 ecc-review-ediff-file-spacing) ?\n)))
       (prog1 (line-number-at-pos (point))
         ;; No font-lock in a buffer of this package: the face goes on
         ;; the text as it is inserted.
@@ -385,6 +412,18 @@ ediff lays out its windows; quitting puts back what was on the screen."
                     ecc-review--comments-function #'ecc-review-ediff-comments
                     ecc-review--close-function #'ecc-review-ediff-quit
                     ediff-quit-hook (list #'ecc-review-ediff--on-quit))
+        ;; ediff reads this one out of the control buffer of each session
+        ;; (`ediff-wind.el'), which is why the review can be laid out its
+        ;; own way without touching how the user's other ediffs look.
+        ;; The windows are laid out again once it is set: `ediff-setup'
+        ;; runs these hooks after `ediff-setup-windows', so the review
+        ;; would otherwise open in ediff's own layout and turn into this
+        ;; one at the first command that recentres.  It is the call
+        ;; `ediff-toggle-split' makes for the same reason.
+        (when ecc-review-ediff-split-window-function
+          (setq-local ediff-split-window-function
+                      ecc-review-ediff-split-window-function)
+          (ediff-recenter))
         ;; `ediff-mode-map' is local to this control buffer, so these
         ;; keys reach no other ediff session.  None of them is one a
         ;; two-way comparison already uses.

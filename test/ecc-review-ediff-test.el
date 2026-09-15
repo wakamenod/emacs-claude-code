@@ -100,18 +100,19 @@
                     ;; One separator per file, in the order git reports.
                     (should (equal (mapcar #'car sections)
                                    '("gone.txt" "made.txt" "x.txt")))
+                    ;; A blank line in front of every file but the first.
                     (should (equal (with-current-buffer base
                                      (buffer-substring-no-properties
                                       (point-min) (point-max)))
                                    (concat "═══ gone.txt ═══\nbye\n"
-                                           "═══ made.txt ═══\n"
-                                           "═══ x.txt ═══\none\n")))
+                                           "\n═══ made.txt ═══\n"
+                                           "\n═══ x.txt ═══\none\n")))
                     (should (equal (with-current-buffer now
                                      (buffer-substring-no-properties
                                       (point-min) (point-max)))
                                    (concat "═══ gone.txt ═══\n"
-                                           "═══ made.txt ═══\nnew\n"
-                                           "═══ x.txt ═══\ntwo\n")))
+                                           "\n═══ made.txt ═══\nnew\n"
+                                           "\n═══ x.txt ═══\ntwo\n")))
                     ;; The separator lines are where the sections say.
                     (pcase-dolist (`(,path ,base-line ,now-line) sections)
                       (dolist (pair (list (cons base base-line) (cons now now-line)))
@@ -127,6 +128,19 @@
                     (should (= ediff-number-of-differences 3))
                     (should (buffer-local-value 'buffer-read-only base))
                     (should (buffer-local-value 'buffer-read-only now))
+                    ;; Side by side, and only for this review: ediff reads
+                    ;; the variable out of the control buffer.
+                    (should (eq ediff-split-window-function
+                                #'split-window-horizontally))
+                    ;; And from the first frame, not from the first
+                    ;; command: the windows are laid out again at setup.
+                    (should (window-live-p ediff-window-A))
+                    (should (window-live-p ediff-window-B))
+                    (should-not (= (car (window-edges ediff-window-A))
+                                   (car (window-edges ediff-window-B))))
+                    ;; Only here: the ediff of anything else is as it was.
+                    (should (eq (default-value 'ediff-split-window-function)
+                                #'split-window-vertically))
                     (let ((before (with-current-buffer now (buffer-string))))
                       (ediff-jump-to-difference 1)
                       (ediff-copy-A-to-B nil)
@@ -157,6 +171,11 @@
                   (should (equal (with-current-buffer (car ecc-review-ediff--buffers)
                                    (buffer-string))
                                  "═══ x.txt ═══\nmine\n"))
+                  ;; One file, so no blank line is wanted anywhere.
+                  (should-not (string-search
+                               "\n\n"
+                               (with-current-buffer (cdr ecc-review-ediff--buffers)
+                                 (buffer-string))))
                   (should-not (string-search
                                "was-here"
                                (with-current-buffer (cdr ecc-review-ediff--buffers)
@@ -173,6 +192,36 @@
         (setf (ecc-session-project-root session) directory)
         (should (ecc-review-ensure-baseline session))
         (should-error (ecc-review-ediff-buffer session) :type 'user-error)))))
+
+(ert-deftest ecc-review-ediff-test-layout-can-be-set-back ()
+  "The spacing and the split are the review's own, and both can be undone."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (let ((ecc-review-ediff-file-spacing 0)
+                    (ecc-review-ediff-split-window-function nil))
+                (ecc-review-ediff-test--repository directory)
+                (setf (ecc-session-project-root session) directory)
+                (should (ecc-review-ensure-baseline session))
+                (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
+                (ecc-review-ediff-test--write (concat directory "made.txt") "new\n")
+                (setq control (ecc-review-ediff-buffer session))
+                (with-current-buffer control
+                  ;; No blank line between the files.
+                  (should (equal (with-current-buffer (cdr ecc-review-ediff--buffers)
+                                   (buffer-string))
+                                 "═══ made.txt ═══\nnew\n═══ x.txt ═══\ntwo\n"))
+                  ;; And ediff's own layout, not the review's.  (ediff
+                  ;; makes the variable local in every control buffer of
+                  ;; its own accord, so what is asked is the value.)
+                  (should (eq ediff-split-window-function
+                              (default-value 'ediff-split-window-function)))
+                  (should (= (car (window-edges ediff-window-A))
+                             (car (window-edges ediff-window-B))))))
+            (ecc-review-ediff-test--quit control)))))))
 
 ;;;; Binary and oversized files
 
