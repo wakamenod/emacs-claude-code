@@ -247,7 +247,7 @@ Neither is in a git repository, so both are diffed from the records."
             (ecc-review-test--write (concat directory "x.txt") "mine\n")
             (ecc-review-test--write (concat directory "was-here.txt") "already\n")
             (setf (ecc-session-project-root session) directory)
-            (should (ecc-review-take-baseline session))
+            (should (ecc-review-ensure-baseline session))
             ;; Now the session works, by no particular tool.
             (ecc-review-test--write (concat directory "x.txt") "theirs\n")
             (ecc-review-test--write (concat directory "made.txt") "new\n")
@@ -260,6 +260,32 @@ Neither is in a git repository, so both are diffed from the records."
                   ;; The file it created, and not the one already there.
                   (should (string-search "made.txt" text))
                   (should-not (string-search "was-here.txt" text))))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-baseline-survives-a-resume ()
+  "A session that has a baseline keeps it, so a resume loses no work."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (progn
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (ecc-review-test--write (concat directory "x.txt") "one\n")
+            (ecc-review-test--git directory "add" "x.txt")
+            (ecc-review-test--git directory "commit" "-q" "-m" "init")
+            (setf (ecc-session-project-root session) directory)
+            (let ((first (ecc-review-ensure-baseline session)))
+              (should first)
+              ;; The session works, then its CLI is killed and started
+              ;; again.  Resuming restarts the process, not the work.
+              (ecc-review-test--write (concat directory "x.txt") "two\n")
+              (should (equal (ecc-review-ensure-baseline session) first))
+              ;; So the work done before the resume is still reviewable.
+              (let ((buffer (ecc-review-buffer session)))
+                (with-current-buffer buffer
+                  (should (string-search "\n-one\n+two\n" (buffer-string)))))))
         (ecc-review-test--kill-review-buffers)))))
 
 (ert-deftest ecc-review-test-baseline-spans-a-commit ()
@@ -276,7 +302,7 @@ Neither is in a git repository, so both are diffed from the records."
             (ecc-review-test--git directory "add" "x.txt")
             (ecc-review-test--git directory "commit" "-q" "-m" "init")
             (setf (ecc-session-project-root session) directory)
-            (should (ecc-review-take-baseline session))
+            (should (ecc-review-ensure-baseline session))
             ;; The session changes a file and commits it, as the project
             ;; asks for: meaningful steps rather than one lump.
             (ecc-review-test--write (concat directory "x.txt") "two\n")
@@ -304,7 +330,7 @@ Neither is in a git repository, so both are diffed from the records."
           (let ((ecc-review-max-bytes 100))
             (ecc-review-test--git directory "init" "-q")
             (setf (ecc-session-project-root session) directory)
-            (should (ecc-review-take-baseline session))
+            (should (ecc-review-ensure-baseline session))
             (ecc-review-test--write (concat directory "lock.json")
                                     (make-string 400 ?x))
             (ecc-review-test--write (concat directory "small.txt") "fine\n")
@@ -327,7 +353,7 @@ Neither is in a git repository, so both are diffed from the records."
                                     :snapshot "after\n" :edits 1)
             (setf (ecc-session-project-root session) directory)
             ;; No repository, so no baseline and nothing to diff trees with.
-            (should-not (ecc-review-take-baseline session))
+            (should-not (ecc-review-ensure-baseline session))
             (let ((buffer (ecc-review-buffer session)))
               (with-current-buffer buffer
                 (should (string-search "\n-before\n+after\n" (buffer-string))))))

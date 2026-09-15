@@ -15,7 +15,7 @@
 ;;
 ;; `ecc-review' and `ecc-review-worktree' are the same review against
 ;; different bases: the first against what the working tree held when
-;; the session started (`ecc-review-take-baseline'), so the commits made
+;; the session started (`ecc-review-ensure-baseline'), so the commits made
 ;; during it are still shown; the second against HEAD, so only what is
 ;; uncommitted is.  Neither asks how a file was changed -- an edit, a
 ;; shell command and a script all read alike -- because both compare
@@ -377,17 +377,28 @@ that hid them would hide the whole of what happened to it."
              (text (concat (or diff "") (string-join (nreverse notes) ""))))
         (and (not (string-empty-p text)) text)))))
 
-(defun ecc-review-take-baseline (session)
-  "Record what the working tree of SESSION holds now, and return it.
-This is what `ecc-review\=' diffs against, so it is taken as a session
-starts and again as one is resumed -- what came before was reviewed
-under the session that made it.  A session outside git keeps nil and is
-reviewed from what it recorded instead."
-  (setf (ecc-session-baseline session)
-        (when-let* ((root (ecc-review-git-root
-                           (or (ecc-session-project-root session)
-                               default-directory))))
-          (ecc-review-snapshot root))))
+(defun ecc-review-ensure-baseline (session)
+  "Record what the working tree of SESSION holds now unless it is known.
+This is what `ecc-review\=' diffs against.  A session that already has
+one keeps it: resuming restarts the CLI, not the work -- the
+conversation, its id and its transcript all carry on -- and taking a
+baseline again there would drop everything the session had already done
+out of its own review.  A review is better too wide than too narrow: a
+hunk that is shown can be passed over, one that is not cannot be
+commented on.
+
+So a session started afresh takes one because it has none, a session
+resumed from a recording in a new Emacs takes its first, and a session
+whose CLI was killed and started again keeps the one it began with.  A
+session outside git keeps nil and is reviewed from what it recorded
+instead -- and asks git again next time, since a project can be put
+under git while a session runs."
+  (or (ecc-session-baseline session)
+      (setf (ecc-session-baseline session)
+            (when-let* ((root (ecc-review-git-root
+                               (or (ecc-session-project-root session)
+                                   default-directory))))
+              (ecc-review-snapshot root)))))
 
 ;;;; A diff made from what the session recorded
 

@@ -35,7 +35,7 @@
 
 (declare-function ecc-render-refresh "ecc-render" (session))
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
-(declare-function ecc-review-take-baseline "ecc-review" (session))
+(declare-function ecc-review-ensure-baseline "ecc-review" (session))
 (declare-function ecc-display-session "ecc-window" (session))
 
 (defvar ecc-history-directory "~/.claude/projects/"
@@ -548,10 +548,11 @@ the CLI would run twice on the same recording."
   (setf (ecc-session-kind session) 'own)
   (require 'ecc-session)
   (ecc-session-ensure-buffer session)
-  ;; The review starts again from here: what came before was the work of
-  ;; the session that made it, and was reviewed under that one.
+  ;; A session resumed in the Emacs that started it keeps the baseline it
+  ;; began with -- this restarts the CLI, not the work -- and one read
+  ;; back from a recording takes its first here.
   (require 'ecc-review)
-  (ecc-review-take-baseline session)
+  (ecc-review-ensure-baseline session)
   (ecc-proc-start session t fork)
   session)
 

@@ -22,7 +22,7 @@ Press `D` in the transient menu, type `C-c c D`, or run `M-x ecc-review`. A pref
 
 When the session starts, ecc records what the working tree held — a Git tree object written through a throwaway index, so nothing is stashed and neither the real index nor your files are touched. The review compares the tree as it stands now against that baseline. Work you had in progress before the session started is therefore left out, and a change is shown whether the CLI made it with an edit tool, a shell command or a script.
 
-Because the base is a moment rather than a commit, changes the session committed along the way are still shown; `G` would have lost them. A resumed session takes a fresh baseline, since what came before was the work of the session that made it.
+Because the base is a moment rather than a commit, changes the session committed along the way are still shown; `G` would have lost them. Resuming a session keeps its baseline — that restarts the CLI, not the work, and the conversation carries on — so nothing the session had already done drops out of its own review. A session read back from a recording in a fresh Emacs has no baseline to keep and takes its first one then.
 
 Two caveats worth knowing. The base is a time, not an author, so another session working in the same directory shows up here too — separate Git worktrees keep them apart. And a file larger than `ecc-review-max-bytes` (200,000 by default) is named rather than printed, which is what usually happens to a lock file a package manager rewrote.
 
