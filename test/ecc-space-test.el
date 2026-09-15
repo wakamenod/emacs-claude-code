@@ -14,6 +14,11 @@
 (require 'cl-lib)
 (require 'ecc-test-helpers)
 (require 'ecc-space)
+;; Both are loaded on demand by `ecc-space': here they are loaded up
+;; front, so that a `require' inside does not redefine a stub the test
+;; has just put in place.
+(require 'ecc-history)
+(require 'ecc)
 (require 'ecc-sidebar)
 (require 'ecc-window)
 (require 'ecc-session)
@@ -65,6 +70,10 @@ project of its own and the Space tables are fresh."
                     (lambda (_session object) object)))
            (ecc-space-test--with-git ,@body))
        (mapc #'ecc-test-cleanup-session sessions))))
+
+(defun ecc-space-test--past-p (space)
+  "Return non-nil when SPACE is one of the projects only recordings are left of."
+  (ecc-space-past space))
 
 (defun ecc-space-test--names ()
   "Return the name of every Space, in order."
@@ -451,6 +460,44 @@ first one asks for a window."
               (should (= 1 (length (ecc-space-sessions space)))))
           (mapc #'ecc-test-cleanup-session (ecc-space-sessions space))
           (delete-directory root t))))))
+
+(ert-deftest ecc-space-test-a-past-project-is-offered-but-not-listed ()
+  "A project only recordings are left of can be gone to, and is not numbered.
+Putting it in `ecc-space-list' would move the numbers the sidebar draws
+and the 1-9 keys take under the user's feet."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one))
+    (let* ((past (file-name-as-directory (make-temp-file "ecc-space-past" t)))
+           (numbers (mapcar (lambda (space) (ecc-space-number space))
+                            (ecc-space-list)))
+           (listed (ecc-space-test--roots)))
+      (unwind-protect
+          (cl-letf (((symbol-function 'ecc-history-project-roots)
+                     (lambda () (list (directory-file-name past)
+                                      ;; A checkout that is gone has
+                                      ;; nowhere to start a session.
+                                      "/tmp/ecc-space-gone/"
+                                      ;; And the live project is not
+                                      ;; offered twice.
+                                      ecc-space-test--one))))
+            (let ((spaces (ecc-space-past-projects)))
+              (should (equal (mapcar #'ecc-space-root spaces) (list past)))
+              (should (ecc-space-test--past-p (car spaces))))
+            ;; The list and the numbering are untouched.
+            (should (equal listed (ecc-space-test--roots)))
+            (should (equal numbers (mapcar (lambda (space)
+                                             (ecc-space-number space))
+                                           (ecc-space-list))))
+            ;; And it is offered, after the Spaces on the screen.
+            (let ((ecc-layout 'spaces)
+                  (offered nil))
+              (cl-letf (((symbol-function 'completing-read)
+                         (lambda (_prompt collection &rest _)
+                           (setq offered (all-completions "" collection))
+                           (car (last offered)))))
+                (should (equal past (ecc-space-root (ecc-space-read)))))
+              (should (= 2 (length offered)))
+              (should (string-match-p "past" (car (last offered))))))
+        (delete-directory past t)))))
 
 (ert-deftest ecc-space-test-going-to-a-request-goes-to-its-space ()
   "`ecc-next-attention' takes the Space of the session with it.

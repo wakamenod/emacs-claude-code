@@ -654,6 +654,43 @@ answered itself."
         (should-not (string-search "<command-name>" text))
         (should-not (string-search "local-command-stdout" text))))))
 
+(ert-deftest ecc-history-test-project-roots ()
+  "Every directory a recording was made in, and only the directories.
+The fixture's `cwd' is on its third line, which is the shape on disk:
+a file opens with what the CLI knows before the conversation does."
+  (ecc-history-test--with-directory file
+    (let ((ecc-history--roots nil)
+          (reads 0))
+      (should (equal (list "/private/var/folders/4v/6r7_g65n4jz15_y1z350h0340000gn/T/ecc-history-2m0x5w0z")
+                     (ecc-history-project-roots)))
+      ;; A directory holding only the working files of a session is not
+      ;; a project: the fixture's own subdirectory answers nothing.
+      (should (= 1 (length (ecc-history-project-roots))))
+      ;; And the second look does not read the file again.
+      (let ((real (symbol-function 'ecc-history--file-cwd)))
+        (cl-letf (((symbol-function 'ecc-history--file-cwd)
+                   (lambda (f) (cl-incf reads) (funcall real f))))
+          (ecc-history-project-roots)
+          (should (= 0 reads))
+          ;; Until something is added to the directory.
+          (copy-file file (expand-file-name "copy.jsonl"
+                                            (file-name-directory file)))
+          (ecc-history-project-roots)
+          (should (> reads 0)))))))
+
+(ert-deftest ecc-history-test-a-cwd-further-in-is-still-found ()
+  "A recording whose `cwd' sits past the head range is still described.
+An attachment sent with the first prompt can be hundreds of kilobytes,
+and a project filter that asks for the `cwd' used to drop the recording
+when the head range stopped short of it."
+  (ecc-history-test--with-directory file
+    ;; The head range reaches nothing but the first line.
+    (let ((ecc-history-scan-head-bytes 120)
+          (ecc-history-scan-tail-bytes 120))
+      (let ((info (ecc-history-scan-file file)))
+        (should (equal (alist-get 'cwd info)
+                       "/private/var/folders/4v/6r7_g65n4jz15_y1z350h0340000gn/T/ecc-history-2m0x5w0z"))))))
+
 (provide 'ecc-history-test)
 
 ;;; ecc-history-test.el ends here

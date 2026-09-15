@@ -52,6 +52,7 @@
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function dired-noselect "dired" (dir-or-list &optional switches))
 (declare-function ecc-sidebar-show "ecc-sidebar" ())
+(declare-function ecc-history-project-roots "ecc-history" ())
 
 ;;;; Settings
 
@@ -76,7 +77,8 @@ the same number."
   root    ; the directory, as `file-name-as-directory'
   name    ; what the sidebar and the tab call it
   parent  ; key of the main worktree when this is a linked worktree, else nil
-  branch) ; the branch checked out there, or nil
+  branch  ; the branch checked out there, or nil
+  past)   ; non-nil when nothing of it is running and only recordings are left
 
 (defvar ecc-space--used nil
   "Alist of a Space key to when it was last selected.
@@ -505,24 +507,66 @@ with only the sidebar beside you changes nothing on the screen."
                     (window-parameter window 'no-delete-other-windows)))
               (window-list nil 'no-minibuffer)))
 
+(defun ecc-space-past-projects ()
+  "Return a Space for every project that has only recordings left.
+A project worked in before is somewhere to go back to, whether or not
+anything of it is running: its Space is made, its session started, and
+`/resume\=' is how the conversation that was there is picked up again.
+
+They are deliberately not in `ecc-space-list\=': a project with no session
+and no tab is not on the screen, and numbering it would move the numbers
+the sidebar draws and the `1\='-`9\=' keys take under the user\='s feet.
+`ecc-space-read\=' is the one place they are offered.
+
+A checkout that has been removed is left out: its recordings are still
+readable with `ecc-history-open\=', but there is nowhere to start."
+  (require 'ecc-history)
+  (let ((keys (ecc-space--keys))
+        (seen (make-hash-table :test #'equal))
+        (spaces nil))
+    (dolist (root (ecc-history-project-roots))
+      (when (file-directory-p root)
+        (let ((key (ecc-window-project-key root)))
+          (unless (or (member key keys) (gethash key seen))
+            (puthash key t seen)
+            (let ((space (ecc-space-of-root key)))
+              (setf (ecc-space-past space) t)
+              (push space spaces))))))
+    (nreverse spaces)))
+
 (defun ecc-space-label (space &optional spaces)
   "Return the line SPACE is offered under, among SPACES."
   (format "%2s %-24s %-9s %s"
           (or (ecc-space-number space spaces) "")
           (ecc--truncate (ecc-space-name space) 24)
-          (or (ecc-space-state space) "")
+          (or (ecc-space-state space) (and (ecc-space-past space) "past") "")
           (abbreviate-file-name (ecc-space-root space))))
 
+(defun ecc-space--table (labels)
+  "Return a completion table of LABELS that keeps the order they are in.
+The live Spaces come in the order the sidebar numbers them and the past
+ones newest first; sorting the candidates would throw both away."
+  (lambda (string predicate action)
+    (if (eq action 'metadata)
+        `(metadata (display-sort-function . identity)
+                   (cycle-sort-function . identity))
+      (complete-with-action action labels string predicate))))
+
 (defun ecc-space-read (&optional prompt)
-  "Ask which Space to use, with PROMPT."
-  (let ((spaces (ecc-space-list)))
-    (unless spaces
-      (user-error "No project has a session or a tab"))
+  "Ask which Space to use, with PROMPT.
+The Spaces on the screen come first, in the order they are numbered,
+and the projects only recordings are left of follow."
+  (let* ((spaces (ecc-space-list))
+         (past (and (eq ecc-layout 'spaces) (ecc-space-past-projects)))
+         (all (append spaces past)))
+    (unless all
+      (user-error "No project has a session, a tab or a recording"))
     (let* ((labels (mapcar (lambda (space)
                              (cons (ecc-space-label space spaces) space))
-                           spaces))
+                           all))
            (choice (completing-read (or prompt "Space: ")
-                                    (mapcar #'car labels) nil t)))
+                                    (ecc-space--table (mapcar #'car labels))
+                                    nil t)))
       (cdr (assoc choice labels)))))
 
 ;;;###autoload

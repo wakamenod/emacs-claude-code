@@ -442,11 +442,99 @@ The alist also carries `file', `session-id' and `mtime'."
                                   (file-attributes file))))))
     (dolist (line (ecc-history--edges file))
       (setq info (ecc-protocol-history-info line info)))
+    ;; The head range is not always far enough in to reach the line that
+    ;; names the working directory: an attachment before the first
+    ;; prompt can be hundreds of kilobytes on its own, and a project
+    ;; filter that asks for the `cwd' drops the recording when it is
+    ;; missing (measured 2026-09-15: the furthest one on this machine
+    ;; sat 13 KiB from the front).
+    (unless (alist-get 'cwd info)
+      (when-let* ((cwd (ecc-history--file-cwd file)))
+        (setf (alist-get 'cwd info) cwd)))
     ;; The name of the file is the id --resume takes.  What the lines say
     ;; is only what the session called itself while it was written, which
     ;; is not the same thing once a file has been copied or renamed.
     (setf (alist-get 'session-id info) (file-name-base file))
     info))
+
+;;;; The projects that were worked in
+
+(defvar ecc-history-scan-cwd-bytes 65536
+  "Bytes read from the front of a recording to find the directory it ran in.
+The line that names it is not the first one: a file opens with what the
+CLI knows before the conversation does -- `ai-title\=', `agent-name\=',
+`cost-state\=' -- and an attachment sent with the first prompt can be
+hundreds of kilobytes on its own.  Measured over every recording on one
+machine, the furthest a `cwd\=' sat from the front was 13 KiB
+\(2026-09-15).")
+
+(defvar ecc-history--roots nil
+  "Alist of a recording directory to what was last read from it.
+The value is (MTIME COUNT . ROOTS).  A `cwd\=' never changes once it is
+written, so the only thing that can change the answer for a directory
+is a file being added to it or taken away, which moves its mtime and
+its count.")
+
+(defun ecc-history--file-cwd (file)
+  "Return the directory the recording FILE was made in, or nil.
+Only the front of the file is read -- `ecc-history-scan-cwd-bytes\=' --
+and only until a line names one."
+  (with-temp-buffer
+    (let ((coding-system-for-read 'utf-8-unix))
+      (insert-file-contents file nil 0 ecc-history-scan-cwd-bytes))
+    ;; The last line of the range was cut in the middle of itself.
+    (goto-char (point-max))
+    (if (search-backward "\n" nil t)
+        (delete-region (1+ (point)) (point-max))
+      (erase-buffer))
+    (catch 'found
+      (dolist (line (split-string (buffer-string) "\n" t))
+        (when-let* ((cwd (alist-get 'cwd (ecc-protocol-history-info line nil))))
+          (throw 'found cwd)))
+      nil)))
+
+(defun ecc-history-project-roots ()
+  "Return every directory a recorded conversation was made in, newest first.
+These are the projects that have only recordings left: nothing of them
+is running and Emacs knows nothing about them but this.
+
+The directory a recording sits in does not answer the question.  Its
+name is the working directory with every character that is not a letter
+or a digit turned into a dash, and that is not invertible; and the two
+do not line up anyway -- one directory can hold recordings of two
+working directories, and one repository is named by as many directories
+as it has worktrees and truenames (both measured 2026-09-15).  So every
+file is asked, and the answers are kept per directory until a file is
+added or taken away."
+  (let ((root (expand-file-name ecc-history-directory))
+        (seen (make-hash-table :test #'equal))
+        (roots nil))
+    (when (file-directory-p root)
+      (dolist (directory (seq-filter
+                          #'file-directory-p
+                          (directory-files root t directory-files-no-dot-files-regexp)))
+        (let* ((files (sort (directory-files directory t "\\.jsonl\\'")
+                            #'string<))
+               (mtime (file-attribute-modification-time
+                       (file-attributes directory)))
+               (cached (assoc directory ecc-history--roots))
+               (value (cdr cached)))
+          (unless (and value
+                       (equal (car value) mtime)
+                       (equal (cadr value) (length files)))
+            (setq value (list mtime (length files)
+                              (delq nil (mapcar #'ecc-history--file-cwd files))))
+            (setf (alist-get directory ecc-history--roots nil nil #'equal) value))
+          ;; Newest directory first, and within it the file order; what
+          ;; the caller wants is a list without repeats.
+          (push (cons mtime (nth 2 value)) roots))))
+    (seq-mapcat (lambda (entry)
+                  (seq-remove (lambda (cwd)
+                                (prog1 (gethash cwd seen)
+                                  (puthash cwd t seen)))
+                              (cdr entry)))
+                (seq-sort (lambda (a b) (time-less-p (car b) (car a)))
+                          (nreverse roots)))))
 
 (defun ecc-history-recordings (&optional project-root)
   "Return a description of every recording, most recently used first.
