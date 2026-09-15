@@ -1,0 +1,12 @@
+Spaces
+ 1 project-two            ▶
+   master
+ 2 project-one            ⚠
+   main ↑2 ↓0
+ 3   feat-x               ·
+   new
+
+Agents
+▶ two               running
+⚠ one            waiting ×2
+· feat                 idle

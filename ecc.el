@@ -47,6 +47,9 @@
 (require 'ecc-capability)
 (require 'ecc-dashboard)
 (require 'ecc-window)
+(require 'ecc-worktree)
+(require 'ecc-space)
+(require 'ecc-sidebar)
 (require 'ecc-context)
 (require 'ecc-notify)
 (require 'ecc-hint)
@@ -127,7 +130,14 @@ the next session, since this runs on every one of them."
   (ecc-pending-indicator-mode 1)
   (ecc-notify-mode 1)
   (ecc-tab-line-mode 1)
-  (ecc-track-source-buffer-mode 1))
+  (ecc-track-source-buffer-mode 1)
+  ;; A Space is a tab, so `spaces' has nowhere to put a session until
+  ;; the tab bar is on.  `classic' is left alone: it never made a tab
+  ;; and must not start now.
+  (when (eq ecc-layout 'spaces)
+    (require 'ecc-space)
+    (unless (bound-and-true-p tab-bar-mode)
+      (tab-bar-mode 1))))
 
 ;;;###autoload
 (defun ecc-start (&optional directory name)
@@ -381,19 +391,29 @@ off `ecc-session-exited-hook'."
 
 ;;;###autoload
 (defun ecc-kill (session)
-  "Stop SESSION and forget it."
+  "Stop SESSION and forget it.
+Asked for by hand, it goes on to offer to undo the checkout when
+SESSION was the last one working in a worktree.  Called from Lisp it
+does not: `ecc-space-close' and `ecc-remove-worktree' stop several
+sessions in a row, and a function that sometimes deletes a directory
+is one nobody can call in a loop."
   (interactive (list (or ecc-render--session
                          (car (ecc-model-sessions))
                          (user-error "No session to kill"))))
-  (ecc-proc-stop session)
-  (ecc-model-remove-session session)
-  (ecc-window-forget-session session)
-  (ecc-image-cleanup-session session)
-  (dolist (buffer (list (ecc-session-buffer session)
-                        (ecc-session-stream-buffer session)))
-    (when (buffer-live-p buffer)
-      (kill-buffer buffer)))
-  (message "Stopped %s" (ecc-session-name session)))
+  ;; Read before the session is stopped: stopping it forgets which
+  ;; project it was in, and there is nothing to ask about afterwards.
+  (let ((root (and (called-interactively-p 'any)
+                   (ecc-window-session-project session))))
+    (ecc-proc-stop session)
+    (ecc-model-remove-session session)
+    (ecc-window-forget-session session)
+    (ecc-image-cleanup-session session)
+    (dolist (buffer (list (ecc-session-buffer session)
+                          (ecc-session-stream-buffer session)))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))
+    (message "Stopped %s" (ecc-session-name session))
+    (when root (ecc-worktree-offer-removal root))))
 
 (provide 'ecc)
 

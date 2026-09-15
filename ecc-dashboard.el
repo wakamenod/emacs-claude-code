@@ -49,6 +49,7 @@
 
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-kill "ecc" (session))
+(declare-function ecc-worktree-kill-session "ecc-worktree" (session))
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 
 (defconst ecc-dashboard-buffer-name "*ecc-dashboard*"
@@ -687,8 +688,10 @@ which arrives with the first turn.\n"
   "Stop the session at point."
   (interactive)
   (let ((session (ecc-dashboard-session-at-point)))
-    (require 'ecc)
-    (ecc-kill session)
+    (require 'ecc-worktree)
+    ;; Not `ecc-kill': stopping the last session of a worktree by hand is
+    ;; the moment to be asked whether the checkout goes too.
+    (ecc-worktree-kill-session session)
     (ecc-dashboard-redraw)))
 
 (defun ecc-dashboard-delete ()
