@@ -45,6 +45,24 @@
 
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ediff-recenter "ediff-util" (&optional no-rehighlight))
+(declare-function ecc-review-ediff-buffer "ecc-review-ediff" (session &optional paths))
+(declare-function ecc-review-ediff-worktree-buffer "ecc-review-ediff"
+                  (session &optional range root))
+
+(defcustom ecc-review-style 'diff
+  "How `ecc-review\=' and `ecc-review-worktree\=' show what changed.
+`diff' is one read-only unified diff of every file, the hunks walked
+with n and p.  `ediff' lays the files out side by side instead -- what
+they held on the left, what they hold now on the right, every file of
+the review in one ediff session -- and n and p walk the differences
+across the file boundaries.  Both are read-only, both comment with c,
+and both send the same prompt.
+
+The review of one proposal waiting to be allowed is a diff either way:
+it is one change to allow or refuse, not a tree to read through."
+  :type '(choice (const :tag "One diff-mode buffer" diff)
+                 (const :tag "ediff, every file in one session" ediff))
+  :group 'ecc)
 
 (defvar ecc-review-git-executable "git"
   "The git program the review runs for `git diff'.")
@@ -1036,7 +1054,15 @@ during it are still shown; that one against the last commit."
                      (mapcar #'ecc-file-entry-path (ecc-review-files session)))
                  nil t)))))
   (let ((session (or session (ecc-review-session))))
-    (ecc-window-display-review (ecc-review-buffer session paths) session)))
+    (if (and (eq ecc-review-style 'ediff)
+             ;; Outside git there are no two trees to lay side by side:
+             ;; the review is built from what the session recorded, and
+             ;; what that gives is a diff.
+             (ecc-review-git-root (or (ecc-session-project-root session)
+                                      default-directory)))
+        (progn (require 'ecc-review-ediff)
+               (ecc-review-ediff-buffer session paths))
+      (ecc-window-display-review (ecc-review-buffer session paths) session))))
 
 (defun ecc-review-refresh ()
   "Read the diff again, keeping the comments whose hunks still exist."
@@ -1143,8 +1169,11 @@ revision like \"HEAD\", a range like \"main...HEAD\", or nothing for
 what is not staged yet."
   (interactive (ecc-review-worktree--read-arguments))
   (let ((session (or session (ecc-review-session))))
-    (ecc-window-display-review (ecc-review-worktree-buffer session range root)
-                               session)))
+    (pcase ecc-review-style
+      ('ediff (require 'ecc-review-ediff)
+              (ecc-review-ediff-worktree-buffer session range root))
+      (_ (ecc-window-display-review (ecc-review-worktree-buffer session range root)
+                                    session)))))
 
 (defun ecc-review-quit ()
   "Close the review buffer, dropping its comments."
