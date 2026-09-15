@@ -267,9 +267,15 @@ Returns (EXIT-CODE . OUTPUT) like `ecc-review--git\=', or nil."
          (cons (concat "GIT_INDEX_FILE=" index) process-environment)))
     (apply #'ecc-review--git root args)))
 
-(defun ecc-review-snapshot (root)
+(defun ecc-review-snapshot (root &optional no-add)
   "Return a git tree naming every file of the working tree at ROOT, or nil.
 What .gitignore excludes is left out, as everywhere else in the review.
+
+With NO-ADD the working tree is not read at all and the tree is the
+index as it stands: what is staged, and nothing else.  That is the
+right-hand side of nothing, but it is the left-hand side of a review
+of what is not staged yet -- the same comparison `git diff\=' with no
+revision makes.
 
 Nothing of the repository is disturbed: the files are added to a
 throwaway index and written out as a tree, so the real index, the
@@ -293,7 +299,9 @@ want no HEAD."
               (copy-file real index t)
             ;; git writes the index itself; an empty file is not one.
             (delete-file index))
-          (pcase (ecc-review--git-with-index root index "add" "-A" "--")
+          (pcase (if no-add
+                     '(0 . "")
+                   (ecc-review--git-with-index root index "add" "-A" "--"))
             (`(0 . ,_)
              (pcase (ecc-review--git-with-index root index "write-tree")
                (`(0 . ,output)

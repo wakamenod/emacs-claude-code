@@ -230,6 +230,39 @@ Neither is in a git repository, so both are diffed from the records."
       ;; Nothing was stashed on the way.
       (should (string-empty-p (ecc-review-test--git directory "stash" "list"))))))
 
+(ert-deftest ecc-review-test-snapshot-no-add-is-the-index ()
+  "With NO-ADD the snapshot is the index: what is staged and nothing else."
+  (skip-unless (executable-find "git"))
+  (ecc-review-test--with-directory directory
+    (ecc-review-test--git directory "init" "-q")
+    (ecc-review-test--git directory "config" "user.email" "t@example.com")
+    (ecc-review-test--git directory "config" "user.name" "t")
+    (ecc-review-test--write (concat directory "x.txt") "one\n")
+    (ecc-review-test--git directory "add" "x.txt")
+    (ecc-review-test--git directory "commit" "-q" "-m" "init")
+    ;; One change staged, one left unstaged, one file untracked.
+    (ecc-review-test--write (concat directory "x.txt") "staged\n")
+    (ecc-review-test--git directory "add" "x.txt")
+    (ecc-review-test--write (concat directory "x.txt") "working\n")
+    (ecc-review-test--write (concat directory "new.txt") "hello\n")
+    (let* ((root (ecc-review-git-root directory))
+           (index (ecc-review-snapshot root t))
+           (whole (ecc-review-snapshot root)))
+      (should index)
+      (should-not (equal index whole))
+      (should (equal (ecc-review-test--git directory "show" (concat index ":x.txt"))
+                     "staged\n"))
+      ;; The untracked file is only in the snapshot of the working tree.
+      (should-not (equal 0 (car (ecc-review--git directory "show"
+                                                 (concat index ":new.txt")))))
+      (should (equal (ecc-review-test--git directory "show" (concat whole ":x.txt"))
+                     "working\n"))
+      (should (equal (ecc-review-test--git directory "show" (concat whole ":new.txt"))
+                     "hello\n"))
+      ;; Neither disturbed the index of the repository itself.
+      (should (equal (ecc-review-test--git directory "diff" "--cached" "--name-only")
+                     "x.txt\n")))))
+
 (ert-deftest ecc-review-test-baseline-excludes-what-came-before ()
   "The session review shows what changed after the baseline, not before it."
   (skip-unless (executable-find "git"))
