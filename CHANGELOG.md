@@ -60,10 +60,11 @@ Verified against **Claude Code CLI 2.1.270**.
   old review read the tool stream, so a file changed by a shell command, a script
   or anything else that is not an Edit or a Write was not in it -- and that is now
   most of what a session does, which left the review empty in the sessions that had
-  the most to show. What the working tree held is recorded when the session starts
-  (and again when one is resumed, since what came before belongs to the session that
-  made it), and the review compares the tree as it stands against that. A change is
-  shown whatever made it.
+  the most to show. What the working tree held is recorded when the session starts,
+  and the review compares the tree as it stands against that. A change is shown
+  whatever made it. Resuming keeps the baseline -- it restarts the CLI, not the
+  work -- so nothing the session had already done drops out of its own review; a
+  session read back from a recording in a fresh Emacs takes its first one then.
 
   The two reviews are now one review with one argument between them: `D` against
   where the session started, `G` against the last commit. So `D` still shows work

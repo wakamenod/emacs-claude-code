@@ -10,7 +10,7 @@ Review changes as a single diff, comment on hunks that need work, and send all c
 `D` and `G` are the same review with a different base:
 
 - `D` — against **where the session started**, so work committed during the session is still shown.
-- `G` — against **the last commit (`HEAD`)**, so only what is uncommitted.
+- `G` — against **the last commit (`HEAD`)**, so only uncommitted changes are shown.
 
 Neither cares how a file was changed: an edit, a shell command and a script all show alike.
 
@@ -22,7 +22,7 @@ Press `D` in the transient menu, type `C-c c D`, or run `M-x ecc-review`. A pref
 
 When the session starts, ecc records what the working tree held — a Git tree object written through a throwaway index, so nothing is stashed and neither the real index nor your files are touched. The review compares the tree as it stands now against that baseline. Work you had in progress before the session started is therefore left out, and a change is shown whether the CLI made it with an edit tool, a shell command or a script.
 
-Because the base is a moment rather than a commit, changes the session committed along the way are still shown; `G` would have lost them. A resumed session takes a fresh baseline, since what came before was the work of the session that made it.
+Because the base is a moment rather than a commit, changes the session committed along the way are still shown; `G` would have lost them. Resuming a session keeps its baseline.
 
 Two caveats worth knowing. The base is a time, not an author, so another session working in the same directory shows up here too — separate Git worktrees keep them apart. And a file larger than `ecc-review-max-bytes` (200,000 by default) is named rather than printed, which is what usually happens to a lock file a package manager rewrote.
 
@@ -58,9 +58,9 @@ There, `C-c C-c` sends the prompt as it stands, while `C-c C-k` returns to the d
 
 ## Reviewing the working tree
 
-Where `ecc-review` starts from the moment the session began, this starts from the last commit. Press `G` in the menu, type `C-c c G`, or run `M-x ecc-review-worktree`.
+Where `ecc-review` starts from the moment the session began, `ecc-review-worktree` starts from the last commit. Press `G` in the menu, type `C-c c G`, or run `M-x ecc-review-worktree`.
 
-This diffs the project's entire repository against `HEAD` — every uncommitted change, staged or unstaged, plus the untracked files (those `.gitignore` excludes are left out; a binary file, or one larger than `ecc-review-max-bytes`, is named rather than printed). A repository with no commit yet is compared against the empty tree, so the first code written in a project can be reviewed before it is committed. `C-u G` prompts for what to diff against: a revision, a range such as `main...HEAD`, or nothing for unstaged changes.
+This diffs the project's entire repository against `HEAD` — every uncommitted change, staged or unstaged, plus the untracked files (those `.gitignore` excludes are left out; a binary file, or one larger than `ecc-review-max-bytes`, is named rather than printed). A repository with no commits yet is compared against the empty tree, so the first code written in a project can be reviewed before it is committed. `C-u G` prompts for what to diff against: a revision, a range such as `main...HEAD`, or nothing for unstaged changes.
 
 The project is determined by the current buffer, and comments go to that project's session. If none exists, ecc offers to start one, which is the usual entry point. Commenting and sending work as described above, and the two reviews use separate buffers.
 
@@ -72,7 +72,7 @@ Hunks are as small as the change itself, since a comment includes the entire hun
 
 While a tool permission request is pending in the transcript, pressing `c` on the request node reviews that change, and `e` opens its proposed content (see [Prompt and transcript](/emacs-claude-code/features/prompt/#on-a-pending-request-node)).
 
-Comments here are sent as the **reason for the deny**, allowing Claude to propose again rather than being corrected after the write.
+Comments here are sent as the **reason for the denial**, allowing Claude to propose again rather than being corrected after the write.
 
 `e` opens the proposal in the target file's major mode. `C-c C-c` allows the change using your text instead of Claude's and sends a diff of what you altered; `C-c C-k` leaves the request pending.
 
@@ -84,11 +84,11 @@ Exiting plan mode sends the plan as a request. ecc opens it in an editable buffe
 
 Feedback can take three forms: a line comment (`C-c C-a`, removed with `C-c C-r`), an inline `@claude: …` marker, or an edit to the plan itself (`C-c C-d` diffs it).
 
-With any feedback present, `C-c C-c` returns the plan with it and requests a revision. Without feedback, it approves and prompts for a permission mode: `C-c C-p` chooses one; otherwise, `ecc-plan-default-mode` (`"acceptEdits"`) is used.
+With any feedback present, `C-c C-c` returns the plan with that feedback and requests a revision. Without feedback, it approves and prompts for a permission mode: `C-c C-p` chooses one; otherwise, `ecc-plan-default-mode` (`"acceptEdits"`) is used.
 
 | Key | Action |
 |---|---|
-| `C-c C-c` | Approve, or send the feedback there is |
+| `C-c C-c` | Approve, or send any feedback |
 | `C-c C-k` | Reject with a reason, feedback included |
 | `C-c C-a` / `C-c C-r` | Add or remove a comment on this line |
 | `C-c C-d` | Diff your edits against the plan as proposed |
