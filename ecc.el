@@ -143,7 +143,7 @@ finding it later among all the others."
     (ecc-session-ensure-buffer session)
     ;; What the tree held before the CLI could touch it: `ecc-review'
     ;; diffs against this, so it is taken before the process starts.
-    (ecc-review-take-baseline session)
+    (ecc-review-ensure-baseline session)
     (ecc-proc-start session)
     (ecc--enable-session-modes)
     (ecc-window-select-session session)
