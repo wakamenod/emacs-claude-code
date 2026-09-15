@@ -27,6 +27,7 @@ Or, without `use-package`:
 | `1`–`4` | Select corresponding option for pending question |
 | `n` / `N` | Jump to next pending request (globally or within current project) |
 | `b` / `D` / `G` / `h` / `U` | Open dashboard / review the session's diffs / review the working tree / view history / check usage |
+| `J` / `B` / `z` / `C` | Go to a Space / open the sidebar / zoom this window / new worktree (see [Spaces and worktrees](/emacs-claude-code/features/spaces/)) |
 | `/` | Search past conversations by message content |
 | `?` | Open transient menu |
 

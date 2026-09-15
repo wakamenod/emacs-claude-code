@@ -83,6 +83,9 @@ M-x customize-group RET ecc
 | `ecc-window-large-frame-min-height` | `80` | 3 つめのセッションウィンドウを開くために必要なフレームの最小高さ（行数）。この値を下回る場合は 2 つのウィンドウを共有し、残りのセッションはタブラインから切り替えます |
 | `ecc-window-sub-height` | `0.33` | 3 つめのセッションウィンドウの高さ（比率または行数）。セッション列ではなく、フレームの主要領域（主にコードバッファ側）から分割して確保されます |
 | `ecc-tab-line-scope` | `'project` | セッションウィンドウのタブラインに表示するセッションの範囲。`'project` はそのウィンドウ自身のプロジェクトのセッションのみ、`'all` は Emacs で開いている全セッション |
+| `ecc-layout` | `'classic` | セッションウィンドウの配置方法。`'classic` はトランスクリプトを main / sub-1 / sub-2 の役割を持つサイドウィンドウに入れ、プロジェクト単位で役割を配り直します。`'spaces` はプロジェクトごとにタブバーのタブを割り当て、その中のウィンドウ配置には手を触れません。[Space と worktree](/emacs-claude-code/ja/features/spaces/) を参照 |
+| `ecc-worktree-directory` | `".claude/worktrees"` | `ecc-start-worktree` がチェックアウトを置く場所。相対パスはリポジトリからの相対、絶対パスは全リポジトリで共有するディレクトリで、`<directory>/<repository>/<branch-slug>` に置かれます |
+| `ecc-space-session-min-width` | `80` | `'spaces'` で、トランスクリプトの列をさらに分割するためにセッションウィンドウが必要とする桁数。これ以上の幅が取れない場合は、全てのトランスクリプトを狭くする代わりに、最も長く触られていないセッションのウィンドウを新しいセッションに渡します。`window-min-width` がこの値の下限です |
 
 `ecc-window-large-frame-min-height` の既定値（80行）は、ノートPCの画面と外付け大画面ディスプレイを自動判別するための値です。14インチ画面はおよそ58行、16インチはおよそ67行であるのに対し、外部デスクトップディスプレイでは110行以上表示できます。
 

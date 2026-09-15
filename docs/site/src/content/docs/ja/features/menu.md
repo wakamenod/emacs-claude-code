@@ -148,6 +148,12 @@ def greet(name):
 
 詳細は [プロンプトとトランスクリプト](/emacs-claude-code/ja/features/prompt/) をご覧ください。
 
+## Spaces グループ
+
+`J` は Space への移動、`B` はサイドバーを開く、`z` はカーソルのあるウィンドウでタブを埋める（もう一度で元に戻る）、`X` はこの Space を閉じて動いているセッションを止めます。`C` は worktree を作ってそこでセッションを開始、`E` は既にある worktree でセッションを開始、`M` はチェックアウトを削除します。
+
+[Space と worktree](/emacs-claude-code/ja/features/spaces/) を参照してください。
+
 ## View グループ
 
 ### `b` — ダッシュボード (Dashboard)

@@ -2,7 +2,7 @@
 title: Other features
 description: Inspect session capabilities, tool configurations, and Claude Code plan usage.
 sidebar:
-  order: 5
+  order: 6
 ---
 
 ## Capabilities

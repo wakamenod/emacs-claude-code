@@ -38,6 +38,7 @@ Because the transcript is standard buffer text, you can use regular Emacs workfl
 - **[Global access](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/):** Approve or deny pending tool requests from any buffer.
 - **[Session management](https://wakamenod.github.io/emacs-claude-code/features/sessions/):** Manage multiple concurrent sessions from a dashboard.
 - **[One project at a time](https://wakamenod.github.io/emacs-claude-code/features/sessions/#focusing-one-project):** `ecc-focus-project` focuses the whole frame on a single project. Window tabs show only that project's sessions.
+- **[Spaces and worktrees](https://wakamenod.github.io/emacs-claude-code/features/spaces/):** `(setq ecc-layout 'spaces)` gives every project a tab of its own and leaves the windows inside it alone, so an arrangement comes back the way it was left. Going to a project starts a session there when nothing is running, and `/resume` carries that window on with a conversation recorded earlier. A sidebar down the left lists every project and session with what each is doing, and `ecc-start-worktree` checks a branch out beside the repository and starts a session there.
 - **Safe defaults:** Permission prompts default to deny. The built-in loopback MCP server is disabled by default, and evaluating Elisp requires explicit opt-in.
 
 ## Requirements
@@ -104,7 +105,9 @@ Because the repository name is `emacs-claude-code` while the package name is `ec
   (ecc-notify-level 'pulse)
   (ecc-usage-display 'posframe)
   (ecc-btw-display 'posframe)
-  (ecc-prompt-suggestions-enabled t))
+  (ecc-prompt-suggestions-enabled t)
+  ;; One tab per project, with a sidebar; `classic' is the default.
+  (ecc-layout 'spaces))
 ```
 
 For all other settings, check the [configuration reference](https://wakamenod.github.io/emacs-claude-code/reference/configuration/).

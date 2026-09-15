@@ -76,6 +76,133 @@ Verified against **Claude Code CLI 2.1.270**.
   settings files are stat'ed and read again only when one has been written to.
   A remote project root is left out: its settings are on the other machine.
 
+- A second way to lay the windows out, chosen with `ecc-layout`. The default,
+  `classic`, is what this package has always done and is unchanged: a
+  transcript goes into a side window with a role -- main, sub-1, sub-2 -- and
+  `ecc-focus-project` deals the roles out again for one project.
+
+  `spaces` gives every project a tab of the tab bar instead -- a Space -- and
+  leaves the windows inside it alone. The transcripts stand side by side and
+  are never stacked: the first opens as an ordinary window beside the source,
+  every one after it divides the rightmost of them, and from there they are the
+  user's to split, move and enlarge. A tab is a window arrangement, so going to
+  another Space and back brings the whole of it back the way it was left. A
+  worktree is a Space of its own, drawn under the repository it came from and
+  named by its branch.
+
+  How many transcripts stand abreast is `ecc-space-session-min-width`, the
+  columns one may not go under (`window-min-width` is a floor under it). A row
+  with no room for another column does not grow a narrower one: the session
+  worked in longest ago hands its window over and goes on running without one,
+  which the sidebar and `ecc-toggle` bring back.
+
+  A Space whose tab has to be made comes up with its sessions already dealt
+  out, most recently used first, until the row has no room for another column.
+  Going to a Space with nothing running in it starts a session there -- always,
+  there is no setting: a tab with a file in it and no way to say anything is a
+  Space that looks broken, and going to a Space is asking to work there.
+
+  `ecc-space-goto` also reaches a project there is nothing left of but its
+  recordings, so a project worked in before can be gone back to. Those are
+  deliberately kept out of the sidebar and out of the numbering: putting them
+  there would move the numbers the `1`-`9` keys take under the user's feet.
+  Finding them reads every recording once for the directory it was made in
+  (0.12s over 244 of them here, and nothing after that): the directory a
+  recording sits in does not answer the question -- its name is the working
+  directory with everything that is not a letter or a digit turned into a dash,
+  which is not invertible, and one repository is named by as many directories
+  as it has worktrees and truenames.
+
+  `C-c c J` (`ecc-space-goto`) and `ecc-space-jump` go to a Space,
+  `ecc-space-close` closes one and stops what is running in it, and `C-c c z`
+  (`ecc-space-zoom`) fills the tab with the window point is in and puts the
+  windows back again. `ecc-focus-project` and `ecc-toggle` keep their keys and
+  do the same thing in both layouts.
+
+- A sidebar, `C-c c B` (`ecc-sidebar-focus`): a narrow window down the left of
+  the frame with the Spaces at the top -- every project and worktree, numbered, each
+  marked with what it is doing and what branch it is on -- and the sessions at
+  the bottom, with what each is waiting for. It stays on the screen while you
+  work, which is the one thing the dashboard does not do, and it never takes
+  the selected window.
+
+  The same key goes in and comes back out: the window is `no-other-window`, so
+  `C-x o` never lands there by accident while working, and `C-c c B` is the way
+  in. `ecc-sidebar-toggle` shows and hides it without going in.
+
+  `RET` goes to what the row stands for, `n` and `p` move, `TAB` folds a
+  repository's worktrees away, `1`-`9` go to a Space by its number, `c` starts
+  a session there, `W` makes a worktree of it, `a` and `d` answer what that
+  session is waiting on, `k` stops it, `x` closes a Space, `X` removes a
+  worktree, `g` asks git again and `q` hides the sidebar.
+
+  The marks, the colours and the beat of the blink are the tab line's, so a
+  session says the same thing wherever it is drawn, and the spinner turns only
+  while something is running where it can be seen. With `spaces` the sidebar
+  comes up with every Space; with `classic` it can be toggled on all the same,
+  and `RET` on a Space focuses the project the way it always has.
+
+- `/resume`, typed in a session, carries that window on with another recorded
+  conversation of the project: the CLI is stopped, the session is emptied, its
+  id becomes the recording's, the recording is read into the same buffer and
+  the CLI is started again with `--resume`. The window, the tab, the buffer,
+  the session name and the review baseline do not move -- what changes is which
+  conversation is in them, which is what the terminal client's own `/resume`
+  does. The name is Emacs's own: the CLI names no `resume` in `slash_commands`
+  and none in `terminal_slash_commands` (checked against 2.1.270), so nothing
+  is shadowed and nothing of ours reaches the CLI.
+
+  It is what makes an automatically started Space worth starting: going to a
+  project with nothing running opens a fresh session, and `/resume` is how the
+  conversation that was there is picked up. `/resume <session-id>` takes one by
+  id without asking.
+
+  A session held in a terminal is refused; a recording another process is
+  running, a conversation that already holds turns and prompts still queued are
+  each asked about before anything moves. The conversation walked away from is
+  left exactly where it is, and `ecc-history-open` reads it again.
+
+  A recording whose `cwd` sat past the first 8 KiB used to be dropped from a
+  project-filtered `ecc-history-recordings` -- the picker's list, among other
+  things. It is now looked for further in.
+
+- Worktrees, as somewhere a session can live: `C-c c C` (`ecc-start-worktree`)
+  checks a branch out beside the repository and starts a session there,
+  `ecc-start-in-worktree` starts one in a checkout that exists already, and
+  `ecc-remove-worktree` stops the sessions working in a checkout and undoes
+  it. The branch is never deleted with the checkout -- what is undone is a
+  checkout, and the work is on the branch.
+
+  Stopping the last session working in a worktree offers to undo the checkout
+  there and then, which is the moment anybody is thinking about it: from
+  `ecc-kill` asked for by hand, the dashboard's `k`, the sidebar's `k` or the
+  tab's close button. Stopping one of two sessions in the same checkout offers
+  nothing, and neither does `ecc-space-close` or `ecc-remove-worktree`, which
+  stop several sessions in a row. Buffers still visiting the checkout are
+  counted in the question rather than closed.
+
+  A branch that is checked out somewhere already is gone to rather than
+  refused: one branch lives in one worktree at a time, so asking for it can
+  only mean the checkout that has it. The branch is what is looked up, not the
+  directory, so a checkout named by somebody else is found all the same --
+  Claude Code's own worktrees turn a `/` into a `+` where this turns it into a
+  `-`.
+
+  Where a checkout goes is `ecc-worktree-directory`, `.claude/worktrees` by
+  default, which is where Claude Code's own worktrees go. A relative name hangs
+  off the repository; an absolute one is a directory every repository shares,
+  and a checkout lands at `<directory>/<repository>/<branch-slug>`.
+
+  What the repository says about a worktree is read as well -- which repository
+  a checkout belongs to, what branch it is on, how far ahead of and behind its
+  upstream it is -- and the answers are kept for ten seconds, so that whatever
+  asks on every redraw costs no process.
+
+- A `Spaces` column in `ecc-menu`, and four keys in `ecc-global-map`: `J` for a
+  Space, `B` for the sidebar, `z` for the zoom and `C` for a new worktree, each
+  the capital of the lower-case key of the nearest thing -- `j` focuses a
+  project, `b` opens the dashboard, `c` starts a session here.
+
 ### Changed
 
 - `C-c C-c` in a review sends the comments instead of opening a buffer to

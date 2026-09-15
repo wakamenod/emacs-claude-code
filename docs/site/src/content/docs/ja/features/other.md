@@ -2,7 +2,7 @@
 title: その他の機能
 description: セッションのケイパビリティ、ツール設定、および Claude Code の使用量確認。
 sidebar:
-  order: 5
+  order: 6
 ---
 
 ## ケイパビリティ (能力一覧)
