@@ -223,6 +223,110 @@
                              (car (window-edges ediff-window-B))))))
             (ecc-review-ediff-test--quit control)))))))
 
+;;;; What it looks like
+
+(ert-deftest ecc-review-ediff-test-the-code-carries-the-faces-of-its-mode ()
+  "The code of a review is coloured the way its own major mode colours it.
+The buffers hold many files at once, so each is fontified on its own
+and the faces are carried in as text properties; no buffer of ours runs
+font-lock."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (ecc-review-ediff-test--repository directory)
+                (setf (ecc-session-project-root session) directory)
+                (should (ecc-review-ensure-baseline session))
+                (ecc-review-ediff-test--write
+                 (concat directory "code.py") "def greet():\n    return 1\n")
+                (setq control (ecc-review-ediff-buffer session))
+                (with-current-buffer control
+                  (with-current-buffer (cdr ecc-review-ediff--buffers)
+                    (goto-char (point-min))
+                    (should (search-forward "def" nil t))
+                    ;; The keyword carries a face, and the separator its own.
+                    (should (get-text-property (- (point) 1) 'face))
+                    (goto-char (point-min))
+                    (should (eq (get-text-property (point) 'face)
+                                'ecc-heading-face))
+                    ;; And the differences ediff is not standing on are
+                    ;; marked in the colours a diff is read by, in these
+                    ;; two buffers alone.
+                    ;; `face-remap-add-relative' keeps the face itself at
+                    ;; the end of the entry, so what is asked is what was
+                    ;; put in front of it.
+                    (should (memq 'diff-added
+                                  (alist-get 'ediff-odd-diff-B
+                                             face-remapping-alist)))
+                    (should-not (default-value 'face-remapping-alist))
+                    ;; What the prompt quotes is the text, never the faces.
+                    (should-not
+                     (text-properties-at
+                      0 (plist-get (ecc-review-ediff--difference
+                                    0 control)
+                                   :text))))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-plain-text-when-fontifying-is-off ()
+  "`ecc-review-ediff-fontify' nil leaves the code as it came."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (let ((ecc-review-ediff-fontify nil))
+                (ecc-review-ediff-test--repository directory)
+                (setf (ecc-session-project-root session) directory)
+                (should (ecc-review-ensure-baseline session))
+                (ecc-review-ediff-test--write
+                 (concat directory "code.py") "def greet():\n    return 1\n")
+                (setq control (ecc-review-ediff-buffer session))
+                (with-current-buffer control
+                  (with-current-buffer (cdr ecc-review-ediff--buffers)
+                    (goto-char (point-min))
+                    (should (search-forward "def" nil t))
+                    (should-not (get-text-property (- (point) 1) 'face)))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-the-review-takes-the-frame ()
+  "The review opens in a frame of its own windows, and gives them back.
+Two texts side by side want the width, and `q' is the review's own
+quit: ediff asks whether to quit, and the question goes to a
+minibuffer the control frame of a graphical Emacs does not have."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (ecc-review-ediff-test--repository directory)
+                (setf (ecc-session-project-root session) directory)
+                (should (ecc-review-ensure-baseline session))
+                (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
+                (delete-other-windows)
+                ;; Something else on the screen, which the review takes
+                ;; over and hands back.
+                (let ((stranger (get-buffer-create "stranger.txt")))
+                  (split-window-below)
+                  (set-window-buffer (next-window) stranger)
+                  (should (= (length (window-list nil 'no-minibuffer)) 2))
+                  (setq control (ecc-review-ediff-buffer session))
+                  (with-current-buffer control
+                    (should (eq (key-binding (kbd "q")) #'ecc-review-quit))
+                    ;; A and B, and nothing else of what was there.
+                    (should-not (get-buffer-window stranger))
+                    (should (memq (window-buffer ediff-window-A)
+                                  (list (car ecc-review-ediff--buffers))))
+                    (ecc-review-quit))
+                  (should (get-buffer-window stranger))
+                  (kill-buffer stranger)))
+            (ecc-review-ediff-test--quit control)))))))
+
 ;;;; Binary and oversized files
 
 (ert-deftest ecc-review-ediff-test-binary-and-oversize-are-named ()
