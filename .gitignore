@@ -31,3 +31,8 @@
 /docs/phase9-ui-redesign.md
 /docs/verified.md
 /tmp
+
+# The videos demo/record.sh makes.  A demonstration is a check by eye,
+# taken again when the code changes; the scene that makes it is the
+# thing worth keeping.
+/demo/*.mp4
