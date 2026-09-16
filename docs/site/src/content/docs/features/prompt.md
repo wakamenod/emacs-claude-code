@@ -27,10 +27,12 @@ A session buffer contains the transcript at the top, a prompt input area below a
 | Key | Action |
 |---|---|
 | `M-p` / `M-n`, `C-<up>` / `C-<down>` | Previous or next prompt from history |
-| `C-c C-r` | Resend last prompt |
+| `C-c C-r` | Select from history and insert at point |
 | `C-c C-s` | Accept CLI prompt suggestion |
 
 Prompt history is shared across all sessions, so a prompt typed in one session is immediately available in another.
+
+`M-p` replaces the whole prompt area, which makes older entries impractical to reach. `C-c C-r` (`ecc-prompt-history-insert`) offers the history as a completion list, one line per prompt, newest first, and inserts the whole of the one chosen at point. What is already written stays where it is.
 
 The CLI may suggest a follow-up prompt after a turn or two. Suggestions appear in the empty prompt area as ghost text; press `C-c C-s` to accept it as an editable draft.
 

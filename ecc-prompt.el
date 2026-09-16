@@ -207,15 +207,51 @@ INDEX nil brings the draft back."
   (ecc-prompt--history-show
    (and (> ecc-prompt--history-index 0) (1- ecc-prompt--history-index))))
 
-(defun ecc-prompt-resend-last (&optional session)
-  "Send the last prompt again to SESSION."
+(defun ecc-prompt--history-table ()
+  "Return the history as a completion table over one-line labels.
+The answer is a list of label and prompt pairs, most recent first.  A
+label is numbered because two long prompts that begin alike are cut to
+the same line, and a table with the same key twice cannot be read back."
+  (seq-map-indexed
+   (lambda (text index)
+     ;; The prompts are read in a minibuffer, so the label is fitted to
+     ;; columns rather than to characters: a Japanese prompt draws twice
+     ;; as wide as it is long.
+     (cons (format "%3d  %s" (1+ index) (ecc--fit text 116)) text))
+   ecc-prompt-history))
+
+(defun ecc-prompt-history-insert ()
+  "Insert a prompt chosen from `ecc-prompt-history' at point.
+The whole prompt goes in, however little of it the list showed.  Unlike
+\\[ecc-prompt-history-previous], which replaces the prompt region with
+one entry after another, this adds to what is being written: a past
+prompt can be picked up and worked into a new one.
+
+Point is moved into the prompt region first when it is not there."
   (interactive)
-  (let ((text (or (car ecc-prompt-history) (user-error "No history")))
-        (session (or session ecc-render--session
-                     (ecc-window-resolve-session current-prefix-arg))))
-    (when (y-or-n-p (format "Send again: %s? " (ecc--truncate text 40)))
-      (ecc-proc-send-prompt session text)
-      text)))
+  (unless ecc-prompt-history
+    (user-error "No history"))
+  (let* ((entries (ecc-prompt--history-table))
+         (labels (mapcar #'car entries))
+         (table (lambda (string predicate action)
+                  (if (eq action 'metadata)
+                      ;; Most recent first is the order to read them in;
+                      ;; sorted by name or by length they are a jumble.
+                      '(metadata (category . ecc-prompt-history)
+                                 (display-sort-function . identity)
+                                 (cycle-sort-function . identity))
+                    (complete-with-action action labels string predicate))))
+         (choice (completing-read "Past prompt: " table nil t))
+         (text (or (cdr (assoc choice entries))
+                   (user-error "Not a prompt from the history"))))
+    (ecc-prompt--ensure-region)
+    (unless (or (bolp) (memq (char-before) '(?\s ?\t)))
+      (insert " "))
+    (insert text " ")
+    ;; What is in the region is no longer an entry of the history, so a
+    ;; walk started after this one starts from the end again.
+    (setq ecc-prompt--history-index nil)
+    text))
 
 ;;;; Images
 

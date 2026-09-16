@@ -427,6 +427,47 @@ prompt is built and sent by `ecc-review.el\\=' either way."
     ;; ediff counts the differences from 1 where it is asked for one.
     (ediff-jump-to-difference (1+ (plist-get comment :position)))))
 
+;;;; The help ? shows
+
+;; ediff's own help is written for the ediff a two-way comparison
+;; usually is: it offers a and b, rx, wx and wd and ~, none of which do
+;; anything here -- both buffers are read-only and the two sides are
+;; every file of the review at once -- and it says nothing of c, d, l,
+;; C-c C-c and C-c C-k, or that q closes a review without asking.  The
+;; layout below is ediff's, so that ? still looks like ediff's help,
+;; with only the commands this review really has on it.
+
+(defconst ecc-review-ediff-long-help-message
+  "    Move around      |      Toggle features      |       Your comments
+=====================|===========================|=============================
+p,DEL -previous diff |     | -vert/horiz split   |      c -comment on this diff
+    n,SPC -next diff |         h -highlighting   |       d -remove that comment
+     j -jump to diff |      @ -auto-refinement   |         l -list the comments
+       C-l -recenter |        * -refine region   |   C-c C-c -send the comments
+   v/V -scroll up/dn |   ## -ignore whitespace   |     C-c C-k -drop the review
+   </> -scroll lt/rt |         #c -ignore case   |          q -close the review
+                     |         m -wide display   |
+=====================|===========================|=============================
+    i -status info   |     ? -help off           |
+-------------------------------------------------------------------------------
+Both buffers are read-only: a review reads, comments and sends, and writes
+nothing.  Claude changes the files, from the prompt the comments are sent as."
+  "What `?\\=' shows in the control panel of an ediff review.")
+
+(defconst ecc-review-ediff-brief-help-message
+  " c -comment   C-c C-c -send   q -quit   ? -help"
+  "What the control panel of an ediff review says with the help off.")
+
+(defun ecc-review-ediff--long-help-message ()
+  "Return the long help of an ediff review.
+This is what `ediff-long-help-message-function\\=' is set to."
+  ecc-review-ediff-long-help-message)
+
+(defun ecc-review-ediff--brief-help-message ()
+  "Return the brief help of an ediff review.
+This is what `ediff-brief-help-message-function\\=' is set to."
+  ecc-review-ediff-brief-help-message)
+
 ;;;; Opening and closing
 
 (defvar ecc-review-ediff-full-frame t
@@ -502,18 +543,26 @@ ediff lays out its windows; quitting puts back what was on the screen."
                     ecc-review--comments-function #'ecc-review-ediff-comments
                     ecc-review--close-function #'ecc-review-ediff-quit
                     ediff-quit-hook (list #'ecc-review-ediff--on-quit))
+        ;; Both of these are read out of the control buffer of this
+        ;; session as well (`ediff-defvar-local'), so no other ediff's ?
+        ;; changes.
+        (setq-local ediff-long-help-message-function
+                    #'ecc-review-ediff--long-help-message
+                    ediff-brief-help-message-function
+                    #'ecc-review-ediff--brief-help-message)
         ;; ediff reads this one out of the control buffer of each session
         ;; (`ediff-wind.el'), which is why the review can be laid out its
         ;; own way without touching how the user's other ediffs look.
-        ;; The windows are laid out again once it is set: `ediff-setup'
-        ;; runs these hooks after `ediff-setup-windows', so the review
-        ;; would otherwise open in ediff's own layout and turn into this
-        ;; one at the first command that recentres.  It is the call
-        ;; `ediff-toggle-split' makes for the same reason.
         (when ecc-review-ediff-split-window-function
           (setq-local ediff-split-window-function
-                      ecc-review-ediff-split-window-function)
-          (ediff-recenter))
+                      ecc-review-ediff-split-window-function))
+        ;; `ediff-setup' lays out the windows and writes the help into
+        ;; the panel before it runs these hooks, so both are done again
+        ;; here: the review would otherwise open in ediff's own layout,
+        ;; under ediff's own help, and turn into this one at the first
+        ;; command that recentres.  It is the call `ediff-toggle-split'
+        ;; and `ediff-toggle-help' both make for the same reason.
+        (ediff-recenter)
         ;; `ediff-mode-map' is local to this control buffer, so these
         ;; keys reach no other ediff session.  None of them is one a
         ;; two-way comparison already uses.
@@ -528,7 +577,15 @@ ediff lays out its windows; quitting puts back what was on the screen."
         ;; enough to show nothing, so q read as a key that did nothing at
         ;; all (reported 2026-09-16).  A review is closed, not saved:
         ;; there is nothing to lose by the question and nothing to ask.
-        (define-key ediff-mode-map (kbd "q") #'ecc-review-quit))))
+        (define-key ediff-mode-map (kbd "q") #'ecc-review-quit)
+        ;; mouse-2 and RET over a line of the help look the command up
+        ;; in the ediff manual, which knows nothing of c, d or l and
+        ;; answers them with "Undocumented command!".  Silenced rather
+        ;; than pointed somewhere else: what the ECC keys do is on the
+        ;; help itself, and the manual has nothing to add about the
+        ;; ediff ones that a review uses.
+        (define-key ediff-mode-map [mouse-2] #'ignore)
+        (define-key ediff-mode-map (kbd "RET") #'ignore))))
     control))
 
 (defun ecc-review-ediff-buffer (session &optional paths)

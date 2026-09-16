@@ -684,15 +684,41 @@ is known (confirmed against the CLI)."
     (ecc-prompt-history-add "   ")
     (should (equal ecc-prompt-history '("c" "a")))))
 
-(ert-deftest ecc-prompt-test-resend-last ()
-  "The last prompt can be sent again without retyping it."
+(defmacro ecc-prompt-test--picking-history (pick offered &rest body)
+  "Run BODY with `completing-read' answering the PICK-th label offered.
+OFFERED is bound to the list of labels the table held."
+  (declare (indent 2))
+  `(let ((,offered nil))
+     (cl-letf (((symbol-function 'completing-read)
+                (lambda (_prompt collection &rest _)
+                  (setq ,offered (all-completions "" collection))
+                  (nth ,pick ,offered))))
+       ,@body)))
+
+(ert-deftest ecc-prompt-test-history-insert ()
+  "A prompt chosen from the history goes in whole, next to the draft."
   (ecc-test-with-fake-session session
-    (let ((ecc-prompt-history '("do it again")))
-      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
-        (ecc-prompt-test--in-buffer session (ecc-prompt-resend-last)))
-      (should (equal (alist-get 'content
-                                (alist-get 'message (car (ecc-test-sent-messages))))
-                     "do it again")))))
+    (let ((ecc-prompt-history '("one line" "two\nlines here")))
+      (ecc-prompt-test--in-buffer session
+        (insert "before")
+        (ecc-prompt-test--picking-history 1 offered
+          (should (equal (ecc-prompt-history-insert) "two\nlines here"))
+          ;; The list is one line an entry, newest first, and nothing is
+          ;; sorted behind the package's back.
+          (should (equal (length offered) 2))
+          (should (string-search "one line" (nth 0 offered)))
+          (should (string-search "two lines here" (nth 1 offered)))
+          (should-not (string-search "\n" (nth 1 offered))))
+        ;; The draft is kept and the whole prompt is there, not the
+        ;; single line the list showed.
+        (should (equal (string-trim (ecc-chat-draft)) "before two\nlines here"))))))
+
+(ert-deftest ecc-prompt-test-history-insert-without-history ()
+  "There is nothing to pick from before anything has been sent."
+  (ecc-test-with-fake-session session
+    (let ((ecc-prompt-history nil))
+      (ecc-prompt-test--in-buffer session
+        (should-error (ecc-prompt-history-insert) :type 'user-error)))))
 
 ;;;; The @ references
 

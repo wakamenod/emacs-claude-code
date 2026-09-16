@@ -17,6 +17,14 @@ Verified against **Claude Code CLI 2.1.270**.
 
 ### Added
 
+- `ecc-prompt-history-insert` (`C-c C-r` in the prompt region, `H` in
+  `ecc-menu`) picks a past prompt from a list and inserts it at point.  The
+  history holds two hundred prompts and `M-p` walks it one entry at a time,
+  replacing the whole region as it goes, which is no way to reach the fiftieth
+  entry back.  The list shows each prompt flattened to a line, most recent
+  first, and what goes in is the whole of the one chosen -- next to whatever
+  was already being written, rather than in place of it.
+
 - Images and video are drawn in the transcript.  Four things put one there:
   an `image` content block on an assistant or a user message, an image block
   inside a `tool_result` (a `Read` of a `.png`, a screenshot from an MCP
@@ -117,6 +125,22 @@ Verified against **Claude Code CLI 2.1.270**.
   sending the same prompt. Quitting -- by `q`, by `C-c C-k` or by sending --
   puts back the windows that were on the screen before the review opened.
   There is no `g`; quit and open the review again.
+
+  `?` shows a help written for the review rather than ediff's own.  ediff's
+  is the one a two-way comparison usually wants: it offers `a` and `b`, `rx`,
+  `wx`, `wd` and `~`, none of which do anything where both buffers are
+  read-only and each side is every file of the review at once, and it says
+  nothing of `c`, `d`, `l`, `C-c C-c` and `C-c C-k`, nor that `q` closes a
+  review without asking.  The help is ediff's own three-column layout with
+  only the commands a review really has on it, and the brief message the panel
+  carries with the help off names them too.  It is set through
+  `ediff-long-help-message-function` and `ediff-brief-help-message-function`,
+  which ediff reads out of the control buffer of each session, so no other
+  ediff's `?` changes; the messages are composed again in the startup hook,
+  because ediff writes the help into the panel before it runs them.  Clicking
+  a line of the help, and `RET` on it, do nothing now: they looked the command
+  up in the ediff manual, which has no entry for `c`, `d` or `l` and answered
+  them with "Undocumented command!".
 
   Both reviews now always compare two git trees: the session's baseline, or
   `HEAD`, against a snapshot of the working tree, and for a range the two trees
@@ -383,6 +407,14 @@ Verified against **Claude Code CLI 2.1.270**.
   covers the files a session changed as well as the untracked ones -- a lock file a
   package manager wrote again is the usual one. The old name still works as an
   obsolete alias.
+
+### Removed
+
+- `ecc-prompt-resend-last` and its `C-c C-r`, which sent the last prompt
+  again after a yes-or-no question.  `C-c C-r` is now
+  `ecc-prompt-history-insert`, which puts that same prompt in the region
+  where it can be read and edited before `C-c C-c` sends it; `M-p C-c C-c`
+  is the two keys that did exactly what the command did.
 
 ### Fixed
 

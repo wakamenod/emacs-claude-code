@@ -88,6 +88,7 @@ Both buffers are read-only, so ediff's `a` and `b` copy commands do nothing here
 | `C-c C-c` | Send the comments as a prompt (`C-u C-c C-c` to edit it first) |
 | `C-c C-k` | Drop the review and its comments |
 | `q` | Quit the review |
+| `?` | Show the full help, and again to hide it |
 
 Comments work the same way here as they do in the diff buffer. They carry the file name and the line numbers inside it, and the prompt sent to the session is identical. Sending comments, pressing `C-c C-k`, or pressing `q` restores the window configuration you had before opening the review. There is no `g` command here; to refresh the review, quit and open it again.
 
