@@ -329,11 +329,41 @@ Nothing is inserted here.  `ecc-render\=' is what draws."
       (put-text-property 0 (length string) 'display image string))
     string))
 
-(defvar ecc-image-animate-seconds 30
-  "Seconds a GIF started by hand keeps moving.
-It is finite on purpose: a redraw deletes the text the timer is
-animating, and a loop with no end would go on turning the frames of a
-picture nobody can see.")
+(defcustom ecc-image-animate t
+  "Non-nil starts a GIF moving as soon as it is drawn.
+Whether pictures move by themselves is a taste, and for some people
+motion on a page is worse than that; with this off a GIF is drawn as
+its first frame and `v\=' on it is what sets it going.
+
+It costs one timer per GIF and nothing else, and the timer stops
+itself -- see `ecc-image-animate-limit\='."
+  :type 'boolean
+  :group 'ecc)
+
+(defvar ecc-image-animate-limit t
+  "How long a GIF started with `ecc-image-view-at-point\=' keeps moving.
+`t\=' loops for as long as it is there, nil plays it once through, and a
+number is that many seconds -- `image-animate\=' reads it that way.
+
+Looping needs no cutoff because the animation is given the position it
+sits at, and `image-animate-timeout\=' stops itself once the text there
+is no longer that image.  A redraw of the live region is what takes it
+away, and before the position was passed each redraw left the timer of
+a picture no longer in the buffer turning its frames: three GIFs and
+ten redraws left thirty such timers and animated none of them, against
+none at all with the position given (measured 2026-09-16).  Scrolling
+away does not stop it -- the test is on the text, not on the window --
+which is what makes a loop the right default.
+
+Ten moving GIFs take a redisplay from 0.10 ms to 0.25 ms, and one
+timer each however many there are, so the cost is not the pixels;
+`ecc-image-descriptor\=' says what the cost is.
+
+Emacs stops an animation of its own accord once its frames arrive
+cumulatively two seconds later than they should, saying the animation
+is possibly too big.  Nothing here has to guard against a huge GIF.
+\(A test that watches one with `sleep-for\=' starves the very timers it
+is watching and trips that guard by itself; `sit-for\=' does not.)")
 
 (defun ecc-image-at-point (&optional position)
   "Return the file drawn at POSITION, or nil."
@@ -352,12 +382,32 @@ zoom of its own."
       ('video (ecc-image-open-externally path))
       (_ (find-file-other-window path)))))
 
+(defun ecc-image--animated-at (position)
+  "Return the image descriptor at POSITION when it is one that moves."
+  (let ((image (get-text-property position 'display)))
+    (and (consp image) (eq (car image) 'image)
+         (image-multi-frame-p image)
+         image)))
+
+(defun ecc-image-maybe-animate (position)
+  "Start the picture just drawn at POSITION, when it moves and may.
+Called by the renderer as each picture goes in.  A frame that draws no
+image has no `display\=' property to find, so this does nothing there."
+  (when ecc-image-animate
+    (when-let* ((image (ecc-image--animated-at position)))
+      (unless (image-animate-timer image)
+        ;; The position is what lets the animation stop itself when a
+        ;; redraw takes the picture away; without it the timer outlives
+        ;; the text it was turning.
+        (image-animate image nil ecc-image-animate-limit position)))))
+
 (defun ecc-image--animate-at-point ()
-  "Start the GIF drawn at point, for `ecc-image-animate-seconds'."
-  (let ((image (get-text-property (point) 'display)))
-    (unless (and (consp image) (image-multi-frame-p image))
-      (user-error "Nothing here is moving"))
-    (image-animate image nil ecc-image-animate-seconds)))
+  "Set the GIF at point going, or stop it when it is going already."
+  (let ((image (or (ecc-image--animated-at (point))
+                   (user-error "Nothing here is moving"))))
+    (if-let* ((timer (image-animate-timer image)))
+        (progn (cancel-timer timer) (message "Stopped"))
+      (image-animate image nil ecc-image-animate-limit (point)))))
 
 (defun ecc-image-toggle-inline ()
   "Turn the drawing of images in a transcript on or off, and redraw."

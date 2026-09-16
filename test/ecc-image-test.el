@@ -213,6 +213,19 @@
         (goto-char (point-min))
         (should-error (ecc-image-view-at-point) :type 'user-error)))))
 
+(ert-deftest ecc-image-test-animating-where-nothing-is-drawn ()
+  "Where no picture was drawn there is nothing to set going."
+  (with-temp-buffer
+    (insert (propertize "image · a.gif" 'ecc-image-file "/tmp/a.gif"))
+    (goto-char (point-min))
+    ;; Batch draws no image, so there is no `display' to animate.
+    (should-not (ecc-image--animated-at (point)))
+    (should-not (ecc-image-maybe-animate (point)))
+    (should-error (ecc-image--animate-at-point) :type 'user-error)
+    ;; And with the setting off it is not even asked.
+    (let ((ecc-image-animate nil))
+      (should-not (ecc-image-maybe-animate (point))))))
+
 (provide 'ecc-image-test)
 
 ;;; ecc-image-test.el ends here

@@ -396,8 +396,14 @@ that must not be broken."
   (let* ((width (ecc-render--image-width (string-width prefix)))
          (preview (and (ecc-image-video-p path) (ecc-render--video-preview path)))
          (string (ecc-image-string path width ecc-image-max-height
-                                   bytes preview name)))
-    (insert prefix string "\n")))
+                                   bytes preview name))
+         (start (+ (point) (length prefix))))
+    (insert prefix string "\n")
+    ;; As it goes in rather than after the draw: the picture is not on
+    ;; screen yet, but the text property the animation watches is, and
+    ;; walking the region again afterwards would only find the same
+    ;; positions.
+    (ecc-image-maybe-animate start)))
 
 (defun ecc-render--video-preview (path)
   "Return the first frame of the video PATH, or nil while there is none.
