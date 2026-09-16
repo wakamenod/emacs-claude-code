@@ -837,6 +837,127 @@ been waiting."
       (should (eq (ecc-node-status node) 'done))
       (should-not (ecc-node-streaming node)))))
 
+;;;; Images
+
+(defmacro ecc-dispatch-test--with-images (session &rest body)
+  "Run BODY with SESSION writing its images somewhere of its own."
+  (declare (indent 1))
+  `(let ((ecc-image-dir (make-temp-file "ecc-images" t)))
+     (unwind-protect (progn ,@body)
+       (setf (ecc-session-tmp-dir ,session) nil)
+       (when (file-directory-p ecc-image-dir)
+         (delete-directory ecc-image-dir t)))))
+
+(defun ecc-dispatch-test--image-block ()
+  "Return an image content block carrying the image fixture."
+  `((type . "image")
+    (source . ((type . "base64") (media_type . "image/png")
+               (data . ,(base64-encode-string (ecc-test-image-bytes) t))))))
+
+(defun ecc-dispatch-test--no-base64 (node)
+  "Fail unless the data of NODE carries none of the image fixture."
+  (should-not (string-search (base64-encode-string (ecc-test-image-bytes) t)
+                             (format "%S" (ecc-node-data node)))))
+
+(ert-deftest ecc-dispatch-test-assistant-image-becomes-a-file ()
+  "An image block on an assistant message is one node naming a file."
+  (ecc-test-with-fake-session session
+    (ecc-dispatch-test--with-images session
+      (ecc-model-begin-turn session "見せて")
+      (ecc-dispatch session
+                    `((type . "assistant") (uuid . "u1")
+                      (message . ((content . [,(ecc-dispatch-test--image-block)])))))
+      (let* ((children (ecc-turn-children (ecc-session-current-turn session)))
+             (node (car children)))
+        (should (= (length children) 1))
+        (should (eq (ecc-node-type node) 'image))
+        (should (eq (ecc-node-status node) 'done))
+        (should (eq (ecc-model-node-get node 'role) 'assistant))
+        (should (file-exists-p (ecc-model-node-get node 'path)))
+        (should (= (ecc-model-node-get node 'bytes)
+                   (length (ecc-test-image-bytes))))
+        ;; The whole point: the payload is on disk, not in the model.
+        (ecc-dispatch-test--no-base64 node)))))
+
+(ert-deftest ecc-dispatch-test-a-streamed-image-is-one-node ()
+  "A streamed image block and the message that closes it are one node."
+  (ecc-test-with-fake-session session
+    (ecc-dispatch-test--with-images session
+      (ecc-model-begin-turn session "見せて")
+      (ecc-dispatch session
+                    `((type . "stream_event")
+                      (event . ((type . "content_block_start") (index . 0)
+                                (content_block . ,(ecc-dispatch-test--image-block))))))
+      ;; The assistant message arrives before the stop: that is the
+      ;; order the CLI sends them in (see partial-messages.jsonl).
+      (ecc-dispatch session
+                    `((type . "assistant") (uuid . "u1")
+                      (message . ((content . [,(ecc-dispatch-test--image-block)])))))
+      (ecc-dispatch session
+                    '((type . "stream_event")
+                      (event . ((type . "content_block_stop") (index . 0)))))
+      (let ((children (ecc-turn-children (ecc-session-current-turn session))))
+        (should (= (length children) 1))
+        (should (eq (ecc-node-type (car children)) 'image))
+        (should (eq (ecc-node-status (car children)) 'done))
+        (should (= 0 (hash-table-count (ecc-session-stream-blocks session))))))))
+
+(ert-deftest ecc-dispatch-test-a-user-image-is-drawn-not-unknown ()
+  "An image block on a user message is an image node, not an unknown one."
+  (ecc-test-with-fake-session session
+    (ecc-dispatch-test--with-images session
+      (ecc-model-begin-turn session "これ")
+      (ecc-dispatch session
+                    `((type . "user")
+                      (message . ((content . [,(ecc-dispatch-test--image-block)])))))
+      (let ((node (car (ecc-turn-children (ecc-session-current-turn session)))))
+        (should (eq (ecc-node-type node) 'image))
+        (should (eq (ecc-model-node-get node 'role) 'user))
+        (ecc-dispatch-test--no-base64 node)))))
+
+(ert-deftest ecc-dispatch-test-an-unreachable-image-keeps-its-reason ()
+  "A source this side cannot read is a node with a reason and no block."
+  (ecc-test-with-fake-session session
+    (ecc-dispatch-test--with-images session
+      (ecc-model-begin-turn session "これ")
+      (ecc-dispatch session
+                    '((type . "user")
+                      (message . ((content . [((type . "image")
+                                               (source . ((type . "file")
+                                                          (file_id . "abc")))
+                                               )])))))
+      (let ((node (car (ecc-turn-children (ecc-session-current-turn session)))))
+        (should (eq (ecc-node-type node) 'image))
+        (should (equal (ecc-model-node-get node 'reason) "image source: file"))
+        (should-not (ecc-model-node-get node 'block))))))
+
+(ert-deftest ecc-dispatch-test-a-result-image-leaves-no-base64 ()
+  "An image in a tool result becomes a path beside the text it came with."
+  (ecc-test-with-fake-session session
+    (ecc-dispatch-test--with-images session
+      (ecc-model-begin-turn session "撮って")
+      (ecc-dispatch session
+                    '((type . "assistant") (uuid . "u1")
+                      (message . ((content . [((type . "tool_use") (id . "t1")
+                                               (name . "Read")
+                                               (input . ((file_path . "/tmp/a.png"))))])))))
+      (ecc-dispatch session
+                    `((type . "user")
+                      (message . ((content . [((type . "tool_result")
+                                               (tool_use_id . "t1")
+                                               (content . [((type . "text") (text . "here"))
+                                                           ,(ecc-dispatch-test--image-block)]))])))))
+      (let* ((node (ecc-model-node session "t1"))
+             (result (ecc-model-node-get node 'result)))
+        (should (vectorp result))
+        (should (= (length result) 2))
+        (should (equal (alist-get 'text (aref result 0)) "here"))
+        (should (equal (alist-get 'type (aref result 1)) "image"))
+        (should (file-exists-p (alist-get 'path (aref result 1))))
+        (should-not (alist-get 'data (aref result 1)))
+        (should-not (alist-get 'source (aref result 1)))
+        (ecc-dispatch-test--no-base64 node)))))
+
 ;;;; Files and tasks from tool_use_result
 
 (ert-deftest ecc-dispatch-test-edit-records-hunk-and-snapshot ()
