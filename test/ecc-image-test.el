@@ -191,27 +191,22 @@
 
 ;;;; Looking at one
 
-(ert-deftest ecc-image-test-view-picks-by-kind ()
-  "A video goes outside Emacs and a still opens in a buffer."
-  (let (outside inside)
-    (cl-letf (((symbol-function 'ecc-image-open-externally)
-               (lambda (path) (setq outside path)))
-              ((symbol-function 'find-file-other-window)
-               (lambda (path) (setq inside path))))
+(ert-deftest ecc-image-test-v-is-about-motion-alone ()
+  "`v\=' toggles what moves and opens nothing; RET is what opens."
+  (cl-letf (((symbol-function 'ecc-image-open-externally)
+             (lambda (&rest _) (error "v must not open anything")))
+            ((symbol-function 'find-file-other-window)
+             (lambda (&rest _) (error "v must not open anything"))))
+    (dolist (file '("/tmp/clip.mp4" "/tmp/shot.png" "/tmp/a.gif"))
       (with-temp-buffer
-        (insert (propertize "clip" 'ecc-image-file "/tmp/clip.mp4"))
+        (insert (propertize "x" 'ecc-image-file file))
         (goto-char (point-min))
-        (ecc-image-view-at-point)
-        (should (equal outside "/tmp/clip.mp4")))
-      (with-temp-buffer
-        (insert (propertize "shot" 'ecc-image-file "/tmp/shot.png"))
-        (goto-char (point-min))
-        (ecc-image-view-at-point)
-        (should (equal inside "/tmp/shot.png")))
-      (with-temp-buffer
-        (insert "plain text")
-        (goto-char (point-min))
-        (should-error (ecc-image-view-at-point) :type 'user-error)))))
+        ;; Batch draws no image, so nothing here moves whatever it is.
+        (should-error (ecc-image-toggle-animation) :type 'user-error)))
+    (with-temp-buffer
+      (insert "plain text")
+      (goto-char (point-min))
+      (should-error (ecc-image-toggle-animation) :type 'user-error))))
 
 (ert-deftest ecc-image-test-animating-where-nothing-is-drawn ()
   "Where no picture was drawn there is nothing to set going."
@@ -221,7 +216,7 @@
     ;; Batch draws no image, so there is no `display' to animate.
     (should-not (ecc-image--animated-at (point)))
     (should-not (ecc-image-maybe-animate (point)))
-    (should-error (ecc-image--animate-at-point) :type 'user-error)
+    (should-error (ecc-image-toggle-animation) :type 'user-error)
     ;; And with the setting off it is not even asked.
     (let ((ecc-image-animate nil))
       (should-not (ecc-image-maybe-animate (point))))))

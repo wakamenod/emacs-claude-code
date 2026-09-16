@@ -341,7 +341,7 @@ itself -- see `ecc-image-animate-limit\='."
   :group 'ecc)
 
 (defvar ecc-image-animate-limit t
-  "How long a GIF started with `ecc-image-view-at-point\=' keeps moving.
+  "How long a GIF keeps moving once it is set going.
 `t\=' loops for as long as it is there, nil plays it once through, and a
 number is that many seconds -- `image-animate\=' reads it that way.
 
@@ -369,19 +369,6 @@ is watching and trips that guard by itself; `sit-for\=' does not.)")
   "Return the file drawn at POSITION, or nil."
   (get-text-property (or position (point)) 'ecc-image-file))
 
-(defun ecc-image-view-at-point ()
-  "Look at the image or the video at point.
-A GIF starts moving where it sits, a video goes to whatever the
-machine plays one with, and a still opens in `image-mode', which has a
-zoom of its own."
-  (interactive)
-  (let ((path (ecc-image-at-point)))
-    (unless path (user-error "No image here"))
-    (pcase (ecc-image-kind path)
-      ('animated (ecc-image--animate-at-point))
-      ('video (ecc-image-open-externally path))
-      (_ (find-file-other-window path)))))
-
 (defun ecc-image--animated-at (position)
   "Return the image descriptor at POSITION when it is one that moves."
   (let ((image (get-text-property position 'display)))
@@ -401,13 +388,23 @@ image has no `display\=' property to find, so this does nothing there."
         ;; the text it was turning.
         (image-animate image nil ecc-image-animate-limit position)))))
 
-(defun ecc-image--animate-at-point ()
-  "Set the GIF at point going, or stop it when it is going already."
+(defun ecc-image-toggle-animation ()
+  "Stop the picture at point moving, or set it moving again.
+Only a picture that moves has anything to toggle, and RET is what
+opens one -- a still in `image-mode\=', a video in whatever the machine
+plays one with.  Whether a GIF moves at all to begin with is
+`ecc-image-animate\='."
+  (interactive)
   (let ((image (or (ecc-image--animated-at (point))
                    (user-error "Nothing here is moving"))))
     (if-let* ((timer (image-animate-timer image)))
-        (progn (cancel-timer timer) (message "Stopped"))
-      (image-animate image nil ecc-image-animate-limit (point)))))
+        (progn (cancel-timer timer)
+               (message "Stopped"))
+      ;; The position is what lets the animation stop itself when a
+      ;; redraw takes the picture away; without it the timer outlives
+      ;; the text it was turning.
+      (image-animate image nil ecc-image-animate-limit (point))
+      (message "Moving"))))
 
 (defun ecc-image-toggle-inline ()
   "Turn the drawing of images in a transcript on or off, and redraw."
