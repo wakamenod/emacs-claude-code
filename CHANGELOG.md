@@ -17,6 +17,74 @@ Verified against **Claude Code CLI 2.1.270**.
 
 ### Added
 
+- Images and video are drawn in the transcript.  Four things put one there:
+  an `image` content block on an assistant or a user message, an image block
+  inside a `tool_result` (a `Read` of a `.png`, a screenshot from an MCP
+  tool), an image file named by a tool's `file_path` where the result carried
+  no picture of its own, and the images a prompt attached as `@path`.
+
+  None of it reaches the buffer as base64.  The payload is decoded where the
+  message is dispatched and written into the session's image directory under
+  the sha1 of its bytes, and only the path, the media type and the size are
+  kept on the node.  The same image arriving twice -- once in the block that
+  streams and once in the message that closes it -- is one file and one node.
+
+  Before this, an image block on a message became an `unknown` node and was
+  drawn as two thousand characters of base64, a streamed one opened no node
+  at all and its deltas were dropped, and an image in a tool result was
+  serialised back to JSON and drawn as a wall of text that the twelve-line
+  result clip could not cut, because base64 is one line.
+
+  Each picture sits on a line that names the file, so a copy of the region, a
+  search through it and a snapshot of it all find the name; a terminal frame,
+  a build without the library for that type and a batch Emacs are left with
+  that line.  The images of a tool call are drawn inside its body, so a fold
+  hides them with it, and after the result clip rather than through it, so a
+  long result is not what decides whether a screenshot is seen; at most
+  `ecc-image-max-per-node` of them, the rest counted.  An image the CLI named
+  by URL is drawn as the URL and never fetched: the renderer does not go to
+  the network.
+
+  A video cannot be drawn in a buffer, so where `ffmpeg` is on `PATH` its
+  first frame is pulled out and shown instead, in a subprocess
+  that is never waited for -- the line naming the file stands until the frame
+  lands.  A video ffmpeg cannot read is tried once, not once per redraw.
+
+  A GIF starts moving as soon as it is drawn and loops for as long as it is
+  on screen, at one timer each and a redisplay of 0.25 ms for ten of them
+  against 0.10 ms still.  It stops itself: `image-animate` is given the
+  position the picture sits at and gives up once the text there is no longer
+  that image, which is what a redraw of the live region does to it.  Without
+  that position every redraw left the timer of a picture no longer in the
+  buffer turning its frames -- three GIFs and ten redraws left thirty such
+  timers and animated none of them.  Scrolling away does not stop it: the
+  test is on the text, not on the window.
+
+  `v` in the transcript stops the picture at point moving, or sets it moving
+  again, and does nothing else: `RET` is what opens one, a still in
+  `image-mode` and a video in whatever the machine plays one with.
+  `ecc-image-inline`, also `I` in the menu, turns the drawing off.  It is
+  the one setting this adds: the height a picture is drawn at, whether a
+  GIF moves by itself and which ffmpeg is used are `defvar`s, reachable
+  with `setq` and bindable in a test, and not choices to put in front of
+  somebody.  A drawn image is limited in height and its width follows
+  `ecc-chat-text-width`.
+
+  There is no cache of image descriptors: `create-image` conses a list and
+  reads nothing, about a third of a microsecond a call, and two equal
+  descriptors share one entry of the image cache Emacs keeps of its own.
+  `scripts/bench-render.el` sees nothing at 800 tool calls with a fifth of
+  them carrying an image.  It now also sweeps before each measurement --
+  adding a case to it had moved an untouched number from 1.7 ms to 4.3, which
+  was the heap the new case left behind rather than the renderer.
+
+  New module `ecc-image.el`, a leaf below `ecc-render`.  `ecc-prompt-save-image`
+  moved there as `ecc-image-save` and `ecc-prompt--image-extension` as
+  `ecc-image--extension`, with `ecc-image-dir`, `ecc-image-cleanup`,
+  `ecc-session-image-dir` and `ecc-image-cleanup-session`: `ecc-prompt`
+  requires `ecc-render`, so the helpers that write an image to disk could not
+  stay there and be called from the renderer as well.
+
 - `ecc-review-style` opens `ecc-review` (`D`) and `ecc-review-worktree` (`G`)
   in ediff instead of the one `diff-mode` buffer. `'diff`, the default, is
   what both did before; `'ediff` lays what the files held on the left and what

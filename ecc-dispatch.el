@@ -30,6 +30,7 @@
 (require 'ecc-core)
 (require 'ecc-protocol)
 (require 'ecc-model)
+(require 'ecc-image)
 (require 'ecc-proc)
 (require 'ecc-diff)
 
@@ -384,9 +385,30 @@ than added again."
             (list (cons 'text (alist-get 'text block))
                   (cons 'synthetic synthetic))))
           ("tool_use" (ecc-dispatch--tool-use session block parent))
+          ("image"
+           (ecc-dispatch--finish-block
+            session parent-id 'image id parent
+            (ecc-dispatch--image-data session block 'assistant)))
           (_ (ecc-model-add-node session :id id :type 'unknown :status 'done
                                  :parent parent
                                  :data (list (cons 'block block)))))))))
+
+(defun ecc-dispatch--image-data (session block role)
+  "Return the node data for the image BLOCK of SESSION, said by ROLE.
+The base64 is decoded to a file here and only the path is kept.  The
+model must hold no JSON and no megabytes: a screenshot left in a node
+sits there for the life of the session, and every debugging `%S\=' of
+that node prints it.  Writing it into the scratch directory the session
+already owns is the same act as saving a pasted image, and
+`ecc-image-cleanup-session\=' sweeps both."
+  (let ((entry (ecc-image-materialize session (alist-get 'source block))))
+    (if entry
+        (cons (cons 'role role) entry)
+      ;; Not reachable from here: say so, and still keep the block out.
+      (list (cons 'role role)
+            (cons 'reason (format "image source: %s"
+                                  (or (alist-get 'type (alist-get 'source block))
+                                      "none")))))))
 
 (defun ecc-dispatch--finish-block (session parent-id type id parent data)
   "Complete the streamed node of TYPE under PARENT-ID in SESSION.
@@ -551,6 +573,10 @@ started with."
                                    :data (list (cons 'kind (if (ecc-turn-p parent)
                                                                'note 'prompt))
                                                (cons 'text text)))))))
+          ("image"
+           (ecc-model-add-node session :type 'image :status 'done
+                               :parent parent
+                               :data (ecc-dispatch--image-data session block 'user)))
           (_ (ecc-model-add-node session :type 'unknown :status 'done
                                  :parent parent
                                  :data (list (cons 'block block)))))))))
@@ -620,6 +646,25 @@ system note rather than dropped."
       (ecc-model-node-changed session node)
       node)))
 
+(defun ecc-dispatch--result-content (session content)
+  "Return the tool result CONTENT of SESSION with its images on disk.
+An image block is replaced by one naming the file it was written to.
+The base64 is gone before the model ever holds it: a screenshot in a
+result stays there for the life of the session, and the renderer, which
+has no key of its own for an image block, was serialising the whole
+payload back to JSON and drawing it as a wall of text that the
+twelve-line clip could not even cut -- base64 is one line."
+  (if (not (vectorp content))
+      content
+    (vconcat
+     (mapcar (lambda (block)
+               (if (equal (alist-get 'type block) "image")
+                   (cons '(type . "image")
+                         (ecc-image-materialize session
+                                                (alist-get 'source block)))
+                 block))
+             content))))
+
 (defun ecc-dispatch--tool-result (session block message)
   "Store the tool_result BLOCK of MESSAGE on its tool node in SESSION."
   (let* ((id (alist-get 'tool_use_id block))
@@ -630,7 +675,9 @@ system note rather than dropped."
         (ecc-model-add-aside session :type 'unknown :status 'done
                              :data (list (cons 'block block)
                                          (cons 'reason "no tool_use for this result")))
-      (ecc-model-node-put node 'result (alist-get 'content block))
+      (ecc-model-node-put node 'result
+                          (ecc-dispatch--result-content
+                           session (alist-get 'content block)))
       (ecc-model-node-put node 'is-error error-p)
       (ecc-model-node-put node 'finished (current-time))
       (setf (ecc-node-status node) (if error-p 'error 'done))
@@ -931,6 +978,17 @@ came in."
                                  :parent parent
                                  :status 'running
                                  :data (list (cons 'text ""))))
+            ;; An image block arrives whole: there is no image_delta, so
+            ;; the node is done as soon as it opens.  It is registered as
+            ;; a stream all the same, so that the assistant message that
+            ;; closes the turn finds it rather than adding a second one.
+            ("image"
+             (ecc-model-add-node session
+                                 :type 'image
+                                 :parent parent
+                                 :status 'done
+                                 :data (ecc-dispatch--image-data
+                                        session block 'assistant)))
             (_ nil))))
     (when node
       (ecc-model-open-stream session parent-id index node))

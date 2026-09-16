@@ -43,12 +43,28 @@ which keeps a Write of thousands of lines from freezing Emacs.")
 
 ;;;; Reading a file
 
+(defun ecc-diff-binary-p (path)
+  "Return non-nil when PATH looks binary, or cannot be read.
+This is git\='s own test: a NUL byte in the first 8000."
+  (condition-case nil
+      (with-temp-buffer
+        (set-buffer-multibyte nil)
+        (insert-file-contents-literally path nil 0 8000)
+        (and (search-forward "\0" nil t) t))
+    (error t)))
+
 (defun ecc-diff-file-content (path)
   "Return the content of the file at PATH, or nil.
-Nil is returned for a missing, unreadable or too large file."
+Nil is returned for a missing, unreadable, too large or binary file.
+
+Binary because there is nothing to diff there and a great deal to
+draw: a Write over an existing PNG put the bytes of the old one in the
+transcript, line by line, under the picture it had just drawn
+\(2026-09-16).  Every caller already reads nil as \"not known\"."
   (when (and (stringp path) (file-readable-p path) (not (file-directory-p path)))
     (let ((size (file-attribute-size (file-attributes path))))
-      (when (and size (<= size ecc-diff-max-file-size))
+      (when (and size (<= size ecc-diff-max-file-size)
+                 (not (ecc-diff-binary-p path)))
         (with-temp-buffer
           (insert-file-contents path)
           (buffer-string))))))

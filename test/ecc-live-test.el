@@ -716,8 +716,7 @@ is what keeps the two from drifting apart."
   "An image is passed by path and the model can see it."
   :tags '(live)
   (ecc-test-live-with-session session
-    (let ((file (expand-file-name "red-square.png"
-                                  (expand-file-name "fixtures" ecc-test-directory))))
+    (let ((file (ecc-test-image-file)))
       (should (file-exists-p file))
       ;; This is what pasting an image into the prompt buffer leaves
       ;; behind: a path, never base64 in the conversation.

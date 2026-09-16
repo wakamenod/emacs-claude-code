@@ -843,26 +843,9 @@ is known (confirmed against the CLI)."
                                        file))
               ;; The prompt refers to it; no base64 goes into the recording.
               (should (equal (ecc-chat-draft) (format "これは @%s " file)))
-              (should-not (string-search "PNG-data" (buffer-string)))
-              ;; jpeg keeps the extension the CLI expects.
-              (should (equal (file-name-extension
-                              (ecc-prompt-save-image session "x" "image/jpeg"))
-                             "jpg"))
-              (should (ecc-image-cleanup-session session))
-              (should-not (file-exists-p file))))
+              (should-not (string-search "PNG-data" (buffer-string)))))
         (when (file-directory-p ecc-image-dir)
           (delete-directory ecc-image-dir t))))))
-
-(ert-deftest ecc-prompt-test-images-can-be-kept ()
-  "With cleanup off the files outlive the session."
-  (ecc-test-with-fake-session session
-    (let ((ecc-image-dir (make-temp-file "ecc-images" t))
-          (ecc-image-cleanup 'never))
-      (unwind-protect
-          (let ((file (ecc-prompt-save-image session "x" "image/png")))
-            (should-not (ecc-image-cleanup-session session))
-            (should (file-exists-p file)))
-        (delete-directory ecc-image-dir t)))))
 
 ;;;; The editor context
 

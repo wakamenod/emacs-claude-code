@@ -180,7 +180,8 @@ transcript."
   "One item in the transcript tree."
   id
   type          ; step | text | thinking | tool | agent | system
-                ; | permission | question | plan | result | unknown
+                ; | command | image | permission | question | plan
+                ; | result | unknown
   parent        ; an ecc-node or an ecc-turn
   children
   data          ; alist, the keys depend on TYPE
