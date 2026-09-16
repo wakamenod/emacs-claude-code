@@ -43,6 +43,7 @@
 (declare-function ecc-mcp-published-tools "ecc-mcp" ())
 (declare-function ecc-mcp-tool-name "ecc-mcp" (tool))
 (declare-function ecc-history-file "ecc-history" (session-id))
+(declare-function ecc-space-forget "ecc-space" (root))
 
 (defcustom ecc-worktree-directory ".claude/worktrees"
   "Where `ecc-worktree-create' puts a checkout.
@@ -398,6 +399,14 @@ and the question would be a dead end in front of it."
              (yes-or-no-p (format "Delete the branch %s as well? " branch)))
     (ecc-worktree-delete-branch root branch)))
 
+(defun ecc-worktree--forget-space (root)
+  "Close the Space of the checkout ROOT, which is about to be removed.
+Under `classic\=' there are no Spaces and nothing to close; `ecc-space\='
+is loaded here rather than required, this file being underneath it."
+  (when (eq ecc-layout 'spaces)
+    (require 'ecc-space)
+    (ecc-space-forget root)))
+
 (defun ecc-worktree--removed (main path branch)
   "Say that the checkout PATH is gone, having offered BRANCH with it.
 MAIN is the repository PATH hung off, and BRANCH what it had checked
@@ -452,6 +461,7 @@ before the fact, not tidied up after."
                        (format " (%d open buffer%s will be left pointing at \
 deleted files)"
                                open (if (= 1 open) "" "s")))))
+        (ecc-worktree--forget-space root)
         (ecc-worktree-remove root)
         (ecc-worktree--removed main root branch)
         root))))
@@ -840,8 +850,9 @@ Interactively, the worktrees of the project are offered."
 (defun ecc-remove-worktree (path)
   "Remove the worktree at PATH, stopping the sessions that work in it.
 Interactively, the worktree the command was run in, or one chosen from
-the worktrees of this project.  The checkout goes, and the branch it
-was on is offered afterwards rather than taken with it."
+the worktrees of this project.  The checkout goes, its Space closes
+with it, and the branch it was on is offered afterwards rather than
+taken with it."
   (interactive (list (ecc-worktree-read-linked "Remove worktree: ")))
   (let ((sessions (ecc-window-project-sessions path)))
     (if sessions
@@ -865,6 +876,7 @@ was on is offered afterwards rather than taken with it."
     ;; is gone: a branch cannot be deleted while a worktree holds it.
     (let ((main (ecc-worktree-main path))
           (branch (ecc-worktree-branch path)))
+      (ecc-worktree--forget-space path)
       (ecc-worktree-remove path)
       (ecc-worktree--removed main path branch))))
 

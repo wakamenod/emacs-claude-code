@@ -618,6 +618,37 @@ may read, newest first."
       (should-not (file-directory-p path))
       (should-not (member "feat/x" (ecc-worktree-branches directory))))))
 
+(ert-deftest ecc-worktree-test-remove-worktree-forgets-the-space ()
+  "The Space of the checkout is closed, while the checkout is still there.
+Its key is `ecc-window-project-key\=' of a directory that exists; asked
+after the removal it could answer something else, and the tab would be
+left open on a Space with nowhere to go."
+  (skip-unless (executable-find "git"))
+  (ecc-worktree-test--with-directory directory
+    (ecc-worktree-test--repository directory)
+    (let* ((ecc-worktree-directory ".claude/worktrees")
+           (ecc-layout 'spaces)
+           (ecc--sessions (make-hash-table :test #'equal))
+           (ecc--session-order nil)
+           (ecc-window--project-root-cache (make-hash-table :test #'equal))
+           (path (ecc-worktree-create directory "feat/x"))
+           (forgotten nil))
+      (cl-letf (((symbol-function 'ecc-space-forget)
+                 (lambda (root)
+                   (push (cons root (file-directory-p root)) forgotten))))
+        (ecc-worktree-test--with-answer t
+          (ecc-remove-worktree path))
+        (should (equal forgotten (list (cons path t)))))
+      (should-not (file-directory-p path))
+      ;; Under `classic\=' there is no Space and `ecc-space\=' is not loaded.
+      (let ((ecc-layout 'classic)
+            (path (ecc-worktree-create directory "feat/y")))
+        (cl-letf (((symbol-function 'ecc-space-forget)
+                   (lambda (_root) (error "No Space under classic"))))
+          (ecc-worktree-test--with-answer t
+            (ecc-remove-worktree path)))
+        (should-not (file-directory-p path))))))
+
 (ert-deftest ecc-worktree-test-offer-counts-the-open-buffers ()
   "A buffer visiting the checkout is counted in the question, not killed."
   (skip-unless (executable-find "git"))

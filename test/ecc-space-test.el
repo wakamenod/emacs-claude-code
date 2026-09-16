@@ -251,6 +251,24 @@ sidebar would be changing the layout behind their back."
         ;; The session is untouched: it has no window, that is all.
         (should (ecc-space-sessions one))))))
 
+(ert-deftest ecc-space-test-forget-closes-the-tab-and-the-space ()
+  "A Space that is forgotten takes its tab and its place in the list with it.
+This is what a removed checkout goes through: the sessions are gone
+already, and a tab left behind would keep the Space in the sidebar with
+nothing under it."
+  (ecc-space-test--with-sessions `(("two" . ,ecc-space-test--two))
+    (ecc-space-test--with-tab-bar
+      (let ((one (make-ecc-space :key ecc-space-test--one
+                                 :root ecc-space-test--one
+                                 :name "project-one")))
+        (ecc-space-select one)
+        (should (equal (ecc-space-tab one) "project-one"))
+        (ecc-space-forget ecc-space-test--one)
+        (should-not (ecc-space-tab one))
+        (should-not (assoc ecc-space-test--one ecc-space--used))
+        (should-not (tab-bar--tab-index-by-name "project-one"))
+        (should (equal (ecc-space-test--roots) (list ecc-space-test--two)))))))
+
 (ert-deftest ecc-space-test-a-tab-with-no-session-keeps-its-place ()
   "A Space whose sessions have gone is still listed, after the busy ones."
   (ecc-space-test--with-sessions `(("two" . ,ecc-space-test--two))

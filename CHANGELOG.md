@@ -266,6 +266,12 @@ Verified against **Claude Code CLI 2.1.270**.
   stop several sessions in a row. Buffers still visiting the checkout are
   counted in the question rather than closed.
 
+  A checkout that goes takes its Space with it: the tab is closed and the key
+  forgotten, under `spaces`, before the directory is removed -- read
+  afterwards, the project key of a directory that is no longer there need not
+  be the one its sessions grouped under. Without this the Space stayed in the
+  sidebar and in `1`-`9`, a row with nothing under it pointing at nowhere.
+
   A branch that is checked out somewhere already is gone to rather than
   refused: one branch lives in one worktree at a time, so asking for it can
   only mean the checkout that has it. The branch is what is looked up, not the

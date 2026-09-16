@@ -709,6 +709,25 @@ what undoes one."
       (tab-bar-close-tab-by-name name))
     (message "Closed %s" (ecc-space-name space))))
 
+(defun ecc-space-forget (root)
+  "Close the tab of the Space at ROOT and forget it.
+For a checkout that is about to be removed: once the directory is gone
+the Space is nowhere to go back to, and a tab left behind keeps it in
+`ecc-space-list\=' and in the sidebar with nothing underneath it.  Call
+this while ROOT is still there, so the key it groups under is the one
+its sessions used.
+
+The sessions are not touched: whoever removes a checkout stops them
+first.  A sole tab is forgotten rather than closed, Emacs refusing to
+delete the last one."
+  (let* ((key (ecc-window-project-key root))
+         (name (alist-get key ecc-space--tabs nil nil #'equal)))
+    (when (and (ecc-space--tab-index name)
+               (cdr (tab-bar-tabs)))
+      (tab-bar-close-tab-by-name name))
+    (setf (alist-get key ecc-space--tabs nil 'remove #'equal) nil)
+    (setf (alist-get key ecc-space--used nil 'remove #'equal) nil)))
+
 (provide 'ecc-space)
 
 ;;; ecc-space.el ends here
