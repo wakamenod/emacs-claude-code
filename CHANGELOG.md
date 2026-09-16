@@ -284,9 +284,11 @@ Verified against **Claude Code CLI 2.1.270**.
   sentence naming the tool, through `ecc-request-refuse-functions`: a
   can_use_tool request whose answer is settled without a person is answered
   before anybody is asked, and the transcript keeps the note. Nothing is refused
-  in a session that has not got the tool. Because an `auto` permission mode may
-  allow a tool without asking Emacs at all, a draft that says worktree, in
-  English or Japanese, is sent with one line reminding the model of the tool --
+  in a session that has not got the tool. In an `auto` permission mode the CLI
+  asks Emacs nothing -- it runs `git worktree add` and no can_use_tool arrives
+  (measured against CLI 2.1.272, 2026-09-16) -- so a draft that says worktree,
+  in English or Japanese, is sent with one line reminding the model of the tool,
+  which in that mode is the whole backstop --
   `ecc-prompt-prepare-functions`, which is where a module adds a word of its own
   to a draft.
 

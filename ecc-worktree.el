@@ -695,10 +695,11 @@ Nothing is refused unless SESSION actually has the tool
 \(`ecc-worktree-tool-published-p\='): a refusal pointing at a tool that is
 not there would be plain obstruction.
 
-An `auto\=' permission mode may allow a tool without asking Emacs at all,
-in which case this is never consulted and the prompt hint is the only
-thing left; what the CLI does there is recorded in
-`ecc-worktree-prompt-hint\=' (checked 2026-09-16)."
+In an `auto\=' permission mode this is never reached: the CLI runs
+`git worktree add\=' and sends no can_use_tool at all -- measured against
+2.1.272 with a session in that mode, which made the worktree while
+Emacs saw no request whatever (2026-09-16).  There
+`ecc-worktree-prompt-hint\=' is the only thing left."
   (when (ecc-worktree-tool-published-p session)
     (let ((tool (ecc-request-tool-name request)))
       (cond
@@ -729,10 +730,11 @@ On `ecc-prompt-prepare-functions\=', so it costs the line only on the
 prompts that mention one -- and nothing at all in a session that has no
 `start_worktree_session\=' to be reminded of.
 
-The permission mode decides whether this is the only thing standing
-between the request and `git worktree add\=': `ecc-worktree-refuse-request\='
-answers the ones the CLI asks Emacs about, and an `auto\=' mode need not
-ask (checked 2026-09-16)."
+In an `auto\=' permission mode this is the only thing standing between
+the request and `git worktree add\=': the CLI runs it there without
+asking Emacs, so `ecc-worktree-refuse-request\=' never sees it (2.1.272,
+measured 2026-09-16).  That is the mode most of this package\='s own
+sessions run in, which is why the line is worth its tokens."
   (if (and (stringp text)
            (string-match-p ecc-worktree--prompt-regexp text)
            (ecc-worktree-tool-published-p session))
