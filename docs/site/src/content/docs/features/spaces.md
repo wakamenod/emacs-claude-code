@@ -28,20 +28,20 @@ A Space whose tab has to be made comes up with its sessions already on the scree
 `ecc-space-goto` also reaches a project you have only recordings of — one worked in before, with nothing running and no tab. Those projects are deliberately not in the sidebar and are not numbered: putting them there would move the numbers the `1`-`9` keys take under your feet.
 
 ```
-┌ *ecc-sidebar* ─┬ tab bar: [ecc] [herdr] [feat-x] ────────────────────┐
-│ Spaces         │ ┌ source ─────────┬ session-A ────┬ session-B ────┐ │
-│  1 ecc       ⚠ │ │                 │ (tab line)    │ (tab line)    │ │
-│    main ↑2 ↓0  │ │                 │               │               │ │
-│  2   feat-x  ▶ │ │                 │               │               │ │
-│  3 herdr     · │ └─────────────────┴───────────────┴───────────────┘ │
-│    master      │                                                     │
-│    new         │   one Space = one tab = one window arrangement      │
-│                │                                                     │
-│ Agents         │                                                     │
-│ ⚠ ecc   waiting│                                                     │
-│ ▶ ecc-2 running│                                                     │
-│ · herdr    idle│                                                     │
-└────────────────┴─────────────────────────────────────────────────────┘
+┌ *ecc-sidebar* ─────┬ tab bar: [ecc] [herdr] [feat-x] ────────────────────┐
+│ Spaces             │ ┌ source ─────────┬ session-A ────┬ session-B ────┐ │
+│ ⚠ [1] ecc        ▾ │ │                 │ (tab line)    │ (tab line)    │ │
+│    main ↑2 ↓0      │ │                 │               │               │ │
+│   └─ ▶ [2] feat-x  │ │                 │               │               │ │
+│ · [3] herdr        │ └─────────────────┴───────────────┴───────────────┘ │
+│    master          │                                                     │
+│       new          │   one Space = one tab = one window arrangement      │
+│                    │                                                     │
+│ Agents             │                                                     │
+│ ⚠ ecc   waiting    │                                                     │
+│ ▶ ecc-2 running    │                                                     │
+│ · herdr    idle    │                                                     │
+└────────────────────┴─────────────────────────────────────────────────────┘
 ```
 
 The tab line inside each session window is unchanged: it switches between the sessions of that project.
@@ -77,12 +77,12 @@ The sidebar window is `no-other-window`, so `C-x o` never lands in it while you 
 
 ```
 Spaces
- 1 ecc                  ⚠
+⚠ [1] ecc                 ▾
    main ↑2 ↓0
- 2   feat-x             ▶
- 3 herdr                ·
+  └─ ▶ [2] feat-x
+· [3] herdr
    master
-   new
+      new
 
 Agents
 ⚠ ecc            waiting ×2
@@ -90,7 +90,9 @@ Agents
 · herdr                 idle
 ```
 
-The top half lists the Spaces: a number, the name, and a mark for what the Space is doing — the loudest of its sessions wins. Under a repository comes what git says: the branch, and how far it is from its upstream. A worktree is indented under the repository it came from and is named by its branch, which is what tells two checkouts of one repository apart.
+The top half lists the Spaces: a mark for what the Space is doing — the loudest of its sessions wins — then the number the `1`-`9` keys take, then the name. Under a repository comes what git says: the branch, and how far it is from its upstream. A worktree hangs on a tree line under the repository it came from and is named by its branch, which is what tells two checkouts of one repository apart.
+
+A repository with worktrees carries `▾` at the right end of its row, `▸` once they are folded away; `TAB` or a click on the arrow turns it. A folded repository answers for its worktrees as well, so a mark still says that one of them is waiting for an answer.
 
 The bottom half lists the sessions, each with its mark, its name and what it is waiting for. The marks, the colours and the blink are the tab line's, so a session says the same thing wherever it is drawn.
 

@@ -321,6 +321,17 @@ Verified against **Claude Code CLI 2.1.270**.
 
 ### Changed
 
+- The Spaces half of the sidebar is laid out the way herdr lays its own out.
+  The mark that says what a Space is doing opens the row, the number the
+  `1`-`9` keys take follows it in brackets, and a worktree hangs on a tree
+  line (`├─`, `└─` on the last one) under the repository it came from rather
+  than sitting two spaces in.  A repository with worktrees carries `▾` at the
+  right end of its row and `▸` once they are folded away; `TAB` still turns
+  it, and so does a click on the arrow.  A folded repository now answers for
+  its worktrees as well -- its mark is the loudest of the whole group, which
+  is the only thing left to say that one of the folded rows is waiting for an
+  answer (herdr's `displayed_workspace_status`).
+
 - `C-c C-c` in a review sends the comments instead of opening a buffer to
   confirm them in.  The comments are the prompt -- each one carries the hunk it
   sits on and the sentence written about it -- so what stood in between was a

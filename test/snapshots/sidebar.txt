@@ -1,10 +1,10 @@
 Spaces
- 1 project-two            ▶
+▶ [1] project-two
    master
- 2 project-one            ⚠
+⚠ [2] project-one         ▾
    main ↑2 ↓0
- 3   feat-x               ·
-   new
+  └─ · [3] feat-x
+      new
 
 Agents
 ▶ two               running

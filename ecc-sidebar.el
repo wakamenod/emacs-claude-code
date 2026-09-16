@@ -57,8 +57,8 @@
 (defvar ecc-sidebar-width 28
   "Width of the sidebar window, in columns.
 herdr draws its own at 26; two more here because a Space carries a
-number in front of the name and Emacs has no room to spare on the
-right.")
+bracketed number in front of the name and Emacs has no room to spare
+on the right.")
 
 (defvar ecc-sidebar-agents-sort 'spaces
   "How the sessions at the bottom of the sidebar are ordered.
@@ -114,8 +114,10 @@ DETAIL marks a second line, which `n' and `p' pass over."
 
 (defun ecc-sidebar--fill (left right)
   "Return LEFT and RIGHT with the room between them, LEFT cut if it must be.
-RIGHT is put against the right edge of the sidebar, which is what lines
-the marks up down the screen."
+RIGHT is put against the right edge of the sidebar: what a session is
+waiting for in the Agents list, and whether a repository is folded in
+the Spaces one.  An empty RIGHT leaves the row where it ends rather
+than trailing the spaces that would have led to it."
   (let* ((width (max 12 (1- ecc-sidebar-width)))
          (room (max 1 (- width (string-width right))))
          ;; Not `ecc--fit': it flattens a run of spaces to one, which is
@@ -123,14 +125,17 @@ the marks up down the screen."
          (left (if (< (string-width left) room)
                    left
                  (truncate-string-to-width left (1- room) nil nil "…"))))
-    (concat left
-            (make-string (max 1 (- room (string-width left))) ?\s)
-            right)))
+    (if (string-empty-p right)
+        left
+      (concat left
+              (make-string (max 1 (- room (string-width left))) ?\s)
+              right))))
 
 (defun ecc-sidebar--mark (state)
   "Return the mark that stands for STATE in the sidebar.
 Idle takes a mark of its own -- the tab line leaves it blank -- because
-a column of marks reads as a column only when every row is in it."
+the mark opens the row here, and a blank one would put the name of an
+idle Space a column to the left of every other name."
   (pcase state
     ('nil " ")
     ('idle "·")
@@ -138,20 +143,79 @@ a column of marks reads as a column only when every row is in it."
 
 ;;;; The Spaces
 
-(defun ecc-sidebar--space-row (space spaces)
-  "Insert the row of SPACE, one of SPACES, and its detail line."
+(defvar ecc-sidebar--toggle-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "<mouse-1>") #'ecc-sidebar-mouse-toggle-children)
+    map)
+  "Keymap of the fold arrow at the right end of a repository's row.")
+
+(defun ecc-sidebar--children (key spaces)
+  "Return the Spaces among SPACES whose parent is the Space KEY."
+  (seq-filter (lambda (space) (equal (ecc-space-parent space) key)) spaces))
+
+(defun ecc-sidebar--connector (space spaces)
+  "Return the tree line drawn in front of SPACE, one of the drawn SPACES.
+Empty for a repository; for a worktree, the line that ties it to the
+row above, closed off on the last one.  SPACES is what is on the
+screen rather than every Space there is: a fold can leave one worktree
+of three drawn, and it is the last of what is drawn that closes the
+line."
+  (if (not (ecc-space-child-p space spaces))
+      ""
+    (let ((last (car (last (ecc-sidebar--children
+                            (ecc-space-parent space) spaces)))))
+      (if (ecc-space-equal space last) "  └─ " "  ├─ "))))
+
+(defun ecc-sidebar--number-width (spaces)
+  "Return the room the bracketed number takes for any of SPACES.
+The widest wins, so that the names line up once the tenth Space opens."
+  (length (format "[%d]" (max 1 (length spaces)))))
+
+(defun ecc-sidebar--space-state (space spaces)
+  "Return the state SPACE is drawn with, among every Space in SPACES.
+A folded repository answers for its worktrees as well: with the rows
+away, its mark is the only thing left to say that one of them is
+waiting.  herdr does the same (`displayed_workspace_status')."
+  (let ((children (and (member (ecc-space-key space) ecc-sidebar--collapsed)
+                       (ecc-sidebar--children (ecc-space-key space) spaces))))
+    (if (null children)
+        (ecc-space-state space)
+      (ecc-tab-state-roll-up
+       (seq-mapcat #'ecc-space-sessions (cons space children))))))
+
+(defun ecc-sidebar--toggle-mark (space spaces)
+  "Return the fold arrow of SPACE, or an empty string when it has no worktree.
+SPACES is every Space there is: a repository whose worktrees are all
+folded away still has them."
+  (if (null (ecc-sidebar--children (ecc-space-key space) spaces))
+      ""
+    (if (member (ecc-space-key space) ecc-sidebar--collapsed) "▸" "▾")))
+
+(defun ecc-sidebar--space-row (space spaces visible)
+  "Insert the row of SPACE and its detail line.
+SPACES is every Space there is, which is what numbers the row; VISIBLE
+is what the sidebar draws, which is what the tree lines follow."
   (let* ((current (ecc-space-equal space (ecc-space-current)))
-         (child (ecc-space-child-p space spaces))
-         (state (ecc-space-state space))
-         (left (format "%2s %s%s"
-                       (or (ecc-space-number space spaces) "")
-                       (if child "  " "")
+         (child (ecc-space-child-p space visible))
+         (state (ecc-sidebar--space-state space spaces))
+         (number (ecc-space-number space spaces))
+         (left (concat (ecc-sidebar--connector space visible)
+                       (ecc-sidebar--mark state)
+                       " "
+                       (string-pad (if number (format "[%d]" number) "")
+                                   (ecc-sidebar--number-width spaces))
+                       " "
                        (ecc-space-name space)))
-         (faces (ecc-tab-faces-of-state state current)))
-    (ecc-sidebar--insert
-     (propertize (ecc-sidebar--fill left (ecc-sidebar--mark state))
-                 'face faces)
-     space)
+         (toggle (ecc-sidebar--toggle-mark space spaces))
+         (faces (ecc-tab-faces-of-state state current))
+         (row (propertize (ecc-sidebar--fill left toggle) 'face faces)))
+    (unless (string-empty-p toggle)
+      (add-text-properties (- (length row) (length toggle)) (length row)
+                           (list 'keymap ecc-sidebar--toggle-map
+                                 'mouse-face 'highlight
+                                 'help-echo "mouse-1: fold or unfold")
+                           row))
+    (ecc-sidebar--insert row space)
     ;; What git says goes under the parent alone: a worktree is already
     ;; named by its branch, and herdr leaves its git details out for the
     ;; same reason (`suppress_git_details').
@@ -194,10 +258,18 @@ is what herdr does as well."
 (defun ecc-sidebar--draw-spaces ()
   "Draw the Spaces section."
   (ecc-sidebar--heading "Spaces")
-  (let ((spaces (ecc-space-list)))
-    (dolist (space (ecc-sidebar--visible-spaces))
-      (ecc-sidebar--space-row space spaces)))
-  (ecc-sidebar--insert (propertize "   new" 'face 'ecc-dim-face) 'new))
+  (let ((spaces (ecc-space-list))
+        (visible (ecc-sidebar--visible-spaces)))
+    (dolist (space visible)
+      (ecc-sidebar--space-row space spaces visible))
+    ;; Under the names, not under the marks: the row is another Space to
+    ;; open, and it reads as one only in the column the names are in.
+    (ecc-sidebar--insert
+     (propertize (concat (make-string
+                          (+ 3 (ecc-sidebar--number-width spaces)) ?\s)
+                         "new")
+                 'face 'ecc-dim-face)
+     'new)))
 
 ;;;; The sessions
 
@@ -446,6 +518,14 @@ tab shows up."
         (setq ecc-sidebar--collapsed (delete key ecc-sidebar--collapsed))
       (push key ecc-sidebar--collapsed))
     (ecc-sidebar-redraw)))
+
+(defun ecc-sidebar-mouse-toggle-children (event)
+  "Fold or unfold the worktrees of the row EVENT was clicked on.
+The arrow is bound rather than the row, so a click anywhere else on a
+repository still goes there."
+  (interactive "e")
+  (mouse-set-point event)
+  (ecc-sidebar-toggle-children))
 
 (defun ecc-sidebar-start-session ()
   "Start a session in the Space of the row at point."

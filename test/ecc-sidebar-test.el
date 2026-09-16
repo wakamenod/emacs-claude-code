@@ -24,6 +24,7 @@
 (defconst ecc-sidebar-test--one "/tmp/project-one/")
 (defconst ecc-sidebar-test--two "/tmp/project-two/")
 (defconst ecc-sidebar-test--work "/tmp/project-one/.claude/worktrees/feat-x/")
+(defconst ecc-sidebar-test--work-2 "/tmp/project-one/.claude/worktrees/feat-y/")
 
 (defmacro ecc-sidebar-test--with-sidebar (spec &rest body)
   "Run BODY in the drawn sidebar, with a session in each root of SPEC.
@@ -56,12 +57,15 @@ when BODY runs, and everything is put back afterwards."
                     (lambda (_session object) object))
                    ((symbol-function 'ecc-worktree-main)
                     (lambda (root)
-                      (and (equal root ecc-sidebar-test--work)
+                      (and (member root (list ecc-sidebar-test--work
+                                              ecc-sidebar-test--work-2))
                            ecc-sidebar-test--one)))
                    ((symbol-function 'ecc-worktree-branch)
                     (lambda (root)
                       (cond ((equal root ecc-sidebar-test--work)
                              "worktree/feat-x")
+                            ((equal root ecc-sidebar-test--work-2)
+                             "worktree/feat-y")
                             ((equal root ecc-sidebar-test--one) "main")
                             (t "master"))))
                    ((symbol-function 'ecc-worktree-ahead-behind)
@@ -110,8 +114,8 @@ when BODY runs, and everything is put back afterwards."
     (let ((text (ecc-sidebar-test--text)))
       ;; The parent says what branch it is on and how far from upstream.
       (should (string-match-p "^   main ↑2 ↓0$" text))
-      ;; The child is named by its branch, indented, and says no more.
-      (should (string-match-p "^ 2   feat-x" text))
+      ;; The child is named by its branch, on a tree line, and says no more.
+      (should (string-match-p "^  └─ . \\[2\\] feat-x" text))
       (should-not (string-match-p "worktree/feat-x" text)))))
 
 (ert-deftest ecc-sidebar-test-a-lone-worktree-says-its-branch-once ()
@@ -120,7 +124,7 @@ It is named after its branch already; repeating the branch under it
 says nothing the second time."
   (ecc-sidebar-test--with-sidebar `(("feat" . ,ecc-sidebar-test--work))
     (let ((text (ecc-sidebar-test--text)))
-      (should (string-match-p "^ 1 feat-x" text))
+      (should (string-match-p "^. \\[1\\] feat-x" text))
       ;; Once, on the row itself, and no dim line under it.
       (should (= 1 (cl-count "feat-x" (split-string text "\n")
                              :test (lambda (needle line)
@@ -132,16 +136,16 @@ says nothing the second time."
   (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
                                     ("one-b" . ,ecc-sidebar-test--one)
                                     ("two" . ,ecc-sidebar-test--two))
-    (should (string-match-p "project-one +·$" (ecc-sidebar-test--text)))
+    (should (string-match-p "^· \\[.\\] project-one$" (ecc-sidebar-test--text)))
     (ecc-model-set-state (nth 1 sessions) 'running)
     (ecc-sidebar-redraw)
-    (should (string-match-p "project-one +▶$" (ecc-sidebar-test--text)))
+    (should (string-match-p "^▶ \\[.\\] project-one$" (ecc-sidebar-test--text)))
     ;; Waiting for an answer wins over working.
     (ecc-test-add-request (car sessions) "Write")
     (ecc-sidebar-redraw)
-    (should (string-match-p "project-one +⚠$" (ecc-sidebar-test--text)))
+    (should (string-match-p "^⚠ \\[.\\] project-one$" (ecc-sidebar-test--text)))
     ;; And the other project is untouched by any of it.
-    (should (string-match-p "project-two +·$" (ecc-sidebar-test--text)))))
+    (should (string-match-p "^· \\[.\\] project-two$" (ecc-sidebar-test--text)))))
 
 (ert-deftest ecc-sidebar-test-waiting-is-counted ()
   "A session waiting on more than one request says how many."
@@ -158,14 +162,15 @@ says nothing the second time."
   "Starting and stopping a session is drawn without anybody asking."
   (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
                                     ("two" . ,ecc-sidebar-test--two))
-    (should (string-match-p "^ 2 project-one" (ecc-sidebar-test--text)))
+    (should (string-match-p "\\[2\\] project-one" (ecc-sidebar-test--text)))
     (let ((third (ecc-model-create-session :name "three"
                                            :project-root "/tmp/project-three/")))
       (unwind-protect
           (progn
             ;; The hook the model runs is what draws it, not the test.
             (ecc-model-set-state third 'idle)
-            (should (string-match-p "^ 1 project-three" (ecc-sidebar-test--text)))
+            (should (string-match-p "\\[1\\] project-three"
+                                    (ecc-sidebar-test--text)))
             (should (string-match-p "three" (ecc-sidebar-test--text))))
         (ecc-model-remove-session third)
         (ecc-test-cleanup-session third)))
@@ -186,7 +191,30 @@ says nothing the second time."
     (should (equal (mapcar #'ecc-session-name (ecc-sidebar--agents))
                    '("two" "one" "three")))))
 
+;;;; The tree
+
+(ert-deftest ecc-sidebar-test-worktrees-hang-on-a-tree-line ()
+  "Every worktree is tied to its repository, and the last one closes the line."
+  (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
+                                    ("feat-x" . ,ecc-sidebar-test--work)
+                                    ("feat-y" . ,ecc-sidebar-test--work-2))
+    (let ((rows (seq-filter (lambda (line) (string-match-p "feat-" line))
+                            (split-string (ecc-sidebar-test--text) "
+"))))
+      ;; The two rows of the Spaces list, and the two of the Agents one.
+      (should (= 4 (length rows)))
+      (should (string-prefix-p "  ├─ " (nth 0 rows)))
+      (should (string-prefix-p "  └─ " (nth 1 rows))))))
+
+(ert-deftest ecc-sidebar-test-a-lone-worktree-closes-the-line-on-its-own ()
+  "One worktree under a repository is the last one as well."
+  (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
+                                    ("feat" . ,ecc-sidebar-test--work))
+    (should (string-match-p "^  └─ " (ecc-sidebar-test--text)))
+    (should-not (string-match-p "├" (ecc-sidebar-test--text)))))
+
 ;;;; Folding
+
 
 (ert-deftest ecc-sidebar-test-tab-folds-the-worktrees-away ()
   "TAB on a repository hides its worktrees, and shows them again."
@@ -208,6 +236,35 @@ says nothing the second time."
       (setq ecc-sidebar--collapsed (list ecc-sidebar-test--one))
       (ecc-sidebar-redraw)
       (should (string-match-p "feat-x" (ecc-sidebar-test--text))))))
+
+(ert-deftest ecc-sidebar-test-only-a-repository-with-worktrees-has-an-arrow ()
+  "The arrow says a row can be folded, and which way it stands."
+  (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
+                                    ("feat" . ,ecc-sidebar-test--work)
+                                    ("two" . ,ecc-sidebar-test--two))
+    (should (string-match-p "project-one +▾$" (ecc-sidebar-test--text)))
+    ;; Nothing under the other project, and nothing under a worktree.
+    (should-not (string-match-p "project-two.*▾" (ecc-sidebar-test--text)))
+    (should-not (string-match-p "feat-x.*▾" (ecc-sidebar-test--text)))
+    (ecc-sidebar-test--goto "project-one")
+    (ecc-sidebar-toggle-children)
+    (should (string-match-p "project-one +▸$" (ecc-sidebar-test--text)))))
+
+(ert-deftest ecc-sidebar-test-a-folded-repository-answers-for-its-worktrees ()
+  "With the rows away, the mark of the repository says a worktree is waiting."
+  (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
+                                    ("feat" . ,ecc-sidebar-test--work))
+    (ecc-test-add-request (nth 1 sessions) "Write")
+    (ecc-sidebar-redraw)
+    ;; Unfolded, the repository says what it is doing and no more.
+    (should (string-match-p "^· \\[.\\] project-one" (ecc-sidebar-test--text)))
+    (ecc-sidebar-test--goto "project-one")
+    (ecc-sidebar-toggle-children)
+    (should-not (string-match-p "feat-x" (ecc-sidebar-test--text)))
+    (should (string-match-p "^⚠ \\[.\\] project-one" (ecc-sidebar-test--text)))
+    ;; And it is the repository's own mark again once it is unfolded.
+    (ecc-sidebar-toggle-children)
+    (should (string-match-p "^· \\[.\\] project-one" (ecc-sidebar-test--text)))))
 
 ;;;; The keys
 
