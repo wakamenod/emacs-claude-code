@@ -504,6 +504,68 @@ than opened a second time."
            buffer (or (ecc-window--source-window) (selected-window))
            ecc-window-width)))))
 
+(defun ecc-space--popup-window ()
+  "Return the widest window of this tab a buffer of ours may be put in, or nil.
+The same windows `ecc-space--source-window\=' will have -- no side
+window, nothing of this package in it -- but the widest of them rather
+than the first: what goes here is read, and in a Space the source
+window is the one wide enough to read a plan in."
+  (car (sort (seq-filter
+              (lambda (window)
+                (and (not (window-parameter window 'window-side))
+                     (not (ecc-window-own-buffer-p (window-buffer window)))))
+              (window-list nil 'no-minibuffer))
+             (lambda (a b) (> (window-total-width a) (window-total-width b))))))
+
+(defun ecc-space--display-in (buffer window)
+  "Show BUFFER in WINDOW and return it, so that quitting puts back what was there.
+`set-window-buffer\=' on its own tells the window nothing about where it
+came from, and `quit-window\=' then has nothing to go back to.  The
+`quit-restore\=' is written first, which also replaces whatever an older
+`display-buffer\=' left there: Emacs 32 resizes a window back to the
+width recorded with it, and a record from a wider arrangement made the
+window jump (Emacs 32.0.50, 2026-09-16)."
+  (display-buffer-record-window 'reuse window buffer)
+  (set-window-buffer window buffer)
+  window)
+
+(defun ecc-space-display-beside-session (buffer session)
+  "Show BUFFER next to SESSION in its Space and return the window.
+A question, a plan, a log or an agent transcript comes out of one
+conversation and belongs beside it.  Left to `display-buffer\=', it did
+not land there: the session windows of a Space are narrower than
+`split-width-threshold\=', so nothing could be divided and
+`display-buffer-use-some-window\=' took whichever window had been used
+longest ago -- the transcript of another session, which then vanished,
+or a leftover window that fell back to `*scratch*\=' when the buffer was
+closed (reported 2026-09-16).
+
+The Space is gone to first and the session put on the screen, so that
+the two are always seen together.  Then the widest window that holds no
+session takes the buffer -- the source, which is the one window in a
+Space wide enough to read a plan in, and which comes back as it was
+when the buffer is quit.  Only where there is no such window is a
+session window divided: to the right when it has the room for two
+columns, below it when it has not, and never so that a transcript is
+lost."
+  (require 'ecc-session)
+  (let ((session-window (ecc-space-display-session session)))
+    (or (get-buffer-window buffer)
+        (when-let* ((source (ecc-space--popup-window)))
+          (ecc-space--display-in buffer source))
+        (when (window-live-p session-window)
+          (if (>= (window-total-width session-window)
+                  (* 2 (max ecc-space-session-min-width window-min-width)))
+              (ecc-space--display-beside
+               buffer session-window
+               (/ (window-total-width session-window) 2))
+            (display-buffer-in-direction
+             buffer `((direction . below)
+                      (window . ,session-window)
+                      (window-height . ,(/ (window-total-height session-window)
+                                           2))))))
+        (display-buffer buffer))))
+
 ;;;; Commands
 
 ;;;###autoload

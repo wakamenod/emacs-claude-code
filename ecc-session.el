@@ -25,6 +25,7 @@
 (require 'ecc-chat)
 (require 'ecc-markdown)
 (require 'ecc-diff)
+(require 'ecc-window)
 
 (declare-function ecc-resume "ecc" (session &optional fork))
 (declare-function ecc-perm-deny "ecc-perm" (&optional reason))
@@ -106,7 +107,9 @@ not its buffer, so killing it does nothing."
 (defun ecc-session-show-log ()
   "Show the raw protocol log of this session."
   (interactive)
-  (pop-to-buffer (ecc--log-buffer (ecc-session-name (ecc-session-at-point)))))
+  (let ((session (ecc-session-at-point)))
+    (ecc-window-display-beside-session
+     (ecc--log-buffer (ecc-session-name session)) session)))
 
 (defun ecc-session-visit ()
   "Open the thing at point: a URL, a file, an agent transcript or a buffer.
@@ -139,10 +142,10 @@ already opens things with."
      ((eq (ecc-node-type node) 'agent) (ecc-session-show-agent session node))
      ((and pending (eq (ecc-node-type node) 'question))
       (require 'ecc-perm)
-      (pop-to-buffer (ecc-question-open request)))
+      (ecc-window-display-beside-session (ecc-question-open request) session))
      ((and pending (eq (ecc-node-type node) 'plan))
       (require 'ecc-plan)
-      (pop-to-buffer (ecc-plan-open request)))
+      (ecc-window-display-beside-session (ecc-plan-open request) session))
      ((eq (ecc-node-type node) 'plan)
       ;; A plan that was answered already: show the file the CLI wrote it
       ;; to, when it named one and it is still there.
@@ -205,7 +208,7 @@ The d key of the transcript does both."
                          (format "%S" (ecc-node-data node))))))
         (goto-char (point-min)))
       (special-mode))
-    (pop-to-buffer buffer)))
+    (ecc-window-display-beside-session buffer session)))
 
 (defun ecc-session--insert-call (name input before)
   "Insert the whole INPUT of a call to NAME, as a diff when it has one.
@@ -240,7 +243,7 @@ BEFORE is the file as it was before the call, when known."
                                          (concat "\n" prompt "\n")
                                        ""))
                              (ecc-node-children node)))
-    (pop-to-buffer buffer)))
+    (ecc-window-display-beside-session buffer session)))
 
 ;;;; Timeline
 

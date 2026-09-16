@@ -33,6 +33,7 @@
 (declare-function ecc-space-of-root "ecc-space" (root))
 (declare-function ecc-space-select "ecc-space" (space))
 (declare-function ecc-space-display-session "ecc-space" (session))
+(declare-function ecc-space-display-beside-session "ecc-space" (buffer session))
 (declare-function ecc-space-current-key "ecc-space" ())
 
 (defvar ecc-window-use-side-window t
@@ -151,19 +152,6 @@ meant as the buffer in front of them."
        (ecc-window--space-root)
        (ecc-window-buffer-directory ecc-window--last-source-buffer)
        default-directory)))
-
-(defun ecc-window-visit-session-space (session)
-  "Bring the Space of SESSION to the screen, and return its tab name.
-Nil under `classic', which has no Spaces to go to.
-
-Whatever opens a buffer of its own for a request -- a question, a plan
--- calls this before showing it, so that the buffer opens where the
-session lives.  Without it the question of a session in another Space
-was popped into whichever Space the user happened to be in, leaving
-the session itself behind (reported 2026-09-15)."
-  (when (eq ecc-layout 'spaces)
-    (require 'ecc-space)
-    (ecc-space-select (ecc-space-of-root (ecc-window-session-project session)))))
 
 (defun ecc-window--space-root ()
   "Return the root of the Space of the current tab, or nil.
@@ -470,6 +458,29 @@ The window is not selected; `ecc-window-select-session' does that."
          (display-buffer (ecc-session-ensure-buffer session))
        (ecc-display-session-in-role session (ecc-window-role-for session))))))
 
+(defun ecc-window-display-beside-session (buffer session &optional no-select)
+  "Show BUFFER beside the window of SESSION and return the window.
+Everything that opens a buffer of its own out of one conversation goes
+through here: a question, a plan, a log, an agent transcript, a node
+laid open.  Under `spaces\=' the Space decides where it lands
+\(`ecc-space-display-beside-session\='), and it never takes the window of
+another session; under `classic\=' it is `pop-to-buffer\=', which is what
+it always was.
+
+The window is selected unless NO-SELECT says otherwise: the buffer is
+opened to be read or answered."
+  (let ((window (pcase ecc-layout
+                  ('spaces
+                   (require 'ecc-space)
+                   (ecc-space-display-beside-session buffer session))
+                  (_ (if no-select
+                         (display-buffer buffer)
+                       (pop-to-buffer buffer)
+                       (get-buffer-window buffer))))))
+    (when (and (not no-select) (window-live-p window))
+      (select-window window))
+    window))
+
 ;;;; Keeping a side window a side window
 
 (defun ecc-window-repair-side-windows (&optional frame)
@@ -532,7 +543,9 @@ windows -- still wants."
 `ecc-window-hide-on-review' and `ecc-window-review-focus' decide what
 happens to the session windows and where point lands."
   (ecc-window-hide-for-review session)
-  (let ((window (display-buffer buffer)))
+  (let ((window (if session
+                    (ecc-window-display-beside-session buffer session t)
+                  (display-buffer buffer))))
     (pcase ecc-window-review-focus
       ('review (when (window-live-p window) (select-window window)))
       ('session

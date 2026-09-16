@@ -73,18 +73,18 @@ A request for one of them has to be answered where it can be read.")
 
 (defun ecc-answer-goto-request (request)
   "Show where REQUEST is answered: its section, question or plan buffer."
-  ;; A question and a plan open a buffer of their own, so the Space of
-  ;; the session has to be gone to first; a permission request is
-  ;; answered in the transcript, and `ecc-display-session' goes there
-  ;; on its own.
+  ;; A question and a plan open a buffer of their own;
+  ;; `ecc-window-display-beside-session' puts it where the session is,
+  ;; Space and all.  A permission request is answered in the transcript,
+  ;; and `ecc-display-session' goes there on its own.
   (pcase (ecc-request-kind request)
     ('question
-     (ecc-window-visit-session-space (ecc-request-session request))
-     (pop-to-buffer (ecc-question-open request)))
+     (ecc-window-display-beside-session (ecc-question-open request)
+                                        (ecc-request-session request)))
     ('plan
      (require 'ecc-plan)
-     (ecc-window-visit-session-space (ecc-request-session request))
-     (pop-to-buffer (ecc-plan-open request)))
+     (ecc-window-display-beside-session (ecc-plan-open request)
+                                        (ecc-request-session request)))
     (_ (let* ((session (ecc-request-session request))
               (window (ecc-display-session session)))
          (when (window-live-p window)
@@ -186,7 +186,8 @@ question buffer opens with the first one answered."
                  (format "Answer %s to" (string-join (aref ecc-question--answers 0) ", "))
                  request)
             (ecc-question-submit))
-        (pop-to-buffer buffer)))
+        (ecc-window-display-beside-session buffer
+                                           (ecc-request-session request))))
     request))
 
 (defun ecc-answer-option-1 () "Answer the oldest question with option 1." (interactive) (ecc-answer-option 1))
