@@ -94,6 +94,13 @@ the recording and its branches. The one rule to carry in: **a second process run
 
 ## How the work goes
 
+- `develop` is where the work gathers; `main` is what people install, and it takes no
+  direct push. A piece of work branches off `develop` and goes back into it through a
+  pull request. `main` sees a release and nothing else.
+- A pull request carries its own entry in the `## [Unreleased]` section of
+  `CHANGELOG.md`. That section is a draft until the release dates it, so a bug that
+  both appeared and was fixed before any release is not an entry under `Fixed` — it is
+  a correction to the entry that introduced it. Nobody outside ever saw it.
 - One piece of work per session, roughly. Report once it is done and `make test` passes,
   and get the user's word before moving on.
 - Commit in meaningful steps rather than one lump at the end. Messages follow Conventional
