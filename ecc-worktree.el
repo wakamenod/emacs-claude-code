@@ -655,6 +655,62 @@ the answer names the session that has the work now."
 
 (with-eval-after-load 'ecc-mcp (ecc-worktree-register-mcp-tool))
 
+(defun ecc-worktree-tool-published-p (session)
+  "Return non-nil when SESSION was given `start_worktree_session\='.
+Both halves have to hold: the Emacs MCP server is registered with this
+session at all (`ecc-mcp-enabled\=', or its :mcp option), and the tool is
+among the ones published (`ecc-mcp-excluded-tools\=' can take it out).
+Nothing here may point the model at a tool it has not got."
+  (and (fboundp 'ecc-mcp-published-tools)
+       (ecc-model-option session :mcp (bound-and-true-p ecc-mcp-enabled))
+       (seq-find (lambda (tool)
+                   (equal (ecc-mcp-tool-name tool) "start_worktree_session"))
+                 (ecc-mcp-published-tools))
+       t))
+
+(defvar ecc-worktree-refusal-text
+  "Emacs handles worktrees here: call start_worktree_session with the \
+branch and a brief that stands on its own, and it makes the checkout, \
+starts a session in it and hands that session the brief.  Making the \
+checkout here instead leaves this one conversation working in two \
+checkouts, which is what the tool exists to avoid."
+  "What the model is told when it tries to make a worktree itself.
+A sentence it can act on: a refusal that only says no is one the model
+works around, and the way around this one is the tool.")
+
+(defconst ecc-worktree--add-regexp
+  "\\bgit\\b[^\n]*\\bworktree\\s-+add\\b"
+  "What a shell command that would add a worktree looks like.
+Not anchored at the start: `cd somewhere && git worktree add ...\=' is
+the same request with a step in front of it.")
+
+(defun ecc-worktree-refuse-request (session request)
+  "Turn a request that would make a worktree toward the tool, or return nil.
+On `ecc-request-refuse-functions\='.  Two ways to the same place are
+refused: the CLI\='s own `EnterWorktree\=', which it carries in a stream-json
+session (2.1.272, confirmed 2026-09-16), and `git worktree add\=' in Bash.
+`ExitWorktree\=' is left alone -- it undoes nothing Emacs made.
+
+Nothing is refused unless SESSION actually has the tool
+\(`ecc-worktree-tool-published-p\='): a refusal pointing at a tool that is
+not there would be plain obstruction.
+
+An `auto\=' permission mode may allow a tool without asking Emacs at all,
+in which case this is never consulted and the prompt hint is the only
+thing left; what the CLI does there is recorded in
+`ecc-worktree-prompt-hint\=' (checked 2026-09-16)."
+  (when (ecc-worktree-tool-published-p session)
+    (let ((tool (ecc-request-tool-name request)))
+      (cond
+       ((equal tool "EnterWorktree") ecc-worktree-refusal-text)
+       ((and (equal tool "Bash")
+             (let ((command (alist-get 'command (ecc-request-input request))))
+               (and (stringp command)
+                    (string-match-p ecc-worktree--add-regexp command))))
+        ecc-worktree-refusal-text)))))
+
+(add-hook 'ecc-request-refuse-functions #'ecc-worktree-refuse-request)
+
 ;;;; Commands
 
 (defun ecc-worktree-context-root ()

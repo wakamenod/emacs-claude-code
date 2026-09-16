@@ -12,6 +12,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'ecc-test-helpers)
+(require 'ecc-dispatch)
 (require 'ecc-worktree)
 ;; Loaded here rather than by the command under test: `ecc-start' is
 ;; replaced with `cl-letf', and a `require' inside the command would put
@@ -395,6 +396,68 @@ has it need not be named the way this package would have named it."
       (setf (ecc-session-project-root session) directory)
       (cl-letf (((symbol-function #'ecc-history-file) (lambda (_id) nil)))
         (should (equal "" (ecc-worktree-handoff-facts session directory)))))))
+
+(defun ecc-worktree-test--request (tool input)
+  "Return a can_use_tool control_request for TOOL with INPUT."
+  `((type . "control_request")
+    (request_id . ,(format "req-%s" (random 100000)))
+    (request . ((subtype . "can_use_tool")
+                (tool_name . ,tool)
+                (display_name . ,tool)
+                (input . ,input)
+                (tool_use_id . "toolu_x")))))
+
+(defun ecc-worktree-test--denials ()
+  "Return the messages of the denies sent so far."
+  (delq nil
+        (mapcar (lambda (message)
+                  (let ((response (alist-get 'response
+                                             (alist-get 'response message))))
+                    (and (equal (alist-get 'behavior response) "deny")
+                         (alist-get 'message response))))
+                (ecc-test-sent-messages))))
+
+(ert-deftest ecc-worktree-test-refuses-the-other-two-ways ()
+  "EnterWorktree and `git worktree add' are turned toward the tool."
+  (require 'ecc-mcp)
+  (ecc-worktree-register-mcp-tool)
+  (ecc-test-with-fake-session session
+    (let ((ecc-mcp-enabled t)
+          (ecc-mcp-excluded-tools nil))
+      (ecc-dispatch session (ecc-worktree-test--request "EnterWorktree"
+                                                        '((branch . "feat/x"))))
+      (ecc-dispatch session (ecc-worktree-test--request
+                             "Bash" '((command . "cd /tmp && git worktree add ../x -b feat/x"))))
+      (should (= 2 (length (ecc-worktree-test--denials))))
+      (should (string-match-p "start_worktree_session"
+                              (car (ecc-worktree-test--denials))))
+      ;; Nobody was asked about either of them.
+      (should-not (ecc-session-pending session))
+      ;; Another git command is none of this hook's business, and
+      ;; `ExitWorktree' undoes nothing Emacs made.
+      (ecc-dispatch session (ecc-worktree-test--request
+                             "Bash" '((command . "git worktree list"))))
+      (ecc-dispatch session (ecc-worktree-test--request "ExitWorktree" nil))
+      (should (= 2 (length (ecc-session-pending session))))
+      (should (= 2 (length (ecc-worktree-test--denials)))))))
+
+(ert-deftest ecc-worktree-test-refuses-nothing-without-the-tool ()
+  "A refusal pointing at a tool the session has not got is obstruction."
+  (require 'ecc-mcp)
+  (ecc-worktree-register-mcp-tool)
+  (ecc-test-with-fake-session session
+    ;; The server is off for this session.
+    (let ((ecc-mcp-enabled nil))
+      (ecc-dispatch session (ecc-worktree-test--request "EnterWorktree" nil))
+      (should-not (ecc-worktree-test--denials))
+      (should (= 1 (length (ecc-session-pending session)))))
+    ;; On, but the tool was taken out of the published list.
+    (let ((ecc-mcp-enabled t)
+          (ecc-mcp-excluded-tools '("start_worktree_session")))
+      (ecc-dispatch session (ecc-worktree-test--request
+                             "Bash" '((command . "git worktree add ../x"))))
+      (should-not (ecc-worktree-test--denials))
+      (should (= 2 (length (ecc-session-pending session)))))))
 
 ;;;; Offering to undo a checkout
 
