@@ -40,6 +40,9 @@
 (declare-function ecc-proc-send-prompt "ecc-proc" (session text))
 (declare-function ecc-mcp-define-tool "ecc-mcp" (&rest arguments))
 (declare-function ecc-mcp-session "ecc-mcp" ())
+(declare-function ecc-mcp-published-tools "ecc-mcp" ())
+(declare-function ecc-mcp-tool-name "ecc-mcp" (tool))
+(declare-function ecc-history-file "ecc-history" (session-id))
 
 (defcustom ecc-worktree-directory ".claude/worktrees"
   "Where `ecc-worktree-create' puts a checkout.
@@ -462,6 +465,87 @@ it, and there is nothing to ask about afterwards."
     (ecc-kill session)
     (ecc-worktree-offer-removal root)))
 
+(defun ecc-worktree--relative (path root)
+  "Return PATH as the new checkout would name it, against ROOT.
+A file under the repository keeps the relative name it had, which is
+the name it has in the checkout as well.  Anything else is named in
+full: a file outside the repository is the same file for both
+sessions."
+  (let ((expanded (expand-file-name path))
+        (root (file-name-as-directory (expand-file-name root))))
+    (if (string-prefix-p root expanded)
+        (file-relative-name expanded root)
+      (abbreviate-file-name expanded))))
+
+(defun ecc-worktree--file-line (entry root)
+  "Return the line the file ENTRY is reported under, relative to ROOT."
+  (let ((counts (delq nil
+                      (list (when (> (ecc-file-entry-edits entry) 0)
+                              (format "%d edits" (ecc-file-entry-edits entry)))
+                            (when (> (ecc-file-entry-writes entry) 0)
+                              (format "%d writes" (ecc-file-entry-writes entry)))
+                            (when (> (ecc-file-entry-reads entry) 0)
+                              (format "%d reads" (ecc-file-entry-reads entry)))))))
+    (format "- %s (%s)"
+            (ecc-worktree--relative (ecc-file-entry-path entry) root)
+            (mapconcat #'identity counts ", "))))
+
+(defun ecc-worktree-handoff-facts (session root)
+  "Return what Emacs knows about the work of SESSION, for a brief.
+ROOT is the repository the work was done in, and the empty string is
+the answer when there is nothing to say -- a session that has touched
+no file and written no plan.
+
+The brief is the model\='s account of the work; this is the part nobody
+has to remember to write.  Emacs has been watching the same
+conversation and knows what it touched, where its plans went and where
+its record is, and every one of those is a name the new session can
+open for itself.
+
+The uncommitted changes are named rather than carried: a checkout is
+made from HEAD, so what has not been committed in the repository is not
+in the worktree, and a brief that leans on an edit that is not there
+sends the new session looking for it."
+  ;; `ecc-history' is above this file -- it reads recordings, and
+  ;; nothing here may pull that in at load time -- so it is asked for
+  ;; only when a brief is actually being written, the way
+  ;; `ecc-worktree-delegate' asks for `ecc'.
+  (require 'ecc-history nil t)
+  (let* ((files (and session (ecc-model-files session)))
+         (plans (and session (ecc-model-plan-files session)))
+         (record (and session (fboundp 'ecc-history-file)
+                      (ecc-history-file (ecc-session-id session))))
+         (dirty (ecc-worktree--output root "status" "--porcelain"))
+         (sections nil))
+    (when files
+      (push (concat "Files the conversation this came from touched, \
+by the name they have here:\n"
+                    (mapconcat (lambda (entry)
+                                 (ecc-worktree--file-line entry root))
+                               files "\n"))
+            sections))
+    (when plans
+      (push (concat "Plans it wrote:\n"
+                    (mapconcat (lambda (path) (format "- %s" path))
+                               plans "\n"))
+            sections))
+    (when record
+      (push (format "The conversation itself, if the brief leaves a \
+question open:\n- %s\n  Read it only then: it is the whole record, and \
+the brief above is meant to be enough." record)
+            sections))
+    (when (and dirty (not (string-empty-p dirty)))
+      (push (concat "Not in this worktree: the checkout was made from \
+HEAD, and these changes are uncommitted in "
+                    (abbreviate-file-name root) ":\n"
+                    (mapconcat (lambda (line) (concat "- " (string-trim line)))
+                               (split-string dirty "\n" t) "\n"))
+            sections))
+    (if sections
+        (concat "\n\nWhat Emacs knows about where this came from:\n\n"
+                (mapconcat #'identity (nreverse sections) "\n\n"))
+      "")))
+
 (defvar ecc-worktree-delegate-brief
   "You are in a git worktree of %s, checked out at %s on the branch %s.
 The work below was handed to you by the session %s, which is staying in
@@ -505,27 +589,29 @@ its own -- can name another one."
       (user-error "%s is checked out at %s already; name another branch"
                   branch (abbreviate-file-name
                           (ecc-worktree-entry-path held))))
-    (let* ((path (ecc-worktree-create root branch base))
-           (from (ecc-worktree--delegating-session))
+    ;; The facts are taken before the checkout is made, from the session
+    ;; that is handing the work over; `ecc-start' below makes another one
+    ;; and `ecc-mcp-session' would then be the wrong answer to read.
+    (let* ((from (ecc-worktree--delegating-session))
+           (facts (ecc-worktree-handoff-facts from root))
+           (path (ecc-worktree-create root branch base))
            (session (ecc-start path)))
       (ecc-proc-send-prompt
-       session (format ecc-worktree-delegate-brief
-                       (abbreviate-file-name root)
-                       (abbreviate-file-name path)
-                       branch
-                       (or from "another session")
-                       brief))
+       session (concat (format ecc-worktree-delegate-brief
+                               (abbreviate-file-name root)
+                               (abbreviate-file-name path)
+                               branch
+                               (if from (ecc-session-name from) "another session")
+                               brief)
+                       facts))
       session)))
 
 (defun ecc-worktree--delegating-session ()
-  "Return the name of the session handing work over, or nil.
+  "Return the session handing work over, or nil.
 The MCP server knows which session is calling it; a command run by hand
 has the buffer it was run in."
-  (cond
-   ((and (fboundp 'ecc-mcp-session) (ecc-mcp-session))
-    (ecc-session-name (ecc-mcp-session)))
-   ((bound-and-true-p ecc-render--session)
-    (ecc-session-name ecc-render--session))))
+  (or (and (fboundp 'ecc-mcp-session) (ecc-mcp-session))
+      (bound-and-true-p ecc-render--session)))
 
 ;;;; Handing a piece of work over from inside a session
 
@@ -543,9 +629,13 @@ has the buffer it was run in."
 The MCP tool `start_worktree_session\='.  The repository is the one the
 calling session works in, BASE is what a new branch is made from, and
 the answer names the session that has the work now."
+  ;; The project the session was started in, and not the cwd the CLI
+  ;; reports: that one follows the `cd' of the last Bash call the model
+  ;; made (2.1.272, confirmed 2026-09-16), so a model that had just
+  ;; looked at something under /tmp would have Emacs make the worktree
+  ;; of no repository at all.
   (let* ((session (and (fboundp 'ecc-mcp-session) (ecc-mcp-session)))
-         (root (or (and session (or (ecc-session-cwd session)
-                                    (ecc-session-project-root session)))
+         (root (or (and session (ecc-session-project-root session))
                    default-directory))
          (started (ecc-worktree-delegate root branch task base)))
     (format "Started the session %s in %s, on the branch %s.  It has the brief and is working on it; the work is no longer yours."
@@ -557,7 +647,7 @@ the answer names the session that has the work now."
   "Publish `start_worktree_session\=' to the model."
   (ecc-mcp-define-tool
    :name "start_worktree_session"
-   :description "Hand a piece of work to a second Claude session running in a git worktree of this project.  Emacs makes the checkout, opens it as a window of its own, starts a session there and gives it the brief.  Use this whenever the user asks for something to be done in a worktree, on a branch or in a session of its own, instead of running `git worktree add' yourself and carrying on here.  You choose the branch name, the way this repository names its branches.  The brief is the only thing the new session is told -- it cannot read this conversation -- so write it to stand on its own: what to do, why, the files and the decisions already made here, and what finished looks like.  When this returns, the work belongs to that session: report where it went and do not do it here as well."
+   :description "Hand a piece of work to a second Claude session running in a git worktree of this project.  Emacs makes the checkout, opens it as a window of its own, starts a session there and gives it the brief.  Use this whenever the user asks for something to be done in a worktree, on a branch or in a session of its own, instead of running `git worktree add' yourself and carrying on here.  You choose the branch name, the way this repository names its branches.  The brief is the only thing the new session is told -- it cannot read this conversation -- so write it to stand on its own: what to do, why, the files and the decisions already made here, and what finished looks like.  Use it in place of `EnterWorktree' and of `git worktree add' in Bash: those leave one conversation working in two checkouts, and Emacs refuses them here.  The checkout is made from HEAD, so work that is not committed in this repository is not in it -- commit it first or say so in the brief.  When this returns, the work belongs to that session: report where it went and do not do it here as well."
    :args '(("branch" "string" "The branch to make, named the way this repository names its branches" t)
            ("task" "string" "The whole brief for the new session, standing on its own without this conversation" t)
            ("base" "string" "The revision the branch is made from; HEAD by default"))

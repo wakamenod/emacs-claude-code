@@ -344,6 +344,58 @@ has it need not be named the way this package would have named it."
             (should (string-match-p (regexp-quote (ecc-session-name session))
                                     answer))))))))
 
+(ert-deftest ecc-worktree-test-handoff-facts ()
+  "The brief carries what Emacs watched the conversation do."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-worktree-test--with-directory directory
+      (ecc-worktree-test--repository directory)
+      (setf (ecc-session-project-root session) directory
+            (ecc-session-cwd session) directory)
+      ;; What the conversation touched, where its plan went, and a file
+      ;; that was never committed.
+      (ecc-model-note-file session (expand-file-name "a.txt" directory) 'edit)
+      (ecc-model-note-file session (expand-file-name "a.txt" directory) 'edit)
+      (ecc-model-note-file session
+                           (expand-file-name "test/b.txt" directory) 'read)
+      (ecc-model-note-plan-file session "/tmp/plans/ecc-plan.md")
+      (with-temp-file (expand-file-name "loose.txt" directory) (insert "x\n"))
+      (let ((ecc-worktree-directory ".claude/worktrees")
+            (ecc-mcp--session-id (ecc-session-id session))
+            (sent nil))
+        (cl-letf (((symbol-function #'ecc-start)
+                   (lambda (&optional path &rest _)
+                     (ignore path)
+                     session))
+                  ((symbol-function #'ecc-proc-send-prompt)
+                   (lambda (_session text) (setq sent text) 'sent))
+                  ((symbol-function #'ecc-history-file)
+                   (lambda (_id) "/tmp/history/session.jsonl")))
+          (ecc-worktree-mcp-delegate "feat/x" "Finish the parser")
+          ;; The brief the model wrote comes first, and the facts follow.
+          (should (string-match-p "Finish the parser" sent))
+          ;; Paths are the ones the new checkout has, not absolute ones.
+          (should (string-match-p "^- a\\.txt (2 edits)$" sent))
+          (should (string-match-p "^- test/b\\.txt (1 reads)$" sent))
+          ;; The header names the repository; the file list does not.
+          (should-not (string-match-p (concat "- " (regexp-quote directory))
+                                      sent))
+          (should (string-match-p "/tmp/plans/ecc-plan\\.md" sent))
+          (should (string-match-p "/tmp/history/session\\.jsonl" sent))
+          ;; And what the checkout will not have, because HEAD does not.
+          (should (string-match-p "Not in this worktree" sent))
+          (should (string-match-p "loose\\.txt" sent)))))))
+
+(ert-deftest ecc-worktree-test-handoff-facts-says-nothing-of-nothing ()
+  "A session that touched nothing, in a clean tree, adds no section."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-worktree-test--with-directory directory
+      (ecc-worktree-test--repository directory)
+      (setf (ecc-session-project-root session) directory)
+      (cl-letf (((symbol-function #'ecc-history-file) (lambda (_id) nil)))
+        (should (equal "" (ecc-worktree-handoff-facts session directory)))))))
+
 ;;;; Offering to undo a checkout
 
 (defmacro ecc-worktree-test--with-answer (answer &rest body)
