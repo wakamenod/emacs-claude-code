@@ -126,6 +126,22 @@ Verified against **Claude Code CLI 2.1.270**.
   puts back the windows that were on the screen before the review opened.
   There is no `g`; quit and open the review again.
 
+  `?` shows a help written for the review rather than ediff's own.  ediff's
+  is the one a two-way comparison usually wants: it offers `a` and `b`, `rx`,
+  `wx`, `wd` and `~`, none of which do anything where both buffers are
+  read-only and each side is every file of the review at once, and it says
+  nothing of `c`, `d`, `l`, `C-c C-c` and `C-c C-k`, nor that `q` closes a
+  review without asking.  The help is ediff's own three-column layout with
+  only the commands a review really has on it, and the brief message the panel
+  carries with the help off names them too.  It is set through
+  `ediff-long-help-message-function` and `ediff-brief-help-message-function`,
+  which ediff reads out of the control buffer of each session, so no other
+  ediff's `?` changes; the messages are composed again in the startup hook,
+  because ediff writes the help into the panel before it runs them.  Clicking
+  a line of the help, and `RET` on it, do nothing now: they looked the command
+  up in the ediff manual, which has no entry for `c`, `d` or `l` and answered
+  them with "Undocumented command!".
+
   Both reviews now always compare two git trees: the session's baseline, or
   `HEAD`, against a snapshot of the working tree, and for a range the two trees
   of the history. `ecc-review-snapshot` takes a `no-add` argument for the one

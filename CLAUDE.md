@@ -28,6 +28,18 @@ Each script in `scripts/` says in its own header what it is and how to run it. R
 is `docs/site/`, documented by `docs/site/README.md`; the `docs/*.md` beside it are
 gitignored working documents.
 
+`demo/` is the other kind of picture: `demo/record.sh <scene>` opens a second GUI Emacs
+with the user's own `init.el`, puts this checkout in front of the ecc that init points
+at, plays a scene and records it as an mp4. It is for what a batch test cannot see -- a
+frame, a panel, a colour, a key -- and for handing that check to somebody else; the
+site's pictures are `scripts/docshots.sh` and stay a dressed-up `-Q`. A scene is
+`demo/scenes/NAME.el` (what it builds, one function per step) and `demo/scenes/NAME.sh`
+(the order and the pauses). `demo/README.md` says how to write one and what it costs to
+learn again: the demo Emacs is not the application macOS has in front, so its frames
+need `z-group` and a timer that holds them, and a step runs the command a key is bound
+to in the buffer it belongs to rather than feeding keys to a command loop that is
+reading somewhere else.
+
 ## Commands
 
 The Makefile's comments document the targets and the `EMACS`/`ELPA` variables. What they
