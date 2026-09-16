@@ -321,6 +321,31 @@ Verified against **Claude Code CLI 2.1.270**.
 
 ### Fixed
 
+- The ediff review is read as code now, and takes the frame it opens in.
+  Three things were wrong with how it looked, all reported 2026-09-16.
+
+  It shared the frame with whatever else was on the screen -- under `spaces`
+  the sidebar and a transcript or two -- which left each of the two texts too
+  narrow to read a line of code in.  It now puts those windows away and hands
+  them back when the review is quit (`ecc-review-ediff-full-frame`).
+
+  Nothing was coloured.  The buffers hold many files at once, so no one major
+  mode fits them and they were left in `fundamental-mode`; each file is now
+  fontified by its own mode as it goes in, and the faces are carried as text
+  properties, which is how everything else in this package is coloured.
+  Neither were the differences: ediff marks the ones it is not standing on
+  with `ediff-odd-diff-A' and its relatives, which the theme this was found on
+  paints a shade of the background with no foreground at all.  In the two
+  buffers of the review alone those faces are remapped to `diff-removed` and
+  `diff-added`, the ones the diff review already reads by, so the colours are
+  the theme's own (`ecc-review-ediff-diff-faces`).
+
+  And `q` did nothing.  It is ediff's `ediff-quit`, which asks "Quit this
+  Ediff session?" -- a question that goes to a minibuffer the control frame of
+  a graphical Emacs does not have, leaving a small frame sitting there that
+  looked like a key that had failed.  `q` is the review's own quit now, the
+  same as `C-c C-k`: there is nothing to save in a review and nothing to ask.
+
 - A Space whose tab had nothing but transcripts left in it comes up with a
   window for the code again. Under `spaces` the windows of a tab are the
   user's and are left where they were put, which is the point of laying the

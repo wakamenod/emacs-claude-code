@@ -30,6 +30,12 @@
 ;; of each separator (`ecc-review-ediff-file-spacing') keeps one file
 ;; from running into the next.
 ;;
+;; They are read as code, not as text: each file is fontified by its own
+;; major mode as it is inserted, and the differences are marked in the
+;; colours the diff review uses, because ediff's own faces for the
+;; differences it is not standing on are invisible under a good many
+;; themes.
+;;
 ;; Both buffers are read-only, and that is the whole of it: a review
 ;; reads, comments and sends, and writes nothing.  ediff's a and b say
 ;; `buffer-read-only' and change nothing, which is the behaviour
@@ -163,6 +169,36 @@ under the difference in the buffer of what the files hold now.")
 SIDE is `base' for what the files held and `now' for what they hold."
   (format "*ecc-review-%s: %s*" side (ecc-session-name session)))
 
+(defvar ecc-review-ediff-fontify t
+  "Non-nil colours the code of a review the way its major mode would.
+The two buffers hold many files at once and no one major mode fits
+them, so each file is fontified on its own in a temporary buffer and
+the faces are carried in as text properties.  That is how this package
+works anyway: faces are put on at insertion time and no buffer of ours
+runs font-lock.  Nil leaves the text plain, which is what it was.")
+
+(defun ecc-review-ediff--fontify (text path)
+  "Return TEXT with the faces the major mode of PATH would give it.
+Mode hooks are not run: a file of the review is read, never edited, and
+a hook that starts a language server or asks a question has no business
+in a buffer that exists to be diffed.  Anything the mode raises leaves
+the text as it came."
+  (if (or (not ecc-review-ediff-fontify) (null text) (string-empty-p text))
+      text
+    (condition-case nil
+        (with-temp-buffer
+          (insert text)
+          (let ((buffer-file-name (expand-file-name path))
+                (enable-local-variables nil)
+                (inhibit-message t))
+            (delay-mode-hooks (set-auto-mode)))
+          ;; `font-lock-ensure' does nothing where font-lock is off, and
+          ;; a batch Emacs has it off.
+          (font-lock-mode 1)
+          (font-lock-ensure)
+          (buffer-string))
+      (error text))))
+
 (defun ecc-review-ediff--separator (path note)
   "Return the line that opens PATH in both buffers, saying NOTE if any."
   (format "═══ %s ═══" (if note (format "%s (%s)" path note) path)))
@@ -207,6 +243,30 @@ one, so that what follows starts a line of its own."
           (insert text)
           (unless (bolp) (insert "\n")))))))
 
+(defvar ecc-review-ediff-diff-faces t
+  "Non-nil marks every difference the way the diff review marks a hunk.
+ediff paints the differences it is not standing on with
+`ediff-odd-diff-A\=' and its relatives, which a good many themes leave
+near enough invisible: the one this was found on gives them a shade of
+the background and no foreground at all, so a review of six changes
+showed one of them (2026-09-16).
+
+Non-nil remaps those faces, in the two buffers of the review alone, to
+`diff-removed\=' on the left and `diff-added\=' on the right -- the faces
+the diff review already reads by, so the colours are the theme\='s own
+and no other ediff is touched.  The difference ediff is standing on
+keeps `ediff-current-diff-A\=' and `-B\='.")
+
+(defun ecc-review-ediff--mark-differences (base now)
+  "Give BASE and NOW the colours a diff is read by, if that is wanted."
+  (when ecc-review-ediff-diff-faces
+    (with-current-buffer base
+      (face-remap-add-relative 'ediff-odd-diff-A 'diff-removed)
+      (face-remap-add-relative 'ediff-even-diff-A 'diff-removed))
+    (with-current-buffer now
+      (face-remap-add-relative 'ediff-odd-diff-B 'diff-added)
+      (face-remap-add-relative 'ediff-even-diff-B 'diff-added))))
+
 (defun ecc-review-ediff--build (session pairs)
   "Fill the two buffers of SESSION with PAIRS and return (BASE NOW SECTIONS)."
   (let ((base (get-buffer-create (ecc-review-ediff-buffer-name session 'base)))
@@ -220,14 +280,17 @@ one, so that what follows starts a line of its own."
     (pcase-dolist (`(,path ,before ,after ,note) pairs)
       (let ((separator (ecc-review-ediff--separator path note)))
         (push (list path
-                    (ecc-review-ediff--insert base separator before)
-                    (ecc-review-ediff--insert now separator after))
+                    (ecc-review-ediff--insert
+                     base separator (ecc-review-ediff--fontify before path))
+                    (ecc-review-ediff--insert
+                     now separator (ecc-review-ediff--fontify after path)))
               sections)))
     (dolist (buffer (list base now))
       (with-current-buffer buffer
         (setq buffer-read-only t)
         (set-buffer-modified-p nil)
         (goto-char (point-min))))
+    (ecc-review-ediff--mark-differences base now)
     (list base now (nreverse sections))))
 
 (defun ecc-review-ediff--section-at (sections line side)
@@ -366,6 +429,31 @@ prompt is built and sent by `ecc-review.el\\=' either way."
 
 ;;;; Opening and closing
 
+(defvar ecc-review-ediff-full-frame t
+  "Non-nil gives the review the whole frame it opens in.
+Two texts side by side want the width: sharing the frame with the
+sidebar and a transcript or two leaves each side too narrow to read a
+line of code in.  The windows that were there are put back when the
+review is quit, the same way the rest of the arrangement is.
+
+Nil opens the review among whatever is on the screen, which is what
+`ediff-buffers\=' would do on its own.")
+
+(defun ecc-review-ediff--take-the-frame ()
+  "Leave one window in this frame, for the review to be laid out in.
+Side windows are taken down too -- a sidebar beside a two-column diff
+is the width that was wanted for the code -- and come back with the
+rest when the review is quit.  A frame that will not give up its
+windows is left as it is rather than made an error of."
+  (when-let* ((window (seq-find (lambda (window)
+                                  (not (window-parameter window 'window-side)))
+                                (window-list nil 'no-minibuffer))))
+    (select-window window)
+    (condition-case nil
+        (let ((ignore-window-parameters t))
+          (delete-other-windows window))
+      (error nil))))
+
 (defun ecc-review-ediff--on-quit ()
   "Take the review down: ediff's own cleanup, the buffers, the windows.
 Run from `ediff-quit-hook\\=' in the control buffer, which
@@ -397,6 +485,8 @@ ediff lays out its windows; quitting puts back what was on the screen."
   (ecc-window-hide-for-review session)
   (let ((windows (current-window-configuration))
         (control nil))
+    (when ecc-review-ediff-full-frame
+      (ecc-review-ediff--take-the-frame))
     (ediff-buffers
      base now
      (list
@@ -431,7 +521,14 @@ ediff lays out its windows; quitting puts back what was on the screen."
         (define-key ediff-mode-map (kbd "d") #'ecc-review-ediff-remove-comment)
         (define-key ediff-mode-map (kbd "l") #'ecc-review-ediff-list-comments)
         (define-key ediff-mode-map (kbd "C-c C-c") #'ecc-review-send)
-        (define-key ediff-mode-map (kbd "C-c C-k") #'ecc-review-quit))))
+        (define-key ediff-mode-map (kbd "C-c C-k") #'ecc-review-quit)
+        ;; ediff's own q asks whether to quit this session, and the
+        ;; question goes to a minibuffer the control frame does not have
+        ;; -- on a graphical Emacs the panel is a frame of its own, small
+        ;; enough to show nothing, so q read as a key that did nothing at
+        ;; all (reported 2026-09-16).  A review is closed, not saved:
+        ;; there is nothing to lose by the question and nothing to ask.
+        (define-key ediff-mode-map (kbd "q") #'ecc-review-quit))))
     control))
 
 (defun ecc-review-ediff-buffer (session &optional paths)

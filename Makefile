@@ -63,14 +63,24 @@ lint:
 # Version header of ecc.el disagreeing with it: package-vc then reports the
 # old number and nobody notices.  It takes two steps, because main takes no
 # direct push -- a repository ruleset requires a pull request, and nobody
-# can bypass it (confirmed 2026-09-14).  Write the two pieces of prose
-# first -- nothing here writes any -- the CHANGELOG.md section and
-# release-notes/$(VERSION).md, which is what the GitHub release says; then
-#   make release VERSION=0.2.0     # on main: checks, bumps, commits
-#   ... open the pull request and merge it ...
+# can bypass it (confirmed 2026-09-14).  The work accumulates on `develop',
+# and a release is cut from it onto a branch of its own: the bump, the
+# CHANGELOG section and the notes are one pull request into main, and
+# nothing half-finished may ride along with them.  Write the two pieces of
+# prose first -- nothing here writes any -- the CHANGELOG.md section, which
+# is `## [Unreleased]' renamed and dated, and release-notes/$(VERSION).md,
+# which is what the GitHub release says; then
+#   git switch develop && git pull
+#   git switch -c release/0.2.0
+#   make release VERSION=0.2.0     # checks, bumps, commits
+#   ... open the pull request into main and merge it ...
 #   git switch main && git pull
 #   make release-tag VERSION=0.2.0 # tags what main became
 #   git push origin v0.2.0         # this is what publishes the release
+#   git switch develop && git merge main && git push
+# The last line is not housekeeping.  Without it develop carries no release
+# commit, its ecc.el still says the version before this one, and the next
+# release is written on top of a number that was already published.
 release: release-check all
 	sed -e 's/^;; Version: .*/;; Version: $(VERSION)/' ecc.el > ecc.el.new
 	mv ecc.el.new ecc.el
@@ -80,6 +90,8 @@ release: release-check all
 	@echo
 	@echo "committed $(VERSION).  Put it on main through a pull request, then:"
 	@echo "  git switch main && git pull && make release-tag VERSION=$(VERSION)"
+	@echo "and once the tag is pushed, take main back to develop:"
+	@echo "  git switch develop && git merge main && git push"
 
 # The tag, once the pull request is merged.  It goes on the main that
 # origin has, so that the tag cannot name a commit nobody else can see, and
@@ -103,10 +115,13 @@ version-check:
 	  || { echo "v$(VERSION) is already tagged"; exit 1; }
 
 # Everything that has to be true before the release commit, checked ahead
-# of `all' so that a missing VERSION does not cost a test run first.
+# of `all' so that a missing VERSION does not cost a test run first.  The
+# commit is made on release/$(VERSION), not on main -- main takes no direct
+# push -- and not on develop, where a release that is abandoned halfway
+# would leave a bumped version header in everybody's way.
 release-check: version-check
-	@branch=$$(git rev-parse --abbrev-ref HEAD); test "$$branch" = main \
-	  || { echo "a release is committed on main, not on $$branch"; exit 1; }
+	@branch=$$(git rev-parse --abbrev-ref HEAD); test "$$branch" = "release/$(VERSION)" \
+	  || { echo "a release is committed on release/$(VERSION), not on $$branch"; exit 1; }
 	@test -z "$$(git status --porcelain --untracked-files=all \
 	    | grep -v 'CHANGELOG.md$$' | grep -v 'release-notes/$(VERSION).md$$')" \
 	  || { echo "the working tree has changes besides the CHANGELOG and the notes"; exit 1; }

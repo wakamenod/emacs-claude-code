@@ -1,8 +1,12 @@
 name: test
 
 on:
+  # develop is here for the merge itself.  Every pull request is tested,
+  # but two of them can each be green and still break once both are in --
+  # a function one renamed and the other called.  Without this, that lands
+  # on develop and is not seen until the release pull request into main.
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
 
