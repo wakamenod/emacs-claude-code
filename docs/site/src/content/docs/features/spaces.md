@@ -132,4 +132,12 @@ Stopping the **last** session working in a worktree offers to undo the checkout 
 
 Once the checkout is gone, **the branch is offered as a question of its own** — after `ecc-remove-worktree` and after the offer that follows the last session in a worktree. Yes runs `git branch -d`; a branch whose commits are on no other branch takes a second yes before `-D`. Nothing is asked about a detached checkout, which had no branch, or about a branch another worktree still holds, which git would refuse anyway.
 
+## Handing work to a session in a worktree
+
+Ask, inside a session, for something to be done in a worktree — "cut a worktree and do X there" — and the CLI left to itself runs `git worktree add` and carries on in the same conversation: one session, two checkouts.
+
+With the [Emacs MCP server](/emacs-claude-code/start/installation/) on (`ecc-mcp-enabled`), the model is offered a tool instead, `start_worktree_session`. It names the branch and writes the brief; Emacs makes the checkout, opens it as a Space, starts a session there and sends it that brief. The new session is told which repository it is in, which branch it is on and which session sent it, because it cannot read the conversation it came from. The session that asked reports where the work went and does not do it as well.
+
+A branch another worktree already holds is refused rather than joined — two sessions in one checkout is not what handing work over means — and the model is told to name another one. `M-x` has no command for this; from Lisp it is `ecc-worktree-delegate`.
+
 Under `spaces`, a session started in a worktree opens a Space of its own, under the repository it came from.

@@ -261,6 +261,17 @@ Verified against **Claude Code CLI 2.1.270**.
   Claude Code's own worktrees turn a `/` into a `+` where this turns it into a
   `-`.
 
+  A piece of work can be handed to a session in a worktree of its own without
+  anybody leaving the conversation it came up in. With the Emacs MCP server on
+  (`ecc-mcp-enabled`), the model is offered `start_worktree_session`: asked for
+  something to be done in a worktree, on a branch or in a session of its own,
+  it names the branch and writes the brief, and Emacs makes the checkout, opens
+  it as a Space, starts a session there and sends it that brief. The new
+  session is told where it is and who sent it, because it cannot read the
+  conversation it came from. Left to itself the CLI runs `git worktree add` and
+  carries on in the same session, which leaves one conversation working in two
+  checkouts. `ecc-worktree-delegate` is the same thing from Lisp.
+
   Where a checkout goes is `ecc-worktree-directory`, `.claude/worktrees` by
   default, which is where Claude Code's own worktrees go. A relative name hangs
   off the repository; an absolute one is a directory every repository shares,

@@ -37,6 +37,9 @@
 
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-kill "ecc" (session))
+(declare-function ecc-proc-send-prompt "ecc-proc" (session text))
+(declare-function ecc-mcp-define-tool "ecc-mcp" (&rest arguments))
+(declare-function ecc-mcp-session "ecc-mcp" ())
 
 (defcustom ecc-worktree-directory ".claude/worktrees"
   "Where `ecc-worktree-create' puts a checkout.
@@ -458,6 +461,109 @@ it, and there is nothing to ask about afterwards."
   (let ((root (ecc-window-session-project session)))
     (ecc-kill session)
     (ecc-worktree-offer-removal root)))
+
+(defvar ecc-worktree-delegate-brief
+  "You are in a git worktree of %s, checked out at %s on the branch %s.
+The work below was handed to you by the session %s, which is staying in
+the repository it came from; it is yours from here.
+
+%s"
+  "What a delegated session is told, before the brief it was given.
+The arguments are the repository, the checkout, the branch, the session
+that handed the work over and the brief itself.  A session that was
+started for one piece of work is told where it is and who sent it: the
+transcript it came from is not there to be read, and a worktree looks
+like the repository until git is asked.")
+
+(defun ecc-worktree-delegate (root branch brief &optional base)
+  "Start a session on BRANCH in a worktree of ROOT and hand it BRIEF.
+Returns the session.  ROOT is any directory of the repository; the
+checkout is made beside its main worktree, under
+`ecc-worktree-directory\='.  BASE is what a branch that does not exist yet
+is made from, HEAD by default.
+
+BRIEF is everything the new session will be told, so it is refused
+empty.  It is sent as the first prompt of the session, which is why
+nothing here waits: the CLI takes a prompt as soon as its process is
+up.
+
+A branch that is checked out in another worktree already is refused
+rather than gone to, which is what `ecc-start-worktree\=' does when a
+person asked for it: two sessions in one checkout is not what handing a
+piece of work over means, and the caller -- a model naming a branch of
+its own -- can name another one."
+  (require 'ecc)
+  (let* ((asked (ecc-worktree--key root))
+         (root (or (ecc-worktree-main asked) asked))
+         (branch (string-trim (or branch "")))
+         (brief (string-trim (or brief ""))))
+    (when (string-empty-p branch)
+      (user-error "The branch name is empty"))
+    (when (string-empty-p brief)
+      (user-error "There is nothing to hand over"))
+    (when-let* ((held (ecc-worktree-of-branch root branch)))
+      (user-error "%s is checked out at %s already; name another branch"
+                  branch (abbreviate-file-name
+                          (ecc-worktree-entry-path held))))
+    (let* ((path (ecc-worktree-create root branch base))
+           (from (ecc-worktree--delegating-session))
+           (session (ecc-start path)))
+      (ecc-proc-send-prompt
+       session (format ecc-worktree-delegate-brief
+                       (abbreviate-file-name root)
+                       (abbreviate-file-name path)
+                       branch
+                       (or from "another session")
+                       brief))
+      session)))
+
+(defun ecc-worktree--delegating-session ()
+  "Return the name of the session handing work over, or nil.
+The MCP server knows which session is calling it; a command run by hand
+has the buffer it was run in."
+  (cond
+   ((and (fboundp 'ecc-mcp-session) (ecc-mcp-session))
+    (ecc-session-name (ecc-mcp-session)))
+   ((bound-and-true-p ecc-render--session)
+    (ecc-session-name ecc-render--session))))
+
+;;;; Handing a piece of work over from inside a session
+
+;; The flow this is for: the user, in a session, asks for something to be
+;; done in a worktree of its own.  Left alone the CLI runs `git worktree
+;; add' and goes on working in the same session -- one conversation, two
+;; checkouts, and the transcript, the Space and `default-directory' all
+;; still pointing at the repository.  The tool gives the model somewhere
+;; to put that request instead: Emacs makes the checkout, opens it as a
+;; Space of its own, starts a session in it and hands it the brief the
+;; model wrote, and the model names the branch.
+
+(defun ecc-worktree-mcp-delegate (branch task &optional base)
+  "Start a session on BRANCH in a worktree and hand it TASK.
+The MCP tool `start_worktree_session\='.  The repository is the one the
+calling session works in, BASE is what a new branch is made from, and
+the answer names the session that has the work now."
+  (let* ((session (and (fboundp 'ecc-mcp-session) (ecc-mcp-session)))
+         (root (or (and session (or (ecc-session-cwd session)
+                                    (ecc-session-project-root session)))
+                   default-directory))
+         (started (ecc-worktree-delegate root branch task base)))
+    (format "Started the session %s in %s, on the branch %s.  It has the brief and is working on it; the work is no longer yours."
+            (ecc-session-name started)
+            (abbreviate-file-name (ecc-session-project-root started))
+            branch)))
+
+(defun ecc-worktree-register-mcp-tool ()
+  "Publish `start_worktree_session\=' to the model."
+  (ecc-mcp-define-tool
+   :name "start_worktree_session"
+   :description "Hand a piece of work to a second Claude session running in a git worktree of this project.  Emacs makes the checkout, opens it as a window of its own, starts a session there and gives it the brief.  Use this whenever the user asks for something to be done in a worktree, on a branch or in a session of its own, instead of running `git worktree add' yourself and carrying on here.  You choose the branch name, the way this repository names its branches.  The brief is the only thing the new session is told -- it cannot read this conversation -- so write it to stand on its own: what to do, why, the files and the decisions already made here, and what finished looks like.  When this returns, the work belongs to that session: report where it went and do not do it here as well."
+   :args '(("branch" "string" "The branch to make, named the way this repository names its branches" t)
+           ("task" "string" "The whole brief for the new session, standing on its own without this conversation" t)
+           ("base" "string" "The revision the branch is made from; HEAD by default"))
+   :function #'ecc-worktree-mcp-delegate))
+
+(with-eval-after-load 'ecc-mcp (ecc-worktree-register-mcp-tool))
 
 ;;;; Commands
 

@@ -259,6 +259,91 @@ has it need not be named the way this package would have named it."
             (should-error (ecc-start-worktree (ecc-worktree-branch directory))
                           :type 'user-error)))))))
 
+(ert-deftest ecc-worktree-test-delegate ()
+  "`ecc-worktree-delegate' makes the checkout, starts a session and briefs it."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-worktree-test--with-directory directory
+      (ecc-worktree-test--repository directory)
+      (let ((ecc-worktree-directory ".claude/worktrees")
+            (started nil)
+            (sent nil))
+        (cl-letf (((symbol-function #'ecc-start)
+                   (lambda (&optional path &rest _) (setq started path) session))
+                  ((symbol-function #'ecc-proc-send-prompt)
+                   (lambda (_session text) (setq sent text) 'sent)))
+          (should (eq session (ecc-worktree-delegate
+                               directory "feat/x" "Make the tests pass")))
+          (should (equal started (ecc-worktree-path directory "feat/x")))
+          (should (file-directory-p started))
+          ;; The brief is what the new session is told, and it is told
+          ;; where it is: the transcript it came from is not there to read.
+          (should (string-match-p "Make the tests pass" sent))
+          (should (string-match-p "feat/x" sent))
+          (should (string-match-p (regexp-quote (abbreviate-file-name started))
+                                  sent))
+          ;; Nothing to hand over is not a session to start.
+          (should-error (ecc-worktree-delegate directory "feat/y" "  ")
+                        :type 'user-error)
+          (should-not (file-exists-p (ecc-worktree-path directory "feat/y")))
+          ;; And a branch another checkout holds is refused rather than
+          ;; gone to: two sessions in one tree is not handing work over.
+          (clrhash ecc-worktree--cache)
+          (should-error (ecc-worktree-delegate directory "feat/x" "again")
+                        :type 'user-error))))))
+
+(ert-deftest ecc-worktree-test-delegate-from-a-worktree-and-a-base ()
+  "The checkout is made beside the main worktree, from the base given."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-worktree-test--with-directory directory
+      (ecc-worktree-test--repository directory)
+      (ecc-worktree-test--git directory "branch" "base-here")
+      (let* ((ecc-worktree-directory ".claude/worktrees")
+             (inside (ecc-worktree-create directory "feat/inside"))
+             (started nil))
+        (cl-letf (((symbol-function #'ecc-start)
+                   (lambda (&optional path &rest _) (setq started path) session))
+                  ((symbol-function #'ecc-proc-send-prompt)
+                   (lambda (&rest _) 'sent)))
+          ;; Asked from inside a worktree: a worktree of a worktree is
+          ;; not a thing, so it hangs off the repository.
+          (ecc-worktree-delegate inside "feat/x" "work" "base-here")
+          ;; Through `file-truename': git resolves the symbolic links of
+          ;; the path it is given and the temporary directory is one.
+          (should (equal (file-truename started)
+                         (file-truename (ecc-worktree-path directory "feat/x"))))
+          (should (equal (ecc-worktree-branch started) "feat/x")))))))
+
+(ert-deftest ecc-worktree-test-mcp-tool ()
+  "The tool is published, and it works in the project of the session calling."
+  (skip-unless (executable-find "git"))
+  (require 'ecc-mcp)
+  (ecc-worktree-register-mcp-tool)
+  (should (ecc-mcp-tool "start_worktree_session"))
+  (ecc-test-with-fake-session session
+    (ecc-worktree-test--with-directory directory
+      (ecc-worktree-test--repository directory)
+      (setf (ecc-session-project-root session) directory
+            (ecc-session-cwd session) directory)
+      (let ((ecc-worktree-directory ".claude/worktrees")
+            (ecc-mcp--session-id (ecc-session-id session))
+            (started nil)
+            (sent nil))
+        (cl-letf (((symbol-function #'ecc-start)
+                   (lambda (&optional path &rest _) (setq started path) session))
+                  ((symbol-function #'ecc-proc-send-prompt)
+                   (lambda (_session text) (setq sent text) 'sent)))
+          (let ((answer (ecc-worktree-mcp-delegate "feat/x" "Write the docs")))
+            (should (equal started (ecc-worktree-path directory "feat/x")))
+            (should (string-match-p "Write the docs" sent))
+            ;; The session that asked is named to the one that gets it.
+            (should (string-match-p (regexp-quote (ecc-session-name session))
+                                    sent))
+            (should (string-match-p "feat/x" answer))
+            (should (string-match-p (regexp-quote (ecc-session-name session))
+                                    answer))))))))
+
 ;;;; Offering to undo a checkout
 
 (defmacro ecc-worktree-test--with-answer (answer &rest body)
