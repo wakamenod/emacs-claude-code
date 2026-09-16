@@ -35,7 +35,7 @@ sidebar:
 │   └─ ▶ [2] feat-x  │ │                 │               │               │ │
 │ · [3] herdr        │ └─────────────────┴───────────────┴───────────────┘ │
 │    master          │                                                     │
-│       new          │   1 つの Space = 1 つのタブ = 1 つのウィンドウ配置  │
+│                    │   1 つの Space = 1 つのタブ = 1 つのウィンドウ配置  │
 │                    │                                                     │
 │ Agents             │                                                     │
 │ ⚠ ecc   waiting    │                                                     │
@@ -76,7 +76,6 @@ Spaces
   └─ ▶ [2] feat-x
 · [3] herdr
    master
-      new
 
 Agents
 ⚠ ecc            waiting ×2

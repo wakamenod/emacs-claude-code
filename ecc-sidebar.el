@@ -82,7 +82,7 @@ is the order to read when there are more sessions than room.")
 ;;;; The rows
 
 (defun ecc-sidebar--item-at-point ()
-  "Return what the line at point stands for: a Space, a session or `new'."
+  "Return what the line at point stands for: a Space or a session."
   (get-text-property (line-beginning-position) 'ecc-sidebar-item))
 
 (defun ecc-sidebar--space-at-point ()
@@ -261,15 +261,7 @@ is what herdr does as well."
   (let ((spaces (ecc-space-list))
         (visible (ecc-sidebar--visible-spaces)))
     (dolist (space visible)
-      (ecc-sidebar--space-row space spaces visible))
-    ;; Under the names, not under the marks: the row is another Space to
-    ;; open, and it reads as one only in the column the names are in.
-    (ecc-sidebar--insert
-     (propertize (concat (make-string
-                          (+ 3 (ecc-sidebar--number-width spaces)) ?\s)
-                         "new")
-                 'face 'ecc-dim-face)
-     'new)))
+      (ecc-sidebar--space-row space spaces visible))))
 
 ;;;; The sessions
 
@@ -499,10 +491,6 @@ tab shows up."
      ;; `ecc-space-select' is what knows the difference between the
      ;; layouts, so RET and the number keys cannot drift apart.
      ((ecc-space-p item) (ecc-space-select item))
-     ((eq item 'new)
-      (require 'ecc)
-      (let ((current-prefix-arg '(4)))
-        (call-interactively #'ecc-start)))
      (t (user-error "Nothing on this line")))))
 
 (defun ecc-sidebar-toggle-children ()

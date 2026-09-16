@@ -4,7 +4,6 @@ Spaces
 ⚠ [2] project-one         ▾
    main ↑2 ↓0
   └─ · [3] feat-x
-      new
 
 Agents
 ▶ two               running

@@ -35,7 +35,7 @@ A Space whose tab has to be made comes up with its sessions already on the scree
 │   └─ ▶ [2] feat-x  │ │                 │               │               │ │
 │ · [3] herdr        │ └─────────────────┴───────────────┴───────────────┘ │
 │    master          │                                                     │
-│       new          │   one Space = one tab = one window arrangement      │
+│                    │   one Space = one tab = one window arrangement      │
 │                    │                                                     │
 │ Agents             │                                                     │
 │ ⚠ ecc   waiting    │                                                     │
@@ -82,7 +82,6 @@ Spaces
   └─ ▶ [2] feat-x
 · [3] herdr
    master
-      new
 
 Agents
 ⚠ ecc            waiting ×2
