@@ -223,6 +223,53 @@
                              (car (window-edges ediff-window-B))))))
             (ecc-review-ediff-test--quit control)))))))
 
+(ert-deftest ecc-review-ediff-test-the-help-is-the-reviews-own ()
+  "? shows the keys a review has, and none of the ones it has not."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (ecc-review-ediff-test--repository directory)
+                (setf (ecc-session-project-root session) directory)
+                (should (ecc-review-ensure-baseline session))
+                (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
+                (setq control (ecc-review-ediff-buffer session))
+                (with-current-buffer control
+                  (dolist (key '("c -comment" "d -remove" "l -list"
+                                 "C-c C-c -send" "C-c C-k -drop"
+                                 "q -close" "n,SPC -next diff"))
+                    (should (string-match-p (regexp-quote key)
+                                            ediff-long-help-message)))
+                  ;; Both sides are read-only: nothing that would write.
+                  (dolist (key '("a/b" "rx -restore" "wx -save" "wd -save"
+                                 "~ -swap" "X -read-only"))
+                    (should-not (string-match-p (regexp-quote key)
+                                                ediff-long-help-message)))
+                  ;; `ediff-setup' composes the messages once before it
+                  ;; runs the startup hooks, so the brief one is the
+                  ;; standard string unless it is composed again there.
+                  (should-not (equal ediff-brief-help-message
+                                     ediff-brief-message-string))
+                  (should (string-match-p "C-c C-c -send"
+                                          ediff-brief-help-message))
+                  ;; And it is in the panel, not only in the variable:
+                  ;; `ediff-setup' writes the help out before it runs
+                  ;; the startup hooks.
+                  (should (equal ediff-help-message ediff-brief-help-message))
+                  (should (string-match-p (regexp-quote "C-c C-c -send")
+                                          (buffer-string)))
+                  (ediff-toggle-help)
+                  (should (string-match-p (regexp-quote "c -comment on this diff")
+                                          (buffer-string)))
+                  (ediff-toggle-help)
+                  ;; And no other ediff session is touched.
+                  (should-not (default-value 'ediff-long-help-message-function))
+                  (should-not (default-value 'ediff-brief-help-message-function))))
+            (ecc-review-ediff-test--quit control)))))))
+
 ;;;; What it looks like
 
 (ert-deftest ecc-review-ediff-test-the-code-carries-the-faces-of-its-mode ()
