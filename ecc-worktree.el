@@ -22,8 +22,10 @@
 ;; worktree under its parent -- and it asks on every redraw, so the
 ;; answers are kept for a few seconds rather than worked out again.
 ;;
-;; The branch is never deleted with the checkout.  Removing a worktree
-;; is undoing a checkout, and the work is on the branch.
+;; The branch is never deleted with the checkout on its own.  Removing a
+;; worktree is undoing a checkout, and the work is on the branch -- so
+;; the branch is offered, as a question of its own, to whoever has just
+;; undone the checkout it was in.
 
 ;;; Code:
 
@@ -322,7 +324,9 @@ it refuses is what the error says."
 
 (defun ecc-worktree-remove (path &optional force)
   "Remove the worktree checked out at PATH, and return PATH.
-The branch is left alone: what is undone is a checkout.
+The branch is left alone: what is undone is a checkout.  Deleting it
+too is `ecc-worktree-delete-branch\=', which the commands offer once
+this has returned.
 
 git refuses a checkout with changes in it that are not committed, and
 that refusal is put to the user as a question of its own rather than
@@ -346,6 +350,56 @@ Remove it anyway? "
                                             (abbreviate-file-name path))))
     (ecc-worktree-forget)
     path))
+
+(defun ecc-worktree-delete-branch (root branch &optional force)
+  "Delete BRANCH from the repository ROOT, and return BRANCH, or nil.
+Nil when git had to be insisted with and the user would not.
+
+git refuses to delete a branch whose commits are on no other branch,
+and that refusal is put to the user as a question of its own rather
+than answered for them -- FORCE non-nil is that answer given in
+advance.  Its other refusals -- a branch that is checked out somewhere,
+a name no branch has -- are passed on as they are."
+  (let* ((result (ecc-worktree--git root "branch" "-d" branch))
+         (unmerged (and result
+                        (/= 0 (car result))
+                        (string-match-p "not fully merged" (cdr result)))))
+    (when (or (not unmerged)
+              force
+              (yes-or-no-p
+               (format "%s is not merged anywhere else.  Delete it anyway? "
+                       branch)))
+      (when unmerged
+        (setq result (ecc-worktree--git root "branch" "-D" branch)))
+      (unless (eq 0 (car-safe result))
+        (ecc-worktree--refused result (format "Cannot delete %s" branch)))
+      (ecc-worktree-forget)
+      branch)))
+
+(defun ecc-worktree-offer-branch-removal (root branch)
+  "Offer to delete BRANCH of the repository ROOT, and return it when deleted.
+This is for the moment a checkout of BRANCH has just been undone: the
+work is on the branch, so the branch is never taken without being asked
+for, and the question is asked where somebody is thinking about it.
+
+Nothing is offered for a checkout that was detached, which had no
+branch of its own, for a branch that is gone already, or for one that
+is still checked out in another worktree -- git would refuse that one,
+and the question would be a dead end in front of it."
+  (when (and root branch
+             (member branch (ecc-worktree-branches root))
+             (null (ecc-worktree-of-branch root branch))
+             (yes-or-no-p (format "Delete the branch %s as well? " branch)))
+    (ecc-worktree-delete-branch root branch)))
+
+(defun ecc-worktree--removed (main path branch)
+  "Say that the checkout PATH is gone, having offered BRANCH with it.
+MAIN is the repository PATH hung off, and BRANCH what it had checked
+out, both read before the removal.  One message for both answers: two
+in a row would leave the user with whichever arrived last."
+  (let ((deleted (ecc-worktree-offer-branch-removal main branch)))
+    (message "Removed %s%s" (abbreviate-file-name path)
+             (if deleted (format " and the branch %s" deleted) ""))))
 
 ;;;; Offering to undo a checkout nothing is left in
 
@@ -378,7 +432,12 @@ before the fact, not tidied up after."
   (when (and root
              (ecc-worktree-main root)
              (null (ecc-window-project-sessions root)))
-    (let ((open (length (ecc-worktree--visiting-buffers root))))
+    ;; The repository and the branch are read while the checkout is
+    ;; still there: once it is gone there is no directory to ask git
+    ;; about, and the branch is what the next question is about.
+    (let ((main (ecc-worktree-main root))
+          (branch (ecc-worktree-branch root))
+          (open (length (ecc-worktree--visiting-buffers root))))
       (when (yes-or-no-p
              (format "Nothing is left running in %s.  Remove the checkout%s? "
                      (abbreviate-file-name root)
@@ -388,7 +447,7 @@ before the fact, not tidied up after."
 deleted files)"
                                open (if (= 1 open) "" "s")))))
         (ecc-worktree-remove root)
-        (message "Removed %s" (abbreviate-file-name root))
+        (ecc-worktree--removed main root branch)
         root))))
 
 (defun ecc-worktree-kill-session (session)
@@ -497,8 +556,8 @@ Interactively, the worktrees of the project are offered."
 (defun ecc-remove-worktree (path)
   "Remove the worktree at PATH, stopping the sessions that work in it.
 Interactively, the worktree the command was run in, or one chosen from
-the worktrees of this project.  The branch is kept; only the checkout
-goes."
+the worktrees of this project.  The checkout goes, and the branch it
+was on is offered afterwards rather than taken with it."
   (interactive (list (ecc-worktree-read-linked "Remove worktree: ")))
   (let ((sessions (ecc-window-project-sessions path)))
     (if sessions
@@ -518,8 +577,12 @@ goes."
     (when sessions
       (require 'ecc)
       (mapc #'ecc-kill sessions))
-    (ecc-worktree-remove path)
-    (message "Removed %s" (abbreviate-file-name path))))
+    ;; Read while the checkout is still there, and asked about once it
+    ;; is gone: a branch cannot be deleted while a worktree holds it.
+    (let ((main (ecc-worktree-main path))
+          (branch (ecc-worktree-branch path)))
+      (ecc-worktree-remove path)
+      (ecc-worktree--removed main path branch))))
 
 (provide 'ecc-worktree)
 

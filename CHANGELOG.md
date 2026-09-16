@@ -238,8 +238,13 @@ Verified against **Claude Code CLI 2.1.270**.
   checks a branch out beside the repository and starts a session there,
   `ecc-start-in-worktree` starts one in a checkout that exists already, and
   `ecc-remove-worktree` stops the sessions working in a checkout and undoes
-  it. The branch is never deleted with the checkout -- what is undone is a
-  checkout, and the work is on the branch.
+  it. The branch is never deleted with the checkout on its own -- what is
+  undone is a checkout, and the work is on the branch -- but once the checkout
+  is gone the branch is offered, as a question of its own, to whoever has just
+  undone it. Saying yes runs `git branch -d`, and a branch whose commits are on
+  no other branch takes a second yes before `-D`. Nothing is asked for a
+  detached checkout, which had no branch, or for a branch another worktree
+  still holds, which git would refuse anyway.
 
   Stopping the last session working in a worktree offers to undo the checkout
   there and then, which is the moment anybody is thinking about it: from

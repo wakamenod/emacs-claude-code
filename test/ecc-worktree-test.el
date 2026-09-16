@@ -263,11 +263,17 @@ has it need not be named the way this package would have named it."
 
 (defmacro ecc-worktree-test--with-answer (answer &rest body)
   "Run BODY with every `yes-or-no-p' answered ANSWER, recording the questions.
-The questions land in `asked', which BODY may read."
+ANSWER may be a function, which is called with the question: a command
+that asks two of them is answered one way about the checkout and
+another about the branch.  The questions land in `asked', which BODY
+may read, newest first."
   (declare (indent 1))
-  `(let ((asked nil))
+  `(let ((asked nil)
+         (answer ,answer))
      (cl-letf (((symbol-function #'yes-or-no-p)
-                (lambda (prompt) (push prompt asked) ,answer)))
+                (lambda (prompt)
+                  (push prompt asked)
+                  (if (functionp answer) (funcall answer prompt) answer))))
        (ignore asked)
        ,@body)))
 
@@ -300,12 +306,90 @@ The questions land in `asked', which BODY may read."
         (should (= 1 (length asked)))
         (should (string-match-p "Remove the checkout" (car asked))))
       (should (file-directory-p path))
-      ;; And yes undoes it, the branch outliving the checkout.
+      ;; And yes undoes it.  The branch is a question of its own, and
+      ;; saying no to that one leaves it standing.
       (clrhash ecc-worktree--cache)
-      (ecc-worktree-test--with-answer t
-        (should (ecc-worktree-offer-removal path)))
+      (ecc-worktree-test--with-answer
+          (lambda (prompt) (not (string-match-p "Delete the branch" prompt)))
+        (should (ecc-worktree-offer-removal path))
+        (should (= 2 (length asked)))
+        (should (string-match-p "Delete the branch feat/x" (car asked))))
       (should-not (file-directory-p path))
       (should (member "feat/x" (ecc-worktree-branches directory))))))
+
+(ert-deftest ecc-worktree-test-branch-offered-once-the-checkout-is-gone ()
+  "The branch is offered after the removal, and never taken unasked."
+  (skip-unless (executable-find "git"))
+  (ecc-worktree-test--with-directory directory
+    (ecc-worktree-test--repository directory)
+    (let* ((ecc-worktree-directory ".claude/worktrees")
+           (path (ecc-worktree-create directory "feat/x")))
+      ;; A branch a worktree still holds is not offered: git would refuse
+      ;; it, and the question would be a dead end in front of that.
+      (ecc-worktree-test--with-answer t
+        (should-not (ecc-worktree-offer-branch-removal directory "feat/x"))
+        (should-not asked))
+      ;; Nor is a detached checkout's branch, there being none.
+      (ecc-worktree-test--with-answer t
+        (should-not (ecc-worktree-offer-branch-removal directory nil))
+        (should-not asked))
+      (ecc-worktree-remove path)
+      ;; No is no.
+      (ecc-worktree-test--with-answer nil
+        (should-not (ecc-worktree-offer-branch-removal directory "feat/x"))
+        (should (= 1 (length asked))))
+      (should (member "feat/x" (ecc-worktree-branches directory)))
+      ;; Yes deletes it.
+      (ecc-worktree-test--with-answer t
+        (should (equal "feat/x"
+                       (ecc-worktree-offer-branch-removal directory "feat/x"))))
+      (should-not (member "feat/x" (ecc-worktree-branches directory))))))
+
+(ert-deftest ecc-worktree-test-delete-branch-insists-only-when-told-to ()
+  "A branch with work on it takes a second yes, and git\='s refusals stand."
+  (skip-unless (executable-find "git"))
+  (ecc-worktree-test--with-directory directory
+    (ecc-worktree-test--repository directory)
+    (let* ((ecc-worktree-directory ".claude/worktrees")
+           (path (ecc-worktree-create directory "feat/x")))
+      (with-temp-file (expand-file-name "b.txt" path) (insert "two\n"))
+      (ecc-worktree-test--git path "add" "b.txt")
+      (ecc-worktree-test--git path "commit" "-q" "-m" "work")
+      (ecc-worktree-remove path)
+      ;; git refuses a branch whose commits are nowhere else, and that
+      ;; refusal is the user's to answer.
+      (ecc-worktree-test--with-answer nil
+        (should-not (ecc-worktree-delete-branch directory "feat/x"))
+        (should (= 1 (length asked)))
+        (should (string-match-p "not merged anywhere else" (car asked))))
+      (should (member "feat/x" (ecc-worktree-branches directory)))
+      ;; FORCE is that answer given in advance.
+      (ecc-worktree-test--with-answer nil
+        (should (equal "feat/x"
+                       (ecc-worktree-delete-branch directory "feat/x" t)))
+        (should-not asked))
+      (should-not (member "feat/x" (ecc-worktree-branches directory)))
+      ;; A name no branch has is git's refusal, not silence.
+      (should-error (ecc-worktree-delete-branch directory "feat/x")
+                    :type 'user-error))))
+
+(ert-deftest ecc-worktree-test-remove-worktree-offers-the-branch ()
+  "`ecc-remove-worktree' asks about the checkout, then about the branch."
+  (skip-unless (executable-find "git"))
+  (ecc-worktree-test--with-directory directory
+    (ecc-worktree-test--repository directory)
+    (let* ((ecc-worktree-directory ".claude/worktrees")
+           (ecc--sessions (make-hash-table :test #'equal))
+           (ecc--session-order nil)
+           (ecc-window--project-root-cache (make-hash-table :test #'equal))
+           (path (ecc-worktree-create directory "feat/x")))
+      (ecc-worktree-test--with-answer t
+        (ecc-remove-worktree path)
+        (should (= 2 (length asked)))
+        (should (string-match-p "Remove the worktree" (nth 1 asked)))
+        (should (string-match-p "Delete the branch feat/x" (car asked))))
+      (should-not (file-directory-p path))
+      (should-not (member "feat/x" (ecc-worktree-branches directory))))))
 
 (ert-deftest ecc-worktree-test-offer-counts-the-open-buffers ()
   "A buffer visiting the checkout is counted in the question, not killed."

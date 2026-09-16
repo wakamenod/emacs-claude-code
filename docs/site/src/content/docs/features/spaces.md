@@ -128,6 +128,8 @@ Where the checkout goes is [`ecc-worktree-directory`](/emacs-claude-code/referen
 
 Stopping the **last** session working in a worktree offers to undo the checkout there and then -- from `ecc-kill`, the dashboard's `k`, the sidebar's `k`, or the tab's close button. Stopping one of two sessions working in the same checkout offers nothing: that is no reason to take the tree from the other. Buffers still visiting the checkout are counted in the question rather than closed.
 
-**The branch is never deleted with the checkout.** `ecc-remove-worktree` undoes a checkout; the work is on the branch. git refuses a checkout with changes that are not committed, and you are asked before it is forced.
+**The branch is never deleted with the checkout on its own.** `ecc-remove-worktree` undoes a checkout; the work is on the branch. git refuses a checkout with changes that are not committed, and you are asked before it is forced.
+
+Once the checkout is gone, **the branch is offered as a question of its own** — after `ecc-remove-worktree` and after the offer that follows the last session in a worktree. Yes runs `git branch -d`; a branch whose commits are on no other branch takes a second yes before `-D`. Nothing is asked about a detached checkout, which had no branch, or about a branch another worktree still holds, which git would refuse anyway.
 
 Under `spaces`, a session started in a worktree opens a Space of its own, under the repository it came from.
