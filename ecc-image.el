@@ -25,6 +25,11 @@
 ;;; Code:
 
 (require 'cl-lib)
+;; `image-animate' and its timer are not autoloaded, and a machine whose
+;; Emacs happens to have image.el loaded already will compile this
+;; without saying so.
+(require 'image)
+(require 'browse-url)
 (require 'ecc-core)
 (require 'ecc-model)
 
@@ -40,6 +45,75 @@ into a prompt and the ones the CLI sends back land there.")
 `on-exit' deletes the directory of the session, `never' keeps it.  The
 recording refers to the files by path, so keeping them is what makes an
 old conversation readable again.")
+
+(defcustom ecc-image-inline t
+  "Non-nil draws an image in the transcript rather than naming it.
+A transcript read as text, or one on the far end of a slow connection,
+is better off with the line that names the file; the line is drawn
+either way and the picture sits on top of it."
+  :type 'boolean
+  :group 'ecc)
+
+(defcustom ecc-image-max-height 400
+  "Most pixels tall an image is drawn in the transcript.
+The width follows `ecc-chat-text-width\=' and the window; the height is
+what keeps one screenshot from filling the screen."
+  :type 'integer
+  :group 'ecc)
+
+(defvar ecc-image-extensions
+  '(("png" . png) ("jpg" . jpeg) ("jpeg" . jpeg) ("gif" . gif)
+    ("webp" . webp) ("svg" . svg) ("bmp" . bmp) ("tiff" . tiff)
+    ("tif" . tiff) ("ico" . ico) ("pbm" . pbm) ("xpm" . xpm))
+  "Extensions Emacs can draw, and the image type each one is.
+The type is what `image-type-available-p\=' is asked about: a build
+without librsvg draws a PNG and not an SVG, and the answer differs per
+type rather than per build.")
+
+(defvar ecc-image-video-extensions
+  '("mp4" "mov" "webm" "mkv" "avi" "m4v" "mpg" "mpeg" "ogv" "gif")
+  "Extensions taken for a video.
+`gif\=' is in both tables and `ecc-image-kind\=' calls it animated: Emacs
+draws it, and it moves.")
+
+;;;; What a path is
+
+(defun ecc-image--extension-of (path)
+  "Return the downcased extension of PATH, or nil."
+  (when-let* ((extension (file-name-extension (or path ""))))
+    (downcase extension)))
+
+(defun ecc-image-type (path)
+  "Return the Emacs image type PATH would be drawn as, or nil."
+  (alist-get (ecc-image--extension-of path) ecc-image-extensions
+             nil nil #'equal))
+
+(defun ecc-image-kind (path)
+  "Return what PATH is: `image\=', `animated\=', `video\=' or nil.
+The extension decides.  Nothing is read: this says how to draw a file,
+not whether it is one."
+  (let ((extension (ecc-image--extension-of path)))
+    (cond ((null extension) nil)
+          ((equal extension "gif") 'animated)
+          ((member extension ecc-image-video-extensions) 'video)
+          ((ecc-image-type path) 'image))))
+
+(defun ecc-image-file-p (path)
+  "Return non-nil when PATH is an image or a video this module draws."
+  (and (ecc-image-kind path) t))
+
+(defun ecc-image-video-p (path)
+  "Return non-nil when PATH is a video Emacs cannot draw by itself."
+  (eq (ecc-image-kind path) 'video))
+
+(defun ecc-image-available-p (path)
+  "Return non-nil when PATH can be drawn in this frame.
+A terminal frame and a batch Emacs draw nothing, and a build without
+the library for one type still has the others."
+  (and ecc-image-inline
+       (display-graphic-p)
+       (when-let* ((type (ecc-image-type path)))
+         (image-type-available-p type))))
 
 ;;;; Where they live
 
@@ -82,6 +156,81 @@ was written, which is what a paste wants.  Returns the file."
       (set-buffer-multibyte nil)
       (insert data))
     file))
+
+;;;; What arrives from the CLI
+
+(defun ecc-image-materialize (session source)
+  "Write the image SOURCE of SESSION to a file and describe it.
+SOURCE is what an image content block carries under `source\='.  The
+answer is an alist of `path\=' or `url\=', `media-type\=' and `bytes\=', or
+nil when the block names an image this side cannot reach.
+
+The file is named by the hash of what is in it, so that the same image
+arriving twice — once while the turn streams and once in the message
+that closes it — is one file and one name.  A name that changed
+between the two would redraw the transcript differently each time."
+  (let ((kind (alist-get 'type source))
+        (media (or (alist-get 'media_type source) "image/png")))
+    (cond
+     ((equal kind "base64")
+      (when-let* ((data (alist-get 'data source)))
+        (let ((bytes (base64-decode-string data)))
+          (list (cons 'path (ecc-image-save session bytes media (sha1 bytes)))
+                (cons 'media-type media)
+                (cons 'bytes (length bytes))))))
+     ;; Nothing is fetched here: the renderer must not go to the
+     ;; network.  The URL is drawn as a link and the browser opens it.
+     ((equal kind "url")
+      (when-let* ((url (alist-get 'url source)))
+        (list (cons 'url url) (cons 'media-type media))))
+     (t nil))))
+
+;;;; What it is drawn as
+
+(defun ecc-image-label (path &optional bytes)
+  "Return the line naming PATH, of BYTES bytes when that is known.
+Only the last component is named: the rest is a session id and a hash,
+which say nothing and would differ between two machines reading the
+same recording."
+  (let ((kind (or (ecc-image-kind path) 'image)))
+    (concat (if (eq kind 'video) "video" "image")
+            " · " (file-name-nondirectory (or path ""))
+            (if bytes
+                (concat " · " (file-size-human-readable bytes 'si " " "B"))
+              ""))))
+
+(defun ecc-image-descriptor (path width height)
+  "Return the image descriptor for PATH, at most WIDTH by HEIGHT pixels.
+Returns nil when PATH cannot be drawn.  A file that is not the image it
+claims to be leaves a line in the log and the label in its place; a
+signal here would take the whole redraw down with it."
+  (when (and (ecc-image-available-p path) (file-readable-p path))
+    (condition-case err
+        (create-image path (ecc-image-type path) nil
+                      :max-width width :max-height height :ascent 'center)
+      (error (ecc-log "image" "%s: %s" path (error-message-string err))
+             nil))))
+
+(defun ecc-image-string (path width height &optional bytes)
+  "Return the string PATH is drawn as, at most WIDTH by HEIGHT pixels.
+The text of it is `ecc-image-label\=', so that a copy of the region, a
+search through it and a snapshot of it all find the name of the file.
+The picture rides on top in a `display\=' property, and is simply absent
+where this frame cannot draw one.  BYTES is passed to the label.
+
+Nothing is inserted here.  `ecc-render\=' is what draws."
+  (let* ((label (ecc-image-label path bytes))
+         (string (propertize label
+                             'face 'ecc-dim-face
+                             'ecc-image-file path
+                             'mouse-face 'highlight
+                             'help-echo (if (ecc-image-video-p path)
+                                            "RET plays it outside Emacs"
+                                          "RET opens it, v views it")))
+         (image (ecc-image-descriptor path width height)))
+    (when image
+      (put-text-property 0 (length string) 'display image string))
+    string))
 
 (provide 'ecc-image)
 

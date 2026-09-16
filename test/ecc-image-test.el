@@ -49,6 +49,90 @@
           (should-not (ecc-image-cleanup-session session))
           (should (file-exists-p file)))))))
 
+;;;; What a path is
+
+(ert-deftest ecc-image-test-kind ()
+  "An extension says how a file is drawn, whatever its case."
+  (should (eq (ecc-image-kind "/tmp/a.png") 'image))
+  (should (eq (ecc-image-kind "/tmp/a.JPEG") 'image))
+  (should (eq (ecc-image-kind "/tmp/a.svg") 'image))
+  (should (eq (ecc-image-kind "/tmp/a.gif") 'animated))
+  (should (eq (ecc-image-kind "/tmp/a.mp4") 'video))
+  (should (eq (ecc-image-kind "/tmp/a.MOV") 'video))
+  (should-not (ecc-image-kind "/tmp/a.txt"))
+  (should-not (ecc-image-kind "/tmp/a"))
+  (should-not (ecc-image-kind nil))
+  (should (ecc-image-file-p "/tmp/a.png"))
+  (should (ecc-image-video-p "/tmp/a.mp4"))
+  (should-not (ecc-image-video-p "/tmp/a.png"))
+  (should (eq (ecc-image-type "/tmp/a.jpg") 'jpeg)))
+
+;;;; What arrives from the CLI
+
+(ert-deftest ecc-image-test-materialize-writes-the-bytes ()
+  "A base64 source becomes a file of exactly those bytes, named by its hash."
+  (ecc-test-with-fake-session session
+    (ecc-image-test--with-dir
+      (let* ((png (ecc-test-image-bytes))
+             (source `((type . "base64") (media_type . "image/png")
+                       (data . ,(base64-encode-string png t))))
+             (entry (ecc-image-materialize session source))
+             (path (alist-get 'path entry)))
+        (should (file-exists-p path))
+        (should (equal (alist-get 'bytes entry) (length png)))
+        (should (equal (alist-get 'media-type entry) "image/png"))
+        (should (equal (file-name-nondirectory path)
+                       (concat (sha1 png) ".png")))
+        (with-temp-buffer
+          (set-buffer-multibyte nil)
+          (insert-file-contents-literally path)
+          (should (equal (buffer-string) png)))
+        ;; The same image twice is the same file: the name is the hash,
+        ;; so a streamed block and the message that closes it agree.
+        (should (equal (alist-get 'path (ecc-image-materialize session source))
+                       path))))))
+
+(ert-deftest ecc-image-test-a-url-is-not-fetched ()
+  "A URL source is carried as a URL and nothing is written."
+  (ecc-test-with-fake-session session
+    (ecc-image-test--with-dir
+      (let ((entry (ecc-image-materialize
+                    session '((type . "url") (url . "https://example.com/a.png")))))
+        (should (equal (alist-get 'url entry) "https://example.com/a.png"))
+        (should-not (alist-get 'path entry))
+        (should-not (file-directory-p
+                     (expand-file-name (ecc-session-id session) ecc-image-dir))))
+      (should-not (ecc-image-materialize session '((type . "file") (file_id . "x")))))))
+
+;;;; What it is drawn as
+
+(ert-deftest ecc-image-test-label-names-the-file-alone ()
+  "The label carries the name and the size, never the directory."
+  (should (equal (ecc-image-label "/tmp/ecc-images/abc/deadbeef.png" 79)
+                 "image · deadbeef.png · 79 B"))
+  (should (equal (ecc-image-label "/tmp/a.png" 1300) "image · a.png · 1.3 kB"))
+  (should (equal (ecc-image-label "/tmp/clip.mp4") "video · clip.mp4")))
+
+(ert-deftest ecc-image-test-string-falls-back-to-the-label ()
+  "Where nothing can be drawn the string is the label and no more."
+  (let ((path (ecc-test-image-file)))
+    (let ((string (ecc-image-string path 400 400 79)))
+      ;; Batch draws nothing, so this is the path every test takes.
+      (should (equal (substring-no-properties string)
+                     (ecc-image-label path 79)))
+      (should-not (get-text-property 0 'display string))
+      (should (equal (get-text-property 0 'ecc-image-file string) path)))
+    ;; And with the setting off, nothing is drawn even in a window.
+    (let ((ecc-image-inline nil))
+      (should-not (ecc-image-available-p path)))))
+
+(ert-deftest ecc-image-test-a-broken-file-does-not-signal ()
+  "A file that is not the image it claims to be leaves a log line."
+  (ecc-image-test--with-dir
+    (let ((path (expand-file-name "broken.png" ecc-image-dir)))
+      (with-temp-file path (insert "not a png"))
+      (should-not (ecc-image-descriptor path 400 400)))))
+
 (provide 'ecc-image-test)
 
 ;;; ecc-image-test.el ends here
