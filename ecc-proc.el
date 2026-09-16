@@ -197,6 +197,23 @@ front of `process-environment', which is what `make-process' reads."
   (append (ecc-model-option session :extra-environment ecc-extra-environment)
           process-environment))
 
+(defun ecc-proc--start-failed (session)
+  "Forget SESSION when its CLI never came up.
+A session that has been running before and is being started again is
+left alone: it has a conversation to read and a buffer the user is in.
+One still at `starting\=' has neither, and there is nothing else that
+would ever take it out of the list."
+  (when (eq (ecc-session-state session) 'starting)
+    ;; The session leaves the list first: killing its transcript runs
+    ;; `ecc-session--forget-on-kill', which would stop a process that is
+    ;; not there and forget it a second time.
+    (let ((buffers (list (ecc-session-stream-buffer session)
+                         (ecc-session-buffer session))))
+      (ecc-model-remove-session session)
+      (dolist (buffer buffers)
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))))))
+
 (defun ecc-proc-start (session &optional resume fork)
   "Start the CLI for SESSION and return the process.
 RESUME and FORK are passed to `ecc-proc-build-command'."
@@ -208,19 +225,34 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
          process)
     (ecc-log (ecc-session-name session) "start: %s"
              (mapconcat #'shell-quote-argument command " "))
+    ;; `make-process' fails on a directory that is not there -- a
+    ;; worktree deleted since the session was asked for -- and the
+    ;; message it raises names `with-editor' or whatever advice is on
+    ;; it rather than the session.  Said here instead, and the session
+    ;; that never came up is taken out of the list below: one left at
+    ;; `starting' with no process sits in the sidebar and the dashboard
+    ;; for ever, and nothing ever takes it out.
+    (unless (file-directory-p default-directory)
+      (ecc-proc--start-failed session)
+      (user-error "%s is not there; %s cannot start"
+                  (abbreviate-file-name default-directory)
+                  (ecc-session-name session)))
     (with-current-buffer (ecc-proc-stream-buffer session)
       (let ((inhibit-read-only t))
         (erase-buffer)))
-    (setq process (make-process
-                   :name (format "ecc: %s" (ecc-session-name session))
-                   :command command
-                   :connection-type 'pipe
-                   :coding 'utf-8-unix
-                   :noquery t
-                   :buffer (ecc-proc-stream-buffer session)
-                   :stderr (ecc-proc-stderr-buffer session)
-                   :filter #'ecc-proc--filter
-                   :sentinel #'ecc-proc--sentinel))
+    (condition-case error
+        (setq process (make-process
+                       :name (format "ecc: %s" (ecc-session-name session))
+                       :command command
+                       :connection-type 'pipe
+                       :coding 'utf-8-unix
+                       :noquery t
+                       :buffer (ecc-proc-stream-buffer session)
+                       :stderr (ecc-proc-stderr-buffer session)
+                       :filter #'ecc-proc--filter
+                       :sentinel #'ecc-proc--sentinel))
+      (error (ecc-proc--start-failed session)
+             (signal (car error) (cdr error))))
     (setf (alist-get 'stop-requested (ecc-session-progress session)) nil)
     (process-put process 'ecc-session-id (ecc-session-id session))
     (setf (ecc-session-process session) process)

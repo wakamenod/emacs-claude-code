@@ -2022,19 +2022,21 @@ no turn, so nothing freezes them."
 `ecc-render--project-name\=' is called from the header line, which
 redisplay evaluates again on every command, and `project-current\=' walks
 the directories above looking for a root: once per directory is enough,
-and the directory only changes when the CLI says it did.")
+and the directory only changes when the user moves the session.")
 
 (defun ecc-render--project-name (session)
   "Return the name of the project SESSION runs in, for the header line.
-The project is the one `project.el\=' finds above the directory the CLI
-works in, so that a session started in a subdirectory says the name of
-the whole tree rather than the leaf; a directory in no project falls
-back to its own name, and so does a session that has no directory yet.
+The project is the one `project.el\=' finds above the root the session
+was started in, so that a session started in a subdirectory says the
+name of the whole tree rather than the leaf; a directory in no project
+falls back to its own name, and so does a session that has no directory
+yet.  The header says the same project as the tab line and the Space,
+which is why it asks the root and not the cwd the CLI reports.
 It stands next to the state, on the left of the header line: several
 sessions look alike from a distance, and the buffer name is not on the
 screen when the window has no mode line."
-  (when-let* ((directory (or (ecc-session-cwd session)
-                             (ecc-session-project-root session)))
+  (when-let* ((directory (or (ecc-session-project-root session)
+                             (ecc-session-cwd session)))
               (name (if (equal (car ecc-render--project-cache) directory)
                         (cdr ecc-render--project-cache)
                       (let ((name (ecc-render--project-name-1 directory)))

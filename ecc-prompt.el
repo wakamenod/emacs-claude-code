@@ -26,6 +26,7 @@
 (require 'ecc-proc)
 (require 'ecc-render)
 (require 'ecc-chat)
+(require 'ecc-session)
 (require 'ecc-hint)
 (require 'ecc-window)
 (require 'ecc-context)
@@ -923,6 +924,51 @@ is what says the prompt region should be left as it was."
        (run-hook-with-args-until-success 'ecc-prompt-intercept-functions
                                          session command)))
 
+(defconst ecc-prompt--cd-regexp
+  "\\`/cd[ \t]+\\(.+?\\)[ \t]*\\'"
+  "What a `/cd\=' typed into the prompt region looks like.
+The whole prompt, because `/cd\=' with something after it is a slash
+command and not a sentence.")
+
+(defun ecc-prompt--cd-target (session text)
+  "Return the directory a `/cd\=' in TEXT moves SESSION to, or nil.
+The path is read from where the session is now, so that a relative one
+means what it does in the transcript, and `~\=' means what it always
+does."
+  (when (string-match ecc-prompt--cd-regexp text)
+    (let ((argument (string-trim (substring-no-properties
+                                  (match-string 1 text))
+                                 "[\"' \t]+" "[\"' \t]+")))
+      (unless (string-empty-p argument)
+        (expand-file-name argument (ecc-session-directory session))))))
+
+(defun ecc-prompt--follow-cd (session text)
+  "Move SESSION when TEXT is a `/cd\=' the user typed into the prompt.
+A `/cd\=' typed here is the user saying where the session is from now
+on, and it is the only thing that moves one.  The cwd the CLI reports
+cannot be used for this: CLI 2.1.272 reports as the session cwd
+whatever directory the last Bash tool call left it in (confirmed
+2026-09-16), so following it would carry the Space, the tab line and
+the `default-directory\=' of the transcript off to wherever the model
+last ran a `cd\='.
+
+A directory this Emacs does not have is said and ignored; the prompt
+goes to the CLI either way, which will have its own word on it.
+
+Where the session went, or did not, is the news of the send and is said
+last, over the `Sent\=' that would otherwise be the last thing on the
+screen."
+  (when-let* ((target (ecc-prompt--cd-target session text)))
+    (if-let* ((moved (ecc-session-set-root session target)))
+        (progn (message "%s is now in %s" (ecc-session-name session)
+                        (abbreviate-file-name moved))
+               moved)
+      (message "%s is not a directory here; %s stays in %s"
+               (abbreviate-file-name target)
+               (ecc-session-name session)
+               (abbreviate-file-name (or (ecc-session-directory session) "?")))
+      nil)))
+
 (cl-defun ecc-prompt-send ()
   "Send the prompt region, or queue it while a turn runs.
 A draft one of `ecc-prompt-intercept-functions\' takes is not sent at
@@ -960,6 +1006,9 @@ history."
                      "A turn started from Remote Control is running"
                    "A turn is running")
                  outcome (ecc-prompt--attachment-report)))
+      ;; Last, so that what became of the session is what is left on the
+      ;; screen rather than the `Sent' of a prompt that has moved it.
+      (ecc-prompt--follow-cd session raw)
       outcome)))
 
 (defun ecc-prompt-clear ()

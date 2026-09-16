@@ -63,7 +63,7 @@
   "One line of the dashboard."
   key           ; the session id, which is what makes a row unique
   session       ; the `ecc-session' the row is about
-  name state cwd model prompt time cost
+  name state root cwd model prompt time cost
   waiting)      ; how many requests of this session wait for an answer
 
 (defun ecc-dashboard--session-entry (session)
@@ -74,7 +74,8 @@
      :session session
      :name (ecc-session-name session)
      :state (format "%s" (ecc-session-state session))
-     :cwd (or (ecc-session-cwd session) (ecc-session-project-root session))
+     :root (or (ecc-session-project-root session) (ecc-session-cwd session))
+     :cwd (ecc-session-cwd session)
      :model (ecc-render--model-name session)
      :prompt (or (and turn (ecc-turn-prompt turn)) "")
      :time (or (ecc-session-last-result-time session)
@@ -289,14 +290,26 @@ it on."
 
 ;;;; Drawing
 
-(defun ecc-dashboard--project-cell (cwd)
-  "Return the Project cell of a row whose working directory is CWD.
+(defun ecc-dashboard--project-cell (root &optional cwd)
+  "Return the Project cell of a row whose session lives in ROOT.
 Only the last name of the path is shown, because that is what tells one
-project from another; the whole path is in the tooltip."
-  (let ((label (ecc--fit (ecc--project-label cwd) 20)))
-    (if (null cwd)
+project from another; the whole path is in the tooltip.  The column
+names the root rather than CWD, the directory the CLI reports: that one
+is wherever the last Bash tool call left the CLI (2.1.272, confirmed
+2026-09-16), so it moves under a row that has not moved.  It is worth
+seeing all the same, and follows the root in the tooltip when the two
+have come apart."
+  (let ((label (ecc--fit (ecc--project-label root) 20)))
+    (if (null root)
         label
-      (propertize label 'help-echo (abbreviate-file-name cwd)))))
+      (propertize label 'help-echo
+                  (concat (abbreviate-file-name root)
+                          (when (and cwd (not (equal (file-name-as-directory
+                                                      (expand-file-name cwd))
+                                                     (file-name-as-directory
+                                                      (expand-file-name root)))))
+                            (format " (the CLI is in %s)"
+                                    (abbreviate-file-name cwd))))))))
 
 (defun ecc-dashboard--row (entry)
   "Return the `tabulated-list-entries' row of ENTRY."
@@ -306,7 +319,9 @@ project from another; the whole path is in the tooltip."
            (ecc--truncate (or (ecc-dashboard-entry-name entry) "") 24)
            (ecc-dashboard--state-cell entry)
            (ecc-dashboard--detail
-            (ecc-dashboard--project-cell (ecc-dashboard-entry-cwd entry)) quiet)
+            (ecc-dashboard--project-cell (ecc-dashboard-entry-root entry)
+                                         (ecc-dashboard-entry-cwd entry))
+            quiet)
            (ecc-dashboard--detail (or (ecc-dashboard-entry-model entry) "") quiet)
            (ecc-dashboard--detail
             (ecc--truncate (or (ecc-dashboard-entry-prompt entry) "") 60) quiet)

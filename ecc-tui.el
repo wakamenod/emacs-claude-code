@@ -159,7 +159,11 @@ the conversation without saying so."
 
 (defun ecc-tui-directory (session)
   "Return the directory a terminal for SESSION should start in."
-  (or (ecc-session-cwd session) (ecc-session-project-root session)
+  ;; The root, not the cwd: the CLI reports the directory the last Bash
+  ;; tool call left it in as the session cwd (2.1.272, confirmed
+  ;; 2026-09-16), and a terminal is opened to carry on where the session
+  ;; is, not where a tool happened to run.
+  (or (ecc-session-project-root session) (ecc-session-cwd session)
       default-directory))
 
 (defun ecc-tui--open-ghostel (session)

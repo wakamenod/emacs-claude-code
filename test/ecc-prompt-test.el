@@ -37,6 +37,91 @@
     (should (equal (ecc-turn-prompt (ecc-session-current-turn session))
                    "hello\nworld"))))
 
+(defmacro ecc-prompt-test--last-message (&rest body)
+  "Run BODY and return the last thing it put in the echo area.
+`current-message\=' is nil in batch, so the messages are collected as
+they are made."
+  (declare (indent 0))
+  `(let ((said nil))
+     (cl-letf (((symbol-function 'message)
+                (lambda (format &rest args)
+                  (when format (push (apply #'format format args) said)))))
+       ,@body)
+     (car said)))
+
+(ert-deftest ecc-prompt-test-cd-moves-the-session ()
+  "A `/cd\=' typed into the prompt moves the session and its buffer.
+It is the one thing that does: the cwd the CLI reports is wherever the
+last Bash tool call left it (2.1.272, 2026-09-16), so the session
+follows what the user says and nothing else."
+  (ecc-test-with-fake-session session
+    (let* ((root (file-name-as-directory (make-temp-file "ecc-cd" t)))
+           (inner (file-name-as-directory (expand-file-name "sub" root))))
+      (unwind-protect
+          (progn
+            (make-directory inner t)
+            (setf (ecc-session-project-root session) root)
+            (let ((buffer (ecc-session-ensure-buffer session)))
+              (should (string-search
+                       (abbreviate-file-name inner)
+                       (ecc-prompt-test--last-message
+                         (ecc-prompt-test--in-buffer session
+                           (insert "/cd sub")
+                           (ecc-prompt-send)))))
+              ;; The prompt went to the CLI as it was typed; Emacs moved
+              ;; as well rather than instead.
+              (should (equal (ecc-protocol-serialize
+                              (car (ecc-test-sent-messages)))
+                             (ecc-protocol-serialize
+                              (ecc-protocol-user-message "/cd sub"))))
+              (should (equal (ecc-session-project-root session) inner))
+              (should (equal (buffer-local-value 'default-directory buffer)
+                             inner))
+              ;; Relative to where the session is now, not to where it
+              ;; started.
+              (ecc-prompt-test--in-buffer session
+                (insert "/cd ..")
+                (ecc-prompt-send))
+              (should (equal (ecc-session-project-root session) root))))
+        (delete-directory root t)))))
+
+(ert-deftest ecc-prompt-test-cd-to-nowhere-does-not-move ()
+  "A `/cd\=' at a directory this Emacs does not have leaves the session."
+  (ecc-test-with-fake-session session
+    (let ((root (file-name-as-directory (make-temp-file "ecc-cd" t))))
+      (unwind-protect
+          (progn
+            (setf (ecc-session-project-root session) root)
+            (let ((buffer (ecc-session-ensure-buffer session)))
+              ;; Sent all the same: the CLI has its own word on it,
+              ;; and the refusal is what is left on the screen rather
+              ;; than the `Sent' that follows the send.
+              (should (string-search
+                       "not a directory here"
+                       (ecc-prompt-test--last-message
+                         (ecc-prompt-test--in-buffer session
+                           (insert "/cd nowhere-at-all")
+                           (ecc-prompt-send)))))
+              (should (ecc-test-sent-messages))
+              (should (equal (ecc-session-project-root session) root))
+              (should (equal (buffer-local-value 'default-directory buffer)
+                             root))))
+        (delete-directory root t)))))
+
+(ert-deftest ecc-prompt-test-cd-is-not-read-out-of-a-sentence ()
+  "Only a prompt that is the command moves the session."
+  (ecc-test-with-fake-session session
+    (let ((root (file-name-as-directory (make-temp-file "ecc-cd" t))))
+      (unwind-protect
+          (progn
+            (make-directory (expand-file-name "sub" root))
+            (setf (ecc-session-project-root session) root)
+            (dolist (text '("please /cd sub" "/cdr sub" "/cd"))
+              (should-not (ecc-prompt--cd-target session text)))
+            (should (equal (ecc-prompt--cd-target session "/cd sub")
+                           (expand-file-name "sub" root))))
+        (delete-directory root t)))))
+
 (ert-deftest ecc-prompt-test-empty-prompt-is-refused ()
   "An empty buffer is not sent."
   (ecc-test-with-fake-session session

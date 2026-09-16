@@ -515,9 +515,7 @@ carry the time of the index it was made from."
   (ecc-test-with-fake-session session
     (ecc-review-test--with-directory directory
       (ecc-review-test--with-directory other
-        ;; The project of a session is its cwd first, so both are moved.
-        (setf (ecc-session-cwd session) other
-              (ecc-session-project-root session) other)
+        (setf (ecc-session-project-root session) other)
         (let ((mine (ecc-model-create-session :name "mine" :project-root directory)))
           (unwind-protect
               (progn
@@ -530,8 +528,7 @@ carry the time of the index it was made from."
   (ecc-test-with-fake-session session
     (ecc-review-test--with-directory directory
       (ecc-review-test--with-directory other
-        (setf (ecc-session-cwd session) other
-              (ecc-session-project-root session) other)
+        (setf (ecc-session-project-root session) other)
         (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
           (should-error (ecc-review-worktree-session directory) :type 'user-error))
         (let ((started nil))

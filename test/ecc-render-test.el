@@ -392,9 +392,9 @@ next to the permission mode."
 
 (ert-deftest ecc-render-test-header-names-the-project ()
   "The project stands on the left of the header line, after the state.
-It is the project `project.el\=' finds above the directory the CLI works
-in, so that a session started in a subdirectory says the name of the
-whole tree.  Several sessions look alike from a distance, and a window
+It is the project `project.el\=' finds above the root the session was
+started in, so that a session started in a subdirectory says the name
+of the whole tree.  Several sessions look alike from a distance, and a window
 with no mode line shows the buffer name nowhere."
   (ecc-test-with-fake-session session
     (let* ((root (file-name-as-directory
@@ -404,7 +404,7 @@ with no mode line shows the buffer name nowhere."
           (progn
             (make-directory (expand-file-name ".git" root))
             (make-directory inner t)
-            (setf (ecc-session-cwd session) inner)
+            (setf (ecc-session-project-root session) inner)
             (ecc-session-ensure-buffer session)
             (setf (ecc-session-state session) 'idle)
             (with-current-buffer (ecc-session-buffer session)
@@ -419,12 +419,12 @@ with no mode line shows the buffer name nowhere."
                                        (substring-no-properties
                                         (ecc-render-header-line))))
                 ;; A directory in no project says its own name, and the
-                ;; answer follows the directory when the CLI moves.
+                ;; answer follows the session when the user moves it.
                 (let ((elsewhere (file-name-as-directory
                                   (make-temp-file "ecc-plain" t))))
                   (unwind-protect
                       (progn
-                        (setf (ecc-session-cwd session) elsewhere)
+                        (setf (ecc-session-project-root session) elsewhere)
                         (should (string-search
                                  (concat "  " (file-name-nondirectory
                                                (directory-file-name elsewhere)))
