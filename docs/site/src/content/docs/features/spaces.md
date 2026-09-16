@@ -138,6 +138,10 @@ Ask, inside a session, for something to be done in a worktree — "cut a worktre
 
 With the [Emacs MCP server](/emacs-claude-code/start/installation/) on (`ecc-mcp-enabled`), the model is offered a tool instead, `start_worktree_session`. It names the branch and writes the brief; Emacs makes the checkout, opens it as a Space, starts a session there and sends it that brief. The new session is told which repository it is in, which branch it is on and which session sent it, because it cannot read the conversation it came from. The session that asked reports where the work went and does not do it as well.
 
+**What the new session is told.** The brief is the model's account of the work, and Emacs adds what it watched the same conversation do: the files it touched, by the name the new checkout has for them; the plans it wrote; the path of the recording, to read only if the brief leaves a question open; and the changes that are uncommitted in the repository. That last one matters — the checkout is made from `HEAD`, so uncommitted work is not in it. Commit it first, or say so in the brief.
+
+**The two other ways are turned back.** A model can reach a worktree through the CLI's own `EnterWorktree` or through `git worktree add` in Bash, and both leave one conversation working in two checkouts. When the session has the tool, Emacs refuses those requests with a sentence naming it, and nothing is put in front of you. Nothing is refused in a session without the tool — the MCP server off, or `start_worktree_session` in `ecc-mcp-excluded-tools` — and `ExitWorktree` is never touched. In an `auto` permission mode the CLI may allow a tool without asking Emacs, so a draft of yours that says *worktree*, in English or Japanese, is sent with one line reminding the model of the tool.
+
 A branch another worktree already holds is refused rather than joined — two sessions in one checkout is not what handing work over means — and the model is told to name another one. `M-x` has no command for this; from Lisp it is `ecc-worktree-delegate`.
 
 Under `spaces`, a session started in a worktree opens a Space of its own, under the repository it came from.

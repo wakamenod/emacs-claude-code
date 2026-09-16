@@ -272,6 +272,24 @@ Verified against **Claude Code CLI 2.1.270**.
   carries on in the same session, which leaves one conversation working in two
   checkouts. `ecc-worktree-delegate` is the same thing from Lisp.
 
+  The brief carries what Emacs knows as well as what the model wrote: the files
+  the conversation touched, by the name the new checkout has for them, the
+  plans it wrote, the path of its recording to read only if the brief leaves a
+  question open, and the changes that are uncommitted in the repository -- a
+  checkout is made from `HEAD`, so a brief leaning on one of those sends the new
+  session looking for an edit that is not there.
+
+  The two other ways to a worktree are turned back. `EnterWorktree`, which a
+  stream-json session carries, and `git worktree add` in Bash are refused with a
+  sentence naming the tool, through `ecc-request-refuse-functions`: a
+  can_use_tool request whose answer is settled without a person is answered
+  before anybody is asked, and the transcript keeps the note. Nothing is refused
+  in a session that has not got the tool. Because an `auto` permission mode may
+  allow a tool without asking Emacs at all, a draft that says worktree, in
+  English or Japanese, is sent with one line reminding the model of the tool --
+  `ecc-prompt-prepare-functions`, which is where a module adds a word of its own
+  to a draft.
+
   Where a checkout goes is `ecc-worktree-directory`, `.claude/worktrees` by
   default, which is where Claude Code's own worktrees go. A relative name hangs
   off the repository; an absolute one is a directory every repository shares,
