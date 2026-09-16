@@ -113,11 +113,15 @@ subdirectory group with the tree it is part of rather than stand alone."
 
 (defun ecc-window-session-project (session)
   "Return the project SESSION belongs to.
-The directory the CLI says it works in is asked first and the root the
-session was made with second: a `/cd\=' moves the one and leaves the
-other, and what the user means by the project is where the CLI is."
-  (ecc-window-project-key (or (ecc-session-cwd session)
-                              (ecc-session-project-root session))))
+The root the session was started in, which `ecc-session-set-root\=' moves
+when the user types a `/cd\=' and nothing else does.  The cwd the CLI
+reports is not asked: CLI 2.1.272 reports as the session cwd whatever
+directory the last Bash tool call left it in (confirmed 2026-09-16), so
+a model that runs `cd /tmp\=' would move the session out of its Space,
+out of its tab line and into a project nobody started it in.  It is
+second only for a session that has no root of its own."
+  (ecc-window-project-key (or (ecc-session-project-root session)
+                              (ecc-session-cwd session))))
 
 (defun ecc-window-session-projects ()
   "Return the projects that have a session, most recently used first."

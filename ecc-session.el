@@ -57,6 +57,41 @@ not its buffer, so killing it does nothing."
         (when (buffer-live-p buffer)
           (kill-buffer buffer))))))
 
+(defun ecc-session-directory (session)
+  "Return the directory SESSION works in.
+The root it was started in, which is what `ecc-window-session-project\='
+asks as well: the buffer, the sidebar and the Spaces must not disagree
+about where a session is.  The cwd the CLI reports comes second and
+only for a session that has no root of its own -- one read back from a
+recording.  It is not asked first because CLI 2.1.272 reports as the
+session cwd whatever directory the last Bash tool call left it in
+\(confirmed 2026-09-16), so it says where a tool ran and not where the
+session lives."
+  (when-let* ((directory (or (ecc-session-project-root session)
+                             (ecc-session-cwd session))))
+    (file-name-as-directory (expand-file-name directory))))
+
+(defun ecc-session-set-root (session directory)
+  "Move SESSION to DIRECTORY and take its buffer with it.
+The root is where a session lives: the Space it opens in, the project
+its tab line groups it under, and the `default-directory\=' of the
+transcript, which is what Magit, `project-find-file\=' and everything
+else run from the buffer acts in.  Only the user moves it, by typing a
+`/cd\=' into the prompt region; nothing the model does moves a session.
+
+DIRECTORY that is not there is refused and nil comes back: a
+`default-directory\=' pointing at nothing breaks every command in the
+buffer."
+  (let ((directory (file-name-as-directory (expand-file-name directory))))
+    (when (file-directory-p directory)
+      (setf (ecc-session-project-root session) directory)
+      (when-let* ((buffer (ecc-session-buffer session))
+                  ((buffer-live-p buffer)))
+        (with-current-buffer buffer
+          (setq default-directory directory)))
+      (force-mode-line-update t)
+      directory)))
+
 (defun ecc-session-buffer-name (name)
   "Return the name of the buffer of the session called NAME."
   (format "*ecc: %s*" name))
@@ -71,7 +106,7 @@ not its buffer, so killing it does nothing."
       (with-current-buffer buffer
         ;; The buffer lives in the project, so that project commands and
         ;; `ecc-next-attention-in-project' see the right root.
-        (setq default-directory (or (ecc-session-project-root session)
+        (setq default-directory (or (ecc-session-directory session)
                                     default-directory))
         (ecc-chat-mode)
         (add-hook 'kill-buffer-hook #'ecc-session--forget-on-kill nil t)

@@ -357,6 +357,31 @@ Verified against **Claude Code CLI 2.1.270**.
 
 ### Fixed
 
+- A session stays in the directory it was started in. It used to follow the
+  cwd the CLI reports on every `system/init`, which the docstring explained
+  as a `/cd`. It is not: CLI 2.1.272 reports whatever directory the last
+  Bash tool call left it in, so a model that runs `cd somewhere && ...`
+  moved the session -- under `spaces`, out of its Space and its tab line,
+  into a project nobody started it in, where the sidebar and `C-c c j` could
+  not find it and started a second session instead (confirmed 2026-09-16).
+
+  Where a session lives is now the root it was started in, asked by the
+  transcript's `default-directory`, by the header line, by the tab line, by
+  the Spaces and by a terminal hand-off alike. The only thing that moves it
+  is a `/cd <dir>` typed into the prompt region, which moves the root and the
+  buffer with it and says where the session went -- or, when the directory is
+  not there, that it stayed. The cwd the CLI
+  reports is still read, and is what the dashboard's Project tooltip adds
+  when the two have come apart.
+
+- A session whose CLI never started is no longer left behind. `make-process`
+  fails when the root is not there -- a worktree deleted since the session
+  was asked for -- and the session stayed in the list as `starting` with no
+  process, in the sidebar and the dashboard, with nothing that would ever
+  take it out. It is now said in terms of the session and the directory, and
+  forgotten; one that had been running before and is being started again is
+  left alone.
+
 - The ediff review is read as code now, and takes the frame it opens in.
   Three things were wrong with how it looked, all reported 2026-09-16.
 

@@ -639,6 +639,28 @@ will never finish."
       (should-error (ecc-proc-release session 0.1) :type 'user-error))
     (should stopped)))
 
+(ert-deftest ecc-proc-test-a-session-that-cannot-start-is-forgotten ()
+  "A session whose CLI never came up does not stay in the list.
+`make-process' fails on a root that is not there -- a worktree deleted
+since the Space was made -- and the session was left at `starting' with
+no process, showing in the sidebar and the dashboard for ever.  Two
+sessions, because the one that did start must be untouched."
+  (ecc-test-with-fake-session session
+    (let ((gone (ecc-model-create-session
+                 :name "gone"
+                 :project-root (expand-file-name "ecc-no-such-directory/"
+                                                 temporary-file-directory))))
+      (unwind-protect
+          (progn
+            (should (eq (ecc-session-state gone) 'starting))
+            (let ((buffer (ecc-session-ensure-buffer gone)))
+              (should-error (ecc-proc-start gone) :type 'user-error)
+              (should-not (ecc-model-session (ecc-session-id gone)))
+              ;; And nothing of it is left on the screen either.
+              (should-not (buffer-live-p buffer)))
+            (should (ecc-model-session (ecc-session-id session))))
+        (ecc-test-cleanup-session gone)))))
+
 (provide 'ecc-proc-test)
 
 ;;; ecc-proc-test.el ends here

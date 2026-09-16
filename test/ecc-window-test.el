@@ -84,14 +84,27 @@ nowhere to be found among its siblings."
           (ecc-test-cleanup-session deep)
           (ecc-model-remove-session deep))))))
 
-(ert-deftest ecc-window-test-session-project-follows-the-cli-cwd ()
-  "The project of a session is where the CLI works, not where it started.
-A `/cd\=' moves the one and leaves the other."
+(ert-deftest ecc-window-test-session-project-ignores-the-cli-cwd ()
+  "The cwd the CLI reports does not move a session out of its project.
+CLI 2.1.272 reports the directory the last Bash tool call left it in as
+the session cwd (2026-09-16), so a model that runs `cd\=' would otherwise
+carry the session out of its Space and its tab line.  Two sessions,
+because only one of them moves: what it does to the other is the bug."
   (ecc-window-test--with-projects '("/tmp/project-one/" "/tmp/project-two/")
     (ecc-window-test--with-sessions one two
       (should-not (equal (ecc-window-session-project one)
                          (ecc-window-session-project two)))
       (setf (ecc-session-cwd one) "/tmp/project-two/src/")
+      (should-not (equal (ecc-window-session-project one)
+                         (ecc-window-session-project two)))
+      (should (equal (mapcar #'ecc-session-name
+                             (ecc-window-project-sessions "/tmp/project-two/"))
+                     '("two")))
+      (should (equal (mapcar #'ecc-session-name
+                             (ecc-window-project-sessions "/tmp/project-one/"))
+                     '("one")))
+      ;; The user moving it does move it.
+      (setf (ecc-session-project-root one) "/tmp/project-two/src/")
       (should (equal (ecc-window-session-project one)
                      (ecc-window-session-project two)))
       (should (equal (sort (mapcar #'ecc-session-name

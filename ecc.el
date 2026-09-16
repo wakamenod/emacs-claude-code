@@ -303,7 +303,8 @@ and resuming it asks first."
                            'running 'own)
                        (ecc-session-name session)
                        (ecc--session-time session)
-                       (abbreviate-file-name (or (ecc-session-cwd session) "")))
+                       (abbreviate-file-name
+                        (or (ecc-session-project-root session) "")))
                       id)
                 candidates))))
     (dolist (info (ecc-history-recordings project-root))
