@@ -579,12 +579,35 @@ while working, and it is `no-other-window' for the same reason."
       (unless (derived-mode-p 'ecc-sidebar-mode)
         (ecc-sidebar-mode)))
     (ecc-sidebar-redraw)
-    (display-buffer-in-side-window
-     buffer `((side . left)
-              (slot . 0)
-              (window-width . ,ecc-sidebar-width)
-              (window-parameters . ((no-delete-other-windows . t)
-                                    (no-other-window . t)))))))
+    (let ((window
+           (display-buffer-in-side-window
+            buffer `((side . left)
+                     (slot . 0)
+                     (window-width . ,ecc-sidebar-width)
+                     ;; Without this the sidebar is resized with the
+                     ;; frame, in proportion, like any other window: a
+                     ;; 28-column sidebar on a 100-column frame came back
+                     ;; 82 columns wide when the frame was made 292 wide,
+                     ;; and what it draws is `ecc-sidebar-width' columns
+                     ;; whatever the window measures, so the rest of it
+                     ;; was blank and half the screen was gone (measured
+                     ;; 2026-09-16).
+                     (preserve-size . (t . nil))
+                     (window-parameters . ((no-delete-other-windows . t)
+                                           (no-other-window . t)))))))
+      (when window
+        ;; A window that is already there is reused as it is, so one that
+        ;; grew before this was fixed -- or that a frame resize widened
+        ;; between two calls -- is put back to its width here.
+        (ecc-sidebar--set-width window))
+      window)))
+
+(defun ecc-sidebar--set-width (window)
+  "Make WINDOW exactly `ecc-sidebar-width' columns wide and keep it there."
+  (let ((delta (- ecc-sidebar-width (window-total-width window))))
+    (unless (zerop delta)
+      (ignore-errors (window-resize window delta t)))
+    (window-preserve-size window t t)))
 
 ;;;###autoload
 (defun ecc-sidebar-hide ()

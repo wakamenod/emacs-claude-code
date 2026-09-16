@@ -365,6 +365,29 @@ several times a second, moving down onto one with `C-n' was impossible."
       (should-not (window-live-p window))
       (should (buffer-live-p (get-buffer ecc-sidebar-buffer-name))))))
 
+(ert-deftest ecc-sidebar-test-the-width-survives-the-frame-changing-size ()
+  "The sidebar keeps its width when the frame is made wider or narrower.
+Without a preserved size it is resized in proportion like any other
+window, and since it draws `ecc-sidebar-width' columns whatever the
+window measures, the rest of a widened one is blank."
+  (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
+                                    ("two" . ,ecc-sidebar-test--two))
+    (delete-other-windows)
+    (let ((window (ecc-sidebar-show)))
+      (should (= (window-total-width window) ecc-sidebar-width))
+      (set-frame-width nil 200)
+      (should (= (window-total-width window) ecc-sidebar-width))
+      (set-frame-width nil 90)
+      (should (= (window-total-width window) ecc-sidebar-width))
+      ;; And one that is already too wide is put back by showing it
+      ;; again, which is what recovers a sidebar widened before this.
+      (window-preserve-size window t nil)
+      (window-resize window 20 t)
+      (should (> (window-total-width window) ecc-sidebar-width))
+      (should (eq (ecc-sidebar-show) window))
+      (should (= (window-total-width window) ecc-sidebar-width))
+      (ecc-sidebar-hide))))
+
 (ert-deftest ecc-sidebar-test-focus-goes-in-and-comes-back ()
   "`ecc-sidebar-focus' is the way in, and the same command is the way out.
 `no-other-window' keeps `C-x o' out of the sidebar, which leaves its
