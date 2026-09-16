@@ -711,6 +711,36 @@ thing left; what the CLI does there is recorded in
 
 (add-hook 'ecc-request-refuse-functions #'ecc-worktree-refuse-request)
 
+(defvar ecc-worktree-prompt-hint-text
+  "\n(If this asks for work in a worktree of its own, hand it over with \
+start_worktree_session rather than making the checkout here.)"
+  "The line added to a draft that speaks of a worktree.
+A tool is offered to the model once, at the start of a session, among
+every other tool; this is the reminder at the moment it applies.  It is
+a sentence sent to the model, so it is a variable and not a setting.")
+
+(defconst ecc-worktree--prompt-regexp "worktree\\|ワークツリー"
+  "What a draft that is asking for a worktree says.
+Both spellings: the user writes to Emacs in either language.")
+
+(defun ecc-worktree-prompt-hint (session text)
+  "Add a line to TEXT when it asks SESSION for work in a worktree.
+On `ecc-prompt-prepare-functions\=', so it costs the line only on the
+prompts that mention one -- and nothing at all in a session that has no
+`start_worktree_session\=' to be reminded of.
+
+The permission mode decides whether this is the only thing standing
+between the request and `git worktree add\=': `ecc-worktree-refuse-request\='
+answers the ones the CLI asks Emacs about, and an `auto\=' mode need not
+ask (checked 2026-09-16)."
+  (if (and (stringp text)
+           (string-match-p ecc-worktree--prompt-regexp text)
+           (ecc-worktree-tool-published-p session))
+      (concat text ecc-worktree-prompt-hint-text)
+    text))
+
+(add-hook 'ecc-prompt-prepare-functions #'ecc-worktree-prompt-hint)
+
 ;;;; Commands
 
 (defun ecc-worktree-context-root ()

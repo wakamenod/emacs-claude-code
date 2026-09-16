@@ -459,6 +459,33 @@ has it need not be named the way this package would have named it."
       (should-not (ecc-worktree-test--denials))
       (should (= 2 (length (ecc-session-pending session)))))))
 
+(ert-deftest ecc-worktree-test-prompt-hint ()
+  "A draft that speaks of a worktree is sent with a line about the tool."
+  (require 'ecc-mcp)
+  (require 'ecc-prompt)
+  (ecc-worktree-register-mcp-tool)
+  (ecc-test-with-fake-session session
+    (let ((ecc-mcp-enabled t)
+          (ecc-mcp-excluded-tools nil))
+      (should (string-match-p
+               "start_worktree_session"
+               (ecc-prompt-prepare-text session "worktree を切ってやって")))
+      (should (string-match-p
+               "start_worktree_session"
+               (ecc-prompt-prepare-text session "do it in a worktree")))
+      ;; The user's own words are still the first thing in it.
+      (should (string-prefix-p "do it in a worktree"
+                               (ecc-prompt-prepare-text
+                                session "do it in a worktree")))
+      ;; A draft about anything else costs nothing.
+      (should (equal "make the tests pass"
+                     (ecc-prompt-prepare-text session "make the tests pass")))
+      ;; And neither does one in a session with no such tool.
+      (let ((ecc-mcp-enabled nil))
+        (should (equal "worktree を切ってやって"
+                       (ecc-prompt-prepare-text session
+                                                "worktree を切ってやって")))))))
+
 ;;;; Offering to undo a checkout
 
 (defmacro ecc-worktree-test--with-answer (answer &rest body)

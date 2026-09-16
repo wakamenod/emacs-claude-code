@@ -866,6 +866,21 @@ are not offered, but one typed out by hand is still accepted."
   (message "Attaching the editor context is %s"
            (if ecc-prompt--attach-context "on" "off")))
 
+(defvar ecc-prompt-prepare-functions nil
+  "Functions given a session and a draft, returning the draft to send.
+Each is called in turn with what the one before it returned, after the
+slash command, the @ references and the editor context have been dealt
+with, and what the last one returns is what goes to the CLI.  A
+function that has nothing to add returns the draft it was given.
+
+This is where a module puts a word of its own beside what the user
+wrote -- a line saying that Emacs can do the thing being asked for.
+Taking the draft away from the CLI altogether is
+`ecc-prompt-intercept-functions\=', which is the other one.
+
+What is added here is sent and is part of the conversation, so it is
+worth what it costs: a line on every prompt is a line on every prompt.")
+
 (defun ecc-prompt-prepare-text (session text &optional source attach)
   "Return TEXT as it should be sent for SESSION.
 The slash command is dealt with first, then the @ references are
@@ -874,10 +889,12 @@ non-nil.  The paths of the labels are relative to the project of
 SESSION, which is where the CLI reading them stands."
   (let* ((root (ecc-window-project-root (ecc-session-project-root session)))
          (text (ecc-prompt-expand-references
-                (ecc-prompt-prepare-command session text) source root)))
-    (if attach
-        (concat text (or (ecc-context-block source root) ""))
-      text)))
+                (ecc-prompt-prepare-command session text) source root))
+         (text (if attach
+                   (concat text (or (ecc-context-block source root) ""))
+                 text)))
+    (dolist (function ecc-prompt-prepare-functions text)
+      (setq text (or (funcall function session text) text)))))
 
 (defun ecc-prompt--attachment-report ()
   "Return what to add to the message of a send about its @ references.
