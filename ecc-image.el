@@ -187,14 +187,18 @@ between the two would redraw the transcript differently each time."
 
 ;;;; What it is drawn as
 
-(defun ecc-image-label (path &optional bytes)
+(defun ecc-image-label (path &optional bytes name)
   "Return the line naming PATH, of BYTES bytes when that is known.
+NAME is said instead of the name of the file: an image decoded out of a
+message is named by the hash of its bytes, which nobody wants to read,
+and the call it came back from usually named a file itself.
+
 Only the last component is named: the rest is a session id and a hash,
 which say nothing and would differ between two machines reading the
 same recording."
   (let ((kind (or (ecc-image-kind path) 'image)))
     (concat (if (eq kind 'video) "video" "image")
-            " · " (file-name-nondirectory (or path ""))
+            " · " (file-name-nondirectory (or name path ""))
             (if bytes
                 (concat " · " (file-size-human-readable bytes 'si " " "B"))
               ""))))
@@ -211,15 +215,16 @@ signal here would take the whole redraw down with it."
       (error (ecc-log "image" "%s: %s" path (error-message-string err))
              nil))))
 
-(defun ecc-image-string (path width height &optional bytes)
+(defun ecc-image-string (path width height &optional bytes name)
   "Return the string PATH is drawn as, at most WIDTH by HEIGHT pixels.
+NAME is passed to the label.
 The text of it is `ecc-image-label\=', so that a copy of the region, a
 search through it and a snapshot of it all find the name of the file.
 The picture rides on top in a `display\=' property, and is simply absent
 where this frame cannot draw one.  BYTES is passed to the label.
 
 Nothing is inserted here.  `ecc-render\=' is what draws."
-  (let* ((label (ecc-image-label path bytes))
+  (let* ((label (ecc-image-label path bytes name))
          (string (propertize label
                              'face 'ecc-dim-face
                              'ecc-image-file path

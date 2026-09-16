@@ -66,6 +66,150 @@ NAME, PROMPT and ANSWERS are as there."
     (ert-fail (format "%s differs from its snapshot; see %s.new"
                       name (ecc-test-snapshot-file name)))))
 
+;;;; Images
+
+(defmacro ecc-render-test--with-images (session &rest body)
+  "Run BODY with SESSION writing its images somewhere of its own."
+  (declare (indent 1))
+  `(let ((ecc-image-dir (make-temp-file "ecc-images" t)))
+     (unwind-protect (progn ,@body)
+       (setf (ecc-session-tmp-dir ,session) nil)
+       (when (file-directory-p ecc-image-dir)
+         (delete-directory ecc-image-dir t)))))
+
+(defun ecc-render-test--image-block ()
+  "Return an image content block carrying the image fixture."
+  `((type . "image")
+    (source . ((type . "base64") (media_type . "image/png")
+               (data . ,(base64-encode-string (ecc-test-image-bytes) t))))))
+
+(defun ecc-render-test--read-with-image (session)
+  "Feed SESSION a Read of a .png answered with the image itself."
+  (ecc-dispatch session
+                '((type . "assistant") (uuid . "u1")
+                  (message . ((content . [((type . "tool_use") (id . "t1")
+                                           (name . "Read")
+                                           (input . ((file_path . "/tmp/red.png"))))])))))
+  (ecc-dispatch session
+                `((type . "user")
+                  (message . ((content . [((type . "tool_result")
+                                           (tool_use_id . "t1")
+                                           (content . [((type . "text") (text . "read it"))
+                                                       ,(ecc-render-test--image-block)]))]))))))
+
+(ert-deftest ecc-render-test-a-result-image-is-a-line-not-base64 ()
+  "The image of a tool result is named on a line; the payload is nowhere."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--with-images session
+      (ecc-session-ensure-buffer session)
+      (ecc-model-begin-turn session "読んで")
+      (ecc-render-test--read-with-image session)
+      (ecc-render-flush session)
+      (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+        ;; This is the regression the feature exists for.
+        (should-not (string-search (base64-encode-string (ecc-test-image-bytes) t)
+                                   text))
+        (should-not (string-search "base64" text))
+        (should (string-search "read it" text))
+        ;; Named after the file the call named, not after the hash the
+        ;; payload was written under, and said once rather than twice.
+        (should (string-match-p "image · red\\.png · 79 B" text))
+        (should (= 1 (cl-count "image · red.png · 79 B"
+                               (split-string text "\n") :test #'string-search)))))))
+
+(ert-deftest ecc-render-test-a-read-of-an-image-is-drawn-once ()
+  "A Read that answers with the image does not draw the input path too."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--with-images session
+      (ecc-session-ensure-buffer session)
+      (ecc-model-begin-turn session "読んで")
+      (ecc-render-test--read-with-image session)
+      (ecc-render-flush session)
+      (let* ((node (ecc-model-node session "t1"))
+             (images (ecc-render--tool-images node)))
+        (should (= (length images) 1))
+        (should (string-suffix-p ".png" (nth 0 (car images))))
+        ;; The picture is the one the result carried, under the name the
+        ;; call gave: the path of the call is not drawn a second time.
+        (should-not (equal (nth 0 (car images)) "/tmp/red.png"))
+        (should (equal (nth 2 (car images)) "/tmp/red.png"))))))
+
+(ert-deftest ecc-render-test-an-image-the-result-did-not-carry ()
+  "A tool that only names an image file shows the file it named."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "書いて")
+    (ecc-dispatch session
+                  `((type . "assistant") (uuid . "u1")
+                    (message . ((content . [((type . "tool_use") (id . "t2")
+                                             (name . "Write")
+                                             (input . ((file_path
+                                                        . ,(ecc-test-image-file)))))])))))
+    (ecc-dispatch session
+                  '((type . "user")
+                    (message . ((content . [((type . "tool_result")
+                                             (tool_use_id . "t2")
+                                             (content . "written"))])))))
+    (let ((images (ecc-render--tool-images (ecc-model-node session "t2"))))
+      (should (equal (mapcar (lambda (i) (nth 0 i)) images)
+                     (list (ecc-test-image-file)))))
+    ;; A file that is not an image contributes nothing.
+    (ecc-dispatch session
+                  '((type . "assistant") (uuid . "u2")
+                    (message . ((content . [((type . "tool_use") (id . "t3")
+                                             (name . "Write")
+                                             (input . ((file_path . "/tmp/a.txt"))))])))))
+    (should-not (ecc-render--tool-images (ecc-model-node session "t3")))))
+
+(ert-deftest ecc-render-test-an-image-node-is-drawn-as-its-label ()
+  "An image block of the conversation itself is one line naming the file."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--with-images session
+      (ecc-session-ensure-buffer session)
+      (ecc-model-begin-turn session "見せて")
+      (ecc-dispatch session
+                    `((type . "assistant") (uuid . "u1")
+                      (message . ((content . [,(ecc-render-test--image-block)])))))
+      (ecc-render-flush session)
+      (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+        (should (string-match-p "image · [0-9a-f]+\\.png · 79 B" text))
+        (should-not (string-search "unknown" text))))))
+
+(ert-deftest ecc-render-test-an-image-url-is-drawn-as-a-link ()
+  "A URL the CLI named is drawn as the URL; nothing was fetched."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "見せて")
+    (ecc-dispatch session
+                  '((type . "assistant") (uuid . "u1")
+                    (message . ((content . [((type . "image")
+                                             (source . ((type . "url")
+                                                        (url . "https://e.test/a.png"))))])))))
+    (ecc-render-flush session)
+    (should (string-search "https://e.test/a.png"
+                           (ecc-test-buffer-string (ecc-session-buffer session))))))
+
+(ert-deftest ecc-render-test-only-so-many-images-per-call ()
+  "A call answering with a heap of images draws some and counts the rest."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--with-images session
+      (ecc-session-ensure-buffer session)
+      (ecc-model-begin-turn session "撮って")
+      (ecc-dispatch session
+                    '((type . "assistant") (uuid . "u1")
+                      (message . ((content . [((type . "tool_use") (id . "t1")
+                                               (name . "Shot") (input . nil))])))))
+      (let ((node (ecc-model-node session "t1")))
+        (ecc-model-node-put
+         node 'result
+         (vconcat (mapcar (lambda (n)
+                            `((type . "image") (path . ,(format "/tmp/%d.png" n))))
+                          (number-sequence 1 9))))
+        (setf (ecc-node-status node) 'done)
+        (ecc-model-node-changed session node))
+      (ecc-render-flush session)
+      (should (string-search "… 3 more images (RET)"
+                             (ecc-test-buffer-string (ecc-session-buffer session)))))))
+
 ;;;; Snapshots
 
 (ert-deftest ecc-render-test-request-hints-name-the-keys-that-do-it ()

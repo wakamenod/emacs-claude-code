@@ -51,6 +51,7 @@
 (require 'ecc-core)
 (require 'ecc-protocol)
 (require 'ecc-model)
+(require 'ecc-image)
 (require 'ecc-markdown)
 (require 'ecc-diff)
 (require 'ecc-visual)
@@ -59,6 +60,7 @@
 
 ;; The keymaps belong to `ecc-chat', which sits above this module; they
 ;; are looked up by name when the text is drawn.
+(defvar ecc-chat-text-width)
 (defvar ecc-chat-transcript-map)
 (defvar ecc-chat-button-map)
 (defvar ecc-request-section-map)
@@ -123,13 +125,13 @@ transcript, is reading, and a redraw leaves it where it was.")
 A turn read back from a recording is drawn with the same mark as one
 this session sent, so that the two do not read as different things.")
 
-(defconst ecc-render-cluster-types '(tool agent step system unknown)
+(defconst ecc-render-cluster-types '(tool agent step system unknown image)
   "Node types that stand together rather than one blank line apart.
 A run of tool calls reads as one piece of work; two paragraphs of an
 answer do not.")
 
 (defconst ecc-render-block-types
-  '(tool agent thinking permission question plan system unknown command)
+  '(tool agent thinking permission question plan system unknown command image)
   "Node types the block movement commands stop at.
 A file row of the Files section is a block too.")
 
@@ -372,14 +374,85 @@ spans the window rather than the text."
                  (concat prefix (make-string (string-width key) ?\s) "  "))
                 "\n")))))
 
+(defun ecc-render--image-width (indent)
+  "Return the pixels an inline image may take, INDENT columns in.
+The ceiling is `ecc-chat-text-width\=' rather than the window: the prose
+is already held to that width by the margins, and a picture wider than
+the text it belongs to reads as a different document."
+  (let* ((window (or (get-buffer-window (current-buffer) t) (selected-window)))
+         (char (frame-char-width (window-frame window)))
+         (columns (- (min (window-body-width window)
+                          (or (bound-and-true-p ecc-chat-text-width)
+                              most-positive-fixnum))
+                     indent 1)))
+    (max (* 8 char) (* columns char))))
+
+(defun ecc-render--insert-image (path prefix &optional bytes name)
+  "Insert the image PATH, of BYTES bytes, on a line of its own after PREFIX.
+NAME is what the line says instead of the name of the file.
+Not through `ecc-render--insert-lines\=': that splits on newlines and
+hangs a wrap prefix on every one of them, and an image is one glyph
+that must not be broken."
+  (let* ((width (ecc-render--image-width (string-width prefix)))
+         (string (ecc-image-string path width ecc-image-max-height bytes name)))
+    (insert prefix string "\n")))
+
+(defun ecc-render--insert-image-node (node depth)
+  "Insert the image NODE at DEPTH.
+An image the CLI named by URL was never fetched: it is drawn as the
+link it is, and RET opens it in a browser."
+  (ecc-render--small
+    (if-let* ((path (ecc-model-node-get node 'path)))
+        (ecc-render--insert-image path (ecc-render--pad depth)
+                                  (ecc-model-node-get node 'bytes))
+      (insert (propertize (concat (ecc-render--pad depth)
+                                  (or (ecc-model-node-get node 'url)
+                                      (ecc-model-node-get node 'reason)
+                                      "image"))
+                          'face 'ecc-dim-face)
+              "\n"))))
+
+(defun ecc-render--result-images (result name)
+  "Return the images of a tool RESULT as (PATH BYTES NAME), in order.
+`ecc-dispatch--result-content\=' put them there; nothing is decoded here.
+NAME is the file the call itself named, which is what the line says
+when there is one: an image decoded out of a message is named by the
+hash of its bytes."
+  (when (vectorp result)
+    (delq nil (mapcar (lambda (block)
+                        (when (equal (alist-get 'type block) "image")
+                          (when-let* ((path (alist-get 'path block)))
+                            (list path (alist-get 'bytes block) name))))
+                      result))))
+
+(defun ecc-render--tool-images (node)
+  "Return what the tool NODE has to show, as (PATH BYTES NAME) in order.
+The result comes first and the input only when the result had nothing:
+a Read of a .png answers with the image and names the path as well, and
+taking both would draw every screenshot twice."
+  (let* ((input (ecc-model-node-get node 'input))
+         (named (alist-get 'file_path input)))
+    (or (ecc-render--result-images (ecc-model-node-get node 'result)
+                                   (and (ecc-image-file-p named) named))
+        (when (and named (ecc-image-file-p named) (file-readable-p named))
+          (list (list named nil nil))))))
+
 (defun ecc-render--result-text (result)
   "Return the text of a tool RESULT, whatever shape it arrived in."
   (cond ((stringp result) result)
         ((vectorp result)
-         (mapconcat (lambda (block)
-                      (or (alist-get 'text block)
-                          (ecc-protocol-value-string block)))
-                    result "\n"))
+         ;; An image block says nothing here: it is drawn under the
+         ;; result on a line that names it, and saying it twice is what
+         ;; the transcript looked like on 2026-09-16.
+         (mapconcat #'identity
+                    (delq nil
+                          (mapcar (lambda (block)
+                                    (cond
+                                     ((alist-get 'text block))
+                                     ((equal (alist-get 'type block) "image") nil)
+                                     (t (ecc-protocol-value-string block))))
+                                  result))
+                    "\n"))
         ((null result) "")
         (t (ecc-protocol-value-string result))))
 
@@ -1045,7 +1118,7 @@ their own marks stay."
            ;; A quoted prompt is text, not a heading with a body.
            (prompt-p (and (eq type 'system)
                           (eq (ecc-model-node-get node 'kind) 'prompt)))
-           (foldable (not (or prompt-p (memq type '(text result)))))
+           (foldable (not (or prompt-p (memq type '(text result image)))))
            (block (and (not prompt-p) (memq type ecc-render-block-types))))
       ;; A step over a single tool says nothing the tool line does not
       ;; say already, so it is drawn through: the tool takes its place
@@ -1063,6 +1136,7 @@ their own marks stay."
         ('tool (ecc-render--insert-tool session node depth))
         ('agent (ecc-render--insert-agent session node depth))
         ((or 'permission 'question 'plan) (ecc-render--insert-request node depth))
+        ('image (ecc-render--insert-image-node node depth))
         ('command (ecc-render--insert-command node depth))
         ('system (ecc-render--insert-system node depth))
         (_ (ecc-render--insert-unknown node depth)))
@@ -1236,7 +1310,28 @@ An Edit or a Write shows its input as a diff."
                                (ecc-model-node-get node 'result))
                               ecc-render-result-max-lines)
             (concat body "→ ")
-            (if error-p 'ecc-error-face 'ecc-dim-face)))))))
+            (if error-p 'ecc-error-face 'ecc-dim-face)))))
+    ;; The pictures come after the clip, never through it: a result of
+    ;; thirteen lines must not be what decides whether a screenshot is
+    ;; seen.
+    (ecc-render--insert-tool-images node body)))
+
+(defvar ecc-image-max-per-node 6
+  "Most images drawn under one tool call.
+A tool that answers with thirty screenshots is a scroll nobody asked
+for; the rest are counted in a line and reachable with RET.")
+
+(defun ecc-render--insert-tool-images (node body)
+  "Insert under BODY the images the tool NODE has to show."
+  (let* ((images (ecc-render--tool-images node))
+         (shown (seq-take images ecc-image-max-per-node)))
+    (dolist (image shown)
+      (ecc-render--insert-image (nth 0 image) body (nth 1 image) (nth 2 image)))
+    (when (> (length images) (length shown))
+      (insert (propertize (format "%s… %d more images (RET)"
+                                  body (- (length images) (length shown)))
+                          'face 'ecc-dim-face)
+              "\n"))))
 
 (defun ecc-render--insert-tool (session node depth)
   "Insert the tool NODE of SESSION at DEPTH."
