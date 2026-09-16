@@ -38,6 +38,7 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 | `ecc-diff-context-lines` | `3` | Lines of context displayed around modifications in the transcript |
 | `ecc-stream-throttle` | `0.05` | Interval in seconds to buffer streaming deltas before redrawing. Zero renders each delta immediately |
 | `ecc-render-debounce` | `0.1` | Debounce delay in seconds before redrawing the active transcript region |
+| `ecc-image-inline` | `t` | When `t`, images in the transcript are drawn. When `nil`, only the line naming the file is shown. The line is drawn either way |
 
 ## Header line and mode line
 

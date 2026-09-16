@@ -112,6 +112,12 @@ Images pasted, dragged into the buffer, or inserted with `C-c C-i` are saved und
 
 ![The picture open beside the session, inserted into the prompt as a path, and described in the answer](../../../assets/image.gif)
 
+Images are drawn in the transcript as well as sent. Images attached to a prompt appear under the band that asked about them. Images that Claude sends back appear under the call that produced them. These include an `image` block in a message, the answer to a `Read` of a `.png`, and a screenshot from an MCP tool. Base64 never reaches the buffer: the payload is written into the session's image directory, and the transcript holds the path.
+
+If `ffmpeg` is on `PATH`, the first frame of a video is shown, and `RET` opens the video in an external player. If `ffmpeg` is not available, only the line naming the file is shown. Pulling the frame runs in a subprocess and is never waited for, so the line stands until the frame lands.
+
+A GIF starts moving as soon as it is drawn and loops as long as it is on screen. `v` on a GIF stops it or starts it again. `v` controls only motion. `RET` opens a picture: a still in `image-mode` and a video in an external player. `ecc-image-inline` (also `I` in the menu) turns off drawing, leaving the line that names the file. Drawn images are limited in height, and the width follows `ecc-chat-text-width`.
+
 `C-c C-x` toggles editor context for the buffer: when enabled, the current file and line number are automatically included with each prompt.
 
 ![C-c C-x turning the context on, and the next prompt carrying the file and line with it](../../../assets/context.gif)
@@ -154,6 +160,7 @@ The transcript is standard read-only buffer text, so `isearch`, `occur`, narrowi
 | `RET` | Visit item at point (link, file, subagent transcript, or full tool result) |
 | `mouse-1` / `mouse-2` | Follow the link that was clicked |
 | `w` | Copy code block at point (or entire response) |
+| `v` | Toggle GIF animation at point |
 | `a` | Allow pending request |
 | `d` | Deny request at point (or view diff if not on a request) |
 | `g` | Redraw transcript |

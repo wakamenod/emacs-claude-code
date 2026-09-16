@@ -387,7 +387,8 @@ it too."
     ("p" "Permission mode" ecc-set-permission-mode)
     ("o" "Remote control" ecc-remote-control-toggle)
     ("O" "Open remotely" ecc-remote-control-open)
-    ("K" "Copy the remote URL" ecc-remote-control-copy-url)]]
+    ("K" "Copy the remote URL" ecc-remote-control-copy-url)
+    ("I" "Inline images" ecc-image-toggle-inline)]]
   (interactive)
   (ecc-transient--load)
   (transient-setup 'ecc-menu))

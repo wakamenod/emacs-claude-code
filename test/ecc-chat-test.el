@@ -931,6 +931,29 @@ first one threw out of `window-size-change-functions\='."
             (ecc-chat--set-margins window)
             (should-not (cdr (window-margins window)))))))))
 
+(ert-deftest ecc-chat-test-ret-opens-the-picture-at-point ()
+  "RET on a picture opens it: a still in a buffer, a video outside Emacs.
+This is the whole of it -- `v\=' stops and starts what moves and opens
+nothing, so the two keys no longer say the same thing."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (with-current-buffer (ecc-session-buffer session)
+      (let (outside inside)
+        (cl-letf (((symbol-function 'ecc-image-open-externally)
+                   (lambda (path) (setq outside path)))
+                  ((symbol-function 'find-file-other-window)
+                   (lambda (path) (setq inside path))))
+          (let ((inhibit-read-only t))
+            (goto-char (point-min))
+            (insert (propertize "clip" 'ecc-image-file "/tmp/clip.mp4") "\n"
+                    (propertize "shot" 'ecc-image-file "/tmp/shot.png") "\n"))
+          (goto-char (point-min))
+          (ecc-session-visit)
+          (should (equal outside "/tmp/clip.mp4"))
+          (forward-line 1)
+          (ecc-session-visit)
+          (should (equal inside "/tmp/shot.png")))))))
+
 (ert-deftest ecc-chat-test-ret-follows-a-link ()
   "RET on a URL in the transcript opens it, and mouse-1 follows it too.
 The link carries no keymap of its own: RET is the `ecc-session-visit\='

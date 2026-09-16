@@ -32,6 +32,20 @@ NAME may be given with or without the .jsonl extension."
   (expand-file-name (if (string-suffix-p ".jsonl" name) name (concat name ".jsonl"))
                     (expand-file-name "fixtures" ecc-test-directory)))
 
+(defun ecc-test-image-file ()
+  "Return the path of the image fixture.
+It is 79 bytes of red PNG, which is the whole point of it: a fixture
+carrying its base64 stays a fixture rather than becoming a megabyte."
+  (expand-file-name "red-square.png"
+                    (expand-file-name "fixtures" ecc-test-directory)))
+
+(defun ecc-test-image-bytes ()
+  "Return the bytes of the image fixture as a unibyte string."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert-file-contents-literally (ecc-test-image-file))
+    (buffer-string)))
+
 (defun ecc-test-fixture-lines (name)
   "Return the non-empty lines of fixture NAME as a list of strings."
   (let ((file (ecc-test-fixture-file name)))

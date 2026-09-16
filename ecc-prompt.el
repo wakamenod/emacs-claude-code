@@ -22,6 +22,7 @@
 (require 'dnd)
 (require 'ecc-core)
 (require 'ecc-model)
+(require 'ecc-image)
 (require 'ecc-proc)
 (require 'ecc-render)
 (require 'ecc-chat)
@@ -36,16 +37,6 @@
 
 (defvar ecc-prompt-history-size 200
   "Number of prompts kept in `ecc-prompt-history'.")
-
-(defvar ecc-image-dir (expand-file-name "ecc-images" temporary-file-directory)
-  "Directory the images pasted into a prompt are written to.
-Each session gets a subdirectory of its own.")
-
-(defvar ecc-image-cleanup 'on-exit
-  "What becomes of the images of a session when it ends.
-`on-exit' deletes the directory of the session, `never' keeps it.  The
-recording refers to the files by path, so keeping them is what makes an
-old conversation readable again.")
 
 (defvar ecc-prompt-interactive-commands
   '(("/model" . ecc-prompt-model-candidates)
@@ -227,44 +218,8 @@ INDEX nil brings the draft back."
 
 ;;;; Images
 
-(defun ecc-session-image-dir (session)
-  "Return the directory the images of SESSION are written to, creating it."
-  (let ((dir (or (ecc-session-tmp-dir session)
-                 (setf (ecc-session-tmp-dir session)
-                       (file-name-as-directory
-                        (expand-file-name (ecc-session-id session)
-                                          ecc-image-dir))))))
-    (make-directory dir t)
-    dir))
-
-(defun ecc-image-cleanup-session (session)
-  "Delete the image directory of SESSION when the setting says so."
-  (let ((dir (ecc-session-tmp-dir session)))
-    (when (and (eq ecc-image-cleanup 'on-exit) dir (file-directory-p dir))
-      (delete-directory dir t)
-      (setf (ecc-session-tmp-dir session) nil)
-      dir)))
-
-(defun ecc-prompt--image-extension (mime)
-  "Return the file extension for MIME, such as png."
-  (let ((name (format "%s" mime)))
-    (cond ((string-match "image/\\([a-zA-Z0-9]+\\)" name)
-           (let ((type (downcase (match-string 1 name))))
-             (if (equal type "jpeg") "jpg" type)))
-          (t "png"))))
-
-(defun ecc-prompt-save-image (session data mime)
-  "Write DATA, an image of type MIME, into the directory of SESSION.
-Returns the file it was written to."
-  (let ((file (expand-file-name
-               (format "%s.%s"
-                       (format-time-string "%Y%m%d-%H%M%S-%3N")
-                       (ecc-prompt--image-extension mime))
-               (ecc-session-image-dir session))))
-    (with-temp-file file
-      (set-buffer-multibyte nil)
-      (insert data))
-    file))
+;; Where an image is written and what it is named is `ecc-image': the
+;; renderer needs it too, and this module is above the renderer.
 
 (defun ecc-prompt-insert-reference (path)
   "Insert PATH as an @ reference at point, with a space after it.
@@ -279,7 +234,7 @@ Point is moved into the prompt region first when it is not there."
   "Save the pasted image DATA of type MIME and refer to it.
 The file is passed by path rather than inline: base64 in the prompt
 would be written into the recording of the conversation."
-  (let ((file (ecc-prompt-save-image (ecc-prompt-session) data mime)))
+  (let ((file (ecc-image-save (ecc-prompt-session) data mime)))
     (ecc-prompt-insert-reference file)
     (message "Image saved to %s" (abbreviate-file-name file))
     file))

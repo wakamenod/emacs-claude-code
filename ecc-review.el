@@ -204,18 +204,12 @@ else.  This covers the untracked files of the working tree review and
 the files a session changed -- a lock file a package manager wrote
 again is the usual one.")
 
-(defun ecc-review--binary-p (path)
-  "Return non-nil when PATH looks binary, or cannot be read.
-This is git\='s own test: a NUL byte in the first 8000.  git does not
-apply it to a new file diffed against /dev/null -- the empty side is
-text, so the pair is text and the bytes of a PNG land in the diff --
-which is why the review has to ask for itself."
-  (condition-case nil
-      (with-temp-buffer
-        (set-buffer-multibyte nil)
-        (insert-file-contents-literally path nil 0 8000)
-        (and (search-forward "\0" nil t) t))
-    (error t)))
+(defalias 'ecc-review--binary-p #'ecc-diff-binary-p
+  "Return non-nil when a path looks binary, or cannot be read.
+git does not apply its own test to a new file diffed against
+/dev/null -- the empty side is text, so the pair is text and the bytes
+of a PNG land in the diff -- which is why the review has to ask for
+itself.")
 
 (defun ecc-review--omitted-note (path reason &optional new-file)
   "Return the diff entry naming PATH without its content, because of REASON.
