@@ -55,6 +55,17 @@ The CLI reports on a control request of ours while it works on it; the
 side question is the only one that takes long enough to say anything.
 It is not `ecc-progress-hook\', which is about the turn.")
 
+(defvar ecc-request-refuse-functions nil
+  "Functions given a session and a request before anybody is asked.
+The first one to return a string refuses the request with it: the CLI
+is sent a deny carrying that string, the transcript keeps a note, and
+nothing is put in front of the user.
+
+For a request whose answer is settled without a person -- a tool this
+Emacs handles itself, and can say so in a sentence the model can act
+on.  A refusal that only says no belongs to the user, who can say it
+themselves.")
+
 (defvar ecc-request-added-hook nil
   "Functions run with a session and a request that needs an answer.")
 
