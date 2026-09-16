@@ -54,12 +54,10 @@ either way and the picture sits on top of it."
   :type 'boolean
   :group 'ecc)
 
-(defcustom ecc-image-max-height 400
+(defvar ecc-image-max-height 400
   "Most pixels tall an image is drawn in the transcript.
 The width follows `ecc-chat-text-width\=' and the window; the height is
-what keeps one screenshot from filling the screen."
-  :type 'integer
-  :group 'ecc)
+what keeps one screenshot from filling the screen.")
 
 (defvar ecc-image-extensions
   '(("png" . png) ("jpg" . jpeg) ("jpeg" . jpeg) ("gif" . gif)
@@ -117,13 +115,11 @@ the library for one type still has the others."
 
 ;;;; The first frame of a video
 
-(defcustom ecc-image-ffmpeg-program "ffmpeg"
+(defvar ecc-image-ffmpeg-program "ffmpeg"
   "Program that pulls the first frame out of a video.
-A video cannot be drawn in a buffer, so a still of it is drawn instead
-where this can be found; where it cannot, the line naming the file is
-all there is, and RET still plays it."
-  :type 'string
-  :group 'ecc)
+A video cannot be drawn in a buffer, so where this is found the first
+frame of it is drawn instead.  Where it is not, the line naming the
+file is all there is, and RET still plays it.")
 
 (defvar ecc-image--ffmpeg 'unset
   "The ffmpeg found on PATH, nil when there is none, `unset\=' before looking.
@@ -329,16 +325,11 @@ Nothing is inserted here.  `ecc-render\=' is what draws."
       (put-text-property 0 (length string) 'display image string))
     string))
 
-(defcustom ecc-image-animate t
+(defvar ecc-image-animate t
   "Non-nil starts a GIF moving as soon as it is drawn.
-Whether pictures move by themselves is a taste, and for some people
-motion on a page is worse than that; with this off a GIF is drawn as
-its first frame and `v\=' on it is what sets it going.
-
-It costs one timer per GIF and nothing else, and the timer stops
-itself -- see `ecc-image-animate-limit\='."
-  :type 'boolean
-  :group 'ecc)
+With this off a GIF is drawn as its first frame and `v\=' on it is what
+sets it going.  It costs one timer per GIF and nothing else, and the
+timer stops itself -- see `ecc-image-animate-limit\='.")
 
 (defvar ecc-image-animate-limit t
   "How long a GIF keeps moving once it is set going.
