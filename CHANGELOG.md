@@ -181,6 +181,18 @@ Verified against **Claude Code CLI 2.1.270**.
   which is not invertible, and one repository is named by as many directories
   as it has worktrees and truenames.
 
+  A question, a plan, a log or an agent transcript opens beside the session it
+  came out of, in that session's Space and with the transcript still on the
+  screen. It takes the widest window that holds no transcript -- in a Space,
+  the one the code is read in -- and that window goes back to what it held
+  when the buffer is quit. Only where every window on the tab is a transcript
+  is one of them divided; none is ever taken away. Left to `display-buffer`,
+  that is what happened: the session windows of a Space are narrower than
+  `split-width-threshold`, so none could be divided and
+  `display-buffer-use-some-window` handed over whichever window had been used
+  longest ago -- the transcript of another session, which then vanished, or a
+  leftover window that fell back to `*scratch*` when the buffer was closed.
+
   `C-c c J` (`ecc-space-goto`) and `ecc-space-jump` go to a Space,
   `ecc-space-close` closes one and stops what is running in it, and `C-c c z`
   (`ecc-space-zoom`) fills the tab with the window point is in and puts the

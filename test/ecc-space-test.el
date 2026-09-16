@@ -372,6 +372,104 @@ read, and the session that lost its window goes on running without one."
               (should-not (get-buffer-window (ecc-session-buffer second)))
               (should (get-buffer-window (ecc-session-buffer first))))))))))
 
+(defun ecc-space-test--layout ()
+  "Return the buffer name and width of every window of this tab, left to right."
+  (mapcar (lambda (window)
+            (cons (buffer-name (window-buffer window))
+                  (window-total-width window)))
+          (sort (window-list nil 'no-minibuffer)
+                (lambda (a b)
+                  (< (nth 0 (window-edges a)) (nth 0 (window-edges b)))))))
+
+(defmacro ecc-space-test--with-popup (var &rest body)
+  "Run BODY with VAR bound to a buffer standing in for a question or a plan."
+  (declare (indent 1))
+  `(let ((,var (get-buffer-create "*ecc-question: test*")))
+     (unwind-protect (progn ,@body)
+       (kill-buffer ,var))))
+
+(ert-deftest ecc-space-test-a-question-leaves-the-other-session-alone ()
+  "A question opens beside its session and takes no session\\='s window.
+The session windows of a Space are narrower than
+`split-width-threshold\\=', so `display-buffer\\=' could divide none of them
+and `display-buffer-use-some-window\\=' handed over whichever window had
+been used longest ago -- the transcript of the other session, which
+then vanished (reported 2026-09-16).  Two sessions, because what it
+does to the one that was not asked about is the bug."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (let ((ecc-layout 'spaces)
+            (ecc-window-width 60)
+            (ecc-space-session-min-width 10))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (ecc-sidebar-hide)
+        (delete-other-windows)
+        (let ((one (car sessions)) (two (nth 1 sessions)))
+          (ecc-space-display-session one)
+          (ecc-space-display-session two)
+          (ecc-space-test--with-popup popup
+            (let* ((before (ecc-space-test--layout))
+                   (window (ecc-window-display-beside-session popup one)))
+              (should (window-live-p window))
+              (should (eq (window-buffer window) popup))
+              ;; Neither transcript lost its window.
+              (should (get-buffer-window (ecc-session-buffer one)))
+              (should (get-buffer-window (ecc-session-buffer two)))
+              ;; And the row is as it was once the question is answered:
+              ;; the window it was in goes back to what it held, at the
+              ;; width it held it.
+              (quit-window nil window)
+              (should (equal (ecc-space-test--layout) before)))))))))
+
+(ert-deftest ecc-space-test-a-question-brings-its-session-with-it ()
+  "A question of a session with no window opens the session as well.
+The two are read together: a question with nothing around it says
+nothing about what is being asked."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (let ((ecc-layout 'spaces)
+            (ecc-window-width 60)
+            (ecc-space-session-min-width 10))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (ecc-sidebar-hide)
+        (delete-other-windows)
+        (let ((two (nth 1 sessions)))
+          (ecc-space-test--with-popup popup
+            (let ((window (ecc-window-display-beside-session popup two)))
+              (should (window-live-p window))
+              (should (eq (window-buffer window) popup))
+              (should (get-buffer-window (ecc-session-buffer two))))))))))
+
+(ert-deftest ecc-space-test-a-question-divides-rather-than-take-a-transcript ()
+  "With every window a transcript, the question divides one instead.
+There is no window left to put it in, and taking one would lose a
+conversation; a new window is made beside the session being asked
+about, and both transcripts stay on the screen."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (let ((ecc-layout 'spaces)
+            (ecc-window-width 60)
+            (ecc-space-session-min-width 10))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (ecc-sidebar-hide)
+        (delete-other-windows)
+        (let ((one (car sessions)) (two (nth 1 sessions)))
+          (ecc-space-display-session one)
+          ;; The source window is given to the other session, so that
+          ;; nothing on the tab is anything but a transcript.
+          (set-window-buffer (selected-window) (ecc-session-buffer two))
+          (should-not (ecc-space--popup-window))
+          (ecc-space-test--with-popup popup
+            (let ((count (length (window-list nil 'no-minibuffer)))
+                  (window (ecc-window-display-beside-session popup one)))
+              (should (eq (window-buffer window) popup))
+              (should (= (1+ count) (length (window-list nil 'no-minibuffer))))
+              (should (get-buffer-window (ecc-session-buffer one)))
+              (should (get-buffer-window (ecc-session-buffer two))))))))))
+
 (ert-deftest ecc-space-test-a-new-tab-stands-the-sessions-side-by-side ()
   "The tab of a Space comes up with its sessions already on the screen.
 Most recently used first, to the right of the source.  A tab that opened

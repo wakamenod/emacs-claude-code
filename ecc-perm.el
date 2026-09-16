@@ -36,6 +36,7 @@
 (require 'ecc-dispatch)
 (require 'ecc-render)
 (require 'ecc-sync)
+(require 'ecc-window)
 
 (declare-function ecc-plan-approve-request "ecc-plan" (request &optional mode))
 
@@ -157,7 +158,8 @@ opens the buffer it is answered in; a plan is approved as it stands.
 Returns `allow', `deny', `save' or `opened'."
   (pcase (ecc-request-kind request)
     ('question
-     (pop-to-buffer (ecc-question-open request))
+     (ecc-window-display-beside-session (ecc-question-open request)
+                                        (ecc-request-session request))
      'opened)
     ('plan
      (require 'ecc-plan)

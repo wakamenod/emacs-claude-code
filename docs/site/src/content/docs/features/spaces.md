@@ -57,8 +57,11 @@ The tab line inside each session window is unchanged: it switches between the se
 
 Going to a session takes you to its Space, whichever command asked: `C-c c n`
 (`ecc-next-attention`), `C-c c v`, the sidebar's `RET`, the dashboard. A question
-or a plan opens its own buffer, and that buffer opens in the Space of the session
-it belongs to rather than in the one you happened to be standing in.
+or a plan opens its own buffer, and that buffer opens next to the session it
+belongs to — in its Space, with its transcript beside it. It takes the widest
+window that holds no transcript, which in a Space is where the code is, and that
+window goes back to what it held once the question is answered. Only where every
+window is a transcript is one of them divided; none is ever taken away.
 
 The windows of a tab are yours, so nothing rearranges them behind your back. That cuts both ways: a window you pointed at another project's file keeps that file, and going to the Space again does not undo it. `C-c c V` (`ecc-window-focus-source`) is the way back — it shows this Space's source in the main window, and asks which buffer with `C-u`. The one exception is a tab with nothing but transcripts left in it, which is nobody's arrangement: going to that Space opens a window for the code again, to the left of the transcripts.
 
