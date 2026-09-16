@@ -192,6 +192,12 @@ its buffer."
   (ecc-menu--in-session #'ecc-chat-goto-plans))
 
 ;;;###autoload
+(defun ecc-insert-past-prompt ()
+  "Insert a past prompt into the prompt region of the session at hand."
+  (interactive)
+  (ecc-menu--in-session #'ecc-prompt-history-insert))
+
+;;;###autoload
 (defun ecc-timeline ()
   "Pick a turn of the session this buffer talks to."
   (interactive)
@@ -348,6 +354,7 @@ it too."
     ("f" "Send this file" ecc-send-buffer-file)
     ("e" "Fix the error at point" ecc-fix-error-at-point)
     ("l" "Ask inline" ecc-inline-prompt)
+    ("H" "Insert a past prompt" ecc-insert-past-prompt)
     ("W" "Rewrite the region" ecc-rewrite)]
    ["Review"
     ("D" "Diff since session start" ecc-review)
