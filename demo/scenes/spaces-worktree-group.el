@@ -27,6 +27,30 @@
 (defvar demo-sessions nil
   "The sessions this scene started, by name.")
 
+;;;; The questions, answered without a minibuffer
+
+;; Since 0.3.0 the offer to remove a worktree follows the last session
+;; working in one wherever it goes -- and it is made from a timer, after
+;; the step that stopped the session has already returned.  A `cl-letf'
+;; around the step cannot catch that one, and an Emacs sitting at a
+;; question nobody answers stops answering `emacsclient': every step
+;; after it times out, and the recording is a frozen frame.  That is what
+;; this scene did on release/0.3.0 until the override below (2026-09-17).
+;;
+;; The answers are the scene's own claims: the worktrees are left where
+;; they are -- `ecc-remove-worktree' is what undoes one, and the scene
+;; says so -- and everything else is agreed to.
+
+(defun demo-answer (prompt)
+  "Answer PROMPT, having put it on the screen long enough to read.
+An override of `yes-or-no-p\=' for the whole of this Emacs.  A question
+about removing a worktree is answered no: this scene closes Spaces and
+stops sessions, and the checkouts it made stay on disk."
+  (let ((answer (not (string-match-p "Remove the worktree" prompt))))
+    (demo-say (concat prompt (if answer "yes" "no")))
+    (sit-for 4)
+    answer))
+
 ;;;; What the scene is played in
 
 (defun demo-scene-build ()
@@ -34,6 +58,7 @@
   (setq ecc-use-spaces t)
   (setq ecc-space-always-session t)
   (setq demo-sessions nil)
+  (advice-add 'yes-or-no-p :override #'demo-answer)
   (demo-fresh-repository)
   (demo-write "greet.py" "def greet(name):\n    return f\"hello {name}!\"\n")
   (demo-write "README.md" "# greet\n\nA greeting.\n")
@@ -143,22 +168,16 @@ The buffer, not the session: this is the case that used to leave
   nil)
 
 (defun demo-close-space (root &optional _answer)
-  "Close the Space of ROOT, showing the question it asks and answering yes.
-Called plainly, and the answering -- not the question -- is stood in
-for.  `ecc-space-close\=' driven from a timer took the whole Emacs down
-twice (2026-09-17): reading the minibuffer from a timer while the tabs
-underneath it are being closed is not something to put on camera, and
-the command itself is fine -- called like this, from `emacsclient\=' or
-by hand, it closes the group and Emacs carries on.
+  "Close the Space of ROOT.  The questions it asks go to `demo-answer\='.
+Called plainly.  `ecc-space-close\=' driven from a timer took the whole
+Emacs down twice (2026-09-17): reading the minibuffer from a timer while
+the tabs underneath it are being closed is not something to put on
+camera, and the command itself is fine -- called like this, from
+`emacsclient\=' or by hand, it closes the group and Emacs carries on.
 
 The text on the screen is the question ecc really asks, held long
 enough to read."
-  (cl-letf (((symbol-function 'yes-or-no-p)
-             (lambda (prompt)
-               (demo-say (concat prompt "yes"))
-               (sit-for 4)
-               t)))
-    (ecc-space-close (ecc-space-of-root root)))
+  (ecc-space-close (ecc-space-of-root root))
   nil)
 
 ;;;; The other half of the setting

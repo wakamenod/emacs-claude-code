@@ -50,7 +50,8 @@ say "6. Stopping the LAST session of a Space now closes the Space as well"; slee
 e "(demo-goto-session-space \"feat/two\")"; sleep 3
 e "(demo-frame)"; sleep 2
 say "Standing in feat/two's own tab, and stopping the one session in it"; sleep 5
-e "(demo-kill-session \"feat/two\")"; sleep 5
+say "The worktree is offered as the session goes -- this scene answers no, and the checkout stays"; sleep 6
+e "(demo-kill-session \"feat/two\")"; sleep 12
 e "(demo-frame)"; sleep 2
 e "(demo-report-spaces)"; sleep 8
 say "feat/two is gone from the tabs and from the sidebar -- an exited session would have kept its place, for /resume"; sleep 8
