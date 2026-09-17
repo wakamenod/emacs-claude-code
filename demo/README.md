@@ -37,11 +37,18 @@ recorder says so and writes no file rather than leaving an mp4 that will
 not open.
 
 Everything a run owns — the server socket, the ready file, the frame
-title the recorder looks for — is named after the scene, so **two scenes
-can record at once**, from two checkouts and two sessions. They could
-not before: each run killed every `demo/demo.el` on the machine at
-startup and at exit, and all three recordings of 2026-09-17 destroyed
-each other.
+title the recorder looks for, the throwaway project — is named after the
+checkout and the scene, so **two different scenes can record at once**,
+from two checkouts and two sessions. They could not before: each run
+killed every `demo/demo.el` on the machine at startup and at exit, and
+all three recordings of 2026-09-17 destroyed each other.
+
+The same scene twice from the same checkout is **refused**, and says so:
+that name is what the cleanup `pkill` matches, so the second run used to
+kill the first one's Emacs the moment it started and both mp4s ended
+there. Record it from a worktree to have two at once — the tag carries
+the checkout — and use the `pkill` line the refusal prints to clear an
+Emacs a run left behind when it died.
 
 ## A scene with more than one frame
 
@@ -60,8 +67,13 @@ A scene is two files:
 
 - `scenes/NAME.el` — loaded into the demo Emacs. It defines
   `demo-scene-build`, which builds whatever the scene is of (there is a
-  throwaway git repository at `demo-root` and `demo-fresh-repository`,
-  `demo-write` and `demo-git` to fill it), and one function per step.
+  throwaway git repository at `demo-root` — `/tmp/ecc-demo-NAME/`, one
+  per scene — and `demo-fresh-repository`, `demo-write` and `demo-git`
+  to fill it), and one function per step.
+- End the scene with `e "(demo-save-log \"/tmp/ecc-demo-NAME-log.txt\")"`
+  when it reports anything worth reading afterwards. The recorder kills
+  the Emacs when the scene ends and everything it said goes with it;
+  what the log keeps is checkable without watching the video.
 - `scenes/NAME.sh` — sourced by the recorder. It is the order of the
   steps and how long each is held, written with `say "..."` for a caption
   in the echo area and `e "(a-form)"` for a step.
@@ -76,6 +88,7 @@ A scene is two files:
 | `demo-frame` | give the frame the size the video is taken at |
 | `demo-float` | nothing, now; kept so older scenes still run |
 | `demo-fresh-repository`, `demo-write`, `demo-git` | the throwaway project |
+| `demo-save-log FILE` | keep what the scene said, as text |
 
 Two things it knows, learned the hard way on 2026-09-16, and both
 explained where they are done in `demo.el`:

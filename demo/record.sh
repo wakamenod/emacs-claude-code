@@ -92,9 +92,25 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# A run of THIS scene that failed may have left its Emacs and its socket
-# behind.
-pkill -f "$server" 2>/dev/null || true
+# A second run of the same scene from the same checkout is refused
+# rather than allowed to take the first one's Emacs.  Everything a run
+# owns is named after the checkout and the scene, and that name is what
+# the `pkill' below matches: started while another run of this scene was
+# playing, it killed that run's Emacs at once, the recorder lost the
+# window it was taking, and both mp4s ended where the second run began.
+# Three runs of one scene did that to each other on 2026-09-17, driven
+# by two sessions in one checkout.
+#
+# What is left over from a run that died -- an Emacs with nobody
+# stepping it -- is cleared by the same `pkill', which is what the
+# message names.  A worktree is the way to record the same scene twice
+# at once: the tag carries the checkout, so two of them share nothing.
+if pgrep -f "$server" >/dev/null 2>&1; then
+    echo "a run of $scene from this checkout is already up." >&2
+    echo "  wait for it, or record from another worktree, or -- if it is" >&2
+    echo "  a run that died -- clear it with: pkill -f $server" >&2
+    exit 1
+fi
 rm -f "$ready" "${TMPDIR:-/tmp}/emacs$(id -u)/$server"
 
 # Built here rather than committed: it is 128K of Mach-O and swiftc is

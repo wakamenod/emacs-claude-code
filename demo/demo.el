@@ -55,8 +55,24 @@ its own, placed above the top of this one.")
 (defvar demo-frame-size '(1700 . 950)
   "How big the frame is held, in pixels.")
 
-(defvar demo-root "/tmp/ecc-demo-project/"
-  "The throwaway project a scene builds.")
+(defvar demo-root
+  (format "/tmp/ecc-demo-%s/"
+          (file-name-nondirectory
+           (directory-file-name
+            (or (and (boundp 'demo-scene-file) demo-scene-file
+                     (file-name-sans-extension demo-scene-file))
+                "project"))))
+  "The throwaway project a scene builds, one directory per scene.
+It was `/tmp/ecc-demo-project/\\=' for every scene, and
+`demo-fresh-repository\\=' deletes what is there: a scene starting while
+another was playing took that one\\='s repository, its worktrees and the
+directories its sessions were running in out from under it.  The Spaces
+then fell back to the name of a directory that was gone, `c\\=' failed
+with \"is not there\", and the recording was of a bug that did not
+exist (2026-09-17).
+
+A scene that wants a second project of its own names it itself; what
+this gives it is one nothing else writes to.")
 
 ;;;; The configuration this is played in
 
@@ -87,6 +103,16 @@ its own, placed above the top of this one.")
   (require 'ecc))
 
 ;;;; Saying what is going on
+
+(defun demo-save-log (file)
+  "Write what this Emacs has said into FILE.
+The recorder kills the Emacs when the scene ends, and everything the
+scene reported goes with it: what is left is the video, to be read
+frame by frame.  A step at the end of a scene keeps the same reports as
+text, which is what a run is checked from (2026-09-17)."
+  (with-current-buffer "*Messages*"
+    (write-region (point-min) (point-max) file nil 'quietly))
+  nil)
 
 (defun demo-say (text)
   "Put TEXT in the echo area, where the camera can read it."
