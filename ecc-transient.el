@@ -331,6 +331,7 @@ it too."
   (ecc-transient--load)
   (transient-setup 'ecc-resume-menu))
 
+;;;###autoload (autoload 'ecc-worktree-menu "ecc-transient" nil t)
 (transient-define-prefix ecc-worktree-menu ()
   "Check a branch out beside the repository, open a checkout, undo one.
 A prefix of its own rather than three keys in the Spaces column: they

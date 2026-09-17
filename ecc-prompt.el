@@ -220,6 +220,7 @@ the same line, and a table with the same key twice cannot be read back."
      (cons (format "%3d  %s" (1+ index) (ecc--fit text 116)) text))
    ecc-prompt-history))
 
+;;;###autoload
 (defun ecc-prompt-history-insert ()
   "Insert a prompt chosen from `ecc-prompt-history' at point.
 The whole prompt goes in, however little of it the list showed.  Unlike

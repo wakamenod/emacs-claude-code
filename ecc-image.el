@@ -397,6 +397,7 @@ plays one with.  Whether a GIF moves at all to begin with is
       (image-animate image nil ecc-image-animate-limit (point))
       (message "Moving"))))
 
+;;;###autoload
 (defun ecc-image-toggle-inline ()
   "Turn the drawing of images in a transcript on or off, and redraw."
   (interactive)
