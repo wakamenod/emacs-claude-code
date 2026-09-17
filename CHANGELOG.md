@@ -457,6 +457,19 @@ Verified against **Claude Code CLI 2.1.270**.
 
 ### Fixed
 
+- `ecc-remove-worktree` stops every session working in the checkout, not
+  only the ones whose project is the checkout itself. A session started in
+  a directory inside it that is a project of its own -- a submodule, a
+  repository nested in the tree -- answers `project-current` with that
+  directory, so it was in none of the checkout's sessions: the checkout
+  was removed from under it and it stayed in the model, a row in the
+  sidebar's Agents list pointing at a directory that is gone. The sessions
+  are now those of the project plus any whose own root lies inside the
+  checkout; a session of another project that merely ran a command in
+  there is still left alone, its cwd being what the CLI reports and not
+  where it works. The same set decides whether
+  `ecc-worktree-offer-removal` asks at all.
+
 - A notice the CLI wrote itself is no longer drawn as a prompt the user
   typed. A CLI that resumes a session whose previous process left a
   background task behind injects a `<task-notification>` into the

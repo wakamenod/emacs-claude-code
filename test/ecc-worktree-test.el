@@ -618,6 +618,43 @@ may read, newest first."
       (should-not (file-directory-p path))
       (should-not (member "feat/x" (ecc-worktree-branches directory))))))
 
+(ert-deftest ecc-worktree-test-remove-worktree-stops-a-nested-session ()
+  "A session in a project of its own inside the checkout is stopped too.
+`project-current\=' answers such a directory with itself, so the session
+is in none of the checkout\='s -- and used to be left in the model with
+its directory deleted under it."
+  (skip-unless (executable-find "git"))
+  (ecc-worktree-test--with-directory directory
+    (ecc-worktree-test--repository directory)
+    (let* ((ecc-worktree-directory ".claude/worktrees")
+           (ecc--sessions (make-hash-table :test #'equal))
+           (ecc--session-order nil)
+           (ecc-window--project-root-cache (make-hash-table :test #'equal))
+           (path (ecc-worktree-create directory "feat/x"))
+           (nested (expand-file-name "vendor/lib" path)))
+      (make-directory nested t)
+      (call-process "git" nil nil nil "-C" nested "init")
+      (cl-letf (((symbol-function #'ecc-proc-stop) #'ignore))
+        (ecc-model-create-session :name "outer" :project-root path)
+        (ecc-model-create-session :name "nested" :project-root nested)
+        ;; The project of the checkout is one of the two; both work in it.
+        (should (= 1 (length (ecc-window-project-sessions path))))
+        (should (= 2 (length (ecc-worktree-sessions path))))
+        (ecc-worktree-test--with-answer t
+          (ecc-remove-worktree path)
+          (should (string-match-p "Stop 2 sessions" (car (last asked)))))
+        (should-not (ecc-model-sessions))
+        (should-not (file-directory-p path)))
+      ;; A session of another project is left alone.
+      (let ((ecc-window--project-root-cache (make-hash-table :test #'equal))
+            (path (ecc-worktree-create directory "feat/y")))
+        (cl-letf (((symbol-function #'ecc-proc-stop) #'ignore))
+          (ecc-model-create-session :name "elsewhere" :project-root directory)
+          (ecc-worktree-test--with-answer t
+            (ecc-remove-worktree path))
+          (should (equal '("elsewhere")
+                         (mapcar #'ecc-session-name (ecc-model-sessions)))))))))
+
 (ert-deftest ecc-worktree-test-remove-worktree-forgets-the-space ()
   "The Space of the checkout is closed, while the checkout is still there.
 Its key is `ecc-window-project-key\=' of a directory that exists; asked

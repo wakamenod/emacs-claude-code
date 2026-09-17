@@ -429,6 +429,34 @@ in a row would leave the user with whichever arrived last."
 ;; deletes a directory is one nobody can call safely.  What calls this is
 ;; the handful of places where a person stopped one session by hand.
 
+(defun ecc-worktree-sessions (root)
+  "Return the sessions working in the checkout ROOT.
+The sessions of the project ROOT, and any whose own root lies inside it
+-- a session started in a directory that is a project of its own, a
+submodule or a checkout nested in the tree, answers `project-current\='
+with that directory and is in none of ROOT\='s sessions.  It is still a
+session the removal takes the ground from under, and one left in the
+model with nothing underneath it is a row in the sidebar pointing at a
+directory that is gone (reproduced 2026-09-17).
+
+The root a session was started in is what is asked, and its cwd only
+when it has none: the CLI reports as the cwd whatever directory the
+last Bash call left it in, so a session of another project that had
+looked inside this checkout would be stopped with it.
+
+ROOT must still be there: `ecc-window-project-key\=' asks
+`project-current\=' about a directory."
+  (let ((inside (file-name-as-directory (expand-file-name root)))
+        (theirs (ecc-window-project-sessions root)))
+    (append theirs
+            (seq-filter
+             (lambda (session)
+               (and (not (memq session theirs))
+                    (when-let* ((directory (or (ecc-session-project-root session)
+                                               (ecc-session-cwd session))))
+                      (file-in-directory-p directory inside))))
+             (ecc-model-sessions)))))
+
 (defun ecc-worktree--visiting-buffers (root)
   "Return the buffers visiting a file under ROOT."
   (let ((root (file-name-as-directory (expand-file-name root))))
@@ -449,7 +477,7 @@ a file that goes out from under one is something to be told about
 before the fact, not tidied up after."
   (when (and root
              (ecc-worktree-main root)
-             (null (ecc-window-project-sessions root)))
+             (null (ecc-worktree-sessions root)))
     ;; The repository and the branch are read while the checkout is
     ;; still there: once it is gone there is no directory to ask git
     ;; about, and the branch is what the next question is about.
@@ -861,7 +889,7 @@ the worktrees of this project.  The checkout goes, its Space closes
 with it, and the branch it was on is offered afterwards rather than
 taken with it."
   (interactive (list (ecc-worktree-read-linked "Remove worktree: ")))
-  (let ((sessions (ecc-window-project-sessions path)))
+  (let ((sessions (ecc-worktree-sessions path)))
     (if sessions
         (unless (yes-or-no-p (format "Stop %d session%s and remove %s? "
                                      (length sessions)
