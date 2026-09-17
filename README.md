@@ -11,8 +11,6 @@ An Emacs client for the Claude Code CLI. Conversations run directly inside ordin
 
 ![A whole session: two prompts, the tools each one ran, the diffs they were allowed to make, and the answers](docs/images/overview.png)
 
-![A session: a prompt is sent, the Edit is allowed, and the source buffer on the left picks up the change](docs/images/session.gif)
-
 **Documentation:** <https://wakamenod.github.io/emacs-claude-code/>
 
 > **Pre-1.0.** ecc is not stable yet, and breaking changes are likely: commands, key bindings and settings can change or go away from one release to the next. Read [CHANGELOG.md](CHANGELOG.md) before upgrading.
@@ -104,7 +102,12 @@ Because the repository name is `emacs-claude-code` while the package name is `ec
   (ecc-notify-level 'pulse)
   (ecc-usage-display 'posframe)
   (ecc-btw-display 'posframe)
-  (ecc-prompt-suggestions-enabled t))
+  (ecc-prompt-suggestions-enabled t)
+  ;; Uncomment to review in ediff instead of one diff-mode buffer.
+  ;; (ecc-review-style 'ediff)
+  ;; The Emacs MCP server: xref, imenu and flymake for Claude, and the
+  ;; tool that hands work to a session in a worktree of its own.
+  (ecc-mcp-enabled t))
 ```
 
 For all other settings, check the [configuration reference](https://wakamenod.github.io/emacs-claude-code/reference/configuration/).

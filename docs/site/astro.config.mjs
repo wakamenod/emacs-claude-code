@@ -91,6 +91,11 @@ export default defineConfig({
 					translations: { ja: 'リファレンス' },
 					items: [{ autogenerate: { directory: 'reference' } }],
 				},
+				{
+					label: 'Use cases',
+					translations: { ja: 'ユースケース' },
+					items: [{ autogenerate: { directory: 'usecases' } }],
+				},
 			],
 		}),
 	],

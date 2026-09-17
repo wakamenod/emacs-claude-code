@@ -11,8 +11,6 @@ Claude Code CLI 向けの Emacs クライアントです。通常の Emacs バ�
 
 ![セッション全体：2 つのプロンプト、それぞれが走らせたツール、許可された差分、そして返ってきた答え](docs/images/overview.png)
 
-![セッション：プロンプトを送り、Edit を許可すると、左のソースバッファが変更を取り込む](docs/images/session.gif)
-
 **ドキュメント:** <https://wakamenod.github.io/emacs-claude-code/ja/>
 
 > **1.0 未満です。** ecc はまだ安定版ではなく、破壊的変更が入る可能性が高い段階です。コマンド、キーバインド、設定はリリースをまたいで変更・削除されることがあります。更新する前に [CHANGELOG.md](CHANGELOG.md) を確認してください。
@@ -105,7 +103,12 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
   (ecc-notify-level 'pulse)
   (ecc-usage-display 'posframe)
   (ecc-btw-display 'posframe)
-  (ecc-prompt-suggestions-enabled t))
+  (ecc-prompt-suggestions-enabled t)
+  ;; ediff でレビューしたい場合はコメントを外す (既定は diff-mode バッファ)。
+  ;; (ecc-review-style 'ediff)
+  ;; Emacs の MCP サーバー。xref・imenu・flymake を Claude から参照でき、
+  ;; 作業を worktree のセッションに引き渡すツールも有効になる。
+  (ecc-mcp-enabled t))
 ```
 
 その他の設定項目については、[設定リファレンス](https://wakamenod.github.io/emacs-claude-code/ja/reference/configuration/) を参照してください。

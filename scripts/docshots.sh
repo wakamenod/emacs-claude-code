@@ -507,6 +507,24 @@ if want resume; then
 
 fi
 
+if want usecase; then
+    # The use-case page: going to a project that has only recordings, as
+    # an animation, and the Space a worktree hand-off leaves, as a still.
+    # The start scene resizes and moves the frame, so the rectangle is
+    # measured after it rather than before: `scene' asks for the geometry
+    # as it stands, and taking it first caught the screen behind the
+    # frame (2026-09-18).
+    e '(shot-scene-usecase-start)'   ; sleep 1
+    scene usecase-goto
+    hold 1
+    e '(shot-scene-usecase-goto)'
+    hold 8
+    gif
+    e '(shot-scene-quit)' ; sleep 1
+    e '(shot-scene-usecase-worktree)' ; sleep 2; still "$outdir/usecase-worktree.png"
+    e '(shot-scene-usecase-end)' ; sleep 1
+fi
+
 if want sidebar; then
     # The sidebar on its own, close up: several Spaces with two worktrees
     # under one of them, and a session waiting for an answer.  The
