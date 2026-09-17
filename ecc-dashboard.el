@@ -699,12 +699,17 @@ which arrives with the first turn.\n"
   (ecc-dashboard-redraw))
 
 (defun ecc-dashboard-stop ()
-  "Stop the session at point."
+  "Stop the session at point, after asking.
+The sidebar's `k\\=' asks and this did not, which is one list of rows
+answering a key two ways; stopping a session takes its window and its
+transcript with it, and the row point is on is whichever the last
+redraw left it on."
   (interactive)
   (let ((session (ecc-dashboard-session-at-point)))
     (require 'ecc)
-    (ecc-kill session)
-    (ecc-dashboard-redraw)))
+    (when (yes-or-no-p (format "Stop %s? " (ecc-session-name session)))
+      (ecc-kill session)
+      (ecc-dashboard-redraw))))
 
 (defun ecc-dashboard-delete ()
   "Delete the recording of the session at point, after asking."
@@ -740,22 +745,32 @@ which arrives with the first turn.\n"
     (ecc-dashboard-redraw)))
 
 (defun ecc-dashboard--request-at-point ()
-  "Return the oldest request of the session at point, or signal an error."
-  (let ((session (ecc-dashboard-session-at-point)))
-    (or (car (ecc-session-pending session))
-        (user-error "%s is not waiting for an answer" (ecc-session-name session)))))
+  "Return the request of the session at point, or signal an error.
+`ecc-answer-session-request\\=' is what says which, here and in the
+sidebar alike: the oldest one waiting, and not one for a tool that has
+to be read where it was asked."
+  (ecc-answer-session-request (ecc-dashboard-session-at-point)))
 
 (defun ecc-dashboard-allow ()
-  "Allow the oldest waiting request of the session at point."
+  "Allow the oldest waiting request of the session at point.
+Asked about first, the way the sidebar asks: a list of rows is answered
+from the row point happens to be on, and `ecc-answer-confirm\\=' is what
+says whether that is enough on its own."
   (interactive)
-  (ecc-perm-allow-request (ecc-dashboard--request-at-point))
-  (ecc-dashboard-redraw))
+  (let ((request (ecc-dashboard--request-at-point)))
+    (when (ecc-answer--confirm "Allow" request)
+      (ecc-perm-allow-request request)
+      (message "Allowed: %s" (ecc-answer-summary request))
+      (ecc-dashboard-redraw))))
 
 (defun ecc-dashboard-deny (reason)
   "Deny the oldest waiting request of the session at point with REASON."
   (interactive (list (read-string "Reason for denying (may be empty): ")))
-  (ecc-perm-respond (ecc-dashboard--request-at-point) 'deny :message reason)
-  (ecc-dashboard-redraw))
+  (let ((request (ecc-dashboard--request-at-point)))
+    (when (ecc-answer--confirm "Deny" request)
+      (ecc-perm-respond request 'deny :message reason)
+      (message "Denied: %s" (ecc-answer-summary request))
+      (ecc-dashboard-redraw))))
 
 ;;;; Wiring
 

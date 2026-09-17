@@ -564,21 +564,12 @@ repository still goes there."
       (ecc-sidebar-redraw))))
 
 (defun ecc-sidebar--oldest-request ()
-  "Return the oldest request the session at point is waiting on.
-A request for a tool of `ecc-answer-exclude-tools\\=' is refused here the
-way `ecc-answer-allow\\=' refuses one: the sidebar is a row and a summary,
-and a shell command has to be read whole before it is answered.  `RET\\='
-on the row is the way to where it can be."
-  (let ((session (or (ecc-sidebar--session-at-point)
-                     (user-error "No session on this line"))))
-    (let ((request (or (car (ecc-session-pending session))
-                       (user-error "%s is not waiting for anything"
-                                   (ecc-session-name session)))))
-      (when (member (ecc-request-tool-name request) ecc-answer-exclude-tools)
-        (user-error "%s is waiting on %s; answer that in the transcript (RET)"
-                    (ecc-session-name session)
-                    (ecc-request-tool-name request)))
-      request)))
+  "Return the request the session at point is waiting on.
+`ecc-answer-session-request\\=' is what says which, here and in the
+dashboard alike."
+  (ecc-answer-session-request
+   (or (ecc-sidebar--session-at-point)
+       (user-error "No session on this line"))))
 
 (defun ecc-sidebar-allow ()
   "Allow what the session at point is waiting on.

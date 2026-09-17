@@ -139,6 +139,23 @@ KIND limits the search to that kind of request.  Tools listed in
                                 ecc-answer-exclude-tools))))
             (ecc-model-pending-all)))
 
+(defun ecc-answer-session-request (session)
+  "Return the oldest request of SESSION that may be answered from a list.
+What the sidebar and the dashboard answer with `a\\=' and `d\\=': the row
+says which session, and this says what of it.  A tool of
+`ecc-answer-exclude-tools\\=' is refused here as `ecc-answer-target\\='
+skips it elsewhere -- a shell command has to be read whole before it is
+answered, and a row carries a summary cut to fit -- and `RET\\=' on the
+row is the way to where it can be read."
+  (let ((request (or (car (ecc-session-pending session))
+                     (user-error "%s is not waiting for anything"
+                                 (ecc-session-name session)))))
+    (when (member (ecc-request-tool-name request) ecc-answer-exclude-tools)
+      (user-error "%s is waiting on %s; answer that in the transcript (RET)"
+                  (ecc-session-name session)
+                  (ecc-request-tool-name request)))
+    request))
+
 (defun ecc-answer--confirm (verb request)
   "Return non-nil when REQUEST may be answered with VERB.
 The tool and its summary are shown first, so that the user knows what

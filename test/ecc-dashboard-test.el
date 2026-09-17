@@ -150,11 +150,14 @@ line of the buffer and the list starts below them."
      (ignore a b))))
 
 (ert-deftest ecc-dashboard-test-answers-from-the-row ()
-  "The a and d keys answer the oldest request of the row."
+  "The a and d keys answer the oldest request of the row.
+`ecc-answer-confirm' is nil here: what it asks is the subject of
+`ecc-dashboard-test-a-and-d-answer-as-the-sidebar-does'."
   (ecc-dashboard-test--with-two-sessions a b
     (ecc-dashboard-test--in-buffer
      (ecc-dashboard-test--first-row)
-     (ecc-dashboard-allow)
+     (let ((ecc-answer-confirm nil))
+       (ecc-dashboard-allow))
      (should-not (ecc-session-pending b))
      (should (equal "allow" (alist-get 'behavior (ecc-test-response 0))))
      ;; The row of a session that is not waiting says so rather than
@@ -212,14 +215,51 @@ line of the buffer and the list starts below them."
      (ignore a))))
 
 (ert-deftest ecc-dashboard-test-stop ()
-  "k stops the session of the row and takes it off the list."
+  "k asks, and stops the session of the row it was typed on.
+It asks for the reason the sidebar's `k' does: the row point is on is
+whichever the last redraw left it on, and stopping a session takes its
+window and its transcript with it."
   (ecc-dashboard-test--with-two-sessions a b
     (ecc-dashboard-test--in-buffer
      (ecc-dashboard-test--first-row)
-     (ecc-dashboard-stop)
+     ;; No leaves it where it is.
+     (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil)))
+       (ecc-dashboard-stop))
+     (should (ecc-model-session (ecc-session-id b)))
+     (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+       (ecc-dashboard-stop))
      (should-not (ecc-model-session (ecc-session-id b)))
      (should (member "test" (ecc-dashboard-test--names (ecc-dashboard-entries))))
      (ignore a))))
+
+(ert-deftest ecc-dashboard-test-a-and-d-answer-as-the-sidebar-does ()
+  "The two lists of rows answer a request the same way.
+Both ask before they answer, and neither answers a tool of
+`ecc-answer-exclude-tools': a shell command is read where it was asked,
+and a row carries a summary cut to fit."
+  (ecc-dashboard-test--with-two-sessions a b
+    (ecc-dashboard-test--in-buffer
+     (ecc-dashboard-test--first-row)
+     (let ((answered nil)
+           (asked nil))
+       (cl-letf (((symbol-function 'ecc-perm-allow-request)
+                  (lambda (request) (setq answered request)))
+                 ((symbol-function 'y-or-n-p)
+                  (lambda (prompt) (setq asked prompt) t)))
+         (cl-letf (((symbol-function 'ecc-dashboard-session-at-point)
+                    (lambda () a)))
+           ;; A Bash request is not answered from here at all.
+           (ecc-test-add-request a "Bash" '((command . "rm -rf /tmp/x")))
+           (should-error (ecc-dashboard-allow) :type 'user-error)
+           (should-not answered)
+           (should-not asked)
+           ;; Anything else is asked about and then answered.
+           (setf (ecc-session-pending a) nil)
+           (let ((request (ecc-test-add-request a "Write")))
+             (ecc-dashboard-allow)
+             (should (eq answered request))
+             (should (string-match-p "Allow" asked))))
+         (ignore b))))))
 
 ;;;; What the list looks like
 
