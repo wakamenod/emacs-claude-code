@@ -22,16 +22,16 @@ Or, without `use-package`:
 |---|---|
 | `c` / `r` / `R` | Start session / resume (`C-u r` to fork the conversation) / rename |
 | `v` / `i` / `t` | Focus prompt / interrupt turn / hand over to terminal |
-| `j` / `w` | Focus one project / hide or restore its session windows (`C-u w` for every project) |
-| `V` | Show this project's source in the main window (`C-u V` asks which buffer) |
 | `a` / `d` | Allow or deny oldest pending request |
 | `1`–`4` | Select corresponding option for pending question |
 | `n` / `N` | Jump to next pending request (globally or within current project) |
-| `b` / `D` / `G` / `h` / `U` | Open dashboard / review the session's diffs / review the working tree / view history / check usage |
-| `J` / `B` / `z` / `C` | Go to a Space / open the sidebar / zoom this window / new worktree (see [Spaces and worktrees](/emacs-claude-code/features/spaces/)) |
+| `B` / `D` / `G` / `h` / `U` | Open dashboard / review the session's diffs / review the working tree / view history / check usage |
+| `j` / `b` / `z` / `V` | Go to a Space / open the sidebar / zoom this window / put this Space's windows back in order (see [Spaces and worktrees](/emacs-claude-code/features/spaces/)) |
 | `/` | Search past conversations by message content |
 | `?` | Open transient menu |
 
 Keybindings correspond directly to commands in the [transient menu](/emacs-claude-code/features/menu/), ensuring consistent mnemonic shortcuts across Emacs. `?` opens the transient menu itself, providing quick access to all ecc commands from outside a session buffer.
+
+What is not here is the handful of commands used once a week rather than once an hour. Making a worktree, opening one and removing one are `?` then `W`; switching a window to another session is `C-c C-t` inside a session buffer; focusing one project under `classic` is `M-x ecc-focus-project`.
 
 For buffer-local bindings inside session buffers, see [Prompt and transcript](/emacs-claude-code/features/prompt/).

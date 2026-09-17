@@ -19,7 +19,7 @@ With `classic`, focusing a project deals the session windows out again from noth
 
 With `spaces` the windows have no roles. The transcripts of a Space stand side by side: the first opens beside the source, to the right, and every one after it divides the rightmost of them. Nothing is ever stacked. From there they are ordinary windows, yours to split, move, enlarge and close. A tab **is** a window arrangement, so going to another Space and back brings the whole of it back the way you left it.
 
-How many fit is `ecc-space-session-min-width`, the columns a transcript may not go under. When there is no room for another one, no narrower window is made: the session you worked in longest ago hands its window over, and goes on running without one. The sidebar and `ecc-toggle` bring it back.
+How many fit is `ecc-space-session-min-width`, the columns a transcript may not go under. When there is no room for another one, no narrower window is made: the session you worked in longest ago hands its window over, and goes on running without one. The sidebar brings it back, and so does `C-c c V`.
 
 A Space whose tab has to be made comes up with its sessions already on the screen: they are dealt out beside the source, most recently used first, until the row has no room for another column. The ones that do not fit go on running without a window.
 
@@ -54,10 +54,9 @@ The tab line inside each session window is unchanged: it switches between the se
 
 | Key | Command | What it does |
 |---|---|---|
-| `C-c c J` | `ecc-space-goto` | Go to a Space, by name — including a project you have only recordings of |
-| `C-c c j` | `ecc-focus-project` | The same thing for the project of this buffer |
+| `C-c c j` | `ecc-space-goto` | Go to a Space, by name — including a project you have only recordings of |
 | `C-c c z` | `ecc-space-zoom` | Fill the tab with this window; the same key puts the windows back |
-| `C-c c V` | `ecc-window-focus-source` | Show this Space's source in the main window |
+| `C-c c V` | `ecc-space-reset-windows` | Put this Space back to the arrangement a new tab gets: the source on the left, the transcripts beside it |
 | `C-c c ?` then `X` | `ecc-space-close` | Close this Space and stop what is running in it — with its worktrees, when it is a repository — then offer to remove the worktrees that closed |
 | — | `ecc-space-jump` | Go to the Nth Space, as numbered in the sidebar |
 
@@ -69,11 +68,11 @@ window that holds no transcript, which in a Space is where the code is, and that
 window goes back to what it held once the question is answered. Only where every
 window is a transcript is one of them divided; none is ever taken away.
 
-The windows of a tab are yours, so nothing rearranges them behind your back. That cuts both ways: a window you pointed at another project's file keeps that file, and going to the Space again does not undo it. `C-c c V` (`ecc-window-focus-source`) is the way back — it shows this Space's source in the main window, and asks which buffer with `C-u`. The one exception is a tab with nothing but transcripts left in it, which is nobody's arrangement: going to that Space opens a window for the code again, to the left of the transcripts.
+The windows of a tab are yours, so nothing rearranges them behind your back. That cuts both ways: a window you pointed at another project's file keeps that file, and going to the Space again does not undo it. `C-c c V` (`ecc-space-reset-windows`) is the way back — it deals the tab again, by the rules a new one is dealt with: the source on the left, the transcripts beside it, most recently used first, stopping where the row is full. It leaves the sidebar where it is, at the width it had, and brings it back if you had hidden it. The one exception it is not needed for is a tab with nothing but transcripts left in it, which is nobody's arrangement: going to that Space opens a window for the code again on its own.
 
 Closing a repository's Space closes the worktrees drawn under it as well: they are one group on the screen and they close as one, after a single question naming everything that will stop. A worktree closed on its own leaves the repository where it is — and a repository that was only opened to hold a worktree goes when the last worktree under it does.
 
-Once the group is closed, the worktrees among it are **offered for removal in one question** naming them: their Spaces are gone and nothing is left running in them, which is the moment anybody is thinking about the directories. No leaves them where they are. Closing a tab by hand is different and stops nothing: the sessions go on running with no window, and `C-c c w` (`ecc-toggle`) or the sidebar brings them back.
+Once the group is closed, the worktrees among it are **offered for removal in one question** naming them: their Spaces are gone and nothing is left running in them, which is the moment anybody is thinking about the directories. No leaves them where they are. Closing a tab by hand is different and stops nothing: the sessions go on running with no window, and the sidebar or `C-c c V` brings them back.
 
 ### The bar itself is yours
 
@@ -87,11 +86,11 @@ With the bar hidden the tabs are made, named, switched and closed exactly as bef
 
 ## The sidebar
 
-`C-c c B` (`ecc-sidebar-focus`) opens the sidebar and puts point in it; the same key puts point back where it was. It works under `classic` too.
+`C-c c b` (`ecc-sidebar-focus`) opens the sidebar and puts point in it; the same key puts point back where it was. It works under `classic` too.
 
 Under `classic` the sidebar draws the same two lists and answers the same keys; what changes is what going somewhere means. `RET` and `1`-`9` on a Space focus that project the way `ecc-focus-project` always has, and no tab is made -- turning the tab bar on because you pressed a number would be changing the layout behind your back. So the sidebar under `classic` is the dashboard that stays on the screen; `spaces` is that plus a different way of laying the session windows out.
 
-The sidebar window is `no-other-window`, so `C-x o` never lands in it while you are working — `C-c c B` is the way in.
+The sidebar window is `no-other-window`, so `C-x o` never lands in it while you are working — `C-c c b` is the way in.
 
 ```
 Spaces
@@ -138,9 +137,11 @@ These commands work under both layouts.
 
 | Key | Command | What it does |
 |---|---|---|
-| `C-c c C` | `ecc-start-worktree` | Check a branch out beside the repository and start a session there |
-| `C-c c ?` then `E` | `ecc-start-in-worktree` | Start a session in a worktree that already exists |
-| `C-c c ?` then `M` | `ecc-remove-worktree` | Stop the sessions working in a worktree and undo it |
+| `C-c c ?` then `W c` | `ecc-start-worktree` | Check a branch out beside the repository and start a session there |
+| `C-c c ?` then `W o` | `ecc-start-in-worktree` | Start a session in a worktree that already exists |
+| `C-c c ?` then `W k` | `ecc-remove-worktree` | Stop the sessions working in a worktree and undo it |
+
+The three live behind `W` in the menu rather than on keys of their own: they are the management of the worktrees rather than the working in them, done in a week what the Spaces keys are done in an hour.
 
 `ecc-start-worktree` asks for a branch, offering the branches that exist and filling nothing in. A branch that exists is checked out as it is; one that does not is created from `HEAD`.
 

@@ -146,4 +146,4 @@ Reviews require screen space, which two variables control:
 | `ecc-window-hide-on-review` | `'project` hides the sessions of this project, `'all` every session, `nil` none |
 | `ecc-window-review-focus` | `'review` focuses the review, `'session` keeps point in the transcript, `nil` leaves focus alone |
 
-`ecc-toggle` restores this project's session windows, and `ecc-toggle-all` restores every project's. The remaining options are in the [configuration reference](/emacs-claude-code/reference/configuration/).
+What was hidden is not written down. Under `spaces` the way back is `C-c c V` (`ecc-space-reset-windows`), which deals the whole tab again; under `classic` it is `M-x ecc-focus-project`, or `C-c c v` one session at a time. The remaining options are in the [configuration reference](/emacs-claude-code/reference/configuration/).
