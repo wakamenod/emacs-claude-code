@@ -728,7 +728,11 @@ start_worktree_session rather than making the checkout here.)"
   "The line added to a draft that speaks of a worktree.
 A tool is offered to the model once, at the start of a session, among
 every other tool; this is the reminder at the moment it applies.  It is
-a sentence sent to the model, so it is a variable and not a setting.")
+a sentence sent to the model, so it is a variable and not a setting.
+
+It goes out marked with `ecc-aside\=', so the transcript shows it folded
+under the prompt rather than inside the user's own band: it is sent,
+but the user did not write it.")
 
 (defconst ecc-worktree--prompt-regexp "worktree\\|ワークツリー"
   "What a draft that is asking for a worktree says.
@@ -748,7 +752,7 @@ sessions run in, which is why the line is worth its tokens."
   (if (and (stringp text)
            (string-match-p ecc-worktree--prompt-regexp text)
            (ecc-worktree-tool-published-p session))
-      (concat text ecc-worktree-prompt-hint-text)
+      (concat text (ecc-aside ecc-worktree-prompt-hint-text))
     text))
 
 (add-hook 'ecc-prompt-prepare-functions #'ecc-worktree-prompt-hint)

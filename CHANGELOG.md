@@ -332,7 +332,13 @@ Verified against **Claude Code CLI 2.1.270**.
   in English or Japanese, is sent with one line reminding the model of the tool,
   which in that mode is the whole backstop --
   `ecc-prompt-prepare-functions`, which is where a module adds a word of its own
-  to a draft.
+  to a draft. That line is sent but not written by anybody, so the transcript
+  does not draw it inside the user's own band: what a module adds is marked
+  with `ecc-aside`, and the renderer parts it from the prompt and shows it
+  under the band as a folded heading ("1 line Emacs added") that opens like
+  any other. What was sent stays in the buffer -- a sentence in the
+  conversation that the user did not write is worth a mark, not a
+  disappearance.
 
   Where a checkout goes is `ecc-worktree-directory`, `.claude/worktrees` by
   default, which is where Claude Code's own worktrees go. A relative name hangs
