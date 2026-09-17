@@ -343,23 +343,43 @@ What comes next is the caller\='s: a terminal takes the conversation over
   "Handle EVENT for PROCESS: close the session down cleanly."
   (let ((session (ecc-proc-session process)))
     (when (and session (not (process-live-p process)))
-      (ecc-proc--handle-exit session (process-exit-status process) event))))
+      (ecc-proc--handle-exit session (process-exit-status process) event
+                             process))))
 
-(defun ecc-proc--handle-exit (session status event)
-  "Close SESSION down after its CLI exited with STATUS, described by EVENT."
-  (ecc-log (ecc-session-name session) "exited: %s (code %s)"
-           (string-trim (or event "")) status)
-  (setf (ecc-session-process session) nil)
-  (setf (alist-get 'exit-status (ecc-session-progress session)) status)
-  (ecc-proc--close-pending session)
-  ;; A turn the CLI was in the middle of will never get its result. Left
-  ;; open, it would hold every later prompt in the queue, and a resumed
-  ;; session would never speak again.
-  (when-let* ((turn (ecc-model-abort-turn session)))
-    (ecc-log (ecc-session-name session) "turn %s left open by the exit; closed"
-             (ecc-turn-id turn)))
-  (ecc-model-set-state session 'exited)
-  (run-hook-with-args 'ecc-session-exited-hook session status))
+(defun ecc-proc--stale-exit-p (session process)
+  "Return non-nil when PROCESS is not the CLI SESSION is running now.
+Emacs runs a sentinel when it next waits for output, which may be after
+the session has been stopped and started again -- `/resume\\=', a resume,
+a hand-off taken back -- and the exit of the process that went then
+belongs to nobody: the session is running another one.  Applying it
+anyway set the session\\='s process to nil, marked it `exited\\=' and threw
+the turn the new CLI had just been given away, so the answer arrived in
+a session nothing was listening to (5 resumes in 10, 2026-09-17)."
+  (and process
+       (ecc-session-process session)
+       (not (eq process (ecc-session-process session)))))
+
+(defun ecc-proc--handle-exit (session status event &optional process)
+  "Close SESSION down after its CLI exited with STATUS, described by EVENT.
+PROCESS is the one that exited; an exit that is not the session\\='s own
+is ignored (`ecc-proc--stale-exit-p\\=')."
+  (if (ecc-proc--stale-exit-p session process)
+      (ecc-log (ecc-session-name session)
+               "an earlier CLI exited (code %s) after the session had been \
+started again; left alone" status)
+    (ecc-log (ecc-session-name session) "exited: %s (code %s)"
+             (string-trim (or event "")) status)
+    (setf (ecc-session-process session) nil)
+    (setf (alist-get 'exit-status (ecc-session-progress session)) status)
+    (ecc-proc--close-pending session)
+    ;; A turn the CLI was in the middle of will never get its result. Left
+    ;; open, it would hold every later prompt in the queue, and a resumed
+    ;; session would never speak again.
+    (when-let* ((turn (ecc-model-abort-turn session)))
+      (ecc-log (ecc-session-name session) "turn %s left open by the exit; closed"
+               (ecc-turn-id turn)))
+    (ecc-model-set-state session 'exited)
+    (run-hook-with-args 'ecc-session-exited-hook session status)))
 
 (defun ecc-proc--close-pending (session)
   "Deny every unanswered request of SESSION.

@@ -295,6 +295,34 @@ The next prompt after a resume must be sent, not queued."
       ;; The turn stays in the transcript; it just is not open any more.
       (should (memq turn (ecc-session-turns session))))))
 
+(ert-deftest ecc-proc-test-an-earlier-exit-leaves-the-session-alone ()
+  "The exit of a process the session has already replaced closes nothing.
+Emacs runs a sentinel when it next waits for output, which is often
+after a stop and a start -- `/resume\\=', `ecc-resume\\=', a hand-off taken
+back.  Taken for the session\\='s own exit, it put the process at nil,
+marked the session exited and threw away the turn the new CLI had just
+been given: the answer then arrived in a session nothing was listening
+to, and the transcript showed a prompt with nothing under it."
+  (ecc-test-with-fake-session session
+    (let ((old (start-process "ecc-test-old" nil "sleep" "30"))
+          (new (start-process "ecc-test-new" nil "sleep" "30")))
+      (unwind-protect
+          (progn
+            (setf (ecc-session-process session) new)
+            (ecc-model-set-state session 'idle)
+            (let ((turn (ecc-model-begin-turn session "work")))
+              (ecc-proc--handle-exit session 143 "terminated" old)
+              (should (eq new (ecc-session-process session)))
+              (should-not (eq (ecc-session-state session) 'exited))
+              (should (eq turn (ecc-session-current-turn session)))
+              (should-not (alist-get 'exit-status (ecc-session-progress session)))
+              ;; The one it is running now still closes it.
+              (ecc-proc--handle-exit session 137 "killed" new)
+              (should (eq (ecc-session-state session) 'exited))
+              (should-not (ecc-session-current-turn session))))
+        (delete-process old)
+        (delete-process new)))))
+
 
 ;;;; The model a session would start with
 

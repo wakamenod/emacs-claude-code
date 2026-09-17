@@ -741,6 +741,24 @@ Verified against **Claude Code CLI 2.1.274**.
   made afresh on every draw, so the first commit puts the real `HEAD` back
   without a refresh having to know anything about it.
 
+- A session that is stopped and started again is no longer declared dead by
+  the CLI that went. Emacs runs a sentinel when it next waits for output, and
+  that is regularly after the next CLI has been started: `/resume`, `ecc-resume`
+  and a hand-off taken back all stop one process and start another within the
+  same command. The exit of the old one was then taken for the session's own --
+  the process was set to nil, the state to `exited`, the pending requests were
+  closed and the turn the new CLI had just been given was aborted as "left open
+  by the exit". The prompt had gone out, so the answer arrived in a session
+  nothing was listening to: the transcript showed a prompt with nothing under
+  it, and the session looked stopped while its CLI was running.
+
+  An exit now only closes a session down when it belongs to the process the
+  session is running (`ecc-proc--stale-exit-p`); any other is left alone with a
+  line in the log. Measured on CLI 2.1.274 by resuming a recorded conversation
+  and sending one prompt: 5 of 10 came back with an empty turn before, 0 of 10
+  after (2026-09-17). It is what `ecc-test-live-history-resume` had been failing
+  on.
+
 ## [0.2.0] - 2026-09-14
 
 Verified against **Claude Code CLI 2.1.270**.
