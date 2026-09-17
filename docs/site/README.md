@@ -3,7 +3,9 @@
 Astro Starlight, deployed to GitHub Pages by `.github/workflows/docs.yml`.
 English is served at the root and Japanese under `/ja/`, following the same
 rule as the two READMEs: `README.md` is the source of record and `README.ja.md`
-follows it.
+follows it. The pages are counted by GoatCounter, from the `script` tag at the
+end of the `head` array in `astro.config.mjs`; the dashboard is
+`https://emacs-claude-code.goatcounter.com/`.
 
 This file is the working note. What is written down here was learned the slow
 way; read it before changing the site.

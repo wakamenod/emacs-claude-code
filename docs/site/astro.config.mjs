@@ -47,6 +47,21 @@ export default defineConfig({
 							'https://wakamenod.github.io/emacs-claude-code/og.png',
 					},
 				},
+
+				// GoatCounter: which pages are read, in which language, and
+				// where the readers came from.  It sets no cookie and keeps
+				// nothing that identifies a reader, so the site needs no
+				// consent banner.  count.js leaves localhost alone, so
+				// `make docs-dev` and `make docs-preview` are not counted.
+				{
+					tag: 'script',
+					attrs: {
+						async: true,
+						src: 'https://gc.zgo.at/count.js',
+						'data-goatcounter':
+							'https://emacs-claude-code.goatcounter.com/count',
+					},
+				},
 			],
 
 			// English lives at the root and Japanese under /ja/, which mirrors
