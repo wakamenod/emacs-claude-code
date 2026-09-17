@@ -460,6 +460,27 @@ has it need not be named the way this package would have named it."
       (should-not (ecc-worktree-test--denials))
       (should (= 2 (length (ecc-session-pending session)))))))
 
+(ert-deftest ecc-worktree-test-a-session-in-a-worktree-goes-by-its-branch ()
+  "The name of a session started in a worktree is the branch, not the slug.
+The Space above it is called after the branch, and the directory is a
+slug of that branch: one screen calling the same thing `feat/one\=' and
+`feat-one\=' is one name too many (2026-09-17)."
+  (skip-unless (executable-find "git"))
+  (ecc-worktree-test--with-directory directory
+    (ecc-worktree-test--repository directory)
+    (let ((ecc-worktree-directory ".claude/worktrees"))
+      (let ((path (ecc-worktree-create directory "feat/one")))
+        (clrhash ecc-worktree--cache)
+        (should (equal (ecc-worktree-session-name path) "feat/one"))
+        ;; The main worktree keeps the name of its directory, and so
+        ;; does a directory that is in no repository at all.
+        (should-not (ecc-worktree-session-name directory))
+        (should-not (ecc-worktree-session-name temporary-file-directory))
+        ;; herdr\='s prefix is dropped, as the Space drops it.
+        (let ((generated (ecc-worktree-create directory "worktree/two")))
+          (clrhash ecc-worktree--cache)
+          (should (equal (ecc-worktree-session-name generated) "two")))))))
+
 (ert-deftest ecc-worktree-test-prompt-hint ()
   "A draft that speaks of a worktree is sent with a line about the tool."
   (require 'ecc-mcp)
@@ -486,6 +507,31 @@ has it need not be named the way this package would have named it."
         (should (equal "worktree を切ってやって"
                        (ecc-prompt-prepare-text session
                                                 "worktree を切ってやって")))))))
+
+(ert-deftest ecc-worktree-test-prompt-hint-on-every-send ()
+  "The line is added wherever a prompt is sent from, not only the region.
+`ecc-send\=' and its neighbours, and `ecc-inline-prompt\=', go straight to
+the process; in an `auto\=' permission mode this line is the whole
+backstop, and one that is only on the prompts typed in the prompt
+region is no backstop at all (2026-09-17)."
+  (require 'ecc-mcp)
+  (require 'ecc-context)
+  (ecc-worktree-register-mcp-tool)
+  (ecc-test-with-fake-session session
+    (let ((ecc-mcp-enabled t)
+          (ecc-mcp-excluded-tools nil)
+          (sent nil))
+      (cl-letf (((symbol-function #'ecc-proc-send-prompt)
+                 (lambda (_session text) (setq sent text) 'sent)))
+        (ecc-send "worktree で直して" session)
+        (should (string-match-p "start_worktree_session" sent))
+        (should (string-prefix-p "worktree で直して" sent))
+        ;; What Emacs added is marked, so the transcript can part it
+        ;; from what the user wrote.
+        (should (text-property-any 0 (length sent) 'ecc-aside t sent))
+        ;; Anything else costs nothing.
+        (ecc-send "テストを通して" session)
+        (should (equal sent "テストを通して"))))))
 
 ;;;; Offering to undo a worktree
 

@@ -548,8 +548,8 @@ object, `:null' becomes null and `:false' becomes false."
 
 ;;;; What Emacs adds beside what the user wrote
 
-;; A module may put a line of its own at the end of a draft before it
-;; goes to the CLI (`ecc-prompt-prepare-functions').  What is sent is
+;; A module may put a line of its own at the end of a prompt before it
+;; goes to the CLI (`ecc-prepare-prompt-functions').  What is sent is
 ;; the two together, and that is what the turn remembers -- but the
 ;; transcript is a record of a conversation, and a sentence the user
 ;; never typed reads as theirs when it is drawn in their band.  Marking

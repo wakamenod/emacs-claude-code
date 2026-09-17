@@ -258,9 +258,11 @@ The answer arrives in an overlay above point: `n' and `p' scroll it,
     (puthash session (current-buffer) ecc-inline--targets)
     (ecc-inline-show "…" (format "Claude (%s)" (ecc-session-name session)))
     (ecc-proc-send-prompt
-     session (ecc-inline-question question (current-buffer)
-                                  (and (use-region-p)
-                                       (cons (region-beginning) (region-end)))))
+     session (ecc-model-prepare-prompt
+              session
+              (ecc-inline-question question (current-buffer)
+                                   (and (use-region-p)
+                                        (cons (region-beginning) (region-end))))))
     session))
 
 (defun ecc-inline--answer-text (session)

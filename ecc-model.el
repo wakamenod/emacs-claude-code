@@ -68,6 +68,33 @@ Emacs handles itself, and can say so in a sentence the model can act
 on.  A refusal that only says no belongs to the user, who can say it
 themselves.")
 
+(defvar ecc-prepare-prompt-functions nil
+  "Functions given a session and a prompt, returning the prompt to send.
+Each is called in turn with what the one before it returned, and what
+the last one returns is what goes to the CLI.  A function that has
+nothing to add returns the prompt it was given.
+
+This is where a module puts a word of its own beside what the user
+wrote -- a line saying that Emacs can do the thing being asked for.
+Taking a draft away from the CLI altogether is
+`ecc-prompt-intercept-functions\=', which is the other one, and belongs to
+the prompt region alone: intercepting is a command, and a command is
+typed somewhere.
+
+It lives here, and not beside the prompt region, because a prompt does
+not only come from there: `ecc-send\=' and its neighbours, and
+`ecc-inline-prompt\=', send one as well, and a line that a module adds
+because the CLI would otherwise do the wrong thing has to be on those
+too (2026-09-17).
+
+What is added here is sent and is part of the conversation, so it is
+worth what it costs: a line on every prompt is a line on every prompt.")
+
+(defun ecc-model-prepare-prompt (session text)
+  "Return TEXT as `ecc-prepare-prompt-functions\=' would have SESSION send it."
+  (dolist (function ecc-prepare-prompt-functions text)
+    (setq text (or (funcall function session text) text))))
+
 (defvar ecc-request-added-hook nil
   "Functions run with a session and a request that needs an answer.")
 
@@ -135,6 +162,12 @@ resumed -- so this is not `ecc-session-exited-hook' by another name.")
   last-model            ; model of the last real assistant message; the
                         ; CLI reports it on every one and a `/model'
                         ; changes it mid-session
+  startup-model         ; what the CLI was started with, worked out in
+                        ; the environment it was started in
+                        ; (`ecc-proc-start').  The settings files and
+                        ; the environment are read again on every
+                        ; footer, and both can change under a session
+                        ; that is already running
   commands              ; commands from the initialize response
   models                ; models from the initialize response: what
                         ; /model may be given, and the name the

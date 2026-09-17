@@ -222,6 +222,21 @@ symbolic links and the caller has not: on macOS a worktree under
          (unless (equal (file-truename main) (file-truename top))
            main))))))
 
+(defun ecc-worktree-session-name (root)
+  "Return what a session started in ROOT should be called, or nil.
+The branch, when ROOT is a worktree of a repository: that is what the
+Space above it is called and what the user asked for, and the directory
+is a slug of the branch that says nothing more -- one screen calling the
+same thing `feat/one\=' and `feat-one\=' is one name too many (2026-09-17).
+
+Nil for the main worktree and for a directory outside a repository,
+where the name of the directory is the answer, and for a detached HEAD,
+which has no branch.  The `worktree/\=' herdr puts in front of the
+branches it generates is dropped, as `ecc-space--name\=' drops it."
+  (when (ecc-worktree-main root)
+    (when-let* ((branch (ecc-worktree-branch root)))
+      (string-remove-prefix "worktree/" branch))))
+
 (defun ecc-worktree-branch (root)
   "Return the branch checked out in ROOT, or nil.
 Nil for a detached HEAD as well as for a directory that is not in a
@@ -792,9 +807,11 @@ Both spellings: the user writes to Emacs in either language.")
 
 (defun ecc-worktree-prompt-hint (session text)
   "Add a line to TEXT when it asks SESSION for work in a worktree.
-On `ecc-prompt-prepare-functions\=', so it costs the line only on the
+On `ecc-prepare-prompt-functions\=', so it costs the line only on the
 prompts that mention one -- and nothing at all in a session that has no
-`start_worktree_session\=' to be reminded of.
+`start_worktree_session\=' to be reminded of.  Every way a prompt is sent
+runs that hook: the prompt region, `ecc-send\=' and its neighbours, and
+`ecc-inline-prompt\='.
 
 In an `auto\=' permission mode this is the only thing standing between
 the request and `git worktree add\=': the CLI runs it there without
@@ -807,7 +824,7 @@ sessions run in, which is why the line is worth its tokens."
       (concat text (ecc-aside ecc-worktree-prompt-hint-text))
     text))
 
-(add-hook 'ecc-prompt-prepare-functions #'ecc-worktree-prompt-hint)
+(add-hook 'ecc-prepare-prompt-functions #'ecc-worktree-prompt-hint)
 
 ;;;; Commands
 
