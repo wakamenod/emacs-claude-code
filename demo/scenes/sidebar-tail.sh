@@ -53,7 +53,16 @@ e "(demo-report-asked)"; sleep 9
 e "(demo-frame)"; sleep 2
 e "(demo-report-rows)"; sleep 8
 
-say "7. q hides the sidebar, and C-c c b is the way back in"; sleep 6
+say "7. K removes the worktree, and the row goes with it -- no g, no session event"; sleep 8
+e "(demo-report-rows)"; sleep 7
+e "(demo-expect (quote (\"Stop \" . t)) (quote (\"Remove the worktree\" . t)) (quote (\"not committed\" . t)))"; sleep 2
+e "(demo-point-on \"feat/one\")"; sleep 4
+e "(demo-sidebar-key \"K\")"; sleep 12
+e "(demo-report-asked)"; sleep 8
+e "(demo-frame)"; sleep 2
+e "(demo-report-rows)"; sleep 9
+
+say "8. q hides the sidebar, and C-c c b is the way back in"; sleep 6
 e "(demo-sidebar-key \"q\")"; sleep 4
 e "(demo-report-window)"; sleep 6
 e "(demo-show-sidebar)"; sleep 4
