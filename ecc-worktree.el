@@ -340,6 +340,18 @@ it refuses is what the error says."
       (ecc-worktree-forget)
       path)))
 
+(defvar ecc-worktree-removed-hook nil
+  "Functions called with the worktree that has just been removed.
+What draws a worktree -- the sidebar -- redraws from this.  It is a
+hook rather than a call upwards: this file is below `ecc-sidebar\\=',
+being what the sidebar asks about every project it lists.
+
+Run by `ecc-worktree-remove\\=', which every removal goes through: the
+command, the offer made when the last session of a worktree leaves, and
+the one question a group closed together is asked.  Only the command
+redrew before, so a worktree removed by an offer left its row on the
+screen until something else changed (2026-09-18).")
+
 (defun ecc-worktree-remove (path &optional force)
   "Remove the worktree checked out at PATH, and return PATH.
 The branch is left where it is: what is undone is the directory.  This
@@ -367,6 +379,7 @@ Remove it anyway? "
       (ecc-worktree--refused result (format "Cannot remove %s"
                                             (abbreviate-file-name path))))
     (ecc-worktree-forget)
+    (run-hook-with-args 'ecc-worktree-removed-hook path)
     path))
 
 (defun ecc-worktree--forget-space (root)

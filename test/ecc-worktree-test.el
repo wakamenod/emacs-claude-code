@@ -599,6 +599,45 @@ session leaves the model; a batch test has no idle moment to wait for."
       (should-not (file-directory-p path))
       (should (member "feat/x" (ecc-worktree-branches directory))))))
 
+(ert-deftest ecc-worktree-test-every-removal-says-so ()
+  "Every way a worktree goes runs `ecc-worktree-removed-hook' with it.
+What draws a worktree redraws from that hook.  Only `ecc-remove-worktree'
+told anybody before, so a worktree an offer removed -- the last session
+of one leaving, or a group closed together -- left its row on the screen
+pointing at a directory that was gone."
+  (skip-unless (executable-find "git"))
+  (ecc-worktree-test--with-directory directory
+    (ecc-worktree-test--repository directory)
+    (let* ((ecc-worktree-directory ".claude/worktrees")
+           (ecc--sessions (make-hash-table :test #'equal))
+           (ecc--session-order nil)
+           (ecc-window--project-root-cache (make-hash-table :test #'equal))
+           (told nil)
+           (ecc-worktree-removed-hook
+            (list (lambda (path) (push path told)))))
+      ;; The offer one session leaving makes.
+      (let ((path (ecc-worktree-create directory "feat/x")))
+        (ecc-worktree-test--with-answer t
+          (should (ecc-worktree-offer-removal path)))
+        (should (equal (mapcar #'file-truename told)
+                       (list (file-truename path)))))
+      ;; The one question a group is asked.
+      (setq told nil)
+      (clrhash ecc-worktree--cache)
+      (let ((one (ecc-worktree-create directory "feat/y"))
+            (two (ecc-worktree-create directory "feat/z")))
+        (ecc-worktree-test--with-answer t
+          (should (ecc-worktree-offer-group-removal (list one two))))
+        (should (equal (sort (mapcar #'file-truename told) #'string<)
+                       (sort (mapcar #'file-truename (list one two)) #'string<))))
+      ;; And the command.
+      (setq told nil)
+      (clrhash ecc-worktree--cache)
+      (let ((path (ecc-worktree-create directory "feat/w")))
+        (ecc-worktree-remove path)
+        (should (equal (mapcar #'file-truename told)
+                       (list (file-truename path))))))))
+
 (ert-deftest ecc-worktree-test-remove-worktree-leaves-the-branch ()
   "`ecc-remove-worktree' asks once, and the branch outlives the directory."
   (skip-unless (executable-find "git"))

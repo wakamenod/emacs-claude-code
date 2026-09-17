@@ -446,6 +446,12 @@ Verified against **Claude Code CLI 2.1.274**.
   upstream it is -- and the answers are kept for ten seconds, so that whatever
   asks on every redraw costs no process.
 
+  `ecc-worktree-removed-hook` is run with a worktree that has gone, by every
+  way one goes: the command, the offer the last session leaving makes, and the
+  one question a group closed together is asked. The sidebar draws a row per
+  worktree and nothing about a session says that one has been removed, so that
+  is what it redraws from.
+
 - A `Spaces` column in `ecc-menu`, and four keys in `ecc-global-map`: `j` goes
   to a Space, `b` opens the sidebar, `z` zooms the window point is in and `V`
   puts the tab back in order.  They have the lower-case keys because the Spaces

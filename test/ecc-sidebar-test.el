@@ -16,6 +16,7 @@
 (require 'cl-lib)
 (require 'ecc-test-helpers)
 (require 'ecc-sidebar)
+(require 'ecc-worktree)
 (require 'ecc-space)
 (require 'ecc-session)
 
@@ -454,6 +455,24 @@ sidebar but not answered."
     (should-error (ecc-sidebar-remove-worktree) :type 'user-error)))
 
 ;;;; The window
+
+(ert-deftest ecc-sidebar-test-a-removed-worktree-is-redrawn ()
+  "The sidebar listens for a worktree going, not only for a session.
+A worktree an offer removed -- the last session of one leaving, a group
+closed together -- took its row with it only when something else
+happened to redraw the sidebar; the row stood there pointing at a
+directory that was gone."
+  (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one))
+    (should (memq #'ecc-sidebar-redraw ecc-worktree-removed-hook))
+    (let ((drawn 0))
+      (cl-letf* ((redraw (symbol-function 'ecc-sidebar-redraw))
+                 ((symbol-function 'ecc-sidebar-redraw)
+                  (lambda (&rest arguments)
+                    (cl-incf drawn)
+                    (apply redraw arguments))))
+        (run-hook-with-args 'ecc-worktree-removed-hook
+                            ecc-sidebar-test--work)
+        (should (= 1 drawn))))))
 
 (ert-deftest ecc-sidebar-test-show-and-hide ()
   "The sidebar goes on the left, is never selected, and hides alone."

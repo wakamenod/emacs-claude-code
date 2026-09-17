@@ -435,10 +435,17 @@ A sidebar nobody is looking at is not worth a timer."
     ecc-session-init-hook
     ecc-session-exited-hook
     ecc-session-removed-hook
-    ecc-turn-finished-hook)
+    ecc-turn-finished-hook
+    ;; A worktree that goes takes a row with it, and nothing about a
+    ;; session says so: the removal an offer makes -- the last session
+    ;; of a worktree leaving, a group closed together -- left the row on
+    ;; the screen, pointing at a directory that was gone, until some
+    ;; session changed or `g' was pressed (2026-09-18).
+    ecc-worktree-removed-hook)
   "The hooks that change what the sidebar says.
-The same set the tab line listens to, and the two are drawn from the
-same facts.")
+Mostly the set the tab line listens to, the two being drawn from the
+same facts, and the removal of a worktree besides -- which the tab line
+has no row for.")
 
 (defun ecc-sidebar--tab-changed (&rest _)
   "Draw the sidebar again when the tab showing has changed.
@@ -555,15 +562,16 @@ repository still goes there."
                        (user-error "No Space on this line"))))
 
 (defun ecc-sidebar-remove-worktree ()
-  "Remove the directory of the worktree Space at point."
+  "Remove the directory of the worktree Space at point.
+The redraw is `ecc-worktree-removed-hook\\=''s, which every removal runs
+-- this one and the ones an offer makes."
   (interactive)
   (require 'ecc-worktree)
   (let ((space (or (ecc-sidebar--space-at-point)
                    (user-error "No Space on this line"))))
     (unless (ecc-space-parent space)
       (user-error "%s is not a worktree" (ecc-space-name space)))
-    (ecc-remove-worktree (ecc-space-root space))
-    (ecc-sidebar-redraw)))
+    (ecc-remove-worktree (ecc-space-root space))))
 
 (defun ecc-sidebar-kill-session ()
   "Stop the session of the row at point."
