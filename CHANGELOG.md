@@ -17,6 +17,27 @@ Verified against **Claude Code CLI 2.1.270**.
 
 ### Added
 
+- `ecc-space-reset-windows`, `C-c c V` and `V` in the menu: put this Space back
+  to the arrangement a new tab gets -- the source of the project on the left,
+  the transcripts beside it, most recently used first, stopping where the row
+  has no room for another column of `ecc-space-session-min-width`. It runs the
+  same code a new tab is dealt with, so the two cannot drift apart.
+
+  The windows of a Space are the user's and nothing rearranges them on its own,
+  which left no way to say start again: a tab that had been split, zoomed,
+  filled with a review or given over to transcripts had to be unpacked by hand.
+
+  The sidebar keeps its place and its width, being a side window that asked not
+  to be deleted, and a sidebar that was hidden comes back -- a new tab has one.
+  The zoom of the tab is forgotten as it goes, the arrangement it was the way
+  back to having just gone. A `spaces` command: under `classic` the roles are
+  `ecc-focus-project`'s to deal out.
+
+- `ecc-worktree-menu`, `W` in `ecc-menu`: `c` makes a worktree and starts a
+  session there, `o` starts one in a worktree that exists, `k` removes one.
+  Three commands that belong together, and that are used in a week what the
+  keys beside them are used in an hour.
+
 - `ecc-prompt-history-insert` (`C-c C-r` in the prompt region, `H` in
   `ecc-menu`) picks a past prompt from a list and inserts it at point.  The
   history holds two hundred prompts and `M-p` walks it one entry at a time,
@@ -205,7 +226,7 @@ Verified against **Claude Code CLI 2.1.270**.
   columns one may not go under (`window-min-width` is a floor under it). A row
   with no room for another column does not grow a narrower one: the session
   worked in longest ago hands its window over and goes on running without one,
-  which the sidebar and `ecc-toggle` bring back.
+  which the sidebar and `ecc-space-reset-windows` bring back.
 
   A Space whose tab has to be made comes up with its sessions already dealt
   out, most recently used first, until the row has no room for another column.
@@ -261,13 +282,12 @@ Verified against **Claude Code CLI 2.1.270**.
   longest ago -- the transcript of another session, which then vanished, or a
   leftover window that fell back to `*scratch*` when the buffer was closed.
 
-  `C-c c J` (`ecc-space-goto`) and `ecc-space-jump` go to a Space,
+  `C-c c j` (`ecc-space-goto`) and `ecc-space-jump` go to a Space,
   `ecc-space-close` closes one and stops what is running in it, and `C-c c z`
   (`ecc-space-zoom`) fills the tab with the window point is in and puts the
-  windows back again. `ecc-focus-project` and `ecc-toggle` keep their keys and
-  do the same thing in both layouts.
+  windows back again.
 
-- A sidebar, `C-c c B` (`ecc-sidebar-focus`): a narrow window down the left of
+- A sidebar, `C-c c b` (`ecc-sidebar-focus`): a narrow window down the left of
   the frame with the Spaces at the top -- every project and worktree, numbered, each
   marked with what it is doing and what branch it is on -- and the sessions at
   the bottom, with what each is waiting for. It stays on the screen while you
@@ -275,7 +295,7 @@ Verified against **Claude Code CLI 2.1.270**.
   the selected window.
 
   The same key goes in and comes back out: the window is `no-other-window`, so
-  `C-x o` never lands there by accident while working, and `C-c c B` is the way
+  `C-x o` never lands there by accident while working, and `C-c c b` is the way
   in. `ecc-sidebar-toggle` shows and hides it without going in.
 
   `RET` goes to what the row stands for, `n` and `p` move, `TAB` folds a
@@ -314,7 +334,8 @@ Verified against **Claude Code CLI 2.1.270**.
   project-filtered `ecc-history-recordings` -- the picker's list, among other
   things. It is now looked for further in.
 
-- Worktrees, as somewhere a session can live: `C-c c C` (`ecc-start-worktree`)
+- Worktrees, as somewhere a session can live: `ecc-start-worktree` -- `W c` in
+  the menu --
   checks a branch out beside the repository and starts a session there,
   `ecc-start-in-worktree` starts one in a checkout that exists already, and
   `ecc-remove-worktree` stops the sessions working in a checkout and undoes
@@ -400,6 +421,27 @@ Verified against **Claude Code CLI 2.1.270**.
   project, `b` opens the dashboard, `c` starts a session here.
 
 ### Changed
+
+- **Breaking.** The Spaces have the lower-case keys of `ecc-global-map` and of
+  `ecc-menu`, being where the day is spent: `C-c c j` goes to a Space (it was
+  `C-c c J`), `C-c c b` opens the sidebar (it was `C-c c B`), `C-c c z` zooms
+  and `C-c c V` puts the tab back in order. `C-c c B` is the dashboard, which
+  was `C-c c b` -- the same list as the sidebar, in the form that does not stay
+  on the screen.
+
+  `spaces` arrived with its keys beside the older ones rather than instead of
+  them, and the result was two vocabularies for one idea: `j` focused a project
+  and `J` went to a Space, `w` hid session windows while `z` zoomed a Space,
+  `V` put one window back while the tab's whole arrangement had no command at
+  all. Seven keys stood in the Spaces column of the menu, three of them
+  worktree management.
+
+  Of these, `C-c c b` is the one to watch: both it and `C-c c B` are still
+  bound, to commands that both make sense, so a wrong press is silent rather
+  than an error.
+
+- `w` in `ecc-menu` rewrites the region (`ecc-rewrite`), which was `W`. `W` is
+  the worktree menu now, and `w` was free.
 
 - Removing a worktree is offered wherever the last session working in one
   leaves, and not only where a person stopped it by hand.  The offer now hangs
@@ -495,6 +537,33 @@ Verified against **Claude Code CLI 2.1.270**.
 
 ### Removed
 
+- **Breaking.** `ecc-toggle` and `ecc-toggle-all`, with `C-c c w` and `w` in the
+  menu. Hiding a project's session windows and bringing them back was the
+  `classic` answer to a frame full of other people's transcripts; under `spaces`
+  the windows of a tab are the user's, and what puts a session back on the
+  screen is dealing the arrangement again -- `ecc-space-reset-windows` -- or
+  going to the session, from the sidebar, the dashboard or `C-c c v`.
+
+  The per-tab record of what was hidden goes with them: the `ecc-hidden-sessions`
+  frame parameter and the four functions that kept it, which nothing but
+  `ecc-toggle` ever read back. `ecc-window-forget-session` was that record's
+  housekeeping and is gone too. The hiding itself stays --
+  `ecc-window-hide-on-review` and `ecc-focus-project` both want it -- and the
+  docstring of `ecc-window-hide-on-review` says what the way back is now.
+
+- **Breaking.** `ecc-window-focus-source` as a command, with `C-c c V` and `V`
+  in the menu. It showed this project's source in the main window because
+  nothing else put the code back; `ecc-space-reset-windows` does that and more,
+  and has taken the key. What is left is `ecc-window--focus-source`, the half of
+  focusing a project that `ecc-focus-project` and the `classic` side of
+  `ecc-space-select` are built on.
+
+- **Breaking.** `C-c c j` no longer focuses a project, `C-c c C` no longer makes
+  a worktree, and `S` has left `ecc-menu`. `ecc-focus-project` is `M-x` now --
+  under `spaces` it only goes to the Space -- worktrees are `C-c c ? W`, and
+  switching a window to another session keeps `C-c C-t` in a session buffer,
+  which is where it is asked for.
+
 - The offer to delete the branch after a worktree is removed, and with it
   `ecc-worktree-delete-branch' and `ecc-worktree-offer-branch-removal' -- the
   only path in the package that reached `git branch -d', and on a second yes
@@ -515,13 +584,14 @@ Verified against **Claude Code CLI 2.1.270**.
 
 ### Fixed
 
-- What `ecc-toggle` hid is remembered per tab again on a frame with one tab
-  or none. The list is stored under the name of the current tab, and that
+- What is kept per tab is keyed per tab again on a frame with one tab or
+  none -- the zoom of `ecc-space-zoom`, and the list of hidden sessions while
+  there was one. The key is the name of the current tab, and that
   name was asked for through `tab-bar--current-tab`, which invents a tab
   named after whatever buffer is showing when the frame has no tabs of its
   own -- so with `tab-bar-mode` on and a single tab the key moved with the
-  buffer, and sessions hidden in one buffer could not be brought back from
-  another. The frame's own `tabs` parameter is read instead, and a lone tab
+  buffer, and what was stored under it could not be found again. The frame's
+  own `tabs` parameter is read instead, and a lone tab
   counts only when it was named on purpose (confirmed on Emacs 32.0.50,
   2026-09-17).
 
@@ -616,16 +686,7 @@ Verified against **Claude Code CLI 2.1.270**.
   tab that is nobody's arrangement, and going to that Space brought back a tab
   with nowhere to read the code and no command to say so (reported
   2026-09-16). A window pointed at another project's file is still left alone:
-  that one is the user's doing, and `ecc-window-focus-source` is the way back.
-
-- `ecc-window-focus-source` is a command, on `C-c c V` and in the menu. It
-  shows the source of this project in the main window, and asks which buffer
-  with a prefix argument. Under `spaces` it is the only thing that puts the
-  code back: `ecc-focus-project` (`C-c c j`) goes to the Space and leaves its
-  windows alone, so a source window given to something else had no way back
-  short of `M-x`. Interactively it asks the Space showing which project is
-  meant, rather than the buffer in front of the user -- that buffer is the
-  very thing being complained about.
+  that one is the user's doing, and `ecc-space-reset-windows` is the way back.
 
 - A file the CLI wrote in the same second as the last commit, and to the same
   number of bytes, could drop out of the review. The snapshot the review
