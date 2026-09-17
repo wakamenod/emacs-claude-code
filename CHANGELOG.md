@@ -293,7 +293,10 @@ Verified against **Claude Code CLI 2.1.274**.
   marked with what it is doing and what branch it is on -- and the sessions at
   the bottom, with what each is waiting for. It stays on the screen while you
   work, which is the one thing the dashboard does not do, and it never takes
-  the selected window.
+  the selected window.  How wide it is drawn is `ecc-sidebar-width`, a
+  setting for the reason `ecc-space-session-min-width` is one: twenty-eight
+  columns of a laptop at a large font and of a 34-inch display are not the
+  same fraction of the frame.
 
   The same key goes in and comes back out: the window is `no-other-window`, so
   `C-x o` never lands there by accident while working, and `C-c c b` is the way
