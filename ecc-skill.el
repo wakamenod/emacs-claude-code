@@ -54,6 +54,12 @@
 (require 'ecc-window)
 (require 'ecc-capability)
 
+;; Declared rather than required: `ecc-render' is above this file, and
+;; the session of the current buffer is all that is wanted of it.  The
+;; same form `ecc-notify' uses, and what lets this file compile on its
+;; own (confirmed 2026-09-17).
+(defvar ecc-render--session)
+
 (declare-function ecc-prompt-command-name "ecc-prompt" (text))
 (defvar ecc-prompt-immediate-commands)
 (declare-function ecc-dashboard-session-at-point "ecc-dashboard" ())

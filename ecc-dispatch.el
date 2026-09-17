@@ -42,6 +42,13 @@
     ("Write" . write))
   "Tools that touch a file, and the kind of access they make.")
 
+;; Beside the other table of tool names, and above everything that reads
+;; either: a variable used before its `defconst' compiles to a free
+;; reference, and whether that is caught depends on what the compiler
+;; had loaded already (confirmed 2026-09-17).
+(defconst ecc-dispatch-agent-tools '("Task" "Agent")
+  "Names of the tools that start a subagent.")
+
 ;;;; Entry point
 
 (defun ecc-dispatch (session message)
@@ -424,9 +431,6 @@ DATA describe it.  Returns the node."
       (ecc-model-close-stream session node)
       (ecc-model-node-changed session node)
       node)))
-
-(defconst ecc-dispatch-agent-tools '("Task" "Agent")
-  "Names of the tools that start a subagent.")
 
 (defun ecc-dispatch--agent-task-p (task)
   "Return non-nil when the TASK lifecycle message is a subagent.

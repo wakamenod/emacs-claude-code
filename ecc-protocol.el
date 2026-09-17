@@ -23,6 +23,12 @@
 (require 'iso8601)
 (require 'ecc-core)
 
+;; `json' is required where it is used rather than here -- reading and
+;; writing JSON is `json-serialize' and `json-parse-string', which are
+;; built in, and only the pretty-printer wants the library.  Declared so
+;; that the file compiles on its own all the same.
+(declare-function json-pretty-print-buffer "json" (&optional minimize))
+
 ;;;; Receiving
 
 (defun ecc-protocol-parse-line (line)
