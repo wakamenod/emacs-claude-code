@@ -182,6 +182,16 @@ Verified against **Claude Code CLI 2.1.270**.
   worktree is a Space of its own, drawn under the repository it came from and
   named by its branch.
 
+  The bar itself is the user's. A tab is a named window arrangement of the
+  frame and `tab-bar-mode` only draws the strip above it, so nothing here
+  turns that mode on: `tab-bar-new-tab` does it where `tab-bar-show` is `t`,
+  its default, and leaves it alone where the user set that to `nil`. With the
+  bar hidden the tabs are made, named, switched and closed all the same, and
+  quietly -- `tab-bar.el` announces every one of those in the echo area when
+  it has no bar to show them on, which would be each move between Spaces
+  reported twice. The sidebar is the list of Spaces either way, and it holds
+  more about each than the strip can.
+
   How many transcripts stand abreast is `ecc-space-session-min-width`, the
   columns one may not go under (`window-min-width` is a floor under it). A row
   with no room for another column does not grow a narrower one: the session
@@ -495,6 +505,16 @@ Verified against **Claude Code CLI 2.1.270**.
   is the two keys that did exactly what the command did.
 
 ### Fixed
+
+- What `ecc-toggle` hid is remembered per tab again on a frame with one tab
+  or none. The list is stored under the name of the current tab, and that
+  name was asked for through `tab-bar--current-tab`, which invents a tab
+  named after whatever buffer is showing when the frame has no tabs of its
+  own -- so with `tab-bar-mode` on and a single tab the key moved with the
+  buffer, and sessions hidden in one buffer could not be brought back from
+  another. The frame's own `tabs` parameter is read instead, and a lone tab
+  counts only when it was named on purpose (confirmed on Emacs 32.0.50,
+  2026-09-17).
 
 - `ecc-remove-worktree` stops every session working in the checkout, not
   only the ones whose project is the checkout itself. A session started in

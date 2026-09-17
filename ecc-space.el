@@ -211,6 +211,23 @@ to `ecc-space-list'."
 (defvar ecc-space--tabs nil
   "Alist of a Space key to the name of the tab it lives in.")
 
+(defmacro ecc-space--quietly (&rest body)
+  "Run BODY without the tab commands announcing themselves.
+`tab-bar.el\=' messages on every tab added, renamed, selected and closed
+-- but only with `tab-bar-mode\=' off, where the bar itself cannot show
+what happened (Emacs 32.0.50, confirmed 2026-09-17).  With
+`tab-bar-show\=' nil that is every move between Spaces, told twice: once
+in tab-bar\='s words and once in this package\='s.  `message-log-max\='
+goes with `inhibit-message\=': a log of \"Added new tab at right\" is no
+more use than the echo area was.
+
+Only the tab-bar calls belong inside.  A session started on arriving at
+a Space has something of its own to say."
+  (declare (indent 0) (debug t))
+  `(let ((inhibit-message t)
+         (message-log-max nil))
+     ,@body))
+
 (defun ecc-space--tab-index (name)
   "Return the index of the tab called NAME, or nil."
   (and name (tab-bar--tab-index-by-name name)))
@@ -441,17 +458,24 @@ Whether the repository gets a session of its own is
   "Show SPACE in its tab, making the tab when it has none.
 A Space with nothing running in it gets a session; see
 `ecc-space--ensure-session\='.  A worktree opened for the first time
-brings its repository with it; see `ecc-space--ensure-parent\='."
-  (unless (bound-and-true-p tab-bar-mode)
-    (tab-bar-mode 1))
+brings its repository with it; see `ecc-space--ensure-parent\='.
+
+`tab-bar-mode\=' is not turned on here.  A tab is a named window
+configuration of the frame and the mode only draws the bar above it:
+`tab-bar-new-tab\=' turns the mode on by itself where `tab-bar-show\=' is
+t, its default, and leaves it off where the user set that to nil
+(verified 2026-09-17 on Emacs 32.0.50).  Whether the bar is shown is
+theirs to say -- the sidebar lists the Spaces with more about each than
+the bar can -- and this package has no opinion to force."
   (let ((name (ecc-space-tab space)))
     (if name
-        (progn (tab-bar-select-tab-by-name name)
+        (progn (ecc-space--quietly (tab-bar-select-tab-by-name name))
                (ecc-space--ensure-source space))
       (ecc-space--ensure-parent space)
       (setq name (ecc-space--unique-tab-name (ecc-space-name space)))
-      (tab-bar-new-tab)
-      (tab-bar-rename-tab name)
+      (ecc-space--quietly
+        (tab-bar-new-tab)
+        (tab-bar-rename-tab name))
       (setf (alist-get (ecc-space-key space) ecc-space--tabs nil nil #'equal)
             name)
       (ecc-space--lay-out space))
@@ -806,7 +830,7 @@ by itself."
     (let ((ecc-space--closing t))
       (dolist (name names)
         (when (ecc-space--tab-index name)
-          (tab-bar-close-tab-by-name name)))
+          (ecc-space--quietly (tab-bar-close-tab-by-name name))))
       (dolist (one group)
         (setq ecc-space--implicit
               (delete (ecc-space-key one) ecc-space--implicit))))
@@ -843,7 +867,7 @@ delete the last one."
          (space (ecc-space-of-root key)))
     (when (and (ecc-space--tab-index name)
                (cdr (tab-bar-tabs)))
-      (tab-bar-close-tab-by-name name))
+      (ecc-space--quietly (tab-bar-close-tab-by-name name)))
     (setf (alist-get key ecc-space--tabs nil 'remove #'equal) nil)
     (setf (alist-get key ecc-space--used nil 'remove #'equal) nil)
     (setq ecc-space--implicit (delete key ecc-space--implicit))

@@ -75,6 +75,16 @@ Closing a repository's Space closes the worktrees drawn under it as well: they a
 
 Once the group is closed, the worktrees among it are **offered for removal in one question** naming them: their Spaces are gone and nothing is left running in them, which is the moment anybody is thinking about the directories. No leaves them where they are. Closing a tab by hand is different and stops nothing: the sessions go on running with no window, and `C-c c w` (`ecc-toggle`) or the sidebar brings them back.
 
+### The bar itself is yours
+
+A Space is a tab, and a tab is a named window arrangement of the frame. `tab-bar-mode` only draws the strip above it, and nothing here turns that mode on: `tab-bar-new-tab` does it where `tab-bar-show` is `t`, its default, and leaves it off where you set that to `nil`.
+
+```elisp
+(setq tab-bar-show nil)   ; Spaces with no strip at the top of the frame
+```
+
+With the bar hidden the tabs are made, named, switched and closed exactly as before — Spaces work the same — and the sidebar is the list of them, with more about each than the strip can hold.
+
 ## The sidebar
 
 `C-c c B` (`ecc-sidebar-focus`) opens the sidebar and puts point in it; the same key puts point back where it was. It works under `classic` too.

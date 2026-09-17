@@ -232,6 +232,71 @@ sidebar would be changing the layout behind their back."
         (should (equal (length (funcall tab-bar-tabs-function)) 3))
         (should (equal (ecc-space-tab one) "project-one"))))))
 
+(defmacro ecc-space-test--with-hidden-tab-bar (&rest body)
+  "Run BODY with `tab-bar-show\=' nil and the mode off, as a user may have it.
+Tabs are made, named and switched all the same: what the mode draws is
+the bar alone.  Otherwise this is `ecc-space-test--with-tab-bar\=', down
+to standing in for `ecc-start\=' and closing the tabs afterwards -- and
+the closing is quiet, tab-bar being exactly as talkative in a test as
+it is anywhere else with the bar hidden."
+  (declare (indent 0))
+  `(let ((was tab-bar-mode)
+         (tab-bar-show nil)
+         (ecc-layout 'spaces)
+         (ecc-space-test--started nil))
+     (unwind-protect
+         (cl-letf (((symbol-function 'ecc-start)
+                    (lambda (&optional root &rest _)
+                      (push root ecc-space-test--started)
+                      nil)))
+           ,@body)
+       (let ((inhibit-message t)
+             (message-log-max nil))
+         (dolist (tab (funcall tab-bar-tabs-function))
+           (unless (eq (car tab) 'current-tab)
+             (tab-bar-close-tab-by-name (alist-get 'name tab))))
+         (tab-bar-rename-tab ""))
+       (tab-bar-mode (if was 1 -1)))))
+
+(ert-deftest ecc-space-test-select-leaves-the-tab-bar-alone ()
+  "A Space is made and found again with the bar hidden and the mode off.
+A tab is a named window configuration of the frame; `tab-bar-mode\='
+only draws the bar above it, and whether that is drawn is
+`tab-bar-show\=', which belongs to the user."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one))
+    (ecc-space-test--with-hidden-tab-bar
+      (let ((one (ecc-space-of-root ecc-space-test--one)))
+        (should (equal (ecc-space-select one) "project-one"))
+        (should-not (bound-and-true-p tab-bar-mode))
+        (should (equal (ecc-space-current-key) ecc-space-test--one))
+        ;; Found again by its name rather than made a second time.
+        (should (equal (ecc-space-select one) "project-one"))
+        (should (equal (length (funcall tab-bar-tabs-function)) 2))
+        (should-not (bound-and-true-p tab-bar-mode))))))
+
+(ert-deftest ecc-space-test-the-tabs-say-nothing ()
+  "Moving between Spaces leaves none of tab-bar's own announcements behind.
+With the bar hidden `tab-bar.el' messages on every tab added, renamed,
+selected and closed -- it cannot show what it did, so it says it -- and
+that is every move between Spaces told twice, once in somebody else's
+words."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--two))
+    (ecc-space-test--with-hidden-tab-bar
+      (let ((start (with-current-buffer (get-buffer-create "*Messages*")
+                     (point-max))))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--two))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                  ((symbol-function 'ecc-kill) #'ecc-model-remove-session))
+          (ecc-space-close (ecc-space-of-root ecc-space-test--two)))
+        (with-current-buffer "*Messages*"
+          (should-not
+           (string-match-p
+            "Added new tab\\|Renamed tab\\|Selected tab\\|Deleted tab"
+            (buffer-substring-no-properties start (point-max)))))))))
+
 (ert-deftest ecc-space-test-two-spaces-of-one-name ()
   "Two Spaces that would be called the same get tabs that are not."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one))

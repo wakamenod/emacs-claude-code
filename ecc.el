@@ -131,13 +131,12 @@ the next session, since this runs on every one of them."
   (ecc-notify-mode 1)
   (ecc-tab-line-mode 1)
   (ecc-track-source-buffer-mode 1)
-  ;; A Space is a tab, so `spaces' has nowhere to put a session until
-  ;; the tab bar is on.  `classic' is left alone: it never made a tab
-  ;; and must not start now.
+  ;; `ecc-space' is loaded rather than the tab bar turned on: the hooks
+  ;; that close a Space once the last of it goes are installed at the
+  ;; top of that file, and `ecc-space--select-tab' says why the mode is
+  ;; left to `tab-bar-show'.  `classic' loads none of it.
   (when (eq ecc-layout 'spaces)
-    (require 'ecc-space)
-    (unless (bound-and-true-p tab-bar-mode)
-      (tab-bar-mode 1))))
+    (require 'ecc-space)))
 
 ;;;###autoload
 (defun ecc-start (&optional directory name)
