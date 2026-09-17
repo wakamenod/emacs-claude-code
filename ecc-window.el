@@ -579,12 +579,28 @@ happens to the session windows and where point lands."
 
 (defun ecc-window--layout-key ()
   "Return the key the hidden session list is stored under.
-With `tab-bar-mode' on, every tab keeps its own layout, so the hidden
-list is per tab as well."
-  (or (and (bound-and-true-p tab-bar-mode)
-           (fboundp 'tab-bar--current-tab)
-           (alist-get 'name (tab-bar--current-tab)))
-      'frame))
+A frame with tabs keeps a layout per tab, so the hidden list is per tab
+as well -- and so is the zoom of `ecc-space-zoom', which is stored
+under this key too.
+
+The frame\='s own `tabs' parameter is what is asked, not `tab-bar-mode':
+tabs are made, named and switched with the bar hidden exactly as with
+it shown, `tab-bar-show' nil being a supported way to run `spaces', and
+keying on the mode would put every tab of such a frame on one list.
+`tab-bar--current-tab' is not asked either: with no tabs at all it
+invents one named after the buffer that is showing, which drifts as the
+buffer changes, and writes the parameter while it is at it (verified
+2026-09-17 on Emacs 32.0.50).
+
+A lone tab counts only when it was named on purpose.  `explicit-name'
+is what tells a tab this package made from the one Emacs names after
+whatever buffer happens to be in it."
+  (let* ((tabs (frame-parameter nil 'tabs))
+         (current (assq 'current-tab tabs)))
+    (or (and current
+             (or (cdr tabs) (alist-get 'explicit-name current))
+             (alist-get 'name current))
+        'frame)))
 
 (defun ecc-window-hidden-sessions ()
   "Return the sessions hidden by `ecc-toggle' here, as (ID . ROLE) pairs.

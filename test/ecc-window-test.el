@@ -259,25 +259,59 @@ window is the next one `display-buffer' takes over."
         (ecc-window-repair-side-windows)
         (should (eq (window-dedicated-p window) 'side))))))
 
+(defmacro ecc-window-test--with-tabs (tabs &rest body)
+  "Run BODY with TABS as the `tabs' frame parameter, putting it back after.
+The parameter is what `ecc-window--layout-key' reads, so a tab is stood
+up here rather than a tab bar opened."
+  (declare (indent 1))
+  `(let ((was (frame-parameter nil 'tabs)))
+     (unwind-protect
+         (progn (set-frame-parameter nil 'tabs ,tabs) ,@body)
+       (set-frame-parameter nil 'tabs was))))
+
 (ert-deftest ecc-window-test-hidden-list-is-per-tab ()
   "What was hidden is remembered per tab, not per Emacs."
   (require 'tab-bar)
   (let ((frame-parameter-backup (frame-parameter nil 'ecc-hidden-sessions)))
     (unwind-protect
-        (progn
+        (ecc-window-test--with-tabs nil
           (set-frame-parameter nil 'ecc-hidden-sessions nil)
           (ecc-window-set-hidden-sessions '("a" "b"))
           (should (equal (ecc-window-hidden-sessions) '("a" "b")))
-          (cl-letf (((symbol-function 'tab-bar--current-tab)
-                     (lambda (&rest _) '(current-tab (name . "second")))))
-            (let ((tab-bar-mode t))
-              ;; Another tab starts out with nothing hidden.
-              (should-not (ecc-window-hidden-sessions))
-              (ecc-window-set-hidden-sessions '("c"))
-              (should (equal (ecc-window-hidden-sessions) '("c")))))
+          ;; A second tab, with the bar left off: `tab-bar-show' nil is
+          ;; a supported way to run `spaces', and the layouts have to
+          ;; stay apart there too.
+          (ecc-window-test--with-tabs
+              '((tab (name . "first"))
+                (current-tab (name . "second") (explicit-name . t)))
+            (should-not (bound-and-true-p tab-bar-mode))
+            ;; Another tab starts out with nothing hidden.
+            (should-not (ecc-window-hidden-sessions))
+            (ecc-window-set-hidden-sessions '("c"))
+            (should (equal (ecc-window-hidden-sessions) '("c"))))
           ;; And the first layout is untouched.
           (should (equal (ecc-window-hidden-sessions) '("a" "b"))))
       (set-frame-parameter nil 'ecc-hidden-sessions frame-parameter-backup))))
+
+(ert-deftest ecc-window-test-layout-key-ignores-a-tab-nobody-made ()
+  "A frame with no tabs of its own keys on the frame, whatever is showing.
+`tab-bar--current-tab' invents a tab named after the current buffer
+there, and a key that drifts with the buffer would lose the hidden list
+and the zoom under it."
+  (require 'tab-bar)
+  (ecc-window-test--with-tabs nil
+    (should (eq (ecc-window--layout-key) 'frame)))
+  ;; The same, once something has asked and Emacs has written the
+  ;; parameter down: one tab, named after a buffer rather than on
+  ;; purpose.
+  (ecc-window-test--with-tabs '((current-tab (name . "*scratch*")
+                                             (explicit-name)))
+    (should (eq (ecc-window--layout-key) 'frame)))
+  ;; A single tab that was named counts: the last Space of a frame is
+  ;; still a Space.
+  (ecc-window-test--with-tabs '((current-tab (name . "alpha")
+                                             (explicit-name . t)))
+    (should (equal (ecc-window--layout-key) "alpha"))))
 
 (ert-deftest ecc-window-test-toggle-hides-then-restores ()
   "Toggle puts back exactly the sessions it took away."
