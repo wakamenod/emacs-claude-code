@@ -60,21 +60,9 @@ With the bar hidden the tabs are made, named, switched and closed exactly as bef
 
 ## The sidebar
 
+![The sidebar: two projects, one of them a repository with two worktrees under it, and the sessions below with what each is doing](../../../assets/sidebar.png)
+
 `C-c c b` (`ecc-sidebar-focus`) opens the sidebar and puts point in it; the same key puts point back. The window is `no-other-window`, so `C-x o` never lands there while you are working. It works with `ecc-use-spaces` off as well, where `RET` and `1`-`9` focus a project instead of making a tab.
-
-```
-Spaces
-⚠ [1] ecc                 ▾
-   main ↑2 ↓0
-  └─ ▶ [2] feat-x
-· [3] herdr
-   master
-
-Sessions
-⚠ ecc            waiting ×2
-▶ ecc-2              running
-· herdr                 idle
-```
 
 The top half lists the Spaces: a mark for what the Space is doing, the number the `1`-`9` keys take, and the name. Under a repository come its branch and how far it is from its upstream, and its worktrees hang on a tree line below it, each named by its branch; `TAB` folds them away.
 

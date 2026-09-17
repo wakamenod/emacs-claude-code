@@ -546,3 +546,19 @@ things depending on which list was in front."
 (provide 'ecc-sidebar-test)
 
 ;;; ecc-sidebar-test.el ends here
+
+(ert-deftest ecc-sidebar-test-a-row-fits-the-window-it-is-drawn-in ()
+  "No row is wider than the text of the sidebar window.
+`ecc-sidebar-width' is the window's total width, fringes included, so a
+row filled to it overflows the body and the right end of every row --
+the state a session is waiting in -- is drawn as a truncation arrow."
+  (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
+                                    ("two" . ,ecc-sidebar-test--two))
+    (delete-other-windows)
+    (let ((window (ecc-sidebar-show)))
+      (ecc-model-set-state (nth 1 sessions) 'running)
+      (ecc-sidebar-redraw)
+      (with-current-buffer (get-buffer ecc-sidebar-buffer-name)
+        (dolist (line (split-string (buffer-string) "\n"))
+          (should (<= (string-width line) (window-body-width window)))))
+      (ecc-sidebar-hide))))

@@ -797,6 +797,127 @@ bar or a sidebar left behind would be in all of them."
   (shot-place-frame-bottom-right)
   (shot-scene-focus-end))
 
+(defconst shot-worktree-roots
+  '(("feat/x" . "feat-x") ("fix/parser" . "fix-parser"))
+  "The worktrees the sidebar picture shows, branch to directory.")
+
+(defvar shot-worktree-sessions nil "The sessions made for those worktrees.")
+
+(defun shot-worktree-root (slug)
+  "Return the directory the worktree SLUG stands in."
+  (expand-file-name slug (expand-file-name ".claude/worktrees" shot-root)))
+
+(defun shot-fake-git (&rest _)
+  "Answer git\='s questions about the demo projects without a repository.
+The sidebar draws the branch a Space is on, how far it is from its
+upstream, and the worktrees hanging under a repository -- all of it read
+from git.  The demo projects are directories in /tmp with no repository
+in them, so the answers are invented here, the way the resume picker\='s
+recordings are.  Making real repositories and real worktrees instead
+would put this machine\='s paths and branches in the picture."
+  (advice-add 'ecc-worktree-main :override
+              (lambda (root)
+                (and (seq-find (lambda (pair)
+                                 (equal (file-name-as-directory root)
+                                        (file-name-as-directory
+                                         (shot-worktree-root (cdr pair)))))
+                               shot-worktree-roots)
+                     shot-root))
+              '((name . shot-fake-git)))
+  (advice-add 'ecc-worktree-branch :override
+              (lambda (root)
+                (let ((root (file-name-as-directory root)))
+                  (or (car (seq-find
+                            (lambda (pair)
+                              (equal root (file-name-as-directory
+                                           (shot-worktree-root (cdr pair)))))
+                            shot-worktree-roots))
+                      (and (equal root (file-name-as-directory shot-root)) "main")
+                      (and (equal root (file-name-as-directory shot-other-root))
+                           "master"))))
+              '((name . shot-fake-git)))
+  (advice-add 'ecc-worktree-ahead-behind :override
+              (lambda (root)
+                (when (equal (file-name-as-directory root)
+                             (file-name-as-directory shot-root))
+                  (cons 2 0)))
+              '((name . shot-fake-git))))
+
+(defun shot-unfake-git ()
+  "Give git its own answers back."
+  (dolist (function '(ecc-worktree-main ecc-worktree-branch
+                                        ecc-worktree-ahead-behind))
+    (advice-remove function 'shot-fake-git)))
+
+(defun shot-scene-sidebar ()
+  "The sidebar on its own: several Spaces, two of them worktrees.
+The picture the sidebar section opens with, so it has to carry a
+repository with worktrees under it, a second project, and a session
+waiting for an answer -- everything the two lists can say."
+  (require 'ecc-space)
+  (require 'ecc-sidebar)
+  (shot-foreign-session)
+  (shot-fake-git)
+  (unless shot-worktree-sessions
+    (dolist (pair shot-worktree-roots)
+      (let* ((slug (cdr pair))
+             (root (shot-worktree-root slug))
+             (session (progn (make-directory root t)
+                             (ecc-model-create-session :name slug
+                                                       :project-root root))))
+        (ecc-session-ensure-buffer session)
+        (setf (ecc-session-cwd session) (file-name-as-directory root))
+        (push session shot-worktree-sessions))))
+  ;; One of them is left waiting, which is the mark the Spaces list
+  ;; carries up to the repository above.  A fixture of its own: a
+  ;; recording carries the session id it was made under, and a second
+  ;; session replaying one another session already has quietly evicts
+  ;; that one from the registry -- which took `greet' out of the
+  ;; Sessions list (measured 2026-09-18).
+  (let ((waiting (car (last shot-worktree-sessions))))
+    (shot-play waiting "permission-deny-retry" 1 8))
+  ;; Short: the picture is of the two lists, and a sidebar as tall as
+  ;; the other scenes' frame is mostly empty below them.
+  (set-frame-height (selected-frame) 18)
+  (shot-place-frame-bottom-right)
+  (ecc-sidebar-show)
+  (ecc-sidebar-redraw)
+  (message nil)
+  (redisplay t))
+
+(defun shot-report-sidebar-geometry ()
+  "Write where the sidebar window is, for a picture of it alone.
+The wrapper captures a rectangle of the screen, and the frame around
+the sidebar is not what this one is of."
+  (unless (active-minibuffer-window)
+    (message nil))
+  (redisplay t)
+  (let* ((window (get-buffer-window ecc-sidebar-buffer-name))
+         (inner (frame-edges nil 'inner-edges))
+         (edges (window-pixel-edges window)))
+    (with-temp-file shot-geometry-file
+      (insert (format "%d %d %d %d %d %d\n"
+                      (+ (nth 0 inner) (nth 0 edges))
+                      (+ (nth 1 inner) (nth 1 edges))
+                      (- (nth 2 edges) (nth 0 edges))
+                      (- (nth 3 edges) (nth 1 edges))
+                      (window-width window)
+                      (window-height window))))))
+
+(defun shot-scene-sidebar-end ()
+  "Take the extra sessions, the sidebar and the invented git away again."
+  (dolist (session shot-worktree-sessions)
+    (ecc-model-remove-session session)
+    (when (buffer-live-p (ecc-session-buffer session))
+      (let ((kill-buffer-query-functions nil))
+        (kill-buffer (ecc-session-buffer session)))))
+  (setq shot-worktree-sessions nil)
+  (shot-unfake-git)
+  (ecc-sidebar-hide)
+  (set-frame-height (selected-frame) 44)
+  (shot-place-frame-bottom-right)
+  (shot-scene-focus-end))
+
 (defun shot-scene-quit ()
   "Close whatever the last scene left open -- a menu, a picker.
 A minibuffer is left by aborting its recursive edit from a timer: the

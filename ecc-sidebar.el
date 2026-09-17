@@ -119,13 +119,25 @@ DETAIL marks a second line, which `n' and `p' pass over."
   (insert (propertize text 'face 'ecc-heading-face)
           (propertize "\n" 'ecc-sidebar-heading t)))
 
+(defun ecc-sidebar--row-width ()
+  "Return the columns a row may fill.
+The body of the sidebar window when it is on the screen, and the
+setting otherwise.  `ecc-sidebar-width\=' is the window\='s total width,
+fringes included, so a row filled to it overflows the text by those
+columns and the right end of every row is drawn as a truncation arrow
+-- the state a session waits in came out as \"idl>\" (measured
+2026-09-18)."
+  (if-let* ((window (ecc-sidebar--window)))
+      (max 12 (window-body-width window))
+    (max 12 (1- ecc-sidebar-width))))
+
 (defun ecc-sidebar--fill (left right)
   "Return LEFT and RIGHT with the room between them, LEFT cut if it must be.
 RIGHT is put against the right edge of the sidebar: what a session is
 waiting for in the Sessions list, and whether a repository is folded in
 the Spaces one.  An empty RIGHT leaves the row where it ends rather
 than trailing the spaces that would have led to it."
-  (let* ((width (max 12 (1- ecc-sidebar-width)))
+  (let* ((width (ecc-sidebar--row-width))
          (room (max 1 (- width (string-width right))))
          ;; Not `ecc--fit': it flattens a run of spaces to one, which is
          ;; the indent of a worktree row gone.

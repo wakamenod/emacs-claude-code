@@ -507,6 +507,17 @@ if want resume; then
 
 fi
 
+if want sidebar; then
+    # The sidebar on its own, close up: several Spaces with two worktrees
+    # under one of them, and a session waiting for an answer.  The
+    # rectangle captured is the sidebar window rather than the frame.
+    e '(shot-scene-sidebar)' ; sleep 2
+    e '(shot-report-sidebar-geometry)'
+    read -r X Y W H _cols _lines < "$geom"
+    screencapture -x -R"$X,$Y,$W,$H" "$outdir/sidebar.png"
+    e '(shot-scene-sidebar-end)' ; sleep 1
+fi
+
 if want spaces; then
     # The Spaces, as one still: the sidebar down the left, a tab for each
     # project across the top, and this project's source with its two

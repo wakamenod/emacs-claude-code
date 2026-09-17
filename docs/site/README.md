@@ -122,7 +122,7 @@ SCENES="menu resume" scripts/docshots.sh
 The scenes are `switch`, `menu`, `capabilities`, `send-region`, `fix-error`,
 `inline`, `rewrite`, `at-cursor`, `context`, `image`, `btw`, `suggestion`,
 `sessions`, `prompt`, `permission`, `question`, `review`, `proposal`, `plan`,
-`files`, `timeline`, `handover`, `resume`, `spaces` and `overview`. A scene is not
+`files`, `timeline`, `handover`, `resume`, `sidebar`, `spaces` and `overview`. A scene is not
 always one picture: `sessions` takes `tabs.png` and `dashboard.png`, and
 `prompt` takes `fold.gif` and `slash.png`. `spaces` is a still of the
 layout the Spaces page opens with: it widens the frame, opens a tab for each

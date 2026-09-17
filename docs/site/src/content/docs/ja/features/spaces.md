@@ -60,21 +60,9 @@ sidebar:
 
 ## サイドバー
 
+![サイドバー: 2 つのプロジェクトと、その一方のリポジトリの下に並ぶ 2 つの worktree、下半分に各セッションの状態](../../../../assets/sidebar.png)
+
 `C-c c b`（`ecc-sidebar-focus`）でサイドバーを開いてカーソルを移します。同じキーを押すと元のウィンドウに戻ります。ウィンドウには `no-other-window` が設定されているため、作業中に `C-x o` で入ることはありません。`ecc-use-spaces` がオフでも使え、その場合 `RET` と `1`–`9` はタブを作らずにそのプロジェクトへフォーカスします。
-
-```
-Spaces
-⚠ [1] ecc                 ▾
-   main ↑2 ↓0
-  └─ ▶ [2] feat-x
-· [3] herdr
-   master
-
-Sessions
-⚠ ecc            waiting ×2
-▶ ecc-2              running
-· herdr                 idle
-```
 
 上半分は Space の一覧です。各行には、その Space の状態を示す印、`1`-`9` で使う番号、Space 名が並びます。リポジトリの下にはブランチと upstream との差が表示され、その worktree がツリー線でぶら下がり、それぞれブランチ名で表示されます。`TAB` で畳めます。
 
