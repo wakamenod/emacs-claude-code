@@ -98,7 +98,7 @@ The active turn is not interrupted: the `/btw` response arrives in a separate vi
 
 ### Another conversation with `/resume`
 
-`/resume` asks which recorded conversation from this project to continue, and switches the current window to it. The window, tab, buffer, and session name stay as they are; only the conversation in them changes. This matches what `/resume` does in the terminal client. The CLI lists no such command for headless clients, so the name is Emacs's own.
+`/resume` asks which recorded conversation from this project to continue, and switches the current window to it. The window, tab, buffer, and session name stay as they are; only the conversation in them changes. This matches what `/resume` does in the terminal client. The CLI offers no such command to headless clients, so `/resume` here is ecc's own, implemented in Emacs.
 
 Emacs stops the running CLI process first (interrupting any active turn and waiting for it to finish), because two processes on one session ID silently branch a recording. If a conversation already has turns or queued prompts, Emacs asks for confirmation before leaving it. The conversation you leave is preserved, and `ecc-history-open` can read it again.
 
