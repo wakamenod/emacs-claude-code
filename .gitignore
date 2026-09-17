@@ -36,3 +36,4 @@
 # taken again when the code changes; the scene that makes it is the
 # thing worth keeping.
 /demo/*.mp4
+demo/.build/

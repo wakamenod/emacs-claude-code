@@ -5,9 +5,13 @@
 ;; What `demo/record.sh' loads into the Emacs it records: the user's own
 ;; configuration, this checkout's ecc in front of whatever that
 ;; configuration points at, and the handful of things a scene needs to
-;; be driven from outside -- a caption, a frame that stays where the
-;; camera is looking, and a way to run a key of a buffer that does not
-;; have the keyboard.
+;; be driven from outside -- a caption, a frame of the size the video is
+;; taken at, and a way to run a key of a buffer that does not have the
+;; keyboard.
+;;
+;; What is recorded is this frame's own window, so the demonstration
+;; neither raises itself nor takes the keyboard: it can be played beside
+;; somebody working.
 ;;
 ;; A scene is two files under demo/scenes: NAME.el, loaded here, which
 ;; says what to build and defines the steps; and NAME.sh, read by the
@@ -32,7 +36,10 @@
 
 (defvar demo-frame-title "ecc demo"
   "The title of the frame the demonstration is played in.
-It is how `demo-main-frame\\=' finds it among the frames a scene opens.")
+It is how `demo-main-frame\\=' finds it among the frames a scene opens,
+and how the recorder finds the window to record.  The recorder sets it
+to a name of its own, one per scene, so that two runs at once do not
+record each other's frame.")
 
 (defvar demo-frame-position '(40 . 140)
   "Where the frame is held, in pixels.
@@ -75,15 +82,11 @@ its own, placed above the top of this one.")
 
 (defun demo-say (text)
   "Put TEXT in the echo area, where the camera can read it."
-  ;; Every step asserts the floating again: a frame of this Emacs is put
-  ;; behind the one the user is working in now and then, and a caption is
-  ;; the one thing every step does.
-  (demo-float)
   (let ((message-log-max 1000))
     (message "%s" text))
   nil)
 
-;;;; Keeping the frame where the camera is looking
+;;;; The frame the video is taken of
 
 (defun demo-main-frame ()
   "Return the frame the demonstration is played in."
@@ -92,29 +95,30 @@ its own, placed above the top of this one.")
             (frame-list)))
 
 (defun demo-float ()
-  "Keep every frame of this Emacs above the windows of other applications.
-macOS does not let an application that is not in front raise itself, and
-the Emacs the user is working in is the one in front, so a demonstration
-recorded without this is recorded behind it (2026-09-16).  `z-group\\=' is
-re-set by turning it off and on again: setting a frame parameter to the
-value it already holds does nothing, and the window has really been
-lowered."
-  (dolist (frame (frame-list))
-    (set-frame-parameter frame 'z-group nil)
-    (set-frame-parameter frame 'z-group 'above))
+  "Do nothing, and stay callable: the scenes written before this call it.
+It used to hold every frame of this Emacs above the windows of other
+applications, because the recording was of the screen and anything in
+front of the frame was in the picture -- including the Emacs the user
+was working in, which is the one macOS keeps in front (2026-09-16).
+
+What is recorded now is the frame\='s own window
+\(demo/record-window.swift), composited whatever covers it, so there is
+nothing to raise.  Raising was not free: it put itself in front of the
+user\='s work and took the keyboard with it."
   nil)
 
 (defun demo-frame ()
-  "Put the frame where the camera is looking, and in front."
+  "Give the frame the size the recording is taken at.
+The size is what matters -- it is the shape of the video -- and the
+position no longer does: the window is recorded where it stands.  The
+frame is neither raised nor given the keyboard, so a recording can run
+beside somebody working."
   (when-let* ((frame (demo-main-frame)))
     (set-frame-size frame (car demo-frame-size) (cdr demo-frame-size) t)
     (set-frame-position frame (car demo-frame-position) (cdr demo-frame-position))
     ;; A warning window opens over the scene and says nothing about it.
     (when-let* ((window (get-buffer-window "*Warnings*" t)))
-      (delete-window window))
-    (raise-frame frame)
-    (select-frame-set-input-focus frame))
-  (demo-float)
+      (delete-window window)))
   nil)
 
 (defvar demo-pin-timer nil
@@ -124,23 +128,18 @@ lowered."
   "How many times the pin has fired.")
 
 (defun demo-pin ()
-  "Put the frame back where it belongs, and in front, if it moved.
-Something on this machine puts the frame back in the corner it started
-in, and behind the user's Emacs, some time after a scene rearranges the
-screen; neither ecc nor the init moves a frame, and what does was not
-found (2026-09-16).  Rather than find out, the frame is held where the
-camera is looking twice a second."
+  "Hold the frame at the size the recording is taken at.
+Something on this machine moves the frame back to the corner it started
+in some time after a scene rearranges the screen; neither ecc nor the
+init moves a frame, and what does was not found (2026-09-16).  Where it
+sits no longer matters, but a frame that is moved is a frame that may be
+resized, and the size is the shape of the video."
   (setq demo-pin-tick (1+ demo-pin-tick))
   (when-let* ((frame (demo-main-frame)))
-    (let ((drifted (not (equal (frame-position frame) demo-frame-position))))
-      (when drifted
-        (set-frame-size frame (car demo-frame-size) (cdr demo-frame-size) t)
-        (set-frame-position frame (car demo-frame-position)
-                            (cdr demo-frame-position)))
-      ;; Floating is asserted on a drift and every five seconds anyway:
-      ;; a frame can be lowered without being moved.
-      (when (or drifted (zerop (% demo-pin-tick 10)))
-        (demo-float)))))
+    (unless (equal (frame-position frame) demo-frame-position)
+      (set-frame-size frame (car demo-frame-size) (cdr demo-frame-size) t)
+      (set-frame-position frame (car demo-frame-position)
+                          (cdr demo-frame-position)))))
 
 (defun demo-pin-start ()
   "Start holding the frame in place."

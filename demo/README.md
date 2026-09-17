@@ -17,11 +17,31 @@ demo/record.sh review-ediff-help            # -> demo/review-ediff-help.mp4
 demo/record.sh review-ediff-help /tmp/x.mp4
 ```
 
-macOS only. It needs `ffmpeg`, and the terminal running it needs Screen
-Recording permission (System Settings → Privacy & Security → Screen
-Recording), or the video is black. The video is cropped to the rectangle
-the demo frame is held in, so the rest of the screen — the other Emacs,
-a browser — is not in it.
+macOS only. What is recorded is the demo frame's **own window**, through
+ScreenCaptureKit (`record-window.swift`, built into `.build/` on the
+first run; `swiftc` comes with the command line tools). Nothing that
+covers the window is in the picture, the window does not have to be in
+front, and you can carry on working on the same screen while it records.
+A window that is *minimised* is not drawn and cannot be recorded; one
+that is covered, on another Space or half off the edge can.
+
+Whatever runs it needs Screen Recording permission (System Settings →
+Privacy & Security → Screen Recording), or there is nothing to record.
+
+**The Mac has to stay unlocked.** A window that is not being drawn hands
+no frames over, so a display asleep or a session locked records nothing
+— not a black video, nothing at all, and the demo Emacs stalls on its
+own redisplay too. `record.sh` holds the display awake with `caffeinate`
+for as long as it runs; a lock it cannot do anything about, and the
+recorder says so and writes no file rather than leaving an mp4 that will
+not open.
+
+Everything a run owns — the server socket, the ready file, the frame
+title the recorder looks for — is named after the scene, so **two scenes
+can record at once**, from two checkouts and two sessions. They could
+not before: each run killed every `demo/demo.el` on the machine at
+startup and at exit, and all three recordings of 2026-09-17 destroyed
+each other.
 
 ## Writing a scene
 
@@ -42,20 +62,18 @@ A scene is two files:
 | `demo-say` | a caption in the echo area |
 | `demo-run-key-in BUFFER KEY [TEXT] [PREFIX]` | run what KEY is bound to in BUFFER |
 | `demo-say-key-in BUFFER KEY` | say what KEY runs there |
-| `demo-frame`, `demo-float` | put the frame where the camera is, and in front |
+| `demo-frame` | give the frame the size the video is taken at |
+| `demo-float` | nothing, now; kept so older scenes still run |
 | `demo-fresh-repository`, `demo-write`, `demo-git` | the throwaway project |
 
-Three things it knows, all learned the hard way on 2026-09-16, and all
+Two things it knows, learned the hard way on 2026-09-16, and both
 explained where they are done in `demo.el`:
 
-- **The demo Emacs is not the one in front.** macOS does not let an
-  application that is not frontmost raise itself, so without
-  `z-group`, and without re-setting it by turning it off and on again,
-  the demonstration is recorded behind the Emacs the user is working
-  in — which is what happened twice.
-- **The frame does not stay where it is put.** Something moves it back
-  to the corner it started in some time after a scene rearranges the
-  screen, so a timer holds it in place twice a second.
+- **The frame does not stay the size it was given.** Something moves it
+  back to the corner it started in some time after a scene rearranges
+  the screen, so a timer puts it back twice a second. Where it sits does
+  not matter any more — the window is recorded where it stands — but the
+  size is the shape of the video.
 - **Keys are not fed to the command loop.** `scripts/docshots.el` leaves
   them on `unread-command-events`, which works when that Emacs has the
   keyboard; here the frame Emacs selects is not the frame the keyboard
