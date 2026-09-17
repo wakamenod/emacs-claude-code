@@ -246,7 +246,9 @@ nothing to do with whether two maps are ever live at once."
       (should (eq (key-binding (kbd "n")) #'ecc-chat-next-heading))
       (should (eq (key-binding (kbd "TAB")) #'ecc-chat-toggle))
       (should (eq (key-binding (kbd "RET")) #'ecc-session-visit))
-      (should (eq (key-binding (kbd "C-c C-k")) #'ecc-session-interrupt))
+      ;; The mode prefix means the same on both sides of the boundary.
+      (should (eq (key-binding (kbd "C-c C-k")) #'ecc-prompt-clear))
+      (should (eq (key-binding (kbd "C-c C-z")) #'ecc-session-interrupt))
       (ecc-chat-goto-prompt)
       (should (eq (key-binding (kbd "n")) #'self-insert-command))
       (should (eq (key-binding (kbd "TAB")) #'ecc-chat-tab))
@@ -983,6 +985,35 @@ carries."
       (should (eq (lookup-key ecc-chat-transcript-map [mouse-2])
                   #'ecc-chat-follow-link))
       (should (eq (lookup-key ecc-chat-transcript-map [follow-link]) 'mouse-face)))))
+
+(ert-deftest ecc-chat-test-interrupt-is-not-on-c-c-c-g ()
+  "The interrupt is C-c C-z, and C-c C-g is left to `keyboard-quit'.
+Pressing C-c and then C-g to take the prefix back is the reflex of
+every other mode, where it does nothing; bound here, it stopped the
+turn.  C-c C-z is comint's key for stopping the process."
+  (should (eq (lookup-key ecc-chat-mode-map (kbd "C-c C-z"))
+              #'ecc-session-interrupt))
+  (dolist (map (list ecc-chat-mode-map ecc-chat-transcript-map))
+    (should-not (commandp (lookup-key map (kbd "C-c C-g"))))))
+
+(ert-deftest ecc-chat-test-c-c-c-k-means-one-thing-in-the-buffer ()
+  "C-c C-k clears the draft wherever point is; the transcript adds nothing.
+Bound to the interrupt in the transcript, one key did two different
+destructive things in the same buffer, and which one depended on where
+point happened to be."
+  (should (eq (lookup-key ecc-chat-mode-map (kbd "C-c C-k")) #'ecc-prompt-clear))
+  (should-not (commandp (lookup-key ecc-chat-transcript-map (kbd "C-c C-k")))))
+
+(ert-deftest ecc-chat-test-transcript-keys-are-spelled-as-the-menu-spells-them ()
+  "`v' goes to the prompt as `C-c c v' does; `F' is the menu's `F'.
+`i' stays beside `v' for the finger that starts writing with it, and
+the picture at point is `I', the capital of the menu's `I' that turns
+all the pictures off."
+  (should (eq (lookup-key ecc-chat-transcript-map (kbd "v")) #'ecc-chat-goto-prompt))
+  (should (eq (lookup-key ecc-chat-transcript-map (kbd "i")) #'ecc-chat-goto-prompt))
+  (should (eq (lookup-key ecc-chat-transcript-map (kbd "F")) #'ecc-chat-goto-files))
+  (should (eq (lookup-key ecc-chat-transcript-map (kbd "I")) #'ecc-image-toggle-animation))
+  (should-not (lookup-key ecc-chat-transcript-map (kbd "f"))))
 
 (provide 'ecc-chat-test)
 

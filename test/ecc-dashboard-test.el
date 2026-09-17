@@ -308,6 +308,15 @@ header line is called itself."
      (should (equal "!" (buffer-substring-no-properties (point) (1+ (point)))))
      (ignore a b))))
 
+(ert-deftest ecc-dashboard-test-r-resumes-as-it-does-everywhere ()
+  "`r' resumes and `R' renames, as in `ecc-global-map' and `ecc-menu'.
+They were the other way round here, and the finger that had learnt
+`C-c c r' got a rename prompt or a resume it had not asked for."
+  (should (eq (lookup-key ecc-dashboard-mode-map (kbd "r")) #'ecc-dashboard-resume))
+  (should (eq (lookup-key ecc-dashboard-mode-map (kbd "R")) #'ecc-dashboard-rename))
+  (should (eq (lookup-key ecc-global-map (kbd "r")) #'ecc-resume))
+  (should (eq (lookup-key ecc-global-map (kbd "R")) #'ecc-rename-session)))
+
 (provide 'ecc-dashboard-test)
 
 ;;; ecc-dashboard-test.el ends here

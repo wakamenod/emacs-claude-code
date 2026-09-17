@@ -390,7 +390,7 @@ before it draws anything."
     ("4" "Answer with option 4" ecc-answer-option-4)]
    ["View"
     ("B" "Dashboard" ecc-dashboard)
-    ("y" "Capabilities" ecc-capabilities-show)
+    ("C" "Capabilities" ecc-capabilities-show)
     ("h" "History" ecc-history-open)
     ("/" "Search past sessions" ecc-search)
     ("U" "Usage" ecc-usage)

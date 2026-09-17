@@ -262,6 +262,12 @@ Remote Control was never trusted with."
       (ecc-remote-control-copy-url)
       (should (equal (current-kill 0) "https://claude.ai/code/session_01")))))
 
+(ert-deftest ecc-transient-test-capabilities-is-c-as-in-the-dashboard ()
+  "Capabilities are `C' in the menu, the key the dashboard already used."
+  (let ((menu (ecc-transient-test--menu-keys)))
+    (should (eq (cdr (assoc "C" menu)) 'ecc-capabilities-show))
+    (should-not (assoc "y" menu))))
+
 (provide 'ecc-transient-test)
 
 ;;; ecc-transient-test.el ends here

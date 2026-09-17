@@ -195,7 +195,13 @@ the dim face.")
     (define-key map (kbd "S-<tab>") #'ecc-chat-cycle-permission-mode)
     (define-key map (kbd "C-c C-c") #'ecc-prompt-send)
     (define-key map (kbd "C-c C-k") #'ecc-prompt-clear)
-    (define-key map (kbd "C-c C-g") #'ecc-session-interrupt)
+    ;; The interrupt is on C-c C-z, comint's key for stopping the
+    ;; process, and C-c C-g is left unbound on purpose: pressing C-c and
+    ;; then C-g to take the prefix back is the reflex of every other
+    ;; mode, where it is harmless, and here it stopped the turn
+    ;; (confirmed 2026-09-17).  Unbound, the sequence falls through to
+    ;; `keyboard-quit', which is what the finger meant.
+    (define-key map (kbd "C-c C-z") #'ecc-session-interrupt)
     (define-key map (kbd "C-c C-q") #'ecc-prompt-show-queue)
     (define-key map (kbd "C-c C-x") #'ecc-prompt-toggle-context)
     (define-key map (kbd "C-c C-i") #'ecc-prompt-insert-image)
@@ -258,7 +264,10 @@ no \\`C-c C-<letter>' free goes to `ecc-menu' rather than taking one.")
     (define-key map (kbd "R") #'ecc-session-resume)
     (define-key map (kbd "a") #'ecc-perm-allow)
     (define-key map (kbd "d") #'ecc-session-review-or-deny)
-    (define-key map (kbd "C-c C-k") #'ecc-session-interrupt)
+    ;; No C-c C-k here: it falls through to `ecc-prompt-clear', so that
+    ;; the key discards the draft wherever point is, as C-c C-c sends it
+    ;; from wherever point is.  Bound to the interrupt in the transcript,
+    ;; the same key did two different destructive things in one buffer.
     ;; Movement and extraction
     (define-key map (kbd "]") #'ecc-chat-next-block)
     (define-key map (kbd "[") #'ecc-chat-previous-block)
@@ -266,8 +275,13 @@ no \\`C-c C-<letter>' free goes to `ecc-menu' rather than taking one.")
     (define-key map (kbd "-") #'ecc-chat-collapse-all)
     (define-key map (kbd "T") #'ecc-session-timeline)
     (define-key map (kbd "w") #'ecc-session-copy-at-point)
-    (define-key map (kbd "v") #'ecc-image-toggle-animation)
-    (define-key map (kbd "f") #'ecc-chat-goto-files)
+    ;; `v' goes to the prompt as `C-c c v' does from anywhere; `i' is
+    ;; the same command for the finger that starts writing with it.
+    ;; `F', `P', `T' and `L' are the capitals of `ecc-menu', and `I' is
+    ;; the picture at point as the menu's `I' is the pictures.
+    (define-key map (kbd "v") #'ecc-chat-goto-prompt)
+    (define-key map (kbd "I") #'ecc-image-toggle-animation)
+    (define-key map (kbd "F") #'ecc-chat-goto-files)
     (define-key map (kbd "P") #'ecc-chat-goto-plans)
     (define-key map (kbd "?") #'ecc-menu)
     map)

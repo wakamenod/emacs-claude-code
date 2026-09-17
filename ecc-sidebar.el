@@ -616,9 +616,12 @@ from here but not answered."
     (define-key map (kbd "TAB") #'ecc-sidebar-toggle-children)
     (define-key map (kbd "c") #'ecc-sidebar-start-session)
     (define-key map (kbd "W") #'ecc-sidebar-start-worktree)
-    (define-key map (kbd "x") #'ecc-sidebar-close-space)
-    (define-key map (kbd "X") #'ecc-sidebar-remove-worktree)
+    ;; `k' stops a session, `K' removes a worktree and `X' closes a
+    ;; Space: each a step larger than the one before, spelled as the
+    ;; menu spells them (`X' there, `k' in `ecc-worktree-menu').
     (define-key map (kbd "k") #'ecc-sidebar-kill-session)
+    (define-key map (kbd "K") #'ecc-sidebar-remove-worktree)
+    (define-key map (kbd "X") #'ecc-sidebar-close-space)
     (define-key map (kbd "a") #'ecc-sidebar-allow)
     (define-key map (kbd "d") #'ecc-sidebar-deny)
     (define-key map (kbd "g") #'ecc-sidebar-refresh)

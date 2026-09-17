@@ -94,7 +94,7 @@ Verified against **Claude Code CLI 2.1.274**.
   timers and animated none of them.  Scrolling away does not stop it: the
   test is on the text, not on the window.
 
-  `v` in the transcript stops the picture at point moving, or sets it moving
+  `I` in the transcript stops the picture at point moving, or sets it moving
   again, and does nothing else: `RET` is what opens one, a still in
   `image-mode` and a video in whatever the machine plays one with.
   `ecc-image-inline`, also `I` in the menu, turns the drawing off.  It is
@@ -318,8 +318,9 @@ Verified against **Claude Code CLI 2.1.274**.
   `RET` goes to what the row stands for, `n` and `p` move, `TAB` folds a
   repository's worktrees away, `1`-`9` go to a Space by its number, `c` starts
   a session there, `W` makes a worktree of it, `a` and `d` answer what that
-  session is waiting on, `k` stops it, `x` closes a Space, `X` removes a
-  worktree, `g` asks git again and `q` hides the sidebar.
+  session is waiting on, `k` stops it, `K` removes a worktree, `X` closes a
+  Space -- each a step larger than the one before -- `g` asks git again and
+  `q` hides the sidebar.
 
   The marks, the colours and the beat of the blink are the tab line's, so a
   session says the same thing wherever it is drawn, and the spinner turns only
@@ -464,6 +465,31 @@ Verified against **Claude Code CLI 2.1.274**.
 
 - `w` in `ecc-menu` rewrites the region (`ecc-rewrite`), which was `W`. `W` is
   the worktree menu now, and `w` was free.
+
+- **Breaking.** The interrupt in a session buffer is `C-c C-z`, comint's key
+  for stopping the process, and `C-c C-g` is unbound on purpose. Pressing
+  `C-c` and then `C-g` to take the prefix back is the reflex of every other
+  mode, where it is harmless; here it stopped the turn. Unbound, the sequence
+  falls through to `keyboard-quit`, which is what the finger meant. `C-c c i`
+  and `i` in the menu are unchanged.
+
+  `C-c C-k` in the transcript no longer interrupts either: it falls through to
+  `ecc-prompt-clear`, so that the key discards the draft wherever point is, as
+  `C-c C-c` sends it from wherever point is. One key did two different
+  destructive things in one buffer, and which one depended on where point
+  happened to be.
+
+- **Breaking.** One letter, one meaning, across the maps and not only within
+  one: the keys a buffer spelled differently from `ecc-global-map` and
+  `ecc-menu` now spell them the same way.
+
+  In the dashboard `r` resumes and `R` renames, as `C-c c r` and `C-c c R`
+  do; they were the other way round. In the transcript `F` goes to the Files
+  section (it was `f`), beside `P`, `T` and `L`, which were capitals already;
+  `v` goes to the prompt, as `C-c c v` does from anywhere, and `i` stays
+  beside it for the finger that starts writing with it. Capabilities are `C`
+  in the menu, the key the dashboard already used; it was `y`, which meant
+  nothing.
 
 - The choice of layout is `ecc-use-spaces`, a boolean that defaults to `t`,
   where it was `ecc-layout` with the values `classic` and `spaces` defaulting to

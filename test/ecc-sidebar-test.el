@@ -533,6 +533,16 @@ keys unreachable without this."
     (should (eq (selected-window) (ecc-sidebar--window)))
     (ecc-sidebar-hide)))
 
+(ert-deftest ecc-sidebar-test-closing-keys-grow-with-what-they-close ()
+  "`k' stops a session, `K' removes a worktree, `X' closes a Space.
+`X' is the menu's key for closing a Space; the sidebar had it on `x'
+and `X' on the worktree, so the same letter closed two different
+things depending on which list was in front."
+  (should (eq (lookup-key ecc-sidebar-mode-map (kbd "k")) #'ecc-sidebar-kill-session))
+  (should (eq (lookup-key ecc-sidebar-mode-map (kbd "K")) #'ecc-sidebar-remove-worktree))
+  (should (eq (lookup-key ecc-sidebar-mode-map (kbd "X")) #'ecc-sidebar-close-space))
+  (should-not (lookup-key ecc-sidebar-mode-map (kbd "x"))))
+
 (provide 'ecc-sidebar-test)
 
 ;;; ecc-sidebar-test.el ends here
