@@ -35,10 +35,13 @@ frame, a panel, a colour, a key -- and for handing that check to somebody else; 
 site's pictures are `scripts/docshots.sh` and stay a dressed-up `-Q`. A scene is
 `demo/scenes/NAME.el` (what it builds, one function per step) and `demo/scenes/NAME.sh`
 (the order and the pauses). `demo/README.md` says how to write one and what it costs to
-learn again: the demo Emacs is not the application macOS has in front, so its frames
-need `z-group` and a timer that holds them, and a step runs the command a key is bound
-to in the buffer it belongs to rather than feeding keys to a command loop that is
-reading somewhere else.
+learn again: what is recorded is the demo frame's own window, through
+`demo/record-window.swift` and ScreenCaptureKit, so nothing that covers it is in the
+picture and the recording does not have to be in front; a step runs the command a key is
+bound to in the buffer it belongs to rather than feeding keys to a command loop that is
+reading somewhere else; and a step arrives with `*scratch*` current, so a scene that
+means a directory has to say which one -- `ecc-window-context-project-root` falls back to
+the checkout the demo Emacs was started from, which is this repository.
 
 ## Commands
 

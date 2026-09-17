@@ -14,11 +14,12 @@
 # site and README.md carry are made by scripts/docshots.sh and
 # scripts/screenshot.sh, which dress a throwaway -Q Emacs up instead.
 #
-# macOS only.  ffmpeg records "Capture screen 0" and the output is
-# cropped to the rectangle the frame is held in, so nothing else on the
-# screen is in the video; the terminal running this needs Screen
-# Recording permission (System Settings -> Privacy & Security -> Screen
-# Recording), or the video comes out black.
+# macOS only.  What is recorded is the demo frame's own window, through
+# demo/record-window.swift: nothing that covers it is in the picture, it
+# does not have to be in front, and two of these can run at once without
+# recording each other.  Whatever runs this needs Screen Recording
+# permission (System Settings -> Privacy & Security -> Screen Recording),
+# or there is nothing to record.
 set -euo pipefail
 
 scene=${1:?usage: demo/record.sh <scene> [out.mp4]}
@@ -32,20 +33,19 @@ scene_sh=$here/scenes/$scene.sh
 emacs_app=${EMACS_APP:-/opt/homebrew/Cellar/emacs-plus@32/32.0.50/Emacs.app}
 # emacs-plus keeps emacsclient beside the .app rather than inside it.
 emacsclient=${EMACSCLIENT:-$(command -v emacsclient || echo "${emacs_app%/*}/bin/emacsclient")}
-server=ecc-demo
-ready=/tmp/ecc-demo-ready.txt
 
-# The frame is held at (40,140), 1700x950 (demo.el), and the ediff
-# control panel is a frame of its own placed above the top of it, so the
-# crop starts at the corner of the screen.  These are the pixels of a 2x
-# display; on a 1x one, halve them.
-crop=${DEMO_CROP:-3560:2260:0:0}
-fps=10
+# Everything a run owns is named after the scene, so that two scenes --
+# in two checkouts, driven by two sessions -- do not take each other's
+# Emacs, socket, ready file or window.  They did, and killed each other
+# halfway through (2026-09-17).
+server=ecc-demo-$scene
+ready=/tmp/ecc-demo-$scene-ready.txt
+title="ecc demo: $scene"
 
-# Which avfoundation device the screen is.  It is 4 on this machine;
-# `ffmpeg -f avfoundation -list_devices true -i ""' says what it is on
-# another, as "[N] Capture screen 0".
-screen=${DEMO_SCREEN_DEVICE:-4}
+fps=${DEMO_FPS:-10}
+width=${DEMO_WIDTH:-1456}
+
+recorder=$here/.build/record-window
 
 # macOS `open' hands this process's environment to the Emacs it starts,
 # and a Claude Code session's own variables turn transcript saving off in
@@ -55,32 +55,66 @@ for variable in $(env | sed -n 's/^\(CLAUDE[A-Z_]*\)=.*/\1/p'); do
     unset "$variable"
 done
 
-ffmpeg_pid=
+recorder_pid=
 cleanup() {
-    [ -n "$ffmpeg_pid" ] && kill -INT "$ffmpeg_pid" 2>/dev/null || true
-    pkill -f "demo/demo.el" 2>/dev/null || true
+    # INT and then wait: the recorder writes the index of the mp4 when
+    # it is asked to stop, and a file it did not finish has no `moov'
+    # atom and will not open at all.
+    if [ -n "$recorder_pid" ]; then
+        kill -INT "$recorder_pid" 2>/dev/null || true
+        wait "$recorder_pid" 2>/dev/null || true
+    fi
+    # This scene's Emacs, by the server name on its command line -- never
+    # every demo Emacs on the machine, which is another run's.  The name
+    # is the pattern rather than the path: a checkout called
+    # `feat+worktree' is a regexp that matches no such thing.
+    pkill -f "$server" 2>/dev/null || true
 }
 trap cleanup EXIT
 
-# A run that failed may have left its Emacs and its socket behind.
-pkill -f "demo/demo.el" 2>/dev/null || true
+# A run of THIS scene that failed may have left its Emacs and its socket
+# behind.
+pkill -f "$server" 2>/dev/null || true
 rm -f "$ready" "${TMPDIR:-/tmp}/emacs$(id -u)/$server"
+
+# Built here rather than committed: it is 128K of Mach-O and swiftc is
+# on any machine that can run this at all.
+if [ ! -x "$recorder" ] || [ "$here/record-window.swift" -nt "$recorder" ]; then
+    echo "building $recorder" >&2
+    mkdir -p "$here/.build"
+    swiftc -O -parse-as-library -o "$recorder" "$here/record-window.swift" \
+        2>&1 | grep -v "^ld: warning" || true
+fi
+[ -x "$recorder" ] || { echo "could not build $recorder" >&2; exit 1; }
+
+# Played from a copy under a name of this run's own.  Every other
+# checkout of this repository carries a record.sh of its own, and the
+# older ones kill `demo/demo.el' -- every one on the machine, not their
+# own -- when they start and when they finish.  Two of this scene's runs
+# died that way (2026-09-17).
+player=${TMPDIR:-/tmp}/ecc-demo-player-$scene.el
+cp "$here/demo.el" "$player"
 
 # `open' is the only way to a frame the window system will really draw:
 # running the executable from a terminal leaves `display-graphic-p' nil.
 # With -Q the command line is processed; with this user's init loaded by
 # Emacs itself it is not, which is why demo.el loads the init by hand.
 open -n -a "$emacs_app" --args -Q \
-     --eval "(setq demo-scene-file \"$scene_el\")" -l "$here/demo.el"
+     --eval "(setq demo-scene-file \"$scene_el\" demo-server-name \"$server\" demo-ready-file \"$ready\" demo-frame-title \"$title\" demo-checkout \"$(cd "$here/.." && pwd)\")" \
+     -l "$player"
 
 for _ in $(seq 1 60); do [ -f "$ready" ] && break; sleep 1; done
 [ -f "$ready" ] || { echo "the demo Emacs never came up" >&2; exit 1; }
 echo "ecc loaded from: $(cat "$ready")" >&2
 
-ffmpeg -hide_banner -loglevel error -y \
-    -f avfoundation -capture_cursor 1 -framerate "$fps" -i "$screen" \
-    -vf "crop=$crop,scale=1456:-2" -pix_fmt yuv420p -r "$fps" "$out" &
-ffmpeg_pid=$!
+# `caffeinate -d' for the whole recording: a display that goes to sleep
+# stops drawing, a window that is not drawn hands no frames over, and the
+# scene is recorded as nothing at all.  It does not defeat a Mac that
+# locks itself -- nothing does, and nothing should -- so a run left alone
+# long enough to lock is a run to start again.
+caffeinate -d -w $$ &
+"$recorder" --title "$title" --out "$out" --fps "$fps" --width "$width" &
+recorder_pid=$!
 sleep 3
 
 # A step that opens a minibuffer can leave `emacsclient' waiting for an
@@ -100,8 +134,8 @@ say() { e "(demo-say \"$1\")"; }
 # shellcheck source=/dev/null
 . "$scene_sh"
 
-kill -INT "$ffmpeg_pid" 2>/dev/null || true
-wait "$ffmpeg_pid" 2>/dev/null || true
-ffmpeg_pid=
+kill -INT "$recorder_pid" 2>/dev/null || true
+wait "$recorder_pid" 2>/dev/null || true
+recorder_pid=
 echo "wrote $out" >&2
 ls -lh "$out" >&2
