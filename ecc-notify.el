@@ -384,7 +384,6 @@ Emacs -- it stops the CLI and forgets the transcript -- so it asks
 first.")
 
 (declare-function ecc-kill "ecc" (session))
-(declare-function ecc-worktree-kill-session "ecc-worktree" (session))
 
 (defun ecc-tab-close (buffer)
   "Stop the session of BUFFER (`tab-line-close-tab-function').
@@ -401,10 +400,8 @@ about first.  A buffer with no session behind it is only killed."
      ((and ecc-tab-close-confirm
            (not (y-or-n-p (format "Stop %s? " (ecc-session-name session)))))
       (message "Left %s running" (ecc-session-name session)))
-     ;; Not `ecc-kill': closing the tab of the last session of a worktree
-     ;; is the moment to be asked whether the checkout goes too.
-     (t (require 'ecc-worktree)
-        (ecc-worktree-kill-session session)))))
+     (t (require 'ecc)
+        (ecc-kill session)))))
 
 ;; `tab-line-force-update' is Emacs 30 and later (confirmed 2026-09-10 on
 ;; the CI matrix, which builds on 29.1).  What it does is what the blink

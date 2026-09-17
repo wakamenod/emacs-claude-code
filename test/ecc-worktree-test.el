@@ -27,7 +27,8 @@ The cache is fresh as well: a test must not see what an earlier one
 asked git."
   (declare (indent 1))
   `(let ((,var (file-name-as-directory (make-temp-file "ecc-worktree" t)))
-         (ecc-worktree--cache (make-hash-table :test #'equal)))
+         (ecc-worktree--cache (make-hash-table :test #'equal))
+         (ecc-worktree--offers-pending nil))
      (unwind-protect (progn ,@body)
        (delete-directory ,var t))))
 
@@ -147,7 +148,7 @@ prunable gitdir file points to non-existent location
       (ecc-worktree-remove path)
       (should-not (file-directory-p path))
       (should (= 1 (length (ecc-worktree-list directory))))
-      ;; The branch outlives the checkout.
+      ;; The branch outlives the worktree.
       (should (member "feat/x" (ecc-worktree-branches directory))))))
 
 (ert-deftest ecc-worktree-test-create-refuses-twice ()
@@ -210,7 +211,7 @@ This is what pins down which side of `rev-list --left-right' is which."
 ;;;; The commands
 
 (ert-deftest ecc-worktree-test-start-worktree ()
-  "`ecc-start-worktree' starts the session in the checkout it made."
+  "`ecc-start-worktree' starts the session in the worktree it made."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
     (ecc-worktree-test--with-directory directory
@@ -229,7 +230,7 @@ This is what pins down which side of `rev-list --left-right' is which."
 
 (ert-deftest ecc-worktree-test-start-worktree-goes-to-the-branch-it-finds ()
   "A branch that is checked out already is gone to rather than refused.
-git allows one branch in one worktree at a time, and the checkout that
+git allows one branch in one worktree at a time, and the worktree that
 has it need not be named the way this package would have named it."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
@@ -261,7 +262,7 @@ has it need not be named the way this package would have named it."
                           :type 'user-error)))))))
 
 (ert-deftest ecc-worktree-test-delegate ()
-  "`ecc-worktree-delegate' makes the checkout, starts a session and briefs it."
+  "`ecc-worktree-delegate' makes the worktree, starts a session and briefs it."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
     (ecc-worktree-test--with-directory directory
@@ -287,14 +288,14 @@ has it need not be named the way this package would have named it."
           (should-error (ecc-worktree-delegate directory "feat/y" "  ")
                         :type 'user-error)
           (should-not (file-exists-p (ecc-worktree-path directory "feat/y")))
-          ;; And a branch another checkout holds is refused rather than
+          ;; And a branch another worktree holds is refused rather than
           ;; gone to: two sessions in one tree is not handing work over.
           (clrhash ecc-worktree--cache)
           (should-error (ecc-worktree-delegate directory "feat/x" "again")
                         :type 'user-error))))))
 
 (ert-deftest ecc-worktree-test-delegate-from-a-worktree-and-a-base ()
-  "The checkout is made beside the main worktree, from the base given."
+  "The worktree is made beside the main one, from the base given."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
     (ecc-worktree-test--with-directory directory
@@ -375,7 +376,7 @@ has it need not be named the way this package would have named it."
           (ecc-worktree-mcp-delegate "feat/x" "Finish the parser")
           ;; The brief the model wrote comes first, and the facts follow.
           (should (string-match-p "Finish the parser" sent))
-          ;; Paths are the ones the new checkout has, not absolute ones.
+          ;; Paths are the ones the new worktree has, not absolute ones.
           (should (string-match-p "^- a\\.txt (2 edits)$" sent))
           (should (string-match-p "^- test/b\\.txt (1 reads)$" sent))
           ;; The header names the repository; the file list does not.
@@ -383,7 +384,7 @@ has it need not be named the way this package would have named it."
                                       sent))
           (should (string-match-p "/tmp/plans/ecc-plan\\.md" sent))
           (should (string-match-p "/tmp/history/session\\.jsonl" sent))
-          ;; And what the checkout will not have, because HEAD does not.
+          ;; And what the worktree will not have, because HEAD does not.
           (should (string-match-p "Not in this worktree" sent))
           (should (string-match-p "loose\\.txt" sent)))))))
 
@@ -486,13 +487,13 @@ has it need not be named the way this package would have named it."
                        (ecc-prompt-prepare-text session
                                                 "worktree を切ってやって")))))))
 
-;;;; Offering to undo a checkout
+;;;; Offering to undo a worktree
 
 (defmacro ecc-worktree-test--with-answer (answer &rest body)
   "Run BODY with every `yes-or-no-p' answered ANSWER, recording the questions.
 ANSWER may be a function, which is called with the question: a command
-that asks two of them is answered one way about the checkout and
-another about the branch.  The questions land in `asked', which BODY
+that asks two of them is answered one way about the worktree and
+another about git's refusal.  The questions land in `asked', which BODY
 may read, newest first."
   (declare (indent 1))
   `(let ((asked nil)
@@ -504,6 +505,16 @@ may read, newest first."
        (ignore asked)
        ,@body)))
 
+(defmacro ecc-worktree-test--with-timers (&rest body)
+  "Run BODY with `run-at-time' calling its function at once.
+The offer to remove a worktree is scheduled rather than made where the
+session leaves the model; a batch test has no idle moment to wait for."
+  (declare (indent 0))
+  `(cl-letf (((symbol-function #'run-at-time)
+              (lambda (_time _repeat function &rest arguments)
+                (apply function arguments))))
+     ,@body))
+
 (ert-deftest ecc-worktree-test-offer-removal ()
   "The offer is made for a worktree with nothing left running in it."
   (skip-unless (executable-find "git"))
@@ -514,7 +525,7 @@ may read, newest first."
            (ecc--session-order nil)
            (ecc-window--project-root-cache (make-hash-table :test #'equal))
            (path (ecc-worktree-create directory "feat/x")))
-      ;; The main worktree is not a checkout to undo.
+      ;; The main worktree is not a worktree to undo.
       (ecc-worktree-test--with-answer t
         (should-not (ecc-worktree-offer-removal directory))
         (should-not asked))
@@ -531,77 +542,19 @@ may read, newest first."
       (ecc-worktree-test--with-answer nil
         (should-not (ecc-worktree-offer-removal path))
         (should (= 1 (length asked)))
-        (should (string-match-p "Remove the checkout" (car asked))))
+        (should (string-match-p "Remove the worktree" (car asked))))
       (should (file-directory-p path))
-      ;; And yes undoes it.  The branch is a question of its own, and
-      ;; saying no to that one leaves it standing.
+      ;; And yes undoes it, in one question: the branch is never asked
+      ;; about, and it outlives the directory it was checked out in.
       (clrhash ecc-worktree--cache)
-      (ecc-worktree-test--with-answer
-          (lambda (prompt) (not (string-match-p "Delete the branch" prompt)))
+      (ecc-worktree-test--with-answer t
         (should (ecc-worktree-offer-removal path))
-        (should (= 2 (length asked)))
-        (should (string-match-p "Delete the branch feat/x" (car asked))))
+        (should (= 1 (length asked))))
       (should-not (file-directory-p path))
       (should (member "feat/x" (ecc-worktree-branches directory))))))
 
-(ert-deftest ecc-worktree-test-branch-offered-once-the-checkout-is-gone ()
-  "The branch is offered after the removal, and never taken unasked."
-  (skip-unless (executable-find "git"))
-  (ecc-worktree-test--with-directory directory
-    (ecc-worktree-test--repository directory)
-    (let* ((ecc-worktree-directory ".claude/worktrees")
-           (path (ecc-worktree-create directory "feat/x")))
-      ;; A branch a worktree still holds is not offered: git would refuse
-      ;; it, and the question would be a dead end in front of that.
-      (ecc-worktree-test--with-answer t
-        (should-not (ecc-worktree-offer-branch-removal directory "feat/x"))
-        (should-not asked))
-      ;; Nor is a detached checkout's branch, there being none.
-      (ecc-worktree-test--with-answer t
-        (should-not (ecc-worktree-offer-branch-removal directory nil))
-        (should-not asked))
-      (ecc-worktree-remove path)
-      ;; No is no.
-      (ecc-worktree-test--with-answer nil
-        (should-not (ecc-worktree-offer-branch-removal directory "feat/x"))
-        (should (= 1 (length asked))))
-      (should (member "feat/x" (ecc-worktree-branches directory)))
-      ;; Yes deletes it.
-      (ecc-worktree-test--with-answer t
-        (should (equal "feat/x"
-                       (ecc-worktree-offer-branch-removal directory "feat/x"))))
-      (should-not (member "feat/x" (ecc-worktree-branches directory))))))
-
-(ert-deftest ecc-worktree-test-delete-branch-insists-only-when-told-to ()
-  "A branch with work on it takes a second yes, and git\='s refusals stand."
-  (skip-unless (executable-find "git"))
-  (ecc-worktree-test--with-directory directory
-    (ecc-worktree-test--repository directory)
-    (let* ((ecc-worktree-directory ".claude/worktrees")
-           (path (ecc-worktree-create directory "feat/x")))
-      (with-temp-file (expand-file-name "b.txt" path) (insert "two\n"))
-      (ecc-worktree-test--git path "add" "b.txt")
-      (ecc-worktree-test--git path "commit" "-q" "-m" "work")
-      (ecc-worktree-remove path)
-      ;; git refuses a branch whose commits are nowhere else, and that
-      ;; refusal is the user's to answer.
-      (ecc-worktree-test--with-answer nil
-        (should-not (ecc-worktree-delete-branch directory "feat/x"))
-        (should (= 1 (length asked)))
-        (should (string-match-p "not merged anywhere else" (car asked))))
-      (should (member "feat/x" (ecc-worktree-branches directory)))
-      ;; FORCE is that answer given in advance.
-      (ecc-worktree-test--with-answer nil
-        (should (equal "feat/x"
-                       (ecc-worktree-delete-branch directory "feat/x" t)))
-        (should-not asked))
-      (should-not (member "feat/x" (ecc-worktree-branches directory)))
-      ;; A name no branch has is git's refusal, not silence.
-      (should-error (ecc-worktree-delete-branch directory "feat/x")
-                    :type 'user-error))))
-
-(ert-deftest ecc-worktree-test-remove-worktree-offers-the-branch ()
-  "`ecc-remove-worktree' asks about the checkout, then about the branch."
+(ert-deftest ecc-worktree-test-remove-worktree-leaves-the-branch ()
+  "`ecc-remove-worktree' asks once, and the branch outlives the directory."
   (skip-unless (executable-find "git"))
   (ecc-worktree-test--with-directory directory
     (ecc-worktree-test--repository directory)
@@ -612,16 +565,15 @@ may read, newest first."
            (path (ecc-worktree-create directory "feat/x")))
       (ecc-worktree-test--with-answer t
         (ecc-remove-worktree path)
-        (should (= 2 (length asked)))
-        (should (string-match-p "Remove the worktree" (nth 1 asked)))
-        (should (string-match-p "Delete the branch feat/x" (car asked))))
+        (should (= 1 (length asked)))
+        (should (string-match-p "Remove the worktree" (car asked))))
       (should-not (file-directory-p path))
-      (should-not (member "feat/x" (ecc-worktree-branches directory))))))
+      (should (member "feat/x" (ecc-worktree-branches directory))))))
 
 (ert-deftest ecc-worktree-test-remove-worktree-stops-a-nested-session ()
-  "A session in a project of its own inside the checkout is stopped too.
+  "A session in a project of its own inside the worktree is stopped too.
 `project-current\=' answers such a directory with itself, so the session
-is in none of the checkout\='s -- and used to be left in the model with
+is in none of the worktree\='s -- and used to be left in the model with
 its directory deleted under it."
   (skip-unless (executable-find "git"))
   (ecc-worktree-test--with-directory directory
@@ -637,7 +589,7 @@ its directory deleted under it."
       (cl-letf (((symbol-function #'ecc-proc-stop) #'ignore))
         (ecc-model-create-session :name "outer" :project-root path)
         (ecc-model-create-session :name "nested" :project-root nested)
-        ;; The project of the checkout is one of the two; both work in it.
+        ;; The project of the worktree is one of the two; both work in it.
         (should (= 1 (length (ecc-window-project-sessions path))))
         (should (= 2 (length (ecc-worktree-sessions path))))
         (ecc-worktree-test--with-answer t
@@ -656,7 +608,7 @@ its directory deleted under it."
                          (mapcar #'ecc-session-name (ecc-model-sessions)))))))))
 
 (ert-deftest ecc-worktree-test-remove-worktree-forgets-the-space ()
-  "The Space of the checkout is closed, while the checkout is still there.
+  "The Space of the worktree is closed, while the directory is still there.
 Its key is `ecc-window-project-key\=' of a directory that exists; asked
 after the removal it could answer something else, and the tab would be
 left open on a Space with nowhere to go."
@@ -687,7 +639,7 @@ left open on a Space with nowhere to go."
         (should-not (file-directory-p path))))))
 
 (ert-deftest ecc-worktree-test-offer-counts-the-open-buffers ()
-  "A buffer visiting the checkout is counted in the question, not killed."
+  "A buffer visiting the worktree is counted in the question, not killed."
   (skip-unless (executable-find "git"))
   (ecc-worktree-test--with-directory directory
     (ecc-worktree-test--repository directory)
@@ -703,8 +655,10 @@ left open on a Space with nowhere to go."
             (should (string-match-p "1 open buffer will be left" (car asked))))
         (kill-buffer buffer)))))
 
-(ert-deftest ecc-worktree-test-kill-session-offers-and-a-loop-does-not ()
-  "Stopping the last session by hand asks; `ecc-kill' in a loop does not."
+(ert-deftest ecc-worktree-test-a-session-leaving-offers-the-worktree ()
+  "The last session of a worktree leaving the model asks about the directory.
+However it left: `ecc-kill\=' from Lisp is the case a command could not
+cover, and it is the one that used to leave the directory behind."
   (skip-unless (executable-find "git"))
   (ecc-worktree-test--with-directory directory
     (ecc-worktree-test--repository directory)
@@ -714,22 +668,105 @@ left open on a Space with nowhere to go."
            (ecc-window--project-root-cache (make-hash-table :test #'equal))
            (path (ecc-worktree-create directory "feat/x")))
       (cl-letf (((symbol-function #'ecc-proc-stop) #'ignore))
-        ;; `ecc-worktree-kill-session' is what the sidebar, the dashboard
-        ;; and the tab use: the session goes, and the offer follows.
-        (let ((session (ecc-model-create-session :name "one"
+        ;; One of two sessions going is no reason to take the tree from
+        ;; the other.
+        (let ((one (ecc-model-create-session :name "one" :project-root path))
+              (two (ecc-model-create-session :name "two" :project-root path)))
+          (ecc-worktree-test--with-timers
+            (ecc-worktree-test--with-answer nil
+              (ecc-kill one)
+              (should-not asked)
+              ;; And the last one asks, once, and no leaves it standing.
+              (ecc-kill two)
+              (should (= 1 (length asked)))
+              (should (string-match-p "Remove the worktree" (car asked)))))
+          (should (file-directory-p path)))
+        ;; A session that belongs to nobody says nothing about the tree.
+        (let ((probe (ecc-model-create-session
+                      :name "probe" :project-root path
+                      :options '(:usage-probe t))))
+          (ecc-worktree-test--with-timers
+            (ecc-worktree-test--with-answer t
+              (ecc-kill probe)
+              (should-not asked))))
+        ;; A command stopping a group of its own answers for itself.
+        (let ((session (ecc-model-create-session :name "three"
                                                  :project-root path)))
-          (ecc-worktree-test--with-answer nil
-            (ecc-worktree-kill-session session)
-            (should (= 1 (length asked))))
-          (should-not (ecc-model-session (ecc-session-id session))))
-        ;; `ecc-kill' from Lisp asks nothing: `ecc-space-close' and
-        ;; `ecc-remove-worktree' stop several sessions in a row.
-        (let ((session (ecc-model-create-session :name "two"
+          (ecc-worktree-test--with-timers
+            (ecc-worktree-test--with-answer t
+              (let ((ecc-space--closing t))
+                (ecc-kill session))
+              (should-not asked)))
+          (should (file-directory-p path)))
+        ;; And yes takes the directory, leaving the branch.
+        (let ((session (ecc-model-create-session :name "four"
                                                  :project-root path)))
-          (ecc-worktree-test--with-answer t
-            (ecc-kill session)
-            (should-not asked))
-          (should (file-directory-p path)))))))
+          (ecc-worktree-test--with-timers
+            (ecc-worktree-test--with-answer t
+              (ecc-kill session)
+              (should (= 1 (length asked)))))
+          (should-not (file-directory-p path))
+          (should (member "feat/x" (ecc-worktree-branches directory))))))))
+
+(ert-deftest ecc-worktree-test-two-sessions-leaving-together-ask-once ()
+  "Two sessions of one worktree stopped in a row are one question.
+The offer is scheduled where a session leaves and made from a timer, so
+without this the second would queue a question about a directory the
+first has already taken away."
+  (skip-unless (executable-find "git"))
+  (ecc-worktree-test--with-directory directory
+    (ecc-worktree-test--repository directory)
+    (let* ((ecc-worktree-directory ".claude/worktrees")
+           (ecc--sessions (make-hash-table :test #'equal))
+           (ecc--session-order nil)
+           (ecc-window--project-root-cache (make-hash-table :test #'equal))
+           (path (ecc-worktree-create directory "feat/x"))
+           (scheduled nil))
+      (cl-letf (((symbol-function #'ecc-proc-stop) #'ignore)
+                ((symbol-function #'run-at-time)
+                 (lambda (_time _repeat function &rest arguments)
+                   (push (cons function arguments) scheduled))))
+        (let ((one (ecc-model-create-session :name "one" :project-root path))
+              (two (ecc-model-create-session :name "two" :project-root path)))
+          (ecc-kill one)
+          (ecc-kill two))
+        (should (= 1 (length scheduled)))
+        ;; The one that was scheduled still asks everything again.
+        (ecc-worktree-test--with-answer t
+          (apply (caar scheduled) (cdar scheduled))
+          (should (= 1 (length asked))))
+        (should-not (file-directory-p path))))))
+
+(ert-deftest ecc-worktree-test-group-removal-asks-once ()
+  "`ecc-worktree-offer-group-removal\=' names the worktrees in one question."
+  (skip-unless (executable-find "git"))
+  (ecc-worktree-test--with-directory directory
+    (ecc-worktree-test--repository directory)
+    (let* ((ecc-worktree-directory ".claude/worktrees")
+           (one (ecc-worktree-create directory "feat/x"))
+           (two (ecc-worktree-create directory "feat/y")))
+      ;; A directory that is gone, and the repository itself, are left
+      ;; out of the question rather than asked about.
+      (ecc-worktree-test--with-answer nil
+        (should-not (ecc-worktree-offer-group-removal
+                     (list directory (expand-file-name "nowhere" directory))))
+        (should-not asked))
+      ;; No leaves both where they are.
+      (ecc-worktree-test--with-answer nil
+        (should-not (ecc-worktree-offer-group-removal (list one two)))
+        (should (= 1 (length asked)))
+        (should (string-match-p "Remove the worktrees feat/x, feat/y as well"
+                                (car asked))))
+      (should (file-directory-p one))
+      ;; Yes takes both, and both branches stay.
+      (ecc-worktree-test--with-answer t
+        (should (equal (list one two)
+                       (ecc-worktree-offer-group-removal (list one two))))
+        (should (= 1 (length asked))))
+      (should-not (file-directory-p one))
+      (should-not (file-directory-p two))
+      (should (member "feat/x" (ecc-worktree-branches directory)))
+      (should (member "feat/y" (ecc-worktree-branches directory))))))
 
 (ert-deftest ecc-worktree-test-context-root-climbs-to-the-parent ()
   "A command run in a linked worktree acts on the repository it came from."

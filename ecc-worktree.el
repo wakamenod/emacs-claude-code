@@ -11,7 +11,7 @@
 ;; What git says about the worktrees of a repository, and the commands
 ;; that start a session in one.
 ;;
-;; A worktree is a second checkout of the same repository on a branch of
+;; A worktree is a second working tree of one repository on a branch of
 ;; its own.  It is the way to let two sessions work on one project
 ;; without either of them seeing the other's edits, and it is what
 ;; `CLAUDE.md' asks of the sessions that work on this package.
@@ -22,10 +22,10 @@
 ;; worktree under its parent -- and it asks on every redraw, so the
 ;; answers are kept for a few seconds rather than worked out again.
 ;;
-;; The branch is never deleted with the checkout on its own.  Removing a
-;; worktree is undoing a checkout, and the work is on the branch -- so
-;; the branch is offered, as a question of its own, to whoever has just
-;; undone the checkout it was in.
+;; No branch is ever deleted here.  Removing a worktree is undoing a
+;; directory, and the work is on the branch -- so what is removed can
+;; lose nothing that was committed, and `git branch -d' is left to the
+;; user.
 
 ;;; Code:
 
@@ -49,7 +49,7 @@
 (defvar ecc-space--closing)
 
 (defcustom ecc-worktree-directory ".claude/worktrees"
-  "Where `ecc-worktree-create' puts a checkout.
+  "Where `ecc-worktree-create' puts a worktree.
 A relative name is taken from the main worktree of the repository, so
 the default puts a worktree of a branch at
 \".claude/worktrees/<slug>\" inside the repository itself -- which is
@@ -57,10 +57,10 @@ where Claude Code's own worktrees go, verified with `git worktree list'
 on this repository (2026-09-14).
 
 An absolute name is a directory for every repository to share, and a
-checkout lands at \"<directory>/<repository>/<slug>\", the repository
+worktree lands at \"<directory>/<repository>/<slug>\", the repository
 being the directory name of its main worktree.  \"~\" is expanded.
 
-This is a setting rather than a variable because where a checkout may
+This is a setting rather than a variable because where a worktree may
 be put is a difference between machines: a repository inside a synced
 folder, or a home directory on a small disk, wants them somewhere
 else."
@@ -76,11 +76,11 @@ question.")
 ;;;; What git says
 
 (cl-defstruct ecc-worktree-entry
-  path        ; the checkout, as `file-name-as-directory'
+  path        ; the worktree, as `file-name-as-directory'
   branch      ; the branch it is on, without refs/heads/, or nil
   main-p      ; non-nil for the main worktree, which git lists first
   detached-p  ; non-nil when HEAD is not on a branch
-  prunable-p) ; git's reason when the checkout is gone, else nil
+  prunable-p) ; git's reason when the worktree is gone, else nil
 
 (defun ecc-worktree--git (directory &rest args)
   "Run git with ARGS in DIRECTORY and return (EXIT-CODE . OUTPUT).
@@ -206,7 +206,7 @@ Nil when ROOT is not in a git repository, or git is not installed."
   "Return the main worktree of ROOT when ROOT is a linked worktree.
 Nil when ROOT is the main worktree itself, or is not in a repository at
 all.  That nil is the whole answer a caller needs to lay a repository
-out: a directory with a main worktree above it is a checkout of
+out: a directory with a main worktree above it is a worktree of
 somebody else's project, and everything else stands on its own.
 
 The paths are compared through `file-truename' because git resolves
@@ -257,7 +257,7 @@ against git 2.50.1 by `ecc-worktree-test-ahead-behind' (2026-09-14)."
 
 (defun ecc-worktree-of-branch (root branch)
   "Return the worktree of the repository ROOT that has BRANCH checked out.
-Nil when no checkout holds it.  git allows one branch in one worktree
+Nil when no worktree holds it.  git allows one branch in one worktree
 at a time, so this is what says in advance that `ecc-worktree-create'
 would be refused -- and where the work on that branch already is."
   (seq-find (lambda (entry) (equal (ecc-worktree-entry-branch entry) branch))
@@ -334,11 +334,11 @@ it refuses is what the error says."
 
 (defun ecc-worktree-remove (path &optional force)
   "Remove the worktree checked out at PATH, and return PATH.
-The branch is left alone: what is undone is a checkout.  Deleting it
-too is `ecc-worktree-delete-branch\=', which the commands offer once
-this has returned.
+The branch is left where it is: what is undone is the directory.  This
+package deletes no branch anywhere -- removing a worktree can then lose
+nothing that was committed, and `git branch -d\=' is the user\='s.
 
-git refuses a checkout with changes in it that are not committed, and
+git refuses a worktree with changes in it that are not committed, and
 that refusal is put to the user as a question of its own rather than
 answered for them -- FORCE non-nil is that answer given in advance.
 Its other refusals -- a worktree that is locked, one that is the main
@@ -361,79 +361,54 @@ Remove it anyway? "
     (ecc-worktree-forget)
     path))
 
-(defun ecc-worktree-delete-branch (root branch &optional force)
-  "Delete BRANCH from the repository ROOT, and return BRANCH, or nil.
-Nil when git had to be insisted with and the user would not.
-
-git refuses to delete a branch whose commits are on no other branch,
-and that refusal is put to the user as a question of its own rather
-than answered for them -- FORCE non-nil is that answer given in
-advance.  Its other refusals -- a branch that is checked out somewhere,
-a name no branch has -- are passed on as they are."
-  (let* ((result (ecc-worktree--git root "branch" "-d" branch))
-         (unmerged (and result
-                        (/= 0 (car result))
-                        (string-match-p "not fully merged" (cdr result)))))
-    (when (or (not unmerged)
-              force
-              (yes-or-no-p
-               (format "%s is not merged anywhere else.  Delete it anyway? "
-                       branch)))
-      (when unmerged
-        (setq result (ecc-worktree--git root "branch" "-D" branch)))
-      (unless (eq 0 (car-safe result))
-        (ecc-worktree--refused result (format "Cannot delete %s" branch)))
-      (ecc-worktree-forget)
-      branch)))
-
-(defun ecc-worktree-offer-branch-removal (root branch)
-  "Offer to delete BRANCH of the repository ROOT, and return it when deleted.
-This is for the moment a checkout of BRANCH has just been undone: the
-work is on the branch, so the branch is never taken without being asked
-for, and the question is asked where somebody is thinking about it.
-
-Nothing is offered for a checkout that was detached, which had no
-branch of its own, for a branch that is gone already, or for one that
-is still checked out in another worktree -- git would refuse that one,
-and the question would be a dead end in front of it."
-  (when (and root branch
-             (member branch (ecc-worktree-branches root))
-             (null (ecc-worktree-of-branch root branch))
-             (yes-or-no-p (format "Delete the branch %s as well? " branch)))
-    (ecc-worktree-delete-branch root branch)))
-
 (defun ecc-worktree--forget-space (root)
-  "Close the Space of the checkout ROOT, which is about to be removed.
+  "Close the Space of the worktree ROOT, which is about to be removed.
 Under `classic\=' there are no Spaces and nothing to close; `ecc-space\='
 is loaded here rather than required, this file being underneath it."
   (when (eq ecc-layout 'spaces)
     (require 'ecc-space)
     (ecc-space-forget root)))
 
-(defun ecc-worktree--removed (main path branch)
-  "Say that the checkout PATH is gone, having offered BRANCH with it.
-MAIN is the repository PATH hung off, and BRANCH what it had checked
-out, both read before the removal.  One message for both answers: two
-in a row would leave the user with whichever arrived last."
-  (let ((deleted (ecc-worktree-offer-branch-removal main branch)))
-    (message "Removed %s%s" (abbreviate-file-name path)
-             (if deleted (format " and the branch %s" deleted) ""))))
+(defun ecc-worktree--removed (path)
+  "Say that the worktree PATH is gone.
+The branch it was on is not mentioned: it is still there, and saying
+so after every removal would be a sentence nobody needs twice."
+  (message "Removed %s" (abbreviate-file-name path)))
 
-;;;; Offering to undo a checkout nothing is left in
+(defun ecc-worktree--name (root)
+  "Return what to call the worktree ROOT in a question.
+Its branch, which is what the sidebar and the tab call it as well, and
+the name of the directory when the worktree is detached."
+  (or (ecc-worktree-branch root)
+      (file-name-nondirectory (directory-file-name root))))
+
+;;;; Offering to undo a worktree nothing is left in
 
 ;; A worktree is usually made for one session, so the moment that session
-;; is stopped is the moment to ask whether the checkout should go too --
-;; and the only moment the user is thinking about it.  The offer is not
-;; inside `ecc-kill': that is the primitive `ecc-space-close' and
-;; `ecc-remove-worktree' call in a loop, and a primitive that sometimes
-;; deletes a directory is one nobody can call safely.  What calls this is
-;; the handful of places where a person stopped one session by hand.
+;; goes is the moment to ask whether the worktree should go too -- and
+;; the only moment anybody is thinking about it.  The offer follows the
+;; session out of the model rather than any one command: a session is
+;; stopped from the sidebar, from the dashboard, from a tab and from
+;; Lisp, and the directory is left behind just the same in every one of
+;; them.
+;;
+;; It is made from a timer because `ecc-session-removed-hook' can run
+;; inside a process sentinel, which is no place to ask a question --
+;; `ecc--offer-resume' defers for the same reason.  What keeps the
+;; question from arriving twice is `ecc-space--closing': the commands
+;; that stop several sessions in a row -- `ecc-space-close',
+;; `ecc-remove-worktree' -- bind it, and ask for the whole group
+;; themselves once the loop is done.
+;;
+;; The branch is never touched here or anywhere else.  Removing a
+;; worktree can then lose nothing that was committed, which is what
+;; makes a question that arrives on its own a safe thing to have.
 
 (defun ecc-worktree-sessions (root)
-  "Return the sessions working in the checkout ROOT.
+  "Return the sessions working in the worktree ROOT.
 The sessions of the project ROOT, and any whose own root lies inside it
 -- a session started in a directory that is a project of its own, a
-submodule or a checkout nested in the tree, answers `project-current\='
+submodule or a repository nested in the tree, answers `project-current\='
 with that directory and is in none of ROOT\='s sessions.  It is still a
 session the removal takes the ground from under, and one left in the
 model with nothing underneath it is a row in the sidebar pointing at a
@@ -442,7 +417,7 @@ directory that is gone (reproduced 2026-09-17).
 The root a session was started in is what is asked, and its cwd only
 when it has none: the CLI reports as the cwd whatever directory the
 last Bash call left it in, so a session of another project that had
-looked inside this checkout would be stopped with it.
+looked inside this worktree would be stopped with it.
 
 ROOT must still be there: `ecc-window-project-key\=' asks
 `project-current\=' about a directory."
@@ -466,26 +441,21 @@ ROOT must still be there: `ecc-window-project-key\=' asks
                 (buffer-list))))
 
 (defun ecc-worktree-offer-removal (root)
-  "Offer to undo the checkout at ROOT, and return it when it was removed.
+  "Offer to undo the worktree at ROOT, and return it when it was removed.
 Nothing is offered unless ROOT is a linked worktree with no session of
 this Emacs left in it: stopping one of two sessions working there is no
 reason to take the tree from the other.
 
-The buffers still visiting the checkout are counted in the question
-rather than killed.  This package does not close a user\\='s buffers, and
+The buffers still visiting the worktree are counted in the question
+rather than killed.  This package does not close a user\='s buffers, and
 a file that goes out from under one is something to be told about
 before the fact, not tidied up after."
   (when (and root
              (ecc-worktree-main root)
              (null (ecc-worktree-sessions root)))
-    ;; The repository and the branch are read while the checkout is
-    ;; still there: once it is gone there is no directory to ask git
-    ;; about, and the branch is what the next question is about.
-    (let ((main (ecc-worktree-main root))
-          (branch (ecc-worktree-branch root))
-          (open (length (ecc-worktree--visiting-buffers root))))
+    (let ((open (length (ecc-worktree--visiting-buffers root))))
       (when (yes-or-no-p
-             (format "Nothing is left running in %s.  Remove the checkout%s? "
+             (format "Nothing is left running in %s.  Remove the worktree%s? "
                      (abbreviate-file-name root)
                      (if (zerop open)
                          ""
@@ -494,22 +464,73 @@ deleted files)"
                                open (if (= 1 open) "" "s")))))
         (ecc-worktree--forget-space root)
         (ecc-worktree-remove root)
-        (ecc-worktree--removed main root branch)
+        (ecc-worktree--removed root)
         root))))
 
-(defun ecc-worktree-kill-session (session)
-  "Stop SESSION, then offer to undo its checkout when it was a worktree.
-The project is read before the session is stopped: `ecc-kill' forgets
-it, and there is nothing to ask about afterwards."
-  (require 'ecc)
-  (let ((root (ecc-window-session-project session)))
-    (ecc-kill session)
-    (ecc-worktree-offer-removal root)))
+(defun ecc-worktree-offer-group-removal (roots)
+  "Offer to remove the worktrees ROOTS, and return the ones that went.
+For a command that has just closed a group of Spaces: the worktrees are
+named in one question rather than asked about one after another, and
+each is then put to git, which refuses one with changes in it and asks
+again before insisting.
+
+A directory that is gone already, or that git no longer calls a linked
+worktree, is left out of the question."
+  (let ((roots (seq-filter (lambda (root)
+                             (and (file-directory-p root)
+                                  (ecc-worktree-main root)))
+                           roots)))
+    (when (and roots
+               (yes-or-no-p
+                (format "Remove the worktree%s %s as well? "
+                        (if (cdr roots) "s" "")
+                        (mapconcat #'ecc-worktree--name roots ", "))))
+      ;; One message at the end: `ecc-worktree--removed' per worktree
+      ;; would leave the user with whichever arrived last.
+      (let ((names (mapcar #'ecc-worktree--name roots)))
+        (dolist (root roots)
+          (ecc-worktree--forget-space root)
+          (ecc-worktree-remove root))
+        (message "Removed %s" (string-join names ", ")))
+      roots)))
+
+(defvar ecc-worktree--offers-pending nil
+  "The worktrees an offer to remove has already been scheduled for.
+Two sessions of one worktree leaving together are one question.")
+
+(defun ecc-worktree--session-removed (session)
+  "Offer to remove the worktree SESSION was the last thing running in.
+On `ecc-session-removed-hook\='.  The project is read here, where the
+session is still whole and the hook has already taken it out of the
+model, and the question itself waits for a timer.
+
+Nothing is offered for a session that belongs to nobody -- a recording
+being read, the usage probe, an inline question -- nor while
+`ecc-space--closing\=' says a command is stopping a group of its own."
+  (when (and (not (bound-and-true-p ecc-space--closing))
+             (ecc-model-own-session-p session))
+    (let ((root (ecc-window-session-project session)))
+      (when (and root
+                 (not (member root ecc-worktree--offers-pending))
+                 (ecc-worktree-main root)
+                 (null (ecc-worktree-sessions root)))
+        (push root ecc-worktree--offers-pending)
+        (run-at-time 0 nil #'ecc-worktree--offer-removal-now root)))))
+
+(defun ecc-worktree--offer-removal-now (root)
+  "Make the offer that was scheduled for ROOT.
+Everything is asked again: a worktree that went in the meantime, or
+that something started up in again, is no longer a question."
+  (setq ecc-worktree--offers-pending
+        (delete root ecc-worktree--offers-pending))
+  (ecc-worktree-offer-removal root))
+
+(add-hook 'ecc-session-removed-hook #'ecc-worktree--session-removed)
 
 (defun ecc-worktree--relative (path root)
-  "Return PATH as the new checkout would name it, against ROOT.
+  "Return PATH as the new worktree would name it, against ROOT.
 A file under the repository keeps the relative name it had, which is
-the name it has in the checkout as well.  Anything else is named in
+the name it has in the worktree as well.  Anything else is named in
 full: a file outside the repository is the same file for both
 sessions."
   (let ((expanded (expand-file-name path))
@@ -543,7 +564,7 @@ conversation and knows what it touched, where its plans went and where
 its record is, and every one of those is a name the new session can
 open for itself.
 
-The uncommitted changes are named rather than carried: a checkout is
+The uncommitted changes are named rather than carried: a worktree is
 made from HEAD, so what has not been committed in the repository is not
 in the worktree, and a brief that leans on an edit that is not there
 sends the new session looking for it."
@@ -576,7 +597,7 @@ question open:\n- %s\n  Read it only then: it is the whole record, and \
 the brief above is meant to be enough." record)
             sections))
     (when (and dirty (not (string-empty-p dirty)))
-      (push (concat "Not in this worktree: the checkout was made from \
+      (push (concat "Not in this worktree: it was made from \
 HEAD, and these changes are uncommitted in "
                     (abbreviate-file-name root) ":\n"
                     (mapconcat (lambda (line) (concat "- " (string-trim line)))
@@ -594,7 +615,7 @@ the repository it came from; it is yours from here.
 
 %s"
   "What a delegated session is told, before the brief it was given.
-The arguments are the repository, the checkout, the branch, the session
+The arguments are the repository, the worktree, the branch, the session
 that handed the work over and the brief itself.  A session that was
 started for one piece of work is told where it is and who sent it: the
 transcript it came from is not there to be read, and a worktree looks
@@ -603,7 +624,7 @@ like the repository until git is asked.")
 (defun ecc-worktree-delegate (root branch brief &optional base)
   "Start a session on BRANCH in a worktree of ROOT and hand it BRIEF.
 Returns the session.  ROOT is any directory of the repository; the
-checkout is made beside its main worktree, under
+worktree is made beside the main one, under
 `ecc-worktree-directory\='.  BASE is what a branch that does not exist yet
 is made from, HEAD by default.
 
@@ -614,7 +635,7 @@ up.
 
 A branch that is checked out in another worktree already is refused
 rather than gone to, which is what `ecc-start-worktree\=' does when a
-person asked for it: two sessions in one checkout is not what handing a
+person asked for it: two sessions in one worktree is not what handing a
 piece of work over means, and the caller -- a model naming a branch of
 its own -- can name another one."
   (require 'ecc)
@@ -630,7 +651,7 @@ its own -- can name another one."
       (user-error "%s is checked out at %s already; name another branch"
                   branch (abbreviate-file-name
                           (ecc-worktree-entry-path held))))
-    ;; The facts are taken before the checkout is made, from the session
+    ;; The facts are taken before the worktree is made, from the session
     ;; that is handing the work over; `ecc-start' below makes another one
     ;; and `ecc-mcp-session' would then be the wrong answer to read.
     (let* ((from (ecc-worktree--delegating-session))
@@ -659,9 +680,9 @@ has the buffer it was run in."
 ;; The flow this is for: the user, in a session, asks for something to be
 ;; done in a worktree of its own.  Left alone the CLI runs `git worktree
 ;; add' and goes on working in the same session -- one conversation, two
-;; checkouts, and the transcript, the Space and `default-directory' all
+;; worktrees, and the transcript, the Space and `default-directory' all
 ;; still pointing at the repository.  The tool gives the model somewhere
-;; to put that request instead: Emacs makes the checkout, opens it as a
+;; to put that request instead: Emacs makes the worktree, opens it as a
 ;; Space of its own, starts a session in it and hands it the brief the
 ;; model wrote, and the model names the branch.
 
@@ -688,7 +709,7 @@ the answer names the session that has the work now."
   "Publish `start_worktree_session\=' to the model."
   (ecc-mcp-define-tool
    :name "start_worktree_session"
-   :description "Hand a piece of work to a second Claude session running in a git worktree of this project.  Emacs makes the checkout, opens it as a window of its own, starts a session there and gives it the brief.  Use this whenever the user asks for something to be done in a worktree, on a branch or in a session of its own, instead of running `git worktree add' yourself and carrying on here.  You choose the branch name, the way this repository names its branches.  The brief is the only thing the new session is told -- it cannot read this conversation -- so write it to stand on its own: what to do, why, the files and the decisions already made here, and what finished looks like.  Use it in place of `EnterWorktree' and of `git worktree add' in Bash: those leave one conversation working in two checkouts, and Emacs refuses them here.  The checkout is made from HEAD, so work that is not committed in this repository is not in it -- commit it first or say so in the brief.  When this returns, the work belongs to that session: report where it went and do not do it here as well."
+   :description "Hand a piece of work to a second Claude session running in a git worktree of this project.  Emacs makes the worktree, opens it as a window of its own, starts a session there and gives it the brief.  Use this whenever the user asks for something to be done in a worktree, on a branch or in a session of its own, instead of running `git worktree add' yourself and carrying on here.  You choose the branch name, the way this repository names its branches.  The brief is the only thing the new session is told -- it cannot read this conversation -- so write it to stand on its own: what to do, why, the files and the decisions already made here, and what finished looks like.  Use it in place of `EnterWorktree' and of `git worktree add' in Bash: those leave one conversation working in two worktrees, and Emacs refuses them here.  The worktree is made from HEAD, so work that is not committed in this repository is not in it -- commit it first or say so in the brief.  When this returns, the work belongs to that session: report where it went and do not do it here as well."
    :args '(("branch" "string" "The branch to make, named the way this repository names its branches" t)
            ("task" "string" "The whole brief for the new session, standing on its own without this conversation" t)
            ("base" "string" "The revision the branch is made from; HEAD by default"))
@@ -711,10 +732,10 @@ Nothing here may point the model at a tool it has not got."
 
 (defvar ecc-worktree-refusal-text
   "Emacs handles worktrees here: call start_worktree_session with the \
-branch and a brief that stands on its own, and it makes the checkout, \
+branch and a brief that stands on its own, and it makes the worktree, \
 starts a session in it and hands that session the brief.  Making the \
-checkout here instead leaves this one conversation working in two \
-checkouts, which is what the tool exists to avoid."
+worktree here instead leaves this one conversation working in two \
+worktrees, which is what the tool exists to avoid."
   "What the model is told when it tries to make a worktree itself.
 A sentence it can act on: a refusal that only says no is one the model
 works around, and the way around this one is the tool.")
@@ -755,7 +776,7 @@ Emacs saw no request whatever (2026-09-16).  There
 
 (defvar ecc-worktree-prompt-hint-text
   "\n(If this asks for work in a worktree of its own, hand it over with \
-start_worktree_session rather than making the checkout here.)"
+start_worktree_session rather than making the worktree here.)"
   "The line added to a draft that speaks of a worktree.
 A tool is offered to the model once, at the start of a session, among
 every other tool; this is the reminder at the moment it applies.  It is
@@ -793,7 +814,7 @@ sessions run in, which is why the line is worth its tokens."
 (defun ecc-worktree-context-root ()
   "Return the main worktree of the project a command should act in.
 A worktree of a worktree is not a thing, so a command run from a
-linked checkout means the repository it came from."
+linked worktree means the repository it came from."
   (let ((root (ecc-window-context-project-root)))
     (or (ecc-worktree-main root) root)))
 
@@ -830,16 +851,16 @@ The current one answers for itself when the command was run in one."
 ;;;###autoload
 (defun ecc-start-worktree (branch)
   "Check BRANCH out in a worktree of this project and start a session there.
-The branch may be one that exists or one to make.  Where the checkout
+The branch may be one that exists or one to make.  Where the worktree
 goes is `ecc-worktree-directory'."
   (interactive (list (ecc-worktree-read-branch (ecc-worktree-context-root))))
   (require 'ecc)
   (let* ((root (ecc-worktree-context-root))
          ;; git allows one branch in one worktree at a time, so asking
          ;; for a branch that is checked out already can only mean the
-         ;; checkout that has it -- the alternative being git's refusal,
+         ;; worktree that has it -- the alternative being git's refusal,
          ;; which is a dead end in front of the thing that was wanted.
-         ;; The name of that checkout need not be the one this package
+         ;; The name of that worktree need not be the one this package
          ;; would have given it: Claude Code's own worktrees turn a `/'
          ;; into a `+' where this turns it into a `-' (2026-09-14), so
          ;; the branch is what is asked about, not the directory.
@@ -885,9 +906,8 @@ Interactively, the worktrees of the project are offered."
 (defun ecc-remove-worktree (path)
   "Remove the worktree at PATH, stopping the sessions that work in it.
 Interactively, the worktree the command was run in, or one chosen from
-the worktrees of this project.  The checkout goes, its Space closes
-with it, and the branch it was on is offered afterwards rather than
-taken with it."
+the worktrees of this project.  The directory goes and its Space
+closes with it; the branch it was on is left where it is."
   (interactive (list (ecc-worktree-read-linked "Remove worktree: ")))
   (let ((sessions (ecc-worktree-sessions path)))
     (if sessions
@@ -896,7 +916,7 @@ taken with it."
                                      (if (= 1 (length sessions)) "" "s")
                                      (abbreviate-file-name path)))
           (user-error "Left alone"))
-      ;; Nothing is running there, but a checkout is still a directory
+      ;; Nothing is running there, but a worktree is still a directory
       ;; full of work.  git refuses one with uncommitted changes in it
       ;; and `ecc-worktree-remove' asks before insisting; this asks
       ;; before the command that has no other confirmation at all does
@@ -904,17 +924,16 @@ taken with it."
       (unless (yes-or-no-p (format "Remove the worktree %s? "
                                    (abbreviate-file-name path)))
         (user-error "Left alone")))
+    ;; `ecc-space--closing' both closes the Spaces quietly and keeps
+    ;; `ecc-worktree--session-removed' from offering what this command
+    ;; is about to do anyway.
     (when sessions
       (require 'ecc)
       (let ((ecc-space--closing t))
         (mapc #'ecc-kill sessions)))
-    ;; Read while the checkout is still there, and asked about once it
-    ;; is gone: a branch cannot be deleted while a worktree holds it.
-    (let ((main (ecc-worktree-main path))
-          (branch (ecc-worktree-branch path)))
-      (ecc-worktree--forget-space path)
-      (ecc-worktree-remove path)
-      (ecc-worktree--removed main path branch))))
+    (ecc-worktree--forget-space path)
+    (ecc-worktree-remove path)
+    (ecc-worktree--removed path)))
 
 (provide 'ecc-worktree)
 

@@ -536,7 +536,7 @@ repository still goes there."
                        (user-error "No Space on this line"))))
 
 (defun ecc-sidebar-remove-worktree ()
-  "Remove the checkout of the worktree Space at point."
+  "Remove the directory of the worktree Space at point."
   (interactive)
   (require 'ecc-worktree)
   (let ((space (or (ecc-sidebar--space-at-point)
@@ -553,9 +553,7 @@ repository still goes there."
   (let ((session (or (ecc-sidebar--session-at-point)
                      (user-error "No session on this line"))))
     (when (yes-or-no-p (format "Stop %s? " (ecc-session-name session)))
-      ;; Not `ecc-kill': stopping the last session of a worktree by hand
-      ;; is the moment to be asked whether the checkout goes too.
-      (ecc-worktree-kill-session session)
+      (ecc-kill session)
       (ecc-sidebar-redraw))))
 
 (defun ecc-sidebar--oldest-request ()

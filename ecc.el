@@ -403,28 +403,24 @@ off `ecc-session-exited-hook'."
 ;;;###autoload
 (defun ecc-kill (session)
   "Stop SESSION and forget it.
-Asked for by hand, it goes on to offer to undo the checkout when
-SESSION was the last one working in a worktree.  Called from Lisp it
-does not: `ecc-space-close' and `ecc-remove-worktree' stop several
-sessions in a row, and a function that sometimes deletes a directory
-is one nobody can call in a loop."
+Stopping the last session working in a worktree goes on to offer to
+remove the worktree, wherever the stopping came from: that offer hangs
+off `ecc-session-removed-hook' in `ecc-worktree.el' and is made from a
+timer, so nothing here waits for an answer.  A command stopping several
+sessions in a row binds `ecc-space--closing' and asks for the group
+itself."
   (interactive (list (or ecc-render--session
                          (car (ecc-model-sessions))
                          (user-error "No session to kill"))))
-  ;; Read before the session is stopped: stopping it forgets which
-  ;; project it was in, and there is nothing to ask about afterwards.
-  (let ((root (and (called-interactively-p 'any)
-                   (ecc-window-session-project session))))
-    (ecc-proc-stop session)
-    (ecc-model-remove-session session)
-    (ecc-window-forget-session session)
-    (ecc-image-cleanup-session session)
-    (dolist (buffer (list (ecc-session-buffer session)
-                          (ecc-session-stream-buffer session)))
-      (when (buffer-live-p buffer)
-        (kill-buffer buffer)))
-    (message "Stopped %s" (ecc-session-name session))
-    (when root (ecc-worktree-offer-removal root))))
+  (ecc-proc-stop session)
+  (ecc-model-remove-session session)
+  (ecc-window-forget-session session)
+  (ecc-image-cleanup-session session)
+  (dolist (buffer (list (ecc-session-buffer session)
+                        (ecc-session-stream-buffer session)))
+    (when (buffer-live-p buffer)
+      (kill-buffer buffer)))
+  (message "Stopped %s" (ecc-session-name session)))
 
 (provide 'ecc)
 
