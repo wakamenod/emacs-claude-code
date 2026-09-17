@@ -40,7 +40,7 @@ when BODY runs, and everything is put back afterwards."
           (ecc-window--project-source-buffers nil)
           (ecc-window--last-source-buffer nil)
           (ecc-worktree--cache (make-hash-table :test #'equal))
-          (ecc-space--tabs nil)
+          (ecc-sidebar-test--tabs-was (frame-parameter nil 'ecc-space-tabs))
           (ecc-space--used nil)
           (ecc-sidebar--collapsed nil)
           (ecc-sidebar-agents-sort 'spaces)
@@ -51,6 +51,9 @@ when BODY runs, and everything is put back afterwards."
                                :name (car entry) :project-root (cdr entry)))
                             ,spec)))
      (ignore sessions)
+     ;; Which tab a Space is in lives on the frame, so a fresh table is
+     ;; set rather than bound, and put back the way it was afterwards.
+     (set-frame-parameter nil 'ecc-space-tabs nil)
      (unwind-protect
          (cl-letf (((symbol-function 'project-current) (lambda (&rest _) nil))
                    ((symbol-function 'ecc-proc-send-json)
@@ -79,6 +82,7 @@ when BODY runs, and everything is put back afterwards."
              (unless (derived-mode-p 'ecc-sidebar-mode) (ecc-sidebar-mode))
              (ecc-sidebar-redraw)
              ,@body))
+       (set-frame-parameter nil 'ecc-space-tabs ecc-sidebar-test--tabs-was)
        (mapc #'ecc-test-cleanup-session sessions)
        (when-let* ((buffer (get-buffer ecc-sidebar-buffer-name)))
          (kill-buffer buffer)))))

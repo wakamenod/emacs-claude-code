@@ -208,8 +208,47 @@ to `ecc-space-list'."
 
 ;;;; The tabs underneath
 
-(defvar ecc-space--tabs nil
-  "Alist of a Space key to the name of the tab it lives in.")
+;; Which tab a Space lives in is kept on the frame, not in one table for
+;; the whole Emacs.  A tab belongs to a frame -- `tab-bar--tab-index-by-name\='
+;; finds one only on the frame that is selected -- so a table shared by every
+;; frame claimed a tab the frame in front could not see: `ecc-space-tab\='
+;; then forgot it, the Space opened a second tab here, and the frame it came
+;; from was left with one that nothing pointed at.  `ecc-space-close\=' run
+;; from the other frame stopped the sessions and left the tab standing
+;; (both verified on two frames, 2026-09-17).
+;;
+;; So a Space may have a tab on each frame, which is what it has always had
+;; on the screen; only the book-keeping has caught up.  `ecc-hidden-sessions\='
+;; and the zoom of `ecc-space-zoom\=' are kept the same way.
+
+(defun ecc-space--tabs (&optional frame)
+  "Return the alist of a Space key to the name of its tab on FRAME."
+  (frame-parameter frame 'ecc-space-tabs))
+
+(defun ecc-space--remember-tab (key name &optional frame)
+  "Remember that the Space KEY lives in the tab called NAME on FRAME."
+  (let ((tabs (ecc-space--tabs frame)))
+    (setf (alist-get key tabs nil nil #'equal) name)
+    (set-frame-parameter frame 'ecc-space-tabs tabs)))
+
+(defun ecc-space--drop-tab (key &optional frame)
+  "Forget which tab the Space KEY lives in on FRAME."
+  (let ((tabs (ecc-space--tabs frame)))
+    (setf (alist-get key tabs nil 'remove #'equal) nil)
+    (set-frame-parameter frame 'ecc-space-tabs tabs)))
+
+(defun ecc-space--close-tab-everywhere (key)
+  "Close the tab of the Space KEY on every frame that has one.
+A Space is closed on its own account, not on the frame\='s: its sessions
+are stopped wherever they were shown, and a tab left standing on
+another frame would hold a Space with nothing in it.  A sole tab is
+forgotten rather than closed, Emacs refusing to delete the last one."
+  (dolist (frame (frame-list))
+    (when-let* ((name (alist-get key (ecc-space--tabs frame) nil nil #'equal)))
+      (with-selected-frame frame
+        (when (and (ecc-space--tab-index name) (cdr (tab-bar-tabs)))
+          (ecc-space--quietly (tab-bar-close-tab-by-name name))))
+      (ecc-space--drop-tab key frame))))
 
 (defmacro ecc-space--quietly (&rest body)
   "Run BODY without the tab commands announcing themselves.
@@ -236,16 +275,15 @@ a Space has something of its own to say."
   "Return the Space keys that still have a tab, in the order of the alist."
   (delq nil (mapcar (lambda (entry)
                       (and (ecc-space--tab-index (cdr entry)) (car entry)))
-                    ecc-space--tabs)))
+                    (ecc-space--tabs))))
 
 (defun ecc-space-tab (space)
   "Return the name of the tab of SPACE, or nil.
 A tab the user closed is forgotten here rather than offered again."
-  (let ((name (alist-get (ecc-space-key space) ecc-space--tabs nil nil #'equal)))
+  (let ((name (alist-get (ecc-space-key space) (ecc-space--tabs)
+                         nil nil #'equal)))
     (cond ((ecc-space--tab-index name) name)
-          (name (setf (alist-get (ecc-space-key space) ecc-space--tabs
-                                 nil 'remove #'equal)
-                      nil)
+          (name (ecc-space--drop-tab (ecc-space-key space))
                 nil))))
 
 (defun ecc-space--unique-tab-name (base)
@@ -264,8 +302,8 @@ On `tab-bar-tab-pre-close-functions'.  Nothing is stopped: the sessions
 go on running with no window, which is what `ecc-toggle' and the
 sidebar bring back."
   (when-let* ((name (alist-get 'name tab))
-              (key (car (rassoc name ecc-space--tabs))))
-    (setf (alist-get key ecc-space--tabs nil 'remove #'equal) nil)))
+              (key (car (rassoc name (ecc-space--tabs)))))
+    (ecc-space--drop-tab key)))
 
 (add-hook 'tab-bar-tab-pre-close-functions #'ecc-space--forget-tab)
 
@@ -476,8 +514,7 @@ the bar can -- and this package has no opinion to force."
       (ecc-space--quietly
         (tab-bar-new-tab)
         (tab-bar-rename-tab name))
-      (setf (alist-get (ecc-space-key space) ecc-space--tabs nil nil #'equal)
-            name)
+      (ecc-space--remember-tab (ecc-space-key space) name)
       (ecc-space--lay-out space))
     (setf (alist-get (ecc-space-key space) ecc-space--used nil nil #'equal)
           (float-time))
@@ -490,7 +527,7 @@ Nil when the tab is not one of ours, which is what says that the user
 went somewhere this package has no opinion about."
   (when-let* ((tab (and (fboundp 'tab-bar--current-tab) (tab-bar--current-tab)))
               (name (alist-get 'name tab)))
-    (car (rassoc name ecc-space--tabs))))
+    (car (rassoc name (ecc-space--tabs)))))
 
 (defun ecc-space-current ()
   "Return the Space that is showing, or nil.
@@ -816,8 +853,7 @@ by itself."
   (let* ((spaces (ecc-space-list))
          (children (ecc-space-children space spaces))
          (group (cons space children))
-         (sessions (seq-mapcat #'ecc-space-sessions group))
-         (names (delq nil (mapcar #'ecc-space-tab group))))
+         (sessions (seq-mapcat #'ecc-space-sessions group)))
     (when sessions
       (unless (yes-or-no-p (format "Stop %d session%s of %s? "
                                    (length sessions)
@@ -828,10 +864,8 @@ by itself."
       (let ((ecc-space--closing t))
         (mapc #'ecc-kill sessions)))
     (let ((ecc-space--closing t))
-      (dolist (name names)
-        (when (ecc-space--tab-index name)
-          (ecc-space--quietly (tab-bar-close-tab-by-name name))))
       (dolist (one group)
+        (ecc-space--close-tab-everywhere (ecc-space-key one))
         (setq ecc-space--implicit
               (delete (ecc-space-key one) ecc-space--implicit))))
     (ecc-space--child-gone space)
@@ -863,12 +897,8 @@ The sessions are not touched: whoever removes a worktree stops them
 first.  A sole tab is forgotten rather than closed, Emacs refusing to
 delete the last one."
   (let* ((key (ecc-window-project-key root))
-         (name (alist-get key ecc-space--tabs nil nil #'equal))
          (space (ecc-space-of-root key)))
-    (when (and (ecc-space--tab-index name)
-               (cdr (tab-bar-tabs)))
-      (ecc-space--quietly (tab-bar-close-tab-by-name name)))
-    (setf (alist-get key ecc-space--tabs nil 'remove #'equal) nil)
+    (ecc-space--close-tab-everywhere key)
     (setf (alist-get key ecc-space--used nil 'remove #'equal) nil)
     (setq ecc-space--implicit (delete key ecc-space--implicit))
     ;; Asked while ROOT is still there: once the worktree is gone git
@@ -980,7 +1010,7 @@ project is what closes it.  On `kill-buffer-hook'."
              (not ecc-space--closing))
     (when-let* ((directory (ecc-window-buffer-directory (current-buffer)))
                 (key (ecc-window-project-key directory))
-                ((alist-get key ecc-space--tabs nil nil #'equal))
+                ((alist-get key (ecc-space--tabs) nil nil #'equal))
                 (space (ecc-space-of-root key))
                 ((null (ecc-space-sessions space)))
                 ((null (ecc-space--other-project-buffers key))))

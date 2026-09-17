@@ -57,7 +57,7 @@ project of its own and the Space tables are fresh."
           (ecc-window--project-source-buffers nil)
           (ecc-window--last-source-buffer nil)
           (ecc-worktree--cache (make-hash-table :test #'equal))
-          (ecc-space--tabs nil)
+          (ecc-space-test--tabs-was (frame-parameter nil 'ecc-space-tabs))
           (ecc-space--used nil)
           (ecc-space--implicit nil)
           (ecc-space--ensuring-parent nil)
@@ -67,11 +67,15 @@ project of its own and the Space tables are fresh."
                                :name (car entry) :project-root (cdr entry)))
                             ,spec)))
      (ignore sessions)
+     ;; Which tab a Space is in lives on the frame, so a fresh table is
+     ;; set rather than bound, and put back the way it was afterwards.
+     (set-frame-parameter nil 'ecc-space-tabs nil)
      (unwind-protect
          (cl-letf (((symbol-function 'project-current) (lambda (&rest _) nil))
                    ((symbol-function 'ecc-proc-send-json)
                     (lambda (_session object) object)))
            (ecc-space-test--with-git ,@body))
+       (set-frame-parameter nil 'ecc-space-tabs ecc-space-test--tabs-was)
        (mapc #'ecc-test-cleanup-session sessions))))
 
 (defun ecc-space-test--past-p (space)
@@ -197,7 +201,7 @@ sidebar would be changing the layout behind their back."
                  (lambda (root &rest _) (setq focused root))))
         (should-not (ecc-space-select (ecc-space-of-root ecc-space-test--one)))
         (should (equal focused ecc-space-test--one))
-        (should-not ecc-space--tabs)
+        (should-not (ecc-space--tabs))
         (should-not (bound-and-true-p tab-bar-mode))))
     ;; A Space with nothing running in it is shown rather than refused:
     ;; `ecc-focus-project' has no windows to deal out there.
@@ -296,6 +300,28 @@ words."
            (string-match-p
             "Added new tab\\|Renamed tab\\|Selected tab\\|Deleted tab"
             (buffer-substring-no-properties start (point-max)))))))))
+
+(ert-deftest ecc-space-test-the-tab-table-is-on-the-frame ()
+  "Which tab a Space is in is kept on the frame, and closing it clears it.
+A tab belongs to a frame, so a table for the whole Emacs said a Space
+had a tab that the frame in front could not see.  Batch cannot make a
+second frame; that the two frames keep their own tables, and that
+closing a Space takes its tab off both, was verified by hand on
+2026-09-17."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (let ((one (ecc-space-of-root ecc-space-test--one)))
+        (should-not (ecc-space--tabs))
+        (ecc-space-select one)
+        (should (equal (ecc-space--tabs)
+                       (frame-parameter nil 'ecc-space-tabs)))
+        (should (equal (alist-get ecc-space-test--one (ecc-space--tabs)
+                                  nil nil #'equal)
+                       "project-one"))
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                  ((symbol-function 'ecc-kill) #'ecc-model-remove-session))
+          (ecc-space-close one))
+        (should-not (ecc-space--tabs))))))
 
 (ert-deftest ecc-space-test-two-spaces-of-one-name ()
   "Two Spaces that would be called the same get tabs that are not."
@@ -996,7 +1022,7 @@ hang under; this is herdr's `ensure_source_parent_membership'."
                    (lambda (&optional root &rest _)
                      (push root ecc-space-test--started))))
           (ecc-space-select (ecc-space-of-root work))
-          (should-not ecc-space--tabs)
+          (should-not (ecc-space--tabs))
           (should-not ecc-space--implicit)
           (should-not ecc-space-test--started))))))
 
@@ -1012,7 +1038,7 @@ hang under; this is herdr's `ensure_source_parent_membership'."
       (should (equal (ecc-space-current-key) ecc-space-test--one))
       (ecc-model-remove-session (car sessions))
       (should-not (tab-bar--tab-index-by-name "project-one"))
-      (should-not (assoc ecc-space-test--one ecc-space--tabs))
+      (should-not (assoc ecc-space-test--one (ecc-space--tabs)))
       (should (equal (ecc-space-test--roots) (list ecc-space-test--two)))
       ;; The tab that closed was the one showing, so another Space is.
       (should (equal (ecc-space-current-key) ecc-space-test--two)))))
@@ -1103,7 +1129,7 @@ It goes when the last buffer of the project goes, and not before."
                                     "source.el" ecc-space-test--one)))
           (kill-buffer buffer))
         (should-not (tab-bar--tab-index-by-name "project-one"))
-        (should-not (assoc ecc-space-test--one ecc-space--tabs))))))
+        (should-not (assoc ecc-space-test--one (ecc-space--tabs)))))))
 
 (ert-deftest ecc-space-test-an-empty-space-starts-nothing-when-told-not-to ()
   "With `ecc-space-always-session' off, opening a Space starts nothing."
@@ -1148,7 +1174,7 @@ test below makes real ones."
         (should-not removed)
         (should-not (tab-bar--tab-index-by-name "project-one"))
         (should-not (tab-bar--tab-index-by-name "feat-x"))
-        (should-not ecc-space--tabs)))))
+        (should-not (ecc-space--tabs))))))
 
 (ert-deftest ecc-space-test-closing-a-worktree-leaves-the-repository ()
   "A worktree closed on its own is the only Space that closes."

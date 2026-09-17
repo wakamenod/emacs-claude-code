@@ -182,6 +182,15 @@ Verified against **Claude Code CLI 2.1.270**.
   worktree is a Space of its own, drawn under the repository it came from and
   named by its branch.
 
+  Which tab a Space lives in is kept on the frame it was opened on, so a
+  Space may have one on each. A tab belongs to a frame -- Emacs can only
+  find one by name on the frame that is selected -- and a table for the whole
+  Emacs said a Space had a tab that the frame in front could not see: the
+  record was dropped, a second tab opened here, and the frame it came from
+  was left with one nothing pointed at. Closing a Space now closes its tab on
+  every frame that has one, its sessions being stopped wherever they were
+  shown (verified on two frames, 2026-09-17).
+
   The bar itself is the user's. A tab is a named window arrangement of the
   frame and `tab-bar-mode` only draws the strip above it, so nothing here
   turns that mode on: `tab-bar-new-tab` does it where `tab-bar-show` is `t`,
