@@ -58,7 +58,7 @@ The tab line inside each session window is unchanged: it switches between the se
 | `C-c c j` | `ecc-focus-project` | The same thing for the project of this buffer |
 | `C-c c z` | `ecc-space-zoom` | Fill the tab with this window; the same key puts the windows back |
 | `C-c c V` | `ecc-window-focus-source` | Show this Space's source in the main window |
-| `C-c c ?` then `X` | `ecc-space-close` | Close this Space and stop what is running in it — with its worktrees, when it is a repository |
+| `C-c c ?` then `X` | `ecc-space-close` | Close this Space and stop what is running in it — with its worktrees, when it is a repository — then offer to remove the worktrees that closed |
 | — | `ecc-space-jump` | Go to the Nth Space, as numbered in the sidebar |
 
 Going to a session takes you to its Space, whichever command asked: `C-c c n`
@@ -73,7 +73,7 @@ The windows of a tab are yours, so nothing rearranges them behind your back. Tha
 
 Closing a repository's Space closes the worktrees drawn under it as well: they are one group on the screen and they close as one, after a single question naming everything that will stop. A worktree closed on its own leaves the repository where it is — and a repository that was only opened to hold a worktree goes when the last worktree under it does.
 
-Closing a Space does not touch the checkout of a worktree. Closing its tab by hand stops nothing: the sessions go on running with no window, and `C-c c w` (`ecc-toggle`) or the sidebar brings them back.
+Once the group is closed, the worktrees among it are **offered for removal in one question** naming them: their Spaces are gone and nothing is left running in them, which is the moment anybody is thinking about the directories. No leaves them where they are. Closing a tab by hand is different and stops nothing: the sessions go on running with no window, and `C-c c w` (`ecc-toggle`) or the sidebar brings them back.
 
 ## The sidebar
 
@@ -97,7 +97,7 @@ Agents
 · herdr                 idle
 ```
 
-The top half lists the Spaces: a mark for what the Space is doing — the loudest of its sessions wins — then the number the `1`-`9` keys take, then the name. Under a repository comes what git says: the branch, and how far it is from its upstream. A worktree hangs on a tree line under the repository it came from and is named by its branch, which is what tells two checkouts of one repository apart.
+The top half lists the Spaces: a mark for what the Space is doing — the loudest of its sessions wins — then the number the `1`-`9` keys take, then the name. Under a repository comes what git says: the branch, and how far it is from its upstream. A worktree hangs on a tree line under the repository it came from and is named by its branch, which is what tells two worktrees of one repository apart.
 
 A repository with worktrees carries `▾` at the right end of its row, `▸` once they are folded away; `TAB` or a click on the arrow turns it. A folded repository answers for its worktrees as well, so a mark still says that one of them is waiting for an answer.
 
@@ -112,7 +112,7 @@ The bottom half lists the sessions, each with its mark, its name and what it is 
 | `c` | Start a session in this Space |
 | `W` | Make a worktree of this Space and start a session there |
 | `x` | Close this Space |
-| `X` | Remove this worktree's checkout |
+| `X` | Remove this worktree's directory |
 | `k` | Stop this session |
 | `a`, `d` | Allow or deny what this session is waiting on |
 | `g` | Ask git again and redraw |
@@ -122,7 +122,7 @@ The bottom half lists the sessions, each with its mark, its name and what it is 
 
 ## Worktrees
 
-A git worktree is a second checkout of one repository on a branch of its own. It is how two sessions work on one project without either seeing the other's edits.
+A git worktree is a second working tree of one repository on a branch of its own. It is how two sessions work on one project without either seeing the other's edits.
 
 These commands work under both layouts.
 
@@ -130,30 +130,30 @@ These commands work under both layouts.
 |---|---|---|
 | `C-c c C` | `ecc-start-worktree` | Check a branch out beside the repository and start a session there |
 | `C-c c ?` then `E` | `ecc-start-in-worktree` | Start a session in a worktree that already exists |
-| `C-c c ?` then `M` | `ecc-remove-worktree` | Stop the sessions working in a checkout and undo it |
+| `C-c c ?` then `M` | `ecc-remove-worktree` | Stop the sessions working in a worktree and undo it |
 
 `ecc-start-worktree` asks for a branch, offering the branches that exist and filling nothing in. A branch that exists is checked out as it is; one that does not is created from `HEAD`.
 
-A branch that is **already checked out somewhere** is gone to rather than refused: one branch lives in one worktree at a time, so asking for it can only mean the checkout that has it. You are asked before the session starts there. The checkout need not be named the way ecc would have named it — Claude Code's own worktrees turn a `/` into a `+` where ecc turns it into a `-`, and the branch is what is looked up, not the directory.
+A branch that is **already checked out somewhere** is gone to rather than refused: one branch lives in one worktree at a time, so asking for it can only mean the worktree that has it. You are asked before the session starts there. The worktree need not be named the way ecc would have named it — Claude Code's own worktrees turn a `/` into a `+` where ecc turns it into a `-`, and the branch is what is looked up, not the directory.
 
-Where the checkout goes is [`ecc-worktree-directory`](/emacs-claude-code/reference/configuration/#ecc-worktree-directory), `.claude/worktrees` by default — a name relative to the repository, so a worktree of `feat/x` lands at `<repo>/.claude/worktrees/feat-x`. An absolute name is a directory every repository shares, and a checkout lands at `<directory>/<repository>/<branch-slug>`.
+Where the worktree goes is [`ecc-worktree-directory`](/emacs-claude-code/reference/configuration/#ecc-worktree-directory), `.claude/worktrees` by default — a name relative to the repository, so a worktree of `feat/x` lands at `<repo>/.claude/worktrees/feat-x`. An absolute name is a directory every repository shares, and a worktree lands at `<directory>/<repository>/<branch-slug>`.
 
-Stopping the **last** session working in a worktree offers to undo the checkout there and then -- from `ecc-kill`, the dashboard's `k`, the sidebar's `k`, or the tab's close button. Stopping one of two sessions working in the same checkout offers nothing: that is no reason to take the tree from the other. Buffers still visiting the checkout are counted in the question rather than closed.
+The **last** session working in a worktree leaving offers to undo the worktree there and then — however it left: `ecc-kill`, the dashboard's `k`, the sidebar's `k`, the tab's close button, or nothing you did at all. The question comes a moment after the session goes, because a session can leave from inside the process that was running it, and that is no place to be asked anything. Stopping one of two sessions working in the same worktree offers nothing: that is no reason to take the tree from the other. Buffers still visiting it are counted in the question rather than closed.
 
-**The branch is never deleted with the checkout on its own.** `ecc-remove-worktree` undoes a checkout; the work is on the branch. git refuses a checkout with changes that are not committed, and you are asked before it is forced.
+**No branch is ever deleted.** `ecc-remove-worktree` undoes a directory; the work is on the branch, and the branch stays — which is why removing a worktree can lose nothing that was committed, and why the question is safe to ask on its own. Deleting a branch is `git branch -d`, yours to run when you want it.
 
-Once the checkout is gone, **the branch is offered as a question of its own** — after `ecc-remove-worktree` and after the offer that follows the last session in a worktree. Yes runs `git branch -d`; a branch whose commits are on no other branch takes a second yes before `-D`. Nothing is asked about a detached checkout, which had no branch, or about a branch another worktree still holds, which git would refuse anyway.
+**A worktree git does not find clean takes a second yes.** git refuses to remove one with changes that are not committed or files it has never seen, and that refusal is put to you as a question of its own, naming the directory, before anything is forced.
 
 ## Handing work to a session in a worktree
 
-Ask, inside a session, for something to be done in a worktree — "cut a worktree and do X there" — and the CLI left to itself runs `git worktree add` and carries on in the same conversation: one session, two checkouts.
+Ask, inside a session, for something to be done in a worktree — "cut a worktree and do X there" — and the CLI left to itself runs `git worktree add` and carries on in the same conversation: one session, two worktrees.
 
-With the [Emacs MCP server](/emacs-claude-code/start/installation/) on (`ecc-mcp-enabled`), the model is offered a tool instead, `start_worktree_session`. It names the branch and writes the brief; Emacs makes the checkout, opens it as a Space, starts a session there and sends it that brief. The new session is told which repository it is in, which branch it is on and which session sent it, because it cannot read the conversation it came from. The session that asked reports where the work went and does not do it as well.
+With the [Emacs MCP server](/emacs-claude-code/start/installation/) on (`ecc-mcp-enabled`), the model is offered a tool instead, `start_worktree_session`. It names the branch and writes the brief; Emacs makes the worktree, opens it as a Space, starts a session there and sends it that brief. The new session is told which repository it is in, which branch it is on and which session sent it, because it cannot read the conversation it came from. The session that asked reports where the work went and does not do it as well.
 
-**What the new session is told.** The brief is the model's account of the work, and Emacs adds what it watched the same conversation do: the files it touched, by the name the new checkout has for them; the plans it wrote; the path of the recording, to read only if the brief leaves a question open; and the changes that are uncommitted in the repository. That last one matters — the checkout is made from `HEAD`, so uncommitted work is not in it. Commit it first, or say so in the brief.
+**What the new session is told.** The brief is the model's account of the work, and Emacs adds what it watched the same conversation do: the files it touched, by the name the new worktree has for them; the plans it wrote; the path of the recording, to read only if the brief leaves a question open; and the changes that are uncommitted in the repository. That last one matters — the worktree is made from `HEAD`, so uncommitted work is not in it. Commit it first, or say so in the brief.
 
-**The two other ways are turned back.** A model can reach a worktree through the CLI's own `EnterWorktree` or through `git worktree add` in Bash, and both leave one conversation working in two checkouts. When the session has the tool, Emacs refuses those requests with a sentence naming it, and nothing is put in front of you. Nothing is refused in a session without the tool — the MCP server off, or `start_worktree_session` in `ecc-mcp-excluded-tools` — and `ExitWorktree` is never touched. In an `auto` permission mode the CLI does not ask Emacs at all — it runs `git worktree add` and Emacs sees no request (measured against CLI 2.1.272) — so a draft of yours that says *worktree*, in English or Japanese, is sent with one line reminding the model of the tool. In that mode the line is the whole backstop. The line is sent but you did not write it, so the transcript does not put it in your own band: it is drawn under the prompt as a folded heading ("1 line Emacs added") that opens like any other.
+**The two other ways are turned back.** A model can reach a worktree through the CLI's own `EnterWorktree` or through `git worktree add` in Bash, and both leave one conversation working in two worktrees. When the session has the tool, Emacs refuses those requests with a sentence naming it, and nothing is put in front of you. Nothing is refused in a session without the tool — the MCP server off, or `start_worktree_session` in `ecc-mcp-excluded-tools` — and `ExitWorktree` is never touched. In an `auto` permission mode the CLI does not ask Emacs at all — it runs `git worktree add` and Emacs sees no request (measured against CLI 2.1.272) — so a draft of yours that says *worktree*, in English or Japanese, is sent with one line reminding the model of the tool. In that mode the line is the whole backstop. The line is sent but you did not write it, so the transcript does not put it in your own band: it is drawn under the prompt as a folded heading ("1 line Emacs added") that opens like any other.
 
-A branch another worktree already holds is refused rather than joined — two sessions in one checkout is not what handing work over means — and the model is told to name another one. `M-x` has no command for this; from Lisp it is `ecc-worktree-delegate`.
+A branch another worktree already holds is refused rather than joined — two sessions in one worktree is not what handing work over means — and the model is told to name another one. `M-x` has no command for this; from Lisp it is `ecc-worktree-delegate`.
 
 Under `spaces`, a session started in a worktree opens a Space of its own, under the repository it came from.

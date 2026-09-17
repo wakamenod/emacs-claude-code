@@ -382,6 +382,33 @@ Verified against **Claude Code CLI 2.1.270**.
 
 ### Changed
 
+- Removing a worktree is offered wherever the last session working in one
+  leaves, and not only where a person stopped it by hand.  The offer now hangs
+  off the session leaving the model rather than off a handful of commands, and
+  is made a moment later from a timer, a session being able to leave from
+  inside the process that was running it.  The commands that stop several
+  sessions in a row -- `ecc-space-close', `ecc-remove-worktree' -- say nothing
+  during the loop and ask for the group themselves afterwards.  Before this a
+  worktree whose session went any other way was left on disk with nothing
+  running in it.
+
+- `ecc-space-close' offers the worktrees that closed with the Space, in one
+  question naming them.  Closing a repository takes its worktrees with it, and
+  the directories used to stay behind with no Space and nothing running in
+  them; answering no still leaves them where they are.
+
+- A worktree git does not find clean takes a second question before it is
+  removed -- the refusal git gives, naming the directory -- and that is now
+  the whole of what stands between yes and the removal, the branch never being
+  touched.
+
+- The word for the directory is "worktree" everywhere the package speaks:
+  questions, messages, docstrings and both documentation sites.  git's own
+  noun is "working tree" and "checkout" is its verb; the package used
+  "checkout" for the directory in one place and "worktree" in the next, and a
+  question that says one thing and a table that says another is one word too
+  many.
+
 - `C-c c r` runs `ecc-resume` itself rather than opening `ecc-resume-menu`,
   and `C-u C-c c r` forks the conversation.  Resuming is the commonest thing
   reached from that key and it took two presses -- `C-c c r r` -- with the
@@ -448,6 +475,18 @@ Verified against **Claude Code CLI 2.1.270**.
   obsolete alias.
 
 ### Removed
+
+- The offer to delete the branch after a worktree is removed, and with it
+  `ecc-worktree-delete-branch' and `ecc-worktree-offer-branch-removal' -- the
+  only path in the package that reached `git branch -d', and on a second yes
+  `git branch -D'.  A worktree is a directory; the work is on the branch, and
+  the branch now always outlives it.  That is what makes an offer arriving on
+  its own safe: removing a worktree can lose nothing that was committed.
+  Deleting a branch is `git branch -d', by hand, when it is wanted.
+
+- `ecc-worktree-kill-session', which was `ecc-kill' followed by the offer.
+  The sidebar, the dashboard and the session tab's close button call `ecc-kill'
+  now; the offer follows on its own wherever a session goes.
 
 - `ecc-prompt-resend-last` and its `C-c C-r`, which sent the last prompt
   again after a yes-or-no question.  `C-c C-r` is now

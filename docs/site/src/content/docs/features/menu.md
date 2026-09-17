@@ -150,7 +150,7 @@ See [Prompt and transcript](/emacs-claude-code/features/prompt/).
 
 ## Spaces
 
-`J` goes to a Space, `B` opens the sidebar, `z` fills the tab with the window point is in and puts the windows back again, and `X` closes this Space and stops what is running in it. `C` makes a worktree and starts a session there, `E` starts one in a worktree that already exists, and `M` removes a checkout.
+`J` goes to a Space, `B` opens the sidebar, `z` fills the tab with the window point is in and puts the windows back again, and `X` closes this Space and stops what is running in it. `C` makes a worktree and starts a session there, `E` starts one in a worktree that already exists, and `M` removes a worktree.
 
 See [Spaces and worktrees](/emacs-claude-code/features/spaces/).
 

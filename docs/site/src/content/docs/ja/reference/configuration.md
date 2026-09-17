@@ -85,7 +85,7 @@ M-x customize-group RET ecc
 | `ecc-window-sub-height` | `0.33` | 3 つめのセッションウィンドウの高さ（比率または行数）。セッション列ではなく、フレームの主要領域（主にコードバッファ側）から分割して確保されます |
 | `ecc-tab-line-scope` | `'project` | セッションウィンドウのタブラインに表示するセッションの範囲。`'project` はそのウィンドウ自身のプロジェクトのセッションのみ、`'all` は Emacs で開いている全セッション |
 | `ecc-layout` | `'classic` | セッションウィンドウの配置方法。`'classic` はトランスクリプトを main / sub-1 / sub-2 の役割を持つサイドウィンドウに入れ、プロジェクト単位で役割を配り直します。`'spaces` はプロジェクトごとにタブバーのタブを割り当て、その中のウィンドウ配置には手を触れません。[Space と worktree](/emacs-claude-code/ja/features/spaces/) を参照 |
-| `ecc-worktree-directory` | `".claude/worktrees"` | `ecc-start-worktree` がチェックアウトを置く場所。相対パスはリポジトリからの相対、絶対パスは全リポジトリで共有するディレクトリで、`<directory>/<repository>/<branch-slug>` に置かれます |
+| `ecc-worktree-directory` | `".claude/worktrees"` | `ecc-start-worktree` が worktree を置く場所。相対パスはリポジトリからの相対、絶対パスは全リポジトリで共有するディレクトリで、`<directory>/<repository>/<branch-slug>` に置かれます |
 | `ecc-space-always-session` | `t` | `'spaces'` で、Space が常にセッションを 1 つ持つかどうか。非 nil なら何も動いていない Space を開いたときにセッションを起動し、最後のセッションがなくなった時点でその Space を閉じます。nil なら Space はソースだけで開き、そのプロジェクトの最後のバッファを kill するまで残ります |
 | `ecc-space-session-min-width` | `80` | `'spaces'` で、トランスクリプトの列をさらに分割するためにセッションウィンドウが必要とする桁数。これ以上の幅が取れない場合は、全てのトランスクリプトを狭くする代わりに、最も長く触られていないセッションのウィンドウを新しいセッションに渡します。`window-min-width` がこの値の下限です |
 
