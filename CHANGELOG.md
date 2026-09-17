@@ -70,7 +70,12 @@ Verified against **Claude Code CLI 2.1.274**.
   that line.  The images of a tool call are drawn inside its body, so a fold
   hides them with it, and after the result clip rather than through it, so a
   long result is not what decides whether a screenshot is seen; at most
-  `ecc-image-max-per-node` of them, the rest counted.  An image the CLI named
+  `ecc-image-max-per-node` of them, the rest counted.  A tool call that
+  brought one comes up open, whatever tool nodes do in general: a `Read` of a
+  `.png` and an MCP tool that answers with a screenshot are the two
+  commonest ways a picture arrives at all, and both drew a heading with the
+  picture behind the fold.  `TAB` folds it away again, and with
+  `ecc-image-inline` off there is nothing to open for.  An image the CLI named
   by URL is drawn as the URL and never fetched: the renderer does not go to
   the network.
 
@@ -185,6 +190,12 @@ Verified against **Claude Code CLI 2.1.274**.
   2026-09-14: `ANTHROPIC_MODEL=haiku` against a settings file naming `opus` ran
   haiku).
 
+  What the session was really started with is kept on it as it starts, and
+  that is what stands until the CLI names one.  Both answers can change under
+  a session that is already running -- a `model` written into the settings
+  files, an `ANTHROPIC_MODEL` bound around the start alone -- and working them
+  out again on every footer had it name a model the CLI was not running.
+
   The footer is drawn after every command and the answer lies in files, so the
   settings files are stat'ed and read again only when one has been written to.
   A remote project root is left out: its settings are on the other machine.
@@ -202,7 +213,9 @@ Verified against **Claude Code CLI 2.1.274**.
   user's to split, move and enlarge. A tab is a window arrangement, so going to
   another Space and back brings the whole of it back the way it was left. A
   worktree is a Space of its own, drawn under the repository it came from and
-  named by its branch.
+  named by its branch; a session started in one goes by that branch as well,
+  rather than by its directory, which is a slug of the branch and says
+  nothing more.
 
   Which tab a Space lives in is kept on the frame it was opened on, so a
   Space may have one on each. A tab belongs to a frame -- Emacs can only
@@ -400,8 +413,11 @@ Verified against **Claude Code CLI 2.1.274**.
   (measured against CLI 2.1.272, 2026-09-16) -- so a draft that says worktree,
   in English or Japanese, is sent with one line reminding the model of the tool,
   which in that mode is the whole backstop --
-  `ecc-prompt-prepare-functions`, which is where a module adds a word of its own
-  to a draft. That line is sent but not written by anybody, so the transcript
+  `ecc-prepare-prompt-functions`, which is where a module adds a word of its own
+  to a prompt.  Every way a prompt is sent runs it -- the prompt region,
+  `ecc-send` and its neighbours, and `ecc-inline-prompt` -- because a line
+  that is there to keep the CLI from doing the wrong thing is no backstop if
+  it is only on the prompts typed in the prompt region. That line is sent but not written by anybody, so the transcript
   does not draw it inside the user's own band: what a module adds is marked
   with `ecc-aside`, and the renderer parts it from the prompt and shows it
   under the band as a folded heading ("1 line Emacs added") that opens like

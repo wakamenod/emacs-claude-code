@@ -333,7 +333,7 @@ it too."
 
 ;;;###autoload (autoload 'ecc-worktree-menu "ecc-transient" nil t)
 (transient-define-prefix ecc-worktree-menu ()
-  "Check a branch out beside the repository, open a checkout, undo one.
+  "Check a branch out beside the repository, open a worktree, undo one.
 A prefix of its own rather than three keys in the Spaces column: they
 are the management of the worktrees rather than the working in them,
 done in a week what the four keys beside them are done in an hour, and

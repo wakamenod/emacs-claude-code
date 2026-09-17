@@ -51,7 +51,7 @@ faceはテキスト挿入時に適用されるため、`M-x customize` による
 
 以下のパッケージがインストールされている場合、機能が強化されます（未導入でも代替処理が行われ、エラーにはなりません）：
 
-- [ghostel](https://github.com/dakra/ghostel) — セッションをターミナルへ引き渡す機能
+- [ghostel](https://github.com/dakra/ghostel) — `ecc-tui-open` で引き渡したセッションのターミナルエミュレーター
 - [posframe](https://github.com/tumashu/posframe) — `/btw` や利用状況のポップアップ表示
 - [nerd-icons](https://github.com/rainstormstudio/nerd-icons.el) — ツールアイコンの表示
 - [markdown-mode](https://github.com/jrblevin/markdown-mode) — プランバッファおよびレビューバッファのメジャーモード
