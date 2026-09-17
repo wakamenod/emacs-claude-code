@@ -57,7 +57,7 @@ The tab line inside each session window is unchanged: it switches between the se
 | `C-c c j` | `ecc-space-goto` | Go to a Space, by name — including a project you have only recordings of |
 | `C-c c z` | `ecc-space-zoom` | Fill the tab with this window; the same key puts the windows back |
 | `C-c c V` | `ecc-space-reset-windows` | Put this Space back to the arrangement a new tab gets: the source on the left, the transcripts beside it |
-| `C-c c ?` then `X` | `ecc-space-close` | Close this Space and stop what is running in it — with its worktrees, when it is a repository — then offer to remove the worktrees that closed |
+| `C-c c ?` then `X` | `ecc-space-close` | Close this Space and stop everything running in it — along with its worktrees, if it is a repository — then offer to remove the worktrees that were closed |
 | — | `ecc-space-jump` | Go to the Nth Space, as numbered in the sidebar |
 
 Going to a session takes you to its Space, whichever command asked: `C-c c n`
@@ -72,7 +72,7 @@ The windows of a tab are yours, so nothing rearranges them behind your back. Tha
 
 Closing a repository's Space closes the worktrees drawn under it as well: they are one group on the screen and they close as one, after a single question naming everything that will stop. A worktree closed on its own leaves the repository where it is — and a repository that was only opened to hold a worktree goes when the last worktree under it does.
 
-Once the group is closed, the worktrees among it are **offered for removal in one question** naming them: their Spaces are gone and nothing is left running in them, which is the moment anybody is thinking about the directories. No leaves them where they are. Closing a tab by hand is different and stops nothing: the sessions go on running with no window, and the sidebar or `C-c c V` brings them back.
+Once the group is closed, the worktrees in it are **offered for removal in one question** naming them: their Spaces are gone and nothing is left running in them, which is when you are likely thinking about the directories. Answering no leaves them where they are. Closing a tab by hand is different and stops nothing: the sessions keep running without a window, and the sidebar or `C-c c V` brings them back.
 
 ### The bar itself is yours
 
@@ -149,11 +149,11 @@ A branch that is **already checked out somewhere** is gone to rather than refuse
 
 Where the worktree goes is [`ecc-worktree-directory`](/emacs-claude-code/reference/configuration/#ecc-worktree-directory), `.claude/worktrees` by default — a name relative to the repository, so a worktree of `feat/x` lands at `<repo>/.claude/worktrees/feat-x`. An absolute name is a directory every repository shares, and a worktree lands at `<directory>/<repository>/<branch-slug>`.
 
-The **last** session working in a worktree leaving offers to undo the worktree there and then — however it left: `ecc-kill`, the dashboard's `k`, the sidebar's `k`, the tab's close button, or nothing you did at all. The question comes a moment after the session goes, because a session can leave from inside the process that was running it, and that is no place to be asked anything. Stopping one of two sessions working in the same worktree offers nothing: that is no reason to take the tree from the other. Buffers still visiting it are counted in the question rather than closed.
+When the **last** session working in a worktree goes, ecc offers to remove the worktree then and there — however it went: `ecc-kill`, the dashboard's `k`, the sidebar's `k`, the tab's close button, or nothing you did at all. The question comes a moment after the session goes, because a session can go from inside the process that was running it, and that is no place to be asked anything. Stopping one of two sessions working in the same worktree does not offer to remove it: there is no reason to take the worktree from the other. Buffers still visiting the worktree are counted in the question rather than closed.
 
-**No branch is ever deleted.** `ecc-remove-worktree` undoes a directory; the work is on the branch, and the branch stays — which is why removing a worktree can lose nothing that was committed, and why the question is safe to ask on its own. Deleting a branch is `git branch -d`, yours to run when you want it.
+**No branch is ever deleted.** `ecc-remove-worktree` removes a directory; the work is on the branch, and the branch stays — which is why removing a worktree cannot lose anything that was committed, and why the question is safe to ask on its own. Deleting a branch is done with `git branch -d`, which you can run whenever you want.
 
-**A worktree git does not find clean takes a second yes.** git refuses to remove one with changes that are not committed or files it has never seen, and that refusal is put to you as a question of its own, naming the directory, before anything is forced.
+**A worktree that git does not find clean requires a second yes.** git refuses to remove a worktree with uncommitted changes or untracked files, and that refusal is presented as its own question, naming the directory, before anything is forced.
 
 ## Handing work to a session in a worktree
 
