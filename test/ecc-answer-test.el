@@ -123,7 +123,8 @@ The request of A is a Bash call and older; the one of B is a Write."
   ;; And the entry points used often enough to be worth a key of their
   ;; own, spelled as `ecc-menu\=' spells them.
   (should (eq (lookup-key ecc-global-map (kbd "c")) #'ecc-start))
-  (should (eq (lookup-key ecc-global-map (kbd "r")) #'ecc-resume-menu))
+  ;; With the one exception `ecc-menu' keeps a menu for: r resumes.
+  (should (eq (lookup-key ecc-global-map (kbd "r")) #'ecc-resume))
   (should (eq (lookup-key ecc-global-map (kbd "R")) #'ecc-rename-session))
   (should (eq (lookup-key ecc-global-map (kbd "v")) #'ecc-show-session))
   (should (eq (lookup-key ecc-global-map (kbd "i")) #'ecc-interrupt))

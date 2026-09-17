@@ -105,13 +105,20 @@ of their own instead, reached by the key the command had in `ecc-menu\='."
   "Every key of `ecc-global-map' runs the same command in `ecc-menu'.
 One letter carries one meaning wherever it is pressed, so a command
 reachable both ways is reachable by the same key both ways.  `?' is the
-exception: it opens the menu, so the menu cannot hold it."
-  (let ((menu (ecc-transient-test--menu-keys)))
+exception: it opens the menu, so the menu cannot hold it.
+
+The table below is the other kind of exception: the same meaning in a
+different form.  `ecc-resume' from a key takes the fork in its prefix
+argument, where a menu would have nothing to show; `ecc-resume-menu'
+shows the switch before it is pressed, which is worth one place."
+  (let ((menu (ecc-transient-test--menu-keys))
+        (aliases '((ecc-resume . ecc-resume-menu))))
     (map-keymap
      (lambda (event command)
        (let ((key (key-description (vector event))))
          (unless (eq command 'ecc-menu)
-           (should (eq command (cdr (assoc key menu)))))))
+           (should (eq (or (alist-get command aliases) command)
+                       (cdr (assoc key menu)))))))
      ecc-global-map)))
 
 (ert-deftest ecc-transient-test-menu-loads-the-package ()

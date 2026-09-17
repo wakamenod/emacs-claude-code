@@ -482,6 +482,38 @@ of its own looks like."
                    (ecc-protocol-history-prompt
                     '((type . "user") (message . ((role . "user") (content . "hello")))))))))
 
+(ert-deftest ecc-protocol-test-task-notification-is-not-a-prompt ()
+  "A notice the CLI injected about a background task opens no turn."
+  (let* ((text (concat "<task-notification>\n"
+                       "  <task-id>bash_7</task-id>\n"
+                       "  <status>stopped</status>\n"
+                       "  <summary>Background shell command didn\u2019t finish"
+                       " before the previous session ended</summary>\n"
+                       "</task-notification>"))
+         (line (lambda (origin content)
+                 (append '((type . "user"))
+                         (when origin `((origin . ((kind . ,origin)))))
+                         `((message . ((role . "user") (content . ,content))))))))
+    (should (equal (ecc-protocol-origin-kind (funcall line "task-notification" text))
+                   "task-notification"))
+    (should-not (ecc-protocol-origin-kind (funcall line nil text)))
+    (should (ecc-protocol-injected-p (funcall line "task-notification" "hello")))
+    (should-not (ecc-protocol-injected-p (funcall line "human" "hello")))
+    (should-not (ecc-protocol-injected-p (funcall line nil "hello")))
+    (should (ecc-protocol-task-notification-p text))
+    (should-not (ecc-protocol-task-notification-p "about <task-notification>"))
+    (should (equal (ecc-protocol-task-notification-summary text)
+                   "Background shell command didn\u2019t finish before the previous session ended"))
+    ;; The origin says it, and so does the text of a recording written
+    ;; before the CLI had the field.
+    (should-not (ecc-protocol-history-prompt (funcall line "task-notification" text)))
+    (should-not (ecc-protocol-history-prompt (funcall line nil text)))
+    (should-not (ecc-protocol-history-prompt (funcall line "task-notification" "hello")))
+    ;; What somebody typed is still a prompt, whether or not the CLI
+    ;; that recorded it named the origin.
+    (should (equal "hello" (ecc-protocol-history-prompt (funcall line "human" "hello"))))
+    (should (equal "hello" (ecc-protocol-history-prompt (funcall line nil "hello"))))))
+
 (ert-deftest ecc-protocol-test-value-string-is-text-not-bytes ()
   "A serialized value reads as text: `json-serialize' answers in bytes."
   (let ((value (ecc--json-read "[{\"question\":\"ツール行\"}]")))

@@ -36,7 +36,7 @@ Lists conversations available to resume.
 | ◉ | Active conversation running in another process |
 | ↺ | Recorded conversation on disk |
 
-Each entry shows its name, last active time, and directory (or initial prompt for recordings). Use the `-f` switch to branch a new conversation from the selected one instead of continuing it.
+Each entry shows its name, last active time, and directory (or initial prompt for recordings). Use the `-f` switch to branch a new conversation from the selected one instead of continuing it. From a key, `C-c c r` resumes directly and `C-u C-c c r` does the same branching.
 
 :::caution[Resuming an active session branches history]
 If two processes write to the same session ID simultaneously, the recording can become corrupted since the CLI does not use file locking. This state is indicated by ◉; ecc asks for confirmation before resuming.

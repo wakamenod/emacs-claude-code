@@ -382,6 +382,14 @@ Verified against **Claude Code CLI 2.1.270**.
 
 ### Changed
 
+- `C-c c r` runs `ecc-resume` itself rather than opening `ecc-resume-menu`,
+  and `C-u C-c c r` forks the conversation.  Resuming is the commonest thing
+  reached from that key and it took two presses -- `C-c c r r` -- with the
+  menu in between showing a `-f` switch almost nobody was there for.  The
+  menu keeps its form: `r` in `ecc-menu` still opens `ecc-resume-menu`, where
+  the fork is a switch seen before it is pressed, which is what a fork is
+  worth.  From the key, the prompt says `Fork: ` instead of `Resume: ` when
+  the prefix argument is there, so the choice is visible where it is made.
 - The Spaces half of the sidebar is laid out the way herdr lays its own out.
   The mark that says what a Space is doing opens the row, the number the
   `1`-`9` keys take follows it in brackets, and a worktree hangs on a tree
@@ -448,6 +456,27 @@ Verified against **Claude Code CLI 2.1.270**.
   is the two keys that did exactly what the command did.
 
 ### Fixed
+
+- A notice the CLI wrote itself is no longer drawn as a prompt the user
+  typed. A CLI that resumes a session whose previous process left a
+  background task behind injects a `<task-notification>` into the
+  conversation as a plain `user` message -- no `isMeta`, not a sidechain,
+  not the record of a local command -- so the round trip of `t` and `/exit`
+  came back with `〉 <task-notification>...` at the head of a turn of its
+  own (confirmed 2026-09-17 against CLI 2.1.271 from the terminal and
+  2.1.273 from a stream-json client).
+
+  What tells such a message apart is `origin.kind`: `human` for what
+  somebody typed, and the name of the injection otherwise. A message whose
+  origin is not `human`, or whose text begins `<task-notification>` in a
+  recording written before the CLI had the field, is now no prompt
+  anywhere -- not in the transcript, nor as a session's last prompt in the
+  resume list and the dashboard, nor in the paging index, nor in the
+  search. It is kept as a folded system note headed `background task --
+  <summary>`, with the notice itself under the fold; it opens no turn, the
+  way an unrecognised message does not, since a notice can arrive between
+  turns. The live stream agrees: an echoed notification is not taken for a
+  prompt from elsewhere.
 
 - A session stays in the directory it was started in. It used to follow the
   cwd the CLI reports on every `system/init`, which the docstring explained

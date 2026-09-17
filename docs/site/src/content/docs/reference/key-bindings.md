@@ -20,7 +20,7 @@ Or, without `use-package`:
 
 | Key | Action |
 |---|---|
-| `c` / `r` / `R` | Start session / resume / rename |
+| `c` / `r` / `R` | Start session / resume (`C-u r` to fork the conversation) / rename |
 | `v` / `i` / `t` | Focus prompt / interrupt turn / hand over to terminal |
 | `j` / `w` | Focus one project / hide or restore its session windows (`C-u w` for every project) |
 | `V` | Show this project's source in the main window (`C-u V` asks which buffer) |

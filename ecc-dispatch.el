@@ -543,11 +543,19 @@ somewhere else -- a phone on the Remote Control bridge -- and is the
 prompt of the turn about to run (`ecc-dispatch--remote-prompt\=').  A
 text message under a parent_tool_use_id is the prompt a subagent was
 started with."
-  (if (ecc-protocol-replay-p message)
-      (let ((content (alist-get 'content (alist-get 'message message))))
-        (setf (alist-get 'replayed (ecc-session-progress session)) content)
-        (unless (ecc-proc-take-sent-echo session content)
-          (ecc-dispatch--remote-prompt session message content)))
+  (cond
+   ((ecc-protocol-replay-p message)
+    (let ((content (alist-get 'content (alist-get 'message message))))
+      (setf (alist-get 'replayed (ecc-session-progress session)) content)
+      (unless (ecc-proc-take-sent-echo session content)
+        (ecc-dispatch--remote-prompt session message content))))
+   ;; A notice the CLI injected about background tasks left over from a
+   ;; previous process is not a prompt, and must not open a turn either:
+   ;; it can arrive between turns, and a turn nothing would close leaves
+   ;; the session busy for good, which is the rule
+   ;; `ecc-dispatch--unknown' keeps for the same reason.
+   ((ecc-dispatch--task-notice session message))
+   (t
     (let ((parent (ecc-dispatch--parent session message
                                         (ecc-model-ensure-turn session))))
       (dolist (block (ecc-protocol-content-blocks message))
@@ -579,7 +587,29 @@ started with."
                                :data (ecc-dispatch--image-data session block 'user)))
           (_ (ecc-model-add-node session :type 'unknown :status 'done
                                  :parent parent
-                                 :data (list (cons 'block block)))))))))
+                                 :data (list (cons 'block block))))))))))
+
+(defun ecc-dispatch--task-notice (session message)
+  "Keep MESSAGE as a folded note of SESSION when it is a task notice, else nil.
+The CLI writes it into the conversation itself when it resumes a
+session whose previous process left a background task behind
+(2026-09-17).  It answers nothing, so it goes beside the conversation
+rather than into a turn, and its `<summary>\=' is what the fold shows."
+  (let ((text (ecc-protocol-history-text message)))
+    (when (and text
+               (or (ecc-protocol-injected-p message)
+                   (ecc-protocol-task-notification-p text)))
+      (ecc-log (ecc-session-name session) "task notice: %s"
+               (ecc--truncate (or (ecc-protocol-task-notification-summary text)
+                                  (ecc-protocol-origin-kind message) "?")
+                              60))
+      (ecc-model-add-aside session :type 'system :status 'done
+                           :data (list (cons 'kind 'task-notice)
+                                       (cons 'summary
+                                             (ecc-protocol-task-notification-summary
+                                              text))
+                                       (cons 'text text)))
+      t)))
 
 (defun ecc-dispatch--remote-prompt (session message content)
   "Show CONTENT of MESSAGE as a prompt of SESSION that Emacs did not send.
@@ -590,14 +620,16 @@ way `ecc-proc-send-user\=' would have; a turn already opened by an
 answer that arrived first takes the text as its prompt instead.
 
 Synthetic messages are left alone: the CLI writes those into the
-conversation itself (a system reminder, the record of a local command)
+conversation itself (a system reminder, the record of a local command,
+the notice about a background task left over from a previous process)
 and they are not anybody\='s prompt."
   (unless (or (ecc--json-true-p (alist-get 'isSynthetic message))
               (not (stringp content))
               (string-empty-p (string-trim content))
               (ecc-protocol-command-caveat-p content)
               (ecc-protocol-parse-command content)
-              (ecc-protocol-command-output content))
+              (ecc-protocol-command-output content)
+              (ecc-protocol-task-notification-p content))
     (ecc-log (ecc-session-name session) "prompt from elsewhere: %s"
              (ecc--truncate content 60))
     (let ((turn (or (ecc-session-current-turn session)

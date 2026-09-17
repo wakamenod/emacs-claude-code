@@ -43,6 +43,17 @@ not before: each run killed every `demo/demo.el` on the machine at
 startup and at exit, and all three recordings of 2026-09-17 destroyed
 each other.
 
+## A scene with more than one frame
+
+Only the demo frame is recorded, so anything a scene puts in a **frame
+of its own** is not in the picture. The one this affects is
+`review-ediff-help`: on a graphical Emacs the ediff control panel is a
+frame, and `demo-place-panel` used to put it above the demo frame where
+the screen crop would catch it. A scene that wants a panel on camera
+should keep it inside the frame instead — for ediff, that is
+`(setq ediff-window-setup-function #'ediff-setup-windows-plain)` in
+`demo-scene-build`, which makes the panel a window like any other.
+
 ## Writing a scene
 
 A scene is two files:
@@ -100,12 +111,15 @@ behind it leaves `ecc-window-context-project-root` on
 `default-directory` — the checkout the demo Emacs was started from,
 which is **the real repository**. `demo.el` points that at `demo-root`
 now, and a scene that asks for a worktree should check the root it
-resolved before it lets git near it: a run of the Spaces scene cut two
-worktrees in the actual repository before anybody noticed (2026-09-17).
+resolved before it lets git near it: a scene that asked for a worktree
+cut two of them in the actual repository before anybody noticed
+(2026-09-17).
 
 The recorder prints the ecc it loaded before it starts — check it is the
 checkout you meant. A scene that hangs spoils the seconds it was given
-and nothing else; `emacsclient -s ecc-demo -e '(...)'` reaches the demo
-Emacs while it runs, and the recorder kills it when it is done.
+and nothing else; `emacsclient -s ecc-demo-<checkout>-<scene> -e '(...)'`
+reaches the demo Emacs while it runs — everything a run owns is named
+after the checkout and the scene, so two worktrees can record at the same
+time — and the recorder kills it when it is done.
 
 The mp4s are not committed. `demo/*.mp4` is ignored.

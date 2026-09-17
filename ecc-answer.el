@@ -34,7 +34,7 @@
 (declare-function ecc-history-open "ecc-history" (session-id))
 (declare-function ecc-interrupt "ecc-transient" ())
 (declare-function ecc-menu "ecc-transient" ())
-(declare-function ecc-resume-menu "ecc-transient" ())
+(declare-function ecc-resume "ecc" (session &optional fork))
 (declare-function ecc-review "ecc-review" (&optional session paths))
 (declare-function ecc-review-worktree "ecc-review" (&optional session range root))
 (declare-function ecc-search "ecc-search" (query &optional everywhere))
@@ -207,7 +207,11 @@ question buffer opens with the first one answered."
   (let ((map (make-sparse-keymap)))
     ;; The session.
     (define-key map (kbd "c") #'ecc-start)
-    (define-key map (kbd "r") #'ecc-resume-menu)
+    ;; Resume itself rather than the menu in front of it: it is the
+    ;; commonest thing done here, and `C-u' is the fork.  `ecc-menu'
+    ;; keeps `ecc-resume-menu' under r, because the fork is worth one
+    ;; form where it is seen before it is pressed.
+    (define-key map (kbd "r") #'ecc-resume)
     (define-key map (kbd "R") #'ecc-rename-session)
     (define-key map (kbd "v") #'ecc-show-session)
     (define-key map (kbd "j") #'ecc-focus-project)
@@ -270,7 +274,10 @@ before ecc is loaded.
 
 Every key here means in `ecc-menu' what it means here, so that one letter
 carries one meaning wherever it is pressed; `?' opens that menu, which is
-the only way to reach it from a buffer that is not a session.")
+the only way to reach it from a buffer that is not a session.  `r' is the
+one key whose command differs: here it resumes at once, with the fork in
+the prefix argument, while in the menu it opens `ecc-resume-menu', where
+the fork is a switch.  The meaning is the same; only the form differs.")
 
 (fset 'ecc-global-map ecc-global-map)
 

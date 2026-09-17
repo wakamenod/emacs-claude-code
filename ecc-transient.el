@@ -310,7 +310,9 @@ allow and deny there, when only this one command looks at it."
 Forking is a switch rather than a prefix argument because it is the
 choice worth seeing before it is made: a second process on a live
 session forks the conversation with no lock to stop it.  The switch
-lives in `ecc-resume-menu\=', which opening this way always shows."
+lives in `ecc-resume-menu\=', which opening this way always shows.  From
+a key it is `C-c c r\=', which runs `ecc-resume\=' itself, and the fork is
+the prefix argument."
   :description "Resume"
   (interactive (list (ecc-read-session "Resume: ")
                      (transient-args 'ecc-resume-menu)))
