@@ -416,10 +416,12 @@ Verified against **Claude Code CLI 2.1.274**.
   upstream it is -- and the answers are kept for ten seconds, so that whatever
   asks on every redraw costs no process.
 
-- A `Spaces` column in `ecc-menu`, and four keys in `ecc-global-map`: `J` for a
-  Space, `B` for the sidebar, `z` for the zoom and `C` for a new worktree, each
-  the capital of the lower-case key of the nearest thing -- `j` focuses a
-  project, `b` opens the dashboard, `c` starts a session here.
+- A `Spaces` column in `ecc-menu`, and four keys in `ecc-global-map`: `j` goes
+  to a Space, `b` opens the sidebar, `z` zooms the window point is in and `V`
+  puts the tab back in order.  They have the lower-case keys because the Spaces
+  are where the day is spent; what each of those keys meant before is under
+  **Changed**.  Nothing here makes or removes a worktree -- the three commands
+  that do are `ecc-worktree-menu`, under `?` then `W`.
 
 ### Changed
 
