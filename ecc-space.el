@@ -418,7 +418,7 @@ refusing is no answer to somebody who asked to be taken there."
   (let ((root (ecc-space-root space)))
     (if (ecc-window-project-sessions root)
         (ecc-focus-project root)
-      (ecc-window-focus-source root))
+      (ecc-window--focus-source root))
     (setf (alist-get (ecc-space-key space) ecc-space--used nil nil #'equal)
           (float-time))
     nil))

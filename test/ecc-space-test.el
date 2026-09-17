@@ -208,7 +208,7 @@ sidebar would be changing the layout behind their back."
     (let ((ecc-layout 'classic)
           (ecc-space-test--started nil)
           (shown nil))
-      (cl-letf (((symbol-function 'ecc-window-focus-source)
+      (cl-letf (((symbol-function 'ecc-window--focus-source)
                  (lambda (root &rest _) (setq shown root)))
                 ((symbol-function 'ecc-start)
                  (lambda (&optional root &rest _)
@@ -654,7 +654,7 @@ nothing brought that window back on its own (reported 2026-09-16)."
 
 (ert-deftest ecc-space-test-a-tab-that-has-a-source-window-is-left-alone ()
   "A window pointed at another project is the user\='s doing and stays.
-`ecc-window-focus-source\=' is the way back, and it is a command with a
+`ecc-space-reset-windows\=' is the way back, and it is a command with a
 key of its own for that reason; going to the Space is not."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
                                    ("two" . ,ecc-space-test--two))
@@ -674,12 +674,14 @@ key of its own for that reason; going to the Space is not."
           (should (= before (length (window-list nil 'no-minibuffer))))
           (kill-buffer stranger))))))
 
-(ert-deftest ecc-space-test-focus-source-puts-the-code-of-this-space-back ()
-  "`ecc-window-focus-source\=' is the way back, and it asks the Space first.
-Everywhere else the project is read off the buffer in front of the
-user.  Here that buffer is the very thing being complained about -- a
-window of this tab showing another project -- so the Space showing is
-what the command means by \"this project\"."
+(ert-deftest ecc-space-test-the-source-of-a-space-can-be-put-back ()
+  "`ecc-window--focus-source\=' puts the code of the root it is given back.
+The half of focusing a project that `ecc-focus-project\=' and the
+`classic\=' side of `ecc-space-select\=' are built on.  It takes the root
+rather than working one out: the buffer in front of the user is the
+very thing being complained about -- a window of this tab showing
+another project -- and reading the project off it would answer with the
+project being asked about."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
                                    ("two" . ,ecc-space-test--two))
     (ecc-space-test--with-tab-bar
@@ -692,13 +694,15 @@ what the command means by \"this project\"."
           (setq buffer-file-name (expand-file-name "code.el" ecc-space-test--one)))
         (with-current-buffer stranger
           (setq buffer-file-name (expand-file-name "other.el" ecc-space-test--two)))
-        (should (commandp 'ecc-window-focus-source))
+        ;; Not a command any more: `C-c c V' is `ecc-space-reset-windows',
+        ;; which puts the whole arrangement back rather than this window.
+        (should-not (commandp 'ecc-window--focus-source))
         (ecc-space-select one)
         (set-window-buffer (ecc-space--source-window) stranger)
-        ;; Run from the window that holds the stranger, the way the user
-        ;; would be sitting in it.
+        ;; Called from the window that holds the stranger, the way
+        ;; `ecc-focus-project' calls it.
         (with-current-buffer stranger
-          (call-interactively #'ecc-window-focus-source))
+          (ecc-window--focus-source ecc-space-test--one))
         (should (eq (window-buffer (ecc-space--source-window)) code))
         (dolist (buffer (list code stranger))
           (with-current-buffer buffer (set-buffer-modified-p nil))
@@ -1169,7 +1173,7 @@ hang under; this is herdr's `ensure_source_parent_membership'."
     (ecc-space-test--with-worktrees repo work
       (let ((ecc-layout 'classic)
             (ecc-space-test--started nil))
-        (cl-letf (((symbol-function 'ecc-window-focus-source) #'ignore)
+        (cl-letf (((symbol-function 'ecc-window--focus-source) #'ignore)
                   ((symbol-function 'ecc-focus-project) #'ignore)
                   ((symbol-function 'ecc-start)
                    (lambda (&optional root &rest _)

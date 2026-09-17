@@ -745,32 +745,23 @@ above the two."
                                    nil t nil nil
                                    (buffer-name (car buffers)))))))
 
-;;;###autoload
-(defun ecc-window-focus-source (root &optional choose)
+(defun ecc-window--focus-source (root &optional choose)
   "Show the source of the project ROOT in the main window, and select it.
-CHOOSE, a prefix argument interactively, asks which buffer rather than
-taking the likeliest.  A project with no buffer open is listed instead:
-a directory is a fair answer to where the source is, and it is somewhere
-to start reading.
+CHOOSE asks which buffer rather than taking the likeliest.  A project
+with no buffer open is listed instead: a directory is a fair answer to
+where the source is, and it is somewhere to start reading.
 
-Interactively ROOT is the Space showing, and the project of the buffer
-being worked in where there are no Spaces.  This is the way to put the
-code back in front of you when the window that held it went somewhere
-else: the windows of a Space are the user\='s, so nothing moves them on
-its own, and `ecc-focus-project\' there only goes to the tab.  The Space
-comes first here, unlike everywhere else -- a window of this tab
-showing another project\='s file is the case the command is for, and
-reading the project off that file would answer with the very project
-being asked about.
+The half of focusing a project that puts the code in front of you, for
+`ecc-focus-project\=' and for the `classic\=' side of `ecc-space-select\='.
+It was a command of its own on `C-c c V' until the Spaces took that key
+for `ecc-space-reset-windows\=', which puts back the whole arrangement
+rather than this one window.
 
 Selecting the window is not a flourish.  Every command that takes no
-prefix argument -- `ecc-toggle', `ecc-start', `ecc-next-attention-in-project',
-`ecc-window-resolve-session' -- reads the project off the current
+prefix argument -- `ecc-start\=', `ecc-next-attention-in-project\=',
+`ecc-window-resolve-session\=' -- reads the project off the current
 buffer, so leaving point here is what makes the whole package agree
 about which project one is in."
-  (interactive (list (or (ecc-window--space-root)
-                         (ecc-window-context-project-root))
-                     current-prefix-arg))
   (require 'dired)
   (let ((window (ecc-window--source-window))
         (buffer (or (if choose
@@ -853,7 +844,7 @@ being whatever they were left as."
                      ;; hidden would put it back a second time.
                      (ecc-window-forget-session session))
                    mine (ecc-window-available-roles)))
-        (ecc-window-focus-source key choose)
+        (ecc-window--focus-source key choose)
         (message "Focused %s: %d session%s, %d hidden"
                  (ecc--project-label key) (length mine)
                  (if (= 1 (length mine)) "" "s") (length hidden))

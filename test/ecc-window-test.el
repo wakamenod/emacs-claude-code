@@ -512,7 +512,7 @@ same transcript twice."
                        (lambda (&optional _frame) ecc-window-roles))
                       ((symbol-function 'ecc-display-session-in-role)
                        (lambda (session role) (push (cons session role) placed)))
-                      ((symbol-function 'ecc-window-focus-source)
+                      ((symbol-function 'ecc-window--focus-source)
                        (lambda (&rest _) nil)))
               (set-frame-parameter nil 'ecc-hidden-sessions nil)
               (ecc-focus-project "/tmp/project-one/")
@@ -549,7 +549,7 @@ back."
                    (lambda (&optional _frame) ecc-window-roles))
                   ((symbol-function 'ecc-display-session-in-role)
                    (lambda (session role) (push (cons session role) placed)))
-                  ((symbol-function 'ecc-window-focus-source)
+                  ((symbol-function 'ecc-window--focus-source)
                    (lambda (&rest _) nil)))
           (ecc-focus-project "/tmp/project-one/")
           ;; The other project is off the screen and remembered; this
