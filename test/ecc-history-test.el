@@ -213,6 +213,44 @@ result message to carry it."
         (should (equal (ecc-model-node-get (car nodes) 'name) "/model"))
         (should (equal (ecc-model-node-get (car nodes) 'output) "Set model"))))))
 
+(ert-deftest ecc-history-test-task-notification-opens-no-turn ()
+  "The notice the CLI injects about a background task is a folded note.
+A CLI resuming a session whose previous process left a task behind
+writes it in as a plain user message; it is not a prompt, so the
+conversation has the same turns with it as without."
+  (let ((notice (concat "{\"type\": \"user\", \"uuid\": \"n1\","
+                        " \"origin\": {\"kind\": \"task-notification\"},"
+                        " \"promptSource\": \"system\", \"entrypoint\": \"cli\","
+                        " \"message\": {\"role\": \"user\", \"content\":"
+                        " \"<task-notification>\\n  <task-id>bash_7</task-id>\\n"
+                        "  <status>stopped</status>\\n  <summary>Background shell"
+                        " command did not finish before the previous session ended"
+                        "</summary>\\n</task-notification>\"}}"))
+        (prompts (list (concat "{\"type\": \"user\", \"uuid\": \"u1\","
+                               " \"message\": {\"role\": \"user\","
+                               " \"content\": \"go\"}}")
+                       (concat "{\"type\": \"user\", \"uuid\": \"u2\","
+                               " \"message\": {\"role\": \"user\","
+                               " \"content\": \"again\"}}"))))
+    (ecc-test-with-fake-session plain
+      (ecc-test-with-fake-session noticed
+        (ecc-history--replay plain prompts)
+        (ecc-history--replay noticed (cons notice prompts))
+        ;; The turns of the conversation are the same either way; the
+        ;; one turn more is the aside the note hangs beside it from.
+        (should (equal (mapcar #'ecc-turn-prompt (ecc-session-turns plain))
+                       (seq-filter #'identity
+                                   (mapcar #'ecc-turn-prompt
+                                           (ecc-session-turns noticed)))))
+        (should (equal '("go" "again")
+                       (mapcar #'ecc-turn-prompt (ecc-session-turns plain))))
+        (let ((nodes (hash-table-values (ecc-session-nodes noticed))))
+          (should (= 1 (length nodes)))
+          (should (eq (ecc-node-type (car nodes)) 'system))
+          (should (eq 'task-notice (ecc-model-node-get (car nodes) 'kind)))
+          (should (string-search "Background shell command"
+                                 (ecc-model-node-get (car nodes) 'summary))))))))
+
 (ert-deftest ecc-history-test-sidechain-is-counted-not-shown ()
   "A subagent line is left out and its number noted."
   (ecc-test-with-fake-session session

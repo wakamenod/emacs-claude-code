@@ -20,6 +20,13 @@
 # recording each other.  Whatever runs this needs Screen Recording
 # permission (System Settings -> Privacy & Security -> Screen Recording),
 # or there is nothing to record.
+#
+# Neither way of recording the screen is here any more, and both had
+# reasons of their own to go: ffmpeg's avfoundation input says the pixel
+# format it was given is not one the device supports and then waits for a
+# frame that never comes (ffmpeg 8, macOS 26), and `screencapture -v'
+# writes the whole display at a size of its own choosing, to be cropped
+# afterwards (2026-09-17).  A window needs neither.
 set -euo pipefail
 
 scene=${1:?usage: demo/record.sh <scene> [out.mp4]}
@@ -34,13 +41,15 @@ emacs_app=${EMACS_APP:-/opt/homebrew/Cellar/emacs-plus@32/32.0.50/Emacs.app}
 # emacs-plus keeps emacsclient beside the .app rather than inside it.
 emacsclient=${EMACSCLIENT:-$(command -v emacsclient || echo "${emacs_app%/*}/bin/emacsclient")}
 
-# Everything a run owns is named after the scene, so that two scenes --
-# in two checkouts, driven by two sessions -- do not take each other's
-# Emacs, socket, ready file or window.  They did, and killed each other
-# halfway through (2026-09-17).
-server=ecc-demo-$scene
-ready=/tmp/ecc-demo-$scene-ready.txt
-title="ecc demo: $scene"
+# Everything a run owns is named after the checkout and the scene, so
+# that two runs -- in two worktrees, driven by two sessions, of the same
+# scene or of different ones -- do not take each other's Emacs, socket,
+# ready file or window.  They did, and killed each other halfway
+# through (2026-09-17).
+tag=$(basename "$(dirname "$here")")-$scene
+server=ecc-demo-$tag
+ready=/tmp/ecc-demo-$tag-ready.txt
+title="ecc demo: $tag"
 
 fps=${DEMO_FPS:-10}
 width=${DEMO_WIDTH:-1456}
@@ -64,10 +73,11 @@ cleanup() {
         kill -INT "$recorder_pid" 2>/dev/null || true
         wait "$recorder_pid" 2>/dev/null || true
     fi
-    # This scene's Emacs, by the server name on its command line -- never
+    # This run's Emacs, by the server name on its command line -- never
     # every demo Emacs on the machine, which is another run's.  The name
-    # is the pattern rather than the path: a checkout called
-    # `feat+worktree' is a regexp that matches no such thing.
+    # is the pattern rather than the path: `pkill -f' takes a regexp, and
+    # a checkout called `feat+worktree' is one that matches no such
+    # thing.
     pkill -f "$server" 2>/dev/null || true
 }
 trap cleanup EXIT
