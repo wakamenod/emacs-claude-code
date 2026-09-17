@@ -657,8 +657,11 @@ The working directory and the recording are both removed afterwards."
 
 (ert-deftest ecc-test-live-agents ()
   "The registry agrees with `claude agents --json'.
-The dashboard reads the files rather than running the command, so this
-is what keeps the two from drifting apart."
+`ecc-registry' reads the session files the CLI writes rather than
+running the command, and this is what keeps the two from drifting
+apart.  What rests on it is `ecc-registry-live-p': a second process on
+a live conversation forks it without saying so, and that is the only
+thing standing between a resume and two CLIs on one recording."
   :tags '(live)
   (let* ((output (with-output-to-string
                    (with-current-buffer standard-output
@@ -684,7 +687,12 @@ is what keeps the two from drifting apart."
           ;; dashboard shows the command's word.
           (should (equal (alist-get 'status agent)
                          (ecc-registry-display-status (alist-get 'status entry))))
-          (should (ecc-dashboard--agent-entry entry)))))))
+          ;; What the rest of the package asks the registry.  The
+          ;; dashboard was asked here until 0.2.0, when it stopped
+          ;; listing what this Emacs does not run; the assertion outlived
+          ;; the function it called and failed every live run after that.
+          (should (ecc-registry-live-p (alist-get 'sessionId agent)))
+          (should (ecc-registry-describe entry)))))))
 
 (ert-deftest ecc-test-live-context ()
   "A region sent from a source buffer arrives quoted."
