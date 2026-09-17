@@ -22,6 +22,10 @@ rules:
 - `ecc-render.el` alone draws the transcript; `ecc-chat.el` holds the major mode, the
   keymaps and the movement. The prompt region lives after `ecc-render--prompt-start` in
   the same buffer, and no redraw deletes past it.
+- `ecc-window.el` does not require `ecc-space.el`: the Spaces are built on top of the
+  windows, not inside them. `ecc-window.el` branches on `ecc-use-spaces` at the head of
+  the four functions that care and loads `ecc-space` at run time, and with that setting
+  off nothing reaches `ecc-worktree.el`, `ecc-space.el` or `ecc-sidebar.el`.
 
 Each script in `scripts/` says in its own header what it is and how to run it. Run
 `scripts/bench-render.el` before and after touching the renderer. The documentation site

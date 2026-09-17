@@ -134,6 +134,23 @@ whole buffer down by one, which was most of what a delta cost."
     (should (eq (get-text-property 7 'face escaped) 'ecc-error-face))
     (should (eq (get-text-property 8 'face escaped) 'ecc-error-face))))
 
+(ert-deftest ecc-core-test-aside-splits-what-emacs-added ()
+  "A prompt is parted into what the user wrote and what Emacs added."
+  (let* ((added (ecc-aside "\n(a line from Emacs)"))
+         (sent (concat "worktree を切って" added))
+         (split (ecc-aside-split sent)))
+    (should (equal (car split) "worktree を切って"))
+    (should (equal (cdr split) "(a line from Emacs)"))
+    ;; The mark is a property, so what goes to the CLI is the two
+    ;; together and nothing else.
+    (should (equal (substring-no-properties sent)
+                   "worktree を切って\n(a line from Emacs)")))
+  ;; A prompt nobody added to comes back whole, and so does text from a
+  ;; recording, which carries no properties at all.
+  (should (equal (ecc-aside-split "hello") (cons "hello" nil)))
+  (should (equal (ecc-aside-split "") (cons "" nil)))
+  (should (equal (ecc-aside-split nil) (cons nil nil))))
+
 (provide 'ecc-core-test)
 
 ;;; ecc-core-test.el ends here

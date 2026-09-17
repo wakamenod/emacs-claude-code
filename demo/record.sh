@@ -47,7 +47,17 @@ emacsclient=${EMACSCLIENT:-$(command -v emacsclient || echo "${emacs_app%/*}/bin
 # ready file or window.  They did, and killed each other halfway
 # through (2026-09-17).
 tag=$(basename "$(dirname "$here")")-$scene
-server=ecc-demo-$tag
+# The server is a Unix socket, and the whole of its path has to fit in
+# the 104 characters of `sun_path' -- and $TMPDIR/emacs<uid>/ is 59 of
+# them on macOS, which leaves 44 for the name.  A checkout and a scene
+# with real names are longer than that: every step of a nine-minute
+# recording came back with "socket-name ... too long" and the video was
+# nine minutes of a frame nobody had touched (2026-09-17).  The name is
+# the scene, cut short, and a digest of the whole tag: short enough,
+# still one per checkout and scene, and still on the command line for
+# `pkill -f' to find.  The ready file and the frame title are a plain
+# file and a window title, and keep the long name.
+server=ecc-demo-$(printf '%s' "$scene" | cut -c1-12)-$(printf '%s' "$tag" | md5 -q | cut -c1-6)
 ready=/tmp/ecc-demo-$tag-ready.txt
 title="ecc demo: $tag"
 
@@ -116,6 +126,7 @@ open -n -a "$emacs_app" --args -Q \
 for _ in $(seq 1 60); do [ -f "$ready" ] && break; sleep 1; done
 [ -f "$ready" ] || { echo "the demo Emacs never came up" >&2; exit 1; }
 echo "ecc loaded from: $(cat "$ready")" >&2
+echo "server: $server" >&2
 
 # `caffeinate -d' for the whole recording: a display that goes to sleep
 # stops drawing, a window that is not drawn hands no frames over, and the

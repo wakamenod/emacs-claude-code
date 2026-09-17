@@ -42,6 +42,13 @@
     ("Write" . write))
   "Tools that touch a file, and the kind of access they make.")
 
+;; Beside the other table of tool names, and above everything that reads
+;; either: a variable used before its `defconst' compiles to a free
+;; reference, and whether that is caught depends on what the compiler
+;; had loaded already (confirmed 2026-09-17).
+(defconst ecc-dispatch-agent-tools '("Task" "Agent")
+  "Names of the tools that start a subagent.")
+
 ;;;; Entry point
 
 (defun ecc-dispatch (session message)
@@ -424,9 +431,6 @@ DATA describe it.  Returns the node."
       (ecc-model-close-stream session node)
       (ecc-model-node-changed session node)
       node)))
-
-(defconst ecc-dispatch-agent-tools '("Task" "Agent")
-  "Names of the tools that start a subagent.")
 
 (defun ecc-dispatch--agent-task-p (task)
   "Return non-nil when the TASK lifecycle message is a subagent.
@@ -822,24 +826,27 @@ the patch of an Edit or a Write, the id and status of a task."
                      :tool-use-id (alist-get 'tool_use_id request-object)
                      :suggestions (ecc-protocol-request-suggestions message)
                      :created-at (current-time))))
-      (if (ecc-dispatch-auto-approve-p session request)
-          (ecc-dispatch--auto-allow session request)
-        (setf (ecc-request-node request)
-              (ecc-model-add-node
-               session
-               :type kind
-               :status 'pending
-               :data (list (cons 'request request)
-                           (cons 'message message)
-                           ;; What the file looks like now, for the diff
-                           ;; shown before the change is allowed.
-                           (cons 'before
-                                 (when (memq (cdr (assoc tool-name
-                                                         ecc-dispatch-file-tools))
-                                             '(edit write))
-                                   (ecc-dispatch--file-before
-                                    session (alist-get 'file_path input)))))))
-        (ecc-model-add-request session request)))))
+      (if-let* ((refusal (run-hook-with-args-until-success
+                          'ecc-request-refuse-functions session request)))
+          (ecc-dispatch--refuse session request refusal)
+        (if (ecc-dispatch-auto-approve-p session request)
+            (ecc-dispatch--auto-allow session request)
+          (setf (ecc-request-node request)
+                (ecc-model-add-node
+                 session
+                 :type kind
+                 :status 'pending
+                 :data (list (cons 'request request)
+                             (cons 'message message)
+                             ;; What the file looks like now, for the diff
+                             ;; shown before the change is allowed.
+                             (cons 'before
+                                   (when (memq (cdr (assoc tool-name
+                                                           ecc-dispatch-file-tools))
+                                               '(edit write))
+                                     (ecc-dispatch--file-before
+                                      session (alist-get 'file_path input)))))))
+          (ecc-model-add-request session request))))))
 
 (defun ecc-dispatch-auto-approve-p (session request)
   "Return non-nil when SESSION may allow REQUEST without asking.
@@ -862,6 +869,23 @@ user allowed for the whole session is never asked about again ."
                        :data (list (cons 'kind 'auto-allow)
                                    (cons 'text (format "auto-allowed %s"
                                                        (ecc-request-tool-name request))))))
+
+(defun ecc-dispatch--refuse (session request message)
+  "Deny REQUEST of SESSION with MESSAGE, and note it in the transcript.
+The mirror of `ecc-dispatch--auto-allow\=': the answer was settled
+without a person, so the request never becomes a node of its own and
+never reaches the pending queue.  MESSAGE is what the model is told,
+and the whole of it is in the note, because a refusal the model cannot
+read the reason of is one it will try again."
+  (ecc-proc-send-json session
+                      (ecc-protocol-permission-deny
+                       (ecc-request-request-id request) message))
+  (ecc-model-add-aside session :type 'system :status 'done
+                       :data (list (cons 'kind 'refused)
+                                   (cons 'text
+                                         (format "refused %s: %s"
+                                                 (ecc-request-tool-name request)
+                                                 message)))))
 
 (defun ecc-dispatch--command-lifecycle (session message)
   "Apply the command_lifecycle MESSAGE to SESSION.

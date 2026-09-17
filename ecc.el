@@ -47,6 +47,9 @@
 (require 'ecc-capability)
 (require 'ecc-dashboard)
 (require 'ecc-window)
+(require 'ecc-worktree)
+(require 'ecc-space)
+(require 'ecc-sidebar)
 (require 'ecc-context)
 (require 'ecc-notify)
 (require 'ecc-hint)
@@ -127,7 +130,13 @@ the next session, since this runs on every one of them."
   (ecc-pending-indicator-mode 1)
   (ecc-notify-mode 1)
   (ecc-tab-line-mode 1)
-  (ecc-track-source-buffer-mode 1))
+  (ecc-track-source-buffer-mode 1)
+  ;; `ecc-space' is loaded rather than the tab bar turned on: the hooks
+  ;; that close a Space once the last of it goes are installed at the
+  ;; top of that file, and `ecc-space--select-tab' says why the mode is
+  ;; left to `tab-bar-show'.  `classic' loads none of it.
+  (when ecc-use-spaces
+    (require 'ecc-space)))
 
 ;;;###autoload
 (defun ecc-start (&optional directory name)
@@ -392,13 +401,18 @@ off `ecc-session-exited-hook'."
 
 ;;;###autoload
 (defun ecc-kill (session)
-  "Stop SESSION and forget it."
+  "Stop SESSION and forget it.
+Stopping the last session working in a worktree goes on to offer to
+remove the worktree, wherever the stopping came from: that offer hangs
+off `ecc-session-removed-hook' in `ecc-worktree.el' and is made from a
+timer, so nothing here waits for an answer.  A command stopping several
+sessions in a row binds `ecc-space--closing' and asks for the group
+itself."
   (interactive (list (or ecc-render--session
                          (car (ecc-model-sessions))
                          (user-error "No session to kill"))))
   (ecc-proc-stop session)
   (ecc-model-remove-session session)
-  (ecc-window-forget-session session)
   (ecc-image-cleanup-session session)
   (dolist (buffer (list (ecc-session-buffer session)
                         (ecc-session-stream-buffer session)))

@@ -722,7 +722,6 @@ be in both of them."
     (setq shot-foreign nil))
   (when-let* ((buffer (get-file-buffer shot-other-file)))
     (kill-buffer buffer))
-  (set-frame-parameter nil 'ecc-hidden-sessions nil)
   (shot-show shot-main))
 
 (defun shot-scene-quit ()

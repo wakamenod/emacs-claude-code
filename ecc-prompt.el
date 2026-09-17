@@ -324,7 +324,8 @@ moment is added to it (`ecc-prompt-current-argument\=')."
     ("/login" . "Sign in to the CLI, in a terminal of its own")
     ("/logout" . "Sign the CLI out")
     ("/auth-status" . "Say who the CLI is signed in as")
-    ("/hooks" . "Show the hooks that would run for this project"))
+    ("/hooks" . "Show the hooks that would run for this project")
+    ("/resume" . "Carry this window on with another conversation of this project"))
   "Commands Emacs offers that the CLI does not name.
 They are added to the list `ecc-prompt-commands\' returns, after
 everything the CLI reported.  `/btw\' is one: the terminal client
@@ -902,6 +903,21 @@ are not offered, but one typed out by hand is still accepted."
   (message "Attaching the editor context is %s"
            (if ecc-prompt--attach-context "on" "off")))
 
+(defvar ecc-prompt-prepare-functions nil
+  "Functions given a session and a draft, returning the draft to send.
+Each is called in turn with what the one before it returned, after the
+slash command, the @ references and the editor context have been dealt
+with, and what the last one returns is what goes to the CLI.  A
+function that has nothing to add returns the draft it was given.
+
+This is where a module puts a word of its own beside what the user
+wrote -- a line saying that Emacs can do the thing being asked for.
+Taking the draft away from the CLI altogether is
+`ecc-prompt-intercept-functions\=', which is the other one.
+
+What is added here is sent and is part of the conversation, so it is
+worth what it costs: a line on every prompt is a line on every prompt.")
+
 (defun ecc-prompt-prepare-text (session text &optional source attach)
   "Return TEXT as it should be sent for SESSION.
 The slash command is dealt with first, then the @ references are
@@ -910,10 +926,12 @@ non-nil.  The paths of the labels are relative to the project of
 SESSION, which is where the CLI reading them stands."
   (let* ((root (ecc-window-project-root (ecc-session-project-root session)))
          (text (ecc-prompt-expand-references
-                (ecc-prompt-prepare-command session text) source root)))
-    (if attach
-        (concat text (or (ecc-context-block source root) ""))
-      text)))
+                (ecc-prompt-prepare-command session text) source root))
+         (text (if attach
+                   (concat text (or (ecc-context-block source root) ""))
+                 text)))
+    (dolist (function ecc-prompt-prepare-functions text)
+      (setq text (or (funcall function session text) text)))))
 
 (defun ecc-prompt--attachment-report ()
   "Return what to add to the message of a send about its @ references.
@@ -934,6 +952,12 @@ The first one to return non-nil takes the draft: nothing is sent to the
 CLI, and `ecc-prompt-send\' returns `intercepted\'.  The draft is
 emptied and remembered either way, so that a typo can be brought back
 with \\[ecc-prompt-history-previous].
+
+`/resume\' is ours outright: the CLI names no resume in
+`slash_commands\' and none in `terminal_slash_commands\' (checked
+against 2.1.270).  The terminal client draws that picker for itself,
+and what it does there is take the conversation over in place, which is
+what Emacs does to the window it is typed in.
 
 Only a draft the CLI is not meant to see belongs here.  The side
 question is the one there is: `/btw\' is not a slash

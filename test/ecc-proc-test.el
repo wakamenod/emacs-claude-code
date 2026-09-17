@@ -589,6 +589,56 @@ queue, and the session would take nothing said to it."
           (set-process-sentinel process #'ignore)
           (delete-process process))))))
 
+(defmacro ecc-proc-test--with-pretend-process (var &rest body)
+  "Run BODY with VAR a session whose process is pretended to be alive.
+`ecc-proc-stop' is the only thing that ends it, and an interrupt is
+answered by nobody: what is being tested is the waiting."
+  (declare (indent 1) (debug (symbolp body)))
+  `(ecc-test-with-fake-session ,var
+     (let ((alive t)
+           (stopped nil)
+           (interrupted nil))
+       (ignore stopped interrupted)
+       (cl-letf (((symbol-function 'process-live-p) (lambda (_object) alive))
+                 ((symbol-function 'ecc-proc-stop)
+                  (lambda (_session) (setq stopped t alive nil)))
+                 ((symbol-function 'ecc-proc-interrupt)
+                  (lambda (_session) (setq interrupted t))))
+         ,@body))))
+
+(ert-deftest ecc-proc-test-release-interrupts-a-running-turn-first ()
+  "A turn is asked to end before the CLI is stopped.
+Stopping mid-tool leaves the CLI to write the result of a call that
+will never finish."
+  (ecc-proc-test--with-pretend-process session
+    (ecc-model-set-state session 'running)
+    (cl-letf (((symbol-function 'ecc-proc-interrupt)
+               (lambda (session)
+                 (setq interrupted t)
+                 ;; The CLI answers an interrupt with a result.
+                 (ecc-model-set-state session 'idle))))
+      (ecc-proc-release session 5))
+    (should interrupted)
+    (should stopped)))
+
+(ert-deftest ecc-proc-test-release-waits-out-a-turn-that-will-not-end ()
+  "The wait has an end, and the process is stopped anyway."
+  (ecc-proc-test--with-pretend-process session
+    (ecc-model-set-state session 'running)
+    (let ((start (float-time)))
+      (ecc-proc-release session 0.3)
+      (should (>= (- (float-time) start) 0.3)))
+    (should interrupted)
+    (should stopped)))
+
+(ert-deftest ecc-proc-test-release-signals-when-it-will-not-stop ()
+  "A process that will not die is an error: two of them branch the session."
+  (ecc-proc-test--with-pretend-process session
+    (cl-letf (((symbol-function 'ecc-proc-stop)
+               (lambda (_session) (setq stopped t))))
+      (should-error (ecc-proc-release session 0.1) :type 'user-error))
+    (should stopped)))
+
 (ert-deftest ecc-proc-test-a-session-that-cannot-start-is-forgotten ()
   "A session whose CLI never came up does not stay in the list.
 `make-process' fails on a root that is not there -- a worktree deleted

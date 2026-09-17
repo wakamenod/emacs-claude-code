@@ -115,11 +115,15 @@ resolved before it lets git near it: a scene that asked for a worktree
 cut two of them in the actual repository before anybody noticed
 (2026-09-17).
 
-The recorder prints the ecc it loaded before it starts — check it is the
-checkout you meant. A scene that hangs spoils the seconds it was given
-and nothing else; `emacsclient -s ecc-demo-<checkout>-<scene> -e '(...)'`
-reaches the demo Emacs while it runs — everything a run owns is named
-after the checkout and the scene, so two worktrees can record at the same
-time — and the recorder kills it when it is done.
+The recorder prints the ecc it loaded and the name of its server before
+it starts — check the ecc is the checkout you meant. A scene that hangs
+spoils the seconds it was given and nothing else; `emacsclient -s
+<server> -e '(...)'` reaches the demo Emacs while it runs, and the
+recorder kills it when it is done. Everything a run owns is named after
+the checkout and the scene, so two worktrees can record at the same
+time; the **socket** carries a digest of that name instead of the name
+itself, because the whole path of a Unix socket has 104 characters to
+live in and `$TMPDIR` is 59 of them. A name that went over ran a
+nine-minute recording in which not one step arrived (2026-09-17).
 
 The mp4s are not committed. `demo/*.mp4` is ignored.

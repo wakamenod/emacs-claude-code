@@ -331,6 +331,21 @@ it too."
   (ecc-transient--load)
   (transient-setup 'ecc-resume-menu))
 
+(transient-define-prefix ecc-worktree-menu ()
+  "Check a branch out beside the repository, open a checkout, undo one.
+A prefix of its own rather than three keys in the Spaces column: they
+are the management of the worktrees rather than the working in them,
+done in a week what the four keys beside them are done in an hour, and
+three of seven keys in one column is what made that column unreadable.
+
+No `interactive\=' body of its own, for the reason `ecc-allow-all-menu\='
+has none: the only way in is `ecc-menu\=', which has loaded the package
+before it draws anything."
+  ["Worktree"
+   ("c" "New worktree" ecc-start-worktree)
+   ("o" "Open a worktree" ecc-start-in-worktree)
+   ("k" "Remove a worktree" ecc-remove-worktree)])
+
 ;;;; The main menu
 
 ;;;###autoload (autoload 'ecc-menu "ecc-transient" nil t)
@@ -343,9 +358,6 @@ it too."
     ("k" "Kill" ecc-kill)
     ("R" "Rename" ecc-rename-session)
     ("v" "Go to the prompt" ecc-show-session)
-    ("j" "Focus one project" ecc-focus-project)
-    ("w" "Hide or restore windows" ecc-toggle)
-    ("S" "Switch this window to another session" ecc-switch-session)
     ("i" "Interrupt" ecc-interrupt)
     ("t" "Hand over to the terminal" ecc-tui-open)
     ("u" "Take it back" ecc-tui-return)]
@@ -357,7 +369,7 @@ it too."
     ("e" "Fix the error at point" ecc-fix-error-at-point)
     ("l" "Ask inline" ecc-inline-prompt)
     ("H" "Insert a past prompt" ecc-insert-past-prompt)
-    ("W" "Rewrite the region" ecc-rewrite)]
+    ("w" "Rewrite the region" ecc-rewrite)]
    ["Review"
     ("D" "Diff since session start" ecc-review)
     ("G" "Diff since last commit" ecc-review-worktree)
@@ -376,12 +388,19 @@ it too."
     ("3" "Answer with option 3" ecc-answer-option-3)
     ("4" "Answer with option 4" ecc-answer-option-4)]
    ["View"
-    ("b" "Dashboard" ecc-dashboard)
+    ("B" "Dashboard" ecc-dashboard)
     ("y" "Capabilities" ecc-capabilities-show)
     ("h" "History" ecc-history-open)
     ("/" "Search past sessions" ecc-search)
     ("U" "Usage" ecc-usage)
     ("L" "Log" ecc-show-log)]
+   ["Spaces"
+    ("j" "Go to a Space" ecc-space-goto)
+    ("b" "Sidebar" ecc-sidebar-focus)
+    ("V" "Put this Space back in order" ecc-space-reset-windows)
+    ("z" "Zoom this window" ecc-space-zoom)
+    ("X" "Close this Space" ecc-space-close)
+    ("W" "Worktree" ecc-worktree-menu)]
    ["Config"
     ("m" "Model" ecc-set-model)
     ("p" "Permission mode" ecc-set-permission-mode)

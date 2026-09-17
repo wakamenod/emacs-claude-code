@@ -84,7 +84,7 @@ Typing `/` at the beginning of the prompt displays the command menu; `TAB` compl
 
 `/model`, `/effort`, `/permissions`, `/config`, and `/btw` prompt for their argument first, as the CLI responds with usage instructions when invoked without arguments. Terminal-only commands are omitted from the completion list, though you can still run them by typing the full command.
 
-A few commands that the CLI doesn't list are handled directly by Emacs and never reach the model: `/btw`, `/hooks`, `/plugins`, `/login`, `/logout`, and `/auth-status`.
+A few commands that the CLI doesn't list are handled directly by Emacs and never reach the model: `/btw`, `/hooks`, `/plugins`, `/login`, `/logout`, `/auth-status`, and `/resume`.
 
 ### Side questions with `/btw`
 
@@ -95,6 +95,14 @@ Sending `/btw <question>` runs a side-query without adding to the main conversat
 The active turn is not interrupted: the `/btw` response arrives in a separate view while the transcript continues streaming. Press `C-c C-b` to review session side-queries: `a` asks another question, `c` copies the answer, `k` cancels an in-flight query, `x` clears the list, and `q` dismisses the buffer. `ecc-btw-display` controls whether responses appear in a floating popup (via posframe) or an ordinary window.
 
 `/btw` queries are single-shot: follow-up questions include only the last few exchanges (`ecc-btw-history-limit`).
+
+### Another conversation with `/resume`
+
+`/resume` asks which recorded conversation of this project to carry on with, and carries this window on with it: the window, the tab, the buffer and the session name stay as they are, and what changes is which conversation is in them. That is what the terminal client's own `/resume` does — the CLI lists no such command for a headless client, so the name is Emacs's own.
+
+The CLI Emacs was running is stopped first (a running turn is interrupted and waited out), because two processes on one session id branch a recording without saying so. A conversation that already holds turns, or prompts still queued, is not left without a question first. The conversation you walk away from is left exactly where it is; `ecc-history-open` reads it again.
+
+`/resume <session-id>` takes the recording by id without asking. It pairs with Spaces: going to a project with nothing running starts a fresh session, and `/resume` is how you get back into the one that was there.
 
 ### While a turn runs
 

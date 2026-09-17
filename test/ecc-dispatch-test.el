@@ -96,6 +96,44 @@
                                 (alist-get 'response (alist-get 'response (car sent))))
                      "allow")))))
 
+(defun ecc-dispatch-test--can-use-tool (tool input)
+  "Return a can_use_tool control_request for TOOL with INPUT."
+  `((type . "control_request")
+    (request_id . "req-refuse")
+    (request . ((subtype . "can_use_tool")
+                (tool_name . ,tool)
+                (display_name . ,tool)
+                (input . ,input)
+                (tool_use_id . "toolu_refuse")))))
+
+(ert-deftest ecc-dispatch-test-a-request-can-be-refused ()
+  "A refusing function answers the request before anybody is asked."
+  (ecc-test-with-fake-session session
+    (let ((ecc-request-refuse-functions
+           (list (lambda (_session request)
+                   (when (equal (ecc-request-tool-name request) "Write")
+                     "Emacs answers this one")))))
+      (ecc-dispatch session (ecc-dispatch-test--can-use-tool
+                             "Write" '((file_path . "/tmp/a.txt"))))
+      ;; The deny went out, carrying the whole reason: a refusal the
+      ;; model cannot read is one it tries again.
+      (let ((response (alist-get 'response
+                                 (alist-get 'response
+                                            (car (ecc-test-sent-messages))))))
+        (should (equal (alist-get 'behavior response) "deny"))
+        (should (equal (alist-get 'message response) "Emacs answers this one")))
+      ;; And nobody was asked: nothing pending, no node of its own, and
+      ;; the session is not waiting on a permission.
+      (should-not (ecc-session-pending session))
+      (should-not (eq (ecc-session-state session) 'waiting-permission))
+      (should (seq-find (lambda (node)
+                          (eq (ecc-model-node-get node 'kind) 'refused))
+                        (hash-table-values (ecc-session-nodes session))))
+      ;; A tool the function says nothing about is asked about as before.
+      (ecc-dispatch session (ecc-dispatch-test--can-use-tool
+                             "Bash" '((command . "ls"))))
+      (should (= 1 (length (ecc-session-pending session)))))))
+
 (ert-deftest ecc-dispatch-test-file-changed-hook ()
   "A successful write tells the rest of Emacs to reload the file."
   (ecc-test-with-fake-session session

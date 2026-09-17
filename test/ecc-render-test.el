@@ -1763,6 +1763,44 @@ to diff every hunk of every file each time."
           (should (string-search "+uno" (ecc-test-buffer-string
                                          (ecc-session-buffer session)))))))))
 
+(ert-deftest ecc-render-test-what-emacs-added-is-folded-under-the-band ()
+  "A line a module added to a draft is not drawn as part of what the user said."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn
+     session (concat "worktree でやって"
+                     (ecc-aside "\n(hand it over with start_worktree_session.)")))
+    (ecc-render-flush session)
+    (with-current-buffer (ecc-session-buffer session)
+      (let* ((turn (car (ecc-session-turns session)))
+             (id (concat (ecc-turn-id turn) "/aside"))
+             (text (ecc-test-buffer-string (current-buffer))))
+        ;; The band holds what was typed; the heading says the rest is
+        ;; there, and the text of it is in the buffer, folded away.
+        (should (string-match-p "〉 worktree でやって" text))
+        (should-not (string-match-p "〉.*start_worktree_session" text))
+        (should (string-search "1 line Emacs added" text))
+        (should (string-search "start_worktree_session" text))
+        (should (ecc-render-node-bounds id))
+        (should (ecc-render-node-foldable-p id))
+        (should (ecc-render-node-hidden-p id))
+        ;; And it opens like anything else under a heading.
+        (ecc-render-show-node id)
+        (should-not (ecc-render-node-hidden-p id))))))
+
+(ert-deftest ecc-render-test-a-prompt-nobody-added-to-has-no-note ()
+  "An ordinary prompt is drawn as it always was."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "ふつうの依頼")
+    (ecc-render-flush session)
+    (with-current-buffer (ecc-session-buffer session)
+      (should-not (ecc-render-node-bounds
+                   (concat (ecc-turn-id (car (ecc-session-turns session)))
+                           "/aside")))
+      (should-not (string-search "Emacs added"
+                                 (ecc-test-buffer-string (current-buffer)))))))
+
 (provide 'ecc-render-test)
 
 ;;; ecc-render-test.el ends here
