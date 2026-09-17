@@ -147,7 +147,7 @@ See [Spaces and worktrees](/emacs-claude-code/features/spaces/).
 View all active sessions in a single overview.
 See [Session management](/emacs-claude-code/features/sessions/).
 
-### `y` — Capabilities
+### `C` — Capabilities
 
 Inspect active skills, subagents, slash commands, MCP servers, and plugins.
 See [Other features](/emacs-claude-code/features/other/#capabilities).

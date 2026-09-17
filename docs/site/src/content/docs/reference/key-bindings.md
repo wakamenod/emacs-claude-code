@@ -15,7 +15,7 @@ sidebar:
 Or, without `use-package`:
 
 ```elisp
-(global-set-key (kbd "C-c c") ecc-global-map)
+(global-set-key (kbd "C-c c") 'ecc-global-map)
 ```
 
 | Key | Action |

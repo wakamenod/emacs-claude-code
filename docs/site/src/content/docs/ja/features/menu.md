@@ -147,7 +147,7 @@ def greet(name):
 この Emacs で管理されている全セッションを一覧表示します。
 詳細は [セッション管理](/emacs-claude-code/ja/features/sessions/) をご覧ください。
 
-### `y` — ケイパビリティ (Capabilities)
+### `C` — ケイパビリティ (Capabilities)
 
 セッションで利用可能なスキル、サブエージェント、スラッシュコマンド、MCP サーバー、プラグインの一覧を確認できます。
 詳細は [その他の機能](/emacs-claude-code/ja/features/other/#ケイパビリティ-能力一覧) をご覧ください。

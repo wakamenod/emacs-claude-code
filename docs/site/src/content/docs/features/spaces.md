@@ -114,9 +114,9 @@ The bottom half lists the sessions, each with its mark, name, and what it is wai
 | `1`–`9` | Go to the Space with that number |
 | `c` | Start a session in this Space |
 | `W` | Create a worktree from this Space and start a session there |
-| `x` | Close this Space |
-| `X` | Remove this worktree's directory |
 | `k` | Stop this session |
+| `K` | Remove this worktree's directory |
+| `X` | Close this Space |
 | `a`, `d` | Allow or deny what this session is waiting on |
 | `g` | Refresh git status and redraw |
 | `q` | Hide the sidebar |

@@ -45,7 +45,7 @@ Suggestions appear only when `ecc-prompt-suggestions-enabled` is non-nil (which 
 | Key | Action |
 |---|---|
 | `C-c C-q` | Show queued prompts |
-| `C-c C-g` | Interrupt running turn |
+| `C-c C-z` | Interrupt running turn (`C-c C-g` is deliberately unbound: it cancels the prefix, as everywhere else) |
 | `C-c C-x` | Toggle editor context attachment |
 | `C-c C-i` | Insert image |
 | `C-c C-a` / `C-c C-d` | Allow or deny pending request |
@@ -118,7 +118,7 @@ Images are displayed in the transcript as well as sent. Images attached to a pro
 
 If `ffmpeg` is on `PATH`, the first frame of a video is shown, and `RET` opens the video in an external player. If `ffmpeg` is not available, only the line naming the file is shown. Extracting the frame runs in a subprocess without blocking, so the line remains until the frame is ready.
 
-A GIF animates as soon as it is displayed and loops as long as it is on screen. Pressing `v` on a GIF stops or starts it again. `v` controls only animation. `RET` opens the file: a still image in `image-mode` and a video in an external player. `ecc-image-inline` (also `I` in the menu) turns off image display, leaving only the line naming the file. Displayed images are limited in height, and their width follows `ecc-chat-text-width`.
+A GIF animates as soon as it is displayed and loops as long as it is on screen. Pressing `I` on a GIF stops or starts it again. `I` controls only animation. `RET` opens the file: a still image in `image-mode` and a video in an external player. `ecc-image-inline` (also `I` in the menu) turns off image display, leaving only the line naming the file. Displayed images are limited in height, and their width follows `ecc-chat-text-width`.
 
 `C-c C-x` toggles editor context for the buffer: when enabled, the current file and line number are automatically included with each prompt.
 
@@ -151,9 +151,9 @@ The transcript is standard read-only buffer text, so `isearch`, `occur`, narrowi
 | `^` | Up to parent heading |
 | `]` / `[` | Next or previous block |
 | `T` | Jump to turn by prompt |
-| `f` / `P` | Jump to Files section / Plan section |
+| `F` / `P` | Jump to Files section / Plan section |
 | `SPC` / `DEL` | Scroll down / up |
-| `i` | Move point to prompt area |
+| `v` / `i` | Move point to prompt area |
 
 ### Acting on items at point
 
@@ -162,13 +162,13 @@ The transcript is standard read-only buffer text, so `isearch`, `occur`, narrowi
 | `RET` | Visit item at point (link, file, subagent transcript, or full tool result) |
 | `mouse-1` / `mouse-2` | Follow the link that was clicked |
 | `w` | Copy code block at point (or entire response) |
-| `v` | Toggle GIF animation at point |
+| `I` | Toggle GIF animation at point |
 | `a` | Allow pending request |
 | `d` | Deny request at point (or view diff if not on a request) |
 | `g` | Redraw transcript |
 | `L` | View raw protocol log |
 | `t` / `R` | Hand over to terminal client / resume session |
-| `C-c C-k` | Interrupt running turn |
+| `C-c C-k` | Clear prompt area (the same as in the prompt: one key, one meaning in the buffer) |
 | `S-TAB` | Cycle permission mode |
 | `q` | Bury buffer |
 | `?` | Open transient menu |
