@@ -1657,6 +1657,9 @@ follows in the dim face of something the CLI said rather than the model."
                                     ""))))
                        (_ ""))))
       ('notice (ecc-render--system-notice-heading message))
+      ('task-notice
+       (format "background task — %s"
+               (or (ecc-model-node-get node 'summary) "notice")))
       (_ (if-let* ((text (ecc-model-node-get node 'text)))
              (ecc--truncate text ecc-render-summary-width)
            (format "%s" kind))))))

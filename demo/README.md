@@ -71,7 +71,9 @@ explained where they are done in `demo.el`:
 
 The recorder prints the ecc it loaded before it starts — check it is the
 checkout you meant. A scene that hangs spoils the seconds it was given
-and nothing else; `emacsclient -s ecc-demo -e '(...)'` reaches the demo
-Emacs while it runs, and the recorder kills it when it is done.
+and nothing else; `emacsclient -s ecc-demo-<checkout> -e '(...)'` reaches
+the demo Emacs while it runs — the server is named after the directory
+the checkout is in, so two worktrees can record at the same time — and
+the recorder kills it when it is done.
 
 The mp4s are not committed. `demo/*.mp4` is ignored.
