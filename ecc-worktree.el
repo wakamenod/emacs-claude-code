@@ -764,9 +764,10 @@ the same request with a step in front of it.")
 (defun ecc-worktree-refuse-request (session request)
   "Turn REQUEST of SESSION toward the tool, or return nil.
 A request that would make a worktree is what is turned; anything else
-is left alone.  On `ecc-request-refuse-functions\='.  Two ways to the same place are
-refused: the CLI\='s own `EnterWorktree\=', which it carries in a stream-json
-session (2.1.272, confirmed 2026-09-16), and `git worktree add\=' in Bash.
+is left alone.  On `ecc-request-refuse-functions\='.  Two ways to the
+same place are refused: the CLI\='s own `EnterWorktree\=', which it
+carries in a stream-json session (2.1.272, confirmed 2026-09-16), and
+`git worktree add\=' in Bash.
 `ExitWorktree\=' is left alone -- it undoes nothing Emacs made.
 
 Nothing is refused unless SESSION actually has the tool
