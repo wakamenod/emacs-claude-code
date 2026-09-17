@@ -48,7 +48,7 @@
 ;; through a removal would take the tab out from under the command.
 (defvar ecc-space--closing)
 
-(defcustom ecc-worktree-directory ".claude/worktrees"
+(defvar ecc-worktree-directory ".claude/worktrees"
   "Where `ecc-worktree-create' puts a worktree.
 A relative name is taken from the main worktree of the repository, so
 the default puts a worktree of a branch at
@@ -58,14 +58,7 @@ on this repository (2026-09-14).
 
 An absolute name is a directory for every repository to share, and a
 worktree lands at \"<directory>/<repository>/<slug>\", the repository
-being the directory name of its main worktree.  \"~\" is expanded.
-
-This is a setting rather than a variable because where a worktree may
-be put is a difference between machines: a repository inside a synced
-folder, or a home directory on a small disk, wants them somewhere
-else."
-  :type 'directory
-  :group 'ecc)
+being the directory name of its main worktree.  \"~\" is expanded.")
 
 (defvar ecc-worktree-git-executable "git"
   "Name of, or path to, the git executable.

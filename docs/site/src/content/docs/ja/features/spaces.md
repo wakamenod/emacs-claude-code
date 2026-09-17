@@ -143,7 +143,7 @@ git の worktree は、独自ブランチを持つリポジトリの 2 つ目の
 
 **既にどこかにチェックアウト済みのブランチ**を指定した場合は、拒否されるのではなくその worktree に切り替わります。1 つのブランチは同時に 1 つの worktree にしか存在できないため、そのブランチを指定したなら該当する worktree を意図しているはずだからです。その worktree でセッションを開始する前に確認を求められます。worktree の名前が ecc の命名規則通りである必要はありません。ecc が `-` を使う箇所で Claude Code 自身の worktree は `/` を `+` に置換しますが、ecc が検索するのはディレクトリではなくブランチです。
 
-worktree は [`ecc-worktree-directory`](/emacs-claude-code/ja/reference/configuration/#ecc-worktree-directory)（既定値は `.claude/worktrees`）に配置されます。相対パスはリポジトリ基準となり、`feat/x` の worktree は `<repo>/.claude/worktrees/feat-x` に配置されます。絶対パスは全リポジトリで共有され、worktree は `<directory>/<repository>/<branch-slug>` に配置されます。
+worktree は `ecc-worktree-directory`（既定値は `.claude/worktrees`）に配置されます。相対パスはリポジトリ基準となり、`feat/x` の worktree は `<repo>/.claude/worktrees/feat-x` に配置されます。絶対パスは全リポジトリで共有され、worktree は `<directory>/<repository>/<branch-slug>` に配置されます。
 
 worktree で動作する**最後の**セッションが終了すると、ecc は即座にその worktree を削除するか確認します。終了方法は問いません（`ecc-kill`、ダッシュボードの `k`、サイドバーの `k`、タブの閉じるボタン、あるいはユーザー操作を伴わない終了のいずれでも同様です）。この確認はセッション終了の少し後に表示されます。セッションが自身のプロセス内部から終了する場合があり、その場では確認を求められないためです。同じ worktree で動いている 2 つのセッションのうち片方を停止しても、もう一方のセッションがまだ使用中であるため削除の確認は表示されません。その worktree 内のファイルを開いているバッファは閉じられず、確認メッセージに件数が表示されます。
 
