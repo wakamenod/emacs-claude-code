@@ -14,9 +14,9 @@
 # site and README.md carry are made by scripts/docshots.sh and
 # scripts/screenshot.sh, which dress a throwaway -Q Emacs up instead.
 #
-# macOS only.  ffmpeg records "Capture screen 0" and the output is
-# cropped to the rectangle the frame is held in, so nothing else on the
-# screen is in the video; the terminal running this needs Screen
+# macOS only.  `screencapture -v' records the display and ffmpeg crops
+# what it wrote to the rectangle the frame is held in, so nothing else on
+# the screen is in the video; the terminal running this needs Screen
 # Recording permission (System Settings -> Privacy & Security -> Screen
 # Recording), or the video comes out black.
 set -euo pipefail
@@ -32,8 +32,14 @@ scene_sh=$here/scenes/$scene.sh
 emacs_app=${EMACS_APP:-/opt/homebrew/Cellar/emacs-plus@32/32.0.50/Emacs.app}
 # emacs-plus keeps emacsclient beside the .app rather than inside it.
 emacsclient=${EMACSCLIENT:-$(command -v emacsclient || echo "${emacs_app%/*}/bin/emacsclient")}
-server=ecc-demo
-ready=/tmp/ecc-demo-ready.txt
+# The server and the ready file are named after this checkout, and the
+# Emacs of a run that failed is killed by its full path: two worktrees
+# recording a demonstration at the same time shared the name `ecc-demo',
+# so a step of one run was answered by the other run's Emacs and each
+# start killed the other (2026-09-17).
+tag=$(basename "$(dirname "$here")")
+server=ecc-demo-$tag
+ready=/tmp/ecc-demo-$tag-ready.txt
 
 # The frame is held at (40,140), 1700x950 (demo.el), and the ediff
 # control panel is a frame of its own placed above the top of it, so the
@@ -42,10 +48,19 @@ ready=/tmp/ecc-demo-ready.txt
 crop=${DEMO_CROP:-3560:2260:0:0}
 fps=10
 
-# Which avfoundation device the screen is.  It is 4 on this machine;
-# `ffmpeg -f avfoundation -list_devices true -i ""' says what it is on
-# another, as "[N] Capture screen 0".
-screen=${DEMO_SCREEN_DEVICE:-4}
+# Which display is recorded, counted the way `screencapture -D' counts.
+screen=${DEMO_SCREEN_DISPLAY:-1}
+
+# The screen is taken with `screencapture -v' and cropped afterwards
+# with ffmpeg, rather than captured by ffmpeg itself: on this machine
+# (ffmpeg 8, macOS 26) the avfoundation input says the pixel format it
+# was given is not one the device supports, then waits for a frame that
+# never comes, while `screencapture' -- which needs the same Screen
+# Recording permission, and has it -- records the same display without a
+# word (2026-09-17).  SIGINT is how it is stopped, and it finishes the
+# file it was writing.
+raw_dir=$(mktemp -d -t ecc-demo-raw)
+raw=$raw_dir/screen.mov
 
 # macOS `open' hands this process's environment to the Emacs it starts,
 # and a Claude Code session's own variables turn transcript saving off in
@@ -55,15 +70,16 @@ for variable in $(env | sed -n 's/^\(CLAUDE[A-Z_]*\)=.*/\1/p'); do
     unset "$variable"
 done
 
-ffmpeg_pid=
+capture_pid=
 cleanup() {
-    [ -n "$ffmpeg_pid" ] && kill -INT "$ffmpeg_pid" 2>/dev/null || true
-    pkill -f "demo/demo.el" 2>/dev/null || true
+    [ -n "$capture_pid" ] && kill -INT "$capture_pid" 2>/dev/null || true
+    pkill -f "$here/demo.el" 2>/dev/null || true
+    rm -rf "$raw_dir"
 }
 trap cleanup EXIT
 
 # A run that failed may have left its Emacs and its socket behind.
-pkill -f "demo/demo.el" 2>/dev/null || true
+pkill -f "$here/demo.el" 2>/dev/null || true
 rm -f "$ready" "${TMPDIR:-/tmp}/emacs$(id -u)/$server"
 
 # `open' is the only way to a frame the window system will really draw:
@@ -71,16 +87,15 @@ rm -f "$ready" "${TMPDIR:-/tmp}/emacs$(id -u)/$server"
 # With -Q the command line is processed; with this user's init loaded by
 # Emacs itself it is not, which is why demo.el loads the init by hand.
 open -n -a "$emacs_app" --args -Q \
-     --eval "(setq demo-scene-file \"$scene_el\")" -l "$here/demo.el"
+     --eval "(setq demo-server-name \"$server\" demo-ready-file \"$ready\" demo-scene-file \"$scene_el\")" \
+     -l "$here/demo.el"
 
 for _ in $(seq 1 60); do [ -f "$ready" ] && break; sleep 1; done
 [ -f "$ready" ] || { echo "the demo Emacs never came up" >&2; exit 1; }
 echo "ecc loaded from: $(cat "$ready")" >&2
 
-ffmpeg -hide_banner -loglevel error -y \
-    -f avfoundation -capture_cursor 1 -framerate "$fps" -i "$screen" \
-    -vf "crop=$crop,scale=1456:-2" -pix_fmt yuv420p -r "$fps" "$out" &
-ffmpeg_pid=$!
+screencapture -v -C -D "$screen" "$raw" &
+capture_pid=$!
 sleep 3
 
 # A step that opens a minibuffer can leave `emacsclient' waiting for an
@@ -100,8 +115,25 @@ say() { e "(demo-say \"$1\")"; }
 # shellcheck source=/dev/null
 . "$scene_sh"
 
-kill -INT "$ffmpeg_pid" 2>/dev/null || true
-wait "$ffmpeg_pid" 2>/dev/null || true
-ffmpeg_pid=
+kill -INT "$capture_pid" 2>/dev/null || true
+wait "$capture_pid" 2>/dev/null || true
+capture_pid=
+
+# `screencapture -v' writes the whole display, at a size of its own
+# choosing rather than the screen's: the crop is in the pixels of a 2x
+# display (above), so it is scaled by what the recording came out at
+# against what a still of the same screen measures.
+shot=$(mktemp -t ecc-demo-shot).png
+screencapture -x -D "$screen" "$shot"
+screen_width=$(sips -g pixelWidth "$shot" | awk '/pixelWidth/ {print $2}')
+rm -f "$shot"
+raw_width=$(ffprobe -v error -select_streams v:0 -show_entries stream=width \
+                    -of csv=p=0 "$raw")
+scaled=$(awk -F: -v r="$raw_width" -v s="$screen_width" \
+             '{f = r / s; printf "%d:%d:%d:%d", $1*f, $2*f, $3*f, $4*f}' \
+             <<<"$crop")
+ffmpeg -hide_banner -loglevel error -y -i "$raw" \
+    -vf "crop=$scaled,scale=1456:-2" -pix_fmt yuv420p -r "$fps" "$out"
+rm -rf "$raw_dir"
 echo "wrote $out" >&2
 ls -lh "$out" >&2

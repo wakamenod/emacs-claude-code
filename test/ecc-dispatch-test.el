@@ -1113,6 +1113,34 @@ once every result is in."
       (should (equal (ecc-model-node-get node 'kind) 'command-output))
       (should (equal (ecc-model-node-get node 'text) "Bye!")))))
 
+(ert-deftest ecc-dispatch-test-task-notification-is-not-a-prompt ()
+  "An injected task notice is a folded aside, live stream or not.
+It arrives with no turn open, and a turn nothing would ever close
+leaves the session busy for good."
+  (let ((text (concat "<task-notification>\n  <task-id>bash_7</task-id>\n"
+                      "  <status>stopped</status>\n  <summary>Background shell"
+                      " command did not finish</summary>\n</task-notification>")))
+    (ecc-test-with-fake-session session
+      ;; The echo of a message nobody here sent is not a prompt from
+      ;; elsewhere when the CLI wrote it itself.
+      (ecc-dispatch session `((type . "user") (isReplay . t)
+                              (message . ((role . "user") (content . ,text)))))
+      (should-not (ecc-session-turns session))
+      (should-not (ecc-session-current-turn session))
+      ;; Without --replay-user-messages it arrives as a plain user message.
+      (ecc-dispatch session `((type . "user")
+                              (origin . ((kind . "task-notification")))
+                              (message . ((role . "user") (content . ,text)))))
+      (let ((nodes (hash-table-values (ecc-session-nodes session))))
+        (should (= 1 (length nodes)))
+        (should (eq (ecc-node-type (car nodes)) 'system))
+        (should (eq 'task-notice (ecc-model-node-get (car nodes) 'kind)))
+        (should (equal "Background shell command did not finish"
+                       (ecc-model-node-get (car nodes) 'summary))))
+      ;; The notice went beside the conversation: no turn was opened for it.
+      (should-not (ecc-session-current-turn session))
+      (should-not (seq-some #'ecc-turn-prompt (ecc-session-turns session))))))
+
 (provide 'ecc-dispatch-test)
 
 ;;; ecc-dispatch-test.el ends here

@@ -226,6 +226,27 @@ Verified against **Claude Code CLI 2.1.270**.
 
 ### Fixed
 
+- A notice the CLI wrote itself is no longer drawn as a prompt the user
+  typed. A CLI that resumes a session whose previous process left a
+  background task behind injects a `<task-notification>` into the
+  conversation as a plain `user` message -- no `isMeta`, not a sidechain,
+  not the record of a local command -- so the round trip of `t` and `/exit`
+  came back with `〉 <task-notification>...` at the head of a turn of its
+  own (confirmed 2026-09-17 against CLI 2.1.271 from the terminal and
+  2.1.273 from a stream-json client).
+
+  What tells such a message apart is `origin.kind`: `human` for what
+  somebody typed, and the name of the injection otherwise. A message whose
+  origin is not `human`, or whose text begins `<task-notification>` in a
+  recording written before the CLI had the field, is now no prompt
+  anywhere -- not in the transcript, nor as a session's last prompt in the
+  resume list and the dashboard, nor in the paging index, nor in the
+  search. It is kept as a folded system note headed `background task --
+  <summary>`, with the notice itself under the fold; it opens no turn, the
+  way an unrecognised message does not, since a notice can arrive between
+  turns. The live stream agrees: an echoed notification is not taken for a
+  prompt from elsewhere.
+
 - A session stays in the directory it was started in. It used to follow the
   cwd the CLI reports on every `system/init`, which the docstring explained
   as a `/cd`. It is not: CLI 2.1.272 reports whatever directory the last

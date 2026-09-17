@@ -616,6 +616,33 @@ narrower on the screen than it is in the text."
           (should (equal text (buffer-substring-no-properties (car bounds) (cdr bounds)))))
         (should (string-search "〉 again" (buffer-string)))))))
 
+(ert-deftest ecc-render-test-task-notice-is-a-note-not-a-prompt ()
+  "A background task notice is headed by its summary and marked as no prompt."
+  (let ((text (concat "<task-notification>\n  <task-id>bash_7</task-id>\n"
+                      "  <status>stopped</status>\n  <summary>Background shell"
+                      " command did not finish</summary>\n</task-notification>")))
+    (should (equal "background task \u2014 Background shell command did not finish"
+                   (ecc-render--system-heading
+                    (make-ecc-node
+                     :type 'system
+                     :data `((kind . task-notice)
+                             (summary . "Background shell command did not finish")
+                             (text . ,text))))))
+    (ecc-test-with-fake-session session
+      (ecc-session-ensure-buffer session)
+      (ecc-dispatch session `((type . "user")
+                              (origin . ((kind . "task-notification")))
+                              (message . ((role . "user") (content . ,text)))))
+      (ecc-render-flush session)
+      (with-current-buffer (ecc-session-buffer session)
+        (let ((drawn (buffer-string)))
+          (should (string-search "background task \u2014 Background shell command"
+                                 drawn))
+          ;; It is nobody\='s prompt, so the user mark is nowhere in it.
+          (should-not (string-search ecc-render-user-mark drawn))
+          ;; The raw notice waits under the fold.
+          (should (string-search "<task-id>bash_7</task-id>" drawn)))))))
+
 (ert-deftest ecc-render-test-aside-turn-at-the-head-is-frozen ()
   "A turn of notes that came before any prompt does not pin the live region.
 Remote Control announces itself before the first prompt, and those notes
