@@ -656,11 +656,10 @@ def handler(request):
 
 (defvar shot-foreign nil "A session of the second project.")
 
-(defun shot-scene-focus-start ()
-  "Crowd the frame: two projects, a session of each, and the wrong source.
-This is the state the command is for.  The source on the left belongs
-to one project and the session in the main window to the other, which
-is what working in several projects at once leaves behind."
+(defun shot-foreign-session ()
+  "Create the second project and the session in it, once, and return it.
+The scenes that want two projects on the screen -- focusing one of
+them, the Spaces -- all want the same one."
   (make-directory shot-other-root t)
   (unless (file-exists-p shot-other-file)
     (with-temp-file shot-other-file (insert shot-other-source)))
@@ -668,7 +667,7 @@ is what working in several projects at once leaves behind."
     (setq shot-foreign (ecc-model-create-session :name "api-server"
                                                  :project-root shot-other-root))
     (ecc-session-ensure-buffer shot-foreign)
-    ;; Not the fixture `notes' was replayed from: a recording carries
+    ;; Not the fixture `notes\=' was replayed from: a recording carries
     ;; the session id it was made under, the dispatch puts the session
     ;; in the registry under it, and two sessions replaying one
     ;; recording means the second quietly evicts the first (confirmed
@@ -677,11 +676,19 @@ is what working in several projects at once leaves behind."
     ;; Every fixture was recorded in one sandbox and every sandbox path
     ;; is rewritten to the demo project, so the init message of the
     ;; recording puts this session back in it -- which is where a
-    ;; session's project comes from.  Saying so again afterwards is what
+    ;; session\='s project comes from.  Saying so again afterwards is what
     ;; makes this a second project rather than a second name for the
     ;; first (confirmed 2026-09-13).
     (setf (ecc-session-cwd shot-foreign)
           (file-name-as-directory shot-other-root)))
+  shot-foreign)
+
+(defun shot-scene-focus-start ()
+  "Crowd the frame: two projects, a session of each, and the wrong source.
+This is the state the command is for.  The source on the left belongs
+to one project and the session in the main window to the other, which
+is what working in several projects at once leaves behind."
+  (shot-foreign-session)
   (select-window (frame-first-window (selected-frame)))
   (let ((ignore-window-parameters t))
     (delete-other-windows))
@@ -723,6 +730,72 @@ be in both of them."
   (when-let* ((buffer (get-file-buffer shot-other-file)))
     (kill-buffer buffer))
   (shot-show shot-main))
+
+(defun shot-scene-spaces ()
+  "The Spaces: a tab for each project, the sidebar down the left, and
+this project\='s two transcripts standing beside its source.
+
+This is the picture the Spaces page opens with, so it has to hold the
+whole idea at once: the list on the left, the tabs across the top, and
+one Space laid out underneath them."
+  (require 'ecc-space)
+  (require 'ecc-sidebar)
+  (shot-foreign-session)
+  ;; Wide enough for the sidebar, the source and two transcripts side by
+  ;; side.  A transcript may not go under `ecc-space-session-min-width\=',
+  ;; 80 columns, and no screen this is run on fits that twice beside the
+  ;; rest -- so the picture is taken with the width the frame can really
+  ;; give two of them.
+  (let* ((area (frame-monitor-workarea))
+         (columns (min 170 (/ (- (nth 2 area) 48) (frame-char-width)))))
+    (set-frame-size (selected-frame) columns 32)
+    (setq ecc-space-session-min-width 44))
+  (shot-place-frame-bottom-right)
+  ;; A tab for each project, ending on the demo one: the picture is of
+  ;; its Space, with the other Space waiting in the tab bar and in the
+  ;; sidebar.
+  (ecc-space-select (ecc-space-of-root shot-other-root))
+  (ecc-space-select (ecc-space-of-root shot-root))
+  (ecc-sidebar-show)
+  ;; Deal the tab the way a new one is dealt: the source on the left,
+  ;; the transcripts beside it.
+  (ecc-space-reset-windows)
+  ;; The demo file is eight lines long, so the source is given a narrow
+  ;; column -- and that is also what leaves the row wide enough for the
+  ;; second transcript to divide the first rather than go windowless.
+  (when-let* ((window (get-buffer-window (get-file-buffer shot-file))))
+    (ignore-errors (window-resize window (- 34 (window-width window)) t)))
+  ;; The second transcript is put beside the first with the Space's own
+  ;; helper rather than with `ecc-space-display-session\=', which goes
+  ;; through `ecc-space-select\=' -- and selecting the tab restores the
+  ;; window configuration stored in it, undoing the narrow source a line
+  ;; above and leaving the row too tight to divide (measured 2026-09-18).
+  (when-let* ((windows (ecc-space--session-windows))
+              (right (car (last windows)))
+              (other (if (eq (window-buffer right) (ecc-session-buffer shot-main))
+                         shot-other
+                       shot-main)))
+    (ecc-space--display-beside (ecc-session-buffer other) right
+                               (/ (window-total-width right) 2)))
+  (dolist (session (list shot-main shot-other))
+    (when-let* ((window (get-buffer-window (ecc-session-buffer session))))
+      (with-selected-window window
+        (ecc-chat--set-margins window)
+        (goto-char (point-max))
+        (recenter -1))))
+  (message nil)
+  (redisplay t))
+
+(defun shot-scene-spaces-end ()
+  "Take the tabs, the sidebar and the second project away again.
+Every scene after this one photographs one frame of windows, and a tab
+bar or a sidebar left behind would be in all of them."
+  (setq ecc-space-session-min-width 80)
+  (ecc-sidebar-hide)
+  (tab-bar-mode -1)
+  (set-frame-size (selected-frame) 112 44)
+  (shot-place-frame-bottom-right)
+  (shot-scene-focus-end))
 
 (defun shot-scene-quit ()
   "Close whatever the last scene left open -- a menu, a picker.

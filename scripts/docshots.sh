@@ -507,6 +507,16 @@ if want resume; then
 
 fi
 
+if want spaces; then
+    # The Spaces, as one still: the sidebar down the left, a tab for each
+    # project across the top, and this project's source with its two
+    # transcripts beside it.  It comes late because it widens the frame
+    # and leaves a tab bar and a sidebar behind, both of which the
+    # scene's own end takes away again.
+    e '(shot-scene-spaces)' ; sleep 2; still "$outdir/spaces.png"
+    e '(shot-scene-spaces-end)' ; sleep 1
+fi
+
 # Last, because it is the one scene that changes the type and the size
 # of the frame.  Both the site's front page and README.md carry it, and
 # README.md reads it from docs/images like the other two there.

@@ -133,15 +133,9 @@ Under the tab line, the header line displays the session's current status on the
 
 ## Focusing one project
 
-`M-x ecc-focus-project` resets the frame to show only one project. It is the `classic` solution for a frame full of transcripts from other projects. Under `spaces`, each project has its own tab, so the command switches to that Space and leaves the windows alone. It lost its key binding in the reorganisation that gave lower-case letters to Spaces.
+`M-x ecc-focus-project` resets the frame to show only one project, for a frame full of transcripts from other projects. It kills nothing and stops no processes.
 
-![Two projects crowding one frame; picking one of them takes the other's window away, brings this project's second session in beside it, and changes the source on the left](../../../assets/focus.gif)
-
-- Session windows from every other project leave the screen. `ecc-focus-project` kills nothing and stops no processes. Focusing that other project brings its windows back, and a single session comes back with `C-c c v`, `C-c c n`, the sidebar, or the dashboard.
-- Sessions of the chosen project fill the window roles in order of recent use, placing the session you worked in last into the main window.
-- The main window switches to that project's source. It chooses a visible project buffer first, then the last buffer you edited there, then the most recently used buffer in the project, or Dired on the project root. A prefix argument (`C-u M-x ecc-focus-project`) prompts for a buffer instead.
-
-A project is matched as a project, not as a path, so a subdirectory session groups with the tree.
+Spaces took the job over: every project has a tab to itself, so switching to that tab is all the focusing there is. See [Spaces and worktrees](/emacs-claude-code/features/spaces/).
 
 ## Pending request indicators
 

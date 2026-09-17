@@ -39,7 +39,7 @@ faceはテキスト挿入時に適用されるため、`M-x customize` による
 - **[プランモード](https://wakamenod.github.io/emacs-claude-code/ja/features/review/#プランモード):** 提案された実行計画を、編集可能なバッファ内で確認・調整しながら進められます。
 - **[グローバル操作](https://wakamenod.github.io/emacs-claude-code/ja/reference/key-bindings/):** どのバッファからでも保留中のツール実行リクエストを許可・拒否できます。
 - **[セッション管理](https://wakamenod.github.io/emacs-claude-code/ja/features/sessions/):** ダッシュボードから複数の同時並行セッションを整理・管理できます。
-- **[Space と worktree](https://wakamenod.github.io/emacs-claude-code/ja/features/spaces/):** プロジェクトごとにタブバーのタブ（Space）が割り当てられ、その中のウィンドウ配置は自分で並べたまま保たれます（`ecc-use-spaces`、既定で有効）。何も動いていないプロジェクトに移動するとセッションが起動し、`/resume` でそのウィンドウを以前の会話の続きに切り替えられます。左側のサイドバーには全プロジェクトとセッションが動作状況とともに一覧表示され、`ecc-start-worktree` はリポジトリの隣にブランチをチェックアウトして独立した Space として開きます。
+- **[Space と worktree](https://wakamenod.github.io/emacs-claude-code/ja/features/spaces/):** プロジェクトごとに Emacs のタブ（Space）が割り当てられ、その中のウィンドウ配置は自分で並べたまま保たれます（`ecc-use-spaces`、既定で有効）。何も動いていないプロジェクトに移動するとセッションが起動し、`/resume` でそのウィンドウを以前の会話の続きに切り替えられます。左側のサイドバーには全プロジェクトとセッションが動作状況とともに一覧表示され、`ecc-start-worktree` はリポジトリの隣にブランチをチェックアウトして独立した Space として開きます。
 - **安全なデフォルト設定:** 権限プロンプトはデフォルトで「拒否」に設定されています。内蔵のループバック MCP サーバーはデフォルトで無効化されており、Elisp の評価ツールも明示的な有効化が必要です。
 
 ## 動作要件

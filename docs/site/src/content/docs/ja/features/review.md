@@ -146,4 +146,4 @@ Comment: the docstring still says hi
 | `ecc-window-hide-on-review` | `'project` でこのプロジェクトのセッションを非表示、`'all` で全セッションを非表示、`nil` でそのまま維持 |
 | `ecc-window-review-focus` | `'review` でレビューバッファにフォーカス、`'session` でトランスクリプトにポイントを維持、`nil` で元のフォーカスのまま |
 
-非表示のウィンドウは保存されません。`spaces` では、`C-c c V`（`ecc-space-reset-windows`）でタブ全体を再配置してレイアウトを復元します。`classic` では `M-x ecc-focus-project` を使うか、`C-c c v` でセッションを 1 つずつ復元します。その他の設定は [設定リファレンス](/emacs-claude-code/ja/reference/configuration/) をご覧ください。
+非表示のウィンドウは保存されません。`C-c c V`（`ecc-space-reset-windows`）でタブ全体を配置し直せます。セッションを 1 つずつ戻すなら `C-c c v` です。その他の設定は [設定リファレンス](/emacs-claude-code/ja/reference/configuration/) をご覧ください。
