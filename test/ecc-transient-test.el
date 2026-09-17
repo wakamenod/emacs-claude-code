@@ -19,6 +19,7 @@
   (should (commandp 'ecc-slash-menu))
   (should (commandp 'ecc-resume-menu))
   (should (commandp 'ecc-allow-all-menu))
+  (should (commandp 'ecc-worktree-menu))
   (should (commandp 'ecc-slash-command))
   (should (commandp 'ecc-customize)))
 
@@ -134,6 +135,7 @@ whatever the menus do."
                                        (mapcan #'ecc-transient-test--menu-keys
                                                (list 'ecc-menu 'ecc-resume-menu
                                                      'ecc-allow-all-menu
+                                                     'ecc-worktree-menu
                                                      'ecc-slash-menu)))))
          (emacs (expand-file-name invocation-name invocation-directory))
          (script (make-temp-file "ecc-cold" nil ".el")))

@@ -41,7 +41,7 @@
 (declare-function ecc-sidebar-focus "ecc-sidebar" ())
 (declare-function ecc-space-goto "ecc-space" (space))
 (declare-function ecc-space-zoom "ecc-space" ())
-(declare-function ecc-start-worktree "ecc-worktree" (branch))
+(declare-function ecc-space-reset-windows "ecc-space" ())
 (declare-function ecc-show-session "ecc-transient" ())
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-tui-open "ecc-tui" (&optional session))
@@ -214,27 +214,26 @@ question buffer opens with the first one answered."
     (define-key map (kbd "r") #'ecc-resume)
     (define-key map (kbd "R") #'ecc-rename-session)
     (define-key map (kbd "v") #'ecc-show-session)
-    (define-key map (kbd "j") #'ecc-focus-project)
-    ;; `w' is here for `j': focusing a project hides the rest, and the
-    ;; way back has to be as near to hand as the way in was.
-    (define-key map (kbd "w") #'ecc-toggle)
-    ;; `v' goes to the prompt of a session and `V' to the code of the
-    ;; project, which is the pair the day is spent between.  It is worth
-    ;; a key because nothing else puts the code back: under `spaces' the
-    ;; windows of a tab are the user's, so `j' goes to the Space and
-    ;; leaves them where they are.
-    (define-key map (kbd "V") #'ecc-window-focus-source)
     (define-key map (kbd "i") #'ecc-interrupt)
     (define-key map (kbd "t") #'ecc-tui-open)
-    ;; The Spaces, in capitals beside the lower-case key of the nearest
-    ;; thing: `j' focuses a project and `J' goes to a Space, `c' starts a
-    ;; session here and `C' starts one in a worktree of its own, `b' opens
-    ;; the dashboard and `B' the sidebar, which is the dashboard that
-    ;; stays.  `z' is herdr's zoom.
-    (define-key map (kbd "J") #'ecc-space-goto)
-    (define-key map (kbd "B") #'ecc-sidebar-focus)
+    ;; The Spaces have the lower-case keys, being where the day is spent:
+    ;; `j' goes to one, `b' is the sidebar that lists them, `z' is
+    ;; herdr's zoom and `V' puts the tab back to the arrangement a new
+    ;; Space gets.  `v' goes to the prompt of a session and `V' to the
+    ;; windows around it, which is the pair worth having beside each
+    ;; other.
+    ;;
+    ;; `B' is the dashboard: the capital beside the `b' that is pressed
+    ;; all day, the two being the same list, one that stays on the screen
+    ;; and one that does not.
+    ;;
+    ;; Nothing here makes or removes a worktree.  The three that do
+    ;; belong together and are done in a week what these are done in an
+    ;; hour: they are `ecc-worktree-menu', under `?' then `W'.
+    (define-key map (kbd "j") #'ecc-space-goto)
+    (define-key map (kbd "b") #'ecc-sidebar-focus)
     (define-key map (kbd "z") #'ecc-space-zoom)
-    (define-key map (kbd "C") #'ecc-start-worktree)
+    (define-key map (kbd "V") #'ecc-space-reset-windows)
     ;; Answering what is waiting.
     (define-key map (kbd "a") #'ecc-answer-allow)
     (define-key map (kbd "d") #'ecc-answer-deny)
@@ -245,7 +244,7 @@ question buffer opens with the first one answered."
     (define-key map (kbd "3") #'ecc-answer-option-3)
     (define-key map (kbd "4") #'ecc-answer-option-4)
     ;; Looking around.
-    (define-key map (kbd "b") #'ecc-dashboard)
+    (define-key map (kbd "B") #'ecc-dashboard)
     (define-key map (kbd "D") #'ecc-review)
     ;; `G' is next to `D' because the two are one review with one
     ;; argument between them: what changed since the session started,
