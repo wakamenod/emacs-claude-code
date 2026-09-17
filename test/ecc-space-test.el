@@ -59,6 +59,9 @@ project of its own and the Space tables are fresh."
           (ecc-worktree--cache (make-hash-table :test #'equal))
           (ecc-space--tabs nil)
           (ecc-space--used nil)
+          (ecc-space--implicit nil)
+          (ecc-space--ensuring-parent nil)
+          (ecc-space--closing nil)
           (sessions (mapcar (lambda (entry)
                               (ecc-model-create-session
                                :name (car entry) :project-root (cdr entry)))
@@ -830,6 +833,343 @@ having changed, and the way back would do nothing either."
         (let ((ecc-layout 'spaces))
           (ecc-focus-project ecc-space-test--one))
         (should (equal selected ecc-space-test--one))))))
+
+;;;; The repository a worktree hangs under
+
+(defmacro ecc-space-test--with-checkouts (repo work &rest body)
+  "Run BODY with REPO and WORK bound to a repository and a worktree of it.
+Real directories, both: a checkout that is not there is one
+`ecc-space--ensure-parent' leaves alone, so the case cannot be made
+with a path that stands for nothing.  git is stood in for all the
+same -- no repository is created."
+  (declare (indent 2))
+  `(let* ((,repo (file-name-as-directory (make-temp-file "ecc-space-repo" t)))
+          (,work (file-name-as-directory (make-temp-file "ecc-space-work" t))))
+     (unwind-protect
+         (cl-letf (((symbol-function 'ecc-worktree-main)
+                    (lambda (root) (and (equal root ,work) ,repo)))
+                   ((symbol-function 'ecc-worktree-branch)
+                    (lambda (root)
+                      (if (equal root ,work) "worktree/feat-x" "main"))))
+           ,@body)
+       (delete-directory ,repo t)
+       (delete-directory ,work t))))
+
+(ert-deftest ecc-space-test-a-worktree-opens-its-repository-too ()
+  "Opening a worktree opens the repository it came from, behind it.
+A worktree with no repository on the screen is a child with nothing to
+hang under; this is herdr's `ensure_source_parent_membership'."
+  (ecc-space-test--with-sessions nil
+    (ecc-space-test--with-tab-bar
+      (ecc-space-test--with-checkouts repo work
+        (let ((space (ecc-space-of-root work)))
+          (ecc-space-select space)
+          ;; Both tabs are there, and the worktree is the one in front.
+          (should (ecc-space-tab (ecc-space-of-root repo)))
+          (should (ecc-space-tab space))
+          (should (equal (ecc-space-current-key) work))
+          ;; The repository was opened first and got a session of its
+          ;; own, the worktree after it.
+          (should (equal (reverse ecc-space-test--started) (list repo work)))
+          ;; Nobody asked for the repository, and it says so.
+          (should (member repo ecc-space--implicit))
+          (should-not (member work ecc-space--implicit)))))))
+
+(ert-deftest ecc-space-test-the-repository-is-not-opened-twice ()
+  "A repository that has a Space already is left where it is."
+  (ecc-space-test--with-sessions nil
+    (ecc-space-test--with-tab-bar
+      (ecc-space-test--with-checkouts repo work
+        (ecc-space-select (ecc-space-of-root repo))
+        (setq ecc-space-test--started nil)
+        (let ((tabs (length (funcall tab-bar-tabs-function))))
+          (ecc-space-select (ecc-space-of-root work))
+          ;; One tab more, not two, and nothing started in the
+          ;; repository a second time.
+          (should (= (1+ tabs) (length (funcall tab-bar-tabs-function))))
+          (should (equal ecc-space-test--started (list work)))
+          ;; The user opened it, so it is not ours to close again.
+          (should-not (member repo ecc-space--implicit))
+          ;; And coming back to the worktree makes no tab either.
+          (ecc-space-select (ecc-space-of-root repo))
+          (ecc-space-select (ecc-space-of-root work))
+          (should (= (1+ tabs) (length (funcall tab-bar-tabs-function)))))))))
+
+(ert-deftest ecc-space-test-a-worktree-whose-repository-is-gone-opens-alone ()
+  "A worktree whose repository is not on the disk opens on its own."
+  (ecc-space-test--with-sessions nil
+    (ecc-space-test--with-tab-bar
+      (ecc-space-test--with-checkouts repo work
+        (delete-directory repo t)
+        (ecc-space-select (ecc-space-of-root work))
+        (should (equal (ecc-space-current-key) work))
+        (should (equal ecc-space-test--started (list work)))
+        (should-not ecc-space--implicit)
+        (should (= 2 (length (funcall tab-bar-tabs-function))))
+        (make-directory repo t)))))
+
+(ert-deftest ecc-space-test-the-repository-gets-no-session-when-told-not-to ()
+  "With `ecc-space-always-session' off the repository is opened and left alone."
+  (ecc-space-test--with-sessions nil
+    (ecc-space-test--with-tab-bar
+      (ecc-space-test--with-checkouts repo work
+        (let ((ecc-space-always-session nil))
+          (ecc-space-select (ecc-space-of-root work))
+          (should (ecc-space-tab (ecc-space-of-root repo)))
+          (should (equal (ecc-space-current-key) work))
+          (should-not ecc-space-test--started))))))
+
+(ert-deftest ecc-space-test-a-worktree-under-classic-opens-nothing ()
+  "Under `classic' there are no Spaces to open, the repository's included."
+  (ecc-space-test--with-sessions nil
+    (ecc-space-test--with-checkouts repo work
+      (let ((ecc-layout 'classic)
+            (ecc-space-test--started nil))
+        (cl-letf (((symbol-function 'ecc-window-focus-source) #'ignore)
+                  ((symbol-function 'ecc-focus-project) #'ignore)
+                  ((symbol-function 'ecc-start)
+                   (lambda (&optional root &rest _)
+                     (push root ecc-space-test--started))))
+          (ecc-space-select (ecc-space-of-root work))
+          (should-not ecc-space--tabs)
+          (should-not ecc-space--implicit)
+          (should-not ecc-space-test--started))))))
+
+;;;; A Space that empties
+
+(ert-deftest ecc-space-test-a-space-goes-with-its-last-session ()
+  "A Space with nothing left in it closes, and another Space comes up."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--two))
+    (ecc-space-test--with-tab-bar
+      (ecc-space-select (ecc-space-of-root ecc-space-test--two))
+      (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+      (should (equal (ecc-space-current-key) ecc-space-test--one))
+      (ecc-model-remove-session (car sessions))
+      (should-not (tab-bar--tab-index-by-name "project-one"))
+      (should-not (assoc ecc-space-test--one ecc-space--tabs))
+      (should (equal (ecc-space-test--roots) (list ecc-space-test--two)))
+      ;; The tab that closed was the one showing, so another Space is.
+      (should (equal (ecc-space-current-key) ecc-space-test--two)))))
+
+(ert-deftest ecc-space-test-a-space-with-a-session-left-keeps-its-tab ()
+  "A Space is closed by its last session going, not by any of them."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("one-b" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+      (ecc-model-remove-session (car sessions))
+      (should (tab-bar--tab-index-by-name "project-one"))
+      (should (equal (ecc-space-current-key) ecc-space-test--one)))))
+
+(ert-deftest ecc-space-test-an-exited-session-keeps-its-space ()
+  "A session whose process died keeps its Space: `/resume' comes back to it."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+      (ecc-model-set-state (car sessions) 'exited)
+      (run-hook-with-args 'ecc-session-exited-hook (car sessions) 0)
+      (should (tab-bar--tab-index-by-name "project-one"))
+      (should (ecc-space-tab (ecc-space-of-root ecc-space-test--one))))))
+
+(ert-deftest ecc-space-test-a-session-of-nobody-closes-nothing ()
+  "A recording, the usage probe and an inline question close no Space.
+All three are kind `own' and all three belong to nobody: the probe has
+no project of its own and lands in whatever directory was current."
+  (ecc-space-test--with-sessions nil
+    (ecc-space-test--with-tab-bar
+      (ecc-space-select (make-ecc-space :key ecc-space-test--one
+                                        :root ecc-space-test--one
+                                        :name "project-one"))
+      (dolist (session
+               (list (ecc-model-create-session
+                      :name "past" :project-root ecc-space-test--one
+                      :kind 'archived)
+                     (ecc-model-create-session
+                      :name "probe" :project-root ecc-space-test--one
+                      :options '(:usage-probe t))))
+        (ecc-model-remove-session session)
+        (ecc-test-cleanup-session session)
+        (should (tab-bar--tab-index-by-name "project-one")))
+      (let ((inline (ecc-model-create-session
+                     :name "inline" :project-root ecc-space-test--one)))
+        (cl-letf (((symbol-function 'ecc-inline-session-p)
+                   (lambda (session) (eq session inline))))
+          (ecc-model-remove-session inline))
+        (ecc-test-cleanup-session inline)
+        (should (tab-bar--tab-index-by-name "project-one"))))))
+
+(ert-deftest ecc-space-test-a-start-that-fails-keeps-its-tab ()
+  "A session that never came up does not take the tab down with it.
+`ecc-proc--start-failed' forgets a session the CLI refused, and the
+Space being opened is empty again at that moment."
+  (ecc-space-test--with-sessions nil
+    (ecc-space-test--with-tab-bar
+      (let ((root (file-name-as-directory (make-temp-file "ecc-space" t))))
+        (unwind-protect
+            (cl-letf (((symbol-function 'ecc-start)
+                       (lambda (&optional directory &rest _)
+                         ;; What a failed start does: register, then
+                         ;; forget again.
+                         (let ((session (ecc-model-create-session
+                                         :name "no" :project-root directory)))
+                           (ecc-model-remove-session session)
+                           (ecc-test-cleanup-session session)
+                           nil))))
+              (ecc-space-select (ecc-space-of-root root))
+              (should (ecc-space-tab (ecc-space-of-root root))))
+          (delete-directory root t))))))
+
+(ert-deftest ecc-space-test-a-space-stays-for-its-source-when-told-to ()
+  "With `ecc-space-always-session' off a Space lives on its source buffer.
+It goes when the last buffer of the project goes, and not before."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--two))
+    (ecc-space-test--with-tab-bar
+      (let ((ecc-space-always-session nil))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--two))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (ecc-model-remove-session (car sessions))
+        ;; Nothing is running there any more, and the Space stands.
+        (should (tab-bar--tab-index-by-name "project-one"))
+        (let ((buffer (generate-new-buffer "source.el")))
+          (with-current-buffer buffer
+            (setq buffer-file-name (expand-file-name
+                                    "source.el" ecc-space-test--one)))
+          (kill-buffer buffer))
+        (should-not (tab-bar--tab-index-by-name "project-one"))
+        (should-not (assoc ecc-space-test--one ecc-space--tabs))))))
+
+(ert-deftest ecc-space-test-an-empty-space-starts-nothing-when-told-not-to ()
+  "With `ecc-space-always-session' off, opening a Space starts nothing."
+  (ecc-space-test--with-sessions `(("two" . ,ecc-space-test--two))
+    (ecc-space-test--with-tab-bar
+      (let ((ecc-space-always-session nil)
+            (root (file-name-as-directory (make-temp-file "ecc-space" t))))
+        (unwind-protect
+            (progn
+              (ecc-space-select (ecc-space-of-root root))
+              (should-not ecc-space-test--started)
+              (should (ecc-space-tab (ecc-space-of-root root))))
+          (delete-directory root t))))))
+
+;;;; Closing a Space, and the group under it
+
+(ert-deftest ecc-space-test-closing-a-repository-closes-its-worktrees ()
+  "A repository takes the worktrees drawn under it with it, and asks once.
+The checkouts are not touched: `ecc-remove-worktree' is what undoes
+one."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("work" . ,ecc-space-test--work))
+    (ecc-space-test--with-tab-bar
+      (let ((asked 0)
+            (killed nil)
+            (removed nil))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--work))
+        (cl-letf (((symbol-function 'yes-or-no-p)
+                   (lambda (&rest _) (cl-incf asked) t))
+                  ((symbol-function 'ecc-kill)
+                   (lambda (session)
+                     (push (ecc-session-name session) killed)
+                     (ecc-model-remove-session session)))
+                  ((symbol-function 'ecc-worktree-remove)
+                   (lambda (&rest _) (setq removed t))))
+          (ecc-space-close (ecc-space-of-root ecc-space-test--one)))
+        (should (= asked 1))
+        (should (equal (sort killed #'string<) '("one" "work")))
+        (should-not removed)
+        (should-not (tab-bar--tab-index-by-name "project-one"))
+        (should-not (tab-bar--tab-index-by-name "feat-x"))
+        (should-not ecc-space--tabs)))))
+
+(ert-deftest ecc-space-test-closing-a-worktree-leaves-the-repository ()
+  "A worktree closed on its own is the only Space that closes."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("work" . ,ecc-space-test--work))
+    (ecc-space-test--with-tab-bar
+      (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+      (ecc-space-select (ecc-space-of-root ecc-space-test--work))
+      (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                ((symbol-function 'ecc-kill) #'ecc-model-remove-session))
+        (ecc-space-close (ecc-space-of-root ecc-space-test--work)))
+      (should-not (tab-bar--tab-index-by-name "feat-x"))
+      (should (tab-bar--tab-index-by-name "project-one")))))
+
+(ert-deftest ecc-space-test-closing-the-last-worktree-closes-a-repository-nobody-asked-for ()
+  "A repository opened behind a worktree goes when the last worktree does.
+One the user opened themselves stays: it was asked for."
+  (ecc-space-test--with-sessions nil
+    (ecc-space-test--with-tab-bar
+      (ecc-space-test--with-checkouts repo work
+        (let ((ecc-space-always-session nil))
+          (ecc-space-select (ecc-space-of-root work))
+          (should (ecc-space-tab (ecc-space-of-root repo)))
+          (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+            (ecc-space-close (ecc-space-of-root work)))
+          (should-not (ecc-space-tab (ecc-space-of-root work)))
+          (should-not (ecc-space-tab (ecc-space-of-root repo)))
+          ;; Now the same with a repository the user opened first.
+          (ecc-space-select (ecc-space-of-root repo))
+          (ecc-space-select (ecc-space-of-root work))
+          (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+            (ecc-space-close (ecc-space-of-root work)))
+          (should (ecc-space-tab (ecc-space-of-root repo))))))))
+
+;;;; The windows of a session that is killed
+
+(ert-deftest ecc-space-test-a-killed-session-takes-its-window-with-it ()
+  "The window of a session that is killed is deleted, not filled with scratch."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("one-b" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (let ((ecc-window-width 60)
+            (ecc-space-session-min-width 10))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (ecc-sidebar-hide)
+        (delete-other-windows)
+        (let ((first (ecc-space-display-session (car sessions)))
+              (second (ecc-space-display-session (nth 1 sessions))))
+          (should (window-live-p first))
+          (should (window-live-p second))
+          (let ((windows (length (window-list nil 'no-minibuffer))))
+            (ecc-model-remove-session (car sessions))
+            (should-not (window-live-p first))
+            (should (window-live-p second))
+            (should (= (1- windows) (length (window-list nil 'no-minibuffer))))
+            ;; And nothing was put in its place: the window is gone,
+            ;; rather than left holding whatever was there before the
+            ;; transcript.
+            (should-not (get-buffer-window-list
+                         (ecc-session-buffer (car sessions)) nil t))))))))
+
+(ert-deftest ecc-space-test-the-last-window-gets-the-source-rather-than-scratch ()
+  "A transcript alone in a Space that stays is replaced by the source.
+The window cannot be deleted -- it would take the tab with it -- and a
+Space kept alive by its source is one with a source to show.  With
+`ecc-space-always-session' on the question does not arise: the Space
+closes with its last session."
+  (ecc-space-test--with-sessions nil
+    (ecc-space-test--with-tab-bar
+      (let* ((ecc-space-always-session nil)
+             (root (file-name-as-directory (make-temp-file "ecc-space" t)))
+             (session nil))
+        (unwind-protect
+            (progn
+              (setq session (ecc-model-create-session
+                             :name "one" :project-root root))
+              (ecc-space-select (ecc-space-of-root root))
+              (ecc-sidebar-hide)
+              (delete-other-windows)
+              (set-window-buffer (selected-window)
+                                 (ecc-session-ensure-buffer session))
+              (ecc-model-remove-session session)
+              (should (= 1 (length (window-list nil 'no-minibuffer))))
+              (should (equal (window-buffer (selected-window))
+                             (ecc-space--source-buffer
+                              (ecc-space-of-root root)))))
+          (when session (ecc-test-cleanup-session session))
+          (delete-directory root t))))))
 
 (provide 'ecc-space-test)
 

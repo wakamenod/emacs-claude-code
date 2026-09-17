@@ -149,10 +149,6 @@ idle Space a column to the left of every other name."
     map)
   "Keymap of the fold arrow at the right end of a repository's row.")
 
-(defun ecc-sidebar--children (key spaces)
-  "Return the Spaces among SPACES whose parent is the Space KEY."
-  (seq-filter (lambda (space) (equal (ecc-space-parent space) key)) spaces))
-
 (defun ecc-sidebar--connector (space spaces)
   "Return the tree line drawn in front of SPACE, one of the drawn SPACES.
 Empty for a repository; for a worktree, the line that ties it to the
@@ -162,7 +158,7 @@ of three drawn, and it is the last of what is drawn that closes the
 line."
   (if (not (ecc-space-child-p space spaces))
       ""
-    (let ((last (car (last (ecc-sidebar--children
+    (let ((last (car (last (ecc-space-children
                             (ecc-space-parent space) spaces)))))
       (if (ecc-space-equal space last) "  └─ " "  ├─ "))))
 
@@ -177,7 +173,7 @@ A folded repository answers for its worktrees as well: with the rows
 away, its mark is the only thing left to say that one of them is
 waiting.  herdr does the same (`displayed_workspace_status')."
   (let ((children (and (member (ecc-space-key space) ecc-sidebar--collapsed)
-                       (ecc-sidebar--children (ecc-space-key space) spaces))))
+                       (ecc-space-children space spaces))))
     (if (null children)
         (ecc-space-state space)
       (ecc-tab-state-roll-up
@@ -187,7 +183,7 @@ waiting.  herdr does the same (`displayed_workspace_status')."
   "Return the fold arrow of SPACE, or an empty string when it has no worktree.
 SPACES is every Space there is: a repository whose worktrees are all
 folded away still has them."
-  (if (null (ecc-sidebar--children (ecc-space-key space) spaces))
+  (if (null (ecc-space-children space spaces))
       ""
     (if (member (ecc-space-key space) ecc-sidebar--collapsed) "▸" "▾")))
 
@@ -419,6 +415,7 @@ A sidebar nobody is looking at is not worth a timer."
     ecc-request-resolved-hook
     ecc-session-init-hook
     ecc-session-exited-hook
+    ecc-session-removed-hook
     ecc-turn-finished-hook)
   "The hooks that change what the sidebar says.
 The same set the tab line listens to, and the two are drawn from the

@@ -52,6 +52,8 @@
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function dired-noselect "dired" (dir-or-list &optional switches))
 (declare-function ecc-sidebar-show "ecc-sidebar" ())
+(declare-function ecc-sidebar-redraw "ecc-sidebar" ())
+(declare-function ecc-inline-session-p "ecc-inline" (session))
 (declare-function ecc-history-project-roots "ecc-history" ())
 
 ;;;; Settings
@@ -68,6 +70,27 @@ It is a setting because it is a screen: the number of transcripts that
 can be read at once on a 13-inch laptop and on a 34-inch display is not
 the same number."
   :type 'integer
+  :group 'ecc)
+
+(defcustom ecc-space-always-session t
+  "Non-nil means a Space always holds a session.
+Going to a Space then starts one when nothing of the project is
+running, and a Space that runs out of sessions closes itself: a tab
+with a file in it and no way to say anything is a Space that looks
+broken, so there is never one on the screen.  That is the default
+because it is what a Space is for.
+
+Nil makes a Space a place to read as much as a place to work: opening
+one shows the source of the project and starts nothing, and the Space
+stays until the last buffer of the project is killed as well.
+
+It is a setting because a session is a process and a budget.  Whether
+opening a checkout should spend either of them -- to look at a
+worktree beside the one being worked in, to keep a repository on the
+screen for what its code says -- is a judgement about cost and about
+how a person works, not something this package can settle for
+everybody."
+  :type 'boolean
   :group 'ecc)
 
 ;;;; The model
@@ -149,6 +172,17 @@ from.  SPACES defaults to `ecc-space-list'."
                    (equal (ecc-space-key other) (ecc-space-parent space)))
                  (or spaces (ecc-space-list)))
        t))
+
+(defun ecc-space-children (space &optional spaces)
+  "Return the Spaces of SPACE drawn under it among SPACES.
+The worktrees of a repository that are on the screen, in the order they
+are drawn.  SPACE is a Space or the key of one, which is what the
+sidebar has in hand when it draws the tree lines.  SPACES defaults to
+`ecc-space-list'."
+  (let ((key (if (ecc-space-p space) (ecc-space-key space) space)))
+    (seq-filter (lambda (other)
+                  (equal (ecc-space-parent other) key))
+                (or spaces (ecc-space-list)))))
 
 (defun ecc-space-number (space &optional spaces)
   "Return the place SPACE holds among SPACES, counting from one.
@@ -338,13 +372,15 @@ so the key is held here instead.")
 (defun ecc-space--ensure-session (space)
   "Start a session in SPACE when nothing of it is running.
 Going to a Space is asking to work there, and a Space with nothing
-running is a tab with a file in it and no way to say anything.  There is
-no setting: a Space that lands empty is one that looks broken.
+running is a tab with a file in it and no way to say anything: that is
+why `ecc-space-always-session' defaults on, and turning it off is
+asking for a Space to read in.
 
 Failing to start is not failing to go there -- the tab is made and the
 message says what happened -- and a checkout that is gone is left alone
 rather than started in a directory that does not exist."
-  (when (and (not ecc-space--laying-out)
+  (when (and ecc-space-always-session
+             (not ecc-space--laying-out)
              (not (member (ecc-space-key space) ecc-space--starting))
              (null (ecc-space-sessions space))
              (file-directory-p (ecc-space-root space)))
@@ -355,16 +391,65 @@ rather than started in a directory that does not exist."
         (error (message "%s: nothing started: %s" (ecc-space-name space)
                         (error-message-string error)))))))
 
+(defvar ecc-space--closing nil
+  "Non-nil while a Space is being closed on purpose.
+The windows of a session that is killed are still taken away, but no
+Space closes itself underneath the command doing the closing.")
+
+(defvar ecc-space--implicit nil
+  "Keys of the Spaces this package opened on somebody else's account.
+A repository opened because a worktree of it was: nobody asked for it,
+so it goes again when the last worktree under it does.  A repository
+the user opened themselves is not here and stays.")
+
+(defvar ecc-space--ensuring-parent nil
+  "Keys of the Spaces whose repository is being opened behind them.
+Opening the repository starts a session in it, which shows it, which
+selects its Space: the key is held here so that the second turn of that
+circle does not go looking for a repository again.")
+
+(defun ecc-space--parent-space (space)
+  "Return the Space of the repository SPACE was checked out from, or nil.
+Nil when SPACE is not a worktree, when the repository has a Space
+already -- a tab or a session of its own -- when git says the
+repository is itself a linked worktree, and when its checkout is gone."
+  (when-let* ((parent (ecc-space-parent space))
+              ((not (member parent (ecc-space--keys))))
+              ((not (member parent ecc-space--ensuring-parent)))
+              ((file-directory-p parent))
+              ((not (ecc-worktree-main parent))))
+    (ecc-space-of-root parent)))
+
+(defun ecc-space--ensure-parent (space)
+  "Open the Space of the repository SPACE was checked out from.
+A worktree with no repository above it is a child with nothing to hang
+under: `ecc-space-list' leaves it at the top of the sidebar, and the
+tree the Spaces are drawn in says nothing about where it came from.  So
+opening a worktree opens the repository too, the way herdr's
+`ensure_source_parent_membership' does.
+
+The tab is made before the tab of SPACE and the session of SPACE is
+started after it, so the worktree is what the user is left looking at.
+Whether the repository gets a session of its own is
+`ecc-space-always-session', like everywhere else."
+  (when-let* ((parent (ecc-space--parent-space space)))
+    (let ((ecc-space--ensuring-parent
+           (cons (ecc-space-key parent) ecc-space--ensuring-parent)))
+      (ecc-space--select-tab parent)
+      (push (ecc-space-key parent) ecc-space--implicit))))
+
 (defun ecc-space--select-tab (space)
   "Show SPACE in its tab, making the tab when it has none.
 A Space with nothing running in it gets a session; see
-`ecc-space--ensure-session\='."
+`ecc-space--ensure-session\='.  A worktree opened for the first time
+brings its repository with it; see `ecc-space--ensure-parent\='."
   (unless (bound-and-true-p tab-bar-mode)
     (tab-bar-mode 1))
   (let ((name (ecc-space-tab space)))
     (if name
         (progn (tab-bar-select-tab-by-name name)
                (ecc-space--ensure-source space))
+      (ecc-space--ensure-parent space)
       (setq name (ecc-space--unique-tab-name (ecc-space-name space)))
       (tab-bar-new-tab)
       (tab-bar-rename-tab name)
@@ -692,22 +777,46 @@ and the projects only recordings are left of follow."
 ;;;###autoload
 (defun ecc-space-close (space)
   "Close the tab of SPACE, stopping the sessions running in it.
+A repository takes its worktrees with it: they are drawn under it and
+are closed with it, the way herdr closes a group.  A worktree closed on
+its own leaves the repository where it is.
+
 The checkout of a worktree is not touched; `ecc-remove-worktree' is
 what undoes one."
   (interactive (list (or (ecc-space-current) (ecc-space-read "Close Space: "))))
-  (let ((sessions (ecc-space-sessions space))
-        (name (ecc-space-tab space)))
+  ;; Everything is read before the first kill: closing a session closes
+  ;; the Space it was the last of, and the children would be gone from
+  ;; `ecc-space-list' halfway through the loop.
+  (let* ((spaces (ecc-space-list))
+         (children (ecc-space-children space spaces))
+         (group (cons space children))
+         (sessions (seq-mapcat #'ecc-space-sessions group))
+         (names (delq nil (mapcar #'ecc-space-tab group))))
     (when sessions
       (unless (yes-or-no-p (format "Stop %d session%s of %s? "
                                    (length sessions)
                                    (if (= 1 (length sessions)) "" "s")
-                                   (ecc-space-name space)))
+                                   (ecc-space--group-name space children)))
         (user-error "Left alone"))
       (require 'ecc)
-      (mapc #'ecc-kill sessions))
-    (when name
-      (tab-bar-close-tab-by-name name))
-    (message "Closed %s" (ecc-space-name space))))
+      (let ((ecc-space--closing t))
+        (mapc #'ecc-kill sessions)))
+    (let ((ecc-space--closing t))
+      (dolist (name names)
+        (when (ecc-space--tab-index name)
+          (tab-bar-close-tab-by-name name)))
+      (dolist (one group)
+        (setq ecc-space--implicit
+              (delete (ecc-space-key one) ecc-space--implicit))))
+    (ecc-space--child-gone space)
+    (message "Closed %s" (ecc-space--group-name space children))))
+
+(defun ecc-space--group-name (space children)
+  "Return what to call SPACE and the CHILDREN closing with it."
+  (if children
+      (format "%s and %s" (ecc-space-name space)
+              (string-join (mapcar #'ecc-space-name children) ", "))
+    (ecc-space-name space)))
 
 (defun ecc-space-forget (root)
   "Close the tab of the Space at ROOT and forget it.
@@ -721,12 +830,150 @@ The sessions are not touched: whoever removes a checkout stops them
 first.  A sole tab is forgotten rather than closed, Emacs refusing to
 delete the last one."
   (let* ((key (ecc-window-project-key root))
-         (name (alist-get key ecc-space--tabs nil nil #'equal)))
+         (name (alist-get key ecc-space--tabs nil nil #'equal))
+         (space (ecc-space-of-root key)))
     (when (and (ecc-space--tab-index name)
                (cdr (tab-bar-tabs)))
       (tab-bar-close-tab-by-name name))
     (setf (alist-get key ecc-space--tabs nil 'remove #'equal) nil)
-    (setf (alist-get key ecc-space--used nil 'remove #'equal) nil)))
+    (setf (alist-get key ecc-space--used nil 'remove #'equal) nil)
+    (setq ecc-space--implicit (delete key ecc-space--implicit))
+    ;; Asked while ROOT is still there: once the checkout is gone git
+    ;; can no longer say which repository it came from.
+    (unless ecc-space--closing
+      (ecc-space--child-gone space))))
+
+;;;; When a session goes
+
+;; A Space is not a thing that is made and destroyed: it is a project
+;; with something of ours in it, and it stops being one when the last
+;; of that goes.  Which is why what closes a Space is a session leaving
+;; the model rather than a command -- and why the trigger is
+;; `ecc-session-removed-hook' and not `ecc-session-exited-hook': a
+;; session whose process died keeps its place so `/resume' has
+;; somewhere to come back to.
+
+(defun ecc-space--counts-p (session)
+  "Return non-nil when the going of SESSION says anything about a Space.
+A recording being read, the usage probe and an inline question are all
+kind `own' and all belong to nobody: the probe has no project of its
+own and lands in whatever directory was current, which would close the
+Space of a project it was never in."
+  (and (not (eq (ecc-session-kind session) 'archived))
+       (not (ecc-model-option session :usage-probe nil))
+       (not (and (fboundp 'ecc-inline-session-p)
+                 (ecc-inline-session-p session)))))
+
+(defun ecc-space--session-buffers (session)
+  "Return the live buffers of SESSION."
+  (seq-filter #'buffer-live-p
+              (list (ecc-session-buffer session)
+                    (ecc-session-stream-buffer session))))
+
+(defun ecc-space--delete-session-windows (session)
+  "Take the windows of SESSION away rather than leave them to Emacs.
+A killed buffer is replaced in its window by whatever was there before
+it, which in a Space is nothing to do with the project -- `*scratch*'
+in the middle of a row of transcripts.  The window is deleted instead,
+and the ones beside it take the room back.
+
+The last window of the tab is given the source of the project instead:
+a tab has to hold something, and the code is the one thing that is
+always an answer.  `window-deletable-p' answers `tab' or `frame' for
+that window -- it can be deleted, but only by taking the tab or the
+frame with it -- so only a plain t is taken for yes.  The sidebar is a
+side window and is neither deleted nor counted."
+  (let ((buffers (ecc-space--session-buffers session)))
+    (dolist (buffer buffers)
+      (dolist (window (get-buffer-window-list buffer nil t))
+        (unless (window-parameter window 'window-side)
+          (if (eq (window-deletable-p window) t)
+              (ignore-errors (delete-window window))
+            (when-let* ((space (ecc-space-current))
+                        (source (ecc-space--source-buffer space))
+                        ((buffer-live-p source)))
+              (set-window-buffer window source))))))))
+
+(defun ecc-space--close-empty (space)
+  "Close SPACE, which has nothing left in it.
+The tab goes, which is what takes the user to the Space beside it, and
+the key is forgotten everywhere it was written down."
+  (let ((ecc-space--closing t))
+    (ecc-space-forget (ecc-space-root space))
+    (setq ecc-space--implicit
+          (delete (ecc-space-key space) ecc-space--implicit)))
+  (ecc-space--child-gone space)
+  (when (fboundp 'ecc-sidebar-redraw)
+    (ecc-sidebar-redraw))
+  (message "Closed %s" (ecc-space-name space)))
+
+(defun ecc-space--child-gone (child)
+  "Close the repository of CHILD when nobody but CHILD asked for it.
+A repository opened by `ecc-space--ensure-parent' is there to hold the
+worktrees under it.  With the last of them gone and nothing running in
+it, it is a tab nobody asked for."
+  (when-let* ((parent-key (ecc-space-parent child))
+              ((member parent-key ecc-space--implicit))
+              (parent (ecc-space-of-root parent-key))
+              ((null (ecc-space-sessions parent)))
+              ((null (seq-remove (lambda (other)
+                                   (equal (ecc-space-key other)
+                                          (ecc-space-key child)))
+                                 (ecc-space-children parent)))))
+    (ecc-space--close-empty parent)))
+
+(defun ecc-space--session-removed (session)
+  "Take the windows of SESSION away, and its Space when it was the last.
+On `ecc-session-removed-hook'.  A Space is closed only under
+`ecc-space-always-session': with the setting off a Space stands on its
+source buffer alone and goes with that instead, in
+`ecc-space--forget-on-source-kill'.
+
+A session of a Space that is still being started is not the end of
+anything: `ecc-proc--start-failed' forgets a session that never came
+up, and the tab the user just asked for would go with it."
+  (when (eq ecc-layout 'spaces)
+    (ecc-space--delete-session-windows session)
+    (when-let* (((not ecc-space--closing))
+                ((not ecc-space--laying-out))
+                ((ecc-space--counts-p session))
+                (key (ecc-window-session-project session))
+                ((not (member key ecc-space--starting)))
+                (space (ecc-space-of-root key))
+                ;; An inline session left in the project counts: nothing
+                ;; here closes a Space that still has something in it.
+                ((null (ecc-space-sessions space)))
+                (ecc-space-always-session))
+      (ecc-space--close-empty space))))
+
+(add-hook 'ecc-session-removed-hook #'ecc-space--session-removed)
+
+(defun ecc-space--forget-on-source-kill ()
+  "Close the Space of the buffer being killed when nothing else is left.
+The other half of `ecc-space-always-session': with the setting off a
+Space is kept alive by its source, so killing the last buffer of the
+project is what closes it.  On `kill-buffer-hook'."
+  (when (and (eq ecc-layout 'spaces)
+             (not ecc-space-always-session)
+             (not ecc-space--closing))
+    (when-let* ((directory (ecc-window-buffer-directory (current-buffer)))
+                (key (ecc-window-project-key directory))
+                ((alist-get key ecc-space--tabs nil nil #'equal))
+                (space (ecc-space-of-root key))
+                ((null (ecc-space-sessions space)))
+                ((null (ecc-space--other-project-buffers key))))
+      (ecc-space--close-empty space))))
+
+(defun ecc-space--other-project-buffers (key)
+  "Return the live buffers of the project KEY, bar the current one."
+  (seq-filter (lambda (buffer)
+                (and (not (eq buffer (current-buffer)))
+                     (not (ecc-window-own-buffer-p buffer))
+                     (when-let* ((directory (ecc-window-buffer-directory buffer)))
+                       (equal (ecc-window-project-key directory) key))))
+              (buffer-list)))
+
+(add-hook 'kill-buffer-hook #'ecc-space--forget-on-source-kill)
 
 (provide 'ecc-space)
 

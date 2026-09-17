@@ -44,6 +44,9 @@
 (declare-function ecc-mcp-tool-name "ecc-mcp" (tool))
 (declare-function ecc-history-file "ecc-history" (session-id))
 (declare-function ecc-space-forget "ecc-space" (root))
+;; Bound around the kill loop below: a Space closing itself halfway
+;; through a removal would take the tab out from under the command.
+(defvar ecc-space--closing)
 
 (defcustom ecc-worktree-directory ".claude/worktrees"
   "Where `ecc-worktree-create' puts a checkout.
@@ -875,7 +878,8 @@ taken with it."
         (user-error "Left alone")))
     (when sessions
       (require 'ecc)
-      (mapc #'ecc-kill sessions))
+      (let ((ecc-space--closing t))
+        (mapc #'ecc-kill sessions)))
     ;; Read while the checkout is still there, and asked about once it
     ;; is gone: a branch cannot be deleted while a worktree holds it.
     (let ((main (ecc-worktree-main path))
