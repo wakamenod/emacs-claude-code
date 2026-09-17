@@ -724,6 +724,159 @@ and `ecc-toggle' bring it back."
                         (ecc-window-buffer-session
                          (window-buffer (car (ecc-space--session-windows))))))))))) 
 
+;;;; Putting a Space back the way a new tab gets it
+
+(defmacro ecc-space-test--with-code (&rest body)
+  "Run BODY with a file of `ecc-space-test--one\\=' to read, killed afterwards.
+These roots are names rather than directories, so there is nothing to
+list either: without a buffer of the project there is no source for a
+lay-out to put anywhere."
+  (declare (indent 0))
+  `(let ((code (get-buffer-create "code.el")))
+     (unwind-protect
+         (progn
+           (with-current-buffer code
+             (setq buffer-file-name
+                   (expand-file-name "code.el" ecc-space-test--one)))
+           ,@body)
+       (with-current-buffer code (set-buffer-modified-p nil))
+       (kill-buffer code))))
+
+(defun ecc-space-test--wreck-the-tab ()
+  "Give the source window to a transcript and put everything else away.
+What `C-x 1' on a transcript leaves: a tab that is all transcript, with
+no window to read the code in and nobody's arrangement in it."
+  (let ((session (car (ecc-window-project-sessions ecc-space-test--one))))
+    (set-window-buffer (ecc-window--source-window)
+                       (ecc-session-ensure-buffer session))
+    (delete-other-windows (get-buffer-window (ecc-session-buffer session)))))
+
+(ert-deftest ecc-space-test-reset-stands-the-sessions-side-by-side-again ()
+  "Resetting deals the tab again, by the rules it was dealt with."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (ecc-space-test--with-code
+        (let ((ecc-window-width 60)
+              (ecc-space-session-min-width 10))
+          (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+          (ecc-space-test--wreck-the-tab)
+          (should-not (ecc-space--source-window))
+          (ecc-space-reset-windows)
+          (let ((row (mapcar (lambda (window)
+                               (ecc-session-name
+                                (ecc-window-buffer-session
+                                 (window-buffer window))))
+                             (ecc-space--session-windows))))
+            ;; The same row a new tab comes up with: most recently used
+            ;; first, nothing stacked, the source to the left of them.
+            (should (equal row '("two" "one")))
+            (should (apply #'= (mapcar (lambda (w) (nth 1 (window-edges w)))
+                                       (ecc-space--session-windows))))
+            (should (< (nth 0 (window-edges (ecc-space--source-window)))
+                       (nth 0 (window-edges
+                               (car (ecc-space--session-windows))))))
+            ;; And point is where a new tab leaves it, in the code.
+            (should (eq (selected-window) (ecc-space--source-window)))))))))
+
+(ert-deftest ecc-space-test-reset-stops-when-the-row-is-full ()
+  "Resetting stops at the edge of the row rather than taking a window over."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one)
+                                   ("three" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (ecc-space-test--with-code
+        (let ((ecc-window-width 60)
+              (ecc-space-session-min-width (frame-width)))
+          (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+          (ecc-space-test--wreck-the-tab)
+          (ecc-space-reset-windows)
+          (should (= 1 (length (ecc-space--session-windows))))
+          (should (equal "three"
+                         (ecc-session-name
+                          (ecc-window-buffer-session
+                           (window-buffer
+                            (car (ecc-space--session-windows)))))))
+          ;; The two that did not fit are running with no window.
+          (dolist (name '("one" "two"))
+            (let ((session (seq-find (lambda (one)
+                                       (equal (ecc-session-name one) name))
+                                     (ecc-model-sessions))))
+              (should session)
+              (should-not (get-buffer-window
+                           (ecc-session-ensure-buffer session))))))))))
+
+(ert-deftest ecc-space-test-reset-leaves-the-sidebar-alone ()
+  "The sidebar keeps its place and its width, and a hidden one comes back.
+It is a side window that asked not to be deleted, which is what
+`delete-other-windows\\=' honours -- and a new tab has a sidebar, which
+is the arrangement this command promises."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (ecc-space-test--with-code
+        (let ((ecc-window-width 60)
+              (ecc-space-session-min-width 10))
+          (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+          (ecc-sidebar-show)
+          (let* ((side (ecc-sidebar--window))
+                 (width (window-total-width side)))
+            (should side)
+            (ecc-space-test--wreck-the-tab)
+            (ecc-space-reset-windows)
+            (should (window-live-p (ecc-sidebar--window)))
+            (should (eq (window-parameter (ecc-sidebar--window) 'window-side)
+                        'left))
+            (should (= width (window-total-width (ecc-sidebar--window))))
+            (should (= 2 (length (ecc-space--session-windows)))))
+          ;; Hidden, it comes back: a new tab has one.
+          (ecc-sidebar-hide)
+          (should-not (ecc-sidebar--window))
+          (ecc-space-reset-windows)
+          (should (ecc-sidebar--window)))))))
+
+(ert-deftest ecc-space-test-reset-forgets-the-zoom ()
+  "The way back a zoom left behind goes with the arrangement it led to."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (ecc-space-test--with-code
+        (let ((ecc-window-width 60)
+              (ecc-space-session-min-width 10))
+          (unwind-protect
+              (progn
+                (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+                (ecc-sidebar-hide)
+                (ecc-space-zoom)
+                (should (alist-get (ecc-window--layout-key)
+                                   (frame-parameter nil 'ecc-space-zoom)
+                                   nil nil #'equal))
+                (ecc-space-reset-windows)
+                (should-not (alist-get (ecc-window--layout-key)
+                                       (frame-parameter nil 'ecc-space-zoom)
+                                       nil nil #'equal))
+                ;; So the next zoom zooms, rather than putting back the
+                ;; arrangement that was thrown away.  The sidebar is not
+                ;; counted: the reset brought it back and zooming cannot
+                ;; take it down.
+                (should (cdr (ecc-space--session-windows)))
+                (ecc-space-zoom)
+                (should-not (seq-remove
+                             (lambda (window)
+                               (window-parameter window 'window-side))
+                             (cdr (window-list nil 'no-minibuffer)))))
+            (set-frame-parameter nil 'ecc-space-zoom nil)))))))
+
+(ert-deftest ecc-space-test-reset-is-a-spaces-command ()
+  "Under `classic' there is no Space to deal, and it says so."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one))
+    (let ((ecc-layout 'classic))
+      (should-error (ecc-space-reset-windows) :type 'user-error))
+    (ecc-space-test--with-tab-bar
+      ;; `spaces', but this tab is nobody's Space.
+      (set-frame-parameter nil 'ecc-space-tabs nil)
+      (should-error (ecc-space-reset-windows) :type 'user-error))))
+
 (ert-deftest ecc-space-test-an-empty-space-gets-a-session ()
   "Going to a Space with nothing running starts one there.
 A tab with a file in it and no way to say anything is a Space that

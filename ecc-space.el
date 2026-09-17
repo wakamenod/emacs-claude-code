@@ -720,6 +720,15 @@ lost."
 
 ;;;; Commands
 
+(defun ecc-space--forget-zoom ()
+  "Forget the arrangement `ecc-space-zoom\=' saved for this tab.
+Zooming and putting back are two halves of one key, so the way back is
+thrown away as it is taken -- and `ecc-space-reset-windows\=' throws it
+away too, the arrangement it was the way back to having just gone."
+  (let ((saved (frame-parameter nil 'ecc-space-zoom)))
+    (setf (alist-get (ecc-window--layout-key) saved nil 'remove #'equal) nil)
+    (set-frame-parameter nil 'ecc-space-zoom saved)))
+
 ;;;###autoload
 (defun ecc-space-zoom ()
   "Fill the tab with the window point is in, or put the windows back.
@@ -732,8 +741,7 @@ sidebar -- stays where it is (verified 2026-09-14)."
          (state (alist-get key saved nil nil #'equal)))
     (cond
      (state
-      (setf (alist-get key saved nil 'remove #'equal) nil)
-      (set-frame-parameter nil 'ecc-space-zoom saved)
+      (ecc-space--forget-zoom)
       (window-state-put state (frame-root-window) 'safe)
       (message "Windows as they were"))
      ;; A side window cannot be made the only window, and the sidebar is
@@ -751,6 +759,57 @@ sidebar -- stays where it is (verified 2026-09-14)."
       (set-frame-parameter nil 'ecc-space-zoom saved)
       (delete-other-windows)
       (message "Zoomed; the same key puts the windows back")))))
+
+;;;###autoload
+(defun ecc-space-reset-windows ()
+  "Put this Space back to the arrangement a new tab gets.
+The source of the project on the left and the sessions of the Space
+beside it, most recently used first, until the row has no room for
+another column of `ecc-space-session-min-width\=' -- the same rules the
+tab was dealt with, run by the same code, so the two cannot drift
+apart.  The sessions that do not fit go on running with no window.
+
+The windows of a Space are the user\='s and nothing rearranges them on
+its own.  This is the command that says start again, for a tab that has
+been split, zoomed, filled with a review or given over to transcripts
+with no window left to read the code in.
+
+The sidebar stays where it is, at the width it had: it is a side window
+that asked not to be deleted.  A sidebar that was hidden comes back,
+because a new tab has one -- `ecc-sidebar-toggle\=' puts it away again.
+
+The zoom of this Space is forgotten: the arrangement it was the way
+back to has just gone, and `ecc-space-zoom\=' afterwards zooms from
+here.
+
+A `spaces\=' command.  Under `classic\=' a transcript lives in a side
+window with a role, and `ecc-focus-project\=' is what deals those out
+again."
+  (interactive)
+  (unless (eq ecc-layout 'spaces)
+    (user-error "Resetting the windows is a `spaces' command; \
+under `classic' the roles are dealt out by `ecc-focus-project'"))
+  (let ((space (or (ecc-space-current)
+                   (user-error "This tab is not a Space; `C-c c j' goes to one")))
+        ;; The window the code is read in, or -- on a tab that is all
+        ;; transcripts -- whichever window is not the sidebar.  Either
+        ;; way `ecc-space--lay-out' is about to put the source in it.
+        (keep (or (ecc-space--source-window)
+                  (seq-find (lambda (window)
+                              (not (window-parameter window 'window-side)))
+                            (window-list nil 'no-minibuffer)))))
+    (unless (window-live-p keep)
+      (user-error "No window here to lay the Space out in"))
+    (ecc-space--forget-zoom)
+    (select-window keep)
+    ;; The sidebar survives this: it carries `no-delete-other-windows',
+    ;; which is what `ecc-space-zoom' leans on as well.
+    (delete-other-windows keep)
+    (ecc-space--lay-out space)
+    (message "%s: %d session%s on the screen"
+             (ecc-space-name space)
+             (length (ecc-space--session-windows))
+             (if (= 1 (length (ecc-space--session-windows))) "" "s"))))
 
 (defun ecc-space--zoomable-windows ()
   "Return the windows `delete-other-windows' would take down from here.
