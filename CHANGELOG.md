@@ -443,6 +443,17 @@ Verified against **Claude Code CLI 2.1.270**.
 - `w` in `ecc-menu` rewrites the region (`ecc-rewrite`), which was `W`. `W` is
   the worktree menu now, and `w` was free.
 
+- `make compile` compiles each file in an Emacs of its own rather than the
+  package in one process, in parallel. In one process a file is compiled with
+  whatever an earlier file had loaded, so a macro used above its `defmacro`
+  becomes a function call and a variable used above its `defvar` a free
+  reference, and the build says nothing: the `.elc` in the tree came out right
+  while the one a fresh Emacs builds did not. `ecc-space--quietly` was shipped
+  that way and signalled `invalid-function` the first time a Space was closed
+  from a second frame; three more files -- `ecc-dispatch.el`,
+  `ecc-protocol.el`, `ecc-skill.el` -- would not compile on their own and now
+  do. It is not slower: the startups run at once.
+
 - Removing a worktree is offered wherever the last session working in one
   leaves, and not only where a person stopped it by hand.  The offer now hangs
   off the session leaving the model rather than off a handful of commands, and
