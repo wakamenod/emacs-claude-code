@@ -427,6 +427,17 @@ prompt is built and sent by `ecc-review.el\\=' either way."
     ;; ediff counts the differences from 1 where it is asked for one.
     (ediff-jump-to-difference (1+ (plist-get comment :position)))))
 
+(defun ecc-review-ediff-copy-refused ()
+  "Say why `a\\=' and `b\\=' do nothing in a review.
+They are ediff\\='s copy commands, and both sides of a review are
+read-only: a review reads, comments and sends, and what changes the
+files is Claude, from the prompt the comments go out as.  Left to
+ediff they signalled `buffer-read-only\\=' against a buffer the user had
+not asked about."
+  (interactive)
+  (message
+   "A review reads; C-c C-c sends the comments and Claude makes the changes"))
+
 ;;;; The help ? shows
 
 ;; ediff's own help is written for the ediff a two-way comparison
@@ -585,7 +596,14 @@ ediff lays out its windows; quitting puts back what was on the screen."
         ;; help itself, and the manual has nothing to add about the
         ;; ediff ones that a review uses.
         (define-key ediff-mode-map [mouse-2] #'ignore)
-        (define-key ediff-mode-map (kbd "RET") #'ignore))))
+        (define-key ediff-mode-map (kbd "RET") #'ignore)
+        ;; ediff's own copy commands.  Both sides of a review are
+        ;; read-only, so they could only fail, and they failed as
+        ;; `ediff-copy-diff: buffer-read-only' -- an error about a
+        ;; buffer the user never asked about, from a key the help does
+        ;; not offer.  They say what a review is instead.
+        (define-key ediff-mode-map (kbd "a") #'ecc-review-ediff-copy-refused)
+        (define-key ediff-mode-map (kbd "b") #'ecc-review-ediff-copy-refused))))
     control))
 
 (defun ecc-review-ediff-buffer (session &optional paths)

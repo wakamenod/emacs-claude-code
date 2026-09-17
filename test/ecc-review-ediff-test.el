@@ -270,6 +270,40 @@
                   (should-not (default-value 'ediff-brief-help-message-function))))
             (ecc-review-ediff-test--quit control)))))))
 
+(ert-deftest ecc-review-ediff-test-a-and-b-say-what-a-review-is ()
+  "ediff's copy commands say what a review does instead of failing.
+Both sides are read-only, so `a' and `b' could only signal
+`buffer-read-only' -- an error naming a buffer nobody asked about, from
+a key the review's own help does not offer."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (ecc-review-ediff-test--repository directory)
+                (setf (ecc-session-project-root session) directory)
+                (should (ecc-review-ensure-baseline session))
+                (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
+                (setq control (ecc-review-ediff-buffer session))
+                (with-current-buffer control
+                  (should (eq (key-binding (kbd "a")) #'ecc-review-ediff-copy-refused))
+                  (should (eq (key-binding (kbd "b")) #'ecc-review-ediff-copy-refused))
+                  ;; `current-message' is nil in batch, so what was said
+                  ;; is taken where it is said.
+                  (let (said)
+                    (cl-letf (((symbol-function 'message)
+                               (lambda (format &rest args)
+                                 (setq said (apply #'format format args)))))
+                      (ecc-review-ediff-copy-refused))
+                    (should said)
+                    (should (string-match-p "C-c C-c" said)))
+                  ;; And the side it would have written to is untouched.
+                  (let ((now (cdr ecc-review-ediff--buffers)))
+                    (should (buffer-local-value 'buffer-read-only now)))))
+            (ecc-review-ediff-test--quit control)))))))
+
 ;;;; What it looks like
 
 (ert-deftest ecc-review-ediff-test-the-code-carries-the-faces-of-its-mode ()
