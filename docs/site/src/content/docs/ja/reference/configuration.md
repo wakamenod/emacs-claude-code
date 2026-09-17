@@ -86,8 +86,8 @@ M-x customize-group RET ecc
 | `ecc-tab-line-scope` | `'project` | セッションウィンドウのタブラインに表示するセッションの範囲。`'project` はそのウィンドウ自身のプロジェクトのセッションのみ、`'all` は Emacs で開いている全セッション |
 | `ecc-use-spaces` | `t` | 非 nil の場合、プロジェクトごとにタブバーのタブ（Space）を割り当て、内部のウィンドウ配置は変更しません。nil の場合、従来のレイアウトを使用します。トランスクリプトはプロジェクトに割り当てられた役割（main、sub-1、sub-2）を持つサイドウィンドウに表示され、タブやサイドバー、worktree コマンドは使用できません。[Space と worktree](/emacs-claude-code/ja/features/spaces/) を参照 |
 | `ecc-worktree-directory` | `".claude/worktrees"` | `ecc-start-worktree` が worktree を配置する場所。相対パスはリポジトリ内を指します。絶対パスは全リポジトリで共有するディレクトリで、worktree は `<directory>/<repository>/<branch-slug>` に配置されます |
-| `ecc-space-always-session` | `t` | `'spaces'` で、Space が常にセッションを保持するかどうか。非 nil の場合、実行中のセッションがない Space を開くとセッションを開始し、最後のセッションを閉じると Space も閉じます。nil の場合、Space はソースファイルのみを表示して開き、プロジェクトの最後のバッファが kill されるまで開いたままになります |
-| `ecc-space-session-min-width` | `80` | `'spaces'` で、トランスクリプトの並びをさらに分割するためにセッションウィンドウが必要とする桁数。この幅の列を確保できない場合は、すべてのトランスクリプトを狭くするのではなく、直近で最も操作されていないセッションのウィンドウを再利用します。`window-min-width` がこの値の下限です |
+| `ecc-space-always-session` | `t` | `ecc-use-spaces` が有効なとき、Space が常にセッションを保持するかどうか。非 nil の場合、実行中のセッションがない Space を開くとセッションを開始し、最後のセッションを閉じると Space も閉じます。nil の場合、Space はソースファイルのみを表示して開き、プロジェクトの最後のバッファが kill されるまで開いたままになります |
+| `ecc-space-session-min-width` | `80` | `ecc-use-spaces` が有効なとき、トランスクリプトの並びをさらに分割するためにセッションウィンドウが必要とする桁数。この幅の列を確保できない場合は、すべてのトランスクリプトを狭くするのではなく、直近で最も操作されていないセッションのウィンドウを再利用します。`window-min-width` がこの値の下限です |
 
 `ecc-window-large-frame-min-height` の既定値（80行）は、ノートPCの画面と外付け大画面ディスプレイを自動判別するための値です。14インチ画面はおよそ58行、16インチはおよそ67行であるのに対し、外部デスクトップディスプレイでは110行以上表示できます。
 

@@ -787,8 +787,8 @@ window with a role, and `ecc-focus-project\=' is what deals those out
 again."
   (interactive)
   (unless ecc-use-spaces
-    (user-error "Resetting the windows is a `spaces' command; \
-under `classic' the roles are dealt out by `ecc-focus-project'"))
+    (user-error "Resetting the windows needs `ecc-use-spaces'; \
+without it the roles are dealt out by `ecc-focus-project'"))
   (let ((space (or (ecc-space-current)
                    (user-error "This tab is not a Space; `C-c c j' goes to one")))
         ;; The window the code is read in, or -- on a tab that is all
