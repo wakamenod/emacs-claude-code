@@ -97,7 +97,22 @@ after every command."
                     ecc-proc--settings-model-cache)))))
 
 (defun ecc-proc-startup-model (session)
-  "Return the model SESSION would run before it has said which, or nil.
+  "Return the model SESSION runs before it has said which, or nil.
+What it was started with when it has been started
+\(`ecc-session-startup-model\='), and what it would be started with now
+otherwise -- a session opened and not started yet, which is the other
+moment the footer has nothing else to show.
+
+Kept rather than worked out again every time, because both answers can
+change under a session that is already running: a `model\=' written into
+the settings files, or an `ANTHROPIC_MODEL\=' bound around the start
+alone, would otherwise have the footer name a model the CLI is not
+running (2026-09-17)."
+  (or (ecc-session-startup-model session)
+      (ecc-proc--startup-model session)))
+
+(defun ecc-proc--startup-model (session)
+  "Return the model SESSION would be started with now, or nil.
 What the CLI is about to be given, in the order it resolves it: the
 model of the session itself, which is the one --model would carry, then
 ANTHROPIC_MODEL in the environment it is started with, then the `model\\='
@@ -256,6 +271,10 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
     (setf (alist-get 'stop-requested (ecc-session-progress session)) nil)
     (process-put process 'ecc-session-id (ecc-session-id session))
     (setf (ecc-session-process session) process)
+    ;; What this process was really given, taken here rather than asked
+    ;; for later: `process-environment' is the one the CLI has, and the
+    ;; settings files are the ones it has just read.
+    (setf (ecc-session-startup-model session) (ecc-proc--startup-model session))
     ;; The CLI is up as soon as `make-process' returned: it is waiting
     ;; for a prompt, which is what idle means.  `starting' is left for a
     ;; session whose process never came up, because system/init only

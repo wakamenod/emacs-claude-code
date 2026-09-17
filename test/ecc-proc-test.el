@@ -373,6 +373,24 @@ narrowest scope first with the managed settings above all of them."
         (delete-directory home t)
         (delete-directory root t)))))
 
+(ert-deftest ecc-proc-test-startup-model-is-kept-once-it-has-started ()
+  "What the session was started with stands, whatever changes afterwards.
+The settings files and the environment are read again on every footer,
+and both can change under a session that is already running -- which
+had the footer naming a model the CLI was not running (2026-09-17)."
+  (ecc-test-with-fake-session session
+    ;; Nothing is kept yet, so the answer is what it would start with.
+    (let ((process-environment (cons "ANTHROPIC_MODEL=haiku" process-environment)))
+      (should (equal (ecc-proc-startup-model session) "haiku"))
+      (setf (ecc-session-startup-model session) (ecc-proc--startup-model session)))
+    ;; The environment it was started in is gone, and the answer is not.
+    (should (equal (ecc-proc-startup-model session) "haiku"))
+    (let ((process-environment (cons "ANTHROPIC_MODEL=opus" process-environment)))
+      (should (equal (ecc-proc-startup-model session) "haiku")))
+    ;; And the CLI naming one is still what wins in the footer.
+    (setf (ecc-session-last-model session) "claude-opus-5")
+    (should (equal (ecc-hint-model session) "claude-opus-5"))))
+
 (ert-deftest ecc-proc-test-startup-model-is-read-again-when-a-file-changes ()
   "The settings are cached, and a file written to is read again.
 The footer asks after every command, so the files are stat\\='ed rather
