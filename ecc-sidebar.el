@@ -564,20 +564,31 @@ repository still goes there."
       (ecc-sidebar-redraw))))
 
 (defun ecc-sidebar--oldest-request ()
-  "Return the oldest request the session at point is waiting on."
+  "Return the oldest request the session at point is waiting on.
+A request for a tool of `ecc-answer-exclude-tools\\=' is refused here the
+way `ecc-answer-allow\\=' refuses one: the sidebar is a row and a summary,
+and a shell command has to be read whole before it is answered.  `RET\\='
+on the row is the way to where it can be."
   (let ((session (or (ecc-sidebar--session-at-point)
                      (user-error "No session on this line"))))
-    (or (car (ecc-session-pending session))
-        (user-error "%s is not waiting for anything"
-                    (ecc-session-name session)))))
+    (let ((request (or (car (ecc-session-pending session))
+                       (user-error "%s is not waiting for anything"
+                                   (ecc-session-name session)))))
+      (when (member (ecc-request-tool-name request) ecc-answer-exclude-tools)
+        (user-error "%s is waiting on %s; answer that in the transcript (RET)"
+                    (ecc-session-name session)
+                    (ecc-request-tool-name request)))
+      request)))
 
 (defun ecc-sidebar-allow ()
-  "Allow what the session at point is waiting on."
+  "Allow what the session at point is waiting on.
+Whatever kind it is: `ecc-perm-allow-request\\=' approves a plan and opens
+a question where it is answered, which is what the dashboard\\='s `a\\=' has
+always done.  It used to refuse anything but a permission while `d\\='
+denied every kind, so a session waiting on a question could be denied
+from here but not answered."
   (interactive)
   (let ((request (ecc-sidebar--oldest-request)))
-    (unless (eq (ecc-request-kind request) 'permission)
-      (user-error "That is a %s, not a permission request"
-                  (ecc-request-kind request)))
     (when (ecc-answer--confirm "Allow" request)
       (ecc-perm-allow-request request)
       (message "Allowed: %s" (ecc-answer-summary request)))))

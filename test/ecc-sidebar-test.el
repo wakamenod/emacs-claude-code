@@ -394,6 +394,54 @@ several times a second, moving down onto one with `C-n' was impossible."
           ;; The one waiting on the other session is untouched.
           (should-not (eq allowed (car (ecc-session-pending (car sessions))))))))))
 
+(ert-deftest ecc-sidebar-test-a-and-d-leave-the-excluded-tools-alone ()
+  "A tool of `ecc-answer-exclude-tools' is not answered from a row.
+`ecc-answer-allow' and `ecc-answer-deny' skip those tools wherever they
+are asked from, the point being that a shell command is read whole
+before it is answered; the sidebar has a row and a one line summary and
+was answering them all the same."
+  (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
+                                    ("two" . ,ecc-sidebar-test--two))
+    (ecc-test-add-request (nth 1 sessions) "Bash"
+                          '((command . "rm -rf /tmp/somewhere")))
+    (ecc-sidebar-redraw)
+    (let ((answered nil)
+          (ecc-answer-confirm nil))
+      (cl-letf (((symbol-function 'ecc-perm-allow-request)
+                 (lambda (request) (setq answered request)))
+                ((symbol-function 'ecc-perm-respond)
+                 (lambda (request &rest _) (setq answered request))))
+        (ecc-sidebar-test--goto "⚠ two")
+        (should-error (ecc-sidebar-allow) :type 'user-error)
+        (should-error (ecc-sidebar-deny "") :type 'user-error)
+        (should-not answered)
+        ;; The request is still there to be answered where it can be read.
+        (should (car (ecc-session-pending (nth 1 sessions))))))))
+
+(ert-deftest ecc-sidebar-test-a-answers-a-question-too ()
+  "`a' takes whatever kind the session is waiting on.
+`ecc-perm-allow-request' approves a plan and opens a question in the
+buffer it is answered in.  `a' used to refuse both while `d' denied
+them, so a session waiting on a question could be turned down from the
+sidebar but not answered."
+  (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
+                                    ("two" . ,ecc-sidebar-test--two))
+    (let* ((session (nth 1 sessions))
+           (node (ecc-model-add-node session :type 'question :status 'pending))
+           (request (make-ecc-request :request-id "q-1" :session session
+                                      :kind 'question :created-at (current-time)
+                                      :node node)))
+      (ecc-model-node-put node 'request request)
+      (ecc-model-add-request session request)
+      (ecc-sidebar-redraw)
+      (let ((allowed nil)
+            (ecc-answer-confirm nil))
+        (cl-letf (((symbol-function 'ecc-perm-allow-request)
+                   (lambda (request) (setq allowed request))))
+          (ecc-sidebar-test--goto "⚠ two")
+          (ecc-sidebar-allow)
+          (should (eq allowed request)))))))
+
 (ert-deftest ecc-sidebar-test-x-on-a-row-with-nothing-refuses ()
   "A key that wants a Space says so rather than acting on the wrong one."
   (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
