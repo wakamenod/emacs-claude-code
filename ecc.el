@@ -4,7 +4,7 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
-;; Version: 0.2.0
+;; Version: 0.3.0
 ;; Package-Requires: ((emacs "29.1"))
 ;; URL: https://github.com/wakamenod/emacs-claude-code
 
