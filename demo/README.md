@@ -87,6 +87,22 @@ explained where they are done in `demo.el`:
 
 ## Watching it go wrong
 
+`demo/.build/record-window --title "ecc demo: NAME" --shot /tmp/x.png`
+takes one picture of the frame, which is how a run that has stopped is
+looked at — including one whose Emacs is stuck at a prompt nobody can
+see. It cannot be done **while the scene is recording**: a second
+capture of one window interrupts the first, and the recording ends
+there.
+
+A step arrives from `emacsclient` with whatever buffer is current, which
+is `*scratch*` until a scene opens a file. A buffer with no directory
+behind it leaves `ecc-window-context-project-root` on
+`default-directory` — the checkout the demo Emacs was started from,
+which is **the real repository**. `demo.el` points that at `demo-root`
+now, and a scene that asks for a worktree should check the root it
+resolved before it lets git near it: a run of the Spaces scene cut two
+worktrees in the actual repository before anybody noticed (2026-09-17).
+
 The recorder prints the ecc it loaded before it starts — check it is the
 checkout you meant. A scene that hangs spoils the seconds it was given
 and nothing else; `emacsclient -s ecc-demo -e '(...)'` reaches the demo

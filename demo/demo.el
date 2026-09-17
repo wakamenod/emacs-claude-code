@@ -28,6 +28,12 @@
 (defvar demo-scene-file nil
   "The NAME.el of the scene being played.  Set by the recorder.")
 
+(defvar demo-checkout nil
+  "The checkout whose ecc is put in front of the configuration's.
+Set by the recorder, which plays a copy of this file from a directory
+of its own: the copy cannot work out where it came from, and another
+run\='s `pkill' cannot find it either.")
+
 (defvar demo-server-name "ecc-demo"
   "The server the recorder steps this Emacs through.")
 
@@ -71,10 +77,12 @@ its own, placed above the top of this one.")
   ;; The init points ecc at a worktree of its own, which is not
   ;; necessarily the one being demonstrated.  This one wins, and
   ;; `demo-ready-file' says which one it was.
-  (let ((checkout (directory-file-name
-                   (file-name-directory
-                    (directory-file-name
-                     (file-name-directory (or load-file-name buffer-file-name)))))))
+  (let ((checkout (or demo-checkout
+                      (directory-file-name
+                       (file-name-directory
+                        (directory-file-name
+                         (file-name-directory
+                          (or load-file-name buffer-file-name))))))))
     (add-to-list 'load-path checkout))
   (require 'ecc))
 
@@ -225,6 +233,15 @@ return first."
       (run-at-time 0.5 nil #'demo-setup)
     (demo-frame)
     (demo-scene-build)
+    ;; A step arrives with whatever buffer is current, which is
+    ;; `*scratch*' until a scene opens a file, and a buffer with no
+    ;; directory behind it leaves `ecc-window-context-project-root' on
+    ;; `default-directory' -- the checkout this Emacs was started from,
+    ;; which is the real repository.  A scene that asked for a worktree
+    ;; got one there (2026-09-17).
+    (with-current-buffer "*scratch*"
+      (setq default-directory demo-root))
+    (setq-default default-directory demo-root)
     (demo-pin-start)
     ;; The recorder waits for this file, and reads it: a demonstration
     ;; of a branch is worth nothing if it ran the ecc of another one.

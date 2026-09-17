@@ -87,13 +87,21 @@ if [ ! -x "$recorder" ] || [ "$here/record-window.swift" -nt "$recorder" ]; then
 fi
 [ -x "$recorder" ] || { echo "could not build $recorder" >&2; exit 1; }
 
+# Played from a copy under a name of this run's own.  Every other
+# checkout of this repository carries a record.sh of its own, and the
+# older ones kill `demo/demo.el' -- every one on the machine, not their
+# own -- when they start and when they finish.  Two of this scene's runs
+# died that way (2026-09-17).
+player=${TMPDIR:-/tmp}/ecc-demo-player-$scene.el
+cp "$here/demo.el" "$player"
+
 # `open' is the only way to a frame the window system will really draw:
 # running the executable from a terminal leaves `display-graphic-p' nil.
 # With -Q the command line is processed; with this user's init loaded by
 # Emacs itself it is not, which is why demo.el loads the init by hand.
 open -n -a "$emacs_app" --args -Q \
-     --eval "(setq demo-scene-file \"$scene_el\" demo-server-name \"$server\" demo-ready-file \"$ready\" demo-frame-title \"$title\")" \
-     -l "$here/demo.el"
+     --eval "(setq demo-scene-file \"$scene_el\" demo-server-name \"$server\" demo-ready-file \"$ready\" demo-frame-title \"$title\" demo-checkout \"$(cd "$here/.." && pwd)\")" \
+     -l "$player"
 
 for _ in $(seq 1 60); do [ -f "$ready" ] && break; sleep 1; done
 [ -f "$ready" ] || { echo "the demo Emacs never came up" >&2; exit 1; }

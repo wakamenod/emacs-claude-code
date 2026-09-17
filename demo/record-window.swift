@@ -96,8 +96,16 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private var started = false
     private var frames = 0
     private var last: CMSampleBuffer?
+    private var lastTime: CMTime = .invalid
+    private var reported = false
+    private var drewSinceTick = false
+    private let step: CMTime
 
-    init(url: URL, width: Int, height: Int) throws {
+    /// Called when the stream stops of its own accord.
+    var onStop: (() -> Void)?
+
+    init(url: URL, width: Int, height: Int, fps: Int) throws {
+        step = CMTime(value: 1, timescale: CMTimeScale(fps))
         try? FileManager.default.removeItem(at: url)
         writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
         input = AVAssetWriterInput(
@@ -130,42 +138,94 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
         if !started {
             writer.startSession(atSourceTime: time)
             started = true
+            lastTime = time
         }
         guard input.isReadyForMoreMediaData else { return }
-        if input.append(buffer) {
-            frames += 1
-            last = buffer
+        // Strictly forward, always.  A frame that does not land after
+        // the one in front of it fails the writer for good: every
+        // append after that is refused, and the file it finishes has no
+        // index and will not open (2026-09-17).
+        if CMTimeCompare(time, lastTime) > 0 {
+            if input.append(buffer) {
+                frames += 1
+                last = buffer
+                lastTime = time
+                drewSinceTick = true
+            } else {
+                report("a frame was refused")
+            }
+        } else {
+            append(buffer, at: CMTimeAdd(lastTime, step))
         }
+    }
+
+    /// Append the image of BUFFER at TIME, which the caller has made
+    /// sure is later than anything written so far.
+    private func append(_ buffer: CMSampleBuffer, at time: CMTime) {
+        guard input.isReadyForMoreMediaData,
+              let image = CMSampleBufferGetImageBuffer(buffer) else { return }
+        var timing = CMSampleTimingInfo(duration: .invalid,
+                                        presentationTimeStamp: time,
+                                        decodeTimeStamp: .invalid)
+        var format: CMFormatDescription?
+        guard CMVideoFormatDescriptionCreateForImageBuffer(
+                allocator: kCFAllocatorDefault, imageBuffer: image,
+                formatDescriptionOut: &format) == noErr,
+              let format else { return }
+        var copy: CMSampleBuffer?
+        guard CMSampleBufferCreateReadyWithImageBuffer(
+                allocator: kCFAllocatorDefault, imageBuffer: image,
+                formatDescription: format, sampleTiming: &timing,
+                sampleBufferOut: &copy) == noErr,
+              let copy else { return }
+        if input.append(copy) {
+            frames += 1
+            last = copy
+            lastTime = time
+            drewSinceTick = true
+        } else {
+            report("a repeat was refused")
+        }
+    }
+
+    /// Say what the writer thinks, once.
+    private func report(_ what: String) {
+        guard !reported else { return }
+        reported = true
+        note("\(what): status \(writer.status.rawValue), "
+             + (writer.error?.localizedDescription ?? "no error"))
     }
 
     /// Write the last frame again, so that a window which is not
     /// redrawing is still time in the video rather than a gap.  A stream
     /// hands a frame over only when the content changes, and a
     /// demonstration holds still for seconds at a time.
-    func repeatLastFrame(at time: CMTime) {
+    ///
+    /// The time is counted on from what was last written rather than
+    /// read off a clock: the host clock and the stream's are not the
+    /// same timebase, and a repeat that lands before the frame in front
+    /// of it takes the recording down with it.
+    func repeatLastFrame() {
         queue.async { [self] in
-            guard started, let buffer = last, input.isReadyForMoreMediaData,
-                  let image = CMSampleBufferGetImageBuffer(buffer) else { return }
-            var timing = CMSampleTimingInfo(duration: .invalid,
-                                            presentationTimeStamp: time,
-                                            decodeTimeStamp: .invalid)
-            var format: CMFormatDescription?
-            guard CMVideoFormatDescriptionCreateForImageBuffer(
-                    allocator: kCFAllocatorDefault, imageBuffer: image,
-                    formatDescriptionOut: &format) == noErr,
-                  let format else { return }
-            var copy: CMSampleBuffer?
-            guard CMSampleBufferCreateReadyWithImageBuffer(
-                    allocator: kCFAllocatorDefault, imageBuffer: image,
-                    formatDescription: format, sampleTiming: &timing,
-                    sampleBufferOut: &copy) == noErr,
-                  let copy else { return }
-            if input.append(copy) { frames += 1 }
+            guard started, let buffer = last else { return }
+            // Only where the window drew nothing: a repeat on top of a
+            // real frame would put two frames where one second of time
+            // belongs, and the video comes out at half speed.
+            if drewSinceTick {
+                drewSinceTick = false
+                return
+            }
+            append(buffer, at: CMTimeAdd(lastTime, step))
+            drewSinceTick = false
         }
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
+        // The window went away -- the application quit, or something
+        // else took a capture of it.  What was recorded up to here is
+        // worth keeping, and a writer left open writes no index at all.
         note("the stream stopped: \(error.localizedDescription)")
+        onStop?()
     }
 
     func finish(_ done: @escaping (Int) -> Void) {
@@ -282,7 +342,8 @@ struct Main {
         let recorder: Recorder
         do {
             recorder = try Recorder(url: URL(fileURLWithPath: options.out),
-                                    width: width, height: height)
+                                    width: width, height: height,
+                                    fps: options.fps)
         } catch {
             fail("cannot write \(options.out): \(error.localizedDescription)")
         }
@@ -336,20 +397,30 @@ struct Main {
             sources.append(source)
         }
 
+        // The recording is finished by whichever comes first: a signal,
+        // or the stream stopping because the window went away.
+        recorder.onStop = {
+            recorder.finish { frames in
+                if frames == 0 {
+                    try? FileManager.default.removeItem(atPath: options.out)
+                    note("nothing had been drawn, so there was nothing to keep")
+                    exit(3)
+                }
+                note("kept \(frames) frames in \(options.out)")
+                exit(0)
+            }
+        }
+
         do {
             try await stream.startCapture()
         } catch {
             fail("cannot record that window: \(error.localizedDescription)")
         }
         let tick = DispatchSource.makeTimerSource(queue: DispatchQueue.global())
-        let start = CMClockGetTime(CMClockGetHostTimeClock())
         tick.schedule(deadline: .now() + 1.0,
                       repeating: 1.0 / Double(options.fps))
-        tick.setEventHandler {
-            recorder.repeatLastFrame(at: CMClockGetTime(CMClockGetHostTimeClock()))
-        }
+        tick.setEventHandler { recorder.repeatLastFrame() }
         tick.resume()
-        _ = start
 
         note("recording \(options.title) at \(width)x\(height)")
 

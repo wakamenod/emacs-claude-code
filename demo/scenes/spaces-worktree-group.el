@@ -94,13 +94,27 @@
 ;;;; The steps
 
 (defun demo-start-worktree (branch)
-  "Check BRANCH out beside the repository and start a session there."
-  (push (cons branch (ecc-start-worktree branch)) demo-sessions)
+  "Check BRANCH out beside the demo project and start a session there.
+The buffer and the directory are both pinned to `demo-root\=', and the
+root the command works out is checked before it is let near git.  A step
+arrives from `emacsclient\=' with `*scratch*\=' current, which has no
+directory behind it, and `ecc-window-context-project-root\=' falls back
+to `default-directory\=' -- the checkout the demo Emacs was started from.
+That is the real repository, and a run of this scene cut two worktrees
+in it before anybody noticed (2026-09-17)."
+  (with-current-buffer (find-file-noselect
+                        (expand-file-name "greet.py" demo-root))
+    (let* ((default-directory demo-root)
+           (root (ecc-worktree-context-root)))
+      (unless (equal (file-truename root) (file-truename demo-root))
+        (error "The demo would have worked in %s, not %s" root demo-root))
+      (push (cons branch (ecc-start-worktree branch)) demo-sessions)))
   nil)
 
 (defun demo-start-second-session ()
   "Start a second session in the repository, so its Space has two."
-  (push (cons "second" (ecc-start demo-root "second")) demo-sessions)
+  (let ((default-directory demo-root))
+    (push (cons "second" (ecc-start demo-root "second")) demo-sessions))
   nil)
 
 (defun demo-kill-a-transcript-buffer ()
@@ -128,31 +142,23 @@ The buffer, not the session: this is the case that used to leave
   (ecc-space-select (ecc-space-of-root root))
   nil)
 
-(defun demo-close-space (root &optional answer)
-  "Close the Space of ROOT, answering its question with ANSWER.
-The answer is typed into the question rather than queued before it.
-Queued ahead of the call it was never read and the demonstration stood
-at the prompt with nothing happening (2026-09-17); put there from
-`minibuffer-setup-hook\=' it goes where a read that is already waiting
-will take it.  A second and a half first, so the question can be read.
+(defun demo-close-space (root &optional _answer)
+  "Close the Space of ROOT, showing the question it asks and answering yes.
+Called plainly, and the answering -- not the question -- is stood in
+for.  `ecc-space-close\=' driven from a timer took the whole Emacs down
+twice (2026-09-17): reading the minibuffer from a timer while the tabs
+underneath it are being closed is not something to put on camera, and
+the command itself is fine -- called like this, from `emacsclient\=' or
+by hand, it closes the group and Emacs carries on.
 
-`use-short-answers\=' is asked because the answer has to be the one the
-question wants: a `yes\=' typed at a y-or-n-p leaves `es\=' and a RET
-behind, in whatever buffer comes next."
-  (run-at-time
-   0.2 nil
-   (lambda ()
-     (minibuffer-with-setup-hook
-         (lambda ()
-           (run-at-time
-            1.5 nil
-            (lambda ()
-              (setq unread-command-events
-                    (listify-key-sequence
-                     (if (bound-and-true-p use-short-answers)
-                         "y"
-                       (concat (or answer "yes") "\r")))))))
-       (ecc-space-close (ecc-space-of-root root)))))
+The text on the screen is the question ecc really asks, held long
+enough to read."
+  (cl-letf (((symbol-function 'yes-or-no-p)
+             (lambda (prompt)
+               (demo-say (concat prompt "yes"))
+               (sit-for 4)
+               t)))
+    (ecc-space-close (ecc-space-of-root root)))
   nil)
 
 ;;;; The other half of the setting
