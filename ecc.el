@@ -413,7 +413,6 @@ itself."
                          (user-error "No session to kill"))))
   (ecc-proc-stop session)
   (ecc-model-remove-session session)
-  (ecc-window-forget-session session)
   (ecc-image-cleanup-session session)
   (dolist (buffer (list (ecc-session-buffer session)
                         (ecc-session-stream-buffer session)))

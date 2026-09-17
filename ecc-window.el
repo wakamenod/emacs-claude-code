@@ -8,9 +8,9 @@
 
 ;;; Commentary:
 
-;; Which window a transcript is shown in, hiding and restoring them per
-;; project and per tab, the name a session goes by and the rule that
-;; decides which session a command sends to.
+;; Which window a transcript is shown in, taking them off the screen for
+;; one project or for a review, the name a session goes by and the rule
+;; that decides which session a command sends to.
 ;;
 ;; It also keeps track of the last buffer the user worked in that is not
 ;; part of this package, which is the source `ecc-context' quotes from.
@@ -82,6 +82,15 @@ Which side the other two stand on, and how wide they are, is
 
 (defvar-local ecc--bound-session-id nil
   "Id of the session this buffer sends to, once one has been chosen.")
+
+;; Declared here rather than beside the rest of the source-buffer
+;; machinery below: `ecc-window-context-project-root' reads it, and a
+;; variable used above its `defvar' compiles to a free reference --
+;; whether that is caught depends on what the compiler had loaded
+;; already, so `make compile' let it pass while the file compiled on its
+;; own did not (confirmed 2026-09-17).
+(defvar ecc-window--last-source-buffer nil
+  "The last buffer selected that does not belong to this package.")
 
 ;;;; Projects and names
 
@@ -194,9 +203,6 @@ after it are told apart by a name the user gives."
     name))
 
 ;;;; The buffer the user came from
-
-(defvar ecc-window--last-source-buffer nil
-  "The last buffer selected that does not belong to this package.")
 
 (defvar ecc-window--project-source-buffers nil
   "Alist of a project root to the last buffer of it the user worked in.
@@ -519,8 +525,13 @@ is usually for."
 (defvar ecc-window-hide-on-review nil
   "Whether opening a diff or a plan review hides the session windows.
 `project' hides the sessions of the project being reviewed, `all' hides
-every session, and nil leaves the windows as they are.  `ecc-toggle'
-brings back what was hidden.")
+every session, and nil leaves the windows as they are, which is the
+default.
+
+What was hidden is not written down.  Under `spaces\=' the way back is
+`ecc-space-reset-windows\=', which deals the tab again; under `classic\='
+it is `ecc-focus-project\=', or `ecc-show-session\=' one session at a
+time.")
 
 (defvar ecc-window-review-focus 'review
   "Where point goes when a diff or a plan review opens.
@@ -578,10 +589,9 @@ happens to the session windows and where point lands."
         (delete-window window)))))
 
 (defun ecc-window--layout-key ()
-  "Return the key the hidden session list is stored under.
-A frame with tabs keeps a layout per tab, so the hidden list is per tab
-as well -- and so is the zoom of `ecc-space-zoom', which is stored
-under this key too.
+  "Return the key an arrangement of this tab is stored under.
+A frame with tabs keeps a layout per tab, so the zoom of
+`ecc-space-zoom' is kept per tab as well.
 
 The frame\='s own `tabs' parameter is what is asked, not `tab-bar-mode':
 tabs are made, named and switched with the bar hidden exactly as with
@@ -602,92 +612,29 @@ whatever buffer happens to be in it."
              (alist-get 'name current))
         'frame)))
 
-(defun ecc-window-hidden-sessions ()
-  "Return the sessions hidden by `ecc-toggle' here, as (ID . ROLE) pairs.
-The role goes with the id so that restoring puts every session back in
-the window it came from, rather than dealing them out again."
-  (alist-get (ecc-window--layout-key)
-             (frame-parameter nil 'ecc-hidden-sessions) nil nil #'equal))
-
-(defun ecc-window-set-hidden-sessions (entries)
-  "Remember ENTRIES, a list of (ID . ROLE), as hidden by `ecc-toggle' here."
-  (let ((alist (frame-parameter nil 'ecc-hidden-sessions)))
-    (setf (alist-get (ecc-window--layout-key) alist nil nil #'equal) entries)
-    (set-frame-parameter nil 'ecc-hidden-sessions alist)
-    entries))
-
-(defun ecc-window--hidden-entries (sessions)
-  "Return the (ID . ROLE) pairs to remember for SESSIONS before hiding them."
-  (mapcar (lambda (session)
-            (cons (ecc-session-id session) (ecc-window--session-role session)))
-          sessions))
-
 (defun ecc-window-hide-sessions (sessions)
   "Take down the windows of the SESSIONS that are on screen, and say which.
-Where each one was is remembered so that `ecc-toggle\=' can put it back
-in the window it came from.  The entries join the ones already hidden
-rather than replacing them: `ecc-focus-project\=' hides several projects
-at once and `ecc-toggle\=' one after it, and both groups have to come
-back."
+Nothing is written down about where they were.  There was a record of
+it once, for a command that put every hidden session back in the window
+it came from; what brings one back now deals the whole arrangement again
+-- `ecc-space-reset-windows\=' under `spaces\=', `ecc-focus-project\='
+under `classic\=' -- or shows one session at a time, from the sidebar,
+the dashboard or `ecc-show-session\='."
   (when-let* ((visible (seq-filter #'ecc-window-session-visible-p sessions)))
-    (let ((entries (ecc-window--hidden-entries visible)))
-      (ecc-window-set-hidden-sessions
-       (append entries
-               (seq-remove (lambda (old) (assoc (car old) entries))
-                           (ecc-window-hidden-sessions)))))
     (mapc #'ecc-window-hide-session visible)
     visible))
-
-(defun ecc-window--restore-hidden (entries)
-  "Show again the sessions of ENTRIES, each in the role it had.
-Return the sessions that were shown."
-  (delq nil
-        (mapcar (lambda (entry)
-                  (when-let* ((session (ecc-model-session (car entry))))
-                    (if (and (cdr entry) ecc-window-use-side-window)
-                        (ecc-display-session-in-role session (cdr entry))
-                      (ecc-display-session session))
-                    session))
-                entries)))
-
-;;;###autoload
-(defun ecc-toggle (&optional all)
-  "Hide the session windows of this project, or bring back the hidden ones.
-With ALL, a prefix argument interactively, every session is toggled
-rather than the ones of the current project.
-
-What comes back is what this project had hidden, and the rest stays
-where it is: `ecc-focus-project\=' hides every other project at once, and
-a toggle of this one would otherwise undo the whole of it.
-`ecc-toggle-all\=' is the way to bring every project back."
-  (interactive "P")
-  (let* ((sessions (if all (ecc-model-sessions)
-                     (ecc-window-project-sessions)))
-         (visible (seq-filter #'ecc-window-session-visible-p sessions)))
-    (cond
-     (visible
-      (ecc-window-hide-sessions visible)
-      (message "Hid %d sessions" (length visible)))
-     (t
-      (let* ((ids (mapcar #'ecc-session-id sessions))
-             (hidden (ecc-window-hidden-sessions))
-             (mine (or (seq-filter (lambda (entry) (member (car entry) ids)) hidden)
-                       (mapcar (lambda (id) (cons id nil)) ids)))
-             (shown (ecc-window--restore-hidden mine)))
-        (if (null shown)
-            (message "No session to show")
-          (ecc-window-set-hidden-sessions
-           (seq-remove (lambda (entry) (member (car entry) ids)) hidden))
-          (message "Showing %d sessions" (length shown)))
-        shown)))))
 
 ;;;; Focusing one project
 
 ;; Several projects at once is what this package is for, and it is also
 ;; what fills a frame with windows and tabs that have nothing to do with
 ;; what is being worked on.  Focusing puts the frame back to one project:
-;; the rest is taken off the screen without being killed, so `ecc-toggle'
-;; and `ecc-toggle-all' bring it back.
+;; the rest is taken off the screen without being killed, and focusing
+;; another project is what brings it back.
+;;
+;; This is the `classic' answer.  Under `spaces' a project has a tab of
+;; its own and there is nothing to deal: `ecc-focus-project' goes to the
+;; Space and leaves the windows alone.
 
 (defun ecc-window--buffer-in-project-p (buffer key)
   "Return non-nil when BUFFER belongs to the project KEY.
@@ -802,10 +749,10 @@ A single project answers for itself: there is nothing to choose."
 (defun ecc-focus-project (root &optional choose)
   "Show the sessions of ROOT alone, and its source in the main window.
 The session windows of every other project are taken off the screen;
-nothing is killed and no process is stopped, so `ecc-toggle-all' brings
-them all back and `ecc-toggle' brings back one project.  CHOOSE, a
-prefix argument interactively, asks which buffer of ROOT to show
-instead of taking the likeliest.
+nothing is killed and no process is stopped, so focusing one of those
+projects brings its windows back.  CHOOSE, a prefix argument
+interactively, asks which buffer of ROOT to show instead of taking the
+likeliest.
 
 The sessions of ROOT are dealt into the window roles in the order they
 were last used, so the one worked in last is the one in the main
@@ -838,23 +785,13 @@ being whatever they were left as."
           ;; it came from showing it as well, and the frame ends up with
           ;; the same transcript twice (confirmed 2026-09-13).
           (mapc #'ecc-window-hide-session mine)
-          (cl-mapc (lambda (session role)
-                     (ecc-display-session-in-role session role)
-                     ;; It is on the screen now, so the note that it was
-                     ;; hidden would put it back a second time.
-                     (ecc-window-forget-session session))
+          (cl-mapc #'ecc-display-session-in-role
                    mine (ecc-window-available-roles)))
         (ecc-window--focus-source key choose)
         (message "Focused %s: %d session%s, %d hidden"
                  (ecc--project-label key) (length mine)
                  (if (= 1 (length mine)) "" "s") (length hidden))
         mine))))
-
-;;;###autoload
-(defun ecc-toggle-all ()
-  "Hide or restore the session windows of every project."
-  (interactive)
-  (ecc-toggle t))
 
 ;;;; Which session a command talks to
 
@@ -908,15 +845,6 @@ the buffer."
           (setq-local ecc--bound-session-id (ecc-session-id session)))
         session)))
 
-(defun ecc-window-forget-session (session)
-  "Forget the hidden entry SESSION had.
-The role it held needs no forgetting: it is written on the window, and
-the window goes with the buffer."
-  (let ((id (ecc-session-id session))
-        (alist (frame-parameter nil 'ecc-hidden-sessions)))
-    (dolist (layout alist)
-      (setcdr layout (assoc-delete-all id (cdr layout))))
-    (set-frame-parameter nil 'ecc-hidden-sessions alist)))
 
 ;;;; Switching a window to another session
 

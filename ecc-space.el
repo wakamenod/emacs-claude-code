@@ -242,8 +242,8 @@ user starts did not.  A demo found it (2026-09-17)."
 ;; (both verified on two frames, 2026-09-17).
 ;;
 ;; So a Space may have a tab on each frame, which is what it has always had
-;; on the screen; only the book-keeping has caught up.  `ecc-hidden-sessions\='
-;; and the zoom of `ecc-space-zoom\=' are kept the same way.
+;; on the screen; only the book-keeping has caught up.  The zoom of
+;; `ecc-space-zoom\=' is kept the same way.
 
 (defun ecc-space--tabs (&optional frame)
   "Return the alist of a Space key to the name of its tab on FRAME."
@@ -306,8 +306,8 @@ Two worktrees of two repositories are called `main' as often as not."
 (defun ecc-space--forget-tab (tab &rest _)
   "Forget the Space of TAB, which is about to be closed.
 On `tab-bar-tab-pre-close-functions'.  Nothing is stopped: the sessions
-go on running with no window, which is what `ecc-toggle' and the
-sidebar bring back."
+go on running with no window, which is what the sidebar and
+`ecc-space-reset-windows' bring back."
   (when-let* ((name (alist-get 'name tab))
               (key (car (rassoc name (ecc-space--tabs)))))
     (ecc-space--drop-tab key)))
@@ -322,7 +322,7 @@ sidebar bring back."
 Most recently used first, to the right of the source, until the row has
 no room for another column of `ecc-space-session-min-width\='.  The ones
 that do not fit go on running with no window, which the sidebar and
-`ecc-toggle\=' bring back.
+`ecc-space-reset-windows\=' bring back.
 
 A tab is a window arrangement and this is the only moment there is none
 to keep: from here on the windows are the user\='s, and coming back to
@@ -624,7 +624,7 @@ Nothing is ever stacked.  A row with no room left for a column of
 `ecc-space-session-min-width' does not grow a narrower one -- the
 window of the session used longest ago shows the new session instead,
 and the one it held goes on running with no window, which the sidebar
-and `ecc-toggle' bring back.
+and `ecc-space-reset-windows' bring back.
 
 NO-REUSE says the caller would rather show nothing than take a window
 away from another session: nil comes back instead, and the session goes

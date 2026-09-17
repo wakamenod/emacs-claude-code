@@ -35,7 +35,6 @@
 (declare-function ecc-plan-file-path "ecc-plan" (request))
 (declare-function ecc-review "ecc-review" (&optional session paths))
 (declare-function ecc-perm-request-at-point "ecc-perm" ())
-(declare-function ecc-window-forget-session "ecc-window" (session))
 
 (defun ecc-session--forget-on-kill ()
   "Stop and forget the session when its buffer is killed.
@@ -51,8 +50,6 @@ not its buffer, so killing it does nothing."
                (eq (ecc-model-session (ecc-session-id session)) session))
       (ecc-proc-stop session)
       (ecc-model-remove-session session)
-      (when (fboundp 'ecc-window-forget-session)
-        (ecc-window-forget-session session))
       (ecc-image-cleanup-session session)
       (let ((buffer (ecc-session-stream-buffer session)))
         (when (buffer-live-p buffer)

@@ -711,7 +711,7 @@ project being asked about."
 (ert-deftest ecc-space-test-a-new-tab-stops-when-the-row-is-full ()
   "The lay-out stops at the edge of the row rather than taking a window over.
 A session that does not fit goes on running without one; the sidebar
-and `ecc-toggle' bring it back."
+and `ecc-space-reset-windows' bring it back."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
                                    ("two" . ,ecc-space-test--one)
                                    ("three" . ,ecc-space-test--one))
