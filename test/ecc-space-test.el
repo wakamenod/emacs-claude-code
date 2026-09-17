@@ -30,7 +30,7 @@
 (defconst ecc-space-test--work "/tmp/project-one/.claude/worktrees/feat-x/")
 
 (defmacro ecc-space-test--with-git (&rest body)
-  "Run BODY with git answering for a fixed repository of three checkouts.
+  "Run BODY with git answering for a fixed repository of three projects.
 `ecc-space-test--work' is a worktree of `ecc-space-test--one' on the
 branch `worktree/feat-x'; the other two are repositories of their own."
   (declare (indent 0))
@@ -256,7 +256,7 @@ sidebar would be changing the layout behind their back."
 
 (ert-deftest ecc-space-test-forget-closes-the-tab-and-the-space ()
   "A Space that is forgotten takes its tab and its place in the list with it.
-This is what a removed checkout goes through: the sessions are gone
+This is what a removed worktree goes through: the sessions are gone
 already, and a tab left behind would keep the Space in the sidebar with
 nothing under it."
   (ecc-space-test--with-sessions `(("two" . ,ecc-space-test--two))
@@ -689,7 +689,7 @@ and the 1-9 keys take under the user's feet."
       (unwind-protect
           (cl-letf (((symbol-function 'ecc-history-project-roots)
                      (lambda () (list (directory-file-name past)
-                                      ;; A checkout that is gone has
+                                      ;; A worktree that is gone has
                                       ;; nowhere to start a session.
                                       "/tmp/ecc-space-gone/"
                                       ;; And the live project is not
@@ -836,9 +836,9 @@ having changed, and the way back would do nothing either."
 
 ;;;; The repository a worktree hangs under
 
-(defmacro ecc-space-test--with-checkouts (repo work &rest body)
+(defmacro ecc-space-test--with-worktrees (repo work &rest body)
   "Run BODY with REPO and WORK bound to a repository and a worktree of it.
-Real directories, both: a checkout that is not there is one
+Real directories, both: a worktree that is not there is one
 `ecc-space--ensure-parent' leaves alone, so the case cannot be made
 with a path that stands for nothing.  git is stood in for all the
 same -- no repository is created."
@@ -861,7 +861,7 @@ A worktree with no repository on the screen is a child with nothing to
 hang under; this is herdr's `ensure_source_parent_membership'."
   (ecc-space-test--with-sessions nil
     (ecc-space-test--with-tab-bar
-      (ecc-space-test--with-checkouts repo work
+      (ecc-space-test--with-worktrees repo work
         (let ((space (ecc-space-of-root work)))
           (ecc-space-select space)
           ;; Both tabs are there, and the worktree is the one in front.
@@ -879,7 +879,7 @@ hang under; this is herdr's `ensure_source_parent_membership'."
   "A repository that has a Space already is left where it is."
   (ecc-space-test--with-sessions nil
     (ecc-space-test--with-tab-bar
-      (ecc-space-test--with-checkouts repo work
+      (ecc-space-test--with-worktrees repo work
         (ecc-space-select (ecc-space-of-root repo))
         (setq ecc-space-test--started nil)
         (let ((tabs (length (funcall tab-bar-tabs-function))))
@@ -899,7 +899,7 @@ hang under; this is herdr's `ensure_source_parent_membership'."
   "A worktree whose repository is not on the disk opens on its own."
   (ecc-space-test--with-sessions nil
     (ecc-space-test--with-tab-bar
-      (ecc-space-test--with-checkouts repo work
+      (ecc-space-test--with-worktrees repo work
         (delete-directory repo t)
         (ecc-space-select (ecc-space-of-root work))
         (should (equal (ecc-space-current-key) work))
@@ -912,7 +912,7 @@ hang under; this is herdr's `ensure_source_parent_membership'."
   "With `ecc-space-always-session' off the repository is opened and left alone."
   (ecc-space-test--with-sessions nil
     (ecc-space-test--with-tab-bar
-      (ecc-space-test--with-checkouts repo work
+      (ecc-space-test--with-worktrees repo work
         (let ((ecc-space-always-session nil))
           (ecc-space-select (ecc-space-of-root work))
           (should (ecc-space-tab (ecc-space-of-root repo)))
@@ -922,7 +922,7 @@ hang under; this is herdr's `ensure_source_parent_membership'."
 (ert-deftest ecc-space-test-a-worktree-under-classic-opens-nothing ()
   "Under `classic' there are no Spaces to open, the repository's included."
   (ecc-space-test--with-sessions nil
-    (ecc-space-test--with-checkouts repo work
+    (ecc-space-test--with-worktrees repo work
       (let ((ecc-layout 'classic)
             (ecc-space-test--started nil))
         (cl-letf (((symbol-function 'ecc-window-focus-source) #'ignore)
@@ -1057,8 +1057,10 @@ It goes when the last buffer of the project goes, and not before."
 
 (ert-deftest ecc-space-test-closing-a-repository-closes-its-worktrees ()
   "A repository takes the worktrees drawn under it with it, and asks once.
-The checkouts are not touched: `ecc-remove-worktree' is what undoes
-one."
+The one question is about the sessions.  Nothing is offered about the
+directories here because these stand for nothing on disk, which is what
+`ecc-worktree-offer-group-removal' leaves out of its own question; the
+test below makes real ones."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
                                    ("work" . ,ecc-space-test--work))
     (ecc-space-test--with-tab-bar
@@ -1101,20 +1103,58 @@ one."
 One the user opened themselves stays: it was asked for."
   (ecc-space-test--with-sessions nil
     (ecc-space-test--with-tab-bar
-      (ecc-space-test--with-checkouts repo work
+      (ecc-space-test--with-worktrees repo work
         (let ((ecc-space-always-session nil))
           (ecc-space-select (ecc-space-of-root work))
           (should (ecc-space-tab (ecc-space-of-root repo)))
-          (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+          ;; The worktree is offered once the tabs are gone; this test
+          ;; is about the tabs, so git is kept out of the answer.
+          (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                    ((symbol-function 'ecc-worktree-remove) #'identity))
             (ecc-space-close (ecc-space-of-root work)))
           (should-not (ecc-space-tab (ecc-space-of-root work)))
           (should-not (ecc-space-tab (ecc-space-of-root repo)))
           ;; Now the same with a repository the user opened first.
           (ecc-space-select (ecc-space-of-root repo))
           (ecc-space-select (ecc-space-of-root work))
-          (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+          (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                    ((symbol-function 'ecc-worktree-remove) #'identity))
             (ecc-space-close (ecc-space-of-root work)))
           (should (ecc-space-tab (ecc-space-of-root repo))))))))
+
+(ert-deftest ecc-space-test-closing-offers-the-worktrees-of-the-group ()
+  "Closing a Space offers the worktrees that closed with it, in one question.
+The Spaces are gone and nothing is left running in them, so this is the
+moment somebody is thinking about the directories.  No leaves them
+where they are."
+  (ecc-space-test--with-sessions nil
+    (ecc-space-test--with-tab-bar
+      (ecc-space-test--with-worktrees repo work
+        (let ((ecc-space-always-session nil)
+              (asked nil)
+              (removed nil))
+          (ecc-space-select (ecc-space-of-root work))
+          (cl-letf (((symbol-function 'yes-or-no-p)
+                     (lambda (prompt) (push prompt asked) nil))
+                    ((symbol-function 'ecc-worktree-remove)
+                     (lambda (path &rest _) (push path removed) path)))
+            (ecc-space-close (ecc-space-of-root work)))
+          (should (= 1 (length asked)))
+          (should (string-match-p "Remove the worktree worktree/feat-x as well"
+                                  (car asked)))
+          (should-not removed)
+          ;; And yes takes it.  The repository itself is never in the
+          ;; question: it is nobody's worktree.
+          (setq asked nil)
+          (ecc-space-select (ecc-space-of-root repo))
+          (ecc-space-select (ecc-space-of-root work))
+          (cl-letf (((symbol-function 'yes-or-no-p)
+                     (lambda (prompt) (push prompt asked) t))
+                    ((symbol-function 'ecc-worktree-remove)
+                     (lambda (path &rest _) (push path removed) path)))
+            (ecc-space-close (ecc-space-of-root repo)))
+          (should (= 1 (length asked)))
+          (should (equal removed (list work))))))))
 
 ;;;; The windows of a session that is killed
 

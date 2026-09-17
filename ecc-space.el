@@ -53,7 +53,6 @@
 (declare-function dired-noselect "dired" (dir-or-list &optional switches))
 (declare-function ecc-sidebar-show "ecc-sidebar" ())
 (declare-function ecc-sidebar-redraw "ecc-sidebar" ())
-(declare-function ecc-inline-session-p "ecc-inline" (session))
 (declare-function ecc-history-project-roots "ecc-history" ())
 
 ;;;; Settings
@@ -85,7 +84,7 @@ one shows the source of the project and starts nothing, and the Space
 stays until the last buffer of the project is killed as well.
 
 It is a setting because a session is a process and a budget.  Whether
-opening a checkout should spend either of them -- to look at a
+opening a project should spend either of them -- to look at a
 worktree beside the one being worked in, to keep a repository on the
 screen for what its code says -- is a judgement about cost and about
 how a person works, not something this package can settle for
@@ -112,7 +111,7 @@ that order at all.")
 
 (defun ecc-space--name (root parent branch)
   "Return what a Space at ROOT with PARENT and BRANCH is called.
-A worktree goes by its branch, which is what tells two checkouts of one
+A worktree goes by its branch, which is what tells two worktrees of one
 repository apart -- the directory name is a slug of that branch and
 says nothing more.  The `worktree/' that herdr puts in front of the
 branches it generates is dropped, as it drops it."
@@ -277,7 +276,7 @@ the Space brings them back as they were left."
   (let ((root (ecc-space-root space)))
     (or (ecc-window-project-source-buffer root)
         ;; A directory is a fair answer to where the source is, but only
-        ;; if it is still there: a worktree whose checkout was removed
+        ;; if it is still there: a worktree whose directory was removed
         ;; under a Space that is still open would otherwise take the tab
         ;; down with an error instead of opening it empty.
         (and (file-directory-p root)
@@ -377,7 +376,7 @@ why `ecc-space-always-session' defaults on, and turning it off is
 asking for a Space to read in.
 
 Failing to start is not failing to go there -- the tab is made and the
-message says what happened -- and a checkout that is gone is left alone
+message says what happened -- and a worktree that is gone is left alone
 rather than started in a directory that does not exist."
   (when (and ecc-space-always-session
              (not ecc-space--laying-out)
@@ -412,7 +411,7 @@ circle does not go looking for a repository again.")
   "Return the Space of the repository SPACE was checked out from, or nil.
 Nil when SPACE is not a worktree, when the repository has a Space
 already -- a tab or a session of its own -- when git says the
-repository is itself a linked worktree, and when its checkout is gone."
+repository is itself a linked worktree, and when its directory is gone."
   (when-let* ((parent (ecc-space-parent space))
               ((not (member parent (ecc-space--keys))))
               ((not (member parent ecc-space--ensuring-parent)))
@@ -705,7 +704,7 @@ and no tab is not on the screen, and numbering it would move the numbers
 the sidebar draws and the `1\='-`9\=' keys take under the user\='s feet.
 `ecc-space-read\=' is the one place they are offered.
 
-A checkout that has been removed is left out: its recordings are still
+A worktree that has been removed is left out: its recordings are still
 readable with `ecc-history-open\=', but there is nowhere to start."
   (require 'ecc-history)
   (let ((keys (ecc-space--keys))
@@ -781,8 +780,11 @@ A repository takes its worktrees with it: they are drawn under it and
 are closed with it, the way herdr closes a group.  A worktree closed on
 its own leaves the repository where it is.
 
-The checkout of a worktree is not touched; `ecc-remove-worktree' is
-what undoes one."
+The worktrees of the group are offered afterwards, in one question:
+their Spaces are gone and nothing is left running in them, so this is
+the moment somebody is thinking about the directories.  Answering no
+leaves them where they are, and `ecc-remove-worktree' still undoes one
+by itself."
   (interactive (list (or (ecc-space-current) (ecc-space-read "Close Space: "))))
   ;; Everything is read before the first kill: closing a session closes
   ;; the Space it was the last of, and the children would be gone from
@@ -809,7 +811,14 @@ what undoes one."
         (setq ecc-space--implicit
               (delete (ecc-space-key one) ecc-space--implicit))))
     (ecc-space--child-gone space)
-    (message "Closed %s" (ecc-space--group-name space children))))
+    (message "Closed %s" (ecc-space--group-name space children))
+    ;; Asked outside the `ecc-space--closing' above: the tabs are gone
+    ;; by now, and the kills under it have already told
+    ;; `ecc-worktree--session-removed' to stay quiet about this group.
+    (ecc-worktree-offer-group-removal
+     (delq nil (mapcar (lambda (one)
+                         (and (ecc-space-parent one) (ecc-space-root one)))
+                       group)))))
 
 (defun ecc-space--group-name (space children)
   "Return what to call SPACE and the CHILDREN closing with it."
@@ -820,13 +829,13 @@ what undoes one."
 
 (defun ecc-space-forget (root)
   "Close the tab of the Space at ROOT and forget it.
-For a checkout that is about to be removed: once the directory is gone
+For a worktree that is about to be removed: once the directory is gone
 the Space is nowhere to go back to, and a tab left behind keeps it in
 `ecc-space-list\=' and in the sidebar with nothing underneath it.  Call
 this while ROOT is still there, so the key it groups under is the one
 its sessions used.
 
-The sessions are not touched: whoever removes a checkout stops them
+The sessions are not touched: whoever removes a worktree stops them
 first.  A sole tab is forgotten rather than closed, Emacs refusing to
 delete the last one."
   (let* ((key (ecc-window-project-key root))
@@ -838,7 +847,7 @@ delete the last one."
     (setf (alist-get key ecc-space--tabs nil 'remove #'equal) nil)
     (setf (alist-get key ecc-space--used nil 'remove #'equal) nil)
     (setq ecc-space--implicit (delete key ecc-space--implicit))
-    ;; Asked while ROOT is still there: once the checkout is gone git
+    ;; Asked while ROOT is still there: once the worktree is gone git
     ;; can no longer say which repository it came from.
     (unless ecc-space--closing
       (ecc-space--child-gone space))))
@@ -852,17 +861,6 @@ delete the last one."
 ;; `ecc-session-removed-hook' and not `ecc-session-exited-hook': a
 ;; session whose process died keeps its place so `/resume' has
 ;; somewhere to come back to.
-
-(defun ecc-space--counts-p (session)
-  "Return non-nil when the going of SESSION says anything about a Space.
-A recording being read, the usage probe and an inline question are all
-kind `own' and all belong to nobody: the probe has no project of its
-own and lands in whatever directory was current, which would close the
-Space of a project it was never in."
-  (and (not (eq (ecc-session-kind session) 'archived))
-       (not (ecc-model-option session :usage-probe nil))
-       (not (and (fboundp 'ecc-inline-session-p)
-                 (ecc-inline-session-p session)))))
 
 (defun ecc-space--session-buffers (session)
   "Return the live buffers of SESSION."
@@ -936,7 +934,7 @@ up, and the tab the user just asked for would go with it."
     (ecc-space--delete-session-windows session)
     (when-let* (((not ecc-space--closing))
                 ((not ecc-space--laying-out))
-                ((ecc-space--counts-p session))
+                ((ecc-model-own-session-p session))
                 (key (ecc-window-session-project session))
                 ((not (member key ecc-space--starting)))
                 (space (ecc-space-of-root key))
