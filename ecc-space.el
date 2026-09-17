@@ -208,6 +208,30 @@ to `ecc-space-list'."
 
 ;;;; The tabs underneath
 
+(defmacro ecc-space--quietly (&rest body)
+  "Run BODY without the tab commands announcing themselves.
+`tab-bar.el\=' messages on every tab added, renamed, selected and closed
+-- but only with `tab-bar-mode\=' off, where the bar itself cannot show
+what happened (Emacs 32.0.50, confirmed 2026-09-17).  With
+`tab-bar-show\=' nil that is every move between Spaces, told twice: once
+in tab-bar\='s words and once in this package\='s.  `message-log-max\='
+goes with `inhibit-message\=': a log of \"Added new tab at right\" is no
+more use than the echo area was.
+
+Only the tab-bar calls belong inside.  A session started on arriving at
+a Space has something of its own to say.
+
+It stays above everything that uses it.  A macro called before it is
+defined compiles to a function call, which signals `invalid-function\='
+when it is reached -- and whether that happens depends on what the
+compiler happened to have loaded already: `make compile\=' does the
+whole package in one process, so it got this right while the Emacs a
+user starts did not.  A demo found it (2026-09-17)."
+  (declare (indent 0) (debug t))
+  `(let ((inhibit-message t)
+         (message-log-max nil))
+     ,@body))
+
 ;; Which tab a Space lives in is kept on the frame, not in one table for
 ;; the whole Emacs.  A tab belongs to a frame -- `tab-bar--tab-index-by-name\='
 ;; finds one only on the frame that is selected -- so a table shared by every
@@ -249,23 +273,6 @@ forgotten rather than closed, Emacs refusing to delete the last one."
         (when (and (ecc-space--tab-index name) (cdr (tab-bar-tabs)))
           (ecc-space--quietly (tab-bar-close-tab-by-name name))))
       (ecc-space--drop-tab key frame))))
-
-(defmacro ecc-space--quietly (&rest body)
-  "Run BODY without the tab commands announcing themselves.
-`tab-bar.el\=' messages on every tab added, renamed, selected and closed
--- but only with `tab-bar-mode\=' off, where the bar itself cannot show
-what happened (Emacs 32.0.50, confirmed 2026-09-17).  With
-`tab-bar-show\=' nil that is every move between Spaces, told twice: once
-in tab-bar\='s words and once in this package\='s.  `message-log-max\='
-goes with `inhibit-message\=': a log of \"Added new tab at right\" is no
-more use than the echo area was.
-
-Only the tab-bar calls belong inside.  A session started on arriving at
-a Space has something of its own to say."
-  (declare (indent 0) (debug t))
-  `(let ((inhibit-message t)
-         (message-log-max nil))
-     ,@body))
 
 (defun ecc-space--tab-index (name)
   "Return the index of the tab called NAME, or nil."
