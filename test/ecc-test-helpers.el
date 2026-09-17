@@ -127,6 +127,14 @@ that tests cannot see each other."
           (ecc--sessions (make-hash-table :test #'equal))
           (ecc--session-order nil)
           (ecc-render-debounce 0)
+          ;; The layout is said rather than inherited.  A test that shows
+          ;; a session under `ecc-use-spaces' makes a tab and turns the
+          ;; tab bar on, which the next test in the same Emacs then finds
+          ;; -- the suite went order-dependent the day the default
+          ;; changed (2026-09-17).  The Spaces have harnesses of their
+          ;; own that turn it back on; `ecc-space-test-the-default-is-spaces'
+          ;; is what holds the default itself to account.
+          (ecc-use-spaces nil)
           ;; The visual effects depend on what this machine has (a nerd
           ;; font, a spinner frame at this instant), so the snapshots
           ;; are taken without them.  `ecc-visual-test' and the render

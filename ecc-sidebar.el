@@ -427,7 +427,7 @@ Emacs 29.1 has no `tab-bar-tab-post-select-functions' -- it arrived in
 30.1 (verified 2026-09-14) -- so on 29.1 the change is noticed from
 `window-configuration-change-hook' instead, which is where selecting a
 tab shows up."
-  (let ((key (and (eq ecc-layout 'spaces) (ecc-space-current-key))))
+  (let ((key (and ecc-use-spaces (ecc-space-current-key))))
     (unless (equal key ecc-sidebar--last-space)
       (setq ecc-sidebar--last-space key)
       (ecc-sidebar-redraw))))

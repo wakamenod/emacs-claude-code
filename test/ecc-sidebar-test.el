@@ -44,7 +44,7 @@ when BODY runs, and everything is put back afterwards."
           (ecc-space--used nil)
           (ecc-sidebar--collapsed nil)
           (ecc-sidebar-agents-sort 'spaces)
-          (ecc-layout 'classic)
+          (ecc-use-spaces nil)
           (ecc-visual-enable-spinner nil)
           (sessions (mapcar (lambda (entry)
                               (ecc-model-create-session
@@ -299,7 +299,7 @@ says nothing the second time."
         (should-not tabbed)
         ;; And under `spaces': its tab, and nothing focused.
         (setq focused nil)
-        (let ((ecc-layout 'spaces))
+        (let ((ecc-use-spaces t))
           (ecc-sidebar-test--goto "project-one")
           (ecc-sidebar-visit))
         (should (equal tabbed ecc-sidebar-test--one))

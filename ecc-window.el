@@ -27,8 +27,8 @@
 (declare-function ecc-session-buffer-name "ecc-session" (name))
 (declare-function ecc-chat-goto-prompt "ecc-chat" ())
 (declare-function ecc-render--project-name-1 "ecc-render" (directory))
-;; `ecc-space' is above this file and is loaded where `ecc-layout' says
-;; `spaces', the way `ecc-display-session' loads `ecc-session'.  Nothing
+;; `ecc-space' is above this file and is loaded where `ecc-use-spaces'
+;; says so, the way `ecc-display-session' loads `ecc-session'.  Nothing
 ;; here requires it: the dependency runs the other way.
 (declare-function ecc-space-of-root "ecc-space" (root))
 (declare-function ecc-space-select "ecc-space" (space))
@@ -169,7 +169,7 @@ meant as the buffer in front of them."
 (defun ecc-window--space-root ()
   "Return the root of the Space of the current tab, or nil.
 Nil under `classic', where there are no Spaces to ask about."
-  (when (eq ecc-layout 'spaces)
+  (when ecc-use-spaces
     (require 'ecc-space)
     (ecc-space-current-key)))
 
@@ -459,34 +459,33 @@ replaced rather than a second window being opened."
   "Show the buffer of SESSION and return its window.
 The window is not selected; `ecc-window-select-session' does that."
   (require 'ecc-session)
-  (pcase ecc-layout
-    ('spaces
-     (require 'ecc-space)
-     (ecc-space-display-session session))
-    (_
-     (if (not ecc-window-use-side-window)
-         (display-buffer (ecc-session-ensure-buffer session))
-       (ecc-display-session-in-role session (ecc-window-role-for session))))))
+  (if ecc-use-spaces
+      (progn
+        (require 'ecc-space)
+        (ecc-space-display-session session))
+    (if (not ecc-window-use-side-window)
+        (display-buffer (ecc-session-ensure-buffer session))
+      (ecc-display-session-in-role session (ecc-window-role-for session)))))
 
 (defun ecc-window-display-beside-session (buffer session &optional no-select)
   "Show BUFFER beside the window of SESSION and return the window.
 Everything that opens a buffer of its own out of one conversation goes
 through here: a question, a plan, a log, an agent transcript, a node
-laid open.  Under `spaces\=' the Space decides where it lands
+laid open.  With `ecc-use-spaces\=' the Space decides where it lands
 \(`ecc-space-display-beside-session\='), and it never takes the window of
-another session; under `classic\=' it is `pop-to-buffer\=', which is what
-it always was.
+another session; without it, it is `pop-to-buffer\=', which is what it
+always was.
 
 The window is selected unless NO-SELECT says otherwise: the buffer is
 opened to be read or answered."
-  (let ((window (pcase ecc-layout
-                  ('spaces
-                   (require 'ecc-space)
-                   (ecc-space-display-beside-session buffer session))
-                  (_ (if no-select
-                         (display-buffer buffer)
-                       (pop-to-buffer buffer)
-                       (get-buffer-window buffer))))))
+  (let ((window (if ecc-use-spaces
+                    (progn
+                      (require 'ecc-space)
+                      (ecc-space-display-beside-session buffer session))
+                  (if no-select
+                      (display-buffer buffer)
+                    (pop-to-buffer buffer)
+                    (get-buffer-window buffer)))))
     (when (and (not no-select) (window-live-p window))
       (select-window window))
     window))
@@ -766,7 +765,7 @@ being whatever they were left as."
                      current-prefix-arg))
   (let* ((key (ecc-window-project-key root))
          (mine (ecc-window-project-sessions key)))
-    (if (eq ecc-layout 'spaces)
+    (if ecc-use-spaces
         (progn
           (require 'ecc-space)
           (ecc-space-select (ecc-space-of-root key))

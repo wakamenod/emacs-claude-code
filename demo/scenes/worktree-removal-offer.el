@@ -79,7 +79,7 @@ say how many were asked since."
 
 (defun demo-scene-build ()
   "Build the project and open it.  Called by demo.el once there is a frame."
-  (setq ecc-layout 'spaces)
+  (setq ecc-use-spaces t)
   (setq ecc-space-always-session t)
   (setq demo-sessions nil
         demo-answers nil
@@ -98,7 +98,7 @@ say how many were asked since."
   (ecc-sidebar-show)
   (demo-say (format "ecc from %s   --   layout %S"
                     (abbreviate-file-name (locate-library "ecc-worktree"))
-                    ecc-layout))
+                    ecc-use-spaces))
   nil)
 
 ;;;; What git and the model say

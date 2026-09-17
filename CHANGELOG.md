@@ -189,13 +189,14 @@ Verified against **Claude Code CLI 2.1.270**.
   settings files are stat'ed and read again only when one has been written to.
   A remote project root is left out: its settings are on the other machine.
 
-- A second way to lay the windows out, chosen with `ecc-layout`. The default,
-  `classic`, is what this package has always done and is unchanged: a
+- A second way to lay the windows out, chosen with `ecc-use-spaces`, **and it is
+  the default**. Off, the windows are what this package has always done: a
   transcript goes into a side window with a role -- main, sub-1, sub-2 -- and
-  `ecc-focus-project` deals the roles out again for one project.
+  `ecc-focus-project` deals the roles out again for one project. There are then
+  no tabs, no sidebar and no worktree commands.
 
-  `spaces` gives every project a tab of the tab bar instead -- a Space -- and
-  leaves the windows inside it alone. The transcripts stand side by side and
+  On, every project gets a tab of the tab bar instead -- a Space -- and the
+  windows inside it are left alone. The transcripts stand side by side and
   are never stacked: the first opens as an ordinary window beside the source,
   every one after it divides the rightmost of them, and from there they are the
   user's to split, move and enlarge. A tab is a window arrangement, so going to
@@ -442,6 +443,13 @@ Verified against **Claude Code CLI 2.1.270**.
 
 - `w` in `ecc-menu` rewrites the region (`ecc-rewrite`), which was `W`. `W` is
   the worktree menu now, and `w` was free.
+
+- The choice of layout is `ecc-use-spaces`, a boolean that defaults to `t`,
+  where it was `ecc-layout` with the values `classic` and `spaces` defaulting to
+  `classic`. A Space per project is what the package is for -- several projects
+  at once, each where it was left -- so it is what a fresh install does, and
+  `(setq ecc-use-spaces nil)` is the way back to side windows with roles.
+  `ecc-layout` is gone rather than deprecated: it never appeared in a release.
 
 - `make compile` compiles each file in an Emacs of its own rather than the
   package in one process, in parallel. In one process a file is compiled with

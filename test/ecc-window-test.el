@@ -17,9 +17,15 @@
 
 (defmacro ecc-window-test--with-sessions (first second &rest body)
   "Run BODY with two registered sessions bound to FIRST and SECOND.
-They live in different projects; the second is the most recently used."
+They live in different projects; the second is the most recently used.
+
+`ecc-use-spaces\=' is off throughout this file: what it tests is the
+window roles and the focusing built on them, which is the arrangement
+that setting turns off.  The Spaces have `ecc-space-test\=' to
+themselves."
   (declare (indent 2))
   `(let* ((ecc-test-sent nil)
+          (ecc-use-spaces nil)
           (ecc--sessions (make-hash-table :test #'equal))
           (ecc--session-order nil)
           (ecc-window--last-sub nil)

@@ -7,10 +7,10 @@ sidebar:
 
 **Space** とは、タブバーのタブを 1 つ専有する 1 つのプロジェクトのことです。git の worktree はそれ自体が 1 つの Space になり、元のリポジトリの下に表示されます。
 
-これは [`ecc-layout`](/emacs-claude-code/ja/reference/configuration/#ecc-layout) の `spaces` を選んだときの姿です。既定値の `classic` は従来どおりで変わりません。トランスクリプトは main / sub-1 / sub-2 という役割を持つサイドウィンドウに入り、[`ecc-focus-project`](/emacs-claude-code/ja/features/sessions/#focusing-one-project) がその役割を 1 つのプロジェクトに配り直します。
+これは [`ecc-use-spaces`](/emacs-claude-code/ja/reference/configuration/#ecc-use-spaces) を有効にしたときの姿で、既定で有効です。無効にすると、これ以前の唯一の配置方法に戻ります。トランスクリプトは main / sub-1 / sub-2 という役割を持つサイドウィンドウに入り、[`ecc-focus-project`](/emacs-claude-code/ja/features/sessions/#focusing-one-project) がその役割を 1 つのプロジェクトに配り直します。タブもサイドバーも worktree コマンドもありません。
 
 ```elisp
-(setq ecc-layout 'spaces)
+(setq ecc-use-spaces nil)
 ```
 
 ## Space で何が変わるか

@@ -365,7 +365,7 @@ Remove it anyway? "
   "Close the Space of the worktree ROOT, which is about to be removed.
 Under `classic\=' there are no Spaces and nothing to close; `ecc-space\='
 is loaded here rather than required, this file being underneath it."
-  (when (eq ecc-layout 'spaces)
+  (when ecc-use-spaces
     (require 'ecc-space)
     (ecc-space-forget root)))
 

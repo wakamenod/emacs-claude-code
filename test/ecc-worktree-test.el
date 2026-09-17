@@ -616,7 +616,7 @@ left open on a Space with nowhere to go."
   (ecc-worktree-test--with-directory directory
     (ecc-worktree-test--repository directory)
     (let* ((ecc-worktree-directory ".claude/worktrees")
-           (ecc-layout 'spaces)
+           (ecc-use-spaces t)
            (ecc--sessions (make-hash-table :test #'equal))
            (ecc--session-order nil)
            (ecc-window--project-root-cache (make-hash-table :test #'equal))
@@ -630,7 +630,7 @@ left open on a Space with nowhere to go."
         (should (equal forgotten (list (cons path t)))))
       (should-not (file-directory-p path))
       ;; Under `classic\=' there is no Space and `ecc-space\=' is not loaded.
-      (let ((ecc-layout 'classic)
+      (let ((ecc-use-spaces nil)
             (path (ecc-worktree-create directory "feat/y")))
         (cl-letf (((symbol-function 'ecc-space-forget)
                    (lambda (_root) (error "No Space under classic"))))

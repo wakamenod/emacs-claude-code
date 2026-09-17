@@ -135,7 +135,7 @@ the next session, since this runs on every one of them."
   ;; that close a Space once the last of it goes are installed at the
   ;; top of that file, and `ecc-space--select-tab' says why the mode is
   ;; left to `tab-bar-show'.  `classic' loads none of it.
-  (when (eq ecc-layout 'spaces)
+  (when ecc-use-spaces
     (require 'ecc-space)))
 
 ;;;###autoload

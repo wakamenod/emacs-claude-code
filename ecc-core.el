@@ -176,26 +176,26 @@ command list to run.  Nil runs the command unchanged."
 
 ;;;; Layout
 
-(defcustom ecc-layout 'classic
-  "How the windows of the sessions are laid out.
+(defcustom ecc-use-spaces t
+  "Non-nil gives every project a tab of the tab bar -- a Space -- of its own.
+The windows inside a tab are then left alone: a transcript opens as an
+ordinary window beside the source and is the user's to split, move and
+enlarge, and going to the project brings the whole arrangement back the
+way it was left.  A worktree is a project of its own here, under the
+repository it came from, and the sidebar lists them all.  That is the
+default because it is what the package is for: several projects at once,
+each where it was left.
 
-`classic' is what this package has always done: a transcript goes into
-a side window with a role -- main, sub-1, sub-2 -- the roles are dealt
-out as sessions arrive, and `ecc-focus-project' deals them again for
-one project.
-
-`spaces' gives each project a tab of the tab bar instead, and leaves
-the windows inside it alone: a transcript is opened as an ordinary
-window beside the source and is then the user's to split, move and
-enlarge, and selecting the project brings its whole window
-arrangement back the way it was left.  A worktree is a project of its
-own here, under the repository it came from.
+Nil is the older arrangement, and the only one before this: a transcript
+goes into a side window with a role -- main, sub-1, sub-2 -- the roles
+are dealt out as sessions arrive, and `ecc-focus-project' deals them
+again for one project.  There are no tabs, no sidebar and no worktree
+commands.
 
 It is a setting because it is a taste in how a screen should be laid
-out, and the two are not halfway compatible: everything follows the
-one that is chosen."
-  :type '(choice (const :tag "Side windows with fixed roles" classic)
-                 (const :tag "One tab per project, free windows" spaces))
+out, and the two are not halfway compatible: everything follows the one
+that is chosen."
+  :type 'boolean
   :group 'ecc)
 
 ;;;; Logging

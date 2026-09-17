@@ -7,10 +7,10 @@ sidebar:
 
 A **Space** is one project with a tab of the tab bar to itself. A git worktree is a Space of its own, drawn under the repository it came from.
 
-This is the `spaces` value of [`ecc-layout`](/emacs-claude-code/reference/configuration/#ecc-layout). The default, `classic`, is unchanged: a transcript goes into a side window with a role — main, sub-1, sub-2 — and [`ecc-focus-project`](/emacs-claude-code/features/sessions/#focusing-one-project) deals those roles out again for one project.
+This is what [`ecc-use-spaces`](/emacs-claude-code/reference/configuration/#ecc-use-spaces) turns on, and it is on by default. Turn it off and you get the older arrangement, the only one before this: a transcript goes into a side window with a role — main, sub-1, sub-2 — and [`ecc-focus-project`](/emacs-claude-code/features/sessions/#focusing-one-project) deals those roles out again for one project. There are no tabs, no sidebar and no worktree commands.
 
 ```elisp
-(setq ecc-layout 'spaces)
+(setq ecc-use-spaces nil)
 ```
 
 ## What a Space changes

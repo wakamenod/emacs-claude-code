@@ -164,15 +164,15 @@ project of its own and the Space tables are fresh."
   "Run BODY with a tab bar, closing whatever tabs it opened afterwards.
 `tab-bar-new-tab' does work in batch, with no tab bar drawn anywhere
 \(verified 2026-09-14), so the tab side is tested for real rather than
-by watching which function is called.  `ecc-layout' is `spaces'
-throughout: `ecc-space-select' makes no tab under `classic'.
+by watching which function is called.  `ecc-use-spaces' is on
+throughout: `ecc-space-select' makes no tab without it.
 
 `ecc-start' is stood in for: going to a Space with nothing running
 starts a session there, and no test in this file is allowed to run a
 CLI.  What it was asked for is in `ecc-space-test--started'."
   (declare (indent 0))
   `(let ((was tab-bar-mode)
-         (ecc-layout 'spaces)
+         (ecc-use-spaces t)
          (ecc-space-test--started nil))
      (unwind-protect
          (cl-letf (((symbol-function 'ecc-start)
@@ -189,13 +189,22 @@ CLI.  What it was asked for is in `ecc-space-test--started'."
        (tab-bar-rename-tab "")
        (tab-bar-mode (if was 1 -1)))))
 
+(ert-deftest ecc-space-test-the-default-is-spaces ()
+  "A Space per project is what the package does unless told otherwise.
+Every harness in the suite says which layout it wants -- they have to,
+or a tab made by one test turns up in the next -- so nothing else here
+would notice the default changing."
+  (should (custom-variable-p 'ecc-use-spaces))
+  (should (eq (default-toplevel-value 'ecc-use-spaces) t))
+  (should (eq (eval (car (get 'ecc-use-spaces 'standard-value)) t) t)))
+
 (ert-deftest ecc-space-test-select-makes-no-tab-under-classic ()
   "Under `classic', going to a Space focuses the project and makes no tab.
 Turning the tab bar on because somebody pressed a number in the
 sidebar would be changing the layout behind their back."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
                                    ("two" . ,ecc-space-test--two))
-    (let ((ecc-layout 'classic)
+    (let ((ecc-use-spaces nil)
           (focused nil))
       (cl-letf (((symbol-function 'ecc-focus-project)
                  (lambda (root &rest _) (setq focused root))))
@@ -205,7 +214,7 @@ sidebar would be changing the layout behind their back."
         (should-not (bound-and-true-p tab-bar-mode))))
     ;; A Space with nothing running in it is shown rather than refused:
     ;; `ecc-focus-project' has no windows to deal out there.
-    (let ((ecc-layout 'classic)
+    (let ((ecc-use-spaces nil)
           (ecc-space-test--started nil)
           (shown nil))
       (cl-letf (((symbol-function 'ecc-window--focus-source)
@@ -246,7 +255,7 @@ it is anywhere else with the bar hidden."
   (declare (indent 0))
   `(let ((was tab-bar-mode)
          (tab-bar-show nil)
-         (ecc-layout 'spaces)
+         (ecc-use-spaces t)
          (ecc-space-test--started nil))
      (unwind-protect
          (cl-letf (((symbol-function 'ecc-start)
@@ -380,7 +389,7 @@ move them afterwards."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
                                    ("one-b" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
-      (let ((ecc-layout 'spaces)
+      (let ((ecc-use-spaces t)
             (ecc-window-width 60)
             (ecc-space-session-min-width 10))
         (ecc-space-select (ecc-space-of-root ecc-space-test--one))
@@ -511,7 +520,7 @@ does to the one that was not asked about is the bug."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
                                    ("two" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
-      (let ((ecc-layout 'spaces)
+      (let ((ecc-use-spaces t)
             (ecc-window-width 60)
             (ecc-space-session-min-width 10))
         (ecc-space-select (ecc-space-of-root ecc-space-test--one))
@@ -541,7 +550,7 @@ nothing about what is being asked."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
                                    ("two" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
-      (let ((ecc-layout 'spaces)
+      (let ((ecc-use-spaces t)
             (ecc-window-width 60)
             (ecc-space-session-min-width 10))
         (ecc-space-select (ecc-space-of-root ecc-space-test--one))
@@ -562,7 +571,7 @@ about, and both transcripts stay on the screen."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
                                    ("two" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
-      (let ((ecc-layout 'spaces)
+      (let ((ecc-use-spaces t)
             (ecc-window-width 60)
             (ecc-space-session-min-width 10))
         (ecc-space-select (ecc-space-of-root ecc-space-test--one))
@@ -874,7 +883,7 @@ is the arrangement this command promises."
 (ert-deftest ecc-space-test-reset-is-a-spaces-command ()
   "Under `classic' there is no Space to deal, and it says so."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one))
-    (let ((ecc-layout 'classic))
+    (let ((ecc-use-spaces nil))
       (should-error (ecc-space-reset-windows) :type 'user-error))
     (ecc-space-test--with-tab-bar
       ;; `spaces', but this tab is nobody's Space.
@@ -952,7 +961,7 @@ and the 1-9 keys take under the user's feet."
                                              (ecc-space-number space))
                                            (ecc-space-list))))
             ;; And it is offered, after the Spaces on the screen.
-            (let ((ecc-layout 'spaces)
+            (let ((ecc-use-spaces t)
                   (offered nil))
               (cl-letf (((symbol-function 'completing-read)
                          (lambda (_prompt collection &rest _)
@@ -1044,14 +1053,14 @@ having changed, and the way back would do nothing either."
   "With `spaces', the Space showing says which project a session starts in."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
-      (let ((ecc-layout 'spaces))
+      (let ((ecc-use-spaces t))
         (ecc-space-select (ecc-space-of-root ecc-space-test--one))
         (with-temp-buffer
           ;; A buffer behind no file says nothing, so the tab is asked.
           (should (equal (ecc-window-context-project-root)
                          ecc-space-test--one))
           ;; And with `classic' it is not, whatever tab is showing.
-          (let ((ecc-layout 'classic)
+          (let ((ecc-use-spaces nil)
                 (default-directory "/tmp/elsewhere/"))
             (should (equal (ecc-window-context-project-root)
                            "/tmp/elsewhere/"))))))))
@@ -1062,12 +1071,12 @@ having changed, and the way back would do nothing either."
     (let ((shown nil))
       (cl-letf (((symbol-function 'ecc-space-display-session)
                  (lambda (session) (setq shown session) 'window)))
-        (let ((ecc-layout 'spaces))
+        (let ((ecc-use-spaces t))
           (should (eq (ecc-display-session (car sessions)) 'window))
           (should (eq shown (car sessions))))
         ;; `classic' never reaches it.
         (setq shown nil)
-        (let ((ecc-layout 'classic)
+        (let ((ecc-use-spaces nil)
               (ecc-window-use-side-window nil))
           (ecc-display-session (car sessions))
           (should-not shown))))))
@@ -1078,7 +1087,7 @@ having changed, and the way back would do nothing either."
     (let ((selected nil))
       (cl-letf (((symbol-function 'ecc-space-select)
                  (lambda (space) (setq selected (ecc-space-root space)))))
-        (let ((ecc-layout 'spaces))
+        (let ((ecc-use-spaces t))
           (ecc-focus-project ecc-space-test--one))
         (should (equal selected ecc-space-test--one))))))
 
@@ -1171,7 +1180,7 @@ hang under; this is herdr's `ensure_source_parent_membership'."
   "Under `classic' there are no Spaces to open, the repository's included."
   (ecc-space-test--with-sessions nil
     (ecc-space-test--with-worktrees repo work
-      (let ((ecc-layout 'classic)
+      (let ((ecc-use-spaces nil)
             (ecc-space-test--started nil))
         (cl-letf (((symbol-function 'ecc-window--focus-source) #'ignore)
                   ((symbol-function 'ecc-focus-project) #'ignore)

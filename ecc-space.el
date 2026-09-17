@@ -9,9 +9,9 @@
 ;;; Commentary:
 
 ;; A Space is a project -- a repository, or a worktree of one -- with a
-;; tab of the tab bar to itself.  This is the `spaces' value of
-;; `ecc-layout'; with `classic' nothing here is called except by whoever
-;; asks for it outright.
+;; tab of the tab bar to itself.  This is what `ecc-use-spaces' turns on;
+;; with it nil nothing here is called except by whoever asks for it
+;; outright.
 ;;
 ;; What a Space buys over `ecc-focus-project' is that the arrangement is
 ;; kept.  Focusing deals the session windows out again every time, which
@@ -406,7 +406,7 @@ Under `classic' there are no tabs of ours and none is made -- turning
 the tab bar on because somebody pressed a number in the sidebar would
 be changing the layout behind their back.  Showing a Space there is
 what it has always been: focusing that project."
-  (if (eq ecc-layout 'spaces)
+  (if ecc-use-spaces
       (ecc-space--select-tab space)
     (ecc-space--select-classic space)))
 
@@ -538,13 +538,13 @@ went somewhere this package has no opinion about."
 
 (defun ecc-space-current ()
   "Return the Space that is showing, or nil.
-With `spaces' that is the Space of the current tab; with `classic'
+With `ecc-use-spaces' that is the Space of the current tab; without it
 there are no tabs of ours, so it is the project the current buffer is
 in, the same one `ecc-start' would use."
-  (pcase ecc-layout
-    ('spaces (when-let* ((key (ecc-space-current-key)))
-               (ecc-space-of-root key)))
-    (_ (ecc-space-of-root (ecc-window-context-project-root)))))
+  (if ecc-use-spaces
+      (when-let* ((key (ecc-space-current-key)))
+        (ecc-space-of-root key))
+    (ecc-space-of-root (ecc-window-context-project-root))))
 
 ;;;; Showing a session in a Space
 
@@ -786,7 +786,7 @@ A `spaces\=' command.  Under `classic\=' a transcript lives in a side
 window with a role, and `ecc-focus-project\=' is what deals those out
 again."
   (interactive)
-  (unless (eq ecc-layout 'spaces)
+  (unless ecc-use-spaces
     (user-error "Resetting the windows is a `spaces' command; \
 under `classic' the roles are dealt out by `ecc-focus-project'"))
   (let ((space (or (ecc-space-current)
@@ -870,7 +870,7 @@ ones newest first; sorting the candidates would throw both away."
 The Spaces on the screen come first, in the order they are numbered,
 and the projects only recordings are left of follow."
   (let* ((spaces (ecc-space-list))
-         (past (and (eq ecc-layout 'spaces) (ecc-space-past-projects)))
+         (past (and ecc-use-spaces (ecc-space-past-projects)))
          (all (append spaces past)))
     (unless all
       (user-error "No project has a session, a tab or a recording"))
@@ -1050,7 +1050,7 @@ source buffer alone and goes with that instead, in
 A session of a Space that is still being started is not the end of
 anything: `ecc-proc--start-failed' forgets a session that never came
 up, and the tab the user just asked for would go with it."
-  (when (eq ecc-layout 'spaces)
+  (when ecc-use-spaces
     (ecc-space--delete-session-windows session)
     (when-let* (((not ecc-space--closing))
                 ((not ecc-space--laying-out))
@@ -1071,7 +1071,7 @@ up, and the tab the user just asked for would go with it."
 The other half of `ecc-space-always-session': with the setting off a
 Space is kept alive by its source, so killing the last buffer of the
 project is what closes it.  On `kill-buffer-hook'."
-  (when (and (eq ecc-layout 'spaces)
+  (when (and ecc-use-spaces
              (not ecc-space-always-session)
              (not ecc-space--closing))
     (when-let* ((directory (ecc-window-buffer-directory (current-buffer)))
