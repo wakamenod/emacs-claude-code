@@ -180,8 +180,18 @@ thing to want but not the same thing as this.
 
 Interactively, the session of the current buffer is resumed when it has
 stopped -- that is the R offered after an exit -- and a choice is asked
-for otherwise.  A prefix argument forks it into a new conversation."
-  (interactive (list (ecc-read-session "Resume: ") current-prefix-arg))
+for otherwise.  A prefix argument forks it into a new conversation.
+
+`C-c c r\=' runs this directly, and `C-u C-c c r\=' forks: the prompt then
+says Fork rather than Resume, so that what is about to happen is in the
+minibuffer where the choice is made.  `ecc-menu\=' keeps `ecc-resume-menu\='
+under r, where the fork is a switch seen before it is pressed."
+  ;; The one path with no prompt to say Fork in: `ecc-read-session'
+  ;; returns the stopped session of the current buffer without asking,
+  ;; so `C-u' there forks in silence.  A fork opens as a new session, so
+  ;; nothing is lost by it.
+  (interactive (list (ecc-read-session (if current-prefix-arg "Fork: " "Resume: "))
+                     current-prefix-arg))
   (if (process-live-p (ecc-session-process session))
       (progn
         (when fork
