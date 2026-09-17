@@ -43,7 +43,7 @@ when BODY runs, and everything is put back afterwards."
           (ecc-sidebar-test--tabs-was (frame-parameter nil 'ecc-space-tabs))
           (ecc-space--used nil)
           (ecc-sidebar--collapsed nil)
-          (ecc-sidebar-agents-sort 'spaces)
+          (ecc-sidebar-sessions-sort 'spaces)
           (ecc-use-spaces nil)
           (ecc-visual-enable-spinner nil)
           (sessions (mapcar (lambda (entry)
@@ -182,17 +182,17 @@ says nothing the second time."
     (should-not (string-match-p "project-three" (ecc-sidebar-test--text)))))
 
 (ert-deftest ecc-sidebar-test-priority-order ()
-  "With `priority', what wants an answer is at the top of the Agents list."
+  "With `priority', what wants an answer is at the top of the Sessions list."
   (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
                                     ("two" . ,ecc-sidebar-test--two)
                                     ("three" . ,ecc-sidebar-test--work))
     (ecc-model-set-state (nth 1 sessions) 'running)
     (ecc-test-add-request (nth 2 sessions) "Write")
-    (let ((ecc-sidebar-agents-sort 'priority))
-      (should (equal (mapcar #'ecc-session-name (ecc-sidebar--agents))
+    (let ((ecc-sidebar-sessions-sort 'priority))
+      (should (equal (mapcar #'ecc-session-name (ecc-sidebar--sessions))
                      '("three" "two" "one"))))
     ;; And by Space otherwise: the order of the list at the top.
-    (should (equal (mapcar #'ecc-session-name (ecc-sidebar--agents))
+    (should (equal (mapcar #'ecc-session-name (ecc-sidebar--sessions))
                    '("two" "one" "three")))))
 
 ;;;; The tree
@@ -205,7 +205,7 @@ says nothing the second time."
     (let ((rows (seq-filter (lambda (line) (string-match-p "feat-" line))
                             (split-string (ecc-sidebar-test--text) "
 "))))
-      ;; The two rows of the Spaces list, and the two of the Agents one.
+      ;; The two rows of the Spaces list, and the two of the Sessions one.
       (should (= 4 (length rows)))
       (should (string-prefix-p "  ├─ " (nth 0 rows)))
       (should (string-prefix-p "  └─ " (nth 1 rows))))))

@@ -5,7 +5,7 @@ Spaces
    main ↑2 ↓0
   └─ · [3] feat-x
 
-Agents
+Sessions
 ▶ two               running
 ⚠ one            waiting ×2
 · feat                 idle

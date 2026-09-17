@@ -43,7 +43,7 @@ sidebar:
 │    master          │                                                     │
 │                    │   1 つの Space = 1 つのタブ = 1 つのウィンドウ配置  │
 │                    │                                                     │
-│ Agents             │                                                     │
+│ Sessions           │                                                     │
 │ ⚠ ecc   waiting    │                                                     │
 │ ▶ ecc-2 running    │                                                     │
 │ · herdr    idle    │                                                     │
@@ -94,7 +94,7 @@ Spaces
 · [3] herdr
    master
 
-Agents
+Sessions
 ⚠ ecc            waiting ×2
 ▶ ecc-2              running
 · herdr                 idle
@@ -121,7 +121,7 @@ worktree を持つリポジトリの行の右端には `▾` が付き、畳む�
 | `g` | git に聞き直して再描画 |
 | `q` | サイドバーを隠す |
 
-`ecc-sidebar-width` が幅（既定 28 桁）、`ecc-sidebar-agents-sort` が下半分の並び順です。`spaces`（既定）はセッションを Space ごとにまとめ、`priority` は答えを待っているものを先頭に出します。
+`ecc-sidebar-width` が幅（既定 28 桁）、`ecc-sidebar-sessions-sort` が下半分の並び順です。`spaces`（既定）はセッションを Space ごとにまとめ、`priority` は答えを待っているものを先頭に出します。
 
 ## worktree
 

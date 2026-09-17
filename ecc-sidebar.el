@@ -60,7 +60,7 @@ herdr draws its own at 26; two more here because a Space carries a
 bracketed number in front of the name and Emacs has no room to spare
 on the right.")
 
-(defvar ecc-sidebar-agents-sort 'spaces
+(defvar ecc-sidebar-sessions-sort 'spaces
   "How the sessions at the bottom of the sidebar are ordered.
 `spaces' keeps them under their Space, in the order they were started,
 so that the bottom of the sidebar reads like the top.  `priority' puts
@@ -115,7 +115,7 @@ DETAIL marks a second line, which `n' and `p' pass over."
 (defun ecc-sidebar--fill (left right)
   "Return LEFT and RIGHT with the room between them, LEFT cut if it must be.
 RIGHT is put against the right edge of the sidebar: what a session is
-waiting for in the Agents list, and whether a repository is folded in
+waiting for in the Sessions list, and whether a repository is folded in
 the Spaces one.  An empty RIGHT leaves the row where it ends rather
 than trailing the spaces that would have led to it."
   (let* ((width (max 12 (1- ecc-sidebar-width)))
@@ -271,10 +271,10 @@ answer while its state still says that it runs."
      ((= waiting 1) "waiting")
      (t (format "%s" (or (ecc-session-state session) ""))))))
 
-(defun ecc-sidebar--agents ()
+(defun ecc-sidebar--sessions ()
   "Return the sessions in the order the sidebar lists them."
   (let ((sessions (ecc-model-sessions)))
-    (pcase ecc-sidebar-agents-sort
+    (pcase ecc-sidebar-sessions-sort
       ('priority
        ;; Stable within a rank: `ecc-model-sessions' is most recently
        ;; used first, which is the nearest thing the model keeps to the
@@ -289,7 +289,7 @@ answer while its state still says that it runs."
                                   (ecc-space-sessions space)))
                    (ecc-space-list))))))
 
-(defun ecc-sidebar--agent-row (session)
+(defun ecc-sidebar--session-row (session)
   "Insert the row of SESSION."
   (let* ((state (ecc-tab-state session))
          (current (and (ecc-window-session-visible-p session) t))
@@ -304,13 +304,13 @@ answer while its state still says that it runs."
                  'face (ecc-tab-faces-of-state state current))
      session)))
 
-(defun ecc-sidebar--draw-agents ()
+(defun ecc-sidebar--draw-sessions ()
   "Draw the sessions section."
-  (ecc-sidebar--heading "Agents")
-  (let ((sessions (ecc-sidebar--agents)))
+  (ecc-sidebar--heading "Sessions")
+  (let ((sessions (ecc-sidebar--sessions)))
     (if (null sessions)
         (ecc-sidebar--insert (propertize "   none" 'face 'ecc-dim-face) nil t)
-      (mapc #'ecc-sidebar--agent-row sessions))))
+      (mapc #'ecc-sidebar--session-row sessions))))
 
 ;;;; Drawing and redrawing
 
@@ -318,7 +318,7 @@ answer while its state still says that it runs."
   "Draw the whole sidebar into the current buffer."
   (ecc-sidebar--draw-spaces)
   (insert "\n")
-  (ecc-sidebar--draw-agents))
+  (ecc-sidebar--draw-sessions))
 
 (defun ecc-sidebar--same-item-p (a b)
   "Return non-nil when the rows A and B stand for the same thing."

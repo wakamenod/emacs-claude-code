@@ -135,9 +135,9 @@ say how many were asked since."
   nil)
 
 (defun demo-report-agents ()
-  "Say which sessions the model still has, which is the sidebar's Agents list."
+  "Say which sessions the model still has, which is the sidebar's Sessions list."
   (let ((names (mapcar #'ecc-session-name (ecc-model-sessions))))
-    (demo-say (format "Agents: %s"
+    (demo-say (format "Sessions: %s"
                       (if names (string-join names ", ") "none"))))
   nil)
 

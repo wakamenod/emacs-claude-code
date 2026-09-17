@@ -620,7 +620,7 @@ Verified against **Claude Code CLI 2.1.270**.
   repository nested in the tree -- answers `project-current` with that
   directory, so it was in none of the checkout's sessions: the checkout
   was removed from under it and it stayed in the model, a row in the
-  sidebar's Agents list pointing at a directory that is gone. The sessions
+  sidebar's Sessions list pointing at a directory that is gone. The sessions
   are now those of the project plus any whose own root lies inside the
   checkout; a session of another project that merely ran a command in
   there is still left alone, its cwd being what the CLI reports and not

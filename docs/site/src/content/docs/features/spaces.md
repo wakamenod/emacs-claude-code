@@ -43,7 +43,7 @@ That is [`ecc-space-always-session`](/emacs-claude-code/reference/configuration/
 │    master          │                                                     │
 │                    │   one Space = one tab = one window arrangement      │
 │                    │                                                     │
-│ Agents             │                                                     │
+│ Sessions           │                                                     │
 │ ⚠ ecc   waiting    │                                                     │
 │ ▶ ecc-2 running    │                                                     │
 │ · herdr    idle    │                                                     │
@@ -100,7 +100,7 @@ Spaces
 · [3] herdr
    master
 
-Agents
+Sessions
 ⚠ ecc            waiting ×2
 ▶ ecc-2              running
 · herdr                 idle
@@ -127,7 +127,7 @@ The bottom half lists the sessions, each with its mark, its name and what it is 
 | `g` | Ask git again and redraw |
 | `q` | Hide the sidebar |
 
-`ecc-sidebar-width` is its width in columns, 28 by default. `ecc-sidebar-agents-sort` orders the bottom half: `spaces` (the default) keeps the sessions under their Space, `priority` puts what wants an answer first.
+`ecc-sidebar-width` is its width in columns, 28 by default. `ecc-sidebar-sessions-sort` orders the bottom half: `spaces` (the default) keeps the sessions under their Space, `priority` puts what wants an answer first.
 
 ## Worktrees
 
