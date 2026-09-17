@@ -784,6 +784,9 @@ appended at its end, which is where a streamed delta lands."
   (cond
    ((equal id "files") t)
    ((string-prefix-p "file:" id) t)
+   ;; What Emacs added to a prompt is folded until it is asked for:
+   ;; the point of parting it from the band is not to have to read it.
+   ((string-suffix-p "/aside" id) t)
    ((not ecc-render--session) nil)
    (t (let ((node (ecc-model-node ecc-render--session id)))
         (and node
@@ -1870,9 +1873,35 @@ start it was registered with."
     ;; over them would take both away (see `ecc-render--mark').
     (ecc-render--register id start (point) 0 t)))
 
+(defun ecc-render--insert-aside (text id)
+  "Insert TEXT as the folded note of what Emacs added to a prompt, as node ID.
+A heading saying how much was added, and the text itself under it,
+folded away by default (`ecc-render--default-hidden-p\=').  What was
+sent stays in the buffer: the transcript is the record of a
+conversation, and a line the user did not write is worth a mark of its
+own, not a disappearance."
+  (let* ((start (point))
+         (lines (length (split-string (string-trim text) "\n"))))
+    (insert (ecc-render--hang
+             (concat (ecc-render--fold-cell)
+                     (propertize (format "%d line%s Emacs added"
+                                         lines (if (= lines 1) "" "s"))
+                                 'face 'ecc-dim-face))
+             "  ")
+            "\n")
+    (ecc-render--insert-lines text "  " 'ecc-dim-face)
+    (ecc-render--mark start (point) id 0)
+    (ecc-render--register id start (point) 0 t)))
+
 (defun ecc-render--insert-turn-band (turn id start)
   "Insert the band that opens TURN, whose id is ID, at START."
-  (let ((prompt (ecc-turn-prompt turn)))
+  (let* ((prompt (ecc-turn-prompt turn))
+         ;; A line a module added to the draft is not what the user
+         ;; said, so it is taken out of the band and shown folded
+         ;; under it (`ecc-aside-split').
+         (split (and prompt (ecc-aside-split prompt)))
+         (aside (cdr split))
+         (prompt (car split)))
     (if prompt
         (progn
           ;; The prompt carries fenced blocks of its own: the quoted
@@ -1891,7 +1920,9 @@ start it was registered with."
             (ecc-render--insert-image path "  "))
           (let ((prompt-id (concat id "/prompt")))
             (ecc-render--mark start (point) prompt-id 0)
-            (ecc-render--register prompt-id start (point) 0)))
+            (ecc-render--register prompt-id start (point) 0))
+          (when aside
+            (ecc-render--insert-aside aside (concat id "/aside"))))
       ;; A turn resumed from a recording has no prompt of its own,
       ;; and neither has one holding what the CLI said between turns
       ;; (`ecc-model-aside-turn', which labels its own).  It still
