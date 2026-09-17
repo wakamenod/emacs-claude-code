@@ -105,3 +105,5 @@ say "Both sessions gone.  This one used to be left in the model -- a row in the 
 say "7. What git has at the end"; sleep 4
 e "(demo-report-git)"; sleep 10
 say "No worktrees left, and every branch still there.  No branch is ever deleted -- git branch -d is yours"; sleep 9
+
+e "(demo-save-log \"/tmp/ecc-demo-worktree-removal-offer-log.txt\")"; sleep 2
