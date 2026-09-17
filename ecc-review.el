@@ -348,7 +348,8 @@ The base a review falls back to when it has no baseline of its own."
 
 (defun ecc-review--numstat (root base now paths)
   "Return (PATH . BINARY-P) for every file that differs between BASE and NOW.
-PATHS restricts the comparison.  Renames are not looked for, so that
+ROOT is the repository the two trees belong to, and PATHS restricts the
+comparison.  Renames are not looked for, so that
 each entry names one path and the sizes below can be decided file by
 file; a rename reads as a delete and an add, which a review can see."
   (pcase (apply #'ecc-review--git root
@@ -1000,7 +1001,8 @@ known only from what the session recorded."
 
 (defun ecc-review--session-buffer (session paths)
   "Return the review of SESSION built from what the session recorded.
-The way a project outside git is reviewed: there is no tree to compare
+PATHS restricts it to those files.  The way a project outside git is
+reviewed: there is no tree to compare
 against, so the files the CLI reported editing are diffed against what
 it reported them holding first."
   (let* ((entries (ecc-review-files session paths))

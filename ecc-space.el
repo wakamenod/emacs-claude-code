@@ -509,7 +509,7 @@ brings its repository with it; see `ecc-space--ensure-parent\='.
 configuration of the frame and the mode only draws the bar above it:
 `tab-bar-new-tab\=' turns the mode on by itself where `tab-bar-show\=' is
 t, its default, and leaves it off where the user set that to nil
-(verified 2026-09-17 on Emacs 32.0.50).  Whether the bar is shown is
+\(verified 2026-09-17 on Emacs 32.0.50).  Whether the bar is shown is
 theirs to say -- the sidebar lists the Spaces with more about each than
 the bar can -- and this package has no opinion to force."
   (let ((name (ecc-space-tab space)))

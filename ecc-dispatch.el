@@ -597,7 +597,7 @@ started with."
   "Keep MESSAGE as a folded note of SESSION when it is a task notice, else nil.
 The CLI writes it into the conversation itself when it resumes a
 session whose previous process left a background task behind
-(2026-09-17).  It answers nothing, so it goes beside the conversation
+\(2026-09-17).  It answers nothing, so it goes beside the conversation
 rather than into a turn, and its `<summary>\=' is what the fold shows."
   (let ((text (ecc-protocol-history-text message)))
     (when (and text
