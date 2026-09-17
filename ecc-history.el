@@ -60,6 +60,7 @@ counted.")
     ecc-request-added-hook
     ecc-request-resolved-hook
     ecc-session-exited-hook
+    ecc-session-removed-hook
     ecc-compact-hook)
   "Hooks silenced while a recorded conversation is replayed.
 These are the ones that act on the world rather than describe the

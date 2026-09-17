@@ -93,6 +93,16 @@ themselves.")
 (defvar ecc-session-state-changed-hook nil
   "Functions run with a session and its previous state.")
 
+(defvar ecc-session-removed-hook nil
+  "Functions run with a session that has just been forgotten.
+The session is already out of the registry when this runs, which is
+what lets a function ask what is left: whether the project it belonged
+to still has anything running is the question, and the answer must not
+count the session that is going.
+
+A session that exited is not removed -- it keeps its place so it can be
+resumed -- so this is not `ecc-session-exited-hook' by another name.")
+
 (defvar ecc-files-updated-hook nil
   "Functions run with a session when its Files summary changed.")
 
@@ -306,9 +316,13 @@ Resuming with --fork-session hands back an id we did not choose."
     (ecc-model-touch session)))
 
 (defun ecc-model-remove-session (session)
-  "Forget SESSION."
+  "Forget SESSION.
+The hook runs last, with the session already gone: a function that asks
+what the project has left would otherwise count the one being removed
+and find nothing changed."
   (remhash (ecc-session-id session) ecc--sessions)
-  (setq ecc--session-order (delete (ecc-session-id session) ecc--session-order)))
+  (setq ecc--session-order (delete (ecc-session-id session) ecc--session-order))
+  (run-hook-with-args 'ecc-session-removed-hook session))
 
 (defun ecc-model-reset-conversation (session)
   "Empty SESSION of the conversation it was in, keeping the session itself.
