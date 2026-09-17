@@ -145,6 +145,52 @@ NAME, PROMPT and ANSWERS are as there."
         (should-not (equal (nth 0 (car images)) "/tmp/red.png"))
         (should (equal (nth 2 (car images)) "/tmp/red.png"))))))
 
+(ert-deftest ecc-render-test-a-tool-with-a-picture-is-not-folded ()
+  "A tool call that brought a picture comes up open.
+Tool nodes start collapsed, and the images of a tool are drawn inside
+its body: a Read of a .png and an MCP tool answering with a screenshot
+-- the two commonest ways a picture arrives -- came up as a heading
+with the picture hidden behind it (2026-09-17)."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--with-images session
+      (ecc-session-ensure-buffer session)
+      (ecc-model-begin-turn session "読んで")
+      (with-current-buffer (ecc-session-buffer session)
+        (ecc-render-test--read-with-image session)
+        (ecc-render-flush session)
+        (should-not (ecc-render--default-hidden-p "t1"))
+        ;; The picture is in the buffer rather than under a fold.
+        (should (ecc-render-test--visible-image-p))
+        ;; With the drawing off there is nothing to open for, and a
+        ;; tool is a tool again.
+        (let ((ecc-image-inline nil))
+          (should (ecc-render--default-hidden-p "t1")))
+        ;; A tool that brought no picture is still folded.
+        (ecc-dispatch session
+                      '((type . "assistant") (uuid . "u9")
+                        (message . ((content . [((type . "tool_use") (id . "t9")
+                                                 (name . "Bash")
+                                                 (input . ((command . "ls"))))])))))
+        (ecc-dispatch session
+                      '((type . "user")
+                        (message . ((content . [((type . "tool_result")
+                                                 (tool_use_id . "t9")
+                                                 (content . "a\nb"))])))))
+        (ecc-render-flush session)
+        (should (ecc-render--default-hidden-p "t9"))))))
+
+(defun ecc-render-test--visible-image-p ()
+  "Return non-nil when a picture is drawn in this buffer and not hidden."
+  (let ((found nil))
+    (save-excursion
+      (goto-char (point-min))
+      (while (and (not found) (< (point) (point-max)))
+        (if (and (get-text-property (point) 'ecc-image-file)
+                 (not (get-text-property (point) 'invisible)))
+            (setq found t)
+          (goto-char (1+ (point))))))
+    found))
+
 (ert-deftest ecc-render-test-an-image-the-result-did-not-carry ()
   "A tool that only names an image file shows the file it named."
   (ecc-test-with-fake-session session

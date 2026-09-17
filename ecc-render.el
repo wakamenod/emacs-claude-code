@@ -792,6 +792,14 @@ appended at its end, which is where a streamed delta lands."
         (and node
              (memq (ecc-node-type node) ecc-render--hidden-types)
              (not (eq (ecc-model-node-get node 'kind) 'prompt))
+             ;; A tool call that brought a picture opens: the images of
+             ;; a tool are drawn inside its body, and a screenshot
+             ;; behind a fold is a screenshot nobody sees.  A Read of a
+             ;; .png and an MCP tool that answers with one are the two
+             ;; commonest ways a picture arrives at all (2026-09-17).
+             (not (and ecc-image-inline
+                       (eq (ecc-node-type node) 'tool)
+                       (ecc-render--tool-images node)))
              t)))))
 
 (defun ecc-render--wanted-hidden-p (id)
