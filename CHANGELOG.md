@@ -142,8 +142,10 @@ Verified against **Claude Code CLI 2.1.274**.
   reach for internal functions, file names and a non-recursive directory scan.
 
   Both sides are read-only, and so `a` and `b` -- ediff's own copy commands --
-  do nothing. A review reads, comments and sends; what changes the files is
-  Claude, from the prompt the comments go out as.
+  say what a review is instead of doing anything: a review reads, comments and
+  sends, and what changes the files is Claude, from the prompt the comments go
+  out as. Left to ediff they signalled `buffer-read-only` against a buffer the
+  user had not asked about, from a key the review's own help does not offer.
 
   The comments are the same comments. `c`, `d` and `l` sit on differences
   rather than hunks, but they carry the same file and the same line numbers
@@ -322,6 +324,14 @@ Verified against **Claude Code CLI 2.1.274**.
   Space -- each a step larger than the one before -- `g` asks git again and
   `q` hides the sidebar.
 
+  `a` and `d` answer whatever kind the session is waiting on -- a permission,
+  a question, a plan -- and ask before they do, and they leave the tools of
+  `ecc-answer-exclude-tools` alone, which is `Bash`: a shell command is read
+  where it was asked, and a row carries a summary cut to twenty-eight columns.
+  `RET` is the way to where it can be read. What a row may answer is
+  `ecc-answer-session-request`, which the dashboard asks as well, so the two
+  lists cannot drift apart.
+
   The marks, the colours and the beat of the blink are the tab line's, so a
   session says the same thing wherever it is drawn, and the spinner turns only
   while something is running where it can be seen. With `spaces` the sidebar
@@ -444,6 +454,16 @@ Verified against **Claude Code CLI 2.1.274**.
   that do are `ecc-worktree-menu`, under `?` then `W`.
 
 ### Changed
+
+- The dashboard answers and stops the way the sidebar does, the two being one
+  list in two forms. `a` and `d` ask before they answer, where they used to
+  answer the row without a word; neither answers a tool of
+  `ecc-answer-exclude-tools` -- `Bash` -- which is what `ecc-answer-allow` and
+  `ecc-answer-deny` have always skipped wherever they are called from, a shell
+  command being something to read where it was asked rather than from a column
+  of a table; and `k` asks before it stops a session, which takes its window
+  and its transcript with it. What a row may answer is one function now,
+  `ecc-answer-session-request`.
 
 - **Breaking.** The Spaces have the lower-case keys of `ecc-global-map` and of
   `ecc-menu`, being where the day is spent: `C-c c j` goes to a Space (it was
