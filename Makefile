@@ -18,6 +18,8 @@ TESTS := $(wildcard test/ecc-*-test.el)
 # The dependencies are read from ~/.emacs.d/elpa by package-initialize
 INIT := --eval '(progn (setq package-user-dir "$(ELPA)") (package-initialize))'
 BATCH := $(EMACS) -Q --batch $(INIT) -L . -L test
+# One Emacs per file means one startup per file, so they run at once.
+JOBS  := $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 
 .PHONY: all autoloads compile test test-live lint clean release release-check \
         release-tag release-tag-check version-check \
@@ -38,9 +40,22 @@ $(AUTOLOADS): $(SRC)
 # A stale .elc is loaded without the changes of what it depends on, which
 # shows up as a bogus "function is not defined".  Wipe them every time
 # before compiling; it costs a second or two.
+#
+# One Emacs per file, not one for the lot.  Compiling the package in a
+# single process lets a file be compiled with definitions an earlier file
+# happened to load -- a macro used above its `defmacro', a variable used
+# above its `defvar' -- so the .elc in the tree came out right while the
+# one a user's Emacs builds did not.  Three of those were in the tree and
+# a fourth was shipped broken before this was noticed (2026-09-17).
+#
+# It costs one Emacs startup per file, which is why they run at once: in
+# parallel the whole package compiles faster than it did in one process.
 compile:
 	rm -f *.elc test/*.elc
-	$(BATCH) --eval '(setq byte-compile-error-on-warn t)' -f batch-byte-compile $(SRC)
+	@$(MAKE) --no-print-directory -j$(JOBS) $(SRC:.el=.elc)
+
+%.elc: %.el
+	@$(BATCH) --eval '(setq byte-compile-error-on-warn t)' -f batch-byte-compile $<
 
 # ecc-autoloads.el is a prerequisite so that a test run always has a current
 # one to check, and so that the checkout an init loads it from is never left
