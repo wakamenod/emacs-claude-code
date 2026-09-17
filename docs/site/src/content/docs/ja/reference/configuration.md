@@ -88,6 +88,7 @@ M-x customize-group RET ecc
 | `ecc-worktree-directory` | `".claude/worktrees"` | `ecc-start-worktree` が worktree を配置する場所。相対パスはリポジトリ内を指します。絶対パスは全リポジトリで共有するディレクトリで、worktree は `<directory>/<repository>/<branch-slug>` に配置されます |
 | `ecc-space-always-session` | `t` | `ecc-use-spaces` が有効なとき、Space が常にセッションを保持するかどうか。非 nil の場合、実行中のセッションがない Space を開くとセッションを開始し、最後のセッションを閉じると Space も閉じます。nil の場合、Space はソースファイルのみを表示して開き、プロジェクトの最後のバッファが kill されるまで開いたままになります |
 | `ecc-space-session-min-width` | `80` | `ecc-use-spaces` が有効なとき、トランスクリプトの並びをさらに分割するためにセッションウィンドウが必要とする桁数。この幅の列を確保できない場合は、すべてのトランスクリプトを狭くするのではなく、直近で最も操作されていないセッションのウィンドウを再利用します。`window-min-width` がこの値の下限です |
+| `ecc-sidebar-width` | `28` | サイドバーの幅（桁数）。大きなフォントの 13 インチと 34 インチのディスプレイでは、28 桁が画面に占める割合は同じではありませんし、プロジェクト名の長さも人それぞれです |
 
 `ecc-window-large-frame-min-height` の既定値（80行）は、ノートPCの画面と外付け大画面ディスプレイを自動判別するための値です。14インチ画面はおよそ58行、16インチはおよそ67行であるのに対し、外部デスクトップディスプレイでは110行以上表示できます。
 

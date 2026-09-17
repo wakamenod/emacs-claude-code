@@ -54,11 +54,18 @@
 (defconst ecc-sidebar-buffer-name "*ecc-sidebar*"
   "Name of the sidebar buffer.")
 
-(defvar ecc-sidebar-width 28
+(defcustom ecc-sidebar-width 28
   "Width of the sidebar window, in columns.
 herdr draws its own at 26; two more here because a Space carries a
 bracketed number in front of the name and Emacs has no room to spare
-on the right.")
+on the right.
+
+It is a setting for the reason `ecc-space-session-min-width\=' is one: it
+is a screen.  Twenty-eight columns of a 13-inch laptop at a large font
+and of a 34-inch display are not the same fraction of the frame, and
+the names a project has are not the same length for everybody."
+  :type 'integer
+  :group 'ecc)
 
 (defvar ecc-sidebar-sessions-sort 'spaces
   "How the sessions at the bottom of the sidebar are ordered.
