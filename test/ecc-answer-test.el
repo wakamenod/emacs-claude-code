@@ -123,7 +123,8 @@ The request of A is a Bash call and older; the one of B is a Write."
   ;; And the entry points used often enough to be worth a key of their
   ;; own, spelled as `ecc-menu\=' spells them.
   (should (eq (lookup-key ecc-global-map (kbd "c")) #'ecc-start))
-  (should (eq (lookup-key ecc-global-map (kbd "r")) #'ecc-resume-menu))
+  ;; With the one exception `ecc-menu' keeps a menu for: r resumes.
+  (should (eq (lookup-key ecc-global-map (kbd "r")) #'ecc-resume))
   (should (eq (lookup-key ecc-global-map (kbd "R")) #'ecc-rename-session))
   (should (eq (lookup-key ecc-global-map (kbd "v")) #'ecc-show-session))
   (should (eq (lookup-key ecc-global-map (kbd "i")) #'ecc-interrupt))
@@ -133,9 +134,18 @@ The request of A is a Bash call and older; the one of B is a Write."
   (should (eq (lookup-key ecc-global-map (kbd "d")) #'ecc-answer-deny))
   (should (eq (lookup-key ecc-global-map (kbd "n")) #'ecc-next-attention))
   (should (eq (lookup-key ecc-global-map (kbd "4")) #'ecc-answer-option-4))
-  ;; Dashboard is `b\=', not `D\=', because `d\=' belongs to deny and the
-  ;; menu spells dashboard the same way.
-  (should (eq (lookup-key ecc-global-map (kbd "b")) #'ecc-dashboard))
+  ;; The Spaces have the lower-case keys, being where the day is spent,
+  ;; and the dashboard is the capital beside the sidebar it is the
+  ;; passing form of.
+  (should (eq (lookup-key ecc-global-map (kbd "j")) #'ecc-space-goto))
+  (should (eq (lookup-key ecc-global-map (kbd "b")) #'ecc-sidebar-focus))
+  (should (eq (lookup-key ecc-global-map (kbd "z")) #'ecc-space-zoom))
+  (should (eq (lookup-key ecc-global-map (kbd "V")) #'ecc-space-reset-windows))
+  (should (eq (lookup-key ecc-global-map (kbd "B")) #'ecc-dashboard))
+  ;; Making and removing a worktree is `ecc-worktree-menu', not a key
+  ;; here: three commands that belong together, done in a week what the
+  ;; keys above are done in an hour.
+  (should-not (lookup-key ecc-global-map (kbd "C")))
   ;; The only way to the menu from a buffer that is not a session.
   (should (eq (lookup-key ecc-global-map (kbd "?")) #'ecc-menu)))
 

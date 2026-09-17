@@ -129,6 +129,56 @@ def farewell(name):
   (replace-regexp-in-string "return \"hi \"" "return \"hello \"" shot-before t t)
   "The same file after the edit the recording makes.")
 
+(defconst shot-hero-file (expand-file-name "pipeline.py" shot-root)
+  "A file that looks like work, for the source window of the hero picture.")
+
+(defconst shot-hero-source "\
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Iterable, Iterator
+
+log = logging.getLogger(__name__)
+
+CHUNK = 4096
+
+
+@dataclass(slots=True)
+class Record:
+    path: Path
+    offset: int
+    fields: list[str] = field(default_factory=list)
+
+    @property
+    def key(self) -> str:
+        return self.fields[0] if self.fields else \"\"
+
+
+def read_records(paths: Iterable[Path]) -> Iterator[Record]:
+    \"\"\"Yield a record per line, skipping the rest.\"\"\"
+    for path in paths:
+        with path.open(encoding=\"utf-8\") as handle:
+            offset = 0
+            for line in handle:
+                offset += len(line)
+                line = line.rstrip(\"\\n\")
+                if not line or line.startswith(\"#\"):
+                    continue
+                fields = line.split(\",\")
+                try:
+                    yield Record(path, offset, fields)
+                except ValueError:
+                    log.warning(\"%s is not a record\", path)
+
+
+def index(paths: Iterable[Path]) -> dict[str, Record]:
+    records = read_records(paths)
+    return {record.key: record for record in records}
+"
+  "The contents of that file.")
+
 (defvar shot-main nil "The session the pictures are taken of.")
 (defvar shot-other nil "The second session, so that switching has somewhere to go.")
 
@@ -656,11 +706,13 @@ def handler(request):
 
 (defvar shot-foreign nil "A session of the second project.")
 
-(defun shot-scene-focus-start ()
-  "Crowd the frame: two projects, a session of each, and the wrong source.
-This is the state the command is for.  The source on the left belongs
-to one project and the session in the main window to the other, which
-is what working in several projects at once leaves behind."
+(defun shot-foreign-session (&optional fixture)
+  "Create the second project and the session in it, once, and return it.
+The scenes that want two projects on the screen -- focusing one of
+them, the Spaces -- all want the same one.  FIXTURE is the recording to
+replay into it, `tool-use-write\=' by default: a scene whose own session
+was replayed from that one has to name another, since two sessions on
+one recording evict each other from the registry."
   (make-directory shot-other-root t)
   (unless (file-exists-p shot-other-file)
     (with-temp-file shot-other-file (insert shot-other-source)))
@@ -668,20 +720,28 @@ is what working in several projects at once leaves behind."
     (setq shot-foreign (ecc-model-create-session :name "api-server"
                                                  :project-root shot-other-root))
     (ecc-session-ensure-buffer shot-foreign)
-    ;; Not the fixture `notes' was replayed from: a recording carries
+    ;; Not the fixture `notes\=' was replayed from: a recording carries
     ;; the session id it was made under, the dispatch puts the session
     ;; in the registry under it, and two sessions replaying one
     ;; recording means the second quietly evicts the first (confirmed
     ;; 2026-09-13).
-    (shot-play shot-foreign "tool-use-write")
+    (shot-play shot-foreign (or fixture "tool-use-write"))
     ;; Every fixture was recorded in one sandbox and every sandbox path
     ;; is rewritten to the demo project, so the init message of the
     ;; recording puts this session back in it -- which is where a
-    ;; session's project comes from.  Saying so again afterwards is what
+    ;; session\='s project comes from.  Saying so again afterwards is what
     ;; makes this a second project rather than a second name for the
     ;; first (confirmed 2026-09-13).
     (setf (ecc-session-cwd shot-foreign)
           (file-name-as-directory shot-other-root)))
+  shot-foreign)
+
+(defun shot-scene-focus-start ()
+  "Crowd the frame: two projects, a session of each, and the wrong source.
+This is the state the command is for.  The source on the left belongs
+to one project and the session in the main window to the other, which
+is what working in several projects at once leaves behind."
+  (shot-foreign-session)
   (select-window (frame-first-window (selected-frame)))
   (let ((ignore-window-parameters t))
     (delete-other-windows))
@@ -722,8 +782,316 @@ be in both of them."
     (setq shot-foreign nil))
   (when-let* ((buffer (get-file-buffer shot-other-file)))
     (kill-buffer buffer))
-  (set-frame-parameter nil 'ecc-hidden-sessions nil)
   (shot-show shot-main))
+
+(defun shot-scene-spaces ()
+  "The Spaces: a tab for each project, the sidebar down the left, and
+this project\='s two transcripts standing beside its source.
+
+This is the picture the Spaces page opens with, so it has to hold the
+whole idea at once: the list on the left, the tabs across the top, and
+one Space laid out underneath them."
+  (require 'ecc-space)
+  (require 'ecc-sidebar)
+  (shot-foreign-session)
+  ;; Wide enough for the sidebar, the source and two transcripts side by
+  ;; side.  A transcript may not go under `ecc-space-session-min-width\=',
+  ;; 80 columns, and no screen this is run on fits that twice beside the
+  ;; rest -- so the picture is taken with the width the frame can really
+  ;; give two of them.
+  (let* ((area (frame-monitor-workarea))
+         (columns (min 170 (/ (- (nth 2 area) 48) (frame-char-width)))))
+    (set-frame-size (selected-frame) columns 32)
+    (setq ecc-space-session-min-width 44))
+  (shot-place-frame-bottom-right)
+  ;; A tab for each project, ending on the demo one: the picture is of
+  ;; its Space, with the other Space waiting in the tab bar and in the
+  ;; sidebar.
+  (ecc-space-select (ecc-space-of-root shot-other-root))
+  (ecc-space-select (ecc-space-of-root shot-root))
+  (ecc-sidebar-show)
+  ;; Deal the tab the way a new one is dealt: the source on the left,
+  ;; the transcripts beside it.
+  (ecc-space-reset-windows)
+  ;; The demo file is eight lines long, so the source is given a narrow
+  ;; column -- and that is also what leaves the row wide enough for the
+  ;; second transcript to divide the first rather than go windowless.
+  (when-let* ((window (get-buffer-window (get-file-buffer shot-file))))
+    (ignore-errors (window-resize window (- 34 (window-width window)) t)))
+  ;; The second transcript is put beside the first with the Space's own
+  ;; helper rather than with `ecc-space-display-session\=', which goes
+  ;; through `ecc-space-select\=' -- and selecting the tab restores the
+  ;; window configuration stored in it, undoing the narrow source a line
+  ;; above and leaving the row too tight to divide (measured 2026-09-18).
+  (when-let* ((windows (ecc-space--session-windows))
+              (right (car (last windows)))
+              (other (if (eq (window-buffer right) (ecc-session-buffer shot-main))
+                         shot-other
+                       shot-main)))
+    (ecc-space--display-beside (ecc-session-buffer other) right
+                               (/ (window-total-width right) 2)))
+  (dolist (session (list shot-main shot-other))
+    (when-let* ((window (get-buffer-window (ecc-session-buffer session))))
+      (with-selected-window window
+        (ecc-chat--set-margins window)
+        (goto-char (point-max))
+        (recenter -1))))
+  (message nil)
+  (redisplay t))
+
+(defun shot-scene-spaces-end ()
+  "Take the tabs, the sidebar and the second project away again.
+Every scene after this one photographs one frame of windows, and a tab
+bar or a sidebar left behind would be in all of them."
+  (setq ecc-space-session-min-width 80)
+  (ecc-sidebar-hide)
+  (tab-bar-mode -1)
+  (set-frame-size (selected-frame) 112 44)
+  (shot-place-frame-bottom-right)
+  (shot-scene-focus-end))
+
+(defconst shot-worktree-roots
+  '(("feat/x" . "feat-x") ("fix/parser" . "fix-parser"))
+  "The worktrees the sidebar picture shows, branch to directory.")
+
+(defvar shot-worktree-sessions nil "The sessions made for those worktrees.")
+
+(defun shot-worktree-root (slug)
+  "Return the directory the worktree SLUG stands in."
+  (expand-file-name slug (expand-file-name ".claude/worktrees" shot-root)))
+
+(defun shot-fake-git (&rest _)
+  "Answer git\='s questions about the demo projects without a repository.
+The sidebar draws the branch a Space is on, how far it is from its
+upstream, and the worktrees hanging under a repository -- all of it read
+from git.  The demo projects are directories in /tmp with no repository
+in them, so the answers are invented here, the way the resume picker\='s
+recordings are.  Making real repositories and real worktrees instead
+would put this machine\='s paths and branches in the picture."
+  (advice-add 'ecc-worktree-main :override
+              (lambda (root)
+                (and (seq-find (lambda (pair)
+                                 (equal (file-name-as-directory root)
+                                        (file-name-as-directory
+                                         (shot-worktree-root (cdr pair)))))
+                               shot-worktree-roots)
+                     shot-root))
+              '((name . shot-fake-git)))
+  (advice-add 'ecc-worktree-branch :override
+              (lambda (root)
+                (let ((root (file-name-as-directory root)))
+                  (or (car (seq-find
+                            (lambda (pair)
+                              (equal root (file-name-as-directory
+                                           (shot-worktree-root (cdr pair)))))
+                            shot-worktree-roots))
+                      (and (equal root (file-name-as-directory shot-root)) "main")
+                      (and (equal root (file-name-as-directory shot-other-root))
+                           "master"))))
+              '((name . shot-fake-git)))
+  (advice-add 'ecc-worktree-ahead-behind :override
+              (lambda (root)
+                (when (equal (file-name-as-directory root)
+                             (file-name-as-directory shot-root))
+                  (cons 2 0)))
+              '((name . shot-fake-git))))
+
+(defun shot-unfake-git ()
+  "Give git its own answers back."
+  (dolist (function '(ecc-worktree-main ecc-worktree-branch
+                                        ecc-worktree-ahead-behind))
+    (advice-remove function 'shot-fake-git)))
+
+(defun shot-scene-sidebar ()
+  "The sidebar on its own: several Spaces, two of them worktrees.
+The picture the sidebar section opens with, so it has to carry a
+repository with worktrees under it, a second project, and a session
+waiting for an answer -- everything the two lists can say."
+  (require 'ecc-space)
+  (require 'ecc-sidebar)
+  (shot-foreign-session)
+  (shot-fake-git)
+  (unless shot-worktree-sessions
+    (dolist (pair shot-worktree-roots)
+      (let* ((slug (cdr pair))
+             (root (shot-worktree-root slug))
+             (session (progn (make-directory root t)
+                             (ecc-model-create-session :name slug
+                                                       :project-root root))))
+        (ecc-session-ensure-buffer session)
+        (setf (ecc-session-cwd session) (file-name-as-directory root))
+        (push session shot-worktree-sessions))))
+  ;; One of them is left waiting, which is the mark the Spaces list
+  ;; carries up to the repository above.  A fixture of its own: a
+  ;; recording carries the session id it was made under, and a second
+  ;; session replaying one another session already has quietly evicts
+  ;; that one from the registry -- which took `greet' out of the
+  ;; Sessions list (measured 2026-09-18).
+  (let ((waiting (car (last shot-worktree-sessions))))
+    (shot-play waiting "permission-deny-retry" 1 8))
+  ;; Short: the picture is of the two lists, and a sidebar as tall as
+  ;; the other scenes' frame is mostly empty below them.
+  (set-frame-height (selected-frame) 18)
+  (shot-place-frame-bottom-right)
+  (ecc-sidebar-show)
+  (ecc-sidebar-redraw)
+  (message nil)
+  (redisplay t))
+
+(defun shot-report-sidebar-geometry ()
+  "Write where the sidebar window is, for a picture of it alone.
+The wrapper captures a rectangle of the screen, and the frame around
+the sidebar is not what this one is of."
+  (unless (active-minibuffer-window)
+    (message nil))
+  (redisplay t)
+  (let* ((window (get-buffer-window ecc-sidebar-buffer-name))
+         (inner (frame-edges nil 'inner-edges))
+         (edges (window-pixel-edges window)))
+    (with-temp-file shot-geometry-file
+      (insert (format "%d %d %d %d %d %d\n"
+                      (+ (nth 0 inner) (nth 0 edges))
+                      (+ (nth 1 inner) (nth 1 edges))
+                      (- (nth 2 edges) (nth 0 edges))
+                      (- (nth 3 edges) (nth 1 edges))
+                      (window-width window)
+                      (window-height window))))))
+
+(defun shot-scene-sidebar-end ()
+  "Take the extra sessions, the sidebar and the invented git away again."
+  (dolist (session shot-worktree-sessions)
+    (ecc-model-remove-session session)
+    (when (buffer-live-p (ecc-session-buffer session))
+      (let ((kill-buffer-query-functions nil))
+        (kill-buffer (ecc-session-buffer session)))))
+  (setq shot-worktree-sessions nil)
+  (shot-unfake-git)
+  (ecc-sidebar-hide)
+  (set-frame-height (selected-frame) 44)
+  (shot-place-frame-bottom-right)
+  (shot-scene-focus-end))
+
+(defvar shot-usecase-session nil "The session the use-case scene starts.")
+
+(defun shot-scene-usecase-start ()
+  "The frame as the use-case page opens: one Space, its sidebar, no more.
+The second project is left with no session of its own and offered as a
+project that has only recordings -- which is what `C-c c j\=' reaches and
+what the scene is about."
+  (require 'ecc-space)
+  (require 'ecc-sidebar)
+  (shot-fake-git)
+  (make-directory shot-other-root t)
+  (unless (file-exists-p shot-other-file)
+    (with-temp-file shot-other-file (insert shot-other-source)))
+  ;; `ecc-space-past-projects\=' reads the recordings on this machine, which
+  ;; are this machine\='s own projects.  The scene answers for it instead,
+  ;; the way the resume picker\='s recordings are answered for.
+  (advice-add 'ecc-space-past-projects :override
+              (lambda () (list (ecc-space-of-root shot-other-root)))
+              '((name . shot-usecase)))
+  ;; Going to a Space with nothing running starts a session there, and
+  ;; a session here is a replayed recording rather than a CLI.
+  (advice-add 'ecc-start :override
+              (lambda (&rest _)
+                (find-file shot-other-file)
+                (let ((session (ecc-model-create-session
+                                :name "api-server" :project-root shot-other-root)))
+                  (ecc-session-ensure-buffer session)
+                  (setf (ecc-session-cwd session)
+                        (file-name-as-directory shot-other-root))
+                  ;; Only the init message of a recording: what the
+                  ;; picture is of is a session that has just started,
+                  ;; and a transcript with a conversation already in it
+                  ;; reads as a session that was there all along.
+                  (shot-play session "tool-use-write" 1 1)
+                  (setq shot-usecase-session session)
+                  ;; `ecc-start\=' shows the session it starts; the Space was
+                  ;; laid out before there was one, so without this the
+                  ;; new tab comes up with the source alone.
+                  (ecc-space-display-session session)
+                  (when-let* ((window (get-buffer-window
+                                       (ecc-session-buffer session))))
+                    (with-selected-window window
+                      (ecc-chat--set-margins window)
+                      (goto-char (point-max))
+                      (recenter -1)))
+                  session))
+              '((name . shot-usecase)))
+  (let* ((area (frame-monitor-workarea))
+         (columns (min 150 (/ (- (nth 2 area) 48) (frame-char-width)))))
+    (set-frame-size (selected-frame) columns 34)
+    (setq ecc-space-session-min-width 44))
+  (shot-place-frame-bottom-right)
+  ;; A Space is offered under a line that begins with its number and its
+  ;; name in a fixed column, so the default prefix completion finds
+  ;; nothing for the name typed in the middle of it: `api\=' matched no
+  ;; candidate and the minibuffer stayed open through the rest of the
+  ;; run (measured 2026-09-18).
+  (setq completion-styles '(substring basic))
+  (ecc-space-select (ecc-space-of-root shot-root))
+  (ecc-sidebar-show)
+  (ecc-space-reset-windows)
+  (message nil)
+  (redisplay t))
+
+(defun shot-scene-usecase-goto ()
+  "Pick the project that has only recordings, and let its Space open."
+  (shot-script
+   (list (cons 0.5 (lambda () (call-interactively #'ecc-space-goto)))
+         (cons 2.0 (lambda () (shot-keys "a")))
+         (cons 2.6 (lambda () (shot-keys "p")))
+         (cons 3.2 (lambda () (shot-keys "i")))
+         (cons 4.4 (lambda () (shot-keys "RET")))
+         (cons 6.0 (lambda () (redisplay t))))))
+
+(defun shot-scene-usecase-worktree ()
+  "The Space a hand-off makes: the worktree\='s tab, beside the repository.
+What `start_worktree_session\=' leaves on the screen, without the CLI: the
+worktree has a Space and a session of its own, and the sidebar draws it
+under the repository it came from."
+  (let* ((slug "feat-x")
+         (root (shot-worktree-root slug)))
+    (make-directory root t)
+    (unless (file-exists-p (expand-file-name "hello.py" root))
+      (with-temp-file (expand-file-name "hello.py" root) (insert shot-before)))
+    ;; The worktree's own source, so that its Space opens on code rather
+    ;; than on Dired of a directory with one file in it.
+    (find-file (expand-file-name "hello.py" root))
+    (let ((session (ecc-model-create-session :name slug :project-root root)))
+      (ecc-session-ensure-buffer session)
+      (setf (ecc-session-cwd session) (file-name-as-directory root))
+      ;; Not `edit-tool': `greet' was replayed from it, and the second
+      ;; session on one recording evicts the first from the registry --
+      ;; which took `greet' out of the Sessions list (2026-09-18).
+      (shot-play session "background-bash")
+      (push session shot-worktree-sessions)
+      (ecc-space-select (ecc-space-of-root root))
+      (ecc-sidebar-show)
+      (ecc-space-reset-windows)
+      (when-let* ((window (get-buffer-window (ecc-session-buffer session))))
+        (with-selected-window window
+          (ecc-chat--set-margins window)
+          (goto-char (point-max))
+          (recenter -1)))))
+  (message nil)
+  (redisplay t))
+
+(defun shot-scene-usecase-end ()
+  "Take the use-case sessions, the tabs and the invented answers away."
+  (setq completion-styles (default-value 'completion-styles))
+  (dolist (function '(ecc-space-past-projects ecc-start))
+    (advice-remove function 'shot-usecase))
+  (when shot-usecase-session
+    (ecc-model-remove-session shot-usecase-session)
+    (when (buffer-live-p (ecc-session-buffer shot-usecase-session))
+      (let ((kill-buffer-query-functions nil))
+        (kill-buffer (ecc-session-buffer shot-usecase-session))))
+    (setq shot-usecase-session nil))
+  (setq ecc-space-session-min-width 80)
+  (set-frame-size (selected-frame) 112 44)
+  (shot-place-frame-bottom-right)
+  (shot-scene-sidebar-end))
 
 (defun shot-scene-quit ()
   "Close whatever the last scene left open -- a menu, a picker.
@@ -1381,16 +1749,58 @@ so that several turns are in view at once rather than the tail of one."
   ;; height: nothing here opens a minibuffer, so it does not need the
   ;; room `shot-place-frame-bottom-right\=' keeps for one, and the whole
   ;; conversation only fits in the picture with that room spent on it.
+  ;; The Spaces are what a frame looks like now: the sidebar down the
+  ;; left listing every project, its worktrees and its sessions, with
+  ;; the code and the conversation beside it.  The strip of tabs is left
+  ;; off -- `tab-bar-show' nil -- because the sidebar is the better list
+  ;; of the same thing and the picture has room for one of them.
+  (require 'ecc-space)
+  (require 'ecc-sidebar)
+  (setq tab-bar-show nil)
+  (shot-fake-git)
+  ;; Not `tool-use-write\=': this scene replays it into `greet\=' itself.
+  (shot-foreign-session "background-bash")
+  ;; A worktree of the demo project, with a session waiting for an
+  ;; answer in it: the sidebar draws it under the repository, and the
+  ;; marks of the two lists are the colour in the picture.
+  (let ((root (shot-worktree-root "feat-x")))
+    (make-directory root t)
+    (unless (file-exists-p (expand-file-name "pipeline.py" root))
+      (with-temp-file (expand-file-name "pipeline.py" root)
+        (insert shot-hero-source)))
+    (unless (seq-find (lambda (session)
+                        (equal (ecc-session-name session) "feat-x"))
+                      (ecc-model-sessions))
+      (let ((session (ecc-model-create-session :name "feat-x"
+                                               :project-root root)))
+        (ecc-session-ensure-buffer session)
+        (setf (ecc-session-cwd session) (file-name-as-directory root))
+        (shot-play session "permission-deny-retry" 1 8)
+        (push session shot-worktree-sessions))))
+  ;; And a session of the project running, so that the Sessions list
+  ;; carries all three marks rather than a column of grey dots.
+  (ecc-model-set-state shot-other 'running)
   (let* ((area (frame-monitor-workarea))
-         (columns (min 132 (/ (- (nth 2 area) 48) (frame-char-width))))
+         (columns (min 160 (/ (- (nth 2 area) 48) (frame-char-width))))
          (limit (/ (- (nth 3 area) 40) (frame-char-height))))
     (set-frame-size (selected-frame) columns limit)
+    (ecc-space-select (ecc-space-of-root shot-other-root))
+    (ecc-space-select (ecc-space-of-root (shot-worktree-root "feat-x")))
+    (ecc-space-select (ecc-space-of-root shot-root))
+    ;; `tab-bar-show\=' nil is what keeps the strip off a frame that has
+    ;; tabs, but a mode already on goes on drawing it: the tabs stay in
+    ;; the frame either way, and this picture is of the sidebar.
+    (tab-bar-mode -1)
     (shot-show shot-main)
-    ;; The demo file is nine lines long, so the source is given a narrow
-    ;; column: half the frame of empty space beside the conversation is
-    ;; what this picture must not be.
+    ;; The source window holds a file that looks like work rather than
+    ;; the eight lines the recordings edit: this is the one picture a
+    ;; reader meets before anything is explained.
     (when-let* ((window (get-buffer-window (get-file-buffer shot-file))))
-      (ignore-errors (window-resize window (- 34 (window-width window)) t)))
+      (with-selected-window window
+        (unless (file-exists-p shot-hero-file)
+          (with-temp-file shot-hero-file (insert shot-hero-source)))
+        (find-file shot-hero-file)))
+    (ecc-sidebar-show)
     (when-let* ((window (get-buffer-window (ecc-session-buffer shot-main))))
       (ecc-chat--set-margins window)
       ;; Grow until the first line of the conversation is in view, or
@@ -1412,8 +1822,33 @@ so that several turns are in view at once rather than the tail of one."
                              (- (+ (nth 0 area) (nth 2 area))
                                 (frame-pixel-width) 24))
                         (+ (nth 1 area) 12)))
+  ;; The three columns are given their widths last of all.  Resizing the
+  ;; frame -- which the loop above does once a line until the whole
+  ;; conversation is in view -- hands the new room out in proportion, so
+  ;; widths set before it came back 49/88/17 of 160 columns instead of
+  ;; the 28/60/72 they were given (measured 2026-09-18).
+  (when-let* ((sidebar (get-buffer-window ecc-sidebar-buffer-name)))
+    (ecc-sidebar--set-width sidebar))
+  (when-let* ((window (get-buffer-window (get-file-buffer shot-hero-file))))
+    (ignore-errors (window-resize window (- 60 (window-width window)) t)))
   (when-let* ((window (get-buffer-window (ecc-session-buffer shot-main))))
+    (setq ecc-chat-text-width (max 60 (- (window-width window) 6)))
     (with-selected-window window
+      (ecc-chat--set-margins window)
+      (ecc-render-refresh shot-main)
+      ;; And grow again now that the text has been re-wrapped to the
+      ;; column it really has: the loop above measured a transcript 17
+      ;; columns wide, so the frame it settled on opened this one in the
+      ;; middle of a sentence.
+      (let ((limit (/ (- (nth 3 (frame-monitor-workarea)) 40)
+                      (frame-char-height))))
+        (while (and (< (frame-height) limit)
+                    (progn (goto-char (point-max))
+                           (recenter -1)
+                           (redisplay t)
+                           (not (pos-visible-in-window-p (point-min) window))))
+          (set-frame-size (selected-frame) (frame-width)
+                          (min limit (+ 4 (frame-height))))))
       (goto-char (point-max))
       (recenter -1)))
   (message nil)
@@ -1425,6 +1860,10 @@ so that several turns are in view at once rather than the tail of one."
 
 (defun shot-scene-overview-end ()
   "Put the frame back to the type and the size every other scene wants."
+  (ecc-sidebar-hide)
+  (setq tab-bar-show t)
+  (tab-bar-mode -1)
+  (shot-unfake-git)
   (setq ecc-chat-text-width 64)
   (set-frame-font "JetBrains Mono 13" nil t)
   (set-frame-size (selected-frame) 112 44)

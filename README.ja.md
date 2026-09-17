@@ -11,8 +11,6 @@ Claude Code CLI 向けの Emacs クライアントです。通常の Emacs バ�
 
 ![セッション全体：2 つのプロンプト、それぞれが走らせたツール、許可された差分、そして返ってきた答え](docs/images/overview.png)
 
-![セッション：プロンプトを送り、Edit を許可すると、左のソースバッファが変更を取り込む](docs/images/session.gif)
-
 **ドキュメント:** <https://wakamenod.github.io/emacs-claude-code/ja/>
 
 > **1.0 未満です。** ecc はまだ安定版ではなく、破壊的変更が入る可能性が高い段階です。コマンド、キーバインド、設定はリリースをまたいで変更・削除されることがあります。更新する前に [CHANGELOG.md](CHANGELOG.md) を確認してください。
@@ -34,12 +32,12 @@ faceはテキスト挿入時に適用されるため、`M-x customize` による
 
 ### 主な機能
 
-- **[Diff レビュー](https://wakamenod.github.io/emacs-claude-code/ja/features/review/):** セッション中に行われたすべての変更を 1 つの `diff-mode` バッファで確認できます。編集・シェルコマンド・スクリプトのいずれで行われた変更も同じように表示されます。ハンク（変更ブロック）にインラインコメントを付けて、まとめて 1 つのプロンプトとして送信可能です。
+- **[Diff レビュー](https://wakamenod.github.io/emacs-claude-code/ja/features/review/):** セッション中に行われたすべての変更を 1 つの `diff-mode` バッファで確認できます。編集・シェルコマンド・スクリプトのいずれによる変更も同じように表示されます。ハンクにインラインコメントを付け、まとめて 1 つのプロンプトとして送信できます。`ecc-review-style` を設定すると、同じレビューを ediff で開き、全ファイルを 1 つのセッションで左右に並べて表示できます。
 - **[インタラクティブな編集](https://wakamenod.github.io/emacs-claude-code/ja/features/review/#適用前の提案をレビューする):** 提案されたファイル編集を適用前に確認・修正できます。
 - **[プランモード](https://wakamenod.github.io/emacs-claude-code/ja/features/review/#プランモード):** 提案された実行計画を、編集可能なバッファ内で確認・調整しながら進められます。
 - **[グローバル操作](https://wakamenod.github.io/emacs-claude-code/ja/reference/key-bindings/):** どのバッファからでも保留中のツール実行リクエストを許可・拒否できます。
 - **[セッション管理](https://wakamenod.github.io/emacs-claude-code/ja/features/sessions/):** ダッシュボードから複数の同時並行セッションを整理・管理できます。
-- **[プロジェクト単位の表示](https://wakamenod.github.io/emacs-claude-code/ja/features/sessions/#focusing-one-project):** `ecc-focus-project` でフレーム全体を 1 つのプロジェクトに絞り込みます。ウィンドウのタブにはそのプロジェクトのセッションだけが表示されます。
+- **[Space と worktree](https://wakamenod.github.io/emacs-claude-code/ja/features/spaces/):** プロジェクトごとに Emacs のタブ（Space）が割り当てられ、その中のウィンドウ配置は自分で並べたまま保たれます（`ecc-use-spaces`、既定で有効）。何も動いていないプロジェクトに移動するとセッションが起動し、`/resume` でそのウィンドウを以前の会話の続きに切り替えられます。左側のサイドバーには全プロジェクトとセッションが動作状況とともに一覧表示され、`ecc-start-worktree` はリポジトリの隣にブランチをチェックアウトして独立した Space として開きます。
 - **安全なデフォルト設定:** 権限プロンプトはデフォルトで「拒否」に設定されています。内蔵のループバック MCP サーバーはデフォルトで無効化されており、Elisp の評価ツールも明示的な有効化が必要です。
 
 ## 動作要件
@@ -51,7 +49,7 @@ faceはテキスト挿入時に適用されるため、`M-x customize` による
 
 以下のパッケージがインストールされている場合、機能が強化されます（未導入でも代替処理が行われ、エラーにはなりません）：
 
-- [ghostel](https://github.com/dakra/ghostel) — セッションをターミナルへ引き渡す機能
+- [ghostel](https://github.com/dakra/ghostel) — `ecc-tui-open` で引き渡したセッションのターミナルエミュレーター
 - [posframe](https://github.com/tumashu/posframe) — `/btw` や利用状況のポップアップ表示
 - [nerd-icons](https://github.com/rainstormstudio/nerd-icons.el) — ツールアイコンの表示
 - [markdown-mode](https://github.com/jrblevin/markdown-mode) — プランバッファおよびレビューバッファのメジャーモード
@@ -105,7 +103,12 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
   (ecc-notify-level 'pulse)
   (ecc-usage-display 'posframe)
   (ecc-btw-display 'posframe)
-  (ecc-prompt-suggestions-enabled t))
+  (ecc-prompt-suggestions-enabled t)
+  ;; ediff でレビューしたい場合はコメントを外す (既定は diff-mode バッファ)。
+  ;; (ecc-review-style 'ediff)
+  ;; Emacs の MCP サーバー。xref・imenu・flymake を Claude から参照でき、
+  ;; 作業を worktree のセッションに引き渡すツールも有効になる。
+  (ecc-mcp-enabled t))
 ```
 
 その他の設定項目については、[設定リファレンス](https://wakamenod.github.io/emacs-claude-code/ja/reference/configuration/) を参照してください。

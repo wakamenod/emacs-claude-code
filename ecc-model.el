@@ -22,6 +22,8 @@
 (require 'seq)
 (require 'ecc-core)
 
+(declare-function ecc-inline-session-p "ecc-inline" (session))
+
 ;;;; Hooks
 
 ;; All of these are abnormal hooks.  The first argument is always the
@@ -55,6 +57,44 @@ The CLI reports on a control request of ours while it works on it; the
 side question is the only one that takes long enough to say anything.
 It is not `ecc-progress-hook\', which is about the turn.")
 
+(defvar ecc-request-refuse-functions nil
+  "Functions given a session and a request before anybody is asked.
+The first one to return a string refuses the request with it: the CLI
+is sent a deny carrying that string, the transcript keeps a note, and
+nothing is put in front of the user.
+
+For a request whose answer is settled without a person -- a tool this
+Emacs handles itself, and can say so in a sentence the model can act
+on.  A refusal that only says no belongs to the user, who can say it
+themselves.")
+
+(defvar ecc-prepare-prompt-functions nil
+  "Functions given a session and a prompt, returning the prompt to send.
+Each is called in turn with what the one before it returned, and what
+the last one returns is what goes to the CLI.  A function that has
+nothing to add returns the prompt it was given.
+
+This is where a module puts a word of its own beside what the user
+wrote -- a line saying that Emacs can do the thing being asked for.
+Taking a draft away from the CLI altogether is
+`ecc-prompt-intercept-functions\=', which is the other one, and belongs to
+the prompt region alone: intercepting is a command, and a command is
+typed somewhere.
+
+It lives here, and not beside the prompt region, because a prompt does
+not only come from there: `ecc-send\=' and its neighbours, and
+`ecc-inline-prompt\=', send one as well, and a line that a module adds
+because the CLI would otherwise do the wrong thing has to be on those
+too (2026-09-17).
+
+What is added here is sent and is part of the conversation, so it is
+worth what it costs: a line on every prompt is a line on every prompt.")
+
+(defun ecc-model-prepare-prompt (session text)
+  "Return TEXT as `ecc-prepare-prompt-functions\=' would have SESSION send it."
+  (dolist (function ecc-prepare-prompt-functions text)
+    (setq text (or (funcall function session text) text))))
+
 (defvar ecc-request-added-hook nil
   "Functions run with a session and a request that needs an answer.")
 
@@ -81,6 +121,16 @@ It is not `ecc-progress-hook\', which is about the turn.")
 
 (defvar ecc-session-state-changed-hook nil
   "Functions run with a session and its previous state.")
+
+(defvar ecc-session-removed-hook nil
+  "Functions run with a session that has just been forgotten.
+The session is already out of the registry when this runs, which is
+what lets a function ask what is left: whether the project it belonged
+to still has anything running is the question, and the answer must not
+count the session that is going.
+
+A session that exited is not removed -- it keeps its place so it can be
+resumed -- so this is not `ecc-session-exited-hook' by another name.")
 
 (defvar ecc-files-updated-hook nil
   "Functions run with a session when its Files summary changed.")
@@ -112,6 +162,12 @@ It is not `ecc-progress-hook\', which is about the turn.")
   last-model            ; model of the last real assistant message; the
                         ; CLI reports it on every one and a `/model'
                         ; changes it mid-session
+  startup-model         ; what the CLI was started with, worked out in
+                        ; the environment it was started in
+                        ; (`ecc-proc-start').  The settings files and
+                        ; the environment are read again on every
+                        ; footer, and both can change under a session
+                        ; that is already running
   commands              ; commands from the initialize response
   models                ; models from the initialize response: what
                         ; /model may be given, and the name the
@@ -180,7 +236,8 @@ transcript."
   "One item in the transcript tree."
   id
   type          ; step | text | thinking | tool | agent | system
-                ; | permission | question | plan | result | unknown
+                ; | command | image | permission | question | plan
+                ; | result | unknown
   parent        ; an ecc-node or an ecc-turn
   children
   data          ; alist, the keys depend on TYPE
@@ -294,9 +351,69 @@ Resuming with --fork-session hands back an id we did not choose."
     (ecc-model-touch session)))
 
 (defun ecc-model-remove-session (session)
-  "Forget SESSION."
+  "Forget SESSION.
+The hook runs last, with the session already gone: a function that asks
+what the project has left would otherwise count the one being removed
+and find nothing changed."
   (remhash (ecc-session-id session) ecc--sessions)
-  (setq ecc--session-order (delete (ecc-session-id session) ecc--session-order)))
+  (setq ecc--session-order (delete (ecc-session-id session) ecc--session-order))
+  (run-hook-with-args 'ecc-session-removed-hook session))
+
+(defun ecc-model-own-session-p (session)
+  "Return non-nil when SESSION is one of the user\='s own.
+A recording being read, the usage probe and an inline question are all
+kind `own\=' and all belong to nobody: the probe has no project of its
+own and lands in whatever directory was current.  Whatever asks what
+the going of a session means for the project it was in -- a Space, a
+worktree -- asks this first, so that the answer is the same in both."
+  (and (not (eq (ecc-session-kind session) 'archived))
+       (not (ecc-model-option session :usage-probe nil))
+       (not (and (fboundp 'ecc-inline-session-p)
+                 (ecc-inline-session-p session)))))
+
+(defun ecc-model-reset-conversation (session)
+  "Empty SESSION of the conversation it was in, keeping the session itself.
+What goes is everything that describes one conversation: the turns and
+their nodes, the queue, the costs, what the CLI said about itself when
+it started.  What stays is what the user has: the id -- the caller\='s
+business, and `ecc-model-set-session-id\=' is how it moves -- the name,
+the buffers, the launch options and the review baseline.
+
+`ecc-history-take-over\=' is what this is for: the window carries on with
+another conversation, and the session is the window.  No hook is run
+and no buffer is touched; the caller redraws with
+`ecc-render-refresh\='."
+  (setf (ecc-session-turns session) nil
+        (ecc-session-current-turn session) nil
+        (ecc-session-node-counter session) 0
+        (ecc-session-turn-counter session) 0
+        (ecc-session-pending session) nil
+        (ecc-session-input-queue session) nil
+        (ecc-session-sent-echoes session) nil
+        (ecc-session-history-offset session) nil
+        (ecc-session-init session) nil
+        (ecc-session-commands session) nil
+        (ecc-session-models session) nil
+        (ecc-session-last-model session) nil
+        (ecc-session-last-effort session) nil
+        (ecc-session-usage session) nil
+        (ecc-session-context-tokens session) 0
+        (ecc-session-total-cost session) 0
+        (ecc-session-rate-limit session) nil
+        (ecc-session-last-result-time session) nil
+        (ecc-session-progress session) nil
+        (ecc-session-hint-state session) nil
+        (ecc-session-auto-approve-turn session) nil
+        (ecc-session-last-plan session) nil
+        (ecc-session-plan-files session) nil
+        ;; The bridge belongs to the process that is going away.
+        (ecc-session-remote-control session) nil)
+  (clrhash (ecc-session-nodes session))
+  (clrhash (ecc-session-stream-blocks session))
+  (clrhash (ecc-session-files session))
+  (clrhash (ecc-session-tasks session))
+  (clrhash (ecc-session-pending-controls session))
+  session)
 
 (defun ecc-model-option (session key default)
   "Return the launch option KEY of SESSION, or DEFAULT when it has none."

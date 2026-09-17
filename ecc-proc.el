@@ -97,7 +97,22 @@ after every command."
                     ecc-proc--settings-model-cache)))))
 
 (defun ecc-proc-startup-model (session)
-  "Return the model SESSION would run before it has said which, or nil.
+  "Return the model SESSION runs before it has said which, or nil.
+What it was started with when it has been started
+\(`ecc-session-startup-model\='), and what it would be started with now
+otherwise -- a session opened and not started yet, which is the other
+moment the footer has nothing else to show.
+
+Kept rather than worked out again every time, because both answers can
+change under a session that is already running: a `model\=' written into
+the settings files, or an `ANTHROPIC_MODEL\=' bound around the start
+alone, would otherwise have the footer name a model the CLI is not
+running (2026-09-17)."
+  (or (ecc-session-startup-model session)
+      (ecc-proc--startup-model session)))
+
+(defun ecc-proc--startup-model (session)
+  "Return the model SESSION would be started with now, or nil.
 What the CLI is about to be given, in the order it resolves it: the
 model of the session itself, which is the one --model would carry, then
 ANTHROPIC_MODEL in the environment it is started with, then the `model\\='
@@ -197,6 +212,23 @@ front of `process-environment', which is what `make-process' reads."
   (append (ecc-model-option session :extra-environment ecc-extra-environment)
           process-environment))
 
+(defun ecc-proc--start-failed (session)
+  "Forget SESSION when its CLI never came up.
+A session that has been running before and is being started again is
+left alone: it has a conversation to read and a buffer the user is in.
+One still at `starting\=' has neither, and there is nothing else that
+would ever take it out of the list."
+  (when (eq (ecc-session-state session) 'starting)
+    ;; The session leaves the list first: killing its transcript runs
+    ;; `ecc-session--forget-on-kill', which would stop a process that is
+    ;; not there and forget it a second time.
+    (let ((buffers (list (ecc-session-stream-buffer session)
+                         (ecc-session-buffer session))))
+      (ecc-model-remove-session session)
+      (dolist (buffer buffers)
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))))))
+
 (defun ecc-proc-start (session &optional resume fork)
   "Start the CLI for SESSION and return the process.
 RESUME and FORK are passed to `ecc-proc-build-command'."
@@ -208,22 +240,41 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
          process)
     (ecc-log (ecc-session-name session) "start: %s"
              (mapconcat #'shell-quote-argument command " "))
+    ;; `make-process' fails on a directory that is not there -- a
+    ;; worktree deleted since the session was asked for -- and the
+    ;; message it raises names `with-editor' or whatever advice is on
+    ;; it rather than the session.  Said here instead, and the session
+    ;; that never came up is taken out of the list below: one left at
+    ;; `starting' with no process sits in the sidebar and the dashboard
+    ;; for ever, and nothing ever takes it out.
+    (unless (file-directory-p default-directory)
+      (ecc-proc--start-failed session)
+      (user-error "%s is not there; %s cannot start"
+                  (abbreviate-file-name default-directory)
+                  (ecc-session-name session)))
     (with-current-buffer (ecc-proc-stream-buffer session)
       (let ((inhibit-read-only t))
         (erase-buffer)))
-    (setq process (make-process
-                   :name (format "ecc: %s" (ecc-session-name session))
-                   :command command
-                   :connection-type 'pipe
-                   :coding 'utf-8-unix
-                   :noquery t
-                   :buffer (ecc-proc-stream-buffer session)
-                   :stderr (ecc-proc-stderr-buffer session)
-                   :filter #'ecc-proc--filter
-                   :sentinel #'ecc-proc--sentinel))
+    (condition-case error
+        (setq process (make-process
+                       :name (format "ecc: %s" (ecc-session-name session))
+                       :command command
+                       :connection-type 'pipe
+                       :coding 'utf-8-unix
+                       :noquery t
+                       :buffer (ecc-proc-stream-buffer session)
+                       :stderr (ecc-proc-stderr-buffer session)
+                       :filter #'ecc-proc--filter
+                       :sentinel #'ecc-proc--sentinel))
+      (error (ecc-proc--start-failed session)
+             (signal (car error) (cdr error))))
     (setf (alist-get 'stop-requested (ecc-session-progress session)) nil)
     (process-put process 'ecc-session-id (ecc-session-id session))
     (setf (ecc-session-process session) process)
+    ;; What this process was really given, taken here rather than asked
+    ;; for later: `process-environment' is the one the CLI has, and the
+    ;; settings files are the ones it has just read.
+    (setf (ecc-session-startup-model session) (ecc-proc--startup-model session))
     ;; The CLI is up as soon as `make-process' returned: it is waiting
     ;; for a prompt, which is what idle means.  `starting' is left for a
     ;; session whose process never came up, because system/init only
@@ -278,27 +329,76 @@ for from one the CLI decided on."
   "Return non-nil when the CLI of SESSION was stopped from Emacs."
   (and (alist-get 'stop-requested (ecc-session-progress session)) t))
 
+(defvar ecc-proc-interrupt-timeout 10
+  "Seconds a running turn is given to end before the CLI is stopped.")
+
+(defun ecc-proc-release (session &optional timeout)
+  "Stop the CLI of SESSION, so that something else may have the conversation.
+A running turn is interrupted first and given TIMEOUT seconds -- default
+`ecc-proc-interrupt-timeout\=' -- to come to an end, because a turn stopped
+mid-tool leaves the CLI to write the result of a call that will never
+finish.  Signals when the process cannot be stopped: two processes on
+one session id branch the conversation without saying so.
+
+What comes next is the caller\='s: a terminal takes the conversation over
+\(`ecc-tui-open\='), or this Emacs carries on with another one
+\(`ecc-history-take-over\=')."
+  (let ((process (ecc-session-process session))
+        (timeout (or timeout ecc-proc-interrupt-timeout)))
+    (when (process-live-p process)
+      (when (eq (ecc-session-state session) 'running)
+        (ecc-proc-interrupt session)
+        (let ((deadline (+ (float-time) timeout)))
+          (while (and (eq (ecc-session-state session) 'running)
+                      (process-live-p process)
+                      (< (float-time) deadline))
+            (accept-process-output process 0.2))))
+      (ecc-proc-stop session))
+    (when (process-live-p (ecc-session-process session))
+      (user-error "%s could not be stopped; two processes would branch the conversation"
+                  (ecc-session-name session)))))
+
 (defun ecc-proc--sentinel (process event)
   "Handle EVENT for PROCESS: close the session down cleanly."
   (let ((session (ecc-proc-session process)))
     (when (and session (not (process-live-p process)))
-      (ecc-proc--handle-exit session (process-exit-status process) event))))
+      (ecc-proc--handle-exit session (process-exit-status process) event
+                             process))))
 
-(defun ecc-proc--handle-exit (session status event)
-  "Close SESSION down after its CLI exited with STATUS, described by EVENT."
-  (ecc-log (ecc-session-name session) "exited: %s (code %s)"
-           (string-trim (or event "")) status)
-  (setf (ecc-session-process session) nil)
-  (setf (alist-get 'exit-status (ecc-session-progress session)) status)
-  (ecc-proc--close-pending session)
-  ;; A turn the CLI was in the middle of will never get its result. Left
-  ;; open, it would hold every later prompt in the queue, and a resumed
-  ;; session would never speak again.
-  (when-let* ((turn (ecc-model-abort-turn session)))
-    (ecc-log (ecc-session-name session) "turn %s left open by the exit; closed"
-             (ecc-turn-id turn)))
-  (ecc-model-set-state session 'exited)
-  (run-hook-with-args 'ecc-session-exited-hook session status))
+(defun ecc-proc--stale-exit-p (session process)
+  "Return non-nil when PROCESS is not the CLI SESSION is running now.
+Emacs runs a sentinel when it next waits for output, which may be after
+the session has been stopped and started again -- `/resume\\=', a resume,
+a hand-off taken back -- and the exit of the process that went then
+belongs to nobody: the session is running another one.  Applying it
+anyway set the session\\='s process to nil, marked it `exited\\=' and threw
+the turn the new CLI had just been given away, so the answer arrived in
+a session nothing was listening to (5 resumes in 10, 2026-09-17)."
+  (and process
+       (ecc-session-process session)
+       (not (eq process (ecc-session-process session)))))
+
+(defun ecc-proc--handle-exit (session status event &optional process)
+  "Close SESSION down after its CLI exited with STATUS, described by EVENT.
+PROCESS is the one that exited; an exit that is not the session\\='s own
+is ignored (`ecc-proc--stale-exit-p\\=')."
+  (if (ecc-proc--stale-exit-p session process)
+      (ecc-log (ecc-session-name session)
+               "an earlier CLI exited (code %s) after the session had been \
+started again; left alone" status)
+    (ecc-log (ecc-session-name session) "exited: %s (code %s)"
+             (string-trim (or event "")) status)
+    (setf (ecc-session-process session) nil)
+    (setf (alist-get 'exit-status (ecc-session-progress session)) status)
+    (ecc-proc--close-pending session)
+    ;; A turn the CLI was in the middle of will never get its result. Left
+    ;; open, it would hold every later prompt in the queue, and a resumed
+    ;; session would never speak again.
+    (when-let* ((turn (ecc-model-abort-turn session)))
+      (ecc-log (ecc-session-name session) "turn %s left open by the exit; closed"
+               (ecc-turn-id turn)))
+    (ecc-model-set-state session 'exited)
+    (run-hook-with-args 'ecc-session-exited-hook session status)))
 
 (defun ecc-proc--close-pending (session)
   "Deny every unanswered request of SESSION.

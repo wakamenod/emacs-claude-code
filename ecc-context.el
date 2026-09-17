@@ -269,8 +269,15 @@ what a checker this package does not know about leaves behind."
 (defun ecc-context--send (text &optional session)
   "Send TEXT to SESSION, or to the session this buffer resolves to.
 The prompt is queued when a turn is running; either way the user is told
-what happened, because the transcript may not be on screen."
+what happened, because the transcript may not be on screen.
+
+What a module adds to a prompt (`ecc-prepare-prompt-functions\=') is added
+here as well: a prompt typed in the minibuffer or sent from a region is
+a prompt, and a line that is there to keep the CLI from doing the wrong
+thing is worth nothing if it is only on the ones typed in the prompt
+region (2026-09-17)."
   (let* ((session (or session (ecc-window-resolve-session current-prefix-arg)))
+         (text (ecc-model-prepare-prompt session text))
          (outcome (ecc-proc-send-prompt session text)))
     (if (eq outcome 'sent)
         (message "Sent to %s" (ecc-session-name session))

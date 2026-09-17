@@ -25,18 +25,29 @@
   (mapconcat (lambda (k) (format "  (setq %s-%d (compute %d))" tag k k))
              (number-sequence from (+ from n -1)) "\n"))
 
-(defun ecc-bench--turn (session n)
-  "Open a turn of SESSION with N finished Read calls and a text every fifth."
+(defun ecc-bench--turn (session n &optional images)
+  "Open a turn of SESSION with N finished Read calls and a text every fifth.
+With IMAGES every fifth Read answers with an image block beside its
+text and names a .png, which is the shape a screenshot arrives in."
   (ecc-model-begin-turn session (format "prompt of %d" n))
   (dotimes (i n)
-    (ecc-model-node-changed
-     session
-     (ecc-model-add-node
-      session :type 'tool :status 'done
-      :data `((name . "Read")
-              (input . ((file_path . ,(format "~/src/file-%d.el" i))))
-              (result . ,(mapconcat (lambda (k) (format "line %d of result %d" k i))
-                                    (number-sequence 1 12) "\n")))))
+    (let* ((picture (and images (zerop (% i 5))))
+           (text (mapconcat (lambda (k) (format "line %d of result %d" k i))
+                            (number-sequence 1 12) "\n")))
+      (ecc-model-node-changed
+       session
+       (ecc-model-add-node
+        session :type 'tool :status 'done
+        :data `((name . "Read")
+                (input . ((file_path . ,(format (if picture "~/src/shot-%d.png"
+                                                  "~/src/file-%d.el")
+                                                i))))
+                (result . ,(if picture
+                               (vector `((type . "text") (text . ,text))
+                                       `((type . "image")
+                                         (path . ,(format "/nonexistent/%d.png" i))
+                                         (bytes . 4096)))
+                             text))))))
     (when (zerop (% i 5))
       (ecc-model-node-changed
        session
@@ -47,6 +58,13 @@
 (defun ecc-bench--ms (thunk &optional times)
   "Return the milliseconds one call of THUNK takes, averaged over TIMES."
   (let* ((times (or times 5))
+         ;; What ran before leaves the heap where it leaves it, and a
+         ;; collection in the middle of a measurement is most of the
+         ;; measurement.  Sweeping first is what makes two runs of this
+         ;; file comparable when one of them has more cases than the
+         ;; other (2026-09-16: adding a case moved an untouched
+         ;; number from 1.7 ms to 4.3).
+         (_ (garbage-collect))
          (run (benchmark-call thunk times)))
     (/ (* 1000 (car run)) times)))
 
@@ -77,7 +95,17 @@
                                  :data '((text . "done"))))
     (ecc-render-flush session)
     (message "Files summary, 60 files x 3 hunks: %6.1f ms per redraw"
-             (ecc-bench--ms (lambda () (ecc-render-flush session))))))
+             (ecc-bench--ms (lambda () (ecc-render-flush session)))))
+  ;; Last, so that the numbers above stay comparable with the runs
+  ;; recorded before there was anything to say about an image: every
+  ;; session left behind shifts what the one after it measures.
+  (dolist (n '(200 800))
+    (ecc-test-with-fake-session session
+      (ecc-session-ensure-buffer session)
+      (ecc-bench--turn session n t)
+      (ecc-render-flush session)
+      (message "live turn of %4d tools, a fifth with images: %6.1f ms per redraw"
+               n (ecc-bench--ms (lambda () (ecc-render-flush session)))))))
 
 (ecc-bench-render)
 

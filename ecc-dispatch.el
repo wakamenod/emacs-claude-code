@@ -30,6 +30,7 @@
 (require 'ecc-core)
 (require 'ecc-protocol)
 (require 'ecc-model)
+(require 'ecc-image)
 (require 'ecc-proc)
 (require 'ecc-diff)
 
@@ -40,6 +41,13 @@
   '(("Read" . read) ("Edit" . edit) ("MultiEdit" . edit) ("NotebookEdit" . edit)
     ("Write" . write))
   "Tools that touch a file, and the kind of access they make.")
+
+;; Beside the other table of tool names, and above everything that reads
+;; either: a variable used before its `defconst' compiles to a free
+;; reference, and whether that is caught depends on what the compiler
+;; had loaded already (confirmed 2026-09-17).
+(defconst ecc-dispatch-agent-tools '("Task" "Agent")
+  "Names of the tools that start a subagent.")
 
 ;;;; Entry point
 
@@ -384,9 +392,30 @@ than added again."
             (list (cons 'text (alist-get 'text block))
                   (cons 'synthetic synthetic))))
           ("tool_use" (ecc-dispatch--tool-use session block parent))
+          ("image"
+           (ecc-dispatch--finish-block
+            session parent-id 'image id parent
+            (ecc-dispatch--image-data session block 'assistant)))
           (_ (ecc-model-add-node session :id id :type 'unknown :status 'done
                                  :parent parent
                                  :data (list (cons 'block block)))))))))
+
+(defun ecc-dispatch--image-data (session block role)
+  "Return the node data for the image BLOCK of SESSION, said by ROLE.
+The base64 is decoded to a file here and only the path is kept.  The
+model must hold no JSON and no megabytes: a screenshot left in a node
+sits there for the life of the session, and every debugging `%S\=' of
+that node prints it.  Writing it into the scratch directory the session
+already owns is the same act as saving a pasted image, and
+`ecc-image-cleanup-session\=' sweeps both."
+  (let ((entry (ecc-image-materialize session (alist-get 'source block))))
+    (if entry
+        (cons (cons 'role role) entry)
+      ;; Not reachable from here: say so, and still keep the block out.
+      (list (cons 'role role)
+            (cons 'reason (format "image source: %s"
+                                  (or (alist-get 'type (alist-get 'source block))
+                                      "none")))))))
 
 (defun ecc-dispatch--finish-block (session parent-id type id parent data)
   "Complete the streamed node of TYPE under PARENT-ID in SESSION.
@@ -402,9 +431,6 @@ DATA describe it.  Returns the node."
       (ecc-model-close-stream session node)
       (ecc-model-node-changed session node)
       node)))
-
-(defconst ecc-dispatch-agent-tools '("Task" "Agent")
-  "Names of the tools that start a subagent.")
 
 (defun ecc-dispatch--agent-task-p (task)
   "Return non-nil when the TASK lifecycle message is a subagent.
@@ -521,11 +547,19 @@ somewhere else -- a phone on the Remote Control bridge -- and is the
 prompt of the turn about to run (`ecc-dispatch--remote-prompt\=').  A
 text message under a parent_tool_use_id is the prompt a subagent was
 started with."
-  (if (ecc-protocol-replay-p message)
-      (let ((content (alist-get 'content (alist-get 'message message))))
-        (setf (alist-get 'replayed (ecc-session-progress session)) content)
-        (unless (ecc-proc-take-sent-echo session content)
-          (ecc-dispatch--remote-prompt session message content)))
+  (cond
+   ((ecc-protocol-replay-p message)
+    (let ((content (alist-get 'content (alist-get 'message message))))
+      (setf (alist-get 'replayed (ecc-session-progress session)) content)
+      (unless (ecc-proc-take-sent-echo session content)
+        (ecc-dispatch--remote-prompt session message content))))
+   ;; A notice the CLI injected about background tasks left over from a
+   ;; previous process is not a prompt, and must not open a turn either:
+   ;; it can arrive between turns, and a turn nothing would close leaves
+   ;; the session busy for good, which is the rule
+   ;; `ecc-dispatch--unknown' keeps for the same reason.
+   ((ecc-dispatch--task-notice session message))
+   (t
     (let ((parent (ecc-dispatch--parent session message
                                         (ecc-model-ensure-turn session))))
       (dolist (block (ecc-protocol-content-blocks message))
@@ -551,9 +585,35 @@ started with."
                                    :data (list (cons 'kind (if (ecc-turn-p parent)
                                                                'note 'prompt))
                                                (cons 'text text)))))))
+          ("image"
+           (ecc-model-add-node session :type 'image :status 'done
+                               :parent parent
+                               :data (ecc-dispatch--image-data session block 'user)))
           (_ (ecc-model-add-node session :type 'unknown :status 'done
                                  :parent parent
-                                 :data (list (cons 'block block)))))))))
+                                 :data (list (cons 'block block))))))))))
+
+(defun ecc-dispatch--task-notice (session message)
+  "Keep MESSAGE as a folded note of SESSION when it is a task notice, else nil.
+The CLI writes it into the conversation itself when it resumes a
+session whose previous process left a background task behind
+\(2026-09-17).  It answers nothing, so it goes beside the conversation
+rather than into a turn, and its `<summary>\=' is what the fold shows."
+  (let ((text (ecc-protocol-history-text message)))
+    (when (and text
+               (or (ecc-protocol-injected-p message)
+                   (ecc-protocol-task-notification-p text)))
+      (ecc-log (ecc-session-name session) "task notice: %s"
+               (ecc--truncate (or (ecc-protocol-task-notification-summary text)
+                                  (ecc-protocol-origin-kind message) "?")
+                              60))
+      (ecc-model-add-aside session :type 'system :status 'done
+                           :data (list (cons 'kind 'task-notice)
+                                       (cons 'summary
+                                             (ecc-protocol-task-notification-summary
+                                              text))
+                                       (cons 'text text)))
+      t)))
 
 (defun ecc-dispatch--remote-prompt (session message content)
   "Show CONTENT of MESSAGE as a prompt of SESSION that Emacs did not send.
@@ -564,14 +624,16 @@ way `ecc-proc-send-user\=' would have; a turn already opened by an
 answer that arrived first takes the text as its prompt instead.
 
 Synthetic messages are left alone: the CLI writes those into the
-conversation itself (a system reminder, the record of a local command)
+conversation itself (a system reminder, the record of a local command,
+the notice about a background task left over from a previous process)
 and they are not anybody\='s prompt."
   (unless (or (ecc--json-true-p (alist-get 'isSynthetic message))
               (not (stringp content))
               (string-empty-p (string-trim content))
               (ecc-protocol-command-caveat-p content)
               (ecc-protocol-parse-command content)
-              (ecc-protocol-command-output content))
+              (ecc-protocol-command-output content)
+              (ecc-protocol-task-notification-p content))
     (ecc-log (ecc-session-name session) "prompt from elsewhere: %s"
              (ecc--truncate content 60))
     (let ((turn (or (ecc-session-current-turn session)
@@ -620,6 +682,25 @@ system note rather than dropped."
       (ecc-model-node-changed session node)
       node)))
 
+(defun ecc-dispatch--result-content (session content)
+  "Return the tool result CONTENT of SESSION with its images on disk.
+An image block is replaced by one naming the file it was written to.
+The base64 is gone before the model ever holds it: a screenshot in a
+result stays there for the life of the session, and the renderer, which
+has no key of its own for an image block, was serialising the whole
+payload back to JSON and drawing it as a wall of text that the
+twelve-line clip could not even cut -- base64 is one line."
+  (if (not (vectorp content))
+      content
+    (vconcat
+     (mapcar (lambda (block)
+               (if (equal (alist-get 'type block) "image")
+                   (cons '(type . "image")
+                         (ecc-image-materialize session
+                                                (alist-get 'source block)))
+                 block))
+             content))))
+
 (defun ecc-dispatch--tool-result (session block message)
   "Store the tool_result BLOCK of MESSAGE on its tool node in SESSION."
   (let* ((id (alist-get 'tool_use_id block))
@@ -630,7 +711,9 @@ system note rather than dropped."
         (ecc-model-add-aside session :type 'unknown :status 'done
                              :data (list (cons 'block block)
                                          (cons 'reason "no tool_use for this result")))
-      (ecc-model-node-put node 'result (alist-get 'content block))
+      (ecc-model-node-put node 'result
+                          (ecc-dispatch--result-content
+                           session (alist-get 'content block)))
       (ecc-model-node-put node 'is-error error-p)
       (ecc-model-node-put node 'finished (current-time))
       (setf (ecc-node-status node) (if error-p 'error 'done))
@@ -743,24 +826,27 @@ the patch of an Edit or a Write, the id and status of a task."
                      :tool-use-id (alist-get 'tool_use_id request-object)
                      :suggestions (ecc-protocol-request-suggestions message)
                      :created-at (current-time))))
-      (if (ecc-dispatch-auto-approve-p session request)
-          (ecc-dispatch--auto-allow session request)
-        (setf (ecc-request-node request)
-              (ecc-model-add-node
-               session
-               :type kind
-               :status 'pending
-               :data (list (cons 'request request)
-                           (cons 'message message)
-                           ;; What the file looks like now, for the diff
-                           ;; shown before the change is allowed.
-                           (cons 'before
-                                 (when (memq (cdr (assoc tool-name
-                                                         ecc-dispatch-file-tools))
-                                             '(edit write))
-                                   (ecc-dispatch--file-before
-                                    session (alist-get 'file_path input)))))))
-        (ecc-model-add-request session request)))))
+      (if-let* ((refusal (run-hook-with-args-until-success
+                          'ecc-request-refuse-functions session request)))
+          (ecc-dispatch--refuse session request refusal)
+        (if (ecc-dispatch-auto-approve-p session request)
+            (ecc-dispatch--auto-allow session request)
+          (setf (ecc-request-node request)
+                (ecc-model-add-node
+                 session
+                 :type kind
+                 :status 'pending
+                 :data (list (cons 'request request)
+                             (cons 'message message)
+                             ;; What the file looks like now, for the diff
+                             ;; shown before the change is allowed.
+                             (cons 'before
+                                   (when (memq (cdr (assoc tool-name
+                                                           ecc-dispatch-file-tools))
+                                               '(edit write))
+                                     (ecc-dispatch--file-before
+                                      session (alist-get 'file_path input)))))))
+          (ecc-model-add-request session request))))))
 
 (defun ecc-dispatch-auto-approve-p (session request)
   "Return non-nil when SESSION may allow REQUEST without asking.
@@ -783,6 +869,23 @@ user allowed for the whole session is never asked about again ."
                        :data (list (cons 'kind 'auto-allow)
                                    (cons 'text (format "auto-allowed %s"
                                                        (ecc-request-tool-name request))))))
+
+(defun ecc-dispatch--refuse (session request message)
+  "Deny REQUEST of SESSION with MESSAGE, and note it in the transcript.
+The mirror of `ecc-dispatch--auto-allow\=': the answer was settled
+without a person, so the request never becomes a node of its own and
+never reaches the pending queue.  MESSAGE is what the model is told,
+and the whole of it is in the note, because a refusal the model cannot
+read the reason of is one it will try again."
+  (ecc-proc-send-json session
+                      (ecc-protocol-permission-deny
+                       (ecc-request-request-id request) message))
+  (ecc-model-add-aside session :type 'system :status 'done
+                       :data (list (cons 'kind 'refused)
+                                   (cons 'text
+                                         (format "refused %s: %s"
+                                                 (ecc-request-tool-name request)
+                                                 message)))))
 
 (defun ecc-dispatch--command-lifecycle (session message)
   "Apply the command_lifecycle MESSAGE to SESSION.
@@ -931,6 +1034,17 @@ came in."
                                  :parent parent
                                  :status 'running
                                  :data (list (cons 'text ""))))
+            ;; An image block arrives whole: there is no image_delta, so
+            ;; the node is done as soon as it opens.  It is registered as
+            ;; a stream all the same, so that the assistant message that
+            ;; closes the turn finds it rather than adding a second one.
+            ("image"
+             (ecc-model-add-node session
+                                 :type 'image
+                                 :parent parent
+                                 :status 'done
+                                 :data (ecc-dispatch--image-data
+                                        session block 'assistant)))
             (_ nil))))
     (when node
       (ecc-model-open-stream session parent-id index node))

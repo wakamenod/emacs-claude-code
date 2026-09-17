@@ -44,6 +44,25 @@
 (require 'ecc-window)
 
 (declare-function ecc-start "ecc" (&optional directory name))
+(declare-function ediff-recenter "ediff-util" (&optional no-rehighlight))
+(declare-function ecc-review-ediff-buffer "ecc-review-ediff" (session &optional paths))
+(declare-function ecc-review-ediff-worktree-buffer "ecc-review-ediff"
+                  (session &optional range root))
+
+(defcustom ecc-review-style 'diff
+  "How `ecc-review\=' and `ecc-review-worktree\=' show what changed.
+`diff' is one read-only unified diff of every file, the hunks walked
+with n and p.  `ediff' lays the files out side by side instead -- what
+they held on the left, what they hold now on the right, every file of
+the review in one ediff session -- and n and p walk the differences
+across the file boundaries.  Both are read-only, both comment with c,
+and both send the same prompt.
+
+The review of one proposal waiting to be allowed is a diff either way:
+it is one change to allow or refuse, not a tree to read through."
+  :type '(choice (const :tag "One diff-mode buffer" diff)
+                 (const :tag "ediff, every file in one session" ediff))
+  :group 'ecc)
 
 (defvar ecc-review-git-executable "git"
   "The git program the review runs for `git diff'.")
@@ -185,18 +204,12 @@ else.  This covers the untracked files of the working tree review and
 the files a session changed -- a lock file a package manager wrote
 again is the usual one.")
 
-(defun ecc-review--binary-p (path)
-  "Return non-nil when PATH looks binary, or cannot be read.
-This is git\='s own test: a NUL byte in the first 8000.  git does not
-apply it to a new file diffed against /dev/null -- the empty side is
-text, so the pair is text and the bytes of a PNG land in the diff --
-which is why the review has to ask for itself."
-  (condition-case nil
-      (with-temp-buffer
-        (set-buffer-multibyte nil)
-        (insert-file-contents-literally path nil 0 8000)
-        (and (search-forward "\0" nil t) t))
-    (error t)))
+(defalias 'ecc-review--binary-p #'ecc-diff-binary-p
+  "Return non-nil when a path looks binary, or cannot be read.
+git does not apply its own test to a new file diffed against
+/dev/null -- the empty side is text, so the pair is text and the bytes
+of a PNG land in the diff -- which is why the review has to ask for
+itself.")
 
 (defun ecc-review--omitted-note (path reason &optional new-file)
   "Return the diff entry naming PATH without its content, because of REASON.
@@ -266,9 +279,15 @@ Returns (EXIT-CODE . OUTPUT) like `ecc-review--git\=', or nil."
          (cons (concat "GIT_INDEX_FILE=" index) process-environment)))
     (apply #'ecc-review--git root args)))
 
-(defun ecc-review-snapshot (root)
+(defun ecc-review-snapshot (root &optional no-add)
   "Return a git tree naming every file of the working tree at ROOT, or nil.
 What .gitignore excludes is left out, as everywhere else in the review.
+
+With NO-ADD the working tree is not read at all and the tree is the
+index as it stands: what is staged, and nothing else.  That is the
+right-hand side of nothing, but it is the left-hand side of a review
+of what is not staged yet -- the same comparison `git diff\=' with no
+revision makes.
 
 Nothing of the repository is disturbed: the files are added to a
 throwaway index and written out as a tree, so the real index, the
@@ -289,10 +308,23 @@ want no HEAD."
     (unwind-protect
         (progn
           (if (and real (file-readable-p real))
-              (copy-file real index t)
+              ;; With the time of the index, not the time of the copy.
+              ;; git re-reads a file whose cached stat is no older than the
+              ;; index that holds it -- racily clean, the case its stat
+              ;; cannot settle -- and trusts the stat otherwise.  A copy
+              ;; stamped now is newer than every stat in it, so nothing is
+              ;; racily clean any more and a file written in the same
+              ;; second as the last commit, to the same length, reads as
+              ;; unchanged and drops out of the review.  Measured on
+              ;; 2026-09-15 (macOS, git 2.x, one second of stat
+              ;; granularity): 7 misses in 900 runs of write-then-snapshot
+              ;; without the time, none in 900 with it.
+              (copy-file real index t t)
             ;; git writes the index itself; an empty file is not one.
             (delete-file index))
-          (pcase (ecc-review--git-with-index root index "add" "-A" "--")
+          (pcase (if no-add
+                     '(0 . "")
+                   (ecc-review--git-with-index root index "add" "-A" "--"))
             (`(0 . ,_)
              (pcase (ecc-review--git-with-index root index "write-tree")
                (`(0 . ,output)
@@ -316,7 +348,8 @@ The base a review falls back to when it has no baseline of its own."
 
 (defun ecc-review--numstat (root base now paths)
   "Return (PATH . BINARY-P) for every file that differs between BASE and NOW.
-PATHS restricts the comparison.  Renames are not looked for, so that
+ROOT is the repository the two trees belong to, and PATHS restricts the
+comparison.  Renames are not looked for, so that
 each entry names one path and the sizes below can be decided file by
 file; a rename reads as a delete and an add, which a review can see."
   (pcase (apply #'ecc-review--git root
@@ -502,6 +535,28 @@ The string is what git is given: \"HEAD\" for everything uncommitted,
 
 (defvar-local ecc-review--comments nil
   "Overlays of the hunk comments, in no particular order.")
+
+;; A review is a buffer that holds comments and is closed when they have
+;; been sent.  How it holds them and how it closes are its own: the diff
+;; buffer keeps overlays on hunks and is killed, an ediff review keeps
+;; them against difference numbers in a control buffer and is quit
+;; through ediff so that the windows come back.  Everything between --
+;; C-c C-c, the prompt shown to be confirmed, C-c C-k -- is the same
+;; code for both, because only these two slots differ.
+
+(defvar-local ecc-review--comments-function #'ecc-review-comments
+  "How this review buffer lists its comments.
+Called with no argument in the review buffer; returns the plists
+`ecc-review-format-message\=' takes.")
+
+(defvar-local ecc-review--close-function #'ecc-perm-close-buffer
+  "How this review buffer is closed once its comments have been sent.
+Called with the review buffer.")
+
+(defun ecc-review--close (review)
+  "Close the review buffer REVIEW the way it asks to be closed."
+  (when (buffer-live-p review)
+    (funcall (buffer-local-value 'ecc-review--close-function review) review)))
 
 (defvar ecc-review-mode-map
   (let ((map (make-sparse-keymap)))
@@ -817,7 +872,7 @@ COMMENTS are the plists of `ecc-review-comments'; HEADER replaces
 
 (defun ecc-review-buffer-message ()
   "Return the prompt for the comments of the current review buffer, or nil."
-  (when-let* ((comments (ecc-review-comments)))
+  (when-let* ((comments (funcall ecc-review--comments-function)))
     (ecc-review-format-message comments
                                (and ecc-review--request ecc-review-proposal-header))))
 
@@ -883,7 +938,7 @@ stand, and the key that says send sends."
          (review (current-buffer)))
     (if (not edit)
         (progn (ecc-review--deliver session text ecc-review--request)
-               (ecc-perm-close-buffer review)
+               (ecc-review--close review)
                text)
       (let ((buffer (get-buffer-create (ecc-review-message-buffer-name session))))
         (with-current-buffer buffer
@@ -909,8 +964,7 @@ stand, and the key that says send sends."
     (ecc-review--deliver session text request)
     (set-buffer-modified-p nil)
     (ecc-perm-close-buffer message-buffer)
-    (when (buffer-live-p review)
-      (ecc-perm-close-buffer review))
+    (ecc-review--close review)
     text))
 
 (defun ecc-review-message-cancel ()
@@ -920,7 +974,11 @@ stand, and the key that says send sends."
     (set-buffer-modified-p nil)
     (ecc-perm-close-buffer (current-buffer))
     (when (buffer-live-p review)
-      (pop-to-buffer review))))
+      (pop-to-buffer review)
+      ;; An ediff review has no window of its own to pop to: the control
+      ;; buffer is one of three, and only ediff can lay them out again.
+      (when (derived-mode-p 'ediff-mode)
+        (ediff-recenter)))))
 
 ;;;; Opening a review
 
@@ -943,7 +1001,8 @@ known only from what the session recorded."
 
 (defun ecc-review--session-buffer (session paths)
   "Return the review of SESSION built from what the session recorded.
-The way a project outside git is reviewed: there is no tree to compare
+PATHS restricts it to those files.  The way a project outside git is
+reviewed: there is no tree to compare
 against, so the files the CLI reported editing are diffed against what
 it reported them holding first."
   (let* ((entries (ecc-review-files session paths))
@@ -1002,7 +1061,15 @@ during it are still shown; that one against the last commit."
                      (mapcar #'ecc-file-entry-path (ecc-review-files session)))
                  nil t)))))
   (let ((session (or session (ecc-review-session))))
-    (ecc-window-display-review (ecc-review-buffer session paths) session)))
+    (if (and (eq ecc-review-style 'ediff)
+             ;; Outside git there are no two trees to lay side by side:
+             ;; the review is built from what the session recorded, and
+             ;; what that gives is a diff.
+             (ecc-review-git-root (or (ecc-session-project-root session)
+                                      default-directory)))
+        (progn (require 'ecc-review-ediff)
+               (ecc-review-ediff-buffer session paths))
+      (ecc-window-display-review (ecc-review-buffer session paths) session))))
 
 (defun ecc-review-refresh ()
   "Read the diff again, keeping the comments whose hunks still exist."
@@ -1109,13 +1176,16 @@ revision like \"HEAD\", a range like \"main...HEAD\", or nothing for
 what is not staged yet."
   (interactive (ecc-review-worktree--read-arguments))
   (let ((session (or session (ecc-review-session))))
-    (ecc-window-display-review (ecc-review-worktree-buffer session range root)
-                               session)))
+    (pcase ecc-review-style
+      ('ediff (require 'ecc-review-ediff)
+              (ecc-review-ediff-worktree-buffer session range root))
+      (_ (ecc-window-display-review (ecc-review-worktree-buffer session range root)
+                                    session)))))
 
 (defun ecc-review-quit ()
   "Close the review buffer, dropping its comments."
   (interactive)
-  (ecc-perm-close-buffer (current-buffer)))
+  (ecc-review--close (current-buffer)))
 
 ;;;; Reviewing one proposal
 

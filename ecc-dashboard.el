@@ -63,7 +63,7 @@
   "One line of the dashboard."
   key           ; the session id, which is what makes a row unique
   session       ; the `ecc-session' the row is about
-  name state cwd model prompt time cost
+  name state root cwd model prompt time cost
   waiting)      ; how many requests of this session wait for an answer
 
 (defun ecc-dashboard--session-entry (session)
@@ -74,7 +74,8 @@
      :session session
      :name (ecc-session-name session)
      :state (format "%s" (ecc-session-state session))
-     :cwd (or (ecc-session-cwd session) (ecc-session-project-root session))
+     :root (or (ecc-session-project-root session) (ecc-session-cwd session))
+     :cwd (ecc-session-cwd session)
      :model (ecc-render--model-name session)
      :prompt (or (and turn (ecc-turn-prompt turn)) "")
      :time (or (ecc-session-last-result-time session)
@@ -289,14 +290,26 @@ it on."
 
 ;;;; Drawing
 
-(defun ecc-dashboard--project-cell (cwd)
-  "Return the Project cell of a row whose working directory is CWD.
+(defun ecc-dashboard--project-cell (root &optional cwd)
+  "Return the Project cell of a row whose session lives in ROOT.
 Only the last name of the path is shown, because that is what tells one
-project from another; the whole path is in the tooltip."
-  (let ((label (ecc--fit (ecc--project-label cwd) 20)))
-    (if (null cwd)
+project from another; the whole path is in the tooltip.  The column
+names the root rather than CWD, the directory the CLI reports: that one
+is wherever the last Bash tool call left the CLI (2.1.272, confirmed
+2026-09-16), so it moves under a row that has not moved.  It is worth
+seeing all the same, and follows the root in the tooltip when the two
+have come apart."
+  (let ((label (ecc--fit (ecc--project-label root) 20)))
+    (if (null root)
         label
-      (propertize label 'help-echo (abbreviate-file-name cwd)))))
+      (propertize label 'help-echo
+                  (concat (abbreviate-file-name root)
+                          (when (and cwd (not (equal (file-name-as-directory
+                                                      (expand-file-name cwd))
+                                                     (file-name-as-directory
+                                                      (expand-file-name root)))))
+                            (format " (the CLI is in %s)"
+                                    (abbreviate-file-name cwd))))))))
 
 (defun ecc-dashboard--row (entry)
   "Return the `tabulated-list-entries' row of ENTRY."
@@ -306,7 +319,9 @@ project from another; the whole path is in the tooltip."
            (ecc--truncate (or (ecc-dashboard-entry-name entry) "") 24)
            (ecc-dashboard--state-cell entry)
            (ecc-dashboard--detail
-            (ecc-dashboard--project-cell (ecc-dashboard-entry-cwd entry)) quiet)
+            (ecc-dashboard--project-cell (ecc-dashboard-entry-root entry)
+                                         (ecc-dashboard-entry-cwd entry))
+            quiet)
            (ecc-dashboard--detail (or (ecc-dashboard-entry-model entry) "") quiet)
            (ecc-dashboard--detail
             (ecc--truncate (or (ecc-dashboard-entry-prompt entry) "") 60) quiet)
@@ -596,8 +611,8 @@ which arrives with the first turn.\n"
     (define-key map (kbd "+") #'ecc-dashboard-new)
     (define-key map (kbd "k") #'ecc-dashboard-stop)
     (define-key map (kbd "D") #'ecc-dashboard-delete)
-    (define-key map (kbd "r") #'ecc-dashboard-rename)
-    (define-key map (kbd "R") #'ecc-dashboard-resume)
+    (define-key map (kbd "r") #'ecc-dashboard-resume)
+    (define-key map (kbd "R") #'ecc-dashboard-rename)
     (define-key map (kbd "a") #'ecc-dashboard-allow)
     (define-key map (kbd "d") #'ecc-dashboard-deny)
     (define-key map (kbd "g") #'ecc-dashboard-refresh)
@@ -684,12 +699,17 @@ which arrives with the first turn.\n"
   (ecc-dashboard-redraw))
 
 (defun ecc-dashboard-stop ()
-  "Stop the session at point."
+  "Stop the session at point, after asking.
+The sidebar's `k\\=' asks and this did not, which is one list of rows
+answering a key two ways; stopping a session takes its window and its
+transcript with it, and the row point is on is whichever the last
+redraw left it on."
   (interactive)
   (let ((session (ecc-dashboard-session-at-point)))
     (require 'ecc)
-    (ecc-kill session)
-    (ecc-dashboard-redraw)))
+    (when (yes-or-no-p (format "Stop %s? " (ecc-session-name session)))
+      (ecc-kill session)
+      (ecc-dashboard-redraw))))
 
 (defun ecc-dashboard-delete ()
   "Delete the recording of the session at point, after asking."
@@ -725,22 +745,32 @@ which arrives with the first turn.\n"
     (ecc-dashboard-redraw)))
 
 (defun ecc-dashboard--request-at-point ()
-  "Return the oldest request of the session at point, or signal an error."
-  (let ((session (ecc-dashboard-session-at-point)))
-    (or (car (ecc-session-pending session))
-        (user-error "%s is not waiting for an answer" (ecc-session-name session)))))
+  "Return the request of the session at point, or signal an error.
+`ecc-answer-session-request\\=' is what says which, here and in the
+sidebar alike: the oldest one waiting, and not one for a tool that has
+to be read where it was asked."
+  (ecc-answer-session-request (ecc-dashboard-session-at-point)))
 
 (defun ecc-dashboard-allow ()
-  "Allow the oldest waiting request of the session at point."
+  "Allow the oldest waiting request of the session at point.
+Asked about first, the way the sidebar asks: a list of rows is answered
+from the row point happens to be on, and `ecc-answer-confirm\\=' is what
+says whether that is enough on its own."
   (interactive)
-  (ecc-perm-allow-request (ecc-dashboard--request-at-point))
-  (ecc-dashboard-redraw))
+  (let ((request (ecc-dashboard--request-at-point)))
+    (when (ecc-answer--confirm "Allow" request)
+      (ecc-perm-allow-request request)
+      (message "Allowed: %s" (ecc-answer-summary request))
+      (ecc-dashboard-redraw))))
 
 (defun ecc-dashboard-deny (reason)
   "Deny the oldest waiting request of the session at point with REASON."
   (interactive (list (read-string "Reason for denying (may be empty): ")))
-  (ecc-perm-respond (ecc-dashboard--request-at-point) 'deny :message reason)
-  (ecc-dashboard-redraw))
+  (let ((request (ecc-dashboard--request-at-point)))
+    (when (ecc-answer--confirm "Deny" request)
+      (ecc-perm-respond request 'deny :message reason)
+      (message "Denied: %s" (ecc-answer-summary request))
+      (ecc-dashboard-redraw))))
 
 ;;;; Wiring
 

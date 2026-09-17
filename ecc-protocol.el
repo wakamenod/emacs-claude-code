@@ -23,6 +23,12 @@
 (require 'iso8601)
 (require 'ecc-core)
 
+;; `json' is required where it is used rather than here -- reading and
+;; writing JSON is `json-serialize' and `json-parse-string', which are
+;; built in, and only the pretty-printer wants the library.  Declared so
+;; that the file compiles on its own all the same.
+(declare-function json-pretty-print-buffer "json" (&optional minimize))
+
 ;;;; Receiving
 
 (defun ecc-protocol-parse-line (line)
@@ -332,6 +338,46 @@ The alist holds `name' (with its leading slash), `message' and `args';
              (string-match-p ecc-protocol-command-output-regexp text))
     (or (ecc-protocol-command-tag text "local-command-stdout") "")))
 
+;;;; Notices the CLI injects
+
+;; A CLI that resumes a session with background tasks left over from the
+;; previous process injects a notice about them into the conversation as
+;; a plain `user' message: no `isMeta', not a sidechain, not a local
+;; command.  What tells it apart is `origin.kind', which is "human" for
+;; what somebody typed and names the injection otherwise; the only other
+;; value seen on this machine is "task-notification", and lines written
+;; before the CLI had the field carry no `origin' at all (confirmed
+;; 2026-09-17 against CLI 2.1.271 from the terminal and 2.1.273 from a
+;; stream-json client).
+
+(defconst ecc-protocol-task-notification-regexp "\\`[ \t\n]*<task-notification>"
+  "Start of the notice the CLI writes about a background task.
+It is the fallback for a recording written before the CLI had an
+`origin' field: there is nothing else on such a line to go by.")
+
+(defun ecc-protocol-origin-kind (message)
+  "Return the string under `origin.kind' of MESSAGE, or nil."
+  (let ((kind (alist-get 'kind (alist-get 'origin message))))
+    (and (stringp kind) kind)))
+
+(defun ecc-protocol-injected-p (message)
+  "Return non-nil when the CLI wrote MESSAGE into the conversation itself.
+That is what an `origin.kind' other than \"human\" says.  A message with
+no `origin' at all says nothing either way and is not judged here."
+  (when-let* ((kind (ecc-protocol-origin-kind message)))
+    (not (equal kind "human"))))
+
+(defun ecc-protocol-task-notification-p (text)
+  "Return non-nil when TEXT is the CLI notice about a background task."
+  (and (stringp text)
+       (string-match-p ecc-protocol-task-notification-regexp text)
+       t))
+
+(defun ecc-protocol-task-notification-summary (text)
+  "Return the one-line summary of the task notice TEXT, or nil."
+  (or (ecc-protocol-command-tag text "summary")
+      (ecc-protocol-command-tag text "status")))
+
 (defun ecc-protocol-history-text (message)
   "Return the text content of the user MESSAGE of a history file, or nil.
 The blocks of a message that carries several are joined by newlines;
@@ -354,15 +400,23 @@ A turn starts at a `user' line whose content is text the user typed.
 A line carrying only tool results continues the turn it is in, a line
 the CLI wrote itself (`isMeta') is not a prompt at all, and neither is
 the record of a local command: neither the command, nor the caveat
-before it, nor what it printed was said to the model."
+before it, nor what it printed was said to the model.  Neither is a
+notice the CLI injected (`ecc-protocol-injected-p\='), such as the one
+about background tasks left over from a previous process.
+
+This is the one place every reader of a recording asks, so a notice
+rejected here opens no turn, and is nobody\='s last prompt in the resume
+list, the dashboard, the paging index or the search."
   (when (and (equal (alist-get 'type message) "user")
              (not (eq (alist-get 'isMeta message) t))
+             (not (ecc-protocol-injected-p message))
              (not (ecc-protocol-history-sidechain-p message)))
     (let ((text (ecc-protocol-history-text message)))
       (and text
            (not (string-match-p ecc-protocol-command-output-regexp text))
            (not (string-match-p ecc-protocol-command-name-regexp text))
            (not (ecc-protocol-command-caveat-p text))
+           (not (ecc-protocol-task-notification-p text))
            text))))
 
 (defun ecc-protocol-history-timestamp (message)

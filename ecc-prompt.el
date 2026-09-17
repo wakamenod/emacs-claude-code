@@ -22,9 +22,11 @@
 (require 'dnd)
 (require 'ecc-core)
 (require 'ecc-model)
+(require 'ecc-image)
 (require 'ecc-proc)
 (require 'ecc-render)
 (require 'ecc-chat)
+(require 'ecc-session)
 (require 'ecc-hint)
 (require 'ecc-window)
 (require 'ecc-context)
@@ -36,16 +38,6 @@
 
 (defvar ecc-prompt-history-size 200
   "Number of prompts kept in `ecc-prompt-history'.")
-
-(defvar ecc-image-dir (expand-file-name "ecc-images" temporary-file-directory)
-  "Directory the images pasted into a prompt are written to.
-Each session gets a subdirectory of its own.")
-
-(defvar ecc-image-cleanup 'on-exit
-  "What becomes of the images of a session when it ends.
-`on-exit' deletes the directory of the session, `never' keeps it.  The
-recording refers to the files by path, so keeping them is what makes an
-old conversation readable again.")
 
 (defvar ecc-prompt-interactive-commands
   '(("/model" . ecc-prompt-model-candidates)
@@ -215,56 +207,57 @@ INDEX nil brings the draft back."
   (ecc-prompt--history-show
    (and (> ecc-prompt--history-index 0) (1- ecc-prompt--history-index))))
 
-(defun ecc-prompt-resend-last (&optional session)
-  "Send the last prompt again to SESSION."
+(defun ecc-prompt--history-table ()
+  "Return the history as a completion table over one-line labels.
+The answer is a list of label and prompt pairs, most recent first.  A
+label is numbered because two long prompts that begin alike are cut to
+the same line, and a table with the same key twice cannot be read back."
+  (seq-map-indexed
+   (lambda (text index)
+     ;; The prompts are read in a minibuffer, so the label is fitted to
+     ;; columns rather than to characters: a Japanese prompt draws twice
+     ;; as wide as it is long.
+     (cons (format "%3d  %s" (1+ index) (ecc--fit text 116)) text))
+   ecc-prompt-history))
+
+;;;###autoload
+(defun ecc-prompt-history-insert ()
+  "Insert a prompt chosen from `ecc-prompt-history' at point.
+The whole prompt goes in, however little of it the list showed.  Unlike
+\\[ecc-prompt-history-previous], which replaces the prompt region with
+one entry after another, this adds to what is being written: a past
+prompt can be picked up and worked into a new one.
+
+Point is moved into the prompt region first when it is not there."
   (interactive)
-  (let ((text (or (car ecc-prompt-history) (user-error "No history")))
-        (session (or session ecc-render--session
-                     (ecc-window-resolve-session current-prefix-arg))))
-    (when (y-or-n-p (format "Send again: %s? " (ecc--truncate text 40)))
-      (ecc-proc-send-prompt session text)
-      text)))
+  (unless ecc-prompt-history
+    (user-error "No history"))
+  (let* ((entries (ecc-prompt--history-table))
+         (labels (mapcar #'car entries))
+         (table (lambda (string predicate action)
+                  (if (eq action 'metadata)
+                      ;; Most recent first is the order to read them in;
+                      ;; sorted by name or by length they are a jumble.
+                      '(metadata (category . ecc-prompt-history)
+                                 (display-sort-function . identity)
+                                 (cycle-sort-function . identity))
+                    (complete-with-action action labels string predicate))))
+         (choice (completing-read "Past prompt: " table nil t))
+         (text (or (cdr (assoc choice entries))
+                   (user-error "Not a prompt from the history"))))
+    (ecc-prompt--ensure-region)
+    (unless (or (bolp) (memq (char-before) '(?\s ?\t)))
+      (insert " "))
+    (insert text " ")
+    ;; What is in the region is no longer an entry of the history, so a
+    ;; walk started after this one starts from the end again.
+    (setq ecc-prompt--history-index nil)
+    text))
 
 ;;;; Images
 
-(defun ecc-session-image-dir (session)
-  "Return the directory the images of SESSION are written to, creating it."
-  (let ((dir (or (ecc-session-tmp-dir session)
-                 (setf (ecc-session-tmp-dir session)
-                       (file-name-as-directory
-                        (expand-file-name (ecc-session-id session)
-                                          ecc-image-dir))))))
-    (make-directory dir t)
-    dir))
-
-(defun ecc-image-cleanup-session (session)
-  "Delete the image directory of SESSION when the setting says so."
-  (let ((dir (ecc-session-tmp-dir session)))
-    (when (and (eq ecc-image-cleanup 'on-exit) dir (file-directory-p dir))
-      (delete-directory dir t)
-      (setf (ecc-session-tmp-dir session) nil)
-      dir)))
-
-(defun ecc-prompt--image-extension (mime)
-  "Return the file extension for MIME, such as png."
-  (let ((name (format "%s" mime)))
-    (cond ((string-match "image/\\([a-zA-Z0-9]+\\)" name)
-           (let ((type (downcase (match-string 1 name))))
-             (if (equal type "jpeg") "jpg" type)))
-          (t "png"))))
-
-(defun ecc-prompt-save-image (session data mime)
-  "Write DATA, an image of type MIME, into the directory of SESSION.
-Returns the file it was written to."
-  (let ((file (expand-file-name
-               (format "%s.%s"
-                       (format-time-string "%Y%m%d-%H%M%S-%3N")
-                       (ecc-prompt--image-extension mime))
-               (ecc-session-image-dir session))))
-    (with-temp-file file
-      (set-buffer-multibyte nil)
-      (insert data))
-    file))
+;; Where an image is written and what it is named is `ecc-image': the
+;; renderer needs it too, and this module is above the renderer.
 
 (defun ecc-prompt-insert-reference (path)
   "Insert PATH as an @ reference at point, with a space after it.
@@ -279,7 +272,7 @@ Point is moved into the prompt region first when it is not there."
   "Save the pasted image DATA of type MIME and refer to it.
 The file is passed by path rather than inline: base64 in the prompt
 would be written into the recording of the conversation."
-  (let ((file (ecc-prompt-save-image (ecc-prompt-session) data mime)))
+  (let ((file (ecc-image-save (ecc-prompt-session) data mime)))
     (ecc-prompt-insert-reference file)
     (message "Image saved to %s" (abbreviate-file-name file))
     file))
@@ -332,7 +325,8 @@ moment is added to it (`ecc-prompt-current-argument\=')."
     ("/login" . "Sign in to the CLI, in a terminal of its own")
     ("/logout" . "Sign the CLI out")
     ("/auth-status" . "Say who the CLI is signed in as")
-    ("/hooks" . "Show the hooks that would run for this project"))
+    ("/hooks" . "Show the hooks that would run for this project")
+    ("/resume" . "Carry this window on with another conversation of this project"))
   "Commands Emacs offers that the CLI does not name.
 They are added to the list `ecc-prompt-commands\' returns, after
 everything the CLI reported.  `/btw\' is one: the terminal client
@@ -918,10 +912,11 @@ non-nil.  The paths of the labels are relative to the project of
 SESSION, which is where the CLI reading them stands."
   (let* ((root (ecc-window-project-root (ecc-session-project-root session)))
          (text (ecc-prompt-expand-references
-                (ecc-prompt-prepare-command session text) source root)))
-    (if attach
-        (concat text (or (ecc-context-block source root) ""))
-      text)))
+                (ecc-prompt-prepare-command session text) source root))
+         (text (if attach
+                   (concat text (or (ecc-context-block source root) ""))
+                 text)))
+    (ecc-model-prepare-prompt session text)))
 
 (defun ecc-prompt--attachment-report ()
   "Return what to add to the message of a send about its @ references.
@@ -942,6 +937,12 @@ The first one to return non-nil takes the draft: nothing is sent to the
 CLI, and `ecc-prompt-send\' returns `intercepted\'.  The draft is
 emptied and remembered either way, so that a typo can be brought back
 with \\[ecc-prompt-history-previous].
+
+`/resume\' is ours outright: the CLI names no resume in
+`slash_commands\' and none in `terminal_slash_commands\' (checked
+against 2.1.270).  The terminal client draws that picker for itself,
+and what it does there is take the conversation over in place, which is
+what Emacs does to the window it is typed in.
 
 Only a draft the CLI is not meant to see belongs here.  The side
 question is the one there is: `/btw\' is not a slash
@@ -967,6 +968,51 @@ is what says the prompt region should be left as it was."
   (and (member command ecc-prompt-immediate-commands)
        (run-hook-with-args-until-success 'ecc-prompt-intercept-functions
                                          session command)))
+
+(defconst ecc-prompt--cd-regexp
+  "\\`/cd[ \t]+\\(.+?\\)[ \t]*\\'"
+  "What a `/cd\=' typed into the prompt region looks like.
+The whole prompt, because `/cd\=' with something after it is a slash
+command and not a sentence.")
+
+(defun ecc-prompt--cd-target (session text)
+  "Return the directory a `/cd\=' in TEXT moves SESSION to, or nil.
+The path is read from where the session is now, so that a relative one
+means what it does in the transcript, and `~\=' means what it always
+does."
+  (when (string-match ecc-prompt--cd-regexp text)
+    (let ((argument (string-trim (substring-no-properties
+                                  (match-string 1 text))
+                                 "[\"' \t]+" "[\"' \t]+")))
+      (unless (string-empty-p argument)
+        (expand-file-name argument (ecc-session-directory session))))))
+
+(defun ecc-prompt--follow-cd (session text)
+  "Move SESSION when TEXT is a `/cd\=' the user typed into the prompt.
+A `/cd\=' typed here is the user saying where the session is from now
+on, and it is the only thing that moves one.  The cwd the CLI reports
+cannot be used for this: CLI 2.1.272 reports as the session cwd
+whatever directory the last Bash tool call left it in (confirmed
+2026-09-16), so following it would carry the Space, the tab line and
+the `default-directory\=' of the transcript off to wherever the model
+last ran a `cd\='.
+
+A directory this Emacs does not have is said and ignored; the prompt
+goes to the CLI either way, which will have its own word on it.
+
+Where the session went, or did not, is the news of the send and is said
+last, over the `Sent\=' that would otherwise be the last thing on the
+screen."
+  (when-let* ((target (ecc-prompt--cd-target session text)))
+    (if-let* ((moved (ecc-session-set-root session target)))
+        (progn (message "%s is now in %s" (ecc-session-name session)
+                        (abbreviate-file-name moved))
+               moved)
+      (message "%s is not a directory here; %s stays in %s"
+               (abbreviate-file-name target)
+               (ecc-session-name session)
+               (abbreviate-file-name (or (ecc-session-directory session) "?")))
+      nil)))
 
 (cl-defun ecc-prompt-send ()
   "Send the prompt region, or queue it while a turn runs.
@@ -1005,6 +1051,9 @@ history."
                      "A turn started from Remote Control is running"
                    "A turn is running")
                  outcome (ecc-prompt--attachment-report)))
+      ;; Last, so that what became of the session is what is left on the
+      ;; screen rather than the `Sent' of a prompt that has moved it.
+      (ecc-prompt--follow-cd session raw)
       outcome)))
 
 (defun ecc-prompt-clear ()

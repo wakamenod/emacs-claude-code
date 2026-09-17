@@ -32,6 +32,20 @@ NAME may be given with or without the .jsonl extension."
   (expand-file-name (if (string-suffix-p ".jsonl" name) name (concat name ".jsonl"))
                     (expand-file-name "fixtures" ecc-test-directory)))
 
+(defun ecc-test-image-file ()
+  "Return the path of the image fixture.
+It is 79 bytes of red PNG, which is the whole point of it: a fixture
+carrying its base64 stays a fixture rather than becoming a megabyte."
+  (expand-file-name "red-square.png"
+                    (expand-file-name "fixtures" ecc-test-directory)))
+
+(defun ecc-test-image-bytes ()
+  "Return the bytes of the image fixture as a unibyte string."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert-file-contents-literally (ecc-test-image-file))
+    (buffer-string)))
+
 (defun ecc-test-fixture-lines (name)
   "Return the non-empty lines of fixture NAME as a list of strings."
   (let ((file (ecc-test-fixture-file name)))
@@ -113,6 +127,14 @@ that tests cannot see each other."
           (ecc--sessions (make-hash-table :test #'equal))
           (ecc--session-order nil)
           (ecc-render-debounce 0)
+          ;; The layout is said rather than inherited.  A test that shows
+          ;; a session under `ecc-use-spaces' makes a tab and turns the
+          ;; tab bar on, which the next test in the same Emacs then finds
+          ;; -- the suite went order-dependent the day the default
+          ;; changed (2026-09-17).  The Spaces have harnesses of their
+          ;; own that turn it back on; `ecc-space-test-the-default-is-spaces'
+          ;; is what holds the default itself to account.
+          (ecc-use-spaces nil)
           ;; The visual effects depend on what this machine has (a nerd
           ;; font, a spinner frame at this instant), so the snapshots
           ;; are taken without them.  `ecc-visual-test' and the render

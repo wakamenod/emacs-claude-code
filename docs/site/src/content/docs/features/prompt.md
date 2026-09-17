@@ -27,10 +27,12 @@ A session buffer contains the transcript at the top, a prompt input area below a
 | Key | Action |
 |---|---|
 | `M-p` / `M-n`, `C-<up>` / `C-<down>` | Previous or next prompt from history |
-| `C-c C-r` | Resend last prompt |
+| `C-c C-r` | Select from history and insert at point |
 | `C-c C-s` | Accept CLI prompt suggestion |
 
 Prompt history is shared across all sessions, so a prompt typed in one session is immediately available in another.
+
+`M-p` replaces the entire prompt area, which makes older entries impractical to reach. `C-c C-r` (`ecc-prompt-history-insert`) shows history as a completion list, one line per prompt, newest first, and inserts the full chosen prompt at point. Any text already written stays where it is.
 
 The CLI may suggest a follow-up prompt after a turn or two. Suggestions appear in the empty prompt area as ghost text; press `C-c C-s` to accept it as an editable draft.
 
@@ -43,7 +45,7 @@ Suggestions appear only when `ecc-prompt-suggestions-enabled` is non-nil (which 
 | Key | Action |
 |---|---|
 | `C-c C-q` | Show queued prompts |
-| `C-c C-g` | Interrupt running turn |
+| `C-c C-z` | Interrupt running turn (`C-c C-g` is deliberately unbound: it cancels the prefix, as everywhere else) |
 | `C-c C-x` | Toggle editor context attachment |
 | `C-c C-i` | Insert image |
 | `C-c C-a` / `C-c C-d` | Allow or deny pending request |
@@ -82,7 +84,7 @@ Typing `/` at the beginning of the prompt displays the command menu; `TAB` compl
 
 `/model`, `/effort`, `/permissions`, `/config`, and `/btw` prompt for their argument first, as the CLI responds with usage instructions when invoked without arguments. Terminal-only commands are omitted from the completion list, though you can still run them by typing the full command.
 
-A few commands that the CLI doesn't list are handled directly by Emacs and never reach the model: `/btw`, `/hooks`, `/plugins`, `/login`, `/logout`, and `/auth-status`.
+A few commands that the CLI does not list are handled directly by Emacs and never reach the model: `/btw`, `/hooks`, `/plugins`, `/login`, `/logout`, `/auth-status`, and `/resume`.
 
 ### Side questions with `/btw`
 
@@ -94,6 +96,14 @@ The active turn is not interrupted: the `/btw` response arrives in a separate vi
 
 `/btw` queries are single-shot: follow-up questions include only the last few exchanges (`ecc-btw-history-limit`).
 
+### Another conversation with `/resume`
+
+`/resume` asks which recorded conversation from this project to continue, and switches the current window to it. The window, tab, buffer, and session name stay as they are; only the conversation in them changes. This matches what `/resume` does in the terminal client. The CLI offers no such command to headless clients, so `/resume` here is ecc's own, implemented in Emacs.
+
+Emacs stops the running CLI process first (interrupting any active turn and waiting for it to finish), because two processes on one session ID silently branch a recording. If a conversation already has turns or queued prompts, Emacs asks for confirmation before leaving it. The conversation you leave is preserved, and `ecc-history-open` can read it again.
+
+`/resume <session-id>` resumes the recording by ID without prompting. This works well with Spaces: opening a project with nothing running starts a fresh session, and `/resume` lets you return to the previous one.
+
 ### While a turn runs
 
 Prompts sent while Claude is working are queued rather than interrupting the turn; the echo area reports the queue position. Press `C-c C-q` to view the queue. Turns initiated via Remote Control are queued the same way and identified in notifications.
@@ -103,6 +113,12 @@ Prompts sent while Claude is working are queued rather than interrupting the tur
 Images pasted, dragged into the buffer, or inserted with `C-c C-i` are saved under `ecc-image-dir` and passed to the CLI as file paths. `ecc-image-cleanup` determines whether session images are deleted when the session ends.
 
 ![The picture open beside the session, inserted into the prompt as a path, and described in the answer](../../../assets/image.gif)
+
+Images are displayed in the transcript as well as sent. Images attached to a prompt appear under the prompt band that asked about them. Images that Claude sends back appear under the call that produced them. These include an `image` block in a message, the result of a `Read` of a `.png`, and a screenshot from an MCP tool. Base64 data never reaches the buffer: the payload is written to the session's image directory, and the transcript holds the path.
+
+If `ffmpeg` is on `PATH`, the first frame of a video is shown, and `RET` opens the video in an external player. If `ffmpeg` is not available, only the line naming the file is shown. Extracting the frame runs in a subprocess without blocking, so the line remains until the frame is ready.
+
+A GIF animates as soon as it is displayed and loops as long as it is on screen. Pressing `I` on a GIF stops or starts it again. `I` controls only animation. `RET` opens the file: a still image in `image-mode` and a video in an external player. `ecc-image-inline` (also `I` in the menu) turns off image display, leaving only the line naming the file. Displayed images are limited in height, and their width follows `ecc-chat-text-width`.
 
 `C-c C-x` toggles editor context for the buffer: when enabled, the current file and line number are automatically included with each prompt.
 
@@ -135,9 +151,9 @@ The transcript is standard read-only buffer text, so `isearch`, `occur`, narrowi
 | `^` | Up to parent heading |
 | `]` / `[` | Next or previous block |
 | `T` | Jump to turn by prompt |
-| `f` / `P` | Jump to Files section / Plan section |
+| `F` / `P` | Jump to Files section / Plan section |
 | `SPC` / `DEL` | Scroll down / up |
-| `i` | Move point to prompt area |
+| `v` / `i` | Move point to prompt area |
 
 ### Acting on items at point
 
@@ -146,12 +162,13 @@ The transcript is standard read-only buffer text, so `isearch`, `occur`, narrowi
 | `RET` | Visit item at point (link, file, subagent transcript, or full tool result) |
 | `mouse-1` / `mouse-2` | Follow the link that was clicked |
 | `w` | Copy code block at point (or entire response) |
+| `I` | Toggle GIF animation at point |
 | `a` | Allow pending request |
 | `d` | Deny request at point (or view diff if not on a request) |
 | `g` | Redraw transcript |
 | `L` | View raw protocol log |
 | `t` / `R` | Hand over to terminal client / resume session |
-| `C-c C-k` | Interrupt running turn |
+| `C-c C-k` | Clear prompt area (the same as in the prompt: one key, one meaning in the buffer) |
 | `S-TAB` | Cycle permission mode |
 | `q` | Bury buffer |
 | `?` | Open transient menu |

@@ -507,6 +507,45 @@ if want resume; then
 
 fi
 
+if want usecase; then
+    # The use-case page: going to a project that has only recordings, as
+    # an animation, and the Space a worktree hand-off leaves, as a still.
+    # The start scene resizes and moves the frame, so the rectangle is
+    # measured after it rather than before: `scene' asks for the geometry
+    # as it stands, and taking it first caught the screen behind the
+    # frame (2026-09-18).
+    e '(shot-scene-usecase-start)'   ; sleep 1
+    scene usecase-goto
+    hold 1
+    e '(shot-scene-usecase-goto)'
+    hold 8
+    gif
+    e '(shot-scene-quit)' ; sleep 1
+    e '(shot-scene-usecase-worktree)' ; sleep 2; still "$outdir/usecase-worktree.png"
+    e '(shot-scene-usecase-end)' ; sleep 1
+fi
+
+if want sidebar; then
+    # The sidebar on its own, close up: several Spaces with two worktrees
+    # under one of them, and a session waiting for an answer.  The
+    # rectangle captured is the sidebar window rather than the frame.
+    e '(shot-scene-sidebar)' ; sleep 2
+    e '(shot-report-sidebar-geometry)'
+    read -r X Y W H _cols _lines < "$geom"
+    screencapture -x -R"$X,$Y,$W,$H" "$outdir/sidebar.png"
+    e '(shot-scene-sidebar-end)' ; sleep 1
+fi
+
+if want spaces; then
+    # The Spaces, as one still: the sidebar down the left, a tab for each
+    # project across the top, and this project's source with its two
+    # transcripts beside it.  It comes late because it widens the frame
+    # and leaves a tab bar and a sidebar behind, both of which the
+    # scene's own end takes away again.
+    e '(shot-scene-spaces)' ; sleep 2; still "$outdir/spaces.png"
+    e '(shot-scene-spaces-end)' ; sleep 1
+fi
+
 # Last, because it is the one scene that changes the type and the size
 # of the frame.  Both the site's front page and README.md carry it, and
 # README.md reads it from docs/images like the other two there.

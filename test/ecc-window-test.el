@@ -17,9 +17,15 @@
 
 (defmacro ecc-window-test--with-sessions (first second &rest body)
   "Run BODY with two registered sessions bound to FIRST and SECOND.
-They live in different projects; the second is the most recently used."
+They live in different projects; the second is the most recently used.
+
+`ecc-use-spaces\=' is off throughout this file: what it tests is the
+window roles and the focusing built on them, which is the arrangement
+that setting turns off.  The Spaces have `ecc-space-test\=' to
+themselves."
   (declare (indent 2))
   `(let* ((ecc-test-sent nil)
+          (ecc-use-spaces nil)
           (ecc--sessions (make-hash-table :test #'equal))
           (ecc--session-order nil)
           (ecc-window--last-sub nil)
@@ -84,14 +90,27 @@ nowhere to be found among its siblings."
           (ecc-test-cleanup-session deep)
           (ecc-model-remove-session deep))))))
 
-(ert-deftest ecc-window-test-session-project-follows-the-cli-cwd ()
-  "The project of a session is where the CLI works, not where it started.
-A `/cd\=' moves the one and leaves the other."
+(ert-deftest ecc-window-test-session-project-ignores-the-cli-cwd ()
+  "The cwd the CLI reports does not move a session out of its project.
+CLI 2.1.272 reports the directory the last Bash tool call left it in as
+the session cwd (2026-09-16), so a model that runs `cd\=' would otherwise
+carry the session out of its Space and its tab line.  Two sessions,
+because only one of them moves: what it does to the other is the bug."
   (ecc-window-test--with-projects '("/tmp/project-one/" "/tmp/project-two/")
     (ecc-window-test--with-sessions one two
       (should-not (equal (ecc-window-session-project one)
                          (ecc-window-session-project two)))
       (setf (ecc-session-cwd one) "/tmp/project-two/src/")
+      (should-not (equal (ecc-window-session-project one)
+                         (ecc-window-session-project two)))
+      (should (equal (mapcar #'ecc-session-name
+                             (ecc-window-project-sessions "/tmp/project-two/"))
+                     '("two")))
+      (should (equal (mapcar #'ecc-session-name
+                             (ecc-window-project-sessions "/tmp/project-one/"))
+                     '("one")))
+      ;; The user moving it does move it.
+      (setf (ecc-session-project-root one) "/tmp/project-two/src/")
       (should (equal (ecc-window-session-project one)
                      (ecc-window-session-project two)))
       (should (equal (sort (mapcar #'ecc-session-name
@@ -246,103 +265,70 @@ window is the next one `display-buffer' takes over."
         (ecc-window-repair-side-windows)
         (should (eq (window-dedicated-p window) 'side))))))
 
-(ert-deftest ecc-window-test-hidden-list-is-per-tab ()
-  "What was hidden is remembered per tab, not per Emacs."
-  (require 'tab-bar)
-  (let ((frame-parameter-backup (frame-parameter nil 'ecc-hidden-sessions)))
-    (unwind-protect
-        (progn
-          (set-frame-parameter nil 'ecc-hidden-sessions nil)
-          (ecc-window-set-hidden-sessions '("a" "b"))
-          (should (equal (ecc-window-hidden-sessions) '("a" "b")))
-          (cl-letf (((symbol-function 'tab-bar--current-tab)
-                     (lambda (&rest _) '(current-tab (name . "second")))))
-            (let ((tab-bar-mode t))
-              ;; Another tab starts out with nothing hidden.
-              (should-not (ecc-window-hidden-sessions))
-              (ecc-window-set-hidden-sessions '("c"))
-              (should (equal (ecc-window-hidden-sessions) '("c")))))
-          ;; And the first layout is untouched.
-          (should (equal (ecc-window-hidden-sessions) '("a" "b"))))
-      (set-frame-parameter nil 'ecc-hidden-sessions frame-parameter-backup))))
+(defmacro ecc-window-test--with-tabs (tabs &rest body)
+  "Run BODY with TABS as the `tabs' frame parameter, putting it back after.
+The parameter is what `ecc-window--layout-key' reads, so a tab is stood
+up here rather than a tab bar opened."
+  (declare (indent 1))
+  `(let ((was (frame-parameter nil 'tabs)))
+     (unwind-protect
+         (progn (set-frame-parameter nil 'tabs ,tabs) ,@body)
+       (set-frame-parameter nil 'tabs was))))
 
-(ert-deftest ecc-window-test-toggle-hides-then-restores ()
-  "Toggle puts back exactly the sessions it took away."
+(ert-deftest ecc-window-test-layout-key-is-per-tab ()
+  "Two tabs answer with two keys, with the bar shown or not.
+`tab-bar-show' nil is a supported way to run `spaces', so what is kept
+per tab -- the zoom of `ecc-space-zoom' -- has to stay apart there too."
+  (require 'tab-bar)
+  (ecc-window-test--with-tabs '((tab (name . "first"))
+                                (current-tab (name . "second")
+                                             (explicit-name . t)))
+    (should-not (bound-and-true-p tab-bar-mode))
+    (should (equal (ecc-window--layout-key) "second")))
+  (ecc-window-test--with-tabs '((current-tab (name . "first")
+                                             (explicit-name . t))
+                                (tab (name . "second")))
+    (should (equal (ecc-window--layout-key) "first"))))
+
+(ert-deftest ecc-window-test-layout-key-ignores-a-tab-nobody-made ()
+  "A frame with no tabs of its own keys on the frame, whatever is showing.
+`tab-bar--current-tab' invents a tab named after the current buffer
+there, and a key that drifts with the buffer would lose the zoom
+stored under it."
+  (require 'tab-bar)
+  (ecc-window-test--with-tabs nil
+    (should (eq (ecc-window--layout-key) 'frame)))
+  ;; The same, once something has asked and Emacs has written the
+  ;; parameter down: one tab, named after a buffer rather than on
+  ;; purpose.
+  (ecc-window-test--with-tabs '((current-tab (name . "*scratch*")
+                                             (explicit-name)))
+    (should (eq (ecc-window--layout-key) 'frame)))
+  ;; A single tab that was named counts: the last Space of a frame is
+  ;; still a Space.
+  (ecc-window-test--with-tabs '((current-tab (name . "alpha")
+                                             (explicit-name . t)))
+    (should (equal (ecc-window--layout-key) "alpha"))))
+
+(ert-deftest ecc-window-test-hide-sessions-takes-down-what-is-on-screen ()
+  "Hiding touches the sessions that have a window and says which they were.
+Nothing is written down about where they were: what brings a session
+back deals the whole arrangement again."
   (ecc-window-test--with-sessions one two
     (let ((hidden nil)
-          (shown nil)
-          (visible (list one two)))
-      (set-frame-parameter nil 'ecc-hidden-sessions nil)
+          (visible (list one)))
       (cl-letf (((symbol-function 'ecc-window-session-visible-p)
                  (lambda (session &optional _frame) (memq session visible)))
                 ((symbol-function 'ecc-window-hide-session)
                  (lambda (session) (push session hidden)
-                   (setq visible (delq session visible))))
-                ((symbol-function 'ecc-display-session)
-                 (lambda (session) (push session shown) (push session visible))))
-        ;; Only the sessions of this project are touched without a prefix.
-        (let ((default-directory "/tmp/project-one/"))
-          (ecc-toggle))
+                   (setq visible (delq session visible)))))
+        ;; The one with no window is not touched, and not counted.
+        (should (equal (ecc-window-hide-sessions (list one two)) (list one)))
         (should (equal hidden (list one)))
-        (should (equal (mapcar #'car (ecc-window-hidden-sessions))
-                       (list (ecc-session-id one))))
-        (let ((default-directory "/tmp/project-one/"))
-          (ecc-toggle))
-        (should (equal shown (list one)))
-        (should-not (ecc-window-hidden-sessions))
-        ;; With a prefix argument every session is hidden.
-        (setq hidden nil)
-        (ecc-toggle t)
-        (should (equal (sort (mapcar #'ecc-session-name hidden) #'string<)
-                       '("one" "two")))))))
-
-(ert-deftest ecc-window-test-hide-sessions-keeps-earlier-entries ()
-  "Hiding one group after another leaves both of them to come back.
-The list used to be replaced rather than added to, so the group hidden
-first was forgotten and never came back."
-  (ecc-window-test--with-sessions one two
-    (set-frame-parameter nil 'ecc-hidden-sessions nil)
-    (cl-letf (((symbol-function 'ecc-window-session-visible-p)
-               (lambda (&rest _) t))
-              ((symbol-function 'ecc-window-hide-session) #'ignore))
-      (ecc-window-hide-sessions (list one))
-      (ecc-window-hide-sessions (list two))
-      (should (equal (sort (mapcar #'car (ecc-window-hidden-sessions)) #'string<)
-                     (sort (list (ecc-session-id one) (ecc-session-id two))
-                           #'string<)))
-      ;; A session hidden twice is remembered once.
-      (ecc-window-hide-sessions (list one))
-      (should (= 2 (length (ecc-window-hidden-sessions)))))))
-
-(ert-deftest ecc-window-test-toggle-restores-only-its-own-project ()
-  "A toggle brings back its own project and leaves the rest hidden.
-It used to restore every entry, whichever project had hidden it, so a
-toggle after `ecc-focus-project\=' undid the whole of the focus."
-  (ecc-window-test--with-sessions one two
-    (let ((shown nil)
-          (visible (list one two)))
-      (set-frame-parameter nil 'ecc-hidden-sessions nil)
-      (cl-letf (((symbol-function 'ecc-window-session-visible-p)
-                 (lambda (session &optional _frame) (memq session visible)))
-                ((symbol-function 'ecc-window-hide-session)
-                 (lambda (session) (setq visible (delq session visible))))
-                ((symbol-function 'ecc-display-session)
-                 (lambda (session) (push session shown) (push session visible))))
-        ;; Both projects go into hiding, one after the other.
-        (ecc-window-hide-sessions (list one))
-        (ecc-window-hide-sessions (list two))
-        (should (= 2 (length (ecc-window-hidden-sessions))))
-        ;; A toggle in the first project brings back that one alone.
-        (let ((default-directory "/tmp/project-one/"))
-          (ecc-toggle))
-        (should (equal shown (list one)))
-        (should (equal (mapcar #'car (ecc-window-hidden-sessions))
-                       (list (ecc-session-id two))))
-        ;; And the other is still there to come back to.
-        (let ((default-directory "/tmp/project-two/"))
-          (ecc-toggle))
-        (should (equal shown (list two one)))
-        (should-not (ecc-window-hidden-sessions))))))
+        ;; Nothing is left to hide, so nothing happens and nothing comes
+        ;; back.
+        (should-not (ecc-window-hide-sessions (list one two)))
+        (should (equal hidden (list one)))))))
 
 ;;;; The source buffer
 
@@ -465,9 +451,8 @@ same transcript twice."
                        (lambda (&optional _frame) ecc-window-roles))
                       ((symbol-function 'ecc-display-session-in-role)
                        (lambda (session role) (push (cons session role) placed)))
-                      ((symbol-function 'ecc-window-focus-source)
+                      ((symbol-function 'ecc-window--focus-source)
                        (lambda (&rest _) nil)))
-              (set-frame-parameter nil 'ecc-hidden-sessions nil)
               (ecc-focus-project "/tmp/project-one/")
               ;; Both sessions of the project are taken down before
               ;; either is put back, so neither is left behind in the
@@ -476,23 +461,24 @@ same transcript twice."
               (should (equal (sort (mapcar #'ecc-session-name taken) #'string<)
                              '("deep" "one" "two")))
               (should (equal (mapcar #'cdr (reverse placed)) '(main sub-1)))
-              ;; Only the other project is remembered as hidden: these
-              ;; two are back on the screen.
-              (should (equal (mapcar #'car (ecc-window-hidden-sessions))
-                             (list (ecc-session-id _two)))))
+              ;; And the two of this project are the ones back on the
+              ;; screen, most recently used in the main window.
+              (should (equal (mapcar (lambda (entry)
+                                       (ecc-session-name (car entry)))
+                                     (reverse placed))
+                             '("deep" "one"))))
           (ecc-test-cleanup-session deep)
           (ecc-model-remove-session deep))))))
 
 (ert-deftest ecc-window-test-focus-project-hides-the-others ()
   "Focusing a project takes the other projects off the screen, and no more.
-Nothing is killed: the hidden list names them, so a toggle brings them
-back."
+Nothing is killed and no process is stopped: focusing that project is
+what brings its windows back."
   (ecc-window-test--with-projects '("/tmp/project-one/" "/tmp/project-two/")
     (ecc-window-test--with-sessions one two
       (let ((placed nil)
             (hidden nil)
             (visible (list one two)))
-        (set-frame-parameter nil 'ecc-hidden-sessions nil)
         (cl-letf (((symbol-function 'ecc-window-session-visible-p)
                    (lambda (session &optional _frame) (memq session visible)))
                   ((symbol-function 'ecc-window-hide-session)
@@ -502,16 +488,13 @@ back."
                    (lambda (&optional _frame) ecc-window-roles))
                   ((symbol-function 'ecc-display-session-in-role)
                    (lambda (session role) (push (cons session role) placed)))
-                  ((symbol-function 'ecc-window-focus-source)
+                  ((symbol-function 'ecc-window--focus-source)
                    (lambda (&rest _) nil)))
           (ecc-focus-project "/tmp/project-one/")
-          ;; The other project is off the screen and remembered; this
-          ;; one comes down too, but only to be dealt out again.
+          ;; The other project is off the screen; this one comes down
+          ;; too, but only to be dealt out again.
           (should (memq two hidden))
-          (should (equal (mapcar #'car (ecc-window-hidden-sessions))
-                         (list (ecc-session-id two))))
-          ;; This one is in the main window, and is not in the hidden
-          ;; list even though it was on the screen already.
+          ;; And it is in the main window afterwards.
           (should (equal placed (list (cons one 'main))))
           ;; A project with no session is refused rather than emptying
           ;; the frame.
@@ -584,8 +567,7 @@ back."
           (progn
             (ecc-display-session session)
             (should (ecc-window-display-review review session))
-            (should (ecc-window-session-visible-p session))
-            (should-not (ecc-window-hidden-sessions)))
+            (should (ecc-window-session-visible-p session)))
         (kill-buffer review)
         (ecc-window-hide-session session)))))
 
@@ -602,12 +584,8 @@ back."
             (should (ecc-window-session-visible-p session))
             (ecc-window-display-review review session)
             (should-not (ecc-window-session-visible-p session))
-            ;; What was hidden is remembered, so `ecc-toggle' brings it back.
-            (should (assoc (ecc-session-id session)
-                           (ecc-window-hidden-sessions)))
             (should (eq (window-buffer (selected-window)) review)))
-        (kill-buffer review)
-        (ecc-window-set-hidden-sessions nil)))))
+        (kill-buffer review)))))
 
 (ert-deftest ecc-window-test-review-focus-can-stay-in-the-transcript ()
   "`ecc-window-review-focus' session leaves point in the transcript."
@@ -633,8 +611,7 @@ An agent transcript of the same session does not count."
           (id (ecc-session-id session)))
       (should (ecc-model-session id))
       (kill-buffer buffer)
-      (should-not (ecc-model-session id))
-      (should-not (assoc id (ecc-window-hidden-sessions))))))
+      (should-not (ecc-model-session id)))))
 
 (provide 'ecc-window-test)
 

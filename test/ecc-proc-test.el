@@ -295,6 +295,34 @@ The next prompt after a resume must be sent, not queued."
       ;; The turn stays in the transcript; it just is not open any more.
       (should (memq turn (ecc-session-turns session))))))
 
+(ert-deftest ecc-proc-test-an-earlier-exit-leaves-the-session-alone ()
+  "The exit of a process the session has already replaced closes nothing.
+Emacs runs a sentinel when it next waits for output, which is often
+after a stop and a start -- `/resume\\=', `ecc-resume\\=', a hand-off taken
+back.  Taken for the session\\='s own exit, it put the process at nil,
+marked the session exited and threw away the turn the new CLI had just
+been given: the answer then arrived in a session nothing was listening
+to, and the transcript showed a prompt with nothing under it."
+  (ecc-test-with-fake-session session
+    (let ((old (start-process "ecc-test-old" nil "sleep" "30"))
+          (new (start-process "ecc-test-new" nil "sleep" "30")))
+      (unwind-protect
+          (progn
+            (setf (ecc-session-process session) new)
+            (ecc-model-set-state session 'idle)
+            (let ((turn (ecc-model-begin-turn session "work")))
+              (ecc-proc--handle-exit session 143 "terminated" old)
+              (should (eq new (ecc-session-process session)))
+              (should-not (eq (ecc-session-state session) 'exited))
+              (should (eq turn (ecc-session-current-turn session)))
+              (should-not (alist-get 'exit-status (ecc-session-progress session)))
+              ;; The one it is running now still closes it.
+              (ecc-proc--handle-exit session 137 "killed" new)
+              (should (eq (ecc-session-state session) 'exited))
+              (should-not (ecc-session-current-turn session))))
+        (delete-process old)
+        (delete-process new)))))
+
 
 ;;;; The model a session would start with
 
@@ -344,6 +372,24 @@ narrowest scope first with the managed settings above all of them."
             (should (equal (ecc-proc-startup-model session) "sonnet[1m]")))
         (delete-directory home t)
         (delete-directory root t)))))
+
+(ert-deftest ecc-proc-test-startup-model-is-kept-once-it-has-started ()
+  "What the session was started with stands, whatever changes afterwards.
+The settings files and the environment are read again on every footer,
+and both can change under a session that is already running -- which
+had the footer naming a model the CLI was not running (2026-09-17)."
+  (ecc-test-with-fake-session session
+    ;; Nothing is kept yet, so the answer is what it would start with.
+    (let ((process-environment (cons "ANTHROPIC_MODEL=haiku" process-environment)))
+      (should (equal (ecc-proc-startup-model session) "haiku"))
+      (setf (ecc-session-startup-model session) (ecc-proc--startup-model session)))
+    ;; The environment it was started in is gone, and the answer is not.
+    (should (equal (ecc-proc-startup-model session) "haiku"))
+    (let ((process-environment (cons "ANTHROPIC_MODEL=opus" process-environment)))
+      (should (equal (ecc-proc-startup-model session) "haiku")))
+    ;; And the CLI naming one is still what wins in the footer.
+    (setf (ecc-session-last-model session) "claude-opus-5")
+    (should (equal (ecc-hint-model session) "claude-opus-5"))))
 
 (ert-deftest ecc-proc-test-startup-model-is-read-again-when-a-file-changes ()
   "The settings are cached, and a file written to is read again.
@@ -588,6 +634,78 @@ queue, and the session would take nothing said to it."
               (should (eq (ecc-session-state session) 'idle)))
           (set-process-sentinel process #'ignore)
           (delete-process process))))))
+
+(defmacro ecc-proc-test--with-pretend-process (var &rest body)
+  "Run BODY with VAR a session whose process is pretended to be alive.
+`ecc-proc-stop' is the only thing that ends it, and an interrupt is
+answered by nobody: what is being tested is the waiting."
+  (declare (indent 1) (debug (symbolp body)))
+  `(ecc-test-with-fake-session ,var
+     (let ((alive t)
+           (stopped nil)
+           (interrupted nil))
+       (ignore stopped interrupted)
+       (cl-letf (((symbol-function 'process-live-p) (lambda (_object) alive))
+                 ((symbol-function 'ecc-proc-stop)
+                  (lambda (_session) (setq stopped t alive nil)))
+                 ((symbol-function 'ecc-proc-interrupt)
+                  (lambda (_session) (setq interrupted t))))
+         ,@body))))
+
+(ert-deftest ecc-proc-test-release-interrupts-a-running-turn-first ()
+  "A turn is asked to end before the CLI is stopped.
+Stopping mid-tool leaves the CLI to write the result of a call that
+will never finish."
+  (ecc-proc-test--with-pretend-process session
+    (ecc-model-set-state session 'running)
+    (cl-letf (((symbol-function 'ecc-proc-interrupt)
+               (lambda (session)
+                 (setq interrupted t)
+                 ;; The CLI answers an interrupt with a result.
+                 (ecc-model-set-state session 'idle))))
+      (ecc-proc-release session 5))
+    (should interrupted)
+    (should stopped)))
+
+(ert-deftest ecc-proc-test-release-waits-out-a-turn-that-will-not-end ()
+  "The wait has an end, and the process is stopped anyway."
+  (ecc-proc-test--with-pretend-process session
+    (ecc-model-set-state session 'running)
+    (let ((start (float-time)))
+      (ecc-proc-release session 0.3)
+      (should (>= (- (float-time) start) 0.3)))
+    (should interrupted)
+    (should stopped)))
+
+(ert-deftest ecc-proc-test-release-signals-when-it-will-not-stop ()
+  "A process that will not die is an error: two of them branch the session."
+  (ecc-proc-test--with-pretend-process session
+    (cl-letf (((symbol-function 'ecc-proc-stop)
+               (lambda (_session) (setq stopped t))))
+      (should-error (ecc-proc-release session 0.1) :type 'user-error))
+    (should stopped)))
+
+(ert-deftest ecc-proc-test-a-session-that-cannot-start-is-forgotten ()
+  "A session whose CLI never came up does not stay in the list.
+`make-process' fails on a root that is not there -- a worktree deleted
+since the Space was made -- and the session was left at `starting' with
+no process, showing in the sidebar and the dashboard for ever.  Two
+sessions, because the one that did start must be untouched."
+  (ecc-test-with-fake-session session
+    (let ((gone (ecc-model-create-session
+                 :name "gone"
+                 :project-root (expand-file-name "ecc-no-such-directory/"
+                                                 temporary-file-directory))))
+      (unwind-protect
+          (progn
+            (should (eq (ecc-session-state gone) 'starting))
+            (let ((buffer (ecc-session-ensure-buffer gone)))
+              (should-error (ecc-proc-start gone) :type 'user-error)
+              (should-not (ecc-model-session (ecc-session-id gone)))
+              ;; And nothing of it is left on the screen either.
+              (should-not (buffer-live-p buffer)))
+            (should (ecc-model-session (ecc-session-id session))))
+        (ecc-test-cleanup-session gone)))))
 
 (provide 'ecc-proc-test)
 

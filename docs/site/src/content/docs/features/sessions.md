@@ -69,7 +69,7 @@ Determining which messages belong to the active line of conversation requires pa
 
 ## The dashboard
 
-Open the dashboard with `b` in the transient menu, `C-c c b`, or `M-x ecc-dashboard`.
+Open the dashboard with `B` in the transient menu, `C-c c B`, or `M-x ecc-dashboard`.
 
 ![The dashboard listing four sessions: one waiting for an answer, one running, one idle and one that has exited](../../../assets/dashboard.png)
 
@@ -100,7 +100,9 @@ Waiting sessions appear at the top, followed by remaining sessions sorted by rec
 | `U` | View usage and rate limits |
 | `g` | Refresh dashboard |
 
-`k` stops the process while keeping the recording on disk so it can still be resumed via `r`. `D` permanently deletes the recording file. See [Prompt and transcript](/emacs-claude-code/features/prompt/) for details on what `a` and `d` send.
+`k` stops the process while keeping the recording on disk so it can still be resumed via `r`, and asks first, since stopping a session takes its window and transcript with it. `D` permanently deletes the recording file.
+
+`a` and `d` ask what they are about to answer before answering it — set `ecc-answer-confirm` to `nil` to skip that — and they leave the tools listed in `ecc-answer-exclude-tools` (`Bash` by default) alone: a shell command is read in the transcript, which `RET` opens, rather than answered from a summary cut to fit a column. The sidebar's `a` and `d` behave identically. See [Prompt and transcript](/emacs-claude-code/features/prompt/) for what answering sends.
 
 ## The tab line
 
@@ -117,27 +119,23 @@ Each session appears as a tab in the tab line of its project's session windows.
 
 The tab for the active session window is bold and underlined; active background sessions use a muted green. Set `ecc-tab-blink` to `nil` to disable blinking.
 
-Tabs remain in creation order so their positions remain stable. Clicking a tab with `mouse-1` (or pressing `S`) switches the window to that session. Clicking the `x` button prompts to stop the session.
+Tabs stay in creation order so their positions remain stable. Clicking a tab with `mouse-1` switches the window to that session. Inside a session buffer, `C-c C-t` (`ecc-switch-session`) does the same. Clicking the `x` button prompts to stop the session.
+
+![The session window changing from one session to another: the selected tab moves from greet to notes and the transcript is replaced](../../../assets/switch.gif)
 
 To show session state in the global Emacs tab bar, set `ecc-tab-bar-state` and use `tab-bar-tab-name-function #'ecc-tab-bar-tab-name`.
 
 A window's tabs list only that window's own project's sessions. Two session windows side by side in different projects show separate rows, and neither lists the other's sessions. Set `ecc-tab-line-scope` to `'all` to list every session in a single row.
 
-You can still reach a session outside the scope with `S` (`ecc-switch-session`), the dashboard (`C-c c b`), and `C-c c n` (`ecc-next-attention`). But because its tab is not on screen, it cannot blink when waiting for an answer. The mode line `⚠ecc:N` count and notifications still report it.
+You can still reach a session outside the scope with `C-c C-t` (`ecc-switch-session`), the dashboard (`C-c c B`), or `C-c c n` (`ecc-next-attention`). Its tab is not on screen, so it cannot blink when waiting for an answer. The mode line `⚠ecc:N` count and notifications still report it.
 
 Under the tab line, the header line displays the session's current status on the left, the project name beside it, and the remaining context window capacity on the right (turning amber and red as capacity diminishes).
 
 ## Focusing one project
 
-`C-c c j` (`ecc-focus-project`) resets the frame to show only one project:
+`M-x ecc-focus-project` resets the frame to show only one project, for a frame full of transcripts from other projects. It kills nothing and stops no processes.
 
-![Two projects crowding one frame; picking one of them takes the other's window away, brings this project's second session in beside it, and changes the source on the left](../../../assets/focus.gif)
-
-- Session windows from every other project leave the screen. `ecc-focus-project` kills nothing and stops no processes. `C-c c w` (`ecc-toggle`) brings back one project, and `C-u C-c c w` (`ecc-toggle-all`) brings back all of them.
-- Sessions of the chosen project fill the window roles in order of recent use, placing the session you worked in last into the main window.
-- The main window switches to that project's source. It chooses a visible project buffer first, then the last buffer you edited there, then the most recently used buffer in the project, or Dired on the project root. A prefix argument (`C-u C-c c j`) prompts for a buffer instead.
-
-A project is matched as a project, not as a path, so a subdirectory session groups with the tree.
+Spaces took the job over: every project has a tab to itself, so switching to that tab is all the focusing there is. See [Spaces and worktrees](/emacs-claude-code/features/spaces/).
 
 ## Pending request indicators
 

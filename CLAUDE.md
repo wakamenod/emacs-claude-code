@@ -22,11 +22,30 @@ rules:
 - `ecc-render.el` alone draws the transcript; `ecc-chat.el` holds the major mode, the
   keymaps and the movement. The prompt region lives after `ecc-render--prompt-start` in
   the same buffer, and no redraw deletes past it.
+- `ecc-window.el` does not require `ecc-space.el`: the Spaces are built on top of the
+  windows, not inside them. `ecc-window.el` branches on `ecc-use-spaces` at the head of
+  the four functions that care and loads `ecc-space` at run time, and with that setting
+  off nothing reaches `ecc-worktree.el`, `ecc-space.el` or `ecc-sidebar.el`.
 
 Each script in `scripts/` says in its own header what it is and how to run it. Run
 `scripts/bench-render.el` before and after touching the renderer. The documentation site
 is `docs/site/`, documented by `docs/site/README.md`; the `docs/*.md` beside it are
 gitignored working documents.
+
+`demo/` is the other kind of picture: `demo/record.sh <scene>` opens a second GUI Emacs
+with the user's own `init.el`, puts this checkout in front of the ecc that init points
+at, plays a scene and records it as an mp4. It is for what a batch test cannot see -- a
+frame, a panel, a colour, a key -- and for handing that check to somebody else; the
+site's pictures are `scripts/docshots.sh` and stay a dressed-up `-Q`. A scene is
+`demo/scenes/NAME.el` (what it builds, one function per step) and `demo/scenes/NAME.sh`
+(the order and the pauses). `demo/README.md` says how to write one and what it costs to
+learn again: what is recorded is the demo frame's own window, through
+`demo/record-window.swift` and ScreenCaptureKit, so nothing that covers it is in the
+picture and the recording does not have to be in front; a step runs the command a key is
+bound to in the buffer it belongs to rather than feeding keys to a command loop that is
+reading somewhere else; and a step arrives with `*scratch*` current, so a scene that
+means a directory has to say which one -- `ecc-window-context-project-root` falls back to
+the checkout the demo Emacs was started from, which is this repository.
 
 ## Commands
 
@@ -94,6 +113,13 @@ the recording and its branches. The one rule to carry in: **a second process run
 
 ## How the work goes
 
+- `develop` is where the work gathers; `main` is what people install, and it takes no
+  direct push. A piece of work branches off `develop` and goes back into it through a
+  pull request. `main` sees a release and nothing else.
+- A pull request carries its own entry in the `## [Unreleased]` section of
+  `CHANGELOG.md`. That section is a draft until the release dates it, so a bug that
+  both appeared and was fixed before any release is not an entry under `Fixed` — it is
+  a correction to the entry that introduced it. Nobody outside ever saw it.
 - One piece of work per session, roughly. Report once it is done and `make test` passes,
   and get the user's word before moving on.
 - Commit in meaningful steps rather than one lump at the end. Messages follow Conventional

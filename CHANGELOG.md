@@ -11,11 +11,170 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
-## [Unreleased]
+## [0.3.0] - 2026-09-18
 
-Verified against **Claude Code CLI 2.1.270**.
+Verified against **Claude Code CLI 2.1.274**.
 
 ### Added
+
+- `ecc-space-reset-windows`, `C-c c V` and `V` in the menu: put this Space back
+  to the arrangement a new tab gets -- the source of the project on the left,
+  the transcripts beside it, most recently used first, stopping where the row
+  has no room for another column of `ecc-space-session-min-width`. It runs the
+  same code a new tab is dealt with, so the two cannot drift apart.
+
+  The windows of a Space are the user's and nothing rearranges them on its own,
+  which left no way to say start again: a tab that had been split, zoomed,
+  filled with a review or given over to transcripts had to be unpacked by hand.
+
+  The sidebar keeps its place and its width, being a side window that asked not
+  to be deleted, and a sidebar that was hidden comes back -- a new tab has one.
+  The zoom of the tab is forgotten as it goes, the arrangement it was the way
+  back to having just gone. A `spaces` command: under `classic` the roles are
+  `ecc-focus-project`'s to deal out.
+
+- `ecc-worktree-menu`, `W` in `ecc-menu`: `c` makes a worktree and starts a
+  session there, `o` starts one in a worktree that exists, `k` removes one.
+  Three commands that belong together, and that are used in a week what the
+  keys beside them are used in an hour.
+
+- `ecc-prompt-history-insert` (`C-c C-r` in the prompt region, `H` in
+  `ecc-menu`) picks a past prompt from a list and inserts it at point.  The
+  history holds two hundred prompts and `M-p` walks it one entry at a time,
+  replacing the whole region as it goes, which is no way to reach the fiftieth
+  entry back.  The list shows each prompt flattened to a line, most recent
+  first, and what goes in is the whole of the one chosen -- next to whatever
+  was already being written, rather than in place of it.
+
+- Images and video are drawn in the transcript.  Four things put one there:
+  an `image` content block on an assistant or a user message, an image block
+  inside a `tool_result` (a `Read` of a `.png`, a screenshot from an MCP
+  tool), an image file named by a tool's `file_path` where the result carried
+  no picture of its own, and the images a prompt attached as `@path`.
+
+  None of it reaches the buffer as base64.  The payload is decoded where the
+  message is dispatched and written into the session's image directory under
+  the sha1 of its bytes, and only the path, the media type and the size are
+  kept on the node.  The same image arriving twice -- once in the block that
+  streams and once in the message that closes it -- is one file and one node.
+
+  Before this, an image block on a message became an `unknown` node and was
+  drawn as two thousand characters of base64, a streamed one opened no node
+  at all and its deltas were dropped, and an image in a tool result was
+  serialised back to JSON and drawn as a wall of text that the twelve-line
+  result clip could not cut, because base64 is one line.
+
+  Each picture sits on a line that names the file, so a copy of the region, a
+  search through it and a snapshot of it all find the name; a terminal frame,
+  a build without the library for that type and a batch Emacs are left with
+  that line.  The images of a tool call are drawn inside its body, so a fold
+  hides them with it, and after the result clip rather than through it, so a
+  long result is not what decides whether a screenshot is seen; at most
+  `ecc-image-max-per-node` of them, the rest counted.  A tool call that
+  brought one comes up open, whatever tool nodes do in general: a `Read` of a
+  `.png` and an MCP tool that answers with a screenshot are the two
+  commonest ways a picture arrives at all, and both drew a heading with the
+  picture behind the fold.  `TAB` folds it away again, and with
+  `ecc-image-inline` off there is nothing to open for.  An image the CLI named
+  by URL is drawn as the URL and never fetched: the renderer does not go to
+  the network.
+
+  A video cannot be drawn in a buffer, so where `ffmpeg` is on `PATH` its
+  first frame is pulled out and shown instead, in a subprocess
+  that is never waited for -- the line naming the file stands until the frame
+  lands.  A video ffmpeg cannot read is tried once, not once per redraw.
+
+  A GIF starts moving as soon as it is drawn and loops for as long as it is
+  on screen, at one timer each and a redisplay of 0.25 ms for ten of them
+  against 0.10 ms still.  It stops itself: `image-animate` is given the
+  position the picture sits at and gives up once the text there is no longer
+  that image, which is what a redraw of the live region does to it.  Without
+  that position every redraw left the timer of a picture no longer in the
+  buffer turning its frames -- three GIFs and ten redraws left thirty such
+  timers and animated none of them.  Scrolling away does not stop it: the
+  test is on the text, not on the window.
+
+  `I` in the transcript stops the picture at point moving, or sets it moving
+  again, and does nothing else: `RET` is what opens one, a still in
+  `image-mode` and a video in whatever the machine plays one with.
+  `ecc-image-inline`, also `I` in the menu, turns the drawing off.  It is
+  the one setting this adds: the height a picture is drawn at, whether a
+  GIF moves by itself and which ffmpeg is used are `defvar`s, reachable
+  with `setq` and bindable in a test, and not choices to put in front of
+  somebody.  A drawn image is limited in height and its width follows
+  `ecc-chat-text-width`.
+
+  There is no cache of image descriptors: `create-image` conses a list and
+  reads nothing, about a third of a microsecond a call, and two equal
+  descriptors share one entry of the image cache Emacs keeps of its own.
+  `scripts/bench-render.el` sees nothing at 800 tool calls with a fifth of
+  them carrying an image.  It now also sweeps before each measurement --
+  adding a case to it had moved an untouched number from 1.7 ms to 4.3, which
+  was the heap the new case left behind rather than the renderer.
+
+  New module `ecc-image.el`, a leaf below `ecc-render`.  `ecc-prompt-save-image`
+  moved there as `ecc-image-save` and `ecc-prompt--image-extension` as
+  `ecc-image--extension`, with `ecc-image-dir`, `ecc-image-cleanup`,
+  `ecc-session-image-dir` and `ecc-image-cleanup-session`: `ecc-prompt`
+  requires `ecc-render`, so the helpers that write an image to disk could not
+  stay there and be called from the renderer as well.
+
+- `ecc-review-style` opens `ecc-review` (`D`) and `ecc-review-worktree` (`G`)
+  in ediff instead of the one `diff-mode` buffer. `'diff`, the default, is
+  what both did before; `'ediff` lays what the files held on the left and what
+  they hold now on the right.
+
+  Every file of the review is in one ediff session, not one session per file:
+  the two sides are concatenated, each file under the same `═══ path ═══`
+  separator line with a blank line in front of it, so `n` and `p` walk every
+  difference of the review across the file boundaries.  The two sides are put
+  left and right rather than one above the other: `ediff-split-window-function`
+  is set in the control buffer of the review alone, which is where ediff reads
+  it from, so no other ediff is touched, and the windows are laid out again
+  there and then -- ediff runs a session's startup hooks after it has already
+  set the windows up, so the review would otherwise open in ediff's own layout
+  and turn into this one at the first keystroke.  Both are `defvar`s --
+  `ecc-review-ediff-split-window-function` (nil leaves ediff's own layout) and
+  `ecc-review-ediff-file-spacing`.  Where the control panel goes is ediff's own
+  `ediff-window-setup-function`, which this package does not touch. A binary file, or one larger than `ecc-review-max-bytes`, is
+  its separator line alone, saying why, and is no difference at all. ediff's own
+  session groups were not used: they walk files rather than differences, and
+  reach for internal functions, file names and a non-recursive directory scan.
+
+  Both sides are read-only, and so `a` and `b` -- ediff's own copy commands --
+  say what a review is instead of doing anything: a review reads, comments and
+  sends, and what changes the files is Claude, from the prompt the comments go
+  out as. Left to ediff they signalled `buffer-read-only` against a buffer the
+  user had not asked about, from a key the review's own help does not offer.
+
+  The comments are the same comments. `c`, `d` and `l` sit on differences
+  rather than hunks, but they carry the same file and the same line numbers
+  inside it, and `C-c C-c`, `C-u C-c C-c` and `C-c C-k` are the same commands
+  sending the same prompt. Quitting -- by `q`, by `C-c C-k` or by sending --
+  puts back the windows that were on the screen before the review opened.
+  There is no `g`; quit and open the review again.
+
+  `?` shows a help written for the review rather than ediff's own.  ediff's
+  is the one a two-way comparison usually wants: it offers `a` and `b`, `rx`,
+  `wx`, `wd` and `~`, none of which do anything where both buffers are
+  read-only and each side is every file of the review at once, and it says
+  nothing of `c`, `d`, `l`, `C-c C-c` and `C-c C-k`, nor that `q` closes a
+  review without asking.  The help is ediff's own three-column layout with
+  only the commands a review really has on it, and the brief message the panel
+  carries with the help off names them too.  It is set through
+  `ediff-long-help-message-function` and `ediff-brief-help-message-function`,
+  which ediff reads out of the control buffer of each session, so no other
+  ediff's `?` changes; the messages are composed again in the startup hook,
+  because ediff writes the help into the panel before it runs them.  Clicking
+  a line of the help, and `RET` on it, do nothing now: they looked the command
+  up in the ediff manual, which has no entry for `c`, `d` or `l` and answered
+  them with "Undocumented command!".
+
+  Both reviews now always compare two git trees: the session's baseline, or
+  `HEAD`, against a snapshot of the working tree, and for a range the two trees
+  of the history. `ecc-review-snapshot` takes a `no-add` argument for the one
+  side that is neither, the index, which is what a review of what is not staged
+  yet compares against.
 
 - The footer under the prompt names the model before the session has answered.
   The CLI says which model ran on every assistant message and says it nowhere
@@ -33,11 +192,394 @@ Verified against **Claude Code CLI 2.1.270**.
   2026-09-14: `ANTHROPIC_MODEL=haiku` against a settings file naming `opus` ran
   haiku).
 
+  What the session was really started with is kept on it as it starts, and
+  that is what stands until the CLI names one.  Both answers can change under
+  a session that is already running -- a `model` written into the settings
+  files, an `ANTHROPIC_MODEL` bound around the start alone -- and working them
+  out again on every footer had it name a model the CLI was not running.
+
   The footer is drawn after every command and the answer lies in files, so the
   settings files are stat'ed and read again only when one has been written to.
   A remote project root is left out: its settings are on the other machine.
 
+- A second way to lay the windows out, chosen with `ecc-use-spaces`, **and it is
+  the default**. Off, the windows are what this package has always done: a
+  transcript goes into a side window with a role -- main, sub-1, sub-2 -- and
+  `ecc-focus-project` deals the roles out again for one project. There are then
+  no tabs, no sidebar and no worktree commands.
+
+  On, every project gets a tab of the tab bar instead -- a Space -- and the
+  windows inside it are left alone. The transcripts stand side by side and
+  are never stacked: the first opens as an ordinary window beside the source,
+  every one after it divides the rightmost of them, and from there they are the
+  user's to split, move and enlarge. A tab is a window arrangement, so going to
+  another Space and back brings the whole of it back the way it was left. A
+  worktree is a Space of its own, drawn under the repository it came from and
+  named by its branch; a session started in one goes by that branch as well,
+  rather than by its directory, which is a slug of the branch and says
+  nothing more.
+
+  Which tab a Space lives in is kept on the frame it was opened on, so a
+  Space may have one on each. A tab belongs to a frame -- Emacs can only
+  find one by name on the frame that is selected -- and a table for the whole
+  Emacs said a Space had a tab that the frame in front could not see: the
+  record was dropped, a second tab opened here, and the frame it came from
+  was left with one nothing pointed at. Closing a Space now closes its tab on
+  every frame that has one, its sessions being stopped wherever they were
+  shown (verified on two frames, 2026-09-17).
+
+  The bar itself is the user's. A tab is a named window arrangement of the
+  frame and `tab-bar-mode` only draws the strip above it, so nothing here
+  turns that mode on: `tab-bar-new-tab` does it where `tab-bar-show` is `t`,
+  its default, and leaves it alone where the user set that to `nil`. With the
+  bar hidden the tabs are made, named, switched and closed all the same, and
+  quietly -- `tab-bar.el` announces every one of those in the echo area when
+  it has no bar to show them on, which would be each move between Spaces
+  reported twice. The sidebar is the list of Spaces either way, and it holds
+  more about each than the strip can.
+
+  How many transcripts stand abreast is `ecc-space-session-min-width`, the
+  columns one may not go under (`window-min-width` is a floor under it). A row
+  with no room for another column does not grow a narrower one: the session
+  worked in longest ago hands its window over and goes on running without one,
+  which the sidebar and `ecc-space-reset-windows` bring back.
+
+  A Space whose tab has to be made comes up with its sessions already dealt
+  out, most recently used first, until the row has no room for another column.
+  Opening a worktree opens the repository it was checked out from behind it,
+  so that the worktree has something to hang under and the sidebar can draw
+  the tree git describes; the worktree is what is left in front.
+
+  `ecc-space-always-session` says whether a Space always holds a session, and
+  it is what a Space is made of rather than a detail. On, the default, going to
+  a Space with nothing running in it starts a session there -- a tab with a
+  file in it and no way to say anything is a Space that looks broken, and going
+  to a Space is asking to work there -- and a Space closes itself when its last
+  session goes, taking the user to the Space beside it. Off, opening a Space
+  starts nothing and shows the source of the project, and the Space stays until
+  the last buffer of the project is killed as well. A session whose process
+  exited is not a session that has gone: it keeps its place, so `/resume` has
+  somewhere to come back to.
+
+  A session that is killed takes its window with it rather than leaving it to
+  Emacs, which would put whatever was there before the transcript -- usually
+  `*scratch*` -- in the middle of a row of transcripts. The last window of a
+  tab cannot be deleted and is given the source of the project instead.
+
+  `ecc-space-close` on a repository closes the worktrees drawn under it too,
+  stopping everything running in the group after one question; a worktree
+  closed on its own leaves the repository where it is. No checkout is touched
+  either way -- `ecc-remove-worktree` is still what undoes one -- and a
+  repository that was only opened to hold a worktree goes when the last
+  worktree under it does. With `ecc-space-always-session` on, `ecc-kill` on the
+  last session of a Space now closes that Space before it offers to remove the
+  checkout.
+
+  `ecc-space-goto` also reaches a project there is nothing left of but its
+  recordings, so a project worked in before can be gone back to. Those are
+  deliberately kept out of the sidebar and out of the numbering: putting them
+  there would move the numbers the `1`-`9` keys take under the user's feet.
+  Finding them reads every recording once for the directory it was made in
+  (0.12s over 244 of them here, and nothing after that): the directory a
+  recording sits in does not answer the question -- its name is the working
+  directory with everything that is not a letter or a digit turned into a dash,
+  which is not invertible, and one repository is named by as many directories
+  as it has worktrees and truenames.
+
+  A question, a plan, a log or an agent transcript opens beside the session it
+  came out of, in that session's Space and with the transcript still on the
+  screen. It takes the widest window that holds no transcript -- in a Space,
+  the one the code is read in -- and that window goes back to what it held
+  when the buffer is quit. Only where every window on the tab is a transcript
+  is one of them divided; none is ever taken away. Left to `display-buffer`,
+  that is what happened: the session windows of a Space are narrower than
+  `split-width-threshold`, so none could be divided and
+  `display-buffer-use-some-window` handed over whichever window had been used
+  longest ago -- the transcript of another session, which then vanished, or a
+  leftover window that fell back to `*scratch*` when the buffer was closed.
+
+  `C-c c j` (`ecc-space-goto`) and `ecc-space-jump` go to a Space,
+  `ecc-space-close` closes one and stops what is running in it, and `C-c c z`
+  (`ecc-space-zoom`) fills the tab with the window point is in and puts the
+  windows back again.
+
+- A sidebar, `C-c c b` (`ecc-sidebar-focus`): a narrow window down the left of
+  the frame with the Spaces at the top -- every project and worktree, numbered, each
+  marked with what it is doing and what branch it is on -- and the sessions at
+  the bottom, with what each is waiting for. It stays on the screen while you
+  work, which is the one thing the dashboard does not do, and it never takes
+  the selected window.  How wide it is drawn is `ecc-sidebar-width`, a
+  setting for the reason `ecc-space-session-min-width` is one: twenty-eight
+  columns of a laptop at a large font and of a 34-inch display are not the
+  same fraction of the frame.
+
+  The same key goes in and comes back out: the window is `no-other-window`, so
+  `C-x o` never lands there by accident while working, and `C-c c b` is the way
+  in. `ecc-sidebar-toggle` shows and hides it without going in.
+
+  `RET` goes to what the row stands for, `n` and `p` move, `TAB` folds a
+  repository's worktrees away, `1`-`9` go to a Space by its number, `c` starts
+  a session there, `W` makes a worktree of it, `a` and `d` answer what that
+  session is waiting on, `k` stops it, `K` removes a worktree, `X` closes a
+  Space -- each a step larger than the one before -- `g` asks git again and
+  `q` hides the sidebar.
+
+  `a` and `d` answer whatever kind the session is waiting on -- a permission,
+  a question, a plan -- and ask before they do, and they leave the tools of
+  `ecc-answer-exclude-tools` alone, which is `Bash`: a shell command is read
+  where it was asked, and a row carries a summary cut to twenty-eight columns.
+  `RET` is the way to where it can be read. What a row may answer is
+  `ecc-answer-session-request`, which the dashboard asks as well, so the two
+  lists cannot drift apart.
+
+  The marks, the colours and the beat of the blink are the tab line's, so a
+  session says the same thing wherever it is drawn, and the spinner turns only
+  while something is running where it can be seen. With `spaces` the sidebar
+  comes up with every Space; with `classic` it can be toggled on all the same,
+  and `RET` on a Space focuses the project the way it always has.
+
+- `/resume`, typed in a session, carries that window on with another recorded
+  conversation of the project: the CLI is stopped, the session is emptied, its
+  id becomes the recording's, the recording is read into the same buffer and
+  the CLI is started again with `--resume`. The window, the tab, the buffer,
+  the session name and the review baseline do not move -- what changes is which
+  conversation is in them, which is what the terminal client's own `/resume`
+  does. The name is Emacs's own: the CLI names no `resume` in `slash_commands`
+  and none in `terminal_slash_commands` (checked against 2.1.270), so nothing
+  is shadowed and nothing of ours reaches the CLI.
+
+  It is what makes an automatically started Space worth starting: going to a
+  project with nothing running opens a fresh session, and `/resume` is how the
+  conversation that was there is picked up. `/resume <session-id>` takes one by
+  id without asking.
+
+  A session held in a terminal is refused; a recording another process is
+  running, a conversation that already holds turns and prompts still queued are
+  each asked about before anything moves. The conversation walked away from is
+  left exactly where it is, and `ecc-history-open` reads it again.
+
+  A recording whose `cwd` sat past the first 8 KiB used to be dropped from a
+  project-filtered `ecc-history-recordings` -- the picker's list, among other
+  things. It is now looked for further in.
+
+- Worktrees, as somewhere a session can live: `ecc-start-worktree` -- `W c` in
+  the menu --
+  checks a branch out beside the repository and starts a session there,
+  `ecc-start-in-worktree` starts one in a checkout that exists already, and
+  `ecc-remove-worktree` stops the sessions working in a checkout and undoes
+  it. The branch is never deleted with the checkout on its own -- what is
+  undone is a checkout, and the work is on the branch -- but once the checkout
+  is gone the branch is offered, as a question of its own, to whoever has just
+  undone it. Saying yes runs `git branch -d`, and a branch whose commits are on
+  no other branch takes a second yes before `-D`. Nothing is asked for a
+  detached checkout, which had no branch, or for a branch another worktree
+  still holds, which git would refuse anyway.
+
+  Stopping the last session working in a worktree offers to undo the checkout
+  there and then, which is the moment anybody is thinking about it: from
+  `ecc-kill` asked for by hand, the dashboard's `k`, the sidebar's `k` or the
+  tab's close button. Stopping one of two sessions in the same checkout offers
+  nothing, and neither does `ecc-space-close` or `ecc-remove-worktree`, which
+  stop several sessions in a row. Buffers still visiting the checkout are
+  counted in the question rather than closed.
+
+  A checkout that goes takes its Space with it: the tab is closed and the key
+  forgotten, under `spaces`, before the directory is removed -- read
+  afterwards, the project key of a directory that is no longer there need not
+  be the one its sessions grouped under. Without this the Space stayed in the
+  sidebar and in `1`-`9`, a row with nothing under it pointing at nowhere.
+
+  A branch that is checked out somewhere already is gone to rather than
+  refused: one branch lives in one worktree at a time, so asking for it can
+  only mean the checkout that has it. The branch is what is looked up, not the
+  directory, so a checkout named by somebody else is found all the same --
+  Claude Code's own worktrees turn a `/` into a `+` where this turns it into a
+  `-`.
+
+  A piece of work can be handed to a session in a worktree of its own without
+  anybody leaving the conversation it came up in. With the Emacs MCP server on
+  (`ecc-mcp-enabled`), the model is offered `start_worktree_session`: asked for
+  something to be done in a worktree, on a branch or in a session of its own,
+  it names the branch and writes the brief, and Emacs makes the checkout, opens
+  it as a Space, starts a session there and sends it that brief. The new
+  session is told where it is and who sent it, because it cannot read the
+  conversation it came from. Left to itself the CLI runs `git worktree add` and
+  carries on in the same session, which leaves one conversation working in two
+  checkouts. `ecc-worktree-delegate` is the same thing from Lisp.
+
+  The brief carries what Emacs knows as well as what the model wrote: the files
+  the conversation touched, by the name the new checkout has for them, the
+  plans it wrote, the path of its recording to read only if the brief leaves a
+  question open, and the changes that are uncommitted in the repository -- a
+  checkout is made from `HEAD`, so a brief leaning on one of those sends the new
+  session looking for an edit that is not there.
+
+  The two other ways to a worktree are turned back. `EnterWorktree`, which a
+  stream-json session carries, and `git worktree add` in Bash are refused with a
+  sentence naming the tool, through `ecc-request-refuse-functions`: a
+  can_use_tool request whose answer is settled without a person is answered
+  before anybody is asked, and the transcript keeps the note. Nothing is refused
+  in a session that has not got the tool. In an `auto` permission mode the CLI
+  asks Emacs nothing -- it runs `git worktree add` and no can_use_tool arrives
+  (measured against CLI 2.1.272, 2026-09-16) -- so a draft that says worktree,
+  in English or Japanese, is sent with one line reminding the model of the tool,
+  which in that mode is the whole backstop --
+  `ecc-prepare-prompt-functions`, which is where a module adds a word of its own
+  to a prompt.  Every way a prompt is sent runs it -- the prompt region,
+  `ecc-send` and its neighbours, and `ecc-inline-prompt` -- because a line
+  that is there to keep the CLI from doing the wrong thing is no backstop if
+  it is only on the prompts typed in the prompt region. That line is sent but not written by anybody, so the transcript
+  does not draw it inside the user's own band: what a module adds is marked
+  with `ecc-aside`, and the renderer parts it from the prompt and shows it
+  under the band as a folded heading ("1 line Emacs added") that opens like
+  any other. What was sent stays in the buffer -- a sentence in the
+  conversation that the user did not write is worth a mark, not a
+  disappearance.
+
+  Where a checkout goes is `ecc-worktree-directory`, `.claude/worktrees` by
+  default, which is where Claude Code's own worktrees go. A relative name hangs
+  off the repository; an absolute one is a directory every repository shares,
+  and a checkout lands at `<directory>/<repository>/<branch-slug>`.
+
+  What the repository says about a worktree is read as well -- which repository
+  a checkout belongs to, what branch it is on, how far ahead of and behind its
+  upstream it is -- and the answers are kept for ten seconds, so that whatever
+  asks on every redraw costs no process.
+
+  `ecc-worktree-removed-hook` is run with a worktree that has gone, by every
+  way one goes: the command, the offer the last session leaving makes, and the
+  one question a group closed together is asked. The sidebar draws a row per
+  worktree and nothing about a session says that one has been removed, so that
+  is what it redraws from.
+
+- A `Spaces` column in `ecc-menu`, and four keys in `ecc-global-map`: `j` goes
+  to a Space, `b` opens the sidebar, `z` zooms the window point is in and `V`
+  puts the tab back in order.  They have the lower-case keys because the Spaces
+  are where the day is spent; what each of those keys meant before is under
+  **Changed**.  Nothing here makes or removes a worktree -- the three commands
+  that do are `ecc-worktree-menu`, under `?` then `W`.
+
 ### Changed
+
+- The dashboard answers and stops the way the sidebar does, the two being one
+  list in two forms. `a` and `d` ask before they answer, where they used to
+  answer the row without a word; neither answers a tool of
+  `ecc-answer-exclude-tools` -- `Bash` -- which is what `ecc-answer-allow` and
+  `ecc-answer-deny` have always skipped wherever they are called from, a shell
+  command being something to read where it was asked rather than from a column
+  of a table; and `k` asks before it stops a session, which takes its window
+  and its transcript with it. What a row may answer is one function now,
+  `ecc-answer-session-request`.
+
+- **Breaking.** The Spaces have the lower-case keys of `ecc-global-map` and of
+  `ecc-menu`, being where the day is spent: `C-c c j` goes to a Space (it was
+  `C-c c J`), `C-c c b` opens the sidebar (it was `C-c c B`), `C-c c z` zooms
+  and `C-c c V` puts the tab back in order. `C-c c B` is the dashboard, which
+  was `C-c c b` -- the same list as the sidebar, in the form that does not stay
+  on the screen.
+
+  `spaces` arrived with its keys beside the older ones rather than instead of
+  them, and the result was two vocabularies for one idea: `j` focused a project
+  and `J` went to a Space, `w` hid session windows while `z` zoomed a Space,
+  `V` put one window back while the tab's whole arrangement had no command at
+  all. Seven keys stood in the Spaces column of the menu, three of them
+  worktree management.
+
+  Of these, `C-c c b` is the one to watch: both it and `C-c c B` are still
+  bound, to commands that both make sense, so a wrong press is silent rather
+  than an error.
+
+- `w` in `ecc-menu` rewrites the region (`ecc-rewrite`), which was `W`. `W` is
+  the worktree menu now, and `w` was free.
+
+- **Breaking.** The interrupt in a session buffer is `C-c C-z`, comint's key
+  for stopping the process, and `C-c C-g` is unbound on purpose. Pressing
+  `C-c` and then `C-g` to take the prefix back is the reflex of every other
+  mode, where it is harmless; here it stopped the turn. Unbound, the sequence
+  falls through to `keyboard-quit`, which is what the finger meant. `C-c c i`
+  and `i` in the menu are unchanged.
+
+  `C-c C-k` in the transcript no longer interrupts either: it falls through to
+  `ecc-prompt-clear`, so that the key discards the draft wherever point is, as
+  `C-c C-c` sends it from wherever point is. One key did two different
+  destructive things in one buffer, and which one depended on where point
+  happened to be.
+
+- **Breaking.** One letter, one meaning, across the maps and not only within
+  one: the keys a buffer spelled differently from `ecc-global-map` and
+  `ecc-menu` now spell them the same way.
+
+  In the dashboard `r` resumes and `R` renames, as `C-c c r` and `C-c c R`
+  do; they were the other way round. In the transcript `F` goes to the Files
+  section (it was `f`), beside `P`, `T` and `L`, which were capitals already;
+  `v` goes to the prompt, as `C-c c v` does from anywhere, and `i` stays
+  beside it for the finger that starts writing with it. Capabilities are `C`
+  in the menu, the key the dashboard already used; it was `y`, which meant
+  nothing.
+
+- The choice of layout is `ecc-use-spaces`, a boolean that defaults to `t`,
+  where it was `ecc-layout` with the values `classic` and `spaces` defaulting to
+  `classic`. A Space per project is what the package is for -- several projects
+  at once, each where it was left -- so it is what a fresh install does, and
+  `(setq ecc-use-spaces nil)` is the way back to side windows with roles.
+  `ecc-layout` is gone rather than deprecated: it never appeared in a release.
+
+- `make compile` compiles each file in an Emacs of its own rather than the
+  package in one process, in parallel. In one process a file is compiled with
+  whatever an earlier file had loaded, so a macro used above its `defmacro`
+  becomes a function call and a variable used above its `defvar` a free
+  reference, and the build says nothing: the `.elc` in the tree came out right
+  while the one a fresh Emacs builds did not. `ecc-space--quietly` was shipped
+  that way and signalled `invalid-function` the first time a Space was closed
+  from a second frame; three more files -- `ecc-dispatch.el`,
+  `ecc-protocol.el`, `ecc-skill.el` -- would not compile on their own and now
+  do. It is not slower: the startups run at once.
+
+- Removing a worktree is offered wherever the last session working in one
+  leaves, and not only where a person stopped it by hand.  The offer now hangs
+  off the session leaving the model rather than off a handful of commands, and
+  is made a moment later from a timer, a session being able to leave from
+  inside the process that was running it.  The commands that stop several
+  sessions in a row -- `ecc-space-close', `ecc-remove-worktree' -- say nothing
+  during the loop and ask for the group themselves afterwards.  Before this a
+  worktree whose session went any other way was left on disk with nothing
+  running in it.
+
+- `ecc-space-close' offers the worktrees that closed with the Space, in one
+  question naming them.  Closing a repository takes its worktrees with it, and
+  the directories used to stay behind with no Space and nothing running in
+  them; answering no still leaves them where they are.
+
+- A worktree git does not find clean takes a second question before it is
+  removed -- the refusal git gives, naming the directory -- and that is now
+  the whole of what stands between yes and the removal, the branch never being
+  touched.
+
+- The word for the directory is "worktree" everywhere the package speaks:
+  questions, messages, docstrings and both documentation sites.  git's own
+  noun is "working tree" and "checkout" is its verb; the package used
+  "checkout" for the directory in one place and "worktree" in the next, and a
+  question that says one thing and a table that says another is one word too
+  many.
+
+- `C-c c r` runs `ecc-resume` itself rather than opening `ecc-resume-menu`,
+  and `C-u C-c c r` forks the conversation.  Resuming is the commonest thing
+  reached from that key and it took two presses -- `C-c c r r` -- with the
+  menu in between showing a `-f` switch almost nobody was there for.  The
+  menu keeps its form: `r` in `ecc-menu` still opens `ecc-resume-menu`, where
+  the fork is a switch seen before it is pressed, which is what a fork is
+  worth.  From the key, the prompt says `Fork: ` instead of `Resume: ` when
+  the prefix argument is there, so the choice is visible where it is made.
+- The Spaces half of the sidebar is laid out the way herdr lays its own out.
+  The mark that says what a Space is doing opens the row, the number the
+  `1`-`9` keys take follows it in brackets, and a worktree hangs on a tree
+  line (`├─`, `└─` on the last one) under the repository it came from rather
+  than sitting two spaces in.  A repository with worktrees carries `▾` at the
+  right end of its row and `▸` once they are folded away; `TAB` still turns
+  it, and so does a click on the arrow.  A folded repository now answers for
+  its worktrees as well -- its mark is the loudest of the whole group, which
+  is the only thing left to say that one of the folded rows is waiting for an
+  answer (herdr's `displayed_workspace_status`).
 
 - `C-c C-c` in a review sends the comments instead of opening a buffer to
   confirm them in.  The comments are the prompt -- each one carries the hunk it
@@ -85,7 +627,171 @@ Verified against **Claude Code CLI 2.1.270**.
   package manager wrote again is the usual one. The old name still works as an
   obsolete alias.
 
+### Removed
+
+- **Breaking.** `ecc-toggle` and `ecc-toggle-all`, with `C-c c w` and `w` in the
+  menu. Hiding a project's session windows and bringing them back was the
+  `classic` answer to a frame full of other people's transcripts; under `spaces`
+  the windows of a tab are the user's, and what puts a session back on the
+  screen is dealing the arrangement again -- `ecc-space-reset-windows` -- or
+  going to the session, from the sidebar, the dashboard or `C-c c v`.
+
+  The per-tab record of what was hidden goes with them: the `ecc-hidden-sessions`
+  frame parameter and the four functions that kept it, which nothing but
+  `ecc-toggle` ever read back. `ecc-window-forget-session` was that record's
+  housekeeping and is gone too. The hiding itself stays --
+  `ecc-window-hide-on-review` and `ecc-focus-project` both want it -- and the
+  docstring of `ecc-window-hide-on-review` says what the way back is now.
+
+- **Breaking.** `ecc-window-focus-source` as a command, with `C-c c V` and `V`
+  in the menu. It showed this project's source in the main window because
+  nothing else put the code back; `ecc-space-reset-windows` does that and more,
+  and has taken the key. What is left is `ecc-window--focus-source`, the half of
+  focusing a project that `ecc-focus-project` and the `classic` side of
+  `ecc-space-select` are built on.
+
+- **Breaking.** `C-c c j` no longer focuses a project, `C-c c C` no longer makes
+  a worktree, and `S` has left `ecc-menu`. `ecc-focus-project` is `M-x` now --
+  under `spaces` it only goes to the Space -- worktrees are `C-c c ? W`, and
+  switching a window to another session keeps `C-c C-t` in a session buffer,
+  which is where it is asked for.
+
+- The offer to delete the branch after a worktree is removed, and with it
+  `ecc-worktree-delete-branch' and `ecc-worktree-offer-branch-removal' -- the
+  only path in the package that reached `git branch -d', and on a second yes
+  `git branch -D'.  A worktree is a directory; the work is on the branch, and
+  the branch now always outlives it.  That is what makes an offer arriving on
+  its own safe: removing a worktree can lose nothing that was committed.
+  Deleting a branch is `git branch -d', by hand, when it is wanted.
+
+- `ecc-worktree-kill-session', which was `ecc-kill' followed by the offer.
+  The sidebar, the dashboard and the session tab's close button call `ecc-kill'
+  now; the offer follows on its own wherever a session goes.
+
+- `ecc-prompt-resend-last` and its `C-c C-r`, which sent the last prompt
+  again after a yes-or-no question.  `C-c C-r` is now
+  `ecc-prompt-history-insert`, which puts that same prompt in the region
+  where it can be read and edited before `C-c C-c` sends it; `M-p C-c C-c`
+  is the two keys that did exactly what the command did.
+
 ### Fixed
+
+- What is kept per tab is keyed per tab again on a frame with one tab or
+  none -- the zoom of `ecc-space-zoom`, and the list of hidden sessions while
+  there was one. The key is the name of the current tab, and that
+  name was asked for through `tab-bar--current-tab`, which invents a tab
+  named after whatever buffer is showing when the frame has no tabs of its
+  own -- so with `tab-bar-mode` on and a single tab the key moved with the
+  buffer, and what was stored under it could not be found again. The frame's
+  own `tabs` parameter is read instead, and a lone tab
+  counts only when it was named on purpose (confirmed on Emacs 32.0.50,
+  2026-09-17).
+
+- `ecc-remove-worktree` stops every session working in the checkout, not
+  only the ones whose project is the checkout itself. A session started in
+  a directory inside it that is a project of its own -- a submodule, a
+  repository nested in the tree -- answers `project-current` with that
+  directory, so it was in none of the checkout's sessions: the checkout
+  was removed from under it and it stayed in the model, a row in the
+  sidebar's Sessions list pointing at a directory that is gone. The sessions
+  are now those of the project plus any whose own root lies inside the
+  checkout; a session of another project that merely ran a command in
+  there is still left alone, its cwd being what the CLI reports and not
+  where it works. The same set decides whether
+  `ecc-worktree-offer-removal` asks at all.
+
+- A notice the CLI wrote itself is no longer drawn as a prompt the user
+  typed. A CLI that resumes a session whose previous process left a
+  background task behind injects a `<task-notification>` into the
+  conversation as a plain `user` message -- no `isMeta`, not a sidechain,
+  not the record of a local command -- so the round trip of `t` and `/exit`
+  came back with `〉 <task-notification>...` at the head of a turn of its
+  own (confirmed 2026-09-17 against CLI 2.1.271 from the terminal and
+  2.1.273 from a stream-json client).
+
+  What tells such a message apart is `origin.kind`: `human` for what
+  somebody typed, and the name of the injection otherwise. A message whose
+  origin is not `human`, or whose text begins `<task-notification>` in a
+  recording written before the CLI had the field, is now no prompt
+  anywhere -- not in the transcript, nor as a session's last prompt in the
+  resume list and the dashboard, nor in the paging index, nor in the
+  search. It is kept as a folded system note headed `background task --
+  <summary>`, with the notice itself under the fold; it opens no turn, the
+  way an unrecognised message does not, since a notice can arrive between
+  turns. The live stream agrees: an echoed notification is not taken for a
+  prompt from elsewhere.
+
+- A session stays in the directory it was started in. It used to follow the
+  cwd the CLI reports on every `system/init`, which the docstring explained
+  as a `/cd`. It is not: CLI 2.1.272 reports whatever directory the last
+  Bash tool call left it in, so a model that runs `cd somewhere && ...`
+  moved the session -- under `spaces`, out of its Space and its tab line,
+  into a project nobody started it in, where the sidebar and `C-c c j` could
+  not find it and started a second session instead (confirmed 2026-09-16).
+
+  Where a session lives is now the root it was started in, asked by the
+  transcript's `default-directory`, by the header line, by the tab line, by
+  the Spaces and by a terminal hand-off alike. The only thing that moves it
+  is a `/cd <dir>` typed into the prompt region, which moves the root and the
+  buffer with it and says where the session went -- or, when the directory is
+  not there, that it stayed. The cwd the CLI
+  reports is still read, and is what the dashboard's Project tooltip adds
+  when the two have come apart.
+
+- A session whose CLI never started is no longer left behind. `make-process`
+  fails when the root is not there -- a worktree deleted since the session
+  was asked for -- and the session stayed in the list as `starting` with no
+  process, in the sidebar and the dashboard, with nothing that would ever
+  take it out. It is now said in terms of the session and the directory, and
+  forgotten; one that had been running before and is being started again is
+  left alone.
+
+- The ediff review is read as code now, and takes the frame it opens in.
+  Three things were wrong with how it looked, all reported 2026-09-16.
+
+  It shared the frame with whatever else was on the screen -- under `spaces`
+  the sidebar and a transcript or two -- which left each of the two texts too
+  narrow to read a line of code in.  It now puts those windows away and hands
+  them back when the review is quit (`ecc-review-ediff-full-frame`).
+
+  Nothing was coloured.  The buffers hold many files at once, so no one major
+  mode fits them and they were left in `fundamental-mode`; each file is now
+  fontified by its own mode as it goes in, and the faces are carried as text
+  properties, which is how everything else in this package is coloured.
+  Neither were the differences: ediff marks the ones it is not standing on
+  with `ediff-odd-diff-A' and its relatives, which the theme this was found on
+  paints a shade of the background with no foreground at all.  In the two
+  buffers of the review alone those faces are remapped to `diff-removed` and
+  `diff-added`, the ones the diff review already reads by, so the colours are
+  the theme's own (`ecc-review-ediff-diff-faces`).
+
+  And `q` did nothing.  It is ediff's `ediff-quit`, which asks "Quit this
+  Ediff session?" -- a question that goes to a minibuffer the control frame of
+  a graphical Emacs does not have, leaving a small frame sitting there that
+  looked like a key that had failed.  `q` is the review's own quit now, the
+  same as `C-c C-k`: there is nothing to save in a review and nothing to ask.
+
+- A Space whose tab had nothing but transcripts left in it comes up with a
+  window for the code again. Under `spaces` the windows of a tab are the
+  user's and are left where they were put, which is the point of laying the
+  sessions out that way -- but `delete-other-windows` on a transcript leaves a
+  tab that is nobody's arrangement, and going to that Space brought back a tab
+  with nowhere to read the code and no command to say so (reported
+  2026-09-16). A window pointed at another project's file is still left alone:
+  that one is the user's doing, and `ecc-space-reset-windows` is the way back.
+
+- A file the CLI wrote in the same second as the last commit, and to the same
+  number of bytes, could drop out of the review. The snapshot the review
+  compares against copies the repository's index in for its stat cache, and it
+  copied it with the time of the copy rather than the time of the index. git
+  re-reads a file whose cached stat is no older than the index holding it --
+  the case a stat one second wide cannot settle -- and trusts the stat
+  otherwise; an index stamped now is newer than every stat in it, so nothing
+  was ever re-read and a same-second, same-length change read as no change at
+  all. The copy now carries the time of the index it was made from. Measured on
+  2026-09-15 (macOS, git 2.x): 7 misses in 900 runs of write-then-snapshot
+  before, none in 900 after. It was also what made a test fail about once in
+  sixty runs.
 
 - `ecc-review-worktree` opens in a repository that has no commit yet, which is
   where the first code of a project is written and the moment there is most to
@@ -102,6 +808,24 @@ Verified against **Claude Code CLI 2.1.270**.
   buffer is named and what its header line says are unchanged, and the test is
   made afresh on every draw, so the first commit puts the real `HEAD` back
   without a refresh having to know anything about it.
+
+- A session that is stopped and started again is no longer declared dead by
+  the CLI that went. Emacs runs a sentinel when it next waits for output, and
+  that is regularly after the next CLI has been started: `/resume`, `ecc-resume`
+  and a hand-off taken back all stop one process and start another within the
+  same command. The exit of the old one was then taken for the session's own --
+  the process was set to nil, the state to `exited`, the pending requests were
+  closed and the turn the new CLI had just been given was aborted as "left open
+  by the exit". The prompt had gone out, so the answer arrived in a session
+  nothing was listening to: the transcript showed a prompt with nothing under
+  it, and the session looked stopped while its CLI was running.
+
+  An exit now only closes a session down when it belongs to the process the
+  session is running (`ecc-proc--stale-exit-p`); any other is left alone with a
+  line in the log. Measured on CLI 2.1.274 by resuming a recorded conversation
+  and sending one prompt: 5 of 10 came back with an empty turn before, 0 of 10
+  after (2026-09-17). It is what `ecc-test-live-history-resume` had been failing
+  on.
 
 ## [0.2.0] - 2026-09-14
 
@@ -419,6 +1143,7 @@ Emacs 29.1, 29.4 and 30.1.
   notifications, and a `transient` menu on `ecc-global-map`.
 - `ecc-version` reports the ecc, Emacs and CLI versions a bug report needs.
 
-[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.3.0
 [0.2.0]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.2.0
 [0.1.0]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.1.0

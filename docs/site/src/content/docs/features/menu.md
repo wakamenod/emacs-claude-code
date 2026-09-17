@@ -36,7 +36,7 @@ Lists conversations available to resume.
 | ◉ | Active conversation running in another process |
 | ↺ | Recorded conversation on disk |
 
-Each entry shows its name, last active time, and directory (or initial prompt for recordings). Use the `-f` switch to branch a new conversation from the selected one instead of continuing it.
+Each entry shows its name, last active time, and directory (or initial prompt for recordings). Use the `-f` switch to branch a new conversation from the selected one instead of continuing it. With keybindings, `C-c c r` resumes directly and `C-u C-c c r` branches instead.
 
 :::caution[Resuming an active session branches history]
 If two processes write to the same session ID simultaneously, the recording can become corrupted since the CLI does not use file locking. This state is indicated by ◉; ecc asks for confirmation before resuming.
@@ -53,22 +53,6 @@ Renames the session and its buffers. The new name updates across tabs, the mode 
 ### `v` — Focus prompt
 
 Displays the session window and moves point to the prompt input area.
-
-### `j` — Focus one project
-
-Focuses the whole frame on one project. Pick a project with sessions: every other project's session windows come off the screen, this project's sessions are dealt into the window roles, and the main window switches to its source. `C-u j` asks which buffer the main window should show. Nothing is killed, and `w` and `C-u w` bring the hidden sessions back. See [Focusing one project](/emacs-claude-code/features/sessions/#focusing-one-project).
-
-### `w` — Toggle windows
-
-Hides or restores session windows for the current project, leaving other projects as they are. `C-u w` toggles session windows across all projects, which undoes a focus. Background sessions continue running while hidden.
-
-### `S` — Switch session in window
-
-Session windows feature tabs for each active session. `S` switches the current window to display another session in place.
-
-![The session window changing from one session to another: the selected tab moves from greet to notes and the transcript is replaced](../../../assets/switch.gif)
-
-Inside session buffers, `C-c C-t` performs the same action.
 
 ### `i` — Interrupt
 
@@ -128,7 +112,7 @@ Asks a question about the region or file and displays the response in an overlay
 
 The question runs in a dedicated lightweight or forked session (selected once and remembered per buffer).
 
-### `W` — Rewrite region
+### `w` — Rewrite region
 
 Rewrites selected code according to an instruction. The proposed replacement is shown in place, and changes are applied to the buffer only after confirmation with `RET`.
 
@@ -148,14 +132,22 @@ See [Review and plan mode](/emacs-claude-code/features/review/).
 
 See [Prompt and transcript](/emacs-claude-code/features/prompt/).
 
+## Spaces
+
+`j` switches to a Space. `b` opens the sidebar. `z` toggles maximizing the current window to fill the tab. `V` resets this Space's windows to the layout of a new tab. `X` closes this Space and stops everything running in it.
+
+`W` opens the worktree menu. In this menu, `c` creates a worktree and starts a session there, `o` starts a session in an existing worktree, and `k` removes a worktree.
+
+See [Spaces and worktrees](/emacs-claude-code/features/spaces/).
+
 ## View
 
-### `b` — Dashboard
+### `B` — Dashboard
 
 View all active sessions in a single overview.
 See [Session management](/emacs-claude-code/features/sessions/).
 
-### `y` — Capabilities
+### `C` — Capabilities
 
 Inspect active skills, subagents, slash commands, MCP servers, and plugins.
 See [Other features](/emacs-claude-code/features/other/#capabilities).

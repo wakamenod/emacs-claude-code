@@ -4,7 +4,7 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
-;; Version: 0.2.0
+;; Version: 0.3.0
 ;; Package-Requires: ((emacs "29.1"))
 ;; URL: https://github.com/wakamenod/emacs-claude-code
 
@@ -38,6 +38,7 @@
 (require 'ecc-hooks)
 (require 'ecc-plan)
 (require 'ecc-review)
+(require 'ecc-review-ediff)
 (require 'ecc-sync)
 (require 'ecc-answer)
 (require 'ecc-registry)
@@ -46,6 +47,9 @@
 (require 'ecc-capability)
 (require 'ecc-dashboard)
 (require 'ecc-window)
+(require 'ecc-worktree)
+(require 'ecc-space)
+(require 'ecc-sidebar)
 (require 'ecc-context)
 (require 'ecc-notify)
 (require 'ecc-hint)
@@ -126,7 +130,13 @@ the next session, since this runs on every one of them."
   (ecc-pending-indicator-mode 1)
   (ecc-notify-mode 1)
   (ecc-tab-line-mode 1)
-  (ecc-track-source-buffer-mode 1))
+  (ecc-track-source-buffer-mode 1)
+  ;; `ecc-space' is loaded rather than the tab bar turned on: the hooks
+  ;; that close a Space once the last of it goes are installed at the
+  ;; top of that file, and `ecc-space--select-tab' says why the mode is
+  ;; left to `tab-bar-show'.  `classic' loads none of it.
+  (when ecc-use-spaces
+    (require 'ecc-space)))
 
 ;;;###autoload
 (defun ecc-start (&optional directory name)
@@ -137,9 +147,13 @@ session started is said in the echo area either way: it is the moment a
 session in the wrong project can be caught, and the alternative is
 finding it later among all the others."
   (interactive (ecc-start--read-arguments))
-  (let ((session (ecc-model-create-session
-                  :project-root (or directory (ecc-window-context-project-root))
-                  :name (and name (not (string-empty-p name)) name))))
+  (let* ((root (or directory (ecc-window-context-project-root)))
+         (session (ecc-model-create-session
+                   :project-root root
+                   ;; A session in a worktree goes by its branch, which
+                   ;; is what its Space and the sidebar call it.
+                   :name (or (and name (not (string-empty-p name)) name)
+                             (ecc-worktree-session-name root)))))
     (ecc-session-ensure-buffer session)
     ;; What the tree held before the CLI could touch it: `ecc-review'
     ;; diffs against this, so it is taken before the process starts.
@@ -179,8 +193,18 @@ thing to want but not the same thing as this.
 
 Interactively, the session of the current buffer is resumed when it has
 stopped -- that is the R offered after an exit -- and a choice is asked
-for otherwise.  A prefix argument forks it into a new conversation."
-  (interactive (list (ecc-read-session "Resume: ") current-prefix-arg))
+for otherwise.  A prefix argument forks it into a new conversation.
+
+`C-c c r\=' runs this directly, and `C-u C-c c r\=' forks: the prompt then
+says Fork rather than Resume, so that what is about to happen is in the
+minibuffer where the choice is made.  `ecc-menu\=' keeps `ecc-resume-menu\='
+under r, where the fork is a switch seen before it is pressed."
+  ;; The one path with no prompt to say Fork in: `ecc-read-session'
+  ;; returns the stopped session of the current buffer without asking,
+  ;; so `C-u' there forks in silence.  A fork opens as a new session, so
+  ;; nothing is lost by it.
+  (interactive (list (ecc-read-session (if current-prefix-arg "Fork: " "Resume: "))
+                     current-prefix-arg))
   (if (process-live-p (ecc-session-process session))
       (progn
         (when fork
@@ -292,7 +316,8 @@ and resuming it asks first."
                            'running 'own)
                        (ecc-session-name session)
                        (ecc--session-time session)
-                       (abbreviate-file-name (or (ecc-session-cwd session) "")))
+                       (abbreviate-file-name
+                        (or (ecc-session-project-root session) "")))
                       id)
                 candidates))))
     (dolist (info (ecc-history-recordings project-root))
@@ -380,13 +405,18 @@ off `ecc-session-exited-hook'."
 
 ;;;###autoload
 (defun ecc-kill (session)
-  "Stop SESSION and forget it."
+  "Stop SESSION and forget it.
+Stopping the last session working in a worktree goes on to offer to
+remove the worktree, wherever the stopping came from: that offer hangs
+off `ecc-session-removed-hook' in `ecc-worktree.el' and is made from a
+timer, so nothing here waits for an answer.  A command stopping several
+sessions in a row binds `ecc-space--closing' and asks for the group
+itself."
   (interactive (list (or ecc-render--session
                          (car (ecc-model-sessions))
                          (user-error "No session to kill"))))
   (ecc-proc-stop session)
   (ecc-model-remove-session session)
-  (ecc-window-forget-session session)
   (ecc-image-cleanup-session session)
   (dolist (buffer (list (ecc-session-buffer session)
                         (ecc-session-stream-buffer session)))

@@ -192,6 +192,12 @@ its buffer."
   (ecc-menu--in-session #'ecc-chat-goto-plans))
 
 ;;;###autoload
+(defun ecc-insert-past-prompt ()
+  "Insert a past prompt into the prompt region of the session at hand."
+  (interactive)
+  (ecc-menu--in-session #'ecc-prompt-history-insert))
+
+;;;###autoload
 (defun ecc-timeline ()
   "Pick a turn of the session this buffer talks to."
   (interactive)
@@ -304,7 +310,9 @@ allow and deny there, when only this one command looks at it."
 Forking is a switch rather than a prefix argument because it is the
 choice worth seeing before it is made: a second process on a live
 session forks the conversation with no lock to stop it.  The switch
-lives in `ecc-resume-menu\=', which opening this way always shows."
+lives in `ecc-resume-menu\=', which opening this way always shows.  From
+a key it is `C-c c r\=', which runs `ecc-resume\=' itself, and the fork is
+the prefix argument."
   :description "Resume"
   (interactive (list (ecc-read-session "Resume: ")
                      (transient-args 'ecc-resume-menu)))
@@ -323,6 +331,22 @@ it too."
   (ecc-transient--load)
   (transient-setup 'ecc-resume-menu))
 
+;;;###autoload (autoload 'ecc-worktree-menu "ecc-transient" nil t)
+(transient-define-prefix ecc-worktree-menu ()
+  "Check a branch out beside the repository, open a worktree, undo one.
+A prefix of its own rather than three keys in the Spaces column: they
+are the management of the worktrees rather than the working in them,
+done in a week what the four keys beside them are done in an hour, and
+three of seven keys in one column is what made that column unreadable.
+
+No `interactive\=' body of its own, for the reason `ecc-allow-all-menu\='
+has none: the only way in is `ecc-menu\=', which has loaded the package
+before it draws anything."
+  ["Worktree"
+   ("c" "New worktree" ecc-start-worktree)
+   ("o" "Open a worktree" ecc-start-in-worktree)
+   ("k" "Remove a worktree" ecc-remove-worktree)])
+
 ;;;; The main menu
 
 ;;;###autoload (autoload 'ecc-menu "ecc-transient" nil t)
@@ -335,9 +359,6 @@ it too."
     ("k" "Kill" ecc-kill)
     ("R" "Rename" ecc-rename-session)
     ("v" "Go to the prompt" ecc-show-session)
-    ("j" "Focus one project" ecc-focus-project)
-    ("w" "Hide or restore windows" ecc-toggle)
-    ("S" "Switch this window to another session" ecc-switch-session)
     ("i" "Interrupt" ecc-interrupt)
     ("t" "Hand over to the terminal" ecc-tui-open)
     ("u" "Take it back" ecc-tui-return)]
@@ -348,7 +369,8 @@ it too."
     ("f" "Send this file" ecc-send-buffer-file)
     ("e" "Fix the error at point" ecc-fix-error-at-point)
     ("l" "Ask inline" ecc-inline-prompt)
-    ("W" "Rewrite the region" ecc-rewrite)]
+    ("H" "Insert a past prompt" ecc-insert-past-prompt)
+    ("w" "Rewrite the region" ecc-rewrite)]
    ["Review"
     ("D" "Diff since session start" ecc-review)
     ("G" "Diff since last commit" ecc-review-worktree)
@@ -367,18 +389,26 @@ it too."
     ("3" "Answer with option 3" ecc-answer-option-3)
     ("4" "Answer with option 4" ecc-answer-option-4)]
    ["View"
-    ("b" "Dashboard" ecc-dashboard)
-    ("y" "Capabilities" ecc-capabilities-show)
+    ("B" "Dashboard" ecc-dashboard)
+    ("C" "Capabilities" ecc-capabilities-show)
     ("h" "History" ecc-history-open)
     ("/" "Search past sessions" ecc-search)
     ("U" "Usage" ecc-usage)
     ("L" "Log" ecc-show-log)]
+   ["Spaces"
+    ("j" "Go to a Space" ecc-space-goto)
+    ("b" "Sidebar" ecc-sidebar-focus)
+    ("V" "Put this Space back in order" ecc-space-reset-windows)
+    ("z" "Zoom this window" ecc-space-zoom)
+    ("X" "Close this Space" ecc-space-close)
+    ("W" "Worktree" ecc-worktree-menu)]
    ["Config"
     ("m" "Model" ecc-set-model)
     ("p" "Permission mode" ecc-set-permission-mode)
     ("o" "Remote control" ecc-remote-control-toggle)
     ("O" "Open remotely" ecc-remote-control-open)
-    ("K" "Copy the remote URL" ecc-remote-control-copy-url)]]
+    ("K" "Copy the remote URL" ecc-remote-control-copy-url)
+    ("I" "Inline images" ecc-image-toggle-inline)]]
   (interactive)
   (ecc-transient--load)
   (transient-setup 'ecc-menu))

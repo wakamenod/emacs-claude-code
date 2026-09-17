@@ -213,6 +213,44 @@ result message to carry it."
         (should (equal (ecc-model-node-get (car nodes) 'name) "/model"))
         (should (equal (ecc-model-node-get (car nodes) 'output) "Set model"))))))
 
+(ert-deftest ecc-history-test-task-notification-opens-no-turn ()
+  "The notice the CLI injects about a background task is a folded note.
+A CLI resuming a session whose previous process left a task behind
+writes it in as a plain user message; it is not a prompt, so the
+conversation has the same turns with it as without."
+  (let ((notice (concat "{\"type\": \"user\", \"uuid\": \"n1\","
+                        " \"origin\": {\"kind\": \"task-notification\"},"
+                        " \"promptSource\": \"system\", \"entrypoint\": \"cli\","
+                        " \"message\": {\"role\": \"user\", \"content\":"
+                        " \"<task-notification>\\n  <task-id>bash_7</task-id>\\n"
+                        "  <status>stopped</status>\\n  <summary>Background shell"
+                        " command did not finish before the previous session ended"
+                        "</summary>\\n</task-notification>\"}}"))
+        (prompts (list (concat "{\"type\": \"user\", \"uuid\": \"u1\","
+                               " \"message\": {\"role\": \"user\","
+                               " \"content\": \"go\"}}")
+                       (concat "{\"type\": \"user\", \"uuid\": \"u2\","
+                               " \"message\": {\"role\": \"user\","
+                               " \"content\": \"again\"}}"))))
+    (ecc-test-with-fake-session plain
+      (ecc-test-with-fake-session noticed
+        (ecc-history--replay plain prompts)
+        (ecc-history--replay noticed (cons notice prompts))
+        ;; The turns of the conversation are the same either way; the
+        ;; one turn more is the aside the note hangs beside it from.
+        (should (equal (mapcar #'ecc-turn-prompt (ecc-session-turns plain))
+                       (seq-filter #'identity
+                                   (mapcar #'ecc-turn-prompt
+                                           (ecc-session-turns noticed)))))
+        (should (equal '("go" "again")
+                       (mapcar #'ecc-turn-prompt (ecc-session-turns plain))))
+        (let ((nodes (hash-table-values (ecc-session-nodes noticed))))
+          (should (= 1 (length nodes)))
+          (should (eq (ecc-node-type (car nodes)) 'system))
+          (should (eq 'task-notice (ecc-model-node-get (car nodes) 'kind)))
+          (should (string-search "Background shell command"
+                                 (ecc-model-node-get (car nodes) 'summary))))))))
+
 (ert-deftest ecc-history-test-sidechain-is-counted-not-shown ()
   "A subagent line is left out and its number noted."
   (ecc-test-with-fake-session session
@@ -653,6 +691,152 @@ answered itself."
         (should-not (string-search "local-command-caveat" text))
         (should-not (string-search "<command-name>" text))
         (should-not (string-search "local-command-stdout" text))))))
+
+(ert-deftest ecc-history-test-project-roots ()
+  "Every directory a recording was made in, and only the directories.
+The fixture's `cwd' is on its third line, which is the shape on disk:
+a file opens with what the CLI knows before the conversation does."
+  (ecc-history-test--with-directory file
+    (let ((ecc-history--roots nil)
+          (reads 0))
+      (should (equal (list "/private/var/folders/4v/6r7_g65n4jz15_y1z350h0340000gn/T/ecc-history-2m0x5w0z")
+                     (ecc-history-project-roots)))
+      ;; A directory holding only the working files of a session is not
+      ;; a project: the fixture's own subdirectory answers nothing.
+      (should (= 1 (length (ecc-history-project-roots))))
+      ;; And the second look does not read the file again.
+      (let ((real (symbol-function 'ecc-history--file-cwd)))
+        (cl-letf (((symbol-function 'ecc-history--file-cwd)
+                   (lambda (f) (cl-incf reads) (funcall real f))))
+          (ecc-history-project-roots)
+          (should (= 0 reads))
+          ;; Until something is added to the directory.
+          (copy-file file (expand-file-name "copy.jsonl"
+                                            (file-name-directory file)))
+          (ecc-history-project-roots)
+          (should (> reads 0)))))))
+
+(ert-deftest ecc-history-test-a-cwd-further-in-is-still-found ()
+  "A recording whose `cwd' sits past the head range is still described.
+An attachment sent with the first prompt can be hundreds of kilobytes,
+and a project filter that asks for the `cwd' used to drop the recording
+when the head range stopped short of it."
+  (ecc-history-test--with-directory file
+    ;; The head range reaches nothing but the first line.
+    (let ((ecc-history-scan-head-bytes 120)
+          (ecc-history-scan-tail-bytes 120))
+      (let ((info (ecc-history-scan-file file)))
+        (should (equal (alist-get 'cwd info)
+                       "/private/var/folders/4v/6r7_g65n4jz15_y1z350h0340000gn/T/ecc-history-2m0x5w0z"))))))
+
+(defmacro ecc-history-test--with-take-over (var &rest body)
+  "Run BODY with VAR a session that can be carried on with another recording.
+Nothing is started and nothing is stopped: `ecc-proc-release' and
+`ecc-proc-start' are stood in for, and what they were asked is in
+`released' and `resumed'."
+  (declare (indent 1) (debug (symbolp body)))
+  `(ecc-test-with-fake-session ,var
+     (let ((released nil)
+           (resumed nil))
+       (ignore released resumed)
+       (cl-letf (((symbol-function 'ecc-proc-release)
+                  (lambda (session &rest _) (setq released session)))
+                 ((symbol-function 'ecc-proc-start)
+                  (lambda (session &rest args) (setq resumed (cons session args))))
+                 ((symbol-function 'ecc-review-ensure-baseline) #'ignore)
+                 ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+         ,@body))))
+
+(ert-deftest ecc-history-test-take-over-swaps-the-conversation ()
+  "`/resume' carries the window on with another recording, in place.
+The buffer, the name and the review baseline are the ones it had; the
+id, the turns and what the CLI said are the recording's."
+  (ecc-history-test--with-directory file
+    (ecc-history-test--with-take-over session
+      (setf (ecc-session-baseline session) "deadbeef")
+      (let ((was (ecc-session-id session))
+            (name (ecc-session-name session))
+            (buffer (ecc-session-ensure-buffer session))
+            (info (ecc-history-scan-file file)))
+        (ecc-history-take-over session info)
+        (should (eq released session))
+        (should (equal (list session t) (seq-take resumed 2)))
+        ;; The recording is the conversation now.
+        (should (equal (alist-get 'session-id info) (ecc-session-id session)))
+        (should (equal ecc-history-test-prompts
+                       (ecc-history-test--prompts session)))
+        (should (eq session (ecc-model-session (ecc-session-id session))))
+        (should-not (ecc-model-session was))
+        ;; And the window the user is looking at did not move.
+        (should (eq buffer (ecc-session-buffer session)))
+        (should (equal name (ecc-session-name session)))
+        (should (equal "deadbeef" (ecc-session-baseline session)))
+        (should (eq (ecc-session-kind session) 'own))))))
+
+(ert-deftest ecc-history-test-take-over-asks-before-leaving-turns ()
+  "A conversation with something in it is not left without a question."
+  (ecc-history-test--with-directory file
+    (ecc-history-test--with-take-over session
+      (ecc-model-begin-turn session "something said")
+      (ecc-model-finish-turn session nil)
+      (let ((was (ecc-session-id session))
+            (info (ecc-history-scan-file file)))
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil)))
+          (should-error (ecc-history-take-over session info) :type 'user-error))
+        ;; Nothing moved.
+        (should (equal was (ecc-session-id session)))
+        (should (= 1 (length (ecc-session-turns session))))
+        (should-not released)))))
+
+(ert-deftest ecc-history-test-take-over-does-not-ask-about-the-session-note ()
+  "A session that has only said what the CLI said is carried on without a word.
+A session started a moment ago already holds the turn the CLI opens for
+itself -- the \"(session)\" note the Remote Control lines hang from -- and
+asking about that one would mean asking every time, which is the case
+`/resume' exists for."
+  (ecc-history-test--with-directory file
+    (ecc-history-test--with-take-over session
+      (ecc-model-add-aside session :type 'text :status 'done
+                           :data (list (cons 'text "remote control ready")))
+      (should (= 1 (length (ecc-session-turns session))))
+      (let ((asked nil))
+        (cl-letf (((symbol-function 'yes-or-no-p)
+                   (lambda (&rest _) (setq asked t) t)))
+          (ecc-history-take-over session (ecc-history-scan-file file)))
+        (should-not asked))
+      (should (equal ecc-history-test-prompts
+                     (ecc-history-test--prompts session))))))
+
+(ert-deftest ecc-history-test-take-over-refuses-one-running-elsewhere ()
+  "A recording another process is running is refused before anything moves."
+  (ecc-history-test--with-directory file
+    (ecc-history-test--with-take-over session
+      (let ((info (ecc-history-scan-file file))
+            (was (ecc-session-id session)))
+        (cl-letf (((symbol-function 'ecc-registry-session)
+                   (lambda (id)
+                     (and (equal id (alist-get 'session-id info))
+                          '((pid . 4242) (name . "elsewhere")))))
+                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) nil)))
+          (should-error (ecc-history-take-over session info) :type 'user-error))
+        (should-not released)
+        (should (equal was (ecc-session-id session)))))))
+
+(ert-deftest ecc-history-test-resume-is-intercepted ()
+  "`/resume' never reaches the CLI: Emacs answers it."
+  (ecc-history-test--with-directory file
+    (ecc-history-test--with-take-over session
+      (let ((info (ecc-history-scan-file file))
+            (asked nil))
+        (cl-letf (((symbol-function 'ecc-history-read-recording)
+                   (lambda (&rest _) (setq asked t) info)))
+          (should (ecc-history-resume-intercept session "/resume"))
+          (should asked)
+          (should (equal (alist-get 'session-id info) (ecc-session-id session))))
+        ;; Nothing was sent, and a prompt that is not the command is
+        ;; left to the CLI.
+        (should-not ecc-test-sent)
+        (should-not (ecc-history-resume-intercept session "resume please"))))))
 
 (provide 'ecc-history-test)
 

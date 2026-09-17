@@ -174,6 +174,30 @@ command list to run.  Nil runs the command unchanged."
 `ecc-proc' can register the Emacs MCP server without depending on it
 .")
 
+;;;; Layout
+
+(defcustom ecc-use-spaces t
+  "Non-nil gives every project a tab of the tab bar -- a Space -- of its own.
+The windows inside a tab are then left alone: a transcript opens as an
+ordinary window beside the source and is the user's to split, move and
+enlarge, and going to the project brings the whole arrangement back the
+way it was left.  A worktree is a project of its own here, under the
+repository it came from, and the sidebar lists them all.  That is the
+default because it is what the package is for: several projects at once,
+each where it was left.
+
+Nil is the older arrangement, and the only one before this: a transcript
+goes into a side window with a role -- main, sub-1, sub-2 -- the roles
+are dealt out as sessions arrive, and `ecc-focus-project' deals them
+again for one project.  There are no tabs, no sidebar and no worktree
+commands.
+
+It is a setting because it is a taste in how a screen should be laid
+out, and the two are not halfway compatible: everything follows the one
+that is chosen."
+  :type 'boolean
+  :group 'ecc)
+
 ;;;; Logging
 
 (defcustom ecc-log-max-lines 5000
@@ -521,6 +545,47 @@ for itself."
 Alists become objects, vectors become arrays, nil becomes an empty
 object, `:null' becomes null and `:false' becomes false."
   (json-serialize object :null-object :null :false-object :false))
+
+;;;; What Emacs adds beside what the user wrote
+
+;; A module may put a line of its own at the end of a prompt before it
+;; goes to the CLI (`ecc-prepare-prompt-functions').  What is sent is
+;; the two together, and that is what the turn remembers -- but the
+;; transcript is a record of a conversation, and a sentence the user
+;; never typed reads as theirs when it is drawn in their band.  Marking
+;; it here lets the renderer part the two again without knowing which
+;; module added what: the property rides on the string, through the
+;; queue and into the turn, and means nothing to `json-serialize'.
+
+(defun ecc-aside (text)
+  "Return TEXT marked as something Emacs added beside what the user wrote.
+The mark is a text property, so the string is the string that is sent;
+`ecc-aside-split' is what reads it back."
+  (propertize text 'ecc-aside t))
+
+(defun ecc-aside-split (text)
+  "Return (BODY . ASIDE) for TEXT: what the user wrote, and what Emacs added.
+ASIDE is nil when nothing in TEXT is marked with `ecc-aside', which is
+every prompt but the few a module had a word to add to.  Text arriving
+from a recording carries no properties at all, so a resumed turn shows
+what was sent as one piece, the way it was before."
+  (if (or (not (stringp text))
+          (zerop (length text))
+          (not (text-property-not-all 0 (length text) 'ecc-aside nil text)))
+      (cons text nil)
+    (let ((position 0)
+          (end (length text))
+          body aside)
+      (while (< position end)
+        (let ((next (or (next-single-property-change position 'ecc-aside text)
+                        end)))
+          (if (get-text-property position 'ecc-aside text)
+              (push (substring text position next) aside)
+            (push (substring text position next) body))
+          (setq position next)))
+      (cons (string-trim-right (apply #'concat (nreverse body)))
+            (let ((added (string-trim (apply #'concat (nreverse aside)))))
+              (and (not (string-empty-p added)) added))))))
 
 ;;;; Small helpers
 

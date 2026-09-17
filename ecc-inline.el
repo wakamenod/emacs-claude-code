@@ -170,6 +170,13 @@ id of its own in system/init, and the binding must survive that.")
 (defvar ecc-inline--targets (make-hash-table :test #'eq)
   "Hash of an inline session to the buffer waiting for its answer.")
 
+(defun ecc-inline-session-p (session)
+  "Return non-nil when SESSION is one of the inline ones.
+An inline session is kind `own' like any other and is told apart by
+this rather than by its name: what says it is inline is that a buffer
+is waiting for its answer."
+  (and (gethash session ecc-inline--targets) t))
+
 (defun ecc-inline--read-binding ()
   "Ask which kind of session this buffer should use, and return it."
   (if (eq ecc-inline-binding 'ask)
@@ -251,9 +258,11 @@ The answer arrives in an overlay above point: `n' and `p' scroll it,
     (puthash session (current-buffer) ecc-inline--targets)
     (ecc-inline-show "…" (format "Claude (%s)" (ecc-session-name session)))
     (ecc-proc-send-prompt
-     session (ecc-inline-question question (current-buffer)
-                                  (and (use-region-p)
-                                       (cons (region-beginning) (region-end)))))
+     session (ecc-model-prepare-prompt
+              session
+              (ecc-inline-question question (current-buffer)
+                                   (and (use-region-p)
+                                        (cons (region-beginning) (region-end))))))
     session))
 
 (defun ecc-inline--answer-text (session)

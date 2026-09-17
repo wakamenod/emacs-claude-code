@@ -11,8 +11,6 @@ An Emacs client for the Claude Code CLI. Conversations run directly inside ordin
 
 ![A whole session: two prompts, the tools each one ran, the diffs they were allowed to make, and the answers](docs/images/overview.png)
 
-![A session: a prompt is sent, the Edit is allowed, and the source buffer on the left picks up the change](docs/images/session.gif)
-
 **Documentation:** <https://wakamenod.github.io/emacs-claude-code/>
 
 > **Pre-1.0.** ecc is not stable yet, and breaking changes are likely: commands, key bindings and settings can change or go away from one release to the next. Read [CHANGELOG.md](CHANGELOG.md) before upgrading.
@@ -32,12 +30,12 @@ Because the transcript is standard buffer text, you can use regular Emacs workfl
 
 ### Key Features
 
-- **[Diff reviews](https://wakamenod.github.io/emacs-claude-code/features/review/):** Inspect all changes made during a session in a single `diff-mode` buffer, however they were made — an edit, a shell command or a script all read alike. Add inline comments to hunks and submit them as a single prompt.
+- **[Diff reviews](https://wakamenod.github.io/emacs-claude-code/features/review/):** Inspect all changes made during a session in a single `diff-mode` buffer, regardless of how they were made. Edits, shell commands, and scripts all read the same. Add inline comments to hunks and submit them as a single prompt. Setting `ecc-review-style` opens the same review in ediff, with every file side by side in one session.
 - **[Interactive edits](https://wakamenod.github.io/emacs-claude-code/features/review/#reviewing-a-proposal-before-it-is-applied):** Review and modify proposed file edits before approving them.
 - **[Plan mode](https://wakamenod.github.io/emacs-claude-code/features/review/#plan-mode):** Work through proposed execution plans in a writable buffer.
 - **[Global access](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/):** Approve or deny pending tool requests from any buffer.
 - **[Session management](https://wakamenod.github.io/emacs-claude-code/features/sessions/):** Manage multiple concurrent sessions from a dashboard.
-- **[One project at a time](https://wakamenod.github.io/emacs-claude-code/features/sessions/#focusing-one-project):** `ecc-focus-project` focuses the whole frame on a single project. Window tabs show only that project's sessions.
+- **[Spaces and worktrees](https://wakamenod.github.io/emacs-claude-code/features/spaces/):** Every project gets an Emacs tab of its own -- a Space -- and the windows inside it stay as you arranged them (`ecc-use-spaces`, on by default). Going to a project with nothing running starts a session there, and `/resume` continues that window with an earlier conversation. A sidebar on the left lists every project and session with what each is doing, and `ecc-start-worktree` checks a branch out beside the repository and opens it as a Space of its own.
 - **Safe defaults:** Permission prompts default to deny. The built-in loopback MCP server is disabled by default, and evaluating Elisp requires explicit opt-in.
 
 ## Requirements
@@ -104,7 +102,12 @@ Because the repository name is `emacs-claude-code` while the package name is `ec
   (ecc-notify-level 'pulse)
   (ecc-usage-display 'posframe)
   (ecc-btw-display 'posframe)
-  (ecc-prompt-suggestions-enabled t))
+  (ecc-prompt-suggestions-enabled t)
+  ;; Uncomment to review in ediff instead of one diff-mode buffer.
+  ;; (ecc-review-style 'ediff)
+  ;; The Emacs MCP server: xref, imenu and flymake for Claude, and the
+  ;; tool that hands work to a session in a worktree of its own.
+  (ecc-mcp-enabled t))
 ```
 
 For all other settings, check the [configuration reference](https://wakamenod.github.io/emacs-claude-code/reference/configuration/).

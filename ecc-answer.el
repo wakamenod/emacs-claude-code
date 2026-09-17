@@ -34,10 +34,14 @@
 (declare-function ecc-history-open "ecc-history" (session-id))
 (declare-function ecc-interrupt "ecc-transient" ())
 (declare-function ecc-menu "ecc-transient" ())
-(declare-function ecc-resume-menu "ecc-transient" ())
+(declare-function ecc-resume "ecc" (session &optional fork))
 (declare-function ecc-review "ecc-review" (&optional session paths))
 (declare-function ecc-review-worktree "ecc-review" (&optional session range root))
 (declare-function ecc-search "ecc-search" (query &optional everywhere))
+(declare-function ecc-sidebar-focus "ecc-sidebar" ())
+(declare-function ecc-space-goto "ecc-space" (space))
+(declare-function ecc-space-zoom "ecc-space" ())
+(declare-function ecc-space-reset-windows "ecc-space" ())
 (declare-function ecc-show-session "ecc-transient" ())
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-tui-open "ecc-tui" (&optional session))
@@ -69,9 +73,18 @@ A request for one of them has to be answered where it can be read.")
 
 (defun ecc-answer-goto-request (request)
   "Show where REQUEST is answered: its section, question or plan buffer."
+  ;; A question and a plan open a buffer of their own;
+  ;; `ecc-window-display-beside-session' puts it where the session is,
+  ;; Space and all.  A permission request is answered in the transcript,
+  ;; and `ecc-display-session' goes there on its own.
   (pcase (ecc-request-kind request)
-    ('question (pop-to-buffer (ecc-question-open request)))
-    ('plan (require 'ecc-plan) (pop-to-buffer (ecc-plan-open request)))
+    ('question
+     (ecc-window-display-beside-session (ecc-question-open request)
+                                        (ecc-request-session request)))
+    ('plan
+     (require 'ecc-plan)
+     (ecc-window-display-beside-session (ecc-plan-open request)
+                                        (ecc-request-session request)))
     (_ (let* ((session (ecc-request-session request))
               (window (ecc-display-session session)))
          (when (window-live-p window)
@@ -126,6 +139,23 @@ KIND limits the search to that kind of request.  Tools listed in
                                 ecc-answer-exclude-tools))))
             (ecc-model-pending-all)))
 
+(defun ecc-answer-session-request (session)
+  "Return the oldest request of SESSION that may be answered from a list.
+What the sidebar and the dashboard answer with `a\\=' and `d\\=': the row
+says which session, and this says what of it.  A tool of
+`ecc-answer-exclude-tools\\=' is refused here as `ecc-answer-target\\='
+skips it elsewhere -- a shell command has to be read whole before it is
+answered, and a row carries a summary cut to fit -- and `RET\\=' on the
+row is the way to where it can be read."
+  (let ((request (or (car (ecc-session-pending session))
+                     (user-error "%s is not waiting for anything"
+                                 (ecc-session-name session)))))
+    (when (member (ecc-request-tool-name request) ecc-answer-exclude-tools)
+      (user-error "%s is waiting on %s; answer that in the transcript (RET)"
+                  (ecc-session-name session)
+                  (ecc-request-tool-name request)))
+    request))
+
 (defun ecc-answer--confirm (verb request)
   "Return non-nil when REQUEST may be answered with VERB.
 The tool and its summary are shown first, so that the user knows what
@@ -173,7 +203,8 @@ question buffer opens with the first one answered."
                  (format "Answer %s to" (string-join (aref ecc-question--answers 0) ", "))
                  request)
             (ecc-question-submit))
-        (pop-to-buffer buffer)))
+        (ecc-window-display-beside-session buffer
+                                           (ecc-request-session request))))
     request))
 
 (defun ecc-answer-option-1 () "Answer the oldest question with option 1." (interactive) (ecc-answer-option 1))
@@ -193,15 +224,33 @@ question buffer opens with the first one answered."
   (let ((map (make-sparse-keymap)))
     ;; The session.
     (define-key map (kbd "c") #'ecc-start)
-    (define-key map (kbd "r") #'ecc-resume-menu)
+    ;; Resume itself rather than the menu in front of it: it is the
+    ;; commonest thing done here, and `C-u' is the fork.  `ecc-menu'
+    ;; keeps `ecc-resume-menu' under r, because the fork is worth one
+    ;; form where it is seen before it is pressed.
+    (define-key map (kbd "r") #'ecc-resume)
     (define-key map (kbd "R") #'ecc-rename-session)
     (define-key map (kbd "v") #'ecc-show-session)
-    (define-key map (kbd "j") #'ecc-focus-project)
-    ;; `w' is here for `j': focusing a project hides the rest, and the
-    ;; way back has to be as near to hand as the way in was.
-    (define-key map (kbd "w") #'ecc-toggle)
     (define-key map (kbd "i") #'ecc-interrupt)
     (define-key map (kbd "t") #'ecc-tui-open)
+    ;; The Spaces have the lower-case keys, being where the day is spent:
+    ;; `j' goes to one, `b' is the sidebar that lists them, `z' is
+    ;; herdr's zoom and `V' puts the tab back to the arrangement a new
+    ;; Space gets.  `v' goes to the prompt of a session and `V' to the
+    ;; windows around it, which is the pair worth having beside each
+    ;; other.
+    ;;
+    ;; `B' is the dashboard: the capital beside the `b' that is pressed
+    ;; all day, the two being the same list, one that stays on the screen
+    ;; and one that does not.
+    ;;
+    ;; Nothing here makes or removes a worktree.  The three that do
+    ;; belong together and are done in a week what these are done in an
+    ;; hour: they are `ecc-worktree-menu', under `?' then `W'.
+    (define-key map (kbd "j") #'ecc-space-goto)
+    (define-key map (kbd "b") #'ecc-sidebar-focus)
+    (define-key map (kbd "z") #'ecc-space-zoom)
+    (define-key map (kbd "V") #'ecc-space-reset-windows)
     ;; Answering what is waiting.
     (define-key map (kbd "a") #'ecc-answer-allow)
     (define-key map (kbd "d") #'ecc-answer-deny)
@@ -212,7 +261,7 @@ question buffer opens with the first one answered."
     (define-key map (kbd "3") #'ecc-answer-option-3)
     (define-key map (kbd "4") #'ecc-answer-option-4)
     ;; Looking around.
-    (define-key map (kbd "b") #'ecc-dashboard)
+    (define-key map (kbd "B") #'ecc-dashboard)
     (define-key map (kbd "D") #'ecc-review)
     ;; `G' is next to `D' because the two are one review with one
     ;; argument between them: what changed since the session started,
@@ -241,7 +290,10 @@ before ecc is loaded.
 
 Every key here means in `ecc-menu' what it means here, so that one letter
 carries one meaning wherever it is pressed; `?' opens that menu, which is
-the only way to reach it from a buffer that is not a session.")
+the only way to reach it from a buffer that is not a session.  `r' is the
+one key whose command differs: here it resumes at once, with the fork in
+the prefix argument, while in the menu it opens `ecc-resume-menu', where
+the fork is a switch.  The meaning is the same; only the form differs.")
 
 (fset 'ecc-global-map ecc-global-map)
 

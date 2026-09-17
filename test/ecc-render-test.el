@@ -66,6 +66,234 @@ NAME, PROMPT and ANSWERS are as there."
     (ert-fail (format "%s differs from its snapshot; see %s.new"
                       name (ecc-test-snapshot-file name)))))
 
+;;;; Images
+
+(defmacro ecc-render-test--with-images (session &rest body)
+  "Run BODY with SESSION writing its images somewhere of its own."
+  (declare (indent 1))
+  `(let ((ecc-image-dir (make-temp-file "ecc-images" t)))
+     (unwind-protect (progn ,@body)
+       (setf (ecc-session-tmp-dir ,session) nil)
+       (when (file-directory-p ecc-image-dir)
+         (delete-directory ecc-image-dir t)))))
+
+(defun ecc-render-test--image-block ()
+  "Return an image content block carrying the image fixture."
+  `((type . "image")
+    (source . ((type . "base64") (media_type . "image/png")
+               (data . ,(base64-encode-string (ecc-test-image-bytes) t))))))
+
+(ert-deftest ecc-render-test-image-result-snapshot ()
+  "The recording of a Read of a .png, drawn."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--with-images session
+      (ecc-render-test--check
+       "image-result"
+       (ecc-render-test--replay
+        session "image-result"
+        "Read test/fixtures/red-square.png and say its colour in one English word."
+        nil)))))
+
+(defun ecc-render-test--read-with-image (session)
+  "Feed SESSION a Read of a .png answered with the image itself."
+  (ecc-dispatch session
+                '((type . "assistant") (uuid . "u1")
+                  (message . ((content . [((type . "tool_use") (id . "t1")
+                                           (name . "Read")
+                                           (input . ((file_path . "/tmp/red.png"))))])))))
+  (ecc-dispatch session
+                `((type . "user")
+                  (message . ((content . [((type . "tool_result")
+                                           (tool_use_id . "t1")
+                                           (content . [((type . "text") (text . "read it"))
+                                                       ,(ecc-render-test--image-block)]))]))))))
+
+(ert-deftest ecc-render-test-a-result-image-is-a-line-not-base64 ()
+  "The image of a tool result is named on a line; the payload is nowhere."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--with-images session
+      (ecc-session-ensure-buffer session)
+      (ecc-model-begin-turn session "読んで")
+      (ecc-render-test--read-with-image session)
+      (ecc-render-flush session)
+      (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+        ;; This is the regression the feature exists for.
+        (should-not (string-search (base64-encode-string (ecc-test-image-bytes) t)
+                                   text))
+        (should-not (string-search "base64" text))
+        (should (string-search "read it" text))
+        ;; Named after the file the call named, not after the hash the
+        ;; payload was written under, and said once rather than twice.
+        (should (string-match-p "image · red\\.png · 79 B" text))
+        (should (= 1 (cl-count "image · red.png · 79 B"
+                               (split-string text "\n") :test #'string-search)))))))
+
+(ert-deftest ecc-render-test-a-read-of-an-image-is-drawn-once ()
+  "A Read that answers with the image does not draw the input path too."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--with-images session
+      (ecc-session-ensure-buffer session)
+      (ecc-model-begin-turn session "読んで")
+      (ecc-render-test--read-with-image session)
+      (ecc-render-flush session)
+      (let* ((node (ecc-model-node session "t1"))
+             (images (ecc-render--tool-images node)))
+        (should (= (length images) 1))
+        (should (string-suffix-p ".png" (nth 0 (car images))))
+        ;; The picture is the one the result carried, under the name the
+        ;; call gave: the path of the call is not drawn a second time.
+        (should-not (equal (nth 0 (car images)) "/tmp/red.png"))
+        (should (equal (nth 2 (car images)) "/tmp/red.png"))))))
+
+(ert-deftest ecc-render-test-a-tool-with-a-picture-is-not-folded ()
+  "A tool call that brought a picture comes up open.
+Tool nodes start collapsed, and the images of a tool are drawn inside
+its body: a Read of a .png and an MCP tool answering with a screenshot
+-- the two commonest ways a picture arrives -- came up as a heading
+with the picture hidden behind it (2026-09-17)."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--with-images session
+      (ecc-session-ensure-buffer session)
+      (ecc-model-begin-turn session "読んで")
+      (with-current-buffer (ecc-session-buffer session)
+        (ecc-render-test--read-with-image session)
+        (ecc-render-flush session)
+        (should-not (ecc-render--default-hidden-p "t1"))
+        ;; The picture is in the buffer rather than under a fold.
+        (should (ecc-render-test--visible-image-p))
+        ;; With the drawing off there is nothing to open for, and a
+        ;; tool is a tool again.
+        (let ((ecc-image-inline nil))
+          (should (ecc-render--default-hidden-p "t1")))
+        ;; A tool that brought no picture is still folded.
+        (ecc-dispatch session
+                      '((type . "assistant") (uuid . "u9")
+                        (message . ((content . [((type . "tool_use") (id . "t9")
+                                                 (name . "Bash")
+                                                 (input . ((command . "ls"))))])))))
+        (ecc-dispatch session
+                      '((type . "user")
+                        (message . ((content . [((type . "tool_result")
+                                                 (tool_use_id . "t9")
+                                                 (content . "a\nb"))])))))
+        (ecc-render-flush session)
+        (should (ecc-render--default-hidden-p "t9"))))))
+
+(defun ecc-render-test--visible-image-p ()
+  "Return non-nil when a picture is drawn in this buffer and not hidden."
+  (let ((found nil))
+    (save-excursion
+      (goto-char (point-min))
+      (while (and (not found) (< (point) (point-max)))
+        (if (and (get-text-property (point) 'ecc-image-file)
+                 (not (get-text-property (point) 'invisible)))
+            (setq found t)
+          (goto-char (1+ (point))))))
+    found))
+
+(ert-deftest ecc-render-test-an-image-the-result-did-not-carry ()
+  "A tool that only names an image file shows the file it named."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "書いて")
+    (ecc-dispatch session
+                  `((type . "assistant") (uuid . "u1")
+                    (message . ((content . [((type . "tool_use") (id . "t2")
+                                             (name . "Write")
+                                             (input . ((file_path
+                                                        . ,(ecc-test-image-file)))))])))))
+    (ecc-dispatch session
+                  '((type . "user")
+                    (message . ((content . [((type . "tool_result")
+                                             (tool_use_id . "t2")
+                                             (content . "written"))])))))
+    (let ((images (ecc-render--tool-images (ecc-model-node session "t2"))))
+      (should (equal (mapcar (lambda (i) (nth 0 i)) images)
+                     (list (ecc-test-image-file)))))
+    ;; A file that is not an image contributes nothing.
+    (ecc-dispatch session
+                  '((type . "assistant") (uuid . "u2")
+                    (message . ((content . [((type . "tool_use") (id . "t3")
+                                             (name . "Write")
+                                             (input . ((file_path . "/tmp/a.txt"))))])))))
+    (should-not (ecc-render--tool-images (ecc-model-node session "t3")))))
+
+(ert-deftest ecc-render-test-an-image-node-is-drawn-as-its-label ()
+  "An image block of the conversation itself is one line naming the file."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--with-images session
+      (ecc-session-ensure-buffer session)
+      (ecc-model-begin-turn session "見せて")
+      (ecc-dispatch session
+                    `((type . "assistant") (uuid . "u1")
+                      (message . ((content . [,(ecc-render-test--image-block)])))))
+      (ecc-render-flush session)
+      (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+        (should (string-match-p "image · [0-9a-f]+\\.png · 79 B" text))
+        (should-not (string-search "unknown" text))))))
+
+(ert-deftest ecc-render-test-an-image-url-is-drawn-as-a-link ()
+  "A URL the CLI named is drawn as the URL; nothing was fetched."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "見せて")
+    (ecc-dispatch session
+                  '((type . "assistant") (uuid . "u1")
+                    (message . ((content . [((type . "image")
+                                             (source . ((type . "url")
+                                                        (url . "https://e.test/a.png"))))])))))
+    (ecc-render-flush session)
+    (should (string-search "https://e.test/a.png"
+                           (ecc-test-buffer-string (ecc-session-buffer session))))))
+
+(ert-deftest ecc-render-test-only-so-many-images-per-call ()
+  "A call answering with a heap of images draws some and counts the rest."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--with-images session
+      (ecc-session-ensure-buffer session)
+      (ecc-model-begin-turn session "撮って")
+      (ecc-dispatch session
+                    '((type . "assistant") (uuid . "u1")
+                      (message . ((content . [((type . "tool_use") (id . "t1")
+                                               (name . "Shot") (input . nil))])))))
+      (let ((node (ecc-model-node session "t1")))
+        (ecc-model-node-put
+         node 'result
+         (vconcat (mapcar (lambda (n)
+                            `((type . "image") (path . ,(format "/tmp/%d.png" n))))
+                          (number-sequence 1 9))))
+        (setf (ecc-node-status node) 'done)
+        (ecc-model-node-changed session node))
+      (ecc-render-flush session)
+      (should (string-search "… 3 more images (RET)"
+                             (ecc-test-buffer-string (ecc-session-buffer session)))))))
+
+(ert-deftest ecc-render-test-a-prompt-shows-what-it-attached ()
+  "An image sent as an @ path is drawn under the band that says it."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session
+                          (format "@%s この画像の色は？" (ecc-test-image-file)))
+    (ecc-render-flush session)
+    (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+      (should (string-search "image · red-square.png" text))
+      ;; Under the band, not inside it: the band ends with the question.
+      (should (< (string-search "この画像の色は？" text)
+                 (string-search "image · red-square.png" text))))))
+
+(ert-deftest ecc-render-test-prompt-images-are-the-readable-ones ()
+  "Only an @ reference that names an image on disk is drawn."
+  (let ((file (ecc-test-image-file)))
+    (should (equal (ecc-render--prompt-images (format "見て @%s" file))
+                   (list file)))
+    ;; Twice named is drawn once.
+    (should (equal (ecc-render--prompt-images (format "@%s と @%s" file file))
+                   (list file)))
+    (should-not (ecc-render--prompt-images "@region と @diagnostics"))
+    (should-not (ecc-render--prompt-images "@/nonexistent/a.png"))
+    (should-not (ecc-render--prompt-images (format "@%s" (expand-file-name
+                                                          "ecc-image.el"))))
+    (should-not (ecc-render--prompt-images nil))))
+
 ;;;; Snapshots
 
 (ert-deftest ecc-render-test-request-hints-name-the-keys-that-do-it ()
@@ -210,9 +438,9 @@ next to the permission mode."
 
 (ert-deftest ecc-render-test-header-names-the-project ()
   "The project stands on the left of the header line, after the state.
-It is the project `project.el\=' finds above the directory the CLI works
-in, so that a session started in a subdirectory says the name of the
-whole tree.  Several sessions look alike from a distance, and a window
+It is the project `project.el\=' finds above the root the session was
+started in, so that a session started in a subdirectory says the name
+of the whole tree.  Several sessions look alike from a distance, and a window
 with no mode line shows the buffer name nowhere."
   (ecc-test-with-fake-session session
     (let* ((root (file-name-as-directory
@@ -222,7 +450,7 @@ with no mode line shows the buffer name nowhere."
           (progn
             (make-directory (expand-file-name ".git" root))
             (make-directory inner t)
-            (setf (ecc-session-cwd session) inner)
+            (setf (ecc-session-project-root session) inner)
             (ecc-session-ensure-buffer session)
             (setf (ecc-session-state session) 'idle)
             (with-current-buffer (ecc-session-buffer session)
@@ -237,12 +465,12 @@ with no mode line shows the buffer name nowhere."
                                        (substring-no-properties
                                         (ecc-render-header-line))))
                 ;; A directory in no project says its own name, and the
-                ;; answer follows the directory when the CLI moves.
+                ;; answer follows the session when the user moves it.
                 (let ((elsewhere (file-name-as-directory
                                   (make-temp-file "ecc-plain" t))))
                   (unwind-protect
                       (progn
-                        (setf (ecc-session-cwd session) elsewhere)
+                        (setf (ecc-session-project-root session) elsewhere)
                         (should (string-search
                                  (concat "  " (file-name-nondirectory
                                                (directory-file-name elsewhere)))
@@ -433,6 +661,33 @@ narrower on the screen than it is in the text."
         (let ((bounds (ecc-render-node-bounds "turn-1")))
           (should (equal text (buffer-substring-no-properties (car bounds) (cdr bounds)))))
         (should (string-search "〉 again" (buffer-string)))))))
+
+(ert-deftest ecc-render-test-task-notice-is-a-note-not-a-prompt ()
+  "A background task notice is headed by its summary and marked as no prompt."
+  (let ((text (concat "<task-notification>\n  <task-id>bash_7</task-id>\n"
+                      "  <status>stopped</status>\n  <summary>Background shell"
+                      " command did not finish</summary>\n</task-notification>")))
+    (should (equal "background task \u2014 Background shell command did not finish"
+                   (ecc-render--system-heading
+                    (make-ecc-node
+                     :type 'system
+                     :data `((kind . task-notice)
+                             (summary . "Background shell command did not finish")
+                             (text . ,text))))))
+    (ecc-test-with-fake-session session
+      (ecc-session-ensure-buffer session)
+      (ecc-dispatch session `((type . "user")
+                              (origin . ((kind . "task-notification")))
+                              (message . ((role . "user") (content . ,text)))))
+      (ecc-render-flush session)
+      (with-current-buffer (ecc-session-buffer session)
+        (let ((drawn (buffer-string)))
+          (should (string-search "background task \u2014 Background shell command"
+                                 drawn))
+          ;; It is nobody\='s prompt, so the user mark is nowhere in it.
+          (should-not (string-search ecc-render-user-mark drawn))
+          ;; The raw notice waits under the fold.
+          (should (string-search "<task-id>bash_7</task-id>" drawn)))))))
 
 (ert-deftest ecc-render-test-aside-turn-at-the-head-is-frozen ()
   "A turn of notes that came before any prompt does not pin the live region.
@@ -1450,7 +1705,10 @@ any route as long as they arrive at the same buffer."
                    ("subagent" "探して" nil)
                    ("edit-tool" "greet を直して" (allow))
                    ("partial-messages" "長いファイルを書いて" (allow))
-                   ("tasks" "タスクを作って" nil)))
+                   ("tasks" "タスクを作って" nil)
+                   ("image-result"
+                    "Read test/fixtures/red-square.png and say its colour in one English word."
+                    nil)))
     (let ((once (ecc-test-with-fake-session session
                   (ecc-render-test--replay session name prompt answers)))
           (each (ecc-test-with-fake-session session
@@ -1550,6 +1808,44 @@ to diff every hunk of every file each time."
           (should-not (member "two\n" olds))
           (should (string-search "+uno" (ecc-test-buffer-string
                                          (ecc-session-buffer session)))))))))
+
+(ert-deftest ecc-render-test-what-emacs-added-is-folded-under-the-band ()
+  "A line a module added to a draft is not drawn as part of what the user said."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn
+     session (concat "worktree でやって"
+                     (ecc-aside "\n(hand it over with start_worktree_session.)")))
+    (ecc-render-flush session)
+    (with-current-buffer (ecc-session-buffer session)
+      (let* ((turn (car (ecc-session-turns session)))
+             (id (concat (ecc-turn-id turn) "/aside"))
+             (text (ecc-test-buffer-string (current-buffer))))
+        ;; The band holds what was typed; the heading says the rest is
+        ;; there, and the text of it is in the buffer, folded away.
+        (should (string-match-p "〉 worktree でやって" text))
+        (should-not (string-match-p "〉.*start_worktree_session" text))
+        (should (string-search "1 line Emacs added" text))
+        (should (string-search "start_worktree_session" text))
+        (should (ecc-render-node-bounds id))
+        (should (ecc-render-node-foldable-p id))
+        (should (ecc-render-node-hidden-p id))
+        ;; And it opens like anything else under a heading.
+        (ecc-render-show-node id)
+        (should-not (ecc-render-node-hidden-p id))))))
+
+(ert-deftest ecc-render-test-a-prompt-nobody-added-to-has-no-note ()
+  "An ordinary prompt is drawn as it always was."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "ふつうの依頼")
+    (ecc-render-flush session)
+    (with-current-buffer (ecc-session-buffer session)
+      (should-not (ecc-render-node-bounds
+                   (concat (ecc-turn-id (car (ecc-session-turns session)))
+                           "/aside")))
+      (should-not (string-search "Emacs added"
+                                 (ecc-test-buffer-string (current-buffer)))))))
 
 (provide 'ecc-render-test)
 

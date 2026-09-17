@@ -2,12 +2,12 @@
 title: Other features
 description: Inspect session capabilities, tool configurations, and Claude Code plan usage.
 sidebar:
-  order: 5
+  order: 6
 ---
 
 ## Capabilities
 
-Press `y` in the transient menu or `C` in the dashboard to inspect active session capabilities reported by the CLI during `system/init`: skills, subagents, slash commands, MCP servers, and plugins. Items are grouped by origin (project, user configuration, plugin, or built-in).
+Press `C` in the transient menu or in the dashboard to inspect active session capabilities reported by the CLI during `system/init`: skills, subagents, slash commands, MCP servers, and plugins. Items are grouped by origin (project, user configuration, plugin, or built-in).
 
 ![The capabilities buffer, its groups folded and unfolded](../../../assets/capabilities.gif)
 

@@ -65,7 +65,7 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 
 ## MCP サーバーの有効化
 
-内蔵のループバック MCP サーバーを有効にすると、Claude から Emacs の編集コンテキスト（`xref` の参照検索、`imenu` のシンボル一覧、`flymake` の診断情報など）を直接照会できるようになります。デフォルトでは無効になっており、任意の Elisp を評価させる機能はセキュリティのため別途明示的な許可が必要です:
+内蔵のループバック MCP サーバーにより、Claude は Emacs からエディタコンテキスト（`xref` の参照、`imenu` のシンボル、`flymake` の診断情報）を照会できます。また、Claude が[作業を worktree のセッションに引き渡す](/emacs-claude-code/ja/features/spaces/#作業を-worktree-のセッションに引き渡す)ことも可能です。デフォルトでは無効です。任意の Elisp を評価するには、追加で明示的なオプトインが必要です:
 
 ```elisp
 (setq ecc-mcp-enabled t)

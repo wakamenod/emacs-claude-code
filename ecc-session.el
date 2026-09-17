@@ -19,11 +19,13 @@
 (require 'seq)
 (require 'ecc-core)
 (require 'ecc-model)
+(require 'ecc-image)
 (require 'ecc-proc)
 (require 'ecc-render)
 (require 'ecc-chat)
 (require 'ecc-markdown)
 (require 'ecc-diff)
+(require 'ecc-window)
 
 (declare-function ecc-resume "ecc" (session &optional fork))
 (declare-function ecc-perm-deny "ecc-perm" (&optional reason))
@@ -33,8 +35,6 @@
 (declare-function ecc-plan-file-path "ecc-plan" (request))
 (declare-function ecc-review "ecc-review" (&optional session paths))
 (declare-function ecc-perm-request-at-point "ecc-perm" ())
-(declare-function ecc-window-forget-session "ecc-window" (session))
-(declare-function ecc-image-cleanup-session "ecc-prompt" (session))
 
 (defun ecc-session--forget-on-kill ()
   "Stop and forget the session when its buffer is killed.
@@ -50,13 +50,45 @@ not its buffer, so killing it does nothing."
                (eq (ecc-model-session (ecc-session-id session)) session))
       (ecc-proc-stop session)
       (ecc-model-remove-session session)
-      (when (fboundp 'ecc-window-forget-session)
-        (ecc-window-forget-session session))
-      (when (fboundp 'ecc-image-cleanup-session)
-        (ecc-image-cleanup-session session))
+      (ecc-image-cleanup-session session)
       (let ((buffer (ecc-session-stream-buffer session)))
         (when (buffer-live-p buffer)
           (kill-buffer buffer))))))
+
+(defun ecc-session-directory (session)
+  "Return the directory SESSION works in.
+The root it was started in, which is what `ecc-window-session-project\='
+asks as well: the buffer, the sidebar and the Spaces must not disagree
+about where a session is.  The cwd the CLI reports comes second and
+only for a session that has no root of its own -- one read back from a
+recording.  It is not asked first because CLI 2.1.272 reports as the
+session cwd whatever directory the last Bash tool call left it in
+\(confirmed 2026-09-16), so it says where a tool ran and not where the
+session lives."
+  (when-let* ((directory (or (ecc-session-project-root session)
+                             (ecc-session-cwd session))))
+    (file-name-as-directory (expand-file-name directory))))
+
+(defun ecc-session-set-root (session directory)
+  "Move SESSION to DIRECTORY and take its buffer with it.
+The root is where a session lives: the Space it opens in, the project
+its tab line groups it under, and the `default-directory\=' of the
+transcript, which is what Magit, `project-find-file\=' and everything
+else run from the buffer acts in.  Only the user moves it, by typing a
+`/cd\=' into the prompt region; nothing the model does moves a session.
+
+DIRECTORY that is not there is refused and nil comes back: a
+`default-directory\=' pointing at nothing breaks every command in the
+buffer."
+  (let ((directory (file-name-as-directory (expand-file-name directory))))
+    (when (file-directory-p directory)
+      (setf (ecc-session-project-root session) directory)
+      (when-let* ((buffer (ecc-session-buffer session))
+                  ((buffer-live-p buffer)))
+        (with-current-buffer buffer
+          (setq default-directory directory)))
+      (force-mode-line-update t)
+      directory)))
 
 (defun ecc-session-buffer-name (name)
   "Return the name of the buffer of the session called NAME."
@@ -72,7 +104,7 @@ not its buffer, so killing it does nothing."
       (with-current-buffer buffer
         ;; The buffer lives in the project, so that project commands and
         ;; `ecc-next-attention-in-project' see the right root.
-        (setq default-directory (or (ecc-session-project-root session)
+        (setq default-directory (or (ecc-session-directory session)
                                     default-directory))
         (ecc-chat-mode)
         (add-hook 'kill-buffer-hook #'ecc-session--forget-on-kill nil t)
@@ -107,14 +139,17 @@ not its buffer, so killing it does nothing."
 (defun ecc-session-show-log ()
   "Show the raw protocol log of this session."
   (interactive)
-  (pop-to-buffer (ecc--log-buffer (ecc-session-name (ecc-session-at-point)))))
+  (let ((session (ecc-session-at-point)))
+    (ecc-window-display-beside-session
+     (ecc--log-buffer (ecc-session-name session)) session)))
 
 (defun ecc-session-visit ()
   "Open the thing at point: a URL, a file, an agent transcript or a buffer.
 A question or a plan that is still waiting opens the buffer it is
 answered in.
 
-A URL comes first, and before the node the point is in: the point is
+A picture drawn in the transcript opens as itself.  A URL comes
+first, and before the node the point is in: the point is
 only on one where a link was drawn, which is narrow enough to say what
 RET does there without a rule of its own.  It is the same key that
 follows a link everywhere else in Emacs, and the same one the transcript
@@ -124,19 +159,25 @@ already opens things with."
          (node (ecc-chat-node-at-point))
          (url (ecc-markdown-url-at-point))
          (path (or (ecc-chat-file-at-point) (ecc-chat-plan-file-at-point)))
+         (picture (ecc-image-at-point))
          (request (and node (ecc-model-node-get node 'request)))
          (pending (and request (memq request (ecc-session-pending session)))))
     (cond
      (url (browse-url url))
+     ;; A still opens in `image-mode\=', which zooms and scrolls; a video
+     ;; is something Emacs cannot play, so the machine plays it.
+     (picture (if (ecc-image-video-p picture)
+                  (ecc-image-open-externally picture)
+                (find-file-other-window picture)))
      (path (find-file-other-window path))
      ((null node) (user-error "Nothing to show here"))
      ((eq (ecc-node-type node) 'agent) (ecc-session-show-agent session node))
      ((and pending (eq (ecc-node-type node) 'question))
       (require 'ecc-perm)
-      (pop-to-buffer (ecc-question-open request)))
+      (ecc-window-display-beside-session (ecc-question-open request) session))
      ((and pending (eq (ecc-node-type node) 'plan))
       (require 'ecc-plan)
-      (pop-to-buffer (ecc-plan-open request)))
+      (ecc-window-display-beside-session (ecc-plan-open request) session))
      ((eq (ecc-node-type node) 'plan)
       ;; A plan that was answered already: show the file the CLI wrote it
       ;; to, when it named one and it is still there.
@@ -199,7 +240,7 @@ The d key of the transcript does both."
                          (format "%S" (ecc-node-data node))))))
         (goto-char (point-min)))
       (special-mode))
-    (pop-to-buffer buffer)))
+    (ecc-window-display-beside-session buffer session)))
 
 (defun ecc-session--insert-call (name input before)
   "Insert the whole INPUT of a call to NAME, as a diff when it has one.
@@ -234,7 +275,7 @@ BEFORE is the file as it was before the call, when known."
                                          (concat "\n" prompt "\n")
                                        ""))
                              (ecc-node-children node)))
-    (pop-to-buffer buffer)))
+    (ecc-window-display-beside-session buffer session)))
 
 ;;;; Timeline
 
