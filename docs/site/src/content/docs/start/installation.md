@@ -65,7 +65,7 @@ Because `M-x ecc-start` is autoloaded, ecc works without any extra configuration
 
 ## Enabling the MCP server
 
-The built-in loopback MCP server allows Claude to query Emacs for editor-specific context: `xref` references, `imenu` symbols, and `flymake` diagnostics. It is also what lets Claude [hand a piece of work to a session in a worktree of its own](/emacs-claude-code/features/spaces/#handing-work-to-a-session-in-a-worktree). It is disabled by default, and evaluating arbitrary Elisp requires an additional explicit opt-in:
+The built-in loopback MCP server lets Claude query Emacs for editor context: `xref` references, `imenu` symbols, and `flymake` diagnostics. It also lets Claude [hand a piece of work to a session in a worktree of its own](/emacs-claude-code/features/spaces/#handing-work-to-a-session-in-a-worktree). It is disabled by default. Evaluating arbitrary Elisp requires an additional explicit opt-in:
 
 ```elisp
 (setq ecc-mcp-enabled t)

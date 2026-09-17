@@ -5,9 +5,9 @@ sidebar:
   order: 5
 ---
 
-A **Space** is one project with a tab of the tab bar to itself. A git worktree is a Space of its own, drawn under the repository it came from.
+A **Space** is a project with its own tab in the tab bar. A git worktree is its own Space, shown under the repository it came from.
 
-This is what [`ecc-use-spaces`](/emacs-claude-code/reference/configuration/#ecc-use-spaces) turns on, and it is on by default. Turn it off and you get the older arrangement, the only one before this: a transcript goes into a side window with a role — main, sub-1, sub-2 — and [`ecc-focus-project`](/emacs-claude-code/features/sessions/#focusing-one-project) deals those roles out again for one project. There are no tabs, no sidebar and no worktree commands.
+[`ecc-use-spaces`](/emacs-claude-code/reference/configuration/#ecc-use-spaces) enables this behavior and is on by default. If you turn it off, you get the older arrangement, the only one before this: a transcript goes into a side window with a role — main, sub-1, sub-2 — and [`ecc-focus-project`](/emacs-claude-code/features/sessions/#focusing-one-project) reassigns those roles for one project. There are no tabs, no sidebar, and no worktree commands.
 
 ```elisp
 (setq ecc-use-spaces nil)
@@ -15,23 +15,23 @@ This is what [`ecc-use-spaces`](/emacs-claude-code/reference/configuration/#ecc-
 
 ## What a Space changes
 
-With `classic`, focusing a project deals the session windows out again from nothing. That is the right thing when the windows have roles, and the wrong thing when you have arranged them yourself.
+With `classic`, focusing a project recreates the session windows from scratch. That makes sense when windows have roles, but not when you have arranged them yourself.
 
-With `spaces` the windows have no roles. The transcripts of a Space stand side by side: the first opens beside the source, to the right, and every one after it divides the rightmost of them. Nothing is ever stacked. From there they are ordinary windows, yours to split, move, enlarge and close. A tab **is** a window arrangement, so going to another Space and back brings the whole of it back the way you left it.
+With `spaces`, windows have no roles. Transcripts in a Space sit side by side: the first opens to the right of the source, and each subsequent one splits the rightmost window. Nothing is ever stacked. From there, they are ordinary windows that you can split, move, enlarge, and close. A tab **is** a window configuration, so switching to another Space and back restores everything the way you left it.
 
-How many fit is `ecc-space-session-min-width`, the columns a transcript may not go under. When there is no room for another one, no narrower window is made: the session you worked in longest ago hands its window over, and goes on running without one. The sidebar brings it back, and so does `C-c c V`.
+`ecc-space-session-min-width` sets the minimum width in columns for a transcript, determining how many can fit. When there is no room for another window, no narrower window is created: the session you worked in longest ago gives up its window and continues running without one. You can bring it back from the sidebar or with `C-c c V`.
 
-A Space whose tab has to be made comes up with its sessions already on the screen: they are dealt out beside the source, most recently used first, until the row has no room for another column. The ones that do not fit go on running without a window.
+When a Space's tab is created, it opens with its sessions already on screen: they are placed beside the source, most recently used first, until the row has no room for another column. Any sessions that do not fit continue running without a window.
 
-**Going to a Space with nothing running starts a session there.** A tab with a file in it and no way to say anything is a Space that looks broken, and going to a Space is asking to work there. To pick up the conversation that was there before, type `/resume` in the session that opens.
+**Going to a Space with nothing running starts a session there.** A tab with only a file and no active session looks broken, and switching to a Space means you want to work there. To resume a previous conversation, type `/resume` in the session that opens.
 
-That is [`ecc-space-always-session`](/emacs-claude-code/reference/configuration/#ecc-space-always-session), on by default, and it says what a Space is made of. On, a Space always holds a session: opening one starts a session, and a Space **closes itself when its last session goes**, taking you to the Space beside it. A session whose process exited has not gone — it keeps its place, so `/resume` has somewhere to come back to — and what closes a Space is killing the session, not the CLI dying. Off, a Space is a place to read as much as a place to work: opening one starts nothing and shows the source, and the Space stays until you kill the last buffer of the project too.
+This is controlled by [`ecc-space-always-session`](/emacs-claude-code/reference/configuration/#ecc-space-always-session), which is on by default and defines how a Space behaves. When enabled, a Space always holds a session: opening one starts a session, and a Space **closes itself when its last session is killed**, taking you to the Space beside it. A session whose process has exited is not gone—it keeps its place so `/resume` has somewhere to return to. Killing the session buffer closes the Space, not the CLI process exiting. When disabled, a Space is for reading as well as working: opening one starts nothing and shows the source, and the Space remains until you also kill the project's last buffer.
 
-**Opening a worktree opens the repository it came from behind it.** A worktree needs the repository on the screen to be drawn under it, so opening one opens the other as well, as a Space of its own and with a session in it if `ecc-space-always-session` says so. The worktree is what you are left looking at. A repository that already has a Space is left where it is.
+**Opening a worktree opens the repository it came from behind it.** A worktree needs its repository on screen to be displayed under it, so opening a worktree also opens the repository as its own Space, with a session if `ecc-space-always-session` is enabled. You remain focused on the worktree. A repository that already has a Space is left where it is.
 
-**A session you kill takes its window with it.** The window is deleted and the transcripts beside it take the room back, rather than the window being left holding whatever was in it before — usually `*scratch*`. The last window of a tab cannot be deleted and shows the project's source instead.
+**A session you kill takes its window with it.** The window is deleted and the transcripts beside it expand to fill the space, rather than leaving the window open with whatever was in it before — usually `*scratch*`. The last window of a tab cannot be deleted and shows the project's source instead.
 
-`ecc-space-goto` also reaches a project you have only recordings of — one worked in before, with nothing running and no tab. Those projects are deliberately not in the sidebar and are not numbered: putting them there would move the numbers the `1`-`9` keys take under your feet.
+`ecc-space-goto` also reaches a project that only has recordings — one you worked in before, with nothing running and no tab. Those projects are deliberately not in the sidebar and are not numbered: putting them there would shift the numbers assigned to the `1`-`9` keys.
 
 ```
 ┌ *ecc-sidebar* ─────┬ tab bar: [ecc] [herdr] [feat-x] ────────────────────┐
@@ -50,47 +50,41 @@ That is [`ecc-space-always-session`](/emacs-claude-code/reference/configuration/
 └────────────────────┴─────────────────────────────────────────────────────┘
 ```
 
-The tab line inside each session window is unchanged: it switches between the sessions of that project.
+The tab line inside each session window is unchanged: it switches between that project's sessions.
 
 | Key | Command | What it does |
 |---|---|---|
-| `C-c c j` | `ecc-space-goto` | Go to a Space, by name — including a project you have only recordings of |
-| `C-c c z` | `ecc-space-zoom` | Fill the tab with this window; the same key puts the windows back |
-| `C-c c V` | `ecc-space-reset-windows` | Put this Space back to the arrangement a new tab gets: the source on the left, the transcripts beside it |
-| `C-c c ?` then `X` | `ecc-space-close` | Close this Space and stop everything running in it — along with its worktrees, if it is a repository — then offer to remove the worktrees that were closed |
+| `C-c c j` | `ecc-space-goto` | Go to a Space by name, including a project that only has recordings |
+| `C-c c z` | `ecc-space-zoom` | Fill the tab with this window; press the same key to restore the windows |
+| `C-c c V` | `ecc-space-reset-windows` | Reset this Space to the layout of a new tab: the source on the left, transcripts beside it |
+| `C-c c ?` then `X` | `ecc-space-close` | Close this Space and stop everything running in it — including its worktrees, if it is a repository — then offer to remove the closed worktrees |
 | — | `ecc-space-jump` | Go to the Nth Space, as numbered in the sidebar |
 
-Going to a session takes you to its Space, whichever command asked: `C-c c n`
-(`ecc-next-attention`), `C-c c v`, the sidebar's `RET`, the dashboard. A question
-or a plan opens its own buffer, and that buffer opens next to the session it
-belongs to — in its Space, with its transcript beside it. It takes the widest
-window that holds no transcript, which in a Space is where the code is, and that
-window goes back to what it held once the question is answered. Only where every
-window is a transcript is one of them divided; none is ever taken away.
+Going to a session takes you to its Space, regardless of which command you use: `C-c c n` (`ecc-next-attention`), `C-c c v`, the sidebar's `RET`, or the dashboard. A question or a plan opens its own buffer next to the session it belongs to — in its Space, with its transcript beside it. It takes the widest window that does not contain a transcript, which in a Space is where the code is. Once the question is answered, that window returns to what it held before. If every window contains a transcript, one of them is divided instead; no window is ever removed.
 
-The windows of a tab are yours, so nothing rearranges them behind your back. That cuts both ways: a window you pointed at another project's file keeps that file, and going to the Space again does not undo it. `C-c c V` (`ecc-space-reset-windows`) is the way back — it deals the tab again, by the rules a new one is dealt with: the source on the left, the transcripts beside it, most recently used first, stopping where the row is full. It leaves the sidebar where it is, at the width it had, and brings it back if you had hidden it. The one exception it is not needed for is a tab with nothing but transcripts left in it, which is nobody's arrangement: going to that Space opens a window for the code again on its own.
+A tab's windows are yours, so nothing rearranges them automatically. This also means that if you pointed a window at another project's file, it keeps that file, and returning to the Space does not undo it. Use `C-c c V` (`ecc-space-reset-windows`) to restore the layout. It arranges the tab using the rules for a new tab: the source on the left, and transcripts beside it ordered by most recent use, stopping when the row is full. It leaves the sidebar where it is, at its current width, and restores it if you had hidden it. The only exception is a tab left with only transcripts: going to that Space automatically opens a window for the code again.
 
-Closing a repository's Space closes the worktrees drawn under it as well: they are one group on the screen and they close as one, after a single question naming everything that will stop. A worktree closed on its own leaves the repository where it is — and a repository that was only opened to hold a worktree goes when the last worktree under it does.
+Closing a repository's Space also closes the worktrees shown under it. They form one group on the screen and close together, after a single question naming everything that will stop. Closing a worktree on its own leaves the repository open. A repository that was opened only to hold a worktree closes when its last worktree is closed.
 
-Once the group is closed, the worktrees in it are **offered for removal in one question** naming them: their Spaces are gone and nothing is left running in them, which is when you are likely thinking about the directories. Answering no leaves them where they are. Closing a tab by hand is different and stops nothing: the sessions keep running without a window, and the sidebar or `C-c c V` brings them back.
+Once the group is closed, the worktrees in it are **offered for removal in one question** that names them. Their Spaces are gone and nothing is left running in them, which is when you are likely ready to remove the directories. Answering no leaves them where they are. Closing a tab manually does not stop anything: sessions keep running without a window, and the sidebar or `C-c c V` brings them back.
 
 ### The bar itself is yours
 
-A Space is a tab, and a tab is a named window arrangement of the frame. `tab-bar-mode` only draws the strip above it, and nothing here turns that mode on: `tab-bar-new-tab` does it where `tab-bar-show` is `t`, its default, and leaves it off where you set that to `nil`.
+A Space is a tab, and a tab is a named window arrangement in the frame. `tab-bar-mode` only draws the strip above it, and nothing here turns that mode on: `tab-bar-new-tab` turns it on when `tab-bar-show` is `t` (the default), and leaves it off if you set `tab-bar-show` to `nil`.
 
 ```elisp
 (setq tab-bar-show nil)   ; Spaces with no strip at the top of the frame
 ```
 
-With the bar hidden the tabs are made, named, switched and closed exactly as before — Spaces work the same — and the sidebar is the list of them, with more about each than the strip can hold.
+When the bar is hidden, Spaces work the same way: tabs are created, named, switched, and closed exactly as before. The sidebar lists them, showing more detail about each Space than the tab bar can hold.
 
 ## The sidebar
 
-`C-c c b` (`ecc-sidebar-focus`) opens the sidebar and puts point in it; the same key puts point back where it was. It works under `classic` too.
+`C-c c b` (`ecc-sidebar-focus`) opens the sidebar and moves point to it. Pressing the same key returns point to where it was. It works under `classic` too.
 
-Under `classic` the sidebar draws the same two lists and answers the same keys; what changes is what going somewhere means. `RET` and `1`-`9` on a Space focus that project the way `ecc-focus-project` always has, and no tab is made -- turning the tab bar on because you pressed a number would be changing the layout behind your back. So the sidebar under `classic` is the dashboard that stays on the screen; `spaces` is that plus a different way of laying the session windows out.
+Under `classic`, the sidebar displays the same two lists and responds to the same keys; only navigation behaves differently. Pressing `RET` or `1`-`9` on a Space focuses that project the way `ecc-focus-project` always has, without creating a tab. Turning on the tab bar because you pressed a number would change your layout unexpectedly. Under `classic`, the sidebar is a dashboard that stays on screen; `spaces` is that dashboard plus a different layout for session windows.
 
-The sidebar window is `no-other-window`, so `C-x o` never lands in it while you are working — `C-c c b` is the way in.
+The sidebar window has `no-other-window` set, so `C-x o` never switches to it while you are working. Use `C-c c b` to switch to it.
 
 ```
 Spaces
@@ -106,65 +100,65 @@ Sessions
 · herdr                 idle
 ```
 
-The top half lists the Spaces: a mark for what the Space is doing — the loudest of its sessions wins — then the number the `1`-`9` keys take, then the name. Under a repository comes what git says: the branch, and how far it is from its upstream. A worktree hangs on a tree line under the repository it came from and is named by its branch, which is what tells two worktrees of one repository apart.
+The top half lists the Spaces. Each row shows a status mark based on its highest-priority session, the number used by `1`-`9`, and the Space name. Below each repository is its git status: the branch, and how far it is from its upstream. Worktrees appear on a tree line under their parent repository and are named after their branch, distinguishing worktrees from the same repository.
 
-A repository with worktrees carries `▾` at the right end of its row, `▸` once they are folded away; `TAB` or a click on the arrow turns it. A folded repository answers for its worktrees as well, so a mark still says that one of them is waiting for an answer.
+A repository with worktrees displays `▾` at the right end of its row, or `▸` when folded. Pressing `TAB` or clicking the arrow toggles it. A folded repository also reflects its worktrees, so its status mark still shows when one of them is waiting for an answer.
 
-The bottom half lists the sessions, each with its mark, its name and what it is waiting for. The marks, the colours and the blink are the tab line's, so a session says the same thing wherever it is drawn.
+The bottom half lists the sessions, each with its mark, name, and what it is waiting for. The marks, colours, and blink match the tab line, so a session shows the same status wherever it appears.
 
 | Key | What it does |
 |---|---|
 | `RET` | Go to the Space or session on this line |
 | `n`, `p` | Next, previous row |
-| `TAB` | Fold a repository's worktrees away, or unfold them |
+| `TAB` | Fold or unfold a repository's worktrees |
 | `1`–`9` | Go to the Space with that number |
 | `c` | Start a session in this Space |
-| `W` | Make a worktree of this Space and start a session there |
+| `W` | Create a worktree from this Space and start a session there |
 | `x` | Close this Space |
 | `X` | Remove this worktree's directory |
 | `k` | Stop this session |
 | `a`, `d` | Allow or deny what this session is waiting on |
-| `g` | Ask git again and redraw |
+| `g` | Refresh git status and redraw |
 | `q` | Hide the sidebar |
 
-`ecc-sidebar-width` is its width in columns, 28 by default. `ecc-sidebar-sessions-sort` orders the bottom half: `spaces` (the default) keeps the sessions under their Space, `priority` puts what wants an answer first.
+`ecc-sidebar-width` sets the sidebar width in columns (28 by default). `ecc-sidebar-sessions-sort` orders the bottom half: `spaces` (the default) keeps sessions under their Space, while `priority` puts sessions waiting for an answer first.
 
 ## Worktrees
 
-A git worktree is a second working tree of one repository on a branch of its own. It is how two sessions work on one project without either seeing the other's edits.
+A git worktree is a second working tree for a repository on its own branch. It lets two sessions work on the same project without seeing each other's edits.
 
 These commands work under both layouts.
 
 | Key | Command | What it does |
 |---|---|---|
-| `C-c c ?` then `W c` | `ecc-start-worktree` | Check a branch out beside the repository and start a session there |
-| `C-c c ?` then `W o` | `ecc-start-in-worktree` | Start a session in a worktree that already exists |
-| `C-c c ?` then `W k` | `ecc-remove-worktree` | Stop the sessions working in a worktree and undo it |
+| `C-c c ?` then `W c` | `ecc-start-worktree` | Check out a branch beside the repository and start a session there |
+| `C-c c ?` then `W o` | `ecc-start-in-worktree` | Start a session in an existing worktree |
+| `C-c c ?` then `W k` | `ecc-remove-worktree` | Stop the sessions running in a worktree and remove it |
 
-The three live behind `W` in the menu rather than on keys of their own: they are the management of the worktrees rather than the working in them, done in a week what the Spaces keys are done in an hour.
+These three commands live under `W` in the menu rather than on their own keys. They manage worktrees rather than work inside them, and are used once a week rather than once an hour like the Spaces keys.
 
-`ecc-start-worktree` asks for a branch, offering the branches that exist and filling nothing in. A branch that exists is checked out as it is; one that does not is created from `HEAD`.
+`ecc-start-worktree` prompts for a branch, offering existing branches with nothing filled in. An existing branch is checked out as it is; a new branch is created from `HEAD`.
 
-A branch that is **already checked out somewhere** is gone to rather than refused: one branch lives in one worktree at a time, so asking for it can only mean the worktree that has it. You are asked before the session starts there. The worktree need not be named the way ecc would have named it — Claude Code's own worktrees turn a `/` into a `+` where ecc turns it into a `-`, and the branch is what is looked up, not the directory.
+A branch that is **already checked out somewhere** is switched to rather than refused: a branch can only be in one worktree at a time, so asking for it can only mean the worktree that has it. You are asked for confirmation before the session starts there. The worktree does not have to be named the way ecc would name it. Claude Code's own worktrees replace `/` with `+` where ecc uses `-`, and ecc looks up the branch, not the directory.
 
-Where the worktree goes is [`ecc-worktree-directory`](/emacs-claude-code/reference/configuration/#ecc-worktree-directory), `.claude/worktrees` by default — a name relative to the repository, so a worktree of `feat/x` lands at `<repo>/.claude/worktrees/feat-x`. An absolute name is a directory every repository shares, and a worktree lands at `<directory>/<repository>/<branch-slug>`.
+Worktrees are placed in [`ecc-worktree-directory`](/emacs-claude-code/reference/configuration/#ecc-worktree-directory), which defaults to `.claude/worktrees`. A relative path is relative to the repository, so a worktree for `feat/x` lands at `<repo>/.claude/worktrees/feat-x`. An absolute path is shared across all repositories, and a worktree lands at `<directory>/<repository>/<branch-slug>`.
 
-When the **last** session working in a worktree goes, ecc offers to remove the worktree then and there — however it went: `ecc-kill`, the dashboard's `k`, the sidebar's `k`, the tab's close button, or nothing you did at all. The question comes a moment after the session goes, because a session can go from inside the process that was running it, and that is no place to be asked anything. Stopping one of two sessions working in the same worktree does not offer to remove it: there is no reason to take the worktree from the other. Buffers still visiting the worktree are counted in the question rather than closed.
+When the **last** session working in a worktree ends, ecc offers to remove the worktree immediately — however it ended: `ecc-kill`, the dashboard's `k`, the sidebar's `k`, the tab's close button, or without any action from you. The question appears a moment after the session ends, because a session can exit from inside its own process, where you cannot be prompted. Stopping one of two sessions working in the same worktree does not offer to remove it, since the other session is still using it. Buffers still visiting the worktree are counted in the question rather than closed.
 
-**No branch is ever deleted.** `ecc-remove-worktree` removes a directory; the work is on the branch, and the branch stays — which is why removing a worktree cannot lose anything that was committed, and why the question is safe to ask on its own. Deleting a branch is done with `git branch -d`, which you can run whenever you want.
+**No branch is ever deleted.** `ecc-remove-worktree` removes a directory. The work remains on the branch, and the branch stays. Because removing a worktree cannot lose committed changes, the question is safe to ask on its own. To delete a branch, run `git branch -d` whenever you want.
 
-**A worktree that git does not find clean requires a second yes.** git refuses to remove a worktree with uncommitted changes or untracked files, and that refusal is presented as its own question, naming the directory, before anything is forced.
+**A worktree that git does not find clean requires a second yes.** git refuses to remove a worktree with uncommitted changes or untracked files. That refusal is presented as its own question, naming the directory, before anything is forced.
 
 ## Handing work to a session in a worktree
 
-Ask, inside a session, for something to be done in a worktree — "cut a worktree and do X there" — and the CLI left to itself runs `git worktree add` and carries on in the same conversation: one session, two worktrees.
+If you ask inside a session for work to be done in a worktree — "cut a worktree and do X there" — the CLI on its own runs `git worktree add` and continues in the same conversation. This leaves one session working in two worktrees.
 
-With the [Emacs MCP server](/emacs-claude-code/start/installation/) on (`ecc-mcp-enabled`), the model is offered a tool instead, `start_worktree_session`. It names the branch and writes the brief; Emacs makes the worktree, opens it as a Space, starts a session there and sends it that brief. The new session is told which repository it is in, which branch it is on and which session sent it, because it cannot read the conversation it came from. The session that asked reports where the work went and does not do it as well.
+With the [Emacs MCP server](/emacs-claude-code/start/installation/) enabled (`ecc-mcp-enabled`), the model is offered the `start_worktree_session` tool instead. The model names the branch and writes a brief. Emacs then creates the worktree, opens it as a Space, starts a session there, and sends it that brief. Because the new session cannot read the conversation it came from, it is told which repository it is in, which branch it is on, and which session sent it. The session that requested the work reports where it went and does not do the work itself.
 
-**What the new session is told.** The brief is the model's account of the work, and Emacs adds what it watched the same conversation do: the files it touched, by the name the new worktree has for them; the plans it wrote; the path of the recording, to read only if the brief leaves a question open; and the changes that are uncommitted in the repository. That last one matters — the worktree is made from `HEAD`, so uncommitted work is not in it. Commit it first, or say so in the brief.
+**What the new session is told.** The brief is the model's summary of the work. Emacs adds context it tracked from that conversation: the files it touched, using their paths in the new worktree; the plans it wrote; the path of the recording, to read only if the brief leaves questions open; and any uncommitted changes in the repository. That last detail matters: the worktree is created from `HEAD`, so uncommitted work is not in it. Commit it first, or mention it in the brief.
 
-**The two other ways are turned back.** A model can reach a worktree through the CLI's own `EnterWorktree` or through `git worktree add` in Bash, and both leave one conversation working in two worktrees. When the session has the tool, Emacs refuses those requests with a sentence naming it, and nothing is put in front of you. Nothing is refused in a session without the tool — the MCP server off, or `start_worktree_session` in `ecc-mcp-excluded-tools` — and `ExitWorktree` is never touched. In an `auto` permission mode the CLI does not ask Emacs at all — it runs `git worktree add` and Emacs sees no request (measured against CLI 2.1.272) — so a draft of yours that says *worktree*, in English or Japanese, is sent with one line reminding the model of the tool. In that mode the line is the whole backstop. The line is sent but you did not write it, so the transcript does not put it in your own band: it is drawn under the prompt as a folded heading ("1 line Emacs added") that opens like any other.
+**The two other ways are turned back.** A model can also access a worktree through the CLI's own `EnterWorktree` or through `git worktree add` in Bash. Both methods leave one conversation working in two worktrees. When the session has the tool, Emacs refuses those requests with a sentence naming the tool, and you are not prompted. In a session without the tool — with the MCP server off, or `start_worktree_session` in `ecc-mcp-excluded-tools` — Emacs refuses nothing, and it never touches `ExitWorktree`. In an `auto` permission mode, the CLI does not ask Emacs at all: it runs `git worktree add` directly, and Emacs sees no request (measured against CLI 2.1.272). If your prompt draft includes *worktree* in English or Japanese, ecc therefore sends it with a one-line reminder about the tool. In that mode, this line is the only safeguard. Although this line is sent, you did not write it, so the transcript does not place it in your prompt section. Instead, it is shown under the prompt as a folded heading ("1 line Emacs added") that opens like any other.
 
-A branch another worktree already holds is refused rather than joined — two sessions in one worktree is not what handing work over means — and the model is told to name another one. `M-x` has no command for this; from Lisp it is `ecc-worktree-delegate`.
+If another worktree already holds the branch, Emacs refuses the request instead of joining it, since running two sessions in one worktree is not what handing work over means. The model is told to name another branch. There is no `M-x` command for this; from Lisp, use `ecc-worktree-delegate`.
 
-Under `spaces`, a session started in a worktree opens a Space of its own, under the repository it came from.
+Under `spaces`, a session started in a worktree opens its own Space under the repository it came from.

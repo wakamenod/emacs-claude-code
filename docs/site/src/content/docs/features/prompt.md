@@ -32,7 +32,7 @@ A session buffer contains the transcript at the top, a prompt input area below a
 
 Prompt history is shared across all sessions, so a prompt typed in one session is immediately available in another.
 
-`M-p` replaces the whole prompt area, which makes older entries impractical to reach. `C-c C-r` (`ecc-prompt-history-insert`) offers the history as a completion list, one line per prompt, newest first, and inserts the whole of the one chosen at point. What is already written stays where it is.
+`M-p` replaces the entire prompt area, which makes older entries impractical to reach. `C-c C-r` (`ecc-prompt-history-insert`) shows history as a completion list, one line per prompt, newest first, and inserts the full chosen prompt at point. Any text already written stays where it is.
 
 The CLI may suggest a follow-up prompt after a turn or two. Suggestions appear in the empty prompt area as ghost text; press `C-c C-s` to accept it as an editable draft.
 
@@ -84,7 +84,7 @@ Typing `/` at the beginning of the prompt displays the command menu; `TAB` compl
 
 `/model`, `/effort`, `/permissions`, `/config`, and `/btw` prompt for their argument first, as the CLI responds with usage instructions when invoked without arguments. Terminal-only commands are omitted from the completion list, though you can still run them by typing the full command.
 
-A few commands that the CLI doesn't list are handled directly by Emacs and never reach the model: `/btw`, `/hooks`, `/plugins`, `/login`, `/logout`, `/auth-status`, and `/resume`.
+A few commands that the CLI does not list are handled directly by Emacs and never reach the model: `/btw`, `/hooks`, `/plugins`, `/login`, `/logout`, `/auth-status`, and `/resume`.
 
 ### Side questions with `/btw`
 
@@ -98,11 +98,11 @@ The active turn is not interrupted: the `/btw` response arrives in a separate vi
 
 ### Another conversation with `/resume`
 
-`/resume` asks which recorded conversation of this project to carry on with, and carries this window on with it: the window, the tab, the buffer and the session name stay as they are, and what changes is which conversation is in them. That is what the terminal client's own `/resume` does — the CLI lists no such command for a headless client, so the name is Emacs's own.
+`/resume` asks which recorded conversation from this project to continue, and switches the current window to it. The window, tab, buffer, and session name stay as they are; only the conversation in them changes. This matches what `/resume` does in the terminal client. The CLI lists no such command for headless clients, so the name is Emacs's own.
 
-The CLI Emacs was running is stopped first (a running turn is interrupted and waited out), because two processes on one session id branch a recording without saying so. A conversation that already holds turns, or prompts still queued, is not left without a question first. The conversation you walk away from is left exactly where it is; `ecc-history-open` reads it again.
+Emacs stops the running CLI process first (interrupting any active turn and waiting for it to finish), because two processes on one session ID silently branch a recording. If a conversation already has turns or queued prompts, Emacs asks for confirmation before leaving it. The conversation you leave is preserved, and `ecc-history-open` can read it again.
 
-`/resume <session-id>` takes the recording by id without asking. It pairs with Spaces: going to a project with nothing running starts a fresh session, and `/resume` is how you get back into the one that was there.
+`/resume <session-id>` resumes the recording by ID without prompting. This works well with Spaces: opening a project with nothing running starts a fresh session, and `/resume` lets you return to the previous one.
 
 ### While a turn runs
 
@@ -114,11 +114,11 @@ Images pasted, dragged into the buffer, or inserted with `C-c C-i` are saved und
 
 ![The picture open beside the session, inserted into the prompt as a path, and described in the answer](../../../assets/image.gif)
 
-Images are drawn in the transcript as well as sent. Images attached to a prompt appear under the band that asked about them. Images that Claude sends back appear under the call that produced them. These include an `image` block in a message, the answer to a `Read` of a `.png`, and a screenshot from an MCP tool. Base64 never reaches the buffer: the payload is written into the session's image directory, and the transcript holds the path.
+Images are displayed in the transcript as well as sent. Images attached to a prompt appear under the prompt band that asked about them. Images that Claude sends back appear under the call that produced them. These include an `image` block in a message, the result of a `Read` of a `.png`, and a screenshot from an MCP tool. Base64 data never reaches the buffer: the payload is written to the session's image directory, and the transcript holds the path.
 
-If `ffmpeg` is on `PATH`, the first frame of a video is shown, and `RET` opens the video in an external player. If `ffmpeg` is not available, only the line naming the file is shown. Pulling the frame runs in a subprocess and is never waited for, so the line stands until the frame lands.
+If `ffmpeg` is on `PATH`, the first frame of a video is shown, and `RET` opens the video in an external player. If `ffmpeg` is not available, only the line naming the file is shown. Extracting the frame runs in a subprocess without blocking, so the line remains until the frame is ready.
 
-A GIF starts moving as soon as it is drawn and loops as long as it is on screen. `v` on a GIF stops it or starts it again. `v` controls only motion. `RET` opens a picture: a still in `image-mode` and a video in an external player. `ecc-image-inline` (also `I` in the menu) turns off drawing, leaving the line that names the file. Drawn images are limited in height, and the width follows `ecc-chat-text-width`.
+A GIF animates as soon as it is displayed and loops as long as it is on screen. Pressing `v` on a GIF stops or starts it again. `v` controls only animation. `RET` opens the file: a still image in `image-mode` and a video in an external player. `ecc-image-inline` (also `I` in the menu) turns off image display, leaving only the line naming the file. Displayed images are limited in height, and their width follows `ecc-chat-text-width`.
 
 `C-c C-x` toggles editor context for the buffer: when enabled, the current file and line number are automatically included with each prompt.
 

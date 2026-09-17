@@ -40,7 +40,7 @@ faceはテキスト挿入時に適用されるため、`M-x customize` による
 - **[グローバル操作](https://wakamenod.github.io/emacs-claude-code/ja/reference/key-bindings/):** どのバッファからでも保留中のツール実行リクエストを許可・拒否できます。
 - **[セッション管理](https://wakamenod.github.io/emacs-claude-code/ja/features/sessions/):** ダッシュボードから複数の同時並行セッションを整理・管理できます。
 - **[プロジェクト単位の表示](https://wakamenod.github.io/emacs-claude-code/ja/features/sessions/#focusing-one-project):** `ecc-focus-project` でフレーム全体を 1 つのプロジェクトに絞り込みます。ウィンドウのタブにはそのプロジェクトのセッションだけが表示されます。
-- **[Space と worktree](https://wakamenod.github.io/emacs-claude-code/ja/features/spaces/):** プロジェクトごとに 1 つのタブが割り当てられ（`ecc-use-spaces`、既定で有効）、その中のウィンドウ配置はそのまま保たれます。並べ替えた配置は、別のタブから戻ってきたときにそのまま復元されます。何も動いていないプロジェクトに移動するとセッションが 1 つ起動し（`ecc-space-always-session`。最後のセッションがなくなった時点で Space を閉じるのも同じ設定です）、`/resume` でその窓を以前記録した会話の続きに乗り換えられます。worktree を開くと元のリポジトリも裏で開き、リポジトリを閉じるとその下の worktree も一緒に閉じます。左側のサイドバーには全プロジェクトとセッションの状態が一覧表示され、`ecc-start-worktree` はリポジトリの隣にブランチをチェックアウトしてそこでセッションを開始します。タブバーを出すかどうかは `tab-bar-show` に委ねてあり、`nil` にすれば帯を出さずに Space がそのまま動きます。一覧はサイドバーが受け持ちます。
+- **[Space と worktree](https://wakamenod.github.io/emacs-claude-code/ja/features/spaces/):** プロジェクトごとに専用のタブが割り当てられます（`ecc-use-spaces`、既定で有効）。ウィンドウ配置が保持されるため、離れたときの状態のまま復元されます。実行中のセッションがないプロジェクトに移動するとセッションが開始されます（`ecc-space-always-session`。最後のセッション終了時に Space を閉じる動作も兼ねます）。`/resume` で、以前記録した会話をそのウィンドウで再開できます。worktree を開くと元のリポジトリも裏で開き、リポジトリを閉じるとその配下の worktree も一緒に閉じます。左側のサイドバーには全プロジェクトとセッションが、それぞれの動作状況とともに一覧表示されます。`ecc-start-worktree` はリポジトリの隣にブランチをチェックアウトし、そこでセッションを開始します。タブバー自体の表示は `tab-bar-show` で制御します。`nil` に設定しても、サイドバーに一覧が表示され、画面上にタブバーがあるときとまったく同じように Space が動作します。
 - **安全なデフォルト設定:** 権限プロンプトはデフォルトで「拒否」に設定されています。内蔵のループバック MCP サーバーはデフォルトで無効化されており、Elisp の評価ツールも明示的な有効化が必要です。
 
 ## 動作要件

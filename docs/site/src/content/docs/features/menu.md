@@ -36,7 +36,7 @@ Lists conversations available to resume.
 | ◉ | Active conversation running in another process |
 | ↺ | Recorded conversation on disk |
 
-Each entry shows its name, last active time, and directory (or initial prompt for recordings). Use the `-f` switch to branch a new conversation from the selected one instead of continuing it. From a key, `C-c c r` resumes directly and `C-u C-c c r` does the same branching.
+Each entry shows its name, last active time, and directory (or initial prompt for recordings). Use the `-f` switch to branch a new conversation from the selected one instead of continuing it. With keybindings, `C-c c r` resumes directly and `C-u C-c c r` branches instead.
 
 :::caution[Resuming an active session branches history]
 If two processes write to the same session ID simultaneously, the recording can become corrupted since the CLI does not use file locking. This state is indicated by ◉; ecc asks for confirmation before resuming.
@@ -134,9 +134,9 @@ See [Prompt and transcript](/emacs-claude-code/features/prompt/).
 
 ## Spaces
 
-`j` goes to a Space, `b` opens the sidebar, `z` fills the tab with the window point is in and puts the windows back again, `V` puts this Space's windows back to the arrangement a new tab gets, and `X` closes this Space and stops what is running in it.
+`j` switches to a Space. `b` opens the sidebar. `z` toggles maximizing the current window to fill the tab. `V` resets this Space's windows to the layout of a new tab. `X` closes this Space and stops everything running in it.
 
-`W` opens the worktree menu, where `c` makes a worktree and starts a session there, `o` starts one in a worktree that already exists, and `k` removes a worktree.
+`W` opens the worktree menu. In this menu, `c` creates a worktree and starts a session there, `o` starts a session in an existing worktree, and `k` removes a worktree.
 
 See [Spaces and worktrees](/emacs-claude-code/features/spaces/).
 

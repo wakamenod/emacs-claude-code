@@ -38,7 +38,7 @@ M-x customize-group RET ecc
 | `ecc-diff-context-lines` | `3` | トランスクリプト内の変更箇所の前後に表示する文脈行数 |
 | `ecc-stream-throttle` | `0.05` | ストリーミング差分を描画前にバッファリングする秒数。0 を指定すると受信した差分を即座に描画します |
 | `ecc-render-debounce` | `0.1` | アクティブなトランスクリプト領域を再描画するまでのデバウンス待機時間（秒） |
-| `ecc-image-inline` | `t` | `t` の場合はトランスクリプト内の画像を描画します。`nil` の場合はファイル名の行だけを表示します（行自体はどちらの場合も描画されます） |
+| `ecc-image-inline` | `t` | `t` の場合はトランスクリプト内の画像を表示します。`nil` の場合はファイル名の行だけを表示します（この行はどちらの場合も表示されます） |
 
 ## ヘッダーラインとモードライン
 
@@ -84,10 +84,10 @@ M-x customize-group RET ecc
 | `ecc-window-large-frame-min-height` | `80` | 3 つめのセッションウィンドウを開くために必要なフレームの最小高さ（行数）。この値を下回る場合は 2 つのウィンドウを共有し、残りのセッションはタブラインから切り替えます |
 | `ecc-window-sub-height` | `0.33` | 3 つめのセッションウィンドウの高さ（比率または行数）。セッション列ではなく、フレームの主要領域（主にコードバッファ側）から分割して確保されます |
 | `ecc-tab-line-scope` | `'project` | セッションウィンドウのタブラインに表示するセッションの範囲。`'project` はそのウィンドウ自身のプロジェクトのセッションのみ、`'all` は Emacs で開いている全セッション |
-| `ecc-use-spaces` | `t` | 非 nil でプロジェクトごとにタブバーのタブ（Space）を割り当て、その中のウィンドウ配置には手を触れません。nil はこれ以前の配置方法で、トランスクリプトを main / sub-1 / sub-2 の役割を持つサイドウィンドウに入れ、プロジェクト単位で役割を配り直します。タブもサイドバーも worktree コマンドもありません。[Space と worktree](/emacs-claude-code/ja/features/spaces/) を参照 |
-| `ecc-worktree-directory` | `".claude/worktrees"` | `ecc-start-worktree` が worktree を置く場所。相対パスはリポジトリからの相対、絶対パスは全リポジトリで共有するディレクトリで、`<directory>/<repository>/<branch-slug>` に置かれます |
-| `ecc-space-always-session` | `t` | `'spaces'` で、Space が常にセッションを 1 つ持つかどうか。非 nil なら何も動いていない Space を開いたときにセッションを起動し、最後のセッションがなくなった時点でその Space を閉じます。nil なら Space はソースだけで開き、そのプロジェクトの最後のバッファを kill するまで残ります |
-| `ecc-space-session-min-width` | `80` | `'spaces'` で、トランスクリプトの列をさらに分割するためにセッションウィンドウが必要とする桁数。これ以上の幅が取れない場合は、全てのトランスクリプトを狭くする代わりに、最も長く触られていないセッションのウィンドウを新しいセッションに渡します。`window-min-width` がこの値の下限です |
+| `ecc-use-spaces` | `t` | 非 nil の場合、プロジェクトごとにタブバーのタブ（Space）を割り当て、内部のウィンドウ配置は変更しません。nil の場合、従来のレイアウトを使用します。トランスクリプトはプロジェクトに割り当てられた役割（main、sub-1、sub-2）を持つサイドウィンドウに表示され、タブやサイドバー、worktree コマンドは使用できません。[Space と worktree](/emacs-claude-code/ja/features/spaces/) を参照 |
+| `ecc-worktree-directory` | `".claude/worktrees"` | `ecc-start-worktree` が worktree を配置する場所。相対パスはリポジトリ内を指します。絶対パスは全リポジトリで共有するディレクトリで、worktree は `<directory>/<repository>/<branch-slug>` に配置されます |
+| `ecc-space-always-session` | `t` | `'spaces'` で、Space が常にセッションを保持するかどうか。非 nil の場合、実行中のセッションがない Space を開くとセッションを開始し、最後のセッションを閉じると Space も閉じます。nil の場合、Space はソースファイルのみを表示して開き、プロジェクトの最後のバッファが kill されるまで開いたままになります |
+| `ecc-space-session-min-width` | `80` | `'spaces'` で、トランスクリプトの並びをさらに分割するためにセッションウィンドウが必要とする桁数。この幅の列を確保できない場合は、すべてのトランスクリプトを狭くするのではなく、直近で最も操作されていないセッションのウィンドウを再利用します。`window-min-width` がこの値の下限です |
 
 `ecc-window-large-frame-min-height` の既定値（80行）は、ノートPCの画面と外付け大画面ディスプレイを自動判別するための値です。14インチ画面はおよそ58行、16インチはおよそ67行であるのに対し、外部デスクトップディスプレイでは110行以上表示できます。
 

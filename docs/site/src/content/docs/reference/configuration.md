@@ -38,7 +38,7 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 | `ecc-diff-context-lines` | `3` | Lines of context displayed around modifications in the transcript |
 | `ecc-stream-throttle` | `0.05` | Interval in seconds to buffer streaming deltas before redrawing. Zero renders each delta immediately |
 | `ecc-render-debounce` | `0.1` | Debounce delay in seconds before redrawing the active transcript region |
-| `ecc-image-inline` | `t` | When `t`, images in the transcript are drawn. When `nil`, only the line naming the file is shown. The line is drawn either way |
+| `ecc-image-inline` | `t` | When `t`, images in the transcript are shown. When `nil`, only the line naming the file is shown. That line is shown either way |
 
 ## Header line and mode line
 
@@ -75,7 +75,7 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 
 | Variable | Default | Description |
 |---|---|---|
-| `ecc-review-style` | `'diff` | How `ecc-review` and `ecc-review-worktree` show changes. `'diff` uses a single read-only `diff-mode` buffer, while `'ediff` displays every file in the review side by side in a single ediff session. Both are read-only and send the same prompt |
+| `ecc-review-style` | `'diff` | How `ecc-review` and `ecc-review-worktree` show changes. `'diff` uses a single read-only `diff-mode` buffer. `'ediff` displays every file in the review side by side in a single ediff session. Both are read-only and send the same prompt |
 
 ## Windows
 
@@ -84,10 +84,10 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 | `ecc-window-large-frame-min-height` | `80` | Minimum frame height (in lines) required before allocating a third session window. Below this threshold, sessions share two windows and the tab line provides navigation |
 | `ecc-window-sub-height` | `0.33` | Height of the third session window (as a fraction or line count). Taken from the primary frame area (typically code buffers) rather than the side session column |
 | `ecc-tab-line-scope` | `'project` | Scope of sessions shown in a session window's tab line. `'project` lists sessions for that window's own project; `'all` lists all open sessions in Emacs |
-| `ecc-use-spaces` | `t` | Non-nil gives every project a tab of the tab bar -- a Space -- and leaves the windows inside it alone. Nil is the older arrangement: a transcript goes in a side window with a role -- main, sub-1, sub-2 -- the roles are dealt out again for one project, and there are no tabs, no sidebar and no worktree commands. See [Spaces and worktrees](/emacs-claude-code/features/spaces/) |
-| `ecc-worktree-directory` | `".claude/worktrees"` | Where `ecc-start-worktree` puts a worktree. A relative name hangs off the repository; an absolute one is a directory every repository shares, and a worktree lands at `<directory>/<repository>/<branch-slug>` |
-| `ecc-space-always-session` | `t` | Whether a Space always holds a session, under `'spaces'`. Non-nil starts one when a Space with nothing running is opened, and closes a Space when its last session goes. Nil opens a Space on its source alone and keeps it until the last buffer of the project is killed as well |
-| `ecc-space-session-min-width` | `80` | Columns a session window needs, under `'spaces'`, before the row of transcripts is divided again. A row with no room for another column this wide gives the new session a window that is already there -- the one whose session was worked in longest ago -- rather than making every transcript narrower. `window-min-width` is a floor under it |
+| `ecc-use-spaces` | `t` | When non-nil, each project gets a tab on the tab bar (a Space), leaving the windows inside it alone. When nil, ecc uses the older layout: transcripts appear in side windows with roles (main, sub-1, sub-2) assigned for a project, with no tabs, sidebar, or worktree commands. See [Spaces and worktrees](/emacs-claude-code/features/spaces/) |
+| `ecc-worktree-directory` | `".claude/worktrees"` | Where `ecc-start-worktree` puts a worktree. A relative path is inside the repository. An absolute path is a directory shared by all repositories, where worktrees are placed at `<directory>/<repository>/<branch-slug>` |
+| `ecc-space-always-session` | `t` | Whether a Space always holds a session, under `'spaces'`. When non-nil, opening a Space with nothing running starts a session, and closing its last session closes the Space. When nil, a Space opens showing only its source files, and stays open until the project's last buffer is killed as well |
+| `ecc-space-session-min-width` | `80` | Columns a session window needs, under `'spaces'`, before the row of transcripts is split again. If there is no room for another column this wide, the new session reuses an existing window (the one whose session was worked in least recently) rather than making every transcript narrower. `window-min-width` sets the lower limit |
 
 The default value of `ecc-window-large-frame-min-height` (80 lines) is calibrated to differentiate laptop screens from larger external displays: a 14-inch screen typically fits ~58 lines and a 16-inch screen ~67 lines, whereas standard desktop monitors accommodate 110+ lines.
 

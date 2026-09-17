@@ -32,6 +32,6 @@ Or, without `use-package`:
 
 Keybindings correspond directly to commands in the [transient menu](/emacs-claude-code/features/menu/), ensuring consistent mnemonic shortcuts across Emacs. `?` opens the transient menu itself, providing quick access to all ecc commands from outside a session buffer.
 
-What is not here is the handful of commands used once a week rather than once an hour. Making a worktree, opening one and removing one are `?` then `W`; switching a window to another session is `C-c C-t` inside a session buffer; focusing one project under `classic` is `M-x ecc-focus-project`.
+Infrequently used commands are not listed here. To create, open, or remove a worktree, press `?` then `W`. To switch a window to another session, press `C-c C-t` inside a session buffer. To focus one project under `classic`, run `M-x ecc-focus-project`.
 
 For buffer-local bindings inside session buffers, see [Prompt and transcript](/emacs-claude-code/features/prompt/).
