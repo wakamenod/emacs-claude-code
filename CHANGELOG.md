@@ -190,9 +190,34 @@ Verified against **Claude Code CLI 2.1.270**.
 
   A Space whose tab has to be made comes up with its sessions already dealt
   out, most recently used first, until the row has no room for another column.
-  Going to a Space with nothing running in it starts a session there -- always,
-  there is no setting: a tab with a file in it and no way to say anything is a
-  Space that looks broken, and going to a Space is asking to work there.
+  Opening a worktree opens the repository it was checked out from behind it,
+  so that the worktree has something to hang under and the sidebar can draw
+  the tree git describes; the worktree is what is left in front.
+
+  `ecc-space-always-session` says whether a Space always holds a session, and
+  it is what a Space is made of rather than a detail. On, the default, going to
+  a Space with nothing running in it starts a session there -- a tab with a
+  file in it and no way to say anything is a Space that looks broken, and going
+  to a Space is asking to work there -- and a Space closes itself when its last
+  session goes, taking the user to the Space beside it. Off, opening a Space
+  starts nothing and shows the source of the project, and the Space stays until
+  the last buffer of the project is killed as well. A session whose process
+  exited is not a session that has gone: it keeps its place, so `/resume` has
+  somewhere to come back to.
+
+  A session that is killed takes its window with it rather than leaving it to
+  Emacs, which would put whatever was there before the transcript -- usually
+  `*scratch*` -- in the middle of a row of transcripts. The last window of a
+  tab cannot be deleted and is given the source of the project instead.
+
+  `ecc-space-close` on a repository closes the worktrees drawn under it too,
+  stopping everything running in the group after one question; a worktree
+  closed on its own leaves the repository where it is. No checkout is touched
+  either way -- `ecc-remove-worktree` is still what undoes one -- and a
+  repository that was only opened to hold a worktree goes when the last
+  worktree under it does. With `ecc-space-always-session` on, `ecc-kill` on the
+  last session of a Space now closes that Space before it offers to remove the
+  checkout.
 
   `ecc-space-goto` also reaches a project there is nothing left of but its
   recordings, so a project worked in before can be gone back to. Those are

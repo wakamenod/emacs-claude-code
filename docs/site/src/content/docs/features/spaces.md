@@ -23,7 +23,13 @@ How many fit is `ecc-space-session-min-width`, the columns a transcript may not 
 
 A Space whose tab has to be made comes up with its sessions already on the screen: they are dealt out beside the source, most recently used first, until the row has no room for another column. The ones that do not fit go on running without a window.
 
-**Going to a Space with nothing running starts a session there.** Always — there is no setting. A tab with a file in it and no way to say anything is a Space that looks broken, and going to a Space is asking to work there. To pick up the conversation that was there before, type `/resume` in the session that opens.
+**Going to a Space with nothing running starts a session there.** A tab with a file in it and no way to say anything is a Space that looks broken, and going to a Space is asking to work there. To pick up the conversation that was there before, type `/resume` in the session that opens.
+
+That is [`ecc-space-always-session`](/emacs-claude-code/reference/configuration/#ecc-space-always-session), on by default, and it says what a Space is made of. On, a Space always holds a session: opening one starts a session, and a Space **closes itself when its last session goes**, taking you to the Space beside it. A session whose process exited has not gone — it keeps its place, so `/resume` has somewhere to come back to — and what closes a Space is killing the session, not the CLI dying. Off, a Space is a place to read as much as a place to work: opening one starts nothing and shows the source, and the Space stays until you kill the last buffer of the project too.
+
+**Opening a worktree opens the repository it came from behind it.** A worktree needs the repository on the screen to be drawn under it, so opening one opens the other as well, as a Space of its own and with a session in it if `ecc-space-always-session` says so. The worktree is what you are left looking at. A repository that already has a Space is left where it is.
+
+**A session you kill takes its window with it.** The window is deleted and the transcripts beside it take the room back, rather than the window being left holding whatever was in it before — usually `*scratch*`. The last window of a tab cannot be deleted and shows the project's source instead.
 
 `ecc-space-goto` also reaches a project you have only recordings of — one worked in before, with nothing running and no tab. Those projects are deliberately not in the sidebar and are not numbered: putting them there would move the numbers the `1`-`9` keys take under your feet.
 
@@ -52,7 +58,7 @@ The tab line inside each session window is unchanged: it switches between the se
 | `C-c c j` | `ecc-focus-project` | The same thing for the project of this buffer |
 | `C-c c z` | `ecc-space-zoom` | Fill the tab with this window; the same key puts the windows back |
 | `C-c c V` | `ecc-window-focus-source` | Show this Space's source in the main window |
-| `C-c c ?` then `X` | `ecc-space-close` | Close this Space and stop what is running in it |
+| `C-c c ?` then `X` | `ecc-space-close` | Close this Space and stop what is running in it — with its worktrees, when it is a repository |
 | — | `ecc-space-jump` | Go to the Nth Space, as numbered in the sidebar |
 
 Going to a session takes you to its Space, whichever command asked: `C-c c n`
@@ -64,6 +70,8 @@ window goes back to what it held once the question is answered. Only where every
 window is a transcript is one of them divided; none is ever taken away.
 
 The windows of a tab are yours, so nothing rearranges them behind your back. That cuts both ways: a window you pointed at another project's file keeps that file, and going to the Space again does not undo it. `C-c c V` (`ecc-window-focus-source`) is the way back — it shows this Space's source in the main window, and asks which buffer with `C-u`. The one exception is a tab with nothing but transcripts left in it, which is nobody's arrangement: going to that Space opens a window for the code again, to the left of the transcripts.
+
+Closing a repository's Space closes the worktrees drawn under it as well: they are one group on the screen and they close as one, after a single question naming everything that will stop. A worktree closed on its own leaves the repository where it is — and a repository that was only opened to hold a worktree goes when the last worktree under it does.
 
 Closing a Space does not touch the checkout of a worktree. Closing its tab by hand stops nothing: the sessions go on running with no window, and `C-c c w` (`ecc-toggle`) or the sidebar brings them back.
 
