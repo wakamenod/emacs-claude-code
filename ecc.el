@@ -147,9 +147,13 @@ session started is said in the echo area either way: it is the moment a
 session in the wrong project can be caught, and the alternative is
 finding it later among all the others."
   (interactive (ecc-start--read-arguments))
-  (let ((session (ecc-model-create-session
-                  :project-root (or directory (ecc-window-context-project-root))
-                  :name (and name (not (string-empty-p name)) name))))
+  (let* ((root (or directory (ecc-window-context-project-root)))
+         (session (ecc-model-create-session
+                   :project-root root
+                   ;; A session in a worktree goes by its branch, which
+                   ;; is what its Space and the sidebar call it.
+                   :name (or (and name (not (string-empty-p name)) name)
+                             (ecc-worktree-session-name root)))))
     (ecc-session-ensure-buffer session)
     ;; What the tree held before the CLI could touch it: `ecc-review'
     ;; diffs against this, so it is taken before the process starts.
