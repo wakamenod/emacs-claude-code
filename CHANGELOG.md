@@ -170,6 +170,15 @@ Verified against **Claude Code CLI 2.1.270**.
 
 ### Changed
 
+- `C-c c r` runs `ecc-resume` itself rather than opening `ecc-resume-menu`,
+  and `C-u C-c c r` forks the conversation.  Resuming is the commonest thing
+  reached from that key and it took two presses -- `C-c c r r` -- with the
+  menu in between showing a `-f` switch almost nobody was there for.  The
+  menu keeps its form: `r` in `ecc-menu` still opens `ecc-resume-menu`, where
+  the fork is a switch seen before it is pressed, which is what a fork is
+  worth.  From the key, the prompt says `Fork: ` instead of `Resume: ` when
+  the prefix argument is there, so the choice is visible where it is made.
+
 - `C-c C-c` in a review sends the comments instead of opening a buffer to
   confirm them in.  The comments are the prompt -- each one carries the hunk it
   sits on and the sentence written about it -- so what stood in between was a

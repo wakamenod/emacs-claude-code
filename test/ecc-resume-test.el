@@ -331,6 +331,26 @@ reachable from inside it."
                    (lambda (&rest _) (error "It asked in a stopped session"))))
           (should (eq session (ecc-read-session))))))))
 
+(ert-deftest ecc-resume-test-the-prefix-argument-forks ()
+  "`C-c c r\=' resumes and `C-u C-c c r\=' forks, saying so in the prompt.
+The key runs `ecc-resume\=' itself, so the fork is the prefix argument
+and the minibuffer is the only place the choice is visible."
+  (ecc-test-with-fake-session session
+    (dolist (case '((nil "Resume: ") ((4) "Fork: ")))
+      (seq-let (prefix prompt) case
+        (let (asked resumed)
+          (cl-letf (((symbol-function 'ecc-read-session)
+                     (lambda (&optional p) (setq asked p) session))
+                    ((symbol-function 'ecc-history-resume)
+                     (lambda (s &optional fork) (setq resumed (list s fork))))
+                    ((symbol-function 'ecc--enable-session-modes) #'ignore)
+                    ((symbol-function 'ecc-window-select-session) #'ignore))
+            (let ((current-prefix-arg prefix))
+              (call-interactively #'ecc-resume))
+            (should (equal prompt asked))
+            (should (eq session (car resumed)))
+            (should (eq (and prefix t) (and (cadr resumed) t)))))))))
+
 (provide 'ecc-resume-test)
 
 ;;; ecc-resume-test.el ends here
