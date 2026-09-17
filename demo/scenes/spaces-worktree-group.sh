@@ -15,7 +15,7 @@ e "(demo-open-source)"; sleep 5
 say "Nothing is running yet: no session, no Space, one tab"; sleep 3
 e "(demo-report-spaces)"; sleep 5
 
-say "1. ecc-start-worktree cuts demo/one beside the repository and starts a session there"; sleep 5
+say "1. ecc-start-worktree cuts feat/one beside the repository and starts a session there"; sleep 5
 e "(demo-start-worktree \"feat/one\")"; sleep 10
 e "(demo-frame)"; sleep 3
 
@@ -24,7 +24,7 @@ e "(demo-report-spaces)"; sleep 7
 say "Two Spaces, two tabs -- and the worktree is the one in front, which is where the work is"; sleep 7
 e "(demo-report-implicit)"; sleep 6
 
-say "2. A second worktree of the same repository, demo/two"; sleep 4
+say "2. A second worktree of the same repository, feat/two"; sleep 4
 e "(demo-start-worktree \"feat/two\")"; sleep 10
 e "(demo-frame)"; sleep 2
 e "(demo-report-spaces)"; sleep 7
@@ -49,11 +49,11 @@ e "(demo-report-spaces)"; sleep 6
 say "6. Stopping the LAST session of a Space now closes the Space as well"; sleep 5
 e "(demo-goto-session-space \"feat/two\")"; sleep 3
 e "(demo-frame)"; sleep 2
-say "Standing in demo/two's own tab, and stopping the one session in it"; sleep 5
+say "Standing in feat/two's own tab, and stopping the one session in it"; sleep 5
 e "(demo-kill-session \"feat/two\")"; sleep 5
 e "(demo-frame)"; sleep 2
 e "(demo-report-spaces)"; sleep 8
-say "demo/two is gone from the tabs and from the sidebar -- an exited session would have kept its place, for /resume"; sleep 8
+say "feat/two is gone from the tabs and from the sidebar -- an exited session would have kept its place, for /resume"; sleep 8
 
 say "7. ecc-space-close on the repository asks once, for the whole group"; sleep 5
 e "(demo-goto-space demo-root)"; sleep 2
