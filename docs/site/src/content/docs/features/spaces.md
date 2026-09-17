@@ -117,9 +117,11 @@ The bottom half lists the sessions, each with its mark, name, and what it is wai
 | `k` | Stop this session |
 | `K` | Remove this worktree's directory |
 | `X` | Close this Space |
-| `a`, `d` | Allow or deny what this session is waiting on |
+| `a`, `d` | Allow or deny what this session is waiting on (asks first; not for `Bash`) |
 | `g` | Refresh git status and redraw |
 | `q` | Hide the sidebar |
+
+`a` and `d` answer whatever the session waits on — a permission, a question, a plan — and behave exactly as the dashboard's do: see [Sessions](/emacs-claude-code/features/sessions/).
 
 `ecc-sidebar-width` sets the sidebar width in columns (28 by default). `ecc-sidebar-sessions-sort` orders the bottom half: `spaces` (the default) keeps sessions under their Space, while `priority` puts sessions waiting for an answer first.
 

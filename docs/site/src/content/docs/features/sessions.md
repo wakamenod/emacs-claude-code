@@ -100,7 +100,9 @@ Waiting sessions appear at the top, followed by remaining sessions sorted by rec
 | `U` | View usage and rate limits |
 | `g` | Refresh dashboard |
 
-`k` stops the process while keeping the recording on disk so it can still be resumed via `r`. `D` permanently deletes the recording file. See [Prompt and transcript](/emacs-claude-code/features/prompt/) for details on what `a` and `d` send.
+`k` stops the process while keeping the recording on disk so it can still be resumed via `r`, and asks first, since stopping a session takes its window and transcript with it. `D` permanently deletes the recording file. See [Prompt and transcript](/emacs-claude-code/features/prompt/) for details on what `a` and `d` send.
+
+`a` and `d` ask what they are about to answer before answering it — set `ecc-answer-confirm` to `nil` to skip that — and they leave the tools listed in `ecc-answer-exclude-tools` (`Bash` by default) alone: a shell command is read in the transcript, which `RET` opens, rather than answered from a summary cut to fit a column. The sidebar's `a` and `d` behave identically.
 
 ## The tab line
 
