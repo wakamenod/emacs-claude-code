@@ -11,6 +11,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'cl-lib)
 (require 'ecc-test-helpers)
 (require 'ecc-review)
 (require 'ecc-review-ediff)
@@ -351,6 +352,136 @@ font-lock."
                                    :text))))))
             (ecc-review-ediff-test--quit control)))))))
 
+(ert-deftest ecc-review-ediff-test-the-current-difference-stands-out ()
+  "The difference being read is marked apart from all the others.
+A theme can paint `ediff-current-diff-A\=' in the very colours a diff is
+read by -- modus-vivendi does -- so the colour is carried a shade
+further, and a bar in the fringe follows the difference from line to
+line as n and p walk it."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (ecc-review-ediff-test--repository directory)
+                (setf (ecc-session-project-root session) directory)
+                (should (ecc-review-ensure-baseline session))
+                (ecc-review-ediff-test--write
+                 (concat directory "x.txt") "one\nchanged\nand again\n")
+                (ecc-review-ediff-test--write
+                 (concat directory "y.txt") "a second file\n")
+                (setq control (ecc-review-ediff-buffer session))
+                (with-current-buffer control
+                  ;; The colour of the current difference is not the one
+                  ;; every other difference was given.
+                  (with-current-buffer (car ecc-review-ediff--buffers)
+                    (let ((current (alist-get 'ediff-current-diff-A
+                                              face-remapping-alist)))
+                      (should current)
+                      (should-not (memq 'diff-removed current))))
+                  ;; A review opens before the first difference, so
+                  ;; there is nothing to mark until n has walked to one.
+                  (should-not ecc-review-ediff--marks)
+                  (ediff-next-difference)
+                  (should (> (length ecc-review-ediff--marks) 1))
+                  (should (seq-some (lambda (overlay)
+                                      (eq (overlay-buffer overlay)
+                                          (car ecc-review-ediff--buffers)))
+                                    ecc-review-ediff--marks))
+                  (should (seq-some (lambda (overlay)
+                                      (eq (overlay-buffer overlay)
+                                          (cdr ecc-review-ediff--buffers)))
+                                    ecc-review-ediff--marks))
+                  ;; Every mark is on a line of the difference, and none
+                  ;; outside it.  A difference the base side does not
+                  ;; hold at all -- these lines are new -- begins and
+                  ;; ends in the same place, and carries the one mark.
+                  (let ((beg (ediff-get-diff-posn 'A 'beg 0))
+                        (end (ediff-get-diff-posn 'A 'end 0)))
+                    (dolist (overlay ecc-review-ediff--marks)
+                      (when (eq (overlay-buffer overlay)
+                                (car ecc-review-ediff--buffers))
+                        (should (<= (1- beg) (overlay-start overlay)))
+                        (should (<= (overlay-start overlay) end)))))
+                  ;; And the bar moves with the difference rather than
+                  ;; piling up behind it.
+                  (let ((first (mapcar #'overlay-start
+                                       ecc-review-ediff--marks)))
+                    (ediff-next-difference)
+                    (should ecc-review-ediff--marks)
+                    (should-not
+                     (equal first (mapcar #'overlay-start
+                                          ecc-review-ediff--marks)))
+                    (should (seq-every-p #'overlay-buffer
+                                         ecc-review-ediff--marks)))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-the-review-asks-for-a-fringe ()
+  "A review gives its own two windows the fringe the bar is drawn in.
+A frame can be set up with no fringe at all -- `left-fringe\=' 0 in
+`initial-frame-alist\=' -- and the bar then had nowhere to go.  Batch
+has no fringes to look at, so what is checked is what the review asks
+for and of which windows."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil)
+              (asked nil))
+          (unwind-protect
+              (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+                        ((symbol-function 'set-window-fringes)
+                         (lambda (window left &rest _)
+                           (push (cons window left) asked))))
+                (ecc-review-ediff-test--repository directory)
+                (setf (ecc-session-project-root session) directory)
+                (should (ecc-review-ensure-baseline session))
+                (ecc-review-ediff-test--write
+                 (concat directory "x.txt") "two\n")
+                (setq control (ecc-review-ediff-buffer session))
+                (with-current-buffer control
+                  (ediff-next-difference)
+                  ;; The two windows of the review, and no other.
+                  (should (= (length asked) 2))
+                  (should (memq ediff-window-A (mapcar #'car asked)))
+                  (should (memq ediff-window-B (mapcar #'car asked)))
+                  (should (seq-every-p (lambda (entry)
+                                         (= (cdr entry)
+                                            ecc-review-ediff-fringe-width))
+                                       asked))
+                  ;; And nothing at all when the review is not to ask.
+                  (setq asked nil)
+                  (let ((ecc-review-ediff-fringe-width nil))
+                    (ediff-previous-difference)
+                    (ediff-next-difference)
+                    (should-not asked))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-the-current-difference-can-be-left-alone ()
+  "Both marks of the current difference can be turned off."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (let ((ecc-review-ediff-current-diff-faces nil)
+                    (ecc-review-ediff-current-diff-mark nil))
+                (ecc-review-ediff-test--repository directory)
+                (setf (ecc-session-project-root session) directory)
+                (should (ecc-review-ensure-baseline session))
+                (ecc-review-ediff-test--write
+                 (concat directory "x.txt") "two\n")
+                (setq control (ecc-review-ediff-buffer session))
+                (with-current-buffer control
+                  (should-not ecc-review-ediff--marks)
+                  (with-current-buffer (car ecc-review-ediff--buffers)
+                    (should-not (alist-get 'ediff-current-diff-A
+                                           face-remapping-alist)))))
+            (ecc-review-ediff-test--quit control)))))))
+
 (ert-deftest ecc-review-ediff-test-plain-text-when-fontifying-is-off ()
   "`ecc-review-ediff-fontify' nil leaves the code as it came."
   (skip-unless (executable-find "git"))
@@ -372,6 +503,55 @@ font-lock."
                     (should (search-forward "def" nil t))
                     (should-not (get-text-property (- (point) 1) 'face)))))
             (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-quitting-hands-the-keyboard-back ()
+  "Quitting gives the frame the review opened in the input focus again.
+The control panel of a graphical Emacs is a frame of its own and holds
+the keyboard; `ediff-cleanup-mess' deletes it and selects the other
+frame within Emacs only, which leaves the window system with no focused
+frame -- and a frame that is not focused draws no cursor at all where
+`cursor-in-non-selected-windows' is nil.  Batch has one terminal frame,
+so the graphical display and the focus are both stood in for."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil)
+              (focused nil))
+          (unwind-protect
+              (progn
+                (ecc-review-ediff-test--repository directory)
+                (setf (ecc-session-project-root session) directory)
+                (should (ecc-review-ensure-baseline session))
+                (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
+                (setq control (ecc-review-ediff-buffer session))
+                (should (eq (buffer-local-value 'ecc-review-ediff--frame control)
+                            (selected-frame)))
+                (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+                          ((symbol-function 'select-frame-set-input-focus)
+                           (lambda (frame &rest _) (push frame focused))))
+                  (with-current-buffer control (ecc-review-quit)))
+                (should (equal focused (list (selected-frame)))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-a-review-of-a-terminal-frame-keeps-its-focus ()
+  "Nothing is done to the focus where the panel was never a frame.
+A terminal Emacs lays the control panel out as a window like any other,
+and there is no frame to hand the keyboard back to."
+  (let ((focused nil))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+              ((symbol-function 'select-frame-set-input-focus)
+               (lambda (frame &rest _) (push frame focused))))
+      (ecc-review-ediff--take-the-keyboard (selected-frame)))
+    (should-not focused))
+  ;; A frame that was closed while the review was open is not one to
+  ;; select, and not an error either.
+  (let ((focused nil))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+              ((symbol-function 'select-frame-set-input-focus)
+               (lambda (frame &rest _) (push frame focused))))
+      (ecc-review-ediff--take-the-keyboard nil))
+    (should-not focused)))
 
 (ert-deftest ecc-review-ediff-test-the-review-takes-the-frame ()
   "The review opens in a frame of its own windows, and gives them back.

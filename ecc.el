@@ -1,12 +1,29 @@
-;;; ecc.el --- Run Claude Code from Emacs  -*- lexical-binding: t; -*-
+;;; ecc.el --- Client for the Claude Code CLI  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
-;; Keywords: tools, processes
-;; Version: 0.3.0
+;; Maintainer: Jun <wakamenod@gmail.com>
+;; Version: 0.3.1
 ;; Package-Requires: ((emacs "29.1"))
+;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -14,7 +31,13 @@
 ;; with the stream-json protocol and shows the conversation in one
 ;; buffer, the transcript above and the prompt below.
 ;;
-;; Start one with \\[ecc-start].
+;; `M-x ecc-start' starts a session in the project of the current
+;; buffer and `M-x ecc-resume' opens a conversation again.  `M-x
+;; ecc-menu' is every command in one menu, and `M-x ecc-dashboard'
+;; lists the sessions of this Emacs with the recordings beside them.
+;;
+;; The CLI is not part of this package: install it separately, and name
+;; it in `ecc-executable' if it is not found on `exec-path'.
 
 ;;; Code:
 
@@ -195,7 +218,7 @@ Interactively, the session of the current buffer is resumed when it has
 stopped -- that is the R offered after an exit -- and a choice is asked
 for otherwise.  A prefix argument forks it into a new conversation.
 
-`C-c c r\=' runs this directly, and `C-u C-c c r\=' forks: the prompt then
+\\`C-c c r\=' runs this directly, and \\`C-u C-c c r\=' forks: the prompt then
 says Fork rather than Resume, so that what is about to happen is in the
 minibuffer where the choice is made.  `ecc-menu\=' keeps `ecc-resume-menu\='
 under r, where the fork is a switch seen before it is pressed."

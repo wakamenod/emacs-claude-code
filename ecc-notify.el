@@ -3,8 +3,25 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
-;; Package-Requires: ((emacs "29.1"))
+;; URL: https://github.com/wakamenod/emacs-claude-code
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -144,7 +161,10 @@ On macOS this is the name of a system sound such as \"Glass\"."
   "Announce TEXT about EVENT of SESSION at `ecc-notify-level'."
   (when ecc-notify-level
     (message "%s" text)
-    (when (memq ecc-notify-level '(pulse desktop))
+    ;; Spelled out rather than a `memq' over a quoted list: a list
+    ;; whose first element is also the name of a function reads as a
+    ;; call to it, and a checker reading the file says so.
+    (when (or (eq ecc-notify-level 'pulse) (eq ecc-notify-level 'desktop))
       (ecc-notify-pulse session))
     (when (ecc-notify-desktop-p)
       (ecc-notify-desktop text))
@@ -329,28 +349,80 @@ projects.  What is given up is that its tab is not on the screen to
 blink when it wants an answer -- the count in the mode line and
 `ecc-notify-mode' are what say so then.")
 
+;; Defined by the minor mode below; named here because the tab line is
+;; asked about from above it.
+(defvar ecc-tab-line-mode)
+
+(defun ecc-tab-line--sessions (session)
+  "Return the sessions a tab line about SESSION lists, the oldest first.
+The sessions of SESSION\='s own project, or every session there is when
+`ecc-tab-line-scope\=' says so or when SESSION is nil -- a tab line drawn
+in a buffer that is nobody\='s session.
+
+The registry is kept most recently used first, which is the wrong
+order for a row of tabs -- they would move about as one works -- so the
+sessions are put back into the order they were made in."
+  (let ((sessions (if (and session (eq ecc-tab-line-scope 'project))
+                      (ecc-window-project-sessions
+                       (ecc-window-session-project session))
+                    (ecc-model-sessions))))
+    (sort (copy-sequence sessions)
+          (lambda (a b)
+            (< (or (ecc-session-created a) 0)
+               (or (ecc-session-created b) 0))))))
+
 (defun ecc-tab-line-tabs ()
   "Return the session buffers of this window, oldest session first.
 This is `tab-line-tabs-function' in a session buffer, and redisplay
 evaluates it in the buffer of the window being drawn, which is how the
 tabs of one window come to be the sessions of its own project.
 `ecc-tab-line-scope' widens that to every session, and so does being
-called anywhere but in a session buffer.
+called anywhere but in a session buffer."
+  (seq-filter #'buffer-live-p
+              (mapcar #'ecc-session-buffer
+                      (ecc-tab-line--sessions (ecc-window-buffer-session)))))
 
-The registry is kept most recently used first, which is the wrong
-order for a row of tabs -- they would move about as one works -- so the
-sessions are put back into the order they were made in."
-  (let* ((session (and (eq ecc-tab-line-scope 'project)
-                       (ecc-window-buffer-session)))
-         (sessions (if session
-                       (ecc-window-project-sessions
-                        (ecc-window-session-project session))
-                     (ecc-model-sessions)))
-         (sessions (sort (copy-sequence sessions)
-                         (lambda (a b)
-                           (< (or (ecc-session-created a) 0)
-                              (or (ecc-session-created b) 0))))))
-    (seq-filter #'buffer-live-p (mapcar #'ecc-session-buffer sessions))))
+(defun ecc-tab-line-neighbour (session &optional frame)
+  "Return the buffer of the tab beside the one SESSION had, or nil.
+What a window showing SESSION moves to when that tab is closed: the tab
+to the right of it, and the tab to the left when it was the rightmost.
+Closing a tab is stopping the session behind it (`ecc-tab-close\='), and a
+window is not a thing to take away because one of the tabs in it went.
+
+A tab another window of FRAME is already showing is not an answer.  A
+Space stands its transcripts side by side, every one of them with the
+same row of tabs above it, and moving to the tab next door would put
+the same transcript in two windows.  FRAME defaults to the selected
+one; the windows of another tab of it are not on the screen and do not
+count.
+
+The tabs are the ones of SESSION\='s row, so under `ecc-tab-line-scope\='
+`all\=' the answer can be a session of another project -- which is what
+that setting asks for: a row of tabs that crosses projects, and
+clicking one of them does the same thing.
+
+SESSION is out of the registry by the time this is asked -- the caller
+is on `ecc-session-removed-hook\=' -- so what comes back is the tabs that
+are left, and the place SESSION held among them is its `created\='
+number.
+
+nil is the answer when no tab is left to move to, and when the tab line
+is off: there is then no row of tabs the window is one of, and whoever
+asked has its own answer for a window with nothing to show."
+  (when ecc-tab-line-mode
+    (let* ((frame (or frame (selected-frame)))
+           (created (or (ecc-session-created session) 0))
+           (sessions (seq-filter
+                      (lambda (other)
+                        (let ((buffer (ecc-session-buffer other)))
+                          (and (buffer-live-p buffer)
+                               (not (get-buffer-window buffer frame)))))
+                      (ecc-tab-line--sessions session)))
+           (beside (or (seq-find (lambda (other)
+                                   (> (or (ecc-session-created other) 0) created))
+                                 sessions)
+                       (car (last sessions)))))
+      (and beside (ecc-session-buffer beside)))))
 
 (defun ecc-tab-line-tab-name (buffer &optional _tabs)
   "Return what the tab of BUFFER says (`tab-line-tab-name-function')."
@@ -374,8 +446,6 @@ underneath so that the theme still decides the shape of a tab."
     (if session
         `(:inherit (,@(ecc-tab-faces session selected-p) ,face))
       face)))
-
-(defvar ecc-tab-line-mode)
 
 (defvar ecc-tab-close-confirm t
   "Non-nil asks before the x of a tab stops the session it stands for.
@@ -506,6 +576,7 @@ what a tab says already goes through."
                            #'ecc-tab--blink-tick)))
     (ecc-tab-blink-stop)))
 
+;;;###autoload
 (define-minor-mode ecc-tab-line-mode
   "List every session in the tab line of the session windows."
   :global t
@@ -541,6 +612,7 @@ tab is waiting for an answer."
                 name)
       name)))
 
+;;;###autoload
 (define-minor-mode ecc-notify-mode
   "Announce what the sessions of this Emacs are waiting for."
   :global t

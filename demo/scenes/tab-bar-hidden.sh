@@ -86,3 +86,5 @@ e "(demo-show-the-bar)"; sleep 10
 e "(demo-report-bar)"; sleep 9
 
 say "That is the whole of the tab-bar work: ecc makes the tabs, and the strip is nobody's business but the user's."; sleep 8
+
+e "(demo-save-log \"/tmp/ecc-demo-tab-bar-hidden-log.txt\")"; sleep 2

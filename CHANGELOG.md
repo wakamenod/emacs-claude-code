@@ -11,6 +11,137 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [0.3.1] - 2026-09-18
+
+Verified against **Claude Code CLI 2.1.274**.
+
+### Changed
+
+- `make lint` runs the package checker rather than skipping it, and fails on
+  its errors. An error is a defect -- a header nothing reads, a global mode a
+  user's init cannot turn on -- and a warning is a judgement, several of this
+  package's being deliberate, so warnings are printed and are not fatal
+  (`scripts/lint.el` carries the reasoning). `make lint-deps` installs the
+  checker, and the lint job of the CI workflow now does that before running
+  the target: the check was not installed on the runner, so the job was green
+  whatever the state of the package, which is how the two defects above
+  reached a release.
+
+- Every source file now opens with the GPL-3.0-or-later notice the `LICENSE`
+  file and the README already named, an `SPDX-License-Identifier` line, a
+  `Maintainer` and a `URL`. A file is read on its own often enough -- quoted
+  in a bug report, vendored into somebody's configuration -- and without a
+  notice in it the terms are unknowable from the file itself.
+
+- `Package-Requires` is written in `ecc.el` alone. The forty-two secondary
+  files each carried a copy, and not one of them was ever read: an installer
+  reads the main file's. Forty-two copies of a number nobody reads were
+  forty-two chances to say a different Emacs than `ecc.el` says, which is the
+  argument this project already makes about `Version`.
+
+- The five global minor modes -- `ecc-pending-indicator-mode`,
+  `ecc-mcp-indicator-mode`, `ecc-tab-line-mode`, `ecc-notify-mode` and
+  `ecc-track-source-buffer-mode` -- carry an autoload cookie. A global mode is
+  turned on from an init file before anything has loaded the file that defines
+  it, and without the cookie `(ecc-notify-mode 1)` there was a void function
+  and a `custom-set-variables` of the variable of the same name set a variable
+  no mode was watching. Two cookies on private helpers, which nothing outside
+  their own files calls, are gone.
+
+- A `.dir-locals.el` names `ecc.el` as the file the package is declared in. A
+  checker handed one file of a package spread over forty-three has no way to
+  know which package it belongs to, so it read the file name as the prefix and
+  called every `ecc-` name in `ecc-render.el` a name borrowed from elsewhere:
+  380 complaints about nothing, and the nine real ones lost among them.
+
+- The Commentary of `ecc.el` names the four commands a session is reached by
+  and says that the CLI is a separate program, rather than ending in a
+  `\[ecc-start]` that only a docstring substitutes. Three file summaries begin
+  with a capital and two no longer say "Emacs" to a reader who is in Emacs;
+  `ecc-resume` quotes its key sequences as keys; a docstring in
+  `ecc-review-ediff` no longer opens a line with an unescaped parenthesis in
+  column 0; and two messages in `ecc-tui` begin with a capital.
+
+### Fixed
+
+- The comparison table in the README said two of the four other projects are
+  published in a package archive. Neither is: `claude-code-ide.el` and
+  `claude-code.el` are both installed from GitHub, by their own READMEs and by
+  the absence of a recipe for either, and the archive name `claude-code` belongs
+  to a different project altogether. The table also listed `eca` among the
+  dependencies of `eca-emacs`, which is that package itself. Each project's
+  `Package-Requires` was read again while correcting this (2026-09-18); the
+  dependency and Emacs-version cells were right, and the table now says what
+  the dependency column means -- `transient` is part of Emacs 28.1 and up, so
+  the packages that name it need a newer one than their Emacs ships, and ecc
+  uses `posframe` and `nerd-icons` only when they are installed.
+
+- A session whose CLI was told to keep its state somewhere else was read from
+  `~/.claude` regardless. `CLAUDE_CONFIG_DIR` moves the whole of that
+  directory -- the recorded conversations, the running sessions, the settings,
+  the skills, the plugins and the credentials with them; a `claude doctor`
+  under it reports a machine that is not signed in (confirmed against CLI
+  2.1.274). ecc starts the CLI with the environment of this Emacs, so the
+  directory the CLI uses is the one this Emacs names, and reading `~/.claude`
+  anyway meant reporting on a directory the session never touched: no
+  conversations to resume, no sessions listed as running elsewhere, and the
+  wrong settings file edited. The six directories now come from
+  `ecc-config-directory`, which reads `CLAUDE_CONFIG_DIR` from
+  `ecc-extra-environment` first -- that is what ecc puts in front of what
+  Emacs inherited -- and from the environment of this Emacs after it. The
+  `.claude.json` the projects are listed in follows the same move:
+  `~/.claude.json` beside the default directory, and inside the directory
+  `CLAUDE_CONFIG_DIR` names. Each of the six is still an ordinary variable, so
+  an Emacs that has to say otherwise sets one.
+
+- Closing the tab of the session a window was showing took the window with it.
+  The `x` of a tab stops the session behind it, and the window of a session
+  that is stopped is deleted so that a row of transcripts is not left holding
+  `*scratch*`. With a tab line the window is one of a row of tabs, though, and
+  losing one tab is no reason to lose the window: it now moves to the tab
+  beside the one that closed -- the tab to its right, or the one to its left
+  when it was the rightmost. A tab another window of the frame is showing
+  already is passed over, so that the transcripts of a Space, which stand
+  side by side under one row of tabs, are not doubled up; the window is
+  deleted when nothing is left for it to show. With `ecc-tab-line-mode` off
+  nothing changes.
+
+- Quitting an ediff review with `q` left the Emacs it came back to with no
+  cursor drawn anywhere until something was clicked. On a graphical Emacs the
+  control panel is a frame of its own and holds the keyboard while the review
+  is read; `ediff-cleanup-mess` deletes it and selects the frame the two sides
+  were shown in, but within Emacs only -- the window system is never told, and
+  no frame is the one it considers focused. A frame that is not focused draws
+  its cursor the way a window that is not selected does, which where
+  `cursor-in-non-selected-windows` is nil is no cursor at all. The review now
+  remembers the frame it opened in and gives it the input focus back once the
+  panel has been taken down. Plain `ediff-buffers` does the same thing, and
+  this fixes it for the reviews ecc opens.
+
+- An ediff review marks the difference it is standing on apart from all the
+  others.  `ecc-review-ediff-diff-faces` gives every other difference the
+  colours of `diff-removed` and `diff-added`, and a theme is free to paint
+  `ediff-current-diff-A` and `-B` in exactly those colours -- modus-vivendi
+  gives both `#4f1119` on the left and both `#00381f` on the right -- so
+  every difference of the review looked like the one being read and nothing
+  said where `n` had just arrived.
+
+  Two marks now, in the two buffers of the review alone.  The colour of the
+  current difference is carried five points of lightness away from the
+  frame's background, from the shade the theme itself gave it and in bold
+  (`ecc-review-ediff-current-diff-faces`, `ecc-review-ediff-current-diff-step`);
+  and a bar is drawn in the fringe beside every line of it, which is not a
+  colour to compare -- a line has it or it does not
+  (`ecc-review-ediff-current-diff-mark`, `ecc-review-ediff-current-mark-face`).
+  The refinement within a line keeps `ediff-fine-diff-A` and `-B`.
+
+  A frame can be set up with no fringe at all -- `left-fringe` 0 in
+  `initial-frame-alist` -- and the bar then has nowhere to be drawn, so the
+  review gives its own two windows a fringe of
+  `ecc-review-ediff-fringe-width` when the frame shows none.  The windows are
+  the review's own and go back with the rest of the arrangement when it
+  quits; every other window of the frame is left as the user set it.
+
 ## [0.3.0] - 2026-09-18
 
 Verified against **Claude Code CLI 2.1.274**.
@@ -1143,7 +1274,8 @@ Emacs 29.1, 29.4 and 30.1.
   notifications, and a `transient` menu on `ecc-global-map`.
 - `ecc-version` reports the ecc, Emacs and CLI versions a bug report needs.
 
-[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.3.1
 [0.3.0]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.3.0
 [0.2.0]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.2.0
 [0.1.0]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.1.0

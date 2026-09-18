@@ -44,3 +44,5 @@ e "(demo-live-notice)"; sleep 8
 e "(demo-goto-notice-after)"; sleep 5
 
 say "No turn opened, nothing dropped.  That is the whole of fix/task-notification-prompt."; sleep 6
+
+e "(demo-save-log \"/tmp/ecc-demo-task-notification-log.txt\")"; sleep 2

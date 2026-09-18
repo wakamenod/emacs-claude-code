@@ -77,3 +77,5 @@ e "(demo-frame)"; sleep 2
 e "(demo-report-spaces)"; sleep 8
 
 say "That is the whole of feat/worktree's Space changes."; sleep 6
+
+e "(demo-save-log \"/tmp/ecc-demo-spaces-worktree-group-log.txt\")"; sleep 2

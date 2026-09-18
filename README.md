@@ -35,8 +35,8 @@ Because the transcript is standard buffer text, you can use regular Emacs workfl
 - **[Plan mode](https://wakamenod.github.io/emacs-claude-code/features/review/#plan-mode):** Work through proposed execution plans in a writable buffer.
 - **[Global access](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/):** Approve or deny pending tool requests from any buffer.
 - **[Session management](https://wakamenod.github.io/emacs-claude-code/features/sessions/):** Manage multiple concurrent sessions from a dashboard.
-- **[Spaces and worktrees](https://wakamenod.github.io/emacs-claude-code/features/spaces/):** Every project gets an Emacs tab of its own -- a Space -- and the windows inside it stay as you arranged them (`ecc-use-spaces`, on by default). Going to a project with nothing running starts a session there, and `/resume` continues that window with an earlier conversation. A sidebar on the left lists every project and session with what each is doing, and `ecc-start-worktree` checks a branch out beside the repository and opens it as a Space of its own.
-- **Safe defaults:** Permission prompts default to deny. The built-in loopback MCP server is disabled by default, and evaluating Elisp requires explicit opt-in.
+- **[Spaces and worktrees](https://wakamenod.github.io/emacs-claude-code/features/spaces/):** Every project gets an Emacs tab of its own -- a Space -- and the windows in it stay where you put them (`ecc-use-spaces`, on by default). A sidebar lists every project and session with what each is doing, and `ecc-start-worktree` checks a branch out beside the repository and opens it as a Space of its own.
+- **Safe defaults:** Nothing is approved without you -- there is no auto-approval, and a request that can no longer be answered is recorded as denied. The built-in loopback MCP server is disabled by default, and evaluating Elisp requires explicit opt-in.
 
 ## Requirements
 
@@ -142,11 +142,13 @@ Comparison of Emacs packages for Claude Code:
 
 | Project | Protocol / Transport | UI Type | Dependencies | Emacs Version | Source |
 |---|---|---|---|---|---|
-| [claude-code-ide.el](https://github.com/manzaltu/claude-code-ide.el) | CLI TUI + WebSocket MCP server | Terminal emulator | `websocket`, `transient`, `web-server` | 28.1 | MELPA |
-| [claude-code.el](https://github.com/stevemolitor/claude-code.el) | CLI TUI | Terminal emulator | `transient`, `inheritenv` | 30 | MELPA |
-| [eca-emacs](https://github.com/editor-code-assistant/eca-emacs) | JSON-RPC via standalone `eca` binary | Markdown buffer + overlays | `dash`, `s`, `f`, `markdown-mode`, `compat`, `eca` | 28.1 | MELPA |
+| [claude-code-ide.el](https://github.com/manzaltu/claude-code-ide.el) | CLI TUI + WebSocket MCP server | Terminal emulator | `websocket`, `transient`, `web-server` | 28.1 | GitHub |
+| [claude-code.el](https://github.com/stevemolitor/claude-code.el) | CLI TUI | Terminal emulator | `transient`, `inheritenv` | 30 | GitHub |
+| [eca-emacs](https://github.com/editor-code-assistant/eca-emacs) | JSON-RPC via standalone `eca` binary | Markdown buffer + overlays | `dash`, `s`, `f`, `markdown-mode`, `compat` | 28.1 | MELPA |
 | [emacs-gravity](https://github.com/gdanov/emacs-gravity) | Plugin hooks + Node shim + socket | Magit-section tree | `magit-section`, `transient`, Node.js | 27.1 | GitHub |
 | **ecc** | Headless `claude` stream-json via pipe | Standard buffer (transcript + prompt) | None | 29.1 | GitHub |
+
+Dependencies are what each project's `Package-Requires` names besides Emacs itself, read from the projects on 2026-09-18. `transient` has been part of Emacs since 28.1, so a package using the bundled version does not declare it; the three that do require a newer one than the Emacs they support ships. ecc uses `posframe` and `nerd-icons` when they happen to be installed and works without either, which is why neither is a dependency.
 
 ### Architectural Focus
 

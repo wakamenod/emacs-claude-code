@@ -3,8 +3,25 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
-;; Package-Requires: ((emacs "29.1"))
+;; URL: https://github.com/wakamenod/emacs-claude-code
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -41,8 +58,10 @@
 (declare-function ecc-prompt-command-name "ecc-prompt" (text))
 (declare-function ecc-prompt-command-argument "ecc-prompt" (text))
 
-(defvar ecc-history-directory "~/.claude/projects/"
+(defvar ecc-history-directory (expand-file-name "projects/" (ecc-config-directory))
   "Directory the CLI keeps its recorded conversations in.
+CLAUDE_CONFIG_DIR moves it, which is why it is not written out here;
+see `ecc-config-directory'.
 It holds one subdirectory per working directory, each with one jsonl
 file per session.")
 
@@ -611,7 +630,6 @@ Interactively the recordings are offered by name."
 
 ;;;; Resuming what was read
 
-;;;###autoload
 (defun ecc-history--check-id-not-running (session-id name)
   "Refuse to resume SESSION-ID, called NAME, while another process runs it.
 There is no lock: a second CLI on the same session id writes into the

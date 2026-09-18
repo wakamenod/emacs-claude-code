@@ -3,8 +3,25 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
-;; Package-Requires: ((emacs "29.1"))
+;; URL: https://github.com/wakamenod/emacs-claude-code
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -156,7 +173,7 @@ module\='s, a hand-off being the one place a turn is worth waiting out."
 The CLI is the process of the buffer, so leaving it ends the buffer
 and Emacs is told without having to ask."
   (unless (require 'ghostel nil t)
-    (user-error "ghostel is not installed; the hand-off needs it"))
+    (user-error "The hand-off needs ghostel, which is not installed"))
   (unless (fboundp 'ghostel-exec)
     (user-error "This ghostel has no `ghostel-exec'; please update it"))
   (let* ((name (ecc-tui-buffer-name session))
@@ -178,7 +195,7 @@ and Emacs is told without having to ask."
       (with-current-buffer buffer
         (let ((process (ghostel-exec buffer (car arguments) (cdr arguments))))
           (unless process
-            (error "ghostel started no process for %s" (ecc-session-name session)))
+            (error "Ghostel started no process for %s" (ecc-session-name session)))
           (cons buffer process))))))
 
 ;;;###autoload

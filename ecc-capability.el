@@ -3,7 +3,25 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
+;; URL: https://github.com/wakamenod/emacs-claude-code
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -25,8 +43,9 @@
 (require 'ecc-core)
 (require 'ecc-model)
 
-(defvar ecc-capabilities-directory "~/.claude/"
-  "Directory holding the skills, agents and commands of every project.")
+(defvar ecc-capabilities-directory (ecc-config-directory)
+  "Directory holding the skills, agents and commands of every project.
+CLAUDE_CONFIG_DIR moves it; see `ecc-config-directory'.")
 
 (defconst ecc-capabilities-scopes
   '((project . "project") (global . "global") (plugin . "plugin")

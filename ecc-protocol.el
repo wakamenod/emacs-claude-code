@@ -1,10 +1,27 @@
-;;; ecc-protocol.el --- stream-json protocol for the ecc client  -*- lexical-binding: t; -*-
+;;; ecc-protocol.el --- Stream-json protocol for the ecc client  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
-;; Package-Requires: ((emacs "29.1"))
+;; URL: https://github.com/wakamenod/emacs-claude-code
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -511,8 +528,9 @@ is what checks that the two still agree (`ecc-test-live-agents')."
 ;; rules, the model a session would start with -- reads it through this
 ;; file.
 
-(defvar ecc-protocol-user-directory "~/.claude/"
-  "Directory holding the settings file that applies to every project.")
+(defvar ecc-protocol-user-directory (ecc-config-directory)
+  "Directory holding the settings file that applies to every project.
+CLAUDE_CONFIG_DIR moves it; see `ecc-config-directory'.")
 
 (defvar ecc-protocol-managed-files
   '("/Library/Application Support/ClaudeCode/managed-settings.json"
@@ -789,13 +807,13 @@ from.  Returns the index the entry was stashed at."
          (disabled (alist-get 'disabled object))
          (file-key (intern settings-file))
          (events (alist-get file-key disabled))
-         (event-key (intern event))
-         (stashed (append (alist-get event-key events) nil))
+         (event-symbol (intern event))
+         (stashed (append (alist-get event-symbol events) nil))
          (one (if matcher
                   (list (cons 'matcher matcher) (cons 'hook entry))
                 (list (cons 'hook entry))))
          (index (length stashed)))
-    (setf (alist-get event-key events) (vconcat stashed (list one)))
+    (setf (alist-get event-symbol events) (vconcat stashed (list one)))
     (setf (alist-get file-key disabled) events)
     (setf (alist-get 'disabled object) disabled)
     (ecc-protocol-write-settings-file file object)
@@ -810,8 +828,8 @@ when the address names nothing."
          (disabled (alist-get 'disabled object))
          (file-key (intern settings-file))
          (events (alist-get file-key disabled))
-         (event-key (intern event))
-         (stashed (append (alist-get event-key events) nil))
+         (event-symbol (intern event))
+         (stashed (append (alist-get event-symbol events) nil))
          (one (nth index stashed)))
     (unless one
       (error "No stashed %s hook at %s for %s" event index
@@ -819,8 +837,8 @@ when the address names nothing."
     (setq stashed (append (seq-take stashed index)
                           (seq-drop stashed (1+ index))))
     (if stashed
-        (setf (alist-get event-key events) (vconcat stashed))
-      (setq events (assq-delete-all event-key events)))
+        (setf (alist-get event-symbol events) (vconcat stashed))
+      (setq events (assq-delete-all event-symbol events)))
     (if events
         (setf (alist-get file-key disabled) events)
       (setq disabled (assq-delete-all file-key disabled)))

@@ -71,3 +71,5 @@ say "12. q closes the review -- no question asked -- and the windows come back";
 e "(demo-say-key \"q\")"; sleep 3
 e "(demo-key \"q\")"; sleep 5
 say "That is the whole of feat/review-ediff-help."; sleep 5
+
+e "(demo-save-log \"/tmp/ecc-demo-review-ediff-help-log.txt\")"; sleep 2

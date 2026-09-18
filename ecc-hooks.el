@@ -1,10 +1,27 @@
-;;; ecc-hooks.el --- the hooks a session would run  -*- lexical-binding: t; -*-
+;;; ecc-hooks.el --- The hooks a session would run  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
-;; Package-Requires: ((emacs "29.1"))
+;; URL: https://github.com/wakamenod/emacs-claude-code
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -108,8 +125,9 @@ read back (2.1.270, 2026-09-13).")
 ;; need.  When the managed settings carry hooks, the CLI runs those and
 ;; nothing else: "Only hooks from managed settings can run" (2.1.270).
 
-(defvar ecc-hooks-plugin-directory "~/.claude/plugins/"
-  "Directory holding the installed plugins and the list of them.")
+(defvar ecc-hooks-plugin-directory (expand-file-name "plugins/" (ecc-config-directory))
+  "Directory holding the installed plugins and the list of them.
+CLAUDE_CONFIG_DIR moves it; see `ecc-config-directory'.")
 
 (defvar ecc-hooks-disabled-file nil
   "File holding the hooks this package has switched off.

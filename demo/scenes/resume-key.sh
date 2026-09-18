@@ -52,5 +52,7 @@ e "(demo-open-resume-menu)"; sleep 8
 say "-f is worth one place where it is seen before it is pressed.  q closes it"; sleep 6
 e "(demo-close-menu)"; sleep 3
 
+e "(demo-save-log \"/tmp/ecc-demo-resume-key-log.txt\")"; sleep 2
 e "(demo-cleanup)"; sleep 4
 say "That is the whole of feat/resume-key."; sleep 5
+

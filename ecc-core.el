@@ -3,8 +3,25 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
-;; Package-Requires: ((emacs "29.1"))
+;; URL: https://github.com/wakamenod/emacs-claude-code
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -161,6 +178,46 @@ a true value (1, true, yes or on).  Setting it opts back in; it does
 not turn anything on that the terminal does not already have, since
 the feature flag and the account policy are read separately
 \(confirmed against 2.1.267 on 2026-09-11).")
+
+(defun ecc--environment-value (name)
+  "Return the value NAME has in the environment a CLI would be started with.
+`ecc-extra-environment' is looked in first, because that is what this
+package puts in front of what Emacs inherited; then Emacs\='s own
+environment.  A session that carries its own :extra-environment is not
+seen here: these are the global answers, and a variable is what a
+session that differs is told about."
+  (let ((prefix (concat name "=")))
+    (or (seq-some (lambda (entry)
+                    (and (stringp entry)
+                         (string-prefix-p prefix entry)
+                         (substring entry (length prefix))))
+                  ecc-extra-environment)
+        (getenv name))))
+
+(defun ecc-config-directory ()
+  "Return the directory the CLI keeps its own state in.
+CLAUDE_CONFIG_DIR moves it: with that set, the CLI creates and reads
+that directory in place of ~/.claude, down to the credentials -- a
+`claude doctor\=' under it reports a machine that is not signed in
+\(confirmed against 2.1.274 on 2026-09-18).  ecc starts the CLI with
+the environment of this Emacs, so the directory the CLI will use is the
+one this Emacs names, and reading ~/.claude anyway would mean reporting
+on a machine the session it started never touches.
+
+The variables built on this are ordinary variables: an Emacs that has
+to say otherwise still sets one."
+  (file-name-as-directory
+   (expand-file-name (or (ecc--environment-value "CLAUDE_CONFIG_DIR")
+                         "~/.claude"))))
+
+(defun ecc-config-json-file ()
+  "Return the CLI\='s .claude.json, the file its projects are listed in.
+It sits beside the configuration directory rather than inside it -- the
+default pair is ~/.claude.json and ~/.claude/ -- and CLAUDE_CONFIG_DIR
+moves the file into the directory it names, so both are one expansion
+of \".claude.json\" against the home of the configuration."
+  (expand-file-name ".claude.json"
+                    (or (ecc--environment-value "CLAUDE_CONFIG_DIR") "~")))
 
 (defcustom ecc-command-wrapper-function nil
   "Function that rewrites the CLI command line before it is run.
