@@ -291,7 +291,7 @@ of `diff-removed\=' and `diff-added\=', and under a theme that paints
 difference being read looks like all the rest: modus-vivendi gives both
 `#4f1119\=' on the left and both `#00381f\=' on the right, so nothing
 said which of the twelve differences n had just walked to
-(2026-09-18).
+\(2026-09-18).
 
 Non-nil remaps the two current-difference faces, in the two buffers of
 the review alone, to a stronger shade of their own background -- the

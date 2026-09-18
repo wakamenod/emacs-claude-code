@@ -212,7 +212,7 @@ Interactively, the session of the current buffer is resumed when it has
 stopped -- that is the R offered after an exit -- and a choice is asked
 for otherwise.  A prefix argument forks it into a new conversation.
 
-`C-c c r\=' runs this directly, and `C-u C-c c r\=' forks: the prompt then
+\\`C-c c r\=' runs this directly, and \\`C-u C-c c r\=' forks: the prompt then
 says Fork rather than Resume, so that what is about to happen is in the
 minibuffer where the choice is made.  `ecc-menu\=' keeps `ecc-resume-menu\='
 under r, where the fork is a switch seen before it is pressed."

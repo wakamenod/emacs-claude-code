@@ -174,7 +174,7 @@ module\='s, a hand-off being the one place a turn is worth waiting out."
 The CLI is the process of the buffer, so leaving it ends the buffer
 and Emacs is told without having to ask."
   (unless (require 'ghostel nil t)
-    (user-error "ghostel is not installed; the hand-off needs it"))
+    (user-error "The hand-off needs ghostel, which is not installed"))
   (unless (fboundp 'ghostel-exec)
     (user-error "This ghostel has no `ghostel-exec'; please update it"))
   (let* ((name (ecc-tui-buffer-name session))
@@ -196,7 +196,7 @@ and Emacs is told without having to ask."
       (with-current-buffer buffer
         (let ((process (ghostel-exec buffer (car arguments) (cdr arguments))))
           (unless process
-            (error "ghostel started no process for %s" (ecc-session-name session)))
+            (error "Ghostel started no process for %s" (ecc-session-name session)))
           (cons buffer process))))))
 
 ;;;###autoload
