@@ -4,7 +4,6 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Maintainer: Jun <wakamenod@gmail.com>
-;; Package-Requires: ((emacs "29.1") (transient "0.7.0"))
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
 ;; SPDX-License-Identifier: GPL-3.0-or-later

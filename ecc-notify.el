@@ -4,7 +4,6 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Maintainer: Jun <wakamenod@gmail.com>
-;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
 ;; SPDX-License-Identifier: GPL-3.0-or-later
@@ -162,7 +161,10 @@ On macOS this is the name of a system sound such as \"Glass\"."
   "Announce TEXT about EVENT of SESSION at `ecc-notify-level'."
   (when ecc-notify-level
     (message "%s" text)
-    (when (memq ecc-notify-level '(pulse desktop))
+    ;; Spelled out rather than a `memq' over a quoted list: a list
+    ;; whose first element is also the name of a function reads as a
+    ;; call to it, and a checker reading the file says so.
+    (when (or (eq ecc-notify-level 'pulse) (eq ecc-notify-level 'desktop))
       (ecc-notify-pulse session))
     (when (ecc-notify-desktop-p)
       (ecc-notify-desktop text))

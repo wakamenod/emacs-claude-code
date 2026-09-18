@@ -4,7 +4,6 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Maintainer: Jun <wakamenod@gmail.com>
-;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
 ;; SPDX-License-Identifier: GPL-3.0-or-later
@@ -184,6 +183,10 @@ is on.")
 (defvar-local ecc-prompt--history-draft nil
   "What the buffer held before the history walk started.")
 
+;; The one thing this package puts into a variable of somebody else's,
+;; and it puts its own history in a list the user has already asked to
+;; be saved: nothing is turned on here, and an Emacs without
+;; `savehist-mode' never loads this form at all.
 (with-eval-after-load 'savehist
   (when (boundp 'savehist-additional-variables)
     (add-to-list 'savehist-additional-variables 'ecc-prompt-history)))
@@ -965,7 +968,16 @@ what Emacs does to the window it is typed in.
 Only a draft the CLI is not meant to see belongs here.  The side
 question is the one there is: `/btw\' is not a slash
 command, and sending it would put it in the conversation it is supposed
-to be asked beside.")
+to be asked beside.
+
+The modules that answer a command register here from a
+`with-eval-after-load\' of this file rather than by requiring it, and so
+does `ecc-prompt-immediate-commands\': `ecc-auth\', `ecc-history\',
+`ecc-hooks\', `ecc-plugin\', `ecc-skill\' and `ecc-btw\' all sit below
+the prompt region in the load order, and a `require\' back up it would
+drag the whole user interface into a file that wanted one hook.  What
+is waited for is always another file of this package; no module of it
+reaches into a package the user installed for their own reasons.")
 
 (defvar ecc-prompt-immediate-commands nil
   "Slash commands that run the moment they are chosen from the `/\=' question.
