@@ -179,6 +179,46 @@ not turn anything on that the terminal does not already have, since
 the feature flag and the account policy are read separately
 \(confirmed against 2.1.267 on 2026-09-11).")
 
+(defun ecc--environment-value (name)
+  "Return the value NAME has in the environment a CLI would be started with.
+`ecc-extra-environment' is looked in first, because that is what this
+package puts in front of what Emacs inherited; then Emacs\='s own
+environment.  A session that carries its own :extra-environment is not
+seen here: these are the global answers, and a variable is what a
+session that differs is told about."
+  (let ((prefix (concat name "=")))
+    (or (seq-some (lambda (entry)
+                    (and (stringp entry)
+                         (string-prefix-p prefix entry)
+                         (substring entry (length prefix))))
+                  ecc-extra-environment)
+        (getenv name))))
+
+(defun ecc-config-directory ()
+  "Return the directory the CLI keeps its own state in.
+CLAUDE_CONFIG_DIR moves it: with that set, the CLI creates and reads
+that directory in place of ~/.claude, down to the credentials -- a
+`claude doctor\=' under it reports a machine that is not signed in
+\(confirmed against 2.1.274 on 2026-09-18).  ecc starts the CLI with
+the environment of this Emacs, so the directory the CLI will use is the
+one this Emacs names, and reading ~/.claude anyway would mean reporting
+on a machine the session it started never touches.
+
+The variables built on this are ordinary variables: an Emacs that has
+to say otherwise still sets one."
+  (file-name-as-directory
+   (expand-file-name (or (ecc--environment-value "CLAUDE_CONFIG_DIR")
+                         "~/.claude"))))
+
+(defun ecc-config-json-file ()
+  "Return the CLI\='s .claude.json, the file its projects are listed in.
+It sits beside the configuration directory rather than inside it -- the
+default pair is ~/.claude.json and ~/.claude/ -- and CLAUDE_CONFIG_DIR
+moves the file into the directory it names, so both are one expansion
+of \".claude.json\" against the home of the configuration."
+  (expand-file-name ".claude.json"
+                    (or (ecc--environment-value "CLAUDE_CONFIG_DIR") "~")))
+
 (defcustom ecc-command-wrapper-function nil
   "Function that rewrites the CLI command line before it is run.
 Called with the command list and the project root; it must return the

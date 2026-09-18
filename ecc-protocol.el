@@ -528,8 +528,9 @@ is what checks that the two still agree (`ecc-test-live-agents')."
 ;; rules, the model a session would start with -- reads it through this
 ;; file.
 
-(defvar ecc-protocol-user-directory "~/.claude/"
-  "Directory holding the settings file that applies to every project.")
+(defvar ecc-protocol-user-directory (ecc-config-directory)
+  "Directory holding the settings file that applies to every project.
+CLAUDE_CONFIG_DIR moves it; see `ecc-config-directory'.")
 
 (defvar ecc-protocol-managed-files
   '("/Library/Application Support/ClaudeCode/managed-settings.json"

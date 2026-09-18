@@ -43,8 +43,9 @@
 (require 'ecc-core)
 (require 'ecc-model)
 
-(defvar ecc-capabilities-directory "~/.claude/"
-  "Directory holding the skills, agents and commands of every project.")
+(defvar ecc-capabilities-directory (ecc-config-directory)
+  "Directory holding the skills, agents and commands of every project.
+CLAUDE_CONFIG_DIR moves it; see `ecc-config-directory'.")
 
 (defconst ecc-capabilities-scopes
   '((project . "project") (global . "global") (plugin . "plugin")
