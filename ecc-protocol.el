@@ -1,4 +1,4 @@
-;;; ecc-protocol.el --- stream-json protocol for the ecc client  -*- lexical-binding: t; -*-
+;;; ecc-protocol.el --- Stream-json protocol for the ecc client  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Jun
 
@@ -807,13 +807,13 @@ from.  Returns the index the entry was stashed at."
          (disabled (alist-get 'disabled object))
          (file-key (intern settings-file))
          (events (alist-get file-key disabled))
-         (event-key (intern event))
-         (stashed (append (alist-get event-key events) nil))
+         (event-symbol (intern event))
+         (stashed (append (alist-get event-symbol events) nil))
          (one (if matcher
                   (list (cons 'matcher matcher) (cons 'hook entry))
                 (list (cons 'hook entry))))
          (index (length stashed)))
-    (setf (alist-get event-key events) (vconcat stashed (list one)))
+    (setf (alist-get event-symbol events) (vconcat stashed (list one)))
     (setf (alist-get file-key disabled) events)
     (setf (alist-get 'disabled object) disabled)
     (ecc-protocol-write-settings-file file object)
@@ -828,8 +828,8 @@ when the address names nothing."
          (disabled (alist-get 'disabled object))
          (file-key (intern settings-file))
          (events (alist-get file-key disabled))
-         (event-key (intern event))
-         (stashed (append (alist-get event-key events) nil))
+         (event-symbol (intern event))
+         (stashed (append (alist-get event-symbol events) nil))
          (one (nth index stashed)))
     (unless one
       (error "No stashed %s hook at %s for %s" event index
@@ -837,8 +837,8 @@ when the address names nothing."
     (setq stashed (append (seq-take stashed index)
                           (seq-drop stashed (1+ index))))
     (if stashed
-        (setf (alist-get event-key events) (vconcat stashed))
-      (setq events (assq-delete-all event-key events)))
+        (setf (alist-get event-symbol events) (vconcat stashed))
+      (setq events (assq-delete-all event-symbol events)))
     (if events
         (setf (alist-get file-key disabled) events)
       (setq disabled (assq-delete-all file-key disabled)))

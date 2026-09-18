@@ -1,4 +1,4 @@
-;;; ecc-worktree.el --- git worktrees a session can live in  -*- lexical-binding: t; -*-
+;;; ecc-worktree.el --- Git worktrees a session can live in  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Jun
 

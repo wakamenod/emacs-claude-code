@@ -1,4 +1,4 @@
-;;; ecc-mcp.el --- An MCP server inside Emacs  -*- lexical-binding: t; -*-
+;;; ecc-mcp.el --- An MCP server the CLI can call back into  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Jun
 

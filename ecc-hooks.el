@@ -1,4 +1,4 @@
-;;; ecc-hooks.el --- the hooks a session would run  -*- lexical-binding: t; -*-
+;;; ecc-hooks.el --- The hooks a session would run  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Jun
 

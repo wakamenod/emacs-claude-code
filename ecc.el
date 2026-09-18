@@ -1,4 +1,4 @@
-;;; ecc.el --- Run Claude Code from Emacs  -*- lexical-binding: t; -*-
+;;; ecc.el --- Client for the Claude Code CLI  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Jun
 
