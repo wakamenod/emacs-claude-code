@@ -15,6 +15,43 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 Verified against **Claude Code CLI 2.1.274**.
 
+### Changed
+
+- Every source file now opens with the GPL-3.0-or-later notice the `LICENSE`
+  file and the README already named, an `SPDX-License-Identifier` line, a
+  `Maintainer` and a `URL`. A file is read on its own often enough -- quoted
+  in a bug report, vendored into somebody's configuration -- and without a
+  notice in it the terms are unknowable from the file itself.
+
+- `Package-Requires` is written in `ecc.el` alone. The forty-two secondary
+  files each carried a copy, and not one of them was ever read: an installer
+  reads the main file's. Forty-two copies of a number nobody reads were
+  forty-two chances to say a different Emacs than `ecc.el` says, which is the
+  argument this project already makes about `Version`.
+
+- The five global minor modes -- `ecc-pending-indicator-mode`,
+  `ecc-mcp-indicator-mode`, `ecc-tab-line-mode`, `ecc-notify-mode` and
+  `ecc-track-source-buffer-mode` -- carry an autoload cookie. A global mode is
+  turned on from an init file before anything has loaded the file that defines
+  it, and without the cookie `(ecc-notify-mode 1)` there was a void function
+  and a `custom-set-variables` of the variable of the same name set a variable
+  no mode was watching. Two cookies on private helpers, which nothing outside
+  their own files calls, are gone.
+
+- A `.dir-locals.el` names `ecc.el` as the file the package is declared in. A
+  checker handed one file of a package spread over forty-three has no way to
+  know which package it belongs to, so it read the file name as the prefix and
+  called every `ecc-` name in `ecc-render.el` a name borrowed from elsewhere:
+  380 complaints about nothing, and the nine real ones lost among them.
+
+- The Commentary of `ecc.el` names the four commands a session is reached by
+  and says that the CLI is a separate program, rather than ending in a
+  `\[ecc-start]` that only a docstring substitutes. Three file summaries begin
+  with a capital and two no longer say "Emacs" to a reader who is in Emacs;
+  `ecc-resume` quotes its key sequences as keys; a docstring in
+  `ecc-review-ediff` no longer opens a line with an unescaped parenthesis in
+  column 0; and two messages in `ecc-tui` begin with a capital.
+
 ### Fixed
 
 - Closing the tab of the session a window was showing took the window with it.

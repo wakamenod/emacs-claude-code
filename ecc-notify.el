@@ -3,8 +3,25 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
-;; Package-Requires: ((emacs "29.1"))
+;; URL: https://github.com/wakamenod/emacs-claude-code
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -144,7 +161,10 @@ On macOS this is the name of a system sound such as \"Glass\"."
   "Announce TEXT about EVENT of SESSION at `ecc-notify-level'."
   (when ecc-notify-level
     (message "%s" text)
-    (when (memq ecc-notify-level '(pulse desktop))
+    ;; Spelled out rather than a `memq' over a quoted list: a list
+    ;; whose first element is also the name of a function reads as a
+    ;; call to it, and a checker reading the file says so.
+    (when (or (eq ecc-notify-level 'pulse) (eq ecc-notify-level 'desktop))
       (ecc-notify-pulse session))
     (when (ecc-notify-desktop-p)
       (ecc-notify-desktop text))
@@ -556,6 +576,7 @@ what a tab says already goes through."
                            #'ecc-tab--blink-tick)))
     (ecc-tab-blink-stop)))
 
+;;;###autoload
 (define-minor-mode ecc-tab-line-mode
   "List every session in the tab line of the session windows."
   :global t
@@ -591,6 +612,7 @@ tab is waiting for an answer."
                 name)
       name)))
 
+;;;###autoload
 (define-minor-mode ecc-notify-mode
   "Announce what the sessions of this Emacs are waiting for."
   :global t
