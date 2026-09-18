@@ -37,8 +37,8 @@ faceはテキスト挿入時に適用されるため、`M-x customize` による
 - **[プランモード](https://wakamenod.github.io/emacs-claude-code/ja/features/review/#プランモード):** 提案された実行計画を、編集可能なバッファ内で確認・調整しながら進められます。
 - **[グローバル操作](https://wakamenod.github.io/emacs-claude-code/ja/reference/key-bindings/):** どのバッファからでも保留中のツール実行リクエストを許可・拒否できます。
 - **[セッション管理](https://wakamenod.github.io/emacs-claude-code/ja/features/sessions/):** ダッシュボードから複数の同時並行セッションを整理・管理できます。
-- **[Space と worktree](https://wakamenod.github.io/emacs-claude-code/ja/features/spaces/):** プロジェクトごとに Emacs のタブ（Space）が割り当てられ、その中のウィンドウ配置は自分で並べたまま保たれます（`ecc-use-spaces`、既定で有効）。何も動いていないプロジェクトに移動するとセッションが起動し、`/resume` でそのウィンドウを以前の会話の続きに切り替えられます。左側のサイドバーには全プロジェクトとセッションが動作状況とともに一覧表示され、`ecc-start-worktree` はリポジトリの隣にブランチをチェックアウトして独立した Space として開きます。
-- **安全なデフォルト設定:** 権限プロンプトはデフォルトで「拒否」に設定されています。内蔵のループバック MCP サーバーはデフォルトで無効化されており、Elisp の評価ツールも明示的な有効化が必要です。
+- **[Space と worktree](https://wakamenod.github.io/emacs-claude-code/ja/features/spaces/):** プロジェクトごとに Emacs のタブ（Space）が割り当てられ、その中のウィンドウ配置は並べたまま保たれます（`ecc-use-spaces`、既定で有効）。サイドバーには全プロジェクトとセッションが動作状況とともに並び、`ecc-start-worktree` はリポジトリの隣にブランチをチェックアウトして独立した Space として開きます。
+- **安全なデフォルト設定:** 自動承認は存在せず、勝手に許可されることはありません。答えられなくなったリクエストは拒否として記録されます。内蔵のループバック MCP サーバーはデフォルトで無効化されており、Elisp の評価ツールも明示的な有効化が必要です。
 
 ## 動作要件
 
@@ -143,11 +143,13 @@ Claude Code 向け Emacs パッケージの比較：
 
 | プロジェクト | 通信プロトコル / 経路 | UI 形式 | 外部依存パッケージ | 必要 Emacs バージョン | 入手先 |
 | --- | --- | --- | --- | --- | --- |
-| [claude-code-ide.el](https://github.com/manzaltu/claude-code-ide.el) | CLI TUI + WebSocket MCP サーバー | ターミナルエミュレータ | `websocket`, `transient`, `web-server` | 28.1 | MELPA |
-| [claude-code.el](https://github.com/stevemolitor/claude-code.el) | CLI TUI | ターミナルエミュレータ | `transient`, `inheritenv` | 30 | MELPA |
-| [eca-emacs](https://github.com/editor-code-assistant/eca-emacs) | 独立した `eca` バイナリとの JSON-RPC | Markdown バッファ + オーバーレイ | `dash`, `s`, `f`, `markdown-mode`, `compat`, `eca` | 28.1 | MELPA |
+| [claude-code-ide.el](https://github.com/manzaltu/claude-code-ide.el) | CLI TUI + WebSocket MCP サーバー | ターミナルエミュレータ | `websocket`, `transient`, `web-server` | 28.1 | GitHub |
+| [claude-code.el](https://github.com/stevemolitor/claude-code.el) | CLI TUI | ターミナルエミュレータ | `transient`, `inheritenv` | 30 | GitHub |
+| [eca-emacs](https://github.com/editor-code-assistant/eca-emacs) | 独立した `eca` バイナリとの JSON-RPC | Markdown バッファ + オーバーレイ | `dash`, `s`, `f`, `markdown-mode`, `compat` | 28.1 | MELPA |
 | [emacs-gravity](https://github.com/gdanov/emacs-gravity) | プラグインフック + Node シム + ソケット | Magit-section ツリー | `magit-section`, `transient`, Node.js | 27.1 | GitHub |
 | **ecc** | ヘッドレス `claude` とのパイプ経由 stream-json | 標準バッファ（履歴 + プロンプト） | なし | 29.1 | GitHub |
+
+外部依存パッケージの列は、各プロジェクトの `Package-Requires` が Emacs 本体以外に挙げているものです（2026-09-18 に各プロジェクトを確認）。`transient` は Emacs 28.1 以降に同梱されているため、同梱版で足りるパッケージは依存として宣言しません。ここで `transient` を挙げている 3 つは、対象 Emacs の同梱版より新しいものを要求しています。ecc は `posframe` と `nerd-icons` がインストールされていれば使いますが、どちらが無くても動作するため、依存には含みません。
 
 ### 設計上の特徴
 
