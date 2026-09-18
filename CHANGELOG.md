@@ -17,6 +17,16 @@ Verified against **Claude Code CLI 2.1.274**.
 
 ### Changed
 
+- `make lint` runs the package checker rather than skipping it, and fails on
+  its errors. An error is a defect -- a header nothing reads, a global mode a
+  user's init cannot turn on -- and a warning is a judgement, several of this
+  package's being deliberate, so warnings are printed and are not fatal
+  (`scripts/lint.el` carries the reasoning). `make lint-deps` installs the
+  checker, and the lint job of the CI workflow now does that before running
+  the target: the check was not installed on the runner, so the job was green
+  whatever the state of the package, which is how the two defects above
+  reached a release.
+
 - Every source file now opens with the GPL-3.0-or-later notice the `LICENSE`
   file and the README already named, an `SPDX-License-Identifier` line, a
   `Maintainer` and a `URL`. A file is read on its own often enough -- quoted
@@ -53,6 +63,24 @@ Verified against **Claude Code CLI 2.1.274**.
   column 0; and two messages in `ecc-tui` begin with a capital.
 
 ### Fixed
+
+- A session whose CLI was told to keep its state somewhere else was read from
+  `~/.claude` regardless. `CLAUDE_CONFIG_DIR` moves the whole of that
+  directory -- the recorded conversations, the running sessions, the settings,
+  the skills, the plugins and the credentials with them; a `claude doctor`
+  under it reports a machine that is not signed in (confirmed against CLI
+  2.1.274). ecc starts the CLI with the environment of this Emacs, so the
+  directory the CLI uses is the one this Emacs names, and reading `~/.claude`
+  anyway meant reporting on a directory the session never touched: no
+  conversations to resume, no sessions listed as running elsewhere, and the
+  wrong settings file edited. The six directories now come from
+  `ecc-config-directory`, which reads `CLAUDE_CONFIG_DIR` from
+  `ecc-extra-environment` first -- that is what ecc puts in front of what
+  Emacs inherited -- and from the environment of this Emacs after it. The
+  `.claude.json` the projects are listed in follows the same move:
+  `~/.claude.json` beside the default directory, and inside the directory
+  `CLAUDE_CONFIG_DIR` names. Each of the six is still an ordinary variable, so
+  an Emacs that has to say otherwise sets one.
 
 - Closing the tab of the session a window was showing took the window with it.
   The `x` of a tab stops the session behind it, and the window of a session
