@@ -11,6 +11,24 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.274**.
+
+### Fixed
+
+- Quitting an ediff review with `q` left the Emacs it came back to with no
+  cursor drawn anywhere until something was clicked. On a graphical Emacs the
+  control panel is a frame of its own and holds the keyboard while the review
+  is read; `ediff-cleanup-mess` deletes it and selects the frame the two sides
+  were shown in, but within Emacs only -- the window system is never told, and
+  no frame is the one it considers focused. A frame that is not focused draws
+  its cursor the way a window that is not selected does, which where
+  `cursor-in-non-selected-windows` is nil is no cursor at all. The review now
+  remembers the frame it opened in and gives it the input focus back once the
+  panel has been taken down. Plain `ediff-buffers` does the same thing, and
+  this fixes it for the reviews ecc opens.
+
 ## [0.3.0] - 2026-09-18
 
 Verified against **Claude Code CLI 2.1.274**.

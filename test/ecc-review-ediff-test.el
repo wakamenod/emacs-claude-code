@@ -11,6 +11,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'cl-lib)
 (require 'ecc-test-helpers)
 (require 'ecc-review)
 (require 'ecc-review-ediff)
@@ -372,6 +373,55 @@ font-lock."
                     (should (search-forward "def" nil t))
                     (should-not (get-text-property (- (point) 1) 'face)))))
             (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-quitting-hands-the-keyboard-back ()
+  "Quitting gives the frame the review opened in the input focus again.
+The control panel of a graphical Emacs is a frame of its own and holds
+the keyboard; `ediff-cleanup-mess' deletes it and selects the other
+frame within Emacs only, which leaves the window system with no focused
+frame -- and a frame that is not focused draws no cursor at all where
+`cursor-in-non-selected-windows' is nil.  Batch has one terminal frame,
+so the graphical display and the focus are both stood in for."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil)
+              (focused nil))
+          (unwind-protect
+              (progn
+                (ecc-review-ediff-test--repository directory)
+                (setf (ecc-session-project-root session) directory)
+                (should (ecc-review-ensure-baseline session))
+                (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
+                (setq control (ecc-review-ediff-buffer session))
+                (should (eq (buffer-local-value 'ecc-review-ediff--frame control)
+                            (selected-frame)))
+                (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+                          ((symbol-function 'select-frame-set-input-focus)
+                           (lambda (frame &rest _) (push frame focused))))
+                  (with-current-buffer control (ecc-review-quit)))
+                (should (equal focused (list (selected-frame)))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-a-review-of-a-terminal-frame-keeps-its-focus ()
+  "Nothing is done to the focus where the panel was never a frame.
+A terminal Emacs lays the control panel out as a window like any other,
+and there is no frame to hand the keyboard back to."
+  (let ((focused nil))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) nil))
+              ((symbol-function 'select-frame-set-input-focus)
+               (lambda (frame &rest _) (push frame focused))))
+      (ecc-review-ediff--take-the-keyboard (selected-frame)))
+    (should-not focused))
+  ;; A frame that was closed while the review was open is not one to
+  ;; select, and not an error either.
+  (let ((focused nil))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+              ((symbol-function 'select-frame-set-input-focus)
+               (lambda (frame &rest _) (push frame focused))))
+      (ecc-review-ediff--take-the-keyboard nil))
+    (should-not focused)))
 
 (ert-deftest ecc-review-ediff-test-the-review-takes-the-frame ()
   "The review opens in a frame of its own windows, and gives them back.
