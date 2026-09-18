@@ -38,6 +38,8 @@ Transcripts sit side by side: the first opens to the right of the source, each o
 
 No transcript is made narrower than `ecc-space-session-min-width`. When the row is full, the session worked in longest ago gives up its window and keeps running without one; the sidebar or `C-c c V` brings it back.
 
+Killing a session leaves the row as it was: its window keeps its place and is given what is left of the Space -- a session running without a window first, and otherwise the one worked in most recently. Only the last session of a Space gives its window back.
+
 **Going to a Space with nothing running starts a session there** — [`ecc-space-always-session`](/emacs-claude-code/reference/configuration/#ecc-space-always-session), on by default, which also closes a Space when its last session is killed. Type `/resume` in the session that opens to carry on an earlier conversation. Turn it off and a Space opens on the source alone and stays until you kill the project's last buffer.
 
 | Key | Command | What it does |

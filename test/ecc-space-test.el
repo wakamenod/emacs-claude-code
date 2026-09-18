@@ -493,6 +493,84 @@ read, and the session that lost its window goes on running without one."
               (should-not (get-buffer-window (ecc-session-buffer second)))
               (should (get-buffer-window (ecc-session-buffer first))))))))))
 
+(ert-deftest ecc-space-test-a-killed-session-hands-its-window-over ()
+  "Killing one session of a Space leaves the row standing.
+The window keeps its place and is given what is left of the Space
+rather than deleted: stopping one of several sessions is not a reason
+to take the arrangement apart around it."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (let ((ecc-window-width 60)
+            (ecc-space-session-min-width 10))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (ecc-sidebar-hide)
+        (delete-other-windows)
+        (let* ((ordered (reverse sessions))
+               (first (nth 0 ordered))
+               (second (nth 1 ordered)))
+          (ecc-space-display-session first)
+          (ecc-space-display-session second)
+          (let ((windows (length (window-list nil 'no-minibuffer)))
+                (window (get-buffer-window (ecc-session-buffer first))))
+            (ecc-model-remove-session first)
+            (should (window-live-p window))
+            (should (= windows (length (window-list nil 'no-minibuffer))))
+            (should (eq (window-buffer window)
+                        (ecc-session-buffer second)))
+            ;; And the killed session is left on no screen at all.
+            (should-not (get-buffer-window-list
+                         (ecc-session-buffer first) nil t))))))))
+
+(ert-deftest ecc-space-test-a-killed-session-makes-room-for-an-unseen-one ()
+  "The freed window goes to a session that had none.
+A row too narrow for every session leaves some of them running unseen;
+the window a killed session gives up is one of them."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one)
+                                   ("three" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (let ((ecc-window-width 60)
+            (ecc-space-session-min-width 10))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (ecc-sidebar-hide)
+        (delete-other-windows)
+        (let* ((ordered (reverse sessions))
+               (first (nth 0 ordered))
+               (second (nth 1 ordered))
+               (third (nth 2 ordered)))
+          (ecc-space-display-session first)
+          (ecc-space-display-session second)
+          ;; The third is running with no window of its own.
+          (should-not (get-buffer-window (ecc-session-buffer third)))
+          (let ((window (get-buffer-window (ecc-session-buffer second))))
+            (ecc-model-remove-session second)
+            (should (window-live-p window))
+            (should (eq (window-buffer window) (ecc-session-buffer third)))
+            (should (get-buffer-window (ecc-session-buffer first)))))))))
+
+(ert-deftest ecc-space-test-the-last-session-gives-its-window-back ()
+  "With nothing left in the Space the window is deleted as before.
+There is no transcript to put in it, and a window showing whatever was
+there before the session is what the deleting is there to avoid."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (let ((ecc-window-width 60)
+            (ecc-space-session-min-width 10)
+            ;; The Space closing itself is another test; this one is
+            ;; about the window it leaves behind.
+            (ecc-space-always-session nil))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (ecc-sidebar-hide)
+        (delete-other-windows)
+        (let* ((session (car sessions))
+               (source (selected-window))
+               (window (ecc-space-display-session session)))
+          (should (= 2 (length (window-list nil 'no-minibuffer))))
+          (ecc-model-remove-session session)
+          (should-not (window-live-p window))
+          (should (equal (list source) (window-list nil 'no-minibuffer))))))))
+
 (defun ecc-space-test--layout ()
   "Return the buffer name and width of every window of this tab, left to right."
   (mapcar (lambda (window)
@@ -1414,31 +1492,6 @@ where they are."
           (should (equal removed (list work))))))))
 
 ;;;; The windows of a session that is killed
-
-(ert-deftest ecc-space-test-a-killed-session-takes-its-window-with-it ()
-  "The window of a session that is killed is deleted, not filled with scratch."
-  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
-                                   ("one-b" . ,ecc-space-test--one))
-    (ecc-space-test--with-tab-bar
-      (let ((ecc-window-width 60)
-            (ecc-space-session-min-width 10))
-        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
-        (ecc-sidebar-hide)
-        (delete-other-windows)
-        (let ((first (ecc-space-display-session (car sessions)))
-              (second (ecc-space-display-session (nth 1 sessions))))
-          (should (window-live-p first))
-          (should (window-live-p second))
-          (let ((windows (length (window-list nil 'no-minibuffer))))
-            (ecc-model-remove-session (car sessions))
-            (should-not (window-live-p first))
-            (should (window-live-p second))
-            (should (= (1- windows) (length (window-list nil 'no-minibuffer))))
-            ;; And nothing was put in its place: the window is gone,
-            ;; rather than left holding whatever was there before the
-            ;; transcript.
-            (should-not (get-buffer-window-list
-                         (ecc-session-buffer (car sessions)) nil t))))))))
 
 (ert-deftest ecc-space-test-the-last-window-gets-the-source-rather-than-scratch ()
   "A transcript alone in a Space that stays is replaced by the source.

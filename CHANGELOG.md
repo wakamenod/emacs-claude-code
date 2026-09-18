@@ -15,6 +15,18 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 Verified against **Claude Code CLI 2.1.274**.
 
+### Changed
+
+- Killing one session of a Space no longer takes its window with it. The
+  window keeps its place and is given what is left of the Space: a session
+  that is running without a window of its own first -- a row too narrow for
+  all of them leaves some unseen -- and the session worked in most recently
+  otherwise. Deleting the window was there to keep `*scratch*` out of a row
+  of transcripts, but it also took the arrangement apart around a session
+  that was merely being stopped. The window is still deleted when the Space
+  has nothing left in it, and the last window of a tab still gets the source
+  of the project.
+
 ### Fixed
 
 - Quitting an ediff review with `q` left the Emacs it came back to with no

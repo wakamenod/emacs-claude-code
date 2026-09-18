@@ -988,29 +988,62 @@ delete the last one."
               (list (ecc-session-buffer session)
                     (ecc-session-stream-buffer session))))
 
-(defun ecc-space--delete-session-windows (session)
-  "Take the windows of SESSION away rather than leave them to Emacs.
+(defun ecc-space--session-replacement (session)
+  "Return the buffer of another session of SESSION's Space, or nil.
+This is what a window of a session being killed is given instead of
+being deleted: killing one session of a Space should leave the
+arrangement around it standing, and a Space with something left in it
+always has a transcript to put there.
+
+A session no window is showing comes first.  A row too narrow for all
+of them leaves some running unseen (`ecc-space--lay-out-sessions'), and
+the window just freed is one they can have; the session used most
+recently answers when every one of them is already on the screen.
+
+SESSION is out of the registry by the time this runs -- the hook is
+`ecc-session-removed-hook' -- so it is never its own answer."
+  (when-let* ((key (ecc-window-session-project session))
+              (space (ecc-space-of-root key))
+              (buffers (seq-filter #'buffer-live-p
+                                   (mapcar #'ecc-session-buffer
+                                           (ecc-space-sessions space)))))
+    (or (seq-find (lambda (buffer)
+                    (null (get-buffer-window buffer t)))
+                  buffers)
+        (car buffers))))
+
+(defun ecc-space--release-session-windows (session)
+  "Fill the windows of SESSION with what is left, or take them away.
 A killed buffer is replaced in its window by whatever was there before
 it, which in a Space is nothing to do with the project -- `*scratch*'
-in the middle of a row of transcripts.  The window is deleted instead,
-and the ones beside it take the room back.
+in the middle of a row of transcripts.
 
-The last window of the tab is given the source of the project instead:
-a tab has to hold something, and the code is the one thing that is
-always an answer.  `window-deletable-p' answers `tab' or `frame' for
-that window -- it can be deleted, but only by taking the tab or the
-frame with it -- so only a plain t is taken for yes.  The sidebar is a
-side window and is neither deleted nor counted."
+With another session left in the Space the window keeps its place and
+is given that session instead (`ecc-space--session-replacement'):
+stopping one of several sessions is not a reason to take the row apart
+around it.  The answer is asked for again at every window, so two
+windows of one session are not both given the same transcript.
+
+With nothing left the window is deleted and the ones beside it take the
+room back.  The last window of the tab is given the source of the
+project instead: a tab has to hold something, and the code is the one
+thing that is always an answer.  `window-deletable-p' answers `tab' or
+`frame' for that window -- it can be deleted, but only by taking the
+tab or the frame with it -- so only a plain t is taken for yes.  The
+sidebar is a side window and is neither deleted nor counted."
   (let ((buffers (ecc-space--session-buffers session)))
     (dolist (buffer buffers)
       (dolist (window (get-buffer-window-list buffer nil t))
         (unless (window-parameter window 'window-side)
-          (if (eq (window-deletable-p window) t)
-              (ignore-errors (delete-window window))
-            (when-let* ((space (ecc-space-current))
-                        (source (ecc-space--source-buffer space))
-                        ((buffer-live-p source)))
-              (set-window-buffer window source))))))))
+          (let ((replacement (ecc-space--session-replacement session)))
+            (cond
+             (replacement (set-window-buffer window replacement))
+             ((eq (window-deletable-p window) t)
+              (ignore-errors (delete-window window)))
+             (t (when-let* ((space (ecc-space-current))
+                            (source (ecc-space--source-buffer space))
+                            ((buffer-live-p source)))
+                  (set-window-buffer window source))))))))))
 
 (defun ecc-space--close-empty (space)
   "Close SPACE, which has nothing left in it.
@@ -1041,7 +1074,7 @@ it, it is a tab nobody asked for."
     (ecc-space--close-empty parent)))
 
 (defun ecc-space--session-removed (session)
-  "Take the windows of SESSION away, and its Space when it was the last.
+  "Hand the windows of SESSION on, and close its Space when it was the last.
 On `ecc-session-removed-hook'.  A Space is closed only under
 `ecc-space-always-session': with the setting off a Space stands on its
 source buffer alone and goes with that instead, in
@@ -1051,7 +1084,7 @@ A session of a Space that is still being started is not the end of
 anything: `ecc-proc--start-failed' forgets a session that never came
 up, and the tab the user just asked for would go with it."
   (when ecc-use-spaces
-    (ecc-space--delete-session-windows session)
+    (ecc-space--release-session-windows session)
     (when-let* (((not ecc-space--closing))
                 ((not ecc-space--laying-out))
                 ((ecc-model-own-session-p session))
