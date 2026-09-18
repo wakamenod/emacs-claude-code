@@ -17,6 +17,18 @@ Verified against **Claude Code CLI 2.1.274**.
 
 ### Fixed
 
+- Closing the tab of the session a window was showing took the window with it.
+  The `x` of a tab stops the session behind it, and the window of a session
+  that is stopped is deleted so that a row of transcripts is not left holding
+  `*scratch*`. With a tab line the window is one of a row of tabs, though, and
+  losing one tab is no reason to lose the window: it now moves to the tab
+  beside the one that closed -- the tab to its right, or the one to its left
+  when it was the rightmost. A tab another window of the frame is showing
+  already is passed over, so that the transcripts of a Space, which stand
+  side by side under one row of tabs, are not doubled up; the window is
+  deleted when nothing is left for it to show. With `ecc-tab-line-mode` off
+  nothing changes.
+
 - Quitting an ediff review with `q` left the Emacs it came back to with no
   cursor drawn anywhere until something was clicked. On a graphical Emacs the
   control panel is a frame of its own and holds the keyboard while the review

@@ -995,6 +995,22 @@ it, which in a Space is nothing to do with the project -- `*scratch*'
 in the middle of a row of transcripts.  The window is deleted instead,
 and the ones beside it take the room back.
 
+A transcript window with a tab line is a row of tabs, and one tab of it
+closing is not the window closing: the window is given the tab beside
+the one that went (`ecc-tab-line-neighbour') and stays where it is.
+The question is put once for every window, and with the frame it is on:
+the transcripts of a Space stand side by side under one row of tabs, and
+a tab the window next door is already showing is not a tab to move to.
+With nothing left to show -- no tab, or none that is not on the screen
+already -- the window goes as it always did.  The stream buffer carries
+no tab line and is not part of any row, so its window is only ever
+deleted.
+
+The tab is put there with `ecc-space--display-in' rather than
+`set-window-buffer': the window still carries the `quit-restore' of the
+transcript that has just gone, and Emacs 32 resizes a window back to
+the width recorded with it.
+
 The last window of the tab is given the source of the project instead:
 a tab has to hold something, and the code is the one thing that is
 always an answer.  `window-deletable-p' answers `tab' or `frame' for
@@ -1005,12 +1021,17 @@ side window and is neither deleted nor counted."
     (dolist (buffer buffers)
       (dolist (window (get-buffer-window-list buffer nil t))
         (unless (window-parameter window 'window-side)
-          (if (eq (window-deletable-p window) t)
-              (ignore-errors (delete-window window))
-            (when-let* ((space (ecc-space-current))
-                        (source (ecc-space--source-buffer space))
-                        ((buffer-live-p source)))
-              (set-window-buffer window source))))))))
+          (let ((neighbour (and (eq buffer (ecc-session-buffer session))
+                                (ecc-tab-line-neighbour
+                                 session (window-frame window)))))
+            (cond
+             (neighbour (ecc-space--display-in neighbour window))
+             ((eq (window-deletable-p window) t)
+              (ignore-errors (delete-window window)))
+             (t (when-let* ((space (ecc-space-current))
+                            (source (ecc-space--source-buffer space))
+                            ((buffer-live-p source)))
+                  (set-window-buffer window source))))))))))
 
 (defun ecc-space--close-empty (space)
   "Close SPACE, which has nothing left in it.

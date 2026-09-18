@@ -193,6 +193,114 @@ Emacs: asking for the value itself called every finished turn an error."
         (ecc-test-cleanup-session second)
         (ecc-model-remove-session second)))))
 
+(ert-deftest ecc-notify-test-the-tab-beside-a-closed-one ()
+  "Closing a tab moves the window to the tab on its right, or its left.
+The window a tab was closed in is one of a row and keeps its place;
+what it shows is the neighbour of the tab that went."
+  (ecc-test-with-fake-session first
+    (let* ((root (ecc-session-project-root first))
+           (second (ecc-model-create-session :name "second" :project-root root))
+           (third (ecc-model-create-session :name "third" :project-root root))
+           (ecc-tab-line-mode t))
+      (unwind-protect
+          ;; The windows are said rather than inherited: a tab already on
+          ;; the screen is not an answer, so what the frame is showing
+          ;; decides what comes back.
+          (save-window-excursion
+            (ecc-session-ensure-buffer first)
+            (ecc-session-ensure-buffer second)
+            (ecc-session-ensure-buffer third)
+            (delete-other-windows)
+            (set-window-buffer (selected-window) (get-buffer-create "*scratch*"))
+            ;; The middle tab goes: the window takes the one to its right.
+            (ecc-model-remove-session second)
+            (should (eq (ecc-tab-line-neighbour second)
+                        (ecc-session-buffer third)))
+            ;; The rightmost goes: there is nothing to its right, so the
+            ;; tab to its left answers.
+            (ecc-model-remove-session third)
+            (should (eq (ecc-tab-line-neighbour third)
+                        (ecc-session-buffer first)))
+            ;; The last tab of all leaves no row to stay in.
+            (ecc-model-remove-session first)
+            (should-not (ecc-tab-line-neighbour first)))
+        (ecc-test-cleanup-session second)
+        (ecc-test-cleanup-session third)
+        (ecc-model-remove-session second)
+        (ecc-model-remove-session third)))))
+
+(ert-deftest ecc-notify-test-a-tab-on-the-screen-already-is-no-neighbour ()
+  "A tab another window of the frame is showing is not moved to.
+Two transcripts side by side carry the same row of tabs, and the tab
+beside the one that closed is as often as not the one next door."
+  (ecc-test-with-fake-session first
+    (let* ((root (ecc-session-project-root first))
+           (second (ecc-model-create-session :name "second" :project-root root))
+           (third (ecc-model-create-session :name "third" :project-root root))
+           (ecc-tab-line-mode t))
+      (unwind-protect
+          (save-window-excursion
+            (ecc-session-ensure-buffer first)
+            (ecc-session-ensure-buffer second)
+            (ecc-session-ensure-buffer third)
+            (delete-other-windows)
+            (set-window-buffer (selected-window) (ecc-session-buffer third))
+            (ecc-model-remove-session second)
+            ;; Third is on the screen, so the tab to the left answers.
+            (should (eq (ecc-tab-line-neighbour second)
+                        (ecc-session-buffer first)))
+            ;; And with that one shown too there is nothing to move to.
+            (set-window-buffer (split-window) (ecc-session-buffer first))
+            (should-not (ecc-tab-line-neighbour second)))
+        (ecc-test-cleanup-session second)
+        (ecc-test-cleanup-session third)
+        (ecc-model-remove-session second)
+        (ecc-model-remove-session third)))))
+
+(ert-deftest ecc-notify-test-the-neighbour-is-of-the-same-row ()
+  "The tab moved to is one of the row, which `ecc-tab-line-scope\=' draws.
+Under `project\=' a session of another project is no tab of this row and
+no answer; under `all\=' the row crosses projects and so does the move,
+which is what clicking one of those tabs does as well."
+  (ecc-test-with-fake-session first
+    (let* ((second (ecc-model-create-session
+                    :name "other"
+                    :project-root (expand-file-name "ecc-notify-elsewhere/"
+                                                    temporary-file-directory)))
+           (ecc-tab-line-mode t)
+           (ecc-window--project-root-cache (make-hash-table :test #'equal)))
+      (unwind-protect
+          (save-window-excursion
+            (ecc-session-ensure-buffer first)
+            (ecc-session-ensure-buffer second)
+            (delete-other-windows)
+            (set-window-buffer (selected-window) (get-buffer-create "*scratch*"))
+            (ecc-model-remove-session first)
+            (let ((ecc-tab-line-scope 'project))
+              (should-not (ecc-tab-line-neighbour first)))
+            (let ((ecc-tab-line-scope 'all))
+              (should (eq (ecc-tab-line-neighbour first)
+                          (ecc-session-buffer second)))))
+        (ecc-test-cleanup-session second)
+        (ecc-model-remove-session second)))))
+
+(ert-deftest ecc-notify-test-no-tab-line-is-no-neighbour ()
+  "With the tab line off a window is not a row of tabs.
+Nothing is handed to the window of a session that is killed, and
+whoever asked keeps the answer it had before there were tabs."
+  (ecc-test-with-fake-session first
+    (let* ((root (ecc-session-project-root first))
+           (second (ecc-model-create-session :name "second" :project-root root))
+           (ecc-tab-line-mode nil))
+      (unwind-protect
+          (progn
+            (ecc-session-ensure-buffer first)
+            (ecc-session-ensure-buffer second)
+            (ecc-model-remove-session second)
+            (should-not (ecc-tab-line-neighbour second)))
+        (ecc-test-cleanup-session second)
+        (ecc-model-remove-session second)))))
+
 (ert-deftest ecc-notify-test-tab-line-keeps-the-order-sessions-were-made-in ()
   "Using a session does not move its tab.
 The registry is most recently used first, which would shuffle the tabs

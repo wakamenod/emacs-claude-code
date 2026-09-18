@@ -1440,6 +1440,124 @@ where they are."
             (should-not (get-buffer-window-list
                          (ecc-session-buffer (car sessions)) nil t))))))))
 
+(ert-deftest ecc-space-test-closing-a-tab-keeps-the-window ()
+  "A window with a tab line loses the tab, not itself.
+Closing the tab of the session a window is showing moves it to the tab
+beside it; the window keeps its place in the row."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (let ((ecc-window-width 60)
+            (ecc-space-session-min-width 10)
+            (ecc-tab-line-mode t))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (ecc-sidebar-hide)
+        (delete-other-windows)
+        (let* ((first (car sessions))
+               (second (nth 1 sessions))
+               ;; Both are tabs of the row; only the first is shown.
+               (_ (ecc-session-ensure-buffer second))
+               (window (ecc-space-display-session first))
+               (windows (length (window-list nil 'no-minibuffer))))
+          (ecc-model-remove-session first)
+          (should (window-live-p window))
+          (should (= windows (length (window-list nil 'no-minibuffer))))
+          (should (eq (window-buffer window) (ecc-session-buffer second)))
+          (should-not (get-buffer-window-list
+                       (ecc-session-buffer first) nil t)))))))
+
+(ert-deftest ecc-space-test-closing-the-last-tab-takes-the-window ()
+  "With no tab left there is nothing for the window to show.
+The window is deleted, as it is with no tab line at all: what the
+deleting is there to avoid is a window left holding whatever was
+underneath the transcript."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (let ((ecc-window-width 60)
+            (ecc-space-session-min-width 10)
+            (ecc-tab-line-mode t))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (ecc-sidebar-hide)
+        (delete-other-windows)
+        (let* ((first (car sessions))
+               (second (nth 1 sessions))
+               (_ (ecc-session-ensure-buffer second))
+               (window (ecc-space-display-session first))
+               (windows (length (window-list nil 'no-minibuffer))))
+          (ecc-model-remove-session first)
+          ;; One tab left, and the window is showing it.
+          (should (window-live-p window))
+          (should (eq (window-buffer window) (ecc-session-buffer second)))
+          (ecc-test-cleanup-session first)
+          (ecc-model-remove-session second)
+          ;; And with that one gone there is no row to stay in.
+          (should-not (window-live-p window))
+          (should (= (1- windows) (length (window-list nil 'no-minibuffer)))))))))
+
+(ert-deftest ecc-space-test-the-stream-window-is-taken-away-all-the-same ()
+  "A stream buffer is no tab, so its window goes as it always did.
+Only the transcript of a session is part of the row of tabs; the log of
+the process behind it carries no tab line and has no neighbour to move
+to."
+  ;; Three of them: the tab the transcript moves to is not the only one
+  ;; left, so a stream window asking the same question would be given
+  ;; the third rather than deleted.
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one)
+                                   ("three" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (let ((ecc-window-width 60)
+            (ecc-space-session-min-width 10)
+            (ecc-tab-line-mode t))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (ecc-sidebar-hide)
+        (delete-other-windows)
+        (let* ((first (car sessions))
+               (second (nth 1 sessions))
+               (stream (get-buffer-create " *ecc-space-test-stream*"))
+               (_ (ecc-session-ensure-buffer second))
+               (_ (ecc-session-ensure-buffer (nth 2 sessions)))
+               (window (ecc-space-display-session first))
+               (stream-window (split-window)))
+          (unwind-protect
+              (progn
+                (setf (ecc-session-stream-buffer first) stream)
+                (set-window-buffer stream-window stream)
+                (ecc-model-remove-session first)
+                ;; The transcript window stayed and took the tab beside it.
+                (should (window-live-p window))
+                (should (eq (window-buffer window) (ecc-session-buffer second)))
+                ;; The window of the stream did not.
+                (should-not (window-live-p stream-window)))
+            (kill-buffer stream)))))))
+
+(ert-deftest ecc-space-test-a-tab-on-the-screen-already-is-not-moved-to ()
+  "A window does not move to a tab the window beside it is showing.
+The transcripts of a Space stand side by side under one row of tabs, so
+the tab next door is often already on the screen; moving to it would
+put the same transcript in two windows.  With nothing else left to
+show, the window that lost its tab goes."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (let ((ecc-window-width 60)
+            (ecc-space-session-min-width 10)
+            (ecc-tab-line-mode t))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (ecc-sidebar-hide)
+        (delete-other-windows)
+        (let* ((first (car sessions))
+               (second (nth 1 sessions))
+               (one (ecc-space-display-session first))
+               (two (ecc-space-display-session second))
+               (windows (length (window-list nil 'no-minibuffer))))
+          (ecc-model-remove-session first)
+          (should-not (window-live-p one))
+          (should (window-live-p two))
+          (should (eq (window-buffer two) (ecc-session-buffer second)))
+          (should (= (1- windows) (length (window-list nil 'no-minibuffer)))))))))
+
 (ert-deftest ecc-space-test-the-last-window-gets-the-source-rather-than-scratch ()
   "A transcript alone in a Space that stays is replaced by the source.
 The window cannot be deleted -- it would take the tab with it -- and a
