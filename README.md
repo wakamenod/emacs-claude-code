@@ -142,11 +142,13 @@ Comparison of Emacs packages for Claude Code:
 
 | Project | Protocol / Transport | UI Type | Dependencies | Emacs Version | Source |
 |---|---|---|---|---|---|
-| [claude-code-ide.el](https://github.com/manzaltu/claude-code-ide.el) | CLI TUI + WebSocket MCP server | Terminal emulator | `websocket`, `transient`, `web-server` | 28.1 | MELPA |
-| [claude-code.el](https://github.com/stevemolitor/claude-code.el) | CLI TUI | Terminal emulator | `transient`, `inheritenv` | 30 | MELPA |
-| [eca-emacs](https://github.com/editor-code-assistant/eca-emacs) | JSON-RPC via standalone `eca` binary | Markdown buffer + overlays | `dash`, `s`, `f`, `markdown-mode`, `compat`, `eca` | 28.1 | MELPA |
+| [claude-code-ide.el](https://github.com/manzaltu/claude-code-ide.el) | CLI TUI + WebSocket MCP server | Terminal emulator | `websocket`, `transient`, `web-server` | 28.1 | GitHub |
+| [claude-code.el](https://github.com/stevemolitor/claude-code.el) | CLI TUI | Terminal emulator | `transient`, `inheritenv` | 30 | GitHub |
+| [eca-emacs](https://github.com/editor-code-assistant/eca-emacs) | JSON-RPC via standalone `eca` binary | Markdown buffer + overlays | `dash`, `s`, `f`, `markdown-mode`, `compat` | 28.1 | MELPA |
 | [emacs-gravity](https://github.com/gdanov/emacs-gravity) | Plugin hooks + Node shim + socket | Magit-section tree | `magit-section`, `transient`, Node.js | 27.1 | GitHub |
 | **ecc** | Headless `claude` stream-json via pipe | Standard buffer (transcript + prompt) | None | 29.1 | GitHub |
+
+Dependencies are what each project's `Package-Requires` names besides Emacs itself, read from the projects on 2026-09-18. `transient` has been part of Emacs since 28.1, so a package using the bundled version does not declare it; the three that do require a newer one than the Emacs they support ships. ecc uses `posframe` and `nerd-icons` when they happen to be installed and works without either, which is why neither is a dependency.
 
 ### Architectural Focus
 

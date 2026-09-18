@@ -143,11 +143,13 @@ Claude Code 向け Emacs パッケージの比較：
 
 | プロジェクト | 通信プロトコル / 経路 | UI 形式 | 外部依存パッケージ | 必要 Emacs バージョン | 入手先 |
 | --- | --- | --- | --- | --- | --- |
-| [claude-code-ide.el](https://github.com/manzaltu/claude-code-ide.el) | CLI TUI + WebSocket MCP サーバー | ターミナルエミュレータ | `websocket`, `transient`, `web-server` | 28.1 | MELPA |
-| [claude-code.el](https://github.com/stevemolitor/claude-code.el) | CLI TUI | ターミナルエミュレータ | `transient`, `inheritenv` | 30 | MELPA |
-| [eca-emacs](https://github.com/editor-code-assistant/eca-emacs) | 独立した `eca` バイナリとの JSON-RPC | Markdown バッファ + オーバーレイ | `dash`, `s`, `f`, `markdown-mode`, `compat`, `eca` | 28.1 | MELPA |
+| [claude-code-ide.el](https://github.com/manzaltu/claude-code-ide.el) | CLI TUI + WebSocket MCP サーバー | ターミナルエミュレータ | `websocket`, `transient`, `web-server` | 28.1 | GitHub |
+| [claude-code.el](https://github.com/stevemolitor/claude-code.el) | CLI TUI | ターミナルエミュレータ | `transient`, `inheritenv` | 30 | GitHub |
+| [eca-emacs](https://github.com/editor-code-assistant/eca-emacs) | 独立した `eca` バイナリとの JSON-RPC | Markdown バッファ + オーバーレイ | `dash`, `s`, `f`, `markdown-mode`, `compat` | 28.1 | MELPA |
 | [emacs-gravity](https://github.com/gdanov/emacs-gravity) | プラグインフック + Node シム + ソケット | Magit-section ツリー | `magit-section`, `transient`, Node.js | 27.1 | GitHub |
 | **ecc** | ヘッドレス `claude` とのパイプ経由 stream-json | 標準バッファ（履歴 + プロンプト） | なし | 29.1 | GitHub |
+
+外部依存パッケージの列は、各プロジェクトの `Package-Requires` が Emacs 本体以外に挙げているものです（2026-09-18 に各プロジェクトを確認）。`transient` は Emacs 28.1 以降に同梱されているため、同梱版で足りるパッケージは依存として宣言しません。ここで `transient` を挙げている 3 つは、対象 Emacs の同梱版より新しいものを要求しています。ecc は `posframe` と `nerd-icons` がインストールされていれば使いますが、どちらが無くても動作するため、依存には含みません。
 
 ### 設計上の特徴
 

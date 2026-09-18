@@ -64,6 +64,18 @@ Verified against **Claude Code CLI 2.1.274**.
 
 ### Fixed
 
+- The comparison table in the README said two of the four other projects are
+  published in a package archive. Neither is: `claude-code-ide.el` and
+  `claude-code.el` are both installed from GitHub, by their own READMEs and by
+  the absence of a recipe for either, and the archive name `claude-code` belongs
+  to a different project altogether. The table also listed `eca` among the
+  dependencies of `eca-emacs`, which is that package itself. Each project's
+  `Package-Requires` was read again while correcting this (2026-09-18); the
+  dependency and Emacs-version cells were right, and the table now says what
+  the dependency column means -- `transient` is part of Emacs 28.1 and up, so
+  the packages that name it need a newer one than their Emacs ships, and ecc
+  uses `posframe` and `nerd-icons` only when they are installed.
+
 - A session whose CLI was told to keep its state somewhere else was read from
   `~/.claude` regardless. `CLAUDE_CONFIG_DIR` moves the whole of that
   directory -- the recorded conversations, the running sessions, the settings,
