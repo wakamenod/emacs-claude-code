@@ -34,7 +34,11 @@
 ;; major mode as it is inserted, and the differences are marked in the
 ;; colours the diff review uses, because ediff's own faces for the
 ;; differences it is not standing on are invisible under a good many
-;; themes.
+;; themes.  The one being read is then told apart from them twice over:
+;; a stronger shade of its own colour, and a bar in the fringe beside
+;; every line of it, because under a theme that paints the current
+;; difference in the very colours a diff is read by the shade alone
+;; says nothing.
 ;;
 ;; Both buffers are read-only, and that is the whole of it: a review
 ;; reads, comments and sends, and writes nothing.  ediff's a and b say
@@ -45,6 +49,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'color)
 (require 'seq)
 (require 'ediff)
 (require 'ecc-core)
@@ -260,6 +265,48 @@ the diff review already reads by, so the colours are the theme\='s own
 and no other ediff is touched.  The difference ediff is standing on
 keeps `ediff-current-diff-A\=' and `-B\='.")
 
+(defvar ecc-review-ediff-current-diff-faces t
+  "Non-nil paints the difference ediff is standing on a shade stronger.
+`ecc-review-ediff-diff-faces\=' gives every other difference the colours
+of `diff-removed\=' and `diff-added\=', and under a theme that paints
+`ediff-current-diff-A\=' and `-B\=' in exactly those colours the
+difference being read looks like all the rest: modus-vivendi gives both
+`#4f1119\=' on the left and both `#00381f\=' on the right, so nothing
+said which of the twelve differences n had just walked to
+(2026-09-18).
+
+Non-nil remaps the two current-difference faces, in the two buffers of
+the review alone, to a stronger shade of their own background -- the
+theme\='s colour, lightened on a dark background and darkened on a
+light one -- in bold.  The refinement inside the difference keeps
+`ediff-fine-diff-A\=' and `-B\=', so what changed within the line is
+still marked apart.  See also `ecc-review-ediff-current-diff-mark\='.")
+
+(defvar ecc-review-ediff-current-diff-step 5
+  "How far the colour of the current difference is carried, in lightness.
+Five points of HSL lightness away from the background the theme gave
+the difference: about half the step modus-vivendi itself puts between
+`ediff-current-diff-A\=' and `ediff-fine-diff-A\='.  The colour is the
+second answer to the question of which difference this is and not the
+first -- the bar in the fringe is not a shade to compare, so what the
+colour has to do is hold the eye where the bar has already sent it,
+which a deeper shade of the same colour does without shouting.")
+
+(defun ecc-review-ediff--stronger (face)
+  "Return the attributes of FACE with its background carried a shade further.
+Away from the background of the frame: lighter on a dark one, darker on
+a light one.  A face with no background of its own, and a background
+this display cannot name, are left to the bold alone."
+  (let ((background (face-attribute face :background nil t)))
+    (append (when (and (stringp background) (color-defined-p background))
+              (list :background
+                    (if (eq (frame-parameter nil 'background-mode) 'dark)
+                        (color-lighten-name
+                         background ecc-review-ediff-current-diff-step)
+                      (color-darken-name
+                       background ecc-review-ediff-current-diff-step))))
+            (list :weight 'bold :extend t))))
+
 (defun ecc-review-ediff--mark-differences (base now)
   "Give BASE and NOW the colours a diff is read by, if that is wanted."
   (when ecc-review-ediff-diff-faces
@@ -268,7 +315,112 @@ keeps `ediff-current-diff-A\=' and `-B\='.")
       (face-remap-add-relative 'ediff-even-diff-A 'diff-removed))
     (with-current-buffer now
       (face-remap-add-relative 'ediff-odd-diff-B 'diff-added)
-      (face-remap-add-relative 'ediff-even-diff-B 'diff-added))))
+      (face-remap-add-relative 'ediff-even-diff-B 'diff-added)))
+  (when ecc-review-ediff-current-diff-faces
+    (with-current-buffer base
+      (face-remap-add-relative
+       'ediff-current-diff-A (ecc-review-ediff--stronger 'ediff-current-diff-A)))
+    (with-current-buffer now
+      (face-remap-add-relative
+       'ediff-current-diff-B (ecc-review-ediff--stronger 'ediff-current-diff-B)))))
+
+;;;; The bar beside the difference being read
+
+;; A colour alone is a poor answer to "which one am I on": every
+;; difference of a review is coloured, and a shade is easy to miss
+;; halfway down a long file.  The bar is in the fringe, outside the
+;; text, so it costs the code no column and is not a colour to compare
+;; -- either a line has it or it does not.
+
+(defface ecc-review-ediff-current-mark-face
+  '((t :inherit warning))
+  "Face of the bar drawn beside the difference ediff is standing on."
+  :group 'ecc)
+
+(defvar ecc-review-ediff-current-diff-mark t
+  "Non-nil draws a bar in the fringe beside the difference being read.
+Every line of the current difference carries it, in both buffers, and
+it moves with n and p.  The two windows of the review are given a
+fringe to draw it in when the frame shows none
+\(`ecc-review-ediff-fringe-width\='); a terminal, and a batch test,
+have no fringe at all and show nothing, which is not an error.")
+
+(when (fboundp 'define-fringe-bitmap)
+  (define-fringe-bitmap 'ecc-review-ediff-current-mark
+    (make-vector 1 #b11100000) nil nil '(center repeated)))
+
+(defvar ecc-review-ediff-fringe-width 8
+  "How wide a fringe the two windows of a review are given, in pixels.
+The bar is drawn in the left fringe, and a frame that shows no fringe
+at all -- `initial-frame-alist\=' with `left-fringe\=' 0, or
+`fringe-mode\=' nil -- has nowhere to draw it: the mark was there and
+invisible (2026-09-18).  A review asks for the fringe it needs in its
+own two windows, which is a window the review made and gives back when
+it quits, and leaves every other window of the frame as the user set
+it.
+
+Nil asks for nothing, and on a frame without fringes the bar is not
+drawn at all.")
+
+(defun ecc-review-ediff--give-the-windows-a-fringe ()
+  "Give the two windows of this review a left fringe to draw the bar in.
+A window that has one already is left alone: what is wanted is a fringe
+where there is none, not one width for everybody."
+  (when (and ecc-review-ediff-fringe-width (display-graphic-p))
+    (dolist (window (list ediff-window-A ediff-window-B))
+      (when (and (window-live-p window)
+                 (zerop (or (car (window-fringes window)) 0)))
+        (set-window-fringes window ecc-review-ediff-fringe-width
+                            (nth 1 (window-fringes window)))))))
+
+(defvar-local ecc-review-ediff--marks nil
+  "The overlays drawing the bar beside the current difference.
+They live in the two buffers of the review; the list is buffer-local in
+the control buffer, which is where they are made and unmade.")
+
+(defun ecc-review-ediff--unmark-current ()
+  "Take down the bar beside the difference that was being read."
+  (mapc #'delete-overlay ecc-review-ediff--marks)
+  (setq ecc-review-ediff--marks nil))
+
+(defun ecc-review-ediff--mark-current ()
+  "Draw the bar beside every line of the difference ediff is standing on.
+This is what `ediff-select-hook\=' is set to in the control buffer of a
+review, so the bar follows n, p and j; ediff runs it with the control
+buffer current, which is where the differences are recorded."
+  (ecc-review-ediff--unmark-current)
+  (when (and ecc-review-ediff-current-diff-mark
+             (ediff-valid-difference-p ediff-current-difference))
+    ;; Asked for again at every difference rather than once at the
+    ;; start: ediff lays its windows out afresh on | and m, and a
+    ;; window that has just been made carries the frame's fringes.
+    (ecc-review-ediff--give-the-windows-a-fringe)
+    (let ((n ediff-current-difference)
+          (marks nil)
+          (mark (propertize
+                 " " 'display '(left-fringe ecc-review-ediff-current-mark
+                                            ecc-review-ediff-current-mark-face))))
+      (dolist (side (list (cons 'A ediff-buffer-A) (cons 'B ediff-buffer-B)))
+        (when (buffer-live-p (cdr side))
+          (let ((beg (ediff-get-diff-posn (car side) 'beg n))
+                (end (ediff-get-diff-posn (car side) 'end n)))
+            (with-current-buffer (cdr side)
+              (save-excursion
+                (goto-char beg)
+                (beginning-of-line)
+                ;; A difference of no length at all -- what one side
+                ;; holds and the other does not -- is one line all the
+                ;; same: the place the text would go is what is marked.
+                (while (progn
+                         (let ((overlay (make-overlay (point) (point))))
+                           (overlay-put overlay 'before-string mark)
+                           (push overlay marks))
+                         (and (zerop (forward-line 1)) (< (point) end)))))))))
+      ;; The overlays are made in the two buffers of the review and
+      ;; remembered in the control buffer, which is the one this runs
+      ;; in: the list is buffer-local, so it is set here and nowhere in
+      ;; between.
+      (setq ecc-review-ediff--marks marks))))
 
 (defun ecc-review-ediff--build (session pairs)
   "Fill the two buffers of SESSION with PAIRS and return (BASE NOW SECTIONS)."
@@ -581,6 +733,10 @@ ediff lays out its windows; quitting puts back what was on the screen."
                     ecc-review--comments-function #'ecc-review-ediff-comments
                     ecc-review--close-function #'ecc-review-ediff-quit
                     ediff-quit-hook (list #'ecc-review-ediff--on-quit))
+        ;; The bar beside the current difference, and then the same
+        ;; function for the difference the review opens on: ediff has
+        ;; selected it before these hooks run.
+        (add-hook 'ediff-select-hook #'ecc-review-ediff--mark-current nil t)
         ;; Both of these are read out of the control buffer of this
         ;; session as well (`ediff-defvar-local'), so no other ediff's ?
         ;; changes.
@@ -630,7 +786,8 @@ ediff lays out its windows; quitting puts back what was on the screen."
         ;; buffer the user never asked about, from a key the help does
         ;; not offer.  They say what a review is instead.
         (define-key ediff-mode-map (kbd "a") #'ecc-review-ediff-copy-refused)
-        (define-key ediff-mode-map (kbd "b") #'ecc-review-ediff-copy-refused))))
+        (define-key ediff-mode-map (kbd "b") #'ecc-review-ediff-copy-refused)
+        (ecc-review-ediff--mark-current))))
     control))
 
 (defun ecc-review-ediff-buffer (session &optional paths)
