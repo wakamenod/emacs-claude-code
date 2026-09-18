@@ -31,7 +31,13 @@
 ;; with the stream-json protocol and shows the conversation in one
 ;; buffer, the transcript above and the prompt below.
 ;;
-;; Start one with \\[ecc-start].
+;; `M-x ecc-start' starts a session in the project of the current
+;; buffer and `M-x ecc-resume' opens a conversation again.  `M-x
+;; ecc-menu' is every command in one menu, and `M-x ecc-dashboard'
+;; lists the sessions of this Emacs with the recordings beside them.
+;;
+;; The CLI is not part of this package: install it separately, and name
+;; it in `ecc-executable' if it is not found on `exec-path'.
 
 ;;; Code:
 
