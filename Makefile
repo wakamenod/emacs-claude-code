@@ -21,7 +21,7 @@ BATCH := $(EMACS) -Q --batch $(INIT) -L . -L test
 # One Emacs per file means one startup per file, so they run at once.
 JOBS  := $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 
-.PHONY: all autoloads compile test test-live lint clean release release-check \
+.PHONY: all autoloads compile test test-live lint lint-deps clean release release-check \
         release-tag release-tag-check version-check \
         docs-install docs-dev docs-build docs-preview docs-clean
 
@@ -70,9 +70,21 @@ test-live: autoloads compile
 	$(BATCH) $(foreach f,$(TESTS),-l $(f)) \
 	  --eval '(ert-run-tests-batch-and-exit (quote (tag live)))'
 
+# checkdoc prints and does not gate: it reports a key sequence of more than
+# one chord -- `C-c C-m' -- even where it is quoted the way it should be, so
+# its findings are read rather than obeyed.  package-lint goes through
+# scripts/lint.el, whose Commentary says which of its findings are fatal
+# here and why.  Neither is installed by Emacs; `make lint-deps' fetches
+# package-lint, and without it this target says so and passes.
 lint:
 	$(BATCH) --eval '(progn (require (quote checkdoc)) (dolist (f (list $(foreach f,$(SRC),"$(f)"))) (checkdoc-file f)))'
-	$(BATCH) --eval '(if (require (quote package-lint) nil t) (progn (setq command-line-args-left (list $(foreach f,$(SRC),"$(f)"))) (package-lint-batch-and-exit)) (message "package-lint not installed; skipping"))'
+	$(BATCH) -l scripts/lint.el -f ecc-lint-batch-and-exit $(SRC)
+
+# The one target here that wants the network for the Emacs side.  It puts
+# package-lint where $(ELPA) points, which is where every other target
+# already looks; nothing in the package depends on it.
+lint-deps:
+	$(BATCH) --eval '(progn (add-to-list (quote package-archives) (cons "melpa" "https://melpa.org/packages/") t) (package-refresh-contents) (package-install (quote package-lint)))'
 
 # A release is a tag, and the one thing it can get silently wrong is the
 # Version header of ecc.el disagreeing with it: package-vc then reports the
