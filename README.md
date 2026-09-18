@@ -35,8 +35,8 @@ Because the transcript is standard buffer text, you can use regular Emacs workfl
 - **[Plan mode](https://wakamenod.github.io/emacs-claude-code/features/review/#plan-mode):** Work through proposed execution plans in a writable buffer.
 - **[Global access](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/):** Approve or deny pending tool requests from any buffer.
 - **[Session management](https://wakamenod.github.io/emacs-claude-code/features/sessions/):** Manage multiple concurrent sessions from a dashboard.
-- **[Spaces and worktrees](https://wakamenod.github.io/emacs-claude-code/features/spaces/):** Every project gets an Emacs tab of its own -- a Space -- and the windows inside it stay as you arranged them (`ecc-use-spaces`, on by default). Going to a project with nothing running starts a session there, and `/resume` continues that window with an earlier conversation. A sidebar on the left lists every project and session with what each is doing, and `ecc-start-worktree` checks a branch out beside the repository and opens it as a Space of its own.
-- **Safe defaults:** Permission prompts default to deny. The built-in loopback MCP server is disabled by default, and evaluating Elisp requires explicit opt-in.
+- **[Spaces and worktrees](https://wakamenod.github.io/emacs-claude-code/features/spaces/):** Every project gets an Emacs tab of its own -- a Space -- and the windows in it stay where you put them (`ecc-use-spaces`, on by default). A sidebar lists every project and session with what each is doing, and `ecc-start-worktree` checks a branch out beside the repository and opens it as a Space of its own.
+- **Safe defaults:** Nothing is approved without you -- there is no auto-approval, and a request that can no longer be answered is recorded as denied. The built-in loopback MCP server is disabled by default, and evaluating Elisp requires explicit opt-in.
 
 ## Requirements
 
