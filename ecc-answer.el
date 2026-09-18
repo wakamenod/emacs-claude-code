@@ -334,6 +334,7 @@ the fork is a switch.  The meaning is the same; only the form differs.")
 (defconst ecc-pending--mode-line-construct '(:eval (ecc-pending-mode-line-string))
   "What `ecc-pending-indicator-mode' adds to `global-mode-string'.")
 
+;;;###autoload
 (define-minor-mode ecc-pending-indicator-mode
   "Show in every mode line how many requests are waiting."
   :global t

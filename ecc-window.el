@@ -343,6 +343,7 @@ the last ordinary buffer that was selected."
         ((buffer-live-p ecc-window--last-source-buffer)
          ecc-window--last-source-buffer)))
 
+;;;###autoload
 (define-minor-mode ecc-track-source-buffer-mode
   "Follow which ordinary buffer the user last worked in.
 The commands that quote code into a prompt need it: by the time one of

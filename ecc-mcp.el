@@ -225,6 +225,7 @@ the server down with it."
 (defconst ecc-mcp--mode-line-construct '(:eval (ecc-mcp-mode-line-string))
   "What `ecc-mcp-indicator-mode' adds to `global-mode-string'.")
 
+;;;###autoload
 (define-minor-mode ecc-mcp-indicator-mode
   "Say in every mode line which Emacs tool Claude is using."
   :global t

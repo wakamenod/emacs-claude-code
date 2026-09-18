@@ -574,6 +574,7 @@ what a tab says already goes through."
                            #'ecc-tab--blink-tick)))
     (ecc-tab-blink-stop)))
 
+;;;###autoload
 (define-minor-mode ecc-tab-line-mode
   "List every session in the tab line of the session windows."
   :global t
@@ -609,6 +610,7 @@ tab is waiting for an answer."
                 name)
       name)))
 
+;;;###autoload
 (define-minor-mode ecc-notify-mode
   "Announce what the sessions of this Emacs are waiting for."
   :global t

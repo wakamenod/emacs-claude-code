@@ -1164,7 +1164,6 @@ a git repository or has nothing to show."
                        (ecc-review-buffer-name session nil range))
                       session text root nil nil range)))
 
-;;;###autoload
 (defun ecc-review-worktree--read-arguments ()
   "Return the (SESSION RANGE ROOT) `ecc-review-worktree\=' should run with.
 The project comes from the buffer the user is working in -- this is a

@@ -629,7 +629,6 @@ Interactively the recordings are offered by name."
 
 ;;;; Resuming what was read
 
-;;;###autoload
 (defun ecc-history--check-id-not-running (session-id name)
   "Refuse to resume SESSION-ID, called NAME, while another process runs it.
 There is no lock: a second CLI on the same session id writes into the
