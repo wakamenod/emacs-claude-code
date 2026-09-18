@@ -29,6 +29,30 @@ Verified against **Claude Code CLI 2.1.274**.
   panel has been taken down. Plain `ediff-buffers` does the same thing, and
   this fixes it for the reviews ecc opens.
 
+- An ediff review marks the difference it is standing on apart from all the
+  others.  `ecc-review-ediff-diff-faces` gives every other difference the
+  colours of `diff-removed` and `diff-added`, and a theme is free to paint
+  `ediff-current-diff-A` and `-B` in exactly those colours -- modus-vivendi
+  gives both `#4f1119` on the left and both `#00381f` on the right -- so
+  every difference of the review looked like the one being read and nothing
+  said where `n` had just arrived.
+
+  Two marks now, in the two buffers of the review alone.  The colour of the
+  current difference is carried five points of lightness away from the
+  frame's background, from the shade the theme itself gave it and in bold
+  (`ecc-review-ediff-current-diff-faces`, `ecc-review-ediff-current-diff-step`);
+  and a bar is drawn in the fringe beside every line of it, which is not a
+  colour to compare -- a line has it or it does not
+  (`ecc-review-ediff-current-diff-mark`, `ecc-review-ediff-current-mark-face`).
+  The refinement within a line keeps `ediff-fine-diff-A` and `-B`.
+
+  A frame can be set up with no fringe at all -- `left-fringe` 0 in
+  `initial-frame-alist` -- and the bar then has nowhere to be drawn, so the
+  review gives its own two windows a fringe of
+  `ecc-review-ediff-fringe-width` when the frame shows none.  The windows are
+  the review's own and go back with the rest of the arrangement when it
+  quits; every other window of the frame is left as the user set it.
+
 ## [0.3.0] - 2026-09-18
 
 Verified against **Claude Code CLI 2.1.274**.
