@@ -244,8 +244,9 @@ and has to be manageable."
 
 ;;;; Skills, and the overrides that turn them off
 
-(defvar ecc-plugin-user-skills-directory "~/.claude/skills/"
-  "Where the skills of this machine live, one directory each.")
+(defvar ecc-plugin-user-skills-directory (expand-file-name "skills/" (ecc-config-directory))
+  "Where the skills of this machine live, one directory each.
+CLAUDE_CONFIG_DIR moves them; see `ecc-config-directory'.")
 
 (defvar ecc-plugin-skill-states nil
   "What a skill can be set to, least restrictive first.

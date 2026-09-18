@@ -45,7 +45,14 @@ jobs:
         with:
           version: '30.1'
 
-      # checkdoc prints its findings and exits 0; this job is here to be read,
-      # not to gate.  package-lint is not installed, and the Makefile skips it.
+      # checkdoc prints its findings and exits 0, so that half of the job is
+      # a report.  package-lint is installed first, because a check nobody
+      # runs is how forty-two stale `Package-Requires' headers and five
+      # global modes with no autoload cookie reached a release.  Its errors
+      # fail this job; its warnings are printed and do not, for the reasons
+      # scripts/lint.el gives.
+      - name: lint dependencies
+        run: make lint-deps ELPA=$PWD/.elpa
+
       - name: lint
         run: make lint ELPA=$PWD/.elpa

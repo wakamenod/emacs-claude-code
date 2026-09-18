@@ -417,7 +417,7 @@ REMEMBER is passed to `tabulated-list-print'."
                         (expand-file-name "settings.json"
                                           (expand-file-name
                                            ecc-capabilities-directory))
-                        (expand-file-name "~/.claude.json")))))
+                        (ecc-config-json-file)))))
 
 (defun ecc-capabilities (session)
   "Return everything SESSION can do, as a list of `ecc-capability'.

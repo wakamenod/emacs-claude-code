@@ -51,8 +51,9 @@
 (require 'ecc-core)
 (require 'ecc-protocol)
 
-(defvar ecc-registry-directory "~/.claude/sessions/"
+(defvar ecc-registry-directory (expand-file-name "sessions/" (ecc-config-directory))
   "Directory in which Claude Code records the sessions it is running.
+CLAUDE_CONFIG_DIR moves it; see `ecc-config-directory'.
 One JSON file per process, named after its process id.")
 
 (defvar ecc-registry-check-process t

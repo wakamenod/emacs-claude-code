@@ -125,8 +125,9 @@ read back (2.1.270, 2026-09-13).")
 ;; need.  When the managed settings carry hooks, the CLI runs those and
 ;; nothing else: "Only hooks from managed settings can run" (2.1.270).
 
-(defvar ecc-hooks-plugin-directory "~/.claude/plugins/"
-  "Directory holding the installed plugins and the list of them.")
+(defvar ecc-hooks-plugin-directory (expand-file-name "plugins/" (ecc-config-directory))
+  "Directory holding the installed plugins and the list of them.
+CLAUDE_CONFIG_DIR moves it; see `ecc-config-directory'.")
 
 (defvar ecc-hooks-disabled-file nil
   "File holding the hooks this package has switched off.

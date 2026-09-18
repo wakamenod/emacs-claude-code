@@ -151,6 +151,37 @@ whole buffer down by one, which was most of what a delta cost."
   (should (equal (ecc-aside-split "") (cons "" nil)))
   (should (equal (ecc-aside-split nil) (cons nil nil))))
 
+(ert-deftest ecc-core-test-config-directory-default ()
+  "With nothing in the environment the CLI\='s state is under ~/.claude."
+  (let ((process-environment (list "PATH=/usr/bin"))
+        (ecc-extra-environment nil))
+    (should (equal (ecc-config-directory)
+                   (file-name-as-directory (expand-file-name "~/.claude"))))
+    ;; The .claude.json sits beside that directory, not inside it.
+    (should (equal (ecc-config-json-file) (expand-file-name "~/.claude.json")))))
+
+(ert-deftest ecc-core-test-config-directory-follows-the-environment ()
+  "CLAUDE_CONFIG_DIR moves the directory, and the .claude.json into it.
+The CLI reads the directory this Emacs names, because this Emacs is
+what starts it; reading ~/.claude anyway would report on a machine the
+session never touches."
+  (let ((process-environment (list "CLAUDE_CONFIG_DIR=/tmp/elsewhere"))
+        (ecc-extra-environment nil))
+    (should (equal (ecc-config-directory) "/tmp/elsewhere/"))
+    (should (equal (ecc-config-json-file) "/tmp/elsewhere/.claude.json"))))
+
+(ert-deftest ecc-core-test-config-directory-reads-extra-environment-first ()
+  "`ecc-extra-environment\=' wins, because the CLI is started with it in front."
+  (let ((process-environment (list "CLAUDE_CONFIG_DIR=/tmp/inherited"))
+        (ecc-extra-environment '("CLAUDE_CODE_ARTIFACT=1"
+                                 "CLAUDE_CONFIG_DIR=/tmp/ours")))
+    (should (equal (ecc-config-directory) "/tmp/ours/")))
+  ;; An entry for another variable is not mistaken for this one.
+  (let ((process-environment (list "PATH=/usr/bin"))
+        (ecc-extra-environment '("NOT_CLAUDE_CONFIG_DIR=/tmp/no")))
+    (should (equal (ecc-config-directory)
+                   (file-name-as-directory (expand-file-name "~/.claude"))))))
+
 (provide 'ecc-core-test)
 
 ;;; ecc-core-test.el ends here

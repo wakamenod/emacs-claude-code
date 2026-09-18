@@ -58,8 +58,10 @@
 (declare-function ecc-prompt-command-name "ecc-prompt" (text))
 (declare-function ecc-prompt-command-argument "ecc-prompt" (text))
 
-(defvar ecc-history-directory "~/.claude/projects/"
+(defvar ecc-history-directory (expand-file-name "projects/" (ecc-config-directory))
   "Directory the CLI keeps its recorded conversations in.
+CLAUDE_CONFIG_DIR moves it, which is why it is not written out here;
+see `ecc-config-directory'.
 It holds one subdirectory per working directory, each with one jsonl
 file per session.")
 
