@@ -164,6 +164,9 @@ under the difference in the buffer of what the files hold now.")
 (defvar-local ecc-review-ediff--windows nil
   "The window configuration to put back when this review is quit.")
 
+(defvar-local ecc-review-ediff--frame nil
+  "The frame the review was opened in, to hand the keyboard back to.")
+
 (defun ecc-review-ediff-buffer-name (session side)
   "Return the name of the SIDE buffer of the ediff review of SESSION.
 SIDE is `base' for what the files held and `now' for what they hold."
@@ -512,14 +515,36 @@ Run from `ediff-quit-hook\\=' in the control buffer, which
 `ediff-cleanup-mess\\=' then kills, so what is needed afterwards is read
 first."
   (let ((buffers ecc-review-ediff--buffers)
-        (windows ecc-review-ediff--windows))
+        (windows ecc-review-ediff--windows)
+        (frame ecc-review-ediff--frame))
     (ediff-cleanup-mess)
     (dolist (buffer (list (car buffers) (cdr buffers)))
       (when (buffer-live-p buffer)
         (with-current-buffer buffer (set-buffer-modified-p nil))
         (kill-buffer buffer)))
     (when (window-configuration-p windows)
-      (set-window-configuration windows))))
+      (set-window-configuration windows))
+    (ecc-review-ediff--take-the-keyboard frame)))
+
+(defun ecc-review-ediff--take-the-keyboard (frame)
+  "Give FRAME the input focus again, now that the review is closed.
+On a graphical Emacs the control panel is a frame of its own, and it is
+the frame that holds the keyboard while the review is being read.
+`ediff-cleanup-mess\\=' deletes it and selects the frame the two sides
+were shown in, but it selects it within Emacs only: the window system is
+never told, so no frame is the one it considers focused.  A frame that
+is not focused draws its cursor the way a window that is not selected
+does -- and where `cursor-in-non-selected-windows\\=' is nil, that is no
+cursor at all.  Quitting a review left an Emacs with the cursor gone
+everywhere until something was clicked (reported 2026-09-18; plain
+`ediff-buffers\\=' does it too).
+
+Nothing is taken from the control panel by this: it is called after
+`ediff-cleanup-mess\\=' has deleted the panel, and there is no
+session left to drive."
+  (when (and (frame-live-p frame)
+             (display-graphic-p frame))
+    (select-frame-set-input-focus frame)))
 
 (defun ecc-review-ediff-quit (control)
   "Quit the ediff review in CONTROL, which closes it and its buffers.
@@ -536,6 +561,7 @@ review is against.  `ecc-window-hide-on-review\\=' is honoured before
 ediff lays out its windows; quitting puts back what was on the screen."
   (ecc-window-hide-for-review session)
   (let ((windows (current-window-configuration))
+        (frame (selected-frame))
         (control nil))
     (when ecc-review-ediff-full-frame
       (ecc-review-ediff--take-the-frame))
@@ -551,6 +577,7 @@ ediff lays out its windows; quitting puts back what was on the screen."
                     ecc-review-ediff--comments nil
                     ecc-review-ediff--buffers (cons base now)
                     ecc-review-ediff--windows windows
+                    ecc-review-ediff--frame frame
                     ecc-review--comments-function #'ecc-review-ediff-comments
                     ecc-review--close-function #'ecc-review-ediff-quit
                     ediff-quit-hook (list #'ecc-review-ediff--on-quit))
