@@ -27,13 +27,18 @@
      (let ((ecc-jev-enabled t)
            (ecc-jev--verdicts (make-hash-table :test #'equal))
            (ecc-jev--requests (make-hash-table :test #'equal))
+           (ecc-jev--reported nil)
            (ecc-jev-confidence-threshold 0.6))
        (ecc-model-set-state ,var 'idle)
        ,@body)))
 
 (defun ecc-jev-test--turn (session text)
-  "Finish a turn of SESSION whose last assistant message is TEXT."
-  (let ((turn (ecc-model-begin-turn session "do it")))
+  "Finish a turn of SESSION whose last assistant message is TEXT.
+Nothing is asked about it: `ecc-jev.el' hangs on
+`ecc-turn-finished-hook', and a test that wants the asking says so by
+calling `ecc-jev-turn-finished' itself."
+  (let ((ecc-jev-enabled nil)
+        (turn (ecc-model-begin-turn session "do it")))
     (ecc-model-add-node session :type 'text :parent turn
                         :data (list (cons 'text text)))
     (ecc-model-finish-turn session '((total_cost_usd . 0.01)))
@@ -159,15 +164,73 @@
                           :data (list (cons 'text "   ")))
       (should-not (ecc-jev--turn-text turn)))))
 
+(defun ecc-jev-test--log (session)
+  "Return the log of SESSION, without the time stamps."
+  (ecc-test-log-string (ecc-log-buffer-name (ecc-session-name session))))
+
+(defun ecc-jev-test--count (needle text)
+  "Return how many times NEEDLE occurs in TEXT."
+  (let ((n 0) (start 0))
+    (while (string-match (regexp-quote needle) text start)
+      (setq n (1+ n) start (match-end 0)))
+    n))
+
+(defmacro ecc-jev-test--messages (&rest body)
+  "Run BODY and return what it put in the echo area, as one string."
+  `(let ((said nil))
+     (cl-letf (((symbol-function 'message)
+                (lambda (format-string &rest args)
+                  (push (apply #'format format-string args) said))))
+       ,@body)
+     (string-join (nreverse said) "\n")))
+
 (ert-deftest ecc-jev-test-a-failure-leaves-the-row-alone ()
-  "A Jev that is down logs and changes nothing."
+  "A Jev having a bad minute logs, changes nothing and says nothing."
   (ecc-jev-test--with-session session
-    (ecc-jev--failed "rate limited" session)
-    (should-not (ecc-jev-verdict session))
-    (should (equal (ecc-jev-sidebar-mark session "·") "·"))
-    (should (string-match-p
-             "jev: rate limited"
-             (ecc-test-log-string (ecc-log-buffer-name (ecc-session-name session)))))))
+    (let ((said (ecc-jev-test--messages
+                 (ecc-jev--failed
+                  (list 'jev-rate-limit-error "rate limited") session))))
+      (should-not (ecc-jev-verdict session))
+      (should (equal (ecc-jev-sidebar-mark session "·") "·"))
+      (should (string-match-p "jev: rate limited" (ecc-jev-test--log session)))
+      (should (string-empty-p said)))))
+
+(ert-deftest ecc-jev-test-a-missing-key-is-said-once ()
+  "A failure nothing will fix by itself reaches the echo area, once."
+  (ecc-jev-test--with-session session
+    (let* ((failure (list 'jev-configuration-error
+                          "No Jev API key for `typesafe'"))
+           (said (ecc-jev-test--messages (ecc-jev--failed failure session))))
+      (should (string-match-p "No Jev API key" said))
+      ;; Said once: every finished turn would fail the same way.
+      (should (string-empty-p (ecc-jev-test--messages
+                               (ecc-jev--failed failure session))))
+      ;; Logged both times all the same.
+      (should (= 2 (ecc-jev-test--count "No Jev API key"
+                                        (ecc-jev-test--log session)))))))
+
+(ert-deftest ecc-jev-test-an-answer-lets-it-speak-again ()
+  "A key put right must not leave a warning that cannot come back."
+  (ecc-jev-test--with-session session
+    (ecc-jev-test--messages
+     (ecc-jev--failed (list 'jev-auth-error "401 from the provider") session))
+    (should ecc-jev--reported)
+    ;; What `ecc-jev--succeeded' does with a reply before it reads it.
+    (ecc-jev--answered)
+    (should-not ecc-jev--reported)))
+
+(ert-deftest ecc-jev-test-without-jev-el-it-says-so ()
+  "The setting on and the package absent is a first run that must not be silent."
+  (ecc-jev-test--with-session session
+    (let* ((turn (ecc-jev-test--turn session "Which of the two?"))
+           (said (cl-letf (((symbol-function 'require)
+                            (lambda (feature &rest _) (and (not (eq feature 'jev))
+                                                           (featurep feature)))))
+                   (ecc-jev-test--messages
+                    (ecc-jev-turn-finished session turn)))))
+      (should (string-match-p "jev.el is not installed" said))
+      (should (string-match-p "jev.el is not installed"
+                              (ecc-jev-test--log session))))))
 
 ;;;; The seam in the sidebar
 

@@ -65,7 +65,6 @@
 (declare-function jev-value "jev" (reply key))
 (declare-function jev-confidence "jev" (reply key))
 (declare-function jev-true-p "jev" (reply key &optional threshold))
-(declare-function jev-error-message "jev" (error))
 
 ;;;; Settings
 
@@ -114,6 +113,14 @@ question.")
     ("partial" . "It did some of the work and stopped short of the rest"))
   "The options of the choice Jev is asked about a finished turn.")
 
+(defvar ecc-jev-loud-errors
+  '(jev-configuration-error jev-auth-error jev-billing-error)
+  "Failures said once in the echo area as well as logged.
+These are the ones nobody can fix from here and nothing will fix by
+itself: no API key, a key that is refused, an account out of credit.
+Everything else -- a rate limit, a timeout, a provider having a bad
+minute -- passes and belongs in the log alone.")
+
 ;;;; What is known, per session
 
 (defvar ecc-jev--verdicts (make-hash-table :test #'equal)
@@ -121,6 +128,12 @@ question.")
 
 (defvar ecc-jev--requests (make-hash-table :test #'equal)
   "The Jev request in flight for a session id, by session id.")
+
+(defvar ecc-jev--reported nil
+  "Non-nil once a failure worth saying out loud has been said.
+It is said once rather than after every turn, and the next answer that
+arrives clears it: a key put right must not leave a warning that
+cannot come back.")
 
 (defun ecc-jev--forget (session)
   "Drop what is known about SESSION, and stop anything asked about it."
@@ -212,21 +225,65 @@ machine that has never heard of it (2026-09-19)."
         (cons 'asking
               (jev-noul "Does the message end by asking the user something?"))))
 
+(defun ecc-jev--answered ()
+  "Note that Jev answered, so that a later failure is said out loud again."
+  (setq ecc-jev--reported nil))
+
 (defun ecc-jev--succeeded (reply session turn)
   "Take REPLY apart into the verdict of TURN in SESSION, and draw it."
+  (ecc-jev--answered)
   (let ((verdict (ecc-jev--verdict-of (jev-value reply 'verdict)
                                       (jev-true-p reply 'asking)))
         (confidence (jev-confidence reply 'verdict)))
     (when (ecc-jev-note-verdict session turn verdict confidence)
       (ecc-sidebar-redraw))))
 
+(defun ecc-jev--loud-p (error)
+  "Return non-nil when ERROR is one `ecc-jev-loud-errors\=' names.
+A jev.el error object is an ordinary condition, (SYMBOL MESSAGE . PROPS).
+The symbol itself is matched first and its family second: the family
+lives in the `error-conditions\=' that jev.el puts on the symbol with
+`define-error\=', so it is there only once the package is loaded, and the
+symbol alone has to be enough without it (2026-09-19)."
+  (and (consp error)
+       (symbolp (car error))
+       (or (memq (car error) ecc-jev-loud-errors)
+           (seq-intersection (get (car error) 'error-conditions)
+                             ecc-jev-loud-errors)
+           nil)))
+
+(defun ecc-jev--error-text (error)
+  "Return what ERROR says.
+A jev.el error object is an ordinary condition, (SYMBOL MESSAGE . PROPS),
+and this reads the message out of one without `jev-error-message\=' --
+which would need the package loaded, and a failure is exactly where it
+may not be (2026-09-19)."
+  (cond ((and (consp error) (stringp (cadr error))) (cadr error))
+        ((stringp error) error)
+        (t (format "%s" error))))
+
+(defun ecc-jev--report (session text)
+  "Log TEXT against SESSION, and say it once where a person will see it."
+  (ecc-log (ecc-session-name session) "jev: %s" text)
+  (unless ecc-jev--reported
+    (setq ecc-jev--reported t)
+    (message "ecc-jev: %s.  The sidebar marks stay as they are" text)))
+
 (defun ecc-jev--failed (error session)
   "Log ERROR against SESSION and leave the sidebar alone.
 A Jev that is down, rate-limited or out of credit must cost a session
 nothing: the row keeps the mark it already has, and the failure is
-here to be found."
-  (ecc-log (ecc-session-name session) "jev: %s"
-           (or (ignore-errors (jev-error-message error)) error)))
+here to be found.
+
+The exception is a failure nobody can fix from here and nothing will
+fix by itself -- no API key above all, which is where a first run ends
+up -- and that one is also said once in the echo area, because a
+setting switched on and answering with silence is worse than the
+setting being off."
+  (let ((text (ecc-jev--error-text error)))
+    (if (ecc-jev--loud-p error)
+        (ecc-jev--report session text)
+      (ecc-log (ecc-session-name session) "jev: %s" text))))
 
 (defun ecc-jev-turn-finished (session turn)
   "Ask Jev what TURN of SESSION meant, when that is switched on."
@@ -234,8 +291,8 @@ here to be found."
     (ecc-jev--forget session)
     (when-let* ((text (ecc-jev--turn-text turn)))
       (if (not (require 'jev nil t))
-          (ecc-log (ecc-session-name session)
-                   "jev: `ecc-jev-enabled' is on but jev.el is not installed")
+          (ecc-jev--report session
+                           "`ecc-jev-enabled' is on but jev.el is not installed")
         (puthash (ecc-session-id session)
                  ;; The tag carries the session and the turn across the
                  ;; round trip, which is jev.el's own advice for an

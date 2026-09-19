@@ -32,8 +32,15 @@ Verified against **Claude Code CLI 2.1.274**.
   at run time and is not a dependency of this package. Jev decides nothing: no
   notification, no permission, no tab-line state -- it annotates one column of
   one row, an answer that lands about a turn the session has moved past is
-  dropped, and a Jev that is down or out of credit leaves the sidebar as it
-  was, with the failure in the session log (`ecc-jev.el`).
+  dropped, and a Jev that is down leaves the sidebar as it was, with the
+  failure in the session log (`ecc-jev.el`).
+
+  The three failures nobody can fix from here and nothing fixes by itself --
+  no API key, a key that is refused, an account out of credit
+  (`ecc-jev-loud-errors`) -- are also said once in the echo area: a setting
+  switched on and answering with silence is worse than the setting being off.
+  A rate limit or a bad minute at the provider stays in the log, and the next
+  answer that arrives lets a failure speak again.
 
 - `ecc-sidebar-mark-functions`, the seam the above hangs on: functions given a
   session and the mark the sidebar would draw for it, returning the mark to
