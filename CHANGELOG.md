@@ -33,7 +33,15 @@ Verified against **Claude Code CLI 2.1.274**.
   notification, no permission, no tab-line state -- it annotates one column of
   one row, an answer that lands about a turn the session has moved past is
   dropped, and a Jev that is down leaves the sidebar as it was, with the
-  failure in the session log (`ecc-jev.el`).
+  failure in the session log (`ecc-jev.el`). A slash command the CLI answered
+  itself -- `/cost` and its like, which arrive as synthetic assistant messages
+  -- is not what the model said, and is neither sent nor charged for.
+
+  Nothing of this may cost a session anything: reading the reply, and the hook
+  entry point that `add-hook` puts in front of the notification and the two
+  redraws, are both inside a handler that logs. jev.el does not wrap the
+  success callback, and an error raised there would otherwise travel into
+  url.el’s, where nothing is listening.
 
   The three failures nobody can fix from here and nothing fixes by itself --
   no API key, a key that is refused, an account out of credit

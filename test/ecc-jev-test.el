@@ -72,11 +72,26 @@ calling `ecc-jev-turn-finished' itself."
 
 (ert-deftest ecc-jev-test-a-question-outranks-the-choice ()
   "A turn that calls itself done and ends in a question waits on the user."
-  (should (eq (ecc-jev--verdict-of "done" t) 'needs-decision))
-  (should (eq (ecc-jev--verdict-of "partial" t) 'needs-decision))
-  (should (eq (ecc-jev--verdict-of "done" nil) 'done))
+  (should (eq (car (ecc-jev--verdict-of "done" 0.9 0.9)) 'needs-decision))
+  (should (eq (car (ecc-jev--verdict-of "partial" 0.9 0.9)) 'needs-decision))
+  (should (eq (car (ecc-jev--verdict-of "done" 0.9 0.1)) 'done))
   ;; Blocked is blocked: what it asks for is not a decision it can take.
-  (should (eq (ecc-jev--verdict-of "blocked" t) 'blocked)))
+  (should (eq (car (ecc-jev--verdict-of "blocked" 0.9 0.9)) 'blocked)))
+
+(ert-deftest ecc-jev-test-the-confidence-is-the-deciding-one ()
+  "The mark is drawn under the confidence of the answer that decided it."
+  ;; The question overturned a confident `done', and is barely sure
+  ;; itself: that is a 0.51 verdict, not a 0.95 one.
+  (let ((verdict (ecc-jev--verdict-of "done" 0.95 0.51)))
+    (should (eq (car verdict) 'needs-decision))
+    (should (equal (cdr verdict) 0.51))
+    (should-not (ecc-jev-mark-of (car verdict) (cdr verdict))))
+  ;; And an unsure `done' with a question it is sure of is worth drawing.
+  (let ((verdict (ecc-jev--verdict-of "done" 0.4 0.99)))
+    (should (equal (cdr verdict) 0.99))
+    (should (equal (ecc-jev-mark-of (car verdict) (cdr verdict)) "?")))
+  ;; Where the choice stands, the choice's own confidence is what counts.
+  (should (equal (cdr (ecc-jev--verdict-of "blocked" 0.8 0.1)) 0.8)))
 
 ;;;; What is recorded, and when it is dropped
 
@@ -154,6 +169,19 @@ calling `ecc-jev-turn-finished' itself."
       (ecc-model-add-node session :type 'text :parent turn
                           :data (list (cons 'text "abcdef")))
       (should (equal (ecc-jev--turn-text turn) "def")))))
+
+(ert-deftest ecc-jev-test-the-clis-own-output-is-not-sent ()
+  "A slash command the CLI answered itself is not what the model said.
+`/cost' comes back as a synthetic assistant message; sending it would
+cost money to be told nothing, and mark a session that is fine."
+  (ecc-jev-test--with-session session
+    (let ((turn (ecc-model-begin-turn session "/cost")))
+      (ecc-model-add-node session :type 'text :parent turn
+                          :data (list (cons 'text "Which of the two?")))
+      (ecc-model-add-node session :type 'text :parent turn
+                          :data (list (cons 'text "Total cost: $0.12")
+                                      (cons 'synthetic t)))
+      (should (equal (ecc-jev--turn-text turn) "Which of the two?")))))
 
 (ert-deftest ecc-jev-test-a-turn-that-said-nothing-is-not-sent ()
   "There is nothing to ask about a turn with no assistant text in it."
@@ -233,6 +261,64 @@ calling `ecc-jev-turn-finished' itself."
                               (ecc-jev-test--log session))))))
 
 ;;;; The seam in the sidebar
+
+(ert-deftest ecc-jev-test-a-reply-it-cannot-read-is-a-failure ()
+  "A provider that leaves a question out must not escape into the transport.
+`jev-value' signals for a missing answer, jev.el does not wrap the
+success callback, and in the asynchronous path that lands in url.el's."
+  (ecc-jev-test--with-session session
+    (let ((turn (ecc-jev-test--turn session "Which of the two?")))
+      (cl-letf (((symbol-function 'jev-value)
+                 (lambda (&rest _)
+                   (signal 'error (list "No answer for verdict in reply")))))
+        ;; It returns rather than signalling ...
+        (should-not (ecc-jev--succeeded 'reply session turn))
+        ;; ... leaves the row alone, and is in the log.
+        (should-not (ecc-jev-verdict session))
+        (should (string-match-p "No answer for verdict"
+                                (ecc-jev-test--log session)))))))
+
+(ert-deftest ecc-jev-test-the-rest-of-the-hook-still-runs ()
+  "Whatever goes wrong in here, the hook's other residents run.
+`add-hook' puts this first, and the notification, the end of the
+transcript and the two redraws come after it."
+  (ecc-jev-test--with-session session
+    (let ((ran nil))
+      (cl-letf (((symbol-function 'ecc-jev--ask)
+                 (lambda (&rest _) (error "jev.el is half installed"))))
+        (let ((ecc-turn-finished-hook (list #'ecc-jev-turn-finished
+                                            (lambda (&rest _) (setq ran t)))))
+          (ecc-jev-test--turn session "Which of the two?")
+          (let ((ecc-jev-enabled t))
+            (run-hook-with-args 'ecc-turn-finished-hook session
+                                (car (last (ecc-session-turns session)))))))
+      (should ran)
+      (should (string-match-p "half installed" (ecc-jev-test--log session))))))
+
+(ert-deftest ecc-jev-test-a-request-that-is-over-is-not-kept ()
+  "A transport answering inside the call leaves no handle behind.
+The next turn would cancel a request that is finished, and the session
+would hold that handle for ever."
+  (unless (require 'jev nil t)
+    (ert-skip "jev.el is not installed"))
+  (ecc-jev-test--with-session session
+    (let ((jev-api-key "test-key")
+          (jev-http-function
+           (lambda (_url _headers _body _timeout sync callback)
+             (let ((result (list :status 200 :headers nil
+                                 :body (json-serialize
+                                        '((model . "jev-1")
+                                          (answers
+                                           (verdict (type . "choice")
+                                                    (choice . "blocked")
+                                                    (confidence . 0.9))
+                                           (asking (type . "noul")
+                                                   (noul . 0.1))))))))
+               (if sync result (progn (funcall callback result) nil))))))
+      (cl-letf (((symbol-function 'ecc-sidebar-redraw) #'ignore))
+        (ecc-jev-turn-finished session (ecc-jev-test--turn session "It failed"))
+        (should (equal (car (ecc-jev-verdict session)) 'blocked))
+        (should (= 0 (hash-table-count ecc-jev--requests)))))))
 
 (ert-deftest ecc-jev-test-the-sidebar-honours-the-seam ()
   "`ecc-sidebar-mark-functions' decides the mark a row opens with."

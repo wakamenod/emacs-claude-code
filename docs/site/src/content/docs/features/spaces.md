@@ -142,7 +142,7 @@ With no key, every turn fails with ``No Jev API key for `typesafe'``. That is sa
 
 jev.el is not a dependency of this package: without it `ecc-jev` loads nothing, and the setting switched on says so once and does nothing more. Jev decides nothing either — it never approves, refuses or answers anything, and it annotates one column of one row. A Jev that is down, rate-limited or out of credit leaves the sidebar exactly as it looks without it, with the failure in the session log (`ecc-show-log`). An answer arrives a few hundred milliseconds later, and is dropped unless the session is still there, still idle, and still on the same turn.
 
-`ecc-jev-confidence-threshold` (0.6) is how sure Jev must be before a mark is drawn; below it the row keeps its ordinary one. The number is a starting guess rather than a calibrated one. `ecc-jev-marks` is the character each verdict draws, and `ecc-jev-text-limit` how much of the message is sent (the tail, 4000 characters). All three are plain variables, set with `setq`.
+A slash command the CLI answers itself, such as `/cost`, is not what the model said: it is left where it is, neither sent nor charged for. `ecc-jev-confidence-threshold` (0.6) is how sure Jev must be before a mark is drawn; below it the row keeps its ordinary one. The number is a starting guess rather than a calibrated one. `ecc-jev-marks` is the character each verdict draws, and `ecc-jev-text-limit` how much of the message is sent (the tail, 4000 characters). All three are plain variables, set with `setq`.
 
 ## Worktrees
 

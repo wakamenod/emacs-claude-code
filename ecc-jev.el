@@ -148,15 +148,23 @@ cannot come back.")
   "Return the verdict recorded for SESSION as (VERDICT . CONFIDENCE), or nil."
   (gethash (ecc-session-id session) ecc-jev--verdicts))
 
-(defun ecc-jev--verdict-of (choice asking)
-  "Return the verdict a reply of CHOICE and ASKING stands for.
-CHOICE is what Jev picked, as a symbol or a string; ASKING is whether
-the message ends by asking the user something.  A turn that calls
-itself done and still ends in a question is waiting on the user, and
-the question is the more reliable of the two: it is about the text,
-not about the work."
-  (let ((choice (if (stringp choice) (intern choice) choice)))
-    (if (and asking (memq choice '(done partial))) 'needs-decision choice)))
+(defun ecc-jev--verdict-of (choice confidence asking)
+  "Return (VERDICT . CONFIDENCE) for CHOICE at CONFIDENCE, given ASKING.
+CHOICE is what Jev picked, as a symbol or a string; ASKING is the
+probability the noul came back with, which for a noul is the answer
+itself.  A turn that calls itself done and still ends in a question is
+waiting on the user, and the question is the more reliable of the two:
+it is about the text, not about the work.
+
+The confidence returned belongs to whichever question decided it.  A
+`done\=' believed at 0.95 and overturned by an `asking\=' of 0.51 is a
+0.51 verdict, and drawing it under the confidence of the answer that
+lost would put a mark on the row that nothing supports."
+  (let ((choice (if (stringp choice) (intern choice) choice))
+        (asking (if (numberp asking) asking (if asking 1.0 0.0))))
+    (if (and (> asking 0.5) (memq choice '(done partial)))
+        (cons 'needs-decision asking)
+      (cons choice confidence))))
 
 (defun ecc-jev-mark-of (verdict confidence)
   "Return the mark VERDICT draws at CONFIDENCE, or nil for the ordinary one.
@@ -197,11 +205,22 @@ running one is handed back untouched."
 
 ;;;; Asking
 
+(defun ecc-jev--said-p (node)
+  "Return non-nil when NODE is something the model said in its own words.
+A slash command the CLI answers itself -- `/cost\=', `/status\=' -- comes
+back as an assistant message like any other, marked `synthetic\=' by
+`ecc-dispatch\=' from the model name \"<synthetic>\" the CLI puts on it.
+Sending a table of token counts to Jev costs money to be told nothing,
+and a healthy session would wear the mark of whatever it made of it
+\(2026-09-19)."
+  (and (eq (ecc-node-type node) 'text)
+       (not (ecc-model-node-get node 'synthetic))))
+
 (defun ecc-jev--turn-text (turn)
   "Return the last thing said in TURN, cut to `ecc-jev-text-limit\\=', or nil.
 The tail is what is kept: the end of a message is where it says what
 it wants."
-  (when-let* ((node (seq-find (lambda (node) (eq (ecc-node-type node) 'text))
+  (when-let* ((node (seq-find #'ecc-jev--said-p
                               (reverse (ecc-model-node-children turn))))
               (text (ecc-model-node-get node 'text))
               (text (string-trim text)))
@@ -230,13 +249,23 @@ machine that has never heard of it (2026-09-19)."
   (setq ecc-jev--reported nil))
 
 (defun ecc-jev--succeeded (reply session turn)
-  "Take REPLY apart into the verdict of TURN in SESSION, and draw it."
+  "Take REPLY apart into the verdict of TURN in SESSION, and draw it.
+`jev-value\=' and its neighbours signal `jev-response-error\=' for an
+answer that is missing or of the wrong type, and a provider that leaves
+a question out is not checked for anywhere else.  jev.el does not wrap
+the success callback -- an error raised there is the caller\='s own and
+travels on -- and in the asynchronous path that is url.el\='s callback,
+where nobody is listening and this module\='s own logging is never
+reached.  So the reply is read inside a handler (jev.el read
+2026-09-19)."
   (ecc-jev--answered)
-  (let ((verdict (ecc-jev--verdict-of (jev-value reply 'verdict)
-                                      (jev-true-p reply 'asking)))
-        (confidence (jev-confidence reply 'verdict)))
-    (when (ecc-jev-note-verdict session turn verdict confidence)
-      (ecc-sidebar-redraw))))
+  (condition-case caught
+      (let ((verdict (ecc-jev--verdict-of (jev-value reply 'verdict)
+                                          (jev-confidence reply 'verdict)
+                                          (jev-value reply 'asking))))
+        (when (ecc-jev-note-verdict session turn (car verdict) (cdr verdict))
+          (ecc-sidebar-redraw)))
+    (error (ecc-jev--failed caught session))))
 
 (defun ecc-jev--loud-p (error)
   "Return non-nil when ERROR is one `ecc-jev-loud-errors\=' names.
@@ -285,29 +314,50 @@ setting being off."
         (ecc-jev--report session text)
       (ecc-log (ecc-session-name session) "jev: %s" text))))
 
+(defun ecc-jev--ask (session turn)
+  "Send the last thing said in TURN of SESSION to Jev."
+  (ecc-jev--forget session)
+  (when-let* ((text (ecc-jev--turn-text turn)))
+    (if (not (require 'jev nil t))
+        (ecc-jev--report session
+                         "`ecc-jev-enabled' is on but jev.el is not installed")
+      (let* ((id (ecc-session-id session))
+             (settled nil)
+             (done (lambda ()
+                     (setq settled t)
+                     (remhash id ecc-jev--requests)))
+             (request
+              ;; The tag carries the session and the turn across the
+              ;; round trip, which is jev.el's own advice for an
+              ;; answer that lands in a world that has moved on.
+              (jev-ask text (ecc-jev--questions)
+                       :tag (cons id (ecc-turn-id turn))
+                       :success (lambda (reply _tag)
+                                  (funcall done)
+                                  (ecc-jev--succeeded reply session turn))
+                       :error (lambda (error _tag)
+                                (funcall done)
+                                (ecc-jev--failed error session)))))
+        ;; A transport that answers inside the call above has run the
+        ;; callback already, and the handle it hands back is of a
+        ;; request that is over: storing it would leave a finished
+        ;; request to be cancelled by the next turn, and this session
+        ;; holding a handle for ever (2026-09-19).
+        (unless settled
+          (puthash id request ecc-jev--requests))))))
+
 (defun ecc-jev-turn-finished (session turn)
-  "Ask Jev what TURN of SESSION meant, when that is switched on."
+  "Ask Jev what TURN of SESSION meant, when that is switched on.
+Nothing that goes wrong here may reach the rest of
+`ecc-turn-finished-hook\=': `add-hook\=' puts this first, and the
+notification, the end of the transcript and the two redraws come after
+it.  `require\=' with NOERROR is no cover either -- it stops a missing
+file, not an error raised while one loads.  The failure is logged
+rather than dropped."
   (when (and ecc-jev-enabled (not (ecc-turn-transient turn)))
-    (ecc-jev--forget session)
-    (when-let* ((text (ecc-jev--turn-text turn)))
-      (if (not (require 'jev nil t))
-          (ecc-jev--report session
-                           "`ecc-jev-enabled' is on but jev.el is not installed")
-        (puthash (ecc-session-id session)
-                 ;; The tag carries the session and the turn across the
-                 ;; round trip, which is jev.el's own advice for an
-                 ;; answer that lands in a world that has moved on.
-                 (jev-ask text (ecc-jev--questions)
-                          :tag (cons (ecc-session-id session) (ecc-turn-id turn))
-                          :success
-                          (lambda (reply _tag)
-                            (remhash (ecc-session-id session) ecc-jev--requests)
-                            (ecc-jev--succeeded reply session turn))
-                          :error
-                          (lambda (error _tag)
-                            (remhash (ecc-session-id session) ecc-jev--requests)
-                            (ecc-jev--failed error session)))
-                 ecc-jev--requests)))))
+    (condition-case caught
+        (ecc-jev--ask session turn)
+      (error (ecc-jev--failed caught session)))))
 
 (defun ecc-jev-turn-started (session _turn)
   "Forget what SESSION last meant: it is saying something else now."
