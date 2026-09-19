@@ -28,8 +28,10 @@ Verified against **Claude Code CLI 2.1.274**.
   verdict below `ecc-jev-confidence-threshold`, keep the ordinary `·`.
 
   It is off by default, because turning it on sends that message to TypeSafe
-  AI (or the Vercel gateway) and every turn is charged for. jev.el is required
-  at run time and is not a dependency of this package. Jev decides nothing: no
+  AI (or the Vercel gateway) and every turn is charged for. `ecc.el` requires
+  `ecc-jev.el` like any other module, so the setting is in Customize and takes
+  effect where it is turned on; jev.el itself is asked for at run time and is
+  not a dependency of this package. Jev decides nothing: no
   notification, no permission, no tab-line state -- it annotates one column of
   one row, an answer that lands about a turn the session has moved past is
   dropped, and a Jev that is down leaves the sidebar as it was, with the

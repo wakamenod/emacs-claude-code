@@ -81,6 +81,12 @@
 (require 'ecc-plugin)
 (require 'ecc-inline)
 (require 'ecc-btw)
+;; jev.el is not a dependency of this package, and this file does not
+;; make it one: `ecc-jev' compiles and loads without it, does nothing at
+;; all while `ecc-jev-enabled' is nil, and asks for jev.el at run time.
+;; It is required here so that the setting is in Customize and takes
+;; effect when it is turned on (2026-09-19).
+(require 'ecc-jev)
 (require 'ecc-skill)
 (require 'ecc-auth)
 (require 'ecc-tui)
