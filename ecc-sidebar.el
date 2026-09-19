@@ -325,15 +325,44 @@ answer while its state still says that it runs."
                                   (ecc-space-sessions space)))
                    (ecc-space-list))))))
 
+(defvar ecc-sidebar-mark-functions nil
+  "Functions that decide the mark a session opens its sidebar row with.
+Each is given a session and the mark the sidebar would draw for it,
+and returns the mark to draw instead.  Each is called in turn with
+what the one before it returned, and what the last one returns opens
+the row.  A function with nothing to say returns the mark it was
+given.
+
+This is where a module puts what it knows about a session that the CLI
+never says -- whether a finished turn is waiting on the user rather
+than done with -- into the one column that is read at a glance.
+
+The spinner wins: while a session is running the mark is the frame of
+the animation, and a function that overwrote it would stop the row
+moving.  A function called here is given that frame like any other
+mark, so one that has an opinion about a session that has stopped says
+so by asking the session what it is doing first (`ecc-tab-state\=').
+
+The sidebar knows nothing of what a function here draws, and nothing
+requires the module that adds one: `ecc-jev.el\=' is the first of them
+and stays optional (2026-09-19).")
+
+(defun ecc-sidebar--mark-of (session mark)
+  "Return MARK as `ecc-sidebar-mark-functions\=' would draw it for SESSION."
+  (dolist (function ecc-sidebar-mark-functions mark)
+    (setq mark (or (funcall function session mark) mark))))
+
 (defun ecc-sidebar--session-row (session)
   "Insert the row of SESSION."
   (let* ((state (ecc-tab-state session))
          (current (and (ecc-window-session-visible-p session) t))
          (frame (and (eq state 'running)
                      (ecc-visual-spinner-string 'ecc-running-face)))
-         (mark (if (and frame (not (string-empty-p frame)))
-                   frame
-                 (ecc-sidebar--mark state)))
+         (mark (ecc-sidebar--mark-of
+                session
+                (if (and frame (not (string-empty-p frame)))
+                    frame
+                  (ecc-sidebar--mark state))))
          (left (concat mark " " (ecc--truncate (ecc-session-name session) 18))))
     (ecc-sidebar--insert
      (propertize (ecc-sidebar--fill left (ecc-sidebar--state-word session))
