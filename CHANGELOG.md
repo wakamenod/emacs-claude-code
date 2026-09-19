@@ -11,6 +11,35 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.274**.
+
+### Added
+
+- Jev can say what a finished turn meant, in the mark that opens a session's
+  row in the sidebar. The CLI reports a session that has stopped as `idle`
+  whether it finished the job, stopped to ask a question or gave up, and with
+  several sessions running the one thing worth knowing is which of the idle
+  ones is waiting for you. With `ecc-jev-enabled` on, the last assistant
+  message of each finished turn goes to [jev.el](https://github.com/wakamenod/jev.el)
+  with two typed questions, and the answer draws `?` (waiting on a decision),
+  `!` (blocked) or `…` (stopped part way); a turn that simply finished, and a
+  verdict below `ecc-jev-confidence-threshold`, keep the ordinary `·`.
+
+  It is off by default, because turning it on sends that message to TypeSafe
+  AI (or the Vercel gateway) and every turn is charged for. jev.el is required
+  at run time and is not a dependency of this package. Jev decides nothing: no
+  notification, no permission, no tab-line state -- it annotates one column of
+  one row, an answer that lands about a turn the session has moved past is
+  dropped, and a Jev that is down or out of credit leaves the sidebar as it
+  was, with the failure in the session log (`ecc-jev.el`).
+
+- `ecc-sidebar-mark-functions`, the seam the above hangs on: functions given a
+  session and the mark the sidebar would draw for it, returning the mark to
+  draw instead. Shaped like `ecc-prepare-prompt-functions`. The spinner of a
+  running session wins, and the sidebar knows nothing about who adds one.
+
 ## [0.3.1] - 2026-09-18
 
 Verified against **Claude Code CLI 2.1.274**.

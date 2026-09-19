@@ -53,6 +53,7 @@ faceはテキスト挿入時に適用されるため、`M-x customize` による
 - [posframe](https://github.com/tumashu/posframe) — `/btw` や利用状況のポップアップ表示
 - [nerd-icons](https://github.com/rainstormstudio/nerd-icons.el) — ツールアイコンの表示
 - [markdown-mode](https://github.com/jrblevin/markdown-mode) — プランバッファおよびレビューバッファのメジャーモード
+- [jev.el](https://github.com/wakamenod/jev.el) — TypeSafe AI による型付き回答。後述のセッション判定に使用（既定では無効）
 
 ## インストール
 
@@ -112,6 +113,28 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 ```
 
 その他の設定項目については、[設定リファレンス](https://wakamenod.github.io/emacs-claude-code/ja/reference/configuration/) を参照してください。
+
+## Jev によるセッション判定（任意）
+
+4 つのセッションが並び、そのすべてが idle のとき、CLI が伝えるのは「停止した」
+ことだけで、どれが*あなた*の返事を待っているのかは分かりません。[jev.el](https://github.com/wakamenod/jev.el)
+を導入して `ecc-jev-enabled` を有効にすると、終了した各ターンの最後のアシスタント
+メッセージについて問い合わせが行われ、その答えがサイドバーの当該セッション行の先頭
+に出ます。`?` は判断待ち、`!` は行き詰まり、`…` は途中で止まった状態です。単に完了
+しただけのターンは通常の `·` のままです。
+
+```elisp
+(require 'ecc-jev)
+(setq ecc-jev-enabled t)
+```
+
+既定では無効です。ecc の中で Claude 以外のサービスと通信する唯一の機能であり、
+有効にすると終了したすべてのターンの最後のアシスタントメッセージが TypeSafe AI
+(`api.typesafe.ai`、jev.el の設定によっては Vercel AI ゲートウェイ) に送信され、
+ターンごとに課金対象のリクエストが発生します。jev.el は本パッケージの依存関係では
+ありません。未導入なら何も読み込まれず、Jev が停止していてもクレジットが尽きていて
+も、サイドバーの見た目は現在のままで、失敗はセッションのログに残ります。Jev は何も
+決定しません。行に印を付けるだけです。
 
 ## クイックスタート
 

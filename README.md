@@ -51,6 +51,7 @@ These packages enhance functionality when available, but ecc falls back graceful
 - [posframe](https://github.com/tumashu/posframe) — Floating popups for `/btw` side-queries and usage reports.
 - [nerd-icons](https://github.com/rainstormstudio/nerd-icons.el) — Icons for tool calls in the transcript.
 - [markdown-mode](https://github.com/jrblevin/markdown-mode) — Major mode for plan and review buffers.
+- [jev.el](https://github.com/wakamenod/jev.el) — Typed answers from TypeSafe AI, for the session verdicts below (off by default).
 
 ## Installation
 
@@ -111,6 +112,29 @@ Because the repository name is `emacs-claude-code` while the package name is `ec
 ```
 
 For all other settings, check the [configuration reference](https://wakamenod.github.io/emacs-claude-code/reference/configuration/).
+
+## Session verdicts with Jev (optional)
+
+Four sessions on the screen and all of them idle: the CLI says only that they
+stopped, never which one is waiting for *you*. With [jev.el](https://github.com/wakamenod/jev.el)
+installed and `ecc-jev-enabled` on, the last assistant message of each
+finished turn is asked about, and the answer opens that session's row in the
+sidebar: `?` waiting on a decision, `!` blocked, `…` stopped part way. A turn
+that simply finished keeps the ordinary `·`.
+
+```elisp
+(require 'ecc-jev)
+(setq ecc-jev-enabled t)
+```
+
+It is off by default, and it is the one part of ecc that speaks to a service
+other than Claude: turning it on sends the last assistant message of every
+finished turn to TypeSafe AI (`api.typesafe.ai`, or the Vercel AI gateway,
+whichever jev.el is pointed at), and every turn is a request that is charged
+for. jev.el is not a dependency of this package — nothing here loads without
+it, and a Jev that is down or out of credit leaves the sidebar exactly as it
+looks today, with the failure in the session log. Jev decides nothing: it
+annotates a row.
 
 ## Quickstart
 
