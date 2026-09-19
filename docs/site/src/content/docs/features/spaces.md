@@ -109,6 +109,37 @@ The last assistant message of each finished turn then goes out with two question
 `ecc-jev-enabled` is the one setting in ecc that sends anything anywhere but Claude. Turning it on sends the last assistant message of every finished turn to TypeSafe AI (`api.typesafe.ai`, or the Vercel AI gateway, whichever jev.el is pointed at), and every turn is a request that is charged for.
 :::
 
+#### The API key
+
+jev.el finds the key itself and ecc has no setting of its own for it. Pick a provider, and give it a key in one of three ways:
+
+| Provider | Endpoint | Environment variable |
+|---|---|---|
+| `typesafe` (the default) | `api.typesafe.ai` | `TYPESAFE_API_KEY` |
+| `vercel` | `ai-gateway.vercel.sh` | `AI_GATEWAY_API_KEY` |
+
+```elisp
+;; auth-source, so that nothing secret is in the init file:
+;;   # ~/.authinfo.gpg
+;;   machine api.typesafe.ai login jev password sk-...
+(setq jev-auth-source-user "jev")
+
+;; macOS Keychain instead of a file:
+;;   security add-internet-password -a jev -s api.typesafe.ai -r htps \
+;;     -l "Jev" -T /usr/bin/security -U -w
+(add-to-list 'auth-sources 'macos-keychain-internet)
+
+;; Or plainly, in the init file:
+(setq jev-api-key "sk-...")
+
+;; The Vercel AI gateway rather than TypeSafe:
+(setq jev-provider 'vercel)
+```
+
+`jev-api-key` is consulted first, then the provider's environment variable, then auth-source by the endpoint's host. `jev-api-key` also takes a function of the provider symbol, or an alist keyed by provider, when both providers are in use.
+
+**With no key, nothing appears and nothing says so.** Every turn fails with ``No Jev API key for `typesafe'``, which goes to that session's log (`C-c c ? L`, `ecc-show-log`) and nowhere else, by the same rule that keeps a Jev outage out of the way. If the marks never turn up, read the log first.
+
 jev.el is not a dependency of this package: without it `ecc-jev` loads nothing and the setting does nothing. Jev decides nothing either — it never approves, refuses or answers anything, and it annotates one column of one row. A Jev that is down, rate-limited or out of credit leaves the sidebar exactly as it looks without it, with the failure in the session log (`ecc-show-log`). An answer arrives a few hundred milliseconds later, and is dropped unless the session is still there, still idle, and still on the same turn.
 
 `ecc-jev-confidence-threshold` (0.6) is how sure Jev must be before a mark is drawn; below it the row keeps its ordinary one. The number is a starting guess rather than a calibrated one. `ecc-jev-marks` is the character each verdict draws, and `ecc-jev-text-limit` how much of the message is sent (the tail, 4000 characters). All three are plain variables, set with `setq`.

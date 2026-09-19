@@ -109,6 +109,37 @@ CLI が伝えるのは、セッションが停止したという事実だけで�
 `ecc-jev-enabled` は、ecc の中で Claude 以外に何かを送信する唯一の設定です。有効にすると、終了したすべてのターンの最後のアシスタントメッセージが TypeSafe AI（`api.typesafe.ai`、jev.el の設定によっては Vercel AI ゲートウェイ）に送信され、ターンごとに課金対象のリクエストが発生します。
 :::
 
+#### API キーの設定
+
+キーを探すのは jev.el 自身で、ecc 側にそのための設定はありません。プロバイダーを選び、次のいずれかの方法でキーを渡します。
+
+| プロバイダー | エンドポイント | 環境変数 |
+|---|---|---|
+| `typesafe`（既定） | `api.typesafe.ai` | `TYPESAFE_API_KEY` |
+| `vercel` | `ai-gateway.vercel.sh` | `AI_GATEWAY_API_KEY` |
+
+```elisp
+;; auth-source を使い、init ファイルに秘密を書かない:
+;;   # ~/.authinfo.gpg
+;;   machine api.typesafe.ai login jev password sk-...
+(setq jev-auth-source-user "jev")
+
+;; ファイルではなく macOS キーチェーンを使う場合:
+;;   security add-internet-password -a jev -s api.typesafe.ai -r htps \
+;;     -l "Jev" -T /usr/bin/security -U -w
+(add-to-list 'auth-sources 'macos-keychain-internet)
+
+;; あるいは init ファイルに直接書く:
+(setq jev-api-key "sk-...")
+
+;; TypeSafe ではなく Vercel AI ゲートウェイを使う:
+(setq jev-provider 'vercel)
+```
+
+参照順は `jev-api-key`、プロバイダーの環境変数、エンドポイントのホストによる auth-source です。両方のプロバイダーを併用する場合、`jev-api-key` にはプロバイダーのシンボルを取る関数や、プロバイダーをキーとする連想リストも指定できます。
+
+**キーが未設定だと、何も表示されず、その旨もどこにも出ません。** 各ターンは ``No Jev API key for `typesafe'`` で失敗し、それはそのセッションのログ（`C-c c ? L`、`ecc-show-log`）にのみ記録されます。Jev の障害を邪魔にしないという方針がそのまま適用されるためです。印がいつまでも出ない場合は、まずログを確認してください。
+
 jev.el は本パッケージの依存関係ではありません。未導入なら `ecc-jev` は何も読み込まず、設定も何も起こしません。また Jev は何も決定しません。許可・拒否・応答を行うことは一切なく、1 つの行の 1 列に印を付けるだけです。Jev が停止していても、レート制限やクレジット切れであっても、サイドバーの見た目は導入前のままで、失敗はセッションのログ（`ecc-show-log`）に残ります。応答は数百ミリ秒後に届き、その時点でセッションが存在し、idle のままで、同じターンのままでなければ破棄されます。
 
 `ecc-jev-confidence-threshold`（0.6）は、印を描くために必要な確信度です。これを下回る場合、行は通常の印のままになります。この値は暫定的なもので、実際の応答に基づいて調整されたものではありません。`ecc-jev-marks` は各判定に対応する文字、`ecc-jev-text-limit` は送信するメッセージの長さ（末尾から 4000 文字）です。いずれも `setq` で設定する通常の変数です。
