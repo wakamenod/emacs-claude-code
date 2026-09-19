@@ -733,17 +733,31 @@ as part of a name; a path with a space in it is missed, as it is in
                              (alist-get 'path block)))
                       result))))
 
+(defconst ecc-dispatch--written-slack 1
+  "Seconds a file may predate a call and still count as written by it.
+A filesystem does not keep modification times as finely as
+`current-time\=' reads the clock: ext4 rounds to the kernel tick, and
+older ones to the second.  A file written in the first milliseconds of
+a call therefore carries a time just before the `started\=' of its node,
+and without this the gate dropped exactly the case it exists for -- the
+tests passed on macOS and failed on the Linux runners (2026-09-19).
+One second is the coarsest rounding in use, and it costs only this: a
+file written in the second before the call started, which is this same
+turn, may be drawn by it.")
+
 (defun ecc-dispatch--written-after-p (path started)
   "Return non-nil when the regular file PATH was written at or after STARTED.
 This is the whole gate: `ls demo/\=' names every video in a directory
 and `open shot.png\=' names one it only read, and neither wrote
 anything, so neither may draw.  A file older than the call is one the
-call found, not one it made."
+call found, not one it made.  `ecc-dispatch--written-slack\=' says how
+much older than the clock a file the call did write may look."
   (when-let* ((started)
               (attributes (file-attributes path)))
     (and (null (file-attribute-type attributes))
          (not (time-less-p (file-attribute-modification-time attributes)
-                           started)))))
+                           (time-subtract started
+                                          ecc-dispatch--written-slack))))))
 
 (defun ecc-dispatch--written-images (session node)
   "Return the pictures the tool NODE of SESSION looks to have written.

@@ -1245,6 +1245,8 @@ in life.  ERROR-P makes the result an error."
     (ecc-test-with-fake-session session
       (setf (ecc-session-project-root session) dir)
       (ecc-model-begin-turn session "what is in demo")
+      ;; Older than `ecc-dispatch--written-slack' by a wide margin: the
+      ;; slack is there for a filesystem's rounding, not for this.
       (ecc-dispatch-test--touch dir "old.mp4" 3600)
       (let ((node (ecc-dispatch-test--tool session "Bash"
                                            '((command . "ls *.mp4"))
