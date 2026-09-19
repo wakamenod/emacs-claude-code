@@ -85,6 +85,64 @@ The bottom half lists the sessions, each with its mark, its name and what it is 
 
 `a` and `d` behave exactly as the dashboard's do: see [Sessions](/emacs-claude-code/features/sessions/). `ecc-sidebar-width` is the width in columns, 28 by default. `ecc-sidebar-sessions-sort` orders the bottom half: `spaces` (the default) keeps sessions under their Space, `priority` puts what wants an answer first.
 
+### What an idle session meant
+
+The CLI reports a session that has stopped as idle, whether it finished the job, stopped to ask you something, or gave up. With several sessions running, the one thing worth knowing is which of the idle ones is waiting on **you**, and that never comes from the CLI.
+
+[jev.el](https://github.com/wakamenod/jev.el) can answer it. It is a client for TypeSafe AI's System One model, which takes unstructured state plus typed questions and answers each with a typed value and a confidence, in one round trip. Put it on your `load-path`, then:
+
+```elisp
+(setq ecc-jev-enabled t)   ; or M-x customize-variable ecc-jev-enabled
+```
+
+The last assistant message of each finished turn then goes out with two questions — what became of the turn, and whether it ends by asking the user something — and the answer becomes the mark that opens the session's row.
+
+| Mark | What the turn meant |
+|---|---|
+| `?` | It is waiting on a decision: it asked you something, or wants you to choose |
+| `!` | It is blocked: something failed, was missing, or was refused |
+| `…` | It did some of the work and stopped short of the rest |
+| `·` | The ordinary mark: the turn simply finished, or nothing is sure enough to say |
+
+:::caution[It is off by default, and it talks to another service]
+`ecc-jev-enabled` is the one setting in ecc that sends anything anywhere but Claude. Turning it on sends the last assistant message of every finished turn to TypeSafe AI (`api.typesafe.ai`, or the Vercel AI gateway, whichever jev.el is pointed at), and every turn is a request that is charged for.
+:::
+
+#### The API key
+
+jev.el finds the key itself and ecc has no setting of its own for it. Pick a provider, and give it a key in one of three ways:
+
+| Provider | Endpoint | Environment variable |
+|---|---|---|
+| `typesafe` (the default) | `api.typesafe.ai` | `TYPESAFE_API_KEY` |
+| `vercel` | `ai-gateway.vercel.sh` | `AI_GATEWAY_API_KEY` |
+
+```elisp
+;; auth-source, so that nothing secret is in the init file:
+;;   # ~/.authinfo.gpg
+;;   machine api.typesafe.ai login jev password sk-...
+(setq jev-auth-source-user "jev")
+
+;; macOS Keychain instead of a file:
+;;   security add-internet-password -a jev -s api.typesafe.ai -r htps \
+;;     -l "Jev" -T /usr/bin/security -U -w
+(add-to-list 'auth-sources 'macos-keychain-internet)
+
+;; Or plainly, in the init file:
+(setq jev-api-key "sk-...")
+
+;; The Vercel AI gateway rather than TypeSafe:
+(setq jev-provider 'vercel)
+```
+
+`jev-api-key` is consulted first, then the provider's environment variable, then auth-source by the endpoint's host. `jev-api-key` also takes a function of the provider symbol, or an alist keyed by provider, when both providers are in use.
+
+With no key, every turn fails with ``No Jev API key for `typesafe'``. That is said once in the echo area, because a setting switched on and answering with silence is worse than the setting being off; so are the other two failures nobody can fix from here and nothing fixes by itself, a key that is refused and an account out of credit (`ecc-jev-loud-errors`). Everything else — a rate limit, a timeout, a provider having a bad minute — is left to that session's log (`C-c c ? L`, `ecc-show-log`), where every failure is written whether or not it was said out loud. The next answer that arrives lets it speak again, so a key put right is not a warning that cannot come back.
+
+jev.el is not a dependency of this package: ecc loads and works without it, and the setting is in Customize either way. Switched on with jev.el absent, it says so once and does nothing more. Jev decides nothing either — it never approves, refuses or answers anything, and it annotates one column of one row. A Jev that is down, rate-limited or out of credit leaves the sidebar exactly as it looks without it, with the failure in the session log (`ecc-show-log`). An answer arrives a few hundred milliseconds later, and is dropped unless the session is still there, still idle, and still on the same turn.
+
+A slash command the CLI answers itself, such as `/cost`, is not what the model said: it is left where it is, neither sent nor charged for. `ecc-jev-confidence-threshold` (0.6) is how sure Jev must be before a mark is drawn; below it the row keeps its ordinary one. The number is a starting guess rather than a calibrated one. `ecc-jev-marks` is the character each verdict draws, and `ecc-jev-text-limit` how much of the message is sent (the tail, 4000 characters). All three are plain variables, set with `setq`.
+
 ## Worktrees
 
 A git worktree is a second working tree for a repository, on a branch of its own: two sessions work on the same project without seeing each other's edits. These commands work with `ecc-use-spaces` on or off.

@@ -51,6 +51,7 @@ These packages enhance functionality when available, but ecc falls back graceful
 - [posframe](https://github.com/tumashu/posframe) — Floating popups for `/btw` side-queries and usage reports.
 - [nerd-icons](https://github.com/rainstormstudio/nerd-icons.el) — Icons for tool calls in the transcript.
 - [markdown-mode](https://github.com/jrblevin/markdown-mode) — Major mode for plan and review buffers.
+- [jev.el](https://github.com/wakamenod/jev.el) — Typed answers from TypeSafe AI, for what a finished turn meant in the sidebar (`ecc-jev-enabled`, off by default).
 
 ## Installation
 

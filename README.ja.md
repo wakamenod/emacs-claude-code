@@ -53,6 +53,7 @@ faceはテキスト挿入時に適用されるため、`M-x customize` による
 - [posframe](https://github.com/tumashu/posframe) — `/btw` や利用状況のポップアップ表示
 - [nerd-icons](https://github.com/rainstormstudio/nerd-icons.el) — ツールアイコンの表示
 - [markdown-mode](https://github.com/jrblevin/markdown-mode) — プランバッファおよびレビューバッファのメジャーモード
+- [jev.el](https://github.com/wakamenod/jev.el) — TypeSafe AI による型付き回答。終了したターンの意味をサイドバーに表示する機能で使用（`ecc-jev-enabled`、既定では無効）
 
 ## インストール
 
