@@ -191,11 +191,15 @@ it wants."
   (when-let* ((node (seq-find (lambda (node) (eq (ecc-node-type node) 'text))
                               (reverse (ecc-model-node-children turn))))
               (text (ecc-model-node-get node 'text))
-              (text (string-trim text))
-              (_ (not (string-empty-p text))))
-    (if (> (length text) ecc-jev-text-limit)
-        (substring text (- (length text) ecc-jev-text-limit))
-      text)))
+              (text (string-trim text)))
+    ;; A binding of `_' in `when-let*' is an error on Emacs 29, where
+    ;; the byte compiler reads the underscore as a promise that the
+    ;; variable is unused (CI, 2026-09-19), so the last condition is a
+    ;; body of its own.
+    (unless (string-empty-p text)
+      (if (> (length text) ecc-jev-text-limit)
+          (substring text (- (length text) ecc-jev-text-limit))
+        text))))
 
 (defun ecc-jev--questions ()
   "Return the questions asked about a finished turn.
