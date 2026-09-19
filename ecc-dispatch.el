@@ -699,6 +699,114 @@ system note rather than dropped."
       (ecc-model-node-changed session node)
       node)))
 
+;;;; What a command wrote
+
+(defvar ecc-dispatch-command-tools '("Bash")
+  "Tools that can make a picture without ever naming it in `file_path\='.
+A Bash call carries a `command\=' and answers with plain text, so the
+two paths the renderer otherwise draws from -- the image blocks of a
+result and the `file_path\=' of an input -- are both empty for the one
+way a video is actually made in this project.  What such a call wrote
+is worked out once, here, and kept on the node.")
+
+(defvar ecc-dispatch-max-written-images 4
+  "Most files one command is credited with having written.
+`ecc-image-max-per-node\=' still decides how many of them are drawn.")
+
+(defconst ecc-dispatch--path-regexp "[^][ \t\n\r\"'`,;:()<>|]+"
+  "Regexp matching a token in a command or a result that could be a path.
+A colon ends a token so that a timestamp in an `ls -l\=' cannot be read
+as part of a name; a path with a space in it is missed, as it is in
+`ecc-render--prompt-images\='.")
+
+(defun ecc-dispatch--result-strings (result)
+  "Return the text of a tool RESULT as a list of strings."
+  (cond ((stringp result) (list result))
+        ((vectorp result)
+         (delq nil (mapcar (lambda (block) (alist-get 'text block)) result)))))
+
+(defun ecc-dispatch--result-image-paths (result)
+  "Return the files the image blocks of a tool RESULT were written to."
+  (when (vectorp result)
+    (delq nil (mapcar (lambda (block)
+                        (and (equal (alist-get 'type block) "image")
+                             (alist-get 'path block)))
+                      result))))
+
+(defconst ecc-dispatch--written-slack 1
+  "Seconds a file may predate a call and still count as written by it.
+A filesystem does not keep modification times as finely as
+`current-time\=' reads the clock: ext4 rounds to the kernel tick, and
+older ones to the second.  A file written in the first milliseconds of
+a call therefore carries a time just before the `started\=' of its node,
+and without this the gate dropped exactly the case it exists for -- the
+tests passed on macOS and failed on the Linux runners (2026-09-19).
+One second is the coarsest rounding in use, and it costs only this: a
+file written in the second before the call started, which is this same
+turn, may be drawn by it.")
+
+(defun ecc-dispatch--written-after-p (path started)
+  "Return non-nil when the regular file PATH was written at or after STARTED.
+This is the whole gate: `ls demo/\=' names every video in a directory
+and `open shot.png\=' names one it only read, and neither wrote
+anything, so neither may draw.  A file older than the call is one the
+call found, not one it made.  `ecc-dispatch--written-slack\=' says how
+much older than the clock a file the call did write may look."
+  (when-let* ((started)
+              (attributes (file-attributes path)))
+    (and (null (file-attribute-type attributes))
+         (not (time-less-p (file-attribute-modification-time attributes)
+                           (time-subtract started
+                                          ecc-dispatch--written-slack))))))
+
+(defun ecc-dispatch--written-images (session node)
+  "Return the pictures the tool NODE of SESSION looks to have written.
+The command and the result text are read for anything `ecc-image-file-p\='
+accepts, and a name is kept only when the file is there and its
+modification time is at or after the `started\=' of the node.  A relative
+name is read from where the session lives, not from `default-directory\='
+\(`ecc-session-directory\=' is above this file; its rule, that the root a
+session was started in comes before the cwd the CLI reports, is the one
+followed here).  Called once, when the result arrives."
+  (let* ((input (ecc-model-node-get node 'input))
+         (started (ecc-model-node-get node 'started))
+         (result (ecc-model-node-get node 'result))
+         (directory (or (ecc-session-project-root session)
+                        (ecc-session-cwd session)
+                        default-directory))
+         (seen (ecc-dispatch--result-image-paths result))
+         (found nil))
+    (catch 'full
+      (dolist (text (cons (alist-get 'command input)
+                          (ecc-dispatch--result-strings result)))
+        (let ((start 0))
+          (while (and (stringp text)
+                      (string-match ecc-dispatch--path-regexp text start))
+            (setq start (match-end 0))
+            (let ((token (match-string 0 text)))
+              (when (ecc-image-file-p token)
+                (let ((path (expand-file-name token directory)))
+                  (when (and (not (member path found))
+                             (not (member path seen))
+                             (file-readable-p path)
+                             (ecc-dispatch--written-after-p path started))
+                    (push path found)
+                    (when (>= (length found) ecc-dispatch-max-written-images)
+                      (throw 'full nil))))))))))
+    (nreverse found)))
+
+(defun ecc-dispatch--note-written-images (session node)
+  "Note on the tool NODE of SESSION what its call wrote, when it could have.
+Only a command tool with no `file_path\=' of its own is looked at, so a
+Read, an Edit and an MCP tool that answers with an image cost nothing
+here and nothing on the redraw either: the renderer reads the list this
+leaves behind."
+  (let ((input (ecc-model-node-get node 'input)))
+    (when (and (member (ecc-model-node-get node 'name) ecc-dispatch-command-tools)
+               (null (alist-get 'file_path input)))
+      (when-let* ((written (ecc-dispatch--written-images session node)))
+        (ecc-model-node-put node 'written-images written)))))
+
 (defun ecc-dispatch--result-content (session content)
   "Return the tool result CONTENT of SESSION with its images on disk.
 An image block is replaced by one naming the file it was written to.
@@ -742,7 +850,8 @@ twelve-line clip could not even cut -- base64 is one line."
           (ecc-model-note-file session
                                (alist-get 'file_path (ecc-model-node-get node 'input))
                                kind))
-        (ecc-dispatch--structured-result session node structured))
+        (ecc-dispatch--structured-result session node structured)
+        (ecc-dispatch--note-written-images session node))
       (ecc-model-node-changed session node)
       (let ((name (ecc-model-node-get node 'name))
             (path (alist-get 'file_path (ecc-model-node-get node 'input))))

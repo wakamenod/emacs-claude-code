@@ -179,6 +179,35 @@ with the picture hidden behind it (2026-09-17)."
         (ecc-render-flush session)
         (should (ecc-render--default-hidden-p "t9"))))))
 
+(ert-deftest ecc-render-test-a-command-that-wrote-a-picture-is-not-folded ()
+  "A Bash call credited with a file it wrote draws it, and comes up open.
+The list is put on the node by `ecc-dispatch--note-written-images\='; all
+the renderer does is read it, as the third and last source of pictures."
+  (ecc-test-with-fake-session session
+    (ecc-render-test--with-images session
+      (ecc-session-ensure-buffer session)
+      (ecc-model-begin-turn session "撮って")
+      (with-current-buffer (ecc-session-buffer session)
+        (ecc-dispatch session
+                      '((type . "assistant") (uuid . "u1")
+                        (message . ((content . [((type . "tool_use") (id . "t1")
+                                                 (name . "Bash")
+                                                 (input . ((command . "shoot")))
+                                                 )])))))
+        (ecc-dispatch session
+                      '((type . "user")
+                        (message . ((content . [((type . "tool_result")
+                                                 (tool_use_id . "t1")
+                                                 (content . "done"))])))))
+        (let ((node (ecc-model-node session "t1")))
+          (ecc-model-node-put node 'written-images (list (ecc-test-image-file)))
+          (ecc-model-node-changed session node))
+        (ecc-render-flush session)
+        (should (equal (ecc-render--tool-images (ecc-model-node session "t1"))
+                       (list (list (ecc-test-image-file) nil nil))))
+        (should-not (ecc-render--default-hidden-p "t1"))
+        (should (ecc-render-test--visible-image-p))))))
+
 (defun ecc-render-test--visible-image-p ()
   "Return non-nil when a picture is drawn in this buffer and not hidden."
   (let ((found nil))
