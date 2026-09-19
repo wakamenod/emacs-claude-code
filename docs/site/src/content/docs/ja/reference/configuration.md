@@ -88,6 +88,7 @@ M-x customize-group RET ecc
 | `ecc-space-always-session` | `t` | `ecc-use-spaces` が有効なとき、Space が常にセッションを保持するかどうか。非 nil の場合、実行中のセッションがない Space を開くとセッションを開始し、最後のセッションを閉じると Space も閉じます。nil の場合、Space はソースファイルのみを表示して開き、プロジェクトの最後のバッファが kill されるまで開いたままになります |
 | `ecc-space-session-min-width` | `80` | `ecc-use-spaces` が有効なとき、トランスクリプトの並びをさらに分割するためにセッションウィンドウが必要とする桁数。この幅の列を確保できない場合は、すべてのトランスクリプトを狭くするのではなく、直近で最も操作されていないセッションのウィンドウを再利用します。`window-min-width` がこの値の下限です |
 | `ecc-sidebar-width` | `28` | サイドバーの幅（桁数）。大きなフォントの 13 インチと 34 インチのディスプレイでは、28 桁が画面に占める割合は同じではありませんし、プロジェクト名の長さも人それぞれです |
+| `ecc-jev-enabled` | `nil` | 非 nil の場合、終了した各ターンの意味（判断待ち・行き詰まり・途中で停止）がサイドバーのセッション行の先頭の印になります。[jev.el](https://github.com/wakamenod/jev.el) と `(require 'ecc-jev)` が必要で、終了したすべてのターンの最後のアシスタントメッセージが TypeSafe AI に送信され、課金対象となります。[Space と worktree](/emacs-claude-code/ja/features/spaces/#停止したセッションが何を意味しているか) を参照 |
 
 `ecc-window-large-frame-min-height` の既定値（80行）は、ノートPCの画面と外付け大画面ディスプレイを自動判別するための値です。14インチ画面はおよそ58行、16インチはおよそ67行であるのに対し、外部デスクトップディスプレイでは110行以上表示できます。
 
