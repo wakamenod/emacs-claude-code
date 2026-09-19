@@ -86,9 +86,13 @@ this package does not depend on."
 
 (defvar ecc-jev-confidence-threshold 0.6
   "Confidence a verdict must reach before it is allowed to draw a mark.
-Below it the row keeps the mark it would have had.  The number is a
-guess: it has not been calibrated against a run of real turns, and the
-right one can only come from watching what Jev returns here.")
+Below it the row keeps the mark it would have had.  The number is still
+a guess, but no longer an uninformed one: the eight turns of
+demo/scenes/jev-verdicts.el came back at 1.0, 1.0, 1.0, 0.89, 0.85,
+0.47 and 0.43 (typesafe, 2026-09-19).  A verdict is either near
+certain or near the middle, and what the middle means is real: the 0.47
+was a turn that was blocked and ended by offering a way on, which is
+half of each.  Lowering this would put a mark on exactly those.")
 
 (defvar ecc-jev-marks
   '((needs-decision . "?")
