@@ -357,6 +357,32 @@ They were the other way round here, and the finger that had learnt
   (should (eq (lookup-key ecc-global-map (kbd "r")) #'ecc-resume))
   (should (eq (lookup-key ecc-global-map (kbd "R")) #'ecc-rename-session)))
 
+;;;; The spinner
+
+(ert-deftest ecc-dashboard-test-the-tick-draws-the-frame-alone ()
+  "A tick of the spinner replaces the frame in place and draws nothing else.
+Undo is off in the list: a redraw is nothing to undo, and the history
+would hold every marker of the buffer."
+  (ecc-dashboard-test--with-two-sessions a b
+    (let ((ecc-visual-enable-spinner t)
+          (ecc-visual--tick 0))
+      (ecc-model-set-state a 'running)
+      (ecc-dashboard-test--in-buffer
+       (should (eq buffer-undo-list t))
+       (let ((before (buffer-substring-no-properties (point-min) (point-max)))
+             (point (point))
+             (old (ecc-visual-spinner-frame)))
+         (should (string-search old before))
+         (cl-letf (((symbol-function 'ecc-dashboard-redraw)
+                    (lambda (&rest _) (error "The tick drew the list again")))
+                   ((symbol-function 'get-buffer-window) (lambda (&rest _) t)))
+           (ecc-dashboard--spinner-tick))
+         (let ((new (ecc-visual-spinner-frame)))
+           (should-not (equal old new))
+           (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                          (string-replace old new before)))
+           (should (= (point) point))))))))
+
 (provide 'ecc-dashboard-test)
 
 ;;; ecc-dashboard-test.el ends here
