@@ -502,6 +502,86 @@ read, and the session that lost its window goes on running without one."
                 (lambda (a b)
                   (< (nth 0 (window-edges a)) (nth 0 (window-edges b)))))))
 
+(ert-deftest ecc-space-test-a-row-is-never-crushed-to-fit ()
+  "A tab dealt more sessions than fit shows the ones that fit and no more.
+The `enghi\\=' tab of 2026-09-22: seven sessions in a Space, and a new
+tab came up with five of them two columns wide.  The rightmost window
+was being widened to make room for the next split with `window-resize\\='
+told to ignore every minimum, which took the transcripts beside it
+down to `window-safe-min-width\\=' one after another.  The row has room
+for two columns here -- 52 columns beside the sidebar, 40 of them the
+first session\\='s -- and two is what it gets."
+  (ecc-space-test--with-sessions `(("enghi" . ,ecc-space-test--one)
+                                   ("fable" . ,ecc-space-test--one)
+                                   ("impl" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one)
+                                   ("three" . ,ecc-space-test--one)
+                                   ("four" . ,ecc-space-test--one)
+                                   ("five" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (ecc-space-test--with-code
+        (let ((ecc-window-width 40)
+              (ecc-space-session-min-width 15))
+          (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+          (let ((row (ecc-space--session-windows)))
+            (should (= 2 (length row)))
+            (dolist (window row)
+              (should (>= (window-total-width window)
+                          (ecc-space--column-width))))
+            ;; The two most recently used, and the other five running
+            ;; with no window rather than in a sliver each.
+            (should (equal (mapcar (lambda (window)
+                                     (ecc-session-name
+                                      (ecc-window-buffer-session
+                                       (window-buffer window))))
+                                   row)
+                           '("five" "four")))
+            (should (= 5 (seq-count (lambda (session)
+                                      (not (get-buffer-window
+                                            (ecc-session-buffer session))))
+                                    sessions)))))))))
+
+(ert-deftest ecc-space-test-the-row-gives-what-it-can-spare ()
+  "A new column is paid for by the transcripts that have room, in proportion.
+Three sessions in a 70-column row with columns of 15: the rightmost
+has 17 and needs 30 before it can be divided.  The 13 it is short come
+from the other two -- 12 from the one with 20 to spare and 1 from the
+one with 3 -- and none from the source, which keeps its 10.  Nothing
+ends under 15."
+  (ecc-space-test--with-sessions `(("a" . ,ecc-space-test--one)
+                                   ("b" . ,ecc-space-test--one)
+                                   ("c" . ,ecc-space-test--one)
+                                   ("d" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (ecc-space-test--with-code
+        (let ((ecc-window-width 70)
+              (ecc-space-session-min-width 15))
+          (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+          (ecc-sidebar-hide)
+          (delete-other-windows)
+          ;; The sessions were made in this order, oldest first, and
+          ;; are shown in it: each new one divides the rightmost.  The
+          ;; row is `ecc-window-width' wide whatever the frame is, so
+          ;; only the session windows are compared: the source is
+          ;; whatever the frame leaves, and one test before this one
+          ;; leaves the batch frame wider than it found it.
+          (cl-flet ((row ()
+                      (seq-filter (lambda (entry)
+                                    (string-prefix-p "*ecc: " (car entry)))
+                                  (ecc-space-test--layout))))
+            (dolist (session (butlast sessions))
+              (ecc-space-display-session session))
+            (should (equal (row) '(("*ecc: a*" . 35) ("*ecc: b*" . 18)
+                                   ("*ecc: c*" . 17))))
+            (let* ((source (ecc-space--source-window))
+                   (width (window-total-width source)))
+              (ecc-space-display-session (car (last sessions)))
+              (should (equal (row) '(("*ecc: a*" . 23) ("*ecc: b*" . 17)
+                                     ("*ecc: c*" . 15) ("*ecc: d*" . 15))))
+              (should (eq source (ecc-space--source-window)))
+              (should (= width (window-total-width source))))))))))
+
+
 (defmacro ecc-space-test--with-popup (var &rest body)
   "Run BODY with VAR bound to a buffer standing in for a question or a plan."
   (declare (indent 1))

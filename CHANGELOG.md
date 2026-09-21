@@ -11,6 +11,25 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.274**.
+
+### Fixed
+
+- A Space with more sessions than its row has room for no longer comes up
+  with the transcripts crushed to two columns each. The rightmost window of
+  the row was widened to make room for the next split with `window-resize`
+  told to ignore every minimum, which took the transcripts beside it down
+  to `window-safe-min-width` one after another -- seven sessions in a
+  429-column frame gave five windows of ten columns. The room now comes
+  from the other session windows alone, each giving in proportion to what
+  it has above `ecc-space-session-min-width` and none going under it, and
+  never from the source; when that is not enough the row is full, which is
+  the rule `ecc-space-session-min-width` has always stated: the sessions
+  that do not fit run with no window, and the sidebar or `C-c c V` brings
+  them back.
+
 ## [0.3.1] - 2026-09-18
 
 Verified against **Claude Code CLI 2.1.274**.
