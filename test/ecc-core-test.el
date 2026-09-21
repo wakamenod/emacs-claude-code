@@ -105,6 +105,34 @@ whole buffer down by one, which was most of what a delta cost."
           (should (<= 100 (length (split-string (ecc-test-log-string buffer) "\n" t)) 120)))
       (kill-buffer buffer))))
 
+(ert-deftest ecc-core-test-flatten-is-what-replacing-the-blanks-was ()
+  "Every run of blanks is one space, the ends of the string included."
+  (dolist (string '("a \n\t b" " a" "a\n" "  " "" "a\r\nb  c"))
+    (should (equal (ecc--flatten string)
+                   (replace-regexp-in-string "[ \t\n\r]+" " " string))))
+  (should (equal (ecc--flatten nil) ""))
+  (should (equal (ecc--fit "one\ntwo" 20) "one two")))
+
+(ert-deftest ecc-core-test-truncate-leaves-no-marker-behind ()
+  "Shortening a string saves no match data, so no marker is made of a search.
+Saving the match data after a search in a buffer makes a marker per
+group in that buffer, and a list drawn five times a second was leaving
+seven of them at every redraw."
+  (let ((calls 0))
+    (advice-add 'match-data :before (lambda (&rest _) (cl-incf calls))
+                '((name . ecc-core-test-count)))
+    ;; Advising a primitive compiles a trampoline for it, and the
+    ;; compiler saves match data of its own: only what comes after counts.
+    (setq calls 0)
+    (unwind-protect
+        (progn
+          (with-temp-buffer (insert "abc") (goto-char (point-min))
+                            (re-search-forward "b"))
+          (ecc--truncate "one\ntwo three" 8)
+          (ecc--fit "one\ntwo three" 8))
+      (advice-remove 'match-data 'ecc-core-test-count))
+    (should (zerop calls))))
+
 (ert-deftest ecc-core-test-truncate ()
   "Truncation flattens whitespace and marks a cut."
   (should (equal (ecc--truncate "one\ntwo" 20) "one two"))
