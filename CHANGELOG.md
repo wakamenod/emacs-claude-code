@@ -34,6 +34,28 @@ Verified against **Claude Code CLI 2.1.274**.
   `ecc-dispatch-command-tools` names the tools this applies to and
   `ecc-dispatch-max-written-images` caps how many are kept.
 
+- A Space with more sessions than its row has room for no longer comes up
+  with the transcripts crushed to two columns each. The rightmost window of
+  the row was widened to make room for the next split with `window-resize`
+  told to ignore every minimum, which took the transcripts beside it down
+  to `window-safe-min-width` one after another -- seven sessions in a
+  429-column frame gave five windows of ten columns. The room now comes
+  from the other session windows alone, each giving in proportion to what
+  it has above `ecc-space-session-min-width` and none going under it, and
+  never from the source; when that is not enough the row is full, which is
+  the rule `ecc-space-session-min-width` has always stated: the sessions
+  that do not fit run with no window, and the sidebar or `C-c c V` brings
+  them back.
+
+- A session window asked to be wider than the frame has room for no longer
+  takes the difference out of the sidebar. `display-buffer` makes a new
+  window the width it was asked for with a resize told to ignore every
+  minimum and every `preserve-size`, so a column count in `ecc-window-width`
+  that the source window could not give came out of the sidebar instead --
+  ten columns of a 28-column sidebar, in an 80-column frame. The width is now
+  capped at what the divided window has to give, which keeps the resize
+  between the two halves.
+
 ## [0.3.1] - 2026-09-18
 
 Verified against **Claude Code CLI 2.1.274**.
