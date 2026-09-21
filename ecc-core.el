@@ -646,10 +646,19 @@ what was sent as one piece, the way it was before."
 
 ;;;; Small helpers
 
+(defun ecc--flatten (string)
+  "Return STRING with every run of blanks and newlines made one space.
+Not `replace-regexp-in-string': it saves the match data first, and
+saving it after a search in a buffer makes a marker per group in that
+buffer -- seven a redraw of the sidebar, five times a second, in an
+Emacs that never collected them (measured 2026-09-21).  `split-string'
+searches the string alone and saves nothing."
+  (string-join (split-string (or string "") "[ \t\n\r]+") " "))
+
 (defun ecc--truncate (string width)
   "Return STRING shortened to at most WIDTH characters.
 Newlines are replaced by spaces and an ellipsis marks a cut."
-  (let ((flat (replace-regexp-in-string "[ \t\n\r]+" " " (or string ""))))
+  (let ((flat (ecc--flatten string)))
     (if (<= (length flat) width)
         flat
       (concat (substring flat 0 (max 0 (1- width))) "…"))))
@@ -660,7 +669,7 @@ Like `ecc--truncate', but counts what a column costs to draw rather
 than how many characters it holds: a Japanese title is twice as wide as
 it is long, and counting characters is what tears a list of them out of
 line."
-  (let ((flat (replace-regexp-in-string "[ \t\n\r]+" " " (or string ""))))
+  (let ((flat (ecc--flatten string)))
     (if (<= (string-width flat) width)
         flat
       ;; The padding fills the half column left behind when the cut
