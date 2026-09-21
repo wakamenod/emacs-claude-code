@@ -312,26 +312,38 @@ was.
 
 A line too long for the window wraps under PREFIX rather than back to
 the left edge (`ecc-render--wrap-prefix\='), and a line that opens a
-list item wraps under the item rather than under its bullet."
+list item wraps under the item rather than under its bullet.
+
+The lines are put together first and inserted as one string.  Every
+insertion walks the whole chain of markers of the buffer, and a
+transcript's chain is long -- two markers a node of its own, and what
+other packages leave behind on every command -- so a block of two
+hundred lines inserted a line at a time was four hundred walks, and at
+40 ms a walk in a long-lived Emacs a single redraw took seconds, as
+measured on 2026-09-21."
   (let* ((body (string-trim-right (or text "") "[\n]+"))
          (wrap (ecc-render--wrap-prefix prefix))
          ;; A body runs to a handful of indentations at most, so the
          ;; strings are made once each and handed out again.
          (wraps (list (cons (length wrap) wrap))))
-    (dolist (line (split-string body "\n"))
-      (let* ((hidden (ecc-render--hidden-line-p line))
-             (string (concat prefix line))
-             (marker (ecc-render--marker-width line))
-             (width (+ (length wrap) (or marker 0)))
-             (hang (or (alist-get width wraps)
-                       (setf (alist-get width wraps)
-                             (make-string width ?\s)))))
-        (add-face-text-property 0 (length string) face t string)
-        (put-text-property 0 (length string) 'wrap-prefix hang string)
-        (when hidden
-          (put-text-property 0 (length string) 'invisible 'ecc-markup string))
-        (insert string)
-        (insert (if hidden (propertize "\n" 'invisible 'ecc-markup) "\n"))))))
+    (insert
+     (mapconcat
+      (lambda (line)
+        (let* ((hidden (ecc-render--hidden-line-p line))
+               (string (concat prefix line))
+               (marker (ecc-render--marker-width line))
+               (width (+ (length wrap) (or marker 0)))
+               (hang (or (alist-get width wraps)
+                         (setf (alist-get width wraps)
+                               (make-string width ?\s)))))
+          (add-face-text-property 0 (length string) face t string)
+          (put-text-property 0 (length string) 'wrap-prefix hang string)
+          (when hidden
+            (put-text-property 0 (length string) 'invisible 'ecc-markup string))
+          (concat string
+                  (if hidden (propertize "\n" 'invisible 'ecc-markup) "\n"))))
+      (split-string body "\n")
+      ""))))
 
 (defun ecc-render--cluster-p (previous next)
   "Return non-nil when NEXT belongs with PREVIOUS rather than apart from it."
