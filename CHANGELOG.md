@@ -17,6 +17,23 @@ Verified against **Claude Code CLI 2.1.274**.
 
 ### Fixed
 
+- A picture or a video that a command wrote is drawn in the transcript. The
+  renderer had two sources of pictures -- the image blocks of a tool result
+  and the `file_path` of a tool input -- and a Bash call has neither: its
+  input carries a `command` and its result is plain text. So the one way a
+  video actually comes into being here, `demo/record.sh` run through Bash,
+  drew nothing, and the feature had only ever worked for a video attached to
+  a prompt by hand. A command tool that names no `file_path` now has what it
+  wrote worked out once, when its result lands
+  (`ecc-dispatch--note-written-images`): a name found in the command or in
+  the result text is kept only when the file is there and its modification
+  time is at or after the start of the call, so `ls demo/` draws nothing and
+  `open shot.png` draws nothing either. The renderer reads that stored list
+  as its third source, which keeps the redraw path free of the disk. A
+  recorded demo therefore comes up unfolded with its first frame showing.
+  `ecc-dispatch-command-tools` names the tools this applies to and
+  `ecc-dispatch-max-written-images` caps how many are kept.
+
 - A Space with more sessions than its row has room for no longer comes up
   with the transcripts crushed to two columns each. The rightmost window of
   the row was widened to make room for the next split with `window-resize`
