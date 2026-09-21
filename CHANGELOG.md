@@ -30,6 +30,15 @@ Verified against **Claude Code CLI 2.1.274**.
   that do not fit run with no window, and the sidebar or `C-c c V` brings
   them back.
 
+- A session window asked to be wider than the frame has room for no longer
+  takes the difference out of the sidebar. `display-buffer` makes a new
+  window the width it was asked for with a resize told to ignore every
+  minimum and every `preserve-size`, so a column count in `ecc-window-width`
+  that the source window could not give came out of the sidebar instead --
+  ten columns of a 28-column sidebar, in an 80-column frame. The width is now
+  capped at what the divided window has to give, which keeps the resize
+  between the two halves.
+
 ## [0.3.1] - 2026-09-18
 
 Verified against **Claude Code CLI 2.1.274**.

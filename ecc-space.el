@@ -668,7 +668,14 @@ to spare, and when all of it together is not enough the row is full."
 
 (defun ecc-space--display-beside (buffer window width &optional direction)
   "Show BUFFER in a new window WIDTH columns wide, beside WINDOW.
-DIRECTION is which side of WINDOW it goes on, `right\=' by default."
+DIRECTION is which side of WINDOW it goes on, `right\=' by default.
+WIDTH is columns, or a fraction of the frame the way `display-buffer\='
+reads one, and is capped at what WINDOW has to give: `display-buffer\='
+makes the new window that wide with `window-resize\=' told to ignore
+what is `safe\=' to ignore, which is every minimum and every
+`preserve-size\=' -- so a width the divided window could not give came
+out of the sidebar, ten columns of it, in an 80-column frame (measured
+2026-09-22).  Capped, the resize stays between the two halves."
   ;; `split-width-threshold' is 160 by default and is how `display-buffer'
   ;; guesses whether a window is wide enough to be worth dividing.  The
   ;; guess is not wanted here: the layout has already decided, and the
@@ -679,7 +686,12 @@ DIRECTION is which side of WINDOW it goes on, `right\=' by default."
   ;; put the new session under the row -- the one thing a Space does not
   ;; do (measured 2026-09-15, in an 80-column frame).
   (let ((split-width-threshold (* 2 (max ecc-space-session-min-width
-                                         window-min-width))))
+                                         window-min-width)))
+        (width (min (if (floatp width)
+                        (round (* width (window-total-width
+                                         (frame-root-window window))))
+                      width)
+                    (- (window-total-width window) window-min-width))))
     (display-buffer-in-direction
      buffer `((direction . ,(or direction 'right))
               (window . ,window)

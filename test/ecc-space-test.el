@@ -797,6 +797,25 @@ project being asked about."
           (with-current-buffer buffer (set-buffer-modified-p nil))
           (kill-buffer buffer))))))
 
+(ert-deftest ecc-space-test-a-session-too-wide-for-the-frame-leaves-the-sidebar-alone ()
+  "A session asked to be wider than the frame has room for takes what there is.
+The batch frame is 80 columns and the sidebar 28 of them, so a session
+of 60 does not fit beside the source.  `display-buffer\\=' made it fit
+with a resize told to ignore every minimum and every `preserve-size\\=',
+which took the ten columns from the sidebar.  The width is capped at
+what the divided window has to give, and the sidebar keeps its own."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (ecc-space-test--with-code
+        (let ((ecc-window-width 60)
+              (ecc-space-session-min-width 10))
+          (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+          (should (= ecc-sidebar-width
+                     (window-total-width (ecc-sidebar--window))))
+          (should (= 1 (length (ecc-space--session-windows))))
+          (should (>= (window-total-width (ecc-space--source-window))
+                      window-min-width)))))))
+
 (ert-deftest ecc-space-test-a-new-tab-stops-when-the-row-is-full ()
   "The lay-out stops at the edge of the row rather than taking a window over.
 A session that does not fit goes on running without one; the sidebar
