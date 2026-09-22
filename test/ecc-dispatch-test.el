@@ -1250,6 +1250,162 @@ leaves the session busy for good."
       (should-not (ecc-session-current-turn session))
       (should-not (seq-some #'ecc-turn-prompt (ecc-session-turns session))))))
 
+;;;; What a command wrote
+
+(defun ecc-dispatch-test--tool (session name input result &optional write error-p)
+  "Run a whole tool call NAME with INPUT and RESULT in SESSION, return its node.
+The node is made first, the way the stream makes it, and WRITE, a thunk
+that stands in for what the call did to the disk, runs after it: what
+the call wrote is then newer than the `started\=' of the node, as it is
+in life.  ERROR-P makes the result an error."
+  (ecc-dispatch session `((type . "assistant")
+                          (message . ((content . [((type . "tool_use")
+                                                   (id . "toolu_written")
+                                                   (name . ,name)
+                                                   (input . ,input))])))))
+  (when write (funcall write))
+  (ecc-dispatch session
+                `((type . "user")
+                  (message . ((content . [((type . "tool_result")
+                                           (tool_use_id . "toolu_written")
+                                           (is_error . ,(if error-p t :false))
+                                           (content . ,result))])))))
+  (ecc-model-node session "toolu_written"))
+
+(defmacro ecc-dispatch-test--in-dir (var &rest body)
+  "Run BODY with VAR bound to a fresh temporary directory, deleted after."
+  (declare (indent 1) (debug (symbolp body)))
+  `(let ((,var (file-name-as-directory (make-temp-file "ecc-written" t))))
+     (unwind-protect (progn ,@body)
+       (delete-directory ,var t))))
+
+(defun ecc-dispatch-test--touch (dir name &optional age)
+  "Write a stand-in file NAME in DIR, AGE seconds old, and return its path."
+  (let ((path (expand-file-name name dir)))
+    (with-temp-file path (insert "not really a video"))
+    (when age
+      (set-file-times path (time-add (current-time) (- age))))
+    path))
+
+(ert-deftest ecc-dispatch-test-a-command-that-wrote-a-video-shows-it ()
+  "A Bash call that made an mp4 hands the renderer the file it made."
+  (ecc-dispatch-test--in-dir dir
+    (ecc-test-with-fake-session session
+      (setf (ecc-session-project-root session) dir)
+      (ecc-model-begin-turn session "record it")
+      (let* ((path nil)
+             (node (ecc-dispatch-test--tool
+                    session "Bash"
+                    '((command . "demo/record.sh tab-close"))
+                    ;; record.sh names what it made in its own output;
+                    ;; the command line names only the scene.
+                    "saved demo/tab-close.mp4\n"
+                    (lambda ()
+                      (make-directory (expand-file-name "demo" dir) t)
+                      (setq path (ecc-dispatch-test--touch
+                                  dir "demo/tab-close.mp4"))))))
+        ;; The path was named relative to the session, not to
+        ;; `default-directory', and it is what the renderer draws.
+        (should (equal (ecc-model-node-get node 'written-images) (list path)))
+        (should (equal (ecc-render--tool-images node)
+                       (list (list path nil nil))))))))
+
+(ert-deftest ecc-dispatch-test-a-command-that-only-named-a-video-shows-nothing ()
+  "An `ls' names every mp4 in a directory and wrote none of them."
+  (ecc-dispatch-test--in-dir dir
+    (ecc-test-with-fake-session session
+      (setf (ecc-session-project-root session) dir)
+      (ecc-model-begin-turn session "what is in demo")
+      ;; Older than `ecc-dispatch--written-slack' by a wide margin: the
+      ;; slack is there for a filesystem's rounding, not for this.
+      (ecc-dispatch-test--touch dir "old.mp4" 3600)
+      (let ((node (ecc-dispatch-test--tool session "Bash"
+                                           '((command . "ls *.mp4"))
+                                           "old.mp4\n")))
+        (should-not (ecc-model-node-get node 'written-images))
+        (should-not (ecc-render--tool-images node))))))
+
+(ert-deftest ecc-dispatch-test-a-command-naming-nothing-on-disk-shows-nothing ()
+  "A path that is not there is not drawn."
+  (ecc-dispatch-test--in-dir dir
+    (ecc-test-with-fake-session session
+      (setf (ecc-session-project-root session) dir)
+      (ecc-model-begin-turn session "record it")
+      (let ((node (ecc-dispatch-test--tool session "Bash"
+                                           '((command . "make gone.mp4"))
+                                           "done\n")))
+        (should-not (ecc-model-node-get node 'written-images))))))
+
+(ert-deftest ecc-dispatch-test-an-errored-command-shows-nothing ()
+  "A call that failed is credited with nothing, whatever is on disk."
+  (ecc-dispatch-test--in-dir dir
+    (ecc-test-with-fake-session session
+      (setf (ecc-session-project-root session) dir)
+      (ecc-model-begin-turn session "record it")
+      (let ((node (ecc-dispatch-test--tool
+                   session "Bash" '((command . "demo/record.sh broken"))
+                   "no such scene\n"
+                   (lambda () (ecc-dispatch-test--touch dir "broken.mp4"))
+                   t)))
+        (should-not (ecc-model-node-get node 'written-images))))))
+
+(ert-deftest ecc-dispatch-test-what-a-command-wrote-is-capped ()
+  "Only the first few files of a command are kept."
+  (ecc-dispatch-test--in-dir dir
+    (ecc-test-with-fake-session session
+      (setf (ecc-session-project-root session) dir)
+      (ecc-model-begin-turn session "record them all")
+      (let* ((names '("a.png" "b.png" "c.png" "d.png" "e.png" "f.png"))
+             (ecc-dispatch-max-written-images 4)
+             (node (ecc-dispatch-test--tool
+                    session "Bash"
+                    `((command . ,(concat "shoot " (string-join names " "))))
+                    "shot\n"
+                    (lambda ()
+                      (dolist (name names)
+                        (ecc-dispatch-test--touch dir name))))))
+        (should (equal (ecc-model-node-get node 'written-images)
+                       (mapcar (lambda (name) (expand-file-name name dir))
+                               (seq-take names 4))))))))
+
+(ert-deftest ecc-dispatch-test-a-file-tool-is-unchanged ()
+  "A Read of a picture still draws its `file_path' and gains no list."
+  (ecc-dispatch-test--in-dir dir
+    (ecc-test-with-fake-session session
+      (setf (ecc-session-project-root session) dir)
+      (ecc-model-begin-turn session "look at it")
+      (let* ((path (ecc-dispatch-test--touch dir "shot.png"))
+             (node (ecc-dispatch-test--tool session "Read"
+                                            `((file_path . ,path))
+                                            "read it\n")))
+        (should-not (ecc-model-node-get node 'written-images))
+        (should (equal (ecc-render--tool-images node)
+                       (list (list path nil nil))))))))
+
+(ert-deftest ecc-dispatch-test-a-result-image-is-not-doubled ()
+  "A command whose result carried an image block draws it once."
+  (ecc-dispatch-test--in-dir dir
+    (ecc-test-with-fake-session session
+      (setf (ecc-session-project-root session) dir)
+      (ecc-model-begin-turn session "shoot")
+      (ecc-dispatch session '((type . "assistant")
+                              (message . ((content . [((type . "tool_use")
+                                                       (id . "toolu_written")
+                                                       (name . "Bash")
+                                                       (input . ((command . "shoot shot.png"))))])))))
+      (let* ((node (ecc-model-node session "toolu_written"))
+             (path (ecc-dispatch-test--touch dir "shot.png")))
+        ;; The image block the CLI sent, as `ecc-dispatch--result-content'
+        ;; leaves it: the base64 already written to a file of its own.
+        (ecc-model-node-put node 'result
+                            (vector `((type . "image") (path . ,path)
+                                      (bytes . 12))
+                                    `((type . "text") (text . ,(concat "wrote " path)))))
+        (ecc-dispatch--note-written-images session node)
+        (should-not (ecc-model-node-get node 'written-images))
+        (should (equal (ecc-render--tool-images node)
+                       (list (list path 12 nil))))))))
+
 (provide 'ecc-dispatch-test)
 
 ;;; ecc-dispatch-test.el ends here

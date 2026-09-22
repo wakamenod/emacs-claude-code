@@ -487,15 +487,25 @@ hash of its bytes."
 
 (defun ecc-render--tool-images (node)
   "Return what the tool NODE has to show, as (PATH BYTES NAME) in order.
-The result comes first and the input only when the result had nothing:
-a Read of a .png answers with the image and names the path as well, and
-taking both would draw every screenshot twice."
+Three sources, in this order.  The result comes first and the input\='s
+`file_path\=' only when the result had nothing: a Read of a .png answers
+with the image and names the path as well, and taking both would draw
+every screenshot twice.  Last come the files the call itself wrote,
+which is how a video made by a Bash command arrives -- a command names
+no `file_path\=' and answers in plain text, so the first two sources are
+both empty for it.  That list was worked out once, when the result
+landed (`ecc-dispatch--note-written-images\='), and is only read back
+here: this function runs on every redraw, and
+`ecc-render--default-hidden-p\=' calls it as well, so nothing here may
+touch the disk."
   (let* ((input (ecc-model-node-get node 'input))
          (named (alist-get 'file_path input)))
     (or (ecc-render--result-images (ecc-model-node-get node 'result)
                                    (and (ecc-image-file-p named) named))
         (when (and named (ecc-image-file-p named) (file-readable-p named))
-          (list (list named nil nil))))))
+          (list (list named nil nil)))
+        (mapcar (lambda (path) (list path nil nil))
+                (ecc-model-node-get node 'written-images)))))
 
 (defun ecc-render--result-text (result)
   "Return the text of a tool RESULT, whatever shape it arrived in."

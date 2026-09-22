@@ -17,6 +17,45 @@ Verified against **Claude Code CLI 2.1.278**.
 
 ### Fixed
 
+- A picture or a video that a command wrote is drawn in the transcript. The
+  renderer had two sources of pictures -- the image blocks of a tool result
+  and the `file_path` of a tool input -- and a Bash call has neither: its
+  input carries a `command` and its result is plain text. So the one way a
+  video actually comes into being here, `demo/record.sh` run through Bash,
+  drew nothing, and the feature had only ever worked for a video attached to
+  a prompt by hand. A command tool that names no `file_path` now has what it
+  wrote worked out once, when its result lands
+  (`ecc-dispatch--note-written-images`): a name found in the command or in
+  the result text is kept only when the file is there and its modification
+  time is at or after the start of the call, so `ls demo/` draws nothing and
+  `open shot.png` draws nothing either. The renderer reads that stored list
+  as its third source, which keeps the redraw path free of the disk. A
+  recorded demo therefore comes up unfolded with its first frame showing.
+  `ecc-dispatch-command-tools` names the tools this applies to and
+  `ecc-dispatch-max-written-images` caps how many are kept.
+
+- A Space with more sessions than its row has room for no longer comes up
+  with the transcripts crushed to two columns each. The rightmost window of
+  the row was widened to make room for the next split with `window-resize`
+  told to ignore every minimum, which took the transcripts beside it down
+  to `window-safe-min-width` one after another -- seven sessions in a
+  429-column frame gave five windows of ten columns. The room now comes
+  from the other session windows alone, each giving in proportion to what
+  it has above `ecc-space-session-min-width` and none going under it, and
+  never from the source; when that is not enough the row is full, which is
+  the rule `ecc-space-session-min-width` has always stated: the sessions
+  that do not fit run with no window, and the sidebar or `C-c c V` brings
+  them back.
+
+- A session window asked to be wider than the frame has room for no longer
+  takes the difference out of the sidebar. `display-buffer` makes a new
+  window the width it was asked for with a resize told to ignore every
+  minimum and every `preserve-size`, so a column count in `ecc-window-width`
+  that the source window could not give came out of the sidebar instead --
+  ten columns of a 28-column sidebar, in an 80-column frame. The width is now
+  capped at what the divided window has to give, which keeps the resize
+  between the two halves.
+
 - A slash command the CLI runs itself -- `/rename`, `/model`, `/cost` and the
   rest -- is drawn as the command it is in a live session, and no longer as a
   reply the model wrote. The live stream does not spread such a command over
