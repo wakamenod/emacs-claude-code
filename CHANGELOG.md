@@ -11,6 +11,35 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.278**.
+
+### Fixed
+
+- A slash command the CLI runs itself -- `/rename`, `/model`, `/cost` and the
+  rest -- is drawn as the command it is in a live session, and no longer as a
+  reply the model wrote. The live stream does not spread such a command over
+  the messages a recording holds: it sends one synthetic assistant message
+  carrying `local_command_run` and `local_command_source`, which nothing here
+  read, so the pretty command node existed only when a recording was replayed
+  (confirmed against CLI 2.1.278, 2026-09-22).
+
+- `/rename` renames the session in Emacs, with its buffer, its mode line and
+  every menu that lists it. The CLI renames its own conversation and says so
+  in what the command printed, and that sentence is the only sign of the new
+  name anywhere in the stream; until now the two names simply drifted apart.
+
+- Renaming a session to the name it already has leaves it alone. The prompt
+  of `C-c c R` offers the current name, and confirming it unchanged renamed
+  the session to `NAME<2>`: `ecc-model-unique-name` counted the session
+  itself as a collision. It now takes the session to leave out.
+
+- `R` in the dashboard is the rename `C-c c R` is. It skipped the trim, so a
+  name of nothing but blanks went through; it wrote the buffer name itself
+  instead of asking `ecc-session-buffer-name` for it; and it offered no
+  default. All three are gone: both keys now call `ecc-rename-session`.
+
 ## [0.3.1] - 2026-09-18
 
 Verified against **Claude Code CLI 2.1.274**.

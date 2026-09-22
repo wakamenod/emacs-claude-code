@@ -1628,24 +1628,32 @@ each question once the request was answered."
 (defun ecc-render--insert-command (node depth)
   "Insert the local command NODE at DEPTH.
 The command is drawn the way the user typed it, and what it printed
-follows in the dim face of something the CLI said rather than the model."
-  (let ((pad (ecc-render--pad depth))
-        (name (or (ecc-model-node-get node 'name) "?"))
-        (args (ecc-model-node-get node 'args))
-        (output (ecc-model-node-get node 'output)))
-    (ecc-render--insert-owned
-     node depth
-     (lambda ()
-       (insert (ecc-render--hang
-                (concat pad (propertize (concat ecc-render-user-mark name
-                                                (if args (concat " " args) ""))
-                                        'face 'ecc-user-face))
-                (concat pad (make-string (string-width ecc-render-user-mark) ?\s)))
-               "\n")))
-    (when (and (stringp output) (not (string-empty-p (string-trim output))))
+follows in the dim face of something the CLI said rather than the model.
+A command the turn above already carries as its prompt -- one typed
+here rather than read out of a recording -- is not drawn twice, and
+only what it printed is inserted."
+  (let* ((pad (ecc-render--pad depth))
+         (name (or (ecc-model-node-get node 'name) "?"))
+         (args (ecc-model-node-get node 'args))
+         (output (ecc-model-node-get node 'output))
+         (echoed (ecc-model-node-get node 'echoed)))
+    (unless echoed
       (ecc-render--insert-owned
-       node (1+ depth)
-       (lambda () (ecc-render--insert-lines output (concat pad "  ") 'ecc-dim-face))))))
+       node depth
+       (lambda ()
+         (insert (ecc-render--hang
+                  (concat pad (propertize (concat ecc-render-user-mark name
+                                                  (if args (concat " " args) ""))
+                                          'face 'ecc-user-face))
+                  (concat pad (make-string (string-width ecc-render-user-mark) ?\s)))
+                 "\n"))))
+    (when (and (stringp output) (not (string-empty-p (string-trim output))))
+      ;; Without the command above it there is nothing to indent under:
+      ;; what it printed stands where the model's own text would.
+      (ecc-render--insert-owned
+       node (if echoed depth (1+ depth))
+       (lambda () (ecc-render--insert-lines output (if echoed pad (concat pad "  "))
+                                            'ecc-dim-face))))))
 
 (defun ecc-render--system-heading (node)
   "Return the heading text of the system NODE."

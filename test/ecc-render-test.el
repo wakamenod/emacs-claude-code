@@ -765,6 +765,28 @@ every redraw drew the whole session again."
     (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
       (ecc-render-test--check "local-command" text))))
 
+(ert-deftest ecc-render-test-local-command-typed-here ()
+  "A command typed in the prompt region is not drawn a second time.
+The prompt of the turn is the command, so only what it printed
+follows it, where the model's own answer would stand."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "/rename aaa")
+    (ecc-dispatch session
+                  '((type . "assistant")
+                    (local_command_run . ((command . "rename") (args . "aaa")))
+                    (local_command_source
+                     . "<local-command-stdout>Session renamed to: aaa</local-command-stdout>")
+                    (message . ((role . "assistant") (model . "<synthetic>")
+                                (content . [((type . "text")
+                                             (text . "Session renamed to: aaa"))])))))
+    (ecc-render-flush session)
+    (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+      (should (string-search "〉 /rename aaa" text))
+      (should (= 1 (length (seq-filter (lambda (line) (string-search "/rename aaa" line))
+                                       (split-string text "\n")))))
+      (should (string-search "\n  Session renamed to: aaa" text)))))
+
 (ert-deftest ecc-render-test-unknown-is-visible ()
   "A message the client does not understand still reaches the buffer."
   (ecc-test-with-fake-session session

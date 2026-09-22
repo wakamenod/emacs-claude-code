@@ -51,6 +51,11 @@
 (require 'ecc-proc)
 (require 'ecc-diff)
 
+;; The buffer of a session is none of this module's business; `/rename'
+;; is the one thing here that has to reach it, and `ecc-session' is
+;; loaded for it at run time.
+(declare-function ecc-session-set-name "ecc-session" (session name))
+
 (defvar ecc-turn-approve-tools '("Edit" "Write" "NotebookEdit")
   "Tools that a turn-wide approval covers.")
 
@@ -369,7 +374,15 @@ only a backgrounded shell command stays the tool it is."
 (defun ecc-dispatch--assistant (session message)
   "Apply the assistant MESSAGE to SESSION, one content block at a time.
 A block that was streamed already has a node; it is completed rather
-than added again."
+than added again.  A message that is the answer of a slash command the
+CLI ran itself is not the model talking and is not drawn as a block of
+text; see `ecc-dispatch--local-command\='."
+  (if-let* ((fields (ecc-protocol-local-command message)))
+      (ecc-dispatch--local-command session fields)
+    (ecc-dispatch--assistant-blocks session message)))
+
+(defun ecc-dispatch--assistant-blocks (session message)
+  "Add the content blocks of the assistant MESSAGE to SESSION."
   (let* ((turn (ecc-model-ensure-turn session))
          (synthetic (ecc-protocol-synthetic-p message))
          (uuid (or (alist-get 'uuid message) (ecc-model-next-node-id session)))
@@ -677,6 +690,68 @@ turn, and what it printed arrives after it and is put on this node
     (setf (alist-get 'command-node (ecc-session-progress session))
           (ecc-node-id node))
     node))
+
+(defconst ecc-dispatch-renamed-regexp
+  "\\`Session renamed to: \\(.+\\)\\'"
+  "What `/rename\=' prints, and the name it settled on.
+Nothing else in the stream carries the new name: the session_id does
+not change, and no system message follows (confirmed against CLI
+2.1.278, 2026-09-22).")
+
+(defun ecc-dispatch--local-command (session fields)
+  "Add the local command FIELDS the live stream reported to SESSION.
+`ecc-protocol-local-command\=' read them out of one synthetic assistant
+message; a recording spreads the same command over the two user
+messages `ecc-dispatch--command\=' reads.  It is the same node either
+way, and what the command did to the session is applied here rather
+than left for the user to notice.
+
+A live turn was opened by the prompt that was sent, so the command is
+already the heading of the turn and the node does not say it a second
+time; a recording has no such heading, which is why the node says it
+at all."
+  (let* ((turn (ecc-model-ensure-turn session))
+         (node (ecc-model-add-node session :type 'command :status 'done
+                                   :parent turn
+                                   :data (list (cons 'name (alist-get 'name fields))
+                                               (cons 'args (alist-get 'args fields))
+                                               (cons 'output (alist-get 'output fields))
+                                               (cons 'echoed
+                                                     (ecc-dispatch--command-echoed-p
+                                                      turn fields))))))
+    (setf (alist-get 'command-node (ecc-session-progress session))
+          (ecc-node-id node))
+    (ecc-dispatch--command-effect session fields)
+    node))
+
+(defun ecc-dispatch--command-echoed-p (turn fields)
+  "Return non-nil when TURN was opened by the command FIELDS describe.
+The CLI resolves an alias before it reports the command -- `/cost\=' is
+reported as `usage\=' (2026-09-22) -- so the two do not always read the
+same, and what is compared is the name as well as the whole line."
+  (let ((prompt (string-trim (or (and (ecc-turn-p turn) (ecc-turn-prompt turn)) "")))
+        (name (alist-get 'name fields))
+        (args (alist-get 'args fields)))
+    (and (equal prompt (string-trim (concat name " " (or args ""))))
+         t)))
+
+(defun ecc-dispatch--command-effect (session fields)
+  "Apply to SESSION what the local command FIELDS say the CLI did.
+`/rename\=' renames the conversation in the CLI, which knows nothing of
+the name this side shows: without this the two drift apart and the
+transcript is the only place the new name appears.  What the command
+printed is preferred over the argument it was given, because that is
+the name the CLI settled on."
+  (when (equal (alist-get 'name fields) "/rename")
+    (let* ((output (or (alist-get 'output fields) ""))
+           (name (string-trim
+                  (or (and (string-match ecc-dispatch-renamed-regexp output)
+                           (match-string 1 output))
+                      (alist-get 'args fields)
+                      ""))))
+      (unless (string-empty-p name)
+        (require 'ecc-session)
+        (ecc-session-set-name session name)))))
 
 (defun ecc-dispatch-command-output (session text)
   "Put what a local command printed, TEXT, on the command node of SESSION.

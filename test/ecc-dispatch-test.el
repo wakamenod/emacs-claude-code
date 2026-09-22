@@ -14,6 +14,7 @@
 (require 'ecc-dispatch)
 (require 'ecc-perm)
 (require 'ecc-render)
+(require 'ecc-session)
 
 ;;;; basic-turn
 
@@ -1139,6 +1140,76 @@ once every result is in."
         ;; Both ways of recording what a command printed land on it.
         (should (equal (ecc-model-node-get node 'output)
                        "Session color set to: red\nand again"))))))
+
+(ert-deftest ecc-dispatch-test-live-local-command ()
+  "A slash command the live CLI ran is a command node, not the model talking.
+The stream says it in one synthetic assistant message rather than in
+the user messages a recording holds."
+  (ecc-test-with-fake-session session
+    (ecc-test-dispatch session "local-command" "/rename aaa")
+    (let ((nodes (seq-filter (lambda (node) (eq (ecc-node-type node) 'command))
+                             (hash-table-values (ecc-session-nodes session)))))
+      (should (= 2 (length nodes)))
+      ;; No text node was made for either of them.
+      (should-not (seq-find (lambda (node) (eq (ecc-node-type node) 'text))
+                            (hash-table-values (ecc-session-nodes session))))
+      (let ((rename (seq-find (lambda (node)
+                                (equal (ecc-model-node-get node 'name) "/rename"))
+                              nodes)))
+        (should rename)
+        (should (equal (ecc-model-node-get rename 'args) "aaa"))
+        (should (equal (ecc-model-node-get rename 'output)
+                       "Session renamed to: aaa")))
+      (let ((model (seq-find (lambda (node)
+                               (equal (ecc-model-node-get node 'name) "/model"))
+                             nodes)))
+        (should model)
+        (should (equal (ecc-model-node-get model 'args) "haiku"))
+        (should (string-search "Haiku" (ecc-model-node-get model 'output)))))))
+
+(ert-deftest ecc-dispatch-test-live-rename-renames-the-session ()
+  "/rename in the CLI renames the session and its buffer here.
+The CLI reports no other sign of the new name, so a session that did
+not follow it kept showing the old one (2026-09-22)."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-test-dispatch session "local-command" "/rename aaa")
+    (should (equal (ecc-session-name session) "aaa"))
+    (should (equal (buffer-name (ecc-session-buffer session)) "*ecc: aaa*"))))
+
+(ert-deftest ecc-dispatch-test-rename-takes-the-name-the-cli-printed ()
+  "What `/rename' printed is the name, and the argument is the fallback."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "/rename one")
+    (ecc-dispatch session
+                  '((type . "assistant")
+                    (local_command_run . ((command . "rename") (args . "one")))
+                    (local_command_source
+                     . "<local-command-stdout>Session renamed to: two</local-command-stdout>")
+                    (message . ((role . "assistant") (model . "<synthetic>")
+                                (content . [((type . "text")
+                                             (text . "Session renamed to: two"))])))))
+    (should (equal (ecc-session-name session) "two"))
+    ;; Without the sentence it printed, the argument stands.
+    (ecc-dispatch session
+                  '((type . "assistant")
+                    (local_command_run . ((command . "rename") (args . "three")))
+                    (local_command_source
+                     . "<local-command-stdout>Renamed.</local-command-stdout>")
+                    (message . ((role . "assistant") (model . "<synthetic>")
+                                (content . [((type . "text") (text . "Renamed."))])))))
+    (should (equal (ecc-session-name session) "three"))))
+
+(ert-deftest ecc-dispatch-test-synthetic-reply-without-the-fields ()
+  "An older CLI sends the answer of a command as plain synthetic text.
+It carries neither `local_command_run' nor `local_command_source', so
+there is nothing here to tell it from the model talking."
+  (ecc-test-with-fake-session session
+    (ecc-test-dispatch session "slash-commands" "/model opus")
+    (should-not (seq-find (lambda (node) (eq (ecc-node-type node) 'command))
+                          (hash-table-values (ecc-session-nodes session))))
+    (should (seq-find (lambda (node) (eq (ecc-node-type node) 'text))
+                      (hash-table-values (ecc-session-nodes session))))))
 
 (ert-deftest ecc-dispatch-test-command-output-without-a-command ()
   "Output whose command is not in this page is kept rather than dropped."
