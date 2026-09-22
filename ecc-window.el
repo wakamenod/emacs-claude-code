@@ -41,7 +41,7 @@
 (require 'ecc-model)
 
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
-(declare-function ecc-session-buffer-name "ecc-session" (name))
+(declare-function ecc-session-set-name "ecc-session" (session name))
 (declare-function ecc-chat-goto-prompt "ecc-chat" ())
 (declare-function ecc-render--project-name-1 "ecc-render" (directory))
 ;; `ecc-space' is above this file and is loaded where `ecc-use-spaces'
@@ -208,16 +208,8 @@ after it are told apart by a name the user gives."
   (interactive
    (let ((session (ecc-window-resolve-session current-prefix-arg)))
      (list session (read-string "New name: " (ecc-session-name session)))))
-  (let ((name (ecc-model-unique-name (string-trim name))))
-    (when (string-empty-p name)
-      (user-error "The name is empty"))
-    (setf (ecc-session-name session) name)
-    (require 'ecc-session)
-    (when (buffer-live-p (ecc-session-buffer session))
-      (with-current-buffer (ecc-session-buffer session)
-        (rename-buffer (ecc-session-buffer-name name) t)))
-    (force-mode-line-update t)
-    name))
+  (require 'ecc-session)
+  (ecc-session-set-name session name))
 
 ;;;; The buffer the user came from
 

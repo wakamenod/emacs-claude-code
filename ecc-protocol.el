@@ -355,6 +355,40 @@ The alist holds `name' (with its leading slash), `message' and `args';
              (string-match-p ecc-protocol-command-output-regexp text))
     (or (ecc-protocol-command-tag text "local-command-stdout") "")))
 
+(defun ecc-protocol-local-command (message)
+  "Return the fields of the local command MESSAGE reports, or nil.
+The live stream does not spread a slash command the CLI answered
+itself over the messages a recording holds: it sends one synthetic
+assistant message that carries the command in `local_command_run\=' --
+`command\=' and `args\=' -- and what it printed in
+`local_command_source\=', wrapped in the same <local-command-stdout>
+element.  The name is the one the CLI settled on rather than the one
+that was typed: `/cost\=' is reported as `usage\=' (confirmed against
+CLI 2.1.278, 2026-09-22).
+
+The alist holds `name\=' with its leading slash, `args\=', nil when the
+command was given none, and `output\='.  Nil for an assistant message
+that is not one: an older CLI sends the same synthetic reply without
+either field, and it is the model talking as far as this side can
+tell (fixture slash-commands.jsonl)."
+  (when-let* ((run (alist-get 'local_command_run message))
+              (name (alist-get 'command run))
+              ((stringp name)))
+    (let ((args (alist-get 'args run))
+          (source (alist-get 'local_command_source message)))
+      (list (cons 'name (concat "/" name))
+            (cons 'args (and (stringp args) (not (string-empty-p args)) args))
+            (cons 'output (or (ecc-protocol-command-output source)
+                              (ecc-protocol-message-text message)))))))
+
+(defun ecc-protocol-message-text (message)
+  "Return the text blocks of MESSAGE joined into one string."
+  (mapconcat (lambda (block)
+               (if (equal (alist-get 'type block) "text")
+                   (or (alist-get 'text block) "")
+                 ""))
+             (ecc-protocol-content-blocks message) ""))
+
 ;;;; Notices the CLI injects
 
 ;; A CLI that resumes a session with background tasks left over from the

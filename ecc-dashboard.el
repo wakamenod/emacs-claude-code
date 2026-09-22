@@ -739,15 +739,17 @@ redraw left it on."
       (ecc-dashboard-refresh))))
 
 (defun ecc-dashboard-rename (name)
-  "Rename the session at point to NAME."
-  (interactive (list (read-string "New name: ")))
+  "Rename the session at point to NAME.
+The prompt offers the name the session has, as `ecc-rename-session\='
+does, and that is the command underneath: one rename, and one place
+where the buffer and the mode line follow it."
+  (interactive (list (read-string
+                      "New name: "
+                      (ecc-session-name (ecc-dashboard-session-at-point)))))
   (let ((session (ecc-dashboard-session-at-point)))
-    (when (string-empty-p name)
+    (when (string-empty-p (string-trim name))
       (user-error "The name may not be empty"))
-    (setf (ecc-session-name session) (ecc-model-unique-name name))
-    (when (buffer-live-p (ecc-session-buffer session))
-      (with-current-buffer (ecc-session-buffer session)
-        (rename-buffer (format "*ecc: %s*" (ecc-session-name session)) t)))
+    (ecc-rename-session session name)
     (ecc-dashboard-redraw)))
 
 (defun ecc-dashboard-resume ()
