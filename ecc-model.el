@@ -316,11 +316,15 @@ the review of a file git does not track diffs against it."
   (let ((id (ecc-session-id session)))
     (setq ecc--session-order (cons id (delete id ecc--session-order)))))
 
-(defun ecc-model-unique-name (base)
-  "Return BASE, or BASE with a suffix if a session already uses it."
+(defun ecc-model-unique-name (base &optional except)
+  "Return BASE, or BASE with a suffix if a session already uses it.
+EXCEPT is a session the name is not taken from: the one being renamed
+keeps the name it already has rather than colliding with itself, which
+turned a rename that changed nothing into BASE<2>."
   (let ((name base)
         (n 1))
-    (while (seq-find (lambda (s) (equal (ecc-session-name s) name))
+    (while (seq-find (lambda (s) (and (not (eq s except))
+                                      (equal (ecc-session-name s) name)))
                      (ecc-model-sessions))
       (setq n (1+ n)
             name (format "%s<%d>" base n)))
