@@ -1,0 +1,84 @@
+name: back-merge
+
+# A hotfix is the one branch that goes straight into main, so main can be
+# ahead of develop -- and a fix that lives only on main is a fix nobody
+# runs, which is what PR #70 was (four commits on main for two days while
+# the bug they fixed was still in everybody's Emacs).  The base-branch
+# guard cannot catch this: the hotfix was allowed.  Only the back merge
+# closes it, and the back merge is a thing a person remembers.
+#
+# So it is checked where forgetting shows up: on every push to main.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  back-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Not `merge-base --is-ancestor': a release branches off develop and
+      # is merged into main, which leaves a merge commit on main that
+      # develop has no reason to have.  What matters is whether any change
+      # exists on main alone, so the commits are compared by patch id --
+      # `--cherry-pick' drops the ones develop already has under another
+      # hash.  Run over the state of PR #70 this lists its five commits,
+      # and over a release it lists nothing.
+      - name: what main has and develop does not
+        id: check
+        run: |
+          git fetch --no-tags origin develop:develop
+          left=$(git log --right-only --cherry-pick --no-merges \
+                   --format='- %h %s' develop...main)
+          if [ -z "$left" ]; then
+            echo "develop has everything main has."
+            echo "behind=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::error::main is ahead of develop."
+          echo "$left"
+          {
+            echo 'behind<<EOF'
+            echo "$left"
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+          exit 1
+
+      # A red run on main is easy to scroll past; an open issue is not.
+      # One is enough -- the next push finds it and leaves it alone.
+      - name: say so where it will be seen
+        if: failure() && steps.check.outputs.behind != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEHIND: ${{ steps.check.outputs.behind }}
+          TITLE: main is ahead of develop
+        run: |
+          if gh issue list --state open --search "$TITLE in:title" \
+               --json title --jq '.[].title' | grep -qxF "$TITLE"; then
+            echo "The issue is already open."
+            exit 0
+          fi
+          gh issue create --title "$TITLE" --body "$(printf '%s\n' \
+            "These changes are on \`main\` and not on \`develop\`:" \
+            "" \
+            "$BEHIND" \
+            "" \
+            "Until they are carried back, anybody working from \`develop\` is" \
+            "running without them -- which is what happened for two days after" \
+            "PR #70." \
+            "" \
+            '```' \
+            "git switch develop && git pull" \
+            "git switch -c chore/back-merge && git merge origin/main" \
+            "gh pr create --base develop" \
+            '```' \
+            "" \
+            "Opened by \`.github/workflows/back-merge.yml\`.")"
