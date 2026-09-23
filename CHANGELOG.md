@@ -11,6 +11,93 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.278**.
+
+### Changed
+
+- A tool call that changes a file comes up showing its diff. An Edit, a
+  MultiEdit, a Write and a NotebookEdit are tool nodes, and a tool node
+  starts folded, so what Claude had just written sat behind a TAB while the
+  CLI itself puts the change in front of the reader as it makes it; a change
+  nobody is shown is a change nobody reviews. This is the exception a tool
+  call carrying a picture already had, for the same reason.
+  `ecc-render-inhibit-inline-diff` folds them again for a reader who would
+  rather have the headings back -- `ecc-render-diff-max-lines` is the only
+  thing holding a diff's length -- and what the reader folded or unfolded by
+  hand is still remembered per node and still wins over the default.
+
+- A diff in the transcript is drawn the way the CLI's own TUI draws it,
+  measured against CLI 2.1.278 on 2026-09-22: every line carries the number
+  it has in the file (a context or added line in the new file, a removed
+  line in the old) instead of an `@@` header, a changed line carries its
+  colour to the right edge of the window, and the line under the heading
+  says what the CLI says -- "Added 1 line, removed 1 line", with a side that
+  changed nothing left out rather than counted as zero. It stands over the
+  diff, where the CLI puts it, so a call folded with TAB shows its heading
+  alone. The context is three lines either
+  way, which is what the CLI's own `structuredPatch` carries. Where two
+  hunks meet, `⋮` stands in for the header that is gone.
+
+  What `ecc-review.el` builds is untouched: its buffers are patches that
+  `diff-mode` reads and that a comment is written against, so the review,
+  the ediff hunks and the diff in the feedback a plan sends back to the
+  model all bind `ecc-diff-style` to `unified` and get the `@@` header and
+  the markers as before.
+
+- The diff of a call no longer repeats the file name over itself. The
+  heading of the call is the file -- `Update(probe.py)` is the whole of it
+  in the CLI -- and a line under it saying the same name was the name twice.
+  A permission section that has been answered keeps its path line, its
+  heading saying only how it went.
+
+- A file of the session's own project is named relative to it -- `src/x.el`
+  rather than the whole path -- wherever the transcript names one: the
+  heading of a call, the line over its diff, the rows of the Files summary
+  and the plan file. A file outside the project keeps its whole path, since
+  a string of `../..` says less than the path does. This too is what the CLI
+  prints. What is left long is cut from the left rather than the right, the
+  name of the file being what tells one call from another.
+
+- The rows of the Files summary still say `+N −M`: a list of files is not
+  the place for a sentence about one of them.
+
+- A finished call draws the `structuredPatch` the CLI reported rather than
+  the diff guessed from the file as it stood before the call. The guess is
+  what there is to show while the call is still running, and for a file
+  nobody had read it is a fragment with no context and no line numbers at
+  all; the patch is what really happened. `ecc-dispatch--structured-result`
+  keeps it on the node, beside the `before` snapshot it already kept.
+
+### Fixed
+
+- MultiEdit showed no diff at all -- neither in the transcript nor in the
+  permission prompt, which asked to change a file without saying what it
+  would change. Its input was read as an Edit's, with a top-level
+  `old_string` and `new_string` that a MultiEdit does not have: they are in
+  its `edits` array. The result was the empty string, which is not nil, so
+  the file path was drawn with nothing under it. The edits are now laid on
+  the file one after another, honouring `replace_all`, and the file before is
+  diffed against the file after, which is one merged diff with real line
+  numbers; without the file each edit is shown as its own old against new,
+  in order. `ecc-diff-for-tool` never returns the empty string again.
+
+- The Files summary read a MultiEdit as an Edit too, looking for a top-level
+  `old_string` and `new_string` it does not have. The row got a change of nil
+  against nil, drawn as an empty `@@ -0,0 +1,0 @@`, and a result carrying
+  `originalFile` handed `string-replace` an empty string to look for, which
+  signals `wrong-length-argument` in the middle of the dispatch. A MultiEdit
+  is now noted as the whole file before it against the whole file with every
+  edit laid on, and its snapshot follows the same way. A row whose change is
+  known on neither side and has no patch draws nothing rather than a hunk of
+  no lines, and MultiEdit has the pencil of Edit rather than no icon.
+
+- NotebookEdit had no diff either. Its new cell source is now shown as added
+  lines, under a header naming the cell. The notebook is not opened to find
+  the old source: it is JSON, and JSON is read in `ecc-protocol.el` and
+  nowhere else.
+
 ## [0.3.2] - 2026-09-24
 
 Verified against **Claude Code CLI 2.1.280**.

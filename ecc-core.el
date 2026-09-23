@@ -663,6 +663,15 @@ Newlines are replaced by spaces and an ellipsis marks a cut."
         flat
       (concat (substring flat 0 (max 0 (1- width))) "…"))))
 
+(defun ecc--truncate-left (string width)
+  "Return STRING shortened to at most WIDTH characters, keeping its end.
+For a path: what tells one call from another is the file at the end of
+it, not the directories every call shares."
+  (let ((flat (replace-regexp-in-string "[ \t\n\r]+" " " (or string ""))))
+    (if (<= (length flat) width)
+        flat
+      (concat "…" (substring flat (- (length flat) (max 0 (1- width))))))))
+
 (defun ecc--fit (string width)
   "Return STRING shortened to at most WIDTH columns on the display.
 Like `ecc--truncate', but counts what a column costs to draw rather

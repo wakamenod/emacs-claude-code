@@ -469,6 +469,10 @@ from what the CLI reported for each (files git does not track)."
   (let* ((path (ecc-file-entry-path entry))
          (original (ecc-file-entry-original entry))
          (current (ecc-review--current-content entry))
+         ;; What comes out of here is a patch: `ecc-review--file-header'
+         ;; puts ---/+++ in front of it and `diff-mode' reads the rest.
+         ;; The transcript's numbered style would not be a patch.
+         (ecc-diff-style 'unified)
          (body
           (cond
            ((and (eq original 'unknown) (null (ecc-file-entry-hunks entry))) nil)
@@ -1212,6 +1216,9 @@ header is always present so that the text is a hunk for `diff-mode'."
   (let* ((name (ecc-request-tool-name request))
          (input (ecc-request-input request))
          (path (alist-get 'file_path input))
+         ;; A hunk for `diff-mode', as the docstring says: the @@ header
+         ;; and the markers, not the transcript's line numbers.
+         (ecc-diff-style 'unified)
          (body (pcase name
                  ((or "Edit" "MultiEdit")
                   (let ((old (or (alist-get 'old_string input) ""))
@@ -1377,7 +1384,10 @@ point.  Returns the buffer."
                   (or (alist-get 'file_path (ecc-request-input request)) "?"))
           "\n```diff\n"
           (string-trim-right
-           (substring-no-properties (or (ecc-diff-render original edited) ""))
+           (substring-no-properties
+            (or (let ((ecc-diff-style 'unified))
+                  (ecc-diff-render original edited))
+                ""))
            "\n")
           "\n```"))
 

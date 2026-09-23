@@ -207,6 +207,49 @@ the renderer does is read it, as the third and last source of pictures."
                        (list (list (ecc-test-image-file) nil nil))))
         (should-not (ecc-render--default-hidden-p "t1"))
         (should (ecc-render-test--visible-image-p))))))
+(defun ecc-render-test--edit-call (session id &optional input)
+  "Dispatch a finished Edit call ID on SESSION, with INPUT or a default one."
+  (ecc-dispatch session
+                `((type . "assistant") (uuid . ,(concat "u-" id))
+                  (message . ((content . [((type . "tool_use") (id . ,id)
+                                           (name . "Edit")
+                                           (input . ,(or input
+                                                         '((file_path . "/tmp/ecc-x.py")
+                                                           (old_string . "b")
+                                                           (new_string . "B")))))])))))
+  (ecc-dispatch session
+                `((type . "user")
+                  (message . ((content . [((type . "tool_result")
+                                           (tool_use_id . ,id)
+                                           (content . "ok"))]))))))
+
+(ert-deftest ecc-render-test-a-tool-that-changes-a-file-is-not-folded ()
+  "An Edit comes up showing its diff, as the CLI shows it.
+Tool nodes start collapsed, so what Claude wrote was behind a TAB."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "直して")
+    (with-current-buffer (ecc-session-buffer session)
+      (ecc-render-test--edit-call session "t1")
+      (ecc-render-flush session)
+      (should-not (ecc-render--default-hidden-p "t1"))
+      (should (string-search "+B" (buffer-substring-no-properties
+                                   (point-min) (point-max))))
+      ;; Asked to fold them, it is a tool like any other again.
+      (let ((ecc-render-inhibit-inline-diff t))
+        (should (ecc-render--default-hidden-p "t1")))
+      ;; A tool with no diff is still folded.
+      (ecc-dispatch session
+                    '((type . "assistant") (uuid . "u9")
+                      (message . ((content . [((type . "tool_use") (id . "t9")
+                                               (name . "Bash")
+                                               (input . ((command . "ls"))))])))))
+      (ecc-render-flush session)
+      (should (ecc-render--default-hidden-p "t9"))
+      ;; What the reader folded by hand stays folded.
+      (ecc-render-hide-node "t1")
+      (ecc-render-flush session)
+      (should (ecc-render-node-hidden-p "t1")))))
 
 (defun ecc-render-test--visible-image-p ()
   "Return non-nil when a picture is drawn in this buffer and not hidden."
@@ -756,10 +799,13 @@ every redraw drew the whole session again."
     (with-current-buffer (ecc-session-buffer session)
       (let ((id "toolu_01Hcu5xtMTxBqGiZ6MfT3XyZ"))
         (should (ecc-render-node-bounds id))
-        ;; Tool bodies start collapsed.
+        ;; A Write starts open; folding it by hand is what has to stick.
+        (should-not (ecc-render-node-hidden-p id))
+        (ecc-render-hide-node id)
+        (should (ecc-render-node-hidden-p id))
+        (ecc-render-flush session)
         (should (ecc-render-node-hidden-p id))
         (ecc-render-show-node id)
-        (should-not (ecc-render-node-hidden-p id))
         (ecc-render-flush session)
         (should-not (ecc-render-node-hidden-p id))))))
 
@@ -1132,17 +1178,27 @@ heading has nothing to wait for."
       (ecc-render-test--check "edit-tool" text)
       ;; The permission section showed the change in place, with context
       ;; taken from the Read that came before.
+      ;; The heading of a call names the file; the diff under it does
+      ;; not say the name again.  An answered permission section says
+      ;; only how it went, so there the path still stands over the diff.
       (should (string-search (concat "  ✓ Permission: Edit  allowed\n"
                                      "    /private/tmp/claude-501/")
                              text))
-      (should (string-search (concat "    @@ -1,6 +1,6 @@\n"
-                                     "     def greet(name):\n"
-                                     "         \"\"\"Say hi.\"\"\"\n"
-                                     "    -    return \"hi \" + name\n"
-                                     "    +    return \"hello \" + name\n")
+      ;; The count stands on its own line under the heading, where the
+      ;; CLI's own TUI puts it.
+      (should (string-match-p (concat "✓ Edit · [^\n]*hello\\.py\n"
+                                      "    Added 1 line, removed 1 line\n"
+                                      "    1  def greet")
+                              text))
+      ;; Every line carries the number it has in the file, and no @@.
+      (should (string-search (concat "    1  def greet(name):\n"
+                                     "    2      \"\"\"Say hi.\"\"\"\n"
+                                     "    3 -    return \"hi \" + name \n"
+                                     "    3 +    return \"hello \" + name \n")
                              text))
+      (should-not (string-search "@@ -1,6 +1,6 @@" text))
       ;; The tool section shows the same diff ...
-      (should (string-search "    -    return \"hi \" + name\n    +    return \"hello \" + name\n"
+      (should (string-search "    3 -    return \"hi \" + name \n    3 +    return \"hello \" + name \n"
                              text))
       ;; ... with diff-mode faces.
       (with-current-buffer (ecc-session-buffer session)
@@ -1152,7 +1208,110 @@ heading has nothing to wait for."
                       (ensure-list (get-text-property (match-beginning 0) 'face)))))
       ;; The Files section merges the patches the CLI reported.
       (should (string-search "  Files (1)\n    /private/tmp/claude-501/" text))
-      (should (string-search "hello.py  R×1 E×1  +1 −1\n      @@ -1,6 +1,6 @@\n" text)))))
+      (should (string-search "hello.py  R×1 E×1  +1 −1\n      1  def greet(name):\n" text))
+      ;; The heading counts the change the way the Files row counts it.
+      (should (string-search "✓ Edit · …" text))
+      (should (string-search "hello.py\n    Added 1 line, removed 1 line\n" text))
+      ;; A Read changes nothing and says nothing about lines.
+      (should-not (string-match-p "✓ Read ·[^\n]*\n *\\(Added\\|Removed\\)" text)))))
+
+(ert-deftest ecc-render-test-a-path-is-named-from-the-project ()
+  "A file of the project is named relative to it, one outside is not.
+This is what the CLI's own TUI prints: `sub/deep.py' for a file of the
+project, the whole path for a file outside it (CLI 2.1.278,
+2026-09-22)."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (with-current-buffer (ecc-session-buffer session)
+      (let ((root (ecc-session-project-root session)))
+        (should (equal (ecc-render--file-label (expand-file-name "sub/deep.py" root))
+                       "sub/deep.py"))
+        (should (equal (ecc-render--file-label (expand-file-name "flat.py" root))
+                       "flat.py"))
+        ;; Outside the project the path stays whole: a string of ../..
+        ;; says less than the path does.
+        (should (equal (ecc-render--file-label "/tmp/ecc-elsewhere/far.py")
+                       "/tmp/ecc-elsewhere/far.py"))
+        ;; The root itself is not "": there is nothing relative to say.
+        (should (equal (ecc-render--file-label root) (abbreviate-file-name root))))))
+  ;; With no session to be relative to -- a buffer that is not a
+  ;; transcript -- the path is abbreviated as it always was.
+  (should (equal (ecc-render--file-label "/tmp/ecc-elsewhere/far.py")
+                 "/tmp/ecc-elsewhere/far.py")))
+
+(ert-deftest ecc-render-test-diff-counts-on-the-heading ()
+  "The heading says +N −M in the faces the Files rows use."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "書いて")
+    (ecc-model-node-changed
+     session
+     (ecc-model-add-node session :type 'tool :status 'done :id "t1"
+                         :data `((name . "Write")
+                                 (before . "a\nb\n")
+                                 (input . ((file_path
+                                            . ,(expand-file-name
+                                                "src/ecc-x.txt"
+                                                (ecc-session-project-root session)))
+                                           (content . "a\nB\nc\n")))
+                                 (result . "done"))))
+    (ecc-render-flush session)
+    (with-current-buffer (ecc-session-buffer session)
+      (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+        ;; The words are the CLI's, on the line under the heading, and
+        ;; so is the path: relative to the project it belongs to.
+        (should (string-search "· src/ecc-x.txt\n" text))
+        (should-not (string-search (ecc-session-project-root session) text))
+        ;; And the lines under it are numbered in the file, with no
+        ;; second line naming the file again.
+        (should (string-search (concat "src/ecc-x.txt\n"
+                                       "    Added 2 lines, removed 1 line\n"
+                                       "    1  a\n    2 -b \n    2 +B \n    3 +c \n")
+                               text))))))
+
+(ert-deftest ecc-render-test-the-patch-of-the-cli-wins ()
+  "Once the CLI has said what it changed, the guess is dropped."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "直して")
+    (let ((node (ecc-model-add-node
+                 session :type 'tool :status 'done :id "t1"
+                 :data '((name . "Edit")
+                         ;; The guess: the file as it was read, and the
+                         ;; strings the call named.
+                         (before . "a\nb\n")
+                         (input . ((file_path . "/tmp/ecc-x.txt")
+                                   (old_string . "b") (new_string . "B")))
+                         (result . "done")))))
+      (should (string-search "+B" (ecc-render--tool-diff node)))
+      ;; What really happened, with the line numbers it really had.
+      (ecc-model-node-put node 'patch
+                          (vector '((oldStart . 12) (oldLines . 1)
+                                    (newStart . 12) (newLines . 1)
+                                    (lines . ["-b" "+BEE"]))))
+      (ecc-model-node-changed session node)
+      (ecc-render-flush session)
+      (should (equal (substring-no-properties (ecc-render--tool-diff node))
+                     "12 -b \n12 +BEE \n"))
+      (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+        ;; The line numbers are the ones the patch reported, not the
+        ;; ones the guess would have made up.
+        (should (string-search "12 -b \n" text))
+        (should (string-search "12 +BEE \n" text))
+        (should-not (string-search "+B \n" text))))))
+
+(ert-deftest ecc-render-test-a-file-row-with-nothing-known-draws-nothing ()
+  "A change the CLI said nothing about is no lines, not an empty hunk.
+A MultiEdit was noted as nil against nil and the row drew
+\"@@ -0,0 +1,0 @@\" under it, a hunk of no lines (2026-09-22)."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (with-current-buffer (ecc-session-buffer session)
+      (ecc-model-note-file session "/tmp/ecc-x.py" 'edit)
+      (ecc-model-note-hunk session "/tmp/ecc-x.py" nil nil nil nil)
+      (let ((entry (car (ecc-model-files session))))
+        (should (equal (substring-no-properties (ecc-render--file-diff entry)) ""))
+        (should (equal (ecc-render--file-counts entry) '(0 . 0)))))))
 
 (ert-deftest ecc-render-test-write-diff-is-clipped ()
   "A long Write shows the head of its diff and says how much was cut."
@@ -1160,11 +1319,11 @@ heading has nothing to wait for."
     (let* ((ecc-render-diff-max-lines 5)
            (text (ecc-render-test--replay session "partial-messages"
                                          "長いファイルを書いて" '(allow))))
-      (should (string-search "    @@ -0,0 +1,298 @@\n    +def f0():\n" text))
-      (should (string-search "… 294 more lines (RET)" text))
+      (should (string-search "      1 +def f0(): \n" text))
+      (should (string-search "… 293 more lines (RET)" text))
       ;; The Files section keeps the whole diff behind its fold.
       (should (string-search "long.py  W×1  +298 −0\n" text))
-      (should (string-search "    +    return 59\n" text)))))
+      (should (string-search "298 +    return 59 \n" text)))))
 
 ;;;; Files and Tasks
 
@@ -1770,8 +1929,8 @@ any route as long as they arrive at the same buffer."
         (ecc-render-flush session)
         (should (= laid-out 2))
         (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
-          (should (string-search "-one\n" text))
-          (should (string-search "+2\n" text)))
+          (should (string-search "1 -one \n" text))
+          (should (string-search "1 +2 \n" text)))
         ;; One more hunk on a: a is laid out again, b is not.
         (ecc-model-note-hunk session "/nowhere/a.txt" "two\n" "2\n" nil "1\ntwo\n")
         (ecc-render-flush session)
