@@ -115,7 +115,13 @@ the recording and its branches. The one rule to carry in: **a second process run
 
 - `develop` is where the work gathers; `main` is what people install, and it takes no
   direct push. A piece of work branches off `develop` and goes back into it through a
-  pull request. `main` sees a release and nothing else.
+  pull request. `main` sees a release and nothing else, and
+  `.github/workflows/base-branch.yml` refuses a pull request into `main` from anything
+  but `release/*` or `hotfix/*` — the base of a pull request defaults to `main`, and a
+  fix that goes there instead of into `develop` is a fix nobody runs (PR #70).
+- **A hotfix is not finished until `main` is merged back into `develop`.** `hotfix/*` is
+  the one branch that goes straight into `main`, for what cannot wait for a release, and
+  it leaves `main` ahead of `develop` until somebody carries it back.
 - A pull request carries its own entry in the `## [Unreleased]` section of
   `CHANGELOG.md`. That section is a draft until the release dates it, so a bug that
   both appeared and was fixed before any release is not an entry under `Fixed` — it is

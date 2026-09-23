@@ -572,16 +572,74 @@ in, the same one `ecc-start' would use."
                     (window-list nil 'no-minibuffer))
         (lambda (a b) (< (nth 0 (window-edges a)) (nth 0 (window-edges b))))))
 
+(defun ecc-space--column-width ()
+  "Return the columns a session window of a Space may not go under.
+`ecc-space-session-min-width\=', with `window-min-width\=' as its floor:
+Emacs refuses a split that would leave a window narrower than that."
+  (max ecc-space-session-min-width window-min-width))
+
+(defun ecc-space--spare (window)
+  "Return the columns WINDOW has above `ecc-space--column-width\='."
+  (max 0 (- (window-total-width window) (ecc-space--column-width))))
+
+(defun ecc-space--shares (windows delta)
+  "Return the columns each of WINDOWS gives up, DELTA between them.
+In proportion to what each has to spare above the column width, so
+that a transcript the user made wide gives the most and one already at
+the width gives nothing.  DELTA is no more than they have to spare in
+all; what the rounding leaves over goes to the first that still has
+room."
+  (let* ((spares (mapcar #'ecc-space--spare windows))
+         (total (apply #'+ spares))
+         (shares (mapcar (lambda (spare) (/ (* delta spare) total)) spares))
+         (left (- delta (apply #'+ shares))))
+    (cl-loop for share in shares
+             for spare in spares
+             collect (let ((extra (min left (- spare share))))
+                       (setq left (- left extra))
+                       (+ share extra)))))
+
+(defun ecc-space--take-from (windows shares)
+  "Shrink each of WINDOWS by its entry in SHARES, the room going to the right.
+WINDOWS stand left to right, and what they give up ends at the right
+end of the row: the right edge of each is moved to where it belongs
+once the windows on its left have given theirs, so the row to the
+right of it grows by that much, and the last window of the row takes
+all of it.  Nothing to the left of WINDOWS -- the source, the sidebar
+-- moves.
+
+The edges are moved rather than the windows resized.  `window-resize\='
+takes its columns from the siblings Emacs finds in the window tree,
+which, since each session split the last, is the one session next
+door and then the row\='s parent -- the source; and asked to ignore the
+minimum so that it could reach past the neighbour, it took every
+transcript down to two columns (the `enghi\=' tab of 2026-09-22).  An
+edge is moved by the amount asked for and by nothing else, and
+`window-min-width\=' is bound to the column width for as long as it
+takes, so Emacs itself refuses to move one past it."
+  (let ((window-min-width (ecc-space--column-width))
+        (edges (mapcar (lambda (window) (nth 2 (window-edges window))) windows))
+        (cut 0))
+    (cl-loop for window in windows
+             for share in shares
+             for edge in edges
+             do (setq cut (+ cut share))
+             (let ((delta (- (- edge cut) (nth 2 (window-edges window)))))
+               (unless (zerop delta)
+                 (adjust-window-trailing-edge window delta t))))))
+
 (defun ecc-space--window-to-split (windows)
   "Return the one of WINDOWS a new session should be opened beside, or nil.
 The rightmost, so that a session appears where the last one did and the
 row reads in the order the sessions were started; nil says the row is
-full and `ecc-space-display-session' puts the new session into a window
+full and `ecc-space-display-session\=' puts the new session into a window
 that is already there instead of making a narrower one.
 
-A rightmost window with less than two sessions' worth of columns is
-widened first, out of the room its siblings have, so that the rule
-holds however the row was arranged."
+A rightmost window with less than two columns\=' worth of room is
+widened first, out of what the other session windows have above the
+column width and out of nothing else -- not the source, which is the
+window the code is read in.  Each gives in proportion to what it has
+to spare, and when all of it together is not enough the row is full."
   ;; Measured with `window-total-width\=', not `window-body-width\=': the
   ;; body leaves out the fringes, the margins and the scroll bar -- five
   ;; columns on the frame this was measured on (2026-09-15) -- while
@@ -589,16 +647,35 @@ holds however the row was arranged."
   ;; `display-buffer\=' are both in the total.  Mixing the two refused
   ;; splits that fit and made the new window narrower than it was asked
   ;; to be.
-  (let* ((room (* 2 (max ecc-space-session-min-width window-min-width)))
-         (right (car (last windows))))
-    (when (and (< (window-total-width right) room) (cdr windows))
-      (ignore-errors
-        (window-resize right (- room (window-total-width right)) t t)))
+  (let* ((room (* 2 (ecc-space--column-width)))
+         (right (car (last windows)))
+         (short (- room (window-total-width right)))
+         ;; One window per column: two transcripts the user stacked share
+         ;; one right edge, and moving it twice would take twice from
+         ;; them.  Only what stands wholly to the left of the rightmost
+         ;; has an edge that can be moved towards it.
+         (others (seq-uniq
+                  (seq-filter (lambda (window)
+                                (<= (nth 2 (window-edges window))
+                                    (nth 0 (window-edges right))))
+                              (butlast windows))
+                  (lambda (a b)
+                    (= (nth 0 (window-edges a)) (nth 0 (window-edges b)))))))
+    (when (and (> short 0)
+               (<= short (apply #'+ (mapcar #'ecc-space--spare others))))
+      (ecc-space--take-from others (ecc-space--shares others short)))
     (and (>= (window-total-width right) room) right)))
 
 (defun ecc-space--display-beside (buffer window width &optional direction)
   "Show BUFFER in a new window WIDTH columns wide, beside WINDOW.
-DIRECTION is which side of WINDOW it goes on, `right\=' by default."
+DIRECTION is which side of WINDOW it goes on, `right\=' by default.
+WIDTH is columns, or a fraction of the frame the way `display-buffer\='
+reads one, and is capped at what WINDOW has to give: `display-buffer\='
+makes the new window that wide with `window-resize\=' told to ignore
+what is `safe\=' to ignore, which is every minimum and every
+`preserve-size\=' -- so a width the divided window could not give came
+out of the sidebar, ten columns of it, in an 80-column frame (measured
+2026-09-22).  Capped, the resize stays between the two halves."
   ;; `split-width-threshold' is 160 by default and is how `display-buffer'
   ;; guesses whether a window is wide enough to be worth dividing.  The
   ;; guess is not wanted here: the layout has already decided, and the
@@ -609,7 +686,12 @@ DIRECTION is which side of WINDOW it goes on, `right\=' by default."
   ;; put the new session under the row -- the one thing a Space does not
   ;; do (measured 2026-09-15, in an 80-column frame).
   (let ((split-width-threshold (* 2 (max ecc-space-session-min-width
-                                         window-min-width))))
+                                         window-min-width)))
+        (width (min (if (floatp width)
+                        (round (* width (window-total-width
+                                         (frame-root-window window))))
+                      width)
+                    (- (window-total-width window) window-min-width))))
     (display-buffer-in-direction
      buffer `((direction . ,(or direction 'right))
               (window . ,window)
