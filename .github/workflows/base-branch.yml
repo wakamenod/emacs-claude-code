@@ -1,0 +1,43 @@
+name: base-branch
+
+# main takes a release and nothing else.  That rule lived only in
+# CLAUDE.md until a fix branch was opened with `gh pr create' and no
+# --base: the base defaults to the repository's default branch, which is
+# main, so four commits went in there and never reached develop.  Nobody
+# noticed for two days, and the Emacs everybody was running kept the bug
+# the branch had fixed (PR #70, 2026-09-21).
+#
+# This runs only on a pull request whose base is main, so a pull request
+# into develop never waits for it.  Make it a required status check on
+# main and a wrong base cannot be merged, only retargeted.
+on:
+  pull_request:
+    branches: [main]
+    # `edited' is the one that matters: it is what a base changed after
+    # the pull request was opened arrives as.
+    types: [opened, reopened, synchronize, edited]
+
+jobs:
+  base:
+    runs-on: ubuntu-latest
+    steps:
+      - name: the head branch is a release branch
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          case "$HEAD_REF" in
+            release/*)
+              echo "$HEAD_REF -> main: a release."
+              ;;
+            *)
+              echo "::error::'$HEAD_REF' is not a release branch."
+              echo
+              echo "main takes a release and nothing else.  A piece of work"
+              echo "goes into develop, and main sees it at the next release:"
+              echo
+              echo "    gh pr edit --base develop"
+              echo
+              echo "If this is the release, branch it as release/<version>."
+              exit 1
+              ;;
+          esac
