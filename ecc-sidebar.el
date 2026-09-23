@@ -430,17 +430,21 @@ git line was impossible (reported and reproduced 2026-09-15)."
            (ecc-sidebar--visible-p))
       (unless ecc-sidebar--spinner-timer
         (setq ecc-sidebar--spinner-timer
-              (run-at-time ecc-sidebar-spinner-interval
-                           ecc-sidebar-spinner-interval
-                           #'ecc-sidebar--spinner-tick)))
+              (ecc-visual-repeat ecc-sidebar-spinner-interval
+                                 'ecc-visual-enable-spinner
+                                 #'ecc-sidebar--spinner-tick)))
     (ecc-sidebar--spinner-stop)))
 
 (defun ecc-sidebar--spinner-tick ()
   "Turn the spinner one frame, or stop when there is nothing to turn.
-A sidebar nobody is looking at is not worth a timer."
+A sidebar nobody is looking at is not worth a timer.  The frame is
+drawn over the spinners that are there and nothing else is touched:
+the rows change on the hooks, and drawing them all again five times a
+second -- with git asked under every Space -- is what took a tick to
+0.39 s and Emacs down with it (`ecc-visual-repeat', 2026-09-21)."
   (if (and (ecc-sidebar--visible-p) (ecc-sidebar--running-p))
       (progn (ecc-visual-spinner-advance)
-             (ecc-sidebar-redraw))
+             (ecc-visual-spinner-refresh (get-buffer ecc-sidebar-buffer-name)))
     (ecc-sidebar--spinner-stop)))
 
 ;;;; Hearing about a change
@@ -669,6 +673,11 @@ from here but not answered."
   "Major mode of the sidebar listing the Spaces and the sessions."
   (setq truncate-lines t
         cursor-in-non-selected-windows nil)
+  ;; `special-mode' leaves undo on, and a buffer erased and drawn again
+  ;; on every change has nothing to undo: the history held 32,000
+  ;; redraws in one Emacs, and every marker of the buffer with them
+  ;; (measured 2026-09-21).
+  (buffer-disable-undo)
   (hl-line-mode 1)
   (ecc-sidebar--listen t)
   (add-hook 'kill-buffer-hook #'ecc-sidebar--teardown nil t))

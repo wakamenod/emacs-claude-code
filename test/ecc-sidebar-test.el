@@ -581,3 +581,61 @@ the state a session is waiting in -- is drawn as a truncation arrow."
         (dolist (line (split-string (buffer-string) "\n"))
           (should (<= (string-width line) (window-body-width window)))))
       (ecc-sidebar-hide))))
+
+;;;; The spinner
+
+(ert-deftest ecc-sidebar-test-the-tick-draws-the-frame-alone ()
+  "A tick of the spinner replaces the frame in place and draws nothing else.
+Drawing the whole sidebar five times a second is what took Emacs down
+once the markers of the buffer had piled up; undo is off in the buffer
+for the same reason, a redraw being nothing to undo."
+  (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
+                                    ("two" . ,ecc-sidebar-test--two))
+    (should (eq buffer-undo-list t))
+    (let ((ecc-visual-enable-spinner t)
+          (ecc-visual--tick 0))
+      (ecc-model-set-state (nth 1 sessions) 'running)
+      (ecc-sidebar-test--goto "two")
+      (let ((before (ecc-sidebar-test--text))
+            (point (point))
+            (old (ecc-visual-spinner-frame)))
+        (should (string-search old before))
+        (cl-letf (((symbol-function 'ecc-sidebar-redraw)
+                   (lambda (&rest _) (error "The tick drew the sidebar again")))
+                  ((symbol-function 'ecc-sidebar--visible-p) (lambda () t)))
+          (ecc-sidebar--spinner-tick))
+        (let ((new (ecc-visual-spinner-frame)))
+          (should-not (equal old new))
+          (should (equal (ecc-sidebar-test--text) (string-replace old new before)))
+          (should (= (point) point))
+          ;; The row still says what it stands for: the properties of
+          ;; the frame went over with it.
+          (should (ecc-sidebar--item-at-point)))))))
+
+(ert-deftest ecc-sidebar-test-a-redraw-leaves-no-marker-behind ()
+  "Drawing the sidebar calls nothing that makes a marker.
+`match-data' after a search in a buffer makes a marker per group in
+that buffer, and an Emacs slow to collect them walks every one at
+every insertion, in every buffer they were left in."
+  (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
+                                    ("two" . ,ecc-sidebar-test--two))
+    (let ((makers '(match-data make-marker copy-marker point-marker))
+          (calls nil))
+      (dolist (maker makers)
+        (advice-add maker :before (lambda (&rest _) (push maker calls))
+                    '((name . ecc-sidebar-test-count))))
+      ;; Advising a primitive compiles a trampoline for it, and the
+      ;; compiler saves match data of its own: only what comes after
+      ;; counts.
+      (setq calls nil)
+      (unwind-protect
+          (progn
+            ;; A search in a buffer first: it is what `match-data' would
+            ;; then answer with markers.
+            (with-temp-buffer (insert "abc") (goto-char (point-min))
+                              (re-search-forward "b"))
+            (ecc-model-set-state (nth 1 sessions) 'running)
+            (ecc-sidebar-redraw))
+        (dolist (maker makers)
+          (advice-remove maker 'ecc-sidebar-test-count)))
+      (should-not calls))))

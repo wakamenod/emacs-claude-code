@@ -572,8 +572,8 @@ what a tab says already goes through."
   (if (and ecc-tab-line-mode ecc-tab-blink (ecc-tab--waiting-p))
       (unless ecc-tab--blink-timer
         (setq ecc-tab--blink-timer
-              (run-at-time ecc-visual-blink-interval ecc-visual-blink-interval
-                           #'ecc-tab--blink-tick)))
+              (ecc-visual-repeat ecc-visual-blink-interval 'ecc-tab-blink
+                                 #'ecc-tab--blink-tick)))
     (ecc-tab-blink-stop)))
 
 ;;;###autoload
