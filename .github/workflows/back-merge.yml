@@ -7,15 +7,23 @@ name: back-merge
 # guard cannot catch this: the hotfix was allowed.  Only the back merge
 # closes it, and the back merge is a thing a person remembers.
 #
-# So it is checked where forgetting shows up: on every push to main.
+# So it is checked where forgetting shows up: on every push to main, and
+# again on every push to develop, which is where the back merge lands.
+# Without that second trigger the issue this opens could never be closed
+# by the thing that answered it -- as happened with the 0.3.2 release,
+# which was squash merged and so left main with a commit develop had no
+# patch-equivalent for until the back merge a minute later (#78).
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 permissions:
   contents: read
   issues: write
+
+env:
+  TITLE: main is ahead of develop
 
 jobs:
   back-merge:
@@ -31,35 +39,33 @@ jobs:
       # exists on main alone, so the commits are compared by patch id --
       # `--cherry-pick' drops the ones develop already has under another
       # hash.  Run over the state of PR #70 this lists its five commits,
-      # and over a release it lists nothing.
+      # and over a release, once it has been carried back, nothing.
       - name: what main has and develop does not
         id: check
         run: |
-          git fetch --no-tags origin develop:develop
+          git fetch --no-tags -q origin main develop
           left=$(git log --right-only --cherry-pick --no-merges \
-                   --format='- %h %s' develop...main)
+                   --format='- %h %s' origin/develop...origin/main)
           if [ -z "$left" ]; then
             echo "develop has everything main has."
             echo "behind=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "::error::main is ahead of develop."
+          echo "main is ahead of develop:"
           echo "$left"
           {
             echo 'behind<<EOF'
             echo "$left"
             echo EOF
           } >> "$GITHUB_OUTPUT"
-          exit 1
 
       # A red run on main is easy to scroll past; an open issue is not.
       # One is enough -- the next push finds it and leaves it alone.
-      - name: say so where it will be seen
-        if: failure() && steps.check.outputs.behind != ''
+      - name: open the issue, or leave the open one alone
+        if: steps.check.outputs.behind != ''
         env:
           GH_TOKEN: ${{ github.token }}
           BEHIND: ${{ steps.check.outputs.behind }}
-          TITLE: main is ahead of develop
         run: |
           if gh issue list --state open --search "$TITLE in:title" \
                --json title --jq '.[].title' | grep -qxF "$TITLE"; then
@@ -81,4 +87,30 @@ jobs:
             "gh pr create --base develop" \
             '```' \
             "" \
-            "Opened by \`.github/workflows/back-merge.yml\`.")"
+            "Closed by \`.github/workflows/back-merge.yml\` once develop has it.")"
+
+      # The back merge lands on develop, and this is the run it triggers.
+      - name: close the issue once develop has caught up
+        if: steps.check.outputs.behind == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          number=$(gh issue list --state open --search "$TITLE in:title" \
+                     --json number,title \
+                     --jq "map(select(.title == \"$TITLE\")) | .[0].number")
+          if [ -z "$number" ] || [ "$number" = "null" ]; then
+            echo "Nothing to close."
+            exit 0
+          fi
+          gh issue close "$number" --comment \
+            "develop has caught up as of ${{ github.sha }}."
+
+      # Red belongs on main, where the omission is.  A push to develop that
+      # finds main still ahead has said so in the issue already, and a
+      # develop that is red for something main did is noise nobody can act
+      # on from there.
+      - name: fail if main is still ahead
+        if: steps.check.outputs.behind != '' && github.ref == 'refs/heads/main'
+        run: |
+          echo "::error::main is ahead of develop -- see the open issue."
+          exit 1
