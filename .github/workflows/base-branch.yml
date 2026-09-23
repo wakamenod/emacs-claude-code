@@ -21,7 +21,7 @@ jobs:
   base:
     runs-on: ubuntu-latest
     steps:
-      - name: the head branch is a release branch
+      - name: the head branch is a release or a hotfix branch
         env:
           HEAD_REF: ${{ github.head_ref }}
         run: |
