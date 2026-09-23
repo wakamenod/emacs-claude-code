@@ -56,6 +56,44 @@ Verified against **Claude Code CLI 2.1.274**.
   capped at what the divided window has to give, which keeps the resize
   between the two halves.
 
+- A repeating timer whose tick could not keep up took the whole of Emacs
+  with it. Emacs runs due timers for as long as one is due, a timer runs
+  with `inhibit-quit` bound, and a repeat timer that is late is put back
+  into the past, so a tick slower than its interval was due again the moment
+  it ended: no key, no `C-g`, no emacsclient got through until a SIGUSR2
+  broke the tick. The sidebar's spinner took 0.39 s a tick on a 0.2 s timer
+  in an Emacs that had run for 27 hours without collecting garbage. Every
+  repeating timer of the package -- the spinners of the sidebar, the
+  dashboard and the session buffers, the pulse and the blink of a line, the
+  blink of the tab line -- now goes through `ecc-visual-repeat`, which
+  cancels a timer whose tick outlasts its interval twice running, the time
+  spent in garbage collection left out, and sets the variable that turns
+  that effect on (`ecc-visual-enable-spinner`, `ecc-visual-enable-pulse`,
+  `ecc-visual-enable-blink`, `ecc-tab-blink`) to nil with a message saying
+  so. An effect that cannot keep up is worth less than an Emacs that answers.
+
+- The spinners of the sidebar and the dashboard turn in place. A tick used
+  to erase the buffer and draw every row again -- with git asked under every
+  Space in the sidebar -- and every insertion walks the whole chain of
+  markers of the buffer, which winner, tab-bar-history and anything saving
+  match data lengthen with every command. The tick now draws the frame over
+  the spinners that are there (`ecc-visual-spinner-refresh`) and touches
+  nothing else; the rows change on the hooks, as before. Undo is off in
+  both buffers: a redraw is nothing to undo, and the history was holding
+  32,000 of them and every marker of the buffer with them.
+
+- A block of the transcript is inserted as one string rather than a line at
+  a time. Two insertions a line were four hundred walks of the marker chain
+  for a block of two hundred lines, and at 40 ms a walk in a long-lived
+  Emacs a single redraw took seconds; `scripts/bench-render.el` went from
+  0.2--0.6 ms to 0.1--0.2 ms a redraw of the live region, and the Files
+  summary from 2.5 ms to 1.6 ms.
+
+- `ecc--truncate` and `ecc--fit` no longer save the match data. Saving it
+  after a search in a buffer makes a marker per group in that buffer, and
+  the sidebar was leaving seven a redraw, five times a second, in an Emacs
+  that never collected them.
+
 ## [0.3.1] - 2026-09-18
 
 Verified against **Claude Code CLI 2.1.274**.

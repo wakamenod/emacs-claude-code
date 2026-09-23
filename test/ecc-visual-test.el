@@ -269,6 +269,87 @@
     (with-current-buffer (ecc-session-buffer session)
       (should-not ecc-render--flash-pending))))
 
+;;;; A timer that repeats
+
+(defvar ecc-visual-test--switch nil
+  "The variable a test hands `ecc-visual-repeat' as the switch of its effect.")
+
+(defun ecc-visual-test--busy (seconds)
+  "Spend SECONDS doing nothing, the time a garbage collection takes not counted.
+Not `sleep-for': that runs the timers, this one among them, and a tick
+called by hand is not marked as triggered the way a fired one is.  The
+collections are left out because `ecc-visual-repeat' leaves them out,
+and a full test run has a heap big enough for one to land here."
+  (let ((start (float-time))
+        (collected gc-elapsed))
+    (while (< (- (float-time) start (- gc-elapsed collected)) seconds))))
+
+(ert-deftest ecc-visual-test-repeat-stops-a-tick-that-cannot-keep-up ()
+  "Two late ticks running cancel the timer and turn the effect off.
+A tick slower than its interval is due again the moment it ends, and
+Emacs never gets back to its input; the effect goes instead."
+  (let ((ecc-visual-test--switch t)
+        (ecc-visual-repeat-overruns 2)
+        (calls 0)
+        (timer nil))
+    (unwind-protect
+        (progn
+          (setq timer (ecc-visual-repeat 0.01 'ecc-visual-test--switch
+                                         (lambda () (cl-incf calls)
+                                           (ecc-visual-test--busy 0.03))))
+          (should (memq timer timer-list))
+          (funcall (timer--function timer))
+          (should (memq timer timer-list))
+          (should ecc-visual-test--switch)
+          (funcall (timer--function timer))
+          (should-not (memq timer timer-list))
+          (should-not ecc-visual-test--switch)
+          (should (= calls 2)))
+      (cancel-timer timer))))
+
+(ert-deftest ecc-visual-test-repeat-forgives-a-late-tick-now-and-then ()
+  "A late tick with a tick in time after it is no reason to stop."
+  (let ((ecc-visual-test--switch t)
+        (ecc-visual-repeat-overruns 2)
+        (slow nil)
+        (timer nil))
+    (unwind-protect
+        (progn
+          (setq timer (ecc-visual-repeat 0.01 'ecc-visual-test--switch
+                                         (lambda ()
+                                           (when slow (ecc-visual-test--busy 0.03)))))
+          (dolist (step '(nil t nil t))
+            (setq slow step)
+            (funcall (timer--function timer)))
+          (should (memq timer timer-list))
+          (should ecc-visual-test--switch))
+      (cancel-timer timer))))
+
+(ert-deftest ecc-visual-test-spinner-refresh-draws-the-frame-in-place ()
+  "The frame is drawn over every spinner; the rest, point and the properties stay."
+  (ecc-visual-test-with-buffer buffer
+    (let ((ecc-visual--tick 0)
+          (inhibit-read-only t))
+      (erase-buffer)
+      (insert (ecc-visual-spinner-string 'ecc-running-face) " one\n"
+              "plain " (propertize (ecc-visual-spinner-string) 'extra 'yes) "\n")
+      (let ((before (buffer-substring-no-properties (point-min) (point-max)))
+            (old (ecc-visual-spinner-frame)))
+        (goto-char (point-min))
+        (ecc-visual-spinner-advance)
+        (ecc-visual-spinner-refresh buffer)
+        (let ((new (ecc-visual-spinner-frame)))
+          (should-not (equal old new))
+          (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                         (string-replace old new before)))
+          (should (= (point) (point-min)))
+          (should (eq (get-text-property (point-min) 'face) 'ecc-running-face))
+          (should (get-text-property (point-min) 'ecc-spinner))
+          (let ((second (text-property-not-all (1+ (point-min)) (point-max)
+                                               'ecc-spinner nil)))
+            (should second)
+            (should (eq (get-text-property second 'extra) 'yes))))))))
+
 (provide 'ecc-visual-test)
 
 ;;; ecc-visual-test.el ends here

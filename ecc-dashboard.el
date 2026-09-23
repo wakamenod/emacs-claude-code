@@ -206,9 +206,9 @@ that something is moving.")
            (get-buffer-window ecc-dashboard-buffer-name t))
       (unless ecc-dashboard--spinner-timer
         (setq ecc-dashboard--spinner-timer
-              (run-at-time ecc-dashboard-spinner-interval
-                           ecc-dashboard-spinner-interval
-                           #'ecc-dashboard--spinner-tick)))
+              (ecc-visual-repeat ecc-dashboard-spinner-interval
+                                 'ecc-visual-enable-spinner
+                                 #'ecc-dashboard--spinner-tick)))
     (ecc-dashboard--spinner-stop)))
 
 (defun ecc-dashboard--spinner-tick ()
@@ -217,7 +217,11 @@ A list nobody is looking at is not worth a timer."
   (if (and (get-buffer-window ecc-dashboard-buffer-name t)
            (ecc-dashboard--running-p))
       (progn (ecc-visual-spinner-advance)
-             (ecc-dashboard-redraw))
+             ;; The frame alone, over the spinners that are there: the
+             ;; rows change on the hooks, and drawing the list again at
+             ;; every frame is what the sidebar was doing when it took
+             ;; Emacs down (`ecc-visual-repeat', 2026-09-21).
+             (ecc-visual-spinner-refresh (get-buffer ecc-dashboard-buffer-name)))
     (ecc-dashboard--spinner-stop)))
 
 ;;;; The summary above the list
@@ -653,6 +657,9 @@ which arrives with the first turn.\n"
   (setq tabulated-list-padding 2)
   (setq tabulated-list-sort-key nil)
   (setq header-line-format '(:eval (ecc-dashboard--header-line)))
+  ;; Drawn again on every change, nothing here is to be undone; the
+  ;; history would hold every redraw and every marker of the buffer.
+  (buffer-disable-undo)
   (hl-line-mode 1)
   (add-hook 'tabulated-list-revert-hook #'ecc-dashboard--collect nil t)
   (add-hook 'kill-buffer-hook #'ecc-dashboard--spinner-stop nil t)

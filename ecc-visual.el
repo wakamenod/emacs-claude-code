@@ -99,6 +99,52 @@ A terminal that cannot name its background colour gets a plain
 highlight rather than nothing."
   :group 'ecc)
 
+;;;; A timer that repeats
+
+(defvar ecc-visual-repeat-overruns 2
+  "Ticks in a row that may outlast their interval before the timer stops.
+One is forgiven: a tick that happened to hold a pause of the display or
+a slow disk is no sign of a tick that cannot keep up.")
+
+(defun ecc-visual-repeat (interval switch function &rest args)
+  "Call FUNCTION with ARGS every INTERVAL seconds, or stop when it cannot keep up.
+Returns the timer.  A tick that takes longer than INTERVAL -- the time
+Emacs spent collecting garbage inside it left out -- for
+`ecc-visual-repeat-overruns' ticks running cancels the timer and sets
+SWITCH, the variable that turns the effect on, to nil, so that nothing
+starts it again in this Emacs; a message says which one went and why.
+
+Every repeating timer of this package goes through here, because a
+tick slower than its interval takes Emacs down with it: keyboard.c
+`timer_check' runs timers for as long as one is due, a timer runs with
+`inhibit-quit' bound, and `timer-event-handler' puts a repeat timer
+that is late back into the past, so a late tick is due again the moment
+it ends and Emacs never returns to its input -- not to a key, not to
+`C-g', not to emacsclient.  The sidebar's tick took 0.39 s on a 0.2 s
+timer in an Emacs that had not collected garbage for 27 hours, and the
+whole of Emacs stood still until a SIGUSR2 broke the tick (measured
+2026-09-21).  An effect that cannot keep up is worth less than an Emacs
+that answers."
+  (let ((late 0) (timer nil))
+    (setq timer
+          (run-at-time
+           interval interval
+           (lambda ()
+             (let ((start (float-time))
+                   (collected gc-elapsed))
+               (apply function args)
+               (if (<= (- (float-time) start (- gc-elapsed collected)) interval)
+                   (setq late 0)
+                 (setq late (1+ late))
+                 (when (>= late ecc-visual-repeat-overruns)
+                   (cancel-timer timer)
+                   (set switch nil)
+                   (ecc-log "visual" "%s stopped: %s took longer than %.2fs, %d ticks running"
+                            switch function interval late)
+                   (message "ecc: %s set to nil, its tick took longer than %.2fs %d times running"
+                            switch interval late)))))))
+    timer))
+
 ;;;; The spinner
 
 (defvar ecc-visual--tick 0
@@ -115,9 +161,12 @@ highlight rather than nothing."
       (aref frames (mod ecc-visual--tick (length frames))))))
 
 (defun ecc-visual-spinner-string (&optional face)
-  "Return the current spinner frame in FACE, or nothing when it is off."
+  "Return the current spinner frame in FACE, or nothing when it is off.
+The frame carries the property `ecc-spinner', which is what
+`ecc-visual-spinner-refresh' looks for once the frame is in a buffer."
   (if ecc-visual-enable-spinner
-      (propertize (ecc-visual-spinner-frame) 'face (or face 'ecc-pending-face))
+      (propertize (ecc-visual-spinner-frame) 'face (or face 'ecc-pending-face)
+                  'ecc-spinner t)
     ""))
 
 (defun ecc-visual-spinner-start (buffer)
@@ -126,8 +175,8 @@ One timer per buffer; asking again while it turns changes nothing."
   (when (and ecc-visual-enable-spinner (buffer-live-p buffer)
              (not (gethash buffer ecc-visual--spinner-timers)))
     (puthash buffer
-             (run-at-time ecc-visual-spinner-interval ecc-visual-spinner-interval
-                          #'ecc-visual--spinner-tick buffer)
+             (ecc-visual-repeat ecc-visual-spinner-interval 'ecc-visual-enable-spinner
+                                #'ecc-visual--spinner-tick buffer)
              ecc-visual--spinner-timers)))
 
 (defun ecc-visual-spinner-stop (buffer)
@@ -148,6 +197,37 @@ The frame is the same wherever it is drawn, so whoever turns it -- the
 timer of a session buffer, or the dashboard drawing its list again --
 moves every spinner on screen along with it."
   (cl-incf ecc-visual--tick))
+
+(defun ecc-visual-spinner-refresh (buffer)
+  "Draw the current frame over every spinner in BUFFER and touch nothing else.
+A spinner is a run of text carrying `ecc-spinner', as
+`ecc-visual-spinner-string' makes it; the run is replaced by the frame
+with the properties it had, and point and the windows stay where they
+were.  This is what a tick does to a list, rather than drawing the list
+again: every insertion and deletion walks the whole chain of markers
+of the buffer, so a redraw of twenty rows costs twenty-odd walks of a
+chain that other packages -- winner, tab-bar-history, anything that
+saves match data -- lengthen with every command, and once the walks
+outlast the timer's interval Emacs stops answering, as
+`ecc-visual-repeat' says."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (let ((frame (ecc-visual-spinner-frame))
+            (inhibit-read-only t)
+            (inhibit-modification-hooks t)
+            (buffer-undo-list t)
+            (pos (point-min)))
+        (unless (string-empty-p frame)
+          (save-excursion
+            (while (setq pos (text-property-not-all pos (point-max) 'ecc-spinner nil))
+              (let ((end (or (next-single-property-change pos 'ecc-spinner)
+                             (point-max)))
+                    (props (text-properties-at pos)))
+                (unless (equal (buffer-substring-no-properties pos end) frame)
+                  (goto-char pos)
+                  (insert (apply #'propertize frame props))
+                  (delete-region (point) (+ (point) (- end pos))))
+                (setq pos (+ pos (length frame)))))))))))
 
 (defun ecc-visual--spinner-tick (buffer)
   "Advance the spinner and redraw BUFFER, or stop when there is no point.
@@ -190,14 +270,16 @@ A buffer nobody is looking at is not worth a timer ten times a second."
       (ecc-visual-stop-overlay oldest)
       (delete-overlay oldest))))
 
-(defun ecc-visual--animate (overlay interval tick)
-  "Run TICK on OVERLAY every INTERVAL seconds until it is stopped."
+(defun ecc-visual--animate (overlay interval switch tick)
+  "Run TICK on OVERLAY every INTERVAL seconds until it is stopped.
+SWITCH is the variable that turns this effect on, which a tick that
+cannot keep up turns off (`ecc-visual-repeat')."
   (ecc-visual-stop-overlay overlay)
   (overlay-put overlay 'ecc-visual-phase 0)
   (funcall tick overlay)
   (overlay-put overlay 'ecc-visual-timer
-               (run-at-time interval interval #'ecc-visual--tick-overlay
-                            overlay tick))
+               (ecc-visual-repeat interval switch #'ecc-visual--tick-overlay
+                                  overlay tick))
   (ecc-visual--register overlay)
   overlay)
 
@@ -249,7 +331,7 @@ at the ends."
   (if (not ecc-visual-enable-pulse)
       overlay
     (ecc-visual--animate overlay ecc-visual-pulse-interval
-                         #'ecc-visual--pulse-tick)))
+                         'ecc-visual-enable-pulse #'ecc-visual--pulse-tick)))
 
 (defun ecc-visual--blink-tick (overlay)
   "Turn OVERLAY on or off according to its phase."
@@ -262,7 +344,7 @@ at the ends."
   (if (not ecc-visual-enable-blink)
       overlay
     (ecc-visual--animate overlay ecc-visual-blink-interval
-                         #'ecc-visual--blink-tick)))
+                         'ecc-visual-enable-blink #'ecc-visual--blink-tick)))
 
 ;;;; The flash of something finishing
 
