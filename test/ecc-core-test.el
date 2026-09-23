@@ -140,6 +140,15 @@ seven of them at every redraw."
   (should (equal (ecc--truncate nil 4) ""))
   (should (equal (ecc--truncate "abcd" 4) "abcd")))
 
+(ert-deftest ecc-core-test-truncate-left ()
+  "A path keeps its end, where the name of the file is."
+  (should (equal (ecc--truncate-left "/a/very/long/path/to/file.py" 12)
+                 "…/to/file.py"))
+  (should (equal (ecc--truncate-left "abcdef" 4) "…def"))
+  (should (equal (ecc--truncate-left "abcd" 4) "abcd"))
+  (should (equal (ecc--truncate-left nil 4) ""))
+  (should (equal (ecc--truncate-left "one\ntwo" 20) "one two")))
+
 (ert-deftest ecc-core-test-mode-line-escape ()
   "A percent sign written for a person survives a mode line."
   ;; What a mode line makes of these is checked by hand rather than

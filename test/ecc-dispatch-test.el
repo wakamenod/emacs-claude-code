@@ -1021,8 +1021,43 @@ been waiting."
           (permission (seq-find (lambda (n) (eq (ecc-node-type n) 'permission))
                                 (hash-table-values (ecc-session-nodes session)))))
       (should (string-search "return \"hi \" + name" (ecc-model-node-get edit 'before)))
+      ;; The patch is kept on the node too, so that the transcript can
+      ;; draw what happened instead of what was going to happen.
+      (should (= 1 (length (ecc-model-node-get edit 'patch))))
       (should (string-search "return \"hi \" + name"
                              (ecc-model-node-get permission 'before))))))
+
+(ert-deftest ecc-dispatch-test-multi-edit-records-the-whole-file ()
+  "A MultiEdit is noted as the file before it against the file after.
+Read as an Edit it looked for a top-level old_string that a MultiEdit
+does not have: the Files summary got a hunk of nil against nil, drawn
+as an empty @@ -0,0 +1,0 @@, and `string-replace' was handed an empty
+string to look for, which is an error (2026-09-22)."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "直して")
+    (let* ((path "/tmp/ecc-multi.py")
+           (original "one\ntwo\nthree\n")
+           (input `((file_path . ,path)
+                    (edits . [((old_string . "two") (new_string . "TWO"))
+                              ((old_string . "three") (new_string . "THREE"))]))))
+      (ecc-dispatch session
+                    `((type . "assistant") (uuid . "u1")
+                      (message . ((content . [((type . "tool_use") (id . "t1")
+                                               (name . "MultiEdit")
+                                               (input . ,input))])))))
+      (ecc-dispatch session
+                    `((type . "user")
+                      (message . ((content . [((type . "tool_result")
+                                               (tool_use_id . "t1")
+                                               (content . "Applied 2 edits"))])))
+                      (tool_use_result . ((filePath . ,path)
+                                          (originalFile . ,original)))))
+      (let ((entry (car (ecc-model-files session))))
+        (should (equal (car (ecc-file-entry-hunks entry))
+                       (cons original "one\nTWO\nTHREE\n")))
+        ;; The snapshot follows the edits too, so the next call knows
+        ;; what the file holds.
+        (should (equal (ecc-file-entry-snapshot entry) "one\nTWO\nTHREE\n"))))))
 
 (ert-deftest ecc-dispatch-test-tasks ()
   "TaskCreate, TaskUpdate and TaskList keep the task list."

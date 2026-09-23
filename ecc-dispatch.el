@@ -867,29 +867,48 @@ the text Claude sees: the content a Read returned, the original file and
 the patch of an Edit or a Write, the id and status of a task."
   (let ((name (ecc-model-node-get node 'name))
         (input (ecc-model-node-get node 'input)))
+    ;; The patch says what the change really was, down to the lines the
+    ;; call did not name and the numbers they have in the file; the node
+    ;; keeps it so that the transcript stops drawing the guess made from
+    ;; the file before the call.
+    (when-let* ((patch (alist-get 'structuredPatch result)))
+      (ecc-model-node-put node 'patch patch))
     (pcase name
       ("Read"
        (ecc-model-note-snapshot session (alist-get 'file_path input)
                                 (alist-get 'content (alist-get 'file result))))
       ((or "Edit" "MultiEdit")
-       (let ((path (alist-get 'file_path input))
-             (original (alist-get 'originalFile result))
-             (patch (alist-get 'structuredPatch result)))
-         (ecc-model-note-hunk session path
-                              (or (alist-get 'oldString result)
-                                  (alist-get 'old_string input))
-                              (or (alist-get 'newString result)
-                                  (alist-get 'new_string input))
-                              patch
-                              (if (stringp original)
-                                  original
-                                (ecc-model-node-get node 'before)))
+       ;; A MultiEdit carries no old_string or new_string of its own:
+       ;; they are in its `edits', one pair per edit.  Reading it as an
+       ;; Edit gave the Files summary a hunk of nil against nil, and
+       ;; `string-replace' an empty string to look for, which is an
+       ;; error (2026-09-22).  The pair of a MultiEdit is the whole file
+       ;; before it against the whole file with every edit laid on.
+       (let* ((path (alist-get 'file_path input))
+              (original (alist-get 'originalFile result))
+              (patch (alist-get 'structuredPatch result))
+              (edits (alist-get 'edits input))
+              (before (if (stringp original)
+                          original
+                        (ecc-model-node-get node 'before)))
+              (multi (equal name "MultiEdit"))
+              (old (if multi
+                       before
+                     (or (alist-get 'oldString result)
+                         (alist-get 'old_string input))))
+              (new (if multi
+                       (ecc-diff-apply-edits before edits)
+                     (or (alist-get 'newString result)
+                         (alist-get 'new_string input)))))
+         (ecc-model-note-hunk session path old new patch before)
          (when (stringp original)
            (ecc-model-note-snapshot
             session path
-            (string-replace (or (alist-get 'old_string input) "")
-                            (or (alist-get 'new_string input) "")
-                            original)))))
+            (if multi
+                (ecc-diff-apply-edits original edits)
+              (string-replace (or (alist-get 'old_string input) "")
+                              (or (alist-get 'new_string input) "")
+                              original))))))
       ("Write"
        (let ((original (or (alist-get 'originalFile result)
                            (ecc-model-node-get node 'before))))

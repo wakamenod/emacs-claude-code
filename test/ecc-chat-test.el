@@ -106,22 +106,22 @@ nothing to do with whether two maps are ever live at once."
     (with-current-buffer (ecc-chat-test--replay session "tool-use-write"
                                                "hello.txt を作って")
       (let ((tool ecc-chat-test--write-tool))
-        ;; A tool starts folded: its heading is there, its diff is not.
-        (should (ecc-render-node-hidden-p tool))
+        ;; A Write starts open: its diff is what it came to say.
+        (should-not (ecc-render-node-hidden-p tool))
         (goto-char (car (ecc-render-node-bounds tool)))
+        (should (string-prefix-p "  ✓ Write" (ecc-chat-test--line)))
+        (forward-line 2)
+        (should-not (invisible-p (point)))
+        (should (string-search "1 +hi" (ecc-chat-test--line)))
+        ;; From a line of the body, TAB goes back up to the heading and folds.
+        (ecc-chat-toggle)
+        (should (ecc-render-node-hidden-p tool))
         (should (string-prefix-p "  ✓ Write" (ecc-chat-test--line)))
         (forward-line 1)
         (should (invisible-p (point)))
         (goto-char (car (ecc-render-node-bounds tool)))
         (ecc-chat-toggle)
         (should-not (ecc-render-node-hidden-p tool))
-        (forward-line 2)
-        (should-not (invisible-p (point)))
-        (should (string-search "@@ -0,0 +1,1 @@" (ecc-chat-test--line)))
-        ;; From a line of the body, TAB goes back up and folds.
-        (ecc-chat-toggle)
-        (should (ecc-render-node-hidden-p tool))
-        (should (string-prefix-p "  ✓ Write" (ecc-chat-test--line)))
         ;; The line that parts the top region from the turns is under
         ;; no heading, so there is nothing to fold there.
         (goto-char ecc-render--top-end)
@@ -171,20 +171,20 @@ nothing to do with whether two maps are ever live at once."
       (let* ((tool ecc-chat-test--write-tool)
              (pos (ecc-render--indicator-position tool)))
         (should pos)
-        ;; A tool starts folded, so the mark points at what is hidden.
-        (should (ecc-render-node-hidden-p tool))
+        ;; A Write starts open, so the mark points at what is in sight.
+        (should-not (ecc-render-node-hidden-p tool))
         (should (equal (get-text-property pos 'display)
-                       ecc-render-fold-closed-mark))
+                       ecc-render-fold-open-mark))
         ;; The character underneath is untouched, so a copy of the line
         ;; still says how the call went.
         (should (equal (char-to-string (char-after pos)) "✓"))
         (goto-char pos)
         (ecc-chat-toggle)
         (should (equal (get-text-property pos 'display)
-                       ecc-render-fold-open-mark))
+                       ecc-render-fold-closed-mark))
         (ecc-chat-toggle)
         (should (equal (get-text-property pos 'display)
-                       ecc-render-fold-closed-mark))))))
+                       ecc-render-fold-open-mark))))))
 
 (ert-deftest ecc-chat-test-isearch-opens-a-fold ()
   "A fold carries the property that lets isearch open it."
@@ -192,7 +192,8 @@ nothing to do with whether two maps are ever live at once."
     (with-current-buffer (ecc-chat-test--replay session "tool-use-write"
                                                "hello.txt を作って")
       (let* ((tool ecc-chat-test--write-tool)
-             (overlay (ecc-render--fold-overlay tool)))
+             (overlay (progn (ecc-render-hide-node tool)
+                             (ecc-render--fold-overlay tool))))
         (should overlay)
         (should (eq (overlay-get overlay 'invisible) 'ecc-fold))
         (funcall (overlay-get overlay 'isearch-open-invisible) overlay)

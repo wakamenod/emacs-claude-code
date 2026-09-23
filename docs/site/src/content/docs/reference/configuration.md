@@ -34,6 +34,7 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 | `ecc-chat-text-width` | `100` | Maximum line width for rendered text, or `nil` to use full window width. Surplus space is padded into the right margin so adjacent window layouts remain unaffected |
 | `ecc-chat-line-spacing` | `0.15` | Additional line spacing below each line, following standard `line-spacing` semantics (e.g., float value represents a fraction of line height). `nil` disables added spacing |
 | `ecc-render-result-max-lines` | `12` | Maximum lines displayed for a tool result preview. The full result is always accessible with `RET` |
+| `ecc-render-inhibit-inline-diff` | `nil` | When `nil` (default), a call that changes a file -- Edit, MultiEdit, Write, NotebookEdit -- comes up showing its diff. When `t`, those calls come up folded and `TAB` opens them |
 | `ecc-render-diff-max-lines` | `40` | Maximum lines displayed for inline diffs in tool and permission blocks. The full diff is always accessible with `RET` |
 | `ecc-diff-context-lines` | `3` | Lines of context displayed around modifications in the transcript |
 | `ecc-stream-throttle` | `0.05` | Interval in seconds to buffer streaming deltas before redrawing. Zero renders each delta immediately |
