@@ -1,11 +1,11 @@
 name: base-branch
 
-# main takes a release and nothing else.  That rule lived only in
-# CLAUDE.md until a fix branch was opened with `gh pr create' and no
-# --base: the base defaults to the repository's default branch, which is
-# main, so four commits went in there and never reached develop.  Nobody
-# noticed for two days, and the Emacs everybody was running kept the bug
-# the branch had fixed (PR #70, 2026-09-21).
+# main takes a release, or a hotfix that cannot wait for one.  That rule
+# lived only in CLAUDE.md until a fix branch was opened with `gh pr
+# create' and no --base: the base defaults to the repository's default
+# branch, which is main, so four commits went in there and never reached
+# develop.  Nobody noticed for two days, and the Emacs everybody was
+# running kept the bug the branch had fixed (PR #70, 2026-09-21).
 #
 # This runs only on a pull request whose base is main, so a pull request
 # into develop never waits for it.  Make it a required status check on
@@ -29,8 +29,18 @@ jobs:
             release/*)
               echo "$HEAD_REF -> main: a release."
               ;;
+            hotfix/*)
+              # A hotfix goes straight to main because waiting for the
+              # next release is the thing that is not acceptable.  It
+              # leaves main ahead of develop, which is exactly what went
+              # wrong in PR #70, so it is not finished until main is
+              # merged back into develop.
+              echo "$HEAD_REF -> main: a hotfix."
+              echo "::notice::Merge main back into develop once this is in,"
+              echo "or develop loses the fix the way it lost PR #70."
+              ;;
             *)
-              echo "::error::'$HEAD_REF' is not a release branch."
+              echo "::error::'$HEAD_REF' is neither a release nor a hotfix branch."
               echo
               echo "main takes a release and nothing else.  A piece of work"
               echo "goes into develop, and main sees it at the next release:"
@@ -38,6 +48,8 @@ jobs:
               echo "    gh pr edit --base develop"
               echo
               echo "If this is the release, branch it as release/<version>."
+              echo "If this cannot wait for the release, branch it as"
+              echo "hotfix/<name> -- and merge main back into develop after."
               exit 1
               ;;
           esac
