@@ -518,6 +518,43 @@ the cursor cannot walk into it; anything written takes it away."
       (ecc-prompt-send)
       (should (equal (ecc-turn-prompt (ecc-session-current-turn session)) "send me")))))
 
+;; Bound by ns-win.el on the NS port only; batch has no NS.
+(defvar ns-working-overlay)
+
+(ert-deftest ecc-chat-test-placeholder-hides-while-composing ()
+  "The working text of an input method in the prompt hides the placeholder.
+On the NS port it is an empty overlay whose `after-string' would be drawn
+behind the whole ghost text; deleting it brings the placeholder back."
+  (ecc-test-with-fake-session session
+    (with-current-buffer (ecc-session-ensure-buffer session)
+      (let* ((start (ecc-chat-prompt-start))
+             (ns-working-overlay (make-overlay start start)))
+        (overlay-put ns-working-overlay 'after-string "にほんご")
+        (should-not (ecc-chat-update-placeholder))
+        (should-not (ecc-chat-placeholder-shown))
+        (delete-overlay ns-working-overlay)
+        (should (equal (ecc-chat-update-placeholder) ecc-chat-placeholder))
+        ;; The advice on `ns-insert-working-text' and
+        ;; `ns-delete-working-text' does the same.
+        (setq ns-working-overlay (make-overlay start start))
+        (ecc-chat--after-working-text)
+        (should-not (ecc-chat-placeholder-shown))
+        (delete-overlay ns-working-overlay)
+        (ecc-chat--after-working-text)
+        (should (equal (ecc-chat-placeholder-shown) ecc-chat-placeholder))
+        ;; Working text outside the prompt region leaves it alone.
+        (setq ns-working-overlay (make-overlay (point-min) (point-min)))
+        (should (< (point-min) start))
+        (should (equal (ecc-chat-update-placeholder) ecc-chat-placeholder))
+        (delete-overlay ns-working-overlay)
+        ;; So does working text in another buffer.
+        (with-temp-buffer
+          (insert "other")
+          (setq ns-working-overlay (make-overlay 1 1))
+          (with-current-buffer (ecc-session-buffer session)
+            (should (equal (ecc-chat-update-placeholder)
+                           ecc-chat-placeholder))))))))
+
 (ert-deftest ecc-chat-test-placeholder-stays-out-of-undo ()
   "Undo in the draft never sees the placeholder: it is not buffer text."
   (ecc-test-with-fake-session session

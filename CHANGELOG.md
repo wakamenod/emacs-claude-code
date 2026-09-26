@@ -98,6 +98,14 @@ Verified against **Claude Code CLI 2.1.278**.
   the old source: it is JSON, and JSON is read in `ecc-protocol.el` and
   nowhere else.
 
+- Typing through the macOS input method at an empty prompt drew what was
+  being composed behind the whole placeholder, with the cursor and the
+  candidate window left in front of it. The NS port of Emacs 32 shows the
+  working text as an overlay, which changes no text and runs no command
+  hook, so nothing took the placeholder away. It now goes while the input
+  method composes in the prompt region and comes back when composing is
+  cancelled.
+
 ## [0.3.2] - 2026-09-24
 
 Verified against **Claude Code CLI 2.1.280**.

@@ -624,19 +624,54 @@ off it as its `after-string', so it is shown and nothing more."
     (overlay-put ecc-chat--placeholder-overlay 'after-string ghost)
     (overlay-put ecc-chat--placeholder-overlay 'ecc-placeholder text)))
 
+(defun ecc-chat--composing-p ()
+  "Return non-nil while an input method's working text sits in the prompt."
+  (let ((ov (bound-and-true-p ns-working-overlay)))
+    (and (overlayp ov)
+         (eq (overlay-buffer ov) (current-buffer))
+         (ecc-chat-in-prompt-p (overlay-start ov)))))
+
 (defun ecc-chat-update-placeholder (&optional buffer)
   "Show the placeholder in BUFFER while its prompt region is empty.
+An input method composing there counts as something written.
 BUFFER defaults to the current one.  Returns the text shown, or nil."
   (with-current-buffer (or buffer (current-buffer))
     (let ((start (ecc-chat-prompt-start))
           (text (ecc-chat-placeholder-string)))
       (cond
-       ((and start text (string-empty-p (ecc-chat-draft)))
+       ((and start text (string-empty-p (ecc-chat-draft))
+             (not (ecc-chat--composing-p)))
         ;; Put in every time: a redraw leaves the overlay behind where
         ;; the prompt region used to start.
         (ecc-chat--insert-placeholder text)
         text)
        (t (ecc-chat--remove-placeholder) nil)))))
+
+(defun ecc-chat--after-working-text (&rest _)
+  "Show or hide the placeholder as an input method's working text changes."
+  (when (derived-mode-p 'ecc-chat-mode)
+    (ecc-chat-update-placeholder)))
+
+;; The NS port's input method draws what it is composing as the
+;; `after-string' of an empty overlay at point, `ns-working-overlay',
+;; rather than as buffer text (Emacs 32.0.50, NS port, confirmed
+;; 2026-09-26).  Sharing the prompt start with the placeholder, it is
+;; drawn behind the whole ghost text while the cursor and the candidate
+;; window stay in front of it.  Nothing else can notice it: the working
+;; text changes no buffer text, so `after-change-functions' do not run,
+;; and it arrives as a special event, which runs no command hooks.  So
+;; the functions that put it in and take it out are advised; commit
+;; inserts real text and is handled by `ecc-chat--after-change'.  The
+;; emacs-plus build puts it in through `ns-insert-marked-text' as well,
+;; a `before-string' of the same kind that never goes near
+;; `ns-insert-working-text' (both bound in `special-event-map', same
+;; date).
+(with-eval-after-load 'ns-win
+  (dolist (function '(ns-insert-working-text
+                      ns-insert-marked-text
+                      ns-delete-working-text))
+    (when (fboundp function)
+      (advice-add function :after #'ecc-chat--after-working-text))))
 
 ;;;; The footer: which permission mode the session runs
 
