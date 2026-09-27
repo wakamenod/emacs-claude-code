@@ -152,15 +152,21 @@ and a draft typed meanwhile is untouched (phase 9b)."
           (progn
             ;; The prompt leaves the content open, so that the reason
             ;; given with the deny is a correction and not a contradiction
-            ;; the model would rather ask about than act on.
+            ;; the model would rather ask about than act on.  It names the
+            ;; tool: left to choose, haiku asked for a Bash call first in
+            ;; two runs of the suite out of three (CLI 2.1.281, 2026-09-27).
             (ecc-proc-send-prompt
              session
-             (format "Create the file %s containing a short greeting." file))
+             (format "Use the Write tool to create the file %s containing a short greeting. Do not run any commands." file))
             ;; First proposal: refuse it and say what to write instead.
             (let ((request (ecc-test-live-wait
                             session (lambda () (car (ecc-session-pending session)))
                             "the first permission request")))
-              (should (equal (ecc-request-tool-name request) "Write"))
+              ;; What it asked for instead is what says why.
+              (unless (equal (ecc-request-tool-name request) "Write")
+                (ert-fail (list "the first request is not a Write"
+                                (ecc-request-tool-name request)
+                                (ecc-request-input request))))
               (should (eq (ecc-request-kind request) 'permission))
               (ecc-perm-respond request 'deny
                                 :message "Make the content exactly: hello from emacs")
@@ -874,10 +880,16 @@ and a follow-up carrying `history\' knows what was asked before."
               (let ((exchange (car (ecc-btw-exchanges session))))
                 (should-not (plist-get exchange :error))
                 (should (string-search "4271" (plist-get exchange :response))))
-              ;; The turn was never interrupted: it is still running
-              ;; with the answer already in hand, and it ends on its own.
-              (should (ecc-session-current-turn session))
-              (ecc-test-live-wait-for-result session)
+              ;; The turn was never interrupted: it ends on its own, as a
+              ;; success, having counted all the way.  Whether it is still
+              ;; running when the answer lands is a race -- haiku counted
+              ;; to 300 before a side answer came back once in five runs
+              ;; of the suite (CLI 2.1.281, 2026-09-27) -- so it is the end
+              ;; of the turn that is asked about, not the moment.
+              (let ((result (ecc-turn-result
+                             (ecc-test-live-wait-for-result session))))
+                (should (equal (alist-get 'subtype result) "success"))
+                (should (string-search "300" (or (alist-get 'result result) ""))))
               ;; Neither the question nor the answer became a turn or a
               ;; node of its own.
               (should (= (length (ecc-session-turns session)) (1+ turns)))
