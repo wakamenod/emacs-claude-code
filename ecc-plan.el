@@ -317,8 +317,12 @@ CONTEXT is the last non-empty line before the marker, or nil at the top."
                "\n"))
 
 (defun ecc-plan-diff-text (original current)
-  "Return the unified diff of ORIGINAL against CURRENT as plain text, or nil."
-  (when-let* ((diff (ecc-diff-render original current)))
+  "Return the unified diff of ORIGINAL against CURRENT as plain text, or nil.
+A patch rather than the transcript\='s numbered diff: this goes into the
+message the model is sent, inside a ```diff fence, and what the model
+reads there should be what a patch looks like everywhere else."
+  (when-let* ((diff (let ((ecc-diff-style 'unified))
+                      (ecc-diff-render original current))))
     (substring-no-properties diff)))
 
 (defun ecc-plan--quote (string)

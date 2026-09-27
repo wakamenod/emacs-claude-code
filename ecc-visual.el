@@ -361,6 +361,7 @@ at the ends."
     ("NotebookRead"    "nf-cod-notebook"      "R" ecc-icon-read-face)
     ("Write"           "nf-cod-new_file"      "W" ecc-icon-write-face)
     ("Edit"            "nf-cod-edit"          "✎" ecc-icon-write-face)
+    ("MultiEdit"       "nf-cod-edit"          "✎" ecc-icon-write-face)
     ("NotebookEdit"    "nf-cod-notebook"      "✎" ecc-icon-write-face)
     ("Bash"            "nf-cod-terminal"      "$" ecc-icon-shell-face)
     ("BashOutput"      "nf-cod-terminal"      "$" ecc-icon-shell-face)

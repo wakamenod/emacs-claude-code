@@ -507,11 +507,15 @@ the prompt the diff review sends.  :position is N."
            (a-start (max 1 (- a-line (nth 1 section))))
            (b-start (max 1 (- b-line (nth 2 section))))
            (b-count (seq-count (lambda (c) (eq c ?\n)) b-text))
+           ;; A hunk of a patch: the @@ header is the line this hunk is
+           ;; known by (`:header' below), and the markers are what the
+           ;; comment is written against.
            (text (string-trim-right
                   (substring-no-properties
-                   (ecc-diff-format-hunks
-                    (ecc-diff-hunks (ecc-diff-lines a-text b-text)
-                                    0 a-start b-start)))
+                   (let ((ecc-diff-style 'unified))
+                     (ecc-diff-format-hunks
+                      (ecc-diff-hunks (ecc-diff-lines a-text b-text)
+                                      0 a-start b-start))))
                   "\n")))
       (list :path (car section)
             :start b-start

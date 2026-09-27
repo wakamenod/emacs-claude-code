@@ -55,6 +55,25 @@ text and names a .png, which is the shape a screenshot arrives in."
         session :type 'text :status 'done
         :data `((text . ,(format "## Heading %d\n\nSome **bold** and `code`.\n\n```elisp\n(defun f%d (x)\n  (+ x 1))\n```\n\n- one\n- two\n" i i))))))))
 
+(defun ecc-bench--edit-turn (session n)
+  "Open a turn of SESSION with N finished Edit calls on a file of 300 lines.
+Each call knows what the file looked like before it, which is the case
+that costs: the diff is made from it and drawn under the heading."
+  (let ((before (ecc-bench--lines 1 300 "x")))
+    (ecc-model-begin-turn session (format "edit %d times" n))
+    (dotimes (i n)
+      (let ((old (format "  (setq x-%d (compute %d))" (1+ (% i 300)) (1+ (% i 300)))))
+        (ecc-model-node-changed
+         session
+         (ecc-model-add-node
+          session :type 'tool :status 'done
+          :data `((name . "Edit")
+                  (before . ,before)
+                  (input . ((file_path . "~/src/edited.el")
+                            (old_string . ,old)
+                            (new_string . ,(concat old " ; edited"))))
+                  (result . "The file has been updated."))))))))
+
 (defun ecc-bench--ms (thunk &optional times)
   "Return the milliseconds one call of THUNK takes, averaged over TIMES."
   (let* ((times (or times 5))
@@ -105,6 +124,17 @@ text and names a .png, which is the shape a screenshot arrives in."
       (ecc-bench--turn session n t)
       (ecc-render-flush session)
       (message "live turn of %4d tools, a fifth with images: %6.1f ms per redraw"
+               n (ecc-bench--ms (lambda () (ecc-render-flush session))))))
+  ;; Edits last, for the same reason and with the same rule: a case put
+  ;; in the middle would move every number under it.  This is the one
+  ;; the diffs are measured on, since an Edit draws its diff where a
+  ;; Read draws a path (2026-09-22).
+  (dolist (n '(200 800))
+    (ecc-test-with-fake-session session
+      (ecc-session-ensure-buffer session)
+      (ecc-bench--edit-turn session n)
+      (ecc-render-flush session)
+      (message "live turn of %4d edits: %6.1f ms per redraw"
                n (ecc-bench--ms (lambda () (ecc-render-flush session)))))))
 
 (ecc-bench-render)

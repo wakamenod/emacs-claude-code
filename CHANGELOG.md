@@ -11,9 +11,135 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [0.3.3] - 2026-09-27
+
+Verified against **Claude Code CLI 2.1.281**.
+
+### Added
+
+- `RET` or a click on code in the transcript opens the file beside the
+  session, at the line, recentred and flashed (`ecc-visit.el`). This covers
+  a line of the diff of an Edit, a MultiEdit, a Write or a NotebookEdit, in
+  the numbered and the unified style alike; a line of a diff in the Files
+  section or in a permission request; the heading of a call that names a
+  file, where a Read opens at its `offset` and a change at the first line it
+  changed; and a path in a reply -- `foo.el:12`, `a/b.el`, `x.el#L3`, inside
+  inline code too but not in a fenced block -- taken against the directory
+  of the session. A removed line opens where it was taken out. The number
+  in a diff is where the line stood once that change was made, so it is
+  moved through the hunks of every later change the session made to the
+  file. A path in a reply is linked when it ends in an extension or plainly
+  names a directory, and whether the file is there is only asked when it is
+  followed; `ecc-markdown-linkify-paths` turns the links off. Nothing is put
+  on a line of a diff to do this: the line is read back when it is asked
+  for, and mouse-1 reaches it through a `follow-link` function
+  (`ecc-visit-follow-link-p`) rather than a `mouse-face` on every line, so a
+  redraw costs what it did (`scripts/bench-render.el`, Files summary of 60
+  files: 2.5--2.6 ms before and after). The Files and plan rows open through
+  the same window helper instead of `find-file-other-window`. Grep and Glob
+  results and Bash output are not linked yet.
+
+### Changed
+
+- `RET` on the heading of a call that names a file opens the file; the
+  `*ecc-detail*` buffer it used to open there is now `o`
+  (`ecc-session-show-detail`), which works on every node. A heading with no
+  file, a Bash call for one, still opens `*ecc-detail*` on `RET`.
+
+- A tool call that changes a file comes up showing its diff. An Edit, a
+  MultiEdit, a Write and a NotebookEdit are tool nodes, and a tool node
+  starts folded, so what Claude had just written sat behind a TAB while the
+  CLI itself puts the change in front of the reader as it makes it; a change
+  nobody is shown is a change nobody reviews. This is the exception a tool
+  call carrying a picture already had, for the same reason.
+  `ecc-render-inhibit-inline-diff` folds them again for a reader who would
+  rather have the headings back -- `ecc-render-diff-max-lines` is the only
+  thing holding a diff's length -- and what the reader folded or unfolded by
+  hand is still remembered per node and still wins over the default.
+
+- A diff in the transcript is drawn the way the CLI's own TUI draws it,
+  measured against CLI 2.1.278 on 2026-09-22: every line carries the number
+  it has in the file (a context or added line in the new file, a removed
+  line in the old) instead of an `@@` header, a changed line carries its
+  colour to the right edge of the window, and the line under the heading
+  says what the CLI says -- "Added 1 line, removed 1 line", with a side that
+  changed nothing left out rather than counted as zero. It stands over the
+  diff, where the CLI puts it, so a call folded with TAB shows its heading
+  alone. The context is three lines either
+  way, which is what the CLI's own `structuredPatch` carries. Where two
+  hunks meet, `⋮` stands in for the header that is gone.
+
+  What `ecc-review.el` builds is untouched: its buffers are patches that
+  `diff-mode` reads and that a comment is written against, so the review,
+  the ediff hunks and the diff in the feedback a plan sends back to the
+  model all bind `ecc-diff-style` to `unified` and get the `@@` header and
+  the markers as before.
+
+- The diff of a call no longer repeats the file name over itself. The
+  heading of the call is the file -- `Update(probe.py)` is the whole of it
+  in the CLI -- and a line under it saying the same name was the name twice.
+  A permission section that has been answered keeps its path line, its
+  heading saying only how it went.
+
+- A file of the session's own project is named relative to it -- `src/x.el`
+  rather than the whole path -- wherever the transcript names one: the
+  heading of a call, the line over its diff, the rows of the Files summary
+  and the plan file. A file outside the project keeps its whole path, since
+  a string of `../..` says less than the path does. This too is what the CLI
+  prints. What is left long is cut from the left rather than the right, the
+  name of the file being what tells one call from another.
+
+- The rows of the Files summary still say `+N −M`: a list of files is not
+  the place for a sentence about one of them.
+
+- A finished call draws the `structuredPatch` the CLI reported rather than
+  the diff guessed from the file as it stood before the call. The guess is
+  what there is to show while the call is still running, and for a file
+  nobody had read it is a fragment with no context and no line numbers at
+  all; the patch is what really happened. `ecc-dispatch--structured-result`
+  keeps it on the node, beside the `before` snapshot it already kept.
+
+### Fixed
+
+- MultiEdit showed no diff at all -- neither in the transcript nor in the
+  permission prompt, which asked to change a file without saying what it
+  would change. Its input was read as an Edit's, with a top-level
+  `old_string` and `new_string` that a MultiEdit does not have: they are in
+  its `edits` array. The result was the empty string, which is not nil, so
+  the file path was drawn with nothing under it. The edits are now laid on
+  the file one after another, honouring `replace_all`, and the file before is
+  diffed against the file after, which is one merged diff with real line
+  numbers; without the file each edit is shown as its own old against new,
+  in order. `ecc-diff-for-tool` never returns the empty string again.
+
+- The Files summary read a MultiEdit as an Edit too, looking for a top-level
+  `old_string` and `new_string` it does not have. The row got a change of nil
+  against nil, drawn as an empty `@@ -0,0 +1,0 @@`, and a result carrying
+  `originalFile` handed `string-replace` an empty string to look for, which
+  signals `wrong-length-argument` in the middle of the dispatch. A MultiEdit
+  is now noted as the whole file before it against the whole file with every
+  edit laid on, and its snapshot follows the same way. A row whose change is
+  known on neither side and has no patch draws nothing rather than a hunk of
+  no lines, and MultiEdit has the pencil of Edit rather than no icon.
+
+- NotebookEdit had no diff either. Its new cell source is now shown as added
+  lines, under a header naming the cell. The notebook is not opened to find
+  the old source: it is JSON, and JSON is read in `ecc-protocol.el` and
+  nowhere else.
+
+- Typing through the macOS input method at an empty prompt drew what was
+  being composed behind the whole placeholder, with the cursor and the
+  candidate window left in front of it. The NS port of Emacs 32 shows the
+  working text as an overlay, which changes no text and runs no command
+  hook, so nothing took the placeholder away. It now goes while the input
+  method composes in the prompt region and comes back when composing is
+  cancelled.
+
 ## [0.3.2] - 2026-09-24
 
 Verified against **Claude Code CLI 2.1.280**.
+
+Verified against **Claude Code CLI 2.1.274**.
 
 ### Fixed
 
@@ -1357,7 +1483,8 @@ Emacs 29.1, 29.4 and 30.1.
   notifications, and a `transient` menu on `ecc-global-map`.
 - `ecc-version` reports the ecc, Emacs and CLI versions a bug report needs.
 
-[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.3.3
 [0.3.2]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.3.2
 [0.3.1]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.3.1
 [0.3.0]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.3.0

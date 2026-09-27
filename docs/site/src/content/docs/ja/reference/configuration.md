@@ -34,6 +34,7 @@ M-x customize-group RET ecc
 | `ecc-chat-text-width` | `100` | テキストを描画する最大桁数（カラム数）。`nil` の場合はウィンドウ幅いっぱいに描画します。余剰幅は右マージンに割り当てられるため、隣接するウィンドウのレイアウトには影響しません |
 | `ecc-chat-line-spacing` | `0.15` | 各行の下に追加する行間。Emacs 標準の `line-spacing` と同様に解釈されます（浮動小数点数は行高に対する比率）。`nil` で余白なし |
 | `ecc-render-result-max-lines` | `12` | ツール実行結果のプレビュー表示行数。全文はいつでも `RET` で確認できます |
+| `ecc-render-inhibit-inline-diff` | `nil` | `nil`（デフォルト）の場合、ファイルを変更する呼び出し（Edit・MultiEdit・Write・NotebookEdit）は diff を開いた状態で表示します。`t` の場合は折りたたんだ状態で表示し、`TAB` で開きます |
 | `ecc-render-diff-max-lines` | `40` | ツールや権限ブロック内にインライン表示する diff の最大行数。全文はいつでも `RET` で確認できます |
 | `ecc-diff-context-lines` | `3` | トランスクリプト内の変更箇所の前後に表示する文脈行数 |
 | `ecc-stream-throttle` | `0.05` | ストリーミング差分を描画前にバッファリングする秒数。0 を指定すると受信した差分を即座に描画します |
