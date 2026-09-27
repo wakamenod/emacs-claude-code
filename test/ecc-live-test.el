@@ -880,10 +880,16 @@ and a follow-up carrying `history\' knows what was asked before."
               (let ((exchange (car (ecc-btw-exchanges session))))
                 (should-not (plist-get exchange :error))
                 (should (string-search "4271" (plist-get exchange :response))))
-              ;; The turn was never interrupted: it is still running
-              ;; with the answer already in hand, and it ends on its own.
-              (should (ecc-session-current-turn session))
-              (ecc-test-live-wait-for-result session)
+              ;; The turn was never interrupted: it ends on its own, as a
+              ;; success, having counted all the way.  Whether it is still
+              ;; running when the answer lands is a race -- haiku counted
+              ;; to 300 before a side answer came back once in five runs
+              ;; of the suite (CLI 2.1.281, 2026-09-27) -- so it is the end
+              ;; of the turn that is asked about, not the moment.
+              (let ((result (ecc-turn-result
+                             (ecc-test-live-wait-for-result session))))
+                (should (equal (alist-get 'subtype result) "success"))
+                (should (string-search "300" (or (alist-get 'result result) ""))))
               ;; Neither the question nor the answer became a turn or a
               ;; node of its own.
               (should (= (length (ecc-session-turns session)) (1+ turns)))
