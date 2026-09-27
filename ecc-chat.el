@@ -79,6 +79,8 @@
 (declare-function ecc-prompt-dnd-insert "ecc-prompt" (url &optional action))
 (declare-function ecc-switch-session "ecc-window" (session))
 (declare-function ecc-session-visit "ecc-session" ())
+(declare-function ecc-session-show-detail "ecc-session" ())
+(declare-function ecc-visit-follow-link-p "ecc-visit" (pos))
 (declare-function ecc-session-refresh "ecc-session" ())
 (declare-function ecc-session-show-log "ecc-session" ())
 (declare-function ecc-session-resume "ecc-session" ())
@@ -265,12 +267,16 @@ no \\`C-c C-<letter>' free goes to `ecc-menu' rather than taking one.")
     (define-key map (kbd "3") #'ecc-chat-show-level-3)
     (define-key map (kbd "4") #'ecc-chat-show-level-4)
     (define-key map (kbd "RET") #'ecc-session-visit)
-    ;; A link is drawn with `mouse-face\=' and nothing else, so
-    ;; `follow-link\=' reading that property is what keeps mouse-1 from
-    ;; following anywhere a link was not drawn.  No link carries a keymap
-    ;; of its own: these two are the whole of the mouse side.
+    ;; RET on a call that names a file opens the file; the node laid
+    ;; open, which RET was on every heading before, is `o'.
+    (define-key map (kbd "o") #'ecc-session-show-detail)
+    ;; A link is drawn with `mouse-face\=' and a line of a diff with
+    ;; nothing at all, so `follow-link\=' asks `ecc-visit-follow-link-p',
+    ;; which says yes to both and keeps mouse-1 from following anywhere
+    ;; else.  No link carries a keymap of its own: these two are the
+    ;; whole of the mouse side.
     (define-key map [mouse-2] #'ecc-chat-follow-link)
-    (define-key map [follow-link] 'mouse-face)
+    (define-key map [follow-link] #'ecc-visit-follow-link-p)
     (define-key map (kbd "SPC") #'scroll-up-command)
     (define-key map (kbd "DEL") #'scroll-down-command)
     (define-key map (kbd "i") #'ecc-chat-goto-prompt)
