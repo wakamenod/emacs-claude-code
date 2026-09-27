@@ -183,6 +183,51 @@ The node laid open is `o' everywhere."
         (should-not opened)
         (should (eq shown 'permission))))))
 
+(ert-deftest ecc-visit-test-change-headings-without-a-patch ()
+  "A change with no patch to read opens at the line it changed all the same.
+A Write of a new file opens at line 1 and one over a file at its first
+different line; a MultiEdit at the first of its edits in the file."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "write")
+    (dolist (data '(((name . "Write")
+                     (input . ((file_path . "/src/new.py") (content . "x\n")))
+                     (patch . [])
+                     (result . "created"))
+                    ((name . "Write")
+                     (input . ((file_path . "/src/old.py")
+                               (content . "a\nb\nC\nd\n")))
+                     (before . "a\nb\nc\nd\n")
+                     (result . "updated"))
+                    ((name . "MultiEdit")
+                     (input . ((file_path . "/src/multi.py")
+                               (edits . [((old_string . "d") (new_string . "D"))
+                                         ((old_string . "b") (new_string . "B"))])))
+                     (result . "updated"))))
+      (ecc-model-node-changed
+       session (ecc-model-add-node session :type 'tool :status 'done :data data)))
+    (ecc-render-flush session)
+    (cl-letf (((symbol-function #'ecc-diff-file-content)
+               (lambda (path) (and (equal path "/src/multi.py") "a\nB\nc\nD\n"))))
+      (with-current-buffer (ecc-session-buffer session)
+        (goto-char (point-min))
+        (search-forward "new.py")
+        (should (equal (ecc-visit-target-at-point) '("/src/new.py" . 1)))
+        (search-forward "old.py")
+        (should (equal (ecc-visit-target-at-point) '("/src/old.py" . 3)))
+        (search-forward "multi.py")
+        (should (equal (ecc-visit-target-at-point) '("/src/multi.py" . 2)))))))
+
+(ert-deftest ecc-visit-test-numbered-diff-after-a-style-change ()
+  "A numbered diff is read as one after `ecc-diff-style' is set to `unified'.
+The style is read from the text drawn, not from the setting."
+  (ecc-visit-test--with-edit (session path)
+    (let ((ecc-diff-style 'unified))
+      (should (equal (ecc-visit-test--target-after "✓ Edit" "+    return \"hello")
+                     (cons path 3)))
+      (should (equal (ecc-visit-test--target-after "✓ Edit" "def farewell")
+                     (cons path 6))))))
+
 ;;;; Where the file stands now
 
 (ert-deftest ecc-visit-test-shift-line ()
