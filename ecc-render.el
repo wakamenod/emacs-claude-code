@@ -954,8 +954,11 @@ without the cache, the transcript of an agent, fontifies each time."
       (setq patches (cdr patches)))
     (cons added removed)))
 
-(defun ecc-render--file-diff-1 (entry)
-  "Return the merged diff text of every change of the file ENTRY."
+(defun ecc-render--file-diff-parts (entry)
+  "Return the diff text of each change of the file ENTRY, oldest first.
+One string per hunk of the entry, empty for a change there is nothing
+to draw of; joined, they are the body of its row, which is how
+`ecc-visit\=' tells which change a line of that body belongs to."
   (let ((patches (ecc-file-entry-patches entry))
         (parts nil))
     (dolist (hunk (ecc-file-entry-hunks entry))
@@ -970,7 +973,11 @@ without the cache, the transcript of an agent, fontifies each time."
                          (propertize "(no change)\n" 'face 'diff-context))))
             parts)
       (setq patches (cdr patches)))
-    (string-join (nreverse parts) "")))
+    (nreverse parts)))
+
+(defun ecc-render--file-diff-1 (entry)
+  "Return the merged diff text of every change of the file ENTRY."
+  (string-join (ecc-render--file-diff-parts entry) ""))
 
 (defun ecc-render--file-body-1 (diff)
   "Return the lines of DIFF as they are drawn under a file row."
@@ -1440,11 +1447,29 @@ nothing left out rather than counted as zero (`ecc-diff-summary\=')."
                         'ecc-fold-cell t)
             " "
             (ecc-render--icon name)
-            (propertize name 'face (if error-p 'ecc-error-face 'ecc-tool-face))
-            (if (string-empty-p summary)
-                ""
-              (propertize (concat " · " summary) 'face 'ecc-dim-face))
+            (ecc-render--file-link
+             node
+             (concat
+              (propertize name 'face (if error-p 'ecc-error-face 'ecc-tool-face))
+              (if (string-empty-p summary)
+                  ""
+                (propertize (concat " · " summary) 'face 'ecc-dim-face))))
             (ecc-render--elapsed-mark node))))
+
+(defun ecc-render--file-link (node string)
+  "Return STRING, the name and summary of the tool NODE, as a link to its file.
+A call that names a file opens it on RET (`ecc-visit\='), and the
+`mouse-face\=' is what tells `follow-link\=' that a click does too.  It
+goes on the heading and on nothing under it: one property per call,
+where one per line of a diff would be paid for at every redraw of the
+Files section."
+  (let ((input (and (not (ecc-node-streaming node))
+                    (ecc-model-node-get node 'input))))
+    (when (and (consp input)
+               (or (stringp (alist-get 'file_path input))
+                   (stringp (alist-get 'notebook_path input))))
+      (put-text-property 0 (length string) 'mouse-face 'highlight string))
+    string))
 
 (defun ecc-render--insert-tool-body (node body &optional diff)
   "Insert the input and the result of the tool NODE, indented by BODY.

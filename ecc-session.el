@@ -43,6 +43,7 @@
 (require 'ecc-markdown)
 (require 'ecc-diff)
 (require 'ecc-window)
+(require 'ecc-visit)
 
 (declare-function ecc-resume "ecc" (session &optional fork))
 (declare-function ecc-perm-deny "ecc-perm" (&optional reason))
@@ -165,6 +166,11 @@ buffer."
 A question or a plan that is still waiting opens the buffer it is
 answered in.
 
+A line of a diff, the heading of a call that names a file and a path
+the model wrote open that file, at the line when there is one
+\(`ecc-visit-target-at-point\='); the node laid open is
+\[ecc-session-show-detail].
+
 A picture drawn in the transcript opens as itself.  A URL comes
 first, and before the node the point is in: the point is
 only on one where a link was drawn, which is narrow enough to say what
@@ -177,6 +183,7 @@ already opens things with."
          (url (ecc-markdown-url-at-point))
          (path (or (ecc-chat-file-at-point) (ecc-chat-plan-file-at-point)))
          (picture (ecc-image-at-point))
+         (target (and (not url) (not picture) (ecc-visit-target-at-point)))
          (request (and node (ecc-model-node-get node 'request)))
          (pending (and request (memq request (ecc-session-pending session)))))
     (cond
@@ -186,7 +193,8 @@ already opens things with."
      (picture (if (ecc-image-video-p picture)
                   (ecc-image-open-externally picture)
                 (find-file-other-window picture)))
-     (path (find-file-other-window path))
+     (target (ecc-visit-open (car target) (cdr target) session))
+     (path (ecc-visit-open path nil session))
      ((null node) (user-error "Nothing to show here"))
      ((eq (ecc-node-type node) 'agent) (ecc-session-show-agent session node))
      ((and pending (eq (ecc-node-type node) 'question))
@@ -201,9 +209,20 @@ already opens things with."
       (require 'ecc-plan)
       (let ((path (and request (ecc-plan-file-path request))))
         (if (and path (file-exists-p path))
-            (find-file-other-window path)
+            (ecc-visit-open path nil session)
           (ecc-session--show-node session node))))
      (t (ecc-session--show-node session node)))))
+
+(defun ecc-session-show-detail ()
+  "Show every detail of the node at point in a buffer of its own.
+The input of a call in full, its diff and its whole result, which the
+transcript cuts."
+  (interactive)
+  (let ((session (ecc-session-at-point))
+        (node (ecc-chat-node-at-point)))
+    (unless node
+      (user-error "Nothing to show here"))
+    (ecc-session--show-node session node)))
 
 (defun ecc-session-review ()
   "Open every change of this session as one diff to review."

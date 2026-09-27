@@ -998,8 +998,8 @@ nothing, so the two keys no longer say the same thing."
   "RET on a URL in the transcript opens it, and mouse-1 follows it too.
 The link carries no keymap of its own: RET is the `ecc-session-visit\='
 the whole transcript answers with, and mouse-1 reaches the link through
-the `follow-link\=' entry, which reads the `mouse-face\=' only a link
-carries."
+the `follow-link\=' entry, which reads the `mouse-face\=' a link carries
+\(`ecc-visit-follow-link-p\=')."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (ecc-model-begin-turn session "hello")
@@ -1022,7 +1022,12 @@ carries."
       (should-not (ecc-markdown-url-at-point))
       (should (eq (lookup-key ecc-chat-transcript-map [mouse-2])
                   #'ecc-chat-follow-link))
-      (should (eq (lookup-key ecc-chat-transcript-map [follow-link]) 'mouse-face)))))
+      (should (eq (lookup-key ecc-chat-transcript-map [follow-link])
+                  #'ecc-visit-follow-link-p))
+      (should (ecc-visit-follow-link-p
+               (save-excursion (search-forward "https://example.com/a")
+                               (match-beginning 0))))
+      (should-not (ecc-visit-follow-link-p (point-min))))))
 
 (ert-deftest ecc-chat-test-interrupt-is-not-on-c-c-c-g ()
   "The interrupt is C-c C-z, and C-c C-g is left to `keyboard-quit'.

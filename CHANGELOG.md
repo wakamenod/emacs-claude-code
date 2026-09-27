@@ -15,7 +15,36 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 Verified against **Claude Code CLI 2.1.278**.
 
+### Added
+
+- `RET` or a click on code in the transcript opens the file beside the
+  session, at the line, recentred and flashed (`ecc-visit.el`). This covers
+  a line of the diff of an Edit, a MultiEdit, a Write or a NotebookEdit, in
+  the numbered and the unified style alike; a line of a diff in the Files
+  section or in a permission request; the heading of a call that names a
+  file, where a Read opens at its `offset` and a change at the first line it
+  changed; and a path in a reply -- `foo.el:12`, `a/b.el`, `x.el#L3`, inside
+  inline code too but not in a fenced block -- taken against the directory
+  of the session. A removed line opens where it was taken out. The number
+  in a diff is where the line stood once that change was made, so it is
+  moved through the hunks of every later change the session made to the
+  file. A path in a reply is linked when it ends in an extension or plainly
+  names a directory, and whether the file is there is only asked when it is
+  followed; `ecc-markdown-linkify-paths` turns the links off. Nothing is put
+  on a line of a diff to do this: the line is read back when it is asked
+  for, and mouse-1 reaches it through a `follow-link` function
+  (`ecc-visit-follow-link-p`) rather than a `mouse-face` on every line, so a
+  redraw costs what it did (`scripts/bench-render.el`, Files summary of 60
+  files: 2.5--2.6 ms before and after). The Files and plan rows open through
+  the same window helper instead of `find-file-other-window`. Grep and Glob
+  results and Bash output are not linked yet.
+
 ### Changed
+
+- `RET` on the heading of a call that names a file opens the file; the
+  `*ecc-detail*` buffer it used to open there is now `o`
+  (`ecc-session-show-detail`), which works on every node. A heading with no
+  file, a Bash call for one, still opens `*ecc-detail*` on `RET`.
 
 - A tool call that changes a file comes up showing its diff. An Edit, a
   MultiEdit, a Write and a NotebookEdit are tool nodes, and a tool node

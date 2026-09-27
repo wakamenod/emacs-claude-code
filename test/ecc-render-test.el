@@ -1377,8 +1377,8 @@ A MultiEdit was noted as nil against nil and the row drew
         (should-not (ecc-render-node-hidden-p id))
         ;; RET opens the file (which need not exist for the call to be made).
         (let (opened)
-          (cl-letf (((symbol-function 'find-file-other-window)
-                     (lambda (file) (setq opened file))))
+          (cl-letf (((symbol-function 'ecc-visit-open)
+                     (lambda (file &rest _) (setq opened file))))
             (ecc-session-visit))
           (should (equal opened path)))))))
 
