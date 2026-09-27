@@ -228,6 +228,17 @@ The style is read from the text drawn, not from the setting."
       (should (equal (ecc-visit-test--target-after "✓ Edit" "def farewell")
                      (cons path 6))))))
 
+(ert-deftest ecc-visit-test-first-difference ()
+  "The first different line counts the lines the way the diff does.
+A final newline does not make a line of its own, so a blank line added
+at the end is found where it is."
+  (should (equal (ecc-visit--first-difference nil "x\n") 1))
+  (should (equal (ecc-visit--first-difference "a\nb\n" "a\nB\n") 2))
+  (should (equal (ecc-visit--first-difference "" "\n") 1))
+  (should (equal (ecc-visit--first-difference "a\n" "a\n\n") 2))
+  (should (equal (ecc-visit--first-difference "a\nb\n" "a\n") 2))
+  (should-not (ecc-visit--first-difference "a\n" "a\n")))
+
 ;;;; Where the file stands now
 
 (ert-deftest ecc-visit-test-shift-line ()
