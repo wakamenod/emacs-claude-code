@@ -207,6 +207,18 @@ different line; a MultiEdit at the first of its edits in the file."
       (ecc-model-node-changed
        session (ecc-model-add-node session :type 'tool :status 'done :data data)))
     (ecc-render-flush session)
+    ;; A MultiEdit whose first edit only deletes, with the file before
+    ;; it known: the deletion is where it opens, not the later edit.
+    (ecc-model-node-changed
+     session
+     (ecc-model-add-node session :type 'tool :status 'done
+                         :data '((name . "MultiEdit")
+                                 (input . ((file_path . "/src/cut.py")
+                                           (edits . [((old_string . "b\n") (new_string . ""))
+                                                     ((old_string . "d") (new_string . "D"))])))
+                                 (before . "a\nb\nc\nd\n")
+                                 (result . "updated"))))
+    (ecc-render-flush session)
     (cl-letf (((symbol-function #'ecc-diff-file-content)
                (lambda (path) (and (equal path "/src/multi.py") "a\nB\nc\nD\n"))))
       (with-current-buffer (ecc-session-buffer session)
@@ -216,7 +228,9 @@ different line; a MultiEdit at the first of its edits in the file."
         (search-forward "old.py")
         (should (equal (ecc-visit-target-at-point) '("/src/old.py" . 3)))
         (search-forward "multi.py")
-        (should (equal (ecc-visit-target-at-point) '("/src/multi.py" . 2)))))))
+        (should (equal (ecc-visit-target-at-point) '("/src/multi.py" . 2)))
+        (search-forward "cut.py")
+        (should (equal (ecc-visit-target-at-point) '("/src/cut.py" . 2)))))))
 
 (ert-deftest ecc-visit-test-numbered-diff-after-a-style-change ()
   "A numbered diff is read as one after `ecc-diff-style' is set to `unified'.

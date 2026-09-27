@@ -230,22 +230,30 @@ blank line added at the end one line too far down."
 A Read opens where it started reading; a change opens at the first
 line it changed, moved through what came after it.  A change the CLI
 has not reported a patch for -- one still running, or a Write of a new
-file, whose `structuredPatch\=' is empty -- is looked for: an Edit and a
-MultiEdit in the file, a Write against the file it replaced."
+file, whose `structuredPatch\=' is empty -- is worked out from the file
+it changed: the file before it against the same file with the change
+laid on.  An Edit or a MultiEdit with no file before it to lay the
+change on is looked for in the file as it is, which cannot find an edit
+that only deleted."
   (let* ((input (ecc-model-node-get node 'input))
          (patch (ecc-model-node-get node 'patch))
+         (before (ecc-model-node-get node 'before))
+         (edits (pcase (ecc-model-node-get node 'name)
+                  ("Edit" (list input))
+                  ("MultiEdit" (append (alist-get 'edits input) nil))))
          (offset (alist-get 'offset input)))
     (pcase (ecc-model-node-get node 'name)
       ((guard (ecc-visit--notebook-p input)) nil)
       ("Read" (and (numberp offset) (max 1 offset)))
       ((guard (ecc-visit--usable-patch-p patch))
        (ecc-visit-shift-line session path (ecc-visit--first-change patch) patch))
-      ("Edit" (ecc-visit--edit-line (ecc-diff-file-content path) input))
-      ("MultiEdit"
+      ((guard (and edits before))
+       (ecc-visit--first-difference before (ecc-diff-apply-edits before edits)))
+      ((guard edits)
        (let* ((content (ecc-diff-file-content path))
               (lines (delq nil (mapcar (lambda (edit)
                                          (ecc-visit--edit-line content edit))
-                                       (alist-get 'edits input)))))
+                                       edits))))
          (and lines (apply #'min lines))))
       ("Write"
        (let ((content (alist-get 'content input)))
