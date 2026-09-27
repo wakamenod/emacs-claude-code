@@ -263,7 +263,10 @@ The phase 2 acceptance check: each delta costs well under 5ms to draw."
               (ecc-render-flush session)
               (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
                 (should (string-search "✓ Write" text))
-                (should (string-search "@@ -0,0 +1," text))
+                ;; A new file is drawn in the CLI's numbered style: a count
+                ;; over the diff and each line with its number, no `@@'.
+                (should (string-match-p "^ +Added [0-9]+ lines$" text))
+                (should (string-match-p "^ +1 \\+def f0" text))
                 (should (string-search "Files (1)" text)))))
         (delete-directory directory t)))))
 
