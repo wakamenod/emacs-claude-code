@@ -131,17 +131,17 @@ is no header, which is a diff of two strings with no file behind them."
 
 (defun ecc-visit--diff-line ()
   "Return the line of the file the diff line at point stands for, or nil.
-The two styles are told apart by the text rather than by
+The two styles are told apart by the text alone, never by
 `ecc-diff-style\\=', which may have changed since the diff was drawn: only
-the `unified\\=' one has an @@ header."
+the `unified\\=' one has an @@ header, and a line with none above it is
+read as `numbered\\='."
   (pcase (ecc-visit--line-tag)
     ('nil nil)
     ('header (save-excursion
                (forward-line 1)
                (and (ecc-visit--line-tag) (ecc-visit--unified-line))))
     (_ (or (ecc-visit--unified-line)
-           (and (not (eq ecc-diff-style 'unified))
-                (ecc-visit--numbered-line))))))
+           (ecc-visit--numbered-line)))))
 
 ;;;; Where the file stands now
 
@@ -205,24 +205,61 @@ around."
   "Return non-nil when INPUT names a notebook, whose lines are not the file\\='s."
   (and (consp input) (alist-get 'notebook_path input) t))
 
+(defun ecc-visit--first-difference (before after)
+  "Return the first line where AFTER differs from BEFORE, or nil.
+A nil BEFORE is a file that was not there, or one not known; either way
+the change starts at line 1.  The lines are split as the diff splits
+them, without the empty one after a final newline, which would put a
+blank line added at the end one line too far down."
+  (if (null before)
+      1
+    (let ((old (ecc-diff--split before))
+          (new (ecc-diff--split after))
+          (line 1))
+      (while (and old new (equal (car old) (car new)))
+        (setq old (cdr old) new (cdr new) line (1+ line)))
+      (and (or old new) line))))
+
+(defun ecc-visit--edit-line (content edit)
+  "Return the line of CONTENT the EDIT, an alist of an Edit\='s strings, is at."
+  (or (ecc-diff--line-of content (alist-get 'new_string edit))
+      (ecc-diff--line-of content (alist-get 'old_string edit))))
+
 (defun ecc-visit--heading-line (session node path)
   "Return the line the heading of the tool NODE of SESSION opens PATH at.
 A Read opens where it started reading; a change opens at the first
 line it changed, moved through what came after it.  A change the CLI
-has not reported on yet is looked for in the file."
+has not reported a patch for -- one still running, or a Write of a new
+file, whose `structuredPatch\=' is empty -- is worked out from the file
+it changed: the file before it against the same file with the change
+laid on.  An Edit or a MultiEdit with no file before it to lay the
+change on is looked for in the file as it is, which cannot find an edit
+that only deleted."
   (let* ((input (ecc-model-node-get node 'input))
          (patch (ecc-model-node-get node 'patch))
+         (before (ecc-model-node-get node 'before))
+         (edits (pcase (ecc-model-node-get node 'name)
+                  ("Edit" (list input))
+                  ("MultiEdit" (append (alist-get 'edits input) nil))))
          (offset (alist-get 'offset input)))
-    (cond
-     ((ecc-visit--notebook-p input) nil)
-     ((equal (ecc-model-node-get node 'name) "Read")
-      (and (numberp offset) (max 1 offset)))
-     ((ecc-visit--usable-patch-p patch)
-      (ecc-visit-shift-line session path (ecc-visit--first-change patch) patch))
-     ((equal (ecc-model-node-get node 'name) "Edit")
-      (let ((content (ecc-diff-file-content path)))
-        (or (ecc-diff--line-of content (alist-get 'new_string input))
-            (ecc-diff--line-of content (alist-get 'old_string input))))))))
+    (pcase (ecc-model-node-get node 'name)
+      ((guard (ecc-visit--notebook-p input)) nil)
+      ("Read" (and (numberp offset) (max 1 offset)))
+      ((guard (ecc-visit--usable-patch-p patch))
+       (ecc-visit-shift-line session path (ecc-visit--first-change patch) patch))
+      ((guard (and edits before))
+       (ecc-visit--first-difference before (ecc-diff-apply-edits before edits)))
+      ((guard edits)
+       (let* ((content (ecc-diff-file-content path))
+              (lines (delq nil (mapcar (lambda (edit)
+                                         (ecc-visit--edit-line content edit))
+                                       edits))))
+         (and lines (apply #'min lines))))
+      ("Write"
+       (let ((content (alist-get 'content input)))
+         (and (stringp content)
+              (ecc-visit--first-difference (ecc-model-node-get node 'before)
+                                           content)))))))
 
 (defun ecc-visit--files-patch (session path)
   "Return the patch the line at point in the Files row of PATH was drawn from.
