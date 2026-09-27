@@ -208,11 +208,13 @@ around."
 (defun ecc-visit--first-difference (before after)
   "Return the first line where AFTER differs from BEFORE, or nil.
 A nil BEFORE is a file that was not there, or one not known; either way
-the change starts at line 1."
+the change starts at line 1.  The lines are split as the diff splits
+them, without the empty one after a final newline, which would put a
+blank line added at the end one line too far down."
   (if (null before)
       1
-    (let ((old (split-string before "\n"))
-          (new (split-string after "\n"))
+    (let ((old (ecc-diff--split before))
+          (new (ecc-diff--split after))
           (line 1))
       (while (and old new (equal (car old) (car new)))
         (setq old (cdr old) new (cdr new) line (1+ line)))
