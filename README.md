@@ -32,6 +32,7 @@ Because the transcript is standard buffer text, you can use regular Emacs workfl
 
 - **[Diff reviews](https://wakamenod.github.io/emacs-claude-code/features/review/):** Inspect all changes made during a session in a single `diff-mode` buffer, regardless of how they were made. Edits, shell commands, and scripts all read the same. Add inline comments to hunks and submit them as a single prompt. Setting `ecc-review-style` opens the same review in ediff, with every file side by side in one session.
 - **[Interactive edits](https://wakamenod.github.io/emacs-claude-code/features/review/#reviewing-a-proposal-before-it-is-applied):** Review and modify proposed file edits before approving them.
+- **[Jump to source](https://wakamenod.github.io/emacs-claude-code/features/prompt/#opening-the-source):** `RET` or a click on a line of a diff, on the heading of a call that names a file, or on a path in Claude's reply (`foo.el:12`) opens the file at that line, counting in the changes made to it since.
 - **[Plan mode](https://wakamenod.github.io/emacs-claude-code/features/review/#plan-mode):** Work through proposed execution plans in a writable buffer.
 - **[Global access](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/):** Approve or deny pending tool requests from any buffer.
 - **[Session management](https://wakamenod.github.io/emacs-claude-code/features/sessions/):** Manage multiple concurrent sessions from a dashboard.

@@ -159,8 +159,9 @@ The transcript is standard read-only buffer text, so `isearch`, `occur`, narrowi
 
 | Key | Action |
 |---|---|
-| `RET` | Visit item at point (link, file, subagent transcript, or full tool result) |
-| `mouse-1` / `mouse-2` | Follow the link that was clicked |
+| `RET` | Visit item at point: a link, the source of a diff line or a file path (see [Opening the source](#opening-the-source)), a subagent transcript, or the full tool result |
+| `o` | Show every detail of the node at point (full input, diff and result) |
+| `mouse-1` / `mouse-2` | Follow the link, diff line or file heading that was clicked |
 | `w` | Copy code block at point (or entire response) |
 | `I` | Toggle GIF animation at point |
 | `a` | Allow pending request |
@@ -172,6 +173,21 @@ The transcript is standard read-only buffer text, so `isearch`, `occur`, narrowi
 | `S-TAB` | Cycle permission mode |
 | `q` | Bury buffer |
 | `?` | Open transient menu |
+
+### Opening the source
+
+`RET` or a click on code in the transcript opens the file beside the session, at the line, and flashes that line:
+
+| Point on | Opens |
+|---|---|
+| A line of the diff of an Edit, MultiEdit, Write or NotebookEdit | The file at that line (a removed line: where it was taken out) |
+| The heading of a call that names a file | A Read at its `offset`; a change at the first line it changed |
+| A line of a diff in the Files section or in a permission request | The file at that line |
+| A path in Claude's reply (`foo.el:12`, `a/b.el`, `x.el#L3`, inside backquotes too) | The file, relative to the session's directory, at the line it names |
+
+A line number in a diff is where that line was once the change was made; later changes the session made to the same file are counted in, so the file opens where the line is now. A path in a reply is only checked when it is followed, and one that does not exist is an error. Paths inside fenced code blocks are not links. `ecc-markdown-linkify-paths` (a variable, set with `setq`) turns the path links off.
+
+On a heading without a file, such as Bash, `RET` shows the full tool result as before; `o` shows it everywhere.
 
 ### On a pending request node
 
@@ -196,6 +212,6 @@ Questions are answered in a dedicated buffer opened with `RET`: press `1`–`9` 
 
 ### Files section
 
-`RET` visits the selected file and `d` reviews its modifications in diff-mode. `TAB` toggles folding and `SPC` scrolls.
+`RET` visits the selected file (on a line of its diff, at that line) and `d` reviews its modifications in diff-mode. `TAB` toggles folding and `SPC` scrolls.
 
 All commands accessible outside the session buffer are documented in the [transient menu reference](/emacs-claude-code/features/menu/).
