@@ -13,9 +13,18 @@ name: back-merge
 # by the thing that answered it -- as happened with the 0.3.2 release,
 # which was squash merged and so left main with a commit develop had no
 # patch-equivalent for until the back merge a minute later (#78).
+#
+# A push to main is never where the omission shows, though: a release is
+# merged into main before it can be carried back, so main is ahead of
+# develop for the minute between the two on every release, and a check
+# that went red then went red every time (0.3.2, 0.3.3).  The push only
+# opens the issue.  What goes red is a run on the schedule that still
+# finds main ahead: by then the back merge was forgotten, not pending.
 on:
   push:
     branches: [main, develop]
+  schedule:
+    - cron: '0 0 * * *'
   workflow_dispatch:
 
 permissions:
@@ -105,12 +114,16 @@ jobs:
           gh issue close "$number" --comment \
             "develop has caught up as of ${{ github.sha }}."
 
-      # Red belongs on main, where the omission is.  A push to develop that
-      # finds main still ahead has said so in the issue already, and a
-      # develop that is red for something main did is noise nobody can act
-      # on from there.
-      - name: fail if main is still ahead
-        if: steps.check.outputs.behind != '' && github.ref == 'refs/heads/main'
+      # A push finds main ahead after every release, for the minute before
+      # the back merge; it says so and stays green.  A run on the schedule,
+      # or one started by hand, that finds it still ahead is the omission,
+      # and that is red.
+      - name: warn, or fail once it has waited
+        if: steps.check.outputs.behind != ''
         run: |
-          echo "::error::main is ahead of develop -- see the open issue."
-          exit 1
+          if [ "${{ github.event_name }}" = push ]; then
+            echo "::warning::main is ahead of develop -- see the open issue."
+          else
+            echo "::error::main is still ahead of develop -- see the open issue."
+            exit 1
+          fi
