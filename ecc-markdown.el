@@ -125,8 +125,16 @@ matches swallows the full stop that ends the sentence as well.")
   (concat "\\[\\([^][\n]+\\)\\](\\(" ecc-markdown-url-regexp "\\))")
   "Regexp matching a Markdown inline link to a URL.
 Group 1 is the text and group 2 the URL.  A link to anything but a URL
-is left as it is written: a relative path in a reply is as often an
-example as it is a file here.")
+is left as it is written, brackets and all; a path inside it is found
+by the pass over paths like any other (`ecc-markdown--linkify-paths\=').")
+
+(defconst ecc-markdown--path-chars "[:alnum:]_.~/@+-"
+  "The characters a path the model writes is made of, for `skip-chars\='.")
+
+(defconst ecc-markdown--path-suffix-regexp
+  ":\\([0-9]+\\)\\(?::[0-9]+\\)?\\|#L\\([0-9]+\\)\\(?:-L?[0-9]+\\)?"
+  "Regexp matching the line after a path: `:12\=', `:12:5\=' or `#L12\='.
+Group 1 or group 2 is the line.")
 
 (defvar ecc-markdown-hide-markup t
   "Non-nil hides the markup around bold, code and headings.
@@ -139,6 +147,17 @@ shape wants.")
 Nil leaves it as plain text.  A Markdown link is drawn as its text
 alone when this and `ecc-markdown-hide-markup\=' are both non-nil, and
 as it was written when either is nil.")
+
+(defvar ecc-markdown-linkify-paths t
+  "Non-nil makes a path in a reply a link that opens the file.
+A path is a run of path characters that either ends in an extension
+\(`ecc-session.el\=', `a/b.el\=') or plainly names a directory: it starts
+with /, ~/, ./ or ../, or has two slashes in it.  A line after it --
+`foo.el:12\=', `foo.el#L12\=' -- is where the file opens.  Inline code is
+no exception, since the model writes most paths between backquotes; a
+fenced block is, since a path there is part of the code.  Whether the
+file is there is only asked when the link is followed: this runs once
+per text and must not touch the disk.")
 
 (defvar ecc-markdown-highlight-code t
   "Non-nil colours a fenced code block with the major mode of its language.
@@ -322,6 +341,64 @@ inside it a second time."
               (ecc-markdown--mark-link from to url)
               (goto-char to))))))))
 
+(defun ecc-markdown--path-p (token)
+  "Return non-nil when TOKEN, a run of path characters, is shaped like a path.
+Asked of every word with a dot or a slash in it, so it errs on the side
+of prose: `and/or\=', `e.g\=', `v1.2\=' and a mail address are not paths."
+  (let ((name (file-name-nondirectory token))
+        (slashes (cl-count ?/ token)))
+    (and (string-match-p "[[:alpha:]]" token)
+         (not (string-search "//" token))
+         (not (and (string-search "@" token) (zerop slashes)))
+         (or (and (>= (length name) 4)
+                  (string-match-p "[[:alnum:]_-]\\.[[:alpha:]][[:alnum:]]\\{0,9\\}\\'"
+                                  name))
+             (string-match-p "\\`\\(?:~\\|\\.\\.?\\)?/" token)
+             (>= slashes 2)))))
+
+(defun ecc-markdown--linkify-paths (start end)
+  "Turn the paths between START and END into links to their files.
+Only a word with a dot or a slash in it is looked at, so a line of
+prose costs a search per such word.  The link carries `ecc-file\=', the
+path as written and the line after it, and `ecc-session-visit\=' is
+what follows it."
+  (save-excursion
+    (goto-char start)
+    (while (re-search-forward "[/.]" end t)
+      (let* ((from (save-excursion
+                     (skip-chars-backward ecc-markdown--path-chars start)
+                     (point)))
+             (to (progn (skip-chars-forward ecc-markdown--path-chars end)
+                        (point))))
+        ;; The full stop that ends the sentence is not the file's.
+        (while (and (> to from) (eq (char-before to) ?.))
+          (setq to (1- to)))
+        (let ((token (buffer-substring-no-properties from to)))
+          (when (and (> to from)
+                     ;; After a colon is the rest of a scheme or a line.
+                     (not (eq (char-before from) ?:))
+                     (not (text-property-not-all from to 'ecc-url nil))
+                     (ecc-markdown--path-p token))
+            (let ((line nil)
+                  (stop to))
+              (save-excursion
+                (goto-char to)
+                (when (looking-at ecc-markdown--path-suffix-regexp)
+                  (setq line (string-to-number (or (match-string 1) (match-string 2)))
+                        stop (match-end 0))))
+              (put-text-property from stop 'ecc-file (cons token line))
+              (ecc-markdown--add-face from stop 'ecc-markdown-link-face)
+              (add-text-properties from stop
+                                   (list 'mouse-face 'highlight
+                                         'help-echo (concat "RET: open " token)))
+              (goto-char (max (point) stop)))))))))
+
+(defun ecc-markdown-file-at-point (&optional pos)
+  "Return the file of the path link at POS, the point by default, or nil.
+It is (PATH . LINE): PATH as the model wrote it, relative or not, and
+LINE the line it named or nil."
+  (get-text-property (or pos (point)) 'ecc-file))
+
 (defun ecc-markdown-url-at-point (&optional pos)
   "Return the URL of the link at POS, the point by default, or nil.
 The hidden half of a Markdown link carries the property too, so a
@@ -343,8 +420,11 @@ search that opened it leaves the point somewhere that still answers."
                               'ecc-markdown-bold-face)
       (ecc-markdown--hide-markup (match-beginning 0) (+ (match-beginning 0) 2))
       (ecc-markdown--hide-markup (- (match-end 0) 2) (match-end 0)))
-    ;; Last, so that a URL already shown as code is left alone.
-    (ecc-markdown--linkify start end)))
+    ;; Last, so that a URL already shown as code is left alone; the
+    ;; paths after the URLs, so that the path of a URL is not one.
+    (ecc-markdown--linkify start end)
+    (when ecc-markdown-linkify-paths
+      (ecc-markdown--linkify-paths start end))))
 
 (defun ecc-markdown--fontify-table (start)
   "Lay out the table beginning at START, and return where its last line does.
@@ -386,7 +466,8 @@ construct whose text is rewritten: `ecc-table-format' draws it with its
 columns lined up.
 
 A URL is given `ecc-url\=', which is what `ecc-session-visit\=' follows;
-a Markdown link keeps its text in sight and hides the rest.  No keymap
+a Markdown link keeps its text in sight and hides the rest.  A path is
+given `ecc-file\=' (`ecc-markdown-linkify-paths\=').  No keymap
 is put on, so nothing here has to know which keymap the transcript is
 drawn with."
   (if (or (null text) (string-empty-p text))
