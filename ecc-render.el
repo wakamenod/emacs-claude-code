@@ -581,11 +581,14 @@ the path is abbreviated as it always was."
   (let* ((path (or path ""))
          (root (and ecc-render--session
                     (ecc-session-project-root ecc-render--session)))
-         (full (expand-file-name path)))
-    (if (and root (not (string-empty-p path))
-             (string-prefix-p (expand-file-name root) full)
-             (not (equal (expand-file-name root) full)))
-        (file-relative-name full (expand-file-name root))
+         (full (expand-file-name path))
+         ;; With the slash, so that a root of /tmp/app does not take in
+         ;; /tmp/application.
+         (dir (and root (file-name-as-directory (expand-file-name root)))))
+    (if (and dir (not (string-empty-p path))
+             (string-prefix-p dir full)
+             (not (equal dir (file-name-as-directory full))))
+        (file-relative-name full dir)
       (abbreviate-file-name path))))
 
 (defconst ecc-render-summary-width 60

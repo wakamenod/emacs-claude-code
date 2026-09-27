@@ -1232,6 +1232,13 @@ project, the whole path for a file outside it (CLI 2.1.278,
         ;; says less than the path does.
         (should (equal (ecc-render--file-label "/tmp/ecc-elsewhere/far.py")
                        "/tmp/ecc-elsewhere/far.py"))
+        ;; A sibling whose name starts with the root's is outside too,
+        ;; with the root written without its slash.
+        (setf (ecc-session-project-root session) "/tmp/ecc-app")
+        (should (equal (ecc-render--file-label "/tmp/ecc-application/x.py")
+                       "/tmp/ecc-application/x.py"))
+        (should (equal (ecc-render--file-label "/tmp/ecc-app/x.py") "x.py"))
+        (setf (ecc-session-project-root session) root)
         ;; The root itself is not "": there is nothing relative to say.
         (should (equal (ecc-render--file-label root) (abbreviate-file-name root))))))
   ;; With no session to be relative to -- a buffer that is not a
