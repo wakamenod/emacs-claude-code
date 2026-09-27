@@ -11,6 +11,29 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.281**.
+
+### Fixed
+
+- A file outside the project whose path starts with the project's own --
+  `/tmp/application/x.el` beside a project at `/tmp/app` -- was named in the
+  transcript as `../application/x.el`, as if it were in the project. The
+  root is now compared with its slash, and such a file keeps its whole path.
+
+- `RET` on the heading of a Write or a MultiEdit the CLI reported no patch
+  for opened the file at the top rather than where it changed. A Write of a
+  new file is reported with an empty `structuredPatch`, and only an Edit was
+  looked for without one. A Write now opens at the first line that differs
+  from the file it replaced (line 1 for a new file), and a MultiEdit at the
+  first of its edits found in the file.
+
+- A numbered diff drawn before `ecc-diff-style` was set to `unified` could
+  not be followed with `RET` any more: the line was read in the style the
+  setting named rather than the one the diff was drawn in. A line with no
+  `@@` header above it is now read as numbered whatever the setting says.
+
 ## [0.3.3] - 2026-09-27
 
 Verified against **Claude Code CLI 2.1.281**.
@@ -25,7 +48,9 @@ Verified against **Claude Code CLI 2.1.281**.
   file, where a Read opens at its `offset` and a change at the first line it
   changed; and a path in a reply -- `foo.el:12`, `a/b.el`, `x.el#L3`, inside
   inline code too but not in a fenced block -- taken against the directory
-  of the session. A removed line opens where it was taken out. The number
+  of the session. A removed line opens where it was taken out. A
+  NotebookEdit opens the notebook but not at the line: the lines of a cell
+  are not lines of the file. The number
   in a diff is where the line stood once that change was made, so it is
   moved through the hunks of every later change the session made to the
   file. A path in a reply is linked when it ends in an extension or plainly
@@ -138,8 +163,6 @@ Verified against **Claude Code CLI 2.1.281**.
 ## [0.3.2] - 2026-09-24
 
 Verified against **Claude Code CLI 2.1.280**.
-
-Verified against **Claude Code CLI 2.1.274**.
 
 ### Fixed
 
