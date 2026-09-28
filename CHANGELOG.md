@@ -40,11 +40,13 @@ Verified against **Claude Code CLI 2.1.281**.
   and cwd, all taken from memory: no recording is read and git is not asked.
   A save that would write the same text again is skipped. At exit the file
   is written once more and then left alone, so the sessions Emacs takes down
-  with it are not saved as closed -- and only by an Emacs that had a session
-  of its own or ran `ecc-restore`: one that only opened a tab or read a
-  recording leaves the last Emacs's state where it is. Until `ecc-restore` has run, the state
-  the last Emacs left is kept in every write, the one at exit included, so
-  starting a session first, or quitting before restoring, does not lose it. A batch Emacs saves nothing (`ecc-restore-enabled`).
+  with it are not saved as closed. Nothing is written at all by an Emacs
+  that has had no session of its own and has not run `ecc-restore`: one
+  that only opened a tab or read a recording leaves the file as the last
+  Emacs wrote it, even a file it cannot read. Until `ecc-restore` has run,
+  the state the last Emacs left is kept in every write, the one at exit
+  included, so starting a session first, or quitting before restoring, does
+  not lose it. A batch Emacs saves nothing (`ecc-restore-enabled`).
   A write costs about 0.2 ms with ten sessions in five Spaces, and one with
   nothing to write about 0.02 ms, which is also what the exit hook adds when
   the file is already current.

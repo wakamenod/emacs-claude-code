@@ -339,15 +339,61 @@ session that belongs in the file, and the exit write stored an empty
 state over the two sessions still to be restored (review of PR #94)."
   (ecc-restore-test--with-world
     (ecc-restore-test--two-sessions)
-    ;; What a tab opening and closing does: a save, which writes.
+    ;; What a tab opening and closing does: a save, which now writes
+    ;; nothing, there being nothing of this Emacs's own to write.
     (ecc-restore-save)
-    (should ecc-restore--written)
+    (should-not ecc-restore--written)
     ;; A recording opened to be read changes state, which saves too.
     (ecc-history-session "id-read" (ecc-history-file ecc-restore-test--b))
     (ecc-restore-save)
     (ecc-restore--save-at-exit)
     (should (equal (ecc-restore-test--saved-ids)
                    (list ecc-restore-test--b ecc-restore-test--a)))))
+
+(defun ecc-restore-test--open-and-close-a-tab ()
+  "Open a tab and close it again, making the saves that schedules."
+  (let ((was tab-bar-mode))
+    (unwind-protect
+        (progn
+          (tab-bar-mode 1)
+          (tab-bar-new-tab)
+          (should ecc-restore--timer)
+          (ecc-restore-save)
+          (tab-bar-close-tab)
+          (ecc-restore-save))
+      (tab-bar-mode (if was 1 -1)))))
+
+(ert-deftest ecc-restore-test-a-tab-does-not-write-over-an-unreadable-file ()
+  "A state file this version cannot read survives a tab opening and closing.
+There is nothing to carry along from it, so a save wrote an empty state
+over it before `ecc-restore' could be run (third review of PR #94)."
+  (ecc-restore-test--with-world
+    (let ((text "(:version 99 :sessions ((:id \"from-the-future\")))\n"))
+      (with-temp-file ecc-restore-file (insert text))
+      (ecc-restore-test--open-and-close-a-tab)
+      (ecc-restore--save-at-exit)
+      (should (equal (with-temp-buffer
+                       (insert-file-contents ecc-restore-file)
+                       (buffer-string))
+                     text)))))
+
+(ert-deftest ecc-restore-test-a-tab-writes-nothing-in-an-emacs-without-sessions ()
+  "An Emacs with no session of its own does not write the file at all.
+Not even the same state again: the file is left as the last Emacs
+wrote it."
+  (ecc-restore-test--with-world
+    (ecc-restore-test--two-sessions)
+    (let ((writes 0))
+      (cl-letf* ((write (symbol-function 'write-region))
+                 ((symbol-function 'write-region)
+                  (lambda (&rest args)
+                    (cl-incf writes)
+                    (apply write args))))
+        (ecc-restore-test--open-and-close-a-tab)
+        (ecc-restore--save-at-exit))
+      (should (= writes 0))
+      (should (equal (ecc-restore-test--saved-ids)
+                     (list ecc-restore-test--b ecc-restore-test--a))))))
 
 (ert-deftest ecc-restore-test-a-recording-being-read-becomes-the-restored-session ()
   "A saved session open to be read is taken over by the restore, not skipped.
