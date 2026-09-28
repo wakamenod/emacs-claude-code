@@ -23,8 +23,10 @@ Verified against **Claude Code CLI 2.1.281**.
   the sessions come back. Each session is read from its recording and comes
   back stopped: no CLI starts until a prompt is sent to it or `R` is pressed,
   and the question about a session another process is running is asked
-  then, one session at a time. A session already open is left alone, and one
-  whose directory is gone is skipped and named. A restored session says
+  then, one session at a time. A session already open is left alone and
+  counted in the message, and one whose directory is gone is skipped and
+  named. A saved session that is open only to be read (`h`) is not counted
+  as open: it becomes the restored session, in the buffer it already has. A restored session says
   `○ restored` and "Restored; a prompt or R starts it" rather than calling
   itself exited, and the tab line and the sidebar draw it the same way: a
   dim `○` and the word `restored`, not the red `✗` of a CLI that died. A
@@ -37,7 +39,9 @@ Verified against **Claude Code CLI 2.1.281**.
   and cwd, all taken from memory: no recording is read and git is not asked.
   A save that would write the same text again is skipped. At exit the file
   is written once more and then left alone, so the sessions Emacs takes down
-  with it are not saved as closed. Until `ecc-restore` has run, the state
+  with it are not saved as closed -- and only by an Emacs that had a session
+  of its own or ran `ecc-restore`: one that only opened a tab or read a
+  recording leaves the last Emacs's state where it is. Until `ecc-restore` has run, the state
   the last Emacs left is kept in every write, so starting a session first
   does not lose it. A batch Emacs saves nothing (`ecc-restore-enabled`).
   A write costs about 0.2 ms with ten sessions in five Spaces, and one with

@@ -65,6 +65,8 @@
 
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-display-session "ecc-window" (session))
+(declare-function ecc-rename-session "ecc-window" (session name))
+(declare-function ecc-render-refresh "ecc-render" (session))
 (declare-function ecc--enable-session-modes "ecc" ())
 (declare-function ecc-space-tab-roots "ecc-space" (&optional frame))
 (declare-function ecc-space-of-root "ecc-space" (root))
@@ -86,6 +88,13 @@ must not write over what the user's own Emacs left.")
 
 (defvar ecc-restore--written nil
   "The text last written to `ecc-restore-file' by this Emacs, or nil.")
+
+(defvar ecc-restore--owned nil
+  "Non-nil once this Emacs has had a session that belongs in the file.
+Set by a save that found one and by `ecc-restore'.  It is what lets the
+exit write replace what the last Emacs left: a save is made for any tab
+opened or closed, so having written the file says nothing about whether
+this Emacs had anything of its own to put there.")
 
 (defvar ecc-restore--frozen nil
   "Non-nil once Emacs is exiting and the file has been written for it.")
@@ -206,6 +215,8 @@ Nothing once Emacs is exiting; see `ecc-restore--save-at-exit'."
     (setq ecc-restore--timer nil))
   (unless ecc-restore--frozen
     (let ((state (ecc-restore-state)))
+      (when (plist-get state :sessions)
+        (setq ecc-restore--owned t))
       (ecc-restore--write (if-let* ((previous (ecc-restore--previous-state)))
                               (ecc-restore--merge state previous)
                             state)))))
@@ -224,9 +235,12 @@ and starts a session in it writes once, and writes what it ended with."
   "Write what is open as Emacs exits, and write nothing after it.
 On `kill-emacs-hook', ahead of everything else there: what exits after
 this is Emacs going down, and saved it would be an Emacs with nothing
-open.  An Emacs that never wrote the file leaves it alone -- it had
-nothing of ours open, and the last one's state is still to be restored."
-  (when (and ecc-restore-enabled ecc-restore--written)
+open.  An Emacs that never had a session of its own leaves the file
+alone -- a tab opened and closed is not a reason to write over the
+sessions the last one left, which are still to be restored."
+  (when (and ecc-restore-enabled
+             (or ecc-restore--owned
+                 (plist-get (ecc-restore-state) :sessions)))
     (condition-case error
         (ecc-restore--write (ecc-restore-state))
       (error (message "ecc: the sessions were not saved: %s"
@@ -272,9 +286,15 @@ cons returned instead: (nil . REASON)."
          (file (and id (ecc-history-file id))))
     (cond
      ((null id) (cons nil "no id"))
-     ((ecc-model-session id) (cons nil 'open))
+     ;; A recording open to be read is not the session being open:
+     ;; it is taken over below rather than counted.
+     ((when-let* ((open (ecc-model-session id)))
+        (not (eq (ecc-session-kind open) 'archived)))
+      (cons nil 'open))
      ((not (and root (file-directory-p root)))
       (cons nil (format "%s is gone" (abbreviate-file-name (or root "?")))))
+     ((ecc-model-session id)
+      (ecc-restore--adopt (ecc-model-session id) entry))
      ((null file) (cons nil "nothing was recorded"))
      (t
       (let ((session (ecc-model-create-session
@@ -292,6 +312,31 @@ cons returned instead: (nil . REASON)."
         (ecc-session-ensure-buffer session)
         (ecc-history-load session)
         (cons session nil))))))
+
+(defun ecc-restore--adopt (session entry)
+  "Make SESSION, a recording open to be read, the restored session of ENTRY.
+The recording is the same conversation: skipping the entry because it
+is being read would leave it out of every save after this one, since a
+recording being read is never saved.  So it becomes what a restored
+session is -- the user's own, stopped, under its saved name and root --
+in the buffer it already has.  Returns (SESSION . nil)."
+  (setf (ecc-session-kind session) 'own
+        (ecc-session-project-root session) (plist-get entry :root)
+        (ecc-session-options session)
+        (plist-put (ecc-session-options session) :restored t))
+  (when-let* ((cwd (plist-get entry :cwd)))
+    (setf (ecc-session-cwd session) cwd))
+  (when-let* ((name (plist-get entry :name))
+              ((not (equal name (ecc-session-name session)))))
+    (require 'ecc-window)
+    (ecc-rename-session session name))
+  (when-let* ((buffer (ecc-session-buffer session))
+              ((buffer-live-p buffer)))
+    (with-current-buffer buffer
+      (setq default-directory (plist-get entry :root))))
+  (require 'ecc-render)
+  (ecc-render-refresh session)
+  (cons session nil))
 
 (defun ecc-restore--spaces (roots)
   "Open a Space for each of ROOTS, in order, starting nothing.
@@ -334,6 +379,7 @@ every time Emacs starts, call it from the init file."
   (let* ((state (or (and (null file) (ecc-restore--previous-state))
                     (ecc-restore--read file)))
          (restored nil)
+         (open 0)
          (skipped nil)
          (spaces nil))
     (unless state
@@ -343,6 +389,7 @@ every time Emacs starts, call it from the init file."
     (dolist (entry (reverse (plist-get state :sessions)))
       (pcase-let ((`(,session . ,reason) (ecc-restore--session entry)))
         (cond (session (push session restored))
+              ((eq reason 'open) (cl-incf open))
               ((stringp reason)
                (push (format "%s (%s)" (or (plist-get entry :name) "?") reason)
                      skipped)))))
@@ -357,14 +404,16 @@ every time Emacs starts, call it from the init file."
         (require 'ecc-window)
         (ecc-display-session (car restored))))
     (when (null file)
-      (setq ecc-restore--previous nil))
+      (setq ecc-restore--previous nil
+            ecc-restore--owned t))
     (ecc-restore--schedule)
-    (message "Restored %d session%s%s%s"
+    (message "Restored %d session%s%s%s%s"
              (length restored) (if (= 1 (length restored)) "" "s")
              (if spaces
                  (format " in %d Space%s" (length spaces)
                          (if (= 1 (length spaces)) "" "s"))
                "")
+             (if (> open 0) (format "; %d open already" open) "")
              (if skipped
                  (format "; skipped %s" (string-join (nreverse skipped) ", "))
                ""))

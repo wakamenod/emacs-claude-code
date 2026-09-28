@@ -40,6 +40,7 @@ interactive Emacs, and starting a CLI fails the test."
           (ecc-restore-file (expand-file-name "ecc-state.eld" dir))
           (ecc-restore-enabled t)
           (ecc-restore--written nil)
+          (ecc-restore--owned nil)
           (ecc-restore--frozen nil)
           (ecc-restore--previous 'unread)
           (ecc-restore--timer nil)
@@ -302,6 +303,52 @@ along in every write; the write at exit says what was open then."
         (should (= tabs (length (funcall tab-bar-tabs-function))))
         ;; Saving under `classic' does not ask the Spaces either.
         (should-not (plist-get (ecc-restore-state) :spaces))))))
+
+;;;; What only looks like a session
+
+(ert-deftest ecc-restore-test-a-tab-or-a-reader-does-not-empty-the-file-at-exit ()
+  "An Emacs with no session of its own leaves the last one's state at exit.
+Opening a tab saves, and so does reading a recording; neither is a
+session that belongs in the file, and the exit write stored an empty
+state over the two sessions still to be restored (review of PR #94)."
+  (ecc-restore-test--with-world
+    (ecc-restore-test--two-sessions)
+    ;; What a tab opening and closing does: a save, which writes.
+    (ecc-restore-save)
+    (should ecc-restore--written)
+    ;; A recording opened to be read changes state, which saves too.
+    (ecc-history-session "id-read" (ecc-history-file ecc-restore-test--b))
+    (ecc-restore-save)
+    (ecc-restore--save-at-exit)
+    (should (equal (ecc-restore-test--saved-ids)
+                   (list ecc-restore-test--b ecc-restore-test--a)))))
+
+(ert-deftest ecc-restore-test-a-recording-being-read-becomes-the-restored-session ()
+  "A saved session open to be read is taken over by the restore, not skipped.
+Skipped, it was dropped for good: a recording being read is never
+saved, and the restore let go of the last Emacs's state (review of
+PR #94).  A session that is really open is skipped and counted."
+  (ecc-restore-test--with-world
+    (ecc-restore-test--two-sessions)
+    (let ((read (ecc-history-open ecc-restore-test--a))
+          (said nil))
+      (should (eq (ecc-session-kind read) 'archived))
+      (ecc-restore-test--open ecc-restore-test--b "mine" ecc-restore-test--two)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (format &rest args)
+                   (setq said (apply #'format-message format args)))))
+        (should (equal (ecc-restore) (list read))))
+      (should (string-search "1 open already" said))
+      ;; The same session, in the buffer it had, now the restored one.
+      (should (eq (ecc-model-session ecc-restore-test--a) read))
+      (should (eq (ecc-session-kind read) 'own))
+      (should (ecc-model-option read :restored nil))
+      (should (equal (ecc-session-name read) "ay"))
+      (should (equal (ecc-session-project-root read) ecc-restore-test--one))
+      (should (eq (ecc-tab-state read) 'restored))
+      ;; And it is saved again, so the next Emacs has it too.
+      (ecc-restore-save)
+      (should (member ecc-restore-test--a (ecc-restore-test--saved-ids))))))
 
 ;;;; What a stopped session says
 
