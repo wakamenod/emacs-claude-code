@@ -175,7 +175,7 @@ The file is still what the last Emacs left, waiting to be restored."
 (ert-deftest ecc-restore-test-a-new-session-keeps-what-is-to-be-restored ()
   "Starting a session before restoring does not lose the last Emacs's state.
 Until `ecc-restore' has run, the sessions left last time are carried
-along in every write; the write at exit says what was open then."
+along in every write, the one at exit as well."
   (ecc-restore-test--with-world
     (ecc-restore--write (list :version ecc-restore--version :spaces nil
                               :sessions (list (list :id "id-old" :name "old"
@@ -185,7 +185,33 @@ along in every write; the write at exit says what was open then."
     (ecc-restore-test--flush)
     (should (equal (ecc-restore-test--saved-ids) '("id-new" "id-old")))
     (ecc-restore--save-at-exit)
-    (should (equal (ecc-restore-test--saved-ids) '("id-new")))))
+    (should (equal (ecc-restore-test--saved-ids) '("id-new" "id-old")))))
+
+(ert-deftest ecc-restore-test-quitting-before-restoring-keeps-the-last-sessions ()
+  "Five sessions saved, one new session, quit without restoring: six remain.
+The exit write stored only what was open, and the five were gone
+\(second review of PR #94)."
+  (ecc-restore-test--with-world
+    (let ((old (mapcar (lambda (n)
+                         (list :id (format "id-old-%d" n) :name (format "old-%d" n)
+                               :root ecc-restore-test--one))
+                       '(1 2 3 4 5))))
+      (ecc-restore-test--write-state nil old)
+      (ecc-restore-test--open "id-new" "new" ecc-restore-test--two)
+      ;; Straight to the exit, with no save in between.
+      (ecc-restore--save-at-exit)
+      (should (equal (ecc-restore-test--saved-ids)
+                     (cons "id-new" (mapcar (lambda (entry) (plist-get entry :id))
+                                            old)))))))
+
+(ert-deftest ecc-restore-test-after-a-restore-a-killed-session-leaves-at-exit ()
+  "Once restored, a session killed on purpose is not written back at exit."
+  (ecc-restore-test--with-world
+    (ecc-restore-test--two-sessions)
+    (ecc-restore)
+    (ecc-kill (ecc-model-session ecc-restore-test--b))
+    (ecc-restore--save-at-exit)
+    (should (equal (ecc-restore-test--saved-ids) (list ecc-restore-test--a)))))
 
 ;;;; Restoring
 
@@ -369,10 +395,18 @@ A real exit still names its code; there was a process to have one."
       (should (string-search "a prompt or R starts it"
                              (ecc-render--tail-string restored)))
       (should (string-search "R resumes it" (ecc-render--tail-string read)))
+      ;; The mode line says the same, not the red `✗ exited'.
+      (let ((line (ecc-render-mode-line-state restored)))
+        (should (equal (substring-no-properties line) "○ restored"))
+        (should (eq (get-text-property 0 'face line) 'ecc-dim-face)))
+      (should (equal (substring-no-properties (ecc-render-mode-line-state read))
+                     "○ not running"))
       ;; An exit with a status is the error it always was.
       (setf (alist-get 'exit-status (ecc-session-progress restored)) 1)
       (should (equal (substring-no-properties (ecc-render-status-line restored))
                      "✗ exited (code 1)"))
+      (should (equal (substring-no-properties (ecc-render-mode-line-state restored))
+                     "✗ exited"))
       (should (string-search "Exited with code 1"
                              (ecc-render--tail-string restored))))))
 

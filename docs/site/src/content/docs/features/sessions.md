@@ -44,7 +44,7 @@ ecc keeps a small record of the open Spaces and sessions in `ecc-state.eld` unde
 - Each session is read from its recording and comes back stopped. No CLI starts until you send a prompt or press `R`, and the check for a conversation running in another process happens at that point.
 - A session that is already open is left alone, so running the command twice restores nothing twice. A session or Space whose directory is gone is skipped and named in the message.
 
-A session you kill leaves the record, so what comes back is what was open when Emacs exited. To restore on every start, call `(ecc-restore)` from your init file.
+A session you kill leaves the record, so what comes back is what was open when Emacs exited. Sessions saved by an earlier Emacs and not restored yet stay in the record until you restore them, even if you start other sessions or quit first. To restore on every start, call `(ecc-restore)` from your init file.
 
 ## Searching past conversations
 

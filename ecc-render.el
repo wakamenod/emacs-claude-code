@@ -2343,7 +2343,12 @@ so it is spelled out with its kind."
            (ecc-session-state session))
     ((or 'idle 'starting) nil)
     ('handoff (propertize "⇄ terminal" 'face 'ecc-pending-face))
-    ('exited (propertize "✗ exited" 'face 'ecc-error-face))
+    ('exited (cond ((alist-get 'exit-status (ecc-session-progress session))
+                    (propertize "✗ exited" 'face 'ecc-error-face))
+                   ;; No process has run here; see `ecc-render--tail-string'.
+                   ((ecc-model-option session :restored nil)
+                    (propertize "○ restored" 'face 'ecc-dim-face))
+                   (t (propertize "○ not running" 'face 'ecc-dim-face))))
     ('compacting (propertize "⟲ compacting" 'face 'ecc-running-face))
     ((or 'waiting-permission 'waiting-question 'waiting-plan)
      (let ((n (length (ecc-session-pending session))))

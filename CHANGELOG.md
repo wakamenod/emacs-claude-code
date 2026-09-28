@@ -30,7 +30,8 @@ Verified against **Claude Code CLI 2.1.281**.
   `○ restored` and "Restored; a prompt or R starts it" rather than calling
   itself exited, and the tab line and the sidebar draw it the same way: a
   dim `○` and the word `restored`, not the red `✗` of a CLI that died. A
-  Space folds it under an exit and over an idle session.
+  Space folds it under an exit and over an idle session. The mode line says
+  `○ restored` too.
 
 - What is open is saved to `ecc-restore-file` (`ecc-state.eld` under
   `user-emacs-directory`, Lisp data) whenever a session starts or is killed
@@ -42,8 +43,8 @@ Verified against **Claude Code CLI 2.1.281**.
   with it are not saved as closed -- and only by an Emacs that had a session
   of its own or ran `ecc-restore`: one that only opened a tab or read a
   recording leaves the last Emacs's state where it is. Until `ecc-restore` has run, the state
-  the last Emacs left is kept in every write, so starting a session first
-  does not lose it. A batch Emacs saves nothing (`ecc-restore-enabled`).
+  the last Emacs left is kept in every write, the one at exit included, so
+  starting a session first, or quitting before restoring, does not lose it. A batch Emacs saves nothing (`ecc-restore-enabled`).
   A write costs about 0.2 ms with ten sessions in five Spaces, and one with
   nothing to write about 0.02 ms, which is also what the exit hook adds when
   the file is already current.

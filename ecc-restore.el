@@ -44,10 +44,12 @@
 ;; saved as an Emacs with nothing open.
 ;;
 ;; Until `ecc-restore' has been run, what the last Emacs left is carried
-;; along in every write.  Starting a session before restoring would
-;; otherwise write over the file with that one session, and the restore
-;; that followed would find nothing to bring back.  The exit write is
-;; the exception: it says what was open at exit and nothing else.
+;; along in every write, the one at exit included.  Starting a session
+;; before restoring would otherwise write over the file with that one
+;; session, and the restore that followed would find nothing to bring
+;; back -- in this Emacs, or in the next one if this one quits first.
+;; A session killed on purpose leaves the file; one the last Emacs left
+;; and nobody restored is still waiting to be, and stays.
 ;;
 ;; A session comes back stopped, read from its recording, with no
 ;; process: N sessions are not N CLIs at startup, and whether another
@@ -207,6 +209,15 @@ and is renamed over it, so a crash in the middle leaves the old one."
       (setq ecc-restore--written text)
       t)))
 
+(defun ecc-restore--to-write ()
+  "Return what is open, with what the last Emacs left and is not restored yet."
+  (let ((state (ecc-restore-state)))
+    (when (plist-get state :sessions)
+      (setq ecc-restore--owned t))
+    (if-let* ((previous (ecc-restore--previous-state)))
+        (ecc-restore--merge state previous)
+      state)))
+
 (defun ecc-restore-save ()
   "Save the open sessions and Spaces, with what is still to be restored.
 Nothing once Emacs is exiting; see `ecc-restore--save-at-exit'."
@@ -214,12 +225,7 @@ Nothing once Emacs is exiting; see `ecc-restore--save-at-exit'."
     (cancel-timer ecc-restore--timer)
     (setq ecc-restore--timer nil))
   (unless ecc-restore--frozen
-    (let ((state (ecc-restore-state)))
-      (when (plist-get state :sessions)
-        (setq ecc-restore--owned t))
-      (ecc-restore--write (if-let* ((previous (ecc-restore--previous-state)))
-                              (ecc-restore--merge state previous)
-                            state)))))
+    (ecc-restore--write (ecc-restore--to-write))))
 
 (defun ecc-restore--schedule (&rest _)
   "Save once what the current command has changed.
@@ -235,14 +241,15 @@ and starts a session in it writes once, and writes what it ended with."
   "Write what is open as Emacs exits, and write nothing after it.
 On `kill-emacs-hook', ahead of everything else there: what exits after
 this is Emacs going down, and saved it would be an Emacs with nothing
-open.  An Emacs that never had a session of its own leaves the file
-alone -- a tab opened and closed is not a reason to write over the
-sessions the last one left, which are still to be restored."
+open.  What the last Emacs left and nobody restored is carried along,
+as every other write carries it: quitting before `ecc-restore' is not
+a reason to lose it.  An Emacs that never had a session of its own
+leaves the file alone altogether."
   (when (and ecc-restore-enabled
              (or ecc-restore--owned
                  (plist-get (ecc-restore-state) :sessions)))
     (condition-case error
-        (ecc-restore--write (ecc-restore-state))
+        (ecc-restore--write (ecc-restore--to-write))
       (error (message "ecc: the sessions were not saved: %s"
                       (error-message-string error)))))
   (setq ecc-restore--frozen t))
