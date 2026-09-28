@@ -26,7 +26,9 @@ Verified against **Claude Code CLI 2.1.281**.
   then, one session at a time. A session already open is left alone, and one
   whose directory is gone is skipped and named. A restored session says
   `○ restored` and "Restored; a prompt or R starts it" rather than calling
-  itself exited.
+  itself exited, and the tab line and the sidebar draw it the same way: a
+  dim `○` and the word `restored`, not the red `✗` of a CLI that died. A
+  Space folds it under an exit and over an idle session.
 
 - What is open is saved to `ecc-restore-file` (`ecc-state.eld` under
   `user-emacs-directory`, Lisp data) whenever a session starts or is killed

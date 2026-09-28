@@ -125,6 +125,7 @@ Each session appears as a tab in the tab line of its project's session windows.
 | `⚠` | Awaiting user input | Flashing warning highlight |
 | `▶` | Busy / working | Green |
 | `✗` | Process terminated | Red |
+| `○` | Restored by `ecc-restore`, not started yet | Dimmed |
 | (none) | Idle | Dimmed |
 
 The tab for the active session window is bold and underlined; active background sessions use a muted green. Set `ecc-tab-blink` to `nil` to disable blinking.

@@ -329,6 +329,30 @@ A real exit still names its code; there was a process to have one."
       (should (string-search "Exited with code 1"
                              (ecc-render--tail-string restored))))))
 
+(ert-deftest ecc-restore-test-the-tabs-and-the-sidebar-say-restored ()
+  "The tab line and the sidebar draw a restored session quietly, not as ✗.
+A Space folds it under the louder states: an exit still wins, and a
+restored session wins over an idle one."
+  (ecc-restore-test--with-world
+    (ecc-restore-test--two-sessions)
+    (ecc-restore)
+    (let ((restored (ecc-model-session ecc-restore-test--a))
+          (other (ecc-model-session ecc-restore-test--b)))
+      (should (eq (ecc-tab-state restored) 'restored))
+      (should (equal (ecc-tab-mark restored) "○"))
+      (should (equal (ecc-tab-faces restored nil) '(ecc-tab-idle-face)))
+      (should (equal (ecc-sidebar--state-word restored) "restored"))
+      (should (eq (ecc-tab-state-roll-up (list restored other)) 'restored))
+      ;; Beside an idle session it is still what the group says.
+      (ecc-model-set-state other 'idle)
+      (should (eq (ecc-tab-state-roll-up (list other restored)) 'restored))
+      ;; A real exit is louder, and is still the error it was.
+      (setf (ecc-session-options other) nil)
+      (ecc-model-set-state other 'exited)
+      (should (eq (ecc-tab-state other) 'exited))
+      (should (equal (ecc-tab-mark other) "✗"))
+      (should (eq (ecc-tab-state-roll-up (list restored other)) 'exited)))))
+
 ;;;; Spaces
 
 (defmacro ecc-restore-test--with-spaces (&rest body)
