@@ -11,6 +11,35 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.281**.
+
+### Added
+
+- `M-x ecc-restore` brings back the Spaces and sessions that were open when
+  Emacs last exited. The Spaces open in the order of their tabs, with their
+  sessions laid out as a Space lays them out; under `ecc-use-spaces` nil only
+  the sessions come back. Each session is read from its recording and comes
+  back stopped: no CLI starts until a prompt is sent to it or `R` is pressed,
+  and the question about a session another process is running is asked
+  then, one session at a time. A session already open is left alone, and one
+  whose directory is gone is skipped and named.
+
+- What is open is saved to `ecc-restore-file` (`ecc-state.eld` under
+  `user-emacs-directory`, Lisp data) whenever a session starts or is killed
+  and whenever a tab opens or closes, so a crash leaves it current.
+  It holds the Space roots in tab order and each session's id, name, root
+  and cwd, all taken from memory: no recording is read and git is not asked.
+  A save that would write the same text again is skipped. At exit the file
+  is written once more and then left alone, so the sessions Emacs takes down
+  with it are not saved as closed. Until `ecc-restore` has run, the state
+  the last Emacs left is kept in every write, so starting a session first
+  does not lose it. A batch Emacs saves nothing (`ecc-restore-enabled`).
+  A write costs about 0.2 ms with ten sessions in five Spaces, and one with
+  nothing to write about 0.02 ms, which is also what the exit hook adds when
+  the file is already current.
+
 ## [0.3.4] - 2026-09-27
 
 Verified against **Claude Code CLI 2.1.281**.
