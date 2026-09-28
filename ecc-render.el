@@ -2126,10 +2126,16 @@ this way.")
     ;; alone stays, because the way back out of it is named nowhere
     ;; else.
     (when (eq (ecc-session-state session) 'exited)
-      (propertize (format "Exited with code %s; R resumes it"
-                          (or (alist-get 'exit-status (ecc-session-progress session))
-                              "?"))
-                  'face 'ecc-error-face))))
+      (if-let* ((status (alist-get 'exit-status (ecc-session-progress session))))
+          (propertize (format "Exited with code %s; R resumes it" status)
+                      'face 'ecc-error-face)
+        ;; No status is no process: a session read back from its
+        ;; recording, which has not run in this Emacs.  Nothing went
+        ;; wrong with it, and a `code ?' said something had.
+        (propertize (if (ecc-model-option session :restored nil)
+                        "Restored; a prompt or R starts it"
+                      "Not running; R resumes it")
+                    'face 'ecc-dim-face)))))
 
 (defun ecc-render--tail-lines (session)
   "Return the lines drawn at the end of the transcript of SESSION."
@@ -2188,9 +2194,15 @@ no turn, so nothing freezes them."
       ('handoff (propertize "⇄ handed over to the terminal" 'face 'ecc-pending-face))
       ('idle (propertize "○ idle" 'face 'ecc-dim-face))
       ('starting (propertize "○ starting…" 'face 'ecc-dim-face))
-      ('exited (propertize (format "✗ exited (code %s)"
-                                   (or (alist-get 'exit-status progress) "?"))
-                           'face 'ecc-error-face))
+      ('exited (if-let* ((status (alist-get 'exit-status progress)))
+                   (propertize (format "✗ exited (code %s)" status)
+                               'face 'ecc-error-face)
+                 ;; Read back from a recording and never run here; see
+                 ;; `ecc-render--tail-string'.
+                 (propertize (if (ecc-model-option session :restored nil)
+                                 "○ restored"
+                               "○ not running")
+                             'face 'ecc-dim-face)))
       ('compacting (propertize "⟲ compacting…" 'face 'ecc-running-face))
       ((or 'waiting-permission 'waiting-question 'waiting-plan)
        (propertize

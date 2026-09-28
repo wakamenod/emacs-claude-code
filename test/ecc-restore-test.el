@@ -303,6 +303,32 @@ along in every write; the write at exit says what was open then."
         ;; Saving under `classic' does not ask the Spaces either.
         (should-not (plist-get (ecc-restore-state) :spaces))))))
 
+;;;; What a stopped session says
+
+(ert-deftest ecc-restore-test-a-restored-session-names-no-exit-code ()
+  "A session that never ran here says so, rather than `exited (code ?)'.
+A real exit still names its code; there was a process to have one."
+  (ecc-restore-test--with-world
+    (ecc-restore-test--two-sessions)
+    (ecc-restore)
+    (let ((restored (ecc-model-session ecc-restore-test--a))
+          (read (ecc-history-session "id-read" (ecc-history-file
+                                                ecc-restore-test--b))))
+      (dolist (session (list restored read))
+        (should-not (string-search "?" (ecc-render-status-line session)))
+        (should-not (string-search "?" (ecc-render--tail-string session))))
+      (should (equal (substring-no-properties (ecc-render-status-line restored))
+                     "○ restored"))
+      (should (string-search "a prompt or R starts it"
+                             (ecc-render--tail-string restored)))
+      (should (string-search "R resumes it" (ecc-render--tail-string read)))
+      ;; An exit with a status is the error it always was.
+      (setf (alist-get 'exit-status (ecc-session-progress restored)) 1)
+      (should (equal (substring-no-properties (ecc-render-status-line restored))
+                     "✗ exited (code 1)"))
+      (should (string-search "Exited with code 1"
+                             (ecc-render--tail-string restored))))))
+
 ;;;; Spaces
 
 (defmacro ecc-restore-test--with-spaces (&rest body)

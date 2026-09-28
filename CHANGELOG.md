@@ -24,7 +24,9 @@ Verified against **Claude Code CLI 2.1.281**.
   back stopped: no CLI starts until a prompt is sent to it or `R` is pressed,
   and the question about a session another process is running is asked
   then, one session at a time. A session already open is left alone, and one
-  whose directory is gone is skipped and named.
+  whose directory is gone is skipped and named. A restored session says
+  `○ restored` and "Restored; a prompt or R starts it" rather than calling
+  itself exited.
 
 - What is open is saved to `ecc-restore-file` (`ecc-state.eld` under
   `user-emacs-directory`, Lisp data) whenever a session starts or is killed
@@ -39,6 +41,14 @@ Verified against **Claude Code CLI 2.1.281**.
   A write costs about 0.2 ms with ten sessions in five Spaces, and one with
   nothing to write about 0.02 ms, which is also what the exit hook adds when
   the file is already current.
+
+### Fixed
+
+- A session with no process behind it -- a recording opened with `h` to be
+  read -- said `✗ exited (code ?)` and "Exited with code ?", as if a CLI had
+  died with a code nobody knew. There was no CLI. It now says `○ not
+  running` and "Not running; R resumes it"; an exit that has a code still
+  names it.
 
 ## [0.3.4] - 2026-09-27
 
