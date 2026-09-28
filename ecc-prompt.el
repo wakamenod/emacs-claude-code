@@ -50,6 +50,7 @@
 
 (declare-function project-files "project" (project &optional dirs))
 (declare-function project-current "project" (&optional maybe-prompt directory))
+(declare-function ecc-resume "ecc" (session &optional fork))
 
 ;;;; Options
 
@@ -1044,6 +1045,17 @@ screen."
                (abbreviate-file-name (or (ecc-session-directory session) "?")))
       nil)))
 
+(defun ecc-prompt--start-restored (session)
+  "Start the CLI of SESSION when `ecc-restore' brought it back stopped.
+A restored session starts nothing until it is used, and a prompt is
+using it.  This is the resume \\`R' runs, so a session another process
+is running is asked about here; saying no leaves the draft where it
+was."
+  (when (and (ecc-model-option session :restored nil)
+             (not (process-live-p (ecc-session-process session))))
+    (require 'ecc)
+    (save-current-buffer (ecc-resume session))))
+
 (cl-defun ecc-prompt-send ()
   "Send the prompt region, or queue it while a turn runs.
 A draft one of `ecc-prompt-intercept-functions\' takes is not sent at
@@ -1061,6 +1073,7 @@ history."
             ecc-prompt--history-draft nil)
       (ecc-chat-clear-draft)
       (cl-return-from ecc-prompt-send 'intercepted))
+    (ecc-prompt--start-restored session)
     (let* ((source (ecc-window-last-source-buffer))
            (text (ecc-prompt-prepare-text session raw source
                                           (ecc-prompt-attach-context-p)))
