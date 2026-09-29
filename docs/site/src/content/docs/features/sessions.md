@@ -36,6 +36,16 @@ Session recordings are stored by Claude Code under `~/.claude/projects`, meaning
 
 `h` inspects a recording without launching a process, and `r` from within that buffer resumes it. If a CLI process terminates unexpectedly, ecc prompts to resume it.
 
+## Bringing sessions back after a restart
+
+ecc keeps a small record of the open Spaces and sessions in `ecc-state.eld` under `user-emacs-directory`. The file is rewritten whenever a session starts or is killed, or a Space opens or closes, so a crash leaves it current too. `M-x ecc-restore` reads it back:
+
+- The Spaces come back in the order their tabs were in, with their sessions side by side. With `ecc-use-spaces` off, only the sessions come back.
+- Each session is read from its recording and comes back stopped. No CLI starts until you send a prompt or press `R`, and the check for a conversation running in another process happens at that point.
+- A session that is already open is left alone, so running the command twice restores nothing twice. A session or Space whose directory is gone is skipped and named in the message.
+
+A session you kill leaves the record, so what comes back is what was open when Emacs exited. Sessions saved by an earlier Emacs and not restored yet stay in the record until you restore them, even if you start other sessions or quit first. To restore on every start, call `(ecc-restore)` from your init file.
+
 ## Searching past conversations
 
 If you remember what was discussed rather than the session name, you can search past conversations by their message text. Press `/` in the transient menu, `C-c c /`, or run `M-x ecc-search`. Matching conversations in the current project are displayed newest first, showing matching lines and context; press `RET` or `o` to open the conversation at point. Providing a prefix argument (`C-u`) searches across all projects instead of just the current one.
@@ -115,6 +125,7 @@ Each session appears as a tab in the tab line of its project's session windows.
 | `⚠` | Awaiting user input | Flashing warning highlight |
 | `▶` | Busy / working | Green |
 | `✗` | Process terminated | Red |
+| `○` | Restored by `ecc-restore`, not started yet | Dimmed |
 | (none) | Idle | Dimmed |
 
 The tab for the active session window is bold and underlined; active background sessions use a muted green. Set `ecc-tab-blink` to `nil` to disable blinking.

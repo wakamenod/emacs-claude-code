@@ -37,7 +37,7 @@ faceはテキスト挿入時に適用されるため、`M-x customize` による
 - **[ソースへジャンプ](https://wakamenod.github.io/emacs-claude-code/ja/features/prompt/#ソースを開く):** diff の行、ファイルを扱うツール呼び出しの見出し、Claude の返答中のパス（`foo.el:12`）で `RET` を押すかクリックすると、そのファイルを該当行で開きます。あとから同じファイルが変更されても、行番号はそれに合わせて補正します。
 - **[プランモード](https://wakamenod.github.io/emacs-claude-code/ja/features/review/#プランモード):** 提案された実行計画を、編集可能なバッファ内で確認・調整しながら進められます。
 - **[グローバル操作](https://wakamenod.github.io/emacs-claude-code/ja/reference/key-bindings/):** どのバッファからでも保留中のツール実行リクエストを許可・拒否できます。
-- **[セッション管理](https://wakamenod.github.io/emacs-claude-code/ja/features/sessions/):** ダッシュボードから複数の同時並行セッションを整理・管理できます。
+- **[セッション管理](https://wakamenod.github.io/emacs-claude-code/ja/features/sessions/):** ダッシュボードから複数の同時並行セッションを整理・管理できます。Emacs を再起動したあとは `M-x ecc-restore` で、終了時に開いていた Space とセッションをまとめて復元できます。各セッションは停止した状態で戻り、プロンプトを送った時点で起動します。
 - **[Space と worktree](https://wakamenod.github.io/emacs-claude-code/ja/features/spaces/):** プロジェクトごとに Emacs のタブ（Space）が割り当てられ、その中のウィンドウ配置は並べたまま保たれます（`ecc-use-spaces`、既定で有効）。サイドバーには全プロジェクトとセッションが動作状況とともに並び、`ecc-start-worktree` はリポジトリの隣にブランチをチェックアウトして独立した Space として開きます。
 - **安全なデフォルト設定:** 自動承認は存在せず、勝手に許可されることはありません。答えられなくなったリクエストは拒否として記録されます。内蔵のループバック MCP サーバーはデフォルトで無効化されており、Elisp の評価ツールも明示的な有効化が必要です。
 

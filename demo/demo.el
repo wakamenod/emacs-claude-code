@@ -100,7 +100,11 @@ this gives it is one nothing else writes to.")
                          (file-name-directory
                           (or load-file-name buffer-file-name))))))))
     (add-to-list 'load-path checkout))
-  (require 'ecc))
+  (require 'ecc)
+  ;; The init is the user's, and so is `user-emacs-directory': the
+  ;; sessions of a scene would be saved over the ones the user's own
+  ;; Emacs left for `ecc-restore'.
+  (setq ecc-restore-file (make-temp-file "ecc-demo-state" nil ".eld")))
 
 ;;;; Saying what is going on
 

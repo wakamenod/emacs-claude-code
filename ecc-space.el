@@ -301,6 +301,15 @@ forgotten rather than closed, Emacs refusing to delete the last one."
                       (and (ecc-space--tab-index (cdr entry)) (car entry)))
                     (ecc-space--tabs))))
 
+(defun ecc-space-tab-roots (&optional frame)
+  "Return the roots of the Spaces with a tab on FRAME, in the order of the tabs.
+What `ecc-restore' saves: the tab bar is the order the user sees, and
+reading it asks git nothing."
+  (let ((tabs (ecc-space--tabs frame)))
+    (delq nil (mapcar (lambda (tab)
+                        (car (rassoc (alist-get 'name tab) tabs)))
+                      (tab-bar-tabs frame)))))
+
 (defun ecc-space-tab (space)
   "Return the name of the tab of SPACE, or nil.
 A tab the user closed is forgotten here rather than offered again."
