@@ -348,6 +348,102 @@ The review buffer is current."
               (should (string-search "cannot start with -" text))))
         (ecc-review-agent-test--kill-review-buffers)))))
 
+(ert-deftest ecc-review-agent-test-open-staged-and-paths ()
+  "review_open reviews what is staged, or only some files, and says so."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-agent-test--with-directory directory
+      (unwind-protect
+          (progn
+            (ecc-review-agent-test--git directory "init" "-q")
+            (ecc-review-agent-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-agent-test--git directory "config" "user.name" "t")
+            (ecc-review-agent-test--write (concat directory "x.txt") "one\n")
+            (ecc-review-agent-test--write (concat directory "y.txt") "alpha\n")
+            (ecc-review-agent-test--git directory "add" "x.txt" "y.txt")
+            (ecc-review-agent-test--git directory "commit" "-q" "-m" "init")
+            (setf (ecc-session-project-root session) directory)
+            (ecc-review-agent-test--write (concat directory "x.txt") "ONE\n")
+            (ecc-review-agent-test--write (concat directory "y.txt") "ALPHA\n")
+            (ecc-review-agent-test--git directory "add" "y.txt")
+            (ecc-review-agent-test--write (concat directory "new.txt") "hello\n")
+            (let ((text (ecc-review-agent-test--ok session "review_open"
+                                                   '((staged . t)))))
+              (should (string-search "Review of what is staged: 1 file, 1 hunk" text))
+              (should (string-search "y.txt" text))
+              (should-not (string-search "new.txt" text)))
+            (should (get-buffer "*ecc-review: test (staged)*"))
+            ;; --staged in range is the same thing.
+            (should (string-search "what is staged"
+                                   (ecc-review-agent-test--ok session "review_open"
+                                                              '((range . "--staged")))))
+            (let ((text (ecc-review-agent-test--ok
+                         session "review_open"
+                         '((range . "HEAD") (paths . ["x.txt" " new.txt"])))))
+              (should (string-search "the working tree against HEAD in x.txt, new.txt: 2 files"
+                                     text))
+              (should-not (string-search "y.txt" text)))
+            (dolist (bad '(((range . "HEAD") (staged . t))
+                           ((range . "") (staged . t))
+                           ((range . "--output=/tmp/x") (staged . :false))
+                           ((paths . [1]))))
+              (should (car (ecc-review-agent-test--call session "review_open" bad))))
+            ;; staged false is no staged at all.
+            (should (string-search "the working tree against HEAD:"
+                                   (ecc-review-agent-test--ok
+                                    session "review_open"
+                                    '((range . "HEAD") (staged . :false))))))
+        (ecc-review-agent-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-agent-test-replies ()
+  "reply_to answers a comment of either author, alone and in a batch."
+  (ecc-review-agent-test--with-review session
+    (ecc-review-agent-test--goto "+TWO")
+    (ecc-review-comment "Keep it lower case")
+    ;; An answer to the user: under their comment, their text untouched.
+    (should (equal (ecc-review-agent-test--ok
+                    session "review_comment" '((reply_to . "#1") (text . "Will do")))
+                   "Added #2 at foo.el:2 (new)"))
+    (should (equal (ecc-review-note-text (ecc-review-find-note 1)) "Keep it lower case"))
+    (should (eq (ecc-review-note-author (ecc-review-find-note 1)) 'user))
+    (should (string-search "#1 [user] foo.el:2 (new): Keep it lower case"
+                           (ecc-review-agent-test--ok session "review_list_comments")))
+    (should (string-search "\n  #2 [claude] foo.el:2 (new): Will do"
+                           (ecc-review-agent-test--ok session "review_list_comments")))
+    ;; The file of the comment answered may be said; another may not,
+    ;; and neither may a line or a hunk.
+    (should (ecc-review-agent-test--ok
+             session "review_comment"
+             '((reply_to . 1) (file . "foo.el") (text . "Same file"))))
+    (dolist (bad '(((reply_to . 1) (line . 11) (text . "x"))
+                   ((reply_to . 1) (hunk . 1) (text . "x"))
+                   ((reply_to . 1) (file . "bar.el") (text . "x"))))
+      (should (car (ecc-review-agent-test--call session "review_comment" bad))))
+    ;; In a batch, checked with the rest: a bad reply adds nothing.
+    (pcase-let ((`(,failed . ,text)
+                 (ecc-review-agent-test--call
+                  session "review_comment_apply"
+                  '((comments . [((file . "foo.el") (line . 11) (text . "fine"))
+                                 ((reply_to . 99) (text . "to nothing"))
+                                 "not an object"])))))
+      (should failed)
+      (should (string-search "comment 2: There is no comment #99" text))
+      (should (string-search "comment 3: A comment is an object" text)))
+    (should (= (length ecc-review--notes) 3))
+    (should (equal (ecc-review-agent-test--ok
+                    session "review_comment_apply"
+                    '((comments . [((file . "foo.el") (line . 11) (text . "fine"))
+                                   ((reply_to . 1) (text . "And another"))])))
+                   "Added #4 at foo.el:11 (new)\nAdded #5 at foo.el:2 (new)"))
+    (should (equal (ecc-review-note-reply-to (ecc-review-find-note 5)) 1))
+    ;; Only the user's go in the prompt, the reply to Claude with it.
+    (ecc-review-agent-test--goto "+added")
+    (ecc-review-comment "Answering Claude" (ecc-review--comment-plan (ecc-review--line-at-point)))
+    (let ((message (ecc-review-buffer-message)))
+      (should (string-search "Keep it lower case" message))
+      (should (string-search "In reply to Claude's #4: fine" message))
+      (should-not (string-search "Will do\n" message)))))
+
 ;;;; What goes wrong
 
 (ert-deftest ecc-review-agent-test-an-unknown-file-is-named ()

@@ -280,8 +280,19 @@ arguments of `review_comment'.  LINES are the lines of the review."
       (error "The comment has no text"))
     (cond
      (reply-to
-      (unless (ecc-review-find-note reply-to)
-        (error "There is no comment #%d; review_list_comments lists them" reply-to))
+      (let ((parent (or (ecc-review-find-note reply-to)
+                        (error "There is no comment #%d; review_list_comments lists them"
+                               reply-to))))
+        ;; A reply goes where the comment it answers is, so a place given
+        ;; with it is either the same or a mistake that would be quietly
+        ;; ignored.
+        (when (or number hunk)
+          (error "A reply goes under the comment it answers; give reply_to without line or hunk"))
+        (when (and (stringp file) (not (string-empty-p (string-trim file)))
+                   (not (equal (ignore-errors (ecc-review-agent--path file t))
+                               (ecc-review-note-path parent))))
+          (error "Comment #%d is on %s, not %s; give reply_to without file"
+                 reply-to (ecc-review-note-path parent) file)))
       (list nil reply-to (string-trim text)))
      ((and number hunk)
       (error "Give line or hunk, not both"))
@@ -303,10 +314,14 @@ arguments of `review_comment'.  LINES are the lines of the review."
 
 (defun ecc-review-agent--what ()
   "Return what the review of this buffer compares, in words."
-  (cond
-   ((null ecc-review--range) "everything changed since the session started")
-   ((string-empty-p ecc-review--range) "what is not staged yet")
-   (t (format "the working tree against %s" ecc-review--range))))
+  (concat
+   (cond
+    ((null ecc-review--range) "everything changed since the session started")
+    ((eq ecc-review--range 'staged) "what is staged")
+    ((string-empty-p ecc-review--range) "what is not staged yet")
+    (t (format "the working tree against %s" ecc-review--range)))
+   (when ecc-review--paths
+     (format " in %s" (string-join ecc-review--paths ", ")))))
 
 (defun ecc-review-agent--counts ()
   "Return the comments of this buffer counted by author, in words."
@@ -352,22 +367,41 @@ INCLUDE-PATCH adds the text of each hunk."
             ""))))
       paths ""))))
 
-(defun ecc-review-agent-open (range)
+(defun ecc-review-agent--paths-argument (paths)
+  "Return PATHS, the paths argument of review_open, as a list of strings."
+  (let ((paths (cond ((null paths) nil)
+                     ((stringp paths) (list paths))
+                     ((vectorp paths) (append paths nil))
+                     (t (error "paths is an array of file names, not %S" paths)))))
+    (delq nil
+          (mapcar (lambda (path)
+                    (unless (stringp path)
+                      (error "paths is an array of file names, and %S is not one" path))
+                    (let ((path (string-trim path)))
+                      (and (not (string-empty-p path)) path)))
+                  paths))))
+
+(defun ecc-review-agent-open (range staged paths)
   "Open the review of the session calling and return what it holds.
 RANGE nil reviews everything changed since the session started; a
 string is what git diffs the working tree against, \"\" meaning what is
-not staged.  A review that is open already is read again, its comments
-kept.  The review is shown the quiet way, or not at all when the user
-is not looking at the session."
+not staged.  STAGED, a JSON boolean, reviews what is staged instead.
+PATHS, an array of file names relative to the repository, restrict the
+review to those.  A review that is open already is read again, its
+comments kept.  The review is shown the quiet way, or not at all when
+the user is not looking at the session."
   (let* ((session (ecc-review-agent--session))
-         (range (and (stringp range) (string-trim range))))
-    ;; The range goes to git as an argument, so one that is an option --
-    ;; --output=FILE writes a file -- is refused before git sees it.
-    (when (and range (string-prefix-p "-" range))
-      (error "A range is a revision or a range of them, like HEAD or main...HEAD; it cannot start with -"))
+         (paths (ecc-review-agent--paths-argument paths))
+         ;; The range goes to git as an argument, so one that is an
+         ;; option -- --output=FILE writes a file -- is refused before git
+         ;; sees it (`ecc-review-parse-range\=').
+         (range (ecc-review-parse-range (and (stringp range) range)))
+         (range (cond ((not (ecc--json-true-p staged)) range)
+                      ((memq range '(nil staged)) 'staged)
+                      (t (error "Give range or staged, not both")))))
     (let* ((buffer (if range
-                       (ecc-review-worktree-buffer session range)
-                     (ecc-review-buffer session)))
+                       (ecc-review-worktree-buffer session range nil paths)
+                     (ecc-review-buffer session paths)))
            (window (ecc-review-agent--show buffer session)))
       (puthash session buffer ecc-review-agent--opened)
       (ecc-review-agent--with-ediff-note
@@ -399,7 +433,11 @@ comment in it adds nothing and can be sent again whole."
       (seq-doseq (spec specs)
         (cl-incf index)
         (condition-case error
-            (push (ecc-review-agent--resolve spec lines) resolved)
+            (push (if (and (consp spec) (seq-every-p #'consp spec))
+                      (ecc-review-agent--resolve spec lines)
+                    (error "A comment is an object with the arguments of review_comment, not %S"
+                           spec))
+                  resolved)
           (error (push (if (cdr-safe specs) ; more than one
                            (format "comment %d: %s" index (error-message-string error))
                          (error-message-string error))
@@ -612,8 +650,11 @@ INCLUDE-USER-COMMENTS, a JSON boolean, removes the user\\='s as well."
   "Publish the review tools and their paragraph of the server instructions."
   (ecc-mcp-define-tool
    :name "review_open"
-   :description "Open the changes as a diff in the user's Emacs review buffer, or read it again when it is open; the comments on it are kept.  Without range it shows everything this session changed since it started, commits included.  With range it is the working tree against a revision (\"HEAD\" is everything uncommitted), \"\" what is not staged, or a range such as \"main...HEAD\".  The user's focus is left alone.  Returns the files and hunks, as review_hunks does."
-   :args '(("range" "string" "What to diff the working tree against; leave it out for this session's changes"))
+   :description "Open the changes as a diff in the user's Emacs review buffer, or read it again when it is open; the comments on it are kept.  Without range it shows everything this session changed since it started, commits included.  With range it is the working tree against a revision (\"HEAD\" is everything uncommitted), \"\" what is not staged, or commits such as \"main...HEAD\" or \"HEAD~1..HEAD\".  staged shows what is staged instead.  paths keeps only those files.  The user's focus is left alone.  Returns the files and hunks, as review_hunks does."
+   :args '(("range" "string" "What to diff the working tree against; leave it out for this session's changes")
+           ("staged" "boolean" "Show what is staged, the index against HEAD, instead of a range")
+           ("paths" ((type . "array") (items . ((type . "string"))))
+            "Only these files, relative to the repository"))
    :function #'ecc-review-agent-open)
   (ecc-mcp-define-tool
    :name "review_hunks"
