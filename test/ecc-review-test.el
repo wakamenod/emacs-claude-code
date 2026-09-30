@@ -703,11 +703,11 @@ carry the time of the index it was made from."
                                "@@ -1,3 +1,3 @@\n one\n-two\n+2\n three"))
                 (should (equal (plist-get (cadr comments) :path) (cadr paths)))
                 (should (equal (plist-get (cadr comments) :comment) "add a newline")))
-              ;; Shown under the hunk, counted in the header line.
-              (should (string-search "▎ use a word"
+              ;; Shown under the hunk with its id, counted in the header line.
+              (should (string-search "▎ #1 use a word"
                                      (overlay-get (car (last (ecc-review-comment-overlays)))
                                                   'after-string)))
-              (should (string-search "comments: 2" (ecc-review--header-line)))
+              (should (string-search "comments: 2 yours" (ecc-review--header-line)))
               ;; Editing replaces, removing drops.
               (ecc-review-comment "add two newlines")
               (should (= (length (ecc-review-comments)) 2))
@@ -798,7 +798,7 @@ carry the time of the index it was made from."
         (ecc-review-test--kill-review-buffers)))))
 
 (ert-deftest ecc-review-test-refresh-keeps-comments ()
-  "g reads the diff again and keeps the comments whose hunk is still there."
+  "g reads the diff again and keeps every comment, moved where its hunk went."
   (ecc-test-with-fake-session session
     (ecc-review-test--with-directory directory
       (unwind-protect
@@ -811,17 +811,22 @@ carry the time of the index it was made from."
               (diff-hunk-next)
               (ecc-review-comment "keep me")
               (diff-hunk-next)
-              (ecc-review-comment "lose me")
+              (ecc-review-comment "follow me")
               ;; The second file changes shape; the first stays.
               (setf (ecc-file-entry-snapshot
                      (gethash (cadr paths) (ecc-session-files session)))
                     "hello\nworld\n")
               (ecc-review-refresh)
               (should (eq (current-buffer) buffer))
+              ;; The second hunk has another header now, but it covers
+              ;; the lines the comment was on, so the comment follows it.
               (let ((comments (ecc-review-comments)))
-                (should (= (length comments) 1))
+                (should (= (length comments) 2))
                 (should (equal (plist-get (car comments) :comment) "keep me"))
-                (should (equal (plist-get (car comments) :path) (car paths))))
+                (should (equal (plist-get (car comments) :path) (car paths)))
+                (should (equal (plist-get (cadr comments) :comment) "follow me"))
+                (should (equal (plist-get (cadr comments) :header) "@@ -0,0 +1,2 @@"))
+                (should-not (plist-get (cadr comments) :outdated)))
               (should (string-search "+world" (buffer-string)))))
         (ecc-review-test--kill-review-buffers)))))
 
@@ -849,6 +854,443 @@ carry the time of the index it was made from."
       (setq ecc-render--session session)
       (should-error (ecc-session-review-or-deny) :type 'user-error)
       (should (memq (car (ecc-session-pending session)) (ecc-session-pending session))))))
+
+;;;; Comments on lines
+
+(defconst ecc-review-test--diff
+  "diff --git a/foo.el b/foo.el
+--- a/foo.el
++++ b/foo.el
+@@ -1,3 +1,3 @@
+ one
+-two
++TWO
+ three
+@@ -10,2 +10,3 @@
+ ten
++added
+ eleven
+"
+  "A diff of one file in two hunks, to comment on line by line.")
+
+(defun ecc-review-test--fill (session text)
+  "Put the diff TEXT in the review buffer of SESSION and return the buffer."
+  (ecc-review--fill (get-buffer-create (ecc-review-buffer-name session))
+                    session text temporary-file-directory))
+
+(defun ecc-review-test--goto (line)
+  "Move to the start of the first line that is LINE exactly."
+  (goto-char (point-min))
+  (re-search-forward (concat "^" (regexp-quote line) "$"))
+  (beginning-of-line))
+
+(defmacro ecc-review-test--with-review (session &rest body)
+  "Run BODY in a review of `ecc-review-test--diff' for a fake SESSION."
+  (declare (indent 1))
+  `(ecc-test-with-fake-session ,session
+     (unwind-protect
+         (with-current-buffer (ecc-review-test--fill ,session ecc-review-test--diff)
+           ,@body)
+       (ecc-review-test--kill-review-buffers))))
+
+(ert-deftest ecc-review-test-lines-are-numbered-on-their-side ()
+  "A removed line counts on the old side, an added or a context line on the new."
+  (ecc-review-test--with-review session
+    (let ((lines (ecc-review--lines)))
+      (should (equal (mapcar (lambda (line)
+                               (list (plist-get line :side) (plist-get line :line)
+                                     (plist-get line :text)))
+                             lines)
+                     '((nil nil "@@ -1,3 +1,3 @@")
+                       (new 1 "one") (old 2 "two") (new 2 "TWO") (new 3 "three")
+                       (nil nil "@@ -10,2 +10,3 @@")
+                       (new 10 "ten") (new 11 "added") (new 12 "eleven"))))
+      (should (equal (plist-get (nth 4 lines) :old-line) 3))
+      (should (equal (plist-get (car lines) :path) "foo.el")))))
+
+(ert-deftest ecc-review-test-comment-takes-its-side-from-the-line ()
+  "c on -, + and context lines comments that line; on @@ the whole hunk."
+  (ecc-review-test--with-review session
+    (ecc-review-test--goto "-two")
+    (ecc-review-comment "why go")
+    (ecc-review-test--goto "+TWO")
+    (ecc-review-comment "shouting")
+    (ecc-review-test--goto " three")
+    (ecc-review-comment "context")
+    (ecc-review-test--goto "@@ -10,2 +10,3 @@")
+    (ecc-review-comment "whole hunk")
+    (should (equal (mapcar (lambda (note)
+                             (list (ecc-review-note-id note)
+                                   (ecc-review-note-side note)
+                                   (ecc-review-note-line note)))
+                           ecc-review--notes)
+                   '((1 old 2) (2 new 2) (3 new 3) (4 nil nil))))
+    (should (equal (mapcar #'ecc-review-note-where ecc-review--notes)
+                   '("foo.el:2 (old)" "foo.el:2 (new)" "foo.el:3 (new)"
+                     "foo.el L10-L12")))
+    ;; Drawn under the line, and the header of the hunk stands out.
+    (ecc-review-test--goto "-two")
+    (let ((overlay (seq-find (lambda (o) (overlay-get o 'ecc-review-notes))
+                             (overlays-at (point)))))
+      (should (equal (overlay-get overlay 'after-string) "  ▎ #1 why go\n"))
+      (should (= (overlay-end overlay) (line-beginning-position 2))))
+    (should (= (length ecc-review--decorations) 2))
+    ;; Again on the same line edits rather than adding.
+    (ecc-review-test--goto "+TWO")
+    (ecc-review-comment "still shouting")
+    (should (= (length ecc-review--notes) 4))
+    (should (equal (ecc-review-note-text (ecc-review-find-note 2)) "still shouting"))
+    ;; Not a line of a hunk.
+    (goto-char (point-min))
+    (should-error (ecc-review-comment "x") :type 'user-error)))
+
+(defconst ecc-review-test--shifted-diff
+  (thread-last ecc-review-test--diff
+               (string-replace "@@ -1,3 +1,3 @@" "@@ -1,3 +1,5 @@")
+               (string-replace "+TWO\n" "+TWO\n+more\n+lines\n")
+               (string-replace "@@ -10,2 +10,3 @@" "@@ -10,2 +12,3 @@"))
+  "`ecc-review-test--diff' with two lines added in its first hunk.
+Everything in the second hunk is two lines further down.")
+
+(defun ecc-review-test--lines-of (text)
+  "Return the lines of the diff TEXT, read in a buffer of its own."
+  (with-temp-buffer
+    (diff-mode)
+    (insert text)
+    (ecc-review--lines)))
+
+(ert-deftest ecc-review-test-locate-note ()
+  "A comment stays, follows its line and neighbours, or is outdated."
+  (ecc-review-test--with-review session
+    (let* ((lines (ecc-review--lines))
+           (added (ecc-review-add-note 'user "a" (nth 7 lines)))
+           (shifted (ecc-review-test--lines-of
+                     (string-replace "@@ -10,2 +10,3 @@" "@@ -10,2 +14,3 @@"
+                                     ecc-review-test--diff))))
+      ;; The lines next to it on its side are kept with it.
+      (should (equal (ecc-review-note-line-before added) "ten"))
+      (should (equal (ecc-review-note-line-after added) "eleven"))
+      ;; 1. Nothing moved: the same line.
+      (should (eq (ecc-review--locate-note added lines) (nth 7 lines)))
+      ;; 2. Lines were added above: the line that says the same between
+      ;; the same neighbours, nearest.
+      (should (equal (plist-get (ecc-review--locate-note added shifted) :line) 15))
+      ;; Not further than `ecc-review-note-max-shift'.
+      (let ((ecc-review-note-max-shift 3))
+        (should-not (ecc-review--locate-note added shifted)))
+      ;; 3. The same text between other lines is another line: outdated.
+      (setf (ecc-review-note-line-text added) "one")
+      (should-not (ecc-review--locate-note added lines))
+      ;; A hunk whose header changed still takes a comment on the lines
+      ;; it covers; one that moved away from them does not.
+      (let ((hunk (ecc-review-add-note 'user "c" (nth 5 lines))))
+        (setf (ecc-review-note-hunk-key hunk) '("foo.el" . "@@ -10,2 +10,4 @@"))
+        (should (eq (ecc-review--locate-note hunk lines) (nth 5 lines)))
+        (setf (ecc-review-note-hunk-range hunk) '(40 . 42))
+        (should-not (ecc-review--locate-note hunk lines))))))
+
+(ert-deftest ecc-review-test-a-blank-line-does-not-wander ()
+  "A comment on a blank line goes outdated rather than to another blank line."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (with-current-buffer
+            (ecc-review-test--fill
+             session
+             "--- a/b.el\n+++ b/b.el\n@@ -5,0 +6,3 @@\n+(defun a ()\n+\n+  1)\n")
+          (ecc-review-test--goto "+")
+          (ecc-review-comment "no blank line here")
+          (ecc-review-test--fill
+           session
+           (concat "--- a/b.el\n+++ b/b.el\n@@ -5,0 +6,3 @@\n+(defun a ()\n+  2\n+  1)\n"
+                   "@@ -40,0 +41,3 @@\n+(defun b ()\n+\n+  3)\n"))
+          (let ((note (car ecc-review--notes)))
+            (should (ecc-review-note-outdated note))
+            (should (= (ecc-review-note-line note) 7))))
+      (ecc-review-test--kill-review-buffers))))
+
+(ert-deftest ecc-review-test-a-look-alike-at-the-same-number-is-not-the-line ()
+  "Pushed down by lines added above, a blank line is not the blank line now in its place."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (with-current-buffer
+            (ecc-review-test--fill
+             session
+             "--- a/c.el\n+++ b/c.el\n@@ -9,3 +9,3 @@\n (defun a ()\n \n-  1)\n+  2)\n")
+          (ecc-review-test--goto " ")
+          (ecc-review-comment "about the blank line in a")
+          (should (= (ecc-review-note-line (car ecc-review--notes)) 10))
+          ;; Three lines above it, the middle one blank: that one is L10 now.
+          (ecc-review-test--fill
+           session
+           (concat "--- a/c.el\n+++ b/c.el\n@@ -8,0 +9,3 @@\n+;; z\n+\n+(z)\n"
+                   "@@ -9,3 +12,3 @@\n (defun a ()\n \n-  1)\n+  2)\n"))
+          (let ((note (car ecc-review--notes)))
+            (should-not (ecc-review-note-outdated note))
+            (should (= (ecc-review-note-line note) 13))))
+      (ecc-review-test--kill-review-buffers))))
+
+(ert-deftest ecc-review-test-the-edge-of-a-hunk-survives-a-merge ()
+  "A line at the edge of a hunk has a neighbour missing, which is not compared."
+  (ecc-review-test--with-review session
+    (let* ((lines (ecc-review--lines))
+           ;; " ten" opens the second hunk: nothing before it.
+           (ten (ecc-review-add-note 'user "a" (nth 6 lines)))
+           ;; "+TWO" sits between "one" and "three".
+           (two (ecc-review-add-note 'user "b" (nth 3 lines)))
+           ;; A line added at the top as well, so that neither is at the
+           ;; number it had and the neighbours are what decide.
+           (merged (ecc-review-test--lines-of
+                    (concat "--- a/foo.el\n+++ b/foo.el\n@@ -1,11 +1,13 @@\n+zero\n"
+                            " one\n-two\n+TWO\n three\n four\n five\n six\n"
+                            " seven\n eight\n nine\n ten\n+added\n eleven\n")))
+           (split (ecc-review-test--lines-of
+                   (concat "--- a/foo.el\n+++ b/foo.el\n@@ -0,0 +1 @@\n+zero\n"
+                           "@@ -2,1 +3,1 @@\n-two\n+TWO\n"))))
+      (should-not (ecc-review-note-line-before ten))
+      ;; Merged into one hunk, " ten" has "nine" before it now.
+      (should (equal (plist-get (ecc-review--locate-note ten merged) :line) 11))
+      ;; Split off, "+TWO" has nothing either side, and is still itself.
+      (should (equal (plist-get (ecc-review--locate-note two split) :line) 3)))))
+
+(ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
+  "Remembering the place reads the hunk it is in, not the whole diff."
+  (ecc-review-test--with-review session
+    (ecc-review-test--goto "+added")
+    (cl-letf (((symbol-function 'ecc-review--lines)
+               (lambda () (error "The whole diff was read"))))
+      (let ((view (car (ecc-review--save-views))))
+        (should (equal (ecc-review-note-line (nth 1 view)) 11))))
+    ;; On a file header, the first hunk after it.
+    (goto-char (point-min))
+    (should (equal (ecc-review-note-hunk-key (nth 1 (car (ecc-review--save-views))))
+                   '("foo.el" . "@@ -1,3 +1,3 @@")))))
+
+(ert-deftest ecc-review-test-a-comment-reads-the-diff-once ()
+  "c reads the lines of the diff once, and draws with them."
+  (ecc-review-test--with-review session
+    (ecc-review-test--goto "+added")
+    (let ((reads 0)
+          (lines (symbol-function 'ecc-review--lines)))
+      (cl-letf (((symbol-function 'ecc-review--lines)
+                 (lambda () (cl-incf reads) (funcall lines))))
+        (ecc-review-comment "once"))
+      (should (= reads 1)))))
+
+(ert-deftest ecc-review-test-refresh-moves-and-outdates ()
+  "A redraw keeps every comment: moved with its line, or marked outdated."
+  (ecc-review-test--with-review session
+    (ecc-review-test--goto "+added")
+    (ecc-review-comment "moves")
+    (ecc-review-test--goto "+TWO")
+    (ecc-review-comment "goes stale")
+    (ecc-review-test--fill session
+                           (thread-last ecc-review-test--diff
+                                        (string-replace "@@ -10,2 +10,3 @@" "@@ -10,2 +12,3 @@")
+                                        (string-replace "+TWO" "+Two")))
+    (let ((moves (ecc-review-find-note 1))
+          (stale (ecc-review-find-note 2)))
+      (should (= (ecc-review-note-line moves) 13))
+      (should-not (ecc-review-note-outdated moves))
+      (should (ecc-review-note-outdated stale))
+      ;; Outdated is drawn above the first hunk of its file, marked.
+      (let ((overlay (seq-find (lambda (o) (memq stale (overlay-get o 'ecc-review-notes)))
+                               (ecc-review-comment-overlays))))
+        (should (string-search "[outdated, was L2 (new)] goes stale"
+                               (overlay-get overlay 'before-string)))
+        (should (= (overlay-start overlay)
+                   (progn (ecc-review-test--goto "@@ -1,3 +1,3 @@") (point)))))
+      (should (string-search "(1 outdated)" (ecc-review--header-line)))
+      ;; It is still sent, with the hunk it was last seen in.
+      (let ((message (ecc-review-buffer-message)))
+        (should (string-search "## foo.el  L2 (new) (outdated)\n" message))
+        (should (string-search "+TWO" message))
+        (should (string-search "## foo.el  L13 (new)\n" message))))))
+
+(ert-deftest ecc-review-test-outdated-are-counted-one-by-one ()
+  "A comment that comes back does not hide one that went outdated."
+  (ecc-review-test--with-review session
+    (ecc-review-test--goto "+TWO")
+    (ecc-review-comment "a")
+    (ecc-review-test--goto "+added")
+    (ecc-review-comment "b")
+    (ecc-review-test--fill session (string-replace "+TWO" "+Two" ecc-review-test--diff))
+    (should (ecc-review-note-outdated (ecc-review-find-note 1)))
+    (let ((messages nil))
+      (cl-letf (((symbol-function 'message)
+                 (lambda (format &rest arguments)
+                   (push (apply #'format-message format arguments) messages))))
+        (ecc-review-test--fill session (string-replace "+added" "+ADDED"
+                                                       ecc-review-test--diff)))
+      (should-not (ecc-review-note-outdated (ecc-review-find-note 1)))
+      (should (ecc-review-note-outdated (ecc-review-find-note 2)))
+      (should (member "1 comment no longer matches a line of the diff; kept as outdated"
+                      messages)))))
+
+(ert-deftest ecc-review-test-no-comment-reads-no-lines ()
+  "Without a comment or a place to keep, drawing reads no line of the diff."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (cl-letf (((symbol-function 'ecc-review--lines)
+                   (lambda () (error "The lines were read"))))
+          (with-current-buffer (ecc-review-test--fill session ecc-review-test--diff)
+            (ecc-review--draw-notes)
+            (should-not (ecc-review-comment-overlays))))
+      (ecc-review-test--kill-review-buffers))))
+
+(ert-deftest ecc-review-test-refill-keeps-the-place ()
+  "Reading the diff again keeps point and the window's start on the same lines."
+  (ecc-review-test--with-review session
+    (save-window-excursion
+      (delete-other-windows)
+      (switch-to-buffer (current-buffer))
+      (ecc-review-test--goto "+added")
+      (forward-char 2)
+      (set-window-point (selected-window) (point))
+      (set-window-start (selected-window) (line-beginning-position 0))
+      (ecc-review-test--fill session ecc-review-test--shifted-diff)
+      (let ((added (progn (save-excursion (ecc-review-test--goto "+added") (point)))))
+        (should (= (point) (+ added 2)))
+        (should (= (window-point (selected-window)) (+ added 2)))
+        (should (= (window-start (selected-window))
+                   (save-excursion (ecc-review-test--goto " ten") (point))))))
+    ;; A buffer shown nowhere keeps its point as well.
+    (ecc-review-test--goto "+more")
+    (ecc-review-test--fill session ecc-review-test--diff)
+    ;; That line is gone: the top, not somewhere arbitrary.
+    (should (= (point) (point-min)))
+    (ecc-review-test--goto " eleven")
+    (ecc-review-test--fill session ecc-review-test--shifted-diff)
+    (should (looking-at-p " eleven"))))
+
+(ert-deftest ecc-review-test-comment-while-the-buffer-changes ()
+  "What happens while a comment is typed does not change where it goes."
+  (ecc-review-test--with-review session
+    ;; Claude comments the same line and the diff is read again, with the
+    ;; line two further down, while the user is still typing.
+    (ecc-review-test--goto "+added")
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (&rest _)
+                 (ecc-review-add-note 'claude "Meanwhile" (ecc-review--line-at-point))
+                 (ecc-review--draw-notes)
+                 (ecc-review-test--fill session ecc-review-test--shifted-diff)
+                 "mine")))
+      (call-interactively #'ecc-review-comment))
+    (let ((mine (car (last ecc-review--notes))))
+      (should (equal (ecc-review-note-text mine) "mine"))
+      (should (eq (ecc-review-note-author mine) 'user))
+      ;; Its own comment, not a reply to what arrived meanwhile.
+      (should-not (ecc-review-note-reply-to mine))
+      (should (= (ecc-review-note-line mine) 13))
+      (should-not (ecc-review-note-outdated mine)))
+    ;; The line goes altogether: the text is kept, as outdated.
+    (ecc-review-test--goto "+TWO")
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (&rest _)
+                 (ecc-review-test--fill session
+                                        (string-replace "+TWO" "+Two"
+                                                        ecc-review-test--shifted-diff))
+                 "about TWO")))
+      (call-interactively #'ecc-review-comment))
+    (let ((note (car (last ecc-review--notes))))
+      (should (equal (ecc-review-note-text note) "about TWO"))
+      (should (ecc-review-note-outdated note))
+      (should (string-search "about TWO" (ecc-review-buffer-message))))))
+
+(ert-deftest ecc-review-test-message-of-lines-and-replies ()
+  "A line comment is headed by its line, a reply quotes Claude, Claude is not sent."
+  (ecc-review-test--with-review session
+    (let ((lines (ecc-review--lines)))
+      (ecc-review-add-note 'claude "Is this a constant?" (nth 7 lines))
+      (ecc-review--draw-notes))
+    ;; c on a line that has only Claude's comment answers it.
+    (ecc-review-test--goto "+added")
+    (ecc-review-comment "No, a variable")
+    (let ((reply (ecc-review-find-note 2)))
+      (should (eq (ecc-review-note-author reply) 'user))
+      (should (equal (ecc-review-note-reply-to reply) 1)))
+    ;; Drawn under Claude's, indented, each in its own face.
+    (let* ((overlay (car (ecc-review-comment-overlays)))
+           (text (overlay-get overlay 'after-string)))
+      (should (equal (substring-no-properties text)
+                     "  ▎ #1 Claude: Is this a constant?\n    ▎ #2 No, a variable\n"))
+      (should (eq (get-text-property 3 'face text) 'ecc-review-agent-comment-face))
+      (should (eq (get-text-property (- (length text) 3) 'face text)
+                  'ecc-review-comment-face)))
+    ;; Again on the line edits the reply.
+    (ecc-review-comment "No, a variable, and rename it")
+    (should (= (length ecc-review--notes) 2))
+    (ecc-review-test--goto "-two")
+    (ecc-review-comment "keep two")
+    (should (equal (ecc-review-buffer-message)
+                   (concat ecc-review-header "\n\n"
+                           "## foo.el  L2 (old)\n```diff\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n```\n"
+                           "Comment: keep two\n\n"
+                           "## foo.el  L11 (new)\n```diff\n@@ -10,2 +10,3 @@\n ten\n+added\n eleven\n```\n"
+                           "In reply to Claude's #1: Is this a constant?\n"
+                           "Comment: No, a variable, and rename it")))
+    (should (string-search "comments: 2 yours, 1 Claude's" (ecc-review--header-line)))))
+
+(ert-deftest ecc-review-test-hide-move-and-remove ()
+  "a hides Claude's comments, { and } move between comments, d removes either."
+  (ecc-review-test--with-review session
+    (should (eq (key-binding (kbd "a")) #'ecc-review-toggle-agent))
+    (should (eq (key-binding (kbd "{")) #'ecc-review-previous-comment))
+    (should (eq (key-binding (kbd "}")) #'ecc-review-next-comment))
+    (let ((lines (ecc-review--lines)))
+      (ecc-review-add-note 'claude "mine" (nth 3 lines))
+      (ecc-review-add-note 'user "yours" (nth 7 lines))
+      (ecc-review--draw-notes))
+    ;; Moving.
+    (goto-char (point-min))
+    (ecc-review-next-comment)
+    (should (looking-at-p "\\+TWO"))
+    (ecc-review-next-comment)
+    (should (looking-at-p "\\+added"))
+    (should-error (ecc-review-next-comment) :type 'user-error)
+    (ecc-review-previous-comment)
+    (should (looking-at-p "\\+TWO"))
+    (should-error (ecc-review-previous-comment) :type 'user-error)
+    ;; Hidden, Claude's is not drawn but still counted.
+    (ecc-review-toggle-agent)
+    (should (= (length (ecc-review-comment-overlays)) 1))
+    (should (string-search "1 Claude's (hidden)" (ecc-review--header-line)))
+    (goto-char (point-min))
+    (ecc-review-next-comment)
+    (should (looking-at-p "\\+added"))
+    (ecc-review-toggle-agent)
+    (should (= (length (ecc-review-comment-overlays)) 2))
+    ;; d removes Claude's too; with nothing on the line it says so.
+    (ecc-review-test--goto "+TWO")
+    (ecc-review-remove-comment)
+    (should (equal (mapcar #'ecc-review-note-text ecc-review--notes) '("yours")))
+    (should-error (ecc-review-remove-comment) :type 'user-error)
+    ;; Two on one line: which one is asked.
+    (ecc-review-test--goto "+added")
+    (ecc-review-add-note 'claude "and mine" (ecc-review--line-at-point))
+    (ecc-review--draw-notes)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt labels &rest _)
+                 (seq-find (lambda (label) (string-prefix-p "#3" label)) labels))))
+      (ecc-review-remove-comment))
+    (should (equal (mapcar #'ecc-review-note-text ecc-review--notes) '("yours")))
+    ;; Ids are never handed out again.
+    (ecc-review-test--goto "+TWO")
+    (should (= (ecc-review-note-id (ecc-review-comment "again")) 4))))
+
+(ert-deftest ecc-review-test-another-proposal-starts-clean ()
+  "Refilling the buffer for another proposal drops the comments of the last."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (let ((buffer (get-buffer-create (ecc-review-buffer-name session))))
+          (ecc-review--fill buffer session ecc-review-test--diff nil 'first)
+          (with-current-buffer buffer
+            (ecc-review-test--goto "+TWO")
+            (ecc-review-comment "about the first"))
+          (ecc-review--fill buffer session ecc-review-test--diff nil 'first)
+          (should (= (length (buffer-local-value 'ecc-review--notes buffer)) 1))
+          (ecc-review--fill buffer session ecc-review-test--diff nil 'second)
+          (should-not (buffer-local-value 'ecc-review--notes buffer)))
+      (ecc-review-test--kill-review-buffers))))
 
 ;;;; Reviewing a proposal
 

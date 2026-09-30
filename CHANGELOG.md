@@ -51,6 +51,85 @@ Verified against **Claude Code CLI 2.1.281**.
   nothing to write about 0.02 ms, which is also what the exit hook adds when
   the file is already current.
 
+- Claude can comment on the review. With the MCP server on
+  (`ecc-mcp-enabled`), the model is offered `review_open`, `review_hunks`,
+  `review_comment`, `review_comment_apply`, `review_navigate`,
+  `review_list_comments`, `review_remove_comment` and
+  `review_clear_comments`: it opens the review of its session, puts
+  comments on lines or hunks, answers a comment with `reply_to`, scrolls
+  the review to a place, and reads or removes comments. It never writes or
+  changes a comment of the user's. A tool works on the review of the session
+  that calls it. The review it opens or moves is shown beside the session
+  without being selected and without hiding a session window: never in the
+  window you are in (nor the one the minibuffer was entered from), never by
+  going to another tab or Space, and not at all when the session is not on
+  the screen or there is no other window to take. It takes the window of
+  another review of the session first, a free window next, and divides the
+  session's window last; `q` deletes a window made for it. A
+  `display-buffer-alist` rule of yours for the review is followed, as long
+  as it leaves your window and tab alone. The review then waits in its
+  buffer at the place Claude chose. The tools
+  do not read a review open in ediff (`ecc-review-style` `ediff`) and say
+  so when there is one. The tools write no file, so they
+  are allowed without asking and noted as `auto-allowed` in the transcript;
+  `ecc-review-agent-auto-allow` set to `nil` asks instead. Claude's comments
+  have a face of their own, `ecc-review-agent-comment-face`, and `a` hides
+  them. Only the user's comments are sent with `C-c C-c`. The tools come
+  from Hunk (github.com/modem-dev/hunk), where an agent annotates a diff
+  somebody is reading in a terminal.
+
+- A comment in the review buffer belongs to a line. `c` on a removed line
+  comments the old side, on an added or a context line the new side, and on
+  the `@@` line the whole hunk, as before. Every comment has a number that is
+  not used again, `{` and `}` move between comments, and the header line
+  counts yours and Claude's. A line comment is sent headed by its line,
+  `## foo.el  L42 (new)`, with the whole hunk under it; a reply quotes the
+  comment of Claude's it answers. What `c` does is settled when it is
+  pressed: a comment from Claude arriving on the line while you type does
+  not turn yours into a reply, and a line that goes away meanwhile leaves
+  your text kept as outdated.
+
+- The MCP server's `initialize` carries instructions, the paragraphs modules
+  register with `ecc-mcp-define-instructions`, each left out while none of its
+  tools is published. Claude Code puts them in the system prompt for an HTTP
+  server given by `--mcp-config` (checked with `claude -p` on 2026-10-01).
+  An argument of an MCP tool may be declared with a whole JSON schema, so a
+  tool can take an array of objects.
+
+- `ecc-request-allow-functions`, the counterpart of
+  `ecc-request-refuse-functions`: a module allows a tool of its own that is
+  harmless by construction, through the same path as a tool approved for
+  the turn.
+
+### Changed
+
+- `c` in the review buffer comments the line at point instead of the hunk
+  around it. On the `@@` line it still comments the whole hunk, and a
+  comment on a whole hunk is sent in the same form as before.
+
+- `g` no longer drops a comment whose hunk header changed ("Dropped N
+  comments whose hunk is gone"). A comment stays on its line while that
+  line says what it said between the same neighbouring lines; otherwise it
+  goes to the nearest line that does, no further than
+  `ecc-review-note-max-shift` (100) lines, so a change higher up in the file
+  moves it instead of losing it, and a comment on a blank line or a lone
+  brace does not wander off to another. A neighbour that is not known -- at
+  the first or last line of a hunk -- is not compared, so hunks merging or
+  splitting leave a comment where it was. A comment on a whole hunk follows a
+  hunk over the same lines. A comment whose line has gone is kept, marked
+  outdated, above the first hunk of its file, and is still sent with
+  `(outdated)` and the hunk as it was.
+
+- Reading the review again -- `g`, `ecc-review` or `ecc-review-worktree` on
+  a review that is open, or Claude's `review_open` -- keeps your place: point,
+  and in each window showing the review its point and how far down the
+  window it was, go back to the same line by the same rule. It used to go
+  to the top. A window of the review in another tab's saved configuration is
+  out of reach and shows the review from the top when that tab comes back.
+
+- `{` and `}` in the review buffer move between comments. `diff-mode` has
+  them moving between files, which `N` and `P` still do.
+
 ### Fixed
 
 - A session with no process behind it -- a recording opened with `h` to be

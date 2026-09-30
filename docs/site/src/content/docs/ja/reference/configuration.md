@@ -103,7 +103,7 @@ M-x customize-group RET ecc
 
 ## MCP サーバー
 
-ecc はループバックインターフェイスで動作するインプロセス MCP サーバーを起動し、各セッションに自動登録できます。これにより、Claude は Emacs のエディタコンテキスト（`xref`、`imenu`、`tree-sitter`、プロジェクト情報、診断情報など）を直接参照できます。
+ecc はループバックインターフェイスで動作するインプロセス MCP サーバーを起動し、各セッションに自動登録できます。これにより、Claude は Emacs のエディタコンテキスト（`xref`、`imenu`、`tree-sitter`、プロジェクト情報、診断情報など）を直接参照できます。Claude が[レビューバッファにコメントを付ける](/emacs-claude-code/ja/features/review/#claude-のコメント)こともできます。
 
 | 変数 | 既定値 | 説明 |
 |---|---|---|

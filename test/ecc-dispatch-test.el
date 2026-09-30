@@ -134,6 +134,38 @@
                              "Bash" '((command . "ls"))))
       (should (= 1 (length (ecc-session-pending session)))))))
 
+(ert-deftest ecc-dispatch-test-a-request-can-be-allowed ()
+  "An allowing function answers a permission before anybody is asked."
+  (ecc-test-with-fake-session session
+    (let ((ecc-request-allow-functions
+           (list (lambda (_session request)
+                   (equal (ecc-request-tool-name request) "mcp__x__harmless")))))
+      (ecc-dispatch session (ecc-dispatch-test--can-use-tool
+                             "mcp__x__harmless" '((a . 1))))
+      (let ((response (alist-get 'response
+                                 (alist-get 'response
+                                            (car (ecc-test-sent-messages))))))
+        (should (equal (alist-get 'behavior response) "allow"))
+        (should (equal (alist-get 'updatedInput response) '((a . 1)))))
+      (should-not (ecc-session-pending session))
+      ;; The transcript says so.
+      (should (seq-find (lambda (node)
+                          (eq (ecc-model-node-get node 'kind) 'auto-allow))
+                        (hash-table-values (ecc-session-nodes session))))
+      ;; Anything else is asked about as before.
+      (ecc-dispatch session (ecc-dispatch-test--can-use-tool
+                             "Bash" '((command . "ls"))))
+      (should (= 1 (length (ecc-session-pending session))))
+      ;; And a refusal comes first.
+      (let ((ecc-request-refuse-functions (list (lambda (&rest _) "no"))))
+        (ecc-dispatch session (ecc-dispatch-test--can-use-tool
+                               "mcp__x__harmless" '((a . 1))))
+        (should (equal (alist-get 'behavior
+                                  (alist-get 'response
+                                             (alist-get 'response
+                                                        (car (last (ecc-test-sent-messages))))))
+                       "deny"))))))
+
 (ert-deftest ecc-dispatch-test-file-changed-hook ()
   "A successful write tells the rest of Emacs to reload the file."
   (ecc-test-with-fake-session session

@@ -827,6 +827,56 @@ what it returned, and nothing else.")
       (remhash "ecc_live_probe" ecc-mcp-tools)
       (ecc-mcp-stop))))
 
+(ert-deftest ecc-test-live-review-agent ()
+  "Claude opens the review and puts a comment on a line of it, unasked-about.
+The tools are named in the prompt, so what is checked is that they work
+and are allowed, not what the model chooses to say."
+  :tags '(live)
+  (skip-unless (executable-find "git"))
+  (require 'ecc-mcp)
+  (require 'ecc-review-agent)
+  (let ((ecc-mcp-port 0)
+        (ecc-mcp-enabled t))
+    (unwind-protect
+        (ecc-test-live-with-session session
+          (let* ((directory (file-name-as-directory
+                             (file-truename (make-temp-file "ecc-live-agent" t))))
+                 (greeting (concat directory "greeting.txt")))
+            (unwind-protect
+                (progn
+                  (ecc-test-live-git directory "init" "-q")
+                  (ecc-test-live-git directory "config" "user.email" "t@example.com")
+                  (ecc-test-live-git directory "config" "user.name" "t")
+                  (with-temp-file greeting (insert "hello\nworld\n"))
+                  (ecc-test-live-git directory "add" ".")
+                  (ecc-test-live-git directory "commit" "-q" "-m" "init")
+                  (with-temp-file greeting (insert "hello\nthere\n"))
+                  (setf (ecc-session-project-root session) directory)
+                  (ecc-proc-send-prompt
+                   session
+                   "Call the mcp__emacs__review_open tool with no arguments.  Then \
+call mcp__emacs__review_comment with file greeting.txt, line 2 and a one \
+sentence text about that line.  Then reply with the word done.")
+                  (ecc-test-live-wait-for-result session)
+                  ;; Allowed by Emacs, not asked about.
+                  (should-not (ecc-session-pending session))
+                  (let ((review (get-buffer (ecc-review-buffer-name session))))
+                    (should review)
+                    (with-current-buffer review
+                      (let ((note (car ecc-review--notes)))
+                        (should note)
+                        (should (eq (ecc-review-note-author note) 'claude))
+                        (should (equal (ecc-review-note-where note)
+                                       "greeting.txt:2 (new)"))))))
+              (ecc-test-live--kill-review session)
+              (delete-directory directory t))))
+      (ecc-mcp-stop))))
+
+(defun ecc-test-live--kill-review (session)
+  "Kill the review buffer of SESSION, if there is one."
+  (when-let* ((buffer (get-buffer (ecc-review-buffer-name session))))
+    (kill-buffer buffer)))
+
 (ert-deftest ecc-test-live-usage ()
   "The CLI answers `get_usage' with the numbers the usage buffer draws.
 No prompt is sent: the session is started, asked, and left alone, so
