@@ -1123,7 +1123,7 @@ Everything in the second hunk is two lines further down.")
                                                        ecc-review-test--diff)))
       (should-not (ecc-review-note-outdated (ecc-review-find-note 1)))
       (should (ecc-review-note-outdated (ecc-review-find-note 2)))
-      (should (member "1 comments no longer match a line of the diff; kept as outdated"
+      (should (member "1 comment no longer matches a line of the diff; kept as outdated"
                       messages)))))
 
 (ert-deftest ecc-review-test-no-comment-reads-no-lines ()

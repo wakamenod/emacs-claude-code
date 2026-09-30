@@ -693,6 +693,10 @@ what the session changed."
                  "  ·  c comment  { } comments  a Claude's  l list  d delete  C-c C-c send (C-u edits)  n/p hunk  RET source")
                'face 'ecc-dim-face))))
 
+(defun ecc-review--count (n noun)
+  "Return N NOUNs in words: \"1 comment\", \"2 comments\"."
+  (format "%d %s%s" n noun (if (= n 1) "" "s")))
+
 (defun ecc-review--count-string ()
   "Return what the header line says about the comments of this buffer.
 Claude\='s are counted while they are hidden: hiding them is for reading
@@ -757,8 +761,8 @@ asked any more."
       ;; make up for another that lost it.
       (let ((lost (seq-count #'ecc-review-note-outdated placed)))
         (when (> lost 0)
-          (message "%d comments no longer match a line of the diff; kept as outdated"
-                   lost)))
+          (message "%s no longer %s a line of the diff; kept as outdated"
+                   (ecc-review--count lost "comment") (if (= lost 1) "matches" "match"))))
       buffer)))
 
 (defun ecc-review--view-at (position)

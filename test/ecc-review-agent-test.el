@@ -113,10 +113,18 @@ The review buffer is current."
   "review_hunks numbers the hunks of each file and can add their text."
   (ecc-review-agent-test--with-review session
     (let ((text (ecc-review-agent-test--ok session "review_hunks")))
-      (should (string-search "2 hunks" text))
+      (should (string-search "1 file, 2 hunks;" text))
+      (should-not (string-search "comments\n" text))
       (should (string-search "foo.el\n  hunk 1  @@ -1,3 +1,3 @@  new L1-L3\n" text))
       (should (string-search "  hunk 2  @@ -10,2 +10,3 @@  new L10-L12\n" text))
       (should-not (string-search "+added" text)))
+    ;; One of anything is one, not one of a plural.
+    (ecc-review-agent-test--ok session "review_comment"
+                               '((file . "foo.el") (line . 11) (text . "x")))
+    (should (string-search "new L10-L12  1 comment\n"
+                           (ecc-review-agent-test--ok session "review_hunks")))
+    (should (string-search "comments: 0 by the user, 1 by you."
+                           (ecc-review-agent-test--ok session "review_hunks")))
     (should (string-search "+added"
                            (ecc-review-agent-test--ok
                             session "review_hunks" '((include_patch . t)))))
@@ -225,7 +233,7 @@ The review buffer is current."
     (should (car (ecc-review-agent-test--call session "review_list_comments"
                                               '((author . "nobody")))))
     ;; Clearing takes Claude's and keeps the user's.
-    (should (string-search "Removed 1 comments.  The user's 2 were kept"
+    (should (string-search "Removed 1 comment.  The user's 2 were kept"
                            (ecc-review-agent-test--ok session "review_clear_comments")))
     (should (equal (mapcar #'ecc-review-note-id ecc-review--notes) '(1 3)))
     ;; Removing one of the user's, once dealt with, is allowed.
@@ -315,7 +323,7 @@ The review buffer is current."
             (ecc-review-agent-test--write file "one\n2\nthree\n")
             (let ((text (ecc-review-agent-test--ok session "review_open")))
               (should (string-search "not on the screen" text))
-              (should (string-search "everything changed since the session started: 1 files, 1 hunks"
+              (should (string-search "everything changed since the session started: 1 file, 1 hunk;"
                                      text))
               (should (string-search "x.txt\n  hunk 1  @@ -2 +2 @@" text)))
             (should (get-buffer "*ecc-review: test*"))

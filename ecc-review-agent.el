@@ -321,9 +321,10 @@ INCLUDE-PATCH adds the text of each hunk."
   (let* ((paths (if file (list (ecc-review-agent--path file)) (ecc-review-agent--paths)))
          (hunks (ecc-review-hunks)))
     (concat
-     (format "Review of %s: %d files, %d hunks; comments: %s.\n"
+     (format "Review of %s: %s, %s; comments: %s.\n"
              (ecc-review-agent--what)
-             (length (ecc-review-agent--paths)) (length hunks)
+             (ecc-review--count (length (ecc-review-agent--paths)) "file")
+             (ecc-review--count (length hunks) "hunk")
              (ecc-review-agent--counts))
      (mapconcat
       (lambda (path)
@@ -343,7 +344,7 @@ INCLUDE-PATCH adds the text of each hunk."
                  (format "  hunk %d  %s  new L%d-L%d%s\n"
                          number (plist-get hunk :header)
                          (plist-get hunk :start) (plist-get hunk :end)
-                         (if (> comments 0) (format "  %d comments" comments) ""))
+                         (if (> comments 0) (concat "  " (ecc-review--count comments "comment")) ""))
                  (when include-patch
                    (let ((fence (ecc-review--fence (plist-get hunk :text))))
                      (format "%sdiff\n%s\n%s\n" fence (plist-get hunk :text) fence))))))
@@ -595,7 +596,7 @@ INCLUDE-USER-COMMENTS, a JSON boolean, removes the user\\='s as well."
            (kept (- (length in-file) (length gone))))
       (mapc #'ecc-review-remove-note gone)
       (ecc-review--draw-notes)
-      (format "Removed %d comments.%s" (length gone)
+      (format "Removed %s.%s" (ecc-review--count (length gone) "comment")
               (if (> kept 0)
                   (format "  The user's %d were kept; include_user_comments removes them too."
                           kept)
