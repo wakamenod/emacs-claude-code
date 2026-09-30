@@ -44,6 +44,10 @@
 ;; made.  Every change the session made to the file after it is in
 ;; `ecc-file-entry-patches', and the line is moved through those, so it
 ;; lands where the line is now.
+;;
+;; A video or a sound is not visited: a buffer of it would show its
+;; bytes, so `ecc-visit-open' hands it to the machine's own player, the
+;; way RET on a video drawn in the transcript does.
 
 ;;; Code:
 
@@ -57,6 +61,7 @@
 (require 'ecc-chat)
 (require 'ecc-markdown)
 (require 'ecc-window)
+(require 'ecc-image)
 
 ;;;; Reading a diff line back
 
@@ -335,12 +340,21 @@ every redraw."
 
 (defun ecc-visit-open (path &optional line session)
   "Open PATH beside SESSION at LINE, and return its window.
+A video or a sound is played by the machine instead
+\(`ecc-image-open-externally\='), LINE is ignored and nil is returned:
+a buffer of one would show its bytes.
 The window is chosen as every buffer opened out of a conversation is
 \(`ecc-window-display-beside-session\\=').  With LINE the point goes to
 it, the window is scrolled to put it in the middle and the line
 flashes; without it the buffer keeps the point it had."
   (unless (file-exists-p path)
     (user-error "No such file: %s" (abbreviate-file-name path)))
+  (if (ecc-image-plays-outside-p path)
+      (progn (ecc-image-open-externally path) nil)
+    (ecc-visit--open-in-buffer path line session)))
+
+(defun ecc-visit--open-in-buffer (path line session)
+  "Visit PATH beside SESSION at LINE, and return its window."
   (let* ((buffer (find-file-noselect path))
          (window (if session
                      (ecc-window-display-beside-session buffer session)
