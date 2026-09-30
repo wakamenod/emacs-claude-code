@@ -613,6 +613,86 @@ An agent transcript of the same session does not count."
       (kill-buffer buffer)
       (should-not (ecc-model-session id)))))
 
+;;;; Showing a review Claude opened
+
+(defun ecc-window-test--quiet-cases (session review)
+  "Check `ecc-window-show-review-quietly' for SESSION and the buffer REVIEW.
+Run once with the Spaces on and once with them off, by the test below."
+  (let ((source (get-buffer-create "*ecc-window-test source*"))
+        (session-buffer (ecc-session-ensure-buffer session))
+        (tab (and (fboundp 'tab-bar--current-tab)
+                  (alist-get 'name (tab-bar--current-tab)))))
+    (unwind-protect
+        (cl-letf (((symbol-function 'ecc-space-select)
+                   (lambda (&rest _) (error "A Space was gone to")))
+                  ((symbol-function 'tab-bar-select-tab-by-name)
+                   (lambda (&rest _) (error "A tab was gone to"))))
+          (save-window-excursion
+            ;; The user types in the source, the session beside it: the
+            ;; source is the widest window of nothing of ours, and it is
+            ;; the one review must not take.
+            (delete-other-windows)
+            (switch-to-buffer source)
+            (set-window-buffer (split-window-right) session-buffer)
+            (let* ((selected (selected-window))
+                   (window (ecc-window-show-review-quietly review session)))
+              (should window)
+              (should (eq (window-buffer window) review))
+              (should (eq (selected-window) selected))
+              (should (eq (window-buffer selected) source))
+              ;; The session keeps its window: the review has a new one.
+              (should (get-buffer-window session-buffer))
+              ;; Shown already: left where it is.
+              (should (eq (ecc-window-show-review-quietly review session) window))))
+          (save-window-excursion
+            ;; The user types in the session, and there is nothing else.
+            (delete-other-windows)
+            (switch-to-buffer session-buffer)
+            (let* ((selected (selected-window))
+                   (window (ecc-window-show-review-quietly review session)))
+              (should window)
+              (should-not (eq window selected))
+              (should (eq (selected-window) selected))
+              (should (eq (window-buffer selected) session-buffer))))
+          (save-window-excursion
+            ;; The session is not on the screen: nothing is brought forward.
+            (delete-other-windows)
+            (switch-to-buffer source)
+            (let ((configuration (current-window-configuration)))
+              (should-not (ecc-window-show-review-quietly review session))
+              (should (compare-window-configurations
+                       configuration (current-window-configuration)))))
+          (when tab
+            (should (equal (alist-get 'name (tab-bar--current-tab)) tab))))
+      (kill-buffer source))))
+
+(ert-deftest ecc-window-test-a-quiet-review-takes-no-window-of-the-user ()
+  "The review Claude shows never takes the selected window or goes to a tab."
+  (ecc-test-with-fake-session session
+    (let ((review (get-buffer-create "*ecc-review: test*")))
+      (unwind-protect
+          (progn
+            (let ((ecc-use-spaces nil))
+              (ecc-window-test--quiet-cases session review))
+            ;; With the Spaces on, and another tab beside the one showing.
+            (let ((ecc-use-spaces t)
+                  (was tab-bar-mode))
+              (unwind-protect
+                  (progn
+                    (tab-bar-mode 1)
+                    (tab-bar-new-tab)
+                    (tab-bar-rename-tab "ecc-window-test other")
+                    (tab-bar-new-tab)
+                    (tab-bar-rename-tab "ecc-window-test here")
+                    (ecc-window-test--quiet-cases session review)
+                    (should (equal (alist-get 'name (tab-bar--current-tab))
+                                   "ecc-window-test here")))
+                (dolist (name '("ecc-window-test other" "ecc-window-test here"))
+                  (ignore-errors (tab-bar-close-tab-by-name name)))
+                (tab-bar-rename-tab "")
+                (tab-bar-mode (if was 1 -1)))))
+        (kill-buffer review)))))
+
 (provide 'ecc-window-test)
 
 ;;; ecc-window-test.el ends here

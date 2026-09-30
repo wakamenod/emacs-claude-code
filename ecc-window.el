@@ -597,16 +597,50 @@ window is hidden, and `ecc-window-review-focus\=' and
 review the user asked for.
 
 A review already on a visible frame is left where it is.  Otherwise it
-is shown only when SESSION is on the screen of the selected frame: a
-session the user is not looking at is not brought forward -- under
-`spaces\=' that would be another tab -- and the review waits in its
-buffer for when they are."
+is shown only when SESSION is on the screen of the selected frame --
+which is the tab showing, so no tab or Space is ever gone to -- and only
+in a window that is not the selected one: the widest window holding
+nothing of this package, else a new one divided off the session\='s.
+Not `ecc-window-display-beside-session\=': under `spaces\=' that selects
+the Space of the session, and may pick the very window the user is
+typing in, which would then take their next keys.  Where there is no
+such window the review waits in its buffer, and nil says so."
   (or (get-buffer-window buffer 'visible)
       (when-let* ((session-buffer (ecc-session-buffer session))
                   ((buffer-live-p session-buffer))
-                  ((get-buffer-window session-buffer)))
-        (save-selected-window
-          (ecc-window-display-beside-session buffer session t)))))
+                  (session-window (get-buffer-window session-buffer)))
+        (let ((window (or (ecc-window--quiet-review-window)
+                          (ecc-window--split-quietly session-window))))
+          (when window
+            (display-buffer-record-window 'reuse window buffer)
+            (set-window-buffer window buffer)
+            window)))))
+
+(defun ecc-window--quiet-review-window ()
+  "Return the widest window a review may take without anybody noticing, or nil.
+Not the selected window, not a side window, not a dedicated one, and
+none showing a buffer of this package."
+  (let ((selected (selected-window)))
+    (car (sort (seq-filter (lambda (window)
+                             (and (not (eq window selected))
+                                  (not (window-parameter window 'window-side))
+                                  (not (window-dedicated-p window))
+                                  (not (ecc-window-own-buffer-p (window-buffer window)))))
+                           (window-list nil 'no-minibuffer))
+               (lambda (a b) (> (window-total-width a) (window-total-width b)))))))
+
+(defun ecc-window--split-quietly (session-window)
+  "Divide SESSION-WINDOW for a review and return the new window, or nil.
+To the right when it has room for two columns of 80, which is what a
+diff wants to be read in, below it otherwise.  A
+side window is left whole.  The selected window stays selected and keeps
+its buffer: the new window is the other half."
+  (unless (window-parameter session-window 'window-side)
+    (ignore-errors
+      (split-window session-window nil
+                    (if (>= (window-total-width session-window) 160)
+                        'right
+                      'below)))))
 
 (defun ecc-window-session-buffers (session)
   "Return the live buffers of SESSION that are shown in a window of their own."
