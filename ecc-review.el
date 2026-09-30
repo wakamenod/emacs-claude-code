@@ -1001,6 +1001,7 @@ are in the order they were made, so that one is placed first."
 
 (defun ecc-review--place (note line lines)
   "Return (BEG END PROPERTY) of the overlay NOTE, placed on LINE, is drawn with.
+LINES are all the lines of the buffer, where an outdated one is placed.
 A comment on a line is drawn under the line and one on a hunk under the
 hunk.  An outdated one has no line: it is drawn above the first hunk of
 its file, right under the file header, or at the top when the file has

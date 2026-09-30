@@ -587,6 +587,27 @@ happens to the session windows and where point lands."
          (select-window session-window))))
     window))
 
+(defun ecc-window-show-review-quietly (buffer session)
+  "Show the review in BUFFER beside SESSION without moving anybody.
+Returns the window that shows it, or nil.  This is how a review Claude
+opened or moved reaches the screen: the user is somewhere else -- very
+likely typing in the prompt -- so nothing is selected, no session
+window is hidden, and `ecc-window-review-focus\=' and
+`ecc-window-hide-on-review\=' are not consulted, both being about a
+review the user asked for.
+
+A review already on a visible frame is left where it is.  Otherwise it
+is shown only when SESSION is on the screen of the selected frame: a
+session the user is not looking at is not brought forward -- under
+`spaces\=' that would be another tab -- and the review waits in its
+buffer for when they are."
+  (or (get-buffer-window buffer 'visible)
+      (when-let* ((session-buffer (ecc-session-buffer session))
+                  ((buffer-live-p session-buffer))
+                  ((get-buffer-window session-buffer)))
+        (save-selected-window
+          (ecc-window-display-beside-session buffer session t)))))
+
 (defun ecc-window-session-buffers (session)
   "Return the live buffers of SESSION that are shown in a window of their own."
   (seq-filter #'buffer-live-p
