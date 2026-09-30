@@ -61,9 +61,14 @@ Verified against **Claude Code CLI 2.1.281**.
   changes a comment of the user's. A tool works on the review of the session
   that calls it. The review it opens or moves is shown beside the session
   without being selected and without hiding a session window: never in the
-  selected window, never by going to another tab or Space, and not at all
-  when the session is not on the screen or there is no other window to take.
-  The review then waits in its buffer at the place Claude chose. The tools
+  window you are in (nor the one the minibuffer was entered from), never by
+  going to another tab or Space, and not at all when the session is not on
+  the screen or there is no other window to take. It takes the window of
+  another review of the session first, a free window next, and divides the
+  session's window last; `q` deletes a window made for it. A
+  `display-buffer-alist` rule of yours for the review is followed, as long
+  as it leaves your window and tab alone. The review then waits in its
+  buffer at the place Claude chose. The tools
   do not read a review open in ediff (`ecc-review-style` `ediff`) and say
   so when there is one. The tools write no file, so they
   are allowed without asking and noted as `auto-allowed` in the transcript;
@@ -104,11 +109,13 @@ Verified against **Claude Code CLI 2.1.281**.
 
 - `g` no longer drops a comment whose hunk header changed ("Dropped N
   comments whose hunk is gone"). A comment stays on its line while that
-  line says what it said; otherwise it goes to the nearest line that says
-  the same between the same neighbouring lines, no further than
+  line says what it said between the same neighbouring lines; otherwise it
+  goes to the nearest line that does, no further than
   `ecc-review-note-max-shift` (100) lines, so a change higher up in the file
   moves it instead of losing it, and a comment on a blank line or a lone
-  brace does not wander off to another. A comment on a whole hunk follows a
+  brace does not wander off to another. A neighbour that is not known -- at
+  the first or last line of a hunk -- is not compared, so hunks merging or
+  splitting leave a comment where it was. A comment on a whole hunk follows a
   hunk over the same lines. A comment whose line has gone is kept, marked
   outdated, above the first hunk of its file, and is still sent with
   `(outdated)` and the hunk as it was.
@@ -117,7 +124,8 @@ Verified against **Claude Code CLI 2.1.281**.
   a review that is open, or Claude's `review_open` -- keeps your place: point,
   and in each window showing the review its point and how far down the
   window it was, go back to the same line by the same rule. It used to go
-  to the top.
+  to the top. A window of the review in another tab's saved configuration is
+  out of reach and shows the review from the top when that tab comes back.
 
 - `{` and `}` in the review buffer move between comments. `diff-mode` has
   them moving between files, which `N` and `P` still do.
