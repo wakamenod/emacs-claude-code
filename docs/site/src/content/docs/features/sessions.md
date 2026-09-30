@@ -38,13 +38,16 @@ Session recordings are stored by Claude Code under `~/.claude/projects`, meaning
 
 ## Bringing sessions back after a restart
 
-ecc keeps a small record of the open Spaces and sessions in `ecc-state.eld` under `user-emacs-directory`. The file is rewritten whenever a session starts or is killed, or a Space opens or closes, so a crash leaves it current too. `M-x ecc-restore` reads it back:
+ecc saves the open Spaces and sessions to `ecc-state.eld` in `user-emacs-directory`. It rewrites the file each time a session starts or is killed and each time a tab opens or closes, so the file stays current even after a crash. Only an Emacs that has had a session of its own, or has run `ecc-restore`, writes to the file. An Emacs that only opens a tab or reads a recording leaves it as it was.
 
-- The Spaces come back in the order their tabs were in, with their sessions side by side. With `ecc-use-spaces` off, only the sessions come back.
-- Each session is read from its recording and comes back stopped. No CLI starts until you send a prompt or press `R`, and the check for a conversation running in another process happens at that point.
-- A session that is already open is left alone, so running the command twice restores nothing twice. A session or Space whose directory is gone is skipped and named in the message.
+Run `M-x ecc-restore` to bring them back:
 
-A session you kill leaves the record, so what comes back is what was open when Emacs exited. Sessions saved by an earlier Emacs and not restored yet stay in the record until you restore them, even if you start other sessions or quit first. To restore on every start, call `(ecc-restore)` from your init file.
+- The Spaces open in their old tab order, with their sessions side by side. With `ecc-use-spaces` off, only the sessions come back.
+- Each session is read from its recording and comes back stopped. Its CLI starts only when you send a prompt or press `R`. That is also when ecc checks whether another process is running the same conversation.
+- ecc skips a session that is already open, so running the command twice does no harm. A recording you opened with `h` to read does not count as open: it becomes the restored session, in the buffer it already has.
+- ecc skips a session or Space whose directory no longer exists, and names it in the message.
+
+A session you kill yourself leaves the file, so what comes back is what was open when Emacs exited. Sessions that an earlier Emacs saved and you have not restored yet stay in the file until you restore them. Starting other sessions first, or quitting Emacs first, does not drop them. To restore on every start, call `(ecc-restore)` from your init file.
 
 ## Searching past conversations
 
