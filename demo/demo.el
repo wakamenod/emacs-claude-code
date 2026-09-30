@@ -87,6 +87,13 @@ this gives it is one nothing else writes to.")
 (defun demo-load-configuration ()
   "Load the user's configuration, then this checkout's ecc."
   (setq package-user-dir (expand-file-name "~/.emacs.d/elpa"))
+  ;; The init runs `auto-package-update-maybe' every few days, and it
+  ;; asks first: the demo Emacs sat at "Auto-update packages now? (y or
+  ;; n)" where nobody could answer, never started its server, and the
+  ;; recorder gave up with "the demo Emacs never came up" (2026-10-01).
+  ;; A demonstration updates nothing; the user's own Emacs asks.
+  (with-eval-after-load 'auto-package-update
+    (defalias 'auto-package-update-maybe #'ignore))
   (load (expand-file-name "~/.emacs.d/early-init.el") t t)
   (package-initialize)
   (load demo-init-file t t)
