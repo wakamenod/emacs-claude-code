@@ -88,6 +88,15 @@ work on that."
 A sentence the model can act on: an error that only says no is one it
 works around.")
 
+(defvar ecc-review-agent-ediff-text
+  "The user is reviewing these changes in ediff, which the review tools \
+do not reach: the comments they write there come to you as a prompt when \
+they send them with C-c C-c."
+  "What the model is told while the user reviews in ediff.
+`ecc-review-style\=' `ediff\=' keeps its comments against the differences
+of an ediff session, which these tools do not read yet; said in a
+sentence, so that the model does not take the silence for no comment.")
+
 (defconst ecc-review-agent-tools
   '("review_open" "review_hunks" "review_comment" "review_comment_apply"
     "review_navigate" "review_list_comments" "review_remove_comment"
@@ -115,6 +124,22 @@ closes the moment they do."
                        (null ecc-review--request))))
               (buffer-list)))
 
+(defun ecc-review-agent--ediff-p (session)
+  "Return non-nil when SESSION has a review open in ediff.
+The control buffer of such a review is the one whose comments are
+listed by `ecc-review-ediff-comments\='."
+  (seq-some (lambda (buffer)
+              (and (eq (buffer-local-value 'ecc-review--comments-function buffer)
+                       'ecc-review-ediff-comments)
+                   (eq (buffer-local-value 'ecc-review--session buffer) session)))
+            (buffer-list)))
+
+(defun ecc-review-agent--with-ediff-note (session text)
+  "Return TEXT, followed by `ecc-review-agent-ediff-text\=' when SESSION has one."
+  (if (ecc-review-agent--ediff-p session)
+      (concat text "\n\n" ecc-review-agent-ediff-text)
+    text))
+
 (defun ecc-review-agent-buffer (session)
   "Return the review buffer the tools of SESSION work on.
 One on the screen comes first, the one Claude opened last among those;
@@ -128,7 +153,8 @@ then the one Claude opened last; then the one used last.  Signals
         (car shown)
         opened
         (car buffers)
-        (error "%s" ecc-review-agent-no-review-text))))
+        (error "%s" (ecc-review-agent--with-ediff-note
+                     session ecc-review-agent-no-review-text)))))
 
 (defmacro ecc-review-agent--in-review (&rest body)
   "Run BODY in the review buffer of the session calling."
@@ -160,11 +186,15 @@ A number may come as a string, and an id as \"#3\"."
   "Return the files of this review that have hunks, in the order of the diff."
   (delete-dups (mapcar (lambda (hunk) (plist-get hunk :path)) (ecc-review-hunks))))
 
-(defun ecc-review-agent--path (file)
+(defun ecc-review-agent--path (file &optional commented)
   "Return the path of this review that FILE names, or signal which there are.
 FILE may be relative to the repository, absolute, or carry git\\='s a/
-or b/ in front."
-  (let ((paths (ecc-review-agent--paths))
+or b/ in front.  With COMMENTED the files that only carry outdated
+comments count too: those can still be listed and cleared."
+  (let ((paths (delete-dups (append (ecc-review-agent--paths)
+                                    (and commented
+                                         (mapcar #'ecc-review-note-path
+                                                 ecc-review--notes)))))
         (wanted (and (stringp file) (string-trim file))))
     (or (and wanted
              (not (string-empty-p wanted))
@@ -329,11 +359,13 @@ is not looking at the session."
                      (ecc-review-buffer session)))
            (window (ecc-window-show-review-quietly buffer session)))
       (puthash session buffer ecc-review-agent--opened)
-      (with-current-buffer buffer
-        (concat (if window
-                    "The review is open beside the session.\n"
-                  "The review is open in Emacs but not on the screen: the user is not looking at this session now.\n")
-                (ecc-review-agent--summary))))))
+      (ecc-review-agent--with-ediff-note
+       session
+       (with-current-buffer buffer
+         (concat (if window
+                     "The review is open beside the session.\n"
+                   "The review is open in Emacs but not on the screen: the user is not looking at this session, or it had no window to go in but the one they are using.\n")
+                 (ecc-review-agent--summary)))))))
 
 (defun ecc-review-agent-hunks (file include-patch)
   "Return the hunks of the review, of FILE alone when given.
@@ -450,7 +482,7 @@ window is moved without being selected."
            (position (car target)))
       (goto-char position)
       (if (not window)
-          (format "The review is not on the screen (the user is not looking at this session); it will open at %s."
+          (format "The review is not on the screen (the user is not looking at this session, or it had no window to go in but the one they are using); it will open at %s."
                   (cdr target))
         (set-window-point window position)
         (set-window-start window (ecc-review-agent--window-start window position))
@@ -479,22 +511,30 @@ window is moved without being selected."
 
 (defun ecc-review-agent-list-comments (author file)
   "Return the comments of the review, of AUTHOR and FILE when given.
-A reply is listed under what it answers."
+A reply is listed under what it answers.  A review the user has open in
+ediff is not read, and the answer says so rather than \"No comments\"."
+  (let ((session (ecc-review-agent--session)))
+    (if (and (ecc-review-agent--ediff-p session)
+             (null (ecc-review-agent--buffers session)))
+        ecc-review-agent-ediff-text
+      (ecc-review-agent--with-ediff-note
+       session (ecc-review-agent--list-comments author file)))))
+
+(defun ecc-review-agent--list-comments (author file)
+  "Return the comments of the diff review, of AUTHOR and FILE when given."
   (ecc-review-agent--in-review
     (let* ((author (pcase author
                      ((or 'nil "") nil)
                      ("user" 'user)
                      ("claude" 'claude)
                      (_ (error "The author is \"user\" or \"claude\", not %S" author))))
-           (file (and (stringp file) (not (string-empty-p file))
-                      (replace-regexp-in-string "\\`[ab]/" "" (string-trim file))))
+           (path (and (stringp file) (not (string-empty-p (string-trim file)))
+                      (ecc-review-agent--path file t)))
            (notes (seq-filter (lambda (note)
                                 (and (or (null author)
                                          (eq (ecc-review-note-author note) author))
-                                     (or (null file)
-                                         (equal (ecc-review-note-path note) file)
-                                         (equal (expand-file-name (ecc-review-note-path note))
-                                                (expand-file-name file)))))
+                                     (or (null path)
+                                         (equal (ecc-review-note-path note) path))))
                               (ecc-review--ordered ecc-review--notes)))
            (children (lambda (note)
                        (seq-filter (lambda (other)
@@ -534,14 +574,12 @@ A reply is listed under what it answers."
   "Remove Claude\\='s comments, of FILE alone when given.
 INCLUDE-USER-COMMENTS, a JSON boolean, removes the user\\='s as well."
   (ecc-review-agent--in-review
-    (let* ((file (and (stringp file) (not (string-empty-p file))
-                      (replace-regexp-in-string "\\`[ab]/" "" (string-trim file))))
+    (let* ((path (and (stringp file) (not (string-empty-p (string-trim file)))
+                      (ecc-review-agent--path file t)))
            (all (ecc--json-true-p include-user-comments))
            (in-file (seq-filter (lambda (note)
-                                  (or (null file)
-                                      (equal (ecc-review-note-path note) file)
-                                      (equal (expand-file-name (ecc-review-note-path note))
-                                             (expand-file-name file))))
+                                  (or (null path)
+                                      (equal (ecc-review-note-path note) path)))
                                 ecc-review--notes))
            (gone (seq-filter (lambda (note) (or all (ecc-review--agent-p note))) in-file))
            (kept (- (length in-file) (length gone))))

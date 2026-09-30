@@ -220,8 +220,8 @@ The review buffer is current."
       (should-not (string-search "[claude]" users))
       (should (string-search "#3 [user] foo.el:11 (new) (reply to #2): Fine by me" users)))
     (should (equal (ecc-review-agent-test--ok session "review_list_comments"
-                                              '((file . "other.el")))
-                   "No comments."))
+                                              '((file . "foo.el") (author . "claude")))
+                   "#2 [claude] foo.el:11 (new): Mine"))
     (should (car (ecc-review-agent-test--call session "review_list_comments"
                                               '((author . "nobody")))))
     ;; Clearing takes Claude's and keeps the user's.
@@ -339,6 +339,93 @@ The review buffer is current."
               (should failed)
               (should (string-search "cannot start with -" text))))
         (ecc-review-agent-test--kill-review-buffers)))))
+
+;;;; What goes wrong
+
+(ert-deftest ecc-review-agent-test-an-unknown-file-is-named ()
+  "Listing or clearing the comments of a file the review has not got says so."
+  (ecc-review-agent-test--with-review session
+    (ecc-review-agent-test--ok session "review_comment"
+                               '((file . "foo.el") (line . 11) (text . "Mine")))
+    (dolist (name '("review_list_comments" "review_clear_comments"))
+      (pcase-let ((`(,failed . ,text)
+                   (ecc-review-agent-test--call session name '((file . "nope.el")))))
+        (should failed)
+        (should (string-search "nope.el is not in the review; its files are: foo.el"
+                               text))))
+    (should (= (length ecc-review--notes) 1))
+    ;; A file that only has outdated comments left can still be named.
+    (setf (ecc-review-note-path (car ecc-review--notes)) "gone.el")
+    (should (string-search "#1 [claude] gone.el"
+                           (ecc-review-agent-test--ok session "review_list_comments"
+                                                      '((file . "gone.el")))))
+    (ecc-review-agent-test--ok session "review_clear_comments" '((file . "gone.el")))
+    (should-not ecc-review--notes)))
+
+(ert-deftest ecc-review-agent-test-an-ediff-review-is-said ()
+  "A review the user has open in ediff is named, not taken for no comment."
+  (ecc-test-with-fake-session session
+    (let ((control (get-buffer-create " *ecc-review-agent-test ediff*")))
+      (unwind-protect
+          (progn
+            (with-current-buffer control
+              (setq-local ecc-review--comments-function #'ecc-review-ediff-comments
+                          ecc-review--session session))
+            (should (equal (ecc-review-agent-test--ok session "review_list_comments")
+                           ecc-review-agent-ediff-text))
+            (pcase-let ((`(,failed . ,text)
+                         (ecc-review-agent-test--call session "review_hunks")))
+              (should failed)
+              (should (string-search "Call review_open first" text))
+              (should (string-search "reviewing these changes in ediff" text)))
+            ;; Beside a diff review, the diff review's comments and the word.
+            (with-current-buffer (ecc-review-agent-test--fill session ecc-review-agent-test--diff)
+              (let ((text (ecc-review-agent-test--ok session "review_list_comments")))
+                (should (string-prefix-p "No comments." text))
+                (should (string-search "reviewing these changes in ediff" text)))))
+        (kill-buffer control)
+        (ecc-review-agent-test--kill-review-buffers)))))
+
+;;;; A place set while nobody looks
+
+(ert-deftest ecc-review-agent-test-a-hidden-place-is-kept ()
+  "review_navigate on a review nobody sees: opening it by hand lands there."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-agent-test--with-directory directory
+      (unwind-protect
+          (let ((file (concat directory "x.txt"))
+                (ecc-review-style 'diff)
+                (ecc-window-hide-on-review nil)
+                (ecc-window-review-focus 'review))
+            (ecc-review-agent-test--git directory "init" "-q")
+            (ecc-review-agent-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-agent-test--git directory "config" "user.name" "t")
+            (ecc-review-agent-test--write
+             file (mapconcat (lambda (n) (format "line %d\n" n)) (number-sequence 1 20) ""))
+            (ecc-review-agent-test--git directory "add" "x.txt")
+            (ecc-review-agent-test--git directory "commit" "-q" "-m" "init")
+            (ecc-review-agent-test--write
+             file (mapconcat (lambda (n) (format (if (memq n '(2 15)) "LINE %d\n" "line %d\n") n))
+                             (number-sequence 1 20) ""))
+            (setf (ecc-session-project-root session) directory)
+            (save-window-excursion
+              (delete-other-windows)
+              (switch-to-buffer (get-buffer-create "*ecc-review-agent-test elsewhere*"))
+              (ecc-review-agent-test--ok session "review_open")
+              (should (string-search "it will open at x.txt:15 (new)"
+                                     (ecc-review-agent-test--ok
+                                      session "review_navigate"
+                                      '((file . "x.txt") (line . 15)))))
+              ;; The user opens the review, which reads the diff again.
+              (ecc-review session)
+              (let ((review (get-buffer "*ecc-review: test*")))
+                (should (eq (window-buffer (selected-window)) review))
+                (should (looking-at-p "\\+LINE 15"))
+                (should (= (window-point (selected-window)) (point))))))
+        (ecc-review-agent-test--kill-review-buffers)
+        (when (get-buffer "*ecc-review-agent-test elsewhere*")
+          (kill-buffer "*ecc-review-agent-test elsewhere*"))))))
 
 ;;;; More than one session
 
