@@ -67,6 +67,20 @@
   (should-not (ecc-image-video-p "/tmp/a.png"))
   (should (eq (ecc-image-type "/tmp/a.jpg") 'jpeg)))
 
+(ert-deftest ecc-image-test-plays-outside ()
+  "A video or a sound plays outside Emacs; a sound is still never drawn."
+  (should (ecc-image-plays-outside-p "/tmp/a.mp4"))
+  (should (ecc-image-plays-outside-p "/tmp/a.MOV"))
+  (should (ecc-image-plays-outside-p "/tmp/a.mp3"))
+  (should (ecc-image-plays-outside-p "/tmp/a.FLAC"))
+  (should-not (ecc-image-plays-outside-p "/tmp/a.gif"))
+  (should-not (ecc-image-plays-outside-p "/tmp/a.png"))
+  (should-not (ecc-image-plays-outside-p "/tmp/a.el"))
+  (should-not (ecc-image-plays-outside-p "/tmp/a"))
+  (should-not (ecc-image-plays-outside-p nil))
+  (should-not (ecc-image-file-p "/tmp/a.mp3"))
+  (should-not (ecc-image-kind "/tmp/a.wav")))
+
 ;;;; What arrives from the CLI
 
 (ert-deftest ecc-image-test-materialize-writes-the-bytes ()

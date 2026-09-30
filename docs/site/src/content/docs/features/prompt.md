@@ -187,6 +187,8 @@ Press `RET` on code in the transcript, or click it, to open the file next to the
 
 A line number in a diff refers to the file right after that change. ecc adjusts it for later changes the session made to the same file, so the file opens where the line is now. ecc checks a path in a reply only when you follow it, and a missing file is an error. Paths inside fenced code blocks are not links. To turn path links off, set the variable `ecc-markdown-linkify-paths` to nil with `setq`.
 
+A video or a sound file (`clip.mp4`, `take.mp3`) does not open in Emacs: `RET` plays it in the machine's own player, as it does for a video drawn in the transcript, and ignores the line number.
+
 On a heading without a file, such as Bash, `RET` still shows the full tool result. `o` shows it on any node.
 
 ### On a pending request node

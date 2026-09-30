@@ -51,6 +51,18 @@ Verified against **Claude Code CLI 2.1.281**.
   nothing to write about 0.02 ms, which is also what the exit hook adds when
   the file is already current.
 
+### Changed
+
+- `RET` or a click on a path to a video or a sound -- a path in Claude's
+  reply, a Files row, a tool heading -- plays the file in the machine's own
+  player (`open` on macOS, `browse-url-of-file` elsewhere) instead of
+  visiting it in a buffer of raw bytes. A line number after such a path is
+  ignored, and a missing file is still an error. The video extensions are
+  `ecc-image-video-extensions`; the sound ones are the new variable
+  `ecc-image-audio-extensions` (mp3, wav, m4a, aac, flac, ogg, oga, opus,
+  aiff, aif). A gif is still drawn in Emacs, and a sound is never drawn in
+  the transcript.
+
 ### Fixed
 
 - A session with no process behind it -- a recording opened with `h` to be
