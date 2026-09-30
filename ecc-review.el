@@ -712,19 +712,23 @@ PATHS and RANGE are remembered as what the buffer reviews.
 
 The comments are kept across a redraw, each put back where its line is
 now (`ecc-review--locate-note\='); one whose line is gone is marked
-outdated and kept, never dropped.  A buffer that reviewed another
-proposal before starts with none: those comments were about something
-that is not being asked any more."
+outdated and kept, never dropped.  So is the place being read: point,
+and in every window showing the buffer its point and how far down the
+window that line was, are put back on the same line by the same rule --
+whether the diff was read again by \\`g', by opening the review again, or
+by Claude.  A buffer that reviewed another proposal before starts with
+no comments and at the top: that was about something that is not being
+asked any more."
   (with-current-buffer buffer
-    (let ((same (and (derived-mode-p 'ecc-review-mode)
-                     (eq ecc-review--request request)))
-          (outdated (seq-count #'ecc-review-note-outdated ecc-review--notes)))
+    (let* ((same (and (derived-mode-p 'ecc-review-mode)
+                      (eq ecc-review--request request)))
+           (placed (and same (seq-remove #'ecc-review-note-outdated ecc-review--notes)))
+           (views (and same (ecc-review--save-views))))
       (unless (derived-mode-p 'ecc-review-mode)
         (ecc-review-mode))
       (unless same
         (setq ecc-review--notes nil
-              ecc-review--next-id 1
-              outdated 0))
+              ecc-review--next-id 1))
       (let ((inhibit-read-only t))
         (erase-buffer)
         (insert text)
@@ -738,13 +742,70 @@ that is not being asked any more."
             ecc-review--range range)
       (set-buffer-modified-p nil)
       (goto-char (point-min))
-      (ecc-review--draw-notes)
-      (let ((lost (- (seq-count #'ecc-review-note-outdated ecc-review--notes)
-                     outdated)))
+      ;; The lines are read once, and only when something is to be put
+      ;; back on them.
+      (let ((lines (and (or ecc-review--notes views) (ecc-review--lines))))
+        (ecc-review--draw-notes lines)
+        (ecc-review--restore-views views lines))
+      ;; Counted one by one: a comment that found its line again does not
+      ;; make up for another that lost it.
+      (let ((lost (seq-count #'ecc-review-note-outdated placed)))
         (when (> lost 0)
           (message "%d comments no longer match a line of the diff; kept as outdated"
                    lost)))
       buffer)))
+
+(defun ecc-review--view-at (position lines)
+  "Return (ANCHOR . COLUMN) for POSITION on LINES, or nil.
+ANCHOR is a note-shaped record of the line POSITION is on -- the next
+line of a hunk when it is on a file header -- and COLUMN how far into
+the line it is."
+  (let* ((bol (save-excursion (goto-char position) (line-beginning-position)))
+         (line (or (seq-find (lambda (line) (= (plist-get line :position) bol)) lines)
+                   (seq-find (lambda (line) (> (plist-get line :position) bol)) lines))))
+    (when line
+      (cons (ecc-review--anchor (ecc-review-note-create) line)
+            (max 0 (- position (plist-get line :position)))))))
+
+(defun ecc-review--save-views ()
+  "Return where this buffer is being read, to be put back after a redraw.
+The answer is a list of (WINDOW ANCHOR COLUMN LINES-FROM-TOP), WINDOW
+being nil for the point of the buffer itself, or nil when the buffer is
+empty."
+  (when (> (buffer-size) 0)
+    (let ((lines (ecc-review--lines))
+          (views nil))
+      (when-let* ((view (ecc-review--view-at (point) lines)))
+        (push (list nil (car view) (cdr view) 0) views))
+      (dolist (window (get-buffer-window-list (current-buffer) nil t))
+        (when-let* ((view (ecc-review--view-at (window-point window) lines)))
+          (push (list window (car view) (cdr view)
+                      (count-lines (window-start window)
+                                   (save-excursion
+                                     (goto-char (window-point window))
+                                     (line-beginning-position))))
+                views)))
+      views)))
+
+(defun ecc-review--restore-views (views lines)
+  "Put the VIEWS of `ecc-review--save-views\=' back on LINES.
+A place whose line cannot be found again is left at the top."
+  (pcase-dolist (`(,window ,anchor ,column ,from-top) views)
+    (let* ((line (ecc-review--locate-note anchor lines))
+           (position (if line
+                         (min (+ (plist-get line :position) column)
+                              (save-excursion
+                                (goto-char (plist-get line :position))
+                                (line-end-position)))
+                       (point-min))))
+      (if (null window)
+          (goto-char position)
+        (when (and (window-live-p window) (eq (window-buffer window) (current-buffer)))
+          (set-window-point window position)
+          (set-window-start window (save-excursion
+                                     (goto-char position)
+                                     (forward-line (- from-top))
+                                     (point))))))))
 
 ;;;; Hunks
 
@@ -830,7 +891,8 @@ Each line is a plist: :position, where it starts; :path; :side, `new'
 for an added or a context line, `old' for a removed one and nil for the
 @@ header; :line, its number on that side; :old-line, the number a
 context line has on the old side as well; :text, the line without its
-marker; and :hunk, HUNK itself.
+marker; :before and :after, the text of the lines next to it on its side
+of the hunk (nil at an edge); and :hunk, HUNK itself.
 
 The numbers are counted down from the @@ header the way git counts
 them: a removed line takes the next number of the old side, an added
@@ -856,23 +918,48 @@ font-lock has been round."
                      (min (1+ (point)) (line-end-position)) (line-end-position))))
           (pcase (char-after)
             (?- (push (list :position position :path path :side 'old :line old
-                            :text text :hunk hunk)
+                            :text text :before nil :after nil :hunk hunk)
                       lines)
                 (cl-incf old))
             (?+ (push (list :position position :path path :side 'new :line new
-                            :text text :hunk hunk)
+                            :text text :before nil :after nil :hunk hunk)
                       lines)
                 (cl-incf new))
             ;; A context line; an empty one is a context line whose
             ;; leading space something on the way trimmed.
             ((or ?\s ?\n)
              (push (list :position position :path path :side 'new :line new
-                         :old-line old :text text :hunk hunk)
+                         :old-line old :text text :before nil :after nil
+                         :hunk hunk)
                    lines)
              (cl-incf new)
              (cl-incf old))))
         (forward-line 1))
-      (nreverse lines))))
+      (setq lines (nreverse lines))
+      ;; The neighbours of a line are the lines next to it in the file it
+      ;; belongs to: the new side reads added and context lines, the old
+      ;; side removed and context lines.
+      (ecc-review--link-neighbours
+       lines 'new (lambda (line) (eq (plist-get line :side) 'new)))
+      (ecc-review--link-neighbours
+       lines 'old (lambda (line) (or (eq (plist-get line :side) 'old)
+                                     (plist-get line :old-line))))
+      lines)))
+
+(defun ecc-review--link-neighbours (lines side member-p)
+  "Give the SIDE lines of LINES the texts of their neighbours on that side.
+MEMBER-P says which lines are read on that side; only the lines whose
+:side is SIDE are given neighbours, a context line taking those of the
+new side it is anchored on."
+  (let ((previous nil)
+        (members (seq-filter member-p lines)))
+    (while members
+      (let ((line (car members)))
+        (when (eq (plist-get line :side) side)
+          (plist-put line :before (and previous (plist-get previous :text)))
+          (plist-put line :after (and (cadr members) (plist-get (cadr members) :text))))
+        (setq previous line
+              members (cdr members))))))
 
 (defun ecc-review--lines ()
   "Return every line of every hunk of this buffer, as `ecc-review--hunk-lines'."
@@ -893,13 +980,14 @@ font-lock has been round."
   "One comment of a review, kept apart from how it is drawn.
 The place is kept as text rather than as a position, so that the
 comment can be put back after the diff has been read again: PATH, SIDE
-and LINE name the line and LINE-TEXT is what it said.  SIDE is nil for
+and LINE name the line, LINE-TEXT is what it said and LINE-BEFORE and
+LINE-AFTER what the lines next to it said.  SIDE is nil for
 a comment on a whole hunk.  HUNK-KEY, HUNK-RANGE and HUNK-TEXT are the
 hunk it was in when last found -- its key, the lines of its new side
 and its text, which is what an outdated comment is still sent with."
   id              ; an integer, unique in the buffer and never reused
   author          ; `user' or `claude'
-  path side line line-text
+  path side line line-text line-before line-after
   hunk-key hunk-range hunk-text
   text
   reply-to        ; the id of the comment this one answers, or nil
@@ -935,6 +1023,8 @@ and its text, which is what an outdated comment is still sent with."
           (ecc-review-note-line note) (plist-get line :line)
           (ecc-review-note-line-text note) (and (plist-get line :side)
                                                 (plist-get line :text))
+          (ecc-review-note-line-before note) (plist-get line :before)
+          (ecc-review-note-line-after note) (plist-get line :after)
           (ecc-review-note-hunk-key note) (ecc-review--hunk-key hunk)
           (ecc-review-note-hunk-range note) (cons (plist-get hunk :start)
                                                   (plist-get hunk :end))
@@ -942,30 +1032,55 @@ and its text, which is what an outdated comment is still sent with."
           (ecc-review-note-outdated note) nil)
     note))
 
+(defvar ecc-review-note-max-shift 100
+  "How many lines a comment may move to follow its line across a redraw.
+A change above a line pushes it down or pulls it up by the lines that
+were added or taken out there, and a comment follows it that far.  Past
+this it is not the same line any more but one that happens to read
+alike, and the comment is marked outdated instead.")
+
 (defun ecc-review--locate-note (note lines)
   "Return the member of LINES NOTE belongs on now, or nil when none is.
-LINES are plists of `ecc-review--hunk-lines'.  A comment on a line goes
-to the line of the same path and side that still says what its line
-said, the one nearest the number it had -- which is the same line when
-nothing above it moved, and the line it was pushed to when something
-did.  A comment on a whole hunk goes to the hunk with the same header,
-else to the first hunk of its path whose new side overlaps the lines it
-covered.  Nil means none of that is there: the comment is outdated."
+LINES are plists of `ecc-review--hunk-lines'.  A comment on a line stays
+on the line of the same path, side and number while it says what it
+said.  Otherwise it goes to the line nearest that number that says the
+same with the same lines on either side, no further away than
+`ecc-review-note-max-shift' -- the line it was pushed to by a change
+above it.  The text alone is not enough: a blank line, a lone brace or
+an `end' reads like a hundred others, and a comment on one would land on
+any of them.
+
+A comment on a whole hunk goes to the hunk with the same header, else to
+the first hunk of its path whose new side overlaps the lines it covered.
+Nil means none of that is there: the comment is outdated."
   (let ((path (ecc-review-note-path note))
         (side (ecc-review-note-side note)))
     (if side
         (let ((text (ecc-review-note-line-text note))
               (number (ecc-review-note-line note))
               (best nil))
-          (dolist (line lines)
-            (when (and (eq (plist-get line :side) side)
-                       (equal (plist-get line :path) path)
-                       (equal (plist-get line :text) text)
-                       (or (null best)
-                           (< (abs (- (plist-get line :line) number))
-                              (abs (- (plist-get best :line) number)))))
-              (setq best line)))
-          best)
+          (or (seq-find (lambda (line)
+                          (and (eq (plist-get line :side) side)
+                               (equal (plist-get line :path) path)
+                               (eql (plist-get line :line) number)
+                               (equal (plist-get line :text) text)))
+                        lines)
+              (progn
+                (dolist (line lines)
+                  (when (and (eq (plist-get line :side) side)
+                             (equal (plist-get line :path) path)
+                             (equal (plist-get line :text) text)
+                             (equal (plist-get line :before)
+                                    (ecc-review-note-line-before note))
+                             (equal (plist-get line :after)
+                                    (ecc-review-note-line-after note))
+                             (<= (abs (- (plist-get line :line) number))
+                                 ecc-review-note-max-shift)
+                             (or (null best)
+                                 (< (abs (- (plist-get line :line) number))
+                                    (abs (- (plist-get best :line) number)))))
+                    (setq best line)))
+                best)))
       (let ((headers (seq-filter (lambda (line)
                                    (and (null (plist-get line :side))
                                         (equal (plist-get line :path) path)))
@@ -1071,17 +1186,24 @@ gone from the diff altogether."
 (defvar-local ecc-review--positions nil
   "Hash of each comment to where it was drawn last, hidden ones included.")
 
-(defun ecc-review--draw-notes ()
+(defun ecc-review--draw-notes (&optional lines)
   "Draw the comments of this buffer again from `ecc-review--notes'.
 Every comment is put back first (`ecc-review--relocate'), so this is
-also what keeps them in place across a refresh."
+also what keeps them in place across a refresh.  LINES are the lines of
+the buffer when the caller has read them already; with no comment there
+is nothing to read them for."
   (mapc #'delete-overlay ecc-review--comments)
   (mapc #'delete-overlay ecc-review--decorations)
   (setq ecc-review--comments nil
         ecc-review--decorations nil
         ecc-review--positions (make-hash-table :test #'eq))
-  (let* ((lines (ecc-review--lines))
-         (places (ecc-review--relocate lines))
+  (when ecc-review--notes
+    (ecc-review--draw-notes-on (or lines (ecc-review--lines))))
+  (force-mode-line-update))
+
+(defun ecc-review--draw-notes-on (lines)
+  "Draw the comments of this buffer on LINES, the lines it holds now."
+  (let* ((places (ecc-review--relocate lines))
          (groups nil)
          (commented nil))
     (dolist (note ecc-review--notes)
@@ -1108,8 +1230,7 @@ also what keeps them in place across a refresh."
                                        (goto-char (plist-get line :position))
                                        (line-end-position)))))
           (overlay-put overlay 'face 'ecc-review-commented-hunk-face)
-          (push overlay ecc-review--decorations)))))
-  (force-mode-line-update))
+          (push overlay ecc-review--decorations))))))
 
 (defun ecc-review-comment-overlays ()
   "Return the live overlays drawing the comments of this buffer."
@@ -1119,21 +1240,28 @@ also what keeps them in place across a refresh."
   "Return where NOTE was drawn last, or would have been when hidden."
   (and ecc-review--positions (gethash note ecc-review--positions)))
 
+(defun ecc-review--copy-anchor (note from)
+  "Put NOTE where the comment FROM is, outdated or not, and return NOTE."
+  (dolist (slot '(path side line line-text line-before line-after
+                       hunk-key hunk-range hunk-text outdated))
+    (setf (cl-struct-slot-value 'ecc-review-note slot note)
+          (cl-struct-slot-value 'ecc-review-note slot from)))
+  note)
+
 (defun ecc-review-add-note (author text line &optional reply-to)
   "Add a comment by AUTHOR saying TEXT on LINE and return it.
-LINE is a plist of `ecc-review--hunk-lines'.  With REPLY-TO, the id of
-the comment answered, LINE may be nil and the reply goes where that one
-is.  The comment is not drawn yet: `ecc-review--draw-notes\=' does that,
-once for however many are added."
+LINE is a plist of `ecc-review--hunk-lines', or a note whose place the
+comment takes.  With REPLY-TO, the id of the comment answered, LINE may
+be nil and the reply goes where that one is.  The comment is not drawn
+yet: `ecc-review--draw-notes\=' does that, once for however many are
+added."
   (let* ((parent (and reply-to (or (ecc-review-find-note reply-to)
                                    (error "No comment #%s" reply-to))))
          (note (ecc-review-note-create :id ecc-review--next-id :author author
                                        :text text :reply-to reply-to)))
-    (if line
-        (ecc-review--anchor note line)
-      (dolist (slot '(path side line line-text hunk-key hunk-range hunk-text outdated))
-        (setf (cl-struct-slot-value 'ecc-review-note slot note)
-              (cl-struct-slot-value 'ecc-review-note slot parent))))
+    (cond ((ecc-review-note-p line) (ecc-review--copy-anchor note line))
+          (line (ecc-review--anchor note line))
+          (t (ecc-review--copy-anchor note parent)))
     (cl-incf ecc-review--next-id)
     (setq ecc-review--notes (append ecc-review--notes (list note)))
     note))
@@ -1168,39 +1296,65 @@ for the last of Claude\='s, else nil for a comment of its own."
       (when-let* ((claude (car (last (seq-filter #'ecc-review--agent-p notes)))))
         (cons 'reply claude)))))
 
-(defun ecc-review-comment (text)
+(defun ecc-review--comment-plan (line)
+  "Return what \\`c' on LINE is to do, settled before anything is typed.
+The answer is (ANCHOR KIND ID): ANCHOR a note-shaped record of LINE,
+KIND `edit', `reply' or nil for a comment of its own, and ID the comment
+edited or answered."
+  (let ((target (ecc-review--comment-target line)))
+    (list (ecc-review--anchor (ecc-review-note-create) line)
+          (car target)
+          (and target (ecc-review-note-id (cdr target))))))
+
+(defun ecc-review-comment (text &optional plan)
   "Put the comment TEXT on the line at point.
 On the @@ header of a hunk the comment is about the whole hunk; on a
 removed line it is about the old side, on an added or a context line
 about the new.  Where the line carries a comment of yours already, TEXT
 replaces it, and interactively that one is offered for editing.  Where
 it carries only Claude\='s, TEXT is your reply to the last of them.
-Returns the comment."
+Returns the comment.
+
+PLAN is what `ecc-review--comment-plan\=' decided when the command was
+started.  Interactively it is taken before the text is read, because
+the buffer does not stand still while it is typed: Claude may put a
+comment on the same line, or the diff may be read again and the line
+move.  The comment goes where it was meant for -- a comment of its own
+does not turn into a reply to what arrived meanwhile -- on the line
+found again by what it said, and when that line has gone it is kept as
+outdated rather than lost with the text."
   (interactive
    (let* ((line (or (ecc-review--line-at-point)
                     (user-error "Not on a line of a hunk")))
-          (target (ecc-review--comment-target line)))
-     (list (pcase target
-             (`(edit . ,note) (read-string "Comment: " (ecc-review-note-text note)))
-             (`(reply . ,note)
-              (read-string (format "Reply to Claude's #%d: " (ecc-review-note-id note))))
+          (plan (ecc-review--comment-plan line))
+          (target (and (nth 2 plan) (ecc-review-find-note (nth 2 plan)))))
+     (list (pcase (nth 1 plan)
+             ('edit (read-string "Comment: " (ecc-review-note-text target)))
+             ('reply (read-string (format "Reply to Claude's #%d: " (nth 2 plan))))
              (_ (read-string (if (plist-get line :side)
                                  "Comment on this line: "
-                               "Comment on this hunk: ")))))))
-  (let ((line (or (ecc-review--line-at-point)
-                  (user-error "Not on a line of a hunk")))
-        (text (string-trim text)))
+                               "Comment on this hunk: "))))
+           plan)))
+  (pcase-let* ((`(,anchor ,kind ,id)
+                (or plan (ecc-review--comment-plan
+                          (or (ecc-review--line-at-point)
+                              (user-error "Not on a line of a hunk")))))
+               (text (string-trim text))
+               (target (and id (ecc-review-find-note id)))
+               (line (ecc-review--locate-note anchor (ecc-review--lines))))
     (when (string-empty-p text)
       (user-error "Empty comment"))
-    (prog1 (pcase (ecc-review--comment-target line)
-             (`(edit . ,note) (setf (ecc-review-note-text note) text) note)
-             (`(reply . ,note)
-              (ecc-review-add-note 'user text line (ecc-review-note-id note)))
-             (_ (ecc-review-add-note 'user text line)))
+    (let ((note (if (and (eq kind 'edit) target)
+                    (progn (setf (ecc-review-note-text target) text) target)
+                  (ecc-review-add-note 'user text (or line anchor)
+                                       (and (eq kind 'reply) target id)))))
       (ecc-review--draw-notes)
-      (message "Comment attached (%d in all)"
-               (seq-count (lambda (note) (not (ecc-review--agent-p note)))
-                          ecc-review--notes)))))
+      (if (ecc-review-note-outdated note)
+          (message "The line has gone from the diff; the comment is kept as outdated")
+        (message "Comment attached (%d in all)"
+                 (seq-count (lambda (note) (not (ecc-review--agent-p note)))
+                            ecc-review--notes)))
+      note)))
 
 (defun ecc-review--notes-here ()
   "Return the shown comments on the line at point, in the order they were made.

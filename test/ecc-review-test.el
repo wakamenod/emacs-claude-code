@@ -944,27 +944,43 @@ carry the time of the index it was made from."
     (goto-char (point-min))
     (should-error (ecc-review-comment "x") :type 'user-error)))
 
+(defconst ecc-review-test--shifted-diff
+  (thread-last ecc-review-test--diff
+               (string-replace "@@ -1,3 +1,3 @@" "@@ -1,3 +1,5 @@")
+               (string-replace "+TWO\n" "+TWO\n+more\n+lines\n")
+               (string-replace "@@ -10,2 +10,3 @@" "@@ -10,2 +12,3 @@"))
+  "`ecc-review-test--diff' with two lines added in its first hunk.
+Everything in the second hunk is two lines further down.")
+
+(defun ecc-review-test--lines-of (text)
+  "Return the lines of the diff TEXT, read in a buffer of its own."
+  (with-temp-buffer
+    (diff-mode)
+    (insert text)
+    (ecc-review--lines)))
+
 (ert-deftest ecc-review-test-locate-note ()
-  "A comment stays, moves with its text, or is outdated; a hunk comment follows."
+  "A comment stays, follows its line and neighbours, or is outdated."
   (ecc-review-test--with-review session
     (let* ((lines (ecc-review--lines))
            (added (ecc-review-add-note 'user "a" (nth 7 lines)))
-           (moved-text (ecc-review-add-note 'user "b" (nth 8 lines))))
+           (shifted (ecc-review-test--lines-of
+                     (string-replace "@@ -10,2 +10,3 @@" "@@ -10,2 +14,3 @@"
+                                     ecc-review-test--diff))))
+      ;; The lines next to it on its side are kept with it.
+      (should (equal (ecc-review-note-line-before added) "ten"))
+      (should (equal (ecc-review-note-line-after added) "eleven"))
       ;; 1. Nothing moved: the same line.
       (should (eq (ecc-review--locate-note added lines) (nth 7 lines)))
-      ;; 2. Lines were added above: the line that says the same, nearest.
-      (let ((shifted (with-temp-buffer
-                       (diff-mode)
-                       (insert (string-replace "@@ -10,2 +10,3 @@" "@@ -10,2 +14,3 @@"
-                                               ecc-review-test--diff))
-                       (ecc-review--lines))))
-        (should (equal (plist-get (ecc-review--locate-note added shifted) :line) 15)))
-      ;; A line that says it somewhere else in the file.
+      ;; 2. Lines were added above: the line that says the same between
+      ;; the same neighbours, nearest.
+      (should (equal (plist-get (ecc-review--locate-note added shifted) :line) 15))
+      ;; Not further than `ecc-review-note-max-shift'.
+      (let ((ecc-review-note-max-shift 3))
+        (should-not (ecc-review--locate-note added shifted)))
+      ;; 3. The same text between other lines is another line: outdated.
       (setf (ecc-review-note-line-text added) "one")
-      (should (equal (plist-get (ecc-review--locate-note added lines) :line) 1))
-      ;; 3. No line says it any more: nil, which is outdated.
-      (setf (ecc-review-note-line-text moved-text) "ELEVEN")
-      (should-not (ecc-review--locate-note moved-text lines))
+      (should-not (ecc-review--locate-note added lines))
       ;; A hunk whose header changed still takes a comment on the lines
       ;; it covers; one that moved away from them does not.
       (let ((hunk (ecc-review-add-note 'user "c" (nth 5 lines))))
@@ -973,17 +989,36 @@ carry the time of the index it was made from."
         (setf (ecc-review-note-hunk-range hunk) '(40 . 42))
         (should-not (ecc-review--locate-note hunk lines))))))
 
+(ert-deftest ecc-review-test-a-blank-line-does-not-wander ()
+  "A comment on a blank line goes outdated rather than to another blank line."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (with-current-buffer
+            (ecc-review-test--fill
+             session
+             "--- a/b.el\n+++ b/b.el\n@@ -5,0 +6,3 @@\n+(defun a ()\n+\n+  1)\n")
+          (ecc-review-test--goto "+")
+          (ecc-review-comment "no blank line here")
+          (ecc-review-test--fill
+           session
+           (concat "--- a/b.el\n+++ b/b.el\n@@ -5,0 +6,3 @@\n+(defun a ()\n+  2\n+  1)\n"
+                   "@@ -40,0 +41,3 @@\n+(defun b ()\n+\n+  3)\n"))
+          (let ((note (car ecc-review--notes)))
+            (should (ecc-review-note-outdated note))
+            (should (= (ecc-review-note-line note) 7))))
+      (ecc-review-test--kill-review-buffers))))
+
 (ert-deftest ecc-review-test-refresh-moves-and-outdates ()
   "A redraw keeps every comment: moved with its line, or marked outdated."
   (ecc-review-test--with-review session
     (ecc-review-test--goto "+added")
     (ecc-review-comment "moves")
-    (ecc-review-test--goto " eleven")
+    (ecc-review-test--goto "+TWO")
     (ecc-review-comment "goes stale")
     (ecc-review-test--fill session
                            (thread-last ecc-review-test--diff
                                         (string-replace "@@ -10,2 +10,3 @@" "@@ -10,2 +12,3 @@")
-                                        (string-replace " eleven" " ELEVEN")))
+                                        (string-replace "+TWO" "+Two")))
     (let ((moves (ecc-review-find-note 1))
           (stale (ecc-review-find-note 2)))
       (should (= (ecc-review-note-line moves) 13))
@@ -992,16 +1027,106 @@ carry the time of the index it was made from."
       ;; Outdated is drawn above the first hunk of its file, marked.
       (let ((overlay (seq-find (lambda (o) (memq stale (overlay-get o 'ecc-review-notes)))
                                (ecc-review-comment-overlays))))
-        (should (string-search "[outdated, was L12 (new)] goes stale"
+        (should (string-search "[outdated, was L2 (new)] goes stale"
                                (overlay-get overlay 'before-string)))
         (should (= (overlay-start overlay)
                    (progn (ecc-review-test--goto "@@ -1,3 +1,3 @@") (point)))))
       (should (string-search "(1 outdated)" (ecc-review--header-line)))
       ;; It is still sent, with the hunk it was last seen in.
       (let ((message (ecc-review-buffer-message)))
-        (should (string-search "## foo.el  L12 (new) (outdated)\n" message))
-        (should (string-search " eleven" message))
+        (should (string-search "## foo.el  L2 (new) (outdated)\n" message))
+        (should (string-search "+TWO" message))
         (should (string-search "## foo.el  L13 (new)\n" message))))))
+
+(ert-deftest ecc-review-test-outdated-are-counted-one-by-one ()
+  "A comment that comes back does not hide one that went outdated."
+  (ecc-review-test--with-review session
+    (ecc-review-test--goto "+TWO")
+    (ecc-review-comment "a")
+    (ecc-review-test--goto "+added")
+    (ecc-review-comment "b")
+    (ecc-review-test--fill session (string-replace "+TWO" "+Two" ecc-review-test--diff))
+    (should (ecc-review-note-outdated (ecc-review-find-note 1)))
+    (let ((messages nil))
+      (cl-letf (((symbol-function 'message)
+                 (lambda (format &rest arguments)
+                   (push (apply #'format-message format arguments) messages))))
+        (ecc-review-test--fill session (string-replace "+added" "+ADDED"
+                                                       ecc-review-test--diff)))
+      (should-not (ecc-review-note-outdated (ecc-review-find-note 1)))
+      (should (ecc-review-note-outdated (ecc-review-find-note 2)))
+      (should (member "1 comments no longer match a line of the diff; kept as outdated"
+                      messages)))))
+
+(ert-deftest ecc-review-test-no-comment-reads-no-lines ()
+  "Without a comment or a place to keep, drawing reads no line of the diff."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (cl-letf (((symbol-function 'ecc-review--lines)
+                   (lambda () (error "The lines were read"))))
+          (with-current-buffer (ecc-review-test--fill session ecc-review-test--diff)
+            (ecc-review--draw-notes)
+            (should-not (ecc-review-comment-overlays))))
+      (ecc-review-test--kill-review-buffers))))
+
+(ert-deftest ecc-review-test-refill-keeps-the-place ()
+  "Reading the diff again keeps point and the window's start on the same lines."
+  (ecc-review-test--with-review session
+    (save-window-excursion
+      (delete-other-windows)
+      (switch-to-buffer (current-buffer))
+      (ecc-review-test--goto "+added")
+      (forward-char 2)
+      (set-window-point (selected-window) (point))
+      (set-window-start (selected-window) (line-beginning-position 0))
+      (ecc-review-test--fill session ecc-review-test--shifted-diff)
+      (let ((added (progn (save-excursion (ecc-review-test--goto "+added") (point)))))
+        (should (= (point) (+ added 2)))
+        (should (= (window-point (selected-window)) (+ added 2)))
+        (should (= (window-start (selected-window))
+                   (save-excursion (ecc-review-test--goto " ten") (point))))))
+    ;; A buffer shown nowhere keeps its point as well.
+    (ecc-review-test--goto "+more")
+    (ecc-review-test--fill session ecc-review-test--diff)
+    ;; That line is gone: the top, not somewhere arbitrary.
+    (should (= (point) (point-min)))
+    (ecc-review-test--goto " eleven")
+    (ecc-review-test--fill session ecc-review-test--shifted-diff)
+    (should (looking-at-p " eleven"))))
+
+(ert-deftest ecc-review-test-comment-while-the-buffer-changes ()
+  "What happens while a comment is typed does not change where it goes."
+  (ecc-review-test--with-review session
+    ;; Claude comments the same line and the diff is read again, with the
+    ;; line two further down, while the user is still typing.
+    (ecc-review-test--goto "+added")
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (&rest _)
+                 (ecc-review-add-note 'claude "Meanwhile" (ecc-review--line-at-point))
+                 (ecc-review--draw-notes)
+                 (ecc-review-test--fill session ecc-review-test--shifted-diff)
+                 "mine")))
+      (call-interactively #'ecc-review-comment))
+    (let ((mine (car (last ecc-review--notes))))
+      (should (equal (ecc-review-note-text mine) "mine"))
+      (should (eq (ecc-review-note-author mine) 'user))
+      ;; Its own comment, not a reply to what arrived meanwhile.
+      (should-not (ecc-review-note-reply-to mine))
+      (should (= (ecc-review-note-line mine) 13))
+      (should-not (ecc-review-note-outdated mine)))
+    ;; The line goes altogether: the text is kept, as outdated.
+    (ecc-review-test--goto "+TWO")
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (&rest _)
+                 (ecc-review-test--fill session
+                                        (string-replace "+TWO" "+Two"
+                                                        ecc-review-test--shifted-diff))
+                 "about TWO")))
+      (call-interactively #'ecc-review-comment))
+    (let ((note (car (last ecc-review--notes))))
+      (should (equal (ecc-review-note-text note) "about TWO"))
+      (should (ecc-review-note-outdated note))
+      (should (string-search "about TWO" (ecc-review-buffer-message))))))
 
 (ert-deftest ecc-review-test-message-of-lines-and-replies ()
   "A line comment is headed by its line, a reply quotes Claude, Claude is not sent."
