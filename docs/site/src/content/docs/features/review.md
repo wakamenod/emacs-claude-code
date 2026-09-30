@@ -41,11 +41,11 @@ Outside a Git repository there is no tree to compare against, so files are diffe
 | `g` | Read the diff again |
 | `q` | Bury the buffer |
 
-The buffer uses read-only `diff-mode`, so `n`, `p`, and `RET` move between hunks and jump to source, and `N` and `P` between files.
+The buffer uses read-only `diff-mode`: `n` and `p` move between hunks, `N` and `P` between files, and `RET` jumps to the source.
 
-A comment belongs to the line it was made on. On a removed line (`-`) it is about the old side; on an added line (`+`) or a line of context it is about the new side. On the `@@` line it is about the whole hunk. It is drawn under its line as `▎ #3 text`, the hunk it is in gets a bold header, and the header line counts the comments. Every comment has a number, and a number is never used twice in a buffer.
+Each comment belongs to the line you made it on. On a removed line (`-`), it is about the old side. On an added line (`+`) or a context line, it is about the new side. On the `@@` line, it is about the whole hunk. The comment appears under its line as `▎ #3 text`, its hunk gets a bold header, and the header line counts the comments. Every comment has a number, and no two comments in a buffer share one.
 
-`g` reads the diff again and keeps every comment, and your place in it (a window of the review in another tab starts again from the top). A comment goes back to the line that still says what its line said between the same neighbouring lines, even when a change higher up in the file has moved that line — up to `ecc-review-note-max-shift` (100) lines away. When the line is gone, the comment is kept, marked `[outdated]`, above the first hunk of its file, and it is still sent with the hunk as it was.
+`g` reads the diff again and keeps every comment and your place in it. A window of the review in another tab starts again from the top. Each comment goes back to the line that still says what its line said, between the same neighbouring lines, even when a change higher up in the file has moved that line. It follows the line for up to `ecc-review-note-max-shift` (100) lines. If the line is gone, ecc keeps the comment, marks it `[outdated]`, and shows it above the first hunk of its file. The comment is still sent, with the hunk as it was.
 
 `C-c C-c` collects your comments into a single prompt and sends it, closing the review. The comments are the prompt, so there is usually nothing to add; `C-u C-c C-c` opens it in a buffer of its own first:
 
@@ -60,7 +60,7 @@ A comment belongs to the line it was made on. On a removed line (`-`) it is abou
 Comment: the docstring still says hi
 ````
 
-A comment on a line is headed by that line, `## hello.py  L3 (new)`, and still carries the whole hunk. A comment whose line has gone adds `(outdated)` to its heading. A reply to Claude starts with `In reply to Claude's #4:` and the comment it answers.
+A line comment has its line in the heading, as in `## hello.py  L3 (new)`, and still carries the whole hunk. If the line has gone, the heading ends with `(outdated)`. A reply to Claude starts with `In reply to Claude's #4:` and quotes the comment it answers.
 
 There, `C-c C-c` sends the prompt as it stands, while `C-c C-k` returns to the diff.
 
@@ -76,9 +76,9 @@ Hunks are as small as the change itself, since a comment includes the entire hun
 
 ## Comments from Claude
 
-With the [Emacs MCP server](/emacs-claude-code/start/installation/) on (`ecc-mcp-enabled`), the review works in both directions. Claude can open the review, put comments on its lines, and scroll it to the place it is talking about. Ask for it in words: "walk me through these changes in the review", "review the diff and leave comments".
+With the [Emacs MCP server](/emacs-claude-code/start/installation/) on (`ecc-mcp-enabled`), the review works both ways. Claude can open the review, comment on its lines, and scroll it to the place it is talking about. Ask in plain words, for example "walk me through these changes in the review" or "review the diff and leave comments."
 
-Claude's comments are drawn in a face of their own, `ecc-review-agent-comment-face`, as `▎ #4 Claude: text`. `c` on a line that has only Claude's comment records your reply to it, drawn indented under it. `a` hides Claude's comments and shows them again, and the header line keeps counting them while they are hidden. Only your comments are sent with `C-c C-c`; Claude already knows what it wrote.
+Claude's comments appear as `▎ #4 Claude: text`, in a face of their own, `ecc-review-agent-comment-face`. Press `c` on a line that has only a comment from Claude to reply to it. Your reply appears indented under it. `a` hides Claude's comments and shows them again, and the header line keeps counting them while they are hidden. `C-c C-c` sends only your comments, since Claude already knows what it wrote.
 
 | Tool | What Claude does with it |
 |---|---|
@@ -91,11 +91,11 @@ Claude's comments are drawn in a face of their own, `ecc-review-agent-comment-fa
 | `review_remove_comment` | Removes one comment, including one of yours it has dealt with |
 | `review_clear_comments` | Removes Claude's comments, yours too only when asked |
 
-Claude cannot write or change your comments; it can remove one. A tool works on the review of the session that calls it, so two sessions never touch each other's reviews.
+Claude cannot write or change your comments, but it can remove them. Each tool works on the review of the session that calls it, so two sessions never touch each other's reviews.
 
-The tools never take the keyboard. A review Claude opens or moves is shown beside the session without being selected, and no session window is hidden, so a prompt you are typing stays where it is. The review never takes the window you are in and never goes to another tab or Space. It goes in the window of another review of the same session first, then a free window, then half of the session's window; `q` deletes a window made for it. A `display-buffer-alist` rule you wrote for review buffers is followed, as long as it leaves your window and tab alone. If the session is not on the screen, or there is no other window for it, nothing is brought forward: the review waits in its buffer, already at the place Claude chose.
+The tools never take the keyboard. A review that Claude opens or moves appears beside the session without being selected. No session window is hidden, so a prompt you are typing stays where it is. The review never takes the window you are in, and never switches to another tab or Space. It goes into the window of another review of the same session first, then into a free window, and last into half of the session's window. `q` deletes a window made for it. If you wrote a `display-buffer-alist` rule for review buffers, the review follows it, as long as the rule leaves your window and tab alone. If the session is not on the screen, or no other window is free, nothing comes forward. The review waits in its buffer, already at the place Claude chose.
 
-These tools put text into a buffer and move a window; they write no file. So Emacs allows them without asking, and the transcript records each one as `auto-allowed`. To be asked like any other tool, set `ecc-review-agent-auto-allow` to `nil`. Claude always uses the diff buffer, even when `ecc-review-style` is `'ediff`. It does not read a review you have open in ediff yet; the tools tell it you are reviewing there, and your comments reach it when you send them.
+These tools only put text into a buffer and move a window. They write no files, so Emacs allows them without asking, and the transcript records each call as `auto-allowed`. To be asked as with any other tool, set `ecc-review-agent-auto-allow` to `nil`. Claude always uses the diff buffer, even when `ecc-review-style` is `'ediff`. It cannot read a review you have open in ediff yet. The tools tell Claude that you are reviewing there, and your comments reach it when you send them.
 
 ## Opening the review in ediff
 
