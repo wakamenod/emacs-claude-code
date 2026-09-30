@@ -52,6 +52,11 @@
 ;; (`ecc-review-agent.el'), drawn in a face of their own; only the
 ;; user's are sent.
 ;;
+;; An open review follows the files (`ecc-review-auto-refresh'): what
+;; the session does and what is saved marks it stale, and it is read
+;; again, the comments put back, once Emacs is idle and it is on the
+;; screen.
+;;
 ;; The same buffer reviews one proposal before it is applied: a comment
 ;; on the diff of a pending Edit or Write goes back as the message of
 ;; the deny, and `ecc-review-edit-proposal' changes the text of the

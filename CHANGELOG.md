@@ -55,7 +55,9 @@ Verified against **Claude Code CLI 2.1.281**.
   (`ecc-mcp-enabled`), the model is offered `review_open`, `review_hunks`,
   `review_comment`, `review_comment_apply`, `review_navigate`,
   `review_list_comments`, `review_remove_comment` and
-  `review_clear_comments`: it opens the review of its session, puts
+  `review_clear_comments`: it opens the review of its session -- what the
+  session changed, the working tree against a range, or what is staged
+  (`staged`), of every file or only some (`paths`) -- puts
   comments on lines or hunks, answers a comment with `reply_to`, scrolls
   the review to a place, and reads or removes comments. It never writes or
   changes a comment of the user's. A tool works on the review of the session
@@ -101,6 +103,31 @@ Verified against **Claude Code CLI 2.1.281**.
   harmless by construction, through the same path as a tool approved for
   the turn.
 
+- An open review follows the files (`ecc-review-auto-refresh`, on by
+  default). It reads the diff again when a tool of its session finishes --
+  a shell command as much as an edit -- when a turn ends, and when a file
+  of its repository is saved in Emacs; a session working in the same
+  repository counts too. Comments and place are kept as `g` keeps them.
+  The changes are gathered into one read by a single idle timer that runs
+  once (0.5 s, `ecc-review-auto-refresh-delay`), never a repeating one.
+  Only a review on the screen is read; one out of sight is marked stale and
+  read when it is shown. Nothing is displayed, selected or divided by it.
+  A review whose changes have all gone stays open and says so, where `g`
+  and opening it still refuse. The review of a proposal is never read
+  again. One read of a diff of 1,000 hunks (65 KB) took 0.06 s and of
+  10,000 hunks (650 KB) 0.22 s, measured with `benchmark-run` in batch.
+
+- `C-u G` (`ecc-review-worktree`) takes `--staged` or `--cached` for what
+  is staged alone -- the index against `HEAD`, without untracked files, in
+  a buffer named `staged` -- and asks after the range for the files to
+  review, out of those the range would show; none is every file. `g` keeps
+  the files. A range starting with `-` is refused, so no git option reaches
+  git. `ecc-review-worktree-buffer` takes the files as PATHS, and a range
+  may be the symbol `staged`.
+
+- `ecc-tool-finished-hook`, run with the session and the tool node on every
+  tool result, whatever the tool.
+
 ### Changed
 
 - `c` in the review buffer comments the line at point instead of the hunk
@@ -131,6 +158,11 @@ Verified against **Claude Code CLI 2.1.281**.
   them moving between files, which `N` and `P` still do.
 
 ### Fixed
+
+- A review of commits (`C-u G` with `a..b`, `a...b` or `REV^!`) listed the
+  untracked files of the working tree, which belong to none of those
+  commits. They are now appended only when the range involves the working
+  tree, which git decides (`git rev-parse --revs-only`, as Hunk does).
 
 - A session with no process behind it -- a recording opened with `h` to be
   read -- said `✗ exited (code ?)` and "Exited with code ?", as if a CLI had
