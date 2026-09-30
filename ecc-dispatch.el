@@ -858,6 +858,7 @@ twelve-line clip could not even cut -- base64 is one line."
         (when (and path (not error-p)
                    (memq (cdr (assoc name ecc-dispatch-file-tools)) '(edit write)))
           (run-hook-with-args 'ecc-sync-file-changed-hook session path)))
+      (run-hook-with-args 'ecc-tool-finished-hook session node)
       node)))
 
 (defun ecc-dispatch--structured-result (session node result)

@@ -1028,6 +1028,29 @@ been waiting."
         (should-not (alist-get 'source (aref result 1)))
         (ecc-dispatch-test--no-base64 node)))))
 
+(ert-deftest ecc-dispatch-test-tool-finished-hook ()
+  "Every tool result runs `ecc-tool-finished-hook', a shell command's too."
+  (ecc-test-with-fake-session session
+    (let* ((heard nil)
+           (ecc-tool-finished-hook
+            (list (lambda (session node)
+                    (push (cons (ecc-session-name session)
+                                (ecc-model-node-get node 'name))
+                          heard)))))
+      (ecc-model-begin-turn session "消して")
+      (ecc-dispatch session
+                    '((type . "assistant") (uuid . "u1")
+                      (message . ((content . [((type . "tool_use") (id . "t1")
+                                               (name . "Bash")
+                                               (input . ((command . "rm a.txt"))))])))))
+      (should-not heard)
+      (ecc-dispatch session
+                    '((type . "user")
+                      (message . ((content . [((type . "tool_result")
+                                               (tool_use_id . "t1")
+                                               (content . "done"))])))))
+      (should (equal heard '(("test" . "Bash")))))))
+
 ;;;; Files and tasks from tool_use_result
 
 (ert-deftest ecc-dispatch-test-edit-records-hunk-and-snapshot ()
