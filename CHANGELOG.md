@@ -60,8 +60,12 @@ Verified against **Claude Code CLI 2.1.281**.
   the review to a place, and reads or removes comments. It never writes or
   changes a comment of the user's. A tool works on the review of the session
   that calls it. The review it opens or moves is shown beside the session
-  without being selected and without hiding a session window, and not at
-  all when the session is not on the screen. The tools write no file, so they
+  without being selected and without hiding a session window: never in the
+  selected window, never by going to another tab or Space, and not at all
+  when the session is not on the screen or there is no other window to take.
+  The review then waits in its buffer at the place Claude chose. The tools
+  do not read a review open in ediff (`ecc-review-style` `ediff`) and say
+  so when there is one. The tools write no file, so they
   are allowed without asking and noted as `auto-allowed` in the transcript;
   `ecc-review-agent-auto-allow` set to `nil` asks instead. Claude's comments
   have a face of their own, `ecc-review-agent-comment-face`, and `a` hides
@@ -75,7 +79,10 @@ Verified against **Claude Code CLI 2.1.281**.
   not used again, `{` and `}` move between comments, and the header line
   counts yours and Claude's. A line comment is sent headed by its line,
   `## foo.el  L42 (new)`, with the whole hunk under it; a reply quotes the
-  comment of Claude's it answers.
+  comment of Claude's it answers. What `c` does is settled when it is
+  pressed: a comment from Claude arriving on the line while you type does
+  not turn yours into a reply, and a line that goes away meanwhile leaves
+  your text kept as outdated.
 
 - The MCP server's `initialize` carries instructions, the paragraphs modules
   register with `ecc-mcp-define-instructions`, each left out while none of its
@@ -96,12 +103,21 @@ Verified against **Claude Code CLI 2.1.281**.
   comment on a whole hunk is sent in the same form as before.
 
 - `g` no longer drops a comment whose hunk header changed ("Dropped N
-  comments whose hunk is gone"). A comment goes back to the line that still
-  says what its line said, nearest the number it had, so a change higher up
-  in the file moves it instead of losing it. A comment on a whole hunk
-  follows a hunk over the same lines. A comment whose line has gone is kept,
-  marked outdated, above the first hunk of its file, and is still sent with
+  comments whose hunk is gone"). A comment stays on its line while that
+  line says what it said; otherwise it goes to the nearest line that says
+  the same between the same neighbouring lines, no further than
+  `ecc-review-note-max-shift` (100) lines, so a change higher up in the file
+  moves it instead of losing it, and a comment on a blank line or a lone
+  brace does not wander off to another. A comment on a whole hunk follows a
+  hunk over the same lines. A comment whose line has gone is kept, marked
+  outdated, above the first hunk of its file, and is still sent with
   `(outdated)` and the hunk as it was.
+
+- Reading the review again -- `g`, `ecc-review` or `ecc-review-worktree` on
+  a review that is open, or Claude's `review_open` -- keeps your place: point,
+  and in each window showing the review its point and how far down the
+  window it was, go back to the same line by the same rule. It used to go
+  to the top.
 
 - `{` and `}` in the review buffer move between comments. `diff-mode` has
   them moving between files, which `N` and `P` still do.
