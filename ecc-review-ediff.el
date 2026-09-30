@@ -95,11 +95,12 @@
 (defun ecc-review-ediff--trees (root range)
   "Return (LEFT . RIGHT), the two trees RANGE names in ROOT.
 RANGE is what `ecc-review-worktree\\=' is given: a revision like
-\"HEAD\", a range like \"main...HEAD\" or \"a..b\", or the empty string
-for what is not staged yet.  A revision is compared with the working
-tree as it stands, so what git does not track is in the review as
-well; a range is two trees of the history and nothing else.  Signals a
-`user-error\\=' when git cannot resolve it."
+\"HEAD\", a range like \"main...HEAD\" or \"a..b\", the empty string
+for what is not staged yet, or `staged\\=' for what is.  A revision
+is compared with the working tree as it stands, so what git does not
+track is in the review as well; a range is two trees of the history and
+nothing else, and so is `staged\\='.  Signals a `user-error\\=' when git
+cannot resolve it."
   (let* ((fail (lambda ()
                  (user-error "Git cannot diff against %S in %s"
                              range (abbreviate-file-name root))))
@@ -110,6 +111,10 @@ well; a range is two trees of the history and nothing else.  Signals a
                     (user-error "Cannot read the working tree of %s"
                                 (abbreviate-file-name root))))))
     (cond
+     ;; What is staged: HEAD against the index.
+     ((eq range 'staged)
+      (cons (or (ecc-review--head-tree root) (funcall fail))
+            (or (ecc-review-snapshot root t) (funcall fail))))
      ;; What is not staged yet: the index against the working tree.
      ((or (null range) (string-empty-p range))
       (cons (or (ecc-review-snapshot root t) (funcall fail)) (funcall now)))
@@ -836,21 +841,23 @@ the same errors."
     (pcase-let ((`(,a ,b ,sections) (ecc-review-ediff--build session pairs)))
       (ecc-review-ediff-open session a b sections))))
 
-(defun ecc-review-ediff-worktree-buffer (session &optional range root)
+(defun ecc-review-ediff-worktree-buffer (session &optional range root paths)
   "Open the working tree of ROOT as one ediff and return the control buffer.
 The comments go to SESSION.  RANGE defaults to
-`ecc-review-worktree-default-range\\='.  This is
-`ecc-review-worktree-buffer\\=' laid out side by side."
-  (let* ((range (or range ecc-review-worktree-default-range))
+`ecc-review-worktree-default-range\\=', and PATHS restrict it to those
+files.  This is `ecc-review-worktree-buffer\\=' laid out side by side."
+  (let* ((range (ecc-review-parse-range (or range ecc-review-worktree-default-range)))
          (directory (or root (ecc-session-project-root session)))
          (root (or (ecc-review-git-root directory)
                    (user-error "%s is not in a git repository"
                                (abbreviate-file-name directory))))
          (trees (ecc-review-ediff--trees root range))
-         (pairs (ecc-review-ediff-pairs root (car trees) (cdr trees))))
+         (pairs (ecc-review-ediff-pairs root (car trees) (cdr trees) paths)))
     (unless pairs
       (user-error "No change against %s in %s"
-                  (if (string-empty-p range) "the index" range)
+                  (cond ((eq range 'staged) "HEAD in the index")
+                        ((string-empty-p range) "the index")
+                        (t range))
                   (abbreviate-file-name root)))
     (pcase-let ((`(,a ,b ,sections) (ecc-review-ediff--build session pairs)))
       (ecc-review-ediff-open session a b sections range))))

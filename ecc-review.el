@@ -74,7 +74,7 @@
 (declare-function ediff-recenter "ediff-util" (&optional no-rehighlight))
 (declare-function ecc-review-ediff-buffer "ecc-review-ediff" (session &optional paths))
 (declare-function ecc-review-ediff-worktree-buffer "ecc-review-ediff"
-                  (session &optional range root))
+                  (session &optional range root paths))
 
 (defcustom ecc-review-style 'diff
   "How `ecc-review\=' and `ecc-review-worktree\=' show what changed.
@@ -205,9 +205,9 @@ PATHS are absolute; the result keeps their order."
   "Return the unified diff git reports for PATHS under ROOT, or nil.
 PATHS may be nil, which diffs everything under ROOT.  RANGE is what to
 diff against -- a revision like \"HEAD\" or a range like
-\"main...HEAD\" -- and defaults to the index, the way `git diff'
-works.  The file names carry a/ and b/ prefixes and are relative to
-ROOT."
+\"main...HEAD\", or `staged\=' for the index against HEAD -- and
+defaults to the index, the way `git diff' works.  The file names carry
+a/ and b/ prefixes and are relative to ROOT."
   (pcase (ecc-review--git-diff root paths range)
     (`(0 . ,output)
      (and (not (string-empty-p output)) output))
@@ -223,7 +223,8 @@ git refused to make -- an unknown revision, say -- reads the code."
   (apply #'ecc-review--git root
          (append (list "diff" "--no-color" "--no-ext-diff"
                        (format "-U%d" (max 0 ecc-review-context-lines)))
-                 (and range (not (string-empty-p range)) (list range))
+                 (cond ((eq range 'staged) (list "--staged"))
+                       ((and range (not (string-empty-p range))) (list range)))
                  (list "--")
                  (mapcar (lambda (path) (ecc-review--relative path root)) paths))))
 
@@ -251,41 +252,47 @@ NEW-FILE writes the header of a file that did not exist before."
   (format "diff --git a/%s b/%s\n%s%s\n"
           path path (if new-file "new file mode 100644\n" "") reason))
 
-(defun ecc-review-git-untracked (root)
+(defun ecc-review--untracked-paths (root &optional paths)
+  "Return the files under ROOT git does not track, relative to ROOT.
+What .gitignore excludes is left out.  PATHS, relative to ROOT, are
+pathspecs that restrict the answer; nil is every file."
+  (pcase (apply #'ecc-review--git root "ls-files" "-z" "--others" "--exclude-standard"
+                "--" paths)
+    (`(0 . ,output) (split-string output "\0" t))))
+
+(defun ecc-review-git-untracked (root &optional paths)
   "Return the diff of the files under ROOT git does not track, or nil.
 What .gitignore excludes is left out, and each file is diffed against
 nothing so that it reads like the rest of the diff.  A binary file, or
 one larger than `ecc-review-max-bytes\=', is named rather than
-printed."
-  (pcase (ecc-review--git root "ls-files" "-z" "--others" "--exclude-standard")
-    (`(0 . ,output)
-     (let ((texts nil))
-       (dolist (path (split-string output "\0" t))
-         (let* ((full (expand-file-name path root))
-                (size (file-attribute-size (file-attributes full))))
-           (cond
-            ((ecc-review--binary-p full)
-             (push (ecc-review--omitted-note
-                    path (format "Binary files /dev/null and b/%s differ" path)
-                    t)
-                   texts))
-            ((and size (> size ecc-review-max-bytes))
-             (push (ecc-review--omitted-note
-                    path (format "Files /dev/null and b/%s differ (%s, not shown)"
-                                 path (file-size-human-readable size))
-                    t)
-                   texts))
-            (t
-             ;; --no-index exits 1 when the two sides differ, which is
-             ;; every time here, so only a larger code is a failure.
-             (pcase (ecc-review--git root "diff" "--no-color" "--no-ext-diff"
-                                     (format "-U%d" (max 0 ecc-review-context-lines))
-                                     "--no-index" "--" "/dev/null" path)
-               ((and `(,code . ,diff)
-                     (guard (and (memq code '(0 1)) (not (string-empty-p diff)))))
-                (push diff texts)))))))
-       (let ((text (string-join (nreverse texts) "")))
-         (and (not (string-empty-p text)) text))))))
+printed.  PATHS, relative to ROOT, restrict it to those files."
+  (let ((texts nil))
+    (dolist (path (ecc-review--untracked-paths root paths))
+      (let* ((full (expand-file-name path root))
+             (size (file-attribute-size (file-attributes full))))
+        (cond
+         ((ecc-review--binary-p full)
+          (push (ecc-review--omitted-note
+                 path (format "Binary files /dev/null and b/%s differ" path)
+                 t)
+                texts))
+         ((and size (> size ecc-review-max-bytes))
+          (push (ecc-review--omitted-note
+                 path (format "Files /dev/null and b/%s differ (%s, not shown)"
+                              path (file-size-human-readable size))
+                 t)
+                texts))
+         (t
+          ;; --no-index exits 1 when the two sides differ, which is
+          ;; every time here, so only a larger code is a failure.
+          (pcase (ecc-review--git root "diff" "--no-color" "--no-ext-diff"
+                                  (format "-U%d" (max 0 ecc-review-context-lines))
+                                  "--no-index" "--" "/dev/null" path)
+            ((and `(,code . ,diff)
+                  (guard (and (memq code '(0 1)) (not (string-empty-p diff)))))
+             (push diff texts)))))))
+    (let ((text (string-join (nreverse texts) "")))
+      (and (not (string-empty-p text)) text))))
 
 (defun ecc-review--unborn-p (root)
   "Return non-nil when the repository at ROOT has no commit yet."
@@ -303,6 +310,71 @@ names the tree of nothing."
     (`(0 . ,output)
      (let ((hash (string-trim output)))
        (and (not (string-empty-p hash)) hash)))))
+
+;;;; What a range names
+
+(defun ecc-review-parse-range (range)
+  "Return RANGE as a review of the working tree takes it, or signal why not.
+Nil and `staged\=' are returned as they are.  A string is trimmed;
+\"--staged\" and \"--cached\" -- what `git diff\=' calls the index against
+HEAD -- become `staged\='.  Any other string starting with - is refused:
+the range goes to git as an argument, and an option there is not a
+revision -- --output=FILE makes git write a file.  A revision never
+starts with -, so no branch is mistaken for one.  The range typed at
+\\[universal-argument] \\[ecc-review-worktree] and the one Claude gives
+`review_open\=' are both read here."
+  (cond
+   ((memq range '(nil staged)) range)
+   ((not (stringp range))
+    (error "A range is a string or `staged', not %S" range))
+   (t
+    (let ((range (string-trim range)))
+      (cond
+       ((member range '("--staged" "--cached")) 'staged)
+       ((string-prefix-p "-" range)
+        (user-error "A range is a revision or a range of them, like HEAD or main...HEAD; it cannot start with -"))
+       (t range))))))
+
+(defun ecc-review--range-name (range)
+  "Return RANGE in words for a buffer name or a header line."
+  (cond ((eq range 'staged) "staged")
+        ((string-empty-p range) "unstaged")
+        (t range)))
+
+(defun ecc-review--effective-range (root range)
+  "Return what git is given for RANGE in the repository at ROOT.
+A repository with no commit has no HEAD to diff against, and git calls
+that a bad revision rather than an empty diff.  The empty tree is what
+HEAD would mean there, so the first code written in a project can be
+reviewed before it is committed.  Only the bare \"HEAD\" is substituted:
+\"main...HEAD\" in such a repository really is unresolvable, and still
+says so.  The test is made afresh every time, so the first commit puts
+the real HEAD back without anything having to be invalidated."
+  (if (and (equal range "HEAD") (ecc-review--unborn-p root))
+      (or (ecc-review--empty-tree root) range)
+    range))
+
+(defun ecc-review--range-includes-worktree-p (root range)
+  "Return non-nil when diffing against RANGE in ROOT reads the working tree.
+The files git does not track belong in such a review and in no other: a
+review of commits -- \"a..b\", \"a...b\", \"REV^!\" -- that listed them
+would show work that is in none of those commits.  The empty range, what
+is not staged, reads the working tree, and `staged\=' does not.
+
+The string is not parsed here but handed to git, the way Hunk decides it
+\(`isWorkingTreeGitDiffInput\=' in github.com/modem-dev/hunk):
+`git rev-parse --revs-only\=' prints one line per revision a range names,
+an excluded one with ^ in front, and `git diff\=' compares a lone
+revision with the working tree and anything else with another commit.
+So one line not starting with ^, and nothing more, is the working tree."
+  (cond
+   ((eq range 'staged) nil)
+   ((or (null range) (string-empty-p range)) t)
+   (t (pcase (ecc-review--git root "rev-parse" "--revs-only" range)
+        (`(0 . ,output)
+         (let ((lines (split-string output "\n" t)))
+           (and (= (length lines) 1)
+                (not (string-prefix-p "^" (car lines))))))))))
 
 ;;;; What the working tree held at one moment
 
@@ -574,8 +646,12 @@ The groups are old start, old count, new start and new count.")
 
 (defvar-local ecc-review--range nil
   "What a review of the working tree diffs against, or nil for a session review.
-The string is what git is given: \"HEAD\" for everything uncommitted,
-\"\" for what is not staged yet, \"main...HEAD\" for a branch.")
+A string is what git is given: \"HEAD\" for everything uncommitted,
+\"\" for what is not staged yet, \"main...HEAD\" for a branch.  The
+symbol `staged\=' is what is staged, the index against HEAD.")
+
+(defvar-local ecc-review--stale nil
+  "Non-nil when the files may have changed since this review was read.")
 
 (defvar-local ecc-review--notes nil
   "The comments of this review, as `ecc-review-note's in the order made.
@@ -669,7 +745,7 @@ what the session changed."
   (cond
    (request (format "*ecc-review: %s (proposal)*" (ecc-session-name session)))
    (range (format "*ecc-review: %s (%s)*" (ecc-session-name session)
-                  (if (string-empty-p range) "unstaged" range)))
+                  (ecc-review--range-name range)))
    (t (format "*ecc-review: %s*" (ecc-session-name session)))))
 
 (defun ecc-review--header-line ()
@@ -680,8 +756,7 @@ what the session changed."
                        (cond (ecc-review--request "Proposal review")
                              (ecc-review--range
                               (format "Working tree (%s)"
-                                      (if (string-empty-p ecc-review--range)
-                                          "unstaged" ecc-review--range)))
+                                      (ecc-review--range-name ecc-review--range)))
                              (t "Review"))
                        (if ecc-review--session
                            (ecc-session-name ecc-review--session)
@@ -714,6 +789,40 @@ the diff, not for forgetting that they are there."
                       (if ecc-review--show-agent "" " (hidden)")))
             (when (> outdated 0)
               (format " (%d outdated)" outdated)))))
+
+(defvar ecc-review--into nil
+  "The review buffer being read again, while it is.
+A review is filled into the buffer its name names, and one read again
+goes back into the buffer it was read from, whatever its name is now.")
+
+(defun ecc-review--buffer-named (name)
+  "Return the buffer a review called NAME is filled into.
+That is `ecc-review--into\=' while a review is being read again."
+  (if (buffer-live-p ecc-review--into)
+      ecc-review--into
+    (get-buffer-create name)))
+
+(defvar ecc-review--watching nil
+  "Non-nil while a review is read again because the files changed.
+A diff that has become empty is then a review with nothing in it,
+rather than the error opening one or pressing \`g' gives.")
+
+(defun ecc-review--nothing (name session root paths range text)
+  "Say TEXT, that there is nothing to review, the way the caller wants it.
+Opening a review or reading it again with \`g' signals it as a
+`user-error\='.  Reading it again because the files changed
+\(`ecc-review--watching\=') leaves the review open for SESSION, in the
+buffer NAME (`ecc-review--buffer-named\='),
+with TEXT in place of the diff: the change that was reviewed may have
+been undone or committed, and the next one will show up here.  ROOT,
+PATHS and RANGE are what `ecc-review--fill\=' takes."
+  (unless ecc-review--watching
+    (user-error "%s" text))
+  (ecc-review--fill (ecc-review--buffer-named name) session
+                    (propertize (concat text ".  This review follows the files,"
+                                        " and the next change will show up here.\n")
+                                'font-lock-face 'ecc-dim-face)
+                    root nil paths range))
 
 (defun ecc-review--fill (buffer session text root &optional request paths range)
   "Put the diff TEXT into BUFFER for SESSION and draw its comments again.
@@ -749,7 +858,8 @@ asked any more."
             ecc-render--session session
             ecc-review--request request
             ecc-review--paths paths
-            ecc-review--range range)
+            ecc-review--range range
+            ecc-review--stale nil)
       (set-buffer-modified-p nil)
       (goto-char (point-min))
       ;; The lines are read once, and only when something is to be put
@@ -1692,13 +1802,15 @@ reviewed: there is no tree to compare
 against, so the files the CLI reported editing are diffed against what
 it reported them holding first."
   (let* ((entries (ecc-review-files session paths))
-         (diff (and entries (ecc-review-diff-text entries))))
-    (unless entries
-      (user-error "No file was edited or written in this session"))
-    (unless diff
-      (user-error "The files of this session show no change"))
-    (ecc-review--fill (get-buffer-create (ecc-review-buffer-name session))
-                      session (car diff) (cdr diff) nil paths)))
+         (diff (and entries (ecc-review-diff-text entries)))
+         (name (ecc-review-buffer-name session)))
+    (if diff
+        (ecc-review--fill (ecc-review--buffer-named name)
+                          session (car diff) (cdr diff) nil paths)
+      (ecc-review--nothing name session nil paths nil
+                           (if entries
+                               "The files of this session show no change"
+                             "No file was edited or written in this session")))))
 
 (defun ecc-review-buffer (session &optional paths)
   "Return the buffer reviewing the changes of SESSION, filled and current.
@@ -1720,12 +1832,13 @@ Outside git the session\='s own record is all there is."
                        (ecc-review--head-tree root)
                        (user-error "Cannot read the history of %s"
                                    (abbreviate-file-name root))))
-             (diff (ecc-review-baseline-diff root base paths)))
-        (unless diff
-          (user-error "Nothing has changed in %s since this session started"
-                      (abbreviate-file-name root)))
-        (ecc-review--fill (get-buffer-create (ecc-review-buffer-name session))
-                          session diff root nil paths)))))
+             (diff (ecc-review-baseline-diff root base paths))
+             (name (ecc-review-buffer-name session)))
+        (if diff
+            (ecc-review--fill (ecc-review--buffer-named name) session diff root nil paths)
+          (ecc-review--nothing name session root paths nil
+                               (format "Nothing has changed in %s since this session started"
+                                       (abbreviate-file-name root))))))))
 
 ;;;###autoload
 (defun ecc-review (&optional session paths)
@@ -1757,18 +1870,160 @@ during it are still shown; that one against the last commit."
                (ecc-review-ediff-buffer session paths))
       (ecc-window-display-review (ecc-review-buffer session paths) session))))
 
+(defun ecc-review--reread (buffer)
+  "Read the diff of the review BUFFER again, into BUFFER itself.
+The review is built again the way it was first built, from what it
+remembers -- its session, its request, its range and its files -- so
+the comments and the place being read are kept (`ecc-review--fill\=')."
+  (with-current-buffer buffer
+    (let ((session (or ecc-review--session (user-error "Not a review buffer")))
+          (ecc-review--into buffer))
+      (cond
+       (ecc-review--request (ecc-review-request ecc-review--request))
+       ;; `ecc-review--fill' left the repository in `default-directory', so
+       ;; the refresh reads the same tree even from a session of another.
+       (ecc-review--range (ecc-review-worktree-buffer session ecc-review--range
+                                                      default-directory
+                                                      ecc-review--paths))
+       (t (ecc-review-buffer session ecc-review--paths))))))
+
 (defun ecc-review-refresh ()
-  "Read the diff again, keeping the comments whose hunks still exist."
+  "Read the diff again, keeping the comments and the place being read."
   (interactive)
-  (let ((session (or ecc-review--session (user-error "Not a review buffer"))))
-    (cond
-     (ecc-review--request (ecc-review-request ecc-review--request))
-     ;; `ecc-review--fill' left the repository in `default-directory', so
-     ;; the refresh reads the same tree even from a session of another.
-     (ecc-review--range (ecc-review-worktree-buffer session ecc-review--range
-                                                    default-directory))
-     (t (ecc-review-buffer session ecc-review--paths)))
-    (message "Refreshed")))
+  (ecc-review--reread (current-buffer))
+  (message "Refreshed"))
+
+;;;; Following the files
+
+;; A review is read again as the files under it change, the way Hunk's
+;; watch mode follows them.  Three things say that they may have: a
+;; tool of the session finishing -- any tool, since a shell command or a
+;; script changes files as well as an edit does, and
+;; `ecc-files-updated-hook' hears only of edits -- a turn ending, and a
+;; file of the repository being saved in Emacs.  None of them reads the
+;; diff: each marks the reviews it concerns stale and asks for the one
+;; timer, which reads the stale reviews that are on the screen once Emacs
+;; has been idle for a moment.  A review out of sight stays stale until
+;; it is shown again.  The timer runs once and is made again by the next
+;; change; a repeating timer that takes longer than its period starves
+;; everything else (the freeze of 2026-09-21).
+;;
+;; Reading a review again never shows, selects or divides a window: it
+;; fills a buffer that is already where it is.
+
+(defcustom ecc-review-auto-refresh t
+  "Whether an open review reads the diff again as the files change.
+When non-nil a review follows the files: it is read again when a tool
+of its session finishes -- a shell command as much as an edit -- when a
+turn ends, and when a file of its repository is saved in Emacs.  Your
+comments and the place you are reading are kept, as \\`g' keeps them,
+and a review whose changes have all gone stays open and says so.  Only
+a review on the screen is read at once; one out of sight is read when
+it is shown again.  The review of one proposal waiting to be allowed is
+never read again: it is about that proposal, not about the files.
+
+When nil a review shows the diff as it was opened, until \\`g'."
+  :type 'boolean
+  :group 'ecc)
+
+(defvar ecc-review-auto-refresh-delay 0.5
+  "Seconds Emacs is idle before a stale review on the screen is read again.
+The changes of one step of a turn come together, a tool result and the
+end of the turn a moment apart, and are read in one go.")
+
+(defvar ecc-review--watch-timer nil
+  "The idle timer that reads the stale reviews again, or nil.
+There is at most one, and it runs once.")
+
+(defun ecc-review--watched-p (buffer)
+  "Return non-nil when the review BUFFER follows the files.
+A review of files does; the review of a proposal does not."
+  (and (buffer-live-p buffer)
+       (with-current-buffer buffer
+         (and (derived-mode-p 'ecc-review-mode)
+              ecc-review--session
+              (null ecc-review--request)))))
+
+(defun ecc-review--schedule-refresh ()
+  "Make sure the timer that reads the stale reviews again is waiting.
+Emacs may be idle already -- a tool result arrives while nobody types
+-- and an idle timer only runs when the idle time reaches its own, so
+the time is counted from now."
+  (unless (memq ecc-review--watch-timer timer-idle-list)
+    (setq ecc-review--watch-timer
+          (run-with-idle-timer (if-let* ((idle (current-idle-time)))
+                                   (time-add idle ecc-review-auto-refresh-delay)
+                                 ecc-review-auto-refresh-delay)
+                               nil #'ecc-review--refresh-stale))))
+
+(defun ecc-review--mark-stale (predicate)
+  "Mark stale every review following the files for which PREDICATE holds.
+PREDICATE is called with no argument in each review buffer.  When any
+was marked, the timer is asked for."
+  (when ecc-review-auto-refresh
+    (let ((marked nil))
+      (dolist (buffer (buffer-list))
+        (when (and (ecc-review--watched-p buffer)
+                   (with-current-buffer buffer (funcall predicate)))
+          (with-current-buffer buffer (setq ecc-review--stale t))
+          (setq marked t)))
+      (when marked
+        (ecc-review--schedule-refresh)))))
+
+(defun ecc-review--under-p (file directory)
+  "Return non-nil when FILE is DIRECTORY or under it, links resolved."
+  (string-prefix-p (file-name-as-directory (file-truename directory))
+                   (file-name-as-directory (file-truename file))))
+
+(defun ecc-review--on-session-change (session &rest _)
+  "Mark stale the reviews SESSION may have changed the files of.
+Its own, and every review of the repository it works in: a working tree
+review shows whoever changed a file, and two sessions share one."
+  (let ((directory (ecc-session-project-root session)))
+    (ecc-review--mark-stale
+     (lambda ()
+       (or (eq ecc-review--session session)
+           (and directory (ecc-review--under-p directory default-directory)))))))
+
+(defun ecc-review--on-save ()
+  "Mark stale the reviews of the repository the file just saved is in."
+  (when-let* ((file buffer-file-name))
+    (ecc-review--mark-stale
+     (lambda () (ecc-review--under-p file default-directory)))))
+
+(defun ecc-review--on-window-buffer-change (frame)
+  "Ask for the timer when a window of FRAME shows a stale review.
+That is how a review out of sight is read again once it is shown."
+  (when (seq-some (lambda (window)
+                    (buffer-local-value 'ecc-review--stale (window-buffer window)))
+                  (window-list frame 'no-minibuffer))
+    (ecc-review--schedule-refresh)))
+
+(defun ecc-review--refresh-stale ()
+  "Read again every stale review that is on the screen.
+An error is logged and shown, and leaves that review stale; it does not
+keep the other reviews from being read.  Called before its time -- the
+timer still waiting -- it takes the timer's place."
+  (when (timerp ecc-review--watch-timer)
+    (cancel-timer ecc-review--watch-timer))
+  (setq ecc-review--watch-timer nil)
+  (when ecc-review-auto-refresh
+    (dolist (buffer (buffer-list))
+      (when (and (ecc-review--watched-p buffer)
+                 (buffer-local-value 'ecc-review--stale buffer)
+                 (get-buffer-window buffer 'visible))
+        (condition-case error
+            (let ((ecc-review--watching t))
+              (ecc-review--reread buffer))
+          (error
+           (ecc-log "review" "reading %s again failed: %s"
+                    (buffer-name buffer) (error-message-string error))
+           (message "%s: %s" (buffer-name buffer) (error-message-string error))))))))
+
+(add-hook 'ecc-tool-finished-hook #'ecc-review--on-session-change)
+(add-hook 'ecc-turn-finished-hook #'ecc-review--on-session-change)
+(add-hook 'after-save-hook #'ecc-review--on-save)
+(add-hook 'window-buffer-change-functions #'ecc-review--on-window-buffer-change)
 
 ;;;; Reviewing the working tree
 
@@ -1776,6 +2031,24 @@ during it are still shown; that one against the last commit."
   "What `ecc-review-worktree\=' diffs against without a prefix argument.
 \"HEAD\" is everything uncommitted, staged or not, which is what the
 CLI\='s own /diff shows.  \"\" is only what is not staged yet.")
+
+(defun ecc-review-worktree-paths (directory range)
+  "Return the files a review of DIRECTORY against RANGE would show.
+They are relative to the repository, the changed ones first and then
+those git does not track, when RANGE reads the working tree.  What
+\\[universal-argument] \\[ecc-review-worktree] offers to choose from."
+  (when-let* ((root (ecc-review-git-root directory)))
+    (let* ((range (ecc-review-parse-range (or range ecc-review-worktree-default-range)))
+           (effective (ecc-review--effective-range root range)))
+      (delete-dups
+       (append
+        (pcase (apply #'ecc-review--git root "diff" "--name-only" "-z"
+                      (append (cond ((eq effective 'staged) (list "--staged"))
+                                    ((not (string-empty-p effective)) (list effective)))
+                              (list "--")))
+          (`(0 . ,output) (split-string output "\0" t)))
+        (and (ecc-review--range-includes-worktree-p root effective)
+             (ecc-review--untracked-paths root)))))))
 
 (defun ecc-review-worktree-session (root)
   "Return the session the comments on the working tree of ROOT go to.
@@ -1789,30 +2062,26 @@ no session, starting one is offered."
           (ecc-start root)
         (user-error "The comments need a session to go to"))))
 
-(defun ecc-review-worktree-buffer (session &optional range root)
+(defun ecc-review-worktree-buffer (session &optional range root paths)
   "Return the buffer reviewing the working tree of ROOT, filled and current.
 The comments of the buffer go to SESSION.  ROOT defaults to the project
-of SESSION, and RANGE to `ecc-review-worktree-default-range\='.  Every
-change under the repository is shown, whoever made it, and the files git
-does not track are appended.  Signals an error when the directory is not
-a git repository or has nothing to show."
-  (let* ((range (or range ecc-review-worktree-default-range))
+of SESSION, and RANGE to `ecc-review-worktree-default-range\=': a
+revision or a range of them, \"\" for what is not staged, or `staged\='
+for what is (`ecc-review-parse-range\=').  PATHS, relative to the
+repository, restrict the review to those files; nil is every file.
+Every change under the repository is shown, whoever made it, and when
+RANGE reads the working tree the files git does not track are appended
+\(`ecc-review--range-includes-worktree-p\=').  Signals an error when the
+directory is not a git repository or has nothing to show."
+  (let* ((range (ecc-review-parse-range (or range ecc-review-worktree-default-range)))
          (directory (or root (ecc-session-project-root session)))
          (root (or (ecc-review-git-root directory)
                    (user-error "%s is not in a git repository"
                                (abbreviate-file-name directory))))
-         ;; A repository with no commit has no HEAD to diff against, and
-         ;; git calls that a bad revision rather than an empty diff.  The
-         ;; empty tree is what HEAD would mean there, so the first code
-         ;; written in a project can be reviewed before it is committed.
-         ;; Only the bare "HEAD" is substituted: "main...HEAD" in such a
-         ;; repository really is unresolvable, and still says so.  The
-         ;; test is made afresh every time, so the first commit puts the
-         ;; real HEAD back without anything having to be invalidated.
-         (effective (if (and (equal range "HEAD") (ecc-review--unborn-p root))
-                        (or (ecc-review--empty-tree root) range)
-                      range))
-         (tracked (pcase (ecc-review--git-diff root nil effective)
+         (effective (ecc-review--effective-range root range))
+         (tracked (pcase (ecc-review--git-diff
+                          root (mapcar (lambda (path) (expand-file-name path root)) paths)
+                          effective)
                     (`(0 . ,output) output)
                     ;; An unknown revision is not "no change": without
                     ;; this the buffer would quietly show the untracked
@@ -1823,33 +2092,46 @@ a git repository or has nothing to show."
                                  range (abbreviate-file-name root) code))
                     (_ (user-error "Git cannot be run in %s"
                                    (abbreviate-file-name root)))))
-         (text (concat tracked (or (ecc-review-git-untracked root) ""))))
-    (when (string-empty-p text)
-      (user-error "No change against %s in %s"
-                  (if (string-empty-p range) "the index" range)
-                  (abbreviate-file-name root)))
-    (ecc-review--fill (get-buffer-create
-                       (ecc-review-buffer-name session nil range))
-                      session text root nil nil range)))
+         (text (concat tracked
+                       (or (and (ecc-review--range-includes-worktree-p root effective)
+                                (ecc-review-git-untracked root paths))
+                           "")))
+         (name (ecc-review-buffer-name session nil range)))
+    (if (string-empty-p text)
+        (ecc-review--nothing name session root paths range
+                             (if (eq range 'staged)
+                                 (format "Nothing is staged in %s"
+                                         (abbreviate-file-name root))
+                               (format "No change against %s in %s"
+                                       (if (string-empty-p range) "the index" range)
+                                       (abbreviate-file-name root))))
+      (ecc-review--fill (ecc-review--buffer-named name) session text root nil
+                        paths range))))
 
 (defun ecc-review-worktree--read-arguments ()
-  "Return the (SESSION RANGE ROOT) `ecc-review-worktree\=' should run with.
+  "Return the (SESSION RANGE ROOT PATHS) `ecc-review-worktree\=' should run with.
 The project comes from the buffer the user is working in -- this is a
 command for the code, not for a transcript -- and the session from that
-project, which is the one that can act on the diff."
+project, which is the one that can act on the diff.  With a prefix
+argument the range is asked for, and then the files, out of those the
+range would show; none chosen is every file."
   (let* ((buffer-session (ecc-window-buffer-session))
          (root (if buffer-session
                    (ecc-window-session-project buffer-session)
                  (ecc-window-context-project-root)))
-         (session (or buffer-session (ecc-review-worktree-session root))))
-    (list session
-          (and current-prefix-arg
-               (read-string "Diff against (empty for unstaged): "
-                            ecc-review-worktree-default-range))
-          root)))
+         (session (or buffer-session (ecc-review-worktree-session root)))
+         (range (and current-prefix-arg
+                     (ecc-review-parse-range
+                      (read-string "Diff against (empty for unstaged, --staged for the index): "
+                                   ecc-review-worktree-default-range))))
+         (paths (and current-prefix-arg
+                     (completing-read-multiple
+                      "Files (empty for all): "
+                      (ecc-review-worktree-paths root range) nil t))))
+    (list session range root paths)))
 
 ;;;###autoload
-(defun ecc-review-worktree (&optional session range root)
+(defun ecc-review-worktree (&optional session range root paths)
   "Open the git diff of the working tree as one diff to review.
 Unlike `ecc-review\=', which shows what the session changed, this shows
 every uncommitted change of the project -- your own work included -- so
@@ -1857,14 +2139,15 @@ that it can be commented on and handed to Claude.  ROOT is the project,
 the one of the buffer the command was run from; SESSION is where the
 comments go, the session of that project, started when it has none.
 RANGE is what git diffs against, asked for with a prefix argument: a
-revision like \"HEAD\", a range like \"main...HEAD\", or nothing for
-what is not staged yet."
+revision like \"HEAD\", a range like \"main...HEAD\", nothing for
+what is not staged yet, or --staged for what is.  PATHS, asked for
+after it, restrict the review to those files."
   (interactive (ecc-review-worktree--read-arguments))
   (let ((session (or session (ecc-review-session))))
     (pcase ecc-review-style
       ('ediff (require 'ecc-review-ediff)
-              (ecc-review-ediff-worktree-buffer session range root))
-      (_ (ecc-window-display-review (ecc-review-worktree-buffer session range root)
+              (ecc-review-ediff-worktree-buffer session range root paths))
+      (_ (ecc-window-display-review (ecc-review-worktree-buffer session range root paths)
                                     session)))))
 
 (defun ecc-review-quit ()

@@ -1444,6 +1444,358 @@ Everything in the second hunk is two lines further down.")
           (should-not (ecc-session-input-queue session)))
       (ecc-review-test--kill-review-buffers))))
 
+;;;; Which range reads the working tree
+
+(defun ecc-review-test--repo (directory)
+  "Make DIRECTORY a repository with x.txt and y.txt committed twice.
+Returns the path of x.txt."
+  (ecc-review-test--git directory "init" "-q")
+  (ecc-review-test--git directory "config" "user.email" "t@example.com")
+  (ecc-review-test--git directory "config" "user.name" "t")
+  (ecc-review-test--write (concat directory "x.txt") "one\ntwo\nthree\n")
+  (ecc-review-test--write (concat directory "y.txt") "alpha\n")
+  (ecc-review-test--git directory "add" "x.txt" "y.txt")
+  (ecc-review-test--git directory "commit" "-q" "-m" "first")
+  (ecc-review-test--write (concat directory "y.txt") "alpha\nbeta\n")
+  (ecc-review-test--git directory "commit" "-q" "-a" "-m" "second")
+  (concat directory "x.txt"))
+
+(ert-deftest ecc-review-test-parse-range ()
+  "--staged and --cached are the index; anything else starting with - is refused."
+  (should-not (ecc-review-parse-range nil))
+  (should (eq (ecc-review-parse-range 'staged) 'staged))
+  (should (eq (ecc-review-parse-range "--staged") 'staged))
+  (should (eq (ecc-review-parse-range " --cached ") 'staged))
+  (should (equal (ecc-review-parse-range " main...HEAD ") "main...HEAD"))
+  (should (equal (ecc-review-parse-range "") ""))
+  (dolist (option '("--output=/tmp/x" "-p" " --no-index"))
+    (should-error (ecc-review-parse-range option) :type 'user-error)))
+
+(ert-deftest ecc-review-test-range-includes-worktree ()
+  "git decides whether a range reads the working tree: a lone revision does."
+  (skip-unless (executable-find "git"))
+  (ecc-review-test--with-directory directory
+    (ecc-review-test--repo directory)
+    (let ((root (ecc-review-git-root directory)))
+      (dolist (range '(nil "" "HEAD" "HEAD~1"))
+        (should (ecc-review--range-includes-worktree-p root range)))
+      (dolist (range '(staged "HEAD~1..HEAD" "HEAD~1...HEAD" "HEAD^!" "no-such-branch"))
+        (should-not (ecc-review--range-includes-worktree-p root range))))))
+
+(ert-deftest ecc-review-test-worktree-commits-leave-untracked-out ()
+  "A review of commits shows no untracked file; one against a revision does."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (progn
+            (ecc-review-test--repo directory)
+            (ecc-review-test--write (concat directory "new.txt") "hello\n")
+            (setf (ecc-session-project-root session) directory)
+            (dolist (range '("HEAD~1..HEAD" "HEAD~1...HEAD" "HEAD^!"))
+              (with-current-buffer (ecc-review-worktree-buffer session range)
+                (should (string-search "+beta" (buffer-string)))
+                (should-not (string-search "new.txt" (buffer-string)))))
+            (with-current-buffer (ecc-review-worktree-buffer session "HEAD~1")
+              (should (string-search "+beta" (buffer-string)))
+              (should (string-search "+hello" (buffer-string)))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-worktree-staged ()
+  "`staged' is the index against HEAD alone, named so, without untracked files."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((x (ecc-review-test--repo directory)))
+            (ecc-review-test--write x "one\n2\nthree\n")
+            (ecc-review-test--write (concat directory "y.txt") "gamma\n")
+            (ecc-review-test--git directory "add" "y.txt")
+            (ecc-review-test--write (concat directory "new.txt") "hello\n")
+            (setf (ecc-session-project-root session) directory)
+            (with-current-buffer (ecc-review-worktree-buffer session "--cached")
+              (should (equal (buffer-name) "*ecc-review: test (staged)*"))
+              (should (eq ecc-review--range 'staged))
+              (should (string-search "Working tree (staged)" (ecc-review--header-line)))
+              (should (string-search "+gamma" (buffer-string)))
+              (should-not (string-search "+2" (buffer-string)))
+              (should-not (string-search "hello" (buffer-string))))
+            ;; Nothing staged is nothing to review.
+            (ecc-review-test--git directory "reset" "-q")
+            (should-error (ecc-review-worktree-buffer session 'staged) :type 'user-error)
+            ;; An option is never handed to git.
+            (should-error (ecc-review-worktree-buffer session "--output=x")
+                          :type 'user-error)
+            (should-not (file-exists-p (concat directory "x"))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-worktree-paths ()
+  "PATHS narrow the diff and the untracked files, and survive g."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((x (ecc-review-test--repo directory)))
+            (ecc-review-test--write x "one\n2\nthree\n")
+            (ecc-review-test--write (concat directory "y.txt") "gamma\n")
+            (ecc-review-test--write (concat directory "new.txt") "hello\n")
+            (ecc-review-test--write (concat directory "other.txt") "other\n")
+            (setf (ecc-session-project-root session) directory)
+            (should (equal (sort (ecc-review-worktree-paths directory "HEAD") #'string<)
+                           '("new.txt" "other.txt" "x.txt" "y.txt")))
+            (should (equal (ecc-review-worktree-paths directory "HEAD~1..HEAD")
+                           '("y.txt")))
+            (with-current-buffer (ecc-review-worktree-buffer session "HEAD" nil
+                                                             '("x.txt" "new.txt"))
+              (should (equal ecc-review--paths '("x.txt" "new.txt")))
+              (let ((text (buffer-string)))
+                (should (string-search "+2" text))
+                (should (string-search "+hello" text))
+                (should-not (string-search "gamma" text))
+                (should-not (string-search "other" text)))
+              (ecc-review-test--write x "one\n2\n3\n")
+              (ecc-review-refresh)
+              (should (equal ecc-review--paths '("x.txt" "new.txt")))
+              (should (string-search "+3" (buffer-string)))
+              (should-not (string-search "gamma" (buffer-string)))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-worktree-asks-for-files ()
+  "C-u asks for the range, then for the files among those it would show."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (let ((x (ecc-review-test--repo directory))
+            (offered nil))
+        (ecc-review-test--write x "one\n2\nthree\n")
+        (ecc-review-test--git directory "add" "x.txt")
+        (ecc-review-test--write (concat directory "new.txt") "hello\n")
+        (cl-letf (((symbol-function 'ecc-window-buffer-session) (lambda () session))
+                  ((symbol-function 'ecc-window-session-project) (lambda (_) directory))
+                  ((symbol-function 'read-string) (lambda (&rest _) "--staged"))
+                  ((symbol-function 'completing-read-multiple)
+                   (lambda (_prompt candidates &rest _)
+                     (setq offered candidates)
+                     '("x.txt"))))
+          (let ((current-prefix-arg '(4)))
+            (should (equal (ecc-review-worktree--read-arguments)
+                           (list session 'staged directory '("x.txt")))))
+          ;; What is staged, and no untracked file.
+          (should (equal offered '("x.txt")))
+          (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "--output=x")))
+            (let ((current-prefix-arg '(4)))
+              (should-error (ecc-review-worktree--read-arguments) :type 'user-error))))))))
+
+;;;; Following the files
+
+(defmacro ecc-review-test--with-watch (&rest body)
+  "Run BODY with a timer of the watch of its own, cancelled afterwards."
+  (declare (indent 0))
+  `(let ((ecc-review--watch-timer nil)
+         (ecc-review-auto-refresh t))
+     (unwind-protect (progn ,@body)
+       (when (timerp ecc-review--watch-timer)
+         (cancel-timer ecc-review--watch-timer)))))
+
+(defun ecc-review-test--watch-timers ()
+  "Return the idle timers waiting to read the stale reviews again."
+  (seq-filter (lambda (timer) (eq (timer--function timer) #'ecc-review--refresh-stale))
+              timer-idle-list))
+
+(defun ecc-review-test--line-at (window)
+  "Return the text of the line WINDOW has its point on."
+  (with-current-buffer (window-buffer window)
+    (save-excursion
+      (goto-char (window-point window))
+      (buffer-substring-no-properties (line-beginning-position) (line-end-position)))))
+
+(ert-deftest ecc-review-test-watch-follows-the-files ()
+  "A tool result marks the review stale; one timer reads it again in place.
+The comments and the place in the window are kept, and nothing about the
+windows changes: which is selected, what they show, how they are laid out."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (ecc-review-test--with-watch
+        (let ((other (get-buffer-create "*ecc-review-test prompt*"))
+              (configuration (current-window-configuration)))
+          (unwind-protect
+              (let ((x (ecc-review-test--repo directory)))
+                (ecc-review-test--write x "one\n2\nthree\n")
+                (setf (ecc-session-project-root session) directory)
+                (let* ((review (ecc-review-worktree-buffer session "HEAD"))
+                       (selected (progn (delete-other-windows)
+                                        (set-window-buffer (selected-window) other)
+                                        (selected-window)))
+                       (window (split-window)))
+                  (set-window-buffer window review)
+                  (with-current-buffer review
+                    (ecc-review-test--goto "+2")
+                    (set-window-point window (point))
+                    (ecc-review-comment "why 2"))
+                  ;; A line is added above the one commented on.
+                  (ecc-review-test--write x "zero\none\n2\nthree\n")
+                  (ecc-review--on-session-change session nil)
+                  (ecc-review--on-session-change session nil)
+                  (ecc-review--on-session-change session nil)
+                  (should (buffer-local-value 'ecc-review--stale review))
+                  (should (memq #'ecc-review--on-session-change ecc-tool-finished-hook))
+                  (should (memq #'ecc-review--on-session-change ecc-turn-finished-hook))
+                  (should (memq #'ecc-review--on-save (default-value 'after-save-hook)))
+                  (should (memq #'ecc-review--on-window-buffer-change
+                                (default-value 'window-buffer-change-functions)))
+                  ;; One timer for the three, and it runs once.
+                  (should (= (length (ecc-review-test--watch-timers)) 1))
+                  (should-not (timer--repeat-delay ecc-review--watch-timer))
+                  (should (string-search "+2" (with-current-buffer review (buffer-string))))
+                  (should-not (string-search "zero" (with-current-buffer review
+                                                      (buffer-string))))
+                  (let ((before (current-window-configuration)))
+                    (timer-event-handler ecc-review--watch-timer)
+                    (should (compare-window-configurations
+                             before (current-window-configuration))))
+                  (should-not (ecc-review-test--watch-timers))
+                  (should (eq (selected-window) selected))
+                  (should (eq (window-buffer selected) other))
+                  (should (eq (window-buffer window) review))
+                  (with-current-buffer review
+                    (should (string-search "+zero" (buffer-string)))
+                    (should-not ecc-review--stale)
+                    (let ((note (car ecc-review--notes)))
+                      (should (equal (ecc-review-note-text note) "why 2"))
+                      (should-not (ecc-review-note-outdated note))
+                      (should (= (ecc-review-note-line note) 3))))
+                  (should (equal (ecc-review-test--line-at window) "+2"))))
+            (set-window-configuration configuration)
+            (kill-buffer other)
+            (ecc-review-test--kill-review-buffers)))))))
+
+(ert-deftest ecc-review-test-watch-hidden-and-other-sessions ()
+  "Only a review on the screen is read; a hidden one waits until it is shown.
+A session marks its own reviews and those of its repository, not another's."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session one
+    (ecc-review-test--with-directory a
+      (ecc-review-test--with-directory b
+        (ecc-review-test--with-watch
+          (let ((two (ecc-model-create-session :name "two" :project-root b))
+                (three (ecc-model-create-session :name "three" :project-root a))
+                (configuration (current-window-configuration)))
+            (unwind-protect
+                (let ((xa (ecc-review-test--repo a))
+                      (xb (ecc-review-test--repo b)))
+                  (ecc-review-test--write xa "one\nA\nthree\n")
+                  (ecc-review-test--write xb "one\nB\nthree\n")
+                  (setf (ecc-session-project-root one) a)
+                  (let ((review-one (ecc-review-worktree-buffer one "HEAD"))
+                        (review-two (ecc-review-worktree-buffer two "HEAD")))
+                    (delete-other-windows)
+                    (set-window-buffer (selected-window) review-one)
+                    ;; Another session of the same repository marks it;
+                    ;; the session of another repository does not.
+                    (ecc-review--on-session-change three nil)
+                    (should (buffer-local-value 'ecc-review--stale review-one))
+                    (should-not (buffer-local-value 'ecc-review--stale review-two))
+                    (ecc-review--on-session-change two nil)
+                    (should (buffer-local-value 'ecc-review--stale review-two))
+                    (ecc-review-test--write xa "one\nAA\nthree\n")
+                    (ecc-review-test--write xb "one\nBB\nthree\n")
+                    (ecc-review--refresh-stale)
+                    (should (string-search "+AA" (with-current-buffer review-one
+                                                   (buffer-string))))
+                    ;; Out of sight: still stale, still as it was.
+                    (should (buffer-local-value 'ecc-review--stale review-two))
+                    (should-not (string-search "+BB" (with-current-buffer review-two
+                                                       (buffer-string))))
+                    ;; Shown, it asks for the timer, which reads it.
+                    (set-window-buffer (selected-window) review-two)
+                    (ecc-review--on-window-buffer-change (selected-frame))
+                    (should (= (length (ecc-review-test--watch-timers)) 1))
+                    (timer-event-handler ecc-review--watch-timer)
+                    (should (string-search "+BB" (with-current-buffer review-two
+                                                   (buffer-string))))
+                    (should-not (buffer-local-value 'ecc-review--stale review-two))))
+              (set-window-configuration configuration)
+              (ecc-review-test--kill-review-buffers)
+              (ecc-test-cleanup-session two)
+              (ecc-test-cleanup-session three))))))))
+
+(ert-deftest ecc-review-test-watch-leaves-some-alone ()
+  "A proposal is never watched, and nothing is with the setting off."
+  (ecc-review-test--with-watch
+    (ecc-review-test--with-review session
+      (let ((proposal (ecc-review--fill (get-buffer-create "*ecc-review: test (proposal)*")
+                                        session ecc-review-test--diff nil 'request)))
+        (ecc-review--on-session-change session nil)
+        (should (buffer-local-value 'ecc-review--stale (current-buffer)))
+        (should-not (buffer-local-value 'ecc-review--stale proposal))
+        (setq ecc-review--stale nil)
+        (cancel-timer ecc-review--watch-timer)
+        (setq ecc-review--watch-timer nil)
+        (let ((ecc-review-auto-refresh nil))
+          (ecc-review--on-session-change session nil)
+          (should-not ecc-review--stale)
+          (should-not (ecc-review-test--watch-timers)))))))
+
+(ert-deftest ecc-review-test-watch-on-save ()
+  "Saving a file of the repository marks its reviews; one elsewhere does not."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (ecc-review-test--with-directory elsewhere
+        (ecc-review-test--with-watch
+          (unwind-protect
+              (let ((x (ecc-review-test--repo directory)))
+                (ecc-review-test--write x "one\n2\nthree\n")
+                (setf (ecc-session-project-root session) directory)
+                (let ((review (ecc-review-worktree-buffer session "HEAD")))
+                  (with-current-buffer (find-file-noselect (concat elsewhere "z.txt"))
+                    (insert "z")
+                    (save-buffer)
+                    (kill-buffer))
+                  (should-not (buffer-local-value 'ecc-review--stale review))
+                  (with-current-buffer (find-file-noselect x)
+                    (goto-char (point-max))
+                    (insert "four\n")
+                    (save-buffer)
+                    (kill-buffer))
+                  (should (buffer-local-value 'ecc-review--stale review))))
+            (ecc-review-test--kill-review-buffers)))))))
+
+(ert-deftest ecc-review-test-watch-an-empty-diff-stays-open ()
+  "A review whose changes have gone stays open under watch; g still refuses."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (ecc-review-test--with-watch
+        (let ((configuration (current-window-configuration)))
+          (unwind-protect
+              (let* ((x (ecc-review-test--repo directory))
+                     (review (progn (ecc-review-test--write x "one\n2\nthree\n")
+                                    (setf (ecc-session-project-root session) directory)
+                                    (ecc-review-worktree-buffer session "HEAD"))))
+                (set-window-buffer (selected-window) review)
+                (with-current-buffer review
+                  (ecc-review-test--goto "+2")
+                  (ecc-review-comment "why 2"))
+                (ecc-review-test--git directory "commit" "-q" "-a" "-m" "third")
+                (ecc-review--on-session-change session nil)
+                (ecc-review--refresh-stale)
+                (with-current-buffer review
+                  (should (string-search "No change against HEAD" (buffer-string)))
+                  (should (equal ecc-review--range "HEAD"))
+                  ;; Kept, outdated, and back when the line is.
+                  (should (ecc-review-note-outdated (car ecc-review--notes)))
+                  (should-error (ecc-review-refresh) :type 'user-error)
+                  (ecc-review-test--write x "one\n2\nthree\nfour\n")
+                  (ecc-review-test--git directory "reset" "-q" "--soft" "HEAD~1")
+                  (ecc-review--on-session-change session nil)
+                  (ecc-review--refresh-stale)
+                  (should (string-search "+2" (buffer-string)))
+                  (should-not (ecc-review-note-outdated (car ecc-review--notes)))))
+            (set-window-configuration configuration)
+            (ecc-review-test--kill-review-buffers)))))))
+
 (provide 'ecc-review-test)
 
 ;;; ecc-review-test.el ends here
