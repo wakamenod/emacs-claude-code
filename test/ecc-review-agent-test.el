@@ -413,10 +413,12 @@ The review buffer is current."
               (delete-other-windows)
               (switch-to-buffer (get-buffer-create "*ecc-review-agent-test elsewhere*"))
               (ecc-review-agent-test--ok session "review_open")
-              (should (string-search "it will open at x.txt:15 (new)"
-                                     (ecc-review-agent-test--ok
-                                      session "review_navigate"
-                                      '((file . "x.txt") (line . 15)))))
+              (let ((reply (ecc-review-agent-test--ok
+                            session "review_navigate"
+                            '((file . "x.txt") (line . 15)))))
+                (should (string-search "Its point is at x.txt:15 (new)" reply))
+                ;; What is not kept is said: a window in another tab.
+                (should (string-search "in another tab keeps the place it had" reply)))
               ;; The user opens the review, which reads the diff again.
               (ecc-review session)
               (let ((review (get-buffer "*ecc-review: test*")))
@@ -426,6 +428,26 @@ The review buffer is current."
         (ecc-review-agent-test--kill-review-buffers)
         (when (get-buffer "*ecc-review-agent-test elsewhere*")
           (kill-buffer "*ecc-review-agent-test elsewhere*"))))))
+
+(ert-deftest ecc-review-agent-test-a-second-review-takes-the-first-ones-window ()
+  "Opening another review of the session puts it where the first one was."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (let ((first (ecc-review-agent-test--fill session ecc-review-agent-test--diff))
+              (second (ecc-review--fill (get-buffer-create
+                                         (ecc-review-buffer-name session nil "HEAD"))
+                                        session ecc-review-agent-test--diff
+                                        temporary-file-directory nil nil "HEAD"))
+              (display-buffer-alist nil))
+          (save-window-excursion
+            (delete-other-windows)
+            (switch-to-buffer (ecc-session-ensure-buffer session))
+            (let ((window (ecc-review-agent--show first session)))
+              (should window)
+              (should (eq (ecc-review-agent--show second session) window))
+              (should (eq (window-buffer window) second))
+              (should (= (length (window-list)) 2)))))
+      (ecc-review-agent-test--kill-review-buffers))))
 
 ;;;; More than one session
 

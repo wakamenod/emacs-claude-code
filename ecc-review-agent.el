@@ -162,6 +162,16 @@ then the one Claude opened last; then the one used last.  Signals
   `(with-current-buffer (ecc-review-agent-buffer (ecc-review-agent--session))
      ,@body))
 
+(defun ecc-review-agent--show (buffer session)
+  "Show the review BUFFER of SESSION the quiet way; return its window or nil.
+Another review of SESSION on the screen gives up its window to it, so
+that a second `review_open\=' does not divide the session again."
+  (ecc-window-show-review-quietly
+   buffer session
+   (lambda (other)
+     (and (not (eq other buffer))
+          (memq other (ecc-review-agent--buffers session))))))
+
 ;;;; Reading what the model sent
 
 (defun ecc-review-agent--integer (value name)
@@ -357,7 +367,7 @@ is not looking at the session."
     (let* ((buffer (if range
                        (ecc-review-worktree-buffer session range)
                      (ecc-review-buffer session)))
-           (window (ecc-window-show-review-quietly buffer session)))
+           (window (ecc-review-agent--show buffer session)))
       (puthash session buffer ecc-review-agent--opened)
       (ecc-review-agent--with-ediff-note
        session
@@ -438,7 +448,7 @@ The place is COMMENT-ID, the next or previous comment in DIRECTION,
 LINE of SIDE of FILE, HUNK of FILE, or the first hunk of FILE.  The
 window is moved without being selected."
   (ecc-review-agent--in-review
-    (let* ((window (ecc-window-show-review-quietly (current-buffer) ecc-review--session))
+    (let* ((window (ecc-review-agent--show (current-buffer) ecc-review--session))
            (from (if window (window-point window) (point)))
            (lines (ecc-review--lines))
            (id (ecc-review-agent--integer comment-id "comment_id"))
@@ -482,7 +492,7 @@ window is moved without being selected."
            (position (car target)))
       (goto-char position)
       (if (not window)
-          (format "The review is not on the screen (the user is not looking at this session, or it had no window to go in but the one they are using); it will open at %s."
+          (format "The review is not on the screen (the user is not looking at this session, or it had no window to go in but the one they are using).  Its point is at %s, where it opens when the user opens it; a window already showing it in another tab keeps the place it had."
                   (cdr target))
         (set-window-point window position)
         (set-window-start window (ecc-review-agent--window-start window position))
