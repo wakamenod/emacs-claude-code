@@ -103,7 +103,7 @@ Both options accept `'window` or `'posframe`. `'posframe` renders the buffer as 
 
 ## The MCP server
 
-ecc can run an in-process MCP server on the loopback interface and register it with each session, allowing Claude to query Emacs for editor context: `xref`, `imenu`, `tree-sitter`, project metadata, and diagnostics.
+ecc can run an in-process MCP server on the loopback interface and register it with each session, allowing Claude to query Emacs for editor context: `xref`, `imenu`, `tree-sitter`, project metadata, and diagnostics. It also lets Claude [comment on the review buffer](/emacs-claude-code/features/review/#comments-from-claude).
 
 | Variable | Default | Description |
 |---|---|---|
