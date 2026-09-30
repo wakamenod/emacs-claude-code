@@ -1008,6 +1008,74 @@ Everything in the second hunk is two lines further down.")
             (should (= (ecc-review-note-line note) 7))))
       (ecc-review-test--kill-review-buffers))))
 
+(ert-deftest ecc-review-test-a-look-alike-at-the-same-number-is-not-the-line ()
+  "Pushed down by lines added above, a blank line is not the blank line now in its place."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (with-current-buffer
+            (ecc-review-test--fill
+             session
+             "--- a/c.el\n+++ b/c.el\n@@ -9,3 +9,3 @@\n (defun a ()\n \n-  1)\n+  2)\n")
+          (ecc-review-test--goto " ")
+          (ecc-review-comment "about the blank line in a")
+          (should (= (ecc-review-note-line (car ecc-review--notes)) 10))
+          ;; Three lines above it, the middle one blank: that one is L10 now.
+          (ecc-review-test--fill
+           session
+           (concat "--- a/c.el\n+++ b/c.el\n@@ -8,0 +9,3 @@\n+;; z\n+\n+(z)\n"
+                   "@@ -9,3 +12,3 @@\n (defun a ()\n \n-  1)\n+  2)\n"))
+          (let ((note (car ecc-review--notes)))
+            (should-not (ecc-review-note-outdated note))
+            (should (= (ecc-review-note-line note) 13))))
+      (ecc-review-test--kill-review-buffers))))
+
+(ert-deftest ecc-review-test-the-edge-of-a-hunk-survives-a-merge ()
+  "A line at the edge of a hunk has a neighbour missing, which is not compared."
+  (ecc-review-test--with-review session
+    (let* ((lines (ecc-review--lines))
+           ;; " ten" opens the second hunk: nothing before it.
+           (ten (ecc-review-add-note 'user "a" (nth 6 lines)))
+           ;; "+TWO" sits between "one" and "three".
+           (two (ecc-review-add-note 'user "b" (nth 3 lines)))
+           ;; A line added at the top as well, so that neither is at the
+           ;; number it had and the neighbours are what decide.
+           (merged (ecc-review-test--lines-of
+                    (concat "--- a/foo.el\n+++ b/foo.el\n@@ -1,11 +1,13 @@\n+zero\n"
+                            " one\n-two\n+TWO\n three\n four\n five\n six\n"
+                            " seven\n eight\n nine\n ten\n+added\n eleven\n")))
+           (split (ecc-review-test--lines-of
+                   (concat "--- a/foo.el\n+++ b/foo.el\n@@ -0,0 +1 @@\n+zero\n"
+                           "@@ -2,1 +3,1 @@\n-two\n+TWO\n"))))
+      (should-not (ecc-review-note-line-before ten))
+      ;; Merged into one hunk, " ten" has "nine" before it now.
+      (should (equal (plist-get (ecc-review--locate-note ten merged) :line) 11))
+      ;; Split off, "+TWO" has nothing either side, and is still itself.
+      (should (equal (plist-get (ecc-review--locate-note two split) :line) 3)))))
+
+(ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
+  "Remembering the place reads the hunk it is in, not the whole diff."
+  (ecc-review-test--with-review session
+    (ecc-review-test--goto "+added")
+    (cl-letf (((symbol-function 'ecc-review--lines)
+               (lambda () (error "The whole diff was read"))))
+      (let ((view (car (ecc-review--save-views))))
+        (should (equal (ecc-review-note-line (nth 1 view)) 11))))
+    ;; On a file header, the first hunk after it.
+    (goto-char (point-min))
+    (should (equal (ecc-review-note-hunk-key (nth 1 (car (ecc-review--save-views))))
+                   '("foo.el" . "@@ -1,3 +1,3 @@")))))
+
+(ert-deftest ecc-review-test-a-comment-reads-the-diff-once ()
+  "c reads the lines of the diff once, and draws with them."
+  (ecc-review-test--with-review session
+    (ecc-review-test--goto "+added")
+    (let ((reads 0)
+          (lines (symbol-function 'ecc-review--lines)))
+      (cl-letf (((symbol-function 'ecc-review--lines)
+                 (lambda () (cl-incf reads) (funcall lines))))
+        (ecc-review-comment "once"))
+      (should (= reads 1)))))
+
 (ert-deftest ecc-review-test-refresh-moves-and-outdates ()
   "A redraw keeps every comment: moved with its line, or marked outdated."
   (ecc-review-test--with-review session
