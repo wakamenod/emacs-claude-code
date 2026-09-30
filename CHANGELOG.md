@@ -38,7 +38,8 @@ Verified against **Claude Code CLI 2.1.281**.
   and whenever a tab opens or closes, so a crash leaves it current.
   It holds the Space roots in tab order and each session's id, name, root
   and cwd, all taken from memory: no recording is read and git is not asked.
-  A save that would write the same text again is skipped. At exit the file
+  A save that would write the same text again is skipped, and an empty
+  file is read as nothing saved. At exit the file
   is written once more and then left alone, so the sessions Emacs takes down
   with it are not saved as closed. Nothing is written at all by an Emacs
   that has had no session of its own and has not run `ecc-restore`: one
