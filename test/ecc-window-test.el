@@ -693,6 +693,98 @@ Run once with the Spaces on and once with them off, by the test below."
                 (tab-bar-mode (if was 1 -1)))))
         (kill-buffer review)))))
 
+(defmacro ecc-window-test--quietly (session review source session-buffer &rest body)
+  "Run BODY with SESSION, a REVIEW buffer and the SOURCE and SESSION-BUFFER.
+The frame is one window, SOURCE selected, when BODY starts."
+  (declare (indent 4))
+  `(ecc-test-with-fake-session ,session
+     (let ((,review (get-buffer-create "*ecc-review: test*"))
+           (,source (get-buffer-create "*ecc-window-test source*"))
+           (,session-buffer (ecc-session-ensure-buffer ,session))
+           (display-buffer-alist nil))
+       (unwind-protect
+           (save-window-excursion
+             (delete-other-windows)
+             (switch-to-buffer ,source)
+             ,@body)
+         (kill-buffer ,review)
+         (kill-buffer ,source)))))
+
+(ert-deftest ecc-window-test-quitting-a-quiet-review ()
+  "q deletes the window a review was given and gives back one it borrowed."
+  (ecc-window-test--quietly session review source session-buffer
+    ;; Divided off the session: quitting deletes it.
+    (set-window-buffer (split-window-right) session-buffer)
+    (let ((window (ecc-window-show-review-quietly review session)))
+      (should-not (memq (window-buffer window) (list source session-buffer)))
+      (quit-window nil window)
+      (should-not (window-live-p window))
+      (should (= (length (window-list)) 2)))
+    ;; Borrowed from a window of something else: quitting brings that back.
+    (let ((other (get-buffer-create "window-test-other")))
+      (unwind-protect
+          (let ((spare (split-window-below)))
+            (set-window-buffer spare other)
+            (let ((window (ecc-window-show-review-quietly review session)))
+              (should (eq window spare))
+              (quit-window nil window)
+              (should (window-live-p window))
+              (should (eq (window-buffer window) other))))
+        (kill-buffer other)))))
+
+(ert-deftest ecc-window-test-a-quiet-review-leaves-the-minibuffer-origin ()
+  "While the minibuffer is active, the window it came from is not taken."
+  (ecc-window-test--quietly session review source session-buffer
+    (let* ((origin (selected-window))
+           (session-window (split-window-right)))
+      (set-window-buffer session-window session-buffer)
+      ;; As in M-x or C-x C-f: the minibuffer is selected, and the window
+      ;; the command goes back to is the source.
+      (select-window session-window)
+      (cl-letf (((symbol-function 'minibuffer-selected-window) (lambda () origin)))
+        (let ((window (ecc-window-show-review-quietly review session)))
+          (should window)
+          (should-not (eq window origin))
+          (should (eq (window-buffer origin) source)))))))
+
+(ert-deftest ecc-window-test-a-quiet-review-does-not-force-a-split ()
+  "A session window too small to divide leaves the review unshown, with no error."
+  (ecc-window-test--quietly session review source session-buffer
+    (let ((session-window (split-window-below
+                           (- (1+ (max ecc-window-quiet-split-min-height
+                                       window-min-height))))))
+      (set-window-buffer session-window session-buffer)
+      (should (< (window-total-height session-window)
+                 (* 2 ecc-window-quiet-split-min-height)))
+      (let ((count (length (window-list))))
+        (should-not (ecc-window-show-review-quietly review session))
+        (should (= (length (window-list)) count))))))
+
+(ert-deftest ecc-window-test-a-quiet-review-follows-the-users-rule ()
+  "A `display-buffer-alist' rule for the review is followed, unless it takes the user's window."
+  (ecc-window-test--quietly session review source session-buffer
+    (set-window-buffer (split-window-right) session-buffer)
+    (let* ((selected (selected-window))
+           (display-buffer-alist
+            '(("\\*ecc-review" (display-buffer-in-side-window) (side . bottom)))))
+      (let ((window (ecc-window-show-review-quietly review session)))
+        (should (eq (window-parameter window 'window-side) 'bottom))
+        (should (eq (selected-window) selected))
+        (should (eq (window-buffer selected) source))
+        (delete-window window)))
+    ;; A rule that puts it in the selected window is undone.
+    (let* ((selected (selected-window))
+           (configuration (current-window-configuration))
+           (display-buffer-alist
+            `(("\\*ecc-review"
+               ,(lambda (buffer _alist)
+                  (set-window-buffer (selected-window) buffer)
+                  (selected-window))))))
+      (should-not (ecc-window-show-review-quietly review session))
+      (should (eq (window-buffer selected) source))
+      (should (compare-window-configurations configuration
+                                             (current-window-configuration))))))
+
 (provide 'ecc-window-test)
 
 ;;; ecc-window-test.el ends here
