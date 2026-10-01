@@ -7,16 +7,40 @@ sidebar:
 
 Review changes as a single diff, comment on hunks that need work, and send all comments in a single prompt. The same buffer reviews what a session changed, the working tree it modified, or a single proposal before it is applied.
 
-`D` and `G` are the same review with a different base:
+`C-c c D` opens a menu where you choose what to compare. The two reviews used most often are the same review with a different base:
 
-- `D` — against **where the session started**, so work committed during the session is still shown.
-- `G` — against **the last commit (`HEAD`)**, so only uncommitted changes are shown.
+- `D` in the menu — against **where the session started**, so work committed during the session is still shown.
+- `w` in the menu, or `C-c c G` directly — against **the last commit (`HEAD`)**, so only uncommitted changes are shown.
 
 Neither cares how a file was changed: an edit, a shell command and a script all show alike.
 
+## Choosing what to compare
+
+`C-c c D`, or `D` in the transient menu, opens `ecc-review-menu`. It asks what to compare before anything opens, and each line shows how many files that review would show:
+
+| Key | Compares |
+|---|---|
+| `D` | Everything since the session started ([below](#reviewing-session-changes)) |
+| `w` | Uncommitted changes, staged or not, against `HEAD`, as `C-c c G` does |
+| `u` | Unstaged changes |
+| `s` | Staged changes |
+| `b` | This branch against another |
+| `c` | One commit, or a run of commits |
+| `r` | A range you type, as `C-u G` takes it |
+
+The git choices (`w` to `r`) review the project of the current buffer and send your comments to its session, as `G` does. If the project has no session yet, they offer to start one. `D` reviews that session, or the session you used last when the project has none. The heading names the session and the project. `S` switches the whole menu to another session and its project, with the sessions of the current project listed first, so the menu never compares one project and sends the comments to another. `-f` asks for the files to keep once you have chosen what to compare. `-e` opens this one review in ediff, or as a diff when `ecc-review-style` is `'ediff`, and leaves the setting as it is. Outside a Git repository you can choose only `D`, and the menu says why. The menu marks your last choice with `(last)` and puts the cursor on it, so `RET` opens it again. If a count fails, the line shows `?` and the echo area says why.
+
+`b` asks for the branch to compare with first. The default is the branch the current one most likely started from. The candidates are `develop`, `main`, `master` and the branch `origin/HEAD` points to. On one of those branches, its upstream is a candidate too, so on `main` the default is `origin/main`, where your unpushed commits show. The menu skips a candidate that is ahead of `HEAD`, such as `develop` when you are on `main` and `develop` has moved on. A candidate at `HEAD` itself stays: it is the branch you just created yours from. Of these, the one with the fewest commits up to `HEAD` wins. If no candidate remains, `b` asks for the branch with no default.
+
+It then asks for the other side. The default is the current branch with its working tree: the review compares the commit where the two branches part with your files as they are now, so the review includes uncommitted and untracked files. The review buffer takes its name from the base, as in `develop + working tree`, and opening the same choice again reuses that buffer. If Claude opens the same comparison with `review_open`, it opens this buffer too, so its comments land in the review you are reading. Choosing another branch shows `BASE...BRANCH`, the way a pull request shows it.
+
+`c` asks for a commit from the recent history, then for the last commit to include. Press `RET` at the second question to review that commit alone (`X^!`). If you choose a second commit, the review covers both and every commit between them (`X^..Y`), in whichever order you chose them. The first commit of a repository has no parent, so it is compared with the empty tree. The review takes its name from the short commit ID and subject, whether you or Claude opened it, and it stays on those commits when `HEAD` moves.
+
+The count beside `D` needs a snapshot of the working tree. It took 35 ms in a repository of 300 files and 70 ms in one of 20,000 files. The other counts come from a single `git status`. To leave the `D` count out, set `ecc-review-menu-count-session-changes` to `nil`.
+
 ## Reviewing session changes
 
-Press `D` in the transient menu, type `C-c c D`, or run `M-x ecc-review`. A prefix argument (`C-u D`) prompts for specific files.
+Press `D` in the review menu (`C-c c D D`), or run `M-x ecc-review`. To review only some files, turn on `-f` in the menu, or give `M-x ecc-review` a prefix argument.
 
 ![Every change of the session as one diff: a comment attached to a hunk, and the prompt it becomes shown before it goes](../../../assets/review.gif)
 
@@ -82,7 +106,7 @@ There, `C-c C-c` sends the prompt as it stands, while `C-c C-k` returns to the d
 
 ## Reviewing the working tree
 
-Where `ecc-review` starts from the moment the session began, `ecc-review-worktree` starts from the last commit. Press `G` in the menu, type `C-c c G`, or run `M-x ecc-review-worktree`.
+Where `ecc-review` starts from the moment the session began, `ecc-review-worktree` starts from the last commit. Type `C-c c G`, press `w` in the review menu, or run `M-x ecc-review-worktree`.
 
 This diffs the project's entire repository against `HEAD` — every uncommitted change, staged or unstaged, plus the untracked files (those `.gitignore` excludes are left out; a binary file, or one larger than `ecc-review-max-bytes`, is named rather than printed). A repository with no commits yet is compared against the empty tree, so the first code written in a project can be reviewed before it is committed.
 
@@ -116,6 +140,8 @@ Claude's comments appear as `▎ #4 Claude: text`, in a face of their own, `ecc-
 | `review_remove_comment` | Removes one comment, including one of yours it has dealt with |
 | `review_clear_comments` | Removes Claude's comments, yours too only when asked |
 
+`review_open` takes the same comparisons as the [review menu](#choosing-what-to-compare). If you ask Claude for "the staged changes", "this whole branch" or "just this commit", it opens what `s`, `b RET RET` or `c` opens.
+
 Claude cannot write or change your comments, but it can remove them. Each tool works on the review of the session that calls it, so two sessions never touch each other's reviews.
 
 The tools never take the keyboard. A review that Claude opens or moves appears beside the session without being selected. No session window is hidden, so a prompt you are typing stays where it is. The review never takes the window you are in, and never switches to another tab or Space. It goes into the window of another review of the same session first, then into a free window, and last into half of the session's window. `q` deletes a window made for it. If you wrote a `display-buffer-alist` rule for review buffers, the review follows it, as long as the rule leaves your window and tab alone. If the session is not on the screen, or no other window is free, nothing comes forward. The review waits in its buffer, already at the place Claude chose.
@@ -126,7 +152,7 @@ The tools also work on a review you have open in ediff. There a hunk is one edif
 
 ## Opening the review in ediff
 
-`ecc-review-style` controls how `D` and `G` show changes. The default, `'diff`, uses the single `diff-mode` buffer described above. Setting it to `'ediff` shows the files side by side instead:
+`ecc-review-style` controls how the reviews of the review menu and `G` show changes. `-e` in the menu changes it for one review. The default, `'diff`, uses the single `diff-mode` buffer described above. Setting it to `'ediff` shows the files side by side instead:
 
 ```elisp
 (setq ecc-review-style 'ediff)

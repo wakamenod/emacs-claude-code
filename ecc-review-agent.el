@@ -86,6 +86,33 @@ or change the user's comments; answer one with reply_to."
 A sentence sent to the model, so a variable and not a setting.  It is
 read when a session starts, so a `setq\\=' takes effect on the next one.")
 
+(defvar ecc-review-agent-open-description
+  "Open the changes as a diff in the user's Emacs review buffer, or read \
+it again when it is open; the comments on it are kept.  The user starts \
+a review from a menu of what to compare, and each choice there is these \
+arguments, so ask for the same review in the same words:
+- everything this session changed since it started, commits included: \
+no range;
+- uncommitted, staged or not: range \"HEAD\";
+- unstaged: range \"\";
+- staged: staged true;
+- this whole branch, committed or not, against the branch it forked from \
+\(develop, main or master): range is the commit where they part, as \
+`git merge-base BASE HEAD` prints it; a branch's commits alone, as a pull request shows them: range \
+\"BASE...BRANCH\";
+- one commit X: range \"X^!\"; commits X through Y, X included: range \
+\"X^..Y\";
+- any other revision (the working tree against it) or range of commits, \
+as `git diff` takes it.
+paths keeps only those files, relative to the repository.  The user's \
+focus is left alone.  Returns the files and hunks, as review_hunks does."
+  "The description of the tool `review_open\=', which the model reads.
+It names, for each choice of `ecc-review-menu', the arguments that open
+the same review, so that \"review what is staged\", \"this whole
+branch\" or \"just this commit\" open what s, b RET RET and c X RET
+open.  A sentence sent to the model, so a variable and not a setting; it
+is read when the tools are registered, as ecc loads.")
+
 (defvar ecc-review-agent-no-review-text
   "No review is open for this session.  Call review_open first: it opens \
 the changes as a diff in the user's Emacs, and the other review tools \
@@ -652,8 +679,8 @@ INCLUDE-USER-COMMENTS, a JSON boolean, removes the user\\='s as well."
   "Publish the review tools and their paragraph of the server instructions."
   (ecc-mcp-define-tool
    :name "review_open"
-   :description "Open the changes as a diff in the user's Emacs review buffer, or read it again when it is open; the comments on it are kept.  Without range it shows everything this session changed since it started, commits included.  With range it is the working tree against a revision (\"HEAD\" is everything uncommitted), \"\" what is not staged, or commits such as \"main...HEAD\" or \"HEAD~1..HEAD\".  staged shows what is staged instead.  paths keeps only those files.  The user's focus is left alone.  Returns the files and hunks, as review_hunks does."
-   :args '(("range" "string" "What to diff the working tree against; leave it out for this session's changes")
+   :description ecc-review-agent-open-description
+   :args '(("range" "string" "What to diff against, as the description says; leave it out for this session's changes")
            ("staged" "boolean" "Show what is staged, the index against HEAD, instead of a range")
            ("paths" ((type . "array") (items . ((type . "string"))))
             "Only these files, relative to the repository"))

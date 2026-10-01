@@ -649,6 +649,9 @@ minibuffer the control frame of a graphical Emacs does not have."
                      (cons first head)))
       (should (equal (ecc-review-ediff--trees root "HEAD~1...HEAD")
                      (cons first head)))
+      ;; One commit, the way `c' in the review menu names it.
+      (should (equal (ecc-review-ediff--trees root "HEAD^!")
+                     (cons first head)))
       ;; The empty range is the index against the working tree.
       (ecc-review-ediff-test--git directory "add" "x.txt")
       (let ((trees (ecc-review-ediff--trees root "")))

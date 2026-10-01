@@ -91,24 +91,13 @@
 
 (defun ecc-review-ediff--tree (root spec)
   "Return the tree of the revision SPEC in ROOT, or nil."
-  (pcase (ecc-review--git root "rev-parse" "--verify" "--quiet"
-                          (concat spec "^{tree}"))
-    (`(0 . ,output)
-     (let ((tree (string-trim output)))
-       (and (not (string-empty-p tree)) tree)))))
-
-(defun ecc-review-ediff--merge-base (root left right)
-  "Return the merge base of LEFT and RIGHT in ROOT, or nil."
-  (pcase (ecc-review--git root "merge-base" left right)
-    (`(0 . ,output)
-     (let ((commit (string-trim output)))
-       (and (not (string-empty-p commit)) commit)))))
+  (ecc-review--git-string root "rev-parse" "--verify" "--quiet" (concat spec "^{tree}")))
 
 (defun ecc-review-ediff--trees (root range)
   "Return (LEFT . RIGHT), the two trees RANGE names in ROOT.
 RANGE is what `ecc-review-worktree\\=' is given: a revision like
-\"HEAD\", a range like \"main...HEAD\" or \"a..b\", the empty string
-for what is not staged yet, or `staged\\=' for what is.  A revision
+\"HEAD\", a range like \"main...HEAD\", \"a..b\" or \"X^!\", the
+empty string for what is not staged yet, or `staged\\=' for what is.  A revision
 is compared with the working tree as it stands, so what git does not
 track is in the review as well; a range is two trees of the history and
 nothing else, and so is `staged\\='.  Signals a `user-error\\=' when git
@@ -130,12 +119,17 @@ cannot resolve it."
      ;; What is not staged yet: the index against the working tree.
      ((or (null range) (string-empty-p range))
       (cons (or (ecc-review-snapshot root t) (funcall fail)) (funcall now)))
+     ;; One commit, X^!: its first parent against it, which is what
+     ;; `git diff X^!' shows of a commit that is not a merge.
+     ((string-match "\\`\\(.+\\)\\^!\\'" range)
+      (let ((commit (match-string 1 range)))
+        (cons (funcall side (concat commit "^")) (funcall side commit))))
      ((string-match "\\`\\(.*?\\)\\.\\.\\.\\(.*\\)\\'" range)
       (let* ((left (or (match-string 1 range) ""))
              (right (or (match-string 2 range) ""))
              (left (if (string-empty-p left) "HEAD" left))
              (right (if (string-empty-p right) "HEAD" right))
-             (base (or (ecc-review-ediff--merge-base root left right)
+             (base (or (ecc-review--merge-base root left right)
                        (funcall fail))))
         (cons (funcall side base) (funcall side right))))
      ((string-match "\\`\\(.*?\\)\\.\\.\\(.*\\)\\'" range)
@@ -275,14 +269,15 @@ blobs of the review on every reading.")
 (defvar-local ecc-review-ediff--frame nil
   "The frame the review was opened in, to hand the keyboard back to.")
 
-(defun ecc-review-ediff-buffer-name (session side &optional range)
+(defun ecc-review-ediff-buffer-name (session side &optional range label)
   "Return the name of the SIDE buffer of the ediff review of SESSION.
 SIDE is `base' for what the files held and `now' for what they hold.
-RANGE is that of a review of the working tree: every review has its own
+RANGE is that of a review of the working tree, called LABEL when given
+\(`ecc-review-range-label\='): every review has its own
 two buffers, named the way `ecc-review-buffer-name\=' names the diff
 reviews, so that two ediff reviews of one session -- of what it changed
 and of the working tree -- do not write into each other's."
-  (let ((name (ecc-review-buffer-name session nil range)))
+  (let ((name (ecc-review-buffer-name session nil range label)))
     (format "*ecc-review-%s:%s" side (substring name (length "*ecc-review:")))))
 
 (defvar ecc-review-ediff-fontify t
@@ -586,14 +581,14 @@ Two reviews never share a side: the second would write into the first."
         (generate-new-buffer name)
       (get-buffer-create name))))
 
-(defun ecc-review-ediff--build (session pairs &optional range cache)
+(defun ecc-review-ediff--build (session pairs &optional range cache label)
   "Fill the two buffers of SESSION with PAIRS and return (BASE NOW SECTIONS).
-RANGE names the buffers (`ecc-review-ediff-buffer-name\='), and CACHE is
-`ecc-review-ediff--write\='s."
+RANGE and LABEL name the buffers (`ecc-review-ediff-buffer-name\='), and
+CACHE is `ecc-review-ediff--write\='s."
   (let ((base (ecc-review-ediff--side-buffer
-               (ecc-review-ediff-buffer-name session 'base range)))
+               (ecc-review-ediff-buffer-name session 'base range label)))
         (now (ecc-review-ediff--side-buffer
-              (ecc-review-ediff-buffer-name session 'now range))))
+              (ecc-review-ediff-buffer-name session 'now range label))))
     (dolist (buffer (list base now))
       (with-current-buffer buffer
         (fundamental-mode)))
@@ -1443,10 +1438,15 @@ opened."
     (unless pairs
       (user-error "%s" (plist-get content :nothing)))
     (pcase-let ((`(,a ,b ,sections)
-                 (ecc-review-ediff--build session pairs (plist-get content :range) cache)))
-      (ecc-review-ediff-open session a b sections (plist-get content :range)
-                             (plist-get content :root) (plist-get content :paths)
-                             (plist-get content :hash) cache))))
+                 (ecc-review-ediff--build session pairs (plist-get content :range) cache
+                                          (plist-get content :label))))
+      (let ((control (ecc-review-ediff-open session a b sections (plist-get content :range)
+                                            (plist-get content :root) (plist-get content :paths)
+                                            (plist-get content :hash) cache)))
+        (when (buffer-live-p control)
+          (with-current-buffer control
+            (setq ecc-review--label (plist-get content :label))))
+        control))))
 
 (defun ecc-review-ediff-buffer (session &optional paths)
   "Open everything SESSION changed as one ediff and return the control buffer.
@@ -1583,6 +1583,7 @@ never closed by being read."
                                              default-directory ecc-review--paths
                                              default-directory))
          (hash (plist-get content :hash)))
+    (setq ecc-review--label (plist-get content :label))
     (if (equal ecc-review--fingerprint (ecc-review-ediff--state hash))
         (progn (setq ecc-review--stale nil
                      ecc-review--failed nil)
