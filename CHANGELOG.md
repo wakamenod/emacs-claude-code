@@ -72,8 +72,16 @@ Verified against **Claude Code CLI 2.1.281**.
   `display-buffer-alist` rule of yours for the review is followed, as long
   as it leaves your window and tab alone. The review then waits in its
   buffer at the place Claude chose. The tools
-  do not read a review open in ediff (`ecc-review-style` `ediff`) and say
-  so when there is one. The tools write no file, so they
+  read a review open in ediff (`ecc-review-style` `ediff`) as well: a hunk
+  there is one difference, `review_hunks` gives its ediff number and the
+  lines it covers on each side, Claude's line comments are drawn under
+  their line on the side it is on, and `review_navigate` puts ediff on the
+  difference and both sides on the line without recentring it, laying its
+  windows out again or selecting any. `review_open` never starts ediff,
+  which takes the frame and the keyboard: it reads the session's ediff
+  review again where it is and says so -- and that a range or files asked
+  for were not applied -- or, with none open, opens the diff review as
+  above. The tools write no file, so they
   are allowed without asking and noted as `auto-allowed` in the transcript;
   `ecc-review-agent-auto-allow` set to `nil` asks instead. Claude's comments
   have a face of their own, `ecc-review-agent-comment-face`, and `a` hides
@@ -127,8 +135,12 @@ Verified against **Claude Code CLI 2.1.281**.
   says why in its header line, once in the echo area, and waits for `g`,
   which reads it again and, when its diff has gone meanwhile, shows it
   empty.
-  The review of a proposal is never read again, and a review in ediff
-  (`ecc-review-style` `ediff`) does not follow the files yet. One read of
+  A review in ediff (`ecc-review-style` `ediff`) follows the files the same
+  way: its two sides are written again and ediff computes the differences
+  again without recentring, so nothing is selected or laid out again and
+  the keyboard is not taken; the difference being read, the line each side
+  is on and the comments are kept, and `!` reads it again after a failure.
+  The review of a proposal is never read again. One read of
   a diff of 1,000 hunks (65 KB) took 0.06 s and of 10,000 hunks (650 KB)
   0.22 s, measured with `benchmark-run` in batch.
 
@@ -147,6 +159,31 @@ Verified against **Claude Code CLI 2.1.281**.
   tool result, whatever the tool.
 
 ### Changed
+
+- The comments of an ediff review are the comments of the diff review:
+  numbered, kept across a refresh by the same rules, and listed, removed
+  and sent the same way, in the order of the review: by place, a comment
+  on the whole difference first, then those on the lines it takes out and
+  puts in, by line. `c` still comments the whole current difference;
+  where the latest comment there is Claude's and you have not answered
+  it, `c` answers it. Whenever there is a comment to answer or edit, `c`
+  asks what to do -- answer it, edit yours, or a new comment -- with the
+  likeliest as the default, so that RET answers Claude. `a` shows or hides Claude's
+  comments instead of saying that a review reads, which `b` still says;
+  `{` and `}` move to the previous and next comment -- each one, its
+  difference and its line -- and `!` reads the review again. `d` offers
+  the outdated comments of the file as well, and off every difference, or
+  with `C-u`, every comment of the review that is shown; `C-u d` does that
+  in the diff review too. A submodule, and a file git will not give, are
+  named on their separator line rather than shown as created or deleted.
+  A changed `ecc-review-max-bytes` or `ecc-review-ediff-fontify` shows at
+  the next `!`. Two ediff reviews of one session have two sides each. When
+  ediff computes the differences again itself (`##`, `#c`), the comments
+  are drawn again on the new ones. A reading of an ediff review that
+  finds the same two trees reads no file, and one that finds a change
+  reads and colours only the files that changed: a review of 40 files
+  read again took 0.68 s unchanged and 0.80 s with one file changed, and
+  takes 0.04 s and 0.08 s (`benchmark-run`, batch).
 
 - The review of what is not staged (`C-u G` with an empty range) is named
   `*ecc-review: SESSION (unstaged changes)*`, not `(unstaged)`, and the
@@ -167,8 +204,12 @@ Verified against **Claude Code CLI 2.1.281**.
   moves it instead of losing it, and a comment on a blank line or a lone
   brace does not wander off to another. A neighbour that is not known -- at
   the first or last line of a hunk -- is not compared, so hunks merging or
-  splitting leave a comment where it was. A comment on a whole hunk follows a
-  hunk over the same lines. A comment whose line has gone is kept, marked
+  splitting leave a comment where it was. A comment on a whole hunk goes to
+  the hunk with the same `@@` line, else to a hunk over the same lines of
+  the old side -- the baseline, which lines put in above do not move, so a
+  hunk put in above does not take the comment -- one that says the same
+  first when there are several; a hunk that only adds is found by where
+  it adds. A comment whose line has gone is kept, marked
   outdated, above the first hunk of its file, and is still sent with
   `(outdated)` and the hunk as it was.
 

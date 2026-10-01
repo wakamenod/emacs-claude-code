@@ -34,7 +34,7 @@ Outside a Git repository there is no tree to compare against, so files are diffe
 | `{` / `}` | Previous / next comment |
 | `a` | Show or hide Claude's comments |
 | `l` | Jump to a comment |
-| `d` | Remove a comment on this line, yours or Claude's |
+| `d` | Remove a comment on this line, yours or Claude's (`C-u d` offers every comment) |
 | `e` | Edit the proposed content (reviewing one proposal) |
 | `C-c C-c` | Send your comments as a prompt (`C-u C-c C-c` to edit it first) |
 | `C-c C-k` | Drop the review and its comments |
@@ -45,7 +45,7 @@ The buffer uses read-only `diff-mode`: `n` and `p` move between hunks, `N` and `
 
 Each comment belongs to the line you made it on. On a removed line (`-`), it is about the old side. On an added line (`+`) or a context line, it is about the new side. On the `@@` line, it is about the whole hunk. The comment appears under its line as `▎ #3 text`, its hunk gets a bold header, and the header line counts the comments. Every comment has a number, and no two comments in a buffer share one.
 
-`g` reads the diff again and keeps every comment and your place in it. A window of the review in another tab starts again from the top. Each comment goes back to the line that still says what its line said, between the same neighbouring lines, even when a change higher up in the file has moved that line. It follows the line for up to `ecc-review-note-max-shift` (100) lines. If the line is gone, ecc keeps the comment, marks it `[outdated]`, and shows it above the first hunk of its file. The comment is still sent, with the hunk as it was.
+`g` reads the diff again and keeps every comment and your place in it. A window of the review in another tab starts again from the top. Each comment goes back to the line that still says what its line said, between the same neighbouring lines, even when a change higher up in the file has moved that line. It follows the line for up to `ecc-review-note-max-shift` (100) lines. A comment on a whole hunk follows its hunk: by its `@@` line, or else by the old lines it covers, which stay put when a change adds lines above them. If the line is gone, ecc keeps the comment, marks it `[outdated]`, and shows it above the first hunk of its file. The comment is still sent, with the hunk as it was.
 
 ## Following the files
 
@@ -53,7 +53,7 @@ An open review reads the diff again when the files may have changed: when a tool
 
 The review waits half a second, longer while you are typing, and reads several changes in one go. If the diff has not changed, the buffer is left as it is. Only a review on the screen is read. A review out of sight is read when you show it again. The review never takes the focus, never moves a window, and leaves a prompt you are typing alone. When every change has gone, for example because it was committed, the review stays open and says so. `g` on such a review still reports that there is nothing to show. If the diff cannot be read, for example because the directory is gone, the header line says why and the review waits until you press `g`. The review of a single proposal is never read again.
 
-Only the diff buffer follows the files. A review in ediff (`ecc-review-style` set to `'ediff`) does not, yet.
+A review in ediff follows the files too, in the same way. It keeps the difference you are on and the line each side shows. If ecc cannot read it, press `!` to try again. See [Opening the review in ediff](#opening-the-review-in-ediff).
 
 To turn this off and read the diff only with `g`:
 
@@ -120,7 +120,9 @@ Claude cannot write or change your comments, but it can remove them. Each tool w
 
 The tools never take the keyboard. A review that Claude opens or moves appears beside the session without being selected. No session window is hidden, so a prompt you are typing stays where it is. The review never takes the window you are in, and never switches to another tab or Space. It goes into the window of another review of the same session first, then into a free window, and last into half of the session's window. `q` deletes a window made for it. If you wrote a `display-buffer-alist` rule for review buffers, the review follows it, as long as the rule leaves your window and tab alone. If the session is not on the screen, or no other window is free, nothing comes forward. The review waits in its buffer, already at the place Claude chose.
 
-These tools only put text into a buffer and move a window. They write no files, so Emacs allows them without asking, and the transcript records each call as `auto-allowed`. To be asked as with any other tool, set `ecc-review-agent-auto-allow` to `nil`. Claude always uses the diff buffer, even when `ecc-review-style` is `'ediff`. It cannot read a review you have open in ediff yet. The tools tell Claude that you are reviewing there, and your comments reach it when you send them.
+These tools only put text into a buffer and move a window. They write no files, so Emacs allows them without asking, and the transcript records each call as `auto-allowed`. To be asked as with any other tool, set `ecc-review-agent-auto-allow` to `nil`.
+
+The tools also work on a review you have open in ediff. There a hunk is one ediff difference, and `review_hunks` gives its number and the lines it covers on each side. Claude never starts ediff, because ediff takes the frame and the keyboard. If you have an ediff review open, `review_open` reads that one again. Otherwise it opens the diff buffer, even when `ecc-review-style` is `'ediff`.
 
 ## Opening the review in ediff
 
@@ -134,13 +136,18 @@ All files in the review open in a single ediff session instead of one session pe
 
 The two buffers appear side by side. `ecc` sets `ediff-split-window-function` only in the review control buffer, so all other ediff sessions keep your configured window layout.
 
-Both buffers are read-only, so ediff's `a` and `b` copy commands do nothing here. You read the changes, add comments, and send them. Claude then updates the files on disk using the prompt generated from your comments.
+Both buffers are read-only, so ediff's `b` copy command does nothing here, and `a` shows or hides Claude's comments instead. You read the changes, add comments, and send them. Claude then updates the files on disk using the prompt generated from your comments.
+
+Your comment is on the whole current difference and appears under it on the right. If the most recent comment in that difference is Claude's and you have not answered it, `c` replies to it. Whenever there is a comment to answer or edit, `c` asks what to do, with the most likely choice as the default, so `RET` replies to Claude. You can also choose a new comment. Claude's comments appear under their lines, on the left for a removed line and on the right for an added one, as `▎ #4 Claude: text`. `review_navigate` moves to the difference and the line without selecting a window. The review follows the files like the diff buffer and keeps the current difference, the place of each side, and the comments.
 
 | Key | Action |
 |---|---|
-| `c` | Comment on the current difference (press again to edit it) |
+| `c` | Comment on the current difference (press again to edit it), or reply to Claude's most recent comment there |
+| `{` / `}` | Previous / next comment |
+| `a` | Show or hide Claude's comments |
 | `l` | Jump to a comment |
-| `d` | Remove the comment on the current difference |
+| `d` | Remove a comment on the current difference (`C-u d`, or off every difference: any comment) |
+| `!` | Read the files again |
 | `C-c C-c` | Send the comments as a prompt (`C-u C-c C-c` to edit it first) |
 | `C-c C-k` | Drop the review and its comments |
 | `q` | Quit the review |

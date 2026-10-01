@@ -37,7 +37,12 @@
 ;; every session reaches the server at carries the session id
 ;; (`ecc-mcp-session'), so there is nothing to list or choose.  Of that
 ;; session's reviews it takes the one on the screen, else the one Claude
-;; opened last, else the one used last.
+;; opened last, else the one used last.  A review in ediff is one of
+;; them like any other: what differs between the two kinds is the
+;; generic functions of `ecc-review.el' ("Kinds of review"), and nothing
+;; here asks which kind it has.  The one thing Claude cannot do to an
+;; ediff review is open it -- ediff takes the frame and the keyboard --
+;; so `review_open' reads the one the user has open again instead.
 ;;
 ;; What the tools will not do: write or change a comment of the user's
 ;; -- Claude may remove one it has dealt with, never put words in it --
@@ -66,8 +71,9 @@ safety or cost to be made here, which is why this is a variable and not
 a setting.  Set it to nil to be asked about them like any other tool.")
 
 (defvar ecc-review-agent-instructions
-  "The user reads changes in an Emacs review buffer: a unified diff they \
-comment on line by line, whose comments come to you as a prompt.  When \
+  "The user reads changes in an Emacs review: a unified diff, or the two \
+sides in ediff, which they comment on and whose comments come to you as \
+a prompt.  When \
 you are asked to explain, walk through or review changes, call \
 review_open, put each remark on the line it is about with review_comment \
 \(or several at once with review_comment_apply), and use review_navigate \
@@ -88,14 +94,22 @@ work on that."
 A sentence the model can act on: an error that only says no is one it
 works around.")
 
-(defvar ecc-review-agent-ediff-text
-  "The user is reviewing these changes in ediff, which the review tools \
-do not reach: the comments they write there come to you as a prompt when \
-they send them with C-c C-c."
-  "What the model is told while the user reviews in ediff.
-`ecc-review-style\=' `ediff\=' keeps its comments against the differences
-of an ediff session, which these tools do not read yet; said in a
-sentence, so that the model does not take the silence for no comment.")
+(defvar ecc-review-agent-in-place-text
+  "The user has this review open side by side in ediff, which takes their \
+whole screen, so review_open read it again where it is rather than opening \
+another.  The other review tools work on it as on a diff: a hunk is one \
+difference of ediff, and your comments show under their lines on the side \
+they are on."
+  "What `review_open\=' says when it read a review that takes the screen.
+That is an ediff review (`ecc-review-takes-the-screen-p\='), which cannot
+be opened without taking the frame and the keyboard; a sentence the
+model can act on, so that it does not open the review again and again.")
+
+(defvar ecc-review-agent-not-applied-text
+  "It shows %s; the range, staged or paths you gave were not applied, \
+since opening another review would take the user's screen."
+  "What `review_open\=' adds when it could not open what was asked for.
+The argument is what the review the user has open compares.")
 
 (defconst ecc-review-agent-tools
   '("review_open" "review_hunks" "review_comment" "review_comment_apply"
@@ -115,30 +129,13 @@ sentence, so that the model does not take the silence for no comment.")
 
 (defun ecc-review-agent--buffers (session)
   "Return the review buffers of SESSION, the one used last first.
-The review of a proposal is left out: it is the user's to answer, and it
-closes the moment they do."
+A diff review, or the control buffer of an ediff review
+\(`ecc-review-buffer-p\=').  The review of a proposal is left out: it is
+the user's to answer, and it closes the moment they do."
   (seq-filter (lambda (buffer)
-                (with-current-buffer buffer
-                  (and (derived-mode-p 'ecc-review-mode)
-                       (eq ecc-review--session session)
-                       (null ecc-review--request))))
+                (and (eq (buffer-local-value 'ecc-review--session buffer) session)
+                     (ecc-review-buffer-p buffer)))
               (buffer-list)))
-
-(defun ecc-review-agent--ediff-p (session)
-  "Return non-nil when SESSION has a review open in ediff.
-The control buffer of such a review is the one whose comments are
-listed by `ecc-review-ediff-comments\='."
-  (seq-some (lambda (buffer)
-              (and (eq (buffer-local-value 'ecc-review--comments-function buffer)
-                       'ecc-review-ediff-comments)
-                   (eq (buffer-local-value 'ecc-review--session buffer) session)))
-            (buffer-list)))
-
-(defun ecc-review-agent--with-ediff-note (session text)
-  "Return TEXT, followed by `ecc-review-agent-ediff-text\=' when SESSION has one."
-  (if (ecc-review-agent--ediff-p session)
-      (concat text "\n\n" ecc-review-agent-ediff-text)
-    text))
 
 (defun ecc-review-agent-buffer (session)
   "Return the review buffer the tools of SESSION work on.
@@ -147,14 +144,14 @@ then the one Claude opened last; then the one used last.  Signals
 `ecc-review-agent-no-review-text\\=' when SESSION has none."
   (let* ((buffers (ecc-review-agent--buffers session))
          (opened (car (memq (gethash session ecc-review-agent--opened) buffers)))
-         (shown (seq-filter (lambda (buffer) (get-buffer-window buffer 'visible))
+         (shown (seq-filter (lambda (buffer)
+                              (with-current-buffer buffer (ecc-review-shown-window)))
                             buffers)))
     (or (car (memq opened shown))
         (car shown)
         opened
         (car buffers)
-        (error "%s" (ecc-review-agent--with-ediff-note
-                     session ecc-review-agent-no-review-text)))))
+        (error "%s" ecc-review-agent-no-review-text))))
 
 (defmacro ecc-review-agent--in-review (&rest body)
   "Run BODY in the review buffer of the session calling."
@@ -165,12 +162,15 @@ then the one Claude opened last; then the one used last.  Signals
 (defun ecc-review-agent--show (buffer session)
   "Show the review BUFFER of SESSION the quiet way; return its window or nil.
 Another review of SESSION on the screen gives up its window to it, so
-that a second `review_open\=' does not divide the session again."
-  (ecc-window-show-review-quietly
-   buffer session
-   (lambda (other)
-     (and (not (eq other buffer))
-          (memq other (ecc-review-agent--buffers session))))))
+that a second `review_open\=' does not divide the session again.  A
+review that takes the screen is never shown this way, only found where
+it is (`ecc-review-show-quietly\=')."
+  (with-current-buffer buffer
+    (ecc-review-show-quietly
+     session
+     (lambda (other)
+       (and (not (eq other buffer))
+            (memq other (ecc-review-agent--buffers session)))))))
 
 ;;;; Reading what the model sent
 
@@ -194,7 +194,7 @@ A number may come as a string, and an id as \"#3\"."
 
 (defun ecc-review-agent--paths ()
   "Return the files of this review that have hunks, in the order of the diff."
-  (delete-dups (mapcar (lambda (hunk) (plist-get hunk :path)) (ecc-review-hunks))))
+  (delete-dups (mapcar (lambda (hunk) (plist-get hunk :path)) (ecc-review-units))))
 
 (defun ecc-review-agent--path (file &optional commented)
   "Return the path of this review that FILE names, or signal which there are.
@@ -334,7 +334,7 @@ arguments of `review_comment'.  LINES are the lines of the review."
   "Return the files and hunks of this review, of FILE alone when given.
 INCLUDE-PATCH adds the text of each hunk."
   (let* ((paths (if file (list (ecc-review-agent--path file)) (ecc-review-agent--paths)))
-         (hunks (ecc-review-hunks)))
+         (hunks (ecc-review-units)))
     (concat
      (format "Review of %s: %s, %s; comments: %s.\n"
              (ecc-review-agent--what)
@@ -356,9 +356,8 @@ INCLUDE-PATCH adds the text of each hunk."
                                              (ecc-review--hunk-key hunk))))
                                ecc-review--notes)))
                 (concat
-                 (format "  hunk %d  %s  new L%d-L%d%s\n"
-                         number (plist-get hunk :header)
-                         (plist-get hunk :start) (plist-get hunk :end)
+                 (format "  hunk %d  %s%s\n"
+                         number (ecc-review-unit-description hunk)
                          (if (> comments 0) (concat "  " (ecc-review--count comments "comment")) ""))
                  (when include-patch
                    (let ((fence (ecc-review--fence (plist-get hunk :text))))
@@ -383,6 +382,21 @@ against the project."
                       (and (not (string-empty-p path)) path)))
                   paths))))
 
+(defun ecc-review-agent--same-paths (paths)
+  "Return non-nil when PATHS are the files of the review of this buffer.
+PATHS, as `review_open\=' was given them, are read against the review\='s
+own repository, its `default-directory' -- which need not be the
+session\='s project -- the way the review keeps its own: relative to it,
+whether they came absolute or relative.  They are compared in any
+order, and none is every file, which a review of some is not.  Paths
+that cannot be read are not the review\='s; nothing here signals."
+  (let ((sorted (lambda (paths) (sort (copy-sequence paths) #'string<))))
+    (equal (funcall sorted (condition-case nil
+                               (ecc-review--relative-paths
+                                paths default-directory default-directory)
+                             (error (list nil))))
+           (funcall sorted ecc-review--paths))))
+
 (defun ecc-review-agent-open (range staged paths)
   "Open the review of the session calling and return what it holds.
 RANGE nil reviews everything changed since the session started; a
@@ -401,18 +415,34 @@ the user is not looking at the session."
          (range (cond ((not (ecc--json-true-p staged)) range)
                       ((memq range '(nil staged)) 'staged)
                       (t (error "Give range or staged, not both")))))
-    (let* ((buffer (if range
-                       (ecc-review-worktree-buffer session range nil paths)
-                     (ecc-review-buffer session paths)))
-           (window (ecc-review-agent--show buffer session)))
-      (puthash session buffer ecc-review-agent--opened)
-      (ecc-review-agent--with-ediff-note
-       session
-       (with-current-buffer buffer
-         (concat (if window
-                     "The review is open beside the session.\n"
-                   "The review is open in Emacs but not on the screen: the user is not looking at this session, or it had no window to go in but the one they are using.\n")
-                 (ecc-review-agent--summary)))))))
+    (if-let* ((held (seq-find (lambda (buffer)
+                                (with-current-buffer buffer
+                                  (ecc-review-takes-the-screen-p)))
+                              (ecc-review-agent--buffers session))))
+        ;; The user's ediff: read where it is, as it is.
+        (with-current-buffer held
+          ;; Settled before reading: the reading may fail, and the
+          ;; comparison is about what was asked, not what was found.
+          (let ((same (and (equal range ecc-review--range)
+                           (ecc-review-agent--same-paths paths))))
+            (ecc-review-reread)
+            (puthash session held ecc-review-agent--opened)
+            (concat ecc-review-agent-in-place-text
+                    (unless same
+                      (concat "  " (format ecc-review-agent-not-applied-text
+                                           (ecc-review-agent--what))))
+                    "\n"
+                    (ecc-review-agent--summary))))
+      (let* ((buffer (if range
+                         (ecc-review-worktree-buffer session range nil paths)
+                       (ecc-review-buffer session paths)))
+             (window (ecc-review-agent--show buffer session)))
+        (puthash session buffer ecc-review-agent--opened)
+        (with-current-buffer buffer
+          (concat (if window
+                      "The review is open beside the session.\n"
+                    "The review is open in Emacs but not on the screen: the user is not looking at this session, or it had no window to go in but the one they are using.\n")
+                  (ecc-review-agent--summary)))))))
 
 (defun ecc-review-agent-hunks (file include-patch)
   "Return the hunks of the review, of FILE alone when given.
@@ -426,7 +456,7 @@ INCLUDE-PATCH, a JSON boolean, adds the text of each."
 Every one is checked before any is added, so that a list with one bad
 comment in it adds nothing and can be sent again whole."
   (ecc-review-agent--in-review
-    (let ((lines (ecc-review--lines))
+    (let ((lines (ecc-review-lines))
           (resolved nil)
           (errors nil)
           (index 0))
@@ -470,73 +500,53 @@ COMMENTS is an array of objects with the arguments of review_comment."
     (error "The comments are an array of objects, each with the arguments of review_comment"))
   (ecc-review-agent--add (append comments nil)))
 
-(defun ecc-review-agent--window-start (window position)
-  "Return a start for WINDOW that puts POSITION a quarter of the way down."
-  (with-current-buffer (window-buffer window)
-    (save-excursion
-      (goto-char position)
-      (forward-line (- (/ (window-body-height window) 4)))
-      (point))))
-
-(defun ecc-review-agent--note-positions ()
-  "Return where the comments of this buffer are, hidden ones included, in order."
-  (sort (delete-dups (delq nil (mapcar #'ecc-review-note-position ecc-review--notes)))
-        #'<))
-
 (defun ecc-review-agent-navigate (file hunk line side comment-id direction)
   "Move the view of the review to a place and say where it went.
 The place is COMMENT-ID, the next or previous comment in DIRECTION,
 LINE of SIDE of FILE, HUNK of FILE, or the first hunk of FILE.  The
-window is moved without being selected."
+window is moved without being selected (`ecc-review-move-to\=')."
   (ecc-review-agent--in-review
     (let* ((window (ecc-review-agent--show (current-buffer) ecc-review--session))
-           (from (if window (window-point window) (point)))
-           (lines (ecc-review--lines))
+           (lines (ecc-review-lines))
            (id (ecc-review-agent--integer comment-id "comment_id"))
            (number (ecc-review-agent--integer line "line"))
            (hunk (ecc-review-agent--integer hunk "hunk"))
            (target
             (cond
              (id
-              (let ((note (or (ecc-review-find-note id)
-                              (error "There is no comment #%d" id))))
-                (cons (ecc-review-note-position note) (format "comment #%d" id))))
+              (cons (or (ecc-review-find-note id)
+                        (error "There is no comment #%d" id))
+                    (format "comment #%d" id)))
              ((and (stringp direction) (not (string-empty-p direction)))
-              (let* ((positions (ecc-review-agent--note-positions))
-                     (position
-                      (pcase direction
-                        ("next_comment" (seq-find (lambda (p) (> p from)) positions))
-                        ("prev_comment" (car (last (seq-filter (lambda (p) (< p from))
-                                                               positions))))
-                        (_ (error "The direction is next_comment or prev_comment, not %S"
-                                  direction)))))
-                (cons (or position (error "There is no comment %s the one in view"
-                                          (if (equal direction "next_comment")
-                                              "after" "before")))
-                      "the comment there")))
+              (let ((note (ecc-review-note-beyond
+                           (ecc-review-reading-position window)
+                           (pcase direction
+                             ("next_comment" t)
+                             ("prev_comment" nil)
+                             (_ (error "The direction is next_comment or prev_comment, not %S"
+                                       direction))))))
+                (cons (or note (error "There is no comment %s the one in view"
+                                      (if (equal direction "next_comment")
+                                          "after" "before")))
+                      (format "comment #%d" (ecc-review-note-id note)))))
              (t
               (let ((path (ecc-review-agent--path file)))
                 (cond
                  (number
                   (let ((side (ecc-review-agent--side side)))
-                    (cons (plist-get (or (ecc-review-agent--find-line path side number lines)
-                                         (error "%s:%d (%s) is not in the diff; the %s side shows %s"
-                                                path number side side
-                                                (ecc-review-agent--ranges path side lines)))
-                                     :position)
+                    (cons (or (ecc-review-agent--find-line path side number lines)
+                              (error "%s:%d (%s) is not in the diff; the %s side shows %s"
+                                     path number side side
+                                     (ecc-review-agent--ranges path side lines)))
                           (format "%s:%d (%s)" path number side))))
                  (hunk
-                  (cons (plist-get (ecc-review-agent--hunk-line path hunk lines) :position)
+                  (cons (ecc-review-agent--hunk-line path hunk lines)
                         (format "hunk %d of %s" hunk path)))
-                 (t (cons (plist-get (ecc-review-agent--hunk-line path 1 lines) :position)
-                          path)))))))
-           (position (car target)))
-      (goto-char position)
+                 (t (cons (ecc-review-agent--hunk-line path 1 lines) path))))))))
+      (ecc-review-move-to (car target) window)
       (if (not window)
           (format "The review is not on the screen (the user is not looking at this session, or it had no window to go in but the one they are using).  Its point is at %s, where it opens when the user opens it; a window already showing it in another tab keeps the place it had."
                   (cdr target))
-        (set-window-point window position)
-        (set-window-start window (ecc-review-agent--window-start window position))
         (format "Showing %s to the user." (cdr target))))))
 
 (defun ecc-review-agent--note-line (note depth)
@@ -562,17 +572,7 @@ window is moved without being selected."
 
 (defun ecc-review-agent-list-comments (author file)
   "Return the comments of the review, of AUTHOR and FILE when given.
-A reply is listed under what it answers.  A review the user has open in
-ediff is not read, and the answer says so rather than \"No comments\"."
-  (let ((session (ecc-review-agent--session)))
-    (if (and (ecc-review-agent--ediff-p session)
-             (null (ecc-review-agent--buffers session)))
-        ecc-review-agent-ediff-text
-      (ecc-review-agent--with-ediff-note
-       session (ecc-review-agent--list-comments author file)))))
-
-(defun ecc-review-agent--list-comments (author file)
-  "Return the comments of the diff review, of AUTHOR and FILE when given."
+A reply is listed under what it answers."
   (ecc-review-agent--in-review
     (let* ((author (pcase author
                      ((or 'nil "") nil)
