@@ -154,9 +154,11 @@ cannot resolve it."
 
 (defun ecc-review-ediff--blobs (root left right paths)
   "Return the blobs of every file that differs between LEFT and RIGHT.
-An alist of PATH to (BEFORE . AFTER), each the id of the blob the tree
-holds for PATH, nil for a tree that does not name it -- one side of a
-file created or deleted.  ROOT is the repository, PATHS restrict it."
+An alist of PATH to (BEFORE AFTER BEFORE-MODE AFTER-MODE), BEFORE and
+AFTER the ids of the blobs the trees hold for PATH, nil for a tree that
+does not name it -- one side of a file created or deleted -- and the
+modes as git writes them, \"160000\" being a submodule, whose id is a
+commit and no blob.  ROOT is the repository, PATHS restrict it."
   (pcase (apply #'ecc-review--git root
                 (append (list "diff" "--raw" "-z" "--no-renames" "--no-abbrev"
                               left right "--")
@@ -169,8 +171,8 @@ file created or deleted.  ROOT is the repository, PATHS restrict it."
          (let ((record (split-string (pop fields) " "))
                (path (pop fields))
                (blob (lambda (id) (and (not (string-match-p "\\`0+\\'" id)) id))))
-           (push (cons path (cons (funcall blob (nth 2 record))
-                                  (funcall blob (nth 3 record))))
+           (push (list path (funcall blob (nth 2 record)) (funcall blob (nth 3 record))
+                       (string-remove-prefix ":" (nth 0 record)) (nth 1 record))
                  blobs)))
        (nreverse blobs)))
     (result (ecc-log "review" "diff --raw failed in %s: %S" root result)
@@ -180,14 +182,22 @@ file created or deleted.  ROOT is the repository, PATHS restrict it."
   "Return the text of BLOB in ROOT, nil for no blob.
 CACHE, a hash table or nil, keeps what was read under (raw . BLOB): a
 blob is the same text for as long as it exists, so a file that did not
-change since the review was last read is not read again."
+change since the review was last read is not read again.  A blob git
+will not give is logged and signalled: taken for nothing, it would read
+as a file created or deleted."
   (when blob
     (let ((key (cons 'raw blob)))
       (or (and cache (gethash key cache))
           (pcase (ecc-review--git root "cat-file" "blob" blob)
             (`(0 . ,output)
              (when cache (puthash key output cache))
-             output))))))
+             output)
+            (result
+             (ecc-log "review" "cat-file %s failed in %s: %S" blob root result)
+             (error "git cat-file %s failed (%s)" (substring blob 0 (min 8 (length blob)))
+                    (if (consp result)
+                        (format "exit %s" (car result))
+                      "git cannot be run"))))))))
 
 (defun ecc-review-ediff-pairs (root left right &optional paths cache)
   "Return what differs between the trees LEFT and RIGHT of ROOT.
@@ -195,27 +205,38 @@ PATHS, relative to ROOT, restrict the comparison.  The result is a list
 of (PATH BEFORE AFTER NOTE BEFORE-BLOB AFTER-BLOB) in the order git
 reports, where BEFORE and AFTER are what the two trees hold, the BLOBs
 their ids, and NOTE, when non-nil, says why neither is there: a file git
-calls binary, or one too large for `ecc-review-max-bytes\\=', is named and
-not shown.  Both sides being empty, such a file is no difference at all
+calls binary, one too large for `ecc-review-max-bytes\\=', a submodule,
+or one git would not give is named and not shown.  Both sides being
+empty, such a file is no difference at all
 and only its separator line is read, which is where the note is put.
 CACHE is that of `ecc-review-ediff--blob-text\\='."
   (let ((blobs (ecc-review-ediff--blobs root left right paths))
         (pairs nil))
     (pcase-dolist (`(,path . ,binary) (ecc-review--numstat root left right paths))
-      (let* ((ids (cdr (assoc path blobs)))
-             (before (unless binary (ecc-review-ediff--blob-text root (car ids) cache)))
-             (after (unless binary (ecc-review-ediff--blob-text root (cdr ids) cache)))
-             (size (max (string-bytes (or before "")) (string-bytes (or after ""))))
-             (note (cond (binary "binary, not shown")
-                         ((> size ecc-review-max-bytes)
-                          (format "%s, not shown"
-                                  (file-size-human-readable size))))))
+      (pcase-let* ((`(,before-id ,after-id ,before-mode ,after-mode)
+                    (cdr (assoc path blobs)))
+                   (submodule (member "160000" (list before-mode after-mode)))
+                   (failed nil)
+                   (`(,before . ,after)
+                    (unless (or binary submodule)
+                      (condition-case error
+                          (cons (ecc-review-ediff--blob-text root before-id cache)
+                                (ecc-review-ediff--blob-text root after-id cache))
+                        (error (setq failed (error-message-string error))
+                               nil))))
+                   (size (max (string-bytes (or before "")) (string-bytes (or after ""))))
+                   (note (cond (submodule "submodule, not shown")
+                               (binary "binary, not shown")
+                               (failed (format "could not be read: %s" failed))
+                               ((> size ecc-review-max-bytes)
+                                (format "%s, not shown"
+                                        (file-size-human-readable size))))))
         (push (list path
                     (if note "" (or before ""))
                     (if note "" (or after ""))
                     note
-                    (and (not note) (car ids))
-                    (and (not note) (cdr ids)))
+                    (and (not note) before-id)
+                    (and (not note) after-id))
               pairs)))
     (nreverse pairs)))
 
@@ -241,8 +262,8 @@ buffer.")
 
 (defvar-local ecc-review-ediff--cache nil
   "What this review read and coloured, by blob; see `ecc-review-ediff--blob-text\='.
-Under (raw . BLOB) the text of a blob, and under (face BLOB . PATH) that
-text fontified as PATH.  Kept in the control buffer, pruned to the
+Under (raw . BLOB) the text of a blob, and under (face BLOB PATH FONTIFY)
+that text fontified as PATH.  Kept in the control buffer, pruned to the
 blobs of the review on every reading.")
 
 (defvar-local ecc-review-ediff--buffers nil
@@ -510,8 +531,10 @@ buffer current, which is where the differences are recorded."
       (setq ecc-review-ediff--marks marks))))
 
 (defun ecc-review-ediff--coloured (text path blob cache)
-  "Return TEXT fontified as PATH, from CACHE when BLOB was fontified before."
-  (let ((key (cons 'face (cons blob path))))
+  "Return TEXT fontified as PATH, from CACHE when BLOB was fontified before.
+The key holds `ecc-review-ediff-fontify\=' too: text kept plain is not
+what is wanted once colours are asked for."
+  (let ((key (list 'face blob path ecc-review-ediff-fontify)))
     (or (and cache blob (gethash key cache))
         (let ((coloured (ecc-review-ediff--fontify text path)))
           (when (and cache blob) (puthash key coloured cache))
@@ -664,6 +687,11 @@ files held and :b-beg and :b-end in the buffer of what they hold now.
             :old-start a-start
             :old-end (if (> a-count 0) (+ a-start a-count -1) a-start)
             :old-count a-count
+            ;; Where an empty old side sits: before the line it is
+            ;; numbered with here, where git numbers the line before.
+            :old-range (if (> a-count 0)
+                           (cons a-start (+ a-start a-count -1))
+                         (cons (- a-start 0.5) (- a-start 0.5)))
             :new-count b-count
             :a-beg a-beg :a-end a-end :b-beg b-beg :b-end b-end))))
 
@@ -852,6 +880,10 @@ file."
                       (line (ecc-review-ediff--key line)))
                 (ecc-review-ediff--right-point)))))
 
+(cl-defmethod ecc-review--note-removed (_note &context (major-mode ediff-mode))
+  "Forget where the view was last moved: it may have been to that comment."
+  (setq ecc-review-ediff--at nil))
+
 (defun ecc-review-ediff--right-point ()
   "Return the point of the right side: of its window, else of its buffer."
   (if (and (window-live-p ediff-window-B)
@@ -965,11 +997,13 @@ answered."
           (and (cdr choice) (ecc-review-note-id (cdr choice))))))
 
 (defun ecc-review-ediff--read-choice (unit)
-  "Ask which of the things \\`c' could do on UNIT is meant, when it is not plain.
-More than one comment to answer or edit is asked about; one, or none,
-is the likeliest of `ecc-review-ediff--comment-choices\\='."
+  "Ask which of the things \\`c' could do on UNIT is meant.
+Whenever there is more than a new comment to choose -- a comment of
+Claude\\='s to answer, one of yours to edit -- the choices are offered,
+the likeliest of `ecc-review-ediff--comment-choices\\=' as the default,
+so that RET takes it.  With nothing to answer or edit, nothing is asked."
   (let ((choices (ecc-review-ediff--comment-choices unit)))
-    (if (<= (length choices) 2)
+    (if (null (cdr choices))
         (car choices)
       (let* ((labels (mapcar #'ecc-review-ediff--choice-label choices))
              (picked (completing-read "c: " labels nil t nil nil (car labels))))
@@ -1044,7 +1078,8 @@ the review, or any in a review whose changes have all gone."
          (note (ecc-review--pick-note
                 (cond (here)
                       (unit (user-error "No comment on this difference; C-u d offers them all"))
-                      ((ecc-review--ordered ecc-review--notes))
+                      ((ecc-review--ordered (seq-filter #'ecc-review--shown-p
+                                                        ecc-review--notes)))
                       (t (user-error "No comment in this review")))
                 "Remove comment: "
                 (not here))))
@@ -1337,16 +1372,24 @@ ediff lays out its windows; quitting puts back what was on the screen."
         (ecc-review-ediff--mark-current))))
     control))
 
+(defvar ecc-review-ediff--replacing nil
+  "Non-nil while a review is being read again in place.
+`ecc-review-ediff--replace\=' draws the comments itself, once the
+difference being read is found again; the redraw after ediff computes
+the differences would only draw them twice.")
+
 (defun ecc-review-ediff--differences-computed ()
   "Forget the hunks of this review and draw its comments on the new ones.
 Run whenever ediff has computed the differences, by whatever command.
 ediff counts them only after this returns, and reads the count to say
 whether a difference exists, so it is counted here first."
   (setq ecc-review-ediff--units nil
+        ecc-review-ediff--at nil
         ediff-number-of-differences (length ediff-difference-vector-A))
-  (ecc-review--draw-notes))
+  (unless ecc-review-ediff--replacing
+    (ecc-review--draw-notes)))
 
-(defun ecc-review-ediff--content (session range root paths)
+(defun ecc-review-ediff--content (session range root paths &optional base)
   "Return what an ediff review of SESSION against RANGE would compare.
 The plist of `ecc-review--target\=' -- the repository, the paths, the
 name and what to say when nothing changed, the same as the diff review
@@ -1355,8 +1398,10 @@ of the same thing -- with :left and :right, the two trees compared, and
 changed since it started, against the baseline `ecc-review\=' uses;
 otherwise it is what `ecc-review-ediff--trees\=' takes.  Nothing is read
 but the two trees: the files are read only once they are known to have
-changed."
-  (let* ((target (ecc-review--target session range root paths))
+changed.  BASE is what relative PATHS are relative to, as in
+`ecc-review--target\='; a review read again gives its repository, since
+the paths it keeps are relative to that."
+  (let* ((target (ecc-review--target session range root paths base))
          (range (plist-get target :range))
          (paths (plist-get target :paths))
          (root (or (plist-get target :root)
@@ -1374,8 +1419,12 @@ changed."
                             (user-error "Cannot read the working tree of %s"
                                         (abbreviate-file-name root)))))))
     (append (list :left (car trees) :right (cdr trees)
+                  ;; With the settings that decide what is shown of
+                  ;; them, so that \`!' after changing one shows it.
                   :hash (secure-hash 'sha1 (prin1-to-string
-                                            (list (car trees) (cdr trees) paths))))
+                                            (list (car trees) (cdr trees) paths
+                                                  ecc-review-max-bytes
+                                                  ecc-review-ediff-fontify))))
             target)))
 
 (defun ecc-review-ediff--pairs-of (content cache)
@@ -1531,7 +1580,8 @@ being read; one whose changes have all gone stays open and says so, as
 the diff review does when it follows the files -- an ediff review is
 never closed by being read."
   (let* ((content (ecc-review-ediff--content ecc-review--session ecc-review--range
-                                             default-directory ecc-review--paths))
+                                             default-directory ecc-review--paths
+                                             default-directory))
          (hash (plist-get content :hash)))
     (if (equal ecc-review--fingerprint (ecc-review-ediff--state hash))
         (progn (setq ecc-review--stale nil
@@ -1573,7 +1623,10 @@ so are the difference being read and the place of each side."
           (ecc-review-ediff--write ediff-buffer-A ediff-buffer-B pairs nothing
                                    ecc-review-ediff--cache)
           ecc-review-ediff--units nil)
-    (ecc-review-ediff--compute-differences)
+    ;; The layout the view was last moved in is gone with the text.
+    (setq ecc-review-ediff--at nil)
+    (let ((ecc-review-ediff--replacing t))
+      (ecc-review-ediff--compute-differences))
     (let* ((lines (ecc-review-lines))
            (found (and current (ecc-review--locate-note current lines)))
            (n (and found (plist-get (plist-get found :hunk) :number))))

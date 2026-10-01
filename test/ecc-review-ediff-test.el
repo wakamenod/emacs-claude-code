@@ -1490,6 +1490,290 @@ unchanged review reads no file at all."
       (should (equal (plist-get (ecc-review--session-content session nil) :nothing)
                      (plist-get (ecc-review-ediff--content session nil nil nil) :nothing))))))
 
+;;;; Findings of the second review
+
+(defun ecc-review-ediff-test--numbered (count &optional edit)
+  "Return COUNT lines \"lN\", with EDIT, a function of N, giving other text."
+  (mapconcat (lambda (n) (or (and edit (funcall edit n)) (format "l%d\n" n)))
+             (number-sequence 1 count) ""))
+
+(ert-deftest ecc-review-ediff-test-a-difference-comment-follows-the-old-side ()
+  "Comments on whole differences stay on theirs as lines are put in above.
+Fifteen lines put in above a change, a blank line that grows, and a
+blank line put in further down that says the same."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil)
+              (file (concat directory "c.txt")))
+          (unwind-protect
+              (progn
+                (ecc-review-ediff-test--repository directory)
+                (ecc-review-ediff-test--write file (ecc-review-ediff-test--numbered 120))
+                (ecc-review-ediff-test--git directory "add" "c.txt")
+                (ecc-review-ediff-test--git directory "commit" "-q" "-m" "c")
+                (setf (ecc-session-project-root session) directory)
+                (should (ecc-review-ensure-baseline session))
+                (ecc-review-ediff-test--write
+                 file (ecc-review-ediff-test--numbered
+                       120 (lambda (n) (pcase n
+                                         (5 "l5\n\n") (40 "l40\n\n") (100 "L100\n")))))
+                (setq control (ecc-review-ediff-buffer session))
+                (with-current-buffer control
+                  (ediff-jump-to-difference 1)
+                  (ecc-review-ediff-comment "why the blank line?")
+                  (ediff-jump-to-difference 3)
+                  (ecc-review-ediff-comment "why capitals?")
+                  (ecc-review-ediff-test--write
+                   file (ecc-review-ediff-test--numbered
+                         120 (lambda (n)
+                               (pcase n
+                                 (5 "l5\n\n(setq x 1)\n")
+                                 (40 "l40\n\n")
+                                 (89 (concat "l89\n" (ecc-review-ediff-test--numbered 15
+                                                                                      (lambda (m) (format "new %d\n" m)))))
+                                 (100 "L100\n")))))
+                  (ecc-review-reread t)
+                  (let ((on (lambda (text)
+                              (let ((note (seq-find (lambda (note)
+                                                      (equal (ecc-review-note-text note) text))
+                                                    ecc-review--notes)))
+                                (and (not (ecc-review-note-outdated note))
+                                     (ecc-review-note-hunk-text note))))))
+                    (should (equal (funcall on "why the blank line?")
+                                   "@@ -6,0 +6,2 @@\n+\n+(setq x 1)"))
+                    (should (string-search "-l100\n+L100" (funcall on "why capitals?"))))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-a-session-in-a-subdirectory-keeps-its-files ()
+  "A review restricted to some files, of a session in a subdirectory, is read again
+with the same files: the paths it keeps are relative to the repository."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil)
+              (sub (concat directory "sub/")))
+          (unwind-protect
+              (progn
+                (ecc-review-ediff-test--repository directory)
+                (make-directory sub)
+                (ecc-review-ediff-test--write (concat sub "a.el") "one\n")
+                (ecc-review-ediff-test--write (concat sub "b.el") "one\n")
+                (ecc-review-ediff-test--git directory "add" ".")
+                (ecc-review-ediff-test--git directory "commit" "-q" "-m" "sub")
+                (setf (ecc-session-project-root session) sub)
+                (should (ecc-review-ensure-baseline session))
+                (ecc-review-ediff-test--write (concat sub "a.el") "two\n")
+                (ecc-review-ediff-test--write (concat sub "b.el") "two\n")
+                (setq control (ecc-review-ediff-buffer session (list "a.el")))
+                (with-current-buffer control
+                  (should (equal ecc-review--paths '("sub/a.el")))
+                  (ecc-review-ediff-test--write (concat sub "a.el") "three\n")
+                  (ecc-review-reread t)
+                  (should (equal (mapcar #'car ecc-review-ediff--sections) '("sub/a.el")))
+                  (should (= ediff-number-of-differences 1))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-reading-again-draws-once ()
+  "Reading the review again draws its comments once, not on the way as well."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil)
+              (drawn 0))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (with-current-buffer control
+                  (ediff-jump-to-difference 1)
+                  (ecc-review-ediff-comment "kept")
+                  (ecc-review-ediff-test--write (concat directory "a.txt")
+                                                (concat "top\n" ecc-review-ediff-test--changed))
+                  (cl-letf* ((draw (symbol-function 'ecc-review--draw-notes))
+                             ((symbol-function 'ecc-review--draw-notes)
+                              (lambda (&rest args) (cl-incf drawn) (apply draw args))))
+                    (ecc-review-reread t))
+                  (should (= drawn 1))
+                  ;; ediff's own computing still draws.
+                  (setq drawn 0)
+                  (cl-letf* ((draw (symbol-function 'ecc-review--draw-notes))
+                             ((symbol-function 'ecc-review--draw-notes)
+                              (lambda (&rest args) (cl-incf drawn) (apply draw args))))
+                    (ediff-update-diffs))
+                  (should (= drawn 1))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-the-last-place-is-forgotten ()
+  "Where the view was last moved is forgotten on a reading, on ediff's own
+computing and on a comment being removed."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (with-current-buffer control
+                  (ecc-review-add-note 'claude "one" (ecc-review-ediff-test--line 'new 2))
+                  (ecc-review-add-note 'claude "two" (ecc-review-ediff-test--line 'old 9))
+                  (ecc-review--draw-notes)
+                  (let ((move (lambda ()
+                                (ecc-review-move-to (ecc-review-find-note 2) nil)
+                                (should ecc-review-ediff--at))))
+                    (funcall move)
+                    (ecc-review-ediff-test--write
+                     (concat directory "a.txt") (concat "top\n" ecc-review-ediff-test--changed))
+                    (ecc-review-reread t)
+                    (should-not ecc-review-ediff--at)
+                    (funcall move)
+                    (ediff-update-diffs)
+                    (should-not ecc-review-ediff--at)
+                    (funcall move)
+                    (ecc-review-remove-note (ecc-review-find-note 1))
+                    (should-not ecc-review-ediff--at))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-bang-shows-a-changed-setting ()
+  "A setting that decides what is shown is part of what a reading compares."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (ecc-review-ediff-test--repository directory)
+                (setf (ecc-session-project-root session) directory)
+                (should (ecc-review-ensure-baseline session))
+                (ecc-review-ediff-test--write
+                 (concat directory "code.py") "def greet():\n    return 1\n")
+                (setq control (ecc-review-ediff-buffer session))
+                (with-current-buffer control
+                  (let ((face-of-def (lambda ()
+                                       (with-current-buffer ediff-buffer-B
+                                         (goto-char (point-min))
+                                         (search-forward "def")
+                                         (get-text-property (1- (point)) 'face)))))
+                    (should (funcall face-of-def))
+                    (let ((ecc-review-ediff-fontify nil))
+                      (ecc-review-refresh)
+                      (should-not (funcall face-of-def)))
+                    (ecc-review-refresh)
+                    (should (funcall face-of-def))
+                    (let ((ecc-review-max-bytes 5))
+                      (ecc-review-refresh)
+                      (should (string-search "code.py (" (with-current-buffer ediff-buffer-B
+                                                           (buffer-string))))))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-a-file-git-will-not-give-is-named ()
+  "A blob git will not give is named, not shown as created or deleted;
+a submodule is named as one."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-directory directory
+    (ecc-review-ediff-test--repository directory)
+    (let* ((root (ecc-review-git-root directory))
+           (first (string-trim (ecc-review-ediff-test--git directory "rev-parse" "HEAD")))
+           (left (ecc-review--head-tree root)))
+      (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
+      (ecc-review-ediff-test--git directory "add" "x.txt")
+      (ecc-review-ediff-test--git directory "update-index" "--add" "--cacheinfo"
+                                  (concat "160000," first ",module"))
+      (ecc-review-ediff-test--git directory "commit" "-q" "-m" "module")
+      (let ((right (ecc-review--head-tree root)))
+        (should (equal (assoc "module" (ecc-review-ediff-pairs root left right))
+                       '("module" "" "" "submodule, not shown" nil nil)))
+        (let ((logged nil))
+          (cl-letf* ((git (symbol-function 'ecc-review--git))
+                     ((symbol-function 'ecc-review--git)
+                      (lambda (directory &rest args)
+                        (if (equal (car args) "cat-file")
+                            '(128 . "fatal: bad object")
+                          (apply git directory args))))
+                     ((symbol-function 'ecc-log)
+                      (lambda (&rest args) (push args logged))))
+            (let ((pair (assoc "x.txt" (ecc-review-ediff-pairs root left right))))
+              (should (string-prefix-p "could not be read: " (nth 3 pair)))
+              (should (equal (nth 1 pair) ""))
+              (should logged))))))))
+
+(ert-deftest ecc-review-ediff-test-hidden-comments-are-not-offered ()
+  "C-u d leaves out Claude's comments while they are hidden, in both reviews."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil)
+              (offered nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (with-current-buffer control
+                  (ecc-review-add-note 'claude "Claude's" (ecc-review-ediff-test--line 'new 2))
+                  (ediff-jump-to-difference 3)
+                  (ecc-review-ediff-comment "mine")
+                  (ecc-review-toggle-agent)
+                  (cl-letf (((symbol-function 'completing-read)
+                             (lambda (_prompt labels &rest _) (setq offered labels) (car labels))))
+                    (ecc-review-ediff-remove-comment t))
+                  (should (= (length offered) 1))
+                  (should (string-search "mine" (car offered))))
+                (ecc-review-ediff-test--quit control)
+                (setq control nil)
+                (with-current-buffer
+                    (ecc-review--fill (get-buffer-create (ecc-review-buffer-name session))
+                                      session "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n"
+                                      temporary-file-directory)
+                  (goto-char (point-min))
+                  (re-search-forward "^\\+b")
+                  (beginning-of-line)
+                  (ecc-review-add-note 'claude "Claude's" (ecc-review--line-at-point))
+                  (ecc-review-comment "mine")
+                  (ecc-review-toggle-agent)
+                  (setq offered nil)
+                  (cl-letf (((symbol-function 'completing-read)
+                             (lambda (_prompt labels &rest _) (setq offered labels) (car labels))))
+                    (ecc-review-remove-comment t))
+                  (should (= (length offered) 1))
+                  (should (string-search "mine" (car offered)))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-c-asks-whenever-there-is-a-choice ()
+  "With one comment of Claude's to answer, c still offers a new comment;
+RET answers Claude.  With nothing to answer or edit, nothing is asked."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil)
+              (asked nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (with-current-buffer control
+                  (cl-letf (((symbol-function 'completing-read)
+                             (lambda (_prompt labels _ _ _ _ default)
+                               (push labels asked)
+                               default)))
+                    (ediff-jump-to-difference 2)
+                    (should (equal (ecc-review-ediff--read-choice
+                                    (ecc-review-ediff--current-unit))
+                                   '(nil)))
+                    (should-not asked)
+                    (ecc-review-add-note 'claude "Why?" (ecc-review-ediff-test--line 'new 2))
+                    (ecc-review--draw-notes)
+                    (ediff-jump-to-difference 1)
+                    (let ((choice (ecc-review-ediff--read-choice
+                                   (ecc-review-ediff--current-unit))))
+                      (should (= (length (car asked)) 2))
+                      (should (member "new comment" (car asked)))
+                      (should (eq (car choice) 'reply))))))
+            (ecc-review-ediff-test--quit control)))))))
+
 ;;;; The setting
 
 (ert-deftest ecc-review-ediff-test-style-chooses-the-review ()
