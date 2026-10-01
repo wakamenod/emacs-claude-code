@@ -31,8 +31,8 @@ e "(demo-report \"3 before\")"; sleep 3
 e "(demo-tool \"review_navigate\" '((comment_id . 2)))"; sleep 4
 e "(demo-report \"3 after\")"; sleep 6
 
-say "4. The user answers with c on that difference"; sleep 4
-e "(demo-key \"c\" \"So it can be logged later.\")"; sleep 5
+say "4. The user answers with c.  Claude has two comments there, so c asks which; RET takes the latest"; sleep 6
+e "(demo-key \"c\" \"\\rSo it can be logged later.\")"; sleep 5
 e "(demo-report-comments)"; sleep 6
 
 say "5. A shell command adds three lines at the top of calc.py.  Nobody presses !"; sleep 5
