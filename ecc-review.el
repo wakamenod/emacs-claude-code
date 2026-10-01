@@ -1261,7 +1261,9 @@ hunk -- is not compared: hunks merge and split as the lines between them
 change, and a line at the edge of one is still the same line.
 
 A comment on a whole hunk goes to the hunk with the same header, else to
-the first hunk of its path whose new side overlaps the lines it covered.
+the nearest hunk of its path that says the same under another header
+\(`ecc-review--same-body\='), else to the first hunk of its path whose
+new side overlaps the lines it covered.
 Nil means none of that is there: the comment is outdated."
   (let ((path (ecc-review-note-path note))
         (side (ecc-review-note-side note)))
@@ -1293,12 +1295,38 @@ Nil means none of that is there: the comment is outdated."
                         (equal (ecc-review--hunk-key (plist-get line :hunk))
                                (ecc-review-note-hunk-key note)))
                       headers)
+            (ecc-review--same-body headers note)
             (and (car range) (cdr range)
                  (seq-find (lambda (line)
                              (let ((hunk (plist-get line :hunk)))
                                (and (<= (plist-get hunk :start) (cdr range))
                                     (>= (plist-get hunk :end) (car range)))))
                            headers)))))))
+
+(defun ecc-review--hunk-body (text)
+  "Return the lines of the hunk TEXT under its @@ header, or nil."
+  (and text (cdr (split-string text "\n"))))
+
+(defun ecc-review--same-body (headers note)
+  "Return the member of HEADERS whose hunk says what the hunk of NOTE said.
+The same lines taken out and put in, under another @@ header: the hunk
+was pushed down or pulled up by a change above it.  Of several, the one
+nearest the lines it covered, and none further than
+`ecc-review-note-max-shift\=' from them."
+  (let ((body (ecc-review--hunk-body (ecc-review-note-hunk-text note)))
+        (start (car (ecc-review-note-hunk-range note)))
+        (best nil))
+    (when (and body start)
+      (dolist (line headers)
+        (let* ((hunk (plist-get line :hunk))
+               (distance (abs (- (plist-get hunk :start) start))))
+          (when (and (equal (ecc-review--hunk-body (plist-get hunk :text)) body)
+                     (<= distance ecc-review-note-max-shift)
+                     (or (null best)
+                         (< distance (abs (- (plist-get (plist-get best :hunk) :start)
+                                             start)))))
+            (setq best line)))))
+    best))
 
 (defun ecc-review--relocate (lines)
   "Put every comment back on LINES and return where each went.

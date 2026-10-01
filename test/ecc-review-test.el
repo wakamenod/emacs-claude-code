@@ -986,7 +986,15 @@ Everything in the second hunk is two lines further down.")
       (let ((hunk (ecc-review-add-note 'user "c" (nth 5 lines))))
         (setf (ecc-review-note-hunk-key hunk) '("foo.el" . "@@ -10,2 +10,4 @@"))
         (should (eq (ecc-review--locate-note hunk lines) (nth 5 lines)))
+        ;; Away from those lines, a hunk that says the same is the hunk
+        ;; pushed down or pulled up -- no further than the line rule's
+        ;; `ecc-review-note-max-shift'.
         (setf (ecc-review-note-hunk-range hunk) '(40 . 42))
+        (should (eq (ecc-review--locate-note hunk lines) (nth 5 lines)))
+        (let ((ecc-review-note-max-shift 3))
+          (should-not (ecc-review--locate-note hunk lines)))
+        ;; And one that says something else there is another hunk.
+        (setf (ecc-review-note-hunk-text hunk) "@@ -40,2 +40,3 @@\n forty\n+other")
         (should-not (ecc-review--locate-note hunk lines))))))
 
 (ert-deftest ecc-review-test-a-blank-line-does-not-wander ()
