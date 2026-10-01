@@ -270,10 +270,19 @@ Return the text node."
             (should-not font-lock-mode))
           (should (string-search "Nothing from Claude yet"
                                  (ecc-review-talk-test--pane-text control)))
+          ;; | lays the windows out again: the pane is back at the bottom,
+          ;; and each side still shows its own buffer -- with the pane in
+          ;; the way the control panel took the window of the left one.
           (ediff-toggle-split)
-          (should (eq (get-buffer-window pane) window))
-          (should-not (eq ediff-window-A window))
-          (should-not (eq ediff-window-B window))
+          (setq window (get-buffer-window pane))
+          (should (eq (window-parameter window 'window-side) 'bottom))
+          (should (eq (window-buffer ediff-window-A) ediff-buffer-A))
+          (should (eq (window-buffer ediff-window-B) ediff-buffer-B))
+          (should (eq (window-buffer ediff-control-window) control))
+          (ediff-toggle-split)
+          (should (eq (window-buffer ediff-window-A) ediff-buffer-A))
+          (should (window-live-p (get-buffer-window pane)))
+          (setq window (get-buffer-window pane))
           ;; T and what comes of it leave the keyboard where it was.
           (let ((selected (selected-window)))
             (ecc-review-talk-tour)

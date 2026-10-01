@@ -344,8 +344,8 @@ Verified against **Claude Code CLI 2.1.281**.
   answers it: allow or deny, approve or deny, or each question read in the
   minibuffer and sent the way the question buffer sends it. Only that
   session's replies and requests reach the pane, and `y` answers no other.
-  The pane is never selected, `|` and `m` leave it where it is, and it
-  goes with the review. The diff review has the session beside it and no
+  The pane is never selected, ediff laying its windows out again with `|`
+  or `m` puts it back at the bottom, and it goes with the review. The diff review has the session beside it and no
   pane.
 
 ### Changed

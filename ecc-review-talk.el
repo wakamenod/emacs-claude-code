@@ -40,9 +40,10 @@
 ;;   latest reply of that session as it streams, each tool call on a
 ;;   line of its own, and whatever Claude is waiting for -- a
 ;;   permission, a question, a plan -- which y answers from the control
-;;   panel.  The pane is a side window, so ediff laying its windows out
-;;   again leaves it alone, and it goes when the review is quit.  It is
-;;   never selected: the keys of the review stay in the control panel.
+;;   panel.  The pane is a side window at the bottom of the frame, put
+;;   back whenever ediff lays its windows out again, and it goes when the
+;;   review is quit.  It is never selected: the keys of the review stay
+;;   in the control panel.
 ;;
 ;; A diff review shares the frame with the session, whose transcript is
 ;; beside it, so it has the keys and no pane.
@@ -286,8 +287,8 @@ other change writes the pane again.")
   "Show the reply pane at the bottom of the frame of REVIEW; return its window.
 Only for an ediff review, and only while `ecc-review-talk-reply-height'
 is a number; nil otherwise, or when the review is on no window.  The
-pane is a side window -- ediff laying its windows out again with | or m
-leaves it where it is -- and it is not selected."
+pane is a side window, taken down while ediff lays its windows out
+again with | or m and put back afterwards, and it is not selected."
   (with-current-buffer review
     (when (and ecc-review-talk-reply-height
                (derived-mode-p 'ediff-mode)
@@ -313,13 +314,27 @@ On `ecc-review-displayed-functions'."
   (when (ecc-review-buffer-p review)
     (with-current-buffer review
       (when (derived-mode-p 'ediff-mode)
+        (add-hook 'ediff-before-setup-windows-hook #'ecc-review-talk--leave-the-frame nil t)
         (add-hook 'ediff-after-setup-windows-hook #'ecc-review-talk--keep-the-pane nil t)))
     (ecc-review-talk--show-pane review)))
 
 (add-hook 'ecc-review-displayed-functions #'ecc-review-talk--on-displayed)
 
+(defun ecc-review-talk--leave-the-frame ()
+  "Take the reply pane off the frame before ediff lays out its windows.
+On `ediff-before-setup-windows-hook\\=' of the control buffer.  ediff
+puts its control panel in the lowest window of the frame
+\(`ediff-select-lowest-window\\='), and with the pane there the panel
+took the window of the left side instead: after | the review showed
+the control buffer where its old text had been."
+  (when-let* ((pane ecc-review-talk--pane)
+              ((buffer-live-p pane)))
+    (dolist (window (get-buffer-window-list pane nil t))
+      (when (eq (window-deletable-p window) t)
+        (delete-window window)))))
+
 (defun ecc-review-talk--keep-the-pane ()
-  "Show the reply pane again, should ediff laying out its windows have taken it.
+  "Show the reply pane again once ediff has laid out its windows.
 On `ediff-after-setup-windows-hook\\=' of the control buffer."
   (when (buffer-live-p ecc-review-talk--pane)
     (ecc-review-talk--show-pane (current-buffer))))
