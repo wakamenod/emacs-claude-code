@@ -1823,6 +1823,16 @@ buffer."
   (ecc-review-ediff-test--write (concat directory "b.el") "(defun b () 2)\n")
   (ecc-review-ediff-buffer session))
 
+(defun ecc-review-ediff-test--as-a-gui ()
+  "Give this ediff session what a graphical Emacs gives it, and batch does not.
+Highlighting with faces, and refining on.  The default of
+`ediff-auto-refine' is worked out when ediff is loaded: Emacs 29 makes
+it `nix' -- \"Refinements are HIDDEN\" -- where there is no face support,
+as in batch, and Emacs 30 made it `on' everywhere.  Run in the control
+buffer, with `ediff-force-faces' bound."
+  (setq ediff-highlighting-style 'face
+        ediff-auto-refine 'on))
+
 (ert-deftest ecc-review-ediff-test-differences-on-the-screen-are-refined ()
   "What changed in the lines of every difference on the screen is marked,
 not only in the current one, and nothing off the screen is refined;
@@ -1839,8 +1849,7 @@ the refining is a timer that runs once."
                 (with-current-buffer control
                   (should (timerp ecc-review-ediff--refine-timer))
                   (should-not (timer--repeat-delay ecc-review-ediff--refine-timer))
-                  ;; What a graphical Emacs has, and batch does not.
-                  (setq ediff-highlighting-style 'face)
+                  (ecc-review-ediff-test--as-a-gui)
                   (ediff-jump-to-difference 1)
                   (should (eq (ecc-review-ediff--refine-turn control) nil))
                   (should-not ecc-review-ediff--refine-timer)
@@ -1870,7 +1879,7 @@ the refining is a timer that runs once."
               (progn
                 (setq control (ecc-review-ediff-test--long session directory))
                 (with-current-buffer control
-                  (setq ediff-highlighting-style 'face)
+                  (ecc-review-ediff-test--as-a-gui)
                   (ediff-jump-to-difference 1)
                   (cl-letf (((symbol-function 'input-pending-p) (lambda (&rest _) t)))
                     (ecc-review-ediff--refine-turn control))
@@ -1901,7 +1910,7 @@ says so.  Return the control buffer, standing on the third difference."
                       (190 "l190 changed\n")))))
   (let ((control (ecc-review-ediff-buffer session)))
     (with-current-buffer control
-      (setq ediff-highlighting-style 'face)
+      (ecc-review-ediff-test--as-a-gui)
       (ediff-unselect-and-select-difference 2 nil 'no-recenter))
     control))
 
@@ -1947,7 +1956,7 @@ refined outside the current difference; back on, it refines again."
               (progn
                 (setq control (ecc-review-ediff-test--long session directory))
                 (with-current-buffer control
-                  (setq ediff-highlighting-style 'face)
+                  (ecc-review-ediff-test--as-a-gui)
                   (ediff-unselect-and-select-difference 0 nil 'no-recenter)
                   (ecc-review-ediff--refine-turn control)
                   (should (ediff-get-fine-diff-vector 1 'B))
@@ -1986,22 +1995,34 @@ refined outside the current difference; back on, it refines again."
             (ecc-review-ediff-test--quit control)))))))
 
 (ert-deftest ecc-review-ediff-test-a-large-file-is-coloured-in-slices ()
-  "A large file is coloured a chunk at a time: no turn runs much past its
-slice, and the file comes out coloured; a file with a line too long to
-colour is left plain."
+  "A large file is coloured a chunk at a time: a turn stops at the first
+chunk that ends past its slice, the file takes many turns and comes out
+coloured, and a file with a line too long to colour is left plain.  The
+clock is one that each chunk moves on by a fixed step, so that what is
+asserted is the slicing rather than the speed of the machine; the real
+times are `scripts/bench-review-ediff.el's."
   (skip-unless (executable-find "git"))
   (ecc-review-ediff-test--with-ediff
     (ecc-test-with-fake-session session
       (ecc-review-ediff-test--with-directory directory
         (let ((control nil)
-              (longest 0)
+              (clock 1000.0)
+              (chunks 0)
+              (most 0)
               (turns 0)
               (ecc-review-max-bytes 1000000)
-              ;; Small slices, so that the file takes many.
               (ecc-review-ediff-colour-first 0.01)
               (ecc-review-ediff-colour-slice 0.01))
           (unwind-protect
-              (progn
+              (cl-letf* ((chunk (symbol-function 'ecc-review-ediff--fontify-chunk))
+                         ((symbol-function 'ecc-review-ediff--fontify-chunk)
+                          (lambda (buffer from)
+                            ;; Each chunk takes 4 ms of this clock.
+                            (setq clock (+ clock 0.004)
+                                  chunks (1+ chunks))
+                            (funcall chunk buffer from)))
+                         ((symbol-function 'float-time) (lambda (&rest _) clock))
+                         ((symbol-function 'input-pending-p) #'ignore))
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
                 (should (ecc-review-ensure-baseline session))
@@ -2015,14 +2036,13 @@ colour is left plain."
                 (setq control (ecc-review-ediff-buffer session))
                 (with-current-buffer control
                   (while (timerp ecc-review-ediff--colour-timer)
-                    (let ((start (float-time)))
-                      (ecc-review-ediff--colour-turn control)
-                      (setq longest (max longest (- (float-time) start))
-                            turns (1+ turns))))
+                    (setq chunks 0)
+                    (ecc-review-ediff--colour-turn control)
+                    (setq most (max most chunks)
+                          turns (1+ turns)))
+                  ;; 10 ms of 4 ms chunks: the third ends past the slice.
+                  (should (= most 3))
                   (should (> turns 5))
-                  ;; The slice, and a chunk at most past it -- and room
-                  ;; for a collection of garbage.
-                  (should (< longest (+ ecc-review-ediff-colour-slice 0.04)))
                   (with-current-buffer ediff-buffer-B
                     (goto-char (point-max))
                     (search-backward "defun f6000")
@@ -2230,7 +2250,7 @@ not."
               (progn
                 (setq control (ecc-review-ediff-test--long session directory))
                 (with-current-buffer control
-                  (setq ediff-highlighting-style 'face)
+                  (ecc-review-ediff-test--as-a-gui)
                   ;; On the first: ediff refines it.
                   (ediff-unselect-and-select-difference 0 nil 'no-recenter)
                   (let ((fine (ediff-get-fine-diff-vector 0 'B)))
@@ -2346,7 +2366,7 @@ refining stops without calling into ediff, and sets no timer again."
               (progn
                 (setq control (ecc-review-ediff-test--long session directory))
                 (with-current-buffer control
-                  (setq ediff-highlighting-style 'face)
+                  (ecc-review-ediff-test--as-a-gui)
                   (let ((base (car ecc-review-ediff--buffers)))
                     (with-current-buffer base (set-buffer-modified-p nil))
                     (let ((kill-buffer-query-functions nil))
