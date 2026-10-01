@@ -554,6 +554,143 @@ what brings its windows back."
             (should (= asked 2))))))))
 
 
+;;;; Switching a window to another session
+
+(defmacro ecc-window-test--with-switch (bindings &rest body)
+  "Run BODY with the sessions of BINDINGS and the selected window showing one.
+BINDINGS is a list of (VAR NAME ROOT); the first is the session the
+selected window shows, the last the most recently used.  The window
+being switched is the selected one, `completing-read' answers with the
+first label it is offered and records them all in `offered', and
+`ecc-window-select-session' records the session it was asked to show in
+`selected' rather than laying out a frame."
+  (declare (indent 1))
+  `(let* ((ecc-test-sent nil)
+          (ecc-use-spaces nil)
+          (ecc--sessions (make-hash-table :test #'equal))
+          (ecc--session-order nil)
+          (offered nil)
+          (selected nil)
+          ,@(mapcar (lambda (binding)
+                      `(,(car binding)
+                        (ecc-model-create-session
+                         :name ,(nth 1 binding) :project-root ,(nth 2 binding))))
+                    bindings)
+          (window (selected-window))
+          (old-buffer (window-buffer window)))
+     (ignore offered selected)
+     (ecc-window-test--with-projects
+         (seq-uniq (list ,@(mapcar (lambda (binding) (nth 2 binding)) bindings)))
+       (unwind-protect
+           (cl-letf (((symbol-function 'ecc-window--switch-target)
+                      (lambda () window))
+                     ((symbol-function 'completing-read)
+                      (lambda (_prompt labels &rest _)
+                        (setq offered labels)
+                        (car labels)))
+                     ((symbol-function 'ecc-window-select-session)
+                      (lambda (session) (setq selected session) nil)))
+             (set-window-buffer window
+                                (ecc-session-ensure-buffer ,(caar bindings)))
+             ,@body)
+         (set-window-buffer window old-buffer)
+         ,@(mapcar (lambda (binding)
+                     `(ecc-test-cleanup-session ,(car binding)))
+                   bindings)))))
+
+(defun ecc-window-test--offered-names (labels)
+  "Return the session names in the completion LABELS, sorted."
+  (sort (mapcar (lambda (label) (car (split-string label))) labels)
+        #'string<))
+
+(ert-deftest ecc-window-test-switch-offers-this-row ()
+  "Without a prefix the choice is the other tabs of this window's project.
+Another project's session is not on these tabs and is not offered; the
+one the window already shows is left out, there being nothing to switch
+to there."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (three "three" "/tmp/project-one/")
+                                 (two "two" "/tmp/project-two/")
+                                 (four "four" "/tmp/project-one/"))
+    (call-interactively #'ecc-switch-session)
+    (should (equal (ecc-window-test--offered-names offered) '("four" "three")))
+    ;; Most recently used first, as `ecc-window-read-session' has it.
+    (should (string-prefix-p "four" (car offered)))
+    ;; A session of the row goes into this window.
+    (should (eq (window-buffer window) (ecc-session-buffer four)))
+    (should-not selected)))
+
+(ert-deftest ecc-window-test-switch-with-prefix-offers-every-session ()
+  "With a prefix every session is offered, the one shown here excepted."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (three "three" "/tmp/project-one/")
+                                 (two "two" "/tmp/project-two/")
+                                 (four "four" "/tmp/project-two/"))
+    (let ((current-prefix-arg '(4)))
+      (call-interactively #'ecc-switch-session))
+    (should (equal (ecc-window-test--offered-names offered)
+                   '("four" "three" "two")))))
+
+(ert-deftest ecc-window-test-switch-scope-all-widens-the-row ()
+  "Under `ecc-tab-line-scope' `all' the tabs are every session, so is the choice."
+  (defvar ecc-tab-line-scope)
+  (let ((ecc-tab-line-scope 'all))
+    (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                   (three "three" "/tmp/project-one/")
+                                   (two "two" "/tmp/project-two/"))
+      (call-interactively #'ecc-switch-session)
+      (should (equal (ecc-window-test--offered-names offered) '("three" "two")))
+      ;; Another project's session is in this row now, so it goes into
+      ;; this window like any tab of it.
+      (should (eq (window-buffer window) (ecc-session-buffer two)))
+      (should-not selected))))
+
+(ert-deftest ecc-window-test-switch-alone-in-the-row-says-so ()
+  "A window whose project has no other session is refused, with the way out.
+`ecc-window-read-session' hands back a lone candidate without asking, and
+handed the empty list it would offer every session; neither is what the
+user asked for."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (two "two" "/tmp/project-two/")
+                                 (three "three" "/tmp/project-two/"))
+    (let ((err (should-error (call-interactively #'ecc-switch-session)
+                             :type 'user-error)))
+      (should (string-match-p "No other session in this project"
+                              (cadr err))))
+    (should-not offered)
+    (should (eq (window-buffer window) (ecc-session-buffer one)))
+    ;; And with a prefix the others are there.
+    (let ((current-prefix-arg '(4)))
+      (call-interactively #'ecc-switch-session))
+    (should (equal (ecc-window-test--offered-names offered) '("three" "two")))))
+
+(ert-deftest ecc-window-test-switch-elsewhere-goes-to-its-own-place ()
+  "A session from outside the row is shown where it belongs, not in this window.
+Put into this window it would sit among another project's tabs, which
+under `spaces' is another project's transcript in this Space's tab."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (three "three" "/tmp/project-one/")
+                                 (two "two" "/tmp/project-two/"))
+    (ecc-switch-session two)
+    (should (eq selected two))
+    (should (eq (window-buffer window) (ecc-session-buffer one)))
+    (setq selected nil)
+    (ecc-switch-session three)
+    (should-not selected)
+    (should (eq (window-buffer window) (ecc-session-buffer three)))))
+
+(ert-deftest ecc-window-test-switch-from-a-source-window ()
+  "A window with no session in it offers the sessions of the current project."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (three "three" "/tmp/project-one/")
+                                 (two "two" "/tmp/project-two/")
+                                 (four "four" "/tmp/project-two/"))
+    (with-temp-buffer
+      (setq default-directory "/tmp/project-two/")
+      (set-window-buffer window (current-buffer))
+      (call-interactively #'ecc-switch-session)
+      (should (equal (ecc-window-test--offered-names offered) '("four" "two"))))))
+
 ;;;; Opening a review
 
 (ert-deftest ecc-window-test-review-leaves-the-windows-alone-by-default ()
