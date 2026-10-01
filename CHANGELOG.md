@@ -11,6 +11,32 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.286**.
+
+### Added
+
+- A Bash command that changed files now shows what it changed, as the CLI's
+  own TUI does, from the `bashEditDiff` the CLI puts in the result. Under the
+  command's output, each file gets a line in the CLI's words
+  (`Updated a.txt (+1 -1)`, `Created`, `Deleted`) and its diff, numbered and
+  clipped like an Edit's. The call comes up unfolded unless
+  `ecc-render-inhibit-inline-diff` is set. The CLI shows hunks for at most
+  five files and ecc counts the rest (`… 3 more files changed`). It also
+  passes on what the CLI says when it could not make a diff. Each file goes
+  into the Files section with its hunks, and an open buffer visiting it is
+  reverted. `RET` on a diff line opens the file at that line, moved through
+  later changes, and `RET` on the file's line opens it at its first change.
+  `o` shows the whole diff.
+
+  The CLI does not always send `bashEditDiff`. It sends it only in a git
+  repository, and only in `auto` and `bypassPermissions` modes with some
+  models (Opus 5.5 had it; Sonnet and Haiku did not). The `default`,
+  `acceptEdits` and `plan` modes never get it. `"bashEditDiffEnabled": true` in `~/.claude/settings.json`
+  (or in `--settings`) turns it on in every mode. A project's
+  `.claude/settings.json` cannot turn it on.
+
 ## [0.3.4] - 2026-09-27
 
 Verified against **Claude Code CLI 2.1.281**.

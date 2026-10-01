@@ -180,12 +180,15 @@ Press `RET` on code in the transcript, or click it, to open the file next to the
 
 | Point on | Opens |
 |---|---|
-| A diff line of an Edit, MultiEdit, Write, or NotebookEdit | That line. A removed line opens where it used to be. |
+| A diff line of an Edit, MultiEdit, Write, NotebookEdit, or Bash command | That line. A removed line opens where it used to be. |
+| The `Updated`/`Created`/`Deleted` line over a Bash command's diff | The first changed line of that file |
 | The heading of a tool call that names a file | For Read, the line at its `offset`. For an edit, the first changed line. |
 | A diff line in the Files section or in a permission request | That line |
 | A path in Claude's reply (`foo.el:12`, `a/b.el`, `x.el#L3`, also inside backticks) | The file, relative to the session directory, at the given line |
 
 A line number in a diff refers to the file right after that change. ecc adjusts it for later changes the session made to the same file, so the file opens where the line is now. ecc checks a path in a reply only when you follow it, and a missing file is an error. Paths inside fenced code blocks are not links. To turn path links off, set the variable `ecc-markdown-linkify-paths` to nil with `setq`.
+
+A Bash command shows the files it changed under its output only when the CLI reports them. Claude Code CLI 2.1.286 does so in a git repository, and only in `auto` and `bypassPermissions` modes with some models, unless `"bashEditDiffEnabled": true` is set in `~/.claude/settings.json`, which turns it on in every mode.
 
 On a heading without a file, such as Bash, `RET` still shows the full tool result. `o` shows it on any node.
 
