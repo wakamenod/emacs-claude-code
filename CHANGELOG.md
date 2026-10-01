@@ -67,13 +67,12 @@ Verified against **Claude Code CLI 2.1.281**.
   switches -- the sessions of that window's project, or every session under
   `ecc-tab-line-scope` `all` -- less the one the window already shows, and
   `C-u C-c C-t` offers every session. It used to offer every session of
-  every project and put the chosen one into this window, so that under
-  `ecc-use-spaces` another project's transcript sat in this Space's tab
-  while the tab bar, the source window and the sidebar stayed where they
-  were. A session from outside the row is now shown in its own Space (under
-  `classic`, by `ecc-display-session`). A window whose project has no other
-  session is refused with a pointer to `C-u C-c C-t`, rather than the one
-  candidate being taken without asking.
+  every project, the one already shown included, so that with one session
+  in the project the command took that one without asking and did nothing.
+  A window whose project has no other session is now refused with a pointer
+  to `C-u C-c C-t`. Under `ecc-use-spaces` a session from another project
+  is still shown in its own Space, and one another window of the Space
+  already shows is selected there rather than shown twice.
 
 ### Fixed
 
