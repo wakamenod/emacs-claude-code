@@ -269,14 +269,15 @@ blobs of the review on every reading.")
 (defvar-local ecc-review-ediff--frame nil
   "The frame the review was opened in, to hand the keyboard back to.")
 
-(defun ecc-review-ediff-buffer-name (session side &optional range)
+(defun ecc-review-ediff-buffer-name (session side &optional range label)
   "Return the name of the SIDE buffer of the ediff review of SESSION.
 SIDE is `base' for what the files held and `now' for what they hold.
-RANGE is that of a review of the working tree: every review has its own
+RANGE is that of a review of the working tree, called LABEL when given
+\(`ecc-review-range-label\='): every review has its own
 two buffers, named the way `ecc-review-buffer-name\=' names the diff
 reviews, so that two ediff reviews of one session -- of what it changed
 and of the working tree -- do not write into each other's."
-  (let ((name (ecc-review-buffer-name session nil range)))
+  (let ((name (ecc-review-buffer-name session nil range label)))
     (format "*ecc-review-%s:%s" side (substring name (length "*ecc-review:")))))
 
 (defvar ecc-review-ediff-fontify t
@@ -580,14 +581,14 @@ Two reviews never share a side: the second would write into the first."
         (generate-new-buffer name)
       (get-buffer-create name))))
 
-(defun ecc-review-ediff--build (session pairs &optional range cache)
+(defun ecc-review-ediff--build (session pairs &optional range cache label)
   "Fill the two buffers of SESSION with PAIRS and return (BASE NOW SECTIONS).
-RANGE names the buffers (`ecc-review-ediff-buffer-name\='), and CACHE is
-`ecc-review-ediff--write\='s."
+RANGE and LABEL name the buffers (`ecc-review-ediff-buffer-name\='), and
+CACHE is `ecc-review-ediff--write\='s."
   (let ((base (ecc-review-ediff--side-buffer
-               (ecc-review-ediff-buffer-name session 'base range)))
+               (ecc-review-ediff-buffer-name session 'base range label)))
         (now (ecc-review-ediff--side-buffer
-              (ecc-review-ediff-buffer-name session 'now range))))
+              (ecc-review-ediff-buffer-name session 'now range label))))
     (dolist (buffer (list base now))
       (with-current-buffer buffer
         (fundamental-mode)))
@@ -1270,7 +1271,6 @@ ediff lays out its windows; quitting puts back what was on the screen."
         (setq-local ecc-review--session session
                     ecc-render--session session
                     ecc-review--range range
-                    ecc-review--label (and range ecc-review-range-label)
                     ecc-review--paths paths
                     ecc-review--notes nil
                     ecc-review--next-id 1
@@ -1438,10 +1438,15 @@ opened."
     (unless pairs
       (user-error "%s" (plist-get content :nothing)))
     (pcase-let ((`(,a ,b ,sections)
-                 (ecc-review-ediff--build session pairs (plist-get content :range) cache)))
-      (ecc-review-ediff-open session a b sections (plist-get content :range)
-                             (plist-get content :root) (plist-get content :paths)
-                             (plist-get content :hash) cache))))
+                 (ecc-review-ediff--build session pairs (plist-get content :range) cache
+                                          (plist-get content :label))))
+      (let ((control (ecc-review-ediff-open session a b sections (plist-get content :range)
+                                            (plist-get content :root) (plist-get content :paths)
+                                            (plist-get content :hash) cache)))
+        (when (buffer-live-p control)
+          (with-current-buffer control
+            (setq ecc-review--label (plist-get content :label))))
+        control))))
 
 (defun ecc-review-ediff-buffer (session &optional paths)
   "Open everything SESSION changed as one ediff and return the control buffer.
@@ -1574,11 +1579,11 @@ trees are the ones it was filled from is left alone, without a file
 being read; one whose changes have all gone stays open and says so, as
 the diff review does when it follows the files -- an ediff review is
 never closed by being read."
-  (let* ((content (let ((ecc-review-range-label ecc-review--label))
-                    (ecc-review-ediff--content ecc-review--session ecc-review--range
-                                               default-directory ecc-review--paths
-                                               default-directory)))
+  (let* ((content (ecc-review-ediff--content ecc-review--session ecc-review--range
+                                             default-directory ecc-review--paths
+                                             default-directory))
          (hash (plist-get content :hash)))
+    (setq ecc-review--label (plist-get content :label))
     (if (equal ecc-review--fingerprint (ecc-review-ediff--state hash))
         (progn (setq ecc-review--stale nil
                      ecc-review--failed nil)
