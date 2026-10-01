@@ -13,7 +13,7 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 ## [Unreleased]
 
-Verified against **Claude Code CLI 2.1.286**.
+Verified against **Claude Code CLI 2.1.281**.
 
 ### Added
 
@@ -33,9 +33,82 @@ Verified against **Claude Code CLI 2.1.286**.
   The CLI does not always send `bashEditDiff`. It sends it only in a git
   repository, and only in `auto` and `bypassPermissions` modes with some
   models (Opus 5.5 had it; Sonnet and Haiku did not). The `default`,
-  `acceptEdits` and `plan` modes never get it. `"bashEditDiffEnabled": true` in `~/.claude/settings.json`
-  (or in `--settings`) turns it on in every mode. A project's
-  `.claude/settings.json` cannot turn it on.
+  `acceptEdits` and `plan` modes never get it.
+  `"bashEditDiffEnabled": true` in `~/.claude/settings.json` (or in
+  `--settings`) turns it on in every mode. A project's
+  `.claude/settings.json` cannot turn it on. Verified against Claude Code
+  CLI 2.1.286.
+
+- `M-x ecc-restore` brings back the Spaces and sessions that were open when
+  Emacs last exited. The Spaces open in the order of their tabs, with their
+  sessions laid out as a Space lays them out; under `ecc-use-spaces` nil only
+  the sessions come back. Each session is read from its recording and comes
+  back stopped: no CLI starts until a prompt is sent to it or `R` is pressed,
+  and the question about a session another process is running is asked
+  then, one session at a time. A session already open is left alone and
+  counted in the message, and one whose directory is gone is skipped and
+  named. A saved session that is open only to be read (`h`) is not counted
+  as open: it becomes the restored session, in the buffer it already has. A restored session says
+  `○ restored` and "Restored; a prompt or R starts it" rather than calling
+  itself exited, and the tab line and the sidebar draw it the same way: a
+  dim `○` and the word `restored`, not the red `✗` of a CLI that died. A
+  Space folds it under an exit and over an idle session. The mode line says
+  `○ restored` too.
+
+- What is open is saved to `ecc-restore-file` (`ecc-state.eld` under
+  `user-emacs-directory`, Lisp data) whenever a session starts or is killed
+  and whenever a tab opens or closes, so a crash leaves it current.
+  It holds the Space roots in tab order and each session's id, name, root
+  and cwd, all taken from memory: no recording is read and git is not asked.
+  A save that would write the same text again is skipped. At exit the file
+  is written once more and then left alone, so the sessions Emacs takes down
+  with it are not saved as closed. Nothing is written at all by an Emacs
+  that has had no session of its own and has not run `ecc-restore`: one
+  that only opened a tab or read a recording leaves the file as the last
+  Emacs wrote it, even a file it cannot read. Until `ecc-restore` has run,
+  the state the last Emacs left is kept in every write, the one at exit
+  included, so starting a session first, or quitting before restoring, does
+  not lose it. A batch Emacs saves nothing (`ecc-restore-enabled`).
+  A write costs about 0.2 ms with ten sessions in five Spaces, and one with
+  nothing to write about 0.02 ms, which is also what the exit hook adds when
+  the file is already current.
+
+### Changed
+
+- `RET` or a click on a path to a video or a sound -- a path in Claude's
+  reply, a Files row, a tool heading -- plays the file in the machine's own
+  player (`open` on macOS, `browse-url-of-file` elsewhere) instead of
+  visiting it in a buffer of raw bytes. A line number after such a path is
+  ignored, and a missing file is still an error. The video extensions are
+  `ecc-image-video-extensions`; the sound ones are the new variable
+  `ecc-image-audio-extensions` (mp3, wav, m4a, aac, flac, ogg, oga, opus,
+  aiff, aif). A gif is still drawn in Emacs, and a sound is never drawn in
+  the transcript.
+
+- `C-c C-t` (`ecc-switch-session`) offers the tabs of the window it
+  switches -- the sessions of that window's project, or every session under
+  `ecc-tab-line-scope` `all` -- less the one the window already shows, and
+  `C-u C-c C-t` offers every session. It used to offer every session of
+  every project, the one already shown included, so that with one session
+  in the project the command took that one without asking and did nothing.
+  A window whose project has no other session is now refused with a pointer
+  to `C-u C-c C-t`. Under `ecc-use-spaces` a session from another project
+  is still shown in its own Space, and one another window of the Space
+  already shows is selected there rather than shown twice.
+
+### Fixed
+
+- A session with no process behind it -- a recording opened with `h` to be
+  read -- said `✗ exited (code ?)` and "Exited with code ?", as if a CLI had
+  died with a code nobody knew. There was no CLI. It now says `○ not
+  running` and "Not running; R resumes it"; an exit that has a code still
+  names it.
+
+- Every call to an MCP tool that answers with content blocks -- the
+  `review_*` tools of ecc's own server among them -- left an `unknown: user
+  (Wrong type argument: listp, ...)` line in the transcript. The CLI
+  reports such a tool's `tool_use_result` as the array of those blocks,
+  and it was read as an object. It is now read only when it is one.
 
 ## [0.3.4] - 2026-09-27
 

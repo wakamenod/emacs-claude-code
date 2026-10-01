@@ -443,6 +443,48 @@ at the end is found where it is."
         (kill-buffer buffer))
       (delete-file file))))
 
+(defmacro ecc-visit-test--recording-opens (&rest body)
+  "Run BODY with both ways of opening a file recorded, not taken.
+`played' and `visited' are bound in BODY to the paths each was given."
+  (declare (indent 0))
+  `(let ((played nil) (visited nil))
+     (cl-letf (((symbol-function 'ecc-image-open-externally)
+                (lambda (path) (push path played)))
+               ((symbol-function 'find-file-noselect)
+                (lambda (path &rest _) (push path visited)
+                  (get-buffer-create " *ecc-visit-test*"))))
+       (save-window-excursion ,@body))))
+
+(ert-deftest ecc-visit-test-open-media-plays-outside ()
+  "A video or a sound goes to the machine's player, and no buffer is made."
+  (dolist (extension '(".mp4" ".mp3"))
+    (let ((file (make-temp-file "ecc-visit" nil extension "bytes")))
+      (unwind-protect
+          (ecc-visit-test--recording-opens
+            (should-not (ecc-visit-open file 12))
+            (should (equal played (list file)))
+            (should-not visited))
+        (delete-file file)))))
+
+(ert-deftest ecc-visit-test-open-missing-media-is-an-error ()
+  "A video that is not there is the error, and nothing is started."
+  (ecc-visit-test--recording-opens
+    (should-error (ecc-visit-open "/nonexistent/ecc-visit/clip.mp4" 1)
+                  :type 'user-error)
+    (should-not played)
+    (should-not visited)))
+
+(ert-deftest ecc-visit-test-open-other-files-in-a-buffer ()
+  "A picture and a source file still open in a buffer."
+  (dolist (extension '(".png" ".el"))
+    (let ((file (make-temp-file "ecc-visit" nil extension "x")))
+      (unwind-protect
+          (ecc-visit-test--recording-opens
+            (ecc-visit-open file nil)
+            (should (equal visited (list file)))
+            (should-not played))
+        (delete-file file)))))
+
 (provide 'ecc-visit-test)
 
 ;;; ecc-visit-test.el ends here

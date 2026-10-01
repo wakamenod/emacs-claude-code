@@ -36,6 +36,19 @@ Session recordings are stored by Claude Code under `~/.claude/projects`, meaning
 
 `h` inspects a recording without launching a process, and `r` from within that buffer resumes it. If a CLI process terminates unexpectedly, ecc prompts to resume it.
 
+## Bringing sessions back after a restart
+
+ecc saves the open Spaces and sessions to `ecc-state.eld` in `user-emacs-directory`. It rewrites the file each time a session starts or is killed and each time a tab opens or closes, so the file stays current even after a crash. Only an Emacs that has had a session of its own, or has run `ecc-restore`, writes to the file. An Emacs that only opens a tab or reads a recording leaves it as it was.
+
+Run `M-x ecc-restore` to bring them back:
+
+- The Spaces open in their old tab order, with their sessions side by side. With `ecc-use-spaces` off, only the sessions come back.
+- Each session is read from its recording and comes back stopped. Its CLI starts only when you send a prompt or press `R`. That is also when ecc checks whether another process is running the same conversation.
+- ecc skips a session that is already open, so running the command twice does no harm. A recording you opened with `h` to read does not count as open: it becomes the restored session, in the buffer it already has.
+- ecc skips a session or Space whose directory no longer exists, and names it in the message.
+
+A session you kill yourself leaves the file, so what comes back is what was open when Emacs exited. Sessions that an earlier Emacs saved and you have not restored yet stay in the file until you restore them. Starting other sessions first, or quitting Emacs first, does not drop them. To restore on every start, call `(ecc-restore)` from your init file.
+
 ## Searching past conversations
 
 If you remember what was discussed rather than the session name, you can search past conversations by their message text. Press `/` in the transient menu, `C-c c /`, or run `M-x ecc-search`. Matching conversations in the current project are displayed newest first, showing matching lines and context; press `RET` or `o` to open the conversation at point. Providing a prefix argument (`C-u`) searches across all projects instead of just the current one.
@@ -115,11 +128,12 @@ Each session appears as a tab in the tab line of its project's session windows.
 | `⚠` | Awaiting user input | Flashing warning highlight |
 | `▶` | Busy / working | Green |
 | `✗` | Process terminated | Red |
+| `○` | Restored by `ecc-restore`, not started yet | Dimmed |
 | (none) | Idle | Dimmed |
 
 The tab for the active session window is bold and underlined; active background sessions use a muted green. Set `ecc-tab-blink` to `nil` to disable blinking.
 
-Tabs stay in creation order so their positions remain stable. Clicking a tab with `mouse-1` switches the window to that session. Inside a session buffer, `C-c C-t` (`ecc-switch-session`) does the same. Clicking the `x` button prompts to stop the session; the window stays where it is and moves to the tab beside the one that closed — the tab to its right, or the one to its left when it was the rightmost. A tab another window of the frame is already showing is skipped, so the same transcript never ends up in two windows. The window closes with its tab only when there is nothing left for it to show.
+Tabs stay in creation order so their positions remain stable. Clicking a tab with `mouse-1` switches the window to that session. Inside a session buffer, `C-c C-t` (`ecc-switch-session`) lets you pick from the window's other tabs. `C-u C-c C-t` lists every session. With `ecc-use-spaces` on, a session from another project opens in that project's Space instead of this window. Clicking the `x` button prompts to stop the session; the window stays where it is and moves to the tab beside the one that closed — the tab to its right, or the one to its left when it was the rightmost. A tab another window of the frame is already showing is skipped, so the same transcript never ends up in two windows. The window closes with its tab only when there is nothing left for it to show.
 
 ![The session window changing from one session to another: the selected tab moves from greet to notes and the transcript is replaced](../../../assets/switch.gif)
 
@@ -127,7 +141,7 @@ To show session state in the global Emacs tab bar, set `ecc-tab-bar-state` and u
 
 A window's tabs list only that window's own project's sessions. Two session windows side by side in different projects show separate rows, and neither lists the other's sessions. Set `ecc-tab-line-scope` to `'all` to list every session in a single row.
 
-You can still reach a session outside the scope with `C-c C-t` (`ecc-switch-session`), the dashboard (`C-c c B`), or `C-c c n` (`ecc-next-attention`). Its tab is not on screen, so it cannot blink when waiting for an answer. The mode line `⚠ecc:N` count and notifications still report it.
+You can still reach a session outside the scope with `C-u C-c C-t` (`ecc-switch-session`), the dashboard (`C-c c B`), or `C-c c n` (`ecc-next-attention`). Its tab is not on screen, so it cannot blink when waiting for an answer. The mode line `⚠ecc:N` count and notifications still report it.
 
 Under the tab line, the header line displays the session's current status on the left, the project name beside it, and the remaining context window capacity on the right (turning amber and red as capacity diminishes).
 
