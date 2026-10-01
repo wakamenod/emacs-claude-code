@@ -858,7 +858,44 @@ twelve-line clip could not even cut -- base64 is one line."
         (when (and path (not error-p)
                    (memq (cdr (assoc name ecc-dispatch-file-tools)) '(edit write)))
           (run-hook-with-args 'ecc-sync-file-changed-hook session path)))
+      (unless error-p
+        (dolist (path (ecc-dispatch--bash-changed-paths node))
+          (run-hook-with-args 'ecc-sync-file-changed-hook session path)))
       node)))
+
+(defun ecc-dispatch--bash-edit-diff (session node result)
+  "Note on SESSION and the Bash NODE the files RESULT says it changed.
+The CLI reports them in `bashEditDiff' only under the conditions
+`ecc-protocol-bash-edit-diff' lists.  Each file with hunks goes into
+the Files section as an Edit's patch does, a new one as a Write; the
+ones the CLI only names are counted there with nothing to draw.  What
+the file was before the command is not known, so the start the review
+diffs from is left as it was."
+  (when-let* ((diff (ecc-protocol-bash-edit-diff result)))
+    (ecc-model-node-put node 'bash-edit diff)
+    (let ((noted nil))
+      (dolist (file (plist-get diff :files))
+        (let ((path (plist-get file :path))
+              (created (eq (plist-get file :change) 'created)))
+          (push path noted)
+          (ecc-model-note-file session path (if created 'write 'edit))
+          (ecc-model-note-hunk session path nil nil (plist-get file :patch)
+                               (if created nil 'unknown))))
+      (dolist (path (plist-get diff :changed))
+        (unless (member path noted)
+          (ecc-model-note-file session path 'edit))))))
+
+(defun ecc-dispatch--bash-changed-paths (node)
+  "Return the files the Bash NODE changed that are still there.
+A deleted file has no buffer worth reverting: reverting one whose file
+is gone is an error."
+  (when-let* ((diff (ecc-model-node-get node 'bash-edit)))
+    (let ((deleted (delq nil (mapcar (lambda (file)
+                                       (and (eq (plist-get file :change) 'deleted)
+                                            (plist-get file :path)))
+                                     (plist-get diff :files)))))
+      (seq-remove (lambda (path) (member path deleted))
+                  (plist-get diff :changed)))))
 
 (defun ecc-dispatch--structured-result (session node result)
   "Apply the structured tool_use_result RESULT of the tool NODE to SESSION.
@@ -918,6 +955,8 @@ the patch of an Edit or a Write, the id and status of a task."
                                   (alist-get 'content input))
                               (alist-get 'structuredPatch result)
                               original)))
+      ("Bash"
+       (ecc-dispatch--bash-edit-diff session node result))
       ("TaskCreate"
        (let ((task (alist-get 'task result)))
          (ecc-model-note-task session (alist-get 'id task)

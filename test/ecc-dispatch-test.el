@@ -1214,6 +1214,63 @@ leaves the session busy for good."
       (should-not (ecc-session-current-turn session))
       (should-not (seq-some #'ecc-turn-prompt (ecc-session-turns session))))))
 
+;;;; What a Bash command changed
+
+(ert-deftest ecc-dispatch-test-bash-edit-diff ()
+  "A Bash call the CLI reports file changes for changes the files as an Edit does.
+Each file with hunks is noted in Files with its patch -- the very one
+the node keeps, which is what moves a line of its diff through later
+changes -- a new file as a Write, and the files past the five the CLI
+showed with no hunks.  Every file still there is reloaded."
+  (ecc-test-with-fake-session session
+    (let (changed)
+      (let ((ecc-sync-file-changed-hook
+             (list (lambda (_session path) (push path changed)))))
+        (ecc-test-dispatch session "bash-edit-diff" "bash"))
+      (let* ((files (ecc-model-files session))
+             (entry (lambda (name)
+                      (seq-find (lambda (e)
+                                  (equal (file-name-nondirectory
+                                          (ecc-file-entry-path e))
+                                         name))
+                                files)))
+             (a (funcall entry "a.txt"))
+             (new (funcall entry "new.txt"))
+             (m8 (funcall entry "m8.txt"))
+             (recorded (seq-some
+                        (lambda (node)
+                          (seq-find (lambda (file)
+                                      (equal (plist-get file :path)
+                                             (ecc-file-entry-path a)))
+                                    (plist-get (ecc-model-node-get node 'bash-edit)
+                                               :files)))
+                        (hash-table-values (ecc-session-nodes session)))))
+        (should (= 11 (length files)))
+        (should (= 1 (ecc-file-entry-edits a)))
+        (should (= 1 (length (ecc-file-entry-hunks a))))
+        ;; What the file was before the command nobody knows.
+        (should (eq (ecc-file-entry-original a) 'unknown))
+        (should (= 1 (ecc-file-entry-writes new)))
+        (should (null (ecc-file-entry-original new)))
+        (should (= 1 (ecc-file-entry-edits m8)))
+        (should-not (ecc-file-entry-hunks m8))
+        (should (eq (plist-get recorded :patch)
+                    (car (ecc-file-entry-patches a))))
+        ;; The deleted b.txt has no buffer to reload; the other ten do.
+        (should (= 10 (length changed)))
+        (should-not (member "b.txt" (mapcar #'file-name-nondirectory changed)))
+        (should (member "m8.txt" (mapcar #'file-name-nondirectory changed)))))))
+
+(ert-deftest ecc-dispatch-test-bash-without-edit-diff ()
+  "A Bash result with no `bashEditDiff' notes no file and reloads nothing."
+  (ecc-test-with-fake-session session
+    (let (changed)
+      (let ((ecc-sync-file-changed-hook
+             (list (lambda (_session path) (push path changed)))))
+        (ecc-test-dispatch session "background-bash" "bash"))
+      (should-not changed)
+      (should-not (ecc-model-files session)))))
+
 ;;;; What a command wrote
 
 (defun ecc-dispatch-test--tool (session name input result &optional write error-p)
