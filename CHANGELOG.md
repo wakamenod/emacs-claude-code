@@ -17,6 +17,29 @@ Verified against **Claude Code CLI 2.1.281**.
 
 ### Added
 
+- A Bash command that changed files now shows what it changed, as the CLI's
+  own TUI does, from the `bashEditDiff` the CLI puts in the result. Under the
+  command's output, each file gets a line in the CLI's words
+  (`Updated a.txt (+1 -1)`, `Created`, `Deleted`) and its diff, numbered and
+  clipped like an Edit's. The call comes up unfolded unless
+  `ecc-render-inhibit-inline-diff` is set. The CLI shows hunks for at most
+  five files and ecc counts the rest (`… 3 more files changed`). It also
+  passes on what the CLI says when it could not make a diff. Each file goes
+  into the Files section with its hunks, and an open buffer visiting it is
+  reverted unless the command deleted the file. `RET` on a diff line opens the file at that line, moved through
+  later changes, and `RET` on the file's line opens it at its first change.
+  `o` shows the whole diff.
+
+  Most sessions will not show these diffs as things stand. ecc starts the
+  CLI in `default` mode, and there the CLI never sends `bashEditDiff`. It
+  sends it in `auto` and `bypassPermissions` only, and there only behind an
+  experiment flag of the CLI that follows the model (Opus 5.5 had it; Sonnet
+  and Haiku did not). `"bashEditDiffEnabled": true` in the user's
+  `~/.claude/settings.json`, or passed with `--settings`, turns it on in
+  every mode; a project's `.claude/settings.json` does not. ecc does not set
+  it: it is a setting of Claude Code. Either way the file must be inside a
+  git repository. Verified against Claude Code CLI 2.1.286.
+
 - `M-x ecc-restore` brings back the Spaces and sessions that were open when
   Emacs last exited. The Spaces open in the order of their tabs, with their
   sessions laid out as a Space lays them out; under `ecc-use-spaces` nil only
@@ -418,6 +441,27 @@ Verified against **Claude Code CLI 2.1.281**.
 - `{` and `}` in the review buffer move between comments. `diff-mode` has
   them moving between files, which `N` and `P` still do.
 
+- `RET` or a click on a path to a video or a sound -- a path in Claude's
+  reply, a Files row, a tool heading -- plays the file in the machine's own
+  player (`open` on macOS, `browse-url-of-file` elsewhere) instead of
+  visiting it in a buffer of raw bytes. A line number after such a path is
+  ignored, and a missing file is still an error. The video extensions are
+  `ecc-image-video-extensions`; the sound ones are the new variable
+  `ecc-image-audio-extensions` (mp3, wav, m4a, aac, flac, ogg, oga, opus,
+  aiff, aif). A gif is still drawn in Emacs, and a sound is never drawn in
+  the transcript.
+
+- `C-c C-t` (`ecc-switch-session`) offers the tabs of the window it
+  switches -- the sessions of that window's project, or every session under
+  `ecc-tab-line-scope` `all` -- less the one the window already shows, and
+  `C-u C-c C-t` offers every session. It used to offer every session of
+  every project, the one already shown included, so that with one session
+  in the project the command took that one without asking and did nothing.
+  A window whose project has no other session is now refused with a pointer
+  to `C-u C-c C-t`. Under `ecc-use-spaces` a session from another project
+  is still shown in its own Space, and one another window of the Space
+  already shows is selected there rather than shown twice.
+
 ### Fixed
 
 - In an ediff review, what changed inside a line of the current difference
@@ -447,6 +491,12 @@ Verified against **Claude Code CLI 2.1.281**.
   died with a code nobody knew. There was no CLI. It now says `○ not
   running` and "Not running; R resumes it"; an exit that has a code still
   names it.
+
+- Every call to an MCP tool that answers with content blocks -- the
+  `review_*` tools of ecc's own server among them -- left an `unknown: user
+  (Wrong type argument: listp, ...)` line in the transcript. The CLI
+  reports such a tool's `tool_use_result` as the array of those blocks,
+  and it was read as an object. It is now read only when it is one.
 
 ## [0.3.4] - 2026-09-27
 

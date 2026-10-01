@@ -2600,12 +2600,19 @@ was marked, the timer is asked for."
                    (file-name-as-directory (file-truename file))))
 
 (defun ecc-review--tool-files (session node)
-  "Return the files the tool NODE of SESSION names in its input, absolute.
+  "Return the files the tool NODE of SESSION changed or names, absolute.
+The file its input names, and the files a Bash call's `bashEditDiff'
+says it changed, when the CLI sent one (`ecc-dispatch--bash-edit-diff\=').
 A relative one is relative to the project of SESSION -- not to whatever
 buffer is current when the result arrives."
-  (when-let* ((path (and node (ecc-tool-input-path (ecc-model-node-get node 'input)))))
-    (list (expand-file-name path (or (ecc-session-project-root session)
-                                     default-directory)))))
+  (when node
+    (let ((root (or (ecc-session-project-root session) default-directory)))
+      (mapcar (lambda (path) (expand-file-name path root))
+              (delete-dups
+               (delq nil
+                     (cons (ecc-tool-input-path (ecc-model-node-get node 'input))
+                           (plist-get (ecc-model-node-get node 'bash-edit)
+                                      :changed))))))))
 
 (defvar ecc-review--changed-in-turn (make-hash-table :test #'eq :weakness 'key)
   "Sessions a tool that can change files has finished for in this turn.
@@ -2623,8 +2630,9 @@ works in, since a working tree review shows whoever changed a file and
 two sessions share one; and every review of a repository one of FILES
 is in, which is how a session working from above the repository -- a
 session in ~/Projects editing one of the projects in it -- is heard.  A
-shell command of such a session names no file, and is heard only by
-its own reviews and those whose repository holds its directory."
+shell command of such a session names a file only when the CLI sent its
+`bashEditDiff'; otherwise it is heard only by its own reviews and those
+whose repository holds its directory."
   (let ((directory (ecc-session-project-root session)))
     (ecc-review--mark-stale
      (lambda ()

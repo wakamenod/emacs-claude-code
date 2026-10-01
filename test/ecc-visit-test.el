@@ -118,6 +118,50 @@ line of a later hunk is not taken for one of this one."
       (should (equal (ecc-visit-test--target-after "✓ Edit" "-x")
                      '("/src/f.el" . 39))))))
 
+;;;; What a Bash command changed
+
+(ert-deftest ecc-visit-test-bash-edit-diff ()
+  "A line of what a Bash call changed opens the file it is under.
+The call names no file; the line over each block does.  That line opens
+the file where its change starts, and a later change to the file moves
+the lines, as it does for an Edit."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "bash")
+    (dolist (line (ecc-test-fixture-lines "bash-edit-diff"))
+      (let ((message (ecc-protocol-parse-line line)))
+        (ecc-dispatch session message)
+        (when (eq (ecc-protocol-control-subtype message) 'can_use_tool)
+          (ecc-perm-respond (car (ecc-session-pending session)) 'allow))))
+    (ecc-render-flush session)
+    (let* ((dir "/private/tmp/ecc-fixture/sandbox/")
+           (a (concat dir "a.txt")))
+      (with-current-buffer (ecc-session-buffer session)
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "+line TWO")
+                       (cons a 2)))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" " line four")
+                       (cons a 4)))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "-bee")
+                       (cons (concat dir "b.txt") 1)))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "Updated ")
+                       (cons a 2)))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "Created ")
+                       (cons (concat dir "new.txt") 1)))
+        ;; A block after the first is the file it is under.
+        (should (equal (ecc-visit-test--target-after "m3.txt (+1 -1)" "+new")
+                       (cons (concat dir "m3.txt") 2)))
+        ;; The command and its output are not the diff.
+        (should-not (ecc-visit-test--target-after "✓ Bash" "command: sed"))
+        (should-not (ecc-visit-test--target-after "✓ Bash" "→ (Bash"))
+        (should-not (ecc-visit-test--target-after "✓ Bash" "… 3 more files"))
+        ;; Two lines put in at the top later push the change down.
+        (ecc-model-note-hunk session a nil nil
+                             (ecc-visit-test--patch 1 1 1 3 "+x" "+y" " line one"))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "+line TWO")
+                       (cons a 4)))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "Updated ")
+                       (cons a 4)))))))
+
 ;;;; Headings
 
 (ert-deftest ecc-visit-test-headings ()
@@ -398,6 +442,48 @@ at the end is found where it is."
       (when-let* ((buffer (find-buffer-visiting file)))
         (kill-buffer buffer))
       (delete-file file))))
+
+(defmacro ecc-visit-test--recording-opens (&rest body)
+  "Run BODY with both ways of opening a file recorded, not taken.
+`played' and `visited' are bound in BODY to the paths each was given."
+  (declare (indent 0))
+  `(let ((played nil) (visited nil))
+     (cl-letf (((symbol-function 'ecc-image-open-externally)
+                (lambda (path) (push path played)))
+               ((symbol-function 'find-file-noselect)
+                (lambda (path &rest _) (push path visited)
+                  (get-buffer-create " *ecc-visit-test*"))))
+       (save-window-excursion ,@body))))
+
+(ert-deftest ecc-visit-test-open-media-plays-outside ()
+  "A video or a sound goes to the machine's player, and no buffer is made."
+  (dolist (extension '(".mp4" ".mp3"))
+    (let ((file (make-temp-file "ecc-visit" nil extension "bytes")))
+      (unwind-protect
+          (ecc-visit-test--recording-opens
+            (should-not (ecc-visit-open file 12))
+            (should (equal played (list file)))
+            (should-not visited))
+        (delete-file file)))))
+
+(ert-deftest ecc-visit-test-open-missing-media-is-an-error ()
+  "A video that is not there is the error, and nothing is started."
+  (ecc-visit-test--recording-opens
+    (should-error (ecc-visit-open "/nonexistent/ecc-visit/clip.mp4" 1)
+                  :type 'user-error)
+    (should-not played)
+    (should-not visited)))
+
+(ert-deftest ecc-visit-test-open-other-files-in-a-buffer ()
+  "A picture and a source file still open in a buffer."
+  (dolist (extension '(".png" ".el"))
+    (let ((file (make-temp-file "ecc-visit" nil extension "x")))
+      (unwind-protect
+          (ecc-visit-test--recording-opens
+            (ecc-visit-open file nil)
+            (should (equal visited (list file)))
+            (should-not played))
+        (delete-file file)))))
 
 (provide 'ecc-visit-test)
 
