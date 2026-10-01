@@ -874,15 +874,60 @@ command run from the source code means the session one is looking at."
         window
       (ecc-window--role-window 'main))))
 
+;; Defined in `ecc-notify', which is above this file; read here so that
+;; the sessions `ecc-switch-session' offers are the tabs on the screen.
+(defvar ecc-tab-line-scope)
+
+(defun ecc-window--switch-row (window)
+  "Return the sessions of the tab row of WINDOW, most recently used first.
+The row of the session WINDOW shows: its project, or every session when
+`ecc-tab-line-scope' is `all', which is what `ecc-tab-line--sessions'
+draws.  A WINDOW that shows no session has no row, and the project
+meant is the Space that is showing, or under `classic' the one
+`ecc-start' would use."
+  (let ((session (and (window-live-p window)
+                      (ecc-window-buffer-session (window-buffer window)))))
+    (cond
+     ((eq (bound-and-true-p ecc-tab-line-scope) 'all) (ecc-model-sessions))
+     (session (ecc-window-project-sessions
+               (ecc-window-session-project session)))
+     (t (ecc-window-project-sessions
+         (or (ecc-window--space-root) (ecc-window-context-project-root)))))))
+
+(defun ecc-window--read-switch (every)
+  "Ask which session `ecc-switch-session' should show.
+The sessions of the tab row of the window being switched, or every
+session when EVERY; the one that window already shows is not among them."
+  (let* ((window (ecc-window--switch-target))
+         (current (and (window-live-p window)
+                       (ecc-window-buffer-session (window-buffer window))))
+         (sessions (remq current (if every
+                                     (ecc-model-sessions)
+                                   (ecc-window--switch-row window)))))
+    (cond
+     (sessions (ecc-window-read-session "Switch to: " sessions))
+     ((or every (eq (bound-and-true-p ecc-tab-line-scope) 'all))
+      (user-error "No other session is running"))
+     (t (user-error "%s" (substitute-command-keys
+                          "No other session in this project; \\[universal-argument] \\[ecc-switch-session] lists them all"))))))
+
 ;;;###autoload
 (defun ecc-switch-session (session)
   "Show SESSION in this window, the way clicking its tab would.
 Which session a window shows is the user's to choose: this is the same
-choice the tab line offers, for when the tabs are not to hand."
-  (interactive (list (ecc-window-read-session "Switch to: ")))
+choice the tab line offers, for when the tabs are not to hand.
+
+Interactively the choice is the tabs of this window -- the sessions of
+its project, or all of them under `ecc-tab-line-scope' `all' -- less the
+one it already shows.  With a prefix argument it is every session.  A
+session from outside the row is not put into this window, where it
+would sit among another project's tabs: it is shown where it belongs,
+in its own Space under `spaces', by `ecc-window-select-session'."
+  (interactive (list (ecc-window--read-switch current-prefix-arg)))
   (require 'ecc-session)
   (let ((window (ecc-window--switch-target)))
-    (if (not (window-live-p window))
+    (if (not (and (window-live-p window)
+                  (memq session (ecc-window--switch-row window))))
         (ecc-window-select-session session)
       (set-window-buffer window (ecc-session-ensure-buffer session))
       (ecc-window-repair-side-windows (window-frame window))
