@@ -126,6 +126,77 @@ A plain string content is returned as a single text block."
           ((consp content) content)
           (t nil))))
 
+;;;; What a Bash call changed
+
+;; A Bash result may carry `bashEditDiff': the files the command
+;; changed, each with hunks shaped like an Edit's structuredPatch.  What
+;; decides whether it is sent was confirmed against CLI 2.1.286 on
+;; 2026-10-01, from live sessions and from the CLI's own code:
+;;
+;; - The `bashEditDiffEnabled' setting turns it on in any permission
+;;   mode, or off in all of them, but only from user, flag (--settings)
+;;   or policy settings; a project's .claude/settings.json cannot turn it
+;;   on.  CLAUDE_CODE_BASH_EDIT_DIFF wins over both.
+;; - Without the setting it is sent in `auto' and `bypassPermissions'
+;;   alone, and there only behind a gate that follows the model: Opus
+;;   5.5 had it, Sonnet and Haiku did not.  `default' (with or without
+;;   the stdio permission prompt), `acceptEdits' and `plan' never do.
+;; - It needs git: the change is a diff of two snapshots of the working
+;;   tree, untracked files included.  Nothing is sent outside a
+;;   repository, for a file outside the repository or one it ignores,
+;;   for a background command, or for a command that changed nothing.
+;; - At most five files carry hunks, created and deleted ones first;
+;;   `moreFiles' counts the rest and `changedFiles' names up to 200 of
+;;   all of them.  A file whose diff runs past 400 lines or 64000
+;;   characters is counted rather than shown.  `created'/`deleted' mark
+;;   a new or a removed file; a new empty one has no hunks.
+;; - `unavailable' says the snapshot could not be taken or compared,
+;;   `skipped' marks a git checkout/switch/stash/pull/merge/rebase/
+;;   reset/restore/clean/cherry-pick/revert with no files, and `shared'
+;;   that another command ran in the same repository at the same time.
+;;
+;; The CLI's TUI names a lone `sed -i ... s/a/b/ FILE' "Update(FILE)"
+;; whatever it changed -- that is the shape of the command, not this
+;; field -- and prints its "convenience view, not a review or audit"
+;; note under the first of these diffs of a session and never again.
+
+(defun ecc-protocol-bash-edit-diff (result)
+  "Return what the Bash tool_use_result RESULT says the command changed.
+Nil when it says nothing.  Otherwise a plist: `:files', a list of
+plists of `:path', `:patch' (the hunks, a structuredPatch) and
+`:change' (`created', `deleted' or `updated'); `:changed', the paths of
+every file changed, those without hunks too; `:more', how many changed
+files carry no hunks; and `:unavailable', `:skipped' and `:shared', each
+non-nil when the CLI said so."
+  (let ((diff (and (consp result) (alist-get 'bashEditDiff result))))
+    (when (consp diff)
+      (let* ((files
+              (delq nil
+                    (mapcar
+                     (lambda (file)
+                       (let ((path (alist-get 'filePath file)))
+                         (when (stringp path)
+                           (list :path path
+                                 :patch (let ((hunks (alist-get 'hunks file)))
+                                          (if (vectorp hunks) hunks []))
+                                 :change (cond ((eq (alist-get 'created file) t)
+                                                'created)
+                                               ((eq (alist-get 'deleted file) t)
+                                                'deleted)
+                                               (t 'updated))))))
+                     (append (alist-get 'files diff) nil))))
+             (changed (seq-filter #'stringp
+                                  (append (alist-get 'changedFiles diff) nil)))
+             (more (alist-get 'moreFiles diff)))
+        (list :files files
+              :changed (seq-uniq (append (mapcar (lambda (f) (plist-get f :path))
+                                                 files)
+                                         changed))
+              :more (if (natnump more) more 0)
+              :unavailable (eq (alist-get 'unavailable diff) t)
+              :skipped (eq (alist-get 'skipped diff) t)
+              :shared (eq (alist-get 'shared diff) t))))))
+
 ;;;; Sending
 
 ;; `json-serialize' reads a list as an object, so every JSON array built

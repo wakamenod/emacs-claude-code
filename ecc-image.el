@@ -91,6 +91,12 @@ type rather than per build.")
 `gif\=' is in both tables and `ecc-image-kind\=' calls it animated: Emacs
 draws it, and it moves.")
 
+(defvar ecc-image-audio-extensions
+  '("mp3" "wav" "m4a" "aac" "flac" "ogg" "oga" "opus" "aiff" "aif")
+  "Extensions taken for a sound.
+Nothing here draws one, so they are kept out of `ecc-image-kind\=':
+a path is only ever opened with these, never drawn.")
+
 ;;;; What a path is
 
 (defun ecc-image--extension-of (path)
@@ -120,6 +126,14 @@ not whether it is one."
 (defun ecc-image-video-p (path)
   "Return non-nil when PATH is a video Emacs cannot draw by itself."
   (eq (ecc-image-kind path) 'video))
+
+(defun ecc-image-plays-outside-p (path)
+  "Return non-nil when PATH is a video or a sound Emacs cannot play.
+Such a file is handed to the machine (`ecc-image-open-externally\=')
+rather than visited: a buffer of it would show its bytes."
+  (or (ecc-image-video-p path)
+      (and (member (ecc-image--extension-of path) ecc-image-audio-extensions)
+           t)))
 
 (defun ecc-image-available-p (path)
   "Return non-nil when PATH can be drawn in this frame.

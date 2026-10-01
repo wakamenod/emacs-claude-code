@@ -2016,6 +2016,13 @@ idle period as long again once a key was pressed."
                   ;; A shell command names no file: not heard.
                   (ecc-review--on-tool-finished above (ecc-review-test--tool "Bash"))
                   (should-not (buffer-local-value 'ecc-review--stale review))
+                  ;; One whose `bashEditDiff' names a file of it is.
+                  (let ((bash (ecc-review-test--tool "Bash")))
+                    (ecc-model-node-put bash 'bash-edit
+                                        `(:changed (,(concat project "x.txt"))))
+                    (ecc-review--on-tool-finished above bash))
+                  (should (buffer-local-value 'ecc-review--stale review))
+                  (with-current-buffer review (setq ecc-review--stale nil))
                   (ecc-review--on-tool-finished
                    above (ecc-review-test--tool
                           "Edit" `((file_path . ,(concat project "x.txt")))))
