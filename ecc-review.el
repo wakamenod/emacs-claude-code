@@ -1185,7 +1185,23 @@ between."
             :header header
             :text (string-trim-right (buffer-substring-no-properties beg end) "\n")
             :position beg
-            :bound end))))
+            :bound end
+            :old-range (ecc-review--old-range header)))))
+
+(defun ecc-review--old-range (header)
+  "Return the lines the old side of the hunk HEADER covers, as (LOW . HIGH).
+A hunk that takes nothing out of the old side covers no line of it, and
+sits between two: git's \"-5,0\" puts it after line 5, which is
+\(5.5 . 5.5).  The old side is the baseline, which a change above does
+not move, so this is what a comment on the whole hunk is found by."
+  (when (string-match ecc-review--hunk-regexp header)
+    (let ((start (string-to-number (match-string 1 header)))
+          (count (if (match-string 2 header)
+                     (string-to-number (match-string 2 header))
+                   1)))
+      (if (zerop count)
+          (cons (+ start 0.5) (+ start 0.5))
+        (cons start (+ start count -1))))))
 
 (defun ecc-review--hunk-key (hunk)
   "Return what identifies HUNK across a redraw: its file and its header."
@@ -1308,6 +1324,7 @@ and its text, which is what an outdated comment is still sent with."
   author          ; `user' or `claude'
   path side line line-text line-before line-after
   hunk-key hunk-range hunk-text
+  hunk-old-range  ; the lines of the old side the hunk covered, (LOW . HIGH)
   text
   reply-to        ; the id of the comment this one answers, or nil
   outdated)       ; non-nil when no line of the diff matches any more
@@ -1348,6 +1365,7 @@ and its text, which is what an outdated comment is still sent with."
           (ecc-review-note-hunk-range note) (cons (plist-get hunk :start)
                                                   (plist-get hunk :end))
           (ecc-review-note-hunk-text note) (plist-get hunk :text)
+          (ecc-review-note-hunk-old-range note) (plist-get hunk :old-range)
           (ecc-review-note-outdated note) nil)
     note))
 
@@ -1379,10 +1397,10 @@ hunk -- is not compared: hunks merge and split as the lines between them
 change, and a line at the edge of one is still the same line.
 
 A comment on a whole hunk goes to the hunk with the same header, else to
-a hunk of its path whose new side overlaps the lines it covered -- of
-those, one that says the same (`ecc-review--same-body\=') first -- and
-only when none overlaps them to the nearest hunk that says the same
-somewhere else, pushed there by a change above it.
+a hunk of its path whose old side overlaps the old lines it covered
+\(`ecc-review--old-range\=') -- the baseline does not move when lines are
+put in above, where the new side does -- and of several, the one that
+says the same (`ecc-review--same-body\=') first.
 Nil means none of that is there: the comment is outdated."
   (let ((path (ecc-review-note-path note))
         (side (ecc-review-note-side note)))
@@ -1409,24 +1427,25 @@ Nil means none of that is there: the comment is outdated."
                                    (and (null (plist-get line :side))
                                         (equal (plist-get line :path) path)))
                                  lines))
-            (range (ecc-review-note-hunk-range note)))
+            (range (ecc-review-note-hunk-old-range note)))
         (or (seq-find (lambda (line)
                         (equal (ecc-review--hunk-key (plist-get line :hunk))
                                (ecc-review-note-hunk-key note)))
                       headers)
-            (let ((over (and (car range) (cdr range)
+            ;; By the old side: the baseline, which a change above does
+            ;; not move.  The new side does move, and a hunk put in above
+            ;; would take the comment by covering the lines it was on.
+            (let ((over (and range
                              (seq-filter
                               (lambda (line)
-                                (let ((hunk (plist-get line :hunk)))
-                                  (and (<= (plist-get hunk :start) (cdr range))
-                                       (>= (plist-get hunk :end) (car range)))))
+                                (let ((old (plist-get (plist-get line :hunk) :old-range)))
+                                  (and old
+                                       (<= (car old) (cdr range))
+                                       (>= (cdr old) (car range)))))
                               headers))))
-              ;; A hunk still over the lines comes first, the one of them
-              ;; that says the same before the rest: a blank line or a
-              ;; brace further down says the same as a hundred others.
-              (if over
+              (if (cdr over)
                   (or (ecc-review--same-body over note) (car over))
-                (ecc-review--same-body headers note))))))))
+                (car over))))))))
 
 (defun ecc-review--hunk-body (text)
   "Return the lines of the hunk TEXT under its @@ header, or nil."
@@ -1598,7 +1617,7 @@ the review."
 (defun ecc-review--copy-anchor (note from)
   "Put NOTE where the comment FROM is, outdated or not, and return NOTE."
   (dolist (slot '(path side line line-text line-before line-after
-                       hunk-key hunk-range hunk-text outdated))
+                       hunk-key hunk-range hunk-text hunk-old-range outdated))
     (setf (cl-struct-slot-value 'ecc-review-note slot note)
           (cl-struct-slot-value 'ecc-review-note slot from)))
   note)
@@ -1621,10 +1640,15 @@ added."
     (setq ecc-review--notes (append ecc-review--notes (list note)))
     note))
 
+(cl-defgeneric ecc-review--note-removed (_note)
+  "Forget what this review kept about the comment NOTE, which is gone."
+  nil)
+
 (defun ecc-review-remove-note (note)
   "Take NOTE out of this review; draw again afterwards.
 Its replies stay, drawn on their own: a reply of the user\='s is the
 user\='s whatever happens to what it answered."
+  (ecc-review--note-removed note)
   (setq ecc-review--notes (delq note ecc-review--notes)))
 
 (defun ecc-review--notes-on (line)
@@ -1761,7 +1785,8 @@ argument ALL every comment of the review is offered, wherever point is."
          (note (ecc-review--pick-note
                 (cond (here)
                       ((not all) (user-error "No comment on this line; C-u d offers them all"))
-                      ((ecc-review--ordered ecc-review--notes))
+                      ((ecc-review--ordered (seq-filter #'ecc-review--shown-p
+                                                        ecc-review--notes)))
                       (t (user-error "No comment in this review")))
                 "Remove comment: "
                 (not here))))

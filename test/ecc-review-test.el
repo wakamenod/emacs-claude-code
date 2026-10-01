@@ -981,20 +981,13 @@ Everything in the second hunk is two lines further down.")
       ;; 3. The same text between other lines is another line: outdated.
       (setf (ecc-review-note-line-text added) "one")
       (should-not (ecc-review--locate-note added lines))
-      ;; A hunk whose header changed still takes a comment on the lines
-      ;; it covers; one that moved away from them does not.
+      ;; A hunk whose header changed still takes a comment on the old
+      ;; lines it covers; one over other old lines does not.
       (let ((hunk (ecc-review-add-note 'user "c" (nth 5 lines))))
+        (should (equal (ecc-review-note-hunk-old-range hunk) '(10 . 11)))
         (setf (ecc-review-note-hunk-key hunk) '("foo.el" . "@@ -10,2 +10,4 @@"))
         (should (eq (ecc-review--locate-note hunk lines) (nth 5 lines)))
-        ;; Away from those lines, a hunk that says the same is the hunk
-        ;; pushed down or pulled up -- no further than the line rule's
-        ;; `ecc-review-note-max-shift'.
-        (setf (ecc-review-note-hunk-range hunk) '(40 . 42))
-        (should (eq (ecc-review--locate-note hunk lines) (nth 5 lines)))
-        (let ((ecc-review-note-max-shift 3))
-          (should-not (ecc-review--locate-note hunk lines)))
-        ;; And one that says something else there is another hunk.
-        (setf (ecc-review-note-hunk-text hunk) "@@ -40,2 +40,3 @@\n forty\n+other")
+        (setf (ecc-review-note-hunk-old-range hunk) '(40 . 42))
         (should-not (ecc-review--locate-note hunk lines))))))
 
 (ert-deftest ecc-review-test-a-hunk-that-grows-keeps-its-comment ()
@@ -1030,6 +1023,37 @@ down, and that one, being nowhere near, took the comment."
       ;; Asked about even when there is one: it was not picked by point.
       (should (= (length asked) 1)))
     (should-not ecc-review--notes)))
+
+(ert-deftest ecc-review-test-a-hunk-comment-follows-the-old-side ()
+  "A comment on a whole hunk is found again by the old lines it covered.
+A hunk put in above covers the new lines it was on; the old side, the
+baseline, does not move.  A hunk that only adds is found by where it
+adds."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (with-current-buffer
+            (ecc-review-test--fill
+             session (concat "--- a/b.el\n+++ b/b.el\n@@ -5,0 +6,1 @@\n+added\n"
+                             "@@ -100,1 +100,1 @@\n-a\n+b\n"))
+          (ecc-review-test--goto "@@ -5,0 +6,1 @@")
+          (ecc-review-comment "the addition")
+          (ecc-review-test--goto "@@ -100,1 +100,1 @@")
+          (ecc-review-comment "the change")
+          ;; Fifteen lines put in at line 90 cover new lines 90-104, the
+          ;; change's old place; three put in at the top push the addition.
+          (ecc-review-test--fill
+           session
+           (concat "--- a/b.el\n+++ b/b.el\n@@ -0,0 +1,3 @@\n+x\n+y\n+z\n"
+                   "@@ -5,0 +9,1 @@\n+added\n"
+                   "@@ -89,0 +93,15 @@\n"
+                   (mapconcat (lambda (n) (format "+new %d\n" n)) (number-sequence 1 15) "")
+                   "@@ -100,1 +118,1 @@\n-a\n+b\n"))
+          (should (equal (mapcar (lambda (note)
+                                   (and (not (ecc-review-note-outdated note))
+                                        (cdr (ecc-review-note-hunk-key note))))
+                                 ecc-review--notes)
+                         '("@@ -5,0 +9,1 @@" "@@ -100,1 +118,1 @@"))))
+      (ecc-review-test--kill-review-buffers))))
 
 (ert-deftest ecc-review-test-a-blank-line-does-not-wander ()
   "A comment on a blank line goes outdated rather than to another blank line."
