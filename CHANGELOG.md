@@ -166,14 +166,18 @@ Verified against **Claude Code CLI 2.1.281**.
   on the whole difference first, then those on the lines it takes out and
   puts in, by line. `c` still comments the whole current difference;
   where the latest comment there is Claude's and you have not answered
-  it, `c` answers it, and with more than one comment there to answer or
-  edit it asks which, or offers a new one. `a` shows or hides Claude's
+  it, `c` answers it. Whenever there is a comment to answer or edit, `c`
+  asks what to do -- answer it, edit yours, or a new comment -- with the
+  likeliest as the default, so that RET answers Claude. `a` shows or hides Claude's
   comments instead of saying that a review reads, which `b` still says;
   `{` and `}` move to the previous and next comment -- each one, its
   difference and its line -- and `!` reads the review again. `d` offers
   the outdated comments of the file as well, and off every difference, or
-  with `C-u`, every comment of the review; `C-u d` does that in the diff
-  review too. Two ediff reviews of one session have two sides each. When
+  with `C-u`, every comment of the review that is shown; `C-u d` does that
+  in the diff review too. A submodule, and a file git will not give, are
+  named on their separator line rather than shown as created or deleted.
+  A changed `ecc-review-max-bytes` or `ecc-review-ediff-fontify` shows at
+  the next `!`. Two ediff reviews of one session have two sides each. When
   ediff computes the differences again itself (`##`, `#c`), the comments
   are drawn again on the new ones. A reading of an ediff review that
   finds the same two trees reads no file, and one that finds a change
@@ -201,10 +205,11 @@ Verified against **Claude Code CLI 2.1.281**.
   brace does not wander off to another. A neighbour that is not known -- at
   the first or last line of a hunk -- is not compared, so hunks merging or
   splitting leave a comment where it was. A comment on a whole hunk goes to
-  the hunk with the same `@@` line, else to a hunk over the same lines --
-  of those, one that says the same first -- and only when none is over
-  them to the nearest hunk that says the same, within
-  `ecc-review-note-max-shift`: a hunk pushed down by a change above it. A comment whose line has gone is kept, marked
+  the hunk with the same `@@` line, else to a hunk over the same lines of
+  the old side -- the baseline, which lines put in above do not move, so a
+  hunk put in above does not take the comment -- one that says the same
+  first when there are several; a hunk that only adds is found by where
+  it adds. A comment whose line has gone is kept, marked
   outdated, above the first hunk of its file, and is still sent with
   `(outdated)` and the hunk as it was.
 
