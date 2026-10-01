@@ -127,7 +127,7 @@ Verified against **Claude Code CLI 2.1.281**.
   marked stale and read when it is shown. A diff that has not changed is
   not put in again, so the buffer is not modified and its overlays stay,
   and the review buffer keeps no undo. The keys of `diff-mode` that edit
-  the buffer or revert a hunk in the file (`k`, `K`, `R`, `s`, `u`, `@`, and
+  the buffer or revert a hunk in the file (`k`, `K`, `R`, `u`, `@`, and
   their `C-c` neighbours) say that the review is read-only, and a review
   edited anyway is put right by `g`. Nothing is displayed, selected or
   divided by it. A review whose changes have all gone stays open and says
@@ -244,6 +244,57 @@ Verified against **Claude Code CLI 2.1.281**.
 - `ecc-tool-finished-hook`, run with the session and the tool node on every
   tool result, whatever the tool.
 
+- The files of a review, listed and filtered, as in Hunk. `s` in a review
+  -- the diff review or the control panel of an ediff review -- shows a
+  list of its files immediately left of the diff, in a buffer of its own,
+  `*ecc-review-files: REVIEW*`: one line a file with what happened to it
+  (`M`, `A`, `D`, or `R` with its former name), the lines added and
+  removed, your comments and Claude's as `yours·Claude's`, and `!` when
+  one of them is outdated, under `Files (SHOWN of ALL)`. `▸` marks the
+  file being read -- the one point is in, or the one of the current
+  difference -- and moves with it, Claude's `review_navigate` included.
+  `RET` or a click on a line goes to that file and back to the review; `n`
+  and `p` there show the next and the previous file and keep the keyboard
+  in the list. In ediff the list is a side window on the left, which `|`
+  and `m` leave where it is; with `ecc-review-ediff-full-frame` nil it is
+  split off the left side and put back whenever ediff lays its windows out
+  again. In the diff review it is split off the left of the review's
+  window, so it sits between whatever is on the left and the diff; taken
+  down, its columns go back to the diff. It goes with the review's window:
+  `q`, another buffer taking that window, or the window deleted takes the
+  list down too, and another review coming into the window takes the
+  list's window over rather than splitting a second one off. Where the
+  window is too narrow for it, nothing fails: a review opens without it,
+  and `/` filters without it and says so. It is hidden at first, `s`
+  toggles it, and the choice holds for the next review opened, until
+  Emacs exits. Its width is `ecc-review-files-width` (32 columns). It is
+  written again whenever the review is read again -- the files followed,
+  `g`, `!` -- and whenever a comment comes or goes, while it is on the
+  screen; out of sight, it is written when it is shown.
+
+- `/` in a review keeps only the files whose path, former path, or one of
+  Claude's comments on them contains what is typed, ignoring case (Hunk's
+  rule). The list of files shows, narrowed, as it is typed, and is put
+  back as it was afterwards; `RET` hides the rest of the review, and an
+  empty `RET` shows every file again. The files are hidden, not read
+  again: in the diff review with an invisibility spec of their own, in
+  ediff both halves of each. Their comments are kept and sent by
+  `C-c C-c`, and not drawn. `n`, `p`, `N` and `P` in the diff review, and
+  in ediff every key of its next, previous and jump commands (`n`, `p`,
+  `SPC`, `DEL`, `<backspace>`, `<delete>`, `S-SPC`, `j`, `ga`, `gb`),
+  step over them -- a negative count still going back -- and say so when
+  nothing kept lies further, `j`, `ga` and `gb` too when the filter keeps
+  no difference at all; a drawing
+  that comes to hide the file being read -- a comment of Claude's that
+  matched gone, the review read again -- steps off it; `{`, `}` and
+  `review_navigate`'s `next_comment` and `prev_comment` pass over their
+  comments, and `review_navigate` to one of them fails and says why. The
+  header line of the diff review says `/FILTER: N files hidden by
+  filter`, and so does a third line of the ediff control panel.
+  `review_hunks` and `review_open` tell Claude the filter, how many files
+  it hides and which (`ecc-review-agent-filter-text`). A filter holds
+  across every reading of the review again.
+
 ### Changed
 
 - An ediff review opens sooner. Both sides of every file are read by two
@@ -352,6 +403,17 @@ Verified against **Claude Code CLI 2.1.281**.
   window it was, go back to the same line by the same rule. It used to go
   to the top. A window of the review in another tab's saved configuration is
   out of reach and shows the review from the top when that tab comes back.
+
+- The control panel of an ediff review says the keys a review is read with
+  in two lines, ` n/p diff   c comment   { } comments   a Claude's   s files
+  / filter` and ` ! reread   C-c C-c send   q quit   ? all keys`, where it
+  said ` c -comment   C-c C-c -send   q -quit   ? -help`. `?` lists `s` and
+  `/` too, and the header line of the diff review names `s files` and
+  `/ filter` in place of `l list`, `(C-u edits)` and `RET source`, which
+  still work.
+
+- `s` in the diff review shows the list of files (above) where it said
+  that the review is read-only: it was `diff-split-hunk` of `diff-mode`.
 
 - `{` and `}` in the review buffer move between comments. `diff-mode` has
   them moving between files, which `N` and `P` still do.

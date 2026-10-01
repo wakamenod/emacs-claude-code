@@ -683,7 +683,7 @@ carry the time of the index it was made from."
               ;; stay available for moving around.
               (should (eq (key-binding (kbd "c")) #'ecc-review-comment))
               (should (eq (key-binding (kbd "C-c C-c")) #'ecc-review-send))
-              (should (eq (key-binding (kbd "n")) #'diff-hunk-next))
+              (should (eq (key-binding (kbd "n")) #'ecc-review-next-hunk))
               (should (eq (key-binding (kbd "RET")) #'diff-goto-source))
               (should (= (length (ecc-review-hunks)) 2))
               ;; Not on a hunk yet.
@@ -2079,8 +2079,11 @@ and makes no buffer."
       (unwind-protect
           (let ((review (ecc-review-test--watched-repo session directory)))
             (with-current-buffer review
-              (dolist (key '("k" "K" "R" "s" "u" "@" "C-c C-r" "C-c C-s" "C-c C-l"))
+              (dolist (key '("k" "K" "R" "u" "@" "C-c C-r" "C-c C-s" "C-c C-l"))
                 (should (eq (key-binding (kbd key)) #'ecc-review-read-only)))
+              ;; s, diff-mode's split of a hunk, lists the files instead.
+              (should (eq (key-binding (kbd "s")) #'ecc-review-files-toggle))
+              (should (eq (key-binding (kbd "/")) #'ecc-review-files-filter))
               (should (eq (command-remapping #'undo) #'ecc-review-read-only))
               (should-error (ecc-review-read-only) :type 'user-error)
               (let ((text (buffer-string)))

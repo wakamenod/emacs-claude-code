@@ -76,6 +76,8 @@
 (require 'ecc-window)
 
 (declare-function ecc-start "ecc" (&optional directory name))
+(autoload 'ecc-review-files-toggle "ecc-review-files" nil t)
+(autoload 'ecc-review-files-filter "ecc-review-files" nil t)
 (declare-function ediff-recenter "ediff-util" (&optional no-rehighlight))
 (declare-function ecc-review-ediff-buffer "ecc-review-ediff" (session &optional paths))
 (declare-function ecc-review-ediff-worktree-buffer "ecc-review-ediff"
@@ -782,6 +784,50 @@ again and a model holding it cannot hit another comment with it.")
 (defvar-local ecc-review--show-agent t
   "Non-nil draws Claude\='s comments; toggled with `ecc-review-toggle-agent\='.")
 
+(defvar-local ecc-review--filter nil
+  "What the files of this review are filtered by, or nil for every file.
+\\`/' sets it (`ecc-review-files-filter\='), and it is kept across every
+reading of the review again.")
+
+(defvar-local ecc-review--hidden nil
+  "The paths of the files the filter of this review hides.
+Hidden, not dropped: their comments are kept and sent, and nothing is
+read again to hide them (`ecc-review-files.el\=').")
+
+(defun ecc-review-hidden-p (path)
+  "Return non-nil when the filter of this review hides the file PATH."
+  (and ecc-review--hidden (member path ecc-review--hidden) t))
+
+(defvar ecc-review-before-draw-hook nil
+  "Run in a review buffer before its comments are drawn again.
+The filter hides its files here (`ecc-review-files.el\='), so that the
+comments of a file it hides are not drawn.")
+
+(defvar ecc-review-after-draw-hook nil
+  "Run in a review buffer after its comments have been drawn again.
+Every reading of the review again and every change to its comments
+ends in a drawing, so the list of its files is written again here.")
+
+(defvar ecc-review--refilling nil
+  "Non-nil while a review is being read again into its buffer.
+The comments are drawn before the place being read is put back, so
+what follows the place waits for `ecc-review-refilled-hook\='.")
+
+(defvar ecc-review-refilled-hook nil
+  "Run in a review buffer once it has been read again and its place put back.
+The files pane marks the file being read here, and a file the filter
+hides is stepped off here.")
+
+(defvar ecc-review-displayed-functions nil
+  "Functions called with a review buffer the user has just opened.
+The review is on the screen by then; the files pane comes up beside it
+here when it is wanted.")
+
+(defvar ecc-review-moved-hook nil
+  "Run in a diff review after its view was moved without a command.
+What Claude moves over MCP, and what the files pane moves, is no
+command of the review's own, so `post-command-hook\=' does not hear it.")
+
 (defvar-local ecc-review--comments nil
   "Overlays drawing the comments, one per place that carries any.")
 
@@ -904,7 +950,8 @@ the review opens there."
     (goto-char position)
     (when window
       (set-window-point window position)
-      (set-window-start window (ecc-review--window-start window position)))))
+      (set-window-start window (ecc-review--window-start window position)))
+    (run-hooks 'ecc-review-moved-hook)))
 
 (cl-defgeneric ecc-review-shown-window ()
   "Return the window this review is on the screen in, or nil."
@@ -941,12 +988,21 @@ changed stays open when its changes have gone."
     (define-key map (kbd "e") #'ecc-review-edit-proposal)
     (define-key map (kbd "g") #'ecc-review-refresh)
     (define-key map (kbd "q") #'quit-window)
+    ;; s was `diff-split-hunk', which edits the buffer and is refused
+    ;; below with the rest; the files pane has it instead, as in Hunk.
+    (define-key map (kbd "s") #'ecc-review-files-toggle)
+    (define-key map (kbd "/") #'ecc-review-files-filter)
+    ;; diff-mode's own moves, past the files the filter hides.
+    (define-key map (kbd "n") #'ecc-review-next-hunk)
+    (define-key map (kbd "p") #'ecc-review-previous-hunk)
+    (define-key map (kbd "N") #'ecc-review-next-file)
+    (define-key map (kbd "P") #'ecc-review-previous-file)
     ;; `diff-mode' edits its buffer from these, read-only or not: they
     ;; bind `inhibit-read-only'.  A review is a copy of what git said, and
     ;; one stray k would leave it saying something else; u and @ revert
     ;; the hunk in the file itself.  The two undo commands go too, there
     ;; being no undo to go back with.
-    (dolist (key '("k" "K" "R" "s" "u" "@"
+    (dolist (key '("k" "K" "R" "u" "@"
                    "C-c C-s" "C-c C-r" "C-c C-u" "C-c C-d" "C-c C-l" "C-c C-w"
                    "C-c M-u" "C-c C-m n"
                    "<remap> <undo>" "<remap> <undo-ignore-read-only>"))
@@ -958,7 +1014,7 @@ come before `diff-mode-shared-map\=' and `diff-mode-read-only-map\='.
 Those move with n, N, p, P, { and } and visit with o and RET, and edit
 the buffer with k, K, R, s and more; every key of `diff-mode\=' that
 edits it, or reverts the file, says that the review is read-only
-instead (`ecc-review-read-only\=').
+instead (`ecc-review-read-only\='), but s, which lists the files.
 
 Nothing here takes a \\`C-c <letter>\=' key: the Emacs Lisp manual
 reserves those for users.  \\`C-c C-c\=' and \\`C-c C-k\=' shadow
@@ -966,6 +1022,71 @@ reserves those for users.  \\`C-c C-c\=' and \\`C-c C-k\=' shadow
 mean everywhere in Emacs.  So do { and }, which move between the
 comments here and between files in `diff-mode\=': N and P still do
 that.")
+
+(defun ecc-review--past-hidden (count forward backward regexp what)
+  "Move COUNT of what REGEXP finds, past what the filter hides.
+FORWARD and BACKWARD are the moves of `diff-mode' that go to the next
+and the previous one, and a negative COUNT goes back, as it does in
+them.  WHAT names what is moved to, for the message.
+
+Without a filter this is FORWARD with COUNT, called as a key calls it
+\(`funcall-interactively'): only then does `diff-mode' scroll the whole
+hunk into view and refine it as it is reached (`diff-refine'
+`navigation').  With one, the place to go is found by a search over the
+starts REGEXP finds that are not hidden, and only the last move, the
+one that lands there, is made as a key would make it -- each hidden
+hunk stepped over interactively would scroll to hidden text and make a
+marker for refining, hundreds to a keypress.  With nothing kept further
+on, point and the window are left as they were and that is said."
+  (if (null ecc-review--hidden)
+      (funcall-interactively (if (< count 0) backward forward) (abs count))
+    (let* ((back (< count 0))
+           (here (point))
+           (starts nil))
+      (save-excursion
+        (goto-char (point-min))
+        (while (re-search-forward regexp nil t)
+          (let ((start (match-beginning 0)))
+            (unless (invisible-p start)
+              (push start starts)))))
+      (setq starts (nreverse starts))
+      (let ((target (nth (1- (abs count))
+                         (if back
+                             (reverse (seq-filter (lambda (start) (< start here)) starts))
+                           (seq-filter (lambda (start) (> start here)) starts)))))
+        (unless target
+          (user-error "No %s %s in the files the filter keeps"
+                      (if back "previous" "next") what))
+        ;; On TARGET, and the key's move with a count of 0, which counts
+        ;; the start it stands on and lands there: the move scrolls and
+        ;; refines the one hunk it lands on.  Not BACKWARD from just after
+        ;; TARGET, which Emacs 29 and 30 take one start further back.
+        (goto-char target)
+        (funcall-interactively forward 0)))))
+
+(defun ecc-review-next-hunk (&optional count)
+  "Go to the next hunk, COUNT of them, past the files the filter hides."
+  (interactive "p")
+  (ecc-review--past-hidden (or count 1) #'diff-hunk-next #'diff-hunk-prev
+                           diff-hunk-header-re "hunk"))
+
+(defun ecc-review-previous-hunk (&optional count)
+  "Go to the previous hunk, COUNT of them, past the files the filter hides."
+  (interactive "p")
+  (ecc-review--past-hidden (- (or count 1)) #'diff-hunk-next #'diff-hunk-prev
+                           diff-hunk-header-re "hunk"))
+
+(defun ecc-review-next-file (&optional count)
+  "Go to the next file, COUNT of them, past the files the filter hides."
+  (interactive "p")
+  (ecc-review--past-hidden (or count 1) #'diff-file-next #'diff-file-prev
+                           diff-file-header-re "file"))
+
+(defun ecc-review-previous-file (&optional count)
+  "Go to the previous file, COUNT of them, past the files the filter hides."
+  (interactive "p")
+  (ecc-review--past-hidden (- (or count 1)) #'diff-file-next #'diff-file-prev
+                           diff-file-header-re "file"))
 
 (defun ecc-review-read-only ()
   "Say that the review cannot be edited, in place of a `diff-mode' edit."
@@ -1028,9 +1149,13 @@ not from who asked for it, so the review the menu opens and the one
      (propertize (format "  ·  could not read the diff: %s; g to retry" ecc-review--failed)
                  'face 'error))
    (propertize (concat "  ·  " (ecc-review--count-string)) 'face 'ecc-dim-face)
+   (when ecc-review--filter
+     (propertize (format "  ·  /%s: %s hidden by filter" ecc-review--filter
+                         (ecc-review--count (length ecc-review--hidden) "file"))
+                 'face 'warning))
    (propertize (if ecc-review--request
                    "  ·  c comment  e edit and apply  C-c C-c send as deny (C-u edits)  n/p hunk  RET source"
-                 "  ·  c comment  { } comments  a Claude's  l list  d delete  C-c C-c send (C-u edits)  n/p hunk  RET source")
+                 "  ·  c comment  { } comments  a Claude's  s files  / filter  d delete  C-c C-c send  n/p hunk")
                'face 'ecc-dim-face))))
 
 (defun ecc-review--count (n noun)
@@ -1146,8 +1271,10 @@ asked any more."
       ;; The lines are read once, and only when something is to be put
       ;; back on them.
       (let ((lines (and (or ecc-review--notes views) (ecc-review--lines))))
-        (ecc-review--draw-notes lines)
+        (let ((ecc-review--refilling t))
+          (ecc-review--draw-notes lines))
         (ecc-review--restore-views views lines))
+      (run-hooks 'ecc-review-refilled-hook)
       ;; Counted one by one: a comment that found its line again does not
       ;; make up for another that lost it.
       (let ((lost (seq-count #'ecc-review-note-outdated placed)))
@@ -1432,6 +1559,11 @@ and its text, which is what an outdated comment is still sent with."
   "Return non-nil when NOTE is drawn: Claude's are hidden by `a'."
   (or ecc-review--show-agent (not (ecc-review--agent-p note))))
 
+(defun ecc-review--visible-p (note)
+  "Return non-nil when NOTE is drawn: shown, and on a file the filter keeps."
+  (and (ecc-review--shown-p note)
+       (not (ecc-review-hidden-p (ecc-review-note-path note)))))
+
 (defun ecc-review--drawn-under (note)
   "Return the comment NOTE is drawn under, or nil when it stands alone."
   (when-let* ((parent (ecc-review--parent note)))
@@ -1658,8 +1790,10 @@ is nothing to read them for."
   (setq ecc-review--comments nil
         ecc-review--decorations nil
         ecc-review--positions (make-hash-table :test #'eq))
+  (run-hooks 'ecc-review-before-draw-hook)
   (when ecc-review--notes
     (ecc-review--draw-notes-on (or lines (ecc-review-lines))))
+  (run-hooks 'ecc-review-after-draw-hook)
   (force-mode-line-update))
 
 (defun ecc-review--draw-notes-on (lines)
@@ -1673,7 +1807,7 @@ the overlays are made there, in whichever buffer that is, and kept here."
       (pcase-let ((`(,buffer ,beg ,end ,property ,key)
                    (ecc-review--note-place note (gethash note places) lines)))
         (puthash note key ecc-review--positions)
-        (when (ecc-review--shown-p note)
+        (when (ecc-review--visible-p note)
           (unless (ecc-review-note-outdated note)
             (cl-pushnew (ecc-review-note-hunk-key note) commented :test #'equal))
           (unless (ecc-review--drawn-under note)
@@ -1871,7 +2005,7 @@ argument ALL every comment of the review is offered, wherever point is."
          (note (ecc-review--pick-note
                 (cond (here)
                       ((not all) (user-error "No comment on this line; C-u d offers them all"))
-                      ((ecc-review--ordered (seq-filter #'ecc-review--shown-p
+                      ((ecc-review--ordered (seq-filter #'ecc-review--visible-p
                                                         ecc-review--notes)))
                       (t (user-error "No comment in this review")))
                 "Remove comment: "
@@ -1910,8 +2044,11 @@ comments one position and tells them apart by the rest of the list."
 FROM is a position in the order of the review, a KEY of
 `ecc-review--note-place\=' (`ecc-review-reading-position\=').  The
 comments are walked by where they are drawn, Claude\='s hidden ones
-included; of several in one place, the one made first."
-  (let* ((notes (seq-filter #'ecc-review-note-position
+included; of several in one place, the one made first.  Those on a
+file the filter hides are passed over."
+  (let* ((notes (seq-filter (lambda (note)
+                              (and (ecc-review-note-position note)
+                                   (not (ecc-review-hidden-p (ecc-review-note-path note)))))
                             (ecc-review--ordered ecc-review--notes)))
          (positions (mapcar #'ecc-review-note-position notes))
          (position (if forward
@@ -1964,7 +2101,7 @@ any more :outdated, its :text then being the hunk as it last was."
 (defun ecc-review-list-comments ()
   "Pick one of the comments, either author's, and move to it."
   (interactive)
-  (let* ((notes (or (ecc-review--ordered (seq-filter #'ecc-review--shown-p
+  (let* ((notes (or (ecc-review--ordered (seq-filter #'ecc-review--visible-p
                                                      ecc-review--notes))
                     (user-error "No comment yet")))
          (note (ecc-review--pick-note notes "Comment: ")))
@@ -2302,7 +2439,13 @@ during it are still shown; that one against the last commit."
                                       default-directory)))
         (progn (require 'ecc-review-ediff)
                (ecc-review-ediff-buffer session paths))
-      (ecc-window-display-review (ecc-review-buffer session paths) session))))
+      (ecc-review--display (ecc-review-buffer session paths) session))))
+
+(defun ecc-review--display (buffer session)
+  "Show the review BUFFER of SESSION, which the user opened; return its window.
+`ecc-review-displayed-functions\=' are told of it."
+  (prog1 (ecc-window-display-review buffer session)
+    (run-hook-with-args 'ecc-review-displayed-functions buffer)))
 
 (defun ecc-review--reread (buffer &optional watching)
   "Read the diff of the review BUFFER again, into BUFFER itself.
@@ -2706,8 +2849,8 @@ after it, restrict the review to those files."
     (pcase ecc-review-style
       ('ediff (require 'ecc-review-ediff)
               (ecc-review-ediff-worktree-buffer session range root paths))
-      (_ (ecc-window-display-review (ecc-review-worktree-buffer session range root paths)
-                                    session)))))
+      (_ (ecc-review--display (ecc-review-worktree-buffer session range root paths)
+                              session)))))
 
 (defun ecc-review-quit ()
   "Close the review buffer, dropping its comments."
