@@ -13,6 +13,7 @@
 (require 'ert)
 (require 'ecc-test-helpers)
 (require 'ecc-review-agent)
+(require 'ecc-review-ediff)
 (require 'ecc-session)
 
 ;;;; Helpers
@@ -509,30 +510,6 @@ The review buffer is current."
     (ecc-review-agent-test--ok session "review_clear_comments" '((file . "gone.el")))
     (should-not ecc-review--notes)))
 
-(ert-deftest ecc-review-agent-test-an-ediff-review-is-said ()
-  "A review the user has open in ediff is named, not taken for no comment."
-  (ecc-test-with-fake-session session
-    (let ((control (get-buffer-create " *ecc-review-agent-test ediff*")))
-      (unwind-protect
-          (progn
-            (with-current-buffer control
-              (setq-local ecc-review--comments-function #'ecc-review-ediff-comments
-                          ecc-review--session session))
-            (should (equal (ecc-review-agent-test--ok session "review_list_comments")
-                           ecc-review-agent-ediff-text))
-            (pcase-let ((`(,failed . ,text)
-                         (ecc-review-agent-test--call session "review_hunks")))
-              (should failed)
-              (should (string-search "Call review_open first" text))
-              (should (string-search "reviewing these changes in ediff" text)))
-            ;; Beside a diff review, the diff review's comments and the word.
-            (with-current-buffer (ecc-review-agent-test--fill session ecc-review-agent-test--diff)
-              (let ((text (ecc-review-agent-test--ok session "review_list_comments")))
-                (should (string-prefix-p "No comments." text))
-                (should (string-search "reviewing these changes in ediff" text)))))
-        (kill-buffer control)
-        (ecc-review-agent-test--kill-review-buffers)))))
-
 ;;;; A place set while nobody looks
 
 (ert-deftest ecc-review-agent-test-a-hidden-place-is-kept ()
@@ -625,6 +602,197 @@ The review buffer is current."
             (should (equal (ecc-review-agent-test--ok one "review_list_comments")
                            "No comments.")))
         (ecc-review-agent-test--kill-review-buffers)
+        (ecc-test-cleanup-session two)))))
+
+;;;; A review in ediff
+
+(defmacro ecc-review-agent-test--with-ediff (session control &rest body)
+  "Run BODY with CONTROL the ediff review of SESSION's change to a.txt.
+a.txt went from line1..line10 to line 2 changed, a line put in after
+line 6 and line 9 taken out.  ediff lays its windows out the way batch
+can."
+  (declare (indent 2))
+  `(ecc-review-agent-test--with-directory directory
+     (let ((ediff-window-setup-function #'ediff-setup-windows-plain)
+           (,control nil))
+       (unwind-protect
+           (let ((file (concat directory "a.txt")))
+             (ecc-review-agent-test--git directory "init" "-q")
+             (ecc-review-agent-test--git directory "config" "user.email" "t@example.com")
+             (ecc-review-agent-test--git directory "config" "user.name" "t")
+             (ecc-review-agent-test--write
+              file (mapconcat (lambda (n) (format "line%d\n" n)) (number-sequence 1 10) ""))
+             (ecc-review-agent-test--git directory "add" "a.txt")
+             (ecc-review-agent-test--git directory "commit" "-q" "-m" "init")
+             (setf (ecc-session-project-root ,session) directory)
+             (should (ecc-review-ensure-baseline ,session))
+             (ecc-review-agent-test--write
+              file "line1\nLINE2\nline3\nline4\nline5\nline6\nnew\nline7\nline8\nline10\n")
+             (setq ,control (ecc-review-ediff-buffer ,session))
+             ,@body)
+         (when (buffer-live-p ,control)
+           (ecc-review-ediff-quit ,control))
+         (ecc-review-agent-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-agent-test-ediff-hunks-and-comments ()
+  "The tools read an ediff review: its differences, its lines, its comments."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-agent-test--with-ediff session control
+      (let ((text (ecc-review-agent-test--ok session "review_hunks")))
+        (should (string-search "1 file, 3 hunks;" text))
+        (should (string-search
+                 (concat "a.txt\n"
+                         "  hunk 1  difference 1  old L2-L2  new L2-L2\n"
+                         "  hunk 2  difference 2  old none  new L7-L7\n"
+                         "  hunk 3  difference 3  old L9-L9  new none\n")
+                 text)))
+      (should (string-search "+LINE2" (ecc-review-agent-test--ok
+                                       session "review_hunks" '((include_patch . t)))))
+      (should (equal (ecc-review-agent-test--ok
+                      session "review_comment"
+                      '((file . "a.txt") (line . 7) (text . "Why this line?")))
+                     "Added #1 at a.txt:7 (new)"))
+      (should (equal (ecc-review-agent-test--ok
+                      session "review_comment"
+                      '((file . "a.txt") (line . 9) (side . "old") (text . "Still used")))
+                     "Added #2 at a.txt:9 (old)"))
+      (should (equal (ecc-review-agent-test--ok
+                      session "review_comment" '((file . "a.txt") (hunk . 1) (text . "Case")))
+                     "Added #3 at a.txt L2-L2"))
+      ;; A line both sides hold is in no difference.
+      (pcase-let ((`(,failed . ,text)
+                   (ecc-review-agent-test--call
+                    session "review_comment" '((file . "a.txt") (line . 5) (text . "x")))))
+        (should failed)
+        (should (string-search "The new side of a.txt shows L2, L7;" text)))
+      (with-current-buffer control
+        ;; Drawn on their sides, with the label the diff review uses.
+        (let ((drawn (lambda (buffer)
+                       (mapconcat (lambda (overlay)
+                                    (if (eq (overlay-buffer overlay) buffer)
+                                        (or (overlay-get overlay 'after-string) "")
+                                      ""))
+                                  ecc-review--comments ""))))
+          (should (string-search "#1 Claude: Why this line?"
+                                 (funcall drawn ediff-buffer-B)))
+          (should (string-search "#3 Claude: Case" (funcall drawn ediff-buffer-B)))
+          (should (string-search "#2 Claude: Still used" (funcall drawn ediff-buffer-A))))
+        ;; The user answers one with c on its difference.
+        (ediff-jump-to-difference 2)
+        (ecc-review-ediff-comment "It is the new default"))
+      (let ((users (ecc-review-agent-test--ok session "review_list_comments"
+                                              '((author . "user")))))
+        (should (string-search "#4 [user] a.txt:7 (new) (reply to #1): It is the new default"
+                               users))
+        (should (string-search "+new" users)))
+      (should (string-search "Removed 3 comments.  The user's 1 were kept"
+                             (ecc-review-agent-test--ok session "review_clear_comments")))
+      (should (equal (with-current-buffer control (mapcar #'ecc-review-note-id ecc-review--notes))
+                     '(4))))))
+
+(ert-deftest ecc-review-agent-test-ediff-navigate-keeps-the-focus ()
+  "review_navigate moves the ediff to the difference and line, selecting nothing."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-agent-test--with-ediff session control
+      (let ((selected (selected-window))
+            (windows (window-list nil 'no-minibuffer)))
+        (should (equal (ecc-review-agent-test--ok
+                        session "review_navigate"
+                        '((file . "a.txt") (line . 9) (side . "old")))
+                       "Showing a.txt:9 (old) to the user."))
+        (should (eq (selected-window) selected))
+        (should (equal (window-list nil 'no-minibuffer) windows))
+        (with-current-buffer control
+          (should (= ediff-current-difference 2))
+          (should (equal (let ((window ediff-window-A))
+                           (with-current-buffer ediff-buffer-A
+                             (save-excursion
+                               (goto-char (window-point window))
+                               (buffer-substring-no-properties
+                                (line-beginning-position) (line-end-position)))))
+                         "line9")))
+        (ecc-review-agent-test--ok session "review_comment"
+                                   '((file . "a.txt") (line . 2) (text . "a")))
+        (ecc-review-agent-test--ok session "review_navigate" '((comment_id . 1)))
+        (with-current-buffer control
+          (should (= ediff-current-difference 0)))
+        (ecc-review-agent-test--ok session "review_comment"
+                                   '((file . "a.txt") (line . 7) (text . "b")))
+        (should (equal (ecc-review-agent-test--ok session "review_navigate"
+                                                  '((direction . "next_comment")))
+                       "Showing comment #2 to the user."))
+        (with-current-buffer control
+          (should (= ediff-current-difference 1)))
+        (should (eq (selected-window) selected))))))
+
+(ert-deftest ecc-review-agent-test-ediff-open-reads-it-in-place ()
+  "review_open never starts ediff: it reads the user's ediff again, or opens a diff."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-agent-test--with-ediff session control
+      (ecc-review-agent-test--ok session "review_comment"
+                                 '((file . "a.txt") (line . 2) (text . "kept")))
+      (let ((text (ecc-review-agent-test--ok session "review_open")))
+        (should (string-prefix-p ecc-review-agent-in-place-text text))
+        (should-not (string-search "were not applied" text))
+        (should (string-search "3 hunks" text)))
+      ;; No diff review was opened beside it, and the comment is there.
+      (should-not (get-buffer "*ecc-review: test*"))
+      (should (= 1 (length (buffer-local-value 'ecc-review--notes control))))
+      ;; What it could not do is said.
+      (should (string-search "the range, staged or paths you gave were not applied"
+                             (ecc-review-agent-test--ok session "review_open"
+                                                        '((range . "HEAD")))))
+      (should-not (get-buffer "*ecc-review: test (HEAD)*"))
+      ;; Once the ediff is closed, review_open opens the diff review --
+      ;; whatever `ecc-review-style' says.
+      (ecc-review-ediff-quit control)
+      (let ((ecc-review-style 'ediff)
+            (before (seq-filter (lambda (b) (with-current-buffer b (derived-mode-p 'ediff-mode)))
+                                (buffer-list))))
+        (should (string-search "everything changed since the session started"
+                               (ecc-review-agent-test--ok session "review_open")))
+        (should (get-buffer "*ecc-review: test*"))
+        (should (equal (seq-filter (lambda (b) (with-current-buffer b
+                                                 (derived-mode-p 'ediff-mode)))
+                                   (buffer-list))
+                       before))))))
+
+(ert-deftest ecc-review-agent-test-ediff-and-another-session ()
+  "One session's calls reach its own ediff review and never another's."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session one
+    (let ((two (ecc-model-create-session :name "two"
+                                         :project-root temporary-file-directory)))
+      (unwind-protect
+          (ecc-review-agent-test--with-ediff one control
+            (let ((review-two (ecc-review-agent-test--fill two ecc-review-agent-test--diff)))
+              (ecc-review-agent-test--ok one "review_comment"
+                                         '((file . "a.txt") (line . 2) (text . "one's")))
+              (ecc-review-agent-test--ok two "review_comment"
+                                         '((file . "foo.el") (line . 2) (text . "two's")))
+              (should (equal (mapcar #'ecc-review-note-text
+                                     (buffer-local-value 'ecc-review--notes control))
+                             '("one's")))
+              (should (equal (mapcar #'ecc-review-note-text
+                                     (buffer-local-value 'ecc-review--notes review-two))
+                             '("two's")))
+              (should (string-search "difference 1"
+                                     (ecc-review-agent-test--ok one "review_hunks")))
+              (should-not (string-search "difference"
+                                         (ecc-review-agent-test--ok two "review_hunks")))
+              ;; review_open from two does not read one's ediff again.
+              (let ((tick (with-current-buffer control
+                            (with-current-buffer ediff-buffer-B
+                              (buffer-chars-modified-tick)))))
+                (ecc-review-agent-test--call two "review_open")
+                (should (= tick (with-current-buffer control
+                                  (with-current-buffer ediff-buffer-B
+                                    (buffer-chars-modified-tick))))))
+              (ecc-review-agent-test--ok two "review_clear_comments")
+              (should (= 1 (length (buffer-local-value 'ecc-review--notes control))))))
         (ecc-test-cleanup-session two)))))
 
 ;;;; Publishing and allowing
