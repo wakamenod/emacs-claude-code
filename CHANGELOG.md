@@ -282,7 +282,9 @@ Verified against **Claude Code CLI 2.1.281**.
   `C-c C-c`, and not drawn. `n`, `p`, `N` and `P` in the diff review, and
   in ediff every key of its next, previous and jump commands (`n`, `p`,
   `SPC`, `DEL`, `<backspace>`, `<delete>`, `S-SPC`, `j`, `ga`, `gb`),
-  step over them, and say so when nothing kept lies further; a drawing
+  step over them -- a negative count still going back -- and say so when
+  nothing kept lies further, `j`, `ga` and `gb` too when the filter keeps
+  no difference at all; a drawing
   that comes to hide the file being read -- a comment of Claude's that
   matched gone, the review read again -- steps off it; `{`, `}` and
   `review_navigate`'s `next_comment` and `prev_comment` pass over their

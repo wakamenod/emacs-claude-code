@@ -2101,32 +2101,51 @@ hides, and signal that there is none left when every one is hidden."
   (interactive "p")
   (ecc-review-ediff--move #'ediff-previous-difference arg nil))
 
+(defun ecc-review-ediff--nearest-shown-difference (n)
+  "Return the difference nearest N that the filter keeps, or nil for none.
+The first one kept at N or after it, else the last one kept before it,
+as `ecc-review-files--nearest-shown' finds a file.  Nil when the filter
+keeps no difference at all; what that means is the caller's to say."
+  (or (car (ecc-review-ediff--shown-differences-from
+            (max 0 n) (1- ediff-number-of-differences)))
+      (car (last (ecc-review-ediff--shown-differences-from
+                  0 (min n (1- ediff-number-of-differences)))))))
+
 (defun ecc-review-ediff-jump-to-difference-at-point (arg)
   "Go to the difference at point of a side, as ediff's ga and gb do.
-When the filter hides it, to the nearest one it keeps.  ARG is ediff's."
+When the filter hides it, to the nearest one it keeps, each side keeping
+the point ga or gb gave it where that is not hidden; when it keeps none,
+back to where the review was, and that is said.  ARG is ediff's."
   (interactive "P")
-  (funcall-interactively #'ediff-jump-to-difference-at-point arg)
-  (when (ecc-review-ediff--hidden-difference-p ediff-current-difference)
-    (let ((target (or (car (ecc-review-ediff--shown-differences-from
-                            ediff-current-difference (1- ediff-number-of-differences)))
-                      (car (last (ecc-review-ediff--shown-differences-from
-                                  0 ediff-current-difference))))))
-      (when target
-        (ediff-jump-to-difference (1+ target))))))
+  (let ((was ediff-current-difference))
+    (funcall-interactively #'ediff-jump-to-difference-at-point arg)
+    (when (ecc-review-ediff--hidden-difference-p ediff-current-difference)
+      (let ((target (ecc-review-ediff--nearest-shown-difference ediff-current-difference))
+            (points (mapcar (lambda (window)
+                              (and (window-live-p window) (window-point window)))
+                            (list ediff-window-A ediff-window-B))))
+        (unless target
+          (ediff-unselect-and-select-difference was)
+          (user-error "Every difference is in a file the filter hides"))
+        (ediff-unselect-and-select-difference target)
+        (cl-mapc (lambda (window point)
+                   (when (and point (window-live-p window)
+                              (not (with-current-buffer (window-buffer window)
+                                     (invisible-p point))))
+                     (set-window-point window point)))
+                 (list ediff-window-A ediff-window-B) points)))))
 
 (defun ecc-review-ediff-jump-to-difference (number)
   "Go to the difference NUMBER, as ediff's j does.
-When the filter hides it, to the first one after it that it keeps, else
-the last one before."
+When the filter hides it, to the nearest one it keeps
+\(`ecc-review-ediff--nearest-shown-difference'), and that is said."
   (interactive "p")
   (let ((n (cond ((< number 0) (+ ediff-number-of-differences number))
                  ((> number 0) (1- number))
                  (t -1))))
     (if (not (ecc-review-ediff--hidden-difference-p n))
         (ediff-jump-to-difference number)
-      (let ((target (or (car (ecc-review-ediff--shown-differences-from
-                              n (1- ediff-number-of-differences)))
-                        (car (last (ecc-review-ediff--shown-differences-from 0 n)))
+      (let ((target (or (ecc-review-ediff--nearest-shown-difference n)
                         (user-error "Every difference is in a file the filter hides"))))
         (ediff-jump-to-difference (1+ target))
         (message "Difference %d is in a file the filter hides; this is %d"
@@ -2136,34 +2155,46 @@ the last one before."
   "Write the help of the control panel again, laying no window out.
 What `ediff-setup-control-buffer\=' writes, without its fitting of the
 window and its selecting of it."
-  (let ((inhibit-read-only t))
+  (let ((inhibit-read-only t)
+        (control (current-buffer))
+        (window (and (window-live-p ediff-control-window) ediff-control-window)))
     (erase-buffer)
     (ediff-set-help-message)
     (insert ediff-help-message)
+    ;; It centres the help on the width of the selected window, which
+    ;; here is seldom the panel.
     (unless (ediff-multiframe-setup-p)
-      (ediff-indent-help-message))
+      (if window
+          (with-selected-window window
+            (with-current-buffer control
+              (ediff-indent-help-message)))
+        (ediff-indent-help-message)))
     (ediff-set-help-overlays)
+    (goto-char (point-min))
     (set-buffer-modified-p nil)))
 
 (cl-defmethod ecc-review-files-filter-applied (&context (major-mode ediff-mode)
                                                         &optional quietly)
   "Move this review off a difference the filter now hides, and say what it hides.
 The brief help carries the filter, so the control panel is written again.
-QUIETLY -- a change no key of the user's made -- writes it in place and
-selects the difference without recentring, which would lay the windows
-out again and hand the panel the keyboard; a key of the user's
+QUIETLY -- a drawing no key of the user's asked for -- selects the
+difference without recentring, which would lay the windows out again
+and hand the panel the keyboard, and writes the help in place when what
+is hidden `changed'; `unchanged' leaves it.  A key of the user's
 recentres, which fits the panel to its new help."
   (when (ecc-review-ediff--hidden-difference-p ediff-current-difference)
-    (let ((target (or (car (ecc-review-ediff--shown-differences-from
-                            ediff-current-difference (1- ediff-number-of-differences)))
-                      (car (last (ecc-review-ediff--shown-differences-from
-                                  0 ediff-current-difference))))))
-      (ediff-unselect-and-select-difference (or target -1) nil 'no-recenter)))
-  (if quietly
-      (ecc-review-ediff--write-help)
+    ;; With none kept, on no difference at all.
+    (ediff-unselect-and-select-difference
+     (or (ecc-review-ediff--nearest-shown-difference ediff-current-difference) -1)
+     nil 'no-recenter))
+  (cond
+   ((eq quietly 'unchanged))
+   (quietly
+      (ecc-review-ediff--write-help))
+   (t
     (setq ediff-window-config-saved "")
     (ecc-review-ediff--leave-the-pane)
-    (ediff-recenter 'no-rehighlight)))
+    (ediff-recenter 'no-rehighlight))))
 
 (cl-defmethod ecc-review-files-give-keyboard (&context (major-mode ediff-mode))
   "Give the control panel of this ediff review the keyboard, where its keys are."

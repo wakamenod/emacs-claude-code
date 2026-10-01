@@ -887,6 +887,213 @@ is swept away."
       (ecc-review-files-toggle)
       (should (string-match-p "a\\.txt +\\+1 −1  1·0" (ecc-review-files-test--pane-text control))))))
 
+;;;; Review round 2
+
+(defun ecc-review-files-test--header (path n)
+  "Return where the Nth hunk of PATH begins, counted from 1."
+  (plist-get (nth (1- n) (seq-filter (lambda (line)
+                                       (and (equal (plist-get line :path) path)
+                                            (null (plist-get line :side))))
+                                     (ecc-review-lines)))
+             :position))
+
+(ert-deftest ecc-review-files-test-a-negative-count-goes-back ()
+  "M-- n goes back and M-- p forward, with a filter or without."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (with-current-buffer (ecc-review-files-test--fill session)
+          (goto-char (ecc-review-files-test--header "after.el" 1))
+          (ecc-review-next-hunk -1)
+          (should (= (point) (ecc-review-files-test--header "gone.txt" 1)))
+          (ecc-review-previous-hunk -1)
+          (should (= (point) (ecc-review-files-test--header "after.el" 1)))
+          (ecc-review-files-set-filter (current-buffer) ".el")
+          (ecc-review-next-hunk -1)
+          (should (= (point) (ecc-review-files-test--header "src/one.el" 3)))
+          (ecc-review-previous-hunk -1)
+          (should (= (point) (ecc-review-files-test--header "after.el" 1))))
+      (ecc-review-files-test--kill-buffers))))
+
+(ert-deftest ecc-review-files-test-quitting-one-review-leaves-another-s-pane ()
+  "Quitting A's window while B's is selected takes A's pane and not B's."
+  (ecc-review-files-test--with-pane
+    (ecc-test-with-fake-session one
+      (let ((two (ecc-model-create-session :name "two"
+                                           :project-root temporary-file-directory)))
+        (unwind-protect
+            (let* ((review-one (ecc-review-files-test--fill one))
+                   (review-two (ecc-review-files-test--fill two))
+                   (window-one (selected-window))
+                   (window-two (split-window-right)))
+              (set-window-buffer window-one review-one)
+              (set-window-buffer window-two review-two)
+              (ecc-review-files--show review-one)
+              (ecc-review-files--show review-two)
+              (should (ecc-review-files--pane-window review-one))
+              (should (ecc-review-files--pane-window review-two))
+              (select-window window-two)
+              (quit-window nil window-one)
+              (should-not (ecc-review-files--pane-window review-one))
+              (should (ecc-review-files--pane-window review-two)))
+          (ecc-test-cleanup-session two)
+          (ecc-review-files-test--kill-buffers))))))
+
+(ert-deftest ecc-review-files-test-hidden-hunks-are-stepped-over-quietly ()
+  "Only the landing move is a key's; failing, point and the window stay."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (let* ((many (concat "diff --git a/a.el b/a.el\n--- a/a.el\n+++ b/a.el\n@@ -1 +1 @@\n-x\n+y\n"
+                             "diff --git a/hidden.txt b/hidden.txt\n--- a/hidden.txt\n+++ b/hidden.txt\n"
+                             (mapconcat (lambda (n) (format "@@ -%d +%d @@\n-a\n+b" (* 10 n) (* 10 n)))
+                                        (number-sequence 1 200) "\n")
+                             "\ndiff --git a/z.el b/z.el\n--- a/z.el\n+++ b/z.el\n@@ -1 +1 @@\n-q\n+r\n"))
+               (review (ecc-review-files-test--fill session many))
+               (keyed 0)
+               (moved 0))
+          (save-window-excursion
+            (delete-other-windows)
+            (set-window-buffer (selected-window) review)
+            (with-current-buffer review
+              (ecc-review-files-set-filter review ".el")
+              (goto-char (ecc-review-files-test--header "a.el" 1))
+              (let ((next (symbol-function 'diff-hunk-next)))
+                (cl-letf (((symbol-function 'diff-hunk-next)
+                           (lambda (&optional count)
+                             (interactive "p")
+                             (cl-incf moved)
+                             (when (called-interactively-p 'any) (cl-incf keyed))
+                             (funcall-interactively next count))))
+                  (ecc-review-next-hunk)))
+              (should (= (point) (ecc-review-files-test--header "z.el" 1)))
+              (should (= moved 1))
+              (should (= keyed 1))
+              ;; Nothing kept further: point and the window as they were.
+              (set-window-start (selected-window) (point-min))
+              (let ((start (window-start)) (here (point)))
+                (should-error (ecc-review-next-hunk) :type 'user-error)
+                (should (= (point) here))
+                (should (= (window-start) start))))))
+      (ecc-review-files-test--kill-buffers))))
+
+(ert-deftest ecc-review-files-test-other-errors-are-not-swallowed ()
+  "Only no room is no pane, and only nothing further is nothing further."
+  (ecc-review-files-test--with-pane
+    (ecc-test-with-fake-session session
+      (unwind-protect
+          (let ((review (ecc-review-files-test--fill session)))
+            (set-window-buffer (selected-window) review)
+            (cl-letf (((symbol-function 'split-window) (lambda (&rest _) (error "Boom"))))
+              (should (equal (cadr (should-error (ecc-review-files--split (selected-window))))
+                             "Boom")))
+            (let ((ecc-review-files-width 75))
+              (should-not (ecc-review-files--split (selected-window))))
+            (with-current-buffer review
+              (cl-letf (((symbol-function 'diff-hunk-next)
+                         (lambda (&rest _) (interactive) (error "Boom"))))
+                (goto-char (point-min))
+                (should (eq (car (should-error (ecc-review-next-hunk))) 'error))
+                (ecc-review-files-set-filter review ".el")
+                (goto-char (point-min))
+                (should (eq (car (should-error (ecc-review-next-hunk))) 'error)))))
+        (ecc-review-files-test--kill-buffers)))))
+
+(ert-deftest ecc-review-files-test-the-quiet-help-is-the-panel-s ()
+  "The help written in place is centred on the panel and starts at its top."
+  (skip-unless (executable-find "git"))
+  (ecc-review-files-test--with-pane
+    (ecc-review-files-test--with-ediff session control
+      (ecc-review-files-set-filter control "c.txt")
+      (let ((as-written (buffer-string)))
+        (with-selected-window ediff-window-A
+          (with-current-buffer control
+            (goto-char (point-max))
+            (ecc-review-ediff--write-help)
+            (should (= (point) (point-min)))))
+        (should (equal (buffer-string) as-written))))))
+
+(ert-deftest ecc-review-files-test-ga-and-gb-past-the-filter ()
+  "ga on a hidden difference goes to the nearest kept; with none kept it says so."
+  (skip-unless (executable-find "git"))
+  (ecc-review-files-test--with-pane
+    (ecc-review-files-test--with-ediff session control
+      (ecc-review-files-set-filter control "c.txt")
+      (let ((a-line (plist-get (car (ecc-review-ediff--unit-lines (nth 0 (ecc-review-units))))
+                               :a-beg)))
+        (ignore a-line)
+        (with-current-buffer ediff-buffer-A
+          (goto-char (ediff-get-diff-posn 'A 'beg 0 control)))
+        (set-window-point ediff-window-A (with-current-buffer ediff-buffer-A (point)))
+        (let ((last-command-event ?a))
+          (ecc-review-ediff-jump-to-difference-at-point nil))
+        (should (= ediff-current-difference 2))
+        (ecc-review-files-set-filter control "zzz")
+        (should (= ediff-current-difference -1))
+        (let ((last-command-event ?a))
+          (should (equal (cadr (should-error (ecc-review-ediff-jump-to-difference-at-point nil)
+                                             :type 'user-error))
+                         "Every difference is in a file the filter hides")))
+        (should (= ediff-current-difference -1))))))
+
+(ert-deftest ecc-review-files-test-a-pane-alone-in-its-frame-is-given-back ()
+  "A stale pane that is the last window of its frame shows another buffer."
+  (ecc-review-files-test--with-pane
+    (ecc-test-with-fake-session session
+      (unwind-protect
+          (let* ((review (ecc-review-files-test--fill session))
+                 (pane (with-current-buffer review (ecc-review-files--pane-buffer review)))
+                 (gone (split-window-right)))
+            (delete-window gone)
+            (set-window-buffer (selected-window) pane)
+            (set-window-dedicated-p (selected-window) t)
+            (set-window-parameter (selected-window) 'ecc-review-files-beside (cons gone review))
+            (ecc-review-files--sweep (selected-frame))
+            (should (window-live-p (selected-window)))
+            (should-not (eq (window-buffer) pane))
+            (should-not (window-dedicated-p))
+            (should-not (window-parameter (selected-window) 'ecc-review-files-beside)))
+        (ecc-review-files-test--kill-buffers)))))
+
+(ert-deftest ecc-review-files-test-a-place-put-back-in-a-hidden-file ()
+  "A reading again that puts point back in a hidden file steps off it."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (with-current-buffer (ecc-review-files-test--fill session)
+          (ecc-review-files-set-filter (current-buffer) ".el")
+          (goto-char (ecc-review-files-test--header "made.txt" 1))
+          (should (invisible-p (point)))
+          (ecc-review--fill (current-buffer) session ecc-review-files-test--diff
+                            temporary-file-directory)
+          (should-not (invisible-p (point))))
+      (ecc-review-files-test--kill-buffers))))
+
+(ert-deftest ecc-review-files-test-slash-steps-off-once ()
+  "Setting a filter steps off what it hides once, and not quietly first."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (with-current-buffer (ecc-review-files-test--fill session)
+          (let ((calls nil)
+                (applied (symbol-function 'ecc-review-files-filter-applied)))
+            (cl-letf (((symbol-function 'ecc-review-files-filter-applied)
+                       (lambda (&optional quietly)
+                         (push quietly calls)
+                         (funcall applied quietly))))
+              (ecc-review-files-set-filter (current-buffer) ".el"))
+            (should (equal calls '(nil)))))
+      (ecc-review-files-test--kill-buffers))))
+
+(ert-deftest ecc-review-files-test-the-nearest-kept-difference ()
+  "After N first, else before it, nil with none kept."
+  (skip-unless (executable-find "git"))
+  (ecc-review-files-test--with-pane
+    (ecc-review-files-test--with-ediff session control
+      (ecc-review-files-set-filter control "c.txt")
+      (should (= (ecc-review-ediff--nearest-shown-difference 0) 2))
+      (should (= (ecc-review-ediff--nearest-shown-difference -1) 2))
+      (ecc-review-files-set-filter control "b.txt")
+      (should (= (ecc-review-ediff--nearest-shown-difference 2) 1))
+      (ecc-review-files-set-filter control "zzz")
+      (should-not (ecc-review-ediff--nearest-shown-difference 1)))))
+
 ;;;; Two reviews
 
 (ert-deftest ecc-review-files-test-two-sessions-keep-apart ()

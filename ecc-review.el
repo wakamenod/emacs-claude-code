@@ -1023,50 +1023,67 @@ mean everywhere in Emacs.  So do { and }, which move between the
 comments here and between files in `diff-mode\=': N and P still do
 that.")
 
-(defun ecc-review--past-hidden (move count regexp what)
-  "Call MOVE, a move of `diff-mode', COUNT times, past what the filter hides.
-A negative COUNT says that MOVE goes back, and is made as often.
-REGEXP is what MOVE stops at, and WHAT names it.  MOVE is called as a
-key calls it (`funcall-interactively'): only then does `diff-mode'
-scroll the whole hunk into view and refine it as it is reached
-\(`diff-refine' `navigation').  A move that lands in a file the filter
-hides is made again.  One that finds nothing past it -- an error, or,
-past the last hunk, the end of that hunk rather than another --
-leaves point where it was and says so."
+(defun ecc-review--past-hidden (count forward backward regexp what)
+  "Move COUNT of what REGEXP finds, past what the filter hides.
+FORWARD and BACKWARD are the moves of `diff-mode' that go to the next
+and the previous one, and a negative COUNT goes back, as it does in
+them.  WHAT names what is moved to, for the message.
+
+Without a filter this is FORWARD with COUNT, called as a key calls it
+\(`funcall-interactively'): only then does `diff-mode' scroll the whole
+hunk into view and refine it as it is reached (`diff-refine'
+`navigation').  With one, the place to go is found by a search over the
+starts REGEXP finds that are not hidden, and only the last move, the
+one that lands there, is made as a key would make it -- each hidden
+hunk stepped over interactively would scroll to hidden text and make a
+marker for refining, hundreds to a keypress.  With nothing kept further
+on, point and the window are left as they were and that is said."
   (if (null ecc-review--hidden)
-      (funcall-interactively move (abs count))
-    (let ((start (point))
-          (found t))
-      (condition-case nil
-          (dotimes (_ (abs count))
-            (funcall-interactively move 1)
-            (while (invisible-p (point))
-              (funcall-interactively move 1)))
-        (error (setq found nil)))
-      (unless (and found (not (invisible-p (point))) (looking-at-p regexp))
-        (goto-char start)
-        (user-error "No %s %s in the files the filter keeps"
-                    (if (< count 0) "previous" "next") what)))))
+      (funcall-interactively (if (< count 0) backward forward) (abs count))
+    (let* ((back (< count 0))
+           (here (point))
+           (starts nil))
+      (save-excursion
+        (goto-char (point-min))
+        (while (re-search-forward regexp nil t)
+          (let ((start (match-beginning 0)))
+            (unless (invisible-p start)
+              (push start starts)))))
+      (setq starts (nreverse starts))
+      (let ((target (nth (1- (abs count))
+                         (if back
+                             (reverse (seq-filter (lambda (start) (< start here)) starts))
+                           (seq-filter (lambda (start) (> start here)) starts)))))
+        (unless target
+          (user-error "No %s %s in the files the filter keeps"
+                      (if back "previous" "next") what))
+        ;; Just short of TARGET, so that one move, the key's, lands on it.
+        (goto-char (if back (1+ target) (1- target)))
+        (funcall-interactively (if back backward forward) 1)))))
 
 (defun ecc-review-next-hunk (&optional count)
   "Go to the next hunk, COUNT of them, past the files the filter hides."
   (interactive "p")
-  (ecc-review--past-hidden #'diff-hunk-next (or count 1) diff-hunk-header-re "hunk"))
+  (ecc-review--past-hidden (or count 1) #'diff-hunk-next #'diff-hunk-prev
+                           diff-hunk-header-re "hunk"))
 
 (defun ecc-review-previous-hunk (&optional count)
   "Go to the previous hunk, COUNT of them, past the files the filter hides."
   (interactive "p")
-  (ecc-review--past-hidden #'diff-hunk-prev (- (or count 1)) diff-hunk-header-re "hunk"))
+  (ecc-review--past-hidden (- (or count 1)) #'diff-hunk-next #'diff-hunk-prev
+                           diff-hunk-header-re "hunk"))
 
 (defun ecc-review-next-file (&optional count)
   "Go to the next file, COUNT of them, past the files the filter hides."
   (interactive "p")
-  (ecc-review--past-hidden #'diff-file-next (or count 1) diff-file-header-re "file"))
+  (ecc-review--past-hidden (or count 1) #'diff-file-next #'diff-file-prev
+                           diff-file-header-re "file"))
 
 (defun ecc-review-previous-file (&optional count)
   "Go to the previous file, COUNT of them, past the files the filter hides."
   (interactive "p")
-  (ecc-review--past-hidden #'diff-file-prev (- (or count 1)) diff-file-header-re "file"))
+  (ecc-review--past-hidden (- (or count 1)) #'diff-file-next #'diff-file-prev
+                           diff-file-header-re "file"))
 
 (defun ecc-review-read-only ()
   "Say that the review cannot be edited, in place of a `diff-mode' edit."
