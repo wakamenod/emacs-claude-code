@@ -198,8 +198,14 @@ Returns nil when git cannot be run at all."
 
 (defun ecc-review--relative (path root)
   "Return PATH relative to the repository ROOT, through symbolic links.
-git reports its root with links resolved, so PATH is resolved too."
-  (file-relative-name (file-truename path) root))
+git reports its root with links resolved, so the directory of PATH is
+resolved too -- the directory and not the file: a symbolic link git
+tracks is a file of its own, and resolving it would name its target, or
+a path outside the repository."
+  (let ((path (expand-file-name path)))
+    (file-relative-name (expand-file-name (file-name-nondirectory path)
+                                          (file-truename (file-name-directory path)))
+                        root)))
 
 (defun ecc-review-git-tracked (root paths)
   "Return the members of PATHS that git tracks in the repository at ROOT.
@@ -672,8 +678,13 @@ symbol `staged\=' is what is staged, the index against HEAD.")
 (defvar-local ecc-review--stale nil
   "Non-nil when the files may have changed since this review was read.")
 
-(defvar-local ecc-review--text nil
-  "The text this review was last filled with.")
+(defvar-local ecc-review--fingerprint nil
+  "What this review was last filled with: (HASH . TICK), or nil.
+HASH is the sha1 of the text put in, and TICK the
+`buffer-chars-modified-tick\=' right after.  A text with the same hash
+is not put in again only while the tick says that nothing has edited
+the buffer since -- a key of `diff-mode\=' that got past the review\='s
+own keymap, say -- so that \`g' always repairs it.")
 
 (defvar-local ecc-review--failed nil
   "Why the last reading of this review again failed, or nil.
@@ -733,16 +744,36 @@ Called with the review buffer.")
     (define-key map (kbd "e") #'ecc-review-edit-proposal)
     (define-key map (kbd "g") #'ecc-review-refresh)
     (define-key map (kbd "q") #'quit-window)
+    ;; `diff-mode' edits its buffer from these, read-only or not: they
+    ;; bind `inhibit-read-only'.  A review is a copy of what git said, and
+    ;; one stray k would leave it saying something else; u and @ revert
+    ;; the hunk in the file itself.  The two undo commands go too, there
+    ;; being no undo to go back with.
+    (dolist (key '("k" "K" "R" "s" "u" "@"
+                   "C-c C-s" "C-c C-r" "C-c C-u" "C-c C-d" "C-c C-l" "C-c C-w"
+                   "C-c M-u" "C-c C-m n"
+                   "<remap> <undo>" "<remap> <undo-ignore-read-only>"))
+      (define-key map (kbd key) #'ecc-review-read-only))
     map)
   "Keymap of `ecc-review-mode\='.
 The buffer is read-only, so a letter is free to be a command, and these
-come before `diff-mode-shared-map\=' -- which uses k, K, n, N, o, p,
-P, { and }.  Nothing here takes a \\`C-c <letter>\=' key: the Emacs Lisp
-manual reserves those for users.  \\`C-c C-c\=' and \\`C-c C-k\=' shadow
+come before `diff-mode-shared-map\=' and `diff-mode-read-only-map\='.
+Those move with n, N, p, P, { and } and visit with o and RET, and edit
+the buffer with k, K, R, s and more; every key of `diff-mode\=' that
+edits it, or reverts the file, says that the review is read-only
+instead (`ecc-review-read-only\=').
+
+Nothing here takes a \\`C-c <letter>\=' key: the Emacs Lisp manual
+reserves those for users.  \\`C-c C-c\=' and \\`C-c C-k\=' shadow
 `diff-mode\=', deliberately: finishing and aborting are what those two
 mean everywhere in Emacs.  So do { and }, which move between the
 comments here and between files in `diff-mode\=': N and P still do
 that.")
+
+(defun ecc-review-read-only ()
+  "Say that the review cannot be edited, in place of a `diff-mode' edit."
+  (interactive)
+  (user-error "The review is read-only: it shows what git says; g reads it again"))
 
 (define-derived-mode ecc-review-mode diff-mode "Claude-Review"
   "Major mode of the buffer the changes of a session are reviewed in.
@@ -855,12 +886,14 @@ the reading."
           (and (derived-mode-p 'ecc-review-mode)
                (null ecc-review--request)
                (eq ecc-review--session session)
-               (equal ecc-review--text text)
+               (equal ecc-review--fingerprint
+                      (cons (secure-hash 'sha1 text) (buffer-chars-modified-tick)))
                (equal ecc-review--paths (plist-get content :paths))
                (equal ecc-review--range (plist-get content :range))))
         (with-current-buffer buffer
           (setq ecc-review--stale nil
                 ecc-review--failed nil)
+          (force-mode-line-update)
           buffer)
       (ecc-review--fill buffer session text (plist-get content :root) nil
                         (plist-get content :paths) (plist-get content :range)))))
@@ -900,10 +933,11 @@ asked any more."
             ecc-review--request request
             ecc-review--paths paths
             ecc-review--range range
-            ecc-review--text text
             ecc-review--stale nil
             ecc-review--failed nil)
       (set-buffer-modified-p nil)
+      (setq ecc-review--fingerprint
+            (cons (secure-hash 'sha1 text) (buffer-chars-modified-tick)))
       (goto-char (point-min))
       ;; The lines are read once, and only when something is to be put
       ;; back on them.
@@ -1838,15 +1872,17 @@ known only from what the session recorded."
               (now (ecc-review-snapshot root)))
     (mapcar #'car (ecc-review--numstat root base now nil))))
 
-(defun ecc-review--relative-paths (paths root)
-  "Return PATHS relative to ROOT, each given relative to it or absolute."
-  (mapcar (lambda (path) (ecc-review--relative (expand-file-name path root) root))
+(defun ecc-review--relative-paths (paths root base)
+  "Return PATHS relative to the repository ROOT.
+Each is absolute or relative to BASE, the directory the session works
+in, which is what a path given by Claude or typed is relative to."
+  (mapcar (lambda (path) (ecc-review--relative (expand-file-name path base) root))
           paths))
 
-(defun ecc-review--session-content (session paths)
+(defun ecc-review--session-content (session paths &optional base)
   "Read what the review of the changes of SESSION holds; see `ecc-review--show\='.
-PATHS, relative to the repository or absolute, restrict it to those
-files.
+PATHS, absolute or relative to BASE -- the project of SESSION by
+default -- restrict it to those files.
 
 In a git repository this is the working tree as it stands against the
 baseline taken when the session started.  Outside git it is built from
@@ -1863,7 +1899,8 @@ them holding first."
                 :nothing (if entries
                              "The files of this session show no change"
                            "No file was edited or written in this session")))
-      (let* ((paths (ecc-review--relative-paths paths root))
+      (let* ((paths (ecc-review--relative-paths
+                     paths root (or base (ecc-session-project-root session) root)))
              (base (or (ecc-session-baseline session)
                        (ecc-review--head-tree root)
                        (user-error "Cannot read the history of %s"
@@ -1901,11 +1938,16 @@ during it are still shown; that one against the last commit."
    (let ((session (ecc-review-session)))
      (list session
            (and current-prefix-arg
-                (completing-read-multiple
-                 "Files: "
-                 (or (ecc-review-changed-paths session)
-                     (mapcar #'ecc-file-entry-path (ecc-review-files session)))
-                 nil t)))))
+                ;; Offered relative to the repository and handed on
+                ;; absolute, which is what the review reads either way.
+                (let ((root (ecc-review-git-root (or (ecc-session-project-root session)
+                                                     default-directory))))
+                  (mapcar (lambda (path) (expand-file-name path root))
+                          (completing-read-multiple
+                           "Files: "
+                           (or (ecc-review-changed-paths session)
+                               (mapcar #'ecc-file-entry-path (ecc-review-files session)))
+                           nil t)))))))
   (let ((session (or session (ecc-review-session))))
     (if (and (eq ecc-review-style 'ediff)
              ;; Outside git there are no two trees to lay side by side:
@@ -1934,14 +1976,28 @@ changed stays open when its diff has gone."
              ;; `default-directory', so the refresh reads the same tree
              ;; even from a session of another.
              (ecc-review--worktree-content session ecc-review--range
-                                           default-directory ecc-review--paths)
-           (ecc-review--session-content session ecc-review--paths))
+                                           default-directory ecc-review--paths
+                                           default-directory)
+           ;; The paths it keeps are relative to the repository.
+           (ecc-review--session-content session ecc-review--paths default-directory))
          session buffer watching)))))
 
 (defun ecc-review-refresh ()
-  "Read the diff again, keeping the comments and the place being read."
+  "Read the diff again, keeping the comments and the place being read.
+A review whose reading failed is tried again and follows the files
+again; one that has nothing to show now stays open and says so, as it
+would have had the files been followed all along.  When it fails again
+the new error is what its header line says."
   (interactive)
-  (ecc-review--reread (current-buffer))
+  (let ((failed ecc-review--failed))
+    (setq ecc-review--failed nil)
+    (condition-case error
+        (ecc-review--reread (current-buffer) failed)
+      (error
+       (when failed
+         (setq ecc-review--failed (error-message-string error))
+         (force-mode-line-update))
+       (signal (car error) (cdr error)))))
   (message "Refreshed"))
 
 ;;;; Following the files
@@ -2058,24 +2114,32 @@ was marked, the timer is asked for."
   (string-prefix-p (file-name-as-directory (file-truename directory))
                    (file-name-as-directory (file-truename file))))
 
-(defun ecc-review--tool-files (node)
-  "Return the files the tool NODE names in its input, absolute."
-  (let ((input (and node (ecc-model-node-get node 'input))))
-    (delq nil (mapcar (lambda (key)
-                        (let ((path (alist-get key input)))
-                          (and (stringp path) (not (string-empty-p path))
-                               (expand-file-name path))))
-                      '(file_path notebook_path)))))
+(defun ecc-review--tool-files (session node)
+  "Return the files the tool NODE of SESSION names in its input, absolute.
+A relative one is relative to the project of SESSION -- not to whatever
+buffer is current when the result arrives."
+  (when-let* ((path (and node (ecc-tool-input-path (ecc-model-node-get node 'input)))))
+    (list (expand-file-name path (or (ecc-session-project-root session)
+                                     default-directory)))))
+
+(defvar ecc-review--changed-in-turn (make-hash-table :test #'eq :weakness 'key)
+  "Sessions a tool that can change files has finished for in this turn.
+The end of a turn reads the reviews again only for these: a turn of
+reads and searches changed nothing.")
+
+(defun ecc-review--forget-session (session)
+  "Forget what this module kept about SESSION, which has gone."
+  (remhash session ecc-review--changed-in-turn))
 
 (defun ecc-review--on-session-change (session &optional files)
   "Mark stale the reviews SESSION may have changed the files of.
-Its own; every review of the repository it works in, since a working
-tree review shows whoever changed a file and two sessions share one;
-and every review of a repository one of FILES is in, which is how a
-session working from above the repository -- a session in ~/Projects
-editing one of the projects in it -- is heard.  A shell command of such
-a session names no file, and is heard only by its own reviews and those
-under its directory."
+Its own; every review whose repository holds the directory SESSION
+works in, since a working tree review shows whoever changed a file and
+two sessions share one; and every review of a repository one of FILES
+is in, which is how a session working from above the repository -- a
+session in ~/Projects editing one of the projects in it -- is heard.  A
+shell command of such a session names no file, and is heard only by
+its own reviews and those whose repository holds its directory."
   (let ((directory (ecc-session-project-root session)))
     (ecc-review--mark-stale
      (lambda ()
@@ -2092,11 +2156,15 @@ Unless it is one that changes no file (`ecc-review-unchanging-tools\=')."
                  (or (member name ecc-review-unchanging-tools)
                      (run-hook-with-args-until-success
                       'ecc-review-unchanging-tool-functions name)))
-      (ecc-review--on-session-change session (ecc-review--tool-files node)))))
+      (puthash session t ecc-review--changed-in-turn)
+      (ecc-review--on-session-change session (ecc-review--tool-files session node)))))
 
 (defun ecc-review--on-turn-finished (session _turn)
-  "Mark stale the reviews SESSION may have changed in the turn that ended."
-  (ecc-review--on-session-change session))
+  "Mark stale the reviews SESSION may have changed in the turn that ended.
+Only when a tool that can change files finished in it."
+  (when (gethash session ecc-review--changed-in-turn)
+    (remhash session ecc-review--changed-in-turn)
+    (ecc-review--on-session-change session)))
 
 (defun ecc-review--on-save ()
   "Mark stale the reviews of the repository the file just saved is in."
@@ -2140,6 +2208,7 @@ time -- the timer still waiting -- it takes the timer's place."
 
 (add-hook 'ecc-tool-finished-hook #'ecc-review--on-tool-finished)
 (add-hook 'ecc-turn-finished-hook #'ecc-review--on-turn-finished)
+(add-hook 'ecc-session-removed-hook #'ecc-review--forget-session)
 (add-hook 'after-save-hook #'ecc-review--on-save)
 (add-hook 'window-buffer-change-functions #'ecc-review--on-window-buffer-change)
 
@@ -2179,15 +2248,16 @@ no session, starting one is offered."
           (ecc-start root)
         (user-error "The comments need a session to go to"))))
 
-(defun ecc-review--worktree-content (session range root paths)
+(defun ecc-review--worktree-content (session range root paths &optional base)
   "Read what a review of the working tree holds; see `ecc-review--show\='.
-The arguments are those of `ecc-review-worktree-buffer\='."
+The arguments are those of `ecc-review-worktree-buffer\=', and BASE is
+what relative PATHS are relative to: ROOT, else the project of SESSION."
   (let* ((range (ecc-review-parse-range (or range ecc-review-worktree-default-range)))
          (directory (or root (ecc-session-project-root session)))
          (root (or (ecc-review-git-root directory)
                    (user-error "%s is not in a git repository"
                                (abbreviate-file-name directory))))
-         (paths (ecc-review--relative-paths paths root))
+         (paths (ecc-review--relative-paths paths root (or base directory)))
          (effective (ecc-review--effective-range root range))
          (tracked (pcase (ecc-review--git-diff
                           root (mapcar (lambda (path) (expand-file-name path root)) paths)
@@ -2220,12 +2290,13 @@ The arguments are those of `ecc-review-worktree-buffer\='."
 The comments of the buffer go to SESSION.  ROOT defaults to the project
 of SESSION, and RANGE to `ecc-review-worktree-default-range\=': a
 revision or a range of them, \"\" for what is not staged, or `staged\='
-for what is (`ecc-review-parse-range\=').  PATHS, relative to the
-repository or absolute, restrict the review to those files; nil is every
-file.  Every change under the repository is shown, whoever made it, and
-when RANGE reads the working tree the files git does not track are
-appended (`ecc-review--range-includes-worktree-p\=').  Signals an error
-when the directory is not a git repository or has nothing to show."
+for what is (`ecc-review-parse-range\=').  PATHS, absolute or relative
+to ROOT -- the project of SESSION by default -- restrict the review to
+those files; nil is every file.  Every change under the repository is
+shown, whoever made it, and when RANGE reads the working tree the files
+git does not track are appended (`ecc-review--range-includes-worktree-p\=').
+Signals an error when the directory is not a git repository or has
+nothing to show."
   (ecc-review--show (ecc-review--worktree-content session range root paths) session))
 
 (defun ecc-review-worktree--read-arguments ()
@@ -2244,10 +2315,12 @@ range would show; none chosen is every file."
                      (ecc-review-parse-range
                       (read-string "Diff against (empty for unstaged, --staged for the index): "
                                    ecc-review-worktree-default-range))))
+         (git-root (and current-prefix-arg (ecc-review-git-root root)))
          (paths (and current-prefix-arg
-                     (completing-read-multiple
-                      "Files (empty for all): "
-                      (ecc-review-worktree-paths root range) nil t))))
+                     (mapcar (lambda (path) (expand-file-name path git-root))
+                             (completing-read-multiple
+                              "Files (empty for all): "
+                              (ecc-review-worktree-paths root range) nil t)))))
     (list session range root paths)))
 
 ;;;###autoload

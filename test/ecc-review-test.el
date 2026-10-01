@@ -1579,7 +1579,9 @@ Returns the path of x.txt."
                      '("x.txt"))))
           (let ((current-prefix-arg '(4)))
             (should (equal (ecc-review-worktree--read-arguments)
-                           (list session 'staged directory '("x.txt")))))
+                           (list session 'staged directory
+                                 (list (expand-file-name
+                                        "x.txt" (ecc-review-git-root directory)))))))
           ;; What is staged, and no untracked file.
           (should (equal offered '("x.txt")))
           (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "--output=x")))
@@ -2001,6 +2003,137 @@ and makes no buffer."
               (should (string-search "+beta" (with-current-buffer branch (buffer-string))))
               (should-not (string-search "+beta" (with-current-buffer index
                                                    (buffer-string))))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-an-edited-review-is-repaired-by-g ()
+  "No key of diff-mode edits the review, and g repairs one that was edited."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((review (ecc-review-test--watched-repo session directory)))
+            (with-current-buffer review
+              (dolist (key '("k" "K" "R" "s" "u" "@" "C-c C-r" "C-c C-s" "C-c C-l"))
+                (should (eq (key-binding (kbd key)) #'ecc-review-read-only)))
+              (should (eq (command-remapping #'undo) #'ecc-review-read-only))
+              (should-error (ecc-review-read-only) :type 'user-error)
+              (let ((text (buffer-string)))
+                ;; Called directly, as a key that got past the keymap would.
+                (ecc-review-test--goto "+2")
+                (diff-hunk-kill)
+                (should-not (equal text (buffer-string)))
+                (ecc-review-refresh)
+                (should (equal text (buffer-string))))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-g-on-a-failed-review ()
+  "g clears the failure: an empty review shows, and a new failure is kept."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((review (ecc-review-test--watched-repo session directory)))
+            (with-current-buffer review
+              ;; The diff has gone meanwhile: g shows the empty review, the
+              ;; header line forgets the failure, and it is watched again.
+              (setq ecc-review--failed "could not read")
+              (ecc-review-test--git directory "commit" "-q" "-a" "-m" "third")
+              (ecc-review-refresh)
+              (should-not ecc-review--failed)
+              (should (string-search "No change against HEAD" (buffer-string)))
+              (should-not (string-search "could not read" (ecc-review--header-line)))
+              (should (ecc-review--watched-p review))
+              ;; It fails again: the new error is the one kept.
+              (setq ecc-review--failed "old")
+              (setq default-directory "/nonexistent-ecc-review/")
+              (should-error (ecc-review-refresh))
+              (should ecc-review--failed)
+              (should-not (equal ecc-review--failed "old"))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-g-clears-the-failure-from-the-header ()
+  "An unchanged diff read by g takes the failure off the header line."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((review (ecc-review-test--watched-repo session directory)))
+            (with-current-buffer review
+              (setq ecc-review--failed "the directory was gone")
+              (let ((tick (buffer-modified-tick)))
+                (ecc-review-refresh)
+                (should (= tick (buffer-modified-tick))))
+              (should-not (string-search "could not read the diff"
+                                         (ecc-review--header-line)))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-watch-a-turn-of-reads-reads-nothing ()
+  "The end of a turn reads the reviews again only after a tool that can write."
+  (ecc-review-test--with-watch
+    (ecc-review-test--with-review session
+      (clrhash ecc-review--changed-in-turn)
+      (ecc-review--on-tool-finished session (ecc-review-test--tool "Read"))
+      (ecc-review--on-turn-finished session nil)
+      (should-not ecc-review--stale)
+      (ecc-review--on-tool-finished session (ecc-review-test--tool "Bash"))
+      (setq ecc-review--stale nil)
+      (ecc-review--on-turn-finished session nil)
+      (should ecc-review--stale)
+      ;; And only once: the next turn starts clean.
+      (setq ecc-review--stale nil)
+      (ecc-review--on-turn-finished session nil)
+      (should-not ecc-review--stale)
+      (should (memq #'ecc-review--forget-session ecc-session-removed-hook)))))
+
+(ert-deftest ecc-review-test-paths-are-relative-to-the-session ()
+  "A relative path is relative to where the session works, a subdirectory too,
+and a tool's relative file_path likewise."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (ecc-review-test--with-watch
+        (unwind-protect
+            (let ((sub (file-name-as-directory (concat directory "sub"))))
+              (ecc-review-test--repo directory)
+              (make-directory sub)
+              (ecc-review-test--write (concat sub "foo.el") "foo\n")
+              (ecc-review-test--write (concat directory "foo.el") "top\n")
+              (setf (ecc-session-project-root session) sub)
+              (with-current-buffer (ecc-review-worktree-buffer session "HEAD" nil '("foo.el"))
+                (should (equal ecc-review--paths '("sub/foo.el")))
+                (should (string-search "+foo" (buffer-string)))
+                (should-not (string-search "+top" (buffer-string)))
+                ;; Read again from the paths it keeps.
+                (ecc-review-test--write (concat sub "foo.el") "foo\nbar\n")
+                (ecc-review-refresh)
+                (should (string-search "+bar" (buffer-string))))
+              (with-current-buffer (ecc-review-buffer session '("foo.el"))
+                (should (string-search "+foo" (buffer-string)))
+                (should-not (string-search "+top" (buffer-string))))
+              ;; A tool's relative path is the session's too, whatever
+              ;; buffer is current.
+              (let ((default-directory "/"))
+                (should (equal (ecc-review--tool-files
+                                session (ecc-review-test--tool "Edit" '((file_path . "foo.el"))))
+                               (list (concat sub "foo.el"))))))
+          (ecc-review-test--kill-review-buffers))))))
+
+(ert-deftest ecc-review-test-a-tracked-symlink-is-itself ()
+  "A path that is a symbolic link git tracks names the link, not its target."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (progn
+            (ecc-review-test--repo directory)
+            (make-symbolic-link "x.txt" (concat directory "link.txt"))
+            (should (equal (ecc-review--relative (concat directory "link.txt")
+                                                 (ecc-review-git-root directory))
+                           "link.txt"))
+            (setf (ecc-session-project-root session) directory)
+            (with-current-buffer (ecc-review-worktree-buffer session "HEAD" nil '("link.txt"))
+              (should (equal ecc-review--paths '("link.txt")))
+              (should (string-search "link.txt" (buffer-string)))))
         (ecc-review-test--kill-review-buffers)))))
 
 (provide 'ecc-review-test)
