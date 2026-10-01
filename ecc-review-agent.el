@@ -98,7 +98,7 @@ no range;
 - staged: staged true;
 - this whole branch, committed or not, against the branch it forked from \
 \(develop, main or master): range is the commit where they part, as \
-`git rev-parse --short $(git merge-base BASE HEAD)` prints it; a branch's commits alone, as a pull request shows them: range \
+`git merge-base BASE HEAD` prints it; a branch's commits alone, as a pull request shows them: range \
 \"BASE...BRANCH\";
 - one commit X: range \"X^!\"; commits X through Y, X included: range \
 \"X^..Y\";

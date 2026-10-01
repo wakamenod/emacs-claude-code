@@ -161,33 +161,57 @@ Verified against **Claude Code CLI 2.1.281**.
   what `C-c c D` was; `w` everything uncommitted (against `HEAD`); `u` what
   is not staged; `s` what is staged; `b` this branch against another; `c` a
   commit; `r` a range typed as `C-u G` takes it. Each line says how many
-  files it would show, counted with `git diff --shortstat` and the
-  untracked files when the comparison reads the working tree. The count of
-  `D` takes a snapshot of the working tree, 35 ms on a repository of 300
-  files and 70 ms on one of 20000 where each other count takes 10 to 25
-  ms; `ecc-review-menu-count-session-changes` set to `nil` leaves it out.
-  The heading names the session the comments go to -- the session of the
-  buffer, else the project's, as for `G` -- and `S` sends them to another,
-  the project's sessions offered first. `-f` asks for the files to keep
-  once the comparison is chosen, out of those it shows, and `-e` opens this
-  one review in ediff, or as a diff, the other way from `ecc-review-style`,
-  which is left alone. Outside git only `D` can be chosen, and the heading
-  says why. The choice made last is marked `(last)` and the cursor of the
-  menu starts on it, so `RET` opens it again.
+  files it would show. One `git status` gives the counts of `w`, `u` and
+  `s`, untracked files included, and `b` adds the files its commits
+  changed. A count that fails shows `?` and the echo area says why; it
+  never reads as "nothing". The count of `D` takes a snapshot of the
+  working tree: 35 ms on a repository of 300 files and 70 ms on one of
+  20000. `ecc-review-menu-count-session-changes`, a setting, leaves it
+  out. Opening the menu on this repository runs 14 git processes in
+  117 ms, 60 ms without the `D` count.
+
+  A menu is about one session and its project, both named in its
+  heading: the session of the buffer, else the session of its project --
+  the rule of `G` -- and, when the project has none, the session used last
+  and its own project, which is what `C-c c D` reviewed before. `S` turns
+  the whole menu to another session, the project's sessions offered
+  first: what is compared and where the comments go are always one
+  project. A session of the same project counts only its own changes
+  again. `-f` asks for the files to keep once the comparison is chosen,
+  out of those it shows, and `-e` opens this one review in ediff, or as a
+  diff, the other way from `ecc-review-style`, which is left alone.
+  Outside git only `D` can be chosen, and the heading says why. The choice
+  made last is marked `(last)` and the cursor of the menu starts on it, so
+  `RET` opens it again. What the menu is about is dropped when it closes,
+  so a suffix run later with `M-x` reviews where it is run.
 
   `b` asks for the branch to compare with, by default the one the current
-  branch most likely forked from: of `develop`, `main`, `master`
-  (`ecc-review-menu-base-candidates`) and the branch `origin/HEAD` points
-  at, the one `HEAD` has the fewest commits beyond. It then asks for the
-  other side, by default the current branch with its working tree: the
-  range is the commit where the two part, which `git diff` compares with
-  the working tree, so uncommitted and untracked files are in the review.
+  branch most likely forked from. The candidates are `develop`, `main`,
+  `master` (`ecc-review-menu-base-candidates`), the branch `origin/HEAD`
+  points at, and the upstream of the current branch when that branch is
+  one of them, so that `main` is compared with `origin/main`, where its
+  unpushed commits show. A candidate that already holds `HEAD` is left out
+  -- `develop` when you are on `main` and `develop` is ahead -- and of the
+  rest the one `HEAD` has the fewest commits beyond wins, the one whose own
+  tip is nearer of a tie. With none left, `b` cannot be chosen and its line
+  says so. `b` then asks for the other side, by default the current branch
+  with its working tree: the range is the commit where the two part, which
+  `git diff` compares with the working tree, so uncommitted and untracked
+  files are in the review, and the review is called `BASE + working tree`.
   Another branch is `BASE...BRANCH`, what a pull request shows. `c` asks
   for a commit out of the last 100 and then for the last one to review
   with it; the default, the same commit, is that commit alone (`X^!`), and
   another is `X^..Y`, `X` included, in whichever order they were picked.
-  The first commit of a repository, which has no parent, is compared with
-  the empty tree.
+  The range is made of the commit ids, so the review stays on its commits
+  when `HEAD` moves, and it is called by the short id and the subject. The
+  first commit of a repository, which has no parent, is compared with the
+  empty tree. `b` and `c` refuse a name starting with `-`; `--staged` is
+  for `r`.
+
+  A review of the working tree can be called something other than its
+  range (`ecc-review-range-label`): the buffer name and the header line
+  say it, and reading the review again keeps it, so the same choice
+  reuses the same buffer.
 
   The description of `review_open` (`ecc-review-agent-open-description`)
   names the arguments of each choice, so that asking Claude for "the staged
@@ -200,9 +224,11 @@ Verified against **Claude Code CLI 2.1.281**.
 ### Changed
 
 - `D` in `C-c c` (`ecc-global-map`) and in `ecc-menu` opens
-  `ecc-review-menu` instead of `ecc-review`; `D` there is `ecc-review`.
-  `G` still opens `ecc-review-worktree` directly, the same as `w` in the
-  menu. `M-x ecc-review` and `M-x ecc-review-worktree` are unchanged.
+  `ecc-review-menu` instead of `ecc-review`; `D` there is `ecc-review` of
+  the session the menu names, which is the session of the buffer or its
+  project, else the one used last, as before. `G` still opens
+  `ecc-review-worktree` directly, the same as `w` in the menu.
+  `M-x ecc-review` and `M-x ecc-review-worktree` are unchanged.
 
 - The comments of an ediff review are the comments of the diff review:
   numbered, kept across a refresh by the same rules, and listed, removed
