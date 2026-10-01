@@ -104,27 +104,37 @@ Verified against **Claude Code CLI 2.1.281**.
   harmless by construction, through the same path as a tool approved for
   the turn.
 
-- An open review follows the files (`ecc-review-auto-refresh`, on by
+- An open diff review follows the files (`ecc-review-auto-refresh`, on by
   default). It reads the diff again when a tool of its session finishes --
-  a shell command as much as an edit -- when a turn ends, and when a file
-  of its repository is saved in Emacs; a session working in the same
-  repository counts too. Comments and place are kept as `g` keeps them.
-  The changes are gathered into one read by a single idle timer that runs
-  once (0.5 s, `ecc-review-auto-refresh-delay`), never a repeating one.
-  Only a review on the screen is read; one out of sight is marked stale and
-  read when it is shown. Nothing is displayed, selected or divided by it.
-  A review whose changes have all gone stays open and says so, where `g`
-  and opening it still refuse. The review of a proposal is never read
-  again. One read of a diff of 1,000 hunks (65 KB) took 0.06 s and of
+  a shell command as much as an edit, but not a tool that only reads, such
+  as Read, Grep or the review tools (`ecc-review-unchanging-tools`) -- when
+  a turn ends, and when a file of its repository is saved in Emacs. A
+  session working in the same repository counts too, and so does an edit
+  of a file in it by a session rooted above it. Comments and place are
+  kept as `g` keeps them. The changes are gathered into one read by a
+  single timer that runs once, 0.5 s later
+  (`ecc-review-auto-refresh-delay`), and waits again while you are typing;
+  it never repeats. Only a review on the screen is read; one out of sight is
+  marked stale and read when it is shown. A diff that has not changed is
+  not put in again, so the buffer is not modified and its overlays stay,
+  and the review buffer keeps no undo. Nothing is displayed, selected or
+  divided by it. A review whose changes have all gone stays open and says
+  so, where `g` and opening it still refuse. A review that cannot be read
+  says why in its header line, once in the echo area, and waits for `g`.
+  The review of a proposal is never read again, and a review in ediff
+  (`ecc-review-style` `ediff`) does not follow the files yet. One read of a diff of 1,000 hunks (65 KB) took 0.06 s and of
   10,000 hunks (650 KB) 0.22 s, measured with `benchmark-run` in batch.
 
 - `C-u G` (`ecc-review-worktree`) takes `--staged` or `--cached` for what
   is staged alone -- the index against `HEAD`, without untracked files, in
-  a buffer named `staged` -- and asks after the range for the files to
+  a buffer named `staged changes` -- and asks after the range for the files to
   review, out of those the range would show; none is every file. `g` keeps
   the files. A range starting with `-` is refused, so no git option reaches
   git. `ecc-review-worktree-buffer` takes the files as PATHS, and a range
-  may be the symbol `staged`.
+  may be the symbol `staged`. The review of what is not staged is now
+  named `unstaged changes`: with a space in them, neither name can be that
+  of a branch. The files, given to `review_open` or to the review, may be
+  relative to the project or absolute, outside git as well.
 
 - `ecc-tool-finished-hook`, run with the session and the tool node on every
   tool result, whatever the tool.

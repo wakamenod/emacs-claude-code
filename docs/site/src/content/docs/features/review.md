@@ -49,9 +49,11 @@ Each comment belongs to the line you made it on. On a removed line (`-`), it is 
 
 ## Following the files
 
-An open review reads the diff again when the files may have changed: when a tool of its session finishes, when a turn ends, and when you save a file of its repository in Emacs. A shell command or a script counts as much as an edit, and so does another session working in the same repository. Your comments and your place are kept, as with `g`.
+An open review reads the diff again when the files may have changed: when a tool of its session finishes, when a turn ends, and when you save a file of its repository in Emacs. A shell command or a script counts as much as an edit, and so does another session working in the same repository. A tool that only reads, such as Read or Grep, does not count. Your comments and your place are kept, as with `g`.
 
-The review waits until Emacs has been idle for half a second, and reads several changes in one go. A review on the screen reads the diff at once. A review out of sight waits until you show it again. The review never takes the focus, never moves a window, and leaves a prompt you are typing alone. When every change has gone, for example because it was committed, the review stays open and says so. `g` on such a review still reports that there is nothing to show. The review of a single proposal is never read again.
+The review waits half a second, longer while you are typing, and reads several changes in one go. If the diff has not changed, the buffer is left as it is. A review on the screen reads the diff at once. A review out of sight waits until you show it again. The review never takes the focus, never moves a window, and leaves a prompt you are typing alone. When every change has gone, for example because it was committed, the review stays open and says so. `g` on such a review still reports that there is nothing to show. If the diff cannot be read, for example because the directory is gone, the header line says why and the review waits until you press `g`. The review of a single proposal is never read again.
+
+Only the diff buffer follows the files. A review in ediff (`ecc-review-style` set to `'ediff`) does not, yet.
 
 To turn this off and read the diff only with `g`:
 
@@ -89,7 +91,7 @@ This diffs the project's entire repository against `HEAD` — every uncommitted 
 - A revision such as `HEAD~1` compares it with the working tree, untracked files included.
 - A range such as `main...HEAD`, `HEAD~1..HEAD` or `HEAD^!` compares commits, without untracked files.
 - Nothing compares the index with the working tree: the unstaged changes.
-- `--staged` (or `--cached`) compares `HEAD` with the index: the staged changes alone. The buffer is named `staged`.
+- `--staged` (or `--cached`) compares `HEAD` with the index: the staged changes alone. The buffer name says `staged changes`.
 
 For the files, choose any number with completion; leave it empty for all of them. `g` and [following the files](#following-the-files) keep the choice. Whether a range involves the working tree is decided by `git rev-parse`, not by reading the text. A range that starts with `-` is refused, so no git option gets in.
 
