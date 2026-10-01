@@ -710,12 +710,17 @@ again and a model holding it cannot hit another comment with it.")
   "Overlays marking the header of every hunk that carries a comment.")
 
 ;; A review is a buffer that holds comments and is closed when they have
-;; been sent.  How it holds them and how it closes are its own: the diff
-;; buffer keeps overlays on hunks and is killed, an ediff review keeps
-;; them against difference numbers in a control buffer and is quit
-;; through ediff so that the windows come back.  Everything between --
-;; C-c C-c, the prompt shown to be confirmed, C-c C-k -- is the same
-;; code for both, because only these two slots differ.
+;; been sent.  Both kinds keep their comments the same way, as
+;; `ecc-review-note's in `ecc-review--notes' of the buffer the review is
+;; driven from -- the diff buffer itself, or the control buffer of an
+;; ediff review -- and put them back with the same rules.  How one lists
+;; them and how one closes are these two slots: the diff buffer is
+;; killed, an ediff review is quit through ediff so that the windows
+;; come back.  What else differs -- where a line is, how a comment is
+;; drawn, how the view is moved -- is the generic functions under "Kinds
+;; of review" below, so that C-c C-c, the prompt shown to be confirmed,
+;; C-c C-k and the tools of `ecc-review-agent.el' are the same code for
+;; both.
 
 (defvar-local ecc-review--comments-function #'ecc-review-comments
   "How this review buffer lists its comments.
@@ -730,6 +735,119 @@ Called with the review buffer.")
   "Close the review buffer REVIEW the way it asks to be closed."
   (when (buffer-live-p review)
     (funcall (buffer-local-value 'ecc-review--close-function review) review)))
+
+(defvar-local ecc-review--part-of nil
+  "The review buffer this buffer shows a part of, or nil.
+The two sides of an ediff review point at its control buffer, which is
+where the review is kept: a window coming to show one of them is a
+review coming into view.")
+
+(defun ecc-review-buffer-p (&optional buffer)
+  "Return non-nil when BUFFER is a review of files.
+A diff review, or the control buffer of an ediff review; the review of
+a proposal is not one, being about that proposal rather than the files.
+BUFFER defaults to the current buffer."
+  (with-current-buffer (or buffer (current-buffer))
+    (and ecc-review--session
+         (null ecc-review--request)
+         (derived-mode-p 'ecc-review-mode 'ediff-mode))))
+
+;;;; Kinds of review
+
+;; The diff review is the default of each of these, and `ecc-review-
+;; ediff.el' has the ediff review's own; they are called in the review
+;; buffer, and dispatch on its major mode.  The tools of
+;; `ecc-review-agent.el' and the following of the files reach a review
+;; through these alone, so neither asks which kind it has.
+
+(cl-defgeneric ecc-review-lines ()
+  "Return every line of this review a comment can be on.
+Each is a plist of `ecc-review--hunk-lines', and the @@ header of each
+hunk is among them, as the line a comment on the whole hunk is on."
+  (ecc-review--lines))
+
+(cl-defgeneric ecc-review-units ()
+  "Return the hunks of this review, as `ecc-review-hunk-at' plists, in order."
+  (ecc-review-hunks))
+
+(cl-defgeneric ecc-review-unit-description (hunk)
+  "Return how `review_hunks' describes HUNK after its number."
+  (format "%s  new L%d-L%d" (plist-get hunk :header)
+          (plist-get hunk :start) (plist-get hunk :end)))
+
+(cl-defgeneric ecc-review--note-place (note line lines)
+  "Return (BUFFER BEG END PROPERTY KEY) for drawing NOTE, put on LINE.
+LINE is nil for an outdated comment, and LINES are all the lines of the
+review.  The overlay goes in BUFFER between BEG and END and shows the
+comment as its PROPERTY, `after-string' or `before-string'; KEY is a
+position in the order of the review, which is what the comments are
+sorted and walked by (`ecc-review-note-position')."
+  (pcase-let ((`(,beg ,end ,property) (ecc-review--place note line lines)))
+    (list (current-buffer) beg end property beg)))
+
+(cl-defgeneric ecc-review--decorate (commented lines)
+  "Mark the hunks of LINES whose keys are in COMMENTED as carrying comments.
+Return the overlays made."
+  (let ((overlays nil))
+    (dolist (line lines)
+      (when (and (null (plist-get line :side))
+                 (member (ecc-review--hunk-key (plist-get line :hunk)) commented))
+        (let ((overlay (make-overlay (plist-get line :position)
+                                     (save-excursion
+                                       (goto-char (plist-get line :position))
+                                       (line-end-position)))))
+          (overlay-put overlay 'face 'ecc-review-commented-hunk-face)
+          (push overlay overlays))))
+    overlays))
+
+(cl-defgeneric ecc-review-reading-position (window)
+  "Return where the review is being read, as a KEY of `ecc-review--note-place'.
+WINDOW is the window it is on the screen in, or nil."
+  (if window (window-point window) (point)))
+
+(defun ecc-review--window-start (window position)
+  "Return a start for WINDOW that puts POSITION a quarter of the way down."
+  (with-current-buffer (window-buffer window)
+    (save-excursion
+      (goto-char position)
+      (forward-line (- (/ (window-body-height window) 4)))
+      (point))))
+
+(cl-defgeneric ecc-review-move-to (place window)
+  "Move the view of this review to PLACE, without selecting anything.
+PLACE is a comment or a line of `ecc-review-lines'.  WINDOW is the
+window the review is shown in, or nil; point moves either way, so that
+the review opens there."
+  (let ((position (or (if (ecc-review-note-p place)
+                          (ecc-review-note-position place)
+                        (plist-get place :position))
+                      (point-min))))
+    (goto-char position)
+    (when window
+      (set-window-point window position)
+      (set-window-start window (ecc-review--window-start window position)))))
+
+(cl-defgeneric ecc-review-shown-window ()
+  "Return the window this review is on the screen in, or nil."
+  (get-buffer-window (current-buffer) 'visible))
+
+(cl-defgeneric ecc-review-show-quietly (session others)
+  "Show this review of SESSION without taking anything; return its window.
+OTHERS is a predicate on a buffer: another review on the screen that
+gives up its window to this one (`ecc-window-show-review-quietly')."
+  (ecc-window-show-review-quietly (current-buffer) session others))
+
+(cl-defgeneric ecc-review-takes-the-screen-p ()
+  "Return non-nil when this review cannot be opened without taking the screen.
+Such a review is read again where it is, never opened afresh by
+Claude."
+  nil)
+
+(cl-defgeneric ecc-review-reread (&optional watching)
+  "Read this review again from what it remembers, keeping its comments.
+WATCHING is `ecc-review--show\='s: a review read because the files
+changed stays open when its changes have gone."
+  (ecc-review--reread (current-buffer) watching))
 
 (defvar ecc-review-mode-map
   (let ((map (make-sparse-keymap)))
@@ -1429,46 +1547,45 @@ is nothing to read them for."
         ecc-review--decorations nil
         ecc-review--positions (make-hash-table :test #'eq))
   (when ecc-review--notes
-    (ecc-review--draw-notes-on (or lines (ecc-review--lines))))
+    (ecc-review--draw-notes-on (or lines (ecc-review-lines))))
   (force-mode-line-update))
 
 (defun ecc-review--draw-notes-on (lines)
-  "Draw the comments of this buffer on LINES, the lines it holds now."
+  "Draw the comments of this buffer on LINES, the lines it holds now.
+Where each goes is the kind of review's own (`ecc-review--note-place\=');
+the overlays are made there, in whichever buffer that is, and kept here."
   (let* ((places (ecc-review--relocate lines))
          (groups nil)
          (commented nil))
     (dolist (note ecc-review--notes)
-      (let ((place (ecc-review--place note (gethash note places) lines)))
-        (puthash note (car place) ecc-review--positions)
+      (pcase-let ((`(,buffer ,beg ,end ,property ,key)
+                   (ecc-review--note-place note (gethash note places) lines)))
+        (puthash note key ecc-review--positions)
         (when (ecc-review--shown-p note)
           (unless (ecc-review-note-outdated note)
             (cl-pushnew (ecc-review-note-hunk-key note) commented :test #'equal))
           (unless (ecc-review--drawn-under note)
-            (push note (alist-get place groups nil nil #'equal))))))
-    (pcase-dolist (`((,beg ,end ,property) . ,roots) (nreverse groups))
-      (let ((overlay (make-overlay beg end nil t nil))
+            (push note (alist-get (list buffer beg end property) groups
+                                  nil nil #'equal))))))
+    (pcase-dolist (`((,buffer ,beg ,end ,property) . ,roots) (nreverse groups))
+      (let ((overlay (make-overlay beg end buffer t nil))
             (roots (nreverse roots)))
         (overlay-put overlay 'ecc-review-notes (mapcan #'ecc-review--subtree roots))
         (overlay-put overlay property
                      (mapconcat (lambda (note) (ecc-review--note-string note 0))
                                 roots ""))
         (push overlay ecc-review--comments)))
-    (dolist (line lines)
-      (when (and (null (plist-get line :side))
-                 (member (ecc-review--hunk-key (plist-get line :hunk)) commented))
-        (let ((overlay (make-overlay (plist-get line :position)
-                                     (save-excursion
-                                       (goto-char (plist-get line :position))
-                                       (line-end-position)))))
-          (overlay-put overlay 'face 'ecc-review-commented-hunk-face)
-          (push overlay ecc-review--decorations))))))
+    (setq ecc-review--decorations (ecc-review--decorate commented lines))))
 
 (defun ecc-review-comment-overlays ()
   "Return the live overlays drawing the comments of this buffer."
   (setq ecc-review--comments (seq-filter #'overlay-buffer ecc-review--comments)))
 
 (defun ecc-review-note-position (note)
-  "Return where NOTE was drawn last, or would have been when hidden."
+  "Return where NOTE was drawn last, or would have been when hidden.
+In a diff review that is a position of its buffer; in an ediff review
+it is the KEY of `ecc-review--note-place\=', a position in the order of
+the review."
   (and ecc-review--positions (gethash note ecc-review--positions)))
 
 (defun ecc-review--copy-anchor (note from)
@@ -1646,6 +1763,22 @@ When the line carries more than one, which is asked."
                 (pb (or (ecc-review-note-position b) (point-max))))
             (or (< pa pb)
                 (and (= pa pb) (< (ecc-review-note-id a) (ecc-review-note-id b))))))))
+
+(defun ecc-review-note-beyond (from forward)
+  "Return the first comment past FROM, after it when FORWARD, else before.
+FROM is a position in the order of the review, a KEY of
+`ecc-review--note-place\=' (`ecc-review-reading-position\=').  The
+comments are walked by where they are drawn, Claude\='s hidden ones
+included; of several in one place, the one made first."
+  (let* ((notes (seq-filter #'ecc-review-note-position
+                            (ecc-review--ordered ecc-review--notes)))
+         (positions (mapcar #'ecc-review-note-position notes))
+         (position (if forward
+                       (seq-find (lambda (p) (> p from)) positions)
+                     (car (last (seq-filter (lambda (p) (< p from)) positions))))))
+    (and position
+         (seq-find (lambda (note) (= (ecc-review-note-position note) position))
+                   notes))))
 
 (defun ecc-review--note-plist (note)
   "Return NOTE as the plist `ecc-review-format-message\=' takes."
@@ -2020,7 +2153,7 @@ the new error is what its header line says."
   (let ((failed ecc-review--failed))
     (setq ecc-review--failed nil)
     (condition-case error
-        (ecc-review--reread (current-buffer) failed)
+        (ecc-review-reread failed)
       (error
        (when failed
          (setq ecc-review--failed (error-message-string error))
@@ -2055,9 +2188,9 @@ comments and the place you are reading are kept, as \\`g' keeps them,
 and a review whose changes have all gone stays open and says so.  Only
 a review on the screen is read at once; one out of sight is read when
 it is shown again.  The review of one proposal waiting to be allowed is
-never read again: it is about that proposal, not about the files.  Nor,
-yet, is a review in ediff (`ecc-review-style\\=' `ediff\\='): only the
-diff review follows the files.
+never read again: it is about that proposal, not about the files.  A
+review in ediff (`ecc-review-style\\=' `ediff\\=') follows them the same
+way, keeping the difference being read and where its two sides are.
 
 When nil a review shows the diff as it was opened, until \\`g'."
   :type 'boolean
@@ -2093,11 +2226,8 @@ review itself -- say so here.")
 A review of files does; the review of a proposal does not, and nor does
 one whose last reading failed, until \\`g' reads it."
   (and (buffer-live-p buffer)
-       (with-current-buffer buffer
-         (and (derived-mode-p 'ecc-review-mode)
-              ecc-review--session
-              (null ecc-review--request)
-              (null ecc-review--failed)))))
+       (ecc-review-buffer-p buffer)
+       (null (buffer-local-value 'ecc-review--failed buffer))))
 
 (defun ecc-review--schedule-refresh ()
   "Make sure the timer that reads the stale reviews again is waiting.
@@ -2202,9 +2332,15 @@ Only when a tool that can change files finished in it."
 
 (defun ecc-review--on-window-buffer-change (frame)
   "Ask for the timer when a window of FRAME shows a stale review.
-That is how a review out of sight is read again once it is shown."
+That is how a review out of sight is read again once it is shown.  A
+window showing a part of a review -- a side of an ediff review -- shows
+the review."
   (when (seq-some (lambda (window)
-                    (buffer-local-value 'ecc-review--stale (window-buffer window)))
+                    (let* ((buffer (window-buffer window))
+                           (review (or (buffer-local-value 'ecc-review--part-of buffer)
+                                       buffer)))
+                      (and (buffer-live-p review)
+                           (buffer-local-value 'ecc-review--stale review))))
                   (window-list frame 'no-minibuffer))
     (ecc-review--schedule-refresh)))
 
@@ -2222,9 +2358,9 @@ time -- the timer still waiting -- it takes the timer's place."
     (dolist (buffer (buffer-list))
       (when (and (ecc-review--watched-p buffer)
                  (buffer-local-value 'ecc-review--stale buffer)
-                 (get-buffer-window buffer 'visible))
+                 (with-current-buffer buffer (ecc-review-shown-window)))
         (condition-case error
-            (ecc-review--reread buffer t)
+            (with-current-buffer buffer (ecc-review-reread t))
           (error
            (let ((text (error-message-string error)))
              (with-current-buffer buffer

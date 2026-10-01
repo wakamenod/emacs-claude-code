@@ -272,10 +272,11 @@
             (ecc-review-ediff-test--quit control)))))))
 
 (ert-deftest ecc-review-ediff-test-a-and-b-say-what-a-review-is ()
-  "ediff's copy commands say what a review does instead of failing.
+  "ediff's copy commands are the review's own keys instead of failing.
 Both sides are read-only, so `a' and `b' could only signal
 `buffer-read-only' -- an error naming a buffer nobody asked about, from
-a key the review's own help does not offer."
+a key the review's own help does not offer.  a shows and hides Claude's
+comments, as in the diff review; b says what a review is."
   (skip-unless (executable-find "git"))
   (ecc-review-ediff-test--with-ediff
     (ecc-test-with-fake-session session
@@ -289,7 +290,7 @@ a key the review's own help does not offer."
                 (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
                 (setq control (ecc-review-ediff-buffer session))
                 (with-current-buffer control
-                  (should (eq (key-binding (kbd "a")) #'ecc-review-ediff-copy-refused))
+                  (should (eq (key-binding (kbd "a")) #'ecc-review-toggle-agent))
                   (should (eq (key-binding (kbd "b")) #'ecc-review-ediff-copy-refused))
                   ;; `current-message' is nil in batch, so what was said
                   ;; is taken where it is said.
@@ -726,7 +727,7 @@ minibuffer the control frame of a graphical Emacs does not have."
                   ;; The second difference is the change to x.txt.
                   (ediff-jump-to-difference 2)
                   (ecc-review-ediff-comment "use a word")
-                  (let ((comment (car (ecc-review-ediff-comments))))
+                  (let ((comment (car (ecc-review-comments))))
                     (should (equal (plist-get comment :path) "x.txt"))
                     (should (equal (plist-get comment :start) 1))
                     (should (equal (plist-get comment :end) 1))
@@ -738,7 +739,7 @@ minibuffer the control frame of a graphical Emacs does not have."
                   ;; on the right, and is still that file's.
                   (ediff-jump-to-difference 1)
                   (ecc-review-ediff-comment "keep it")
-                  (let ((comments (ecc-review-ediff-comments)))
+                  (let ((comments (ecc-review-comments)))
                     (should (= (length comments) 2))
                     (should (equal (plist-get (car comments) :path) "gone.txt"))
                     (should (equal (plist-get (car comments) :text)
@@ -746,19 +747,22 @@ minibuffer the control frame of a graphical Emacs does not have."
                     ;; In the order of the differences, not of the typing.
                     (should (equal (plist-get (cadr comments) :path) "x.txt")))
                   ;; Shown under the difference on the right.
-                  (should (string-search
-                           "▎ use a word"
-                           (overlay-get (nth 2 (assq 1 ecc-review-ediff--comments))
-                                        'after-string)))
+                  (let ((overlay (seq-find (lambda (overlay)
+                                             (string-search "▎ #1 use a word"
+                                                            (or (overlay-get overlay 'after-string)
+                                                                "")))
+                                           ecc-review--comments)))
+                    (should overlay)
+                    (should (eq (overlay-buffer overlay) (cdr ecc-review-ediff--buffers))))
                   ;; Editing replaces, removing drops.
                   (ediff-jump-to-difference 2)
                   (ecc-review-ediff-comment "use two words")
-                  (should (= (length (ecc-review-ediff-comments)) 2))
-                  (should (equal (plist-get (cadr (ecc-review-ediff-comments))
+                  (should (= (length (ecc-review-comments)) 2))
+                  (should (equal (plist-get (cadr (ecc-review-comments))
                                             :comment)
                                  "use two words"))
                   (ecc-review-ediff-remove-comment)
-                  (should (= (length (ecc-review-ediff-comments)) 1))
+                  (should (= (length (ecc-review-comments)) 1))
                   (should-error (ecc-review-ediff-remove-comment)
                                 :type 'user-error)))
             (ecc-review-ediff-test--quit control)))))))
@@ -787,7 +791,7 @@ minibuffer the control frame of a graphical Emacs does not have."
                   (let ((base (car ecc-review-ediff--buffers))
                         (now (cdr ecc-review-ediff--buffers))
                         (expected (ecc-review-format-message
-                                   (ecc-review-ediff-comments))))
+                                   (ecc-review-comments))))
                     (ecc-review-send)
                     (should (string-search "## x.txt  L1-L1" expected))
                     (let ((sent (car (ecc-test-sent-messages))))
@@ -818,7 +822,7 @@ minibuffer the control frame of a graphical Emacs does not have."
                   (ediff-jump-to-difference 2)
                   (ecc-review-ediff-comment "use a word")
                   (let ((expected (ecc-review-format-message
-                                   (ecc-review-ediff-comments))))
+                                   (ecc-review-comments))))
                     (ecc-review-send t)
                     (let ((message-buffer (get-buffer "*ecc-review-message: test*")))
                       (should message-buffer)
@@ -865,6 +869,333 @@ minibuffer the control frame of a graphical Emacs does not have."
                   (should-not (buffer-live-p now))
                   (should-not ecc-test-sent)))
             (ecc-review-ediff-test--quit control)))))))
+
+;;;; Notes: Claude's comments, the keys, the reply
+
+(defconst ecc-review-ediff-test--lines
+  (mapconcat (lambda (n) (format "line%d\n" n)) (number-sequence 1 10) "")
+  "What a.txt holds when the repository is made: line1 to line10.")
+
+(defconst ecc-review-ediff-test--changed
+  "line1\nLINE2\nline3\nline4\nline5\nline6\nnew\nline7\nline8\nline10\n"
+  "a.txt as the session leaves it: line 2 changed, a line put in after line 6
+and line 9 taken out -- three differences, one of each kind.")
+
+(defun ecc-review-ediff-test--rich (session directory)
+  "Make DIRECTORY a repository whose a.txt SESSION changed three times.
+Open its ediff review and return the control buffer."
+  (ecc-review-ediff-test--repository directory)
+  (ecc-review-ediff-test--write (concat directory "a.txt") ecc-review-ediff-test--lines)
+  (ecc-review-ediff-test--git directory "add" "a.txt")
+  (ecc-review-ediff-test--git directory "commit" "-q" "-m" "a")
+  (setf (ecc-session-project-root session) directory)
+  (should (ecc-review-ensure-baseline session))
+  (ecc-review-ediff-test--write (concat directory "a.txt") ecc-review-ediff-test--changed)
+  (ecc-review-ediff-buffer session))
+
+(defun ecc-review-ediff-test--line (side number)
+  "Return the line of SIDE, `old' or `new', of a.txt numbered NUMBER."
+  (seq-find (lambda (line)
+              (and (eq (plist-get line :side) side)
+                   (equal (plist-get line :path) "a.txt")
+                   (eql (plist-get line :line) number)))
+            (ecc-review-lines)))
+
+(defun ecc-review-ediff-test--drawn (buffer)
+  "Return what the comment overlays of this review draw in BUFFER, joined."
+  (mapconcat (lambda (overlay)
+               (if (eq (overlay-buffer overlay) buffer)
+                   (or (overlay-get overlay 'after-string)
+                       (overlay-get overlay 'before-string) "")
+                 ""))
+             ecc-review--comments ""))
+
+(ert-deftest ecc-review-ediff-test-differences-are-hunks ()
+  "Each difference is a hunk with lines on the side that holds them."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (with-current-buffer control
+                  (let ((units (seq-filter (lambda (unit)
+                                             (equal (plist-get unit :path) "a.txt"))
+                                           (ecc-review-units))))
+                    (should (= (length units) 3))
+                    (should (equal (mapcar #'ecc-review-unit-description units)
+                                   '("difference 1  old L2-L2  new L2-L2"
+                                     "difference 2  old none  new L7-L7"
+                                     "difference 3  old L9-L9  new none")))
+                    (should (equal (plist-get (car units) :text)
+                                   "@@ -2,1 +2,1 @@\n-line2\n+LINE2")))
+                  ;; The lines are where they are in the two buffers.
+                  (let ((old (ecc-review-ediff-test--line 'old 9))
+                        (new (ecc-review-ediff-test--line 'new 7)))
+                    (should (equal (plist-get old :text) "line9"))
+                    (should (eq (plist-get old :buffer) (car ecc-review-ediff--buffers)))
+                    (should (equal (plist-get new :text) "new"))
+                    (with-current-buffer (plist-get new :buffer)
+                      (goto-char (plist-get new :position))
+                      (should (looking-at-p "new$"))))
+                  ;; A line both sides hold is on no difference.
+                  (should-not (ecc-review-ediff-test--line 'new 5))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-claude-comments-and-the-keys ()
+  "Claude's comments are drawn on their side; c answers them; a { } d work."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (with-current-buffer control
+                  (let ((base (car ecc-review-ediff--buffers))
+                        (now (cdr ecc-review-ediff--buffers)))
+                    (ecc-review-add-note 'claude "Why the capitals?"
+                                         (ecc-review-ediff-test--line 'new 2))
+                    (ecc-review-add-note 'claude "line9 was used"
+                                         (ecc-review-ediff-test--line 'old 9))
+                    (ecc-review--draw-notes)
+                    ;; Under their lines, on their own side, as the diff
+                    ;; review draws them.
+                    (should (string-search "▎ #1 Claude: Why the capitals?"
+                                           (ecc-review-ediff-test--drawn now)))
+                    (should (string-search "▎ #2 Claude: line9 was used"
+                                           (ecc-review-ediff-test--drawn base)))
+                    (should-not (string-search "#2" (ecc-review-ediff-test--drawn now)))
+                    (let ((overlay (seq-find (lambda (overlay)
+                                               (eq (overlay-buffer overlay) now))
+                                             ecc-review--comments)))
+                      (should (eq (get-text-property
+                                   0 'face (overlay-get overlay 'after-string))
+                                  'ecc-review-agent-comment-face))
+                      (with-current-buffer now
+                        (goto-char (overlay-start overlay))
+                        (should (looking-at-p "LINE2$"))))
+                    ;; The keys of the diff review are here too.
+                    (dolist (key '(("a" . ecc-review-toggle-agent)
+                                   ("{" . ecc-review-ediff-previous-comment)
+                                   ("}" . ecc-review-ediff-next-comment)
+                                   ("d" . ecc-review-ediff-remove-comment)
+                                   ("l" . ecc-review-ediff-list-comments)
+                                   ("!" . ecc-review-refresh)))
+                      (should (eq (key-binding (kbd (car key))) (cdr key))))
+                    ;; } walks to the comments, difference and line.
+                    (ecc-review-ediff-next-comment)
+                    (should (= ediff-current-difference 0))
+                    (should (= (window-point ediff-window-B)
+                               (plist-get (ecc-review-ediff-test--line 'new 2) :position)))
+                    (ecc-review-ediff-next-comment)
+                    (should (= ediff-current-difference 2))
+                    (should (= (window-point ediff-window-A)
+                               (plist-get (ecc-review-ediff-test--line 'old 9) :position)))
+                    (should-error (ecc-review-ediff-next-comment) :type 'user-error)
+                    (ecc-review-ediff-previous-comment)
+                    (should (= ediff-current-difference 0))
+                    ;; c on a difference Claude spoke on answers it.
+                    (should (eq (nth 1 (ecc-review-ediff--comment-plan
+                                        (ecc-review-ediff--current-unit)))
+                                'reply))
+                    (ecc-review-ediff-comment "To stand out")
+                    (let ((reply (ecc-review-find-note 3)))
+                      (should (equal (ecc-review-note-reply-to reply) 1))
+                      (should (string-search "\n    ▎ #3 To stand out"
+                                             (ecc-review-ediff-test--drawn now))))
+                    (should (string-search "In reply to Claude's #1: Why the capitals?"
+                                           (ecc-review-buffer-message)))
+                    ;; Claude's are not sent.
+                    (should-not (string-search "line9 was used" (ecc-review-buffer-message)))
+                    ;; And c again edits the reply rather than answering twice.
+                    (should (eq (nth 1 (ecc-review-ediff--comment-plan
+                                        (ecc-review-ediff--current-unit)))
+                                'edit))
+                    ;; a hides Claude's and keeps them counted.
+                    (ecc-review-toggle-agent)
+                    (should-not (string-search "Claude:" (ecc-review-ediff-test--drawn now)))
+                    (should-not (string-search "Claude:" (ecc-review-ediff-test--drawn base)))
+                    (should (string-search "#3 [reply to #1] To stand out"
+                                           (ecc-review-ediff-test--drawn now)))
+                    (should (= (length ecc-review--notes) 3))
+                    (ecc-review-toggle-agent)
+                    ;; d takes the one asked for.
+                    (ediff-jump-to-difference 3)
+                    (ecc-review-ediff-remove-comment)
+                    (should-not (ecc-review-find-note 2))
+                    (should-not (string-search "line9" (ecc-review-ediff-test--drawn base))))))
+            (ecc-review-ediff-test--quit control)))))))
+
+;;;; Following the files
+
+(defmacro ecc-review-ediff-test--with-watch (&rest body)
+  "Run BODY with a timer of the watch of its own, cancelled afterwards."
+  (declare (indent 0))
+  `(let ((ecc-review--watch-timer nil)
+         (ecc-review-auto-refresh t))
+     (unwind-protect (progn ,@body)
+       (when (timerp ecc-review--watch-timer)
+         (cancel-timer ecc-review--watch-timer)))))
+
+(defun ecc-review-ediff-test--fire ()
+  "Run the watch timer as it runs with Emacs idle."
+  (cl-letf (((symbol-function 'current-idle-time) (lambda () (seconds-to-time 10)))
+            ((symbol-function 'input-pending-p) #'ignore))
+    (timer-event-handler ecc-review--watch-timer)))
+
+(ert-deftest ecc-review-ediff-test-follows-the-files ()
+  "A change marks the ediff review stale and the timer reads it in place.
+The comments, the difference being read and the line each side is on
+stay; nothing about the windows changes but what they show."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (ecc-review-ediff-test--with-watch
+          (let ((control nil))
+            (unwind-protect
+                (progn
+                  (setq control (ecc-review-ediff-test--rich session directory))
+                  (with-current-buffer control
+                    (ecc-review-add-note 'claude "A new line"
+                                         (ecc-review-ediff-test--line 'new 7))
+                    (ecc-review--draw-notes)
+                    (ediff-jump-to-difference 2)
+                    (ecc-review-ediff-comment "Name it")
+                    (should (ecc-review-shown-window)))
+                  ;; Two lines are put in at the top of a.txt.
+                  (ecc-review-ediff-test--write
+                   (concat directory "a.txt")
+                   (concat "zero\nzero2\n" ecc-review-ediff-test--changed))
+                  (ecc-review--on-session-change session nil)
+                  (should (buffer-local-value 'ecc-review--stale control))
+                  (should (timerp ecc-review--watch-timer))
+                  (let ((selected (selected-window))
+                        (windows (window-list)))
+                    (ecc-review-ediff-test--fire)
+                    (should (eq (selected-window) selected))
+                    (should (equal (window-list) windows)))
+                  (with-current-buffer control
+                    (should-not ecc-review--stale)
+                    (should (string-search "zero2"
+                                           (with-current-buffer ediff-buffer-B
+                                             (buffer-string))))
+                    ;; Still on the line that was put in: difference 3 now.
+                    (should (= ediff-current-difference 2))
+                    (should (equal (plist-get (nth 2 (ecc-review-units)) :header)
+                                   "@@ -7,0 +9,1 @@"))
+                    (should (string-search "new"
+                                           (ecc-review-ediff-test--drawn ediff-buffer-B)))
+                    (dolist (note ecc-review--notes)
+                      (should-not (ecc-review-note-outdated note))
+                      (should (equal (ecc-review-note-hunk-key note)
+                                   '("a.txt" . "@@ -7,0 +9,1 @@"))))
+                    (should (= (ecc-review-note-line (ecc-review-find-note 1)) 9))
+                    (should (string-search "▎ #1 Claude: A new line"
+                                           (ecc-review-ediff-test--drawn ediff-buffer-B)))
+                    ;; And its window is on that line.
+                    (should (= (window-point ediff-window-B)
+                               (plist-get (ecc-review-ediff-test--line 'new 9)
+                                          :position)))
+                    ;; Read again with nothing new, nothing is written.
+                    (let ((tick (with-current-buffer ediff-buffer-B
+                                  (buffer-chars-modified-tick))))
+                      (ecc-review-reread t)
+                      (should (= tick (with-current-buffer ediff-buffer-B
+                                        (buffer-chars-modified-tick)))))))
+              (ecc-review-ediff-test--quit control))))))))
+
+(ert-deftest ecc-review-ediff-test-follows-the-files-to-nothing ()
+  "An ediff review whose changes all go stays open and keeps its comments."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
+                (with-current-buffer control
+                  (ediff-jump-to-difference 1)
+                  (ecc-review-ediff-comment "Keep this")
+                  (ecc-review-ediff-test--write (concat directory "a.txt")
+                                                ecc-review-ediff-test--lines)
+                  (ecc-review-ediff-test--write (concat directory "x.txt") "one\n")
+                  (ecc-review-reread t)
+                  (should (buffer-live-p control))
+                  (should (= ediff-number-of-differences 0))
+                  (should (string-search "Nothing has changed"
+                                         (with-current-buffer ediff-buffer-B
+                                           (buffer-string))))
+                  (should (ecc-review-note-outdated (car ecc-review--notes)))
+                  ;; Sent as outdated, with the hunk it was on.
+                  (should (string-search "(outdated)" (ecc-review-buffer-message)))
+                  ;; And back once the change comes back.
+                  (ecc-review-ediff-test--write (concat directory "a.txt")
+                                                ecc-review-ediff-test--changed)
+                  (ecc-review-reread t)
+                  (should (= ediff-number-of-differences 3))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-a-failed-read-waits-for-bang ()
+  "An ediff review that cannot be read says so once and waits for !."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (ecc-review-ediff-test--with-watch
+          (let ((control nil)
+                (said nil))
+            (unwind-protect
+                (let ((moved (concat (directory-file-name directory) "-moved")))
+                  (setq control (ecc-review-ediff-test--rich session directory))
+                  (rename-file (directory-file-name directory) moved)
+                  (unwind-protect
+                      (progn
+                        (ecc-review--on-session-change session)
+                        (cl-letf (((symbol-function 'message)
+                                   (lambda (&rest args) (push (apply #'format args) said))))
+                          (ecc-review--refresh-stale))
+                        (should (= (length said) 1))
+                        (with-current-buffer control
+                          (should ecc-review--failed)
+                          (should-not ecc-review--stale)
+                          ;; The review is as it was.
+                          (should (= ediff-number-of-differences 3)))
+                        (ecc-review--on-session-change session)
+                        (should-not (buffer-local-value 'ecc-review--stale control)))
+                    (rename-file moved (directory-file-name directory)))
+                  (with-current-buffer control
+                    (ecc-review-refresh)
+                    (should-not ecc-review--failed))
+                  (ecc-review--on-session-change session)
+                  (should (buffer-local-value 'ecc-review--stale control)))
+              (ecc-review-ediff-test--quit control))))))))
+
+(ert-deftest ecc-review-ediff-test-a-side-coming-into-view-reads-it ()
+  "A window coming to show a side of a stale ediff review asks for the timer."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (ecc-review-ediff-test--with-watch
+          (let ((control nil))
+            (unwind-protect
+                (progn
+                  (setq control (ecc-review-ediff-test--rich session directory))
+                  (with-current-buffer control
+                    (should (eq (buffer-local-value 'ecc-review--part-of ediff-buffer-A)
+                                control))
+                    (setq ecc-review--stale t))
+                  (should-not ecc-review--watch-timer)
+                  (ecc-review--on-window-buffer-change (selected-frame))
+                  (should (timerp ecc-review--watch-timer)))
+              (ecc-review-ediff-test--quit control))))))))
 
 ;;;; The setting
 

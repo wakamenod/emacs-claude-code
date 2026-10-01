@@ -111,8 +111,8 @@ the frame of buffer A was when the review opened."
   "Say how many comments the review is carrying, and what they are."
   (with-current-buffer (demo-control-buffer)
     (demo-say (format "%d comment(s): %S"
-                      (length ecc-review-ediff--comments)
-                      (mapcar #'cadr ecc-review-ediff--comments))))
+                      (length ecc-review--notes)
+                      (mapcar #'ecc-review-note-text ecc-review--notes))))
   nil)
 
 (defun demo-message-buffer ()
