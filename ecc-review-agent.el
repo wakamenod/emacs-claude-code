@@ -357,6 +357,21 @@ arguments of `review_comment'.  LINES are the lines of the review."
         (claude (seq-count #'ecc-review--agent-p ecc-review--notes)))
     (format "%d by the user, %d by you" user claude)))
 
+(defvar ecc-review-agent-filter-text
+  "The user filtered the files of this review by \"%s\": %s hidden, \
+marked below.  Their comments are kept and sent; review_navigate cannot \
+show them until the user clears the filter.\n"
+  "What the review tools say of a filter in force.
+The arguments are the filter and how many files it hides.  A sentence
+sent to the model, so a variable and not a setting.")
+
+(defun ecc-review-agent--filter-line ()
+  "Return what the summary of this review says of its filter, or \"\"."
+  (if ecc-review--filter
+      (format ecc-review-agent-filter-text ecc-review--filter
+              (ecc-review--count (length ecc-review--hidden) "file"))
+    ""))
+
 (defun ecc-review-agent--summary (&optional file include-patch)
   "Return the files and hunks of this review, of FILE alone when given.
 INCLUDE-PATCH adds the text of each hunk."
@@ -368,11 +383,14 @@ INCLUDE-PATCH adds the text of each hunk."
              (ecc-review--count (length (ecc-review-agent--paths)) "file")
              (ecc-review--count (length hunks) "hunk")
              (ecc-review-agent--counts))
+     (ecc-review-agent--filter-line)
      (mapconcat
       (lambda (path)
         (let ((number 0))
           (concat
-           "\n" path "\n"
+           "\n" path
+           (if (ecc-review-hidden-p path) "  (hidden by the user's filter)" "")
+           "\n"
            (mapconcat
             (lambda (hunk)
               (cl-incf number)
@@ -509,8 +527,11 @@ comment in it adds nothing and can be sent again whole."
                            (nreverse resolved))))
         (ecc-review--draw-notes)
         (mapconcat (lambda (note)
-                     (format "Added #%d at %s" (ecc-review-note-id note)
-                             (ecc-review-note-where note)))
+                     (format "Added #%d at %s%s" (ecc-review-note-id note)
+                             (ecc-review-note-where note)
+                             (if (ecc-review-hidden-p (ecc-review-note-path note))
+                                 " (the user's filter hides this file; the comment shows when they clear it)"
+                               "")))
                    notes "\n")))))
 
 (defun ecc-review-agent-comment (file line side hunk text reply-to)
@@ -570,6 +591,12 @@ window is moved without being selected (`ecc-review-move-to\=')."
                   (cons (ecc-review-agent--hunk-line path hunk lines)
                         (format "hunk %d of %s" hunk path)))
                  (t (cons (ecc-review-agent--hunk-line path 1 lines) path))))))))
+      (let ((path (if (ecc-review-note-p (car target))
+                      (ecc-review-note-path (car target))
+                    (plist-get (car target) :path))))
+        (when (ecc-review-hidden-p path)
+          (error "%s is hidden by the user's filter \"%s\"; it cannot be shown until they clear it"
+                 path ecc-review--filter)))
       (ecc-review-move-to (car target) window)
       (if (not window)
           (format "The review is not on the screen (the user is not looking at this session, or it had no window to go in but the one they are using).  Its point is at %s, where it opens when the user opens it; a window already showing it in another tab keeps the place it had."

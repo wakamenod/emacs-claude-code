@@ -241,7 +241,8 @@
                 (with-current-buffer control
                   (dolist (key '("c -comment" "d -remove" "l -list"
                                  "C-c C-c -send" "C-c C-k -drop"
-                                 "q -close" "n,SPC -next diff"))
+                                 "q -close" "n,SPC -next diff"
+                                 "s -list the files" "/ -filter the files"))
                     (should (string-match-p (regexp-quote key)
                                             ediff-long-help-message)))
                   ;; Both sides are read-only: nothing that would write.
@@ -254,13 +255,17 @@
                   ;; standard string unless it is composed again there.
                   (should-not (equal ediff-brief-help-message
                                      ediff-brief-message-string))
-                  (should (string-match-p "C-c C-c -send"
-                                          ediff-brief-help-message))
+                  ;; Two lines: the keys a review is read with.
+                  (should (equal (split-string ediff-brief-help-message "\n")
+                                 '(" n/p diff   c comment   { } comments   a Claude's   s files   / filter"
+                                   " ! reread   C-c C-c send   q quit   ? all keys")))
                   ;; And it is in the panel, not only in the variable:
                   ;; `ediff-setup' writes the help out before it runs
                   ;; the startup hooks.
                   (should (equal ediff-help-message ediff-brief-help-message))
-                  (should (string-match-p (regexp-quote "C-c C-c -send")
+                  (should (string-match-p (regexp-quote "C-c C-c send")
+                                          (buffer-string)))
+                  (should (string-match-p (regexp-quote "s files   / filter")
                                           (buffer-string)))
                   (ediff-toggle-help)
                   (should (string-match-p (regexp-quote "c -comment on this diff")
@@ -1695,7 +1700,7 @@ a submodule is named as one."
       (ecc-review-ediff-test--git directory "commit" "-q" "-m" "module")
       (let ((right (ecc-review--head-tree root)))
         (should (equal (assoc "module" (ecc-review-ediff-pairs root left right))
-                       '("module" "" "" "submodule, not shown" nil nil)))
+                       '("module" "" "" "submodule, not shown" nil nil "A")))
         (let ((logged nil))
           (cl-letf* ((git (symbol-function 'ecc-review--git))
                      ((symbol-function 'ecc-review--git)

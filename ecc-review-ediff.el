@@ -89,6 +89,7 @@
 (require 'ecc-diff)
 (require 'ecc-window)
 (require 'ecc-review)
+(require 'ecc-review-files)
 
 ;;;; The two trees a review compares
 
@@ -270,9 +271,11 @@ created or deleted."
 (defun ecc-review-ediff-pairs (root left right &optional paths cache)
   "Return what differs between the trees LEFT and RIGHT of ROOT.
 PATHS, relative to ROOT, restrict the comparison.  The result is a list
-of (PATH BEFORE AFTER NOTE BEFORE-BLOB AFTER-BLOB) in the order git
-reports, where BEFORE and AFTER are what the two trees hold, the BLOBs
-their ids, and NOTE, when non-nil, says why neither is there: a file git
+of (PATH BEFORE AFTER NOTE BEFORE-BLOB AFTER-BLOB STATUS) in the order
+git reports, where BEFORE and AFTER are what the two trees hold, the BLOBs
+their ids, STATUS \"A\" for a file the left tree does not name, \"D\"
+for one the right does not and \"M\" for the rest, and NOTE, when
+non-nil, says why neither is there: a file git
 calls binary, one too large for `ecc-review-max-bytes\\=', a submodule,
 or one git would not give is named and not shown.  Both sides being
 empty, such a file is no difference at all
@@ -324,7 +327,10 @@ through it, and through one git process (`ecc-review-ediff--read-blobs\\=')."
                     (if note "" (or after ""))
                     note
                     (and (not note) before-id)
-                    (and (not note) after-id))
+                    (and (not note) after-id)
+                    (cond ((null before-id) "A")
+                          ((null after-id) "D")
+                          (t "M")))
               pairs)))
     (nreverse pairs)))
 
@@ -345,10 +351,10 @@ Its keys are (raw . BLOB), (size . BLOB) and (face BLOB PATH FONTIFY)."
 ;;;; The two buffers
 
 (defvar-local ecc-review-ediff--sections nil
-  "Where each file begins, as (PATH BASE-LINE NOW-LINE).
+  "Where each file begins, as (PATH BASE-LINE NOW-LINE STATUS).
 The lines are those of the separator line in the two buffers, in the
-order the files were written out.  Buffer-local in the ediff control
-buffer.")
+order the files were written out, and STATUS is that of
+`ecc-review-ediff-pairs\='.  Buffer-local in the ediff control buffer.")
 
 (defvar-local ecc-review-ediff--cache nil
   "What this review read and coloured, by blob; see `ecc-review-ediff--blob-text\='.
@@ -1093,7 +1099,8 @@ was 0.7 s of the 1.7 s a review of 57 files took to open in batch, and
               (insert (propertize (concat nothing ".  This review follows the files,"
                                           " and the next change will show up here.\n")
                                   'face 'ecc-dim-face)))))
-      (pcase-dolist (`(,path ,before ,after ,note ,before-blob ,after-blob) pairs)
+      (pcase-dolist (`(,path ,before ,after ,note ,before-blob ,after-blob ,status)
+                     pairs)
         (let ((separator (ecc-review-ediff--separator path note))
               (lines nil))
           (pcase-dolist (`(,buffer ,text ,blob) (list (list base before before-blob)
@@ -1107,7 +1114,7 @@ was 0.7 s of the 1.7 s a review of 57 files took to open in batch, and
                        :path path :blob blob :text text)
                       (alist-get buffer uncoloured)))
               (push (car place) lines)))
-          (push (cons path (nreverse lines)) sections))))
+          (push (append (cons path (nreverse lines)) (list status)) sections))))
     (dolist (buffer (list base now))
       (with-current-buffer buffer
         (setq ecc-review-ediff--uncoloured (nreverse (alist-get buffer uncoloured)))
@@ -1838,7 +1845,7 @@ the review, or any in a review whose changes have all gone."
          (note (ecc-review--pick-note
                 (cond (here)
                       (unit (user-error "No comment on this difference; C-u d offers them all"))
-                      ((ecc-review--ordered (seq-filter #'ecc-review--shown-p
+                      ((ecc-review--ordered (seq-filter #'ecc-review--visible-p
                                                         ecc-review--notes)))
                       (t (user-error "No comment in this review")))
                 "Remove comment: "
@@ -1851,7 +1858,7 @@ the review, or any in a review whose changes have all gone."
 (defun ecc-review-ediff-list-comments ()
   "Pick one of the comments, either author's, and move to it."
   (interactive)
-  (let ((notes (or (ecc-review--ordered (seq-filter #'ecc-review--shown-p
+  (let ((notes (or (ecc-review--ordered (seq-filter #'ecc-review--visible-p
                                                     ecc-review--notes))
                    (user-error "No comment yet"))))
     (ecc-review-move-to (ecc-review--pick-note notes "Comment: ") nil)))
@@ -1882,6 +1889,229 @@ or hides Claude\\='s comments."
   (message
    "A review reads; C-c C-c sends the comments and Claude makes the changes"))
 
+;;;; The files pane and the filter
+
+;; The ediff review's answers to what `ecc-review-files.el' asks of a
+;; review.  A file is a section of both sides, from its separator line
+;; to the next one; the filter hides both halves of it, and n, p and j
+;; step over the differences in what it hides -- in this control buffer
+;; alone, through `ediff-skip-diff-region-function', the way ediff's own
+;; #h and #f skip theirs.
+
+(defvar ecc-review-ediff-full-frame)
+
+(cl-defmethod ecc-review-files-entries (&context (major-mode ediff-mode))
+  "Return the files of this ediff review, one per section of the two sides.
+The lines added and removed are those of its differences, which are
+what the review shows; there are no renames, the review being made with
+--no-renames."
+  (let ((counts (make-hash-table :test #'equal)))
+    (dolist (unit (ecc-review-units))
+      (let ((count (or (gethash (plist-get unit :path) counts) (cons 0 0))))
+        (puthash (plist-get unit :path)
+                 (cons (+ (car count) (plist-get unit :new-count))
+                       (+ (cdr count) (plist-get unit :old-count)))
+                 counts)))
+    (mapcar (lambda (section)
+              (let ((count (gethash (car section) counts '(0 . 0))))
+                (list :path (car section) :old-path nil
+                      :status (or (nth 3 section) "M")
+                      :added (car count) :removed (cdr count))))
+            ecc-review-ediff--sections)))
+
+(cl-defmethod ecc-review-files--key (&context (major-mode ediff-mode))
+  "Return the sections and the differences of this review: what its files are."
+  (list ecc-review-ediff--sections (ecc-review-units)))
+
+(cl-defmethod ecc-review-files-current (&context (major-mode ediff-mode))
+  "Return the file of the difference ediff is on, else of the right side's point."
+  (if (ediff-valid-difference-p ediff-current-difference)
+      (plist-get (nth ediff-current-difference (ecc-review-units)) :path)
+    (when-let* ((point (and ecc-review-ediff--sections (ecc-review-ediff--right-point))))
+      (car (ecc-review-ediff--file-place 'B point)))))
+
+(defun ecc-review-ediff--give-the-control-panel-the-keyboard ()
+  "Select the control panel of this review, and its frame when it has one."
+  (when (window-live-p ediff-control-window)
+    (select-window ediff-control-window)
+    (when (and (display-graphic-p) (not (eq (window-frame ediff-control-window)
+                                            (selected-frame))))
+      (select-frame-set-input-focus (window-frame ediff-control-window)))))
+
+(cl-defmethod ecc-review-files-goto (entry select &context (major-mode ediff-mode))
+  "Put this review on the first difference of the file ENTRY.
+A file with no difference -- one named and not shown -- is scrolled to
+on both sides.  SELECT hands the control panel the keyboard."
+  (let* ((path (plist-get entry :path))
+         (unit (seq-find (lambda (unit) (equal (plist-get unit :path) path))
+                         (ecc-review-units))))
+    (if unit
+        (ecc-review-move-to (car (ecc-review-ediff--unit-lines unit)) nil)
+      (dolist (side '(A B))
+        (ecc-review-ediff--show-position
+         side (or (ecc-review-ediff--separator-position side path) 1))))
+    (ecc-review-files--follow)
+    (when select
+      (ecc-review-ediff--give-the-control-panel-the-keyboard))))
+
+(defun ecc-review-ediff--section-bounds (side path)
+  "Return (BEG . END), where the file PATH runs on SIDE, `A' or `B'."
+  (let* ((beg (ecc-review-ediff--separator-position side path))
+         (next (cadr (member (assoc path ecc-review-ediff--sections)
+                             ecc-review-ediff--sections))))
+    (cons beg (or (and next (ecc-review-ediff--separator-position side (car next)))
+                  (with-current-buffer (if (eq side 'A) (car ecc-review-ediff--buffers)
+                                         (cdr ecc-review-ediff--buffers))
+                    (point-max))))))
+
+(cl-defmethod ecc-review-files-hide (entries &context (major-mode ediff-mode))
+  "Hide both halves of the files ENTRIES of this ediff review, and no other.
+The overlays live in the two sides and are kept here, in the control
+buffer."
+  (mapc #'delete-overlay ecc-review-files--hiders)
+  (setq ecc-review-files--hiders nil)
+  (dolist (side '(A B))
+    (let ((buffer (if (eq side 'A) (car ecc-review-ediff--buffers)
+                    (cdr ecc-review-ediff--buffers))))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer
+          (add-to-invisibility-spec 'ecc-review-filter))
+        (dolist (entry entries)
+          (pcase-let ((`(,beg . ,end) (ecc-review-ediff--section-bounds
+                                       side (plist-get entry :path))))
+            (when beg
+              (let ((overlay (make-overlay beg end buffer t nil)))
+                (overlay-put overlay 'invisible 'ecc-review-filter)
+                (overlay-put overlay 'evaporate t)
+                (push overlay ecc-review-files--hiders)))))))))
+
+(cl-defmethod ecc-review-files-review-window (&context (major-mode ediff-mode))
+  "Return the left window of this ediff review, which the pane goes beside."
+  (and (window-live-p ediff-window-A)
+       (eq (window-buffer ediff-window-A) ediff-buffer-A)
+       ediff-window-A))
+
+(cl-defmethod ecc-review-files-place-pane (pane &context (major-mode ediff-mode))
+  "Show PANE left of this ediff review, and return its window.
+With the frame the review's own (`ecc-review-ediff-full-frame\\=') the
+pane is a side window on the left, which ediff laying its windows out
+again -- | and m -- leaves where it is, and which goes when the windows
+of before the review are put back.  Otherwise it is split off the left
+of the left side, and put back by `ecc-review-ediff--keep-the-pane'
+whenever ediff lays the windows out again."
+  (when-let* ((window (ecc-review-files-review-window)))
+    (let ((left
+           (if ecc-review-ediff-full-frame
+               (with-selected-window window
+                 (display-buffer-in-side-window
+                  pane `((side . left) (slot . 0)
+                         (window-width . ,ecc-review-files-width)
+                         (preserve-size . (t . nil))
+                         (dedicated . t)
+                         (window-parameters . ((no-other-window . t)
+                                               (no-delete-other-windows . t))))))
+             (let ((left (ecc-review-files--split window)))
+               (set-window-buffer left pane)
+               (set-window-dedicated-p left t)
+               (set-window-parameter left 'no-other-window t)
+               left))))
+      (when (window-live-p left)
+        (set-window-parameter left 'ecc-review-files t))
+      left)))
+
+(defun ecc-review-ediff--keep-the-pane ()
+  "Show the files pane again after ediff laid out the windows, when it is wanted.
+On `ediff-after-setup-windows-hook\\=' of the control buffer: a pane
+split off the left side is deleted with the rest of the windows."
+  (when (and ecc-review-files-shown
+             (buffer-live-p ecc-review-files--pane)
+             (not (ecc-review-files--pane-window (current-buffer))))
+    (ecc-review-files--show (current-buffer))))
+
+(defun ecc-review-ediff--leave-the-pane ()
+  "Take the selection out of the files pane before ediff lays out the windows.
+On `ediff-before-setup-windows-hook\\=' of the control buffer: ediff
+deletes every other window from the one it finds selected, and a side
+window cannot be the only one."
+  (when-let* ((pane (ecc-review-files--pane-window (current-buffer)))
+              (frame (window-frame pane))
+              ((eq (frame-selected-window frame) pane))
+              (other (seq-find (lambda (window) (not (eq window pane)))
+                               (window-list frame 'no-minibuffer))))
+    (if (eq (selected-window) pane)
+        (select-window other)
+      (set-frame-selected-window frame other))))
+
+(defun ecc-review-ediff--hidden-difference-p (n)
+  "Return non-nil when the filter of this review hides difference N."
+  (and ecc-review--hidden
+       (ediff-valid-difference-p n)
+       (ecc-review-hidden-p (plist-get (nth n (ecc-review-units)) :path))))
+
+(defun ecc-review-ediff--shown-differences-from (from to)
+  "Return the differences from FROM to TO, both included, the filter keeps."
+  (and (<= from to)
+       (seq-remove #'ecc-review-ediff--hidden-difference-p (number-sequence from to))))
+
+(defun ecc-review-ediff--move (move arg forward)
+  "Call MOVE, ediff's next or previous difference, ARG differences, FORWARD or not.
+The differences the filter hides are skipped as ediff skips those #h
+hides, and signal that there is none left when every one is hidden."
+  (if (null ecc-review--hidden)
+      (funcall move arg)
+    (unless (if forward
+                (ecc-review-ediff--shown-differences-from
+                 (1+ ediff-current-difference) (1- ediff-number-of-differences))
+              (ecc-review-ediff--shown-differences-from 0 (1- ediff-current-difference)))
+      (user-error (if forward
+                      "No difference below in the files the filter keeps"
+                    "No difference above in the files the filter keeps")))
+    (let* ((skip ediff-skip-diff-region-function)
+           (ediff-skip-diff-region-function
+            (lambda (n) (or (ecc-review-ediff--hidden-difference-p n) (funcall skip n)))))
+      (funcall move arg))))
+
+(defun ecc-review-ediff-next-difference (&optional arg)
+  "Go to the next difference, ARG of them, past those the filter hides."
+  (interactive "p")
+  (ecc-review-ediff--move #'ediff-next-difference arg t))
+
+(defun ecc-review-ediff-previous-difference (&optional arg)
+  "Go to the previous difference, ARG of them, past those the filter hides."
+  (interactive "p")
+  (ecc-review-ediff--move #'ediff-previous-difference arg nil))
+
+(defun ecc-review-ediff-jump-to-difference (number)
+  "Go to the difference NUMBER, as ediff's j does.
+When the filter hides it, to the first one after it that it keeps, else
+the last one before."
+  (interactive "p")
+  (let ((n (cond ((< number 0) (+ ediff-number-of-differences number))
+                 ((> number 0) (1- number))
+                 (t -1))))
+    (if (not (ecc-review-ediff--hidden-difference-p n))
+        (ediff-jump-to-difference number)
+      (let ((target (or (car (ecc-review-ediff--shown-differences-from
+                              n (1- ediff-number-of-differences)))
+                        (car (last (ecc-review-ediff--shown-differences-from 0 n)))
+                        (user-error "Every difference is in a file the filter hides"))))
+        (ediff-jump-to-difference (1+ target))
+        (message "Difference %d is in a file the filter hides; this is %d"
+                 (1+ n) (1+ target))))))
+
+(cl-defmethod ecc-review-files-filter-applied (&context (major-mode ediff-mode))
+  "Move this review off a difference the filter now hides, and say what it hides.
+The brief help carries the filter, so the control panel is written again."
+  (when (ecc-review-ediff--hidden-difference-p ediff-current-difference)
+    (let ((target (or (car (ecc-review-ediff--shown-differences-from
+                            ediff-current-difference (1- ediff-number-of-differences)))
+                      (car (last (ecc-review-ediff--shown-differences-from
+                                  0 ediff-current-difference))))))
+      (ediff-unselect-and-select-difference (or target -1) nil 'no-recenter)))
+  (setq ediff-window-config-saved "")
+  (ecc-review-ediff--leave-the-pane)
+  (ediff-recenter 'no-rehighlight))
+
 ;;;; The help ? shows
 
 ;; ediff's own help is written for the ediff a two-way comparison
@@ -1901,8 +2131,8 @@ p,DEL -previous diff |     | -vert/horiz split   |      c -comment on this diff
        C-l -recenter |        * -refine region   |         l -list the comments
    v/V -scroll up/dn |   ## -ignore whitespace   |     a -show or hide Claude's
    </> -scroll lt/rt |         #c -ignore case   |   C-c C-c -send the comments
-                     |         m -wide display   |     C-c C-k -drop the review
-                     |                           |          q -close the review
+  s -list the files  |         m -wide display   |     C-c C-k -drop the review
+ / -filter the files |                           |          q -close the review
 =====================|===========================|=============================
     i -status info   |     ? -help off           |      ! -read the files again
 -------------------------------------------------------------------------------
@@ -1911,8 +2141,11 @@ nothing.  Claude changes the files, from the prompt the comments are sent as."
   "What `?\\=' shows in the control panel of an ediff review.")
 
 (defconst ecc-review-ediff-brief-help-message
-  " c -comment   C-c C-c -send   q -quit   ? -help"
-  "What the control panel of an ediff review says with the help off.")
+  " n/p diff   c comment   { } comments   a Claude's   s files   / filter
+ ! reread   C-c C-c send   q quit   ? all keys"
+  "What the control panel of an ediff review says with the help off.
+Two lines, so that the keys a review is read with are in sight without
+\\`?'; a filter in force adds a third (`ecc-review-ediff--brief-help-message').")
 
 (defun ecc-review-ediff--long-help-message ()
   "Return the long help of an ediff review.
@@ -1920,9 +2153,13 @@ This is what `ediff-long-help-message-function\\=' is set to."
   ecc-review-ediff-long-help-message)
 
 (defun ecc-review-ediff--brief-help-message ()
-  "Return the brief help of an ediff review.
-This is what `ediff-brief-help-message-function\\=' is set to."
-  ecc-review-ediff-brief-help-message)
+  "Return the brief help of an ediff review, and the filter in force.
+This is what `ediff-brief-help-message-function\\=' is set to; it is
+read in the control buffer of the review."
+  (concat ecc-review-ediff-brief-help-message
+          (when ecc-review--filter
+            (format "\n /%s: %s hidden by filter" ecc-review--filter
+                    (ecc-review--count (length ecc-review--hidden) "file")))))
 
 ;;;; Opening and closing
 
@@ -2162,6 +2399,20 @@ ediff lays out its windows; quitting puts back what was on the screen."
           ;; hiding Claude's comments, and b says what a review is.
           (define-key ediff-mode-map (kbd "a") #'ecc-review-toggle-agent)
           (define-key ediff-mode-map (kbd "b") #'ecc-review-ediff-copy-refused)
+          ;; The files pane and the filter.  ediff binds s and / in a
+          ;; merge alone -- the size of the merge window, the ancestor --
+          ;; and a review is never a merge (checked 2026-10-01).  n, p
+          ;; and j step over what the filter hides.
+          (define-key ediff-mode-map (kbd "s") #'ecc-review-files-toggle)
+          (define-key ediff-mode-map (kbd "/") #'ecc-review-files-filter)
+          (dolist (key '("n" "SPC"))
+            (define-key ediff-mode-map (kbd key) #'ecc-review-ediff-next-difference))
+          (dolist (key '("p" "DEL"))
+            (define-key ediff-mode-map (kbd key) #'ecc-review-ediff-previous-difference))
+          (define-key ediff-mode-map (kbd "j") #'ecc-review-ediff-jump-to-difference)
+          (add-hook 'ediff-select-hook #'ecc-review-files--follow nil t)
+          (add-hook 'ediff-before-setup-windows-hook #'ecc-review-ediff--leave-the-pane nil t)
+          (add-hook 'ediff-after-setup-windows-hook #'ecc-review-ediff--keep-the-pane nil t)
           (ecc-review-ediff--mark-current)
           ;; What is on the screen is coloured before the review is
           ;; shown, the rest after it (`ecc-review-ediff--colour-later'),
@@ -2173,7 +2424,8 @@ ediff lays out its windows; quitting puts back what was on the screen."
           (dolist (buffer (list base now))
             (with-current-buffer buffer
               (add-hook 'window-scroll-functions #'ecc-review-ediff--scrolled nil t)))
-          (ecc-review-ediff--after-write)))))
+          (ecc-review-ediff--after-write)
+          (run-hook-with-args 'ecc-review-displayed-functions control)))))
     control))
 
 (defvar ecc-review-ediff--replacing nil
