@@ -107,8 +107,8 @@
 (defun ecc-review-ediff--trees (root range)
   "Return (LEFT . RIGHT), the two trees RANGE names in ROOT.
 RANGE is what `ecc-review-worktree\\=' is given: a revision like
-\"HEAD\", a range like \"main...HEAD\" or \"a..b\", the empty string
-for what is not staged yet, or `staged\\=' for what is.  A revision
+\"HEAD\", a range like \"main...HEAD\", \"a..b\" or \"X^!\", the
+empty string for what is not staged yet, or `staged\\=' for what is.  A revision
 is compared with the working tree as it stands, so what git does not
 track is in the review as well; a range is two trees of the history and
 nothing else, and so is `staged\\='.  Signals a `user-error\\=' when git
@@ -130,6 +130,11 @@ cannot resolve it."
      ;; What is not staged yet: the index against the working tree.
      ((or (null range) (string-empty-p range))
       (cons (or (ecc-review-snapshot root t) (funcall fail)) (funcall now)))
+     ;; One commit, X^!: its first parent against it, which is what
+     ;; `git diff X^!' shows of a commit that is not a merge.
+     ((string-match "\\`\\(.+\\)\\^!\\'" range)
+      (let ((commit (match-string 1 range)))
+        (cons (funcall side (concat commit "^")) (funcall side commit))))
      ((string-match "\\`\\(.*?\\)\\.\\.\\.\\(.*\\)\\'" range)
       (let* ((left (or (match-string 1 range) ""))
              (right (or (match-string 2 range) ""))
