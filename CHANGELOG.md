@@ -162,56 +162,64 @@ Verified against **Claude Code CLI 2.1.281**.
   is not staged; `s` what is staged; `b` this branch against another; `c` a
   commit; `r` a range typed as `C-u G` takes it. Each line says how many
   files it would show. One `git status` gives the counts of `w`, `u` and
-  `s`, untracked files included, and `b` adds the files its commits
-  changed. A count that fails shows `?` and the echo area says why; it
+  `s`, untracked files included; `b` counts the diff of its fork against
+  the working tree and the untracked files, which is what its review
+  shows. A count that fails shows `?` and the echo area says why; it
   never reads as "nothing". The count of `D` takes a snapshot of the
   working tree: 35 ms on a repository of 300 files and 70 ms on one of
   20000. `ecc-review-menu-count-session-changes`, a setting, leaves it
   out. Opening the menu on this repository runs 14 git processes in
   117 ms, 60 ms without the `D` count.
 
-  A menu is about one session and its project, both named in its
-  heading: the session of the buffer, else the session of its project --
-  the rule of `G` -- and, when the project has none, the session used last
-  and its own project, which is what `C-c c D` reviewed before. `S` turns
-  the whole menu to another session, the project's sessions offered
-  first: what is compared and where the comments go are always one
-  project. A session of the same project counts only its own changes
-  again. `-f` asks for the files to keep once the comparison is chosen,
-  out of those it shows, and `-e` opens this one review in ediff, or as a
-  diff, the other way from `ecc-review-style`, which is left alone.
-  Outside git only `D` can be chosen, and the heading says why. The choice
-  made last is marked `(last)` and the cursor of the menu starts on it, so
-  `RET` opens it again. What the menu is about is dropped when it closes,
-  so a suffix run later with `M-x` reviews where it is run.
+  The git choices review the project of the current buffer and send the
+  comments to its session, the rule of `G`: with no session there, they
+  offer to start one, as `G` does. `D` reviews that session, or, when the
+  project has none, the session used last, which is what `C-c c D`
+  reviewed before; the heading says which session each is about, and the
+  project. `S` turns the whole menu to another session and its project,
+  the project's sessions offered first, so what is compared and where the
+  comments go are always one project; a session of the same project
+  counts only its own changes again. `-f` asks for the files to keep once
+  the comparison is chosen, out of those it shows, and `-e` opens this
+  one review in ediff, or as a diff, the other way from
+  `ecc-review-style`, which is left alone. Outside git only `D` can be
+  chosen, and the heading says why. The choice made last is marked
+  `(last)` and the cursor of the menu starts on it, so `RET` opens it
+  again. What the menu is about is dropped when it closes, and kept when
+  it is only suspended -- `C-h`, a switch of frame -- so that it comes
+  back as it was. A choice run with `M-x` reads only where to review, not
+  the counts, and `S` with no menu open says so and does nothing.
 
   `b` asks for the branch to compare with, by default the one the current
   branch most likely forked from. The candidates are `develop`, `main`,
   `master` (`ecc-review-menu-base-candidates`), the branch `origin/HEAD`
   points at, and the upstream of the current branch when that branch is
   one of them, so that `main` is compared with `origin/main`, where its
-  unpushed commits show. A candidate that already holds `HEAD` is left out
-  -- `develop` when you are on `main` and `develop` is ahead -- and of the
-  rest the one `HEAD` has the fewest commits beyond wins, the one whose own
-  tip is nearer of a tie. With none left, `b` cannot be chosen and its line
-  says so. `b` then asks for the other side, by default the current branch
-  with its working tree: the range is the commit where the two part, which
-  `git diff` compares with the working tree, so uncommitted and untracked
-  files are in the review, and the review is called `BASE + working tree`.
-  Another branch is `BASE...BRANCH`, what a pull request shows. `c` asks
-  for a commit out of the last 100 and then for the last one to review
-  with it; the default, the same commit, is that commit alone (`X^!`), and
-  another is `X^..Y`, `X` included, in whichever order they were picked.
-  The range is made of the commit ids, so the review stays on its commits
-  when `HEAD` moves, and it is called by the short id and the subject. The
-  first commit of a repository, which has no parent, is compared with the
-  empty tree. `b` and `c` refuse a name starting with `-`; `--staged` is
-  for `r`.
+  unpushed commits show. A candidate ahead of `HEAD` is left out --
+  `develop` when you are on `main` and `develop` has gone on -- and one at
+  `HEAD` itself, the branch a new one was just cut from, stays. Of these,
+  the one `HEAD` has the fewest commits beyond wins, the one whose own tip
+  is nearer of a tie. With no guess, `b` asks with no default. It then
+  asks for the other side, by default the current branch with its working
+  tree: the range is the commit where the two part, which `git diff`
+  compares with the working tree, so uncommitted and untracked files are
+  in the review. Another branch is `BASE...BRANCH`, what a pull request
+  shows. `c` asks for a commit out of the last 100 and then for the last
+  one to review with it; the default, the same commit, is that commit
+  alone (`X^!`), and another is `X^..Y`, `X` included, in whichever order
+  they were picked. The range is made of the commit ids, so the review
+  stays on its commits when `HEAD` moves. The first commit of a
+  repository, which has no parent, is compared with the empty tree. `b`
+  and `c` refuse a name starting with `-`; `--staged` is for `r`.
 
-  A review of the working tree can be called something other than its
-  range (`ecc-review-range-label`): the buffer name and the header line
-  say it, and reading the review again keeps it, so the same choice
-  reuses the same buffer.
+  A review of the working tree is named after what it compares, not after
+  how it was asked for (`ecc-review-range-label`): a range of commit ids
+  is called by the short id and subject of a commit (`X^!`), the short ids
+  of a span, or, for the fork `b` compares with, `BASE + working tree`, so
+  an id written short or in full and a review opened by the menu or by
+  Claude's `review_open` are one buffer, and Claude's comments land in
+  the review being read. A range of names, such as `HEAD` or
+  `main...HEAD`, is still its own name.
 
   The description of `review_open` (`ecc-review-agent-open-description`)
   names the arguments of each choice, so that asking Claude for "the staged

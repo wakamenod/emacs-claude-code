@@ -143,11 +143,14 @@ The candidates are `ecc-review-menu-base-candidates', the branch
 origin/HEAD points at, and the upstream of the current branch when the
 current branch is one of those -- on main, origin/main is where the
 commits not pushed yet show.  Left out are the ones that do not exist,
-the current branch, and any that already holds HEAD: develop when main
-is checked out and develop is ahead of it would compare HEAD with
-itself.  Of the rest, the one HEAD has the fewest commits beyond -- the
-commits from where the two part to HEAD -- wins, and of a tie the one
-whose own tip is nearest that point.  Nil when none is left."
+the current branch, and any that is ahead of HEAD -- HEAD is behind it,
+with nothing of its own: develop when main is checked out and develop
+has gone on would compare HEAD with itself.  A candidate at HEAD itself
+stays: it is the branch a new one was just cut from, and the fork is
+HEAD, so `b' shows the working tree.  Of the rest, the one HEAD has the
+fewest commits beyond -- the commits from where the two part to HEAD --
+wins, and of a tie the one whose own tip is nearest that point.  Nil
+when none is left."
   (let* ((refs (or refs (ecc-review-menu--refs root)))
          (current (plist-get refs :current))
          (branches (plist-get refs :branches))
@@ -168,7 +171,7 @@ whose own tip is nearest that point.  Nil when none is left."
       (when-let* ((counts (ecc-review--git-string root "rev-list" "--left-right" "--count"
                                                   (concat candidate "...HEAD") "--")))
         (pcase-let ((`(,theirs ,ours) (mapcar #'string-to-number (split-string counts))))
-          (when (and (> ours 0)
+          (when (and (not (and (= ours 0) (> theirs 0)))
                      (or (null best)
                          (< ours (car best))
                          (and (= ours (car best)) (< theirs (cadr best)))))
@@ -203,14 +206,13 @@ untracked files besides -- before."
 
 (defun ecc-review-menu--branch-count (root fork status)
   "Return how many files ROOT holds that differ from the commit FORK.
-STATUS is `ecc-review-menu--status' of ROOT: what the commits since FORK
-changed, read from the history alone, together with what is changed in
-the working tree, which STATUS has read already."
-  (pcase (ecc-review--git root "diff" "--name-only" "-z" fork "HEAD" "--")
+The diff of FORK against the working tree, which is what the review of
+`b' shows -- a file a commit changed and the working tree put back is
+in neither -- and the untracked files, which STATUS, the
+`ecc-review-menu--status' of ROOT, has read already."
+  (pcase (ecc-review--git root "diff" "--name-only" "-z" fork "--")
     (`(0 . ,output)
      (length (delete-dups (append (split-string output "\0" t)
-                                  (plist-get status :staged)
-                                  (plist-get status :unstaged)
                                   (plist-get status :untracked)))))
     (`(,code . ,_) (format "git diff failed (exit %s)" code))))
 
@@ -280,7 +282,7 @@ with its working tree.  RANGE is then the commit where it parted from
 BASE, which `git diff' compares with the working tree, so what is not
 committed yet and the files git does not track are in the review as
 well (`ecc-review--range-includes-worktree-p'), and LABEL is \"BASE +
-working tree\", what the review is called (`ecc-review-range-label').
+working tree\", what the review is called (`ecc-review-name-fork').
 Any other branch is BASE...OTHER, what a pull request of OTHER into
 BASE shows, and needs no LABEL.  STATE, the menu's, supplies the
 current branch and the fork of its base, which are read from git when
@@ -301,26 +303,11 @@ it is not given."
 
 (defun ecc-review-menu--commit-id (root revision)
   "Return the commit REVISION names in ROOT, or signal that it names none."
-  (or (ecc-review--git-string root "rev-parse" "--verify" "--quiet"
-                              (concat revision "^{commit}"))
+  (or (ecc-review--commit root revision)
       (user-error "%s is not a commit in %s" revision (abbreviate-file-name root))))
 
-(defun ecc-review-menu--commit-label (root from &optional to)
-  "Return what the review of the commit FROM, or FROM through TO, is called.
-The short id and the subject of one commit, or the short ids of two, as
-git in ROOT abbreviates them."
-  (if to
-      ;; `rev-parse --short' shortens one revision, not two.
-      (string-join (split-string (or (ecc-review--git-string root "log" "--no-walk=unsorted"
-                                                             "--format=%h" from to "--")
-                                     (concat from "\n" to)))
-                   " to ")
-    (let ((line (ecc-review--git-string root "log" "-1" "--no-color"
-                                        "--format=%h %s" from)))
-      (ecc--truncate (or line from) 48))))
-
 (defun ecc-review-menu-commit-range (root from &optional to)
-  "Return (RANGE . LABEL), what `c' reviews in ROOT: FROM, or FROM through TO.
+  "Return the range `c' reviews in ROOT: the commit FROM, or FROM through TO.
 TO nil, empty or the commit FROM is FROM alone, FROM^! -- what Hunk
 calls `hunk show'.  Otherwise it is FROM^..TO, FROM included; the two
 are put in order first, so that a TO older than FROM is the same span
@@ -329,10 +316,11 @@ the repository -- is compared with the empty tree instead, which is
 what a parent would have held: FROM^! there names FROM alone, and git
 would compare it with the working tree.
 
-RANGE names the commits by their ids, not by the names typed: HEAD or
-main moves, and a review read again would show another commit under
-the same comments.  LABEL is what the review is called
-\(`ecc-review-menu--commit-label')."
+The range names the commits by their ids, not by the names typed: HEAD
+or main moves, and a review read again would show another commit under
+the same comments.  The review is called by the short ids and the
+subject all the same (`ecc-review-range-label'), and Claude asking for
+the same commits by id opens the same review."
   (let* ((from (or (ecc-review-menu--name from "A commit" "HEAD or a1b2c3d")
                    (user-error "Name the commit to review")))
          (to (ecc-review-menu--name to "A commit" "HEAD or a1b2c3d"))
@@ -346,15 +334,14 @@ the same comments.  LABEL is what the review is called
       (cl-rotatef from-id to-id))
     (let ((parent (ecc-review--git-string root "rev-parse" "--verify" "--quiet"
                                           (concat from-id "^"))))
-      (cons (cond
-             ((and parent (null to-id)) (concat from-id "^!"))
-             (parent (format "%s^..%s" from-id to-id))
-             (t (format "%s..%s"
-                        (or (ecc-review--empty-tree root)
-                            (user-error "Cannot name the empty tree in %s"
-                                        (abbreviate-file-name root)))
-                        (or to-id from-id))))
-            (ecc-review-menu--commit-label root from-id to-id)))))
+      (cond
+       ((and parent (null to-id)) (concat from-id "^!"))
+       (parent (format "%s^..%s" from-id to-id))
+       (t (format "%s..%s"
+                  (or (ecc-review--empty-tree root)
+                      (user-error "Cannot name the empty tree in %s"
+                                  (abbreviate-file-name root)))
+                  (or to-id from-id)))))))
 
 ;;;; What the menu is about
 
@@ -363,53 +350,68 @@ the same comments.  LABEL is what the review is called
   (file-name-as-directory (expand-file-name (ecc-window-session-project session))))
 
 (defun ecc-review-menu--context ()
-  "Return (SESSION . DIRECTORY), what the menu opened here is about.
-`ecc-review-context': the session of the current buffer or of its
-project.  When that project has none, the session used last and its
-own project, which is what \\`C-c c D' reviewed before it asked what to
-compare; the heading names it, and `S' turns the menu to another."
+  "Return what the menu opened here is about, as (SESSION D-SESSION DIRECTORY).
+DIRECTORY is the project of the current buffer and SESSION its session,
+nil when it has none -- `ecc-review-context', the rule of \\[ecc-review-worktree],
+which the git choices follow: they review this project, and with no
+session here they offer to start one, as \\`G' does.  D-SESSION is the
+session `D' reviews: SESSION, else the session used last, which is what
+\\`C-c c D' reviewed before it asked what to compare."
   (let ((context (ecc-review-context)))
-    (if-let* (((null (car context)))
-              (recent (car (ecc-model-sessions))))
-        (cons recent (ecc-review-menu--project recent))
-      context)))
+    (list (car context)
+          (or (car context) (car (ecc-model-sessions)))
+          (cdr context))))
 
-(defun ecc-review-menu-make-state (session directory)
-  "Return what the menu is about for SESSION and DIRECTORY; see the state."
-  (let* ((root (and directory (ecc-review-git-root directory)))
+(defun ecc-review-menu-make-state (session directory &optional d-session light)
+  "Return what the menu is about for SESSION and DIRECTORY; see the state.
+D-SESSION is the session of `D', SESSION by default.  LIGHT leaves the
+counts out: what a choice run without the menu needs is where to
+review, not how much."
+  (let* ((d-session (or d-session session))
+         (root (and directory (ecc-review-git-root directory)))
          (refs (and root (ecc-review-menu--refs root)))
          (guess (and root (ecc-review-menu-guess-base root refs))))
-    (list :session session :directory directory :root root
+    (list :session session :d-session d-session :directory directory :root root
           :branch (plist-get refs :current) :branches (plist-get refs :branches)
           :base (car guess) :fork (cdr guess)
-          :counts (ecc-review-menu-counts session root (cdr guess)))))
+          :counts (unless light
+                    (ecc-review-menu-counts d-session root (cdr guess))))))
+
+(defun ecc-review-menu--fresh-state (&optional light)
+  "Return a state made from the current buffer, without counts when LIGHT."
+  (pcase-let ((`(,session ,d-session ,directory) (ecc-review-menu--context)))
+    (ecc-review-menu-make-state session directory d-session light)))
 
 (defun ecc-review-menu--current-state ()
   "Return the state of the open menu.
-With no menu open -- a suffix run with \\[execute-extended-command] --
-one is made afresh from the current buffer, and not kept."
-  (or ecc-review-menu--state
-      (let ((context (ecc-review-menu--context)))
-        (ecc-review-menu-make-state (car context) (cdr context)))))
+With no menu open -- a choice run with \\[execute-extended-command] -- a
+light one, without counts, is made from the current buffer and not
+kept."
+  (or ecc-review-menu--state (ecc-review-menu--fresh-state t)))
 
-(defmacro ecc-review-menu--with-state (&rest body)
-  "Run BODY with `ecc-review-menu--state' the state of the open menu.
-When no menu is open, a state made from the current buffer for BODY
-alone."
-  (declare (indent 0) (debug t))
-  `(let ((ecc-review-menu--state (ecc-review-menu--current-state)))
+(defmacro ecc-review-menu--with-state (state &rest body)
+  "Run BODY with `ecc-review-menu--state' bound to STATE.
+STATE nil is the state of the open menu, or, with none open, one made
+for BODY alone (`ecc-review-menu--current-state').  A choice reads its
+state in its `interactive' form and hands it on as an argument, so that
+run without the menu it is made once, not twice."
+  (declare (indent 1) (debug t))
+  `(let ((ecc-review-menu--state (or ,state (ecc-review-menu--current-state))))
      ,@body))
 
 (defun ecc-review-menu--forget-state ()
-  "Drop the state of the menu once no review menu is open.
-On `transient-exit-hook', which runs after the suffix that closed the
-menu has finished, and also when another menu hands over to this one
--- D in `ecc-menu' -- when the menu now open is this one and its state
-is kept.  Without this the state of the last menu stayed: a suffix run
-later from elsewhere reviewed that menu's project, and a killed
-session was kept alive."
-  (unless (and (bound-and-true-p transient--prefix)
-               (eq (oref transient--prefix command) 'ecc-review-menu))
+  "Drop the state of the menu once the menu is really gone.
+On `transient-exit-hook', which runs after the choice that closed the
+menu has finished.  It also runs when another menu hands over to this
+one -- D in `ecc-menu' -- and when this one is suspended, by \\`C-h' or
+a switch of frame, to be resumed later: transient then puts it on its
+stack, and resumes it without running `ecc-review-menu' again, so the
+state, and the session `S' chose, are kept for it.  Without this the
+state of the last menu stayed: a choice run later from elsewhere
+reviewed that menu's project, and a killed session was kept alive."
+  (unless (or (and (bound-and-true-p transient--prefix)
+                   (eq (oref transient--prefix command) 'ecc-review-menu))
+              (assq 'ecc-review-menu (bound-and-true-p transient--stack)))
     (setq ecc-review-menu--state nil)))
 
 (defun ecc-review-menu--root ()
@@ -424,32 +426,31 @@ session was kept alive."
   "Return non-nil when the menu has no repository to compare in."
   (null (plist-get ecc-review-menu--state :root)))
 
-(defun ecc-review-menu--no-base-p ()
-  "Return non-nil when the menu has no branch for `b' to compare with."
-  (null (plist-get ecc-review-menu--state :base)))
-
 (defun ecc-review-menu--no-session-p ()
   "Return non-nil when the menu has no session to review the changes of."
-  (null (plist-get ecc-review-menu--state :session)))
+  (null (plist-get ecc-review-menu--state :d-session)))
 
 (defun ecc-review-menu-set-session (session)
-  "Turn the menu to SESSION: its changes, its project, its comments.
+  "Turn the open menu to SESSION: its changes, its project, its comments.
 A session of the same project changes the session and what it changed,
 and nothing else is read again; one of another project makes the whole
 menu again from that project, so that what is reviewed and where the
-comments go cannot be two projects."
-  (let* ((state (ecc-review-menu--current-state))
-         (directory (ecc-review-menu--project session)))
-    (setq ecc-review-menu--state
-          (if (equal directory (plist-get state :directory))
-              (let ((state (copy-sequence state)))
-                (plist-put (plist-put state :session session)
-                           :counts (cons (cons 'session (ecc-review-menu--session-count
-                                                         session))
-                                         (assq-delete-all
-                                          'session (copy-alist (plist-get state :counts))))))
-            (ecc-review-menu-make-state session directory)))
-    session))
+comments go cannot be two projects.  With no menu open there is
+nothing to turn, and it says so."
+  (if (not ecc-review-menu--state)
+      (progn (message "No review menu is open; C-c c D opens one") nil)
+    (let* ((state ecc-review-menu--state)
+           (directory (ecc-review-menu--project session)))
+      (setq ecc-review-menu--state
+            (if (equal directory (plist-get state :directory))
+                (let ((state (copy-sequence state)))
+                  (plist-put
+                   (plist-put (plist-put state :session session) :d-session session)
+                   :counts (cons (cons 'session (ecc-review-menu--session-count session))
+                                 (assq-delete-all
+                                  'session (copy-alist (plist-get state :counts))))))
+              (ecc-review-menu-make-state session directory)))
+      session)))
 
 ;;;; Opening the review
 
@@ -459,27 +460,27 @@ comments go cannot be two projects."
         ((member "--diff" args) 'diff)
         (t ecc-review-style)))
 
-(defun ecc-review-menu-open (choice range args &optional label)
+(defun ecc-review-menu-open (choice range args &optional state)
   "Open the review CHOICE stands for, against RANGE, with the menu's ARGS.
-CHOICE `session' is `ecc-review' of the session of the menu; anything
-else is `ecc-review-worktree' of its directory against RANGE, the
-comments going to that session, or to one of the directory that is
-offered to start when there is none.  LABEL is what that review is
-called (`ecc-review-range-label').  --files among ARGS asks for the
-files of that review to keep, and --ediff or --diff is the
-`ecc-review-style' of this review alone.  CHOICE is remembered."
-  (ecc-review-menu--with-state
+CHOICE `session' is `ecc-review' of the session of `D'; anything else
+is `ecc-review-worktree' of the menu's project against RANGE, the
+comments going to its session, or to one offered to start there when
+it has none, as \\`G' does.  --files among ARGS asks for the files of
+that review to keep, and --ediff or --diff is the `ecc-review-style' of
+this review alone.  STATE is the menu's (`ecc-review-menu--with-state').
+CHOICE is remembered."
+  (ecc-review-menu--with-state state
     (let* ((state ecc-review-menu--state)
-           (session (plist-get state :session))
            (directory (plist-get state :directory))
            (files (member "--files" args))
-           (ecc-review-style (ecc-review-menu--style args))
-           (ecc-review-range-label label))
+           (ecc-review-style (ecc-review-menu--style args)))
       (setq ecc-review-menu--last choice)
       (if (eq choice 'session)
-          (let ((session (or session (user-error "No session has changes to review"))))
+          (let ((session (or (plist-get state :d-session)
+                             (user-error "No session has changes to review"))))
             (ecc-review session (and files (ecc-review-read-paths session))))
-        (let ((session (or session (ecc-review-worktree-session directory))))
+        (let ((session (or (plist-get state :session)
+                           (ecc-review-worktree-session directory))))
           (ecc-review-worktree session range directory
                                (and files (ecc-review-worktree-read-paths
                                            directory range))))))))
@@ -580,11 +581,8 @@ The choice made last is marked, and carries the property
   (let* ((state ecc-review-menu--state)
          (label (format (alist-get choice ecc-review-menu--labels)
                         (or (plist-get state :base) "…")))
-         (count (if (and (eq choice 'branch) (plist-get state :root)
-                         (null (plist-get state :base)))
-                    "no branch to compare with"
-                  (ecc-review-menu--count-string
-                   (alist-get choice (plist-get state :counts)))))
+         (count (ecc-review-menu--count-string
+                 (alist-get choice (plist-get state :counts))))
          (text (string-trim-right (format "%-27s %s" label count))))
     (if (eq choice ecc-review-menu--last)
         (propertize (concat text "  " (propertize "(last)" 'face 'transient-value))
@@ -592,14 +590,21 @@ The choice made last is marked, and carries the property
       text)))
 
 (defun ecc-review-menu--header ()
-  "Return the heading of the menu: the session it is about, and its project."
-  (let ((session (plist-get ecc-review-menu--state :session))
-        (directory (plist-get ecc-review-menu--state :directory)))
+  "Return the heading of the menu: the sessions it is about, and its project.
+When the project has no session, `D' and the rest are about different
+ones, and the heading says which is which."
+  (let* ((state ecc-review-menu--state)
+         (session (plist-get state :session))
+         (d-session (plist-get state :d-session))
+         (directory (plist-get state :directory))
+         (name (lambda (session)
+                 (propertize (ecc-session-name session) 'face 'transient-value))))
     (concat "Review  ·  "
-            (if session
-                (concat (propertize (ecc-session-name session) 'face 'transient-value)
-                        " gets the comments")
-              "no session yet (S to choose one)")
+            (cond
+             (session (concat (funcall name session) " gets the comments"))
+             (d-session (concat "D reviews " (funcall name d-session)
+                                ", the session used last; the rest offer to start one here"))
+             (t "no session yet (S to choose one)"))
             (if directory
                 (concat "  ·  " (abbreviate-file-name directory))
               ""))))
@@ -623,78 +628,88 @@ The choice made last is marked, and carries the property
   "Return non-nil when a review opens in ediff unless told otherwise."
   (eq ecc-review-style 'ediff))
 
-(transient-define-suffix ecc-review-menu-session-changes (args)
+(transient-define-suffix ecc-review-menu-session-changes (args &optional state)
   "Review everything the session of the menu changed since it started.
-ARGS are the arguments of the menu."
+ARGS are the arguments of the menu, and STATE its state
+\(`ecc-review-menu--with-state')."
   :description (lambda () (ecc-review-menu--describe 'session))
   :inapt-if #'ecc-review-menu--no-session-p
-  (interactive (list (transient-args 'ecc-review-menu)))
-  (ecc-review-menu-open 'session nil args))
+  (interactive (list (transient-args 'ecc-review-menu) ecc-review-menu--state))
+  (ecc-review-menu-open 'session nil args state))
 
-(transient-define-suffix ecc-review-menu-uncommitted (args)
+(transient-define-suffix ecc-review-menu-uncommitted (args &optional state)
   "Review the working tree against HEAD, staged or not.
-ARGS are the arguments of the menu."
+ARGS are the arguments of the menu, and STATE its state
+\(`ecc-review-menu--with-state')."
   :description (lambda () (ecc-review-menu--describe 'worktree))
   :inapt-if #'ecc-review-menu--outside-git-p
-  (interactive (list (transient-args 'ecc-review-menu)))
-  (ecc-review-menu-open 'worktree "HEAD" args))
+  (interactive (list (transient-args 'ecc-review-menu) ecc-review-menu--state))
+  (ecc-review-menu-open 'worktree "HEAD" args state))
 
-(transient-define-suffix ecc-review-menu-unstaged (args)
+(transient-define-suffix ecc-review-menu-unstaged (args &optional state)
   "Review what is not staged yet: the working tree against the index.
-ARGS are the arguments of the menu."
+ARGS are the arguments of the menu, and STATE its state
+\(`ecc-review-menu--with-state')."
   :description (lambda () (ecc-review-menu--describe 'unstaged))
   :inapt-if #'ecc-review-menu--outside-git-p
-  (interactive (list (transient-args 'ecc-review-menu)))
-  (ecc-review-menu-open 'unstaged "" args))
+  (interactive (list (transient-args 'ecc-review-menu) ecc-review-menu--state))
+  (ecc-review-menu-open 'unstaged "" args state))
 
-(transient-define-suffix ecc-review-menu-staged (args)
+(transient-define-suffix ecc-review-menu-staged (args &optional state)
   "Review what is staged: the index against HEAD.
-ARGS are the arguments of the menu."
+ARGS are the arguments of the menu, and STATE its state
+\(`ecc-review-menu--with-state')."
   :description (lambda () (ecc-review-menu--describe 'staged))
   :inapt-if #'ecc-review-menu--outside-git-p
-  (interactive (list (transient-args 'ecc-review-menu)))
-  (ecc-review-menu-open 'staged 'staged args))
+  (interactive (list (transient-args 'ecc-review-menu) ecc-review-menu--state))
+  (ecc-review-menu-open 'staged 'staged args state))
 
-(transient-define-suffix ecc-review-menu-branch (base other args)
+(transient-define-suffix ecc-review-menu-branch (base other args &optional state)
   "Review the branch OTHER against BASE (`ecc-review-menu-branch-range').
-ARGS are the arguments of the menu."
+ARGS are the arguments of the menu, and STATE its state
+\(`ecc-review-menu--with-state')."
   :description (lambda () (ecc-review-menu--describe 'branch))
-  :inapt-if #'ecc-review-menu--no-base-p
+  :inapt-if #'ecc-review-menu--outside-git-p
   (interactive
-   (ecc-review-menu--with-state
+   (ecc-review-menu--with-state nil
      (let* ((args (transient-args 'ecc-review-menu))
             (base (progn (ecc-review-menu--root) (ecc-review-menu--read-base))))
-       (list base (ecc-review-menu--read-other base) args))))
-  (ecc-review-menu--with-state
-    (let ((range (ecc-review-menu-branch-range (ecc-review-menu--root) base other
-                                               ecc-review-menu--state)))
-      (ecc-review-menu-open 'branch (car range) args (cdr range)))))
+       (list base (ecc-review-menu--read-other base) args ecc-review-menu--state))))
+  (ecc-review-menu--with-state state
+    (let* ((root (ecc-review-menu--root))
+           (range (ecc-review-menu-branch-range root base other ecc-review-menu--state)))
+      (when (cdr range)
+        (ecc-review-name-fork root (car range) (cdr range)))
+      (ecc-review-menu-open 'branch (car range) args ecc-review-menu--state))))
 
-(transient-define-suffix ecc-review-menu-commit (from to args)
+(transient-define-suffix ecc-review-menu-commit (from to args &optional state)
   "Review the commit FROM, or FROM through TO (`ecc-review-menu-commit-range').
-ARGS are the arguments of the menu."
+ARGS are the arguments of the menu, and STATE its state
+\(`ecc-review-menu--with-state')."
   :description (lambda () (ecc-review-menu--describe 'commit))
   :inapt-if #'ecc-review-menu--outside-git-p
   (interactive
-   (ecc-review-menu--with-state
+   (ecc-review-menu--with-state nil
      (let ((args (transient-args 'ecc-review-menu)))
-       (append (ecc-review-menu--read-commits (ecc-review-menu--root)) (list args)))))
-  (ecc-review-menu--with-state
-    (let ((range (ecc-review-menu-commit-range (ecc-review-menu--root) from to)))
-      (ecc-review-menu-open 'commit (car range) args (cdr range)))))
+       (append (ecc-review-menu--read-commits (ecc-review-menu--root))
+               (list args ecc-review-menu--state)))))
+  (ecc-review-menu--with-state state
+    (ecc-review-menu-open 'commit (ecc-review-menu-commit-range (ecc-review-menu--root) from to)
+                          args ecc-review-menu--state)))
 
-(transient-define-suffix ecc-review-menu-range (range args)
+(transient-define-suffix ecc-review-menu-range (range args &optional state)
   "Review the working tree against RANGE, typed as \\[universal-argument] \
 \\[ecc-review-worktree] takes it.
-ARGS are the arguments of the menu."
+ARGS are the arguments of the menu, and STATE its state
+\(`ecc-review-menu--with-state')."
   :description (lambda () (ecc-review-menu--describe 'range))
   :inapt-if #'ecc-review-menu--outside-git-p
   (interactive
-   (ecc-review-menu--with-state
+   (ecc-review-menu--with-state nil
      (let ((args (transient-args 'ecc-review-menu)))
        (ecc-review-menu--root)
-       (list (ecc-review-read-range) args))))
-  (ecc-review-menu-open 'range range args))
+       (list (ecc-review-read-range) args ecc-review-menu--state))))
+  (ecc-review-menu-open 'range range args state))
 
 (transient-define-suffix ecc-review-menu-switch-session (session)
   "Turn the menu to SESSION, chosen with completion: its project too."
@@ -764,8 +779,7 @@ review the other way from `ecc-review-style'."
   ;; cold Emacs has loaded this file alone (`ecc-transient--load').
   (require 'ecc)
   (add-hook 'transient-exit-hook #'ecc-review-menu--forget-state)
-  (setq ecc-review-menu--state nil)
-  (setq ecc-review-menu--state (ecc-review-menu--current-state))
+  (setq ecc-review-menu--state (ecc-review-menu--fresh-state))
   (transient-setup 'ecc-review-menu)
   (ecc-review-menu--point-at-last)
   (ecc-review-menu--say-why))

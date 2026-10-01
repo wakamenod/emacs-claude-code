@@ -81,6 +81,19 @@ Each call is pushed as (COMMAND STYLE ARGS...), STYLE being the
   "Return the full id of REVISION in DIRECTORY."
   (ecc-review-menu-test--git directory "rev-parse" revision))
 
+(defun ecc-review-menu-test--kill-reviews ()
+  "Kill every review buffer a test left behind."
+  (dolist (buffer (buffer-list))
+    (when (string-prefix-p "*ecc-review" (buffer-name buffer))
+      (kill-buffer buffer))))
+
+(defun ecc-review-menu-test--tool (session name &optional arguments)
+  "Call the tool NAME as SESSION would and return its text, failing on a failure."
+  (pcase-let ((`(,failed . ,text) (let ((ecc-mcp--session-id (ecc-session-id session)))
+                                    (ecc-mcp-call-tool name arguments))))
+    (when failed (ert-fail text))
+    text))
+
 ;;;; Which branch b compares with
 
 (ert-deftest ecc-review-menu-test-guess-base ()
@@ -93,13 +106,18 @@ Each call is pushed as (COMMAND STYLE ARGS...), STYLE being the
         ;; beyond main.  The fork comes with the guess.
         (should (equal (ecc-review-menu-guess-base root)
                        (cons "develop" (ecc-review-menu-test--id directory two))))
+        ;; A branch just cut from develop, with main behind: develop, at
+        ;; HEAD itself, so that b shows the working tree alone.
+        (ecc-review-menu-test--git directory "checkout" "-q" "-b" "fresh" "develop")
+        (should (equal (ecc-review-menu-guess-base root)
+                       (cons "develop" (ecc-review-menu-test--id directory two))))
         ;; The current branch is never its own base.
         (ecc-review-menu-test--git directory "checkout" "-q" "develop")
         (should (equal (car (ecc-review-menu-guess-base root)) "main"))
-        ;; On main with develop ahead: develop holds HEAD already and would
-        ;; compare HEAD with itself, so there is no base at all.
+        ;; On main with develop ahead: develop is ahead of HEAD and would
+        ;; compare HEAD with itself, so it is not the base.
         (ecc-review-menu-test--git directory "checkout" "-q" "main")
-        (should-not (ecc-review-menu-guess-base root))
+        (should-not (equal (car (ecc-review-menu-guess-base root)) "develop"))
         ;; On main with commits not pushed: origin/main, where they show.
         (ecc-review-menu-test--git directory "update-ref" "refs/remotes/origin/main" "HEAD")
         (ecc-review-menu-test--git directory "symbolic-ref" "refs/remotes/origin/HEAD"
@@ -142,19 +160,29 @@ Each call is pushed as (COMMAND STYLE ARGS...), STYLE being the
           (ecc-review-menu-base-candidates '("main" "develop")))
       (should (equal (car (ecc-review-menu-guess-base root)) "develop")))))
 
-(ert-deftest ecc-review-menu-test-no-base-makes-b-inapt ()
-  "With no branch to compare with, b cannot be chosen, and its line says why."
+(ert-deftest ecc-review-menu-test-no-base-still-asks ()
+  "With no branch guessed, b asks for one with no default rather than going off."
   (skip-unless (executable-find "git"))
   (ecc-review-menu-test--with-directory directory
     (ecc-review-menu-test--repo directory)
     (ecc-review-menu-test--git directory "checkout" "-q" "main")
-    (let ((ecc-review-menu--state (ecc-review-menu-make-state nil directory)))
+    (let ((ecc-review-menu--state (ecc-review-menu-make-state nil directory))
+          (seen nil))
       (should (plist-get ecc-review-menu--state :root))
-      (should (ecc-review-menu--no-base-p))
-      (should (string-search "no branch to compare with"
-                             (ecc-review-menu--describe 'branch)))
+      (should-not (plist-get ecc-review-menu--state :base))
+      ;; Inapt outside git alone, and the line has no count.
       (should (eq (oref (get 'ecc-review-menu-branch 'transient--suffix) inapt-if)
-                  #'ecc-review-menu--no-base-p)))))
+                  #'ecc-review-menu--outside-git-p))
+      (should (equal (ecc-review-menu--describe 'branch) "this branch vs …"))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (prompt table &optional _pred _match _initial _history default
+                                 &rest _)
+                   (setq seen (list prompt default (all-completions "" table)))
+                   "develop")))
+        (should (equal (ecc-review-menu--read-base) "develop")))
+      (should (equal (car seen) "Compare with the branch: "))
+      (should-not (cadr seen))
+      (should (member "develop" (nth 2 seen))))))
 
 ;;;; What b and c compare
 
@@ -222,27 +250,32 @@ Each call is pushed as (COMMAND STYLE ARGS...), STYLE being the
              (one-id (ecc-review-menu-test--id directory one))
              (two-id (ecc-review-menu-test--id directory two))
              (three-id (ecc-review-menu-test--id directory three)))
-        (should (equal (ecc-review-menu-commit-range root two)
-                       (cons (concat two-id "^!") (concat two " b.txt"))))
-        (should (equal (car (ecc-review-menu-commit-range root two "")) (concat two-id "^!")))
-        (should (equal (car (ecc-review-menu-commit-range root two two-id))
+        (should (equal (ecc-review-menu-commit-range root two) (concat two-id "^!")))
+        (should (equal (ecc-review-range-label root (concat two-id "^!"))
+                       (concat two " b.txt")))
+        (should (equal (ecc-review-menu-commit-range root two "") (concat two-id "^!")))
+        (should (equal (ecc-review-menu-commit-range root two two-id)
                        (concat two-id "^!")))
         (should (equal (ecc-review-menu-commit-range root two three)
-                       (cons (format "%s^..%s" two-id three-id)
-                             (format "%s to %s" two three))))
+                       (format "%s^..%s" two-id three-id)))
+        (should (equal (ecc-review-range-label root (format "%s^..%s" two-id three-id))
+                       (format "%s to %s" two three)))
         ;; Picked newest first, the span is the same.
-        (should (equal (car (ecc-review-menu-commit-range root three two))
+        (should (equal (ecc-review-menu-commit-range root three two)
                        (format "%s^..%s" two-id three-id)))
         ;; The first commit has no parent: the empty tree stands in.
-        (let ((alone (car (ecc-review-menu-commit-range root one))))
+        (let ((alone (ecc-review-menu-commit-range root one)))
+          (should (equal (ecc-review-range-label root alone) (concat one " a.txt")))
           (should (equal alone (format "%s..%s" empty one-id)))
           ;; Which compares commits, not the working tree, and shows
           ;; that commit's file and nothing later.
           (should-not (ecc-review--range-includes-worktree-p root alone))
           (should (equal (ecc-review-menu-test--git directory "diff" "--name-only" alone)
                          "a.txt")))
-        (should (equal (car (ecc-review-menu-commit-range root one two))
+        (should (equal (ecc-review-menu-commit-range root one two)
                        (format "%s..%s" empty two-id)))
+        (should (equal (ecc-review-range-label root (format "%s..%s" empty two-id))
+                       (concat "first commit to " two)))
         (should-error (ecc-review-menu-commit-range root "no-such-commit")
                       :type 'user-error)))))
 
@@ -256,8 +289,7 @@ under the name it was given."
         (setf (ecc-session-project-root session) directory)
         (let* ((root (ecc-review-git-root directory))
                (range (ecc-review-menu-commit-range root "HEAD"))
-               (buffer (let ((ecc-review-range-label (cdr range)))
-                         (ecc-review-worktree-buffer session (car range) directory))))
+               (buffer (ecc-review-worktree-buffer session range directory)))
           (unwind-protect
               (with-current-buffer buffer
                 (should (equal (buffer-name buffer)
@@ -299,6 +331,37 @@ under the name it was given."
                   (ecc-review-refresh)
                   (should (equal (buffer-name) "*ecc-review: test (develop + working tree)*"))))
             (mapc #'kill-buffer (seq-uniq buffers))))))))
+
+(ert-deftest ecc-review-menu-test-claude-opens-the-same-review ()
+  "review_open of the commit b or c compares opens the buffer the menu opened.
+The name comes from what is compared, so Claude's comments land in the
+review the user is reading."
+  (skip-unless (executable-find "git"))
+  (ecc-review-menu-test--with-directory directory
+    (seq-let (_one two _three) (ecc-review-menu-test--repo directory)
+      (ecc-review-menu-test--write directory "c.txt" "changed\n")
+      (ecc-test-with-fake-session session
+        (setf (ecc-session-project-root session) directory)
+        (let ((ecc-review-menu--state (ecc-review-menu-make-state session directory))
+              (menu nil))
+          (cl-letf (((symbol-function 'ecc-window-display-review)
+                     (lambda (buffer &rest _) (setq menu buffer))))
+            (unwind-protect
+                (progn
+                  ;; b RET RET, then Claude with the fork git names.
+                  (ecc-review-menu-branch "develop" nil nil)
+                  (ecc-review-menu-test--tool
+                   session "review_open"
+                   `((range . ,(ecc-review-menu-test--git
+                                directory "merge-base" "develop" "HEAD"))))
+                  (should (eq (gethash session ecc-review-agent--opened) menu))
+                  ;; c X RET, then Claude with the short id.
+                  (ecc-review-menu-commit two nil nil)
+                  (should (equal (buffer-name menu) (format "*ecc-review: test (%s b.txt)*" two)))
+                  (ecc-review-menu-test--tool session "review_open"
+                                             `((range . ,(concat two "^!"))))
+                  (should (eq (gethash session ecc-review-agent--opened) menu)))
+              (ecc-review-menu-test--kill-reviews))))))))
 
 (ert-deftest ecc-review-menu-test-read-commits ()
   "The second question of c defaults to the first answer, which is one commit."
@@ -392,6 +455,24 @@ under the name it was given."
               (should (equal (alist-get 'staged counts) 1))))
           ;; No base, no count for b.
           (should-not (alist-get 'branch (ecc-review-menu-counts session root nil))))))))
+
+(ert-deftest ecc-review-menu-test-branch-count-is-what-b-shows ()
+  "A file a commit changed and the working tree put back is not counted."
+  (skip-unless (executable-find "git"))
+  (ecc-review-menu-test--with-directory directory
+    (seq-let (_one two _three) (ecc-review-menu-test--repo directory)
+      (let ((root (ecc-review-git-root directory))
+            (fork (ecc-review-menu-test--id directory two)))
+        ;; c.txt came with feature's commit; the working tree drops it
+        ;; again, so the fork and the working tree agree about it.
+        (delete-file (concat directory "c.txt"))
+        (ecc-review-menu-test--write directory "u.txt" "untracked\n")
+        (should (= (ecc-review-menu--branch-count root fork (ecc-review-menu--status root))
+                   1))
+        (ecc-test-with-fake-session session
+          (let ((text (plist-get (ecc-review--worktree-content session fork root nil) :text)))
+            (should (string-search "b/u.txt" text))
+            (should-not (string-search "c.txt" text))))))))
 
 (ert-deftest ecc-review-menu-test-a-failed-count-is-not-nothing ()
   "A count that failed shows ?, says why, and never passes for none."
@@ -563,30 +644,43 @@ and send the comments to the other."
           (ecc-test-cleanup-session second))))))
 
 (ert-deftest ecc-review-menu-test-context ()
-  "The menu is about the buffer's session, else the project's, else the last one."
+  "The git choices review the buffer's project; only D falls back elsewhere.
+A buffer in a project with no session, and a session in another: w
+reviews this project as G would, and D reviews the session used last."
   (skip-unless (executable-find "git"))
   (ecc-review-menu-test--with-directory directory
     (ecc-review-menu-test--with-directory elsewhere
       (ecc-review-menu-test--repo directory)
+      (ecc-review-menu-test--repo elsewhere)
       (ecc-test-with-fake-session first
         (setf (ecc-session-project-root first) elsewhere)
         (cl-letf (((symbol-function 'ecc-window-context-project-root)
                    (lambda () directory)))
           (with-temp-buffer
-            ;; The project has no session: G's rule finds none ...
             (should (equal (ecc-review-context) (cons nil directory)))
-            ;; ... and the menu takes the session used last, with its project.
-            (should (equal (ecc-review-menu--context) (cons first elsewhere)))
-            (let ((ecc-review-menu--state (ecc-review-menu-make-state first elsewhere)))
-              (should (string-search "test" (ecc-review-menu--header)))
-              (should-not (ecc-review-menu--no-session-p)))
-            ;; A session of the project is preferred to it.
+            (should (equal (ecc-review-menu--context) (list nil first directory)))
+            (ecc-review-menu-test--capturing calls
+              (let ((ecc-review-menu--state (ecc-review-menu--fresh-state))
+                    (offered nil))
+                (should (equal (plist-get ecc-review-menu--state :root) directory))
+                (should (string-search "D reviews test" (ecc-review-menu--header)))
+                (should-not (ecc-review-menu--no-session-p))
+                ;; w is G: this project, with a session offered here.
+                (cl-letf (((symbol-function 'ecc-review-worktree-session)
+                           (lambda (root) (setq offered root) 'started)))
+                  (ecc-review-menu-uncommitted nil))
+                (should (equal offered directory))
+                (should (equal (cddr (pop calls)) (list 'started "HEAD" directory nil)))
+                (ecc-review-menu-session-changes nil)
+                (should (eq (nth 2 (pop calls)) first))))
+            ;; A session of the project is preferred to it, for both.
             (let ((second (ecc-model-create-session :name "second"
                                                     :project-root directory)))
               (unwind-protect
                   (progn
                     (should (equal (ecc-review-context) (cons second directory)))
-                    (should (equal (ecc-review-menu--context) (cons second directory))))
+                    (should (equal (ecc-review-menu--context)
+                                   (list second second directory))))
                 (ecc-test-cleanup-session second)))))))))
 
 (ert-deftest ecc-review-menu-test-state-goes-with-the-menu ()
@@ -620,6 +714,77 @@ and send the comments to the other."
                   (setq ecc-review-menu--state nil)))
             (ecc-test-cleanup-session second)))))))
 
+(ert-deftest ecc-review-menu-test-a-suspended-menu-keeps-its-state ()
+  "C-h or a switch of frame suspends the menu; its state and S's choice stay.
+Transient resumes it without running `ecc-review-menu', so a state
+dropped at the suspend would leave every choice off."
+  (let ((ecc-review-menu--state '(:session chosen :directory "/p/"))
+        (transient--prefix nil)
+        (transient--stack (list (list 'ecc-review-menu nil nil))))
+    (ecc-review-menu--forget-state)
+    (should (eq (plist-get ecc-review-menu--state :session) 'chosen))
+    ;; Gone from the stack, it is gone.
+    (setq transient--stack nil)
+    (ecc-review-menu--forget-state)
+    (should-not ecc-review-menu--state)))
+
+(ert-deftest ecc-review-menu-test-s-needs-an-open-menu ()
+  "S with no menu open changes nothing and keeps no state."
+  (ecc-test-with-fake-session session
+    (let ((ecc-review-menu--state nil)
+          (said nil))
+      (cl-letf (((symbol-function 'message)
+                 (lambda (format &rest args) (setq said (apply #'format format args)))))
+        (should-not (ecc-review-menu-set-session session)))
+      (should-not ecc-review-menu--state)
+      (should (string-search "No review menu is open" said)))))
+
+(ert-deftest ecc-review-menu-test-a-choice-without-the-menu-reads-little ()
+  "Run with M-x, a choice makes one light state: no counts, no snapshot."
+  (skip-unless (executable-find "git"))
+  (ecc-review-menu-test--with-directory directory
+    (ecc-review-menu-test--repo directory)
+    (ecc-test-with-fake-session session
+      (setf (ecc-session-project-root session) directory)
+      (let ((ecc-review-menu--state nil)
+            (made nil)
+            (counted nil))
+        (ecc-review-menu-test--capturing calls
+          (cl-letf (((symbol-function 'ecc-window-context-project-root)
+                     (lambda () directory))
+                    ((symbol-function 'completing-read)
+                     (lambda (_prompt _table &optional _pred _match _initial _history default
+                                      &rest _)
+                       default)))
+            (advice-add 'ecc-review-menu-make-state :before
+                        (lambda (&rest args) (push args made)) '((name . made)))
+            (advice-add 'ecc-review-menu-counts :before
+                        (lambda (&rest _) (setq counted t)) '((name . counted)))
+            (unwind-protect
+                (with-temp-buffer
+                  (call-interactively #'ecc-review-menu-branch))
+              (advice-remove 'ecc-review-menu-make-state 'made)
+              (advice-remove 'ecc-review-menu-counts 'counted)))
+          (should (= (length made) 1))
+          (should (nth 3 (car made)))
+          (should-not counted)
+          (should (equal (nth 3 (pop calls))
+                         (ecc-review-menu-test--git directory "merge-base" "develop" "HEAD")))
+          (should-not ecc-review-menu--state))))))
+
+(ert-deftest ecc-review-menu-test-head-tree ()
+  "The tree of HEAD, or the empty tree before the first commit."
+  (skip-unless (executable-find "git"))
+  (ecc-review-menu-test--with-directory directory
+    (ecc-review-menu-test--git directory "init" "-q")
+    (let ((root (ecc-review-git-root directory)))
+      (should (equal (ecc-review--head-tree root) (ecc-review--empty-tree root)))
+      (ecc-review-menu-test--git directory "config" "user.email" "t@example.com")
+      (ecc-review-menu-test--git directory "config" "user.name" "t")
+      (ecc-review-menu-test--commit directory "a.txt" "a\n")
+      (should (equal (ecc-review--head-tree root)
+                     (ecc-review-menu-test--git directory "rev-parse" "HEAD^{tree}"))))))
+
 (ert-deftest ecc-review-menu-test-outside-git ()
   "Outside git only D works, and the heading says why."
   (ecc-review-menu-test--with-directory directory
@@ -628,7 +793,6 @@ and send the comments to the other."
       (let ((ecc-review-menu--state (ecc-review-menu-make-state session directory)))
         (should-not (plist-get ecc-review-menu--state :root))
         (should (ecc-review-menu--outside-git-p))
-        (should (ecc-review-menu--no-base-p))
         (should-not (ecc-review-menu--no-session-p))
         (should (string-search "not a git repository"
                                (ecc-review-menu--compare-heading)))
@@ -637,8 +801,8 @@ and send the comments to the other."
                        '(session)))
         (should-error (ecc-review-menu--root) :type 'user-error)
         (dolist (command '(ecc-review-menu-uncommitted ecc-review-menu-unstaged
-                           ecc-review-menu-staged ecc-review-menu-commit
-                           ecc-review-menu-range))
+                           ecc-review-menu-staged ecc-review-menu-branch
+                           ecc-review-menu-commit ecc-review-menu-range))
           (let ((inapt (oref (get command 'transient--suffix) inapt-if)))
             (should (eq inapt #'ecc-review-menu--outside-git-p))))
         (should (eq (oref (get 'ecc-review-menu-session-changes 'transient--suffix)
