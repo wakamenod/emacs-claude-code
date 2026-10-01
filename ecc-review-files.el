@@ -473,11 +473,7 @@ On `ecc-review-after-draw-hook': the files or their comments changed."
 
 (defun ecc-review-files--pane-name (review)
   "Return the name of the files pane of REVIEW."
-  (with-current-buffer review
-    (let ((name (ecc-review-buffer-name ecc-review--session nil ecc-review--range
-                                        ecc-review--label)))
-      (format "*ecc-review-files: %s"
-              (substring name (length "*ecc-review: "))))))
+  (ecc-review-pane-name review "files"))
 
 (defun ecc-review-files--pane-buffer (review)
   "Return the files pane of REVIEW, made when it has none."

@@ -49,9 +49,12 @@
       (kill-buffer buffer))))
 
 (defmacro ecc-review-ediff-test--with-ediff (&rest body)
-  "Run BODY with ediff laying its windows out the way batch can."
+  "Run BODY with ediff laying its windows out the way batch can.
+Without the reply pane: a batch frame is a few lines high, and what
+these tests count on being on the screen is what the two sides show."
   (declare (indent 0))
-  `(let ((ediff-window-setup-function #'ediff-setup-windows-plain))
+  `(let ((ediff-window-setup-function #'ediff-setup-windows-plain)
+         (ecc-review-talk-reply-height nil))
      ,@body))
 
 (defun ecc-review-ediff-test--repository (directory)
@@ -258,7 +261,7 @@
                   ;; Two lines: the keys a review is read with.
                   (should (equal (split-string ediff-brief-help-message "\n")
                                  '(" n/p diff   c comment   { } comments   a Claude's   s files   / filter"
-                                   " ! reread   C-c C-c send   q quit   ? all keys")))
+                                   " T tour   t next   M message   C-c C-c send   q quit   ! reread   ? all keys")))
                   ;; And it is in the panel, not only in the variable:
                   ;; `ediff-setup' writes the help out before it runs
                   ;; the startup hooks.

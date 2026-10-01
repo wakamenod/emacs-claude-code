@@ -78,6 +78,9 @@
 (declare-function ecc-start "ecc" (&optional directory name))
 (autoload 'ecc-review-files-toggle "ecc-review-files" nil t)
 (autoload 'ecc-review-files-filter "ecc-review-files" nil t)
+(autoload 'ecc-review-talk-tour "ecc-review-talk" nil t)
+(autoload 'ecc-review-talk-next "ecc-review-talk" nil t)
+(autoload 'ecc-review-talk-message "ecc-review-talk" nil t)
 (declare-function ediff-recenter "ediff-util" (&optional no-rehighlight))
 (declare-function ecc-review-ediff-buffer "ecc-review-ediff" (session &optional paths))
 (declare-function ecc-review-ediff-worktree-buffer "ecc-review-ediff"
@@ -997,6 +1000,13 @@ changed stays open when its changes have gone."
     (define-key map (kbd "p") #'ecc-review-previous-hunk)
     (define-key map (kbd "N") #'ecc-review-next-file)
     (define-key map (kbd "P") #'ecc-review-previous-file)
+    ;; Talking to the session of the review without going to its prompt
+    ;; (`ecc-review-talk.el').  t and M rather than N and m: N is the
+    ;; next file just above, and m is ediff's wide display, and the keys
+    ;; are the same in both kinds of review (decided 2026-10-02).
+    (define-key map (kbd "T") #'ecc-review-talk-tour)
+    (define-key map (kbd "t") #'ecc-review-talk-next)
+    (define-key map (kbd "M") #'ecc-review-talk-message)
     ;; `diff-mode' edits its buffer from these, read-only or not: they
     ;; bind `inhibit-read-only'.  A review is a copy of what git said, and
     ;; one stray k would leave it saying something else; u and @ revert
@@ -1155,8 +1165,17 @@ not from who asked for it, so the review the menu opens and the one
                  'face 'warning))
    (propertize (if ecc-review--request
                    "  ·  c comment  e edit and apply  C-c C-c send as deny (C-u edits)  n/p hunk  RET source"
-                 "  ·  c comment  { } comments  a Claude's  s files  / filter  d delete  C-c C-c send  n/p hunk")
+                 "  ·  c comment  { } comments  a Claude's  s files  / filter  T tour  t next  M message  C-c C-c send")
                'face 'ecc-dim-face))))
+
+(defun ecc-review-pane-name (review kind)
+  "Return the name of the KIND pane of REVIEW: \"*ecc-review-KIND: ...*\".
+What follows the colon is what follows it in the name of the review
+itself, so that a pane says which review it belongs to."
+  (with-current-buffer review
+    (let ((name (ecc-review-buffer-name ecc-review--session nil ecc-review--range
+                                        ecc-review--label)))
+      (format "*ecc-review-%s: %s" kind (substring name (length "*ecc-review: "))))))
 
 (defun ecc-review--count (n noun)
   "Return N NOUNs in words: \"1 comment\", \"2 comments\"."

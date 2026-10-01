@@ -90,6 +90,7 @@
 (require 'ecc-window)
 (require 'ecc-review)
 (require 'ecc-review-files)
+(require 'ecc-review-talk)
 
 ;;;; The two trees a review compares
 
@@ -2224,13 +2225,16 @@ p,DEL -previous diff |     | -vert/horiz split   |      c -comment on this diff
 =====================|===========================|=============================
     i -status info   |     ? -help off           |      ! -read the files again
 -------------------------------------------------------------------------------
+  T -ask Claude for a tour of the review       t -the next stop of the tour
+  M -say something to Claude                   y -answer what Claude asks
+-------------------------------------------------------------------------------
 Both buffers are read-only: a review reads, comments and sends, and writes
 nothing.  Claude changes the files, from the prompt the comments are sent as."
   "What `?\\=' shows in the control panel of an ediff review.")
 
 (defconst ecc-review-ediff-brief-help-message
   " n/p diff   c comment   { } comments   a Claude's   s files   / filter
- ! reread   C-c C-c send   q quit   ? all keys"
+ T tour   t next   M message   C-c C-c send   q quit   ! reread   ? all keys"
   "What the control panel of an ediff review says with the help off.
 Two lines, so that the keys a review is read with are in sight without
 \\`?'; a filter in force adds a third (`ecc-review-ediff--brief-help-message').")
@@ -2493,6 +2497,15 @@ ediff lays out its windows; quitting puts back what was on the screen."
           ;; and j step over what the filter hides.
           (define-key ediff-mode-map (kbd "s") #'ecc-review-files-toggle)
           (define-key ediff-mode-map (kbd "/") #'ecc-review-files-filter)
+          ;; Talking to the session, whose prompt the review hides, and
+          ;; answering it from here (`ecc-review-talk.el').  ediff binds
+          ;; none of T, t and y, and M only to the meta buffer of its
+          ;; sessions, which has nothing to show for a review (checked
+          ;; 2026-10-02).
+          (define-key ediff-mode-map (kbd "T") #'ecc-review-talk-tour)
+          (define-key ediff-mode-map (kbd "t") #'ecc-review-talk-next)
+          (define-key ediff-mode-map (kbd "M") #'ecc-review-talk-message)
+          (define-key ediff-mode-map (kbd "y") #'ecc-review-talk-answer)
           ;; Remapped rather than rebound, so that every key ediff gives
           ;; them -- SPC, DEL, <backspace>, <delete>, S-SPC, ga, gb -- is
           ;; covered.
