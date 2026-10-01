@@ -34,7 +34,7 @@ Outside a Git repository there is no tree to compare against, so files are diffe
 | `{` / `}` | Previous / next comment |
 | `a` | Show or hide Claude's comments |
 | `l` | Jump to a comment |
-| `d` | Remove a comment on this line, yours or Claude's |
+| `d` | Remove a comment on this line, yours or Claude's (`C-u d` offers every comment) |
 | `e` | Edit the proposed content (reviewing one proposal) |
 | `C-c C-c` | Send your comments as a prompt (`C-u C-c C-c` to edit it first) |
 | `C-c C-k` | Drop the review and its comments |
@@ -45,7 +45,7 @@ The buffer uses read-only `diff-mode`: `n` and `p` move between hunks, `N` and `
 
 Each comment belongs to the line you made it on. On a removed line (`-`), it is about the old side. On an added line (`+`) or a context line, it is about the new side. On the `@@` line, it is about the whole hunk. The comment appears under its line as `▎ #3 text`, its hunk gets a bold header, and the header line counts the comments. Every comment has a number, and no two comments in a buffer share one.
 
-`g` reads the diff again and keeps every comment and your place in it. A window of the review in another tab starts again from the top. Each comment goes back to the line that still says what its line said, between the same neighbouring lines, even when a change higher up in the file has moved that line. It follows the line for up to `ecc-review-note-max-shift` (100) lines. A comment on a whole hunk follows the hunk the same way: by its `@@` line, by what the hunk says, or by the lines it covers. If the line is gone, ecc keeps the comment, marks it `[outdated]`, and shows it above the first hunk of its file. The comment is still sent, with the hunk as it was.
+`g` reads the diff again and keeps every comment and your place in it. A window of the review in another tab starts again from the top. Each comment goes back to the line that still says what its line said, between the same neighbouring lines, even when a change higher up in the file has moved that line. It follows the line for up to `ecc-review-note-max-shift` (100) lines. A comment on a whole hunk follows its hunk: by its `@@` line, then by the lines it covers, then by what the hunk says. If the line is gone, ecc keeps the comment, marks it `[outdated]`, and shows it above the first hunk of its file. The comment is still sent, with the hunk as it was.
 
 ## Following the files
 
@@ -138,15 +138,15 @@ The two buffers appear side by side. `ecc` sets `ediff-split-window-function` on
 
 Both buffers are read-only, so ediff's `b` copy command does nothing here, and `a` shows or hides Claude's comments instead. You read the changes, add comments, and send them. Claude then updates the files on disk using the prompt generated from your comments.
 
-Your comment is on the whole current difference and appears under it on the right. If Claude has commented in that difference, `c` replies to Claude's last comment. Claude's comments appear under their lines, on the left for a removed line and on the right for an added one, as `▎ #4 Claude: text`. `review_navigate` moves to the difference and the line without selecting a window. The review follows the files like the diff buffer and keeps the current difference, the place of each side, and the comments.
+Your comment is on the whole current difference and appears under it on the right. If the most recent comment in that difference is Claude's and you have not answered it, `c` replies to it. When there is more than one comment to answer or edit, `c` asks which, or offers a new comment. Claude's comments appear under their lines, on the left for a removed line and on the right for an added one, as `▎ #4 Claude: text`. `review_navigate` moves to the difference and the line without selecting a window. The review follows the files like the diff buffer and keeps the current difference, the place of each side, and the comments.
 
 | Key | Action |
 |---|---|
-| `c` | Comment on the current difference (press again to edit it), or reply to Claude there |
+| `c` | Comment on the current difference (press again to edit it), or reply to Claude's most recent comment there |
 | `{` / `}` | Previous / next comment |
 | `a` | Show or hide Claude's comments |
 | `l` | Jump to a comment |
-| `d` | Remove a comment on the current difference |
+| `d` | Remove a comment on the current difference (`C-u d`, or off every difference: any comment) |
 | `!` | Read the files again |
 | `C-c C-c` | Send the comments as a prompt (`C-u C-c C-c` to edit it first) |
 | `C-c C-k` | Drop the review and its comments |

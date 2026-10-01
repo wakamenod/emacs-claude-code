@@ -162,12 +162,24 @@ Verified against **Claude Code CLI 2.1.281**.
 
 - The comments of an ediff review are the comments of the diff review:
   numbered, kept across a refresh by the same rules, and listed, removed
-  and sent the same way. `c` still comments the whole current difference,
-  and on a difference Claude commented on it answers Claude's last
-  comment there. `a` shows or hides Claude's comments instead of saying
-  that a review reads, which `b` still says; `{` and `}` move to the
-  previous and next comment, its difference and its line, and `!` reads
-  the review again. `d` offers the outdated comments of the file as well.
+  and sent the same way, in the order of the review: by place, a comment
+  on the whole difference first, then those on the lines it takes out and
+  puts in, by line. `c` still comments the whole current difference;
+  where the latest comment there is Claude's and you have not answered
+  it, `c` answers it, and with more than one comment there to answer or
+  edit it asks which, or offers a new one. `a` shows or hides Claude's
+  comments instead of saying that a review reads, which `b` still says;
+  `{` and `}` move to the previous and next comment -- each one, its
+  difference and its line -- and `!` reads the review again. `d` offers
+  the outdated comments of the file as well, and off every difference, or
+  with `C-u`, every comment of the review; `C-u d` does that in the diff
+  review too. Two ediff reviews of one session have two sides each. When
+  ediff computes the differences again itself (`##`, `#c`), the comments
+  are drawn again on the new ones. A reading of an ediff review that
+  finds the same two trees reads no file, and one that finds a change
+  reads and colours only the files that changed: a review of 40 files
+  read again took 0.68 s unchanged and 0.80 s with one file changed, and
+  takes 0.04 s and 0.08 s (`benchmark-run`, batch).
 
 - The review of what is not staged (`C-u G` with an empty range) is named
   `*ecc-review: SESSION (unstaged changes)*`, not `(unstaged)`, and the
@@ -189,9 +201,10 @@ Verified against **Claude Code CLI 2.1.281**.
   brace does not wander off to another. A neighbour that is not known -- at
   the first or last line of a hunk -- is not compared, so hunks merging or
   splitting leave a comment where it was. A comment on a whole hunk goes to
-  the hunk with the same `@@` line, else to the nearest that says the same
-  under another one, within `ecc-review-note-max-shift`, else to a hunk over
-  the same lines. A comment whose line has gone is kept, marked
+  the hunk with the same `@@` line, else to a hunk over the same lines --
+  of those, one that says the same first -- and only when none is over
+  them to the nearest hunk that says the same, within
+  `ecc-review-note-max-shift`: a hunk pushed down by a change above it. A comment whose line has gone is kept, marked
   outdated, above the first hunk of its file, and is still sent with
   `(outdated)` and the hunk as it was.
 
