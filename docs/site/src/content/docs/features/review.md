@@ -59,13 +59,15 @@ Outside a Git repository there is no tree to compare against, so files are diffe
 | `a` | Show or hide Claude's comments |
 | `l` | Jump to a comment |
 | `d` | Remove a comment on this line, yours or Claude's (`C-u d` offers every comment) |
+| `s` | Show or hide the list of files (see [Listing and filtering the files](#listing-and-filtering-the-files)) |
+| `/` | Keep only the files that match a filter |
 | `e` | Edit the proposed content (reviewing one proposal) |
 | `C-c C-c` | Send your comments as a prompt (`C-u C-c C-c` to edit it first) |
 | `C-c C-k` | Drop the review and its comments |
 | `g` | Read the diff again (see [Following the files](#following-the-files)) |
 | `q` | Bury the buffer |
 
-The buffer uses read-only `diff-mode`: `n` and `p` move between hunks, `N` and `P` between files, and `RET` jumps to the source.
+The buffer uses read-only `diff-mode`: `n` and `p` move between hunks, `N` and `P` between files, and `RET` jumps to the source. All four skip the files a filter hides.
 
 Each comment belongs to the line you made it on. On a removed line (`-`), it is about the old side. On an added line (`+`) or a context line, it is about the new side. On the `@@` line, it is about the whole hunk. The comment appears under its line as `▎ #3 text`, its hunk gets a bold header, and the header line counts the comments. Every comment has a number, and no two comments in a buffer share one.
 
@@ -84,6 +86,35 @@ To turn this off and read the diff only with `g`:
 ```elisp
 (setq ecc-review-auto-refresh nil)
 ```
+
+## Listing and filtering the files
+
+`s` shows the files of the review in a list immediately left of the diff, as Hunk's files pane does. It works in the diff buffer and in the ediff control panel.
+
+```
+ Files (3 of 5)  /review
+▸ M ecc-review.el        +12 −4  2·1
+  M ecc-review-ediff.el   +6 −2
+  A ecc-review-files.el    +80  0·1!
+```
+
+Each line shows what happened to the file: `M` changed, `A` added, `D` deleted, or `R` renamed with its former name. Then come the lines added and removed, and your comments and Claude's as `yours·Claude's`. A `!` marks a file with an outdated comment. `▸` marks the file you are reading, the one point is in or the one of the current ediff difference, and it moves as you move.
+
+In the list, `RET` or a click goes to that file and back to the review. `n` and `p` show the next or previous file and keep you in the list. `/` filters, `g` writes the list again, and `s` or `q` hides it.
+
+The list is always on the left of the diff. In ediff the review has the frame to itself, so the list is a side window at the left edge, and `|` and `m` leave it in place. When `ecc-review-ediff-full-frame` is `nil`, the list is split off the left side of the review instead. In the diff buffer the list is split off the review's window, so the order is the Spaces sidebar, the session, the list, the diff. When you hide the list, its columns go back to the diff. The list closes with the review.
+
+The list starts hidden. `s` shows it, and every review you open afterwards shows it too, until you press `s` again or Emacs exits. The width is `ecc-review-files-width` (32 columns):
+
+```elisp
+(setq ecc-review-files-width 40)
+```
+
+ecc writes the list again whenever it reads the review again and whenever a comment comes or goes.
+
+`/` keeps only the files whose path, former path or one of Claude's comments contains what you type, ignoring case, as in Hunk. The list appears and narrows as you type. `RET` hides the other files of the review, and an empty `RET` shows every file again. The filter hides the files without reading the diff again. Their comments are kept and still sent by `C-c C-c`. The header line of the diff buffer says how many files are hidden, as `/review: 2 files hidden by filter`, and so does a third line of the ediff control panel.
+
+Moving skips the hidden files: `n`, `p`, `N` and `P` in the diff buffer, `n`, `p` and `j` in ediff, and `{` and `}` in both. `review_hunks` and `review_open` tell Claude about the filter. Its `next_comment` and `prev_comment` skip the hidden files, and it cannot scroll the review to one of them. The filter stays when the review is read again.
 
 ## Sending comments
 
@@ -160,7 +191,12 @@ The tools also work on a review you have open in ediff. There a hunk is one edif
 
 All files in the review open in a single ediff session instead of one session per file. The original contents are concatenated into the left buffer, and the new contents into the right buffer. A separator line like `═══ path ═══` marks each file, preceded by a blank line so files do not run together. Because all changes are in one session, `n` and `p` move through every difference across the entire review, crossing directly from one file into the next. Any file that git considers binary, or that is larger than `ecc-review-max-bytes`, appears only as a separator line, such as `═══ photo.png (binary, not shown) ═══`, and contains no differences.
 
-The two buffers appear side by side. `ecc` sets `ediff-split-window-function` only in the review control buffer, so all other ediff sessions keep your configured window layout.
+The two buffers appear side by side. `ecc` sets `ediff-split-window-function` only in the review control buffer, so all other ediff sessions keep your configured window layout. The control panel lists the keys of a review in two lines:
+
+```
+ n/p diff   c comment   { } comments   a Claude's   s files   / filter
+ ! reread   C-c C-c send   q quit   ? all keys
+```
 
 Each file is coloured by its own major mode. The review does not wait for that: it colours what is on the screen first and the rest in the background, pausing while you type. A file with very long lines, such as a minified script, stays uncoloured. In the current difference and in every other difference on the screen, the words that changed are shown in bold. Their shade stays clearly apart from the highlight of the current difference, whatever your theme.
 
@@ -175,13 +211,16 @@ Your comment is on the whole current difference and appears under it on the righ
 | `a` | Show or hide Claude's comments |
 | `l` | Jump to a comment |
 | `d` | Remove a comment on the current difference (`C-u d`, or off every difference: any comment) |
+| `n` / `p` / `j` | Next, previous, or numbered difference, skipping the files a filter hides |
+| `s` | Show or hide the list of files (see [Listing and filtering the files](#listing-and-filtering-the-files)) |
+| `/` | Keep only the files that match a filter |
 | `!` | Read the files again |
 | `C-c C-c` | Send the comments as a prompt (`C-u C-c C-c` to edit it first) |
 | `C-c C-k` | Drop the review and its comments |
 | `q` | Quit the review |
 | `?` | Show the full help (press again to hide it) |
 
-Comments work much as they do in the diff buffer, except that a comment belongs to a whole difference rather than to one line. They include the file name and line numbers, and the prompt sent to the session has the same form. Claude's comments appear only in the diff buffer. Sending comments, pressing `C-c C-k`, or pressing `q` restores the window configuration you had before opening the review. There is no `g` command here. To refresh the review, quit and open it again.
+Comments work much as they do in the diff buffer, except that a comment of yours belongs to a whole difference rather than to one line. They include the file name and line numbers, and the prompt sent to the session has the same form. Sending comments, pressing `C-c C-k`, or pressing `q` restores the window configuration you had before opening the review. There is no `g` command here. `!` reads the review again.
 
 ## Reviewing proposals before approval
 
