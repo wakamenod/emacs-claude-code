@@ -2178,6 +2178,19 @@ take them -- falls back to HEAD, which is `ecc-review-worktree\='.
 Outside git the session\='s own record is all there is."
   (ecc-review--show (ecc-review--session-content session paths) session))
 
+(defun ecc-review-read-paths (session)
+  "Ask for some of the files SESSION changed and return them absolute.
+Offered relative to the repository and handed on absolute, which is
+what the review reads either way.  None chosen is nil, every file."
+  (let ((root (ecc-review-git-root (or (ecc-session-project-root session)
+                                       default-directory))))
+    (mapcar (lambda (path) (expand-file-name path root))
+            (completing-read-multiple
+             "Files (empty for all): "
+             (or (ecc-review-changed-paths session)
+                 (mapcar #'ecc-file-entry-path (ecc-review-files session)))
+             nil t))))
+
 ;;;###autoload
 (defun ecc-review (&optional session paths)
   "Open everything that changed since SESSION started as one diff to review.
@@ -2190,18 +2203,7 @@ bases: this one against where the session started, so the commits made
 during it are still shown; that one against the last commit."
   (interactive
    (let ((session (ecc-review-session)))
-     (list session
-           (and current-prefix-arg
-                ;; Offered relative to the repository and handed on
-                ;; absolute, which is what the review reads either way.
-                (let ((root (ecc-review-git-root (or (ecc-session-project-root session)
-                                                     default-directory))))
-                  (mapcar (lambda (path) (expand-file-name path root))
-                          (completing-read-multiple
-                           "Files: "
-                           (or (ecc-review-changed-paths session)
-                               (mapcar #'ecc-file-entry-path (ecc-review-files session)))
-                           nil t)))))))
+     (list session (and current-prefix-arg (ecc-review-read-paths session)))))
   (let ((session (or session (ecc-review-session))))
     (if (and (eq ecc-review-style 'ediff)
              ;; Outside git there are no two trees to lay side by side:
@@ -2551,6 +2553,24 @@ Signals an error when the directory is not a git repository or has
 nothing to show."
   (ecc-review--show (ecc-review--worktree-content session range root paths) session))
 
+(defun ecc-review-read-range ()
+  "Ask what to diff the working tree against, and return it parsed.
+What \\[universal-argument] \\[ecc-review-worktree] asks, and `r\=' in
+`ecc-review-menu\=': a revision or a range, empty for what is not
+staged, --staged for what is (`ecc-review-parse-range\=')."
+  (ecc-review-parse-range
+   (read-string "Diff against (empty for unstaged, --staged for the index): "
+                ecc-review-worktree-default-range)))
+
+(defun ecc-review-worktree-read-paths (directory range)
+  "Ask for some of the files a review of DIRECTORY against RANGE shows.
+They come back absolute; none chosen is nil, every file."
+  (let ((root (ecc-review-git-root directory)))
+    (mapcar (lambda (path) (expand-file-name path root))
+            (completing-read-multiple
+             "Files (empty for all): "
+             (ecc-review-worktree-paths directory range) nil t))))
+
 (defun ecc-review-worktree--read-arguments ()
   "Return the (SESSION RANGE ROOT PATHS) `ecc-review-worktree\=' should run with.
 The project comes from the buffer the user is working in -- this is a
@@ -2563,16 +2583,8 @@ range would show; none chosen is every file."
                    (ecc-window-session-project buffer-session)
                  (ecc-window-context-project-root)))
          (session (or buffer-session (ecc-review-worktree-session root)))
-         (range (and current-prefix-arg
-                     (ecc-review-parse-range
-                      (read-string "Diff against (empty for unstaged, --staged for the index): "
-                                   ecc-review-worktree-default-range))))
-         (git-root (and current-prefix-arg (ecc-review-git-root root)))
-         (paths (and current-prefix-arg
-                     (mapcar (lambda (path) (expand-file-name path git-root))
-                             (completing-read-multiple
-                              "Files (empty for all): "
-                              (ecc-review-worktree-paths root range) nil t)))))
+         (range (and current-prefix-arg (ecc-review-read-range)))
+         (paths (and current-prefix-arg (ecc-review-worktree-read-paths root range))))
     (list session range root paths)))
 
 ;;;###autoload
