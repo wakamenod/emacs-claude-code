@@ -778,6 +778,36 @@ can."
                              (ecc-review-agent-test--ok session "review_open"
                                                         '((paths . ["b.txt"]))))))))
 
+(ert-deftest ecc-review-agent-test-ediff-open-of-another-repository ()
+  "review_open's paths are read against the held review's own repository.
+The ediff review is of another repository than the session's project,
+and a review_open without paths is answered, not failed."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-agent-test--with-ediff session control
+      (ecc-review-ediff-quit control)
+      (ecc-review-agent-test--with-directory other
+        (ecc-review-agent-test--git other "init" "-q")
+        (ecc-review-agent-test--git other "config" "user.email" "t@example.com")
+        (ecc-review-agent-test--git other "config" "user.name" "t")
+        (ecc-review-agent-test--write (concat other "f.txt") "one\n")
+        (ecc-review-agent-test--write (concat other "g.txt") "one\n")
+        (ecc-review-agent-test--git other "add" ".")
+        (ecc-review-agent-test--git other "commit" "-q" "-m" "init")
+        (ecc-review-agent-test--write (concat other "f.txt") "two\n")
+        (ecc-review-agent-test--write (concat other "g.txt") "two\n")
+        (setq control (ecc-review-ediff-worktree-buffer session "HEAD" other (list "f.txt")))
+        (unwind-protect
+            (progn
+              (should-not (string-search "were not applied"
+                                         (ecc-review-agent-test--ok
+                                          session "review_open"
+                                          '((range . "HEAD") (paths . ["f.txt"])))))
+              (should (string-search "were not applied"
+                                     (ecc-review-agent-test--ok session "review_open"
+                                                                '((range . "HEAD"))))))
+          (ecc-review-ediff-quit control))))))
+
 (ert-deftest ecc-review-agent-test-ediff-and-another-session ()
   "One session's calls reach its own ediff review and never another's."
   (skip-unless (executable-find "git"))

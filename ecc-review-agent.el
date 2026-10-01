@@ -382,15 +382,19 @@ against the project."
                       (and (not (string-empty-p path)) path)))
                   paths))))
 
-(defun ecc-review-agent--same-paths (session range paths)
+(defun ecc-review-agent--same-paths (paths)
   "Return non-nil when PATHS are the files of the review of this buffer.
-PATHS, as `review_open\=' was given them, are read the way the review
-reads its own (`ecc-review--target\=') -- relative to the repository,
-whether they came absolute or relative to the session -- and compared
-in any order.  None is every file, which a review of some is not."
+PATHS, as `review_open\=' was given them, are read against the review\='s
+own repository, its `default-directory' -- which need not be the
+session\='s project -- the way the review keeps its own: relative to it,
+whether they came absolute or relative.  They are compared in any
+order, and none is every file, which a review of some is not.  Paths
+that cannot be read are not the review\='s; nothing here signals."
   (let ((sorted (lambda (paths) (sort (copy-sequence paths) #'string<))))
-    (equal (funcall sorted (plist-get (ecc-review--target session range nil paths)
-                                      :paths))
+    (equal (funcall sorted (condition-case nil
+                               (ecc-review--relative-paths
+                                paths default-directory default-directory)
+                             (error (list nil))))
            (funcall sorted ecc-review--paths))))
 
 (defun ecc-review-agent-open (range staged paths)
@@ -417,15 +421,18 @@ the user is not looking at the session."
                               (ecc-review-agent--buffers session))))
         ;; The user's ediff: read where it is, as it is.
         (with-current-buffer held
-          (ecc-review-reread)
-          (puthash session held ecc-review-agent--opened)
-          (concat ecc-review-agent-in-place-text
-                  (unless (and (equal range ecc-review--range)
-                               (ecc-review-agent--same-paths session range paths))
-                    (concat "  " (format ecc-review-agent-not-applied-text
-                                         (ecc-review-agent--what))))
-                  "\n"
-                  (ecc-review-agent--summary)))
+          ;; Settled before reading: the reading may fail, and the
+          ;; comparison is about what was asked, not what was found.
+          (let ((same (and (equal range ecc-review--range)
+                           (ecc-review-agent--same-paths paths))))
+            (ecc-review-reread)
+            (puthash session held ecc-review-agent--opened)
+            (concat ecc-review-agent-in-place-text
+                    (unless same
+                      (concat "  " (format ecc-review-agent-not-applied-text
+                                           (ecc-review-agent--what))))
+                    "\n"
+                    (ecc-review-agent--summary))))
       (let* ((buffer (if range
                          (ecc-review-worktree-buffer session range nil paths)
                        (ecc-review-buffer session paths)))
