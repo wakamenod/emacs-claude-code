@@ -560,8 +560,10 @@ what brings its windows back."
   "Run BODY with the sessions of BINDINGS and the selected window showing one.
 BINDINGS is a list of (VAR NAME ROOT); the first is the session the
 selected window shows, the last the most recently used.  The window
-being switched is the selected one, `completing-read' answers with the
-first label it is offered and records them all in `offered', and
+being switched is the selected one, since it shows a session, which is
+how it is found with and without a role.  `completing-read' answers
+with the first label it is offered and records them all in `offered',
+and
 `ecc-window-select-session' records the session it was asked to show in
 `selected' rather than laying out a frame."
   (declare (indent 1))
@@ -582,9 +584,7 @@ first label it is offered and records them all in `offered', and
      (ecc-window-test--with-projects
          (seq-uniq (list ,@(mapcar (lambda (binding) (nth 2 binding)) bindings)))
        (unwind-protect
-           (cl-letf (((symbol-function 'ecc-window--switch-target)
-                      (lambda () window))
-                     ((symbol-function 'completing-read)
+           (cl-letf (((symbol-function 'completing-read)
                       (lambda (_prompt labels &rest _)
                         (setq offered labels)
                         (car labels)))
@@ -664,20 +664,72 @@ user asked for."
       (call-interactively #'ecc-switch-session))
     (should (equal (ecc-window-test--offered-names offered) '("three" "two")))))
 
-(ert-deftest ecc-window-test-switch-elsewhere-goes-to-its-own-place ()
-  "A session from outside the row is shown where it belongs, not in this window.
-Put into this window it would sit among another project's tabs, which
-under `spaces' is another project's transcript in this Space's tab."
+(ert-deftest ecc-window-test-switch-elsewhere-under-classic-stays-here ()
+  "Under `classic' any session is put into this window, its project or not.
+There is no Space for another project's session to go to, and handing
+it to `ecc-window-select-session' would put it in a sub window instead."
   (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
                                  (three "three" "/tmp/project-one/")
                                  (two "two" "/tmp/project-two/"))
     (ecc-switch-session two)
-    (should (eq selected two))
-    (should (eq (window-buffer window) (ecc-session-buffer one)))
-    (setq selected nil)
-    (ecc-switch-session three)
     (should-not selected)
-    (should (eq (window-buffer window) (ecc-session-buffer three)))))
+    (should (eq (window-buffer window) (ecc-session-buffer two)))))
+
+(ert-deftest ecc-window-test-switch-under-spaces-finds-the-selected-window ()
+  "Under `spaces' the window switched is the selected one, though it has no role.
+A Space's windows are ordinary windows, and looking for a role found
+none: the session already shown was offered again, a lone one was taken
+without asking, and every choice went out to `ecc-window-select-session'."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (two "two" "/tmp/project-two/")
+                                 (three "three" "/tmp/project-one/")
+                                 (four "four" "/tmp/project-one/"))
+    (let ((ecc-use-spaces t))
+      (should-not (window-parameter window 'ecc-window-role))
+      (should (eq (ecc-window--switch-target) window))
+      (call-interactively #'ecc-switch-session)
+      (should (equal (ecc-window-test--offered-names offered) '("four" "three")))
+      ;; A session of the row lands in the selected window.
+      (should (eq (window-buffer window) (ecc-session-buffer four)))
+      (should-not selected))))
+
+(ert-deftest ecc-window-test-switch-under-spaces-alone-says-so ()
+  "Under `spaces' a session alone in its project is refused, not taken again."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (two "two" "/tmp/project-two/"))
+    (let ((ecc-use-spaces t))
+      (should-error (call-interactively #'ecc-switch-session)
+                    :type 'user-error)
+      (should-not offered)
+      (should-not selected))))
+
+(ert-deftest ecc-window-test-switch-under-spaces-goes-to-its-own-space ()
+  "Under `spaces' another project's session is shown in its own Space."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (three "three" "/tmp/project-one/")
+                                 (two "two" "/tmp/project-two/"))
+    (let ((ecc-use-spaces t))
+      (ecc-switch-session two)
+      (should (eq selected two))
+      (should (eq (window-buffer window) (ecc-session-buffer one))))))
+
+(ert-deftest ecc-window-test-switch-under-spaces-selects-a-shown-session ()
+  "Under `spaces' a session another window already shows is selected there.
+Putting it into this window as well would stand the same transcript in
+two windows, which `ecc-tab-line-neighbour' takes care never to do."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (three "three" "/tmp/project-one/")
+                                 (four "four" "/tmp/project-one/"))
+    (let* ((ecc-use-spaces t)
+           (other (split-window window)))
+      (unwind-protect
+          (progn
+            (set-window-buffer other (ecc-session-ensure-buffer three))
+            (select-window window)
+            (should (eq (ecc-switch-session three) other))
+            (should (eq (selected-window) other))
+            (should (eq (window-buffer window) (ecc-session-buffer one))))
+        (delete-window other)))))
 
 (ert-deftest ecc-window-test-switch-from-a-source-window ()
   "A window with no session in it offers the sessions of the current project."
