@@ -61,6 +61,7 @@ Outside a Git repository there is no tree to compare against, so files are diffe
 | `d` | Remove a comment on this line, yours or Claude's (`C-u d` offers every comment) |
 | `s` | Show or hide the list of files (see [Listing and filtering the files](#listing-and-filtering-the-files)) |
 | `/` | Keep only the files that match a filter |
+| `T` / `t` / `M` | Ask Claude for a tour, its next stop, or send a message (see [Talking to Claude from the review](#talking-to-claude-from-the-review)) |
 | `e` | Edit the proposed content (reviewing one proposal) |
 | `C-c C-c` | Send your comments as a prompt (`C-u C-c C-c` to edit it first) |
 | `C-c C-k` | Drop the review and its comments |
@@ -181,6 +182,35 @@ These tools only put text into a buffer and move a window. They write no files, 
 
 The tools also work on a review you have open in ediff. There a hunk is one ediff difference, and `review_hunks` gives its number and the lines it covers on each side. Claude never starts ediff, because ediff takes the frame and the keyboard. If you have an ediff review open, `review_open` reads that one again. Otherwise it opens the diff buffer, even when `ecc-review-style` is `'ediff`.
 
+## Talking to Claude from the review
+
+An ediff review takes the whole frame, so the session and its prompt are out of sight while you read. Hunk keeps the agent in a second terminal. In ecc you talk to Claude from the review itself. These keys work in the diff buffer and in the ediff control panel, and they always go to the session of the review:
+
+| Key | Action |
+|---|---|
+| `T` | Ask Claude for a tour of the changes, the most important first. Claude shows each stop with `review_navigate`, explains it, comments on the lines that need attention, and waits |
+| `t` | Ask for the next stop of the tour |
+| `M` | Type a message in the minibuffer and send it as a prompt. Claude can use any tool, as with a prompt typed in the session |
+
+They are sent like a prompt typed in the minibuffer: while the session is busy, the prompt waits in its queue. `T` and `t` need the MCP server (`ecc-mcp-enabled`), because a tour is made of the review tools.
+
+In an ediff review, a pane at the bottom of the frame shows the session's latest reply as it streams, with each tool call on a line of its own:
+
+```
+› Next stop.
+The cache is now keyed by path, so a renamed file is read again.
+  review_navigate → ecc-review-ediff.el:248
+  review_comment → ecc-review-ediff.el:252: This drops the old entry
+```
+
+Each turn replaces the last one. The whole conversation stays in the transcript. When Claude asks for permission, asks a question, or has a plan to approve, the pane shows the request in full, and `y` in the control panel answers it: allow or deny, or pick an answer in the minibuffer. The pane is never selected, so the keys stay in the control panel. It stays when ediff lays out its windows again, and it closes with the review. The pane is `ecc-review-talk-reply-height` (8) lines high, and `nil` turns it off:
+
+```elisp
+(setq ecc-review-talk-reply-height 12)
+```
+
+The diff buffer has the session beside it, so it has no pane.
+
 ## Opening the review in ediff
 
 `ecc-review-style` controls how the reviews of the review menu and `G` show changes. `-e` in the menu changes it for one review. The default, `'diff`, uses the single `diff-mode` buffer described above. Setting it to `'ediff` shows the files side by side instead:
@@ -195,7 +225,7 @@ The two buffers appear side by side. `ecc` sets `ediff-split-window-function` on
 
 ```
  n/p diff   c comment   { } comments   a Claude's   s files   / filter
- ! reread   C-c C-c send   q quit   ? all keys
+ T tour   t next   M message   C-c C-c send   q quit   ! reread   ? all keys
 ```
 
 Each file is coloured by its own major mode. The review does not wait for that: it colours what is on the screen first and the rest in the background, pausing while you type. A file with very long lines, such as a minified script, stays uncoloured. In the current difference and in every other difference on the screen, the words that changed are shown in bold. Their shade stays clearly apart from the highlight of the current difference, whatever your theme.
@@ -214,6 +244,8 @@ Your comment is on the whole current difference and appears under it on the righ
 | `n` / `p` / `j` | Next, previous, or numbered difference, skipping the files a filter hides |
 | `s` | Show or hide the list of files (see [Listing and filtering the files](#listing-and-filtering-the-files)) |
 | `/` | Keep only the files that match a filter |
+| `T` / `t` / `M` | Ask Claude for a tour, its next stop, or send a message (see [Talking to Claude from the review](#talking-to-claude-from-the-review)) |
+| `y` | Answer what Claude is waiting for, shown in the pane under the review |
 | `!` | Read the files again |
 | `C-c C-c` | Send the comments as a prompt (`C-u C-c C-c` to edit it first) |
 | `C-c C-k` | Drop the review and its comments |
