@@ -133,7 +133,7 @@ Each session appears as a tab in the tab line of its project's session windows.
 
 The tab for the active session window is bold and underlined; active background sessions use a muted green. Set `ecc-tab-blink` to `nil` to disable blinking.
 
-Tabs stay in creation order so their positions remain stable. Clicking a tab with `mouse-1` switches the window to that session. Inside a session buffer, `C-c C-t` (`ecc-switch-session`) does the same. Clicking the `x` button prompts to stop the session; the window stays where it is and moves to the tab beside the one that closed — the tab to its right, or the one to its left when it was the rightmost. A tab another window of the frame is already showing is skipped, so the same transcript never ends up in two windows. The window closes with its tab only when there is nothing left for it to show.
+Tabs stay in creation order so their positions remain stable. Clicking a tab with `mouse-1` switches the window to that session. Inside a session buffer, `C-c C-t` (`ecc-switch-session`) does the same: it offers the other tabs of that window. `C-u C-c C-t` offers every session, and a session from another project opens in its own Space rather than in this window. Clicking the `x` button prompts to stop the session; the window stays where it is and moves to the tab beside the one that closed — the tab to its right, or the one to its left when it was the rightmost. A tab another window of the frame is already showing is skipped, so the same transcript never ends up in two windows. The window closes with its tab only when there is nothing left for it to show.
 
 ![The session window changing from one session to another: the selected tab moves from greet to notes and the transcript is replaced](../../../assets/switch.gif)
 
@@ -141,7 +141,7 @@ To show session state in the global Emacs tab bar, set `ecc-tab-bar-state` and u
 
 A window's tabs list only that window's own project's sessions. Two session windows side by side in different projects show separate rows, and neither lists the other's sessions. Set `ecc-tab-line-scope` to `'all` to list every session in a single row.
 
-You can still reach a session outside the scope with `C-c C-t` (`ecc-switch-session`), the dashboard (`C-c c B`), or `C-c c n` (`ecc-next-attention`). Its tab is not on screen, so it cannot blink when waiting for an answer. The mode line `⚠ecc:N` count and notifications still report it.
+You can still reach a session outside the scope with `C-u C-c C-t` (`ecc-switch-session`), the dashboard (`C-c c B`), or `C-c c n` (`ecc-next-attention`). Its tab is not on screen, so it cannot blink when waiting for an answer. The mode line `⚠ecc:N` count and notifications still report it.
 
 Under the tab line, the header line displays the session's current status on the left, the project name beside it, and the remaining context window capacity on the right (turning amber and red as capacity diminishes).
 

@@ -63,6 +63,18 @@ Verified against **Claude Code CLI 2.1.281**.
   aiff, aif). A gif is still drawn in Emacs, and a sound is never drawn in
   the transcript.
 
+- `C-c C-t` (`ecc-switch-session`) offers the tabs of the window it
+  switches -- the sessions of that window's project, or every session under
+  `ecc-tab-line-scope` `all` -- less the one the window already shows, and
+  `C-u C-c C-t` offers every session. It used to offer every session of
+  every project and put the chosen one into this window, so that under
+  `ecc-use-spaces` another project's transcript sat in this Space's tab
+  while the tab bar, the source window and the sidebar stayed where they
+  were. A session from outside the row is now shown in its own Space (under
+  `classic`, by `ecc-display-session`). A window whose project has no other
+  session is refused with a pointer to `C-u C-c C-t`, rather than the one
+  candidate being taken without asking.
+
 ### Fixed
 
 - A session with no process behind it -- a recording opened with `h` to be
