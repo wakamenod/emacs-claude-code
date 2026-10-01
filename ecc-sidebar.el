@@ -305,6 +305,7 @@ answer while its state still says that it runs."
     (cond
      ((> waiting 1) (format "waiting ×%d" waiting))
      ((= waiting 1) "waiting")
+     ((eq (ecc-tab-state session) 'restored) "restored")
      (t (format "%s" (or (ecc-session-state session) ""))))))
 
 (defun ecc-sidebar--sessions ()

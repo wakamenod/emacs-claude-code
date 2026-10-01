@@ -267,25 +267,31 @@ step.")
   "Timer that blinks the tabs of the sessions waiting for an answer.")
 
 (defun ecc-tab-state (session)
-  "Return `attention', `running', `exited' or `idle' for SESSION."
+  "Return `attention', `running', `exited', `restored' or `idle' for SESSION.
+`restored' is a session `ecc-restore' brought back that has not run
+since: stopped, but nothing went wrong with it, so it is not drawn as
+the error an exit is."
   (cond
    ((ecc-session-pending session) 'attention)
    ((memq (ecc-session-state session) '(starting running compacting)) 'running)
-   ((eq (ecc-session-state session) 'exited) 'exited)
+   ((eq (ecc-session-state session) 'exited)
+    (if (ecc-model-option session :restored nil) 'restored 'exited))
    (t 'idle)))
 
 (defun ecc-tab-state-roll-up (sessions)
   "Return the one state that stands for SESSIONS, or nil when there are none.
 The loudest wins: a session waiting for an answer speaks for the
-group, then one that is working, then one that has died.  Whatever
-draws a group of sessions under a single mark -- a tab of the tab bar,
-a Space in the sidebar -- folds them with this, so that they all agree
-about what the mark means."
+group, then one that is working, then one that has died, then one
+restored and not started yet.  Whatever draws a group of sessions
+under a single mark -- a tab of the tab bar, a Space in the sidebar --
+folds them with this, so that they all agree about what the mark
+means."
   (cond
    ((null sessions) nil)
    ((seq-find (lambda (s) (eq (ecc-tab-state s) 'attention)) sessions) 'attention)
    ((seq-find (lambda (s) (eq (ecc-tab-state s) 'running)) sessions) 'running)
    ((seq-find (lambda (s) (eq (ecc-tab-state s) 'exited)) sessions) 'exited)
+   ((seq-find (lambda (s) (eq (ecc-tab-state s) 'restored)) sessions) 'restored)
    (t 'idle)))
 
 (defun ecc-tab-mark-of-state (state)
@@ -295,7 +301,7 @@ when only the ones that want something are marked.  Somewhere with
 room to line the marks up -- the sidebar -- puts its own character in
 for the empty one."
   (pcase state
-    ('attention "⚠") ('running "▶") ('exited "✗") (_ "")))
+    ('attention "⚠") ('running "▶") ('exited "✗") ('restored "○") (_ "")))
 
 (defun ecc-tab-mark (session)
   "Return the character that stands for the state of SESSION."
@@ -326,6 +332,7 @@ tab in front of you."
                                  'ecc-tab-running-face
                                'ecc-tab-running-dim-face))
                    ('exited 'ecc-error-face)
+                   ;; Quiet like idle: waiting to be used, not broken.
                    (_ 'ecc-tab-idle-face)))))
     (cond
      ;; Idle is not a colour so much as the want of one: the dim face
@@ -344,10 +351,12 @@ row of tabs is the handful one is working among rather than every
 session this Emacs has open; `all' lists them all.
 
 A session outside the scope is still there and still reached:
-`ecc-switch-session', the dashboard and `ecc-next-attention' all cross
-projects.  What is given up is that its tab is not on the screen to
-blink when it wants an answer -- the count in the mode line and
-`ecc-notify-mode' are what say so then.")
+`ecc-switch-session' with a prefix argument, the dashboard and
+`ecc-next-attention' all cross projects.  Without one,
+`ecc-switch-session' offers the same sessions as the tabs.  What is
+given up is that its tab is not on the screen to blink when it wants an
+answer -- the count in the mode line and `ecc-notify-mode' are what say
+so then.")
 
 ;; Defined by the minor mode below; named here because the tab line is
 ;; asked about from above it.

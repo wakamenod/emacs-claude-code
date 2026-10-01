@@ -66,6 +66,7 @@
 (require 'ecc-answer)
 (require 'ecc-registry)
 (require 'ecc-history)
+(require 'ecc-restore)
 (require 'ecc-search)
 (require 'ecc-capability)
 (require 'ecc-dashboard)
