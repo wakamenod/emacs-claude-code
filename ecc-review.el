@@ -808,6 +808,16 @@ comments of a file it hides are not drawn.")
 Every reading of the review again and every change to its comments
 ends in a drawing, so the list of its files is written again here.")
 
+(defvar ecc-review--refilling nil
+  "Non-nil while a review is being read again into its buffer.
+The comments are drawn before the place being read is put back, so
+what follows the place waits for `ecc-review-refilled-hook\='.")
+
+(defvar ecc-review-refilled-hook nil
+  "Run in a review buffer once it has been read again and its place put back.
+The files pane marks the file being read here, and a file the filter
+hides is stepped off here.")
+
 (defvar ecc-review-displayed-functions nil
   "Functions called with a review buffer the user has just opened.
 The review is on the screen by then; the files pane comes up beside it
@@ -1013,41 +1023,50 @@ mean everywhere in Emacs.  So do { and }, which move between the
 comments here and between files in `diff-mode\=': N and P still do
 that.")
 
-(defun ecc-review--past-hidden (move count)
-  "Call MOVE, a move of `diff-mode', COUNT times, over what the filter hides.
-A move that lands in a file the filter hides is made again, and one
-that finds nothing past it leaves point where it was and says so."
+(defun ecc-review--past-hidden (move count regexp what)
+  "Call MOVE, a move of `diff-mode', COUNT times, past what the filter hides.
+A negative COUNT says that MOVE goes back, and is made as often.
+REGEXP is what MOVE stops at, and WHAT names it.  MOVE is called as a
+key calls it (`funcall-interactively'): only then does `diff-mode'
+scroll the whole hunk into view and refine it as it is reached
+\(`diff-refine' `navigation').  A move that lands in a file the filter
+hides is made again.  One that finds nothing past it -- an error, or,
+past the last hunk, the end of that hunk rather than another --
+leaves point where it was and says so."
   (if (null ecc-review--hidden)
-      (funcall move count)
-    (let ((start (point)))
-      (condition-case error
+      (funcall-interactively move (abs count))
+    (let ((start (point))
+          (found t))
+      (condition-case nil
           (dotimes (_ (abs count))
-            (funcall move (if (< count 0) -1 1))
+            (funcall-interactively move 1)
             (while (invisible-p (point))
-              (funcall move (if (< count 0) -1 1))))
-        (error (goto-char start)
-               (user-error "%s in the files the filter keeps"
-                           (error-message-string error)))))))
+              (funcall-interactively move 1)))
+        (error (setq found nil)))
+      (unless (and found (not (invisible-p (point))) (looking-at-p regexp))
+        (goto-char start)
+        (user-error "No %s %s in the files the filter keeps"
+                    (if (< count 0) "previous" "next") what)))))
 
 (defun ecc-review-next-hunk (&optional count)
   "Go to the next hunk, COUNT of them, past the files the filter hides."
   (interactive "p")
-  (ecc-review--past-hidden #'diff-hunk-next (or count 1)))
+  (ecc-review--past-hidden #'diff-hunk-next (or count 1) diff-hunk-header-re "hunk"))
 
 (defun ecc-review-previous-hunk (&optional count)
   "Go to the previous hunk, COUNT of them, past the files the filter hides."
   (interactive "p")
-  (ecc-review--past-hidden #'diff-hunk-prev (or count 1)))
+  (ecc-review--past-hidden #'diff-hunk-prev (- (or count 1)) diff-hunk-header-re "hunk"))
 
 (defun ecc-review-next-file (&optional count)
   "Go to the next file, COUNT of them, past the files the filter hides."
   (interactive "p")
-  (ecc-review--past-hidden #'diff-file-next (or count 1)))
+  (ecc-review--past-hidden #'diff-file-next (or count 1) diff-file-header-re "file"))
 
 (defun ecc-review-previous-file (&optional count)
   "Go to the previous file, COUNT of them, past the files the filter hides."
   (interactive "p")
-  (ecc-review--past-hidden #'diff-file-prev (or count 1)))
+  (ecc-review--past-hidden #'diff-file-prev (- (or count 1)) diff-file-header-re "file"))
 
 (defun ecc-review-read-only ()
   "Say that the review cannot be edited, in place of a `diff-mode' edit."
@@ -1232,8 +1251,10 @@ asked any more."
       ;; The lines are read once, and only when something is to be put
       ;; back on them.
       (let ((lines (and (or ecc-review--notes views) (ecc-review--lines))))
-        (ecc-review--draw-notes lines)
+        (let ((ecc-review--refilling t))
+          (ecc-review--draw-notes lines))
         (ecc-review--restore-views views lines))
+      (run-hooks 'ecc-review-refilled-hook)
       ;; Counted one by one: a comment that found its line again does not
       ;; make up for another that lost it.
       (let ((lost (seq-count #'ecc-review-note-outdated placed)))

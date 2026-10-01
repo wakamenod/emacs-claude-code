@@ -1975,7 +1975,7 @@ buffer."
                     (cdr ecc-review-ediff--buffers))))
       (when (buffer-live-p buffer)
         (with-current-buffer buffer
-          (add-to-invisibility-spec 'ecc-review-filter))
+          (ecc-review-files--spec entries))
         (dolist (entry entries)
           (pcase-let ((`(,beg . ,end) (ecc-review-ediff--section-bounds
                                        side (plist-get entry :path))))
@@ -2010,7 +2010,8 @@ whenever ediff lays the windows out again."
                          (dedicated . t)
                          (window-parameters . ((no-other-window . t)
                                                (no-delete-other-windows . t))))))
-             (let ((left (ecc-review-files--split window)))
+             ;; Nil, and no pane, when the left side is too narrow.
+             (when-let* ((left (ecc-review-files--split window)))
                (set-window-buffer left pane)
                (set-window-dedicated-p left t)
                (set-window-parameter left 'no-other-window t)
@@ -2042,11 +2043,30 @@ window cannot be the only one."
         (select-window other)
       (set-frame-selected-window frame other))))
 
+(defvar-local ecc-review-ediff--hidden-vector nil
+  "(UNITS HIDDEN . VECTOR): which differences the filter hides, by number.
+VECTOR is a bool-vector made for the differences UNITS and the files
+HIDDEN, and made again when either is another list: a key that steps
+over hidden differences asks about each of them, and asking the list
+of differences every time cost the square of their number.")
+
 (defun ecc-review-ediff--hidden-difference-p (n)
   "Return non-nil when the filter of this review hides difference N."
   (and ecc-review--hidden
        (ediff-valid-difference-p n)
-       (ecc-review-hidden-p (plist-get (nth n (ecc-review-units)) :path))))
+       (let ((units (ecc-review-units)))
+         (unless (and ecc-review-ediff--hidden-vector
+                      (eq (car ecc-review-ediff--hidden-vector) units)
+                      (eq (cadr ecc-review-ediff--hidden-vector) ecc-review--hidden))
+           (let ((vector (make-bool-vector (length units) nil))
+                 (index 0))
+             (dolist (unit units)
+               (aset vector index (ecc-review-hidden-p (plist-get unit :path)))
+               (cl-incf index))
+             (setq ecc-review-ediff--hidden-vector
+                   (cons units (cons ecc-review--hidden vector)))))
+         (let ((vector (cddr ecc-review-ediff--hidden-vector)))
+           (and (< n (length vector)) (aref vector n))))))
 
 (defun ecc-review-ediff--shown-differences-from (from to)
   "Return the differences from FROM to TO, both included, the filter keeps."
@@ -2081,6 +2101,19 @@ hides, and signal that there is none left when every one is hidden."
   (interactive "p")
   (ecc-review-ediff--move #'ediff-previous-difference arg nil))
 
+(defun ecc-review-ediff-jump-to-difference-at-point (arg)
+  "Go to the difference at point of a side, as ediff's ga and gb do.
+When the filter hides it, to the nearest one it keeps.  ARG is ediff's."
+  (interactive "P")
+  (funcall-interactively #'ediff-jump-to-difference-at-point arg)
+  (when (ecc-review-ediff--hidden-difference-p ediff-current-difference)
+    (let ((target (or (car (ecc-review-ediff--shown-differences-from
+                            ediff-current-difference (1- ediff-number-of-differences)))
+                      (car (last (ecc-review-ediff--shown-differences-from
+                                  0 ediff-current-difference))))))
+      (when target
+        (ediff-jump-to-difference (1+ target))))))
+
 (defun ecc-review-ediff-jump-to-difference (number)
   "Go to the difference NUMBER, as ediff's j does.
 When the filter hides it, to the first one after it that it keeps, else
@@ -2099,18 +2132,42 @@ the last one before."
         (message "Difference %d is in a file the filter hides; this is %d"
                  (1+ n) (1+ target))))))
 
-(cl-defmethod ecc-review-files-filter-applied (&context (major-mode ediff-mode))
+(defun ecc-review-ediff--write-help ()
+  "Write the help of the control panel again, laying no window out.
+What `ediff-setup-control-buffer\=' writes, without its fitting of the
+window and its selecting of it."
+  (let ((inhibit-read-only t))
+    (erase-buffer)
+    (ediff-set-help-message)
+    (insert ediff-help-message)
+    (unless (ediff-multiframe-setup-p)
+      (ediff-indent-help-message))
+    (ediff-set-help-overlays)
+    (set-buffer-modified-p nil)))
+
+(cl-defmethod ecc-review-files-filter-applied (&context (major-mode ediff-mode)
+                                                        &optional quietly)
   "Move this review off a difference the filter now hides, and say what it hides.
-The brief help carries the filter, so the control panel is written again."
+The brief help carries the filter, so the control panel is written again.
+QUIETLY -- a change no key of the user's made -- writes it in place and
+selects the difference without recentring, which would lay the windows
+out again and hand the panel the keyboard; a key of the user's
+recentres, which fits the panel to its new help."
   (when (ecc-review-ediff--hidden-difference-p ediff-current-difference)
     (let ((target (or (car (ecc-review-ediff--shown-differences-from
                             ediff-current-difference (1- ediff-number-of-differences)))
                       (car (last (ecc-review-ediff--shown-differences-from
                                   0 ediff-current-difference))))))
       (ediff-unselect-and-select-difference (or target -1) nil 'no-recenter)))
-  (setq ediff-window-config-saved "")
-  (ecc-review-ediff--leave-the-pane)
-  (ediff-recenter 'no-rehighlight))
+  (if quietly
+      (ecc-review-ediff--write-help)
+    (setq ediff-window-config-saved "")
+    (ecc-review-ediff--leave-the-pane)
+    (ediff-recenter 'no-rehighlight)))
+
+(cl-defmethod ecc-review-files-give-keyboard (&context (major-mode ediff-mode))
+  "Give the control panel of this ediff review the keyboard, where its keys are."
+  (ecc-review-ediff--give-the-control-panel-the-keyboard))
 
 ;;;; The help ? shows
 
@@ -2405,11 +2462,17 @@ ediff lays out its windows; quitting puts back what was on the screen."
           ;; and j step over what the filter hides.
           (define-key ediff-mode-map (kbd "s") #'ecc-review-files-toggle)
           (define-key ediff-mode-map (kbd "/") #'ecc-review-files-filter)
-          (dolist (key '("n" "SPC"))
-            (define-key ediff-mode-map (kbd key) #'ecc-review-ediff-next-difference))
-          (dolist (key '("p" "DEL"))
-            (define-key ediff-mode-map (kbd key) #'ecc-review-ediff-previous-difference))
-          (define-key ediff-mode-map (kbd "j") #'ecc-review-ediff-jump-to-difference)
+          ;; Remapped rather than rebound, so that every key ediff gives
+          ;; them -- SPC, DEL, <backspace>, <delete>, S-SPC, ga, gb -- is
+          ;; covered.
+          (define-key ediff-mode-map [remap ediff-next-difference]
+                      #'ecc-review-ediff-next-difference)
+          (define-key ediff-mode-map [remap ediff-previous-difference]
+                      #'ecc-review-ediff-previous-difference)
+          (define-key ediff-mode-map [remap ediff-jump-to-difference]
+                      #'ecc-review-ediff-jump-to-difference)
+          (define-key ediff-mode-map [remap ediff-jump-to-difference-at-point]
+                      #'ecc-review-ediff-jump-to-difference-at-point)
           (add-hook 'ediff-select-hook #'ecc-review-files--follow nil t)
           (add-hook 'ediff-before-setup-windows-hook #'ecc-review-ediff--leave-the-pane nil t)
           (add-hook 'ediff-after-setup-windows-hook #'ecc-review-ediff--keep-the-pane nil t)
@@ -2696,7 +2759,8 @@ so are the difference being read and the place of each side."
     (let* ((lines (ecc-review-lines))
            (found (and current (ecc-review--locate-note current lines)))
            (n (and found (plist-get (plist-get found :hunk) :number))))
-      (ecc-review--draw-notes lines)
+      (let ((ecc-review--refilling t))
+        (ecc-review--draw-notes lines))
       (ecc-review-ediff--restore-views
        views
        (and n starts
@@ -2720,6 +2784,7 @@ so are the difference being read and the place of each side."
     (setq ecc-review--fingerprint (ecc-review-ediff--state hash)
           ecc-review--stale nil
           ecc-review--failed nil)
+    (run-hooks 'ecc-review-refilled-hook)
     (let ((lost (seq-count #'ecc-review-note-outdated placed)))
       (when (> lost 0)
         (message "%s no longer %s a difference of the review; kept as outdated"

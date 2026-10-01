@@ -91,6 +91,9 @@ with the pane or without it accordingly, for as long as Emacs runs.")
 (defvar-local ecc-review-files--shown-path nil
   "The file the pane of this review marks as being read.")
 
+(defvar-local ecc-review-files--hidden-changed nil
+  "Non-nil when the last drawing changed which files the filter hides.")
+
 
 (cl-defgeneric ecc-review-files-entries ()
   "Return the files of this review, in the order it shows them.
@@ -121,11 +124,22 @@ SELECT gives the review the keyboard; otherwise only its view moves."
       (when select (select-window window)))
     (run-hooks 'ecc-review-moved-hook)))
 
+(defun ecc-review-files--spec (on)
+  "Put the filter's invisibility in this buffer's spec when ON, else take it out.
+Once: `add-to-invisibility-spec\=' adds an entry every time it is
+called, and redisplay walks the whole spec."
+  (if on
+      (unless (and (listp buffer-invisibility-spec)
+                   (or (memq 'ecc-review-filter buffer-invisibility-spec)
+                       (assq 'ecc-review-filter buffer-invisibility-spec)))
+        (add-to-invisibility-spec 'ecc-review-filter))
+    (remove-from-invisibility-spec 'ecc-review-filter)))
+
 (cl-defgeneric ecc-review-files-hide (entries)
   "Hide the files ENTRIES of this review, and show every other again."
   (mapc #'delete-overlay ecc-review-files--hiders)
   (setq ecc-review-files--hiders nil)
-  (add-to-invisibility-spec 'ecc-review-filter)
+  (ecc-review-files--spec entries)
   (dolist (entry entries)
     (let ((overlay (make-overlay (plist-get entry :beg) (plist-get entry :end) nil t nil)))
       (overlay-put overlay 'invisible 'ecc-review-filter)
@@ -140,30 +154,89 @@ SELECT gives the review the keyboard; otherwise only its view moves."
   "Split `ecc-review-files-width' columns off the left of WINDOW; return them.
 The two are made a combination of their own, so that the columns go
 back to WINDOW when the pane is deleted, and not to the window on its
-other side."
+other side.  Nil when WINDOW is too narrow to give them: the pane is
+never a reason for anything else to fail."
   (let ((window-combination-limit t))
     (condition-case nil
         (split-window window (- ecc-review-files-width) 'left)
-      (error (user-error "The review's window is too narrow for the files pane")))))
+      (error nil))))
+
+(defun ecc-review-files--pane-beside (window)
+  "Return the files pane window that goes with the review WINDOW, or nil."
+  (seq-find (lambda (other)
+              (eq (car (window-parameter other 'ecc-review-files-beside)) window))
+            (window-list (window-frame window) 'no-minibuffer)))
 
 (cl-defgeneric ecc-review-files-place-pane (pane)
   "Show PANE, the files pane of this review, left of the review; return its window.
-Nil when the review is on no window to go beside."
+Nil when the review is on no window to go beside, or when that window
+is too narrow to give the pane its columns.  The pane window
+remembers the window and the buffer it goes with: a review that comes
+into that window takes the pane window over rather than splitting
+another off, and when the review leaves it, or it is deleted, the pane
+goes (`ecc-review-files--sweep')."
   (when-let* ((window (ecc-review-files-review-window)))
-    (let ((left (ecc-review-files--split window)))
+    (when-let* ((left (or (ecc-review-files--pane-beside window)
+                          (ecc-review-files--split window))))
+      (set-window-dedicated-p left nil)
       (set-window-buffer left pane)
       (set-window-dedicated-p left t)
       (set-window-parameter left 'ecc-review-files t)
+      (set-window-parameter left 'ecc-review-files-beside (cons window (current-buffer)))
+      (add-hook 'quit-window-hook #'ecc-review-files--quitting nil t)
       left)))
 
-(cl-defgeneric ecc-review-files-filter-applied ()
-  "Run in this review once its filter has changed, to move off what it hides."
-  (when-let* ((path (ecc-review-files-current)))
-    (when (ecc-review-hidden-p path)
-      (when-let* ((entry (seq-find (lambda (entry)
-                                     (not (ecc-review-hidden-p (plist-get entry :path))))
-                                   (ecc-review-files--entries))))
-        (ecc-review-files-goto entry nil)))))
+(defun ecc-review-files--sweep (frame)
+  "Delete the files panes of FRAME whose review has left the window beside them.
+On `window-buffer-change-functions': another buffer in the review's
+window, or the window deleted, and the pane would list a review nobody
+is reading."
+  (dolist (window (window-list frame 'no-minibuffer))
+    (when-let* ((beside (window-parameter window 'ecc-review-files-beside)))
+      (unless (and (window-live-p (car beside))
+                   (eq (window-buffer (car beside)) (cdr beside)))
+        (ignore-errors (delete-window window))))))
+
+(add-hook 'window-buffer-change-functions #'ecc-review-files--sweep)
+
+(defun ecc-review-files--quitting ()
+  "Take the files pane down with the review, on `quit-window-hook\='.
+At once, and not at the next redisplay as `ecc-review-files--sweep' would."
+  (when-let* ((pane (ecc-review-files--pane-beside (selected-window))))
+    (ignore-errors (delete-window pane))))
+
+(cl-defgeneric ecc-review-files-give-keyboard ()
+  "Select the window of this review that its keys are typed in."
+  (when-let* ((window (ecc-review-files-review-window)))
+    (select-window window)))
+
+(defun ecc-review-files--nearest-shown (path)
+  "Return the file nearest PATH that the filter keeps: after it, else before."
+  (let* ((entries (ecc-review-files--entries))
+         (tail (or (member (ecc-review-files--entry (current-buffer) path) entries) entries))
+         (shown (lambda (entry) (not (ecc-review-hidden-p (plist-get entry :path))))))
+    (or (seq-find shown tail)
+        (car (last (seq-filter shown (butlast entries (length tail))))))))
+
+(cl-defgeneric ecc-review-files-filter-applied (&optional _quietly)
+  "Run in this review once what its filter hides has changed.
+Point, and the point of every window on the review, is moved off a file
+it hides to the nearest one it keeps.  QUIETLY is for a change no
+command of the user's made, a reading again or a comment of Claude's."
+  (let ((moved nil))
+    (dolist (window (cons nil (get-buffer-window-list (current-buffer) nil t)))
+      (let ((position (if window (window-point window) (point))))
+        (when (invisible-p position)
+          (when-let* ((path (save-excursion (goto-char position) (ecc-review-files-current)))
+                      (entry (ecc-review-files--nearest-shown path)))
+            (let ((target (or (plist-get entry :first) (plist-get entry :beg))))
+              (setq moved t)
+              (if window
+                  (progn (set-window-point window target)
+                         (set-window-start window (plist-get entry :beg)))
+                (goto-char target)))))))
+    (when moved
+      (run-hooks 'ecc-review-moved-hook))))
 
 ;;;; The diff review's files
 
@@ -301,19 +374,34 @@ On `ecc-review-before-draw-hook': the comments drawn next leave the
 hidden files out, and a comment of Claude's that has just come may have
 brought a file back."
   (when (ecc-review-buffer-p)
-    (let ((hidden (ecc-review-files--hidden-entries ecc-review--filter)))
-      (setq ecc-review--hidden (mapcar (lambda (entry) (plist-get entry :path)) hidden))
+    (let* ((hidden (ecc-review-files--hidden-entries ecc-review--filter))
+           (paths (mapcar (lambda (entry) (plist-get entry :path)) hidden)))
+      (unless (equal paths ecc-review--hidden)
+        (setq ecc-review-files--hidden-changed t))
+      (setq ecc-review--hidden paths)
       (when (or hidden ecc-review-files--hiders)
         (ecc-review-files-hide hidden)))))
 
-(defun ecc-review-files--after-draw ()
-  "Write the files pane of this review again, when it has one.
-On `ecc-review-after-draw-hook': the files or their comments changed."
+(defun ecc-review-files--settle ()
+  "Step off what the filter has come to hide, and write the pane again.
+After the comments are drawn, or once a review read again has its place
+back (`ecc-review-refilled-hook'), never in between: the place a reading
+again puts back is the one to look at."
   (when (ecc-review-buffer-p)
+    (when ecc-review-files--hidden-changed
+      (setq ecc-review-files--hidden-changed nil)
+      (ecc-review-files-filter-applied t))
     (ecc-review-files--render)))
+
+(defun ecc-review-files--after-draw ()
+  "Settle this review once its comments are drawn, unless it is read again.
+On `ecc-review-after-draw-hook': the files or their comments changed."
+  (unless ecc-review--refilling
+    (ecc-review-files--settle)))
 
 (add-hook 'ecc-review-before-draw-hook #'ecc-review-files--before-draw)
 (add-hook 'ecc-review-after-draw-hook #'ecc-review-files--after-draw)
+(add-hook 'ecc-review-refilled-hook #'ecc-review-files--settle)
 
 ;;;; The pane
 
@@ -461,10 +549,12 @@ WIDTH is the width of the pane and NOTES the comments of the review."
     line))
 
 (defun ecc-review-files--render (&optional filter)
-  "Write the files pane of this review afresh, when it has one.
-FILTER, when given, is what is being typed after \\`/' and lists the
-files it would keep; otherwise the filter of the review does."
-  (when (buffer-live-p ecc-review-files--pane)
+  "Write the files pane of this review afresh, when it is on the screen.
+A pane out of sight is written when it is shown again.  FILTER, when
+given, is what is being typed after \\`/' and lists the files it would
+keep; otherwise the filter of the review does."
+  (when (and (buffer-live-p ecc-review-files--pane)
+             (get-buffer-window ecc-review-files--pane t))
     (let* ((filter (or filter ecc-review--filter))
            (entries (ecc-review-files--entries))
            (kept (seq-filter (lambda (entry)
@@ -506,6 +596,7 @@ files it would keep; otherwise the filter of the review does."
 (defun ecc-review-files--follow ()
   "Mark again the file being read in the pane of this review, when it moved."
   (when (and (buffer-live-p ecc-review-files--pane)
+             (get-buffer-window ecc-review-files--pane t)
              (not (equal (ecc-review-files-current) ecc-review-files--shown-path)))
     (ecc-review-files--render)))
 
@@ -524,15 +615,16 @@ Nil when the review is on no window."
   "Take the files pane of REVIEW off the screen."
   (when-let* ((window (ecc-review-files--pane-window review)))
     (when (eq (selected-window) window)
-      (when-let* ((other (with-current-buffer review (ecc-review-files-review-window))))
-        (select-window other)))
+      (with-current-buffer review
+        (ecc-review-files-give-keyboard)))
     (ignore-errors (delete-window window))))
 
 (defun ecc-review-files--on-displayed (review)
   "Show the files pane of REVIEW now that it is on the screen, if it is wanted.
 On `ecc-review-displayed-functions'."
   (when (and ecc-review-files-shown (ecc-review-buffer-p review))
-    (ecc-review-files--show review)))
+    (unless (ecc-review-files--show review)
+      (ecc-log "review" "no room for the files pane of %s" (buffer-name review)))))
 
 (add-hook 'ecc-review-displayed-functions #'ecc-review-files--on-displayed)
 
@@ -548,7 +640,7 @@ every review opened afterwards, for as long as Emacs runs."
                (ecc-review-files--hide-pane review))
       (setq ecc-review-files-shown t)
       (unless (ecc-review-files--show review)
-        (user-error "The review is not on the screen")))))
+        (user-error "The review is not on the screen, or its window is too narrow for the list")))))
 
 (defun ecc-review-files-rebuild ()
   "Write the list of the files again."
@@ -620,9 +712,10 @@ On `after-change-functions' of the minibuffer \\`/' reads in."
       (with-current-buffer ecc-review-files--typing
         (ecc-review-files--render text)))))
 
-(defun ecc-review-files-set-filter (review filter)
+(defun ecc-review-files-set-filter (review filter &optional note)
   "Keep only the files of REVIEW that FILTER matches; nil or \"\" keeps all.
-The files left out are hidden and nothing is read again."
+The files left out are hidden and nothing is read again.  NOTE is added
+to what the echo area says."
   (with-current-buffer review
     (setq ecc-review--filter (and filter (not (string-empty-p (string-trim filter)))
                                   (string-trim filter)))
@@ -630,9 +723,11 @@ The files left out are hidden and nothing is read again."
     (ecc-review-files-filter-applied)
     (force-mode-line-update)
     (let ((hidden (length ecc-review--hidden)))
-      (message (if ecc-review--filter
+      (message "%s%s"
+               (if ecc-review--filter
                    (format "%s hidden by filter" (ecc-review--count hidden "file"))
-                 "Every file is shown")))))
+                 "Every file is shown")
+               (or note "")))))
 
 ;;;###autoload
 (defun ecc-review-files-filter ()
@@ -644,6 +739,7 @@ are kept and sent with the others."
   (interactive)
   (let* ((review (ecc-review-files--review))
          (shown (ecc-review-files--pane-window review))
+         (placed nil)
          (done nil))
     (unwind-protect
         (let ((filter
@@ -653,13 +749,15 @@ are kept and sent with the others."
                                (lambda (&rest _) (ecc-review-files--typed)) nil t))
                  (let ((ecc-review-files--typing review))
                    (unless shown
-                     (ecc-review-files--show review))
+                     (setq placed (ecc-review-files--show review)))
                    (read-from-minibuffer "Filter files (empty for all): "
                                          (buffer-local-value 'ecc-review--filter review))))))
           (setq done t)
           (unless shown
             (ecc-review-files--hide-pane review))
-          (ecc-review-files-set-filter review filter))
+          (ecc-review-files-set-filter review filter
+                                       (and (not shown) (not placed)
+                                            "; no room for the list of files")))
       (unless done
         (unless shown
           (ecc-review-files--hide-pane review))

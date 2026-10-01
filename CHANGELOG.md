@@ -259,13 +259,18 @@ Verified against **Claude Code CLI 2.1.281**.
   and `m` leave where it is; with `ecc-review-ediff-full-frame` nil it is
   split off the left side and put back whenever ediff lays its windows out
   again. In the diff review it is split off the left of the review's
-  window, so the order is the Spaces sidebar, the session, the list and
-  the diff; taken down, its columns go back to the diff. It goes with the
-  review. It is hidden at first, `s` toggles it, and the choice holds for
-  the next review opened, until Emacs exits. Its width is
-  `ecc-review-files-width` (32 columns). It is written again whenever the
-  review is read again -- the files followed, `g`, `!` -- and whenever a
-  comment comes or goes.
+  window, so it sits between whatever is on the left and the diff; taken
+  down, its columns go back to the diff. It goes with the review's window:
+  `q`, another buffer taking that window, or the window deleted takes the
+  list down too, and another review coming into the window takes the
+  list's window over rather than splitting a second one off. Where the
+  window is too narrow for it, nothing fails: a review opens without it,
+  and `/` filters without it and says so. It is hidden at first, `s`
+  toggles it, and the choice holds for the next review opened, until
+  Emacs exits. Its width is `ecc-review-files-width` (32 columns). It is
+  written again whenever the review is read again -- the files followed,
+  `g`, `!` -- and whenever a comment comes or goes, while it is on the
+  screen; out of sight, it is written when it is shown.
 
 - `/` in a review keeps only the files whose path, former path, or one of
   Claude's comments on them contains what is typed, ignoring case (Hunk's
@@ -275,7 +280,11 @@ Verified against **Claude Code CLI 2.1.281**.
   again: in the diff review with an invisibility spec of their own, in
   ediff both halves of each. Their comments are kept and sent by
   `C-c C-c`, and not drawn. `n`, `p`, `N` and `P` in the diff review, and
-  `n`, `p`, `SPC`, `DEL` and `j` in ediff, step over them; `{`, `}` and
+  in ediff every key of its next, previous and jump commands (`n`, `p`,
+  `SPC`, `DEL`, `<backspace>`, `<delete>`, `S-SPC`, `j`, `ga`, `gb`),
+  step over them, and say so when nothing kept lies further; a drawing
+  that comes to hide the file being read -- a comment of Claude's that
+  matched gone, the review read again -- steps off it; `{`, `}` and
   `review_navigate`'s `next_comment` and `prev_comment` pass over their
   comments, and `review_navigate` to one of them fails and says why. The
   header line of the diff review says `/FILTER: N files hidden by

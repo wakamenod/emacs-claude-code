@@ -618,6 +618,275 @@ keeps the filter."
                             ecc-review--comments))
       (should (string-search "on a" (ecc-review-buffer-message))))))
 
+;;;; Review round 1
+
+(ert-deftest ecc-review-files-test-n-moves-as-a-key-does ()
+  "n is diff-mode's own move as a key makes it: whole hunk in view, refined.
+diff-mode scrolls a hunk that runs off the window into view, and
+refines a hunk it reaches with `diff-refine' `navigation', only when
+called interactively; batch has no redisplay to scroll, so what is seen
+is the recentring asked for, where this Emacs asks for it."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (let* ((long (concat "diff --git a/a.el b/a.el\n--- a/a.el\n+++ b/a.el\n"
+                             "@@ -1 +1 @@\n-x\n+y\n@@ -100,40 +100,40 @@\n"
+                             (mapconcat (lambda (n) (format "-old %d\n+new %d" n n))
+                                        (number-sequence 1 40) "\n")
+                             "\n"))
+               (review (ecc-review-files-test--fill session long))
+               (recentred nil))
+          (save-window-excursion
+            (delete-other-windows)
+            (set-window-buffer (selected-window) review)
+            (with-current-buffer review
+              (goto-char (point-min))
+              (dolist (filter '(nil "a.el"))
+                (ecc-review-files-set-filter review filter)
+                (goto-char (point-min))
+                (setq recentred nil diff--auto-refine-data nil)
+                ;; `called-interactively-p' `interactive' is never true in batch.
+                (cl-letf (((symbol-function 'pos-visible-in-window-p) #'ignore)
+                          ((symbol-function 'recenter)
+                           (lambda (&rest args) (push args recentred))))
+                  (let ((noninteractive nil)
+                        (diff-refine 'navigation))
+                    (call-interactively #'ecc-review-next-hunk)
+                    (call-interactively #'ecc-review-next-hunk)))
+                (should (looking-at-p "@@ -100,40"))
+                ;; Emacs 29 to 31 recentre in the move itself.  The Emacs
+                ;; 32 snapshot moved that into `easy-mmode--next', where
+                ;; `called-interactively-p' asks about the helper and is
+                ;; never true, so it recentres for nobody (2026-10-02).
+                (unless (fboundp 'easy-mmode--next)
+                  (should (member '((0)) recentred)))
+                (should (eq (car diff--auto-refine-data) review))
+                (setq diff--auto-refine-data nil)))))
+      (ecc-review-files-test--kill-buffers))))
+
+(ert-deftest ecc-review-files-test-the-pane-goes-with-the-review-window ()
+  "q takes the pane down; a review taking the window takes the pane window over.
+And a pane whose review left its window, or whose window was deleted,
+is swept away."
+  (ecc-review-files-test--with-pane
+    (ecc-test-with-fake-session session
+      (let ((two (ecc-model-create-session :name "two"
+                                           :project-root temporary-file-directory)))
+        (unwind-protect
+            (let* ((review (ecc-review-files-test--fill session))
+                   (other (ecc-review-files-test--fill two))
+                   (window (ecc-review-files-test--beside session review)))
+              (with-current-buffer review (ecc-review-files-toggle))
+              (should (ecc-review-files--pane-window review))
+              ;; q
+              (with-selected-window window (quit-window))
+              (should-not (ecc-review-files--pane-window review))
+              ;; A second review in the same window: one pane, not two.
+              (set-window-buffer window review)
+              (with-current-buffer review (ecc-review-files--show review))
+              (set-window-buffer window other)
+              (with-current-buffer other (ecc-review-files--show other))
+              (should (= 1 (seq-count (lambda (w) (window-parameter w 'ecc-review-files))
+                                      (window-list))))
+              (should (ecc-review-files--pane-window other))
+              ;; Another buffer takes the window: swept at the next redisplay.
+              (set-window-buffer window (ecc-session-buffer session))
+              (ecc-review-files--sweep (selected-frame))
+              (should-not (ecc-review-files--pane-window other))
+              ;; The window deleted: swept too.
+              (let ((window (ecc-review-files-test--beside session review)))
+                (with-current-buffer review (ecc-review-files--show review))
+                (delete-window window)
+                (ecc-review-files--sweep (selected-frame))
+                (should-not (ecc-review-files--pane-window review))))
+          (ecc-test-cleanup-session two)
+          (ecc-review-files-test--kill-buffers))))))
+
+(ert-deftest ecc-review-files-test-every-key-ediff-moves-by-skips-hidden ()
+  "<backspace>, <delete>, S-SPC, ga and gb reach the filter-aware moves too."
+  (skip-unless (executable-find "git"))
+  (ecc-review-files-test--with-pane
+    (ecc-review-files-test--with-ediff session control
+      (dolist (key (list [backspace] [delete] [?\S-\s] (kbd "DEL") (kbd "p")))
+        (should (eq (key-binding key) #'ecc-review-ediff-previous-difference)))
+      (dolist (key (list (kbd "SPC") (kbd "n")))
+        (should (eq (key-binding key) #'ecc-review-ediff-next-difference)))
+      (should (eq (key-binding (kbd "ga")) #'ecc-review-ediff-jump-to-difference-at-point))
+      (ediff-jump-to-difference 3)
+      (ecc-review-files-set-filter control "a.txt")
+      (ediff-jump-to-difference 1)
+      (ecc-review-files-set-filter control "c.txt")
+      (should (= ediff-current-difference 2))
+      (should-error (call-interactively (key-binding [backspace])) :type 'user-error)
+      (should (= ediff-current-difference 2)))))
+
+(ert-deftest ecc-review-files-test-the-invisibility-spec-is-added-once ()
+  "Many drawings leave one entry in the spec; clearing the filter takes it out."
+  (skip-unless (executable-find "git"))
+  (let ((count (lambda () (seq-count (lambda (entry)
+                                       (eq (if (consp entry) (car entry) entry)
+                                           'ecc-review-filter))
+                                     (and (listp buffer-invisibility-spec)
+                                          buffer-invisibility-spec)))))
+    (ecc-test-with-fake-session session
+      (unwind-protect
+          (with-current-buffer (ecc-review-files-test--fill session)
+            (ecc-review-files-set-filter (current-buffer) ".el")
+            (dotimes (_ 20) (ecc-review--draw-notes))
+            (should (= (funcall count) 1))
+            (ecc-review-files-set-filter (current-buffer) "")
+            (should (= (funcall count) 0)))
+        (ecc-review-files-test--kill-buffers)))
+    (ecc-review-files-test--with-pane
+      (ecc-review-files-test--with-ediff session control
+        (ecc-review-files-set-filter control "a.txt")
+        (dotimes (_ 20) (ecc-review--draw-notes))
+        (dolist (side (list ediff-buffer-A ediff-buffer-B))
+          (with-current-buffer side (should (= (funcall count) 1))))
+        (ecc-review-files-set-filter control "")
+        (dolist (side (list ediff-buffer-A ediff-buffer-B))
+          (with-current-buffer side (should (= (funcall count) 0))))))))
+
+(ert-deftest ecc-review-files-test-no-room-for-the-pane-fails-nothing ()
+  "/ filters without the pane, and a review opens without it, where there is no room."
+  (skip-unless (executable-find "git"))
+  (ecc-review-files-test--with-pane
+    (let ((ecc-review-files-width 75))
+      (ecc-test-with-fake-session session
+        (unwind-protect
+            (let* ((review (ecc-review-files-test--fill session))
+                   (window (ecc-review-files-test--beside session review))
+                   (said nil))
+              (cl-letf (((symbol-function 'read-from-minibuffer) (lambda (&rest _) "txt"))
+                        ((symbol-function 'message)
+                         (lambda (format &rest args)
+                           (push (apply #'format-message format args) said))))
+                (with-current-buffer review (ecc-review-files-filter)))
+              (should (equal (buffer-local-value 'ecc-review--filter review) "txt"))
+              (should (string-search "no room for the list" (car said)))
+              (should (= (length (window-list)) 2))
+              (setq ecc-review-files-shown t)
+              (cl-letf (((symbol-function 'ecc-window-display-review)
+                         (lambda (buffer _session) (set-window-buffer window buffer) window)))
+                (ecc-review--display review session))
+              (should-not (ecc-review-files--pane-window review)))
+          (ecc-review-files-test--kill-buffers))))
+    ;; ediff, its frame shared: the pane does not fit, ediff still opens.
+    (let ((ecc-review-files-width 75)
+          (ecc-review-files-shown t)
+          (ecc-review-ediff-full-frame nil))
+      (ecc-review-files-test--with-ediff session control
+        (should (memq control ediff-session-registry))
+        (should (window-live-p ediff-window-B))
+        (should-not (ecc-review-files--pane-window control))))))
+
+(ert-deftest ecc-review-files-test-no-next-hunk-past-the-filter ()
+  "From the last hunk kept, n stays and says there is nothing further kept."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (with-current-buffer (ecc-review-files-test--fill session)
+          (ecc-review-files-set-filter (current-buffer) "one.el")
+          (goto-char (plist-get (car (last (seq-filter (lambda (line)
+                                                         (and (equal (plist-get line :path)
+                                                                     "src/one.el")
+                                                              (null (plist-get line :side))))
+                                                       (ecc-review-lines))))
+                                :position))
+          (let ((here (point)))
+            (should (equal (cadr (should-error (ecc-review-next-hunk) :type 'user-error))
+                           "No next hunk in the files the filter keeps"))
+            (should (= (point) here))
+            (should-error (ecc-review-next-file) :type 'user-error)
+            (should (= (point) here))))
+      (ecc-review-files-test--kill-buffers))))
+
+(ert-deftest ecc-review-files-test-a-drawing-that-hides-the-current-file ()
+  "When a drawing hides the file being read, the review steps off it."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (with-current-buffer (ecc-review-files-test--fill session)
+          (let ((on-made (ecc-review-add-note 'claude "zzz" (ecc-review-files-test--line
+                                                             "made.txt"))))
+            (ecc-review-add-note 'claude "zzz" (ecc-review-files-test--line "after.el"))
+            (ecc-review-files-set-filter (current-buffer) "zzz")
+            (goto-char (plist-get (ecc-review-files-test--line "made.txt") :position))
+            ;; Claude's comment goes, and made.txt no longer matches.
+            (ecc-review-remove-note on-made)
+            (ecc-review--draw-notes)
+            (should (ecc-review-hidden-p "made.txt"))
+            (should-not (invisible-p (point)))
+            (should (= (point) (plist-get (ecc-review-files-test--line "after.el") :position)))
+            (should (string-search "4 files hidden" (ecc-review--header-line)))))
+      (ecc-review-files-test--kill-buffers)))
+  (skip-unless (executable-find "git"))
+  (ecc-review-files-test--with-pane
+    (ecc-review-files-test--with-ediff session control
+      (let ((on-b (ecc-review-add-note 'claude "zzz" (car (ecc-review-ediff--unit-lines
+                                                           (nth 1 (ecc-review-units)))))))
+        (ecc-review-add-note 'claude "zzz" (car (ecc-review-ediff--unit-lines
+                                                 (nth 2 (ecc-review-units)))))
+        (ediff-jump-to-difference 2)
+        (ecc-review-files-set-filter control "zzz")
+        (ecc-review-remove-note on-b)
+        (ecc-review--draw-notes)
+        (should (= ediff-current-difference 2))
+        (should (string-search "/zzz: 2 files hidden by filter" (buffer-string)))))))
+
+(ert-deftest ecc-review-files-test-the-mark-after-a-reading-again ()
+  "Read again with point in the last file, the pane marks that file."
+  (ecc-review-files-test--with-pane
+    (ecc-test-with-fake-session session
+      (unwind-protect
+          (let* ((review (ecc-review-files-test--fill session))
+                 (window (ecc-review-files-test--beside session review)))
+            (with-current-buffer review
+              (ecc-review-files-toggle)
+              (let ((position (plist-get (ecc-review-files-test--line "after.el") :position)))
+                (goto-char position)
+                (set-window-point window position))
+              (ecc-review-files--follow)
+              (should (equal (ecc-review-files-test--current review) "after.el"))
+              (ecc-review--fill review session
+                                (concat ecc-review-files-test--diff
+                                        "diff --git a/z.el b/z.el\n--- a/z.el\n+++ b/z.el\n@@ -1 +1 @@\n-q\n+r\n")
+                                temporary-file-directory)
+              (should (equal (ecc-review-files-test--current review) "after.el"))))
+        (ecc-review-files-test--kill-buffers)))))
+
+(ert-deftest ecc-review-files-test-hiding-the-pane-in-ediff-keeps-the-keys ()
+  "s in the pane of an ediff review hands the keyboard to the control panel."
+  (skip-unless (executable-find "git"))
+  (ecc-review-files-test--with-pane
+    (ecc-review-files-test--with-ediff session control
+      (ecc-review-files-toggle)
+      (select-window (ecc-review-files--pane-window control))
+      (with-current-buffer (window-buffer (selected-window))
+        (ecc-review-files-toggle))
+      (should (eq (selected-window) (buffer-local-value 'ediff-control-window control))))))
+
+(ert-deftest ecc-review-files-test-the-cost-of-what-is-hidden ()
+  "Hidden differences are looked up in one vector; a hidden pane is not written."
+  (skip-unless (executable-find "git"))
+  (ecc-review-files-test--with-pane
+    (ecc-review-files-test--with-ediff session control
+      (ecc-review-files-set-filter control "c.txt")
+      (should (ecc-review-ediff--hidden-difference-p 0))
+      (let ((vector ecc-review-ediff--hidden-vector))
+        (should-not (ecc-review-ediff--hidden-difference-p 2))
+        (should (eq ecc-review-ediff--hidden-vector vector))
+        (should (bool-vector-p (cddr vector))))
+      ;; Written while shown, not while hidden, and again when shown.
+      (ecc-review-files-set-filter control "")
+      (ecc-review-files-toggle)
+      (ecc-review-files-toggle)
+      (should-not (ecc-review-files--pane-window control))
+      (let ((before (ecc-review-files-test--pane-text control)))
+        (ecc-review-add-note 'user "new" (car (ecc-review-ediff--unit-lines
+                                               (nth 0 (ecc-review-units)))))
+        (ecc-review--draw-notes)
+        (should (equal (ecc-review-files-test--pane-text control) before)))
+      (ecc-review-files-toggle)
+      (should (string-match-p "a\\.txt +\\+1 −1  1·0" (ecc-review-files-test--pane-text control))))))
+
 ;;;; Two reviews
 
 (ert-deftest ecc-review-files-test-two-sessions-keep-apart ()
