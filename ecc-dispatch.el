@@ -888,14 +888,13 @@ diffs from is left as it was."
 (defun ecc-dispatch--bash-changed-paths (node)
   "Return the files the Bash NODE changed that are still there.
 A deleted file has no buffer worth reverting: reverting one whose file
-is gone is an error."
+is gone is an error, and with `ecc-sync-modified-action\=' `ask\=' it
+offers to replace unsaved work with nothing.  The disk is asked rather
+than the `deleted\=' mark of the CLI, which only the five files it shows
+hunks of carry; a file past them, or one whose diff was too long to
+show, is only named in `changedFiles\='."
   (when-let* ((diff (ecc-model-node-get node 'bash-edit)))
-    (let ((deleted (delq nil (mapcar (lambda (file)
-                                       (and (eq (plist-get file :change) 'deleted)
-                                            (plist-get file :path)))
-                                     (plist-get diff :files)))))
-      (seq-remove (lambda (path) (member path deleted))
-                  (plist-get diff :changed)))))
+    (seq-filter #'file-exists-p (plist-get diff :changed))))
 
 (defun ecc-dispatch--structured-result (session node result)
   "Apply the structured tool_use_result RESULT of the tool NODE to SESSION.

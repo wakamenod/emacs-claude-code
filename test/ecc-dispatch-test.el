@@ -1245,7 +1245,7 @@ leaves the session busy for good."
 Each file with hunks is noted in Files with its patch -- the very one
 the node keeps, which is what moves a line of its diff through later
 changes -- a new file as a Write, and the files past the five the CLI
-showed with no hunks.  Every file still there is reloaded."
+showed with no hunks."
   (ecc-test-with-fake-session session
     (let (changed)
       (let ((ecc-sync-file-changed-hook
@@ -1280,10 +1280,9 @@ showed with no hunks.  Every file still there is reloaded."
         (should-not (ecc-file-entry-hunks m8))
         (should (eq (plist-get recorded :patch)
                     (car (ecc-file-entry-patches a))))
-        ;; The deleted b.txt has no buffer to reload; the other ten do.
-        (should (= 10 (length changed)))
-        (should-not (member "b.txt" (mapcar #'file-name-nondirectory changed)))
-        (should (member "m8.txt" (mapcar #'file-name-nondirectory changed)))))))
+        ;; The recorded files are not on this machine, and a file that is
+        ;; not there is not reloaded (`ecc-dispatch-test-bash-reloads').
+        (should-not changed)))))
 
 (ert-deftest ecc-dispatch-test-bash-without-edit-diff ()
   "A Bash result with no `bashEditDiff' notes no file and reloads nothing."
@@ -1294,6 +1293,50 @@ showed with no hunks.  Every file still there is reloaded."
         (ecc-test-dispatch session "background-bash" "bash"))
       (should-not changed)
       (should-not (ecc-model-files session)))))
+
+(ert-deftest ecc-dispatch-test-bash-reloads ()
+  "Every file a Bash call changed is reloaded but the ones it deleted.
+Those include a file deleted past the five the CLI shows: only the
+files with hunks carry its `deleted' mark, the rest are only named in
+`changedFiles', and reverting a buffer whose file is gone is an error."
+  (ecc-dispatch-test--in-dir dir
+    (ecc-test-with-fake-session session
+      (let* ((paths (mapcar (lambda (n) (expand-file-name (format "f%d.txt" n) dir))
+                            (number-sequence 1 6)))
+             (hunk [((oldStart . 1) (oldLines . 1) (newStart . 1) (newLines . 1)
+                     (lines . ["-a" "+b"]))])
+             (changed nil))
+        (dolist (path paths) (with-temp-file path (insert "b\n")))
+        ;; The command removed the first, which the CLI marks, and the
+        ;; sixth, which it only names.
+        (delete-file (car paths))
+        (delete-file (car (last paths)))
+        (let ((ecc-sync-file-changed-hook
+               (list (lambda (_session path) (push path changed)))))
+          (ecc-dispatch session
+                       '((type . "assistant")
+                         (message . ((content . [((type . "tool_use")
+                                                  (id . "toolu_rm")
+                                                  (name . "Bash")
+                                                  (input . ((command . "edit; rm f6.txt"))))])))))
+          (ecc-dispatch session
+                       `((type . "user")
+                         (tool_use_result
+                          . ((stdout . "") (stderr . "")
+                             (bashEditDiff
+                              . ((files . ,(vconcat
+                                            (mapcar (lambda (path)
+                                                      `((filePath . ,path) (hunks . ,hunk)
+                                                        ,@(and (equal path (car paths))
+                                                               '((deleted . t)))))
+                                                    (seq-take paths 5))))
+                                 (moreFiles . 1)
+                                 (changedFiles . ,(vconcat paths))))))
+                         (message . ((content . [((type . "tool_result")
+                                                  (tool_use_id . "toolu_rm")
+                                                  (is_error . :false)
+                                                  (content . ""))]))))))
+        (should (equal (sort changed #'string<) (seq-subseq paths 1 5)))))))
 
 ;;;; What a command wrote
 
