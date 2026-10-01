@@ -864,9 +864,14 @@ twelve-line clip could not even cut -- base64 is one line."
   "Apply the structured tool_use_result RESULT of the tool NODE to SESSION.
 The CLI reports what a file tool did in a machine readable form next to
 the text Claude sees: the content a Read returned, the original file and
-the patch of an Edit or a Write, the id and status of a task."
+the patch of an Edit or a Write, the id and status of a task.
+
+Only an object is read.  An MCP tool's tool_use_result is the array of
+content blocks it returned, the same as the text Claude sees, and holds
+nothing to apply (CLI 2.1.281, 2026-10-01)."
   (let ((name (ecc-model-node-get node 'name))
-        (input (ecc-model-node-get node 'input)))
+        (input (ecc-model-node-get node 'input))
+        (result (and (consp result) result)))
     ;; The patch says what the change really was, down to the lines the
     ;; call did not name and the numbers they have in the file; the node
     ;; keeps it so that the transcript stops drawing the guess made from

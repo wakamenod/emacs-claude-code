@@ -11,6 +11,17 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+### Fixed
+
+- Every call to an MCP tool that answers with content blocks -- the
+  `review_*` tools of ecc's own server among them -- left an `unknown: user
+  (Wrong type argument: listp, ...)` line in the transcript. The CLI
+  reports such a tool's `tool_use_result` as the array of those blocks,
+  and it was read as an object. It is now read only when it is one (CLI
+  2.1.281).
+
 ## [0.3.4] - 2026-09-27
 
 Verified against **Claude Code CLI 2.1.281**.

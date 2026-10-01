@@ -1059,6 +1059,30 @@ string to look for, which is an error (2026-09-22)."
         ;; what the file holds.
         (should (equal (ecc-file-entry-snapshot entry) "one\nTWO\nTHREE\n"))))))
 
+(ert-deftest ecc-dispatch-test-mcp-result-is-not-an-alist ()
+  "The tool_use_result of an MCP tool is the array of its content blocks.
+Read as an alist it was an error, and the result was left as an
+`unknown' node while its tool stayed running (CLI 2.1.281, 2026-10-01)."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "見て")
+    (let ((blocks [((type . "text") (text . "1 file, 4 hunks"))]))
+      (ecc-dispatch session
+                    '((type . "assistant") (uuid . "u1")
+                      (message . ((content . [((type . "tool_use") (id . "t1")
+                                               (name . "mcp__emacs__review_hunks")
+                                               (input . nil))])))))
+      (ecc-dispatch session
+                    `((type . "user")
+                      (message . ((content . [((type . "tool_result")
+                                               (tool_use_id . "t1")
+                                               (content . ,blocks))])))
+                      (tool_use_result . ,blocks)))
+      (let ((node (ecc-model-node session "t1")))
+        (should (eq (ecc-node-status node) 'done))
+        (should (equal (ecc-model-node-get node 'result) blocks)))
+      (should-not (seq-find (lambda (n) (eq (ecc-node-type n) 'unknown))
+                            (hash-table-values (ecc-session-nodes session)))))))
+
 (ert-deftest ecc-dispatch-test-tasks ()
   "TaskCreate, TaskUpdate and TaskList keep the task list."
   (ecc-test-with-fake-session session
