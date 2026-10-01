@@ -351,10 +351,12 @@ row of tabs is the handful one is working among rather than every
 session this Emacs has open; `all' lists them all.
 
 A session outside the scope is still there and still reached:
-`ecc-switch-session', the dashboard and `ecc-next-attention' all cross
-projects.  What is given up is that its tab is not on the screen to
-blink when it wants an answer -- the count in the mode line and
-`ecc-notify-mode' are what say so then.")
+`ecc-switch-session' with a prefix argument, the dashboard and
+`ecc-next-attention' all cross projects.  Without one,
+`ecc-switch-session' offers the same sessions as the tabs.  What is
+given up is that its tab is not on the screen to blink when it wants an
+answer -- the count in the mode line and `ecc-notify-mode' are what say
+so then.")
 
 ;; Defined by the minor mode below; named here because the tab line is
 ;; asked about from above it.

@@ -866,29 +866,94 @@ the buffer."
 ;;;; Switching a window to another session
 
 (defun ecc-window--switch-target ()
-  "Return the window `ecc-switch-session' should change.
-The current window when it is one of ours, and `main' otherwise: a
-command run from the source code means the session one is looking at."
+  "Return the window `ecc-switch-session' should change, or nil.
+The current window when it shows a session or carries a role, and
+`main' otherwise: a command run from the source code means the session
+one is looking at.  The windows of a Space carry no role, so there it
+is the current window or none, and none means the Space that is
+showing."
   (let ((window (selected-window)))
-    (if (window-parameter window 'ecc-window-role)
+    (if (or (window-parameter window 'ecc-window-role)
+            (ecc-window-buffer-session (window-buffer window)))
         window
       (ecc-window--role-window 'main))))
+
+;; Defined in `ecc-notify', which is above this file; read here so that
+;; the sessions `ecc-switch-session' offers are the tabs on the screen.
+(defvar ecc-tab-line-scope)
+
+(defun ecc-window--switch-row (window)
+  "Return the sessions of the tab row of WINDOW, most recently used first.
+The row of the session WINDOW shows: its project, or every session when
+`ecc-tab-line-scope' is `all', which is what `ecc-tab-line--sessions'
+draws.  A WINDOW that shows no session has no row, and the project
+meant is the Space that is showing, or under `classic' the one
+`ecc-start' would use."
+  (let ((session (and (window-live-p window)
+                      (ecc-window-buffer-session (window-buffer window)))))
+    ;; The same rule as `ecc-tab-line--sessions'; change them together.
+    (cond
+     ((eq (bound-and-true-p ecc-tab-line-scope) 'all) (ecc-model-sessions))
+     (session (ecc-window-project-sessions
+               (ecc-window-session-project session)))
+     (t (ecc-window-project-sessions
+         (or (ecc-window--space-root) (ecc-window-context-project-root)))))))
+
+(defun ecc-window--read-switch (every)
+  "Ask which session `ecc-switch-session' should show.
+The sessions of the tab row of the window being switched, or every
+session when EVERY; the one that window already shows is not among them."
+  (let* ((window (ecc-window--switch-target))
+         (current (and (window-live-p window)
+                       (ecc-window-buffer-session (window-buffer window))))
+         (sessions (remq current (if every
+                                     (ecc-model-sessions)
+                                   (ecc-window--switch-row window)))))
+    (cond
+     (sessions (ecc-window-read-session "Switch to: " sessions))
+     ((or every (eq (bound-and-true-p ecc-tab-line-scope) 'all))
+      (user-error "No other session is running"))
+     (t (user-error "%s" (substitute-command-keys
+                          "No other session in this project; \\[universal-argument] \\[ecc-switch-session] lists them all"))))))
 
 ;;;###autoload
 (defun ecc-switch-session (session)
   "Show SESSION in this window, the way clicking its tab would.
 Which session a window shows is the user's to choose: this is the same
-choice the tab line offers, for when the tabs are not to hand."
-  (interactive (list (ecc-window-read-session "Switch to: ")))
+choice the tab line offers, for when the tabs are not to hand.
+
+Interactively the choice is the tabs of this window -- the sessions of
+its project, or all of them under `ecc-tab-line-scope' `all' -- less the
+one it already shows.  With a prefix argument it is every session.
+
+Under `spaces' a session from outside the row is not put into this
+window, where it would sit among another project's tabs: it is shown in
+its own Space, by `ecc-window-select-session'.  One another window of
+this Space already shows is selected there rather than shown twice.
+Under `classic' there is no Space for it to go to, and the session is
+put into this window whatever its project."
+  (interactive (list (ecc-window--read-switch current-prefix-arg)))
   (require 'ecc-session)
-  (let ((window (ecc-window--switch-target)))
-    (if (not (window-live-p window))
-        (ecc-window-select-session session)
+  (let* ((window (ecc-window--switch-target))
+         (frame (and (window-live-p window) (window-frame window)))
+         (buffer (ecc-session-buffer session))
+         (shown (and ecc-use-spaces frame (buffer-live-p buffer)
+                     (get-buffer-window buffer frame))))
+    (cond
+     ((or (not frame)
+          (and ecc-use-spaces
+               (not (memq session (ecc-window--switch-row window)))))
+      (ecc-window-select-session session))
+     (shown
+      (select-window shown)
+      (ecc-chat-goto-prompt)
+      shown)
+     (t
       (set-window-buffer window (ecc-session-ensure-buffer session))
-      (ecc-window-repair-side-windows (window-frame window))
+      (ecc-window-repair-side-windows frame)
       (select-window window)
       (ecc-chat-goto-prompt)
-      window)))
+      window))))
 
 ;; The tab line changes what a window shows with `switch-to-buffer',
 ;; which costs a side window its dedication; so does anything else the
