@@ -382,6 +382,17 @@ against the project."
                       (and (not (string-empty-p path)) path)))
                   paths))))
 
+(defun ecc-review-agent--same-paths (session range paths)
+  "Return non-nil when PATHS are the files of the review of this buffer.
+PATHS, as `review_open\=' was given them, are read the way the review
+reads its own (`ecc-review--target\=') -- relative to the repository,
+whether they came absolute or relative to the session -- and compared
+in any order.  None is every file, which a review of some is not."
+  (let ((sorted (lambda (paths) (sort (copy-sequence paths) #'string<))))
+    (equal (funcall sorted (plist-get (ecc-review--target session range nil paths)
+                                      :paths))
+           (funcall sorted ecc-review--paths))))
+
 (defun ecc-review-agent-open (range staged paths)
   "Open the review of the session calling and return what it holds.
 RANGE nil reviews everything changed since the session started; a
@@ -410,7 +421,7 @@ the user is not looking at the session."
           (puthash session held ecc-review-agent--opened)
           (concat ecc-review-agent-in-place-text
                   (unless (and (equal range ecc-review--range)
-                               (or (null paths) (equal paths ecc-review--paths)))
+                               (ecc-review-agent--same-paths session range paths))
                     (concat "  " (format ecc-review-agent-not-applied-text
                                          (ecc-review-agent--what))))
                   "\n"

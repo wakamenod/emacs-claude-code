@@ -760,6 +760,24 @@ can."
                                    (buffer-list))
                        before))))))
 
+(ert-deftest ecc-review-agent-test-ediff-open-compares-paths-as-the-review-reads-them ()
+  "review_open's paths are compared with the review's after reading them alike."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-agent-test--with-ediff session control
+      (ecc-review-ediff-quit control)
+      (setq control (ecc-review-ediff-buffer session (list (concat directory "a.txt"))))
+      (dolist (paths (list ["a.txt"] (vector (concat directory "a.txt"))))
+        (should-not (string-search "were not applied"
+                                   (ecc-review-agent-test--ok session "review_open"
+                                                              `((paths . ,paths))))))
+      ;; No paths is every file, which this review of one is not.
+      (should (string-search "were not applied"
+                             (ecc-review-agent-test--ok session "review_open")))
+      (should (string-search "were not applied"
+                             (ecc-review-agent-test--ok session "review_open"
+                                                        '((paths . ["b.txt"]))))))))
+
 (ert-deftest ecc-review-agent-test-ediff-and-another-session ()
   "One session's calls reach its own ediff review and never another's."
   (skip-unless (executable-find "git"))
