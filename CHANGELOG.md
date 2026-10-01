@@ -82,6 +82,12 @@ Verified against **Claude Code CLI 2.1.281**.
   running` and "Not running; R resumes it"; an exit that has a code still
   names it.
 
+- Every call to an MCP tool that answers with content blocks -- the
+  `review_*` tools of ecc's own server among them -- left an `unknown: user
+  (Wrong type argument: listp, ...)` line in the transcript. The CLI
+  reports such a tool's `tool_use_result` as the array of those blocks,
+  and it was read as an object. It is now read only when it is one.
+
 ## [0.3.4] - 2026-09-27
 
 Verified against **Claude Code CLI 2.1.281**.
