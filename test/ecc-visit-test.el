@@ -118,6 +118,50 @@ line of a later hunk is not taken for one of this one."
       (should (equal (ecc-visit-test--target-after "✓ Edit" "-x")
                      '("/src/f.el" . 39))))))
 
+;;;; What a Bash command changed
+
+(ert-deftest ecc-visit-test-bash-edit-diff ()
+  "A line of what a Bash call changed opens the file it is under.
+The call names no file; the line over each block does.  That line opens
+the file where its change starts, and a later change to the file moves
+the lines, as it does for an Edit."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "bash")
+    (dolist (line (ecc-test-fixture-lines "bash-edit-diff"))
+      (let ((message (ecc-protocol-parse-line line)))
+        (ecc-dispatch session message)
+        (when (eq (ecc-protocol-control-subtype message) 'can_use_tool)
+          (ecc-perm-respond (car (ecc-session-pending session)) 'allow))))
+    (ecc-render-flush session)
+    (let* ((dir "/private/tmp/ecc-fixture/sandbox/")
+           (a (concat dir "a.txt")))
+      (with-current-buffer (ecc-session-buffer session)
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "+line TWO")
+                       (cons a 2)))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" " line four")
+                       (cons a 4)))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "-bee")
+                       (cons (concat dir "b.txt") 1)))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "Updated ")
+                       (cons a 2)))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "Created ")
+                       (cons (concat dir "new.txt") 1)))
+        ;; A block after the first is the file it is under.
+        (should (equal (ecc-visit-test--target-after "m3.txt (+1 -1)" "+new")
+                       (cons (concat dir "m3.txt") 2)))
+        ;; The command and its output are not the diff.
+        (should-not (ecc-visit-test--target-after "✓ Bash" "command: sed"))
+        (should-not (ecc-visit-test--target-after "✓ Bash" "→ (Bash"))
+        (should-not (ecc-visit-test--target-after "✓ Bash" "… 3 more files"))
+        ;; Two lines put in at the top later push the change down.
+        (ecc-model-note-hunk session a nil nil
+                             (ecc-visit-test--patch 1 1 1 3 "+x" "+y" " line one"))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "+line TWO")
+                       (cons a 4)))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "Updated ")
+                       (cons a 4)))))))
+
 ;;;; Headings
 
 (ert-deftest ecc-visit-test-headings ()
