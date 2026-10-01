@@ -155,10 +155,54 @@ Verified against **Claude Code CLI 2.1.281**.
   directory the session works in, inside git and outside it, and a
   symbolic link git tracks is the link and not its target.
 
+- `ecc-review-menu`, where a review starts: `D` in `C-c c` and in
+  `ecc-menu` opens it, and it asks what to compare before anything is
+  opened. `D` is what changed since the session started, so `C-c c D D` is
+  what `C-c c D` was; `w` everything uncommitted (against `HEAD`); `u` what
+  is not staged; `s` what is staged; `b` this branch against another; `c` a
+  commit; `r` a range typed as `C-u G` takes it. Each line says how many
+  files it would show, counted with `git diff --shortstat` and the
+  untracked files when the comparison reads the working tree. The count of
+  `D` takes a snapshot of the working tree, 35 ms on a repository of 300
+  files and 70 ms on one of 20000 where each other count takes 10 to 25
+  ms; `ecc-review-menu-count-session-changes` set to `nil` leaves it out.
+  The heading names the session the comments go to -- the session of the
+  buffer, else the project's, as for `G` -- and `S` sends them to another,
+  the project's sessions offered first. `-f` asks for the files to keep
+  once the comparison is chosen, out of those it shows, and `-e` opens this
+  one review in ediff, or as a diff, the other way from `ecc-review-style`,
+  which is left alone. Outside git only `D` can be chosen, and the heading
+  says why. The choice made last is marked `(last)` and the cursor of the
+  menu starts on it, so `RET` opens it again.
+
+  `b` asks for the branch to compare with, by default the one the current
+  branch most likely forked from: of `develop`, `main`, `master`
+  (`ecc-review-menu-base-candidates`) and the branch `origin/HEAD` points
+  at, the one `HEAD` has the fewest commits beyond. It then asks for the
+  other side, by default the current branch with its working tree: the
+  range is the commit where the two part, which `git diff` compares with
+  the working tree, so uncommitted and untracked files are in the review.
+  Another branch is `BASE...BRANCH`, what a pull request shows. `c` asks
+  for a commit out of the last 100 and then for the last one to review
+  with it; the default, the same commit, is that commit alone (`X^!`), and
+  another is `X^..Y`, `X` included, in whichever order they were picked.
+  The first commit of a repository, which has no parent, is compared with
+  the empty tree.
+
+  The description of `review_open` (`ecc-review-agent-open-description`)
+  names the arguments of each choice, so that asking Claude for "the staged
+  changes", "this whole branch" or "just this commit" opens what `s`,
+  `b RET RET` and `c X RET` open.
+
 - `ecc-tool-finished-hook`, run with the session and the tool node on every
   tool result, whatever the tool.
 
 ### Changed
+
+- `D` in `C-c c` (`ecc-global-map`) and in `ecc-menu` opens
+  `ecc-review-menu` instead of `ecc-review`; `D` there is `ecc-review`.
+  `G` still opens `ecc-review-worktree` directly, the same as `w` in the
+  menu. `M-x ecc-review` and `M-x ecc-review-worktree` are unchanged.
 
 - The comments of an ediff review are the comments of the diff review:
   numbered, kept across a refresh by the same rules, and listed, removed
@@ -224,6 +268,10 @@ Verified against **Claude Code CLI 2.1.281**.
   them moving between files, which `N` and `P` still do.
 
 ### Fixed
+
+- A review of one commit in ediff (`C-u G` with `REV^!` and
+  `ecc-review-style` `ediff`) failed with "Git cannot diff against"; it
+  compares the commit with its first parent, as the diff review does.
 
 - A review of commits (`C-u G` with `a..b`, `a...b` or `REV^!`) listed the
   untracked files of the working tree, which belong to none of those

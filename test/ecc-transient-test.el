@@ -12,6 +12,7 @@
 (require 'ecc-test-helpers)
 (require 'ecc-transient)
 (require 'ecc-answer)
+(require 'ecc-review-menu)
 
 (ert-deftest ecc-transient-test-menu-is-a-command ()
   "Every menu is reachable with \\[execute-extended-command]."
@@ -23,9 +24,10 @@
   (should (commandp 'ecc-slash-command))
   (should (commandp 'ecc-customize)))
 
-(defun ecc-transient-test--menu-keys (&optional prefix)
+(defun ecc-transient-test--menu-keys (&optional prefix file)
   "Return an alist of the key and command of every suffix of PREFIX.
-PREFIX defaults to `ecc-menu\='.
+PREFIX defaults to `ecc-menu\=', and FILE, the library it is declared
+in, to ecc-transient.el.
 Read out of the source rather than out of `transient--layout'.  That
 property is transient's own business: its shape has changed between
 versions, and the copy Emacs 29 ships stores it in a shape this walk
@@ -35,11 +37,12 @@ here is which key the menu gives a command, not how transient files it.
 
 An infix, whose last element is the argument string rather than a
 command, comes back with that string as its cdr."
-  (let ((prefix (or prefix 'ecc-menu))
-        (file (locate-library "ecc-transient.el" t))
+  (let* ((prefix (or prefix 'ecc-menu))
+         (library (or file "ecc-transient.el"))
+         (file (locate-library library t))
         (out nil)
-        (menu nil))
-    (unless file (error "Cannot find ecc-transient.el to read"))
+         (menu nil))
+    (unless file (error "Cannot find %s to read" library))
     (with-temp-buffer
       (insert-file-contents file)
       (goto-char (point-min))
@@ -50,7 +53,7 @@ command, comes back with that string as its cdr."
                       (eq (car form) 'transient-define-prefix)
                       (eq (cadr form) prefix))
                  (setq menu form))))))
-    (unless menu (error "No `%s' prefix in ecc-transient.el" prefix))
+    (unless menu (error "No `%s' prefix in %s" prefix library))
     (letrec ((walk
               (lambda (node)
                 (cond
@@ -132,11 +135,14 @@ because this one has the whole package loaded already and would pass
 whatever the menus do."
   (let* ((commands (seq-filter #'symbolp
                                (mapcar #'cdr
-                                       (mapcan #'ecc-transient-test--menu-keys
-                                               (list 'ecc-menu 'ecc-resume-menu
-                                                     'ecc-allow-all-menu
-                                                     'ecc-worktree-menu
-                                                     'ecc-slash-menu)))))
+                                       (append
+                                        (mapcan #'ecc-transient-test--menu-keys
+                                                (list 'ecc-menu 'ecc-resume-menu
+                                                      'ecc-allow-all-menu
+                                                      'ecc-worktree-menu
+                                                      'ecc-slash-menu))
+                                        (ecc-transient-test--menu-keys
+                                         'ecc-review-menu "ecc-review-menu.el")))))
          (emacs (expand-file-name invocation-name invocation-directory))
          (script (make-temp-file "ecc-cold" nil ".el")))
     (should commands)
@@ -153,7 +159,8 @@ whatever the menus do."
                       ;; prefix loads on its way there.
                       (advice-add 'transient-setup :override #'ignore)
                       (load "ecc-autoloads" nil t)
-                      (dolist (menu '(ecc-menu ecc-resume-menu ecc-slash-menu))
+                      (dolist (menu '(ecc-menu ecc-resume-menu ecc-slash-menu
+                                               ecc-review-menu))
                         (command-execute menu))
                       (princ (format "%S" (seq-remove #'fboundp ',commands))))
                    (current-buffer)))
@@ -267,6 +274,36 @@ Remote Control was never trusted with."
   (let ((menu (ecc-transient-test--menu-keys)))
     (should (eq (cdr (assoc "C" menu)) 'ecc-capabilities-show))
     (should-not (assoc "y" menu))))
+
+(ert-deftest ecc-transient-test-review-menu ()
+  "D opens the review menu, whose D is the review it used to open.
+`C-c c D D' is what `C-c c D' was, and G stays beside it as the
+commonest choice without the question."
+  (let ((menu (ecc-transient-test--menu-keys))
+        (review (ecc-transient-test--menu-keys 'ecc-review-menu "ecc-review-menu.el")))
+    (should (eq (cdr (assoc "D" menu)) 'ecc-review-menu))
+    (should (eq (cdr (assoc "G" menu)) 'ecc-review-worktree))
+    (should (eq (lookup-key ecc-global-map "D") 'ecc-review-menu))
+    (should (equal (mapcar #'car review)
+                   '("D" "w" "u" "s" "b" "c" "r" "-f" "-e" "-e" "S")))
+    (should (eq (cdr (assoc "D" review)) 'ecc-review-menu-session-changes))
+    (should (equal (cdr (assoc "-f" review)) "--files"))
+    (dolist (cell review)
+      (when (symbolp (cdr cell))
+        (should (commandp (cdr cell))))))
+  ;; The two -e are never shown together: one is the way
+  ;; `ecc-review-style' does not open.
+  (dolist (style '(diff ediff))
+    (let* ((ecc-review-style style)
+           (diff-shown (and (funcall (oref (get 'ecc-review-menu--in-diff
+                                                'transient--suffix)
+                                           if))
+                            t))
+           (ediff-shown (not (funcall (oref (get 'ecc-review-menu--in-ediff
+                                                 'transient--suffix)
+                                            if-not)))))
+      (should (eq diff-shown (eq style 'ediff)))
+      (should (eq ediff-shown (eq style 'diff))))))
 
 (provide 'ecc-transient-test)
 
