@@ -810,7 +810,14 @@ scroll does not visit it again and have ediff say the same thing again.
 What ediff says as it refines is about a difference the user is not
 on, and goes neither to the echo area nor to *Messages*; what it
 signals is not caught.  Return nil when DEADLINE, a `float-time',
-passed or input came first with some left to do, t otherwise."
+passed or input came first with some left to do, t otherwise.
+
+Nothing is refined unless `ediff-auto-refine' is `on', and Emacs 29
+works its default out when ediff is loaded: `nix' where there is no
+face support -- a batch Emacs, or a daemon whose init loads ediff
+before any frame -- and then ediff refines not even the current
+difference.  Emacs 30 made it `on' everywhere (checked 2026-10-01).
+The review follows ediff there as everywhere."
   (catch 'interrupted
     (when (and ecc-review-ediff-refine-shown
                (eq ediff-auto-refine 'on)
@@ -1018,8 +1025,11 @@ a file coloured once the review is open does."
 BEG and END are markers around where TEXT went in; PATH is what it is
 fontified as and BLOB what its colours are kept under.  WORK is the
 buffer it is fontified in, once begun, DONE how far that has got and
-FROM where the chunk before the last began."
-  beg end path blob text work done from)
+FROM where the chunk before the last began.  KEPT is the text up to
+KEPT-TO with its faces, newest piece first, which no chunk will touch
+again: what is kept for the file once it is done, gathered a chunk at a
+time so that no turn has the whole file to copy."
+  beg end path blob text work done from kept kept-to)
 
 (defvar-local ecc-review-ediff--uncoloured nil
   "The files of this side of a review written out without their colours.
@@ -1203,6 +1213,8 @@ with."
                 (ecc-review-ediff--copy-faces work from to buffer (+ beg (1- from)))
                 (setf (ecc-review-ediff--job-from job) done
                       (ecc-review-ediff--job-done job) to)
+                ;; What is before the start of this chunk is final now.
+                (ecc-review-ediff--keep job (if (< to last) done last))
                 (setq done to
                       first nil)))
           (error
@@ -1220,11 +1232,22 @@ with."
           (when (and cache (ecc-review-ediff--job-blob job))
             (puthash (list 'face (ecc-review-ediff--job-blob job)
                            (ecc-review-ediff--job-path job) ecc-review-ediff-fontify)
-                     (with-current-buffer buffer
-                       (ecc-review-ediff--faces-only (buffer-substring beg end)))
+                     (apply #'concat (reverse (ecc-review-ediff--job-kept job)))
                      cache))
           (ecc-review-ediff--drop-job job)
           t)))))))
+
+(defun ecc-review-ediff--keep (job to)
+  "Keep the text of JOB as shown, with its faces, from where it was kept to TO.
+TO is a position of the buffer JOB is fontified in."
+  (let ((from (or (ecc-review-ediff--job-kept-to job) 1))
+        (beg (ecc-review-ediff--job-beg job)))
+    (when (> to from)
+      (push (with-current-buffer (marker-buffer beg)
+              (ecc-review-ediff--faces-only
+               (buffer-substring (+ beg (1- from)) (+ beg (1- to)))))
+            (ecc-review-ediff--job-kept job))
+      (setf (ecc-review-ediff--job-kept-to job) to))))
 
 (defun ecc-review-ediff--next-job (buffers &optional shown-only)
   "Return the file of BUFFERS to colour next, or nil.
