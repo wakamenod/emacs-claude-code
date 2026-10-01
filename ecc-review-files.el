@@ -508,7 +508,7 @@ On `ecc-review-after-draw-hook': the files or their comments changed."
   (let ((pane ecc-review-files--pane))
     (when (buffer-live-p pane)
       (dolist (window (get-buffer-window-list pane nil t))
-        (ignore-errors (delete-window window)))
+        (ecc-review-files--take-down window))
       (kill-buffer pane))))
 
 (defun ecc-review-files--count-string (yours claude)
@@ -646,7 +646,7 @@ Nil when the review is on no window."
     (when (eq (selected-window) window)
       (with-current-buffer review
         (ecc-review-files-give-keyboard)))
-    (ignore-errors (delete-window window))))
+    (ecc-review-files--take-down window)))
 
 (defun ecc-review-files--on-displayed (review)
   "Show the files pane of REVIEW now that it is on the screen, if it is wanted.

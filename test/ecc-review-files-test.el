@@ -1094,6 +1094,29 @@ is swept away."
       (ecc-review-files-set-filter control "zzz")
       (should-not (ecc-review-ediff--nearest-shown-difference 1)))))
 
+;;;; Review round 3
+
+(ert-deftest ecc-review-files-test-hiding-a-pane-alone-in-its-frame ()
+  "s on a pane that is the last window of its frame gives the window back."
+  (ecc-review-files-test--with-pane
+    (ecc-test-with-fake-session session
+      (unwind-protect
+          (let* ((review (ecc-review-files-test--fill session))
+                 (pane (with-current-buffer review (ecc-review-files--pane-buffer review))))
+            (set-window-buffer (selected-window) pane)
+            (set-window-dedicated-p (selected-window) t)
+            (ecc-review-files--hide-pane review)
+            (should (window-live-p (selected-window)))
+            (should-not (eq (window-buffer) pane))
+            (should-not (window-dedicated-p))
+            ;; And killing the review does the same with a pane left alone.
+            (set-window-buffer (selected-window) pane)
+            (set-window-dedicated-p (selected-window) t)
+            (kill-buffer review)
+            (should-not (buffer-live-p pane))
+            (should-not (window-dedicated-p)))
+        (ecc-review-files-test--kill-buffers)))))
+
 ;;;; Two reviews
 
 (ert-deftest ecc-review-files-test-two-sessions-keep-apart ()
