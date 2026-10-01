@@ -180,7 +180,7 @@ Each call is pushed as (COMMAND STYLE ARGS...), STYLE being the
                    (setq seen (list prompt default (all-completions "" table)))
                    "develop")))
         (should (equal (ecc-review-menu--read-base) "develop")))
-      (should (equal (car seen) "Compare with the branch: "))
+      (should (equal (car seen) "Base, the before side: "))
       (should-not (cadr seen))
       (should (member "develop" (nth 2 seen))))))
 
@@ -402,10 +402,138 @@ review the user is reading."
                    (setq seen (list prompt (all-completions "" table) default))
                    default)))
         (should (equal (ecc-review-menu--read-other "develop") "feature"))
-        (should (string-search "feature with its working tree" (car seen)))
+        (should (equal (car seen)
+                       "Changes on, the after side (default feature with its working tree): "))
         ;; Local branches before the remote ones, read once with the menu.
         (should (equal (cadr seen) '("develop" "feature" "main")))
-        (should (equal (ecc-review-menu--read-base) "develop"))))))
+        (should (equal (ecc-review-menu--read-base) "develop"))
+        (should (equal (car seen) "Base, the before side (default develop): "))))))
+
+(defun ecc-review-menu-test--stale-develop (directory)
+  "Make the develop of DIRECTORY two commits behind an origin/develop it tracks.
+The repository is `ecc-review-menu-test--repo''s, and feature is cut
+again from origin/develop, the way a branch is cut from what was
+fetched while the local develop stays where it was."
+  (ecc-review-menu-test--repo directory)
+  (ecc-review-menu-test--git directory "checkout" "-q" "develop")
+  (ecc-review-menu-test--commit directory "d1.txt" "1\n")
+  (ecc-review-menu-test--commit directory "d2.txt" "2\n")
+  (ecc-review-menu-test--git directory "update-ref" "refs/remotes/origin/develop" "HEAD")
+  (ecc-review-menu-test--git directory "reset" "-q" "--hard" "HEAD~2")
+  (ecc-review-menu-test--git directory "remote" "add" "origin" "https://example.com/r.git")
+  (ecc-review-menu-test--git directory "config" "branch.develop.remote" "origin")
+  (ecc-review-menu-test--git directory "config" "branch.develop.merge" "refs/heads/develop")
+  (ecc-review-menu-test--git directory "checkout" "-q" "-B" "feature" "origin/develop")
+  (ecc-review-menu-test--commit directory "f.txt" "f\n"))
+
+(ert-deftest ecc-review-menu-test-a-stale-base-gives-way-to-its-upstream ()
+  "A guessed base behind its upstream, with nothing of its own, is the upstream.
+The local develop two commits behind origin/develop would put those two
+commits into the review of a feature cut from origin/develop; one with a
+commit of its own is somebody's work, and stays."
+  (skip-unless (executable-find "git"))
+  (ecc-review-menu-test--with-directory directory
+    (ecc-review-menu-test--stale-develop directory)
+    (let ((root (ecc-review-git-root directory)))
+      (should (equal (ecc-review-menu-guess-base root)
+                     (cons "origin/develop"
+                           (ecc-review-menu-test--id directory "origin/develop"))))
+      ;; And b counts the files of the feature alone.
+      (let ((state (ecc-review-menu-make-state nil directory)))
+        (should (equal (alist-get 'branch (plist-get state :counts)) 1)))
+      ;; Kept while develop has a commit of its own: diverged, not stale.
+      (ecc-review-menu-test--git directory "checkout" "-q" "develop")
+      (ecc-review-menu-test--commit directory "own.txt" "own\n")
+      (ecc-review-menu-test--git directory "checkout" "-q" "feature")
+      (should (equal (car (ecc-review-menu-guess-base root)) "develop")))))
+
+(ert-deftest ecc-review-menu-test-an-upstream-holding-head-is-no-base ()
+  "The upstream of a stale base is not taken when it already holds HEAD.
+feature, cut from develop, was merged into origin/develop, and the local
+develop is behind: origin/develop holds feature, and b would show the
+working tree alone.  The local develop stays the base."
+  (skip-unless (executable-find "git"))
+  (ecc-review-menu-test--with-directory directory
+    (seq-let (_one two _three) (ecc-review-menu-test--repo directory)
+      (let ((root (ecc-review-git-root directory)))
+        ;; origin/develop: develop, then feature merged in, then more.
+        (ecc-review-menu-test--git directory "checkout" "-q" "-b" "merged" "develop")
+        (ecc-review-menu-test--git directory "merge" "-q" "--no-ff" "-m" "merge" "feature")
+        (ecc-review-menu-test--commit directory "after.txt" "after\n")
+        (ecc-review-menu-test--git directory "update-ref" "refs/remotes/origin/develop" "HEAD")
+        (ecc-review-menu-test--git directory "remote" "add" "origin" "https://example.com/r.git")
+        (ecc-review-menu-test--git directory "config" "branch.develop.remote" "origin")
+        (ecc-review-menu-test--git directory "config" "branch.develop.merge" "refs/heads/develop")
+        (ecc-review-menu-test--git directory "checkout" "-q" "feature")
+        (should (equal (ecc-review-menu-guess-base root)
+                       (cons "develop" (ecc-review-menu-test--id directory two))))
+        (let ((state (ecc-review-menu-make-state nil directory)))
+          (should (equal (alist-get 'branch (plist-get state :counts)) 1)))))))
+
+(ert-deftest ecc-review-menu-test-branches-say-how-far-they-are-behind ()
+  "Each branch is offered with how far it is from its upstream, beside it.
+An annotation: what is typed and returned is the name of the branch."
+  (skip-unless (executable-find "git"))
+  (ecc-review-menu-test--with-directory directory
+    (ecc-review-menu-test--stale-develop directory)
+    (let ((ecc-review-menu--state (ecc-review-menu-make-state nil directory))
+          (seen nil))
+      (should (equal (ecc-review-menu--distance "develop") "  (2 behind origin/develop)"))
+      ;; Cut from origin/develop, feature tracks it, a commit ahead.
+      (should (equal (ecc-review-menu--distance "feature") "  (1 ahead of origin/develop)"))
+      (should-not (ecc-review-menu--distance "main"))
+      (should-not (ecc-review-menu--distance "origin/develop"))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (_prompt table &rest _)
+                   (setq seen (list (all-completions "" table)
+                                    (completion-metadata-get
+                                     (completion-metadata "" table nil)
+                                     'annotation-function)))
+                   "develop")))
+        (should (equal (ecc-review-menu--read-base) "develop"))
+        (should (equal (car seen) '("develop" "feature" "main" "origin/develop")))
+        (should (equal (funcall (cadr seen) "develop") "  (2 behind origin/develop)"))
+        (ecc-review-menu--read-other "develop")
+        (should (equal (funcall (cadr seen) "develop") "  (2 behind origin/develop)")))
+      ;; Ahead, both, and an upstream that has gone.
+      (should (equal (ecc-review-menu--distance-string '("origin/a" 3 0))
+                     "  (3 ahead of origin/a)"))
+      (should (equal (ecc-review-menu--distance-string '("origin/b" 1 2))
+                     "  (1 ahead, 2 behind origin/b)"))
+      (should (equal (ecc-review-menu--distance-string '("origin/c" 0 gone))
+                     "  (origin/c is gone)"))
+      (should-not (ecc-review-menu--distance-string '("origin/d" 0 0))))))
+
+(ert-deftest ecc-review-menu-test-distances-are-asked-for-when-shown ()
+  "Opening the menu asks git nothing of how far branches are from their
+upstreams; the first branch shown asks once for all of them, and the
+rest ask nothing."
+  (skip-unless (executable-find "git"))
+  (ecc-review-menu-test--with-directory directory
+    (ecc-review-menu-test--stale-develop directory)
+    (let ((asked nil))
+      (cl-letf* ((git (symbol-function 'ecc-review--git))
+                 ((symbol-function 'ecc-review--git)
+                  (lambda (root &rest args)
+                    (push args asked)
+                    (apply git root args))))
+        (let ((ecc-review-menu--state (ecc-review-menu-make-state nil directory nil t)))
+          ;; The guess asks of the winner alone: develop against origin/develop.
+          (should-not (seq-find (lambda (args) (string-search "track" (format "%S" args)))
+                                asked))
+          (should-not (seq-find (lambda (args) (member "origin/develop...feature" args))
+                                asked))
+          ;; The first annotation reads every branch with one call;
+          ;; the rest ask nothing.
+          (setq asked nil)
+          (should (equal (ecc-review-menu--distance "develop") "  (2 behind origin/develop)"))
+          (should (equal (ecc-review-menu--distance "feature") "  (1 ahead of origin/develop)"))
+          (should-not (ecc-review-menu--distance "main"))
+          (should (= (length asked) 1))
+          (should (equal (caar asked) "for-each-ref"))
+          (setq asked nil)
+          (should (equal (ecc-review-menu--distance "develop") "  (2 behind origin/develop)"))
+          (should-not asked))))))
 
 ;;;; Counts
 

@@ -88,11 +88,13 @@ origin/main is what has not been pushed.  See
 :session is the session reviewed and sent the comments, nil when there
 is none; :directory is its project; :root the git root of that, nil
 outside git; :branch the branch checked out and :branches every branch;
-:base the guess at the branch the current one forked from and :fork
-the commit where they part; :counts an alist of a choice to how many
-files it would show -- a number, nil when it is not counted, or a
-string saying why it could not be.  Dropped when the menu goes away
-\(`ecc-review-menu--forget-state').")
+:upstreams the upstream of each local branch that has one, and
+:distances how far those are from it, filled as `b' shows them
+\(`ecc-review-menu--distance'); :base the guess at the branch the current
+one forked from and :fork the commit where they part; :counts an alist
+of a choice to how many files it would show -- a number, nil when it is
+not counted, or a string saying why it could not be.  Dropped when the
+menu goes away (`ecc-review-menu--forget-state').")
 
 (defvar ecc-review-menu--last nil
   "The choice made last in `ecc-review-menu', a symbol of its labels.")
@@ -105,23 +107,73 @@ string saying why it could not be.  Dropped when the menu goes away
 
 ;;;; Asking git
 
+(defun ecc-review-menu--left-right (root left right)
+  "Return (L R): the commits of ROOT only LEFT has and only RIGHT has, or nil."
+  (when-let* ((counts (ecc-review--git-string root "rev-list" "--left-right" "--count"
+                                              (concat left "..." right) "--")))
+    (mapcar #'string-to-number (split-string counts))))
+
+(defun ecc-review-menu--track (upstream track)
+  "Return (UPSTREAM AHEAD BEHIND) from what git says of a branch, or nil.
+TRACK is its %(upstream:track,nobracket): \"ahead 2, behind 4\",
+\"behind 4\", empty when the two are level, \"gone\" when UPSTREAM is no
+more -- BEHIND is then the symbol `gone'.  Nil without an UPSTREAM."
+  (when (and upstream (not (string-empty-p upstream)))
+    (let ((count (lambda (word)
+                   (if (string-match (concat word " \\([0-9]+\\)") track)
+                       (string-to-number (match-string 1 track))
+                     0))))
+      (list upstream (funcall count "ahead")
+            (if (equal track "gone") 'gone (funcall count "behind"))))))
+
+(defun ecc-review-menu--all-distances (root)
+  "Return how far each local branch of ROOT is from its upstream, as an alist.
+Of each branch that has one, to (UPSTREAM AHEAD BEHIND), from one call
+of git: what a list of branches shows beside them
+\(`ecc-review-menu--distance')."
+  (pcase (ecc-review--git root "for-each-ref"
+                          "--format=%(refname)%00%(upstream:short)%00%(upstream:track,nobracket)"
+                          "refs/heads")
+    (`(0 . ,output)
+     (delq nil (mapcar (lambda (line)
+                         (pcase-let ((`(,ref ,upstream ,track) (split-string line "\0")))
+                           (when-let* ((gap (ecc-review-menu--track upstream (or track ""))))
+                             (cons (string-remove-prefix "refs/heads/" ref) gap))))
+                       (split-string output "\n" t))))))
+
+(defun ecc-review-menu--distance-of (root branch refs)
+  "Return how far BRANCH of ROOT is from its upstream, or nil.
+\(UPSTREAM AHEAD BEHIND), BEHIND the symbol `gone' for an upstream
+REFS no longer lists; nil for a branch with no upstream.  One call of
+git, made only when it is asked for, which the guess does for the one
+branch it chose (`ecc-review-menu--fresher').  A list of branches asks
+for all of them at once (`ecc-review-menu--all-distances')."
+  (when-let* ((upstream (alist-get branch (plist-get refs :upstreams) nil nil #'equal)))
+    (if (not (member upstream (plist-get refs :branches)))
+        (list upstream 0 'gone)
+      (pcase (ecc-review-menu--left-right root upstream branch)
+        (`(,behind ,ahead) (list upstream ahead behind))))))
+
 (defun ecc-review-menu--refs (root)
   "Return what the branches of ROOT are, as a plist, from one call of git.
 :current is the branch checked out, nil when HEAD is detached;
 :upstream the branch it tracks; :origin-head the branch origin/HEAD
 points at; :branches the local and then the remote branches, without
-the symbolic origin/HEAD, which names one of them again."
+the symbolic origin/HEAD, which names one of them again; :upstreams an
+alist of each local branch that has an upstream to that upstream."
   (pcase (ecc-review--git root "for-each-ref"
                           "--format=%(HEAD)%00%(refname)%00%(upstream:short)%00%(symref)"
                           "refs/heads" "refs/remotes")
     (`(0 . ,output)
-     (let (current upstream origin-head locals remotes)
+     (let (current upstream origin-head locals remotes upstreams)
        (dolist (line (split-string output "\n" t))
          (pcase-let ((`(,head ,ref ,up ,symref) (split-string line "\0")))
            (cond
             ((string-prefix-p "refs/heads/" ref)
              (let ((name (substring ref (length "refs/heads/"))))
                (push name locals)
+               (when (and up (not (string-empty-p up)))
+                 (push (cons name up) upstreams))
                (when (equal head "*")
                  (setq current name
                        upstream (and up (not (string-empty-p up)) up)))))
@@ -132,7 +184,8 @@ the symbolic origin/HEAD, which names one of them again."
             ((string-prefix-p "refs/remotes/" ref)
              (push (substring ref (length "refs/remotes/")) remotes)))))
        (list :current current :upstream upstream :origin-head origin-head
-             :branches (append (nreverse locals) (nreverse remotes)))))))
+             :branches (append (nreverse locals) (nreverse remotes))
+             :upstreams (nreverse upstreams))))))
 
 (defun ecc-review-menu-guess-base (root &optional refs)
   "Return (BASE . FORK): the branch HEAD of ROOT most likely forked from.
@@ -150,7 +203,14 @@ stays: it is the branch a new one was just cut from, and the fork is
 HEAD, so `b' shows the working tree.  Of the rest, the one HEAD has the
 fewest commits beyond -- the commits from where the two part to HEAD --
 wins, and of a tie the one whose own tip is nearest that point.  Nil
-when none is left."
+when none is left.
+
+A local branch that won and is behind its upstream, with nothing of
+its own, gives way to the upstream: the local develop is the remote
+one of some time ago, and a feature cut from the remote one since
+would have the commits it has not fetched yet in its review.  A
+develop four commits behind put the files of two other pull requests
+into the review, 57 of them where 46 had changed (2026-10-01)."
   (let* ((refs (or refs (ecc-review-menu--refs root)))
          (current (plist-get refs :current))
          (branches (plist-get refs :branches))
@@ -176,9 +236,27 @@ when none is left."
                          (< ours (car best))
                          (and (= ours (car best)) (< theirs (cadr best)))))
             (setq best (list ours theirs candidate))))))
-    (when-let* ((base (nth 2 best))
+    (when-let* ((base (ecc-review-menu--fresher root (nth 2 best) refs))
                 (fork (ecc-review--merge-base root base "HEAD")))
       (cons base fork))))
+
+(defun ecc-review-menu--fresher (root branch refs)
+  "Return the upstream of BRANCH when BRANCH only lags behind it, else BRANCH.
+ROOT is the repository and REFS what `ecc-review-menu--refs' says of it:
+BRANCH is local, behind its upstream and ahead of it by nothing, and
+the upstream is a branch REFS knows.  The upstream must also pass the
+rule the guess holds every candidate to -- not ahead of HEAD with
+nothing of HEAD's own beyond it: a feature merged into origin/develop
+since is contained in it, and the review would be the working tree
+alone.  Two calls of git, for the one branch.  Nil for a BRANCH that is
+nil."
+  (pcase (and branch (ecc-review-menu--distance-of root branch refs))
+    ((and `(,upstream 0 ,behind)
+          (guard (and (numberp behind) (> behind 0)))
+          (guard (pcase (ecc-review-menu--left-right root upstream "HEAD")
+                   (`(,theirs ,ours) (not (and (= ours 0) (> theirs 0)))))))
+     upstream)
+    (_ branch)))
 
 (defun ecc-review-menu--status (root)
   "Return the changed files of ROOT, read by one `git status', or nil.
@@ -373,6 +451,8 @@ review, not how much."
          (guess (and root (ecc-review-menu-guess-base root refs))))
     (list :session session :d-session d-session :directory directory :root root
           :branch (plist-get refs :current) :branches (plist-get refs :branches)
+          :upstreams (plist-get refs :upstreams)
+          :distances (make-hash-table :test #'equal)
           :base (car guess) :fork (cdr guess)
           :counts (unless light
                     (ecc-review-menu-counts d-session root (cdr guess))))))
@@ -487,29 +567,64 @@ CHOICE is remembered."
 
 ;;;; Asking
 
-(defun ecc-review-menu--in-order (candidates)
-  "Return a completion table of CANDIDATES that keeps their order."
+(defun ecc-review-menu--in-order (candidates &optional annotate)
+  "Return a completion table of CANDIDATES that keeps their order.
+ANNOTATE, a function of a candidate, says what is shown beside it."
   (lambda (string predicate action)
     (if (eq action 'metadata)
-        '(metadata (display-sort-function . identity)
-                   (cycle-sort-function . identity))
+        `(metadata (display-sort-function . identity)
+                   (cycle-sort-function . identity)
+                   ,@(and annotate `((annotation-function . ,annotate))))
       (complete-with-action action candidates string predicate))))
 
-(defun ecc-review-menu--read-base ()
-  "Ask for the branch to compare with, the guessed one by default."
+(defun ecc-review-menu--distance-string (gap)
+  "Return GAP, an `ecc-review-menu--distance-of', as shown beside a branch.
+\"  (4 behind origin/develop)\", \"  (2 ahead of origin/develop)\" or
+both; nothing for a branch level with its upstream or with none."
+  (pcase gap
+    (`(,upstream ,_ gone) (format "  (%s is gone)" upstream))
+    (`(,_ 0 0) nil)
+    (`(,upstream 0 ,behind) (format "  (%d behind %s)" behind upstream))
+    (`(,upstream ,ahead 0) (format "  (%d ahead of %s)" ahead upstream))
+    (`(,upstream ,ahead ,behind) (format "  (%d ahead, %d behind %s)" ahead behind upstream))))
+
+(defun ecc-review-menu--distance (branch)
+  "Return how far BRANCH is from its upstream, as shown beside it, or nil.
+The first time a list asks, every local branch is read by one call of
+git (`ecc-review-menu--all-distances') and kept in the menu's state, so
+that opening the menu asks nothing of the kind and a list of eighty
+branches is not eighty processes."
   (let* ((state ecc-review-menu--state)
-         (guess (plist-get state :base)))
-    (completing-read (format-prompt "Compare with the branch" guess)
-                     (ecc-review-menu--in-order (plist-get state :branches))
+         (distances (plist-get state :distances)))
+    (when (assoc branch (plist-get state :upstreams))
+      (ecc-review-menu--distance-string
+       (if (not distances)
+           (ecc-review-menu--distance-of (plist-get state :root) branch state)
+         (unless (gethash :read distances)
+           (pcase-dolist (`(,name . ,gap) (ecc-review-menu--all-distances
+                                           (plist-get state :root)))
+             (puthash name gap distances))
+           (puthash :read t distances))
+         (gethash branch distances))))))
+
+(defun ecc-review-menu--branches ()
+  "Return the branches of the menu as a completion table, with their distances."
+  (ecc-review-menu--in-order (plist-get ecc-review-menu--state :branches)
+                             #'ecc-review-menu--distance))
+
+(defun ecc-review-menu--read-base ()
+  "Ask for the base of the comparison, the before side, the guessed one by default."
+  (let ((guess (plist-get ecc-review-menu--state :base)))
+    (completing-read (format-prompt "Base, the before side" guess)
+                     (ecc-review-menu--branches)
                      nil nil nil 'ecc-review-menu--branch-history guess)))
 
-(defun ecc-review-menu--read-other (base)
-  "Ask what to compare with BASE: the current branch by default."
-  (let* ((state ecc-review-menu--state)
-         (current (or (plist-get state :branch) "HEAD")))
-    (completing-read (format "Compare %s with (default %s with its working tree): "
-                             base current)
-                     (ecc-review-menu--in-order (plist-get state :branches))
+(defun ecc-review-menu--read-other (_base)
+  "Ask for the after side, compared with the base: the current branch by default."
+  (let ((current (or (plist-get ecc-review-menu--state :branch) "HEAD")))
+    (completing-read (format "Changes on, the after side (default %s with its working tree): "
+                             current)
+                     (ecc-review-menu--branches)
                      nil nil nil 'ecc-review-menu--branch-history current)))
 
 (defun ecc-review-menu--commits (root)
