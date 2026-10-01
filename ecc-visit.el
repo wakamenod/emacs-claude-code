@@ -187,13 +187,6 @@ around."
 
 ;;;; What point is on
 
-(defun ecc-visit--input-path (input)
-  "Return the file the tool INPUT names, or nil."
-  (let ((path (and (consp input)
-                   (or (alist-get 'file_path input)
-                       (alist-get 'notebook_path input)))))
-    (and (stringp path) (not (string-empty-p path)) path)))
-
 (defun ecc-visit--node-input (node)
   "Return the input of the call NODE is about: its own, or its request\\='s."
   (pcase (ecc-node-type node)
@@ -295,7 +288,7 @@ taken against `default-directory\\=', the directory of the session."
          (row (ecc-chat-file-at-point))
          (node (and (not row) (ecc-chat-node-at-point)))
          (input (and node (ecc-visit--node-input node)))
-         (path (or row (ecc-visit--input-path input)))
+         (path (or row (ecc-tool-input-path input)))
          (heading (and (ecc-chat-heading-at-point)
                        (equal (ecc-chat-heading-at-point)
                               (ecc-chat-node-id-at-point)))))

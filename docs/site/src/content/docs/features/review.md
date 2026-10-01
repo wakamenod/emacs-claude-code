@@ -38,7 +38,7 @@ Outside a Git repository there is no tree to compare against, so files are diffe
 | `e` | Edit the proposed content (reviewing one proposal) |
 | `C-c C-c` | Send your comments as a prompt (`C-u C-c C-c` to edit it first) |
 | `C-c C-k` | Drop the review and its comments |
-| `g` | Read the diff again |
+| `g` | Read the diff again (see [Following the files](#following-the-files)) |
 | `q` | Bury the buffer |
 
 The buffer uses read-only `diff-mode`: `n` and `p` move between hunks, `N` and `P` between files, and `RET` jumps to the source.
@@ -46,6 +46,22 @@ The buffer uses read-only `diff-mode`: `n` and `p` move between hunks, `N` and `
 Each comment belongs to the line you made it on. On a removed line (`-`), it is about the old side. On an added line (`+`) or a context line, it is about the new side. On the `@@` line, it is about the whole hunk. The comment appears under its line as `▎ #3 text`, its hunk gets a bold header, and the header line counts the comments. Every comment has a number, and no two comments in a buffer share one.
 
 `g` reads the diff again and keeps every comment and your place in it. A window of the review in another tab starts again from the top. Each comment goes back to the line that still says what its line said, between the same neighbouring lines, even when a change higher up in the file has moved that line. It follows the line for up to `ecc-review-note-max-shift` (100) lines. If the line is gone, ecc keeps the comment, marks it `[outdated]`, and shows it above the first hunk of its file. The comment is still sent, with the hunk as it was.
+
+## Following the files
+
+An open review reads the diff again when the files may have changed: when a tool of its session finishes, when a turn ends, and when you save a file of its repository in Emacs. A shell command or a script counts as much as an edit, and so does another session working in the same repository. A tool that only reads, such as Read or Grep, does not count. Your comments and your place are kept, as with `g`.
+
+The review waits half a second, longer while you are typing, and reads several changes in one go. If the diff has not changed, the buffer is left as it is. Only a review on the screen is read. A review out of sight is read when you show it again. The review never takes the focus, never moves a window, and leaves a prompt you are typing alone. When every change has gone, for example because it was committed, the review stays open and says so. `g` on such a review still reports that there is nothing to show. If the diff cannot be read, for example because the directory is gone, the header line says why and the review waits until you press `g`. The review of a single proposal is never read again.
+
+Only the diff buffer follows the files. A review in ediff (`ecc-review-style` set to `'ediff`) does not, yet.
+
+To turn this off and read the diff only with `g`:
+
+```elisp
+(setq ecc-review-auto-refresh nil)
+```
+
+## Sending comments
 
 `C-c C-c` collects your comments into a single prompt and sends it, closing the review. The comments are the prompt, so there is usually nothing to add; `C-u C-c C-c` opens it in a buffer of its own first:
 
@@ -68,7 +84,16 @@ There, `C-c C-c` sends the prompt as it stands, while `C-c C-k` returns to the d
 
 Where `ecc-review` starts from the moment the session began, `ecc-review-worktree` starts from the last commit. Press `G` in the menu, type `C-c c G`, or run `M-x ecc-review-worktree`.
 
-This diffs the project's entire repository against `HEAD` — every uncommitted change, staged or unstaged, plus the untracked files (those `.gitignore` excludes are left out; a binary file, or one larger than `ecc-review-max-bytes`, is named rather than printed). A repository with no commits yet is compared against the empty tree, so the first code written in a project can be reviewed before it is committed. `C-u G` prompts for what to diff against: a revision, a range such as `main...HEAD`, or nothing for unstaged changes.
+This diffs the project's entire repository against `HEAD` — every uncommitted change, staged or unstaged, plus the untracked files (those `.gitignore` excludes are left out; a binary file, or one larger than `ecc-review-max-bytes`, is named rather than printed). A repository with no commits yet is compared against the empty tree, so the first code written in a project can be reviewed before it is committed.
+
+`C-u G` prompts for what to diff against, then for the files to include:
+
+- A revision such as `HEAD~1` compares it with the working tree, untracked files included.
+- A range such as `main...HEAD`, `HEAD~1..HEAD` or `HEAD^!` compares commits, without untracked files.
+- Nothing compares the index with the working tree: the unstaged changes.
+- `--staged` (or `--cached`) compares `HEAD` with the index: the staged changes alone. The buffer name says `staged changes`.
+
+For the files, choose any number with completion; leave it empty for all of them. `g` and [following the files](#following-the-files) keep the choice. Whether a range involves the working tree is decided by `git rev-parse`, not by reading the text. A range that starts with `-` is refused, so no git option gets in.
 
 The project is determined by the current buffer, and comments go to that project's session. If none exists, ecc offers to start one, which is the usual entry point. Commenting and sending work as described above, and the two reviews use separate buffers.
 
@@ -82,7 +107,7 @@ Claude's comments appear as `▎ #4 Claude: text`, in a face of their own, `ecc-
 
 | Tool | What Claude does with it |
 |---|---|
-| `review_open` | Opens the session's changes, or the working tree against a range, or reads the review again |
+| `review_open` | Opens the session's changes, the working tree against a range, or the staged changes (`staged`), optionally for some files only (`paths`), or reads the review again |
 | `review_hunks` | Lists the files and the numbered hunks, optionally with their text |
 | `review_comment` | Puts a comment on a line (`side` `new` or `old`), on a hunk, or under another comment (`reply_to`) |
 | `review_comment_apply` | Puts several comments at once, and puts none when one of them is wrong |

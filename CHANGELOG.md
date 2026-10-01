@@ -38,7 +38,8 @@ Verified against **Claude Code CLI 2.1.281**.
   and whenever a tab opens or closes, so a crash leaves it current.
   It holds the Space roots in tab order and each session's id, name, root
   and cwd, all taken from memory: no recording is read and git is not asked.
-  A save that would write the same text again is skipped. At exit the file
+  A save that would write the same text again is skipped, and an empty
+  file is read as nothing saved. At exit the file
   is written once more and then left alone, so the sessions Emacs takes down
   with it are not saved as closed. Nothing is written at all by an Emacs
   that has had no session of its own and has not run `ecc-restore`: one
@@ -55,7 +56,9 @@ Verified against **Claude Code CLI 2.1.281**.
   (`ecc-mcp-enabled`), the model is offered `review_open`, `review_hunks`,
   `review_comment`, `review_comment_apply`, `review_navigate`,
   `review_list_comments`, `review_remove_comment` and
-  `review_clear_comments`: it opens the review of its session, puts
+  `review_clear_comments`: it opens the review of its session -- what the
+  session changed, the working tree against a range, or what is staged
+  (`staged`), of every file or only some (`paths`) -- puts
   comments on lines or hunks, answers a comment with `reply_to`, scrolls
   the review to a place, and reads or removes comments. It never writes or
   changes a comment of the user's. A tool works on the review of the session
@@ -101,7 +104,56 @@ Verified against **Claude Code CLI 2.1.281**.
   harmless by construction, through the same path as a tool approved for
   the turn.
 
+- An open diff review follows the files (`ecc-review-auto-refresh`, on by
+  default). It reads the diff again when a tool of its session finishes --
+  a shell command as much as an edit, but not a tool that only reads, such
+  as Read or Grep (`ecc-review-unchanging-tools`), nor the review tools
+  (`ecc-review-unchanging-tool-functions`) -- when a turn in which such a
+  tool finished ends, and when a file of its repository is saved in Emacs. A
+  session working in the same repository counts too, and so does an edit
+  of a file in it by a session rooted above it. Comments and place are
+  kept as `g` keeps them. The changes are gathered into one read by a
+  single timer that runs once, 0.5 s later
+  (`ecc-review-auto-refresh-delay`), and waits again while you are typing;
+  it never repeats. Only a review on the screen is read; one out of sight is
+  marked stale and read when it is shown. A diff that has not changed is
+  not put in again, so the buffer is not modified and its overlays stay,
+  and the review buffer keeps no undo. The keys of `diff-mode` that edit
+  the buffer or revert a hunk in the file (`k`, `K`, `R`, `s`, `u`, `@`, and
+  their `C-c` neighbours) say that the review is read-only, and a review
+  edited anyway is put right by `g`. Nothing is displayed, selected or
+  divided by it. A review whose changes have all gone stays open and says
+  so, where `g` and opening it still refuse. A review that cannot be read
+  says why in its header line, once in the echo area, and waits for `g`,
+  which reads it again and, when its diff has gone meanwhile, shows it
+  empty.
+  The review of a proposal is never read again, and a review in ediff
+  (`ecc-review-style` `ediff`) does not follow the files yet. One read of
+  a diff of 1,000 hunks (65 KB) took 0.06 s and of 10,000 hunks (650 KB)
+  0.22 s, measured with `benchmark-run` in batch.
+
+- `C-u G` (`ecc-review-worktree`) takes `--staged` or `--cached` for what
+  is staged alone -- the index against `HEAD`, without untracked files, in
+  a buffer named `staged changes` -- and asks after the range for the
+  files to review, out of those the range would show; none is every file.
+  `g` keeps the files. A range starting with `-` is refused, so no git
+  option reaches git. `ecc-review-worktree-buffer` takes the files as
+  PATHS, and a range may be the symbol `staged`. The files, given to
+  `review_open` or to the review, are absolute or relative to the
+  directory the session works in, inside git and outside it, and a
+  symbolic link git tracks is the link and not its target.
+
+- `ecc-tool-finished-hook`, run with the session and the tool node on every
+  tool result, whatever the tool.
+
 ### Changed
+
+- The review of what is not staged (`C-u G` with an empty range) is named
+  `*ecc-review: SESSION (unstaged changes)*`, not `(unstaged)`, and the
+  review of what is staged `(staged changes)`: with a space in them,
+  neither can be the name of a branch, whose review would otherwise share
+  the buffer and its comments. Code that looks the buffer up by name has
+  to use the new one.
 
 - `c` in the review buffer comments the line at point instead of the hunk
   around it. On the `@@` line it still comments the whole hunk, and a
@@ -131,6 +183,11 @@ Verified against **Claude Code CLI 2.1.281**.
   them moving between files, which `N` and `P` still do.
 
 ### Fixed
+
+- A review of commits (`C-u G` with `a..b`, `a...b` or `REV^!`) listed the
+  untracked files of the working tree, which belong to none of those
+  commits. They are now appended only when the range involves the working
+  tree, which git decides (`git rev-parse --revs-only`, as Hunk does).
 
 - A session with no process behind it -- a recording opened with `h` to be
   read -- said `✗ exited (code ?)` and "Exited with code ?", as if a CLI had

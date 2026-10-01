@@ -137,6 +137,11 @@ worth what it costs: a line on every prompt is a line on every prompt.")
 (defvar ecc-turn-finished-hook nil
   "Functions run with a session and the turn that just finished.")
 
+(defvar ecc-tool-finished-hook nil
+  "Functions run with a session and the tool node whose result just arrived.
+Any tool, whatever it did: a shell command changes files as much as an
+edit does, and `ecc-files-updated-hook\=' hears only of the file tools.")
+
 (defvar ecc-usage-hook nil
   "Functions run with a session when token usage or cost changed.")
 

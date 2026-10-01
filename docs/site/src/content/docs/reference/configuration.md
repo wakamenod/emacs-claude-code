@@ -77,6 +77,7 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 | Variable | Default | Description |
 |---|---|---|
 | `ecc-review-style` | `'diff` | How `ecc-review` and `ecc-review-worktree` show changes. `'diff` uses a single read-only `diff-mode` buffer. `'ediff` displays every file in the review side by side in a single ediff session. Both are read-only and send the same prompt |
+| `ecc-review-auto-refresh` | `t` | When non-nil, an open review reads the diff again when a tool of its session finishes, a turn ends, or a file of its repository is saved, keeping the comments and your place. A hidden review is read when it is shown. Only the diff review follows the files, not ediff. `nil` reads it only with `g` |
 
 ## Windows
 
