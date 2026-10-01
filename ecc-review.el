@@ -1057,9 +1057,12 @@ on, point and the window are left as they were and that is said."
         (unless target
           (user-error "No %s %s in the files the filter keeps"
                       (if back "previous" "next") what))
-        ;; Just short of TARGET, so that one move, the key's, lands on it.
-        (goto-char (if back (1+ target) (1- target)))
-        (funcall-interactively (if back backward forward) 1)))))
+        ;; On TARGET, and the key's move with a count of 0, which counts
+        ;; the start it stands on and lands there: the move scrolls and
+        ;; refines the one hunk it lands on.  Not BACKWARD from just after
+        ;; TARGET, which Emacs 29 and 30 take one start further back.
+        (goto-char target)
+        (funcall-interactively forward 0)))))
 
 (defun ecc-review-next-hunk (&optional count)
   "Go to the next hunk, COUNT of them, past the files the filter hides."
