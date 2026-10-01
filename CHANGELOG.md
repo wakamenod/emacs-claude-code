@@ -190,8 +190,9 @@ Verified against **Claude Code CLI 2.1.281**.
   back as it was. A choice run with `M-x` reads only where to review, not
   the counts, and `S` with no menu open says so and does nothing.
 
-  `b` asks for the branch to compare with, by default the one the current
-  branch most likely forked from. The candidates are `develop`, `main`,
+  `b` asks first for the base, the before side (`Base, the before side
+  (default develop): `), by default the branch the current one most likely
+  forked from. The candidates are `develop`, `main`,
   `master` (`ecc-review-menu-base-candidates`), the branch `origin/HEAD`
   points at, and the upstream of the current branch when that branch is
   one of them, so that `main` is compared with `origin/main`, where its
@@ -199,9 +200,14 @@ Verified against **Claude Code CLI 2.1.281**.
   `develop` when you are on `main` and `develop` has gone on -- and one at
   `HEAD` itself, the branch a new one was just cut from, stays. Of these,
   the one `HEAD` has the fewest commits beyond wins, the one whose own tip
-  is nearer of a tie. With no guess, `b` asks with no default. It then
-  asks for the other side, by default the current branch with its working
-  tree: the range is the commit where the two part, which `git diff`
+  is nearer of a tie. A local branch that wins while it is behind its
+  upstream, with no commit of its own, gives way to the upstream: a
+  `develop` four commits behind `origin/develop` put the commits not
+  pulled yet into the review of a branch cut from `origin/develop`, 57
+  files where 46 had changed. With no guess, `b` asks with no default. It
+  then asks for the after side (`Changes on, the after side (default
+  feature with its working tree): `), by default the current branch with
+  its working tree: the range is the commit where the two part, which `git diff`
   compares with the working tree, so uncommitted and untracked files are
   in the review. Another branch is `BASE...BRANCH`, what a pull request
   shows. `c` asks for a commit out of the last 100 and then for the last
@@ -210,7 +216,12 @@ Verified against **Claude Code CLI 2.1.281**.
   they were picked. The range is made of the commit ids, so the review
   stays on its commits when `HEAD` moves. The first commit of a
   repository, which has no parent, is compared with the empty tree. `b`
-  and `c` refuse a name starting with `-`; `--staged` is for `r`.
+  and `c` refuse a name starting with `-`; `--staged` is for `r`. Each
+  branch `b` offers says beside it how far it is from its upstream --
+  `develop  (4 behind origin/develop)`, `(2 ahead of origin/develop)`,
+  both, or `(origin/develop is gone)` -- read by the same one `git
+  for-each-ref` that lists the branches. It is a completion annotation:
+  what is typed and returned is the name alone.
 
   A review of the working tree is named after what it compares, not after
   how it was asked for (`ecc-review-range-label`): a range of commit ids
@@ -230,6 +241,28 @@ Verified against **Claude Code CLI 2.1.281**.
   tool result, whatever the tool.
 
 ### Changed
+
+- An ediff review opens sooner. Both sides of every file are read by one
+  `git cat-file --batch` instead of a git process each. The files go in
+  uncoloured: what is on the screen is coloured before the review is
+  shown, and the rest a slice of 50 ms at a time, on a timer that runs
+  once and sets itself again for as long as anything is left -- never a
+  repeating one -- and waits while there is input. A file coloured before
+  goes in with its colours, and one read again after a change is coloured
+  later like the rest. ediff's "Processing difference region N of M" and
+  "Computing differences" are not shown while a review is built or read
+  again (`ecc-review-ediff-progress-regexp`); they still go to
+  `*Messages*`, and nothing else said meanwhile is hidden. Opening a review
+  of 57 files (24,639 lines against 35,897) took 1.70 s in batch and takes
+  0.32 s: reading the two sides 0.80 s and now 0.05 s, writing them 0.69 s
+  and now 0.03 s, ediff 0.13 s as before (`scripts/bench-review-ediff.el`).
+
+- An ediff review marks what changed inside the lines of every difference
+  on the screen, not only the current one (`ecc-review-ediff-refine-shown`).
+  They are refined as they come into view -- once the review opens, after
+  a move, after a scroll -- by a timer that runs once and gives way to the
+  keyboard, never all of them at once: each takes a diff process.
+  `ediff-auto-refine-limit` and `@` hold for them as for the current one.
 
 - `D` in `C-c c` (`ecc-global-map`) and in `ecc-menu` opens
   `ecc-review-menu` instead of `ecc-review`; `D` there is `ecc-review` of
@@ -302,6 +335,19 @@ Verified against **Claude Code CLI 2.1.281**.
   them moving between files, which `N` and `P` still do.
 
 ### Fixed
+
+- In an ediff review, what changed inside a line of the current difference
+  could not be seen under a theme that gives the fine differences nearly
+  the colour of the current one: modus-vivendi gives `ediff-fine-diff-B`
+  `#034f2f`, and the review lightened the current difference to about the
+  same. The two fine-difference faces are now remapped too, in the two
+  buffers of the review alone (`ecc-review-ediff-fine-diff-faces`): the
+  background of `diff-refine-removed` or `diff-refine-added`, carried at
+  least 12 points of lightness from the current difference and from the
+  differences around it (`ecc-review-ediff-fine-diff-contrast`), in bold.
+  Under modus-vivendi the words that changed on the right become `#039759`
+  against a current difference of `#00512d`. The colours are worked out from the colours as
+  written, not from the nearest the display can show.
 
 - A review of one commit in ediff (`C-u G` with `REV^!` and
   `ecc-review-style` `ediff`) failed with "Git cannot diff against"; it
