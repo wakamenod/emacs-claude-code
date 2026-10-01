@@ -506,8 +506,8 @@ An annotation: what is typed and returned is the name of the branch."
 
 (ert-deftest ecc-review-menu-test-distances-are-asked-for-when-shown ()
   "Opening the menu asks git nothing of how far branches are from their
-upstreams; showing a branch asks once for it, and showing it again asks
-nothing."
+upstreams; the first branch shown asks once for all of them, and the
+rest ask nothing."
   (skip-unless (executable-find "git"))
   (ecc-review-menu-test--with-directory directory
     (ecc-review-menu-test--stale-develop directory)
@@ -523,9 +523,14 @@ nothing."
                                 asked))
           (should-not (seq-find (lambda (args) (member "origin/develop...feature" args))
                                 asked))
+          ;; The first annotation reads every branch with one call;
+          ;; the rest ask nothing.
           (setq asked nil)
           (should (equal (ecc-review-menu--distance "develop") "  (2 behind origin/develop)"))
+          (should (equal (ecc-review-menu--distance "feature") "  (1 ahead of origin/develop)"))
+          (should-not (ecc-review-menu--distance "main"))
           (should (= (length asked) 1))
+          (should (equal (caar asked) "for-each-ref"))
           (setq asked nil)
           (should (equal (ecc-review-menu--distance "develop") "  (2 behind origin/develop)"))
           (should-not asked))))))

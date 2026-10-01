@@ -113,12 +113,41 @@ menu goes away (`ecc-review-menu--forget-state').")
                                               (concat left "..." right) "--")))
     (mapcar #'string-to-number (split-string counts))))
 
+(defun ecc-review-menu--track (upstream track)
+  "Return (UPSTREAM AHEAD BEHIND) from what git says of a branch, or nil.
+TRACK is its %(upstream:track,nobracket): \"ahead 2, behind 4\",
+\"behind 4\", empty when the two are level, \"gone\" when UPSTREAM is no
+more -- BEHIND is then the symbol `gone'.  Nil without an UPSTREAM."
+  (when (and upstream (not (string-empty-p upstream)))
+    (let ((count (lambda (word)
+                   (if (string-match (concat word " \\([0-9]+\\)") track)
+                       (string-to-number (match-string 1 track))
+                     0))))
+      (list upstream (funcall count "ahead")
+            (if (equal track "gone") 'gone (funcall count "behind"))))))
+
+(defun ecc-review-menu--all-distances (root)
+  "Return how far each local branch of ROOT is from its upstream, as an alist.
+Of each branch that has one, to (UPSTREAM AHEAD BEHIND), from one call
+of git: what a list of branches shows beside them
+\(`ecc-review-menu--distance')."
+  (pcase (ecc-review--git root "for-each-ref"
+                          "--format=%(refname)%00%(upstream:short)%00%(upstream:track,nobracket)"
+                          "refs/heads")
+    (`(0 . ,output)
+     (delq nil (mapcar (lambda (line)
+                         (pcase-let ((`(,ref ,upstream ,track) (split-string line "\0")))
+                           (when-let* ((gap (ecc-review-menu--track upstream (or track ""))))
+                             (cons (string-remove-prefix "refs/heads/" ref) gap))))
+                       (split-string output "\n" t))))))
+
 (defun ecc-review-menu--distance-of (root branch refs)
   "Return how far BRANCH of ROOT is from its upstream, or nil.
 \(UPSTREAM AHEAD BEHIND), BEHIND the symbol `gone' for an upstream
 REFS no longer lists; nil for a branch with no upstream.  One call of
-git, made only when it is asked for: computing it for every branch each
-time the menu opens is what `%(upstream:track)' did."
+git, made only when it is asked for, which the guess does for the one
+branch it chose (`ecc-review-menu--fresher').  A list of branches asks
+for all of them at once (`ecc-review-menu--all-distances')."
   (when-let* ((upstream (alist-get branch (plist-get refs :upstreams) nil nil #'equal)))
     (if (not (member upstream (plist-get refs :branches)))
         (list upstream 0 'gone)
@@ -561,17 +590,22 @@ both; nothing for a branch level with its upstream or with none."
 
 (defun ecc-review-menu--distance (branch)
   "Return how far BRANCH is from its upstream, as shown beside it, or nil.
-Asked of git the first time a list shows BRANCH and kept in the menu's
-state after, so that opening the menu asks nothing of the kind."
+The first time a list asks, every local branch is read by one call of
+git (`ecc-review-menu--all-distances') and kept in the menu's state, so
+that opening the menu asks nothing of the kind and a list of eighty
+branches is not eighty processes."
   (let* ((state ecc-review-menu--state)
          (distances (plist-get state :distances)))
     (when (assoc branch (plist-get state :upstreams))
       (ecc-review-menu--distance-string
-       (if (and distances (not (eq (gethash branch distances 'none) 'none)))
-           (gethash branch distances)
-         (let ((gap (ecc-review-menu--distance-of (plist-get state :root) branch state)))
-           (when distances (puthash branch gap distances))
-           gap))))))
+       (if (not distances)
+           (ecc-review-menu--distance-of (plist-get state :root) branch state)
+         (unless (gethash :read distances)
+           (pcase-dolist (`(,name . ,gap) (ecc-review-menu--all-distances
+                                           (plist-get state :root)))
+             (puthash name gap distances))
+           (puthash :read t distances))
+         (gethash branch distances))))))
 
 (defun ecc-review-menu--branches ()
   "Return the branches of the menu as a completion table, with their distances."
