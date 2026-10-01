@@ -17,6 +17,29 @@ Verified against **Claude Code CLI 2.1.281**.
 
 ### Added
 
+- A Bash command that changed files now shows what it changed, as the CLI's
+  own TUI does, from the `bashEditDiff` the CLI puts in the result. Under the
+  command's output, each file gets a line in the CLI's words
+  (`Updated a.txt (+1 -1)`, `Created`, `Deleted`) and its diff, numbered and
+  clipped like an Edit's. The call comes up unfolded unless
+  `ecc-render-inhibit-inline-diff` is set. The CLI shows hunks for at most
+  five files and ecc counts the rest (`… 3 more files changed`). It also
+  passes on what the CLI says when it could not make a diff. Each file goes
+  into the Files section with its hunks, and an open buffer visiting it is
+  reverted unless the command deleted the file. `RET` on a diff line opens the file at that line, moved through
+  later changes, and `RET` on the file's line opens it at its first change.
+  `o` shows the whole diff.
+
+  Most sessions will not show these diffs as things stand. ecc starts the
+  CLI in `default` mode, and there the CLI never sends `bashEditDiff`. It
+  sends it in `auto` and `bypassPermissions` only, and there only behind an
+  experiment flag of the CLI that follows the model (Opus 5.5 had it; Sonnet
+  and Haiku did not). `"bashEditDiffEnabled": true` in the user's
+  `~/.claude/settings.json`, or passed with `--settings`, turns it on in
+  every mode; a project's `.claude/settings.json` does not. ecc does not set
+  it: it is a setting of Claude Code. Either way the file must be inside a
+  git repository. Verified against Claude Code CLI 2.1.286.
+
 - `M-x ecc-restore` brings back the Spaces and sessions that were open when
   Emacs last exited. The Spaces open in the order of their tabs, with their
   sessions laid out as a Space lays them out; under `ecc-use-spaces` nil only

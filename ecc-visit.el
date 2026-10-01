@@ -26,9 +26,10 @@
 ;;; Commentary:
 
 ;; RET or a click on code in the transcript opens the file it is about,
-;; at the line: a line of the diff of an Edit or a Write, the heading of
-;; a call that names a file, a line of the Files section or of a
-;; permission request, and a path the model wrote in its reply.
+;; at the line: a line of the diff of an Edit, a Write or a Bash command
+;; that changed a file, the heading of a call that names a file, a line
+;; of the Files section or of a permission request, and a path the model
+;; wrote in its reply.
 ;;
 ;; A diff line carries nothing that says where it is from.  The Files
 ;; section is drawn again at every redraw of the live region, and a
@@ -36,9 +37,10 @@
 ;; so the line is read back when RET is pressed instead: the number
 ;; drawn at its start in the `numbered' style, or the lines counted from
 ;; the @@ header above it in the `unified' one.  The file is the one of
-;; the node, the row or the request the line belongs to.  What a click
-;; follows is decided the same way, by `ecc-visit-follow-link-p' as the
-;; `follow-link' of the transcript, with no `mouse-face' on the lines.
+;; the node, the row or the request the line belongs to -- for a Bash
+;; command, which names none, the one on the line over its diff.  What a
+;; click follows is decided the same way, by `ecc-visit-follow-link-p' as
+;; the `follow-link' of the transcript, with no `mouse-face' on the lines.
 ;;
 ;; A number drawn in a diff is where the line stood once that change was
 ;; made.  Every change the session made to the file after it is in
@@ -289,6 +291,24 @@ says which one the point is in."
         (setq patches (cdr patches)))
       (car found))))
 
+(defun ecc-visit--changed-file ()
+  "Return (PATH . PATCH) of the file a Bash call changed that point is in.
+A Bash call names no file of its own: the line over each file\='s diff
+carries it (`ecc-render--insert-bash-edit\='), and the lines are walked
+up to the nearest such line without leaving the node.  Nil when there
+is none."
+  (save-excursion
+    (beginning-of-line)
+    (let ((id (ecc-chat-node-id-at-point))
+          found)
+      (while (and id (not found))
+        (setq found (get-text-property (point) 'ecc-changed-file))
+        (unless (or found
+                    (and (zerop (forward-line -1))
+                         (equal (ecc-chat-node-id-at-point) id)))
+          (setq id nil)))
+      found)))
+
 (defun ecc-visit-target-at-point ()
   "Return what RET at point opens, as (PATH . LINE), or nil.
 LINE is nil when there is no line to go to.  Asked in order: a path
@@ -300,7 +320,10 @@ taken against `default-directory\\=', the directory of the session."
          (row (ecc-chat-file-at-point))
          (node (and (not row) (ecc-chat-node-at-point)))
          (input (and node (ecc-visit--node-input node)))
-         (path (or row (ecc-visit--input-path input)))
+         (changed (and node (eq (ecc-node-type node) 'tool)
+                       (not (ecc-visit--input-path input))
+                       (ecc-visit--changed-file)))
+         (path (or row (ecc-visit--input-path input) (car changed)))
          (heading (and (ecc-chat-heading-at-point)
                        (equal (ecc-chat-heading-at-point)
                               (ecc-chat-node-id-at-point)))))
@@ -311,6 +334,13 @@ taken against `default-directory\\=', the directory of the session."
      (heading (and (eq (ecc-node-type node) 'tool)
                    (cons path (and session
                                    (ecc-visit--heading-line session node path)))))
+     ;; The line that names a file a Bash call changed opens it where
+     ;; the change starts, as the heading of an Edit does.
+     ((and changed (get-text-property (line-beginning-position) 'ecc-changed-file))
+      (cons path (and session
+                      (ecc-visit-shift-line session path
+                                            (ecc-visit--first-change (cdr changed))
+                                            (cdr changed)))))
      ((ecc-visit--line-tag)
       (let ((line (and (not (ecc-visit--notebook-p input))
                        (ecc-visit--diff-line))))
@@ -321,7 +351,9 @@ taken against `default-directory\\=', the directory of the session."
                                           (ecc-visit--files-patch session path)))
                ((eq (ecc-node-type node) 'tool)
                 (ecc-visit-shift-line session path line
-                                      (ecc-model-node-get node 'patch)))
+                                      (if changed
+                                          (cdr changed)
+                                        (ecc-model-node-get node 'patch))))
                (t line))))))))
 
 (defun ecc-visit-follow-link-p (pos)

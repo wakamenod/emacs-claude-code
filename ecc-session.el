@@ -263,7 +263,10 @@ The d key of the transcript does both."
                                      (ecc-model-node-get node 'input)
                                      (ecc-model-node-get node 'before))
            (insert "\n")
-           (insert (ecc-render--result-text (ecc-model-node-get node 'result))))
+           (insert (ecc-render--result-text (ecc-model-node-get node 'result)))
+           (when (ecc-model-node-get node 'bash-edit)
+             (insert "\n\n")
+             (ecc-render--insert-bash-edit node "" t)))
           ((or 'permission 'question 'plan)
            (let ((request (ecc-model-node-get node 'request)))
              (insert (format "%s  %s\n\n"
