@@ -190,7 +190,7 @@ diff の行番号は、その変更を加えた直後のファイルでの行で
 
 動画や音声のファイル（`clip.mp4`、`take.mp3`）は Emacs では開きません。トランスクリプトに描いた動画と同じく、`RET` でマシンのプレイヤーを起動して再生し、行番号は無視します。
 
-Bash が変更したファイルは、CLI が報告したときに限り、その出力の下に表示されます。Claude Code CLI 2.1.286 が報告するのは git リポジトリの中で、`auto` と `bypassPermissions` モードの一部のモデルだけです。`~/.claude/settings.json` に `"bashEditDiffEnabled": true` を設定すると、どのモードでも報告されます。
+Bash が変更したファイルは、CLI が報告したときに限り、その出力の下に表示されます。デフォルトでは表示されません。ecc は CLI を `default` モードで起動し、Claude Code CLI 2.1.286 はこのモードでは報告しないためです。報告するのは `auto` と `bypassPermissions` モードだけで、それもモデルによって変わる CLI の実験フラグが有効な場合に限られます。どのモードでも表示するには、`~/.claude/settings.json` に `"bashEditDiffEnabled": true` を追加するか、`--settings` で渡します。プロジェクトの `.claude/settings.json` に書いても有効になりません。これは Claude Code の設定なので、ecc が代わりに設定することはありません。いずれの場合も、ファイルが git リポジトリの中にある必要があります。
 
 Bash のようにファイルを持たない見出しでは、これまでどおり `RET` でツール実行全文を表示します。`o` なら、どのノードでも全文を表示します。
 

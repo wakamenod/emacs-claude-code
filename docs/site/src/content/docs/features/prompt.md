@@ -190,7 +190,7 @@ A line number in a diff refers to the file right after that change. ecc adjusts 
 
 A video or a sound file (`clip.mp4`, `take.mp3`) does not open in Emacs: `RET` plays it in the machine's own player, as it does for a video drawn in the transcript, and ignores the line number.
 
-A Bash command shows the files it changed under its output only when the CLI reports them. Claude Code CLI 2.1.286 does so in a git repository, and only in `auto` and `bypassPermissions` modes with some models, unless `"bashEditDiffEnabled": true` is set in `~/.claude/settings.json`, which turns it on in every mode.
+A Bash command shows the files it changed under its output only when the CLI reports them, and by default it does not. ecc starts the CLI in `default` mode, where Claude Code CLI 2.1.286 never reports them. It reports them in `auto` and `bypassPermissions` modes only, and there only behind an experiment flag of the CLI that depends on the model. To see them in every mode, add `"bashEditDiffEnabled": true` to your `~/.claude/settings.json`, or pass it with `--settings`. A project's `.claude/settings.json` does not turn it on. ecc does not set it for you, because it is a Claude Code setting. In every case the file must be inside a git repository.
 
 On a heading without a file, such as Bash, `RET` still shows the full tool result. `o` shows it on any node.
 

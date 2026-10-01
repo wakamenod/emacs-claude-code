@@ -26,18 +26,19 @@ Verified against **Claude Code CLI 2.1.281**.
   five files and ecc counts the rest (`… 3 more files changed`). It also
   passes on what the CLI says when it could not make a diff. Each file goes
   into the Files section with its hunks, and an open buffer visiting it is
-  reverted. `RET` on a diff line opens the file at that line, moved through
+  reverted unless the command deleted the file. `RET` on a diff line opens the file at that line, moved through
   later changes, and `RET` on the file's line opens it at its first change.
   `o` shows the whole diff.
 
-  The CLI does not always send `bashEditDiff`. It sends it only in a git
-  repository, and only in `auto` and `bypassPermissions` modes with some
-  models (Opus 5.5 had it; Sonnet and Haiku did not). The `default`,
-  `acceptEdits` and `plan` modes never get it.
-  `"bashEditDiffEnabled": true` in `~/.claude/settings.json` (or in
-  `--settings`) turns it on in every mode. A project's
-  `.claude/settings.json` cannot turn it on. Verified against Claude Code
-  CLI 2.1.286.
+  Most sessions will not show these diffs as things stand. ecc starts the
+  CLI in `default` mode, and there the CLI never sends `bashEditDiff`. It
+  sends it in `auto` and `bypassPermissions` only, and there only behind an
+  experiment flag of the CLI that follows the model (Opus 5.5 had it; Sonnet
+  and Haiku did not). `"bashEditDiffEnabled": true` in the user's
+  `~/.claude/settings.json`, or passed with `--settings`, turns it on in
+  every mode; a project's `.claude/settings.json` does not. ecc does not set
+  it: it is a setting of Claude Code. Either way the file must be inside a
+  git repository. Verified against Claude Code CLI 2.1.286.
 
 - `M-x ecc-restore` brings back the Spaces and sessions that were open when
   Emacs last exited. The Spaces open in the order of their tabs, with their
