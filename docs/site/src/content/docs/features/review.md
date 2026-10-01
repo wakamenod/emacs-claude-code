@@ -102,7 +102,7 @@ Each line shows what happened to the file: `M` changed, `A` added, `D` deleted, 
 
 In the list, `RET` or a click goes to that file and back to the review. `n` and `p` show the next or previous file and keep you in the list. `/` filters, `g` writes the list again, and `s` or `q` hides it.
 
-The list is always on the left of the diff. In ediff the review has the frame to itself, so the list is a side window at the left edge, and `|` and `m` leave it in place. When `ecc-review-ediff-full-frame` is `nil`, the list is split off the left side of the review instead. In the diff buffer the list is split off the review's window, so the order is the Spaces sidebar, the session, the list, the diff. When you hide the list, its columns go back to the diff. The list closes with the review.
+The list is always on the left of the diff. In ediff the review has the frame to itself, so the list is a side window at the left edge, and `|` and `m` leave it in place. When `ecc-review-ediff-full-frame` is `nil`, the list is split off the left side of the review instead. In the diff buffer the list is split off the left of the review's window. When you hide the list, its columns go back to the diff. The list closes when the review leaves its window, for example with `q`. If the window is too narrow for the list, the review opens without it and `/` still works.
 
 The list starts hidden. `s` shows it, and every review you open afterwards shows it too, until you press `s` again or Emacs exits. The width is `ecc-review-files-width` (32 columns):
 
