@@ -372,7 +372,7 @@ The review buffer is current."
               (should (string-search "Review of what is staged: 1 file, 1 hunk" text))
               (should (string-search "y.txt" text))
               (should-not (string-search "new.txt" text)))
-            (should (get-buffer "*ecc-review: test (staged)*"))
+            (should (get-buffer "*ecc-review: test (staged changes)*"))
             ;; --staged in range is the same thing.
             (should (string-search "what is staged"
                                    (ecc-review-agent-test--ok session "review_open"
@@ -443,6 +443,49 @@ The review buffer is current."
       (should (string-search "Keep it lower case" message))
       (should (string-search "In reply to Claude's #4: fine" message))
       (should-not (string-search "Will do\n" message)))))
+
+(ert-deftest ecc-review-agent-test-review-tools-do-not-make-the-review-stale ()
+  "A review tool's result is no reason to read the review again."
+  (ecc-review-agent-test--with-review session
+    (let ((ecc-review-auto-refresh t)
+          (ecc-review--watch-timer nil))
+      (unwind-protect
+          (progn
+            (dolist (tool ecc-review-agent-tools)
+              (ecc-review--on-tool-finished
+               session (make-ecc-node :type 'tool
+                                      :data `((name . ,(format "mcp__%s__%s"
+                                                               ecc-mcp-server-name tool)))))
+              (should-not ecc-review--stale))
+            ;; Another server's tool of the same name is not one of them.
+            (ecc-review--on-tool-finished
+             session (make-ecc-node :type 'tool :data '((name . "mcp__other__review_open"))))
+            (should ecc-review--stale))
+        (when (timerp ecc-review--watch-timer)
+          (cancel-timer ecc-review--watch-timer))))))
+
+(ert-deftest ecc-review-agent-test-open-paths-outside-git ()
+  "Outside git, review_open takes a path relative to the project, or absolute."
+  (ecc-test-with-fake-session session
+    (ecc-review-agent-test--with-directory directory
+      (unwind-protect
+          (let ((a (concat directory "a.txt"))
+                (b (concat directory "b.txt")))
+            (setf (ecc-session-project-root session) directory)
+            (dolist (path (list a b))
+              (let ((entry (ecc-model-note-file session path nil)))
+                (setf (ecc-file-entry-original entry) "one\n"
+                      (ecc-file-entry-snapshot entry) (concat "one\n" path "\n")
+                      (ecc-file-entry-edits entry) 1)))
+            (let ((text (ecc-review-agent-test--ok session "review_open"
+                                                   '((paths . ["a.txt"])))))
+              (should (string-search "1 file" text))
+              (should (string-search "a.txt" text))
+              (should-not (string-search "b.txt" text)))
+            (should (string-search "1 file"
+                                   (ecc-review-agent-test--ok
+                                    session "review_open" `((paths . [,b]))))))
+        (ecc-review-agent-test--kill-review-buffers)))))
 
 ;;;; What goes wrong
 

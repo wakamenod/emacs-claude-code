@@ -368,7 +368,9 @@ INCLUDE-PATCH adds the text of each hunk."
       paths ""))))
 
 (defun ecc-review-agent--paths-argument (paths)
-  "Return PATHS, the paths argument of review_open, as a list of strings."
+  "Return PATHS, the paths argument of review_open, as a list of strings.
+They are left as given, relative or absolute: the review resolves them
+against the project."
   (let ((paths (cond ((null paths) nil)
                      ((stringp paths) (list paths))
                      ((vectorp paths) (append paths nil))
@@ -722,6 +724,21 @@ INCLUDE-USER-COMMENTS, a JSON boolean, removes the user\\='s as well."
 
 ;;;; Allowing them
 
+(defun ecc-review-agent-tool-p (name)
+  "Return non-nil when NAME, as the CLI names a tool, is one of the review tools.
+The CLI names a tool mcp__SERVER__TOOL, and the prefix is made from
+`ecc-mcp-server-name\=' rather than written out."
+  (let ((prefix (format "mcp__%s__" ecc-mcp-server-name)))
+    (and (stringp name)
+         (string-prefix-p prefix name)
+         (member (substring name (length prefix)) ecc-review-agent-tools)
+         t)))
+
+;; They read and annotate the review and touch no file, so a result of
+;; one is no reason to read the review again -- `review_open' has just
+;; read it.
+(add-hook 'ecc-review-unchanging-tool-functions #'ecc-review-agent-tool-p)
+
 (defun ecc-review-agent-allow-request (_session request)
   "Return non-nil when REQUEST calls one of the review tools of this Emacs.
 On `ecc-request-allow-functions\\=', while `ecc-review-agent-auto-allow\\='
@@ -734,12 +751,7 @@ Allowed here rather than by handing the CLI --allowedTools: that would
 mix with the session\\='s own :allowed-tools, and the transcript would
 not show that anything was allowed."
   (and ecc-review-agent-auto-allow
-       (let ((prefix (format "mcp__%s__" ecc-mcp-server-name))
-             (name (ecc-request-tool-name request)))
-         (and (stringp name)
-              (string-prefix-p prefix name)
-              (member (substring name (length prefix)) ecc-review-agent-tools)
-              t))))
+       (ecc-review-agent-tool-p (ecc-request-tool-name request))))
 
 (add-hook 'ecc-request-allow-functions #'ecc-review-agent-allow-request)
 

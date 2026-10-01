@@ -476,7 +476,7 @@ carry the time of the index it was made from."
             ;; Without a revision only what is not staged is shown.
             (let ((buffer (ecc-review-worktree-buffer session "")))
               (with-current-buffer buffer
-                (should (equal (buffer-name) "*ecc-review: test (unstaged)*"))
+                (should (equal (buffer-name) "*ecc-review: test (unstaged changes)*"))
                 (should (string-search "\n-two\n+2\n" (buffer-string)))
                 (should-not (string-search "-alpha" (buffer-string))))))
         (ecc-review-test--kill-review-buffers)))))
@@ -1514,9 +1514,9 @@ Returns the path of x.txt."
             (ecc-review-test--write (concat directory "new.txt") "hello\n")
             (setf (ecc-session-project-root session) directory)
             (with-current-buffer (ecc-review-worktree-buffer session "--cached")
-              (should (equal (buffer-name) "*ecc-review: test (staged)*"))
+              (should (equal (buffer-name) "*ecc-review: test (staged changes)*"))
               (should (eq ecc-review--range 'staged))
-              (should (string-search "Working tree (staged)" (ecc-review--header-line)))
+              (should (string-search "Working tree (staged changes)" (ecc-review--header-line)))
               (should (string-search "+gamma" (buffer-string)))
               (should-not (string-search "+2" (buffer-string)))
               (should-not (string-search "hello" (buffer-string))))
@@ -1598,9 +1598,16 @@ Returns the path of x.txt."
          (cancel-timer ecc-review--watch-timer)))))
 
 (defun ecc-review-test--watch-timers ()
-  "Return the idle timers waiting to read the stale reviews again."
-  (seq-filter (lambda (timer) (eq (timer--function timer) #'ecc-review--refresh-stale))
-              timer-idle-list))
+  "Return the timers waiting to read the stale reviews again."
+  (seq-filter (lambda (timer) (eq (timer--function timer) #'ecc-review--watch-fire))
+              (append timer-list timer-idle-list)))
+
+(defun ecc-review-test--fire (&optional idle)
+  "Run the watch timer as it runs with Emacs IDLE seconds idle (default 10)."
+  (cl-letf (((symbol-function 'current-idle-time)
+             (lambda () (and idle (> idle 0) (seconds-to-time idle))))
+            ((symbol-function 'input-pending-p) #'ignore))
+    (timer-event-handler ecc-review--watch-timer)))
 
 (defun ecc-review-test--line-at (window)
   "Return the text of the line WINDOW has its point on."
@@ -1639,8 +1646,8 @@ windows changes: which is selected, what they show, how they are laid out."
                   (ecc-review--on-session-change session nil)
                   (ecc-review--on-session-change session nil)
                   (should (buffer-local-value 'ecc-review--stale review))
-                  (should (memq #'ecc-review--on-session-change ecc-tool-finished-hook))
-                  (should (memq #'ecc-review--on-session-change ecc-turn-finished-hook))
+                  (should (memq #'ecc-review--on-tool-finished ecc-tool-finished-hook))
+                  (should (memq #'ecc-review--on-turn-finished ecc-turn-finished-hook))
                   (should (memq #'ecc-review--on-save (default-value 'after-save-hook)))
                   (should (memq #'ecc-review--on-window-buffer-change
                                 (default-value 'window-buffer-change-functions)))
@@ -1651,7 +1658,7 @@ windows changes: which is selected, what they show, how they are laid out."
                   (should-not (string-search "zero" (with-current-buffer review
                                                       (buffer-string))))
                   (let ((before (current-window-configuration)))
-                    (timer-event-handler ecc-review--watch-timer)
+                    (ecc-review-test--fire 10)
                     (should (compare-window-configurations
                              before (current-window-configuration))))
                   (should-not (ecc-review-test--watch-timers))
@@ -1711,7 +1718,7 @@ A session marks its own reviews and those of its repository, not another's."
                     (set-window-buffer (selected-window) review-two)
                     (ecc-review--on-window-buffer-change (selected-frame))
                     (should (= (length (ecc-review-test--watch-timers)) 1))
-                    (timer-event-handler ecc-review--watch-timer)
+                    (ecc-review-test--fire 10)
                     (should (string-search "+BB" (with-current-buffer review-two
                                                    (buffer-string))))
                     (should-not (buffer-local-value 'ecc-review--stale review-two))))
@@ -1795,6 +1802,206 @@ A session marks its own reviews and those of its repository, not another's."
                   (should-not (ecc-review-note-outdated (car ecc-review--notes)))))
             (set-window-configuration configuration)
             (ecc-review-test--kill-review-buffers)))))))
+
+(defun ecc-review-test--tool (name &optional input)
+  "Return a tool node called NAME with INPUT, as a tool result carries."
+  (make-ecc-node :type 'tool :data (list (cons 'name name) (cons 'input input))))
+
+(defun ecc-review-test--watched-repo (session directory)
+  "Make DIRECTORY a repository with a change, and return SESSION's review of it."
+  (let ((x (ecc-review-test--repo directory)))
+    (ecc-review-test--write x "one\n2\nthree\n")
+    (setf (ecc-session-project-root session) directory)
+    (ecc-review-worktree-buffer session "HEAD")))
+
+(ert-deftest ecc-review-test-watch-timer-waits-for-idleness-not-for-an-idle-period ()
+  "After a long idle period the refresh still comes within the delay.
+An idle timer set at the idle time so far plus the delay waited for an
+idle period as long again once a key was pressed."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (ecc-review-test--with-watch
+        (let ((configuration (current-window-configuration)))
+          (unwind-protect
+              (let ((review (ecc-review-test--watched-repo session directory)))
+                (set-window-buffer (selected-window) review)
+                (ecc-review-test--write (concat directory "x.txt") "one\n22\nthree\n")
+                ;; Five minutes of watching Claude work.
+                (cl-letf (((symbol-function 'current-idle-time)
+                           (lambda () (seconds-to-time 300))))
+                  (ecc-review--on-session-change session))
+                (should (= (length (ecc-review-test--watch-timers)) 1))
+                (should (memq ecc-review--watch-timer timer-list))
+                (should-not (timer--repeat-delay ecc-review--watch-timer))
+                (should (<= (float-time (time-subtract (timer--time ecc-review--watch-timer)
+                                                       nil))
+                            ecc-review-auto-refresh-delay))
+                ;; A key pressed meanwhile: the user is at work, so it
+                ;; waits once more, the same delay, and reads nothing.
+                (ecc-review-test--fire nil)
+                (should (= (length (ecc-review-test--watch-timers)) 1))
+                (should (<= (float-time (time-subtract (timer--time ecc-review--watch-timer)
+                                                       nil))
+                            ecc-review-auto-refresh-delay))
+                (should (buffer-local-value 'ecc-review--stale review))
+                ;; Idle for the delay: read.
+                (ecc-review-test--fire 1)
+                (should-not (ecc-review-test--watch-timers))
+                (should (string-search "+22" (with-current-buffer review (buffer-string)))))
+            (set-window-configuration configuration)
+            (ecc-review-test--kill-review-buffers)))))))
+
+(ert-deftest ecc-review-test-watch-ignores-tools-that-change-nothing ()
+  "A Read, a Grep and the like mark nothing stale; a Bash does."
+  (ecc-review-test--with-watch
+    (ecc-review-test--with-review session
+      (dolist (name '("Read" "Grep" "Glob" "WebFetch" "TodoWrite"))
+        (ecc-review--on-tool-finished session (ecc-review-test--tool name))
+        (should-not ecc-review--stale))
+      (let ((ecc-review-unchanging-tool-functions
+             (list (lambda (name) (equal name "mcp__x__look")))))
+        (ecc-review--on-tool-finished session (ecc-review-test--tool "mcp__x__look"))
+        (should-not ecc-review--stale))
+      (ecc-review--on-tool-finished session (ecc-review-test--tool "Bash"))
+      (should ecc-review--stale))))
+
+(ert-deftest ecc-review-test-an-unchanged-refresh-changes-nothing ()
+  "Reading the same diff again neither modifies the buffer nor keeps undo."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((review (ecc-review-test--watched-repo session directory)))
+            (with-current-buffer review
+              (should (eq buffer-undo-list t))
+              (ecc-review-test--goto "+2")
+              (ecc-review-comment "why 2")
+              (let ((tick (buffer-modified-tick))
+                    (overlays (ecc-review-comment-overlays)))
+                (setq ecc-review--stale t)
+                (ecc-review--reread review t)
+                (should (= tick (buffer-modified-tick)))
+                (should (equal overlays (ecc-review-comment-overlays)))
+                (should-not ecc-review--stale)
+                ;; A change is still read.
+                (ecc-review-test--write (concat directory "x.txt") "one\n3\nthree\n")
+                (ecc-review--reread review t)
+                (should (/= tick (buffer-modified-tick)))
+                (should (string-search "+3" (buffer-string)))
+                (should (eq buffer-undo-list t)))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-watch-a-failed-read-is-not-retried ()
+  "A review that cannot be read says so once and waits for g."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (ecc-review-test--with-watch
+        (let ((configuration (current-window-configuration))
+              (said nil))
+          (unwind-protect
+              (let ((review (ecc-review-test--watched-repo session directory))
+                    (moved (concat (directory-file-name directory) "-moved")))
+                (set-window-buffer (selected-window) review)
+                (rename-file (directory-file-name directory) moved)
+                (unwind-protect
+                    (progn
+                      (ecc-review--on-session-change session)
+                      (cl-letf (((symbol-function 'message)
+                                 (lambda (&rest args) (push (apply #'format args) said))))
+                        (ecc-review--refresh-stale))
+                      (should (= (length said) 1))
+                      (with-current-buffer review
+                        (should ecc-review--failed)
+                        (should-not ecc-review--stale)
+                        (should (string-search "could not read the diff"
+                                               (ecc-review--header-line)))
+                        (should (string-search "g to retry" (ecc-review--header-line))))
+                      ;; Not marked, not read, by the next change.
+                      (ecc-review--on-session-change session)
+                      (should-not (buffer-local-value 'ecc-review--stale review))
+                      (ecc-review--on-window-buffer-change (selected-frame))
+                      (should-not (ecc-review-test--watch-timers)))
+                  (rename-file moved (directory-file-name directory)))
+                ;; g reads it, and it follows the files again.
+                (with-current-buffer review
+                  (ecc-review-refresh)
+                  (should-not ecc-review--failed))
+                (ecc-review--on-session-change session)
+                (should (buffer-local-value 'ecc-review--stale review)))
+            (set-window-configuration configuration)
+            (ecc-review-test--kill-review-buffers)))))))
+
+(ert-deftest ecc-review-test-watch-hears-a-session-above-the-repository ()
+  "A session rooted above the repository is heard through the file it named."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (ecc-review-test--with-watch
+        (let* ((project (file-name-as-directory (concat directory "project")))
+               (above (ecc-model-create-session :name "above" :project-root directory)))
+          (unwind-protect
+              (progn
+                (make-directory project)
+                (let ((review (ecc-review-test--watched-repo session project)))
+                  ;; A shell command names no file: not heard.
+                  (ecc-review--on-tool-finished above (ecc-review-test--tool "Bash"))
+                  (should-not (buffer-local-value 'ecc-review--stale review))
+                  (ecc-review--on-tool-finished
+                   above (ecc-review-test--tool
+                          "Edit" `((file_path . ,(concat project "x.txt")))))
+                  (should (buffer-local-value 'ecc-review--stale review))))
+            (ecc-review-test--kill-review-buffers)
+            (ecc-test-cleanup-session above)))))))
+
+(ert-deftest ecc-review-test-reread-fills-the-buffer-it-is-given ()
+  "A review read again goes into its own buffer, whatever it is called now,
+and the public builders keep their contract: an empty diff is an error
+and makes no buffer."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((review (ecc-review-test--watched-repo session directory)))
+            (with-current-buffer review (rename-buffer "*ecc-review renamed*"))
+            (ecc-review-test--write (concat directory "x.txt") "one\n3\nthree\n")
+            (ecc-review--reread review t)
+            (should (string-search "+3" (with-current-buffer review (buffer-string))))
+            (should-not (get-buffer "*ecc-review: test (HEAD)*"))
+            (ecc-review-test--git directory "commit" "-q" "-a" "-m" "third")
+            (should-error (ecc-review-worktree-buffer session "HEAD") :type 'user-error)
+            (should-not (get-buffer "*ecc-review: test (HEAD)*"))
+            (ecc-review--reread review t)
+            (should (string-search "No change against HEAD"
+                                   (with-current-buffer review (buffer-string)))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-range-arguments ()
+  "The range becomes the arguments of git diff in one place."
+  (should (equal (ecc-review--range-arguments 'staged) '("--staged")))
+  (should-not (ecc-review--range-arguments ""))
+  (should-not (ecc-review--range-arguments nil))
+  (should (equal (ecc-review--range-arguments "main...HEAD") '("main...HEAD"))))
+
+(ert-deftest ecc-review-test-a-branch-called-staged-is-not-the-index ()
+  "The review of the index and of a ref named staged are two buffers."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((x (ecc-review-test--repo directory)))
+            (ecc-review-test--git directory "branch" "staged" "HEAD~1")
+            (ecc-review-test--write x "one\n2\nthree\n")
+            (ecc-review-test--git directory "add" "x.txt")
+            (setf (ecc-session-project-root session) directory)
+            (let ((index (ecc-review-worktree-buffer session 'staged))
+                  (branch (ecc-review-worktree-buffer session "staged")))
+              (should-not (eq index branch))
+              (should (string-search "+beta" (with-current-buffer branch (buffer-string))))
+              (should-not (string-search "+beta" (with-current-buffer index
+                                                   (buffer-string))))))
+        (ecc-review-test--kill-review-buffers)))))
 
 (provide 'ecc-review-test)
 
