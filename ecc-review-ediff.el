@@ -91,18 +91,7 @@
 
 (defun ecc-review-ediff--tree (root spec)
   "Return the tree of the revision SPEC in ROOT, or nil."
-  (pcase (ecc-review--git root "rev-parse" "--verify" "--quiet"
-                          (concat spec "^{tree}"))
-    (`(0 . ,output)
-     (let ((tree (string-trim output)))
-       (and (not (string-empty-p tree)) tree)))))
-
-(defun ecc-review-ediff--merge-base (root left right)
-  "Return the merge base of LEFT and RIGHT in ROOT, or nil."
-  (pcase (ecc-review--git root "merge-base" left right)
-    (`(0 . ,output)
-     (let ((commit (string-trim output)))
-       (and (not (string-empty-p commit)) commit)))))
+  (ecc-review--git-string root "rev-parse" "--verify" "--quiet" (concat spec "^{tree}")))
 
 (defun ecc-review-ediff--trees (root range)
   "Return (LEFT . RIGHT), the two trees RANGE names in ROOT.
@@ -140,7 +129,7 @@ cannot resolve it."
              (right (or (match-string 2 range) ""))
              (left (if (string-empty-p left) "HEAD" left))
              (right (if (string-empty-p right) "HEAD" right))
-             (base (or (ecc-review-ediff--merge-base root left right)
+             (base (or (ecc-review--merge-base root left right)
                        (funcall fail))))
         (cons (funcall side base) (funcall side right))))
      ((string-match "\\`\\(.*?\\)\\.\\.\\(.*\\)\\'" range)
@@ -1281,6 +1270,7 @@ ediff lays out its windows; quitting puts back what was on the screen."
         (setq-local ecc-review--session session
                     ecc-render--session session
                     ecc-review--range range
+                    ecc-review--label (and range ecc-review-range-label)
                     ecc-review--paths paths
                     ecc-review--notes nil
                     ecc-review--next-id 1
@@ -1584,9 +1574,10 @@ trees are the ones it was filled from is left alone, without a file
 being read; one whose changes have all gone stays open and says so, as
 the diff review does when it follows the files -- an ediff review is
 never closed by being read."
-  (let* ((content (ecc-review-ediff--content ecc-review--session ecc-review--range
-                                             default-directory ecc-review--paths
-                                             default-directory))
+  (let* ((content (let ((ecc-review-range-label ecc-review--label))
+                    (ecc-review-ediff--content ecc-review--session ecc-review--range
+                                               default-directory ecc-review--paths
+                                               default-directory)))
          (hash (plist-get content :hash)))
     (if (equal ecc-review--fingerprint (ecc-review-ediff--state hash))
         (progn (setq ecc-review--stale nil

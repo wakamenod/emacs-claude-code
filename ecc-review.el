@@ -186,6 +186,18 @@ Returns nil when git cannot be run at all."
           (file-error (ecc-log "review" "git failed: %s" (error-message-string err))
                       nil))))))
 
+(defun ecc-review--git-string (directory &rest args)
+  "Return what git ARGS in DIRECTORY print, trimmed.
+Nil when git fails or prints nothing."
+  (pcase (apply #'ecc-review--git directory args)
+    (`(0 . ,output)
+     (let ((text (string-trim output)))
+       (and (not (string-empty-p text)) text)))))
+
+(defun ecc-review--merge-base (root left right)
+  "Return the commit where LEFT and RIGHT part in ROOT, or nil."
+  (ecc-review--git-string root "merge-base" left right))
+
 (defun ecc-review-git-root (path)
   "Return the root of the git repository holding PATH, or nil."
   (let ((directory (file-name-directory (expand-file-name path))))
@@ -358,11 +370,22 @@ starts with -, so no branch is mistaken for one.  The range typed at
         (user-error "A range is a revision or a range of them, like HEAD or main...HEAD; it cannot start with -"))
        (t range))))))
 
-(defun ecc-review--range-name (range)
-  "Return RANGE in words for a buffer name or a header line."
+(defvar ecc-review-range-label nil
+  "What a review of the working tree being opened is called, or nil.
+Bound by a caller that knows the range by a better name than git does:
+`ecc-review-menu\=' reviews a branch against the commit where it parted
+from its base, an id that says nothing, and calls it \"develop + working
+tree\" instead.  The name goes into the buffer name and the header line
+in place of the range, and the review keeps it (`ecc-review--label\=')
+for when it is read again.  The range itself is what git is given.")
+
+(defun ecc-review--range-name (range &optional label)
+  "Return RANGE in words for a buffer name or a header line.
+LABEL, when given, is that name (`ecc-review-range-label\=')."
   ;; With a space in them, so that no ref can share the name, and the
   ;; buffer and comments of the review of a branch called "staged".
-  (cond ((eq range 'staged) "staged changes")
+  (cond (label label)
+        ((eq range 'staged) "staged changes")
         ((string-empty-p range) "unstaged changes")
         (t range)))
 
@@ -675,6 +698,11 @@ A string is what git is given: \"HEAD\" for everything uncommitted,
 \"\" for what is not staged yet, \"main...HEAD\" for a branch.  The
 symbol `staged\=' is what is staged, the index against HEAD.")
 
+(defvar-local ecc-review--label nil
+  "What this review of the working tree is called, if not its range.
+The `ecc-review-range-label\=' it was opened with, bound again when it is
+read again, so that the buffer keeps its name.")
+
 (defvar-local ecc-review--stale nil
   "Non-nil when the files may have changed since this review was read.")
 
@@ -924,7 +952,7 @@ what the session changed."
   (cond
    (request (format "*ecc-review: %s (proposal)*" (ecc-session-name session)))
    (range (format "*ecc-review: %s (%s)*" (ecc-session-name session)
-                  (ecc-review--range-name range)))
+                  (ecc-review--range-name range ecc-review-range-label)))
    (t (format "*ecc-review: %s*" (ecc-session-name session)))))
 
 (defun ecc-review--header-line ()
@@ -935,7 +963,8 @@ what the session changed."
                        (cond (ecc-review--request "Proposal review")
                              (ecc-review--range
                               (format "Working tree (%s)"
-                                      (ecc-review--range-name ecc-review--range)))
+                                      (ecc-review--range-name ecc-review--range
+                                                              ecc-review--label)))
                              (t "Review"))
                        (if ecc-review--session
                            (ecc-session-name ecc-review--session)
@@ -1051,6 +1080,7 @@ asked any more."
             ecc-review--request request
             ecc-review--paths paths
             ecc-review--range range
+            ecc-review--label (and range ecc-review-range-label)
             ecc-review--stale nil
             ecc-review--failed nil)
       (set-buffer-modified-p nil)
@@ -2223,7 +2253,8 @@ the comments and the place being read are kept (`ecc-review--fill\=').
 WATCHING is `ecc-review--show\=''s: a review read because the files
 changed stays open when its diff has gone."
   (with-current-buffer buffer
-    (let ((session (or ecc-review--session (user-error "Not a review buffer"))))
+    (let ((session (or ecc-review--session (user-error "Not a review buffer")))
+          (ecc-review-range-label ecc-review--label))
       (if ecc-review--request
           (ecc-review-request ecc-review--request)
         (ecc-review--show
@@ -2571,6 +2602,20 @@ They come back absolute; none chosen is nil, every file."
              "Files (empty for all): "
              (ecc-review-worktree-paths directory range) nil t))))
 
+(defun ecc-review-context ()
+  "Return (SESSION . DIRECTORY): which session a review is for, and where.
+The project comes from the buffer the user is working in -- the
+session of a transcript and its project, else the project of the
+source being worked on and its session.  SESSION is nil when that
+project has none; nothing is started here.  `ecc-review-worktree\=' and
+`ecc-review-menu\=' both start from this."
+  (let* ((buffer-session (ecc-window-buffer-session))
+         (directory (if buffer-session
+                        (ecc-window-session-project buffer-session)
+                      (ecc-window-context-project-root))))
+    (cons (or buffer-session (car (ecc-window-project-sessions directory)))
+          (and directory (file-name-as-directory (expand-file-name directory))))))
+
 (defun ecc-review-worktree--read-arguments ()
   "Return the (SESSION RANGE ROOT PATHS) `ecc-review-worktree\=' should run with.
 The project comes from the buffer the user is working in -- this is a
@@ -2578,11 +2623,9 @@ command for the code, not for a transcript -- and the session from that
 project, which is the one that can act on the diff.  With a prefix
 argument the range is asked for, and then the files, out of those the
 range would show; none chosen is every file."
-  (let* ((buffer-session (ecc-window-buffer-session))
-         (root (if buffer-session
-                   (ecc-window-session-project buffer-session)
-                 (ecc-window-context-project-root)))
-         (session (or buffer-session (ecc-review-worktree-session root)))
+  (let* ((context (ecc-review-context))
+         (root (cdr context))
+         (session (or (car context) (ecc-review-worktree-session root)))
          (range (and current-prefix-arg (ecc-review-read-range)))
          (paths (and current-prefix-arg (ecc-review-worktree-read-paths root range))))
     (list session range root paths)))
