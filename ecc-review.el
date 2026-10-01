@@ -1379,9 +1379,10 @@ hunk -- is not compared: hunks merge and split as the lines between them
 change, and a line at the edge of one is still the same line.
 
 A comment on a whole hunk goes to the hunk with the same header, else to
-the nearest hunk of its path that says the same under another header
-\(`ecc-review--same-body\='), else to the first hunk of its path whose
-new side overlaps the lines it covered.
+a hunk of its path whose new side overlaps the lines it covered -- of
+those, one that says the same (`ecc-review--same-body\=') first -- and
+only when none overlaps them to the nearest hunk that says the same
+somewhere else, pushed there by a change above it.
 Nil means none of that is there: the comment is outdated."
   (let ((path (ecc-review-note-path note))
         (side (ecc-review-note-side note)))
@@ -1413,13 +1414,19 @@ Nil means none of that is there: the comment is outdated."
                         (equal (ecc-review--hunk-key (plist-get line :hunk))
                                (ecc-review-note-hunk-key note)))
                       headers)
-            (ecc-review--same-body headers note)
-            (and (car range) (cdr range)
-                 (seq-find (lambda (line)
-                             (let ((hunk (plist-get line :hunk)))
-                               (and (<= (plist-get hunk :start) (cdr range))
-                                    (>= (plist-get hunk :end) (car range)))))
-                           headers)))))))
+            (let ((over (and (car range) (cdr range)
+                             (seq-filter
+                              (lambda (line)
+                                (let ((hunk (plist-get line :hunk)))
+                                  (and (<= (plist-get hunk :start) (cdr range))
+                                       (>= (plist-get hunk :end) (car range)))))
+                              headers))))
+              ;; A hunk still over the lines comes first, the one of them
+              ;; that says the same before the rest: a blank line or a
+              ;; brace further down says the same as a hundred others.
+              (if over
+                  (or (ecc-review--same-body over note) (car over))
+                (ecc-review--same-body headers note))))))))
 
 (defun ecc-review--hunk-body (text)
   "Return the lines of the hunk TEXT under its @@ header, or nil."
@@ -1735,34 +1742,57 @@ the comments on the whole of the hunk point is in."
           (if (ecc-review-note-outdated note) " (outdated)" "")
           (ecc--truncate (ecc-review-note-text note) 60)))
 
-(defun ecc-review--pick-note (notes prompt)
-  "Return the one of NOTES asked for with PROMPT, or the only one."
-  (if (cdr notes)
+(defun ecc-review--pick-note (notes prompt &optional always)
+  "Return the one of NOTES asked for with PROMPT, or the only one.
+With ALWAYS the only one is asked about too: NOTES were not chosen by
+where point is, and a lone comment elsewhere is not to go unasked."
+  (if (or (cdr notes) always)
       (let* ((labels (mapcar #'ecc-review-note-label notes))
              (choice (completing-read prompt labels nil t)))
         (nth (seq-position labels choice) notes))
     (car notes)))
 
-(defun ecc-review-remove-comment ()
+(defun ecc-review-remove-comment (&optional all)
   "Remove a comment on the line at point, whoever wrote it.
-When the line carries more than one, which is asked."
-  (interactive)
-  (let ((note (ecc-review--pick-note
-               (or (ecc-review--notes-here) (user-error "No comment on this line"))
-               "Remove comment: ")))
+When the line carries more than one, which is asked.  With a prefix
+argument ALL every comment of the review is offered, wherever point is."
+  (interactive "P")
+  (let* ((here (and (not all) (ecc-review--notes-here)))
+         (note (ecc-review--pick-note
+                (cond (here)
+                      ((not all) (user-error "No comment on this line; C-u d offers them all"))
+                      ((ecc-review--ordered ecc-review--notes))
+                      (t (user-error "No comment in this review")))
+                "Remove comment: "
+                (not here))))
     (ecc-review-remove-note note)
     (ecc-review--draw-notes)
     (message "Comment #%d removed (%d left)" (ecc-review-note-id note)
              (length ecc-review--notes))))
 
+(defun ecc-review--key (key)
+  "Return KEY, a KEY of `ecc-review--note-place\=', as a list of numbers.
+A position alone is (POSITION 0 0); an ediff review gives several
+comments one position and tells them apart by the rest of the list."
+  (if (consp key) key (list key 0 0)))
+
+(defun ecc-review--key< (a b)
+  "Return non-nil when the KEY A comes before the KEY B."
+  (let ((a (ecc-review--key a))
+        (b (ecc-review--key b)))
+    (while (and a b (= (car a) (car b)))
+      (setq a (cdr a) b (cdr b)))
+    (and a b (< (car a) (car b)))))
+
 (defun ecc-review--ordered (notes)
-  "Return NOTES in the order of the diff, then in the order they were made."
+  "Return NOTES in the order of the review, then in the order they were made."
   (sort (copy-sequence notes)
         (lambda (a b)
-          (let ((pa (or (ecc-review-note-position a) (point-max)))
-                (pb (or (ecc-review-note-position b) (point-max))))
-            (or (< pa pb)
-                (and (= pa pb) (< (ecc-review-note-id a) (ecc-review-note-id b))))))))
+          (let ((pa (or (ecc-review-note-position a) most-positive-fixnum))
+                (pb (or (ecc-review-note-position b) most-positive-fixnum)))
+            (or (ecc-review--key< pa pb)
+                (and (not (ecc-review--key< pb pa))
+                     (< (ecc-review-note-id a) (ecc-review-note-id b))))))))
 
 (defun ecc-review-note-beyond (from forward)
   "Return the first comment past FROM, after it when FORWARD, else before.
@@ -1774,10 +1804,11 @@ included; of several in one place, the one made first."
                             (ecc-review--ordered ecc-review--notes)))
          (positions (mapcar #'ecc-review-note-position notes))
          (position (if forward
-                       (seq-find (lambda (p) (> p from)) positions)
-                     (car (last (seq-filter (lambda (p) (< p from)) positions))))))
+                       (seq-find (lambda (p) (ecc-review--key< from p)) positions)
+                     (car (last (seq-filter (lambda (p) (ecc-review--key< p from))
+                                            positions))))))
     (and position
-         (seq-find (lambda (note) (= (ecc-review-note-position note) position))
+         (seq-find (lambda (note) (equal (ecc-review-note-position note) position))
                    notes))))
 
 (defun ecc-review--note-plist (note)
@@ -2040,6 +2071,46 @@ in, which is what a path given by Claude or typed is relative to."
   (mapcar (lambda (path) (ecc-review--relative (expand-file-name path base) root))
           paths))
 
+(defun ecc-review--target (session range root paths &optional base)
+  "Return what a review of SESSION against RANGE is of, as a plist.
+Both kinds of review read this, so that they name, restrict and fail
+alike.  RANGE nil is the review of everything SESSION changed; anything
+else is what `ecc-review-parse-range\=' takes, nil having been replaced
+by the default first.  ROOT is a directory in the repository, the
+project of SESSION by default, and PATHS, absolute or relative to BASE
+-- ROOT, else the project of SESSION -- restrict the review.
+
+The plist has :root, the root of the repository, nil for a review of
+SESSION outside git (and an error for a review of a range there);
+:range; :paths, relative to :root when there is one and as given when
+not; :name, the name of the review buffer; and :nothing, what to say
+when there is no change to show."
+  (let* ((range (and range (ecc-review-parse-range range)))
+         (directory (or root (ecc-session-project-root session) default-directory))
+         (root (or (ecc-review-git-root directory)
+                   (and range
+                        (user-error "%s is not in a git repository"
+                                    (abbreviate-file-name directory))))))
+    (list :root root
+          :range range
+          :paths (if root
+                     (ecc-review--relative-paths
+                      paths root (or base (if range directory
+                                            (or (ecc-session-project-root session)
+                                                root))))
+                   paths)
+          :name (ecc-review-buffer-name session nil range)
+          :nothing (cond
+                    ((null root) "No file was edited or written in this session")
+                    ((null range)
+                     (format "Nothing has changed in %s since this session started"
+                             (abbreviate-file-name root)))
+                    ((eq range 'staged)
+                     (format "Nothing is staged in %s" (abbreviate-file-name root)))
+                    (t (format "No change against %s in %s"
+                               (if (string-empty-p range) "the index" range)
+                               (abbreviate-file-name root)))))))
+
 (defun ecc-review--session-content (session paths &optional base)
   "Read what the review of the changes of SESSION holds; see `ecc-review--show\='.
 PATHS, absolute or relative to BASE -- the project of SESSION by
@@ -2050,26 +2121,23 @@ baseline taken when the session started.  Outside git it is built from
 what the session recorded: there is no tree to compare against, so the
 files the CLI reported editing are diffed against what it reported
 them holding first."
-  (let ((root (ecc-review-git-root (or (ecc-session-project-root session)
-                                       default-directory)))
-        (name (ecc-review-buffer-name session)))
+  (let* ((target (ecc-review--target session nil nil paths base))
+         (root (plist-get target :root))
+         (paths (plist-get target :paths))
+         (name (plist-get target :name)))
     (if (not root)
         (let* ((entries (ecc-review-files session paths))
                (diff (and entries (ecc-review-diff-text entries))))
           (list :name name :text (car diff) :root (cdr diff) :paths paths
                 :nothing (if entries
                              "The files of this session show no change"
-                           "No file was edited or written in this session")))
-      (let* ((paths (ecc-review--relative-paths
-                     paths root (or base (ecc-session-project-root session) root)))
-             (base (or (ecc-session-baseline session)
-                       (ecc-review--head-tree root)
-                       (user-error "Cannot read the history of %s"
-                                   (abbreviate-file-name root)))))
+                           (plist-get target :nothing))))
+      (let ((base (or (ecc-session-baseline session)
+                      (ecc-review--head-tree root)
+                      (user-error "Cannot read the history of %s"
+                                  (abbreviate-file-name root)))))
         (list :name name :text (ecc-review-baseline-diff root base paths)
-              :root root :paths paths
-              :nothing (format "Nothing has changed in %s since this session started"
-                               (abbreviate-file-name root)))))))
+              :root root :paths paths :nothing (plist-get target :nothing))))))
 
 (defun ecc-review-buffer (session &optional paths)
   "Return the buffer reviewing the changes of SESSION, filled.
@@ -2416,12 +2484,11 @@ no session, starting one is offered."
   "Read what a review of the working tree holds; see `ecc-review--show\='.
 The arguments are those of `ecc-review-worktree-buffer\=', and BASE is
 what relative PATHS are relative to: ROOT, else the project of SESSION."
-  (let* ((range (ecc-review-parse-range (or range ecc-review-worktree-default-range)))
-         (directory (or root (ecc-session-project-root session)))
-         (root (or (ecc-review-git-root directory)
-                   (user-error "%s is not in a git repository"
-                               (abbreviate-file-name directory))))
-         (paths (ecc-review--relative-paths paths root (or base directory)))
+  (let* ((target (ecc-review--target
+                  session (or range ecc-review-worktree-default-range) root paths base))
+         (range (plist-get target :range))
+         (root (plist-get target :root))
+         (paths (plist-get target :paths))
          (effective (ecc-review--effective-range root range))
          (tracked (pcase (ecc-review--git-diff
                           root (mapcar (lambda (path) (expand-file-name path root)) paths)
@@ -2440,14 +2507,10 @@ what relative PATHS are relative to: ROOT, else the project of SESSION."
                        (or (and (ecc-review--range-includes-worktree-p root effective)
                                 (ecc-review-git-untracked root paths))
                            ""))))
-    (list :name (ecc-review-buffer-name session nil range)
+    (list :name (plist-get target :name)
           :text (and (not (string-empty-p text)) text)
           :root root :paths paths :range range
-          :nothing (if (eq range 'staged)
-                       (format "Nothing is staged in %s" (abbreviate-file-name root))
-                     (format "No change against %s in %s"
-                             (if (string-empty-p range) "the index" range)
-                             (abbreviate-file-name root))))))
+          :nothing (plist-get target :nothing))))
 
 (defun ecc-review-worktree-buffer (session &optional range root paths)
   "Return the buffer reviewing the working tree of ROOT, filled.

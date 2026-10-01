@@ -997,6 +997,40 @@ Everything in the second hunk is two lines further down.")
         (setf (ecc-review-note-hunk-text hunk) "@@ -40,2 +40,3 @@\n forty\n+other")
         (should-not (ecc-review--locate-note hunk lines))))))
 
+(ert-deftest ecc-review-test-a-hunk-that-grows-keeps-its-comment ()
+  "A comment on a hunk stays on the hunk still over its lines.
+A blank line said the same as a blank line put in forty lines further
+down, and that one, being nowhere near, took the comment."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (with-current-buffer
+            (ecc-review-test--fill session "--- a/b.el\n+++ b/b.el\n@@ -5,0 +6,1 @@\n+\n")
+          (ecc-review-test--goto "@@ -5,0 +6,1 @@")
+          (ecc-review-comment "why the blank line?")
+          (ecc-review-test--fill
+           session
+           (concat "--- a/b.el\n+++ b/b.el\n@@ -5,0 +6,2 @@\n+\n+(setq x 1)\n"
+                   "@@ -40,0 +42,1 @@\n+\n"))
+          (let ((note (car ecc-review--notes)))
+            (should-not (ecc-review-note-outdated note))
+            (should (equal (ecc-review-note-hunk-key note) '("b.el" . "@@ -5,0 +6,2 @@")))))
+      (ecc-review-test--kill-review-buffers))))
+
+(ert-deftest ecc-review-test-d-with-a-prefix-offers-every-comment ()
+  "C-u d offers every comment of the review, wherever point is."
+  (ecc-review-test--with-review session
+    (ecc-review-test--goto "+TWO")
+    (ecc-review-comment "one")
+    (ecc-review-test--goto " one")
+    (should-error (ecc-review-remove-comment) :type 'user-error)
+    (let ((asked nil))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (_prompt labels &rest _) (setq asked labels) (car labels))))
+        (ecc-review-remove-comment t))
+      ;; Asked about even when there is one: it was not picked by point.
+      (should (= (length asked) 1)))
+    (should-not ecc-review--notes)))
+
 (ert-deftest ecc-review-test-a-blank-line-does-not-wander ()
   "A comment on a blank line goes outdated rather than to another blank line."
   (ecc-test-with-fake-session session
