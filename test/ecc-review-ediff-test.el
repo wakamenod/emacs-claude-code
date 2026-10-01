@@ -1463,7 +1463,12 @@ unchanged review reads no file at all."
                              ((symbol-function 'ecc-review--git)
                               (lambda (directory &rest args)
                                 (when (equal (car args) "cat-file") (cl-incf read))
-                                (apply git directory args))))
+                                (apply git directory args)))
+                             (run (symbol-function 'call-process-region))
+                             ((symbol-function 'call-process-region)
+                              (lambda (&rest args)
+                                (when (member "cat-file" args) (cl-incf read))
+                                (apply run args))))
                     (ecc-review-reread t)
                     (should (zerop read))
                     (should-not coloured)
@@ -1697,12 +1702,357 @@ a submodule is named as one."
                         (if (equal (car args) "cat-file")
                             '(128 . "fatal: bad object")
                           (apply git directory args))))
+                     ;; The one process that reads every blob fails too,
+                     ;; and each is then asked for alone.
+                     (run (symbol-function 'call-process-region))
+                     ((symbol-function 'call-process-region)
+                      (lambda (&rest args)
+                        (if (member "cat-file" args) 128 (apply run args))))
                      ((symbol-function 'ecc-log)
                       (lambda (&rest args) (push args logged))))
             (let ((pair (assoc "x.txt" (ecc-review-ediff-pairs root left right))))
               (should (string-prefix-p "could not be read: " (nth 3 pair)))
               (should (equal (nth 1 pair) ""))
               (should logged))))))))
+
+;;;; What changed inside a line
+
+(defconst ecc-review-ediff-test--themes
+  '(;; NAME DARK CURRENT FINE REFINE DIFF
+    ("modus-vivendi, added" t "#00381f" "#034f2f" "#034f2f" "#00381f")
+    ("modus-vivendi, removed" t "#4f1119" "#781a1f" "#781a1f" "#4f1119")
+    ("modus-operandi, added" nil "#c1f2d1" "#aee5be" "#aee5be" "#c1f2d1")
+    ("modus-operandi, removed" nil "#ffd8d5" "#f3b5af" "#f3b5af" "#ffd8d5")
+    ("leuven, added" nil "#DDFFDD" "#55FF55" "#97F295" "#DDFFDD")
+    ("tango-dark, no diff faces" t "#555753" "#8f5902" unspecified unspecified)
+    ("fine the same as current" t "#004f2b" "#004f2b" "#004f2b" "#00381f")
+    ("near black" t "#050505" "#000000" unspecified "#020202")
+    ("near white" nil "#fafafa" "#ffffff" unspecified "#fdfdfd")
+    ("no fine face at all" t "#00381f" unspecified unspecified "#00381f"))
+  "Backgrounds a theme gives the faces of a difference, real and made up.
+CURRENT is `ediff-current-diff-A\=' and `-B\=', FINE `ediff-fine-diff-A\='
+and `-B\=', REFINE `diff-refine-removed\=' and `-added\=', and DIFF
+`diff-removed\=' and `diff-added\='.")
+
+(ert-deftest ecc-review-ediff-test-what-changed-in-a-line-stands-apart ()
+  "Under any theme the words that changed stand apart from their difference.
+The background they are given is a clear step of lightness from the
+current difference as the review paints it, and from the differences
+around it, whatever the theme gave them; and they are bold."
+  (let* ((faces '(ediff-current-diff-A ediff-current-diff-B ediff-fine-diff-A
+                  ediff-fine-diff-B diff-refine-removed diff-refine-added
+                  diff-removed diff-added))
+         (saved (mapcar (lambda (face) (cons face (face-attribute face :background)))
+                        faces))
+         (wanted (/ ecc-review-ediff-fine-diff-contrast 100.0)))
+    (unwind-protect
+        (pcase-dolist (`(,name ,dark ,current ,fine ,refine ,diff) ecc-review-ediff-test--themes)
+          (cl-letf (((symbol-function 'ecc-review-ediff--dark-p) (lambda () dark)))
+            (dolist (pair `((ediff-current-diff-A . ,current) (ediff-current-diff-B . ,current)
+                            (ediff-fine-diff-A . ,fine) (ediff-fine-diff-B . ,fine)
+                            (diff-refine-removed . ,refine) (diff-refine-added . ,refine)
+                            (diff-removed . ,diff) (diff-added . ,diff)))
+              (set-face-attribute (car pair) nil :background (cdr pair)))
+            (dolist (side '(A B))
+              (let* ((attributes (ecc-review-ediff--fine side))
+                     (background (plist-get attributes :background))
+                     (painted (plist-get (ecc-review-ediff--stronger
+                                          (if (eq side 'A) 'ediff-current-diff-A
+                                            'ediff-current-diff-B))
+                                         :background)))
+                (should (eq (plist-get attributes :weight) 'bold))
+                (should background)
+                (dolist (other (delq nil (list painted (and (stringp diff) diff))))
+                  (let ((apart (abs (- (ecc-review-ediff--lightness background)
+                                       (ecc-review-ediff--lightness other)))))
+                    (unless (>= apart wanted)
+                      (ert-fail (list name side background other apart)))))))))
+      (pcase-dolist (`(,face . ,background) saved)
+        (set-face-attribute face nil :background background)))))
+
+(ert-deftest ecc-review-ediff-test-colours-are-read-as-written ()
+  "A colour in hex is read as written, and shaded by points of lightness.
+A batch Emacs, like a terminal, answers the nearest colour it can show
+when asked for the values of one: green for every dark green."
+  (should (equal (ecc-review-ediff--shade "#00381f" 0) "#00381f"))
+  (should (< (abs (- (ecc-review-ediff--lightness (ecc-review-ediff--shade "#00381f" 5))
+                     (+ (ecc-review-ediff--lightness "#00381f") 0.05)))
+             0.005))
+  (should (equal (ecc-review-ediff--shade "#ffffff" 10) "#ffffff"))
+  (should-not (ecc-review-ediff--shade 'unspecified 5)))
+
+(ert-deftest ecc-review-ediff-test-fine-faces-are-the-reviews-own ()
+  "The fine-difference faces are remapped in the two buffers of a review alone,
+and not at all with `ecc-review-ediff-fine-diff-faces' off."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (dolist (on '(t nil))
+      (ecc-test-with-fake-session session
+        (ecc-review-ediff-test--with-directory directory
+          (let ((control nil)
+                (ecc-review-ediff-fine-diff-faces on))
+            (unwind-protect
+                (progn
+                  (setq control (ecc-review-ediff-test--rich session directory))
+                  (with-current-buffer control
+                    (should-not (assq 'ediff-fine-diff-B face-remapping-alist))
+                    (with-current-buffer (car ecc-review-ediff--buffers)
+                      (should (eq on (and (assq 'ediff-fine-diff-A face-remapping-alist) t))))
+                    (with-current-buffer (cdr ecc-review-ediff--buffers)
+                      (should (eq on (and (assq 'ediff-fine-diff-B face-remapping-alist) t))))))
+              (ecc-review-ediff-test--quit control))))))))
+
+(defun ecc-review-ediff-test--long (session directory)
+  "Make DIRECTORY a repository with a long a.txt changed near the top and the end.
+Lines 3, 6 and 190 of 200 change a word each, and a file b.el comes
+after it.  Open its ediff review of SESSION and return the control
+buffer."
+  (ecc-review-ediff-test--repository directory)
+  (ecc-review-ediff-test--write (concat directory "a.txt")
+                                (ecc-review-ediff-test--numbered 200))
+  (ecc-review-ediff-test--write (concat directory "b.el") "(defun b () 1)\n")
+  (ecc-review-ediff-test--git directory "add" "a.txt" "b.el")
+  (ecc-review-ediff-test--git directory "commit" "-q" "-m" "long")
+  (setf (ecc-session-project-root session) directory)
+  (should (ecc-review-ensure-baseline session))
+  (ecc-review-ediff-test--write
+   (concat directory "a.txt")
+   (ecc-review-ediff-test--numbered
+    200 (lambda (n) (and (memq n '(3 6 190)) (format "l%d changed\n" n)))))
+  (ecc-review-ediff-test--write (concat directory "b.el") "(defun b () 2)\n")
+  (ecc-review-ediff-buffer session))
+
+(ert-deftest ecc-review-ediff-test-differences-on-the-screen-are-refined ()
+  "What changed in the lines of every difference on the screen is marked,
+not only in the current one, and nothing off the screen is refined;
+the refining is a timer that runs once."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil)
+              (ediff-force-faces t))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--long session directory))
+                (with-current-buffer control
+                  (should (timerp ecc-review-ediff--refine-timer))
+                  (should-not (timer--repeat-delay ecc-review-ediff--refine-timer))
+                  ;; What a graphical Emacs has, and batch does not.
+                  (setq ediff-highlighting-style 'face)
+                  (ediff-jump-to-difference 1)
+                  (should (eq (ecc-review-ediff--refine-turn control) nil))
+                  (should-not ecc-review-ediff--refine-timer)
+                  ;; The second difference, on the screen and not current.
+                  (let ((fine (ediff-get-fine-diff-vector 1 'B)))
+                    (should (> (length fine) 0))
+                    (should (eq (overlay-get (aref fine 0) 'face) 'ediff-fine-diff-B)))
+                  ;; The third, 190 lines down, is left alone.
+                  (should-not (ediff-get-fine-diff-vector 2 'B))
+                  ;; Moving on unmarks the first, which ediff does to the
+                  ;; difference it leaves; still on the screen, it is
+                  ;; marked again.
+                  (ediff-unselect-and-select-difference 1 nil 'no-recenter)
+                  (let ((fine (ediff-get-fine-diff-vector 0 'B)))
+                    (should-not (overlay-get (aref fine 0) 'face))
+                    (should (timerp ecc-review-ediff--refine-timer))
+                    (ecc-review-ediff--refine-turn control)
+                    (should (eq (overlay-get (aref fine 0) 'face) 'ediff-fine-diff-B)))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-refining-gives-way-to-the-keyboard ()
+  "With input waiting nothing is refined, and the turn is put off."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil)
+              (ediff-force-faces t))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--long session directory))
+                (with-current-buffer control
+                  (setq ediff-highlighting-style 'face)
+                  (ediff-jump-to-difference 1)
+                  (cl-letf (((symbol-function 'input-pending-p) (lambda (&rest _) t)))
+                    (ecc-review-ediff--refine-turn control))
+                  (should-not (ediff-get-fine-diff-vector 1 'B))
+                  (should (timerp ecc-review-ediff--refine-timer))))
+            (ecc-review-ediff-test--quit control)))))))
+
+;;;; Opening faster
+
+(ert-deftest ecc-review-ediff-test-colours-come-after-the-review-opens ()
+  "A review opens with what is on the screen coloured and the rest plain,
+and colours the rest a slice at a time on a timer that runs once,
+giving way to the keyboard.  The colours touch neither the text nor the
+comments, and each of two reviews colours its own."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session one
+      (ecc-test-with-fake-session two
+        (ecc-review-ediff-test--with-directory first
+          (ecc-review-ediff-test--with-directory second
+            (let ((controls nil)
+                  (face-of-defun
+                   (lambda ()
+                     (with-current-buffer ediff-buffer-B
+                       (goto-char (point-max))
+                       (search-backward "defun")
+                       (get-text-property (point) 'face)))))
+              (unwind-protect
+                  (progn
+                    (push (ecc-review-ediff-test--long one first) controls)
+                    (push (ecc-review-ediff-test--long two second) controls)
+                    (with-current-buffer (car controls)
+                      ;; On the screen: the top of a.txt.  Off it: b.el.
+                      (with-current-buffer ediff-buffer-B
+                        (goto-char (point-min))
+                        (should (eq (get-text-property (point) 'face) 'ecc-heading-face)))
+                      (should-not (funcall face-of-defun))
+                      (should (timerp ecc-review-ediff--colour-timer))
+                      (should-not (timer--repeat-delay ecc-review-ediff--colour-timer))
+                      ;; Input waiting: nothing is coloured, the turn is put off.
+                      (cl-letf (((symbol-function 'input-pending-p) (lambda (&rest _) t)))
+                        (ecc-review-ediff--colour-turn (current-buffer)))
+                      (should-not (funcall face-of-defun))
+                      (should (timerp ecc-review-ediff--colour-timer))
+                      (ecc-review-add-note 'user "A comment" (ecc-review-ediff-test--line 'new 3))
+                      (ecc-review--draw-notes)
+                      (let ((ticks (ecc-review-ediff--ticks))
+                            (drawn (ecc-review-ediff-test--drawn ediff-buffer-B)))
+                        (while (timerp ecc-review-ediff--colour-timer)
+                          (ecc-review-ediff--colour-turn (current-buffer)))
+                        (should (funcall face-of-defun))
+                        (should (equal ticks (ecc-review-ediff--ticks)))
+                        (should (equal drawn (ecc-review-ediff-test--drawn ediff-buffer-B)))
+                        (should-not (buffer-modified-p ediff-buffer-B))))
+                    ;; The other review is still waiting for its own turn.
+                    (with-current-buffer (cadr controls)
+                      (should-not (funcall face-of-defun))
+                      (should (timerp ecc-review-ediff--colour-timer))))
+                (dolist (control controls)
+                  (when (buffer-live-p control)
+                    (ecc-review-ediff-quit control)))
+                (ecc-review-ediff-test--kill-buffers)))))))))
+
+(ert-deftest ecc-review-ediff-test-a-file-read-again-is-coloured-again ()
+  "A file that changed while the review was open goes in plain, and is
+coloured once it is on the screen; the files that did not change keep
+their colours."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--long session directory))
+                (with-current-buffer control
+                  (ecc-review-ediff--colour-all)
+                  (ecc-review-ediff-test--write (concat directory "b.el") "(defun b () 3)\n")
+                  (ecc-review-reread t)
+                  (with-current-buffer ediff-buffer-B
+                    (should (equal (mapcar (lambda (entry) (nth 2 entry))
+                                           ecc-review-ediff--uncoloured)
+                                   '("b.el"))))
+                  (ecc-review-ediff--colour-all)
+                  (with-current-buffer ediff-buffer-B
+                    (should-not ecc-review-ediff--uncoloured)
+                    (goto-char (point-max))
+                    (search-backward "defun")
+                    (should (get-text-property (point) 'face)))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-ediff-progress-is-not-shown ()
+  "ediff's progress messages are not shown while a review is built or read
+again; every other message goes on to the function that shows it."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let* ((control nil)
+               (shown nil)
+               (set-message-function (lambda (message) (push message shown) nil))
+               (answers nil)
+               (ask (lambda ()
+                      (push (list (funcall set-message-function
+                                           "Buffer A: Processing difference region 10 of 30")
+                                  (funcall set-message-function "Processing difference regions ... done")
+                                  (funcall set-message-function "Computing differences ...")
+                                  (funcall set-message-function "Something else"))
+                            answers))))
+          (unwind-protect
+              (cl-letf* ((buffers (symbol-function 'ediff-buffers))
+                         ((symbol-function 'ediff-buffers)
+                          (lambda (&rest args) (funcall ask) (apply buffers args)))
+                         (compute (symbol-function 'ecc-review-ediff--compute-differences))
+                         ((symbol-function 'ecc-review-ediff--compute-differences)
+                          (lambda () (funcall ask) (funcall compute))))
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (ecc-review-ediff-test--write (concat directory "a.txt") "other\n")
+                (with-current-buffer control
+                  (ecc-review-reread t))
+                (should (= (length answers) 2))
+                (dolist (answer answers)
+                  (should (equal answer '(t t t nil))))
+                (should (equal shown '("Something else" "Something else"))))
+            (ecc-review-ediff-test--quit control)))))))
+
+;;;; Opening faster
+
+(ert-deftest ecc-review-ediff-test-every-blob-in-one-process ()
+  "Both sides of every file are read by one `git cat-file --batch'.
+Each text is what reading the blob alone gives; a blob that process
+does not give is read alone, and a blob read before is not read again."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-directory directory
+    (ecc-review-ediff-test--repository directory)
+    (let* ((root (ecc-review-git-root directory))
+           (left (ecc-review--head-tree root)))
+      (ecc-review-ediff-test--write (concat directory "x.txt") "two\nえ\n")
+      (ecc-review-ediff-test--write (concat directory "gone.txt") "still here\n")
+      (ecc-review-ediff-test--write (concat directory "new.txt") "")
+      (ecc-review-ediff-test--write (concat directory "crlf.txt") "a\r\nb\r\n")
+      (ecc-review-ediff-test--git directory "add" ".")
+      (ecc-review-ediff-test--git directory "commit" "-q" "-m" "more")
+      (let ((right (ecc-review--head-tree root))
+            (batches 0)
+            (alone 0)
+            (cache (make-hash-table :test #'equal)))
+        (cl-letf* ((git (symbol-function 'ecc-review--git))
+                   ((symbol-function 'ecc-review--git)
+                    (lambda (directory &rest args)
+                      (when (equal (car args) "cat-file") (cl-incf alone))
+                      (apply git directory args)))
+                   (run (symbol-function 'call-process-region))
+                   ((symbol-function 'call-process-region)
+                    (lambda (&rest args)
+                      (when (member "--batch" args) (cl-incf batches))
+                      (apply run args))))
+          (let ((pairs (ecc-review-ediff-pairs root left right nil cache)))
+            (should (= batches 1))
+            (should (zerop alone))
+            (pcase-dolist (`(,path ,before ,after ,_ ,before-blob ,after-blob) pairs)
+              (should (equal before (if before-blob
+                                        (cdr (ecc-review--git root "cat-file" "blob" before-blob))
+                                      "")))
+              (should (equal after (if after-blob
+                                       (cdr (ecc-review--git root "cat-file" "blob" after-blob))
+                                     "")))
+              (when (equal path "x.txt") (should (equal after "two\nえ\n")))
+              (when (equal path "crlf.txt") (should (equal after "a\r\nb\r\n")))))
+          ;; Read again through the same cache: nothing is read.
+          (setq batches 0 alone 0)
+          (ecc-review-ediff-pairs root left right nil cache)
+          (should (zerop batches))
+          (should (zerop alone))
+          ;; A blob the one process leaves out is asked for alone.
+          (cl-letf (((symbol-function 'call-process-region)
+                     (lambda (&rest _) 0)))
+            (should (equal (nth 2 (assoc "x.txt" (ecc-review-ediff-pairs root left right)))
+                           "two\nえ\n")))
+          (should (> alone 0)))))))
 
 (ert-deftest ecc-review-ediff-test-hidden-comments-are-not-offered ()
   "C-u d leaves out Claude's comments while they are hidden, in both reviews."

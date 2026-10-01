@@ -60,14 +60,17 @@
 ;; from running into the next.
 ;;
 ;; They are read as code, not as text: each file is fontified by its own
-;; major mode as it is inserted, and the differences are marked in the
+;; major mode -- what is on the screen before the review is shown, the
+;; rest a slice at a time after -- and the differences are marked in the
 ;; colours the diff review uses, because ediff's own faces for the
 ;; differences it is not standing on are invisible under a good many
 ;; themes.  The one being read is then told apart from them twice over:
 ;; a stronger shade of its own colour, and a bar in the fringe beside
 ;; every line of it, because under a theme that paints the current
 ;; difference in the very colours a diff is read by the shade alone
-;; says nothing.
+;; says nothing.  What changed inside its lines is carried further still,
+;; so that the stronger shade does not swallow it, and is marked in every
+;; difference on the screen, not in the current one alone.
 ;;
 ;; Both buffers are read-only, and that is the whole of it: a review
 ;; reads, comments and sends, and writes nothing.  ediff's a and b say
@@ -172,13 +175,61 @@ commit and no blob.  ROOT is the repository, PATHS restrict it."
     (result (ecc-log "review" "diff --raw failed in %s: %S" root result)
             nil)))
 
+(defun ecc-review-ediff--read-blobs (root blobs cache)
+  "Read every blob of BLOBS in ROOT that CACHE lacks, through one git process.
+`git cat-file --batch' is given the ids on its input and writes each
+blob after a line naming its size, so a review of fifty files starts one
+process where it started a hundred: reading the two sides of 57 files
+took 0.80 s that way and takes 0.05 s this way (measured 2026-10-01).  Each
+text goes into CACHE under (raw . BLOB), decoded the way `call-process'
+would have decoded it.  What git will not give is left out of CACHE,
+and `ecc-review-ediff--blob-text' asks for it alone, which says why;
+so does a git that fails here altogether, which is logged."
+  (let ((wanted (seq-uniq (seq-remove (lambda (blob) (gethash (cons 'raw blob) cache))
+                                      (delq nil (copy-sequence blobs))))))
+    (when (and wanted (executable-find ecc-review-git-executable))
+      (with-temp-buffer
+        (set-buffer-multibyte nil)
+        (insert (mapconcat #'identity wanted "\n") "\n")
+        (let* ((default-directory (file-name-as-directory root))
+               (coding (or (car (find-operation-coding-system
+                                 'call-process ecc-review-git-executable))
+                           (car default-process-coding-system)
+                           'undecided))
+               (coding-system-for-read 'binary)
+               (coding-system-for-write 'binary)
+               (code (condition-case error
+                         (call-process-region (point-min) (point-max)
+                                              ecc-review-git-executable
+                                              t '(t nil) nil "cat-file" "--batch")
+                       (file-error (error-message-string error)))))
+          (if (not (eq code 0))
+              (ecc-log "review" "cat-file --batch failed in %s: %S" root code)
+            (goto-char (point-min))
+            ;; "ID blob SIZE", SIZE bytes and a newline; "ID missing" for
+            ;; an id git does not have.
+            (while (re-search-forward "^\\([0-9a-f]+\\) \\([a-z]+\\)\\(?: \\([0-9]+\\)\\)?\n"
+                                      nil t)
+              (let ((id (match-string 1))
+                    (type (match-string 2))
+                    (size (and (match-string 3) (string-to-number (match-string 3)))))
+                (when size
+                  (let ((end (+ (point) size)))
+                    (when (equal type "blob")
+                      (puthash (cons 'raw id)
+                               (decode-coding-string (buffer-substring (point) end) coding)
+                               cache))
+                    (goto-char (min (point-max) (1+ end)))))))))))))
+
 (defun ecc-review-ediff--blob-text (root blob cache)
   "Return the text of BLOB in ROOT, nil for no blob.
 CACHE, a hash table or nil, keeps what was read under (raw . BLOB): a
 blob is the same text for as long as it exists, so a file that did not
-change since the review was last read is not read again.  A blob git
-will not give is logged and signalled: taken for nothing, it would read
-as a file created or deleted."
+change since the review was last read is not read again, and
+`ecc-review-ediff--read-blobs' fills it for a whole review at once.  A
+blob that is not there is asked for alone.  A blob git will not give is
+logged and signalled: taken for nothing, it would read as a file
+created or deleted."
   (when blob
     (let ((key (cons 'raw blob)))
       (or (and cache (gethash key cache))
@@ -203,10 +254,22 @@ calls binary, one too large for `ecc-review-max-bytes\\=', a submodule,
 or one git would not give is named and not shown.  Both sides being
 empty, such a file is no difference at all
 and only its separator line is read, which is where the note is put.
-CACHE is that of `ecc-review-ediff--blob-text\\='."
-  (let ((blobs (ecc-review-ediff--blobs root left right paths))
-        (pairs nil))
-    (pcase-dolist (`(,path . ,binary) (ecc-review--numstat root left right paths))
+CACHE is that of `ecc-review-ediff--blob-text\\='; every blob is read
+through it, and through one git process (`ecc-review-ediff--read-blobs\\=')."
+  (let* ((blobs (ecc-review-ediff--blobs root left right paths))
+         (numstat (ecc-review--numstat root left right paths))
+         (cache (or cache (make-hash-table :test #'equal)))
+         (pairs nil))
+    (ecc-review-ediff--read-blobs
+     root
+     (mapcan (lambda (entry)
+               (pcase-let ((`(,before ,after ,before-mode ,after-mode)
+                            (cdr (assoc (car entry) blobs))))
+                 (unless (or (cdr entry) (member "160000" (list before-mode after-mode)))
+                   (list before after))))
+             numstat)
+     cache)
+    (pcase-dolist (`(,path . ,binary) numstat)
       (pcase-let* ((`(,before-id ,after-id ,before-mode ,after-mode)
                     (cdr (assoc path blobs)))
                    (submodule (member "160000" (list before-mode after-mode)))
@@ -337,7 +400,8 @@ their own, and they belong to the file above -- a deletion at the end of
 one still reads against that file and not the next.")
 
 (defun ecc-review-ediff--insert (buffer separator text)
-  "Append SEPARATOR and TEXT to BUFFER and return the line of SEPARATOR.
+  "Append SEPARATOR and TEXT to BUFFER; return (LINE BEG . END).
+LINE is the line of SEPARATOR, and BEG and END are where TEXT went.
 `ecc-review-ediff-file-spacing\=' blank lines go in front of it unless
 BUFFER is still empty.  TEXT is given a closing newline when it lacks
 one, so that what follows starts a line of its own."
@@ -346,13 +410,16 @@ one, so that what follows starts a line of its own."
       (goto-char (point-max))
       (unless (= (point-min) (point-max))
         (insert (make-string (max 0 ecc-review-ediff-file-spacing) ?\n)))
-      (prog1 (line-number-at-pos (point))
+      (let ((line (line-number-at-pos (point))))
         ;; No font-lock in a buffer of this package: the face goes on
-        ;; the text as it is inserted.
+        ;; the text as it is inserted, or once it is known
+        ;; (`ecc-review-ediff--colour-later').
         (insert (propertize separator 'face 'ecc-heading-face) "\n")
-        (unless (string-empty-p text)
-          (insert text)
-          (unless (bolp) (insert "\n")))))))
+        (let ((beg (point)))
+          (unless (string-empty-p text)
+            (insert text)
+            (unless (bolp) (insert "\n")))
+          (cons line (cons beg (+ beg (length text)))))))))
 
 (defvar ecc-review-ediff-diff-faces t
   "Non-nil marks every difference the way the diff review marks a hunk.
@@ -381,9 +448,9 @@ said which of the twelve differences n had just walked to
 Non-nil remaps the two current-difference faces, in the two buffers of
 the review alone, to a stronger shade of their own background -- the
 theme\='s colour, lightened on a dark background and darkened on a
-light one -- in bold.  The refinement inside the difference keeps
-`ediff-fine-diff-A\=' and `-B\=', so what changed within the line is
-still marked apart.  See also `ecc-review-ediff-current-diff-mark\='.")
+light one -- in bold.  What changed within the line is kept apart from
+the stronger shade by `ecc-review-ediff-fine-diff-faces\='.  See also
+`ecc-review-ediff-current-diff-mark\='.")
 
 (defvar ecc-review-ediff-current-diff-step 5
   "How far the colour of the current difference is carried, in lightness.
@@ -395,20 +462,131 @@ first -- the bar in the fringe is not a shade to compare, so what the
 colour has to do is hold the eye where the bar has already sent it,
 which a deeper shade of the same colour does without shouting.")
 
+(defvar ecc-review-ediff-fine-diff-faces t
+  "Non-nil keeps what changed inside a line clearly apart from the rest.
+ediff marks the words that changed within a difference with
+`ediff-fine-diff-A\=' and `-B\=', and under a theme that gives those
+nearly the background of the current difference, lightening that
+background (`ecc-review-ediff-current-diff-faces\=') took the words
+away: modus-vivendi gives `ediff-fine-diff-B\=' `#034f2f\=', and the
+current difference became `#004f2b\=' (2026-10-01).
+
+Non-nil remaps the two fine-difference faces, in the two buffers of the
+review alone, to the background of `diff-refine-removed\=' on the left
+and `diff-refine-added\=' on the right, carried a step further and then
+as many more as it takes to stand `ecc-review-ediff-fine-diff-contrast\='
+points of lightness apart from the backgrounds of the differences
+around it, in bold.")
+
+(defvar ecc-review-ediff-fine-diff-contrast 12
+  "How far apart in lightness what changed in a line stands from its difference.
+In points of HSL lightness, from the background of the current
+difference and from that of the differences around it.  Under
+modus-vivendi twelve takes the words that changed on the right from
+`#034f2f\=', 16 points of lightness, to `#039759\=', 30, against a
+current difference of `#00512d\=', 16 (2026-10-01).")
+
+(defun ecc-review-ediff--dark-p ()
+  "Return non-nil when the frame has a dark background."
+  (eq (frame-parameter nil 'background-mode) 'dark))
+
+(defun ecc-review-ediff--rgb (colour)
+  "Return COLOUR as a list of red, green and blue between 0 and 1, or nil.
+A colour written in hex is read as written, not as the nearest colour
+the display can show -- a terminal, and a batch Emacs, would answer
+green for any of the dark greens of a theme."
+  (when (stringp colour)
+    (if-let* ((values (color-values-from-color-spec colour)))
+        (mapcar (lambda (value) (/ value 65535.0)) values)
+      (color-name-to-rgb colour))))
+
+(defun ecc-review-ediff--lightness (colour)
+  "Return the HSL lightness of COLOUR, between 0 and 1, or nil."
+  (when-let* ((rgb (ecc-review-ediff--rgb colour)))
+    (nth 2 (apply #'color-rgb-to-hsl rgb))))
+
+(defun ecc-review-ediff--shade (colour points)
+  "Return COLOUR with its lightness moved by POINTS, as #RRGGBB, or nil.
+POINTS are points of HSL lightness, negative for darker."
+  (when-let* ((rgb (ecc-review-ediff--rgb colour)))
+    (pcase-let ((`(,hue ,saturation ,lightness) (apply #'color-rgb-to-hsl rgb)))
+      (apply #'color-rgb-to-hex
+             (append (color-hsl-to-rgb hue saturation
+                                       (min 1.0 (max 0.0 (+ lightness (/ points 100.0)))))
+                     (list 2))))))
+
+(defun ecc-review-ediff--background (face)
+  "Return the background of FACE as a colour, or nil when it has none."
+  (let ((background (face-attribute face :background nil t)))
+    (and (stringp background) (ecc-review-ediff--rgb background) background)))
+
 (defun ecc-review-ediff--stronger (face)
   "Return the attributes of FACE with its background carried a shade further.
 Away from the background of the frame: lighter on a dark one, darker on
 a light one.  A face with no background of its own, and a background
-this display cannot name, are left to the bold alone."
-  (let ((background (face-attribute face :background nil t)))
-    (append (when (and (stringp background) (color-defined-p background))
+that is no colour, are left to the bold alone."
+  (let ((background (ecc-review-ediff--background face)))
+    (append (when background
               (list :background
-                    (if (eq (frame-parameter nil 'background-mode) 'dark)
-                        (color-lighten-name
-                         background ecc-review-ediff-current-diff-step)
-                      (color-darken-name
-                       background ecc-review-ediff-current-diff-step))))
+                    (ecc-review-ediff--shade
+                     background (if (ecc-review-ediff--dark-p)
+                                    ecc-review-ediff-current-diff-step
+                                  (- ecc-review-ediff-current-diff-step)))))
             (list :weight 'bold :extend t))))
+
+(defun ecc-review-ediff--apart (start around)
+  "Return START carried away from every colour of AROUND, or nil.
+A step of `ecc-review-ediff-current-diff-step\=' at least, away from the
+background of the frame, and then as many more as it takes to stand
+`ecc-review-ediff-fine-diff-contrast\=' points of lightness from each
+colour of AROUND; the other way when that runs out of lightness first."
+  (let ((wanted (/ ecc-review-ediff-fine-diff-contrast 100.0))
+        (levels (delq nil (mapcar #'ecc-review-ediff--lightness around))))
+    (seq-some
+     (lambda (direction)
+       (let ((colour start)
+             (found nil)
+             (previous nil))
+         (while (and (not found) colour
+                     (not (equal previous (ecc-review-ediff--lightness colour))))
+           (setq previous (ecc-review-ediff--lightness colour)
+                 colour (ecc-review-ediff--shade
+                         colour (* direction ecc-review-ediff-current-diff-step)))
+           (when (and colour
+                      (seq-every-p (lambda (level)
+                                     (>= (abs (- (ecc-review-ediff--lightness colour) level))
+                                         wanted))
+                                   levels))
+             (setq found colour)))
+         found))
+     (if (ecc-review-ediff--dark-p) '(1 -1) '(-1 1)))))
+
+(defun ecc-review-ediff--fine (side)
+  "Return the attributes the fine differences of SIDE, `A' or `B', are given.
+Their background is that of `diff-refine-removed\=' or
+`diff-refine-added\=' -- `ediff-fine-diff-A\=' or `-B\=' where the theme
+gives those none -- carried apart from the backgrounds around it
+\(`ecc-review-ediff--apart\='): of the current difference as this review
+paints it, and of the differences it is not standing on.  In bold."
+  (let* ((a (eq side 'A))
+         (current (if a 'ediff-current-diff-A 'ediff-current-diff-B))
+         (others (cond (ecc-review-ediff-diff-faces
+                        (list (if a 'diff-removed 'diff-added)))
+                       (a (list 'ediff-odd-diff-A 'ediff-even-diff-A))
+                       (t (list 'ediff-odd-diff-B 'ediff-even-diff-B))))
+         (around (delq nil (cons (if ecc-review-ediff-current-diff-faces
+                                     (plist-get (ecc-review-ediff--stronger current)
+                                                :background)
+                                   (ecc-review-ediff--background current))
+                                 (mapcar #'ecc-review-ediff--background others))))
+         (start (or (ecc-review-ediff--background
+                     (if a 'diff-refine-removed 'diff-refine-added))
+                    (ecc-review-ediff--background
+                     (if a 'ediff-fine-diff-A 'ediff-fine-diff-B))
+                    (car around)))
+         (background (and start (ecc-review-ediff--apart start around))))
+    (append (and background (list :background background))
+            (list :weight 'bold))))
 
 (defun ecc-review-ediff--mark-differences (base now)
   "Give BASE and NOW the colours a diff is read by, if that is wanted."
@@ -425,7 +603,111 @@ this display cannot name, are left to the bold alone."
        'ediff-current-diff-A (ecc-review-ediff--stronger 'ediff-current-diff-A)))
     (with-current-buffer now
       (face-remap-add-relative
-       'ediff-current-diff-B (ecc-review-ediff--stronger 'ediff-current-diff-B)))))
+       'ediff-current-diff-B (ecc-review-ediff--stronger 'ediff-current-diff-B))))
+  (when ecc-review-ediff-fine-diff-faces
+    (with-current-buffer base
+      (face-remap-add-relative 'ediff-fine-diff-A (ecc-review-ediff--fine 'A)))
+    (with-current-buffer now
+      (face-remap-add-relative 'ediff-fine-diff-B (ecc-review-ediff--fine 'B)))))
+
+;;;; Refining the differences on the screen
+
+;; ediff marks what changed inside the lines of the difference it is
+;; standing on and of no other, so a screen of differences showed which
+;; words changed in one of them.  The others on the screen are refined
+;; too, once they are on it: after the review opens, after n or p, and
+;; after a scroll, on a timer that runs once and gives way to the
+;; keyboard.  Each takes a diff process of its own, which is why it is
+;; never all of them at once -- a review of a thousand differences would
+;; start a thousand -- and ediff's own limit, `ediff-auto-refine-limit',
+;; and its own switch, `@', hold for these as for the current one.
+
+(defvar ecc-review-ediff-colour-slice 0.05
+  "How long one turn of the work done after a review opens may run, in seconds.
+That work is colouring the files and refining the differences on the
+screen; at least one file is coloured each turn, however long it takes.")
+
+(defvar ecc-review-ediff-colour-delay 0.05
+  "How long colouring an open review waits between two turns, in seconds.")
+
+(defvar ecc-review-ediff-colour-wait 0.3
+  "How long the work after a review opens waits for input to be read first.
+In seconds: colouring and refining both give way to the keyboard.")
+
+(defvar ecc-review-ediff-refine-shown t
+  "Non-nil marks what changed in the lines of every difference on the screen.
+Nil leaves it to ediff, which marks it in the current difference alone.")
+
+(defvar ecc-review-ediff-refine-delay 0.1
+  "How long after a move or a scroll the differences shown are refined.")
+
+(defvar-local ecc-review-ediff--refine-timer nil
+  "The one-shot timer of the next refining of what is shown, or nil.
+Buffer-local in the control buffer.")
+
+(defun ecc-review-ediff--shown-differences ()
+  "Return the numbers of the differences this review has on the screen."
+  (let ((ranges (mapcar (lambda (side)
+                          (let ((window (if (eq side 'A) ediff-window-A ediff-window-B))
+                                (buffer (if (eq side 'A) ediff-buffer-A ediff-buffer-B)))
+                            (and (window-live-p window) (eq (window-buffer window) buffer)
+                                 (ecc-review-ediff--shown-range window))))
+                        '(A B)))
+        (shown nil))
+    (dotimes (n (length ediff-difference-vector-A))
+      (when (seq-some (lambda (pair)
+                        (let ((range (cdr pair)))
+                          (and range
+                               (<= (ediff-get-diff-posn (car pair) 'beg n) (cdr range))
+                               (>= (ediff-get-diff-posn (car pair) 'end n) (car range)))))
+                      (list (cons 'A (car ranges)) (cons 'B (cadr ranges))))
+        (push n shown)))
+    (nreverse shown)))
+
+(defun ecc-review-ediff--refine-shown (&optional deadline)
+  "Refine the differences on the screen that ediff has not, and mark them.
+Run in the control buffer.  Return nil when DEADLINE, a `float-time',
+passed or input came first with some left to do, t otherwise.  What
+ediff says as it refines is about a difference the user is not on, and
+is not shown; what it signals is."
+  (catch 'interrupted
+    (when (and ecc-review-ediff-refine-shown
+               (> (length ediff-difference-vector-A) 0))
+      (let ((inhibit-message t))
+        (dolist (n (ecc-review-ediff--shown-differences))
+          (unless (eql n ediff-current-difference)
+            (when (and deadline (or (> (float-time) deadline) (input-pending-p)))
+              (throw 'interrupted nil))
+            (ediff-install-fine-diff-if-necessary n)))))
+    t))
+
+(defun ecc-review-ediff--refine-later (&optional delay)
+  "Refine the differences on the screen in DELAY seconds, once.
+A timer set already is left to run: one is enough for all the moves
+made before it fires.  Run in the control buffer."
+  (unless (timerp ecc-review-ediff--refine-timer)
+    (setq ecc-review-ediff--refine-timer
+          (run-with-timer (or delay ecc-review-ediff-refine-delay) nil
+                          #'ecc-review-ediff--refine-turn (current-buffer)))))
+
+(defun ecc-review-ediff--refine-turn (control)
+  "Refine a slice of what the review in CONTROL shows, and set the next turn."
+  (when (buffer-live-p control)
+    (with-current-buffer control
+      (setq ecc-review-ediff--refine-timer nil)
+      (unless (and (not (input-pending-p))
+                   (ecc-review-ediff--refine-shown
+                    (+ (float-time) ecc-review-ediff-colour-slice)))
+        (ecc-review-ediff--refine-later ecc-review-ediff-colour-wait)))))
+
+(defun ecc-review-ediff--scrolled (window _start)
+  "Refine what WINDOW, a side of a review, shows after it scrolled.
+On `window-scroll-functions' in the two buffers of a review: it runs
+within redisplay, so it does nothing but set the timer."
+  (let ((control (buffer-local-value 'ecc-review--part-of (window-buffer window))))
+    (when (buffer-live-p control)
+      (with-current-buffer control
+        (ecc-review-ediff--refine-later)))))
 
 ;;;; The bar beside the difference being read
 
@@ -535,6 +817,17 @@ what is wanted once colours are asked for."
           (when (and cache blob) (puthash key coloured cache))
           coloured))))
 
+(defun ecc-review-ediff--known-colours (path blob cache)
+  "Return the text of BLOB as PATH fontified, when CACHE holds it already."
+  (and cache blob (gethash (list 'face blob path ecc-review-ediff-fontify) cache)))
+
+(defvar-local ecc-review-ediff--uncoloured nil
+  "The files of this side of a review written out without their colours.
+A list of (BEG END PATH BLOB TEXT), in the order they were written:
+TEXT went in between BEG and END plain, and is to be fontified as PATH
+\(`ecc-review-ediff--colour-later').  Buffer-local in each of the two
+buffers, and made afresh whenever they are written.")
+
 (defun ecc-review-ediff--write (base now pairs nothing &optional cache)
   "Write PAIRS into the buffers BASE and NOW afresh and return the sections.
 With no pair at all both say NOTHING, the same on both sides, so that
@@ -542,9 +835,14 @@ the review shows no difference and says why.  Nothing but the text is
 touched: the major mode, the local variables ediff keeps in the two
 buffers and the colours stay, which is what lets a review that is open
 be read again into the same buffers.  CACHE keeps the fontified text
-of each blob (`ecc-review-ediff--cache\='), so that a file that did not
-change is not fontified again."
-  (let ((sections nil))
+of each blob (`ecc-review-ediff--cache\='): a file coloured before goes
+in with its colours, and every other is written plain and left in
+`ecc-review-ediff--uncoloured', to be coloured once the review is on the
+screen (`ecc-review-ediff--colour-later').  Fontifying every file first
+was 0.7 s of the 1.7 s a review of 57 files took to open in batch, and
+2 s in an Emacs with its modes set up (measured 2026-10-01)."
+  (let ((sections nil)
+        (uncoloured (list (cons base nil) (cons now nil))))
     (dolist (buffer (list base now))
       (with-current-buffer buffer
         (let ((inhibit-read-only t))
@@ -557,20 +855,151 @@ change is not fontified again."
                                           " and the next change will show up here.\n")
                                   'face 'ecc-dim-face)))))
       (pcase-dolist (`(,path ,before ,after ,note ,before-blob ,after-blob) pairs)
-        (let ((separator (ecc-review-ediff--separator path note)))
-          (push (list path
-                      (ecc-review-ediff--insert
-                       base separator
-                       (ecc-review-ediff--coloured before path before-blob cache))
-                      (ecc-review-ediff--insert
-                       now separator
-                       (ecc-review-ediff--coloured after path after-blob cache)))
-                sections))))
+        (let ((separator (ecc-review-ediff--separator path note))
+              (lines nil))
+          (pcase-dolist (`(,buffer ,text ,blob) (list (list base before before-blob)
+                                                      (list now after after-blob)))
+            (let* ((known (ecc-review-ediff--known-colours path blob cache))
+                   (place (ecc-review-ediff--insert buffer separator (or known text))))
+              (when (and (not known) ecc-review-ediff-fontify (not (string-empty-p text)))
+                (push (list (cadr place) (cddr place) path blob text)
+                      (alist-get buffer uncoloured)))
+              (push (car place) lines)))
+          (push (cons path (nreverse lines)) sections))))
     (dolist (buffer (list base now))
       (with-current-buffer buffer
+        (setq ecc-review-ediff--uncoloured (nreverse (alist-get buffer uncoloured)))
         (setq buffer-read-only t)
         (set-buffer-modified-p nil)))
     (nreverse sections)))
+
+;;;; Colouring the code once the review is open
+
+;; The two buffers are written plain and opened, and the files are
+;; coloured afterwards: what is on the screen at once, the rest a slice
+;; at a time on a timer that runs once and sets itself again, for as
+;; long as there is anything left to colour.  Never a repeating timer: a
+;; repeating timer whose work outgrew its interval froze the user's
+;; Emacs on 2026-09-21.  A slice gives way to the keyboard -- while
+;; there is input waiting, nothing is coloured -- and starts with
+;; whatever is on the screen, so that a file scrolled to is the next
+;; one coloured.  The colours go on as text properties, the way they
+;; went in before, so the comments drawn as overlays and the reading
+;; again of a review that follows the files are untouched by them.
+
+(defvar-local ecc-review-ediff--colour-timer nil
+  "The one-shot timer of the next turn of colouring, or nil.
+Buffer-local in the control buffer.")
+
+(defun ecc-review-ediff--put-faces (buffer beg coloured)
+  "Put the faces of the string COLOURED on BUFFER from BEG on.
+Text properties, as the faces of this package always are, put on
+without the buffer counting as changed: `buffer-chars-modified-tick',
+which says whether a review was written into, does not move."
+  (with-current-buffer buffer
+    (with-silent-modifications
+      (let ((position 0)
+            (length (length coloured)))
+        (while (< position length)
+          (let ((next (next-single-property-change position 'face coloured length))
+                (face (get-text-property position 'face coloured)))
+            (when face
+              (put-text-property (+ beg position) (+ beg next) 'face face))
+            (setq position next)))))))
+
+(defun ecc-review-ediff--shown-range (window)
+  "Return (START . END), the part of its buffer WINDOW shows, about.
+Counted in lines from the start of the window rather than asked of
+redisplay, which may not have been round yet."
+  (with-current-buffer (window-buffer window)
+    (let ((start (window-start window)))
+      (cons start (save-excursion
+                    (goto-char start)
+                    (forward-line (window-body-height window))
+                    (point))))))
+
+(defun ecc-review-ediff--colour-entry (buffer entry cache)
+  "Colour ENTRY of `ecc-review-ediff--uncoloured' in BUFFER, through CACHE."
+  (pcase-let ((`(,beg ,_ ,path ,blob ,text) entry))
+    (ecc-review-ediff--put-faces buffer beg (ecc-review-ediff--coloured text path blob cache))
+    (with-current-buffer buffer
+      (setq ecc-review-ediff--uncoloured (delq entry ecc-review-ediff--uncoloured)))))
+
+(defun ecc-review-ediff--next-uncoloured (buffers &optional shown-only)
+  "Return (BUFFER . ENTRY), the file of BUFFERS to colour next, or nil.
+One on the screen comes first, the first in the review otherwise.  With
+SHOWN-ONLY, only one on the screen."
+  (let ((live (seq-filter #'buffer-live-p buffers)))
+    (or (seq-some
+         (lambda (buffer)
+           (let ((ranges (mapcar #'ecc-review-ediff--shown-range
+                                 (get-buffer-window-list buffer nil t))))
+             (when-let* ((entry (seq-find
+                                 (lambda (entry)
+                                   (seq-some (lambda (range)
+                                               (and (< (car entry) (cdr range))
+                                                    (> (cadr entry) (car range))))
+                                             ranges))
+                                 (buffer-local-value 'ecc-review-ediff--uncoloured buffer))))
+               (cons buffer entry))))
+         live)
+        (and (not shown-only)
+             (seq-some (lambda (buffer)
+                         (when-let* ((entry (car (buffer-local-value
+                                                  'ecc-review-ediff--uncoloured buffer))))
+                           (cons buffer entry)))
+                       live)))))
+
+(defun ecc-review-ediff--colour-shown ()
+  "Colour every file of this review that is on the screen, now.
+Run in the control buffer."
+  (let ((buffers (list (car ecc-review-ediff--buffers) (cdr ecc-review-ediff--buffers))))
+    (while-let ((next (ecc-review-ediff--next-uncoloured buffers t)))
+      (ecc-review-ediff--colour-entry (car next) (cdr next) ecc-review-ediff--cache))))
+
+(defun ecc-review-ediff--colour-later (&optional delay)
+  "Colour what is left of this review a slice at a time, starting in DELAY.
+DELAY is `ecc-review-ediff-colour-delay' by default.  Run in the control
+buffer; the timer set before is dropped, so a review has one at most."
+  (when (timerp ecc-review-ediff--colour-timer)
+    (cancel-timer ecc-review-ediff--colour-timer))
+  (setq ecc-review-ediff--colour-timer
+        (and (seq-some (lambda (buffer)
+                         (and (buffer-live-p buffer)
+                              (buffer-local-value 'ecc-review-ediff--uncoloured buffer)))
+                       (list (car ecc-review-ediff--buffers) (cdr ecc-review-ediff--buffers)))
+             (run-with-timer (or delay ecc-review-ediff-colour-delay) nil
+                             #'ecc-review-ediff--colour-turn (current-buffer)))))
+
+(defun ecc-review-ediff--colour-turn (control)
+  "Colour a slice of the review in CONTROL, and set the next turn.
+With input waiting nothing is coloured and the turn is put off."
+  (when (buffer-live-p control)
+    (with-current-buffer control
+      (setq ecc-review-ediff--colour-timer nil)
+      (if (input-pending-p)
+          (ecc-review-ediff--colour-later ecc-review-ediff-colour-wait)
+        (let ((buffers (list (car ecc-review-ediff--buffers) (cdr ecc-review-ediff--buffers)))
+              (deadline (+ (float-time) ecc-review-ediff-colour-slice))
+              (next nil))
+          (while (and (setq next (ecc-review-ediff--next-uncoloured buffers))
+                      (progn (ecc-review-ediff--colour-entry
+                              (car next) (cdr next) ecc-review-ediff--cache)
+                             t)
+                      (< (float-time) deadline)
+                      (not (input-pending-p))))
+          (ecc-review-ediff--colour-later))))))
+
+(defun ecc-review-ediff--colour-all ()
+  "Colour at once whatever of this review is still plain.
+Run in the control buffer: what the timer would have done a slice at a
+time, all in one go."
+  (when (timerp ecc-review-ediff--colour-timer)
+    (cancel-timer ecc-review-ediff--colour-timer))
+  (setq ecc-review-ediff--colour-timer nil)
+  (let ((buffers (list (car ecc-review-ediff--buffers) (cdr ecc-review-ediff--buffers))))
+    (while-let ((next (ecc-review-ediff--next-uncoloured buffers)))
+      (ecc-review-ediff--colour-entry (car next) (cdr next) ecc-review-ediff--cache))))
 
 (defun ecc-review-ediff--side-buffer (name)
   "Return a buffer named NAME, or like it when NAME is a side of an open review.
@@ -1161,6 +1590,32 @@ This is what `ediff-brief-help-message-function\\=' is set to."
 
 ;;;; Opening and closing
 
+(defvar ecc-review-ediff-progress-regexp
+  "\\`\\(?:Buffer [A-C]: \\)?Processing difference region\\|\\`Computing differences"
+  "The messages ediff writes as it computes the differences of a review.
+\"Processing difference region N of M\" comes once every ten
+differences, and each message is drawn at once: a review of a thousand
+differences was a hundred redisplays of the echo area while it opened
+\(2026-10-01).  They are not shown while a review is built or read again
+\(`ecc-review-ediff--quietly'), and still go to *Messages*.")
+
+(defun ecc-review-ediff--quiet-filter (next)
+  "Return a `set-message-function' that drops ediff's progress, NEXT the rest.
+A message matching `ecc-review-ediff-progress-regexp' is not shown;
+any other goes to NEXT, the function that was there, and is shown the
+way it would have been."
+  (lambda (message)
+    (cond ((string-match-p ecc-review-ediff-progress-regexp message) t)
+          (next (funcall next message)))))
+
+(defmacro ecc-review-ediff--quietly (&rest body)
+  "Run BODY without showing ediff's progress messages.
+Only those: an error, a question or anything else said meanwhile is
+shown as ever (`ecc-review-ediff--quiet-filter')."
+  (declare (indent 0) (debug t))
+  `(let ((set-message-function (ecc-review-ediff--quiet-filter set-message-function)))
+     ,@body))
+
 (defvar ecc-review-ediff-full-frame t
   "Non-nil gives the review the whole frame it opens in.
 Two texts side by side want the width: sharing the frame with the
@@ -1194,6 +1649,9 @@ first."
   (let ((buffers ecc-review-ediff--buffers)
         (windows ecc-review-ediff--windows)
         (frame ecc-review-ediff--frame))
+    (dolist (timer (list ecc-review-ediff--colour-timer ecc-review-ediff--refine-timer))
+      (when (timerp timer)
+        (cancel-timer timer)))
     (ediff-cleanup-mess)
     (dolist (buffer (list (car buffers) (cdr buffers)))
       (when (buffer-live-p buffer)
@@ -1263,108 +1721,119 @@ ediff lays out its windows; quitting puts back what was on the screen."
         (control nil))
     (when ecc-review-ediff-full-frame
       (ecc-review-ediff--take-the-frame))
-    (ediff-buffers
-     base now
-     (list
-      (lambda ()
-        (setq control (current-buffer))
-        (setq-local ecc-review--session session
-                    ecc-render--session session
-                    ecc-review--range range
-                    ecc-review--paths paths
-                    ecc-review--notes nil
-                    ecc-review--next-id 1
-                    ecc-review--stale nil
-                    ecc-review--failed nil
-                    ecc-review-ediff--sections sections
-                    ecc-review-ediff--units nil
-                    ecc-review-ediff--cache cache
-                    ecc-review-ediff--buffers (cons base now)
-                    ecc-review-ediff--windows windows
-                    ecc-review-ediff--frame frame
-                    ecc-review--close-function #'ecc-review-ediff-quit
-                    ediff-quit-hook (list #'ecc-review-ediff--on-quit))
-        ;; The repository: a file saved under it is a change to follow.
-        (when root
-          (setq default-directory (file-name-as-directory root)))
-        (setq-local ecc-review--fingerprint (ecc-review-ediff--state hash))
-        ;; ediff computes the differences again by itself -- `##', `#c'
-        ;; and `!' of a plain ediff go through `ediff-update-diffs' -- and
-        ;; then the hunks and the comments drawn on them are about
-        ;; differences it no longer has.  The function it computes them
-        ;; with is local to this control buffer, so it is wrapped here
-        ;; and no other ediff is touched.
-        (setq-local ediff-setup-diff-regions-function
-                    (let ((compute ediff-setup-diff-regions-function))
-                      (lambda (&rest args)
-                        (prog1 (apply compute args)
-                          (ecc-review-ediff--differences-computed)))))
-        ;; A window coming to show either side is the review coming into
-        ;; view, which is when a stale one is read again.
-        (dolist (buffer (list base now))
-          (with-current-buffer buffer
-            (setq-local ecc-review--part-of control)))
-        ;; The bar beside the current difference, and then the same
-        ;; function for the difference the review opens on: ediff has
-        ;; selected it before these hooks run.
-        (add-hook 'ediff-select-hook #'ecc-review-ediff--mark-current nil t)
-        ;; Both of these are read out of the control buffer of this
-        ;; session as well (`ediff-defvar-local'), so no other ediff's ?
-        ;; changes.
-        (setq-local ediff-long-help-message-function
-                    #'ecc-review-ediff--long-help-message
-                    ediff-brief-help-message-function
-                    #'ecc-review-ediff--brief-help-message)
-        ;; ediff reads this one out of the control buffer of each session
-        ;; (`ediff-wind.el'), which is why the review can be laid out its
-        ;; own way without touching how the user's other ediffs look.
-        (when ecc-review-ediff-split-window-function
-          (setq-local ediff-split-window-function
-                      ecc-review-ediff-split-window-function))
-        ;; `ediff-setup' lays out the windows and writes the help into
-        ;; the panel before it runs these hooks, so both are done again
-        ;; here: the review would otherwise open in ediff's own layout,
-        ;; under ediff's own help, and turn into this one at the first
-        ;; command that recentres.  It is the call `ediff-toggle-split'
-        ;; and `ediff-toggle-help' both make for the same reason.
-        (ediff-recenter)
-        ;; `ediff-mode-map' is local to this control buffer, so these
-        ;; keys reach no other ediff session.  c, d, l, {, } and ! are
-        ;; the ones the diff review has; ediff has none of the first
-        ;; five, and ! is its own "compute the differences again", which
-        ;; for a review is reading the files again.
-        (define-key ediff-mode-map (kbd "c") #'ecc-review-ediff-comment)
-        (define-key ediff-mode-map (kbd "d") #'ecc-review-ediff-remove-comment)
-        (define-key ediff-mode-map (kbd "l") #'ecc-review-ediff-list-comments)
-        (define-key ediff-mode-map (kbd "{") #'ecc-review-ediff-previous-comment)
-        (define-key ediff-mode-map (kbd "}") #'ecc-review-ediff-next-comment)
-        (define-key ediff-mode-map (kbd "!") #'ecc-review-refresh)
-        (define-key ediff-mode-map (kbd "C-c C-c") #'ecc-review-send)
-        (define-key ediff-mode-map (kbd "C-c C-k") #'ecc-review-quit)
-        ;; ediff's own q asks whether to quit this session, and the
-        ;; question goes to a minibuffer the control frame does not have
-        ;; -- on a graphical Emacs the panel is a frame of its own, small
-        ;; enough to show nothing, so q read as a key that did nothing at
-        ;; all (reported 2026-09-16).  A review is closed, not saved:
-        ;; there is nothing to lose by the question and nothing to ask.
-        (define-key ediff-mode-map (kbd "q") #'ecc-review-quit)
-        ;; mouse-2 and RET over a line of the help look the command up
-        ;; in the ediff manual, which knows nothing of c, d or l and
-        ;; answers them with "Undocumented command!".  Silenced rather
-        ;; than pointed somewhere else: what the ECC keys do is on the
-        ;; help itself, and the manual has nothing to add about the
-        ;; ediff ones that a review uses.
-        (define-key ediff-mode-map [mouse-2] #'ignore)
-        (define-key ediff-mode-map (kbd "RET") #'ignore)
-        ;; ediff's own copy commands.  Both sides of a review are
-        ;; read-only, so they could only fail, and they failed as
-        ;; `ediff-copy-diff: buffer-read-only' -- an error about a
-        ;; buffer the user never asked about, from a key the help does
-        ;; not offer.  a is the diff review's own key for showing and
-        ;; hiding Claude's comments, and b says what a review is.
-        (define-key ediff-mode-map (kbd "a") #'ecc-review-toggle-agent)
-        (define-key ediff-mode-map (kbd "b") #'ecc-review-ediff-copy-refused)
-        (ecc-review-ediff--mark-current))))
+    (ecc-review-ediff--quietly
+      (ediff-buffers
+       base now
+       (list
+	(lambda ()
+          (setq control (current-buffer))
+          (setq-local ecc-review--session session
+                      ecc-render--session session
+                      ecc-review--range range
+                      ecc-review--paths paths
+                      ecc-review--notes nil
+                      ecc-review--next-id 1
+                      ecc-review--stale nil
+                      ecc-review--failed nil
+                      ecc-review-ediff--sections sections
+                      ecc-review-ediff--units nil
+                      ecc-review-ediff--cache cache
+                      ecc-review-ediff--buffers (cons base now)
+                      ecc-review-ediff--windows windows
+                      ecc-review-ediff--frame frame
+                      ecc-review--close-function #'ecc-review-ediff-quit
+                      ediff-quit-hook (list #'ecc-review-ediff--on-quit))
+          ;; The repository: a file saved under it is a change to follow.
+          (when root
+            (setq default-directory (file-name-as-directory root)))
+          (setq-local ecc-review--fingerprint (ecc-review-ediff--state hash))
+          ;; ediff computes the differences again by itself -- `##', `#c'
+          ;; and `!' of a plain ediff go through `ediff-update-diffs' -- and
+          ;; then the hunks and the comments drawn on them are about
+          ;; differences it no longer has.  The function it computes them
+          ;; with is local to this control buffer, so it is wrapped here
+          ;; and no other ediff is touched.
+          (setq-local ediff-setup-diff-regions-function
+                      (let ((compute ediff-setup-diff-regions-function))
+			(lambda (&rest args)
+                          (prog1 (apply compute args)
+                            (ecc-review-ediff--differences-computed)))))
+          ;; A window coming to show either side is the review coming into
+          ;; view, which is when a stale one is read again.
+          (dolist (buffer (list base now))
+            (with-current-buffer buffer
+              (setq-local ecc-review--part-of control)))
+          ;; The bar beside the current difference, and then the same
+          ;; function for the difference the review opens on: ediff has
+          ;; selected it before these hooks run.
+          (add-hook 'ediff-select-hook #'ecc-review-ediff--mark-current nil t)
+          ;; Both of these are read out of the control buffer of this
+          ;; session as well (`ediff-defvar-local'), so no other ediff's ?
+          ;; changes.
+          (setq-local ediff-long-help-message-function
+                      #'ecc-review-ediff--long-help-message
+                      ediff-brief-help-message-function
+                      #'ecc-review-ediff--brief-help-message)
+          ;; ediff reads this one out of the control buffer of each session
+          ;; (`ediff-wind.el'), which is why the review can be laid out its
+          ;; own way without touching how the user's other ediffs look.
+          (when ecc-review-ediff-split-window-function
+            (setq-local ediff-split-window-function
+			ecc-review-ediff-split-window-function))
+          ;; `ediff-setup' lays out the windows and writes the help into
+          ;; the panel before it runs these hooks, so both are done again
+          ;; here: the review would otherwise open in ediff's own layout,
+          ;; under ediff's own help, and turn into this one at the first
+          ;; command that recentres.  It is the call `ediff-toggle-split'
+          ;; and `ediff-toggle-help' both make for the same reason.
+          (ediff-recenter)
+          ;; `ediff-mode-map' is local to this control buffer, so these
+          ;; keys reach no other ediff session.  c, d, l, {, } and ! are
+          ;; the ones the diff review has; ediff has none of the first
+          ;; five, and ! is its own "compute the differences again", which
+          ;; for a review is reading the files again.
+          (define-key ediff-mode-map (kbd "c") #'ecc-review-ediff-comment)
+          (define-key ediff-mode-map (kbd "d") #'ecc-review-ediff-remove-comment)
+          (define-key ediff-mode-map (kbd "l") #'ecc-review-ediff-list-comments)
+          (define-key ediff-mode-map (kbd "{") #'ecc-review-ediff-previous-comment)
+          (define-key ediff-mode-map (kbd "}") #'ecc-review-ediff-next-comment)
+          (define-key ediff-mode-map (kbd "!") #'ecc-review-refresh)
+          (define-key ediff-mode-map (kbd "C-c C-c") #'ecc-review-send)
+          (define-key ediff-mode-map (kbd "C-c C-k") #'ecc-review-quit)
+          ;; ediff's own q asks whether to quit this session, and the
+          ;; question goes to a minibuffer the control frame does not have
+          ;; -- on a graphical Emacs the panel is a frame of its own, small
+          ;; enough to show nothing, so q read as a key that did nothing at
+          ;; all (reported 2026-09-16).  A review is closed, not saved:
+          ;; there is nothing to lose by the question and nothing to ask.
+          (define-key ediff-mode-map (kbd "q") #'ecc-review-quit)
+          ;; mouse-2 and RET over a line of the help look the command up
+          ;; in the ediff manual, which knows nothing of c, d or l and
+          ;; answers them with "Undocumented command!".  Silenced rather
+          ;; than pointed somewhere else: what the ECC keys do is on the
+          ;; help itself, and the manual has nothing to add about the
+          ;; ediff ones that a review uses.
+          (define-key ediff-mode-map [mouse-2] #'ignore)
+          (define-key ediff-mode-map (kbd "RET") #'ignore)
+          ;; ediff's own copy commands.  Both sides of a review are
+          ;; read-only, so they could only fail, and they failed as
+          ;; `ediff-copy-diff: buffer-read-only' -- an error about a
+          ;; buffer the user never asked about, from a key the help does
+          ;; not offer.  a is the diff review's own key for showing and
+          ;; hiding Claude's comments, and b says what a review is.
+          (define-key ediff-mode-map (kbd "a") #'ecc-review-toggle-agent)
+          (define-key ediff-mode-map (kbd "b") #'ecc-review-ediff-copy-refused)
+          (ecc-review-ediff--mark-current)
+          ;; What is on the screen is coloured before the review is
+          ;; shown, the rest after it (`ecc-review-ediff--colour-later'),
+          ;; and the differences shown are refined as they come into view.
+          (add-hook 'ediff-select-hook #'ecc-review-ediff--refine-later nil t)
+          (dolist (buffer (list base now))
+            (with-current-buffer buffer
+              (add-hook 'window-scroll-functions #'ecc-review-ediff--scrolled nil t)))
+          (ecc-review-ediff--colour-shown)
+          (ecc-review-ediff--colour-later)
+          (ecc-review-ediff--refine-later)))))
     control))
 
 (defvar ecc-review-ediff--replacing nil
@@ -1382,7 +1851,9 @@ whether a difference exists, so it is counted here first."
         ecc-review-ediff--at nil
         ediff-number-of-differences (length ediff-difference-vector-A))
   (unless ecc-review-ediff--replacing
-    (ecc-review--draw-notes)))
+    (ecc-review--draw-notes))
+  ;; What ediff refined is gone with the differences it was in.
+  (ecc-review-ediff--refine-later))
 
 (defun ecc-review-ediff--content (session range root paths &optional base)
   "Return what an ediff review of SESSION against RANGE would compare.
@@ -1627,7 +2098,8 @@ so are the difference being read and the place of each side."
     ;; The layout the view was last moved in is gone with the text.
     (setq ecc-review-ediff--at nil)
     (let ((ecc-review-ediff--replacing t))
-      (ecc-review-ediff--compute-differences))
+      (ecc-review-ediff--quietly
+        (ecc-review-ediff--compute-differences)))
     (let* ((lines (ecc-review-lines))
            (found (and current (ecc-review--locate-note current lines)))
            (n (and found (plist-get (plist-get found :hunk) :number))))
@@ -1649,6 +2121,10 @@ so are the difference being read and the place of each side."
                                  'B (ecc-review-ediff--right-point)))))))
       (when n
         (ediff-unselect-and-select-difference n nil 'no-recenter)))
+    ;; The files that changed went in plain.
+    (ecc-review-ediff--colour-shown)
+    (ecc-review-ediff--colour-later)
+    (ecc-review-ediff--refine-later)
     (ediff-refresh-mode-lines)
     (setq ecc-review--fingerprint (ecc-review-ediff--state hash)
           ecc-review--stale nil

@@ -2202,6 +2202,37 @@ and a tool's relative file_path likewise."
               (should (string-search "link.txt" (buffer-string)))))
         (ecc-review-test--kill-review-buffers)))))
 
+;;;; What changed inside a line
+
+(ert-deftest ecc-review-test-the-words-that-changed-are-marked ()
+  "The diff review marks the words that changed within a line, as `diff-mode'
+does wherever font-lock runs: `diff-refine' is left as it is."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (progn
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (ecc-review-test--write (concat directory "x.txt") "one two three\n")
+            (ecc-review-test--git directory "add" "x.txt")
+            (ecc-review-test--git directory "commit" "-q" "-m" "init")
+            (setf (ecc-session-project-root session) directory)
+            (ecc-review-test--write (concat directory "x.txt") "one TWO three\n")
+            (with-current-buffer (ecc-review-worktree-buffer session)
+              (should diff-refine)
+              ;; A batch Emacs runs no font-lock by itself; an Emacs with
+              ;; `global-font-lock-mode' on does.
+              (font-lock-mode 1)
+              (font-lock-ensure)
+              (goto-char (point-min))
+              (search-forward "+one TWO")
+              (should (seq-some (lambda (overlay)
+                                  (eq (overlay-get overlay 'face) 'diff-refine-added))
+                                (overlays-at (1- (point)))))))
+        (ecc-review-test--kill-review-buffers)))))
+
 (provide 'ecc-review-test)
 
 ;;; ecc-review-test.el ends here
