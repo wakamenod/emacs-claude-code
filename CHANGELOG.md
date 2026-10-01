@@ -222,10 +222,10 @@ Verified against **Claude Code CLI 2.1.281**.
   and `c` refuse a name starting with `-`; `--staged` is for `r`. Each
   branch `b` offers says beside it how far it is from its upstream --
   `develop  (4 behind origin/develop)`, `(2 ahead of origin/develop)`,
-  both, or `(origin/develop is gone)` -- asked of git for a branch the
-  first time the list shows it, so opening the menu asks nothing of the
-  kind. It is a completion annotation: what is typed and returned is the
-  name alone.
+  both, or `(origin/develop is gone)` -- asked of git, all of them in one
+  `git for-each-ref`, the first time a list shows one, so opening the
+  menu asks nothing of the kind. It is a completion annotation: what is
+  typed and returned is the name alone.
 
   A review of the working tree is named after what it compares, not after
   how it was asked for (`ecc-review-range-label`): a range of commit ids
@@ -246,27 +246,33 @@ Verified against **Claude Code CLI 2.1.281**.
 
 ### Changed
 
-- An ediff review opens sooner. Both sides of every file are read by one
-  `git cat-file --batch` instead of a git process each. The files go in
-  uncoloured: what is on the screen is coloured before the review is
-  shown, for 0.2 s at most, and the rest a slice of 50 ms at a time, on a
-  timer that runs once and sets itself again for as long as anything is
-  left -- never a repeating one -- and waits while there is input. A file
-  is fontified 100 lines at a time, so a large one takes many slices
-  rather than one long wait, and a slice can be quit with `C-g`. A file
-  over 1,000,000 bytes or with a line over 4,000 characters is left
-  uncoloured (`ecc-review-ediff-fontify-max-bytes`,
-  `ecc-review-ediff-fontify-max-line`). A file coloured before goes in
-  with its colours, and one read again after a change is coloured later
-  like the rest; either way only the faces are carried over, not the
-  `invisible`, `display` or `help-echo` a mode puts on its text. A blob
-  over `ecc-review-max-bytes` is not decoded at all. ediff's "Processing difference region N of M" and
-  "Computing differences" are not shown while a review is built or read
-  again (`ecc-review-ediff-progress-regexp`); they still go to
-  `*Messages*`, and nothing else said meanwhile is hidden. Opening a review
-  of 57 files (24,639 lines against 35,897) took 1.70 s in batch and takes
-  0.32 s: reading the two sides 0.80 s and now 0.05 s, writing them 0.69 s
-  and now 0.03 s, ediff 0.13 s as before (`scripts/bench-review-ediff.el`).
+- An ediff review opens sooner. Both sides of every file are read by two
+  git processes instead of one each: `git cat-file --batch-check` for the
+  sizes, then `git cat-file --batch` for the blobs within
+  `ecc-review-max-bytes`, so a blob too large to show is never read. The
+  files go in uncoloured: what is on the screen is coloured before the
+  review is shown, for 0.2 s at most, and the rest a slice of 50 ms at a
+  time, on a timer that runs once and sets itself again for as long as
+  anything is left -- never a repeating one. A file is fontified 100
+  lines at a time, so a large one takes many slices rather than one long
+  wait, and both the first pass and a slice stop after a chunk as soon as
+  there is input waiting. A slice can be quit with `C-g`, and the file
+  is taken up again from that chunk; a quit of the first pass leaves the
+  rest to the timer. A file with a line over 4,000 characters is left
+  uncoloured (`ecc-review-ediff-fontify-max-line`). A file coloured before
+  goes in with its colours, and one read again after a change is coloured
+  later like the rest; either way only the faces are carried over, not
+  the `invisible`, `display` or `help-echo` a mode puts on its text, and
+  colouring a chunk at a time gives what colouring a file at once does.
+  The buffers files are fontified in go with the review, also when a side
+  is killed or setting a mode up is quit. ediff's "Processing difference
+  region N of M" and "Computing differences" are not shown while a review
+  is built or read again (`ecc-review-ediff-progress-regexp`); they still
+  go to `*Messages*`, and nothing else said meanwhile is hidden. Opening
+  a review of 57 files (24,639 lines against 35,897) took 1.70 s in batch
+  and takes 0.33 s: reading the two sides 0.80 s and now 0.06 s, writing
+  them 0.69 s and now 0.04 s, ediff 0.13 s as before
+  (`scripts/bench-review-ediff.el`).
 
 - An ediff review marks what changed inside the lines of every difference
   on the screen, not only the current one (`ecc-review-ediff-refine-shown`).
