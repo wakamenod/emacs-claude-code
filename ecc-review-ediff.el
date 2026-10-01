@@ -175,58 +175,74 @@ commit and no blob.  ROOT is the repository, PATHS restrict it."
     (result (ecc-log "review" "diff --raw failed in %s: %S" root result)
             nil)))
 
-(defun ecc-review-ediff--read-blobs (root blobs cache)
-  "Read every blob of BLOBS in ROOT that CACHE lacks, through one git process.
-`git cat-file --batch' is given the ids on its input and writes each
-blob after a line naming its size, so a review of fifty files starts one
-process where it started a hundred: reading the two sides of 57 files
-took 0.80 s that way and takes 0.05 s this way (measured 2026-10-01).  Each
-size goes into CACHE under (size . BLOB), and each text under (raw .
-BLOB), decoded the way `call-process' would have decoded it -- but not
-the text of a blob over `ecc-review-max-bytes', which the review names
-and does not show: its bytes are passed over undecoded.  What git will
-not give is left out of CACHE, and `ecc-review-ediff--blob-text' asks
-for it alone, which says why; so does a git that fails here altogether,
-which is logged."
-  (let ((wanted (seq-uniq (seq-remove (lambda (blob)
-                                        (or (gethash (cons 'raw blob) cache)
-                                            (gethash (cons 'size blob) cache)))
-                                      (delq nil (copy-sequence blobs))))))
-    (when (and wanted (executable-find ecc-review-git-executable))
-      (with-temp-buffer
-        (set-buffer-multibyte nil)
-        (insert (mapconcat #'identity wanted "\n") "\n")
-        (let* ((default-directory (file-name-as-directory root))
-               (coding (or (car (find-operation-coding-system
-                                 'call-process ecc-review-git-executable))
-                           (car default-process-coding-system)
-                           'undecided))
-               (coding-system-for-read 'binary)
-               (coding-system-for-write 'binary)
-               (code (condition-case error
-                         (call-process-region (point-min) (point-max)
-                                              ecc-review-git-executable
-                                              t '(t nil) nil "cat-file" "--batch")
-                       (file-error (error-message-string error)))))
-          (if (not (eq code 0))
-              (ecc-log "review" "cat-file --batch failed in %s: %S" root code)
-            (goto-char (point-min))
-            ;; "ID blob SIZE", SIZE bytes and a newline; "ID missing" for
-            ;; an id git does not have.
-            (while (re-search-forward "^\\([0-9a-f]+\\) \\([a-z]+\\)\\(?: \\([0-9]+\\)\\)?\n"
-                                      nil t)
-              (let ((id (match-string 1))
-                    (type (match-string 2))
-                    (size (and (match-string 3) (string-to-number (match-string 3)))))
-                (when size
-                  (let ((end (+ (point) size)))
-                    (when (equal type "blob")
-                      (puthash (cons 'size id) size cache)
-                      (when (<= size ecc-review-max-bytes)
-                        (puthash (cons 'raw id)
-                                 (decode-coding-string (buffer-substring (point) end) coding)
-                                 cache)))
+(defun ecc-review-ediff--cat-file (root ids option each)
+  "Run `git cat-file OPTION' in ROOT on IDS and call EACH on what it says.
+OPTION is \"--batch-check\" or \"--batch\".  EACH is called with an
+id, its type and its size, and under --batch with its bytes as well, a
+unibyte string; nothing is called for an id git does not have.  A git
+that fails is logged."
+  (when (and ids (executable-find ecc-review-git-executable))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (insert (mapconcat #'identity ids "\n") "\n")
+      (let* ((default-directory (file-name-as-directory root))
+             (coding-system-for-read 'binary)
+             (coding-system-for-write 'binary)
+             (code (condition-case error
+                       (call-process-region (point-min) (point-max)
+                                            ecc-review-git-executable
+                                            t '(t nil) nil "cat-file" option)
+                     (file-error (error-message-string error)))))
+        (if (not (eq code 0))
+            (ecc-log "review" "cat-file %s failed in %s: %S" option root code)
+          (goto-char (point-min))
+          ;; "ID TYPE SIZE", and under --batch SIZE bytes and a newline;
+          ;; "ID missing" for an id git does not have.
+          (while (re-search-forward "^\\([0-9a-f]+\\) \\([a-z]+\\)\\(?: \\([0-9]+\\)\\)?\n"
+                                    nil t)
+            (let ((id (match-string 1))
+                  (type (match-string 2))
+                  (size (and (match-string 3) (string-to-number (match-string 3)))))
+              (when size
+                (if (not (equal option "--batch"))
+                    (funcall each id type size)
+                  (let ((end (min (point-max) (+ (point) size))))
+                    (funcall each id type size (buffer-substring (point) end))
                     (goto-char (min (point-max) (1+ end)))))))))))))
+
+(defun ecc-review-ediff--read-blobs (root blobs cache)
+  "Read every blob of BLOBS in ROOT that CACHE lacks, through two git processes.
+`git cat-file --batch-check' gives the size of each, and `git cat-file
+--batch' the bytes of those within `ecc-review-max-bytes', so a review
+of fifty files starts two processes where it started a hundred, and a
+blob too large to show is never read: reading the two sides of 57
+files took 0.80 s one process a file and takes 0.05 s this way
+\(measured 2026-10-01).  Each size goes into CACHE under (size . BLOB),
+and each text under (raw . BLOB), decoded the way `call-process' would
+have decoded it.  What git will not give is left out of CACHE, and
+`ecc-review-ediff--blob-text' asks for it alone, which says why; so does
+a git that fails here altogether, which is logged."
+  (let* ((wanted (seq-uniq (seq-remove (lambda (blob) (gethash (cons 'raw blob) cache))
+                                       (delq nil (copy-sequence blobs)))))
+         (coding (or (car (find-operation-coding-system
+                           'call-process ecc-review-git-executable))
+                     (car default-process-coding-system)
+                     'undecided)))
+    (ecc-review-ediff--cat-file
+     root (seq-remove (lambda (blob) (gethash (cons 'size blob) cache)) wanted)
+     "--batch-check"
+     (lambda (id type size)
+       (when (equal type "blob")
+         (puthash (cons 'size id) size cache))))
+    (ecc-review-ediff--cat-file
+     root (seq-filter (lambda (blob)
+                        (let ((size (gethash (cons 'size blob) cache)))
+                          (and size (<= size ecc-review-max-bytes))))
+                      wanted)
+     "--batch"
+     (lambda (id type _size bytes)
+       (when (equal type "blob")
+         (puthash (cons 'raw id) (decode-coding-string bytes coding) cache))))))
 
 (defun ecc-review-ediff--blob-text (root blob cache)
   "Return the text of BLOB in ROOT, nil for no blob.
@@ -368,11 +384,6 @@ the faces are carried in as text properties.  That is how this package
 works anyway: faces are put on at insertion time and no buffer of ours
 runs font-lock.  Nil leaves the text plain, which is what it was.")
 
-(defvar ecc-review-ediff-fontify-max-bytes 1000000
-  "Files of an ediff review larger than this many bytes are left uncoloured.
-Fontifying one is seconds of work spread over many turns, for a file
-too large to read in a review anyway.")
-
 (defvar ecc-review-ediff-fontify-max-line 4000
   "Files of an ediff review with a line longer than this are left uncoloured.
 A minified script or a document on one line is fontified as one piece
@@ -380,19 +391,21 @@ whatever it is cut into, and that piece can take seconds.")
 
 (defvar ecc-review-ediff-fontify-chunk 100
   "How many lines of a file are fontified at a time.
-Colouring checks the clock and the keyboard between two chunks.")
+Colouring checks the clock and the keyboard between two chunks.  A file
+too large for this to matter is not shown at all
+\(`ecc-review-max-bytes').")
 
 (defun ecc-review-ediff--fontifiable-p (text)
-  "Return non-nil when TEXT is small enough to colour, line by line too."
-  (and (<= (string-bytes text) ecc-review-ediff-fontify-max-bytes)
-       (let ((start 0)
-             (fits t))
-         (while (and fits start)
-           (let ((end (string-search "\n" text start)))
-             (when (> (- (or end (length text)) start) ecc-review-ediff-fontify-max-line)
-               (setq fits nil))
-             (setq start (and end (1+ end)))))
-         fits)))
+  "Return non-nil when no line of TEXT is too long to colour.
+How large a file may be at all is `ecc-review-max-bytes'."
+  (let ((start 0)
+        (fits t))
+    (while (and fits start)
+      (let ((end (string-search "\n" text start)))
+        (when (> (- (or end (length text)) start) ecc-review-ediff-fontify-max-line)
+          (setq fits nil))
+        (setq start (and end (1+ end)))))
+    fits))
 
 (defun ecc-review-ediff--fontify-buffer (text path)
   "Return a buffer holding TEXT in the major mode of PATH, to be fontified.
@@ -400,25 +413,29 @@ Nil when there is nothing to colour or it is not to be coloured
 \(`ecc-review-ediff--fontifiable-p').  Mode hooks are not run: a file of
 the review is read, never edited, and a hook that starts a language
 server or asks a question has no business in a buffer that exists to
-be diffed.  A mode that raises is logged, and the text left plain."
+be diffed.  A mode that raises is logged, and the text left plain; one
+that is quit, or raises, leaves no buffer behind."
   (when (and ecc-review-ediff-fontify text (not (string-empty-p text))
              (ecc-review-ediff--fontifiable-p text))
-    (let ((buffer (generate-new-buffer " *ecc-review-fontify*" t)))
-      (condition-case error
-          (with-current-buffer buffer
-            (insert text)
-            (let ((buffer-file-name (expand-file-name path))
-                  (enable-local-variables nil)
-                  (inhibit-message t))
-              (delay-mode-hooks (set-auto-mode)))
-            ;; A batch Emacs has font-lock off.
-            (font-lock-mode 1)
-            (font-lock-set-defaults)
-            buffer)
-        (error
-         (ecc-log "review" "cannot set up %s to colour it: %S" path error)
-         (kill-buffer buffer)
-         nil)))))
+    (let ((buffer (generate-new-buffer " *ecc-review-fontify*" t))
+          (ready nil))
+      (unwind-protect
+          (condition-case error
+              (with-current-buffer buffer
+                (insert text)
+                (let ((buffer-file-name (expand-file-name path))
+                      (enable-local-variables nil)
+                      (inhibit-message t))
+                  (delay-mode-hooks (set-auto-mode)))
+                ;; A batch Emacs has font-lock off.
+                (font-lock-mode 1)
+                (font-lock-set-defaults)
+                (setq ready buffer))
+            (error
+             (ecc-log "review" "cannot set up %s to colour it: %S" path error)
+             nil))
+        (unless ready
+          (kill-buffer buffer))))))
 
 (defun ecc-review-ediff--fontify-chunk (buffer from)
   "Fontify a chunk of BUFFER from FROM on and return where it ends.
@@ -465,13 +482,11 @@ review shows the text as it is."
 (defun ecc-review-ediff--fontify (text path)
   "Return TEXT with the faces the major mode of PATH gives it, and only those.
 All at once, which is what the colouring of an open review does a chunk
-at a time (`ecc-review-ediff--colour-job')."
+at a time (`ecc-review-ediff--colour-job'), with the same result."
   (if-let* ((buffer (ecc-review-ediff--fontify-buffer text path)))
       (unwind-protect
           (with-current-buffer buffer
-            (let ((done (point-min)))
-              (while (< done (point-max))
-                (setq done (ecc-review-ediff--fontify-chunk buffer done))))
+            (font-lock-ensure)
             (ecc-review-ediff--faces-only (buffer-string)))
         (kill-buffer buffer))
     text))
@@ -1002,8 +1017,9 @@ a file coloured once the review is open does."
   "A file of a side of a review that went in uncoloured, to be coloured.
 BEG and END are markers around where TEXT went in; PATH is what it is
 fontified as and BLOB what its colours are kept under.  WORK is the
-buffer it is fontified in, once begun, and DONE how far that has got."
-  beg end path blob text work done)
+buffer it is fontified in, once begun, DONE how far that has got and
+FROM where the chunk before the last began."
+  beg end path blob text work done from)
 
 (defvar-local ecc-review-ediff--uncoloured nil
   "The files of this side of a review written out without their colours.
@@ -1011,6 +1027,17 @@ A list of `ecc-review-ediff--job's, in the order they were written, to
 be coloured once the review is on the screen
 \(`ecc-review-ediff--colour-later').  Buffer-local in each of the two
 buffers, and made afresh whenever they are written.")
+
+(defvar-local ecc-review-ediff--work-buffers nil
+  "The buffers this review fontifies files in, live or not.
+Kept in the control buffer, which outlives the two sides: a side killed
+takes its list of files to colour with it, and the buffers would stay.")
+
+(defun ecc-review-ediff--kill-work-buffers ()
+  "Kill every buffer this review fontifies a file in.  Run in the control buffer."
+  (mapc (lambda (buffer) (when (buffer-live-p buffer) (kill-buffer buffer)))
+        ecc-review-ediff--work-buffers)
+  (setq ecc-review-ediff--work-buffers nil))
 
 (defun ecc-review-ediff--drop-job (job)
   "Forget JOB: its buffer, its markers, its place in the list of its side."
@@ -1135,8 +1162,13 @@ redisplay, which may not have been round yet."
 
 (defun ecc-review-ediff--colour-job (job deadline cache)
   "Colour JOB, a chunk at a time, until it is done or DEADLINE has passed.
-At least one chunk.  DEADLINE is a `float-time', nil for no end.  Done,
-the faces of the file are kept in CACHE, as they are shown.  A
+At least one chunk, and no more once there is input waiting.  DEADLINE
+is a `float-time', nil for no end and no regard for the keyboard.  Each
+chunk carries the faces from where the chunk before it began: font-lock
+may go back over the end of a chunk to fontify a construct that spans
+it.  Done, the faces of the file are kept in CACHE, as they are shown.
+Run in the control buffer, which keeps the buffer the file is fontified
+in (`ecc-review-ediff--work-buffers').  A
 file whose place no longer holds its text is left as it is: something
 wrote into the side since it went in.  Return non-nil when JOB is done
 with."
@@ -1155,16 +1187,22 @@ with."
       (ecc-review-ediff--drop-job job)
       t)
      (t
+      (unless (memq (ecc-review-ediff--job-work job) ecc-review-ediff--work-buffers)
+        (setq ecc-review-ediff--work-buffers
+              (cons (ecc-review-ediff--job-work job)
+                    (seq-filter #'buffer-live-p ecc-review-ediff--work-buffers))))
       (let* ((work (ecc-review-ediff--job-work job))
              (done (or (ecc-review-ediff--job-done job) 1))
              (last (with-current-buffer work (point-max)))
              (first t))
         (condition-case error
             (while (and (< done last)
-                        (or first (null deadline) (< (float-time) deadline)))
-              (let ((to (ecc-review-ediff--fontify-chunk work done)))
-                (ecc-review-ediff--copy-faces work done to buffer (+ beg (1- done)))
-                (setf (ecc-review-ediff--job-done job) to)
+                        (or first (not (ecc-review-ediff--yield-p deadline))))
+              (let ((to (ecc-review-ediff--fontify-chunk work done))
+                    (from (or (ecc-review-ediff--job-from job) 1)))
+                (ecc-review-ediff--copy-faces work from to buffer (+ beg (1- from)))
+                (setf (ecc-review-ediff--job-from job) done
+                      (ecc-review-ediff--job-done job) to)
                 (setq done to
                       first nil)))
           (error
@@ -1209,8 +1247,14 @@ SHOWN-ONLY, only one on the screen."
                          (car (buffer-local-value 'ecc-review-ediff--uncoloured buffer)))
                        live)))))
 
+(defun ecc-review-ediff--yield-p (deadline)
+  "Return non-nil when colouring is to stop: DEADLINE passed, or input waiting.
+DEADLINE nil is no end, and then the keyboard is not asked either."
+  (and deadline (or (>= (float-time) deadline) (input-pending-p))))
+
 (defun ecc-review-ediff--colour (deadline &optional shown-only)
   "Colour this review until DEADLINE, a `float-time', or until it is done.
+It stops as well, after a chunk, as soon as there is input waiting.
 DEADLINE nil is no end.  With SHOWN-ONLY, only what is on the screen.
 Run in the control buffer."
   (let ((buffers (ecc-review-ediff--sides))
@@ -1218,7 +1262,7 @@ Run in the control buffer."
     (while (and (setq job (ecc-review-ediff--next-job buffers shown-only))
                 (progn (ecc-review-ediff--colour-job job deadline ecc-review-ediff--cache)
                        t)
-                (or (null deadline) (< (float-time) deadline))))))
+                (not (ecc-review-ediff--yield-p deadline))))))
 
 (defun ecc-review-ediff--colour-later (&optional delay)
   "Colour what is left of this review a slice at a time, starting in DELAY.
@@ -1237,35 +1281,38 @@ buffer; the timer set before is dropped, so a review has one at most."
 (defun ecc-review-ediff--colour-turn (control)
   "Colour a slice of the review in CONTROL, and set the next turn.
 With input waiting nothing is coloured and the turn is put off.  A
-review that has lost a side is coloured no more.  The turn can be
-quit: a timer runs with `inhibit-quit' on, and a file the user would
-rather not wait for is a \\[keyboard-quit] away; it is taken up again
-on the next turn, from the chunk the quit fell in."
+review that has lost a side is coloured no more, and the buffers its
+files were fontified in are killed.  The turn can be quit
+\(`with-local-quit'): a timer runs with `inhibit-quit' on, and a file the
+user would rather not wait for is a \\[keyboard-quit] away; it is taken up
+again on the next turn, from the chunk the quit fell in."
   (when (buffer-live-p control)
     (with-current-buffer control
       (setq ecc-review-ediff--colour-timer nil)
       (cond
        ((not (ecc-review-ediff--sides-live-p))
-        (mapc #'ecc-review-ediff--drop-jobs (ecc-review-ediff--sides)))
+        (mapc #'ecc-review-ediff--drop-jobs (ecc-review-ediff--sides))
+        (ecc-review-ediff--kill-work-buffers))
        ((input-pending-p)
         (ecc-review-ediff--colour-later ecc-review-ediff-colour-wait))
        (t
-        (condition-case nil
-            (let ((inhibit-quit nil))
-              (ecc-review-ediff--colour (+ (float-time) ecc-review-ediff-colour-slice)))
-          (quit
-           (ecc-review-ediff--colour-later ecc-review-ediff-colour-wait)
-           (signal 'quit nil)))
-        (ecc-review-ediff--colour-later))))))
+        (ecc-review-ediff--colour-later
+         (unless (with-local-quit
+                   (ecc-review-ediff--colour (+ (float-time) ecc-review-ediff-colour-slice))
+                   t)
+           ecc-review-ediff-colour-wait)))))))
 
 (defun ecc-review-ediff--after-write ()
   "Start what follows a writing of the two sides: colours and refining.
 What is on the screen is coloured now, for `ecc-review-ediff-colour-first'
 at most, and the rest later; the differences on the screen are refined
-later.  Run in the control buffer."
-  (ecc-review-ediff--colour (+ (float-time) ecc-review-ediff-colour-first) t)
+later.  The later work is set first, so that a quit of the colouring
+now leaves the rest to the timers.  Run in the control buffer."
   (ecc-review-ediff--colour-later)
-  (ecc-review-ediff--refine-later))
+  (ecc-review-ediff--refine-later)
+  (ecc-review-ediff--colour (+ (float-time) ecc-review-ediff-colour-first) t)
+  ;; Done now, it may have left nothing for the timer.
+  (ecc-review-ediff--colour-later))
 
 (defun ecc-review-ediff--side-buffer (name)
   "Return a buffer named NAME, or like it when NAME is a side of an open review.
@@ -1920,6 +1967,7 @@ first."
         (cancel-timer timer)))
     ;; The buffers files were being fontified in.
     (mapc #'ecc-review-ediff--drop-jobs (ecc-review-ediff--sides))
+    (ecc-review-ediff--kill-work-buffers)
     (ediff-cleanup-mess)
     (dolist (buffer (list (car buffers) (cdr buffers)))
       (when (buffer-live-p buffer)

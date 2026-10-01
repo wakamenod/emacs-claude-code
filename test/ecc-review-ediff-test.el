@@ -1475,7 +1475,8 @@ unchanged review reads no file at all."
                     (ecc-review-ediff-test--write (concat directory "x.txt") "three\n")
                     (ecc-review-reread t)
                     (should (equal (delete-dups coloured) '("x.txt")))
-                    (should (= read 1)))))
+                    ;; Its size, then its text: two processes.
+                    (should (= read 2)))))
             (ecc-review-ediff-test--quit control)))))))
 
 (ert-deftest ecc-review-ediff-test-says-nothing-as-the-diff-review-does ()
@@ -2032,22 +2033,24 @@ colour is left plain."
             (ecc-review-ediff-test--quit control)))))))
 
 (ert-deftest ecc-review-ediff-test-a-turn-of-colouring-can-be-quit ()
-  "C-g in a turn of colouring quits it, with quitting allowed though a timer
-runs with it inhibited; the file is taken up again from where it was."
+  "C-g in a turn of colouring quits it as `with-local-quit' does: the quit
+waits, in `quit-flag', for wherever quitting is allowed, rather than
+unwinding into what ran the timer.  The file is taken up again from
+where it was."
   (skip-unless (executable-find "git"))
   (ecc-review-ediff-test--with-ediff
     (ecc-test-with-fake-session session
       (ecc-review-ediff-test--with-directory directory
         (let ((control nil)
               (calls 0)
-              (allowed nil))
+              (allowed nil)
+              (flagged nil))
           (unwind-protect
               (progn
                 (setq control (ecc-review-ediff-test--long session directory))
                 (with-current-buffer control
                   (let ((job (car (buffer-local-value 'ecc-review-ediff--uncoloured
-                                                      ediff-buffer-B)))
-                        (inhibit-quit t))
+                                                      ediff-buffer-B))))
                     (cl-letf* ((chunk (symbol-function 'ecc-review-ediff--fontify-chunk))
                                ((symbol-function 'ecc-review-ediff--fontify-chunk)
                                 (lambda (buffer from)
@@ -2055,18 +2058,198 @@ runs with it inhibited; the file is taken up again from where it was."
                                   (if (= (cl-incf calls) 1)
                                       (signal 'quit nil)
                                     (funcall chunk buffer from)))))
-                      ;; `should-error' catches errors, and a quit is none.
-                      (should (eq (condition-case nil
-                                      (progn (ecc-review-ediff--colour-turn control) 'returned)
-                                    (quit 'quit))
-                                  'quit))
+                      ;; As a timer runs: quitting inhibited around it.
+                      (let ((inhibit-quit t))
+                        (ecc-review-ediff--colour-turn control)
+                        (setq flagged quit-flag
+                              quit-flag nil))
                       (should allowed)
+                      (should flagged)
                       (should (memq job (buffer-local-value 'ecc-review-ediff--uncoloured
                                                             ediff-buffer-B)))
                       (should (timerp ecc-review-ediff--colour-timer))
                       (ecc-review-ediff--colour nil)
                       (should-not (buffer-local-value 'ecc-review-ediff--uncoloured
                                                       ediff-buffer-B))))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(defun ecc-review-ediff-test--fontify-buffers ()
+  "Return the buffers colouring fontifies files in that are still there."
+  (seq-filter (lambda (buffer)
+                (string-prefix-p " *ecc-review-fontify*" (buffer-name buffer)))
+              (buffer-list)))
+
+(ert-deftest ecc-review-ediff-test-colouring-gives-way-to-input ()
+  "With input waiting, colouring runs one chunk at most -- in a turn of the
+timer and in the colouring of what is on the screen as the review opens."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil)
+              (chunks 0))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--long session directory))
+                (with-current-buffer control
+                  (cl-letf* ((chunk (symbol-function 'ecc-review-ediff--fontify-chunk))
+                             ((symbol-function 'ecc-review-ediff--fontify-chunk)
+                              (lambda (buffer from) (cl-incf chunks) (funcall chunk buffer from)))
+                             ((symbol-function 'input-pending-p) (lambda (&rest _) t))
+                             (ecc-review-ediff-fontify-chunk 1))
+                    ;; The first pass, with b.el brought on the screen.
+                    (set-window-start ediff-window-B
+                                      (marker-position
+                                       (ecc-review-ediff--job-beg
+                                        (car (buffer-local-value 'ecc-review-ediff--uncoloured
+                                                                 ediff-buffer-B)))))
+                    (ecc-review-ediff--colour (+ (float-time) 10) t)
+                    (should (= chunks 1))
+                    ;; A turn: nothing at all.
+                    (setq chunks 0)
+                    (ecc-review-ediff--colour-turn control)
+                    (should (= chunks 0))
+                    (should (timerp ecc-review-ediff--colour-timer)))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-no-fontify-buffer-is-left-behind ()
+  "The buffers files are fontified in go with the review: when a side is
+killed in the middle of colouring, when the review is quit, and when
+setting a mode up is quit."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        ;; Two lines at a time, and no time on opening: a.txt is begun
+        ;; as the review opens, and left half done, its buffer open.
+        (let ((control nil)
+              (ecc-review-ediff-fontify-chunk 2)
+              (ecc-review-ediff-colour-first 0))
+          (unwind-protect
+              (progn
+                (mapc #'kill-buffer (ecc-review-ediff-test--fontify-buffers))
+                (setq control (ecc-review-ediff-test--long session directory))
+                (with-current-buffer control
+                  (should (ecc-review-ediff-test--fontify-buffers))
+                  (let ((now (cdr ecc-review-ediff--buffers))
+                        (kill-buffer-query-functions nil))
+                    (with-current-buffer now (set-buffer-modified-p nil))
+                    (kill-buffer now))
+                  (ecc-review-ediff--colour-turn control)
+                  (should-not (ecc-review-ediff-test--fontify-buffers))))
+            (when (buffer-live-p control)
+              (ignore-errors (ecc-review-ediff-quit control)))
+            (when (buffer-live-p control)
+              (kill-buffer control))
+            (ecc-review-ediff-test--kill-buffers))
+          ;; Quitting the review, a file half coloured.
+          (ecc-review-ediff-test--with-directory second
+            (unwind-protect
+                (progn
+                  (setq control (ecc-review-ediff-test--long session second))
+                  (should (ecc-review-ediff-test--fontify-buffers)))
+              (ecc-review-ediff-test--quit control)))
+          (should-not (ecc-review-ediff-test--fontify-buffers))
+          ;; A quit while the mode is set up.
+          (cl-letf (((symbol-function 'set-auto-mode) (lambda (&rest _) (signal 'quit nil))))
+            (should (eq (condition-case nil
+                            (ecc-review-ediff--fontify-buffer "(defun x ())\n" "x.el")
+                          (quit 'quit))
+                        'quit)))
+          (should-not (ecc-review-ediff-test--fontify-buffers)))))))
+
+(ert-deftest ecc-review-ediff-test-a-quit-on-opening-leaves-the-rest-to-the-timers ()
+  "A quit of the colouring done as the review opens leaves the colouring and
+the refining of the rest set to run."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--long session directory))
+                (with-current-buffer control
+                  (dolist (timer (list ecc-review-ediff--colour-timer
+                                       ecc-review-ediff--refine-timer))
+                    (when (timerp timer) (cancel-timer timer)))
+                  (setq ecc-review-ediff--colour-timer nil
+                        ecc-review-ediff--refine-timer nil)
+                  (cl-letf (((symbol-function 'ecc-review-ediff--colour)
+                             (lambda (&rest _) (signal 'quit nil))))
+                    (should (eq (condition-case nil
+                                    (ecc-review-ediff--after-write)
+                                  (quit 'quit))
+                                'quit)))
+                  (should (timerp ecc-review-ediff--colour-timer))
+                  (should (timerp ecc-review-ediff--refine-timer))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-chunks-colour-as-a-whole-does ()
+  "Coloured a few lines at a time, with a docstring and a comment block across
+the boundaries, a file comes out as it does coloured all at once."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let* ((control nil)
+               (ecc-review-ediff-fontify-chunk 2)
+               (text (concat ";;; m.el --- x  -*- lexical-binding: t; -*-\n"
+                             "(defun f (x)\n  \"A docstring\nover several\nlines,\n"
+                             "with (parens) and `quotes'.\"\n  (+ x 1))\n"
+                             "#|\n;; a\n;; b\n|#\n(defvar v \"one\ntwo\nthree\")\n")))
+          (unwind-protect
+              (progn
+                (ecc-review-ediff-test--repository directory)
+                (setf (ecc-session-project-root session) directory)
+                (should (ecc-review-ensure-baseline session))
+                (ecc-review-ediff-test--write (concat directory "m.el") text)
+                (setq control (ecc-review-ediff-buffer session))
+                (with-current-buffer control
+                  (ecc-review-ediff--colour nil)
+                  (with-current-buffer ediff-buffer-B
+                    (goto-char (point-min))
+                    (let ((beg (progn (search-forward "═══ m.el ═══\n") (point))))
+                      (should (equal-including-properties
+                               (ecc-review-ediff--faces-only
+                                (buffer-substring beg (+ beg (length text))))
+                               (ecc-review-ediff--fontify text "m.el")))))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-a-difference-left-stays-marked ()
+  "The difference ediff leaves keeps the marks of what changed in it, whether
+ediff refined it as the current one or the review did; hidden, it does
+not."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil)
+              (ediff-force-faces t))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--long session directory))
+                (with-current-buffer control
+                  (setq ediff-highlighting-style 'face)
+                  ;; On the first: ediff refines it.
+                  (ediff-unselect-and-select-difference 0 nil 'no-recenter)
+                  (let ((fine (ediff-get-fine-diff-vector 0 'B)))
+                    (should (eq (overlay-get (aref fine 0) 'face) 'ediff-fine-diff-B))
+                    ;; Off it: still marked.
+                    (ediff-unselect-and-select-difference 1 nil 'no-recenter)
+                    (should (eq (overlay-get (aref fine 0) 'face) 'ediff-fine-diff-B))
+                    ;; Hidden, then on again: leaving it unmarks it.
+                    (ecc-review-ediff-toggle-autorefine)
+                    (ecc-review-ediff-toggle-autorefine)
+                    (should (eq ediff-auto-refine 'nix))
+                    (ecc-review-ediff-toggle-autorefine)
+                    (should (eq ediff-auto-refine 'on))
+                    (ediff-unselect-and-select-difference 0 nil 'no-recenter)
+                    (ecc-review-ediff-toggle-autorefine)
+                    (ecc-review-ediff-toggle-autorefine)
+                    (ediff-unselect-and-select-difference 1 nil 'no-recenter)
+                    (let ((fine (ediff-get-fine-diff-vector 0 'B)))
+                      (should-not (and fine (overlay-get (aref fine 0) 'face)))))))
             (ecc-review-ediff-test--quit control)))))))
 
 (ert-deftest ecc-review-ediff-test-colours-are-the-same-read-again ()
@@ -2183,15 +2366,17 @@ refining stops without calling into ediff, and sets no timer again."
             (ecc-review-ediff-test--kill-buffers)))))))
 
 (ert-deftest ecc-review-ediff-test-a-blob-too-large-is-not-decoded ()
-  "A blob over `ecc-review-max-bytes' is passed over by the one process
-that reads them, and named without being read alone."
+  "A blob over `ecc-review-max-bytes' is never read: its size comes from
+`git cat-file --batch-check', its bytes are not asked of `--batch', and
+it is named without being read alone."
   (skip-unless (executable-find "git"))
   (ecc-review-ediff-test--with-directory directory
     (ecc-review-ediff-test--repository directory)
     (let* ((root (ecc-review-git-root directory))
            (left (ecc-review--head-tree root))
            (cache (make-hash-table :test #'equal))
-           (alone 0))
+           (alone 0)
+           (asked nil))
       (ecc-review-ediff-test--write (concat directory "x.txt") (make-string 400 ?y))
       (ecc-review-ediff-test--write (concat directory "small.txt") "small\n")
       (ecc-review-ediff-test--git directory "add" ".")
@@ -2200,7 +2385,13 @@ that reads them, and named without being read alone."
                  ((symbol-function 'ecc-review--git)
                   (lambda (directory &rest args)
                     (when (equal (car args) "cat-file") (cl-incf alone))
-                    (apply git directory args))))
+                    (apply git directory args)))
+                 (run (symbol-function 'call-process-region))
+                 ((symbol-function 'call-process-region)
+                  (lambda (start end &rest args)
+                    (when (member "--batch" args)
+                      (push (buffer-substring start end) asked))
+                    (apply run start end args))))
         (let* ((ecc-review-max-bytes 100)
                (pairs (ecc-review-ediff-pairs root left (ecc-review--head-tree root) nil cache))
                (big (assoc "x.txt" pairs))
@@ -2209,7 +2400,10 @@ that reads them, and named without being read alone."
           (should (equal (nth 2 (assoc "small.txt" pairs)) "small\n"))
           (should (zerop alone))
           (should (= (gethash (cons 'size blob) cache) 400))
-          (should-not (gethash (cons 'raw blob) cache)))))))
+          (should-not (gethash (cons 'raw blob) cache))
+          ;; Its bytes were never asked for.
+          (should (= (length asked) 1))
+          (should-not (string-search blob (car asked))))))))
 
 ;;;; Opening faster
 
