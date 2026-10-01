@@ -204,7 +204,10 @@ Verified against **Claude Code CLI 2.1.281**.
   upstream, with no commit of its own, gives way to the upstream: a
   `develop` four commits behind `origin/develop` put the commits not
   pulled yet into the review of a branch cut from `origin/develop`, 57
-  files where 46 had changed. With no guess, `b` asks with no default. It
+  files where 46 had changed. The upstream is held to the same rule as
+  every candidate, so one that already holds `HEAD` -- a feature merged
+  into `origin/develop` since -- is not taken, and the local branch
+  stays. With no guess, `b` asks with no default. It
   then asks for the after side (`Changes on, the after side (default
   feature with its working tree): `), by default the current branch with
   its working tree: the range is the commit where the two part, which `git diff`
@@ -219,9 +222,10 @@ Verified against **Claude Code CLI 2.1.281**.
   and `c` refuse a name starting with `-`; `--staged` is for `r`. Each
   branch `b` offers says beside it how far it is from its upstream --
   `develop  (4 behind origin/develop)`, `(2 ahead of origin/develop)`,
-  both, or `(origin/develop is gone)` -- read by the same one `git
-  for-each-ref` that lists the branches. It is a completion annotation:
-  what is typed and returned is the name alone.
+  both, or `(origin/develop is gone)` -- asked of git for a branch the
+  first time the list shows it, so opening the menu asks nothing of the
+  kind. It is a completion annotation: what is typed and returned is the
+  name alone.
 
   A review of the working tree is named after what it compares, not after
   how it was asked for (`ecc-review-range-label`): a range of commit ids
@@ -245,11 +249,18 @@ Verified against **Claude Code CLI 2.1.281**.
 - An ediff review opens sooner. Both sides of every file are read by one
   `git cat-file --batch` instead of a git process each. The files go in
   uncoloured: what is on the screen is coloured before the review is
-  shown, and the rest a slice of 50 ms at a time, on a timer that runs
-  once and sets itself again for as long as anything is left -- never a
-  repeating one -- and waits while there is input. A file coloured before
-  goes in with its colours, and one read again after a change is coloured
-  later like the rest. ediff's "Processing difference region N of M" and
+  shown, for 0.2 s at most, and the rest a slice of 50 ms at a time, on a
+  timer that runs once and sets itself again for as long as anything is
+  left -- never a repeating one -- and waits while there is input. A file
+  is fontified 100 lines at a time, so a large one takes many slices
+  rather than one long wait, and a slice can be quit with `C-g`. A file
+  over 1,000,000 bytes or with a line over 4,000 characters is left
+  uncoloured (`ecc-review-ediff-fontify-max-bytes`,
+  `ecc-review-ediff-fontify-max-line`). A file coloured before goes in
+  with its colours, and one read again after a change is coloured later
+  like the rest; either way only the faces are carried over, not the
+  `invisible`, `display` or `help-echo` a mode puts on its text. A blob
+  over `ecc-review-max-bytes` is not decoded at all. ediff's "Processing difference region N of M" and
   "Computing differences" are not shown while a review is built or read
   again (`ecc-review-ediff-progress-regexp`); they still go to
   `*Messages*`, and nothing else said meanwhile is hidden. Opening a review
@@ -261,8 +272,13 @@ Verified against **Claude Code CLI 2.1.281**.
   on the screen, not only the current one (`ecc-review-ediff-refine-shown`).
   They are refined as they come into view -- once the review opens, after
   a move, after a scroll -- by a timer that runs once and gives way to the
-  keyboard, never all of them at once: each takes a diff process.
-  `ediff-auto-refine-limit` and `@` hold for them as for the current one.
+  keyboard, never all of them at once: each takes a diff process. Each is
+  visited once until the differences are computed again, and what ediff
+  says of it goes neither to the echo area nor to `*Messages*`.
+  `ediff-auto-refine-limit` holds for them as for the current one; `@` at
+  "hidden", or `h` leaving the other differences unpainted, clears them,
+  and turning either back refines what is on the screen again. A
+  difference ediff leaves stays marked.
 
 - `D` in `C-c c` (`ecc-global-map`) and in `ecc-menu` opens
   `ecc-review-menu` instead of `ecc-review`; `D` there is `ecc-review` of
