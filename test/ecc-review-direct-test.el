@@ -1200,6 +1200,43 @@ is given to the header line."
             (should (string-search "C-c C-c send" text))
             (should (<= (string-width text) width))))))))
 
+(ert-deftest ecc-review-direct-test-the-right-header-is-fitted-once-a-width ()
+  "Drawing the right header line again at the same width fits the keys no more.
+Another width, other keys or another status fit them again, and at any
+width what is drawn, keys and status, is no wider than the window."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (let* ((buffer (buffer-local-value 'ediff-buffer-B control))
+             (window (ecc-review-direct-test--window control 'B))
+             (width 60)
+             (fitted 0)
+             (fit (symbol-function 'ecc-review-direct--fit-keys)))
+        (cl-letf (((symbol-function 'window-width) (lambda (&rest _) width))
+                  ((symbol-function 'ecc-review-direct--fit-keys)
+                   (lambda (&rest args) (cl-incf fitted) (apply fit args))))
+          (let ((text (ecc-review-direct-header-text buffer window)))
+            (should (= fitted 1))
+            (should (equal (ecc-review-direct-header-text buffer window) text))
+            (should (= fitted 1))
+            (setq width 70)
+            (ecc-review-direct-header-text buffer window)
+            (should (= fitted 2))
+            ;; The difference changes: so does the status.
+            (ecc-review-direct-test--move control 'B 55)
+            (ecc-review-direct-header-text buffer window)
+            (should (= fitted 3))))
+        (dolist (columns (number-sequence 25 120 5))
+          (cl-letf (((symbol-function 'window-width) (lambda (&rest _) columns)))
+            (let ((text (ecc-review-direct-header-text buffer window)))
+              (should (string-search "? all keys" text))
+              ;; The space aligned to the status takes no room where the
+              ;; keys reach it already; it is not counted.
+              (should (<= (- (string-width text)
+                             (cl-count-if (lambda (at) (get-text-property at 'display text))
+                                          (number-sequence 0 (1- (length text)))))
+                          columns)))))))))
+
 ;; A command that leaves the keyboard elsewhere on purpose, run through
 ;; the relay.
 (defun ecc-review-direct-test--to-the-left ()

@@ -750,9 +750,16 @@ Faces are put on the strings here; no font-lock runs in a review."
                     (propertize (cdr key) 'face 'ecc-dim-face)))
           (alist-get side ecc-review-direct-header-keys)))
 
+(defun ecc-review-direct--join (pieces)
+  "Return the keys PIECES as a header line has them: after a space, two apart.
+Every header line of keys is made by this, and so is what the width of
+one is measured on."
+  (concat " " (string-join pieces "  ")))
+
 (defun ecc-review-direct--keys (side)
-  "Return the keys the header line of SIDE shows, as one string."
-  (string-join (ecc-review-direct--key-pieces side) "  "))
+  "Return the keys the header line of SIDE shows, as one string.
+Without the space they start with on the header line."
+  (substring (ecc-review-direct--join (ecc-review-direct--key-pieces side)) 1))
 
 (defun ecc-review-direct--to-the-right (text)
   "Return a space that runs up to where TEXT, put after it, ends at the right edge.
@@ -791,13 +798,19 @@ put together by (`ecc-review-direct--align') are not counted in it."
   (let ((keys (ecc-review-direct--keys side)))
     (if right
         (concat (ecc-review-direct--to-the-right (concat keys " ")) keys " ")
-      (concat " " keys))))
+      (ecc-review-direct--join (ecc-review-direct--key-pieces side)))))
 
 (defvar-local ecc-review-direct--header-keys nil
   "The keys of the header line of this side, a string for each.")
 
 (defvar-local ecc-review-direct--header-status nil
   "Where the review is, for the header line of this side, or nil.")
+
+(defvar-local ecc-review-direct--header-cache nil
+  "The last right header line drawn: (WIDTH PIECES STATUS . TEXT).
+Redisplay draws the header line far more often than the window, the
+keys or the status change, and each of those draws looks it up here
+rather than fitting the keys again (`ecc-review-direct--header-line').")
 
 (defun ecc-review-direct--fit-keys (pieces width)
   "Return the keys PIECES as the header line has them, in WIDTH columns, or nil.
@@ -806,7 +819,7 @@ dropped from the last until the rest fit."
   (let ((pieces (copy-sequence pieces))
         (text nil))
     (while (and pieces
-                (> (string-width (setq text (concat " " (string-join pieces "  "))))
+                (> (string-width (setq text (ecc-review-direct--join pieces)))
                    width)
                 (cdr pieces))
       (setq pieces (nconc (butlast pieces 2) (last pieces))))
@@ -821,15 +834,27 @@ the review is, where the review is comes first and the keys after it,
 as many as fit: with the panel out of sight, nothing else says it.
 Worked out as the header line is drawn, from the strings made when the
 difference or the layout changes (`ecc-review-direct-refresh-headers'),
-so that a window made narrower is followed at once."
+so that a window made narrower is followed at once.  What it comes to
+is kept for the next draw of the same width, keys and status
+\(`ecc-review-direct--header-cache')."
   (let ((pieces ecc-review-direct--header-keys)
-        (status ecc-review-direct--header-status))
-    (if (null status)
-        (concat " " (string-join pieces "  "))
-      (if-let* ((keys (ecc-review-direct--fit-keys
-                       pieces (- (window-width window) (string-width status)))))
-          (concat keys (ecc-review-direct--to-the-right status) status)
-        (concat (substring status 1) "│ " (string-join pieces "  "))))))
+        (status ecc-review-direct--header-status)
+        (width (window-width window))
+        (cache ecc-review-direct--header-cache))
+    (if (and cache
+             (eql (nth 0 cache) width)
+             (eq (nth 1 cache) pieces)
+             (eq (nth 2 cache) status))
+        (nthcdr 3 cache)
+      (let ((text
+             (if (null status)
+                 (ecc-review-direct--join pieces)
+               (if-let* ((keys (ecc-review-direct--fit-keys
+                                pieces (- width (string-width status)))))
+                   (concat keys (ecc-review-direct--to-the-right status) status)
+                 (concat (substring status 1) "│" (ecc-review-direct--join pieces))))))
+        (setq ecc-review-direct--header-cache (cl-list* width pieces status text))
+        text))))
 
 (defun ecc-review-direct-header-text (buffer &optional window)
   "Return the header line BUFFER, a side of a review, shows in WINDOW, as a string.
