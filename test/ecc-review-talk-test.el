@@ -536,8 +536,32 @@ as the right window changing size."
     (let ((ecc-review-talk-make-frame-function (lambda (&rest args) args)))
       (should (equal (ecc-review-talk--new-frame "n") '("n"))))))
 
+;; Batch does no redisplay: what is checked is where each window of
+;; the pane was told to start, and what is at that start.
+
+(defun ecc-review-talk-test--top (window)
+  "Return the line of its buffer WINDOW starts at, without the newline."
+  (with-current-buffer (window-buffer window)
+    (save-excursion
+      (goto-char (window-start window))
+      (buffer-substring-no-properties (point) (line-end-position)))))
+
+(defun ecc-review-talk-test--end-shown (window)
+  "Return non-nil when WINDOW, a window of a reply pane, shows its end."
+  (with-current-buffer (window-buffer window)
+    (ecc-review-talk--end-shown-p window)))
+
+(defun ecc-review-talk-test--long (session)
+  "Have SESSION say forty lines in a turn of its own, after a call still running.
+Return the call."
+  (ecc-model-begin-turn session "long")
+  (prog1 (ecc-review-talk-test--call session "Read" '((file_path . "/tmp/x/a.txt")) 'running)
+    (ecc-review-talk-test--say
+     session (mapconcat (lambda (n) (format "Line %d of the reply." n))
+                        (number-sequence 1 40) "\n"))))
+
 (ert-deftest ecc-review-talk-test-u-and-d-scroll-the-pane ()
-  "u scrolls the reply pane back and holds it there as Claude goes on; d scrolls it on.
+  "u scrolls the reply pane back, where it stays as Claude goes on; d scrolls it on.
 Reaching the end, the pane follows its end again; so it does when a turn
 begins.  Typed in a window of the review, the keyboard stays there."
   (skip-unless (executable-find "git"))
@@ -546,37 +570,152 @@ begins.  Typed in a window of the review, the keyboard stays there."
       (ecc-review-talk-test--with-ediff one control
         (let* ((pane (ecc-review-talk-test--pane control))
                (window (get-buffer-window pane))
-               (right (with-current-buffer control ediff-window-B))
-               (end-shown (lambda ()
-                            (with-current-buffer pane
-                              (ecc-review-talk--end-shown-p window)))))
+               (right (with-current-buffer control ediff-window-B)))
           (should (eq (key-binding (kbd "u")) #'ecc-review-talk-scroll-back))
           (should (eq (key-binding (kbd "d")) #'ecc-review-talk-scroll-on))
-          (ecc-review-talk-tour)
-          (ecc-review-talk-test--say
-           one (mapconcat (lambda (n) (format "Line %d of the reply." n))
-                          (number-sequence 1 40) "\n"))
-          (should (funcall end-shown))
+          (ecc-review-talk-test--long one)
+          (should (ecc-review-talk-test--end-shown window))
           (select-window right)
           (execute-kbd-macro (kbd "u"))
           (should (eq (selected-window) right))
-          (should-not (funcall end-shown))
-          (should (buffer-local-value 'ecc-review-talk--held pane))
+          (should-not (ecc-review-talk-test--end-shown window))
           ;; Claude goes on; the pane stays where it was put.
-          (let ((start (window-start window)))
+          (let ((top (ecc-review-talk-test--top window)))
             (ecc-review-talk-test--say one "More.")
-            (should (= (window-start window) start)))
+            (should (equal (ecc-review-talk-test--top window) top)))
           (dotimes (_ 20)
-            (unless (funcall end-shown)
+            (unless (ecc-review-talk-test--end-shown window)
               (execute-kbd-macro (kbd "d"))))
-          (should (funcall end-shown))
-          (should-not (buffer-local-value 'ecc-review-talk--held pane))
+          (should (ecc-review-talk-test--end-shown window))
+          (should-error (ecc-review-talk-scroll-on) :type 'user-error)
           (should (eq (selected-window) right))
-          ;; Held again, a new turn lets it go.
+          ;; At the end, it follows what comes in.
+          (ecc-review-talk-test--say one (mapconcat #'identity (make-list 10 "Again.") "\n"))
+          (should (ecc-review-talk-test--end-shown window))
+          ;; Scrolled back again, a new turn brings it to the end.
           (execute-kbd-macro (kbd "u"))
-          (should (buffer-local-value 'ecc-review-talk--held pane))
+          (should-not (ecc-review-talk-test--end-shown window))
           (ecc-model-begin-turn one "Next stop.")
-          (should-not (buffer-local-value 'ecc-review-talk--held pane)))))))
+          (ecc-review-talk-test--long one)
+          (should (ecc-review-talk-test--end-shown window)))))))
+
+(ert-deftest ecc-review-talk-test-a-call-done-keeps-the-lines-in-view ()
+  "A pane scrolled back keeps its top line when a call above it ends.
+The call's line is shorter without its \" …\", and the pane is written
+afresh: the start is kept by line, not by position."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((ecc-review-talk-reply-height 6))
+      (ecc-review-talk-test--with-ediff one control
+        (let* ((window (get-buffer-window (ecc-review-talk-test--pane control)))
+               (call (ecc-review-talk-test--long one)))
+          (ecc-review-talk-scroll-back)
+          (ecc-review-talk-scroll-back)
+          (let ((top (ecc-review-talk-test--top window)))
+            (should (string-prefix-p "Line " top))
+            (setf (ecc-node-status call) 'done)
+            (ecc-model-node-changed one call)
+            (should-not (string-search " …" (ecc-review-talk-test--pane-text control)))
+            (should (equal (ecc-review-talk-test--top window) top))
+            (should (string-prefix-p "Line " (ecc-review-talk-test--top window)))))))))
+
+(ert-deftest ecc-review-talk-test-scrolled-any-way-the-pane-stays ()
+  "A pane scrolled back by the wheel or its own keys stays where it is.
+The keys of the review work in the pane too, and scrolling it on to the
+end lets it follow again."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((ecc-review-talk-reply-height 6))
+      (ecc-review-talk-test--with-ediff one control
+        (let* ((pane (ecc-review-talk-test--pane control))
+               (window (get-buffer-window pane)))
+          (with-current-buffer pane
+            (should (eq (key-binding (kbd "u")) #'ecc-review-talk-scroll-back))
+            (should (eq (key-binding (kbd "d")) #'ecc-review-talk-scroll-on))
+            (should (eq (key-binding (kbd "DEL")) #'ecc-review-talk-scroll-back))
+            (should (eq (key-binding (kbd "SPC")) #'ecc-review-talk-scroll-on)))
+          (ecc-review-talk-test--long one)
+          ;; What the wheel does: scroll the window, from inside it.
+          (with-selected-window window
+            (scroll-down 10))
+          (should-not (ecc-review-talk-test--end-shown window))
+          (let ((top (ecc-review-talk-test--top window)))
+            (ecc-review-talk-test--say one "More.")
+            (should (equal (ecc-review-talk-test--top window) top)))
+          ;; d in the pane, to the end.
+          (with-selected-window window
+            (dotimes (_ 20)
+              (unless (ecc-review-talk-test--end-shown window)
+                (execute-kbd-macro (kbd "d")))))
+          (should (ecc-review-talk-test--end-shown window))
+          (ecc-review-talk-test--say one (mapconcat #'identity (make-list 10 "Again.") "\n"))
+          (should (ecc-review-talk-test--end-shown window))
+          ;; DEL in the pane is u.
+          (with-selected-window window
+            (execute-kbd-macro (kbd "DEL")))
+          (should-not (ecc-review-talk-test--end-shown window)))))))
+
+(ert-deftest ecc-review-talk-test-one-session-s-pane-scrolled-leaves-the-other ()
+  "With two sessions, a pane scrolled back stays and the other's follows.
+A new turn of one session brings its own pane to the end, not the other's."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one two
+    (let ((ecc-review-talk-reply-height 6))
+      (ecc-review-talk-test--with-ediff one first
+        (let ((first-pane (ecc-review-talk-test--pane first)))
+          (ecc-review-talk-test--with-ediff two second
+            (let* ((second-window (get-buffer-window (ecc-review-talk-test--pane second)))
+                   ;; The first review's pane in a window of its own, beside.
+                   (first-window (split-window (with-current-buffer second ediff-window-A))))
+              (set-window-buffer first-window first-pane)
+              (with-current-buffer first-pane
+                (ecc-review-talk--window-to-the-end first-window))
+              (ecc-review-talk-test--long one)
+              (ecc-review-talk-test--long two)
+              (should (ecc-review-talk-test--end-shown first-window))
+              (should (ecc-review-talk-test--end-shown second-window))
+              (with-current-buffer first (ecc-review-talk-scroll-back))
+              (let ((top (ecc-review-talk-test--top first-window)))
+                (ecc-review-talk-test--say one "More from one.")
+                (ecc-review-talk-test--say two "More from two.")
+                (should (equal (ecc-review-talk-test--top first-window) top))
+                (should (ecc-review-talk-test--end-shown second-window))
+                ;; The second scrolled back; a new turn of the first lets
+                ;; the first go and keeps the second where it is.
+                (with-current-buffer second (ecc-review-talk-scroll-back))
+                (let ((second-top (ecc-review-talk-test--top second-window)))
+                  (ecc-review-talk-test--long one)
+                  (should (ecc-review-talk-test--end-shown first-window))
+                  (should (equal (ecc-review-talk-test--top second-window) second-top)))))))))))
+
+(ert-deftest ecc-review-talk-test-a-pane-shown-again-is-where-it-was ()
+  "| lays the review out again: a pane scrolled back shows the same line, one at its end its end.
+So it does when a call above that line ends while the pane is off the screen."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((ecc-review-talk-reply-height 6))
+      (ecc-review-talk-test--with-ediff one control
+        (let ((pane (ecc-review-talk-test--pane control))
+              (call (ecc-review-talk-test--long one)))
+          (ediff-toggle-split)
+          (should (ecc-review-talk-test--end-shown (get-buffer-window pane)))
+          (ecc-review-talk-scroll-back)
+          (let ((top (ecc-review-talk-test--top (get-buffer-window pane))))
+            (ediff-toggle-split)
+            (let ((window (get-buffer-window pane)))
+              (should (window-live-p window))
+              (should (equal (ecc-review-talk-test--top window) top))
+              (should-not (ecc-review-talk-test--end-shown window)))
+            ;; Off the screen, as | has it between the two layouts.
+            (ecc-review-talk--take-down pane 'side-only)
+            (setf (ecc-node-status call) 'done)
+            (ecc-model-node-changed one call)
+            (ecc-review-talk--show-pane control)
+            (should (equal (ecc-review-talk-test--top (get-buffer-window pane)) top))
+            ;; A new turn has it at the end.
+            (ediff-toggle-split)
+            (ecc-model-begin-turn one "Next stop.")
+            (should (ecc-review-talk-test--end-shown (get-buffer-window pane)))))))))
 
 (ert-deftest ecc-review-talk-test-no-pane-at-height-nil ()
   "With `ecc-review-talk-reply-height' nil an ediff review shows no pane."
