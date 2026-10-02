@@ -959,6 +959,25 @@ the current buffer around it, as Emacs 31 does."
                                 :type 'user-error)))
             (ecc-review-ediff-test--quit control)))))))
 
+;; d scrolls the reply pane in an ediff review, and x removes a comment.
+(ert-deftest ecc-review-ediff-test-no-comment-here-names-x ()
+  "Off any comment, removing one says C-u x offers them all: the key it is bound to."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--setup session directory))
+                (with-current-buffer control
+                  (ediff-jump-to-difference 2)
+                  (let ((message (cadr (should-error (ecc-review-ediff-remove-comment)
+                                                     :type 'user-error))))
+                    (should (string-search "C-u x offers them all" message))
+                    (should-not (string-search "C-u d" message)))))
+            (ecc-review-ediff-test--quit control)))))))
+
 (ert-deftest ecc-review-ediff-test-send ()
   "C-c C-c sends the comments as the diff review would and closes the ediff."
   (skip-unless (executable-find "git"))
@@ -2794,7 +2813,7 @@ does not give is read alone, and a blob read before is not read again."
           (should (> alone 0)))))))
 
 (ert-deftest ecc-review-ediff-test-hidden-comments-are-not-offered ()
-  "C-u d leaves out Claude's comments while they are hidden, in both reviews."
+  "C-u x leaves out Claude's comments while they are hidden, in both reviews."
   (skip-unless (executable-find "git"))
   (ecc-review-ediff-test--with-ediff
     (ecc-test-with-fake-session session
