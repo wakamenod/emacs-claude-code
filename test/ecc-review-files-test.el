@@ -171,6 +171,7 @@ buffer."
   `(ecc-test-with-fake-session ,session
      (ecc-review-files-test--with-directory directory
        (let ((ediff-window-setup-function #'ediff-setup-windows-plain)
+             (ecc-review-ediff-layout 'side-by-side)
              (,control nil))
          (unwind-protect
              (progn
@@ -582,7 +583,8 @@ keeps the filter."
           (should (invisible-p (point)))
           (re-search-forward "═══ c.txt")
           (should-not (invisible-p (point)))))
-      (should (string-search "/NEEDLE: 2 files hidden by filter" ediff-brief-help-message))
+      (should (string-search "/NEEDLE: 2 hidden"
+                             (ecc-review-direct-header-text ediff-buffer-B)))
       (should-error (ecc-review-ediff-previous-difference) :type 'user-error)
       (should (= ediff-current-difference 2))
       ;; j to a hidden one goes to the first one kept after it.
@@ -596,7 +598,8 @@ keeps the filter."
       (ecc-review-files-set-filter control "")
       (ecc-review-ediff-next-difference)
       (should (= ediff-current-difference 2))
-      (should-not (string-search "hidden by filter" ediff-brief-help-message)))))
+      (should-not (string-search "hidden"
+                                 (ecc-review-direct-header-text ediff-buffer-B))))))
 
 (ert-deftest ecc-review-files-test-ediff-filter-holds-across-reading-again ()
   "A filtered ediff review read again hides the same files, and draws no comment there."
@@ -829,7 +832,8 @@ is swept away."
         (ecc-review-remove-note on-b)
         (ecc-review--draw-notes)
         (should (= ediff-current-difference 2))
-        (should (string-search "/zzz: 2 files hidden by filter" (buffer-string)))))))
+        (should (string-search "/zzz: 2 hidden"
+                               (ecc-review-direct-header-text ediff-buffer-B)))))))
 
 (ert-deftest ecc-review-files-test-the-mark-after-a-reading-again ()
   "Read again with point in the last file, the pane marks that file."
@@ -997,20 +1001,6 @@ is swept away."
                 (should (eq (car (should-error (ecc-review-next-hunk))) 'error)))))
         (ecc-review-files-test--kill-buffers)))))
 
-(ert-deftest ecc-review-files-test-the-quiet-help-is-the-panel-s ()
-  "The help written in place is centred on the panel and starts at its top."
-  (skip-unless (executable-find "git"))
-  (ecc-review-files-test--with-pane
-    (ecc-review-files-test--with-ediff session control
-      (ecc-review-files-set-filter control "c.txt")
-      (let ((as-written (buffer-string)))
-        (with-selected-window ediff-window-A
-          (with-current-buffer control
-            (goto-char (point-max))
-            (ecc-review-ediff--write-help)
-            (should (= (point) (point-min)))))
-        (should (equal (buffer-string) as-written))))))
-
 (ert-deftest ecc-review-files-test-ga-and-gb-past-the-filter ()
   "ga on a hidden difference goes to the nearest kept; with none kept it says so."
   (skip-unless (executable-find "git"))
@@ -1033,6 +1023,32 @@ is swept away."
                                              :type 'user-error))
                          "Every difference is in a file the filter hides")))
         (should (= ediff-current-difference -1))))))
+
+(ert-deftest ecc-review-files-test-ga-above-the-first-difference ()
+  "ga with point above the first difference goes to the first one the filter keeps.
+`ediff-diff-at-point' answers 0 there, which ediff's own ga refuses as a
+bad difference number; with every file hidden it is the filter's error."
+  (skip-unless (executable-find "git"))
+  (ecc-review-files-test--with-pane
+    (ecc-review-files-test--with-ediff session control
+      (let ((top (lambda ()
+                   (with-current-buffer ediff-buffer-A (goto-char (point-min)))
+                   (set-window-point ediff-window-A 1))))
+        (funcall top)
+        (let ((last-command-event ?a))
+          (ecc-review-ediff-jump-to-difference-at-point nil))
+        (should (= ediff-current-difference 0))
+        (ecc-review-files-set-filter control "c.txt")
+        (funcall top)
+        (let ((last-command-event ?a))
+          (ecc-review-ediff-jump-to-difference-at-point nil))
+        (should (= ediff-current-difference 2))
+        (ecc-review-files-set-filter control "zzz")
+        (funcall top)
+        (let ((last-command-event ?a))
+          (should (equal (cadr (should-error (ecc-review-ediff-jump-to-difference-at-point nil)
+                                             :type 'user-error))
+                         "Every difference is in a file the filter hides")))))))
 
 (ert-deftest ecc-review-files-test-a-pane-alone-in-its-frame-is-given-back ()
   "A stale pane that is the last window of its frame shows another buffer."
@@ -1148,6 +1164,30 @@ is swept away."
                                      (cdr (ecc-review-files-test--call one "review_hunks")))))
           (ecc-test-cleanup-session two)
           (ecc-review-files-test--kill-buffers))))))
+
+
+(ert-deftest ecc-review-files-test-s-is-autoloaded ()
+  "The autoloads `make autoloads' writes have `ecc-review-files-toggle' as a command."
+  (require 'loaddefs-gen)
+  (let* ((dir (file-name-directory (locate-library "ecc-review-files.el" t)))
+         (tmp (make-temp-file "ecc-autoloads" t))
+         (out (expand-file-name "ecc-autoloads.el" tmp)))
+    (unwind-protect
+        (progn
+          (let ((inhibit-message t))
+            (loaddefs-generate dir out))
+          (with-temp-buffer
+            (insert-file-contents out)
+            (should (search-forward "(autoload 'ecc-review-files-toggle " nil t))
+            (goto-char (match-beginning 0))
+            ;; (autoload 'NAME FILE DOC INTERACTIVE), FILE named relative
+            ;; to the output, which is elsewhere here.
+            (let ((form (read (current-buffer))))
+              (should (string-suffix-p "ecc-review-files" (nth 2 form)))
+              (should (eq (nth 4 form) t)))
+            (goto-char (point-min))
+            (should-not (search-forward "ecc-review-files-toggled-functions" nil t))))
+      (delete-directory tmp t))))
 
 (provide 'ecc-review-files-test)
 

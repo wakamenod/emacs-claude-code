@@ -202,7 +202,15 @@ Verified against **Claude Code CLI 2.1.281**.
   project. `S` turns the whole menu to another session and its project,
   the project's sessions offered first, so what is compared and where the
   comments go are always one project; a session of the same project
-  counts only its own changes again. `-f` asks for the files to keep once
+  counts only its own changes again. Its first choice, `+ new session`,
+  starts a session in the menu's project with `ecc-start` -- named as
+  `ecc-start` names it, asked for a name when the project has one already
+  -- leaves the user where the menu was, back in its tab when `ecc-start`
+  went to the tab of a Space of its own, or to the tab of a worktree's
+  repository first, or failed part of the way -- found again by the index
+  and the name it had -- with the selected window selected and the menu
+  open, and turns the menu to it, so that the comments go there; it has the review tools, so
+  `T` works at once. `-f` asks for the files to keep once
   the comparison is chosen, out of those it shows, and `-e` opens this
   one review in ediff, or as a diff, the other way from
   `ecc-review-style`, which is left alone. Outside git only `D` can be
@@ -309,13 +317,16 @@ Verified against **Claude Code CLI 2.1.281**.
   `SPC`, `DEL`, `<backspace>`, `<delete>`, `S-SPC`, `j`, `ga`, `gb`),
   step over them -- a negative count still going back -- and say so when
   nothing kept lies further, `j`, `ga` and `gb` too when the filter keeps
-  no difference at all; a drawing
+  no difference at all; `ga` and `gb` with point above the first
+  difference go to the first one kept, where ediff's own refused them as
+  a bad difference number, 0; a drawing
   that comes to hide the file being read -- a comment of Claude's that
   matched gone, the review read again -- steps off it; `{`, `}` and
   `review_navigate`'s `next_comment` and `prev_comment` pass over their
   comments, and `review_navigate` to one of them fails and says why. The
   header line of the diff review says `/FILTER: N files hidden by
-  filter`, and so does the line of the ediff control panel.
+  filter`, and an ediff review says `/FILTER: N hidden` at the right end
+  of the header line of the window with the keyboard.
   `review_hunks` and `review_open` tell Claude the filter, how many files
   it hides and which (`ecc-review-agent-filter-text`). A filter holds
   across every reading of the review again.
@@ -335,8 +346,23 @@ Verified against **Claude Code CLI 2.1.281**.
   the diff review and `m` ediff's wide display -- so they are `t` and `M`.
 
 - The reply pane of an ediff review, `*ecc-review-reply: REVIEW*`: a side
-  window at the bottom of the frame, `ecc-review-talk-reply-height` lines
-  high (8; nil shows none), that shows the latest turn of the session of
+  window on the right while the two sides are stacked,
+  `ecc-review-talk-reply-width` columns wide (60), and at the bottom while
+  they are side by side, `ecc-review-talk-reply-height` lines high (8; nil
+  shows no pane in either) -- at the bottom too when the frame cannot
+  leave the diff 80 columns beside it (`ecc-review-talk-min-diff-width`).
+  `ecc-review-talk-reply-place` set to `frame` puts it in a frame of its
+  own instead, one for each review, named after its pane, used again while
+  it is there and closed with that review alone, made with
+  `no-focus-on-map` and never selected, so the
+  keyboard stays in the review and `y` is typed there.
+  `ecc-review-talk-make-frame-function` is called with the frame's name,
+  or, taking no argument, with none, and the frame is named after. The
+  files pane of the review itself, as wide as it is, counts against the
+  diff; `s` or `q` showing or hiding it, and the frame resized, move the
+  pane to the side the width now asks for, seen as the window of the new
+  side changing size (`window-size-change-functions` of its buffer), and
+  a pane that had the keyboard has it again on its new side. It shows the latest turn of the session of
   the review as it streams -- what you sent on a line, what Claude says,
   and each tool call on a line of its own, such as `review_navigate →
   foo.el:12` -- and keeps its end in view. Each turn replaces the last;
@@ -352,16 +378,42 @@ Verified against **Claude Code CLI 2.1.281**.
   session's replies and requests reach the pane, and `y` answers no other.
   The pane is written again only for what it shows, and a streamed piece
   is appended without touching any mode line. It is never selected; it is
-  taken down and put back at the bottom only when ediff really lays its
-  windows out again, as `|` and `m` do, so `n` and `p` leave its window
+  taken down and put back, on the side the layout asks for, only when
+  ediff really lays its windows out again, as `|` and `m` do, so `n` and `p` leave its window
   and its height alone; and it goes with the review. The diff review has
   the session beside it and no pane.
+
+- An ediff review opens with the old side above the new one, each the width
+  of the frame, and the reply pane on the right (`ecc-review-ediff-layout`,
+  `stacked`); `|` puts them side by side with the pane under them, and back.
+  `side-by-side` opens it the way it opened before. The files pane, the
+  rows the two sides are put together by and the keyboard follow either
+  layout.
+
+- The control panel of an ediff review is out of sight: the keys and where
+  the review is are on the header lines of its two windows, and `?` shows
+  the panel with every key, without a mode line, until `?` again. The
+  panel's window is deleted after each layout, and ediff is told the layout
+  is the one it made -- the print of the window in
+  `ediff-window-config-saved` said again as the window is now -- so that
+  `n`, `p`, `j`, `v` and `C-l` lay nothing out and `|`, `m` and `?` lay it
+  out once each. A review is laid out the plain way, its panel a window of
+  the review's frame, whatever `ediff-window-setup-function` says for other
+  ediffs -- its default as the review opens, whichever buffer is current,
+  and again before every layout, as `ediff-toggle-multiframe` sets every
+  session there is: a control frame cannot be taken away, since
+  `ediff-recenter` gives it the focus at every `n` and `p`, which makes an
+  invisible one visible again. `C-c C-k` in the message `C-u C-c C-c`
+  opens goes back to the review laid out again, the panel out of sight
+  and the keyboard in the new side (`ecc-review-go-back`), where it popped
+  to the control buffer and left the panel on the screen with the
+  keyboard in it.
 
 - An ediff review is read in its two windows, which have its keys
   (`ecc-review-direct-mode`). ediff keeps its keys in the control panel,
   and ecc gave the panel the keyboard, so `c` could only be about a whole
-  difference. Now the review opens with the keyboard in the right window,
-  and every key of the panel works in both windows -- `n`, `p`, `j`, `{`,
+  difference. Now the review opens with the keyboard in the window of the
+  new side, and every key of the panel works in both windows -- `n`, `p`, `j`, `{`,
   `}`, `a`, `s`, `/`, `T`, `t`, `M`, `y`, `l`, `!`, `?`, `i`, `q`,
   `C-c C-c`, `C-c C-k`, `v`, `V`, `C-l`, `|`, `m`, `h`, `@`, `*`, `<`,
   `>`, `##`, `#c` -- run in the control buffer as from the panel, with
@@ -406,15 +458,25 @@ Verified against **Claude Code CLI 2.1.281**.
   a path that is no longer a regular file is refused. `RET` in the control panel opens the file of the current
   difference. Each window has a header line of keys, the
   left one for reading and your comments, the right one for Claude,
-  opening, sending and closing; the control panel says which difference
-  is current, how many there are and what the filter hides -- after every
-  change of either, reading again included -- and `?`
-  shows every key, in a window as in the panel. `o` in the files pane
+  opening, sending and closing; while the two sides are side by side the
+  left one is put at the right edge of its window (`:align-to`), so that
+  the two meet in the middle. The header line of the new side ends with
+  which difference is current out of how many, `3/12`, and what the
+  filter hides -- after every change of either, reading again included;
+  a window too narrow for the keys and that puts it first, and the keys
+  after it, worked out as the header line is drawn, and drawn again
+  whenever what it reads changes --
+  and `?` shows every key, in a window as in the panel. `o` in the files pane
   opens the file itself, at its first change in an ediff review and
   beside the session in the diff review; `RET` there still moves the
   review.
 
 ### Changed
+
+- `ecc-review-ediff-layout` replaces `ecc-review-ediff-split-window-function`:
+  `stacked` or `side-by-side` rather than a split function, and nil, ediff's
+  own layout, is gone. An ediff review no longer has a control frame on a
+  graphical Emacs (above).
 
 - An ediff review opens sooner. Both sides of every file are read by two
   git processes instead of one each: `git cat-file --batch-check` for the

@@ -53,6 +53,8 @@
 (require 'ecc-window)
 (require 'ecc-review)
 
+(declare-function ecc-start "ecc" (&optional directory name))
+
 (defcustom ecc-review-menu-count-session-changes t
   "Non-nil makes `ecc-review-menu' count what the session changed.
 That is the number beside `D', the files changed since the session
@@ -659,25 +661,68 @@ Return (FROM TO), TO nil when the answer was FROM again."
          (to (ecc-review-menu--commit-of to)))
     (list from (and to (not (equal to from)) to))))
 
+(defvar ecc-review-menu-new-session-label "+ new session"
+  "The choice of `S' in `ecc-review-menu' that starts a session in its project.")
+
 (defun ecc-review-menu--read-session ()
-  "Ask for the session the menu is about, those of its project first."
+  "Ask for the session the menu is about, those of its project first.
+Return the session, or `new' for a new one in the project of the menu
+\(`ecc-review-menu-new-session-label', offered first when the menu has a
+project)."
   (let* ((state (ecc-review-menu--current-state))
-         (project (and (plist-get state :directory)
-                       (ecc-window-project-sessions (plist-get state :directory))))
+         (directory (plist-get state :directory))
+         (project (and directory (ecc-window-project-sessions directory)))
          (sessions (append project (seq-difference (ecc-model-sessions) project)))
-         (labels (mapcar (lambda (session)
-                           (cons (format "%s  %s" (ecc-session-name session)
-                                         (abbreviate-file-name
-                                          (ecc-review-menu--project session)))
-                                 session))
-                         sessions)))
-    (unless sessions
+         (labels (append
+                  (and directory (list (cons ecc-review-menu-new-session-label 'new)))
+                  (mapcar (lambda (session)
+                            (cons (format "%s  %s" (ecc-session-name session)
+                                          (abbreviate-file-name
+                                           (ecc-review-menu--project session)))
+                                  session))
+                          sessions))))
+    (unless labels
       (user-error "No session is running"))
     (cdr (assoc (completing-read "Review the session: "
                                  (ecc-review-menu--in-order (mapcar #'car labels))
                                  nil t nil nil
                                  (car (rassq (plist-get state :session) labels)))
                 labels))))
+
+(defun ecc-review-menu--back-to-tab (index name)
+  "Select again the tab that was the INDEXth, 0 counting, and was called NAME.
+`ecc-start' may have made tabs on either side of it -- a worktree's
+Space brings its repository's -- so the tab now at INDEX is taken when
+it has that name, else the first tab of that name, else the one at
+INDEX.  Nothing is selected when that tab is the current one."
+  (let* ((tabs (funcall tab-bar-tabs-function))
+         (target (cond ((equal (alist-get 'name (nth index tabs)) name) index)
+                       ((seq-position tabs name
+                                      (lambda (tab name) (equal (alist-get 'name tab) name))))
+                       (t (min index (1- (length tabs)))))))
+    (unless (= target (tab-bar--current-tab-index))
+      (tab-bar-select-tab (1+ target)))))
+
+(defun ecc-review-menu--start-session ()
+  "Start a session in the project of the menu and return it.
+With `ecc-start', as \\[ecc-start] would, asking for a name when the
+project has a session already.  The session is shown where a new one
+is, and the user stays where the menu was opened: in its tab, with its
+window selected, the menu open over it.  With `ecc-use-spaces' the
+session may have gone to a Space of its own, in a tab `ecc-start'
+switched to; that is switched back from, by the index and the name the
+menu's tab had (`ecc-review-menu--back-to-tab'), and so it is when
+`ecc-start' fails part of the way."
+  (let ((directory (or (plist-get (ecc-review-menu--current-state) :directory)
+                       (user-error "The menu is about no project")))
+        (window (selected-window))
+        (index (tab-bar--current-tab-index))
+        (name (alist-get 'name (tab-bar--current-tab))))
+    (unwind-protect
+        (ecc-start directory (ecc-window-read-session-name directory))
+      (ecc-review-menu--back-to-tab index name)
+      (when (window-live-p window)
+        (select-window window)))))
 
 ;;;; The menu
 
@@ -827,11 +872,15 @@ ARGS are the arguments of the menu, and STATE its state
   (ecc-review-menu-open 'range range args state))
 
 (transient-define-suffix ecc-review-menu-switch-session (session)
-  "Turn the menu to SESSION, chosen with completion: its project too."
+  "Turn the menu to SESSION, chosen with completion: its project too.
+SESSION `new' starts one in the project of the menu first
+\(`ecc-review-menu--start-session'), and the comments go to it."
   :description "review another session"
   :transient t
   (interactive (list (ecc-review-menu--read-session)))
-  (ecc-review-menu-set-session session)
+  (ecc-review-menu-set-session (if (eq session 'new)
+                                   (ecc-review-menu--start-session)
+                                 session))
   (ecc-review-menu--say-why))
 
 (transient-define-infix ecc-review-menu--in-ediff ()

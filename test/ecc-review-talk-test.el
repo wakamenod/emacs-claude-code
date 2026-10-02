@@ -109,11 +109,16 @@ Two differences, far enough apart to stay two."
                  (if (and changed (memq n '(2 11))) (upcase line) line)))
              (number-sequence 1 12) "\n"))
 
+(defvar ecc-review-talk-test--layout 'side-by-side
+  "The `ecc-review-ediff-layout' `ecc-review-talk-test--with-ediff' opens in.")
+
 (defmacro ecc-review-talk-test--with-ediff (session control &rest body)
-  "Run BODY in CONTROL, the ediff review of one file of SESSION."
+  "Run BODY in CONTROL, the ediff review of one file of SESSION.
+It is laid out as `ecc-review-talk-test--layout' says."
   (declare (indent 2))
   `(let ((directory (file-name-as-directory (make-temp-file "ecc-review-talk" t)))
          (ediff-window-setup-function #'ediff-setup-windows-plain)
+         (ecc-review-ediff-layout ecc-review-talk-test--layout)
          (,control nil))
      (unwind-protect
          (save-window-excursion
@@ -185,8 +190,8 @@ Return the text node."
       (should (eq (key-binding (kbd "m")) #'ediff-toggle-wide-display))
       ;; The header line of the right window says them, and so does ?.
       (should (string-search "T tour  t next  M message"
-                             (buffer-local-value 'header-line-format
-                                                 (buffer-local-value 'ediff-buffer-B control))))
+                             (ecc-review-direct-header-text
+                              (buffer-local-value 'ediff-buffer-B control))))
       (should (string-match-p "T -ask Claude for a tour" ecc-review-ediff-long-help-message))
       (should (string-match-p "y -answer what Claude asks" ecc-review-ediff-long-help-message)))))
 
@@ -288,7 +293,7 @@ Return the text node."
           (should (eq (window-parameter window 'window-side) 'bottom))
           (should (eq (window-buffer ediff-window-A) ediff-buffer-A))
           (should (eq (window-buffer ediff-window-B) ediff-buffer-B))
-          (should (eq (window-buffer ediff-control-window) control))
+          (should-not (get-buffer-window control))
           (ediff-toggle-split)
           (should (eq (window-buffer ediff-window-A) ediff-buffer-A))
           (should (window-live-p (get-buffer-window pane)))
@@ -302,6 +307,234 @@ Return the text node."
           (ecc-review-ediff-quit control)
           (should-not (buffer-live-p pane))
           (should-not (window-live-p window)))))))
+
+(defun ecc-review-talk-test--stacked-p (control)
+  "Return non-nil when the two sides of the review CONTROL are one above the other."
+  (with-current-buffer control
+    (< (cadr (window-edges ediff-window-A)) (cadr (window-edges ediff-window-B)))))
+
+(ert-deftest ecc-review-talk-test-a-review-opens-stacked-with-the-pane-on-the-right ()
+  "Stacked by default, the pane on the right; | puts the sides apart and the pane under.
+The second | puts both back."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    ;; A batch frame is 80 columns: the pane is made narrow enough to fit.
+    (let ((ecc-review-talk-test--layout
+           (eval (car (get 'ecc-review-ediff-layout 'standard-value)) t))
+          (ecc-review-talk-reply-width 20)
+          (ecc-review-talk-min-diff-width 40)
+          (ecc-review-talk-reply-height 6))
+      (ecc-review-talk-test--with-ediff one control
+        (let ((pane (ecc-review-talk-test--pane control)))
+          (should (eq ecc-review-talk-test--layout 'stacked))
+          (should (ecc-review-talk-test--stacked-p control))
+          (should (eq (window-parameter (get-buffer-window pane) 'window-side) 'right))
+          (should (= (window-total-width (get-buffer-window pane)) 20))
+          (ediff-toggle-split)
+          (should-not (ecc-review-talk-test--stacked-p control))
+          (should (eq (window-parameter (get-buffer-window pane) 'window-side) 'bottom))
+          (should (= (window-total-height (get-buffer-window pane)) 6))
+          (should (eq (window-buffer ediff-window-A) ediff-buffer-A))
+          (should (eq (window-buffer ediff-window-B) ediff-buffer-B))
+          (ediff-toggle-split)
+          (should (ecc-review-talk-test--stacked-p control))
+          (should (eq (window-parameter (get-buffer-window pane) 'window-side) 'right))
+          ;; One pane, never two.
+          (should (= (length (get-buffer-window-list pane nil t)) 1)))))))
+
+(ert-deftest ecc-review-talk-test-a-narrow-frame-has-the-pane-under ()
+  "Stacked in a frame that cannot spare the columns, the pane goes under the review."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((ecc-review-talk-test--layout 'stacked)
+          (ecc-review-talk-reply-width 60)
+          (ecc-review-talk-min-diff-width 80))
+      (ecc-review-talk-test--with-ediff one control
+        (should (ecc-review-talk-test--stacked-p control))
+        (should (eq (window-parameter (get-buffer-window (ecc-review-talk-test--pane control))
+                                      'window-side)
+                    'bottom))))))
+
+(defmacro ecc-review-talk-test--with-fake-frames (made deleted &rest body)
+  "Run BODY with reply frames that are symbols, each shown in a side window.
+Batch makes no frame.  MADE is the list of the names the frames were
+made with, DELETED of the frames deleted.  A frame's window is a side
+window of the frame there is, at the top, which ediff does not lay out."
+  (declare (indent 2))
+  `(let* ((,made nil)
+          (,deleted nil)
+          (live nil)
+          (holders nil)
+          (ecc-review-talk-reply-place 'frame)
+          (ecc-review-talk-make-frame-function
+           (lambda (name)
+             (push name ,made)
+             (let ((frame (intern (format "frame-%d" (length ,made)))))
+               (push frame live)
+               frame))))
+     (cl-letf* ((frame-live (symbol-function 'frame-live-p))
+                ((symbol-function 'frame-live-p)
+                 (lambda (frame) (if (symbolp frame) (memq frame live) (funcall frame-live frame))))
+                ((symbol-function 'ecc-review-talk--frame-window)
+                 (lambda (frame)
+                   (let ((window (alist-get frame holders)))
+                     (unless (window-live-p window)
+                       (setq window (display-buffer-in-side-window
+                                     (get-buffer-create (format " *%s*" frame))
+                                     `((side . top) (slot . ,(length holders)) (window-height . 3)
+                                       ;; As a frame of its own is: out of
+                                       ;; the way of ediff's layout, whose
+                                       ;; `other-window' before Emacs 31
+                                       ;; would go into it.
+                                       (window-parameters . ((no-delete-other-windows . t)
+                                                             (no-other-window . t))))))
+                       (setf (alist-get frame holders) window))
+                     window)))
+                ((symbol-function 'delete-frame)
+                 (lambda (frame &rest _)
+                   (push frame ,deleted)
+                   (setq live (delq frame live)))))
+       ,@body)))
+
+(ert-deftest ecc-review-talk-test-the-pane-in-a-frame-of-its-own ()
+  "With the place `frame' the pane is in a frame made once and closed with the review.
+The keyboard stays where it was, and | leaves the frame alone."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (ecc-review-talk-test--with-fake-frames made deleted
+      (ecc-review-talk-test--with-ediff one control
+        (let* ((pane (ecc-review-talk-test--pane control))
+               (window (get-buffer-window pane))
+               (selected (selected-window)))
+          (should (eq (window-parameter window 'ecc-review-talk) 'frame))
+          (should (equal made (list (buffer-name pane))))
+          (should (eq (selected-window) selected))
+          (ediff-toggle-split)
+          (should (eq (get-buffer-window pane) window))
+          (should (= (length (get-buffer-window-list pane nil t)) 1))
+          (ecc-review-talk-tour)
+          (should (= (length made) 1))
+          (ecc-review-ediff-quit control)
+          (should (equal deleted '(frame-1))))))))
+
+(ert-deftest ecc-review-talk-test-two-reviews-two-reply-frames ()
+  "Two sessions with a review each: each pane has a frame, and quitting one keeps the other."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one two
+    (ecc-review-talk-test--with-fake-frames made deleted
+      (ecc-review-talk-test--with-ediff one first
+        (let ((first-pane (ecc-review-talk-test--pane first)))
+          (ecc-review-talk-test--with-ediff two second
+            (let ((second-pane (ecc-review-talk-test--pane second)))
+              ;; One frame each; the first is not taken by the second.
+              ;; (Batch has one frame, so the second review laid out
+              ;; over the side window the first pane's stood for.)
+              (should (equal made (list (buffer-name second-pane) (buffer-name first-pane))))
+              (should (eq (buffer-local-value 'ecc-review-talk--frame first-pane) 'frame-1))
+              (should (eq (buffer-local-value 'ecc-review-talk--frame second-pane) 'frame-2))
+              (should (get-buffer-window second-pane))
+              (ecc-review-ediff-quit second)
+              (should (equal deleted '(frame-2)))
+              (should (eq (buffer-local-value 'ecc-review-talk--frame first-pane) 'frame-1))))
+          (ecc-review-ediff-quit first)
+          (should (equal deleted '(frame-1 frame-2))))))))
+
+(defun ecc-review-talk-test--resized (control)
+  "Run what redisplay runs when the right window of the review CONTROL changed size.
+Batch does no redisplay, which is what runs `window-size-change-functions'."
+  (with-current-buffer control
+    (with-current-buffer ediff-buffer-B
+      (run-hook-with-args 'window-size-change-functions ediff-window-B))))
+
+(ert-deftest ecc-review-talk-test-s-and-q-move-the-pane-when-the-diff-gets-narrow ()
+  "The files pane shown by s leaves the stacked diff too narrow: the pane goes under.
+q in the files pane gives the columns back, and the pane goes back to
+the right; a frame made narrower is checked the same way.  Each is seen
+as the right window changing size."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((ecc-review-talk-test--layout 'stacked)
+          (ecc-review-talk-reply-width 20)
+          (ecc-review-talk-min-diff-width 40)
+          (ecc-review-files-shown nil)
+          (ecc-review-files-width 32))
+      (ecc-review-talk-test--with-ediff one control
+        (let ((side (lambda ()
+                      (window-parameter (get-buffer-window (ecc-review-talk-test--pane control))
+                                        'window-side))))
+          (should (eq (funcall side) 'right))
+          (should (memq #'ecc-review-talk--size-changed
+                        (buffer-local-value 'window-size-change-functions ediff-buffer-B)))
+          (ecc-review-files-toggle)
+          (ecc-review-talk-test--resized control)
+          (should (eq (funcall side) 'bottom))
+          (should (ecc-review-talk-test--stacked-p control))
+          ;; q in the files pane.
+          (with-selected-window (ecc-review-files--pane-window control)
+            (call-interactively (key-binding (kbd "q"))))
+          (should-not (ecc-review-files--pane-window control))
+          (ecc-review-talk-test--resized control)
+          (should (eq (funcall side) 'right))
+          ;; The frame narrower.
+          (let ((ecc-review-talk-min-diff-width 70))
+            (ecc-review-talk-test--resized control))
+          (should (eq (funcall side) 'bottom)))))))
+
+(ert-deftest ecc-review-talk-test-a-pane-moved-keeps-the-keyboard ()
+  "A reply pane that has the keyboard as it moves has it again on its new side."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((ecc-review-talk-test--layout 'stacked)
+          (ecc-review-talk-reply-width 20)
+          (ecc-review-talk-min-diff-width 40))
+      (ecc-review-talk-test--with-ediff one control
+        (let ((pane (ecc-review-talk-test--pane control)))
+          (select-window (get-buffer-window pane))
+          (let ((ecc-review-talk-min-diff-width 70))
+            (ecc-review-talk-test--resized control))
+          (should (eq (window-parameter (get-buffer-window pane) 'window-side) 'bottom))
+          (should (eq (window-buffer (selected-window)) pane)))))))
+
+(ert-deftest ecc-review-talk-test-another-review-s-files-pane-moves-nothing ()
+  "Two sessions' reviews: the files pane of one leaves the reply pane of the other where it is."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one two
+    (let ((ecc-review-talk-test--layout 'stacked)
+          (ecc-review-talk-reply-width 20)
+          (ecc-review-talk-min-diff-width 40)
+          (ecc-review-files-shown nil)
+          (ecc-review-files-width 32))
+      (ecc-review-talk-test--with-ediff one first
+        (ecc-review-talk-test--with-ediff two second
+          ;; The second review's files pane: `ecc-review-files-shown' is t
+          ;; for every review from now on.
+          (ecc-review-files-toggle)
+          (should ecc-review-files-shown)
+          (ecc-review-talk-test--resized second)
+          (should (eq (window-parameter (get-buffer-window (ecc-review-talk-test--pane second))
+                                        'window-side)
+                      'bottom))
+          (ecc-review-ediff-quit second))
+        ;; Back on the screen, the first has no files pane, and its pane
+        ;; stays on the right.
+        (should-not (ecc-review-files--pane-window first))
+        (ecc-review-talk-test--resized first)
+        (should (eq (window-parameter (get-buffer-window (ecc-review-talk-test--pane first))
+                                      'window-side)
+                    'right))))))
+
+(ert-deftest ecc-review-talk-test-a-frame-function-of-no-argument ()
+  "A `ecc-review-talk-make-frame-function' of no argument still works, and the frame is named."
+  (let* ((named nil)
+         (ecc-review-talk-make-frame-function (lambda () 'a-frame)))
+    (cl-letf (((symbol-function 'set-frame-parameter)
+               (lambda (frame parameter value) (push (list frame parameter value) named))))
+      (should (eq (ecc-review-talk--new-frame "*ecc-review-reply: x*") 'a-frame))
+      (should (equal named '((a-frame name "*ecc-review-reply: x*")))))
+    (let ((ecc-review-talk-make-frame-function (lambda (name) (list 'made name))))
+      (should (equal (ecc-review-talk--new-frame "n") '(made "n"))))
+    (let ((ecc-review-talk-make-frame-function (lambda (&rest args) args)))
+      (should (equal (ecc-review-talk--new-frame "n") '("n"))))))
 
 (ert-deftest ecc-review-talk-test-no-pane-at-height-nil ()
   "With `ecc-review-talk-reply-height' nil an ediff review shows no pane."
@@ -615,7 +848,7 @@ Return the text node."
                       (should (eq (window-parameter (get-buffer-window reply) 'window-side) 'bottom))
                       (should (eq (window-buffer ediff-window-A) ediff-buffer-A))
                       (should (eq (window-buffer ediff-window-B) ediff-buffer-B))
-                      (should (eq (window-buffer ediff-control-window) control))))
+                      (should-not (get-buffer-window control))))
             (check)
             (ecc-review-ediff-next-difference)
             (ecc-review-ediff-previous-difference)

@@ -614,6 +614,7 @@ can."
   (declare (indent 2))
   `(ecc-review-agent-test--with-directory directory
      (let ((ediff-window-setup-function #'ediff-setup-windows-plain)
+           (ecc-review-ediff-layout 'side-by-side)
            (,control nil))
        (unwind-protect
            (let ((file (concat directory "a.txt")))
