@@ -2266,6 +2266,154 @@ nothing that changes, and is left as it is."
   (unless ediff-use-long-help-message
     (ecc-review-ediff--write-help)))
 
+;;;; One diff per file
+
+;; ediff diffs the two buffers whole, and the two buffers are every file
+;; of the review one after the other.  diff makes the most of the lines
+;; the two sides share, and with many files alike -- the scripts of a
+;; directory of them, say -- and a large file put in, it paired lines of
+;; one file with lines of another rather than the separators between
+;; them: a review of 59 files showed differences of 44, and gave a file
+;; created in it lines of the old side (2026-10-02).  A difference that
+;; runs over the end of a file is no difference of any one file.
+;;
+;; So the differences are computed a file at a time: the text of each
+;; file on each side goes into a directory of its own, the ones that
+;; differ, and one `diff -r' compares the two directories -- one process
+;; for the review, as before, with ediff's own program and options.  Its
+;; hunks are moved down by where each file begins in the two buffers and
+;; written out as the one diff ediff would have read, and ediff takes it
+;; from there as from its own.  ediff sets the function it computes the
+;; differences with as it sets up, so the review's own is put in its
+;; place for as long as the review is being opened
+;; (`ecc-review-ediff-open'), and after that in the control buffer, where
+;; ediff reads it whenever it computes them again.
+
+(defvar ecc-review-ediff--opening-sections nil
+  "The sections of the review being opened, while ediff computes its differences.
+The control buffer does not hold them yet then.")
+
+(defun ecc-review-ediff--section-texts (buffer sections index)
+  "Return the text of each file of SECTIONS in BUFFER, as (LINE . TEXT).
+LINE is that of its separator, which the first line of TEXT follows.
+INDEX is 1 for the buffer of what the files held and 2 for the other.
+The blank lines in front of the next file are no part of the file."
+  (with-current-buffer buffer
+    (save-excursion
+      (save-restriction
+        (widen)
+        (goto-char (point-min))
+        (let ((line 1)
+              (texts nil))
+          (while sections
+            (let ((separator (nth index (car sections)))
+                  (next (and (cdr sections) (nth index (cadr sections)))))
+              (forward-line (- separator line))
+              (forward-line 1)
+              (setq line (1+ separator))
+              (let ((beg (point))
+                    (end (if next
+                             (save-excursion
+                               (forward-line (- next line (max 0 ecc-review-ediff-file-spacing)))
+                               (point))
+                           (point-max))))
+                (push (cons separator (buffer-substring-no-properties beg (max beg end)))
+                      texts)))
+            (setq sections (cdr sections)))
+          (nreverse texts))))))
+
+(defun ecc-review-ediff--diff-files (directory)
+  "Run ediff's diff on the two directories a and b of DIRECTORY; return its output.
+With ediff's program and its options as they stand -- `##' and `#c'
+change them -- and the messages of the C locale, as ediff runs it.  A
+diff that fails is an error, with what it said."
+  (with-temp-buffer
+    (let* ((default-directory (file-name-as-directory directory))
+           (coding-system-for-read ediff-coding-system-for-write)
+           (process-environment (cons "LC_MESSAGES=C" process-environment))
+           (code (apply #'call-process ediff-diff-program nil t nil
+                        (append (split-string ediff-actual-diff-options)
+                                (list "-r" "a" "b")))))
+      (unless (memq code '(0 1))
+        (error "%s failed (%s): %s" ediff-diff-program code
+               (string-trim (buffer-string))))
+      (buffer-string))))
+
+(defun ecc-review-ediff--diff-sections (sections diff-buffer)
+  "Write into DIFF-BUFFER the differences of the files of SECTIONS, one by one.
+In the form of a diff of the two buffers whole, which is what ediff
+reads.  Run in the control buffer.  A line of diff's output that is no
+part of a diff -- \"Binary files differ\" -- is an error, as ediff makes
+one of it."
+  (let* ((a-texts (vconcat (ecc-review-ediff--section-texts ediff-buffer-A sections 1)))
+         (b-texts (vconcat (ecc-review-ediff--section-texts ediff-buffer-B sections 2)))
+         (directory (make-temp-file "ecc-review-diff" t))
+         (coding-system-for-write ediff-coding-system-for-write)
+         (hunks (make-vector (length sections) nil))
+         (any nil))
+    (unwind-protect
+        (progn
+          (dolist (side '("a" "b"))
+            (make-directory (expand-file-name side directory)))
+          (cl-loop for a across a-texts
+                   for b across b-texts
+                   for index from 0
+                   unless (equal (cdr a) (cdr b))
+                   do (setq any t)
+                   (dolist (pair (list (cons "a" (cdr a)) (cons "b" (cdr b))))
+                     ;; Numbered so that diff walks them in order.
+                     (write-region (cdr pair) nil
+                                   (expand-file-name (format "%s/%06d" (car pair) index)
+                                                     directory)
+                                   nil 'silent)))
+          (when any
+            (let ((index nil))
+              (dolist (line (split-string (ecc-review-ediff--diff-files directory) "\n"))
+                (cond
+                 ((string-match "\\`diff .*a/\\([0-9]+\\) b/[0-9]+\r?\\'" line)
+                  (setq index (string-to-number (match-string 1 line))))
+                 ((string-match "\\`\\([0-9]+\\)\\(,[0-9]+\\)?\\([acd]\\)\\([0-9]+\\)\\(,[0-9]+\\)?\r?\\'"
+                                line)
+                  (unless index
+                    (error "Diff output before any file: %s" line))
+                  (let ((a-shift (car (aref a-texts index)))
+                        (b-shift (car (aref b-texts index)))
+                        (end (lambda (group shift)
+                               (if (match-string group line)
+                                   (format ",%d" (+ shift (string-to-number
+                                                           (substring (match-string group line) 1))))
+                                 ""))))
+                    (push (format "%d%s%s%d%s"
+                                  (+ a-shift (string-to-number (match-string 1 line)))
+                                  (funcall end 2 a-shift)
+                                  (match-string 3 line)
+                                  (+ b-shift (string-to-number (match-string 4 line)))
+                                  (funcall end 5 b-shift))
+                          (aref hunks index))))
+                 ((string-match-p "\\`\\(?:[<>] \\|---\\|\\\\ \\|\r?\\'\\)" line))
+                 (t (error "Unexpected diff output: %s" line)))))))
+      (delete-directory directory t))
+    (with-current-buffer diff-buffer
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (seq-doseq (file hunks)
+          (dolist (hunk (reverse file))
+            (insert hunk "\n")))))))
+
+(defun ecc-review-ediff--setup-diff-regions (_file-A _file-B _file-C)
+  "Compute the differences of this review a file at a time, and give them to ediff.
+What `ediff-setup-diff-regions' does, but for the diff of the whole two
+buffers, which ediff writes to FILE-A and FILE-B and is not read here
+\(`ecc-review-ediff--diff-sections').  Run in the control buffer."
+  (let ((sections (or ecc-review-ediff--sections ecc-review-ediff--opening-sections)))
+    (unless (ediff-buffer-live-p ediff-diff-buffer)
+      (setq ediff-diff-buffer
+            (get-buffer-create (ediff-unique-buffer-name "*ediff-diff" "*"))))
+    (ecc-review-ediff--diff-sections sections ediff-diff-buffer)
+    (ediff-prepare-error-list ediff-diff-ok-lines-regexp ediff-diff-buffer)
+    (ediff-convert-diffs-to-overlays
+     (ediff-extract-diffs ediff-diff-buffer ediff-word-mode ediff-narrow-bounds))))
+
 ;;;; Opening and closing
 
 (defvar ecc-review-ediff-progress-regexp
@@ -2403,154 +2551,161 @@ ediff lays out its windows; quitting puts back what was on the screen."
     (when ecc-review-ediff-full-frame
       (ecc-review-ediff--take-the-frame))
     (ecc-review-ediff--quietly
-      (ediff-buffers
-       base now
-       (list
-	(lambda ()
-          (setq control (current-buffer))
-          (setq-local ecc-review--session session
-                      ecc-render--session session
-                      ecc-review--range range
-                      ecc-review--paths paths
-                      ecc-review--notes nil
-                      ecc-review--next-id 1
-                      ecc-review--stale nil
-                      ecc-review--failed nil
-                      ecc-review-ediff--sections sections
-                      ecc-review-ediff--units nil
-                      ecc-review-ediff--cache cache
-                      ecc-review-ediff--buffers (cons base now)
-                      ecc-review-ediff--windows windows
-                      ecc-review-ediff--frame frame
-                      ecc-review--close-function #'ecc-review-ediff-quit
-                      ediff-quit-hook (list #'ecc-review-ediff--on-quit))
-          ;; The repository: a file saved under it is a change to follow.
-          (when root
-            (setq default-directory (file-name-as-directory root)))
-          (setq-local ecc-review--fingerprint (ecc-review-ediff--state hash))
-          ;; ediff computes the differences again by itself -- `##', `#c'
-          ;; and `!' of a plain ediff go through `ediff-update-diffs' -- and
-          ;; then the hunks and the comments drawn on them are about
-          ;; differences it no longer has.  The function it computes them
-          ;; with is local to this control buffer, so it is wrapped here
-          ;; and no other ediff is touched.
-          (setq-local ediff-setup-diff-regions-function
-                      (let ((compute ediff-setup-diff-regions-function))
-			(lambda (&rest args)
-                          (prog1 (apply compute args)
-                            (ecc-review-ediff--differences-computed)))))
-          ;; A window coming to show either side is the review coming into
-          ;; view, which is when a stale one is read again.
-          (dolist (buffer (list base now))
-            (with-current-buffer buffer
-              (setq-local ecc-review--part-of control)))
-          ;; The keys of the review in its two windows, and point
-          ;; driving it there.
-          (ecc-review-direct-setup control)
-          ;; The bar beside the current difference, and then the same
-          ;; function for the difference the review opens on: ediff has
-          ;; selected it before these hooks run.
-          (add-hook 'ediff-select-hook #'ecc-review-ediff--mark-current nil t)
-          ;; The panel says which difference this is.
-          (add-hook 'ediff-select-hook #'ecc-review-ediff--status-changed nil t)
-          ;; Both of these are read out of the control buffer of this
-          ;; session as well (`ediff-defvar-local'), so no other ediff's ?
-          ;; changes.
-          (setq-local ediff-long-help-message-function
-                      #'ecc-review-ediff--long-help-message
-                      ediff-brief-help-message-function
-                      #'ecc-review-ediff--brief-help-message)
-          ;; ediff reads this one out of the control buffer of each session
-          ;; (`ediff-wind.el'), which is why the review can be laid out its
-          ;; own way without touching how the user's other ediffs look.
-          (when ecc-review-ediff-split-window-function
-            (setq-local ediff-split-window-function
-			ecc-review-ediff-split-window-function))
-          ;; `ediff-setup' lays out the windows and writes the help into
-          ;; the panel before it runs these hooks, so both are done again
-          ;; here: the review would otherwise open in ediff's own layout,
-          ;; under ediff's own help, and turn into this one at the first
-          ;; command that recentres.  It is the call `ediff-toggle-split'
-          ;; and `ediff-toggle-help' both make for the same reason.
-          (ediff-recenter)
-          ;; `ediff-mode-map' is local to this control buffer, so these
-          ;; keys reach no other ediff session.  c, d, l, {, } and ! are
-          ;; the ones the diff review has; ediff has none of the first
-          ;; five, and ! is its own "compute the differences again", which
-          ;; for a review is reading the files again.
-          (define-key ediff-mode-map (kbd "c") #'ecc-review-ediff-comment)
-          (define-key ediff-mode-map (kbd "d") #'ecc-review-ediff-remove-comment)
-          (define-key ediff-mode-map (kbd "l") #'ecc-review-ediff-list-comments)
-          (define-key ediff-mode-map (kbd "{") #'ecc-review-ediff-previous-comment)
-          (define-key ediff-mode-map (kbd "}") #'ecc-review-ediff-next-comment)
-          (define-key ediff-mode-map (kbd "!") #'ecc-review-refresh)
-          (define-key ediff-mode-map (kbd "C-c C-c") #'ecc-review-send)
-          (define-key ediff-mode-map (kbd "C-c C-k") #'ecc-review-quit)
-          ;; ediff's own q asks whether to quit this session, and the
-          ;; question goes to a minibuffer the control frame does not have
-          ;; -- on a graphical Emacs the panel is a frame of its own, small
-          ;; enough to show nothing, so q read as a key that did nothing at
-          ;; all (reported 2026-09-16).  A review is closed, not saved:
-          ;; there is nothing to lose by the question and nothing to ask.
-          (define-key ediff-mode-map (kbd "q") #'ecc-review-quit)
-          ;; mouse-2 and RET over a line of the help look the command up
-          ;; in the ediff manual, which knows nothing of c, d or l and
-          ;; answers them with "Undocumented command!".  Silenced rather
-          ;; than pointed somewhere else: what the ECC keys do is on the
-          ;; help itself, and the manual has nothing to add about the
-          ;; ediff ones that a review uses.
-          (define-key ediff-mode-map [mouse-2] #'ignore)
-          (define-key ediff-mode-map (kbd "RET") #'ignore)
-          ;; ediff's own copy commands.  Both sides of a review are
-          ;; read-only, so they could only fail, and they failed as
-          ;; `ediff-copy-diff: buffer-read-only' -- an error about a
-          ;; buffer the user never asked about, from a key the help does
-          ;; not offer.  a is the diff review's own key for showing and
-          ;; hiding Claude's comments, and b says what a review is.
-          (define-key ediff-mode-map (kbd "a") #'ecc-review-toggle-agent)
-          (define-key ediff-mode-map (kbd "b") #'ecc-review-ediff-copy-refused)
-          ;; The files pane and the filter.  ediff binds s and / in a
-          ;; merge alone -- the size of the merge window, the ancestor --
-          ;; and a review is never a merge (checked 2026-10-01).  n, p
-          ;; and j step over what the filter hides.
-          (define-key ediff-mode-map (kbd "s") #'ecc-review-files-toggle)
-          (define-key ediff-mode-map (kbd "/") #'ecc-review-files-filter)
-          ;; Talking to the session, whose prompt the review hides, and
-          ;; answering it from here (`ecc-review-talk.el').  ediff binds
-          ;; none of T, t and y, and M only to the meta buffer of its
-          ;; sessions, which has nothing to show for a review (checked
-          ;; 2026-10-02).
-          (define-key ediff-mode-map (kbd "T") #'ecc-review-talk-tour)
-          (define-key ediff-mode-map (kbd "t") #'ecc-review-talk-next)
-          (define-key ediff-mode-map (kbd "M") #'ecc-review-talk-message)
-          (define-key ediff-mode-map (kbd "y") #'ecc-review-talk-answer)
-          ;; Remapped rather than rebound, so that every key ediff gives
-          ;; them -- SPC, DEL, <backspace>, <delete>, S-SPC, ga, gb -- is
-          ;; covered.
-          (define-key ediff-mode-map [remap ediff-next-difference]
-                      #'ecc-review-ediff-next-difference)
-          (define-key ediff-mode-map [remap ediff-previous-difference]
-                      #'ecc-review-ediff-previous-difference)
-          (define-key ediff-mode-map [remap ediff-jump-to-difference]
-                      #'ecc-review-ediff-jump-to-difference)
-          (define-key ediff-mode-map [remap ediff-jump-to-difference-at-point]
-                      #'ecc-review-ediff-jump-to-difference-at-point)
-          (add-hook 'ediff-select-hook #'ecc-review-files--follow nil t)
-          (add-hook 'ediff-before-setup-windows-hook #'ecc-review-ediff--leave-the-pane nil t)
-          (add-hook 'ediff-after-setup-windows-hook #'ecc-review-ediff--keep-the-pane nil t)
-          (ecc-review-ediff--mark-current)
-          ;; What is on the screen is coloured before the review is
-          ;; shown, the rest after it (`ecc-review-ediff--colour-later'),
-          ;; and the differences shown are refined as they come into view.
-          (add-hook 'ediff-select-hook #'ecc-review-ediff--refine-later nil t)
-          (add-hook 'ediff-unselect-hook #'ecc-review-ediff--keep-refined nil t)
-          (define-key ediff-mode-map (kbd "@") #'ecc-review-ediff-toggle-autorefine)
-          (define-key ediff-mode-map (kbd "h") #'ecc-review-ediff-toggle-hilit)
-          (dolist (buffer (list base now))
-            (with-current-buffer buffer
-              (add-hook 'window-scroll-functions #'ecc-review-ediff--scrolled nil t)))
-          (ecc-review-ediff--after-write)
-          (run-hook-with-args 'ecc-review-displayed-functions control)))))
+     ;; ediff sets the function it computes the differences with as it
+     ;; sets up, and computes them before any hook of ours runs: for as
+     ;; long as this review is opened, that function is the review's own
+     ;; ("One diff per file").
+     (cl-letf (((symbol-function 'ediff-setup-diff-regions)
+                #'ecc-review-ediff--setup-diff-regions))
+       (let ((ecc-review-ediff--opening-sections sections))
+	 (ediff-buffers
+	  base now
+	  (list
+	   (lambda ()
+             (setq control (current-buffer))
+             (setq-local ecc-review--session session
+			 ecc-render--session session
+			 ecc-review--range range
+			 ecc-review--paths paths
+			 ecc-review--notes nil
+			 ecc-review--next-id 1
+			 ecc-review--stale nil
+			 ecc-review--failed nil
+			 ecc-review-ediff--sections sections
+			 ecc-review-ediff--units nil
+			 ecc-review-ediff--cache cache
+			 ecc-review-ediff--buffers (cons base now)
+			 ecc-review-ediff--windows windows
+			 ecc-review-ediff--frame frame
+			 ecc-review--close-function #'ecc-review-ediff-quit
+			 ediff-quit-hook (list #'ecc-review-ediff--on-quit))
+             ;; The repository: a file saved under it is a change to follow.
+             (when root
+               (setq default-directory (file-name-as-directory root)))
+             (setq-local ecc-review--fingerprint (ecc-review-ediff--state hash))
+             ;; ediff computes the differences again by itself -- `##', `#c'
+             ;; and `!' of a plain ediff go through `ediff-update-diffs' -- and
+             ;; then the hunks and the comments drawn on them are about
+             ;; differences it no longer has.  The function it computes them
+             ;; with is local to this control buffer, so it is the review's
+             ;; own here, a file at a time ("One diff per file"), and no
+             ;; other ediff is touched.
+             (setq-local ediff-setup-diff-regions-function
+			 (lambda (&rest args)
+                           (prog1 (apply #'ecc-review-ediff--setup-diff-regions args)
+                             (ecc-review-ediff--differences-computed))))
+             ;; A window coming to show either side is the review coming into
+             ;; view, which is when a stale one is read again.
+             (dolist (buffer (list base now))
+               (with-current-buffer buffer
+		 (setq-local ecc-review--part-of control)))
+             ;; The keys of the review in its two windows, and point
+             ;; driving it there.
+             (ecc-review-direct-setup control)
+             ;; The bar beside the current difference, and then the same
+             ;; function for the difference the review opens on: ediff has
+             ;; selected it before these hooks run.
+             (add-hook 'ediff-select-hook #'ecc-review-ediff--mark-current nil t)
+             ;; The panel says which difference this is.
+             (add-hook 'ediff-select-hook #'ecc-review-ediff--status-changed nil t)
+             ;; Both of these are read out of the control buffer of this
+             ;; session as well (`ediff-defvar-local'), so no other ediff's ?
+             ;; changes.
+             (setq-local ediff-long-help-message-function
+			 #'ecc-review-ediff--long-help-message
+			 ediff-brief-help-message-function
+			 #'ecc-review-ediff--brief-help-message)
+             ;; ediff reads this one out of the control buffer of each session
+             ;; (`ediff-wind.el'), which is why the review can be laid out its
+             ;; own way without touching how the user's other ediffs look.
+             (when ecc-review-ediff-split-window-function
+               (setq-local ediff-split-window-function
+			   ecc-review-ediff-split-window-function))
+             ;; `ediff-setup' lays out the windows and writes the help into
+             ;; the panel before it runs these hooks, so both are done again
+             ;; here: the review would otherwise open in ediff's own layout,
+             ;; under ediff's own help, and turn into this one at the first
+             ;; command that recentres.  It is the call `ediff-toggle-split'
+             ;; and `ediff-toggle-help' both make for the same reason.
+             (ediff-recenter)
+             ;; `ediff-mode-map' is local to this control buffer, so these
+             ;; keys reach no other ediff session.  c, d, l, {, } and ! are
+             ;; the ones the diff review has; ediff has none of the first
+             ;; five, and ! is its own "compute the differences again", which
+             ;; for a review is reading the files again.
+             (define-key ediff-mode-map (kbd "c") #'ecc-review-ediff-comment)
+             (define-key ediff-mode-map (kbd "d") #'ecc-review-ediff-remove-comment)
+             (define-key ediff-mode-map (kbd "l") #'ecc-review-ediff-list-comments)
+             (define-key ediff-mode-map (kbd "{") #'ecc-review-ediff-previous-comment)
+             (define-key ediff-mode-map (kbd "}") #'ecc-review-ediff-next-comment)
+             (define-key ediff-mode-map (kbd "!") #'ecc-review-refresh)
+             (define-key ediff-mode-map (kbd "C-c C-c") #'ecc-review-send)
+             (define-key ediff-mode-map (kbd "C-c C-k") #'ecc-review-quit)
+             ;; ediff's own q asks whether to quit this session, and the
+             ;; question goes to a minibuffer the control frame does not have
+             ;; -- on a graphical Emacs the panel is a frame of its own, small
+             ;; enough to show nothing, so q read as a key that did nothing at
+             ;; all (reported 2026-09-16).  A review is closed, not saved:
+             ;; there is nothing to lose by the question and nothing to ask.
+             (define-key ediff-mode-map (kbd "q") #'ecc-review-quit)
+             ;; mouse-2 and RET over a line of the help look the command up
+             ;; in the ediff manual, which knows nothing of c, d or l and
+             ;; answers them with "Undocumented command!".  Silenced rather
+             ;; than pointed somewhere else: what the ECC keys do is on the
+             ;; help itself, and the manual has nothing to add about the
+             ;; ediff ones that a review uses.
+             (define-key ediff-mode-map [mouse-2] #'ignore)
+             (define-key ediff-mode-map (kbd "RET") #'ignore)
+             ;; ediff's own copy commands.  Both sides of a review are
+             ;; read-only, so they could only fail, and they failed as
+             ;; `ediff-copy-diff: buffer-read-only' -- an error about a
+             ;; buffer the user never asked about, from a key the help does
+             ;; not offer.  a is the diff review's own key for showing and
+             ;; hiding Claude's comments, and b says what a review is.
+             (define-key ediff-mode-map (kbd "a") #'ecc-review-toggle-agent)
+             (define-key ediff-mode-map (kbd "b") #'ecc-review-ediff-copy-refused)
+             ;; The files pane and the filter.  ediff binds s and / in a
+             ;; merge alone -- the size of the merge window, the ancestor --
+             ;; and a review is never a merge (checked 2026-10-01).  n, p
+             ;; and j step over what the filter hides.
+             (define-key ediff-mode-map (kbd "s") #'ecc-review-files-toggle)
+             (define-key ediff-mode-map (kbd "/") #'ecc-review-files-filter)
+             ;; Talking to the session, whose prompt the review hides, and
+             ;; answering it from here (`ecc-review-talk.el').  ediff binds
+             ;; none of T, t and y, and M only to the meta buffer of its
+             ;; sessions, which has nothing to show for a review (checked
+             ;; 2026-10-02).
+             (define-key ediff-mode-map (kbd "T") #'ecc-review-talk-tour)
+             (define-key ediff-mode-map (kbd "t") #'ecc-review-talk-next)
+             (define-key ediff-mode-map (kbd "M") #'ecc-review-talk-message)
+             (define-key ediff-mode-map (kbd "y") #'ecc-review-talk-answer)
+             ;; Remapped rather than rebound, so that every key ediff gives
+             ;; them -- SPC, DEL, <backspace>, <delete>, S-SPC, ga, gb -- is
+             ;; covered.
+             (define-key ediff-mode-map [remap ediff-next-difference]
+			 #'ecc-review-ediff-next-difference)
+             (define-key ediff-mode-map [remap ediff-previous-difference]
+			 #'ecc-review-ediff-previous-difference)
+             (define-key ediff-mode-map [remap ediff-jump-to-difference]
+			 #'ecc-review-ediff-jump-to-difference)
+             (define-key ediff-mode-map [remap ediff-jump-to-difference-at-point]
+			 #'ecc-review-ediff-jump-to-difference-at-point)
+             (add-hook 'ediff-select-hook #'ecc-review-files--follow nil t)
+             (add-hook 'ediff-before-setup-windows-hook #'ecc-review-ediff--leave-the-pane nil t)
+             (add-hook 'ediff-after-setup-windows-hook #'ecc-review-ediff--keep-the-pane nil t)
+             (ecc-review-ediff--mark-current)
+             ;; What is on the screen is coloured before the review is
+             ;; shown, the rest after it (`ecc-review-ediff--colour-later'),
+             ;; and the differences shown are refined as they come into view.
+             (add-hook 'ediff-select-hook #'ecc-review-ediff--refine-later nil t)
+             (add-hook 'ediff-unselect-hook #'ecc-review-ediff--keep-refined nil t)
+             (define-key ediff-mode-map (kbd "@") #'ecc-review-ediff-toggle-autorefine)
+             (define-key ediff-mode-map (kbd "h") #'ecc-review-ediff-toggle-hilit)
+             (dolist (buffer (list base now))
+               (with-current-buffer buffer
+		 (add-hook 'window-scroll-functions #'ecc-review-ediff--scrolled nil t)))
+             (ecc-review-ediff--after-write)
+             (run-hook-with-args 'ecc-review-displayed-functions control)))))))
     ;; ediff leaves the keyboard in its control panel, and on a
     ;; graphical Emacs the focus in its control frame.  The review is
     ;; read in its windows, which have the keys; the panel is the help

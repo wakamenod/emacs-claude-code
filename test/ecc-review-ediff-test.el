@@ -605,6 +605,82 @@ minibuffer the control frame of a graphical Emacs does not have."
                   (kill-buffer stranger)))
             (ecc-review-ediff-test--quit control)))))))
 
+;;;; One diff per file
+
+(defun ecc-review-ediff-test--within-its-file (unit)
+  "Return non-nil when the difference UNIT lies inside the section of its file."
+  (let ((a (ecc-review-ediff--section-bounds 'A (plist-get unit :path)))
+        (b (ecc-review-ediff--section-bounds 'B (plist-get unit :path))))
+    (and (car a) (car b)
+         (<= (car a) (plist-get unit :a-beg)) (<= (plist-get unit :a-end) (cdr a))
+         (<= (car b) (plist-get unit :b-beg)) (<= (plist-get unit :b-end) (cdr b)))))
+
+(ert-deftest ecc-review-ediff-test-a-difference-stays-in-its-file ()
+  "Each file is diffed on its own: no difference runs over a separator.
+A file taken out and another put in with the same text were one diff of
+the two buffers whole, which paired the text of the one with the text
+of the other across the separator between them -- the new file was
+given lines of the old side, and the old one none."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil)
+              (text (ecc-review-ediff-test--numbered 20))
+              (script (lambda (name)
+                        (mapconcat (lambda (n) (format "echo %s step %d\n" name n))
+                                   (number-sequence 1 15) ""))))
+          (unwind-protect
+              (progn
+                (ecc-review-ediff-test--repository directory)
+                (ecc-review-ediff-test--write (concat directory "a.txt") text)
+                (ecc-review-ediff-test--write (concat directory "one.sh") (funcall script "one"))
+                (ecc-review-ediff-test--git directory "add" "a.txt" "one.sh")
+                (ecc-review-ediff-test--git directory "commit" "-q" "-m" "a")
+                (setf (ecc-session-project-root session) directory)
+                (should (ecc-review-ensure-baseline session))
+                ;; a.txt goes and b.txt comes with its text; two scripts
+                ;; much like one.sh come, and one.sh grows by a lot.
+                (delete-file (concat directory "a.txt"))
+                (ecc-review-ediff-test--write (concat directory "b.txt") text)
+                (ecc-review-ediff-test--write (concat directory "one.sh")
+                                              (concat (funcall script "one")
+                                                      (ecc-review-ediff-test--numbered 40)))
+                (ecc-review-ediff-test--write (concat directory "two.sh") (funcall script "two"))
+                (ecc-review-ediff-test--write (concat directory "three.sh") (funcall script "one"))
+                (setq control (ecc-review-ediff-buffer session))
+                (with-current-buffer control
+                  (let ((units (ecc-review-units)))
+                    (should (seq-every-p #'ecc-review-ediff-test--within-its-file units))
+                    ;; Every file is in what review_hunks lists.
+                    (should (equal (sort (seq-uniq (mapcar (lambda (unit) (plist-get unit :path))
+                                                           units))
+                                         #'string<)
+                                   (sort (mapcar #'car ecc-review-ediff--sections) #'string<)))
+                    (dolist (unit units)
+                      (pcase (nth 3 (assoc (plist-get unit :path) ecc-review-ediff--sections))
+                        ;; A file put in has no old line, one taken out no new.
+                        ("A" (should (zerop (plist-get unit :old-count))))
+                        ("D" (should (zerop (plist-get unit :new-count))))))
+                    (let ((gone (seq-find (lambda (unit) (equal (plist-get unit :path) "a.txt"))
+                                          units)))
+                      (should (= (plist-get gone :old-count) 20))
+                      (should (equal (plist-get gone :header) "@@ -1,20 +1,0 @@"))))
+                  ;; And it holds when ediff computes them again.
+                  (ediff-update-diffs)
+                  (should (seq-every-p #'ecc-review-ediff-test--within-its-file (ecc-review-units)))
+                  ;; n walks them, and the filter still hides a file.
+                  (ediff-jump-to-difference 1)
+                  (ecc-review-ediff-next-difference)
+                  (should (= ediff-current-difference 1))
+                  (ecc-review-files-set-filter control "two")
+                  (should (seq-every-p (lambda (unit)
+                                         (eq (ecc-review-ediff--hidden-difference-p
+                                              (plist-get unit :number))
+                                             (not (equal (plist-get unit :path) "two.sh"))))
+                                       (ecc-review-units)))))
+            (ecc-review-ediff-test--quit control)))))))
+
 ;;;; Binary and oversized files
 
 (ert-deftest ecc-review-ediff-test-binary-and-oversize-are-named ()
