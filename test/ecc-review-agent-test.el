@@ -396,6 +396,56 @@ The review buffer is current."
                                     '((range . "HEAD") (staged . :false))))))
         (ecc-review-agent-test--kill-review-buffers)))))
 
+(ert-deftest ecc-review-agent-test-what-a-range-is ()
+  "A range of commits is called the commits it names, not the working tree against it.
+git is asked once at most: never for what needs no asking, nor for the
+bare HEAD, which is the working tree even before the first commit, nor
+for a review whose right side is not checked out."
+  (skip-unless (executable-find "git"))
+  (ecc-review-agent-test--with-directory directory
+    (ecc-review-agent-test--git directory "init" "-q")
+    (ecc-review-agent-test--git directory "config" "user.email" "t@example.com")
+    (ecc-review-agent-test--git directory "config" "user.name" "t")
+    (with-temp-buffer
+      (setq default-directory directory)
+      (let* ((asked 0)
+             (git (symbol-function 'ecc-review--git))
+             (what (lambda (range)
+                     (setq ecc-review--range range
+                           asked 0)
+                     (cl-letf (((symbol-function 'ecc-review--git)
+                                (lambda (&rest args)
+                                  (setq asked (1+ asked))
+                                  (apply git args))))
+                       (ecc-review-agent--what)))))
+        ;; No commit yet: HEAD is still the working tree.
+        (should (equal (funcall what "HEAD") "the working tree against HEAD"))
+        (should (= asked 0))
+        (ecc-review-agent-test--write (concat directory "x.txt") "one\n")
+        (ecc-review-agent-test--git directory "add" "x.txt")
+        (ecc-review-agent-test--git directory "commit" "-q" "-m" "one")
+        (ecc-review-agent-test--write (concat directory "x.txt") "two\n")
+        (ecc-review-agent-test--git directory "commit" "-q" "-am" "two")
+        (let ((id (string-trim (ecc-review-agent-test--git directory "rev-parse" "HEAD"))))
+          (pcase-dolist (`(,range ,said ,questions)
+                         `((nil "everything changed since the session started" 0)
+                           (staged "what is staged" 0)
+                           ("" "what is not staged yet" 0)
+                           ("HEAD" "the working tree against HEAD" 0)
+                           ("HEAD~1" "the working tree against HEAD~1" 1)
+                           (,(concat id "^!") ,(format "the commits %s^!" id) 1)
+                           ("HEAD~1..HEAD" "the commits HEAD~1..HEAD" 1)
+                           ("HEAD~1...HEAD" "the commits HEAD~1...HEAD" 1)))
+            (should (equal (funcall what range) said))
+            (should (= asked questions))))
+        ;; A right side not checked out is of commits already: another
+        ;; branch's pull request, or a commit before HEAD of one's own.
+        (setq-local ecc-review--elsewhere "fix/x (a1b2c3d)")
+        (should (equal (funcall what "HEAD~1...a1b2c3d")
+                       (concat "the commits HEAD~1...a1b2c3d, whose right side, "
+                               "fix/x (a1b2c3d), is not checked out here")))
+        (should (= asked 0))))))
+
 (ert-deftest ecc-review-agent-test-replies ()
   "reply_to answers a comment of either author, alone and in a batch."
   (ecc-review-agent-test--with-review session

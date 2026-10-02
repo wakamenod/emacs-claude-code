@@ -80,8 +80,8 @@ Verified against **Claude Code CLI 2.1.281**.
   `review_comment`, `review_comment_apply`, `review_navigate`,
   `review_list_comments`, `review_remove_comment` and
   `review_clear_comments`: it opens the review of its session -- what the
-  session changed, the working tree against a range, or what is staged
-  (`staged`), of every file or only some (`paths`) -- puts
+  session changed, the working tree against a revision, a range of
+  commits, or what is staged (`staged`), of every file or only some (`paths`) -- puts
   comments on lines or hunks, answers a comment with `reply_to`, scrolls
   the review to a place, and reads or removes comments. It never writes or
   changes a comment of the user's. A tool works on the review of the session
@@ -276,7 +276,11 @@ Verified against **Claude Code CLI 2.1.281**.
   The description of `review_open` (`ecc-review-agent-open-description`)
   names the arguments of each choice, so that asking Claude for "the staged
   changes", "this whole branch" or "just this commit" opens what `s`,
-  `b RET RET` and `c X RET` open.
+  `b RET RET` and `c X RET` open. What `review_open` and `review_hunks`
+  say the review is of follows git, as the untracked files do
+  (`ecc-review--range-includes-worktree-p`): a range of commits -- `X^!`,
+  `A..B`, `A...B` -- is "the commits" it names, as typed, and only a range
+  that reads the working tree is "the working tree against" it.
 
 - `p` in `ecc-review-menu` reviews a GitHub pull request. It is offered only
   when the `gh` CLI is on `PATH` (`ecc-review-gh-executable`); gh is not a
