@@ -171,6 +171,7 @@ buffer."
   `(ecc-test-with-fake-session ,session
      (ecc-review-files-test--with-directory directory
        (let ((ediff-window-setup-function #'ediff-setup-windows-plain)
+             (ecc-review-ediff-layout 'side-by-side)
              (,control nil))
          (unwind-protect
              (progn
@@ -582,7 +583,8 @@ keeps the filter."
           (should (invisible-p (point)))
           (re-search-forward "═══ c.txt")
           (should-not (invisible-p (point)))))
-      (should (string-search "/NEEDLE: 2 files hidden by filter" ediff-brief-help-message))
+      (should (string-search "/NEEDLE: 2 hidden"
+                             (buffer-local-value 'header-line-format ediff-buffer-B)))
       (should-error (ecc-review-ediff-previous-difference) :type 'user-error)
       (should (= ediff-current-difference 2))
       ;; j to a hidden one goes to the first one kept after it.
@@ -596,7 +598,8 @@ keeps the filter."
       (ecc-review-files-set-filter control "")
       (ecc-review-ediff-next-difference)
       (should (= ediff-current-difference 2))
-      (should-not (string-search "hidden by filter" ediff-brief-help-message)))))
+      (should-not (string-search "hidden"
+                                 (buffer-local-value 'header-line-format ediff-buffer-B))))))
 
 (ert-deftest ecc-review-files-test-ediff-filter-holds-across-reading-again ()
   "A filtered ediff review read again hides the same files, and draws no comment there."
@@ -829,7 +832,8 @@ is swept away."
         (ecc-review-remove-note on-b)
         (ecc-review--draw-notes)
         (should (= ediff-current-difference 2))
-        (should (string-search "/zzz: 2 files hidden by filter" (buffer-string)))))))
+        (should (string-search "/zzz: 2 hidden"
+                               (buffer-local-value 'header-line-format ediff-buffer-B)))))))
 
 (ert-deftest ecc-review-files-test-the-mark-after-a-reading-again ()
   "Read again with point in the last file, the pane marks that file."
@@ -996,20 +1000,6 @@ is swept away."
                 (goto-char (point-min))
                 (should (eq (car (should-error (ecc-review-next-hunk))) 'error)))))
         (ecc-review-files-test--kill-buffers)))))
-
-(ert-deftest ecc-review-files-test-the-quiet-help-is-the-panel-s ()
-  "The help written in place is centred on the panel and starts at its top."
-  (skip-unless (executable-find "git"))
-  (ecc-review-files-test--with-pane
-    (ecc-review-files-test--with-ediff session control
-      (ecc-review-files-set-filter control "c.txt")
-      (let ((as-written (buffer-string)))
-        (with-selected-window ediff-window-A
-          (with-current-buffer control
-            (goto-char (point-max))
-            (ecc-review-ediff--write-help)
-            (should (= (point) (point-min)))))
-        (should (equal (buffer-string) as-written))))))
 
 (ert-deftest ecc-review-files-test-ga-and-gb-past-the-filter ()
   "ga on a hidden difference goes to the nearest kept; with none kept it says so."

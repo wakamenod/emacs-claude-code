@@ -51,7 +51,8 @@
 (defmacro ecc-review-ediff-test--with-ediff (&rest body)
   "Run BODY with ediff laying its windows out the way batch can."
   (declare (indent 0))
-  `(let ((ediff-window-setup-function #'ediff-setup-windows-plain))
+  `(let ((ediff-window-setup-function #'ediff-setup-windows-plain)
+         (ecc-review-ediff-layout 'side-by-side))
      ,@body))
 
 (defmacro ecc-review-ediff-test--with-ediff-and-no-pane (&rest body)
@@ -203,15 +204,14 @@ batch frame, 24 of them, does not have to spare."
         (should-error (ecc-review-ediff-buffer session) :type 'user-error)))))
 
 (ert-deftest ecc-review-ediff-test-layout-can-be-set-back ()
-  "The spacing and the split are the review's own, and both can be undone."
+  "The spacing can be undone, and the split is the review's own."
   (skip-unless (executable-find "git"))
   (ecc-review-ediff-test--with-ediff
     (ecc-test-with-fake-session session
       (ecc-review-ediff-test--with-directory directory
         (let ((control nil))
           (unwind-protect
-              (let ((ecc-review-ediff-file-spacing 0)
-                    (ecc-review-ediff-split-window-function nil))
+              (let ((ecc-review-ediff-file-spacing 0))
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
                 (should (ecc-review-ensure-baseline session))
@@ -223,12 +223,11 @@ batch frame, 24 of them, does not have to spare."
                   (should (equal (with-current-buffer (cdr ecc-review-ediff--buffers)
                                    (buffer-string))
                                  "═══ made.txt ═══\nnew\n═══ x.txt ═══\ntwo\n"))
-                  ;; And ediff's own layout, not the review's.  (ediff
-                  ;; makes the variable local in every control buffer of
-                  ;; its own accord, so what is asked is the value.)
-                  (should (eq ediff-split-window-function
-                              (default-value 'ediff-split-window-function)))
-                  (should (= (car (window-edges ediff-window-A))
+                  ;; Side by side, as asked, in this review alone.
+                  (should (eq ediff-split-window-function #'split-window-horizontally))
+                  (should (eq (default-value 'ediff-split-window-function)
+                              #'split-window-vertically))
+                  (should (< (car (window-edges ediff-window-A))
                              (car (window-edges ediff-window-B))))))
             (ecc-review-ediff-test--quit control)))))))
 
@@ -263,19 +262,15 @@ batch frame, 24 of them, does not have to spare."
                   ;; standard string unless it is composed again there.
                   (should-not (equal ediff-brief-help-message
                                      ediff-brief-message-string))
-                  ;; One line, and no key but ?: the keys are on the
-                  ;; header lines of the two windows.  Where the review
-                  ;; is, and it follows the difference.
-                  (should (equal ediff-brief-help-message
-                                 " 1 difference, none selected   ? all keys"))
+                  ;; One line, and no key but ?: the keys, and where the
+                  ;; review is, are on the header lines of the two
+                  ;; windows.
+                  (should (equal ediff-brief-help-message " ? all keys"))
                   ;; And it is in the panel, not only in the variable:
                   ;; `ediff-setup' writes the help out before it runs
                   ;; the startup hooks.
                   (should (equal ediff-help-message ediff-brief-help-message))
-                  (should (string-match-p (regexp-quote "none selected") (buffer-string)))
-                  (ediff-unselect-and-select-difference 0 nil 'no-recenter)
-                  (should (string-match-p (regexp-quote " Difference 1 of 1   ? all keys")
-                                          (buffer-string)))
+                  (should (equal (string-trim (buffer-string)) "? all keys"))
                   (ediff-toggle-help)
                   (should (string-match-p (regexp-quote "c -comment on the line/diff")
                                           (buffer-string)))

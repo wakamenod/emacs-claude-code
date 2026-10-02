@@ -101,11 +101,16 @@ recorded sessions; RET reads the file a review is of."
       (with-current-buffer buffer (set-buffer-modified-p nil))
       (kill-buffer buffer))))
 
+(defvar ecc-review-direct-test--layout 'side-by-side
+  "The `ecc-review-ediff-layout' `ecc-review-direct-test--with-review' opens in.")
+
 (defmacro ecc-review-direct-test--with-review (session control &rest body)
-  "Run BODY with CONTROL the ediff review of a.txt that SESSION changed."
+  "Run BODY with CONTROL the ediff review of a.txt that SESSION changed.
+It is laid out as `ecc-review-direct-test--layout' says."
   (declare (indent 2))
   `(let ((directory (file-name-as-directory (make-temp-file "ecc-review-direct" t)))
          (ediff-window-setup-function #'ediff-setup-windows-plain)
+         (ecc-review-ediff-layout ecc-review-direct-test--layout)
          (ediff-force-faces t)
          (ecc-review-talk-reply-height nil)
          (ecc-review-files-shown nil)
@@ -182,14 +187,16 @@ command is run, with `this-command' COMMAND, `next-line' by default."
           (should-not (equal left right))
           (should-not (string-search "\n" left))
           (should-not (string-search "\n" right))
-          (should (string-prefix-p " n/p diff  j jump  { } comments  c comment" left))
+          ;; Side by side, the left keys are put at the right edge.
+          (should (string-search "n/p diff  j jump  { } comments  c comment" left))
           (should (string-prefix-p " RET open  T tour  t next  M message" right))
           (should (string-search "? all keys" right))
+          ;; Where the review is, at the end of the right one.
+          (should (string-suffix-p "  -/4 " right))
           ;; Faces on the string, no font-lock.
           (should (eq (get-text-property 1 'face left) 'bold)))
-        ;; The panel is the state now: no key but ?.
-        (should (string-match-p "\\` [0-9]+ differences, none selected   \\? all keys\\'"
-                                ediff-brief-help-message))))))
+        ;; The panel says ? and nothing else.
+        (should (equal ediff-brief-help-message " ? all keys"))))))
 
 (ert-deftest ecc-review-direct-test-keys-do-what-the-panel-does ()
   "n, j and v in a window do what they do in the panel, and the window keeps the keys."
@@ -477,6 +484,7 @@ side is the cursor of the window that has the keyboard."
   (ecc-test-with-fake-session session
     (let ((directory (file-name-as-directory (make-temp-file "ecc-review-direct" t)))
           (ediff-window-setup-function #'ediff-setup-windows-plain)
+          (ecc-review-ediff-layout 'side-by-side)
           (ecc-review-talk-reply-height nil)
           (control nil))
       (unwind-protect
@@ -605,6 +613,7 @@ EXTRA is what `ecc-review-direct-test--open' takes."
   (declare (indent 3))
   `(let ((directory (file-name-as-directory (make-temp-file "ecc-review-direct" t)))
          (ediff-window-setup-function #'ediff-setup-windows-plain)
+         (ecc-review-ediff-layout 'side-by-side)
          (ediff-force-faces t)
          (ecc-review-talk-reply-height nil)
          (ecc-review-files-shown nil)
@@ -722,25 +731,29 @@ the keyboard back, is no move of point."
             (call-interactively (key-binding (kbd "RET")))))
         (should (equal opened (cons (file-truename (expand-file-name "a.txt" directory)) 21)))))))
 
-(ert-deftest ecc-review-direct-test-the-panel-says-the-difference-after-any-change ()
-  "The status of the panel follows a reading again and a quiet change of difference."
+(ert-deftest ecc-review-direct-test-the-header-says-the-difference-after-any-change ()
+  "Where the review is follows a reading again and a quiet change of difference.
+It is at the end of the header line of the right window."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
     (ecc-review-direct-test--with-review session control
-      (ecc-review-direct-test--move control 'B 55)
-      (should (string-search "Difference 4 of 4" (with-current-buffer control (buffer-string))))
-      ;; Off the difference, n goes from point: the panel is told of the
-      ;; one n starts from, and then of where n went.
-      (ecc-review-direct-test--move control 'B 10)
-      (ecc-review-direct-test--type control 'B "n")
-      (should (string-search "Difference 2 of 4" (with-current-buffer control (buffer-string))))
-      ;; A fifth difference, read again: the count follows.
-      (ecc-review-direct-test--write
-       (concat directory "a.txt")
-       (replace-regexp-in-string "^l58$" "l58 changed" ecc-review-direct-test--changed))
-      (with-current-buffer control
-        (ecc-review-reread t)
-        (should (string-search "of 5" (buffer-string)))))))
+      (let ((status (lambda ()
+                      (buffer-local-value 'header-line-format
+                                          (buffer-local-value 'ediff-buffer-B control)))))
+        (ecc-review-direct-test--move control 'B 55)
+        (should (string-suffix-p "  4/4 " (funcall status)))
+        ;; Off the difference, n goes from point: the header is told of
+        ;; the one n starts from, and then of where n went.
+        (ecc-review-direct-test--move control 'B 10)
+        (ecc-review-direct-test--type control 'B "n")
+        (should (string-suffix-p "  2/4 " (funcall status)))
+        ;; A fifth difference, read again: the count follows.
+        (ecc-review-direct-test--write
+         (concat directory "a.txt")
+         (replace-regexp-in-string "^l58$" "l58 changed" ecc-review-direct-test--changed))
+        (with-current-buffer control
+          (ecc-review-reread t))
+        (should (string-match-p "/5 \\'" (funcall status)))))))
 
 (ert-deftest ecc-review-direct-test-a-file-too-large-opens-unshifted ()
   "A file too large to diff a line through opens at the line the review shows."
@@ -925,15 +938,15 @@ The scroll may drag point into another difference; a scroll is not followed."
               (ecc-review-ediff--put-back places))))
         (should (zerop set))))))
 
-(ert-deftest ecc-review-direct-test-the-panel-is-written-once-a-change ()
-  "Point going into a new difference writes the panel once."
+(ert-deftest ecc-review-direct-test-the-header-is-written-once-a-change ()
+  "Point going into a new difference writes the header lines once."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
     (ecc-review-direct-test--with-review session control
       (let ((writes 0)
-            (write (symbol-function 'ecc-review-ediff--write-help)))
-        (cl-letf (((symbol-function 'ecc-review-ediff--write-help)
-                   (lambda () (cl-incf writes) (funcall write))))
+            (write (symbol-function 'ecc-review-direct-refresh-headers)))
+        (cl-letf (((symbol-function 'ecc-review-direct-refresh-headers)
+                   (lambda (control) (cl-incf writes) (funcall write control))))
           (ecc-review-direct-test--move control 'B 22))
         (should (= (buffer-local-value 'ediff-current-difference control) 1))
         (should (= writes 1))))))
@@ -1026,5 +1039,111 @@ right is the separator of the next file."
                   (ecc-review-ediff-quit second))
                 (delete-directory directory t))))
         (ecc-test-cleanup-session two)))))
+
+;;;; The layouts
+
+(defun ecc-review-direct-test--align-to (header)
+  "Return the :align-to of the first stretch of space in HEADER, or nil."
+  (let ((at (text-property-not-all 0 (length header) 'display nil header)))
+    (and at (plist-get (cdr (get-text-property at 'display header)) :align-to))))
+
+(ert-deftest ecc-review-direct-test-stacked-sides-are-aligned-by-rows ()
+  "One above the other, the line against point is at the same height in both windows."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (let ((ecc-review-direct-test--layout 'stacked))
+      (ecc-review-direct-test--with-review session control
+        (let ((left (ecc-review-direct-test--window control 'A))
+              (right (ecc-review-direct-test--window control 'B)))
+          (should (< (cadr (window-edges left)) (cadr (window-edges right))))
+          (set-window-start right (ecc-review-direct-test--position control 'B 20))
+          (ecc-review-direct-test--move control 'B 24)
+          (should (= (ecc-review-direct-test--line-of left) 22))
+          (should (= (ecc-review-direct-test--row left) (ecc-review-direct-test--row right)))
+          ;; And from the window above.
+          (ecc-review-direct-test--move control 'A 10)
+          (should (= (ecc-review-direct-test--line-of right) 10))
+          (should (= (ecc-review-direct-test--row left) (ecc-review-direct-test--row right))))))))
+
+(ert-deftest ecc-review-direct-test-the-left-keys-meet-the-right-ones-side-by-side ()
+  "Side by side the left header is at the right edge; stacked, both are at the left.
+| from a window changes it, and keeps the keyboard there."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (let ((ecc-review-direct-test--layout 'stacked))
+      (ecc-review-direct-test--with-review session control
+        (let ((header (lambda (side)
+                        (buffer-local-value 'header-line-format
+                                            (buffer-local-value (if (eq side 'A)
+                                                                    'ediff-buffer-A
+                                                                  'ediff-buffer-B)
+                                                                control)))))
+          (should (string-prefix-p " n/p diff" (funcall header 'A)))
+          (should-not (ecc-review-direct-test--align-to (funcall header 'A)))
+          (ecc-review-direct-test--type control 'B "|")
+          (should (eq (selected-window) (ecc-review-direct-test--window control 'B)))
+          (should (< (car (window-edges (ecc-review-direct-test--window control 'A)))
+                     (car (window-edges (ecc-review-direct-test--window control 'B)))))
+          (let ((left (funcall header 'A)))
+            (should (equal (ecc-review-direct-test--align-to left)
+                           `(- right ,(1+ (string-width (ecc-review-direct--keys 'A))))))
+            (should (string-suffix-p "/ filter " left)))
+          ;; The right one starts at the left either way, and ends with
+          ;; where the review is, at the right edge.
+          (should (string-prefix-p " RET open" (funcall header 'B)))
+          (ecc-review-direct-test--type control 'B "|")
+          (should-not (ecc-review-direct-test--align-to (funcall header 'A))))))))
+
+(ert-deftest ecc-review-direct-test-the-panel-is-out-of-sight ()
+  "The control panel is on the screen only while ? shows the long help.
+Without it ediff finds the layout it made: n, p, j, v and C-l lay
+nothing out, and | and ? once each, the reply pane and the files pane
+with them; reading again and q work as ever."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (let ((ecc-review-direct-test--layout 'stacked)
+          (ecc-review-talk-reply-width 20)
+          (ecc-review-talk-min-diff-width 40))
+      (ecc-review-direct-test--with-review session control
+        (let ((ecc-review-talk-reply-height 4)
+              (ecc-review-files-shown t)
+              (ecc-review-files-width 10)
+              (layouts 0)
+              (panel (lambda () (get-buffer-window control))))
+          (ecc-review-files--show control)
+          (should (eq (window-parameter (ecc-review-talk--show-pane control) 'window-side)
+                      'right))
+          (cl-letf* ((plain (symbol-function 'ediff-setup-windows-plain))
+                     ((symbol-function 'ediff-setup-windows-plain)
+                      (lambda (&rest args) (cl-incf layouts) (apply plain args))))
+            (should-not (funcall panel))
+            (dolist (key '("n" "n" "p" "j" "v" "C-l"))
+              (ecc-review-direct-test--type control 'B key))
+            (should (zerop layouts))
+            (should-not (funcall panel))
+            (should (eq (selected-window) (ecc-review-direct-test--window control 'B)))
+            (ecc-review-direct-test--type control 'B "?")
+            (should (= layouts 1))
+            (should (window-live-p (funcall panel)))
+            (should (eq (window-parameter (funcall panel) 'mode-line-format) 'none))
+            (should (string-search "Every key works"
+                                   (with-current-buffer control (buffer-string))))
+            (should (eq (selected-window) (ecc-review-direct-test--window control 'B)))
+            (ecc-review-direct-test--type control 'B "?")
+            (should (= layouts 2))
+            (should-not (funcall panel))
+            (ecc-review-direct-test--type control 'B "|")
+            (should (= layouts 3))
+            (should-not (funcall panel))
+            (should (ecc-review-files--pane-window control))
+            (should (get-buffer-window (buffer-local-value 'ecc-review-talk--pane control)))
+            (ecc-review-direct-test--type control 'B "n")
+            (should (= layouts 3))
+            (with-current-buffer control
+              (ecc-review-reread t))
+            (should (= layouts 3))
+            (should-not (funcall panel))
+            (ecc-review-direct-test--type control 'B "q")
+            (should-not (buffer-live-p control))))))))
 
 ;;; ecc-review-direct-test.el ends here
