@@ -2005,6 +2005,21 @@ edited or answered."
           (car target)
           (and target (ecc-review-note-id (cdr target))))))
 
+(defun ecc-review--read-comment (line)
+  "Settle what \\`c' on LINE does and read the text; return (TEXT PLAN).
+The arguments of `ecc-review-comment\=', read the way it reads them: the
+plan first, then the comment, offered for editing when it is one of
+yours already."
+  (let* ((plan (ecc-review--comment-plan line))
+         (target (and (nth 2 plan) (ecc-review-find-note (nth 2 plan)))))
+    (list (pcase (nth 1 plan)
+            ('edit (read-string "Comment: " (ecc-review-note-text target)))
+            ('reply (read-string (format "Reply to Claude's #%d: " (nth 2 plan))))
+            (_ (read-string (if (plist-get line :side)
+                                "Comment on this line: "
+                              "Comment on this hunk: "))))
+          plan)))
+
 (defun ecc-review-comment (text &optional plan)
   "Put the comment TEXT on the line at point.
 On the @@ header of a hunk the comment is about the whole hunk; on a
@@ -2023,24 +2038,16 @@ does not turn into a reply to what arrived meanwhile -- on the line
 found again by what it said, and when that line has gone it is kept as
 outdated rather than lost with the text."
   (interactive
-   (let* ((line (or (ecc-review--line-at-point)
-                    (user-error "Not on a line of a hunk")))
-          (plan (ecc-review--comment-plan line))
-          (target (and (nth 2 plan) (ecc-review-find-note (nth 2 plan)))))
-     (list (pcase (nth 1 plan)
-             ('edit (read-string "Comment: " (ecc-review-note-text target)))
-             ('reply (read-string (format "Reply to Claude's #%d: " (nth 2 plan))))
-             (_ (read-string (if (plist-get line :side)
-                                 "Comment on this line: "
-                               "Comment on this hunk: "))))
-           plan)))
+   (let ((line (or (ecc-review--line-at-point)
+                   (user-error "Not on a line of a hunk"))))
+     (ecc-review--read-comment line)))
   (pcase-let* ((`(,anchor ,kind ,id)
                 (or plan (ecc-review--comment-plan
                           (or (ecc-review--line-at-point)
                               (user-error "Not on a line of a hunk")))))
                (text (string-trim text))
                (target (and id (ecc-review-find-note id)))
-               (lines (ecc-review--lines))
+               (lines (ecc-review-lines))
                (line (ecc-review--locate-note anchor lines)))
     (when (string-empty-p text)
       (user-error "Empty comment"))

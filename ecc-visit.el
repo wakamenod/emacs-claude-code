@@ -169,15 +169,28 @@ PATH."
          (later (and entry (cdr (memq patch (ecc-file-entry-patches entry))))))
     (dolist (next later line)
       (when (ecc-visit--usable-patch-p next)
-        (let ((delta 0))
-          (seq-doseq (hunk next)
-            (let ((old-start (alist-get 'oldStart hunk))
-                  (old-lines (alist-get 'oldLines hunk))
-                  (new-lines (alist-get 'newLines hunk)))
-              (when (and (numberp old-start) (numberp old-lines) (numberp new-lines)
-                         (>= line (+ old-start old-lines)))
-                (cl-incf delta (- new-lines old-lines)))))
-          (setq line (max 1 (+ line delta))))))))
+        (setq line (ecc-visit-shift-through
+                    line
+                    (seq-keep (lambda (hunk)
+                                (let ((old-start (alist-get 'oldStart hunk))
+                                      (old-lines (alist-get 'oldLines hunk))
+                                      (new-lines (alist-get 'newLines hunk)))
+                                  (and (numberp old-start) (numberp old-lines)
+                                       (numberp new-lines)
+                                       (list old-start old-lines nil new-lines))))
+                              next)))))))
+
+(defun ecc-visit-shift-through (line hunks)
+  "Return LINE moved through one change, made of HUNKS.
+Each hunk is (OLD-START OLD-COUNT NEW-START NEW-COUNT ...), the shape of
+`ecc-diff-hunks\=', in the file before the change.  The hunks above LINE
+move it by what they added less what they removed; a line inside a hunk
+is left where it is, which is the place the change was made."
+  (let ((delta 0))
+    (pcase-dolist (`(,old-start ,old-count ,_ ,new-count) hunks)
+      (when (>= line (+ old-start old-count))
+        (cl-incf delta (- new-count old-count))))
+    (max 1 (+ line delta))))
 
 (defun ecc-visit--first-change (patch)
   "Return the first line PATCH changed, in the file as it left it, or nil.
@@ -386,12 +399,16 @@ flashes; without it the buffer keeps the point it had."
                    (pop-to-buffer buffer)
                    (get-buffer-window buffer))))
     (when (and line (window-live-p window))
-      (with-selected-window window
-        (goto-char (point-min))
-        (forward-line (1- line))
-        (recenter)
-        (pulse-momentary-highlight-one-line (point))))
+      (ecc-visit-show-line window line))
     window))
+
+(defun ecc-visit-show-line (window line)
+  "Put the point of WINDOW on LINE, in the middle of it, and flash the line."
+  (with-selected-window window
+    (goto-char (point-min))
+    (forward-line (1- line))
+    (recenter)
+    (pulse-momentary-highlight-one-line (point))))
 
 (provide 'ecc-visit)
 
