@@ -469,8 +469,8 @@ review of commits -- \"a..b\", \"a...b\", \"REV^!\" -- that listed them
 would show work that is in none of those commits.  The empty range, what
 is not staged, reads the working tree, and `staged\=' does not.
 
-The string is not parsed here but handed to git, the way Hunk decides it
-\(`isWorkingTreeGitDiffInput\=' in github.com/modem-dev/hunk):
+The string is not parsed here but handed to git, which knows every way
+of writing a revision:
 `git rev-parse --revs-only\=' prints one line per revision a range names,
 an excluded one with ^ in front, and `git diff\=' compares a lone
 revision with the working tree and anything else with another commit.
@@ -997,7 +997,7 @@ changed stays open when its changes have gone."
     (define-key map (kbd "g") #'ecc-review-refresh)
     (define-key map (kbd "q") #'quit-window)
     ;; s was `diff-split-hunk', which edits the buffer and is refused
-    ;; below with the rest; the files pane has it instead, as in Hunk.
+    ;; below with the rest; s toggles the files pane instead.
     (define-key map (kbd "s") #'ecc-review-files-toggle)
     (define-key map (kbd "/") #'ecc-review-files-filter)
     ;; diff-mode's own moves, past the files the filter hides.
@@ -2599,8 +2599,8 @@ the new error is what its header line says."
 
 ;;;; Following the files
 
-;; A review is read again as the files under it change, the way Hunk's
-;; watch mode follows them.  Three things say that they may have: a
+;; A review is read again as the files under it change, so that it shows
+;; the tree as it is now and not as it was when it opened.  Three things say that they may have: a
 ;; tool of the session finishing -- any tool that can write, since a shell
 ;; command or a script changes files as well as an edit does, and
 ;; `ecc-files-updated-hook' hears only of edits -- a turn ending, and a

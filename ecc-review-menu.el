@@ -388,8 +388,8 @@ it is not given."
 
 (defun ecc-review-menu-commit-range (root from &optional to)
   "Return the range `c' reviews in ROOT: the commit FROM, or FROM through TO.
-TO nil, empty or the commit FROM is FROM alone, FROM^! -- what Hunk
-calls `hunk show'.  Otherwise it is FROM^..TO, FROM included; the two
+TO nil, empty or the commit FROM is FROM alone, FROM^!, the change
+`git show' shows.  Otherwise it is FROM^..TO, FROM included; the two
 are put in order first, so that a TO older than FROM is the same span
 picked the other way round.  A commit with no parent -- the first of
 the repository -- is compared with the empty tree instead, which is
