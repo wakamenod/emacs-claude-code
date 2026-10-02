@@ -366,7 +366,15 @@ Verified against **Claude Code CLI 2.1.281**.
   a pane that had the keyboard has it again on its new side. It shows the latest turn of the session of
   the review as it streams -- what you sent on a line, what Claude says,
   and each tool call on a line of its own, such as `review_navigate →
-  foo.el:12` -- and keeps its end in view. Each turn replaces the last;
+  foo.el:12` -- and keeps its end in view. `u` and `d` in the review scroll
+  it back and on without selecting it, and so do `u`, `d`, `DEL` and `SPC`
+  in the pane. Each window of the pane is asked before every change
+  whether its end is in view: one that shows it follows it, and one
+  scrolled back any way -- those keys, the mouse wheel -- keeps the lines
+  it shows, by line, so that a call line above them losing its ` …` moves
+  nothing. A pane taken down and put back, as `|` does, shows the lines it
+  showed, or its end. A new turn brings every window of that session's
+  panes to the end, and another session's are left alone. Each turn replaces the last;
   the whole conversation stays in the transcript. What the session waits
   for -- a permission, Bash included, printed whole; a question with its
   options; a plan -- is shown at the end, and `y` in the review
@@ -415,7 +423,7 @@ Verified against **Claude Code CLI 2.1.281**.
   and ecc gave the panel the keyboard, so `c` could only be about a whole
   difference. Now the review opens with the keyboard in the window of the
   new side, and every key of the panel works in both windows -- `n`, `p`, `j`, `{`,
-  `}`, `a`, `s`, `/`, `T`, `t`, `M`, `y`, `l`, `!`, `?`, `i`, `q`,
+  `}`, `a`, `s`, `/`, `T`, `t`, `M`, `y`, `u`, `d`, `l`, `!`, `?`, `i`, `q`,
   `C-c C-c`, `C-c C-k`, `v`, `V`, `C-l`, `|`, `m`, `h`, `@`, `*`, `<`,
   `>`, `##`, `#c` -- run in the control buffer as from the panel, with
   the keyboard kept in the window or given back to it when ediff lays its
@@ -426,9 +434,7 @@ Verified against **Claude Code CLI 2.1.281**.
   says there is nothing to comment on a line both sides share; `c` in
   the panel still comments on the whole difference. `x` removes a
   comment of the line at point first -- `d` in the diff review; in ediff
-  `u` and `d` scroll the reply pane back and on, and a pane scrolled back
-  stays where it was put as Claude goes on, until `d` brings its end into
-  view again or another turn begins. Moving point drives the review:
+  `u` and `d` scroll the reply pane back and on (above). Moving point drives the review:
   after a command in a window, a difference that point has gone into
   becomes the current one -- its colour, its bar, its number -- without
   ediff's select, which lays both windows out again; the window being
@@ -467,8 +473,10 @@ Verified against **Claude Code CLI 2.1.281**.
   the two meet in the middle. The header line of the new side ends with
   which difference is current out of how many, `3/12`, and what the
   filter hides -- after every change of either, reading again included;
-  a window too narrow for the keys and that puts it first, and the keys
-  after it, worked out as the header line is drawn, and drawn again
+  a window too narrow for every key and that leaves out the keys before
+  the last, `? all keys`, from the one before it until the rest fit, and
+  one too narrow even for `?` and that puts it first and the keys after
+  it, worked out as the header line is drawn, and drawn again
   whenever what it reads changes --
   and `?` shows every key, in a window as in the panel. `o` in the files pane
   opens the file itself, at its first change in an ediff review and
@@ -476,6 +484,12 @@ Verified against **Claude Code CLI 2.1.281**.
   review.
 
 ### Changed
+
+- **Breaking.** `d` in an ediff review no longer removes a comment: it
+  scrolls the reply pane on, as `u` scrolls it back (above). `x` removes a
+  comment there -- in the control panel, a comment of the current
+  difference; in a window, one of the line at point first -- and `C-u x`
+  offers every comment of the review. The diff review keeps `d`.
 
 - `ecc-review-ediff-layout` replaces `ecc-review-ediff-split-window-function`:
   `stacked` or `side-by-side` rather than a split function, and nil, ediff's
