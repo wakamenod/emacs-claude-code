@@ -263,20 +263,23 @@ batch frame, 24 of them, does not have to spare."
                   ;; standard string unless it is composed again there.
                   (should-not (equal ediff-brief-help-message
                                      ediff-brief-message-string))
-                  ;; Two lines: the keys a review is read with.
-                  (should (equal (split-string ediff-brief-help-message "\n")
-                                 '(" n/p diff   c comment   { } comments   a Claude's   s files   / filter"
-                                   " T tour   t next   M message   C-c C-c send   q quit   ! reread   ? all keys")))
+                  ;; One line, and no key but ?: the keys are on the
+                  ;; header lines of the two windows.  Where the review
+                  ;; is, and it follows the difference.
+                  (should (equal ediff-brief-help-message
+                                 " 1 difference, none selected   ? all keys"))
                   ;; And it is in the panel, not only in the variable:
                   ;; `ediff-setup' writes the help out before it runs
                   ;; the startup hooks.
                   (should (equal ediff-help-message ediff-brief-help-message))
-                  (should (string-match-p (regexp-quote "C-c C-c send")
-                                          (buffer-string)))
-                  (should (string-match-p (regexp-quote "s files   / filter")
+                  (should (string-match-p (regexp-quote "none selected") (buffer-string)))
+                  (ediff-unselect-and-select-difference 0 nil 'no-recenter)
+                  (should (string-match-p (regexp-quote " Difference 1 of 1   ? all keys")
                                           (buffer-string)))
                   (ediff-toggle-help)
-                  (should (string-match-p (regexp-quote "c -comment on this diff")
+                  (should (string-match-p (regexp-quote "c -comment on the line/diff")
+                                          (buffer-string)))
+                  (should (string-match-p (regexp-quote "Every key works in both windows")
                                           (buffer-string)))
                   (ediff-toggle-help)
                   ;; And no other ediff session is touched.
@@ -601,6 +604,184 @@ minibuffer the control frame of a graphical Emacs does not have."
                   (should (get-buffer-window stranger))
                   (kill-buffer stranger)))
             (ecc-review-ediff-test--quit control)))))))
+
+;;;; One diff per file
+
+(defun ecc-review-ediff-test--within-its-file (unit)
+  "Return non-nil when the difference UNIT lies inside the section of its file."
+  (let ((a (ecc-review-ediff--section-bounds 'A (plist-get unit :path)))
+        (b (ecc-review-ediff--section-bounds 'B (plist-get unit :path))))
+    (and (car a) (car b)
+         (<= (car a) (plist-get unit :a-beg)) (<= (plist-get unit :a-end) (cdr a))
+         (<= (car b) (plist-get unit :b-beg)) (<= (plist-get unit :b-end) (cdr b)))))
+
+(ert-deftest ecc-review-ediff-test-a-difference-stays-in-its-file ()
+  "Each file is diffed on its own: no difference runs over a separator.
+A file taken out and another put in with the same text were one diff of
+the two buffers whole, which paired the text of the one with the text
+of the other across the separator between them -- the new file was
+given lines of the old side, and the old one none."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil)
+              (text (ecc-review-ediff-test--numbered 20))
+              (script (lambda (name)
+                        (mapconcat (lambda (n) (format "echo %s step %d\n" name n))
+                                   (number-sequence 1 15) ""))))
+          (unwind-protect
+              (progn
+                (ecc-review-ediff-test--repository directory)
+                (ecc-review-ediff-test--write (concat directory "a.txt") text)
+                (ecc-review-ediff-test--write (concat directory "one.sh") (funcall script "one"))
+                (ecc-review-ediff-test--git directory "add" "a.txt" "one.sh")
+                (ecc-review-ediff-test--git directory "commit" "-q" "-m" "a")
+                (setf (ecc-session-project-root session) directory)
+                (should (ecc-review-ensure-baseline session))
+                ;; a.txt goes and b.txt comes with its text; two scripts
+                ;; much like one.sh come, and one.sh grows by a lot.
+                (delete-file (concat directory "a.txt"))
+                (ecc-review-ediff-test--write (concat directory "b.txt") text)
+                (ecc-review-ediff-test--write (concat directory "one.sh")
+                                              (concat (funcall script "one")
+                                                      (ecc-review-ediff-test--numbered 40)))
+                (ecc-review-ediff-test--write (concat directory "two.sh") (funcall script "two"))
+                (ecc-review-ediff-test--write (concat directory "three.sh") (funcall script "one"))
+                (setq control (ecc-review-ediff-buffer session))
+                (with-current-buffer control
+                  (let ((units (ecc-review-units)))
+                    (should (seq-every-p #'ecc-review-ediff-test--within-its-file units))
+                    ;; Every file is in what review_hunks lists.
+                    (should (equal (sort (seq-uniq (mapcar (lambda (unit) (plist-get unit :path))
+                                                           units))
+                                         #'string<)
+                                   (sort (mapcar #'car ecc-review-ediff--sections) #'string<)))
+                    (dolist (unit units)
+                      (pcase (nth 3 (assoc (plist-get unit :path) ecc-review-ediff--sections))
+                        ;; A file put in has no old line, one taken out no new.
+                        ("A" (should (zerop (plist-get unit :old-count))))
+                        ("D" (should (zerop (plist-get unit :new-count))))))
+                    (let ((gone (seq-find (lambda (unit) (equal (plist-get unit :path) "a.txt"))
+                                          units)))
+                      (should (= (plist-get gone :old-count) 20))
+                      (should (equal (plist-get gone :header) "@@ -1,20 +1,0 @@"))))
+                  ;; And it holds when ediff computes them again.
+                  (ediff-update-diffs)
+                  (should (seq-every-p #'ecc-review-ediff-test--within-its-file (ecc-review-units)))
+                  ;; n walks them, and the filter still hides a file.
+                  (ediff-jump-to-difference 1)
+                  (ecc-review-ediff-next-difference)
+                  (should (= ediff-current-difference 1))
+                  (ecc-review-files-set-filter control "two")
+                  (should (seq-every-p (lambda (unit)
+                                         (eq (ecc-review-ediff--hidden-difference-p
+                                              (plist-get unit :number))
+                                             (not (equal (plist-get unit :path) "two.sh"))))
+                                       (ecc-review-units)))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(defmacro ecc-review-ediff-test--with-one-file (session control old new &rest body)
+  "Run BODY with CONTROL the ediff review of x.txt that SESSION took from OLD to NEW."
+  (declare (indent 4))
+  `(ecc-review-ediff-test--with-ediff
+     (ecc-review-ediff-test--with-directory directory
+       (let ((,control nil))
+         (unwind-protect
+             (progn
+               (ecc-review-ediff-test--git directory "init" "-q")
+               (ecc-review-ediff-test--git directory "config" "user.email" "t@example.com")
+               (ecc-review-ediff-test--git directory "config" "user.name" "t")
+               (ecc-review-ediff-test--write (concat directory "x.txt") ,old)
+               (ecc-review-ediff-test--git directory "add" "x.txt")
+               (ecc-review-ediff-test--git directory "commit" "-q" "-m" "x")
+               (setf (ecc-session-project-root ,session) directory)
+               (should (ecc-review-ensure-baseline ,session))
+               (ecc-review-ediff-test--write (concat directory "x.txt") ,new)
+               (setq ,control (ecc-review-ediff-buffer ,session))
+               (with-current-buffer ,control
+                 ,@body))
+           (ecc-review-ediff-test--quit ,control))))))
+
+(ert-deftest ecc-review-ediff-test-the-diff-options-are-the-review-s-own ()
+  "The review diffs with its own options, not with those another ediff set.
+ediff keeps them in each control buffer, and `#c' in another ediff sets
+the default; read from anywhere but the review's control buffer, a
+review ignoring case stopped ignoring it."
+  (skip-unless (and (executable-find "git") (executable-find ediff-diff-program)))
+  (ecc-test-with-fake-session session
+    (ecc-review-ediff-test--with-one-file session control "Hello\nworld\n" "hello\nworld\n"
+      (should (= ediff-number-of-differences 1))
+      (let ((default (default-value 'ediff-actual-diff-options)))
+        (unwind-protect
+            (progn
+              (setq ediff-actual-diff-options "-i")
+              (setq-default ediff-actual-diff-options "")
+              (ecc-review-ediff--compute-differences)
+              (should (= ediff-number-of-differences 0)))
+          (setq-default ediff-actual-diff-options default))))))
+
+(ert-deftest ecc-review-ediff-test-a-file-diff-calls-binary-is-one-difference ()
+  "A file git reads as text and diff as binary is one difference, the whole file.
+git looks for a NUL in the first 8000 bytes only."
+  (skip-unless (and (executable-find "git") (executable-find ediff-diff-program)))
+  (ecc-test-with-fake-session session
+    (let ((text (concat (make-string 9000 ?a) "\n" "x\0y\n")))
+      (ecc-review-ediff-test--with-one-file session control
+          (concat "one\n" text) (concat "two\n" text)
+        (should (>= ediff-number-of-differences 1))
+        (should (seq-every-p #'ecc-review-ediff-test--within-its-file (ecc-review-units)))))))
+
+(ert-deftest ecc-review-ediff-test-trouble-in-diff-is-said ()
+  "diff exiting with 2 is an error with what it said; what it says on stderr
+otherwise is no part of the diff."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-ediff-test--with-one-file session control "one\n" "two\n"
+      (let ((script (make-temp-file "ecc-review-diff" nil ".sh")))
+        (unwind-protect
+            (progn
+              (set-file-modes script #o755)
+              (ecc-review-ediff-test--write
+               script "#!/bin/sh\necho 'a warning' >&2\necho 'diff -r a/000000 b/000000'\necho 1c1\nexit 1\n")
+              (setq-local ediff-diff-program script)
+              (ecc-review-ediff--compute-differences)
+              (should (= ediff-number-of-differences 1))
+              (ecc-review-ediff-test--write script "#!/bin/sh\necho 'no such thing' >&2\nexit 2\n")
+              (let ((error (should-error (ecc-review-ediff--compute-differences))))
+                (should (string-search "no such thing" (error-message-string error))))
+              ;; A line that is no part of a diff names the review's file.
+              (ecc-review-ediff-test--write
+               script "#!/bin/sh\necho 'diff -r a/000000 b/000000'\necho 'what is this'\nexit 1\n")
+              (let ((error (should-error (ecc-review-ediff--compute-differences))))
+                (should (string-search "x.txt" (error-message-string error)))))
+          (delete-file script))))))
+
+(ert-deftest ecc-review-ediff-test-reading-again-writes-no-whole-buffer ()
+  "The differences are computed from the buffers, with no file of either whole."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-ediff-test--with-one-file session control "one\n" "two\n"
+      (cl-letf (((symbol-function 'ediff-make-temp-file)
+                 (lambda (&rest _) (error "A whole side was written out"))))
+        (ecc-review-ediff--compute-differences))
+      (should (= ediff-number-of-differences 1)))))
+
+(ert-deftest ecc-review-ediff-test-recentering-keeps-the-control-buffer ()
+  "Before Emacs 31, recentering one side made the selected window's buffer current.
+With the keyboard in a side that broke every recentre; the review keeps
+the current buffer around it, as Emacs 31 does."
+  (let ((side (get-buffer-create " *ecc-review-ediff-test-side*")))
+    (unwind-protect
+        (with-temp-buffer
+          (let ((control (current-buffer)))
+            (ecc-review-ediff--recenter-one-window (lambda (_type) (set-buffer side)) 'B)
+            (should (eq (current-buffer) control))))
+      (kill-buffer side)))
+  (should (eq (< emacs-major-version 31)
+              (and (advice-member-p #'ecc-review-ediff--recenter-one-window
+                                    'ediff-recenter-one-window)
+                   t))))
 
 ;;;; Binary and oversized files
 
@@ -1067,17 +1248,22 @@ Open its ediff review and return the control buffer."
 (ert-deftest ecc-review-ediff-test-follows-the-files ()
   "A change marks the ediff review stale and the timer reads it in place.
 The comments, the difference being read and the line each side is on
-stay; nothing about the windows changes but what they show."
+stay; nothing about the windows changes but what they show.  Faces, as
+a graphical Emacs has them: without them ediff marks the current
+difference by writing flags into the text, which moves the point of the
+window that has the keyboard."
   (skip-unless (executable-find "git"))
   (ecc-review-ediff-test--with-ediff
     (ecc-test-with-fake-session session
       (ecc-review-ediff-test--with-directory directory
         (ecc-review-ediff-test--with-watch
-          (let ((control nil))
+          (let ((control nil)
+                (ediff-force-faces t))
             (unwind-protect
                 (progn
                   (setq control (ecc-review-ediff-test--rich session directory))
                   (with-current-buffer control
+                    (ecc-review-ediff-test--as-a-gui)
                     (ecc-review-add-note 'claude "A new line"
                                          (ecc-review-ediff-test--line 'new 7))
                     (ecc-review--draw-notes)

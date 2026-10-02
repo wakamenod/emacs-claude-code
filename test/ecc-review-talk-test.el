@@ -174,7 +174,7 @@ Return the text node."
       (should (string-search "T tour  t next  M message" (ecc-review--header-line))))))
 
 (ert-deftest ecc-review-talk-test-keys-of-the-ediff-review ()
-  "T, t, M and y in the control panel, m still ediff's wide display."
+  "T, t, M and y in the panel and its windows; m still ediff's wide display."
   (skip-unless (executable-find "git"))
   (ecc-review-talk-test--with-sessions one _two
     (ecc-review-talk-test--with-ediff one control
@@ -183,9 +183,10 @@ Return the text node."
       (should (eq (key-binding (kbd "M")) #'ecc-review-talk-message))
       (should (eq (key-binding (kbd "y")) #'ecc-review-talk-answer))
       (should (eq (key-binding (kbd "m")) #'ediff-toggle-wide-display))
-      ;; The help says them: two lines with the help off, all of them on ?.
-      (should (= (length (split-string ecc-review-ediff-brief-help-message "\n")) 2))
-      (should (string-search "T tour   t next   M message" ecc-review-ediff-brief-help-message))
+      ;; The header line of the right window says them, and so does ?.
+      (should (string-search "T tour  t next  M message"
+                             (buffer-local-value 'header-line-format
+                                                 (buffer-local-value 'ediff-buffer-B control))))
       (should (string-match-p "T -ask Claude for a tour" ecc-review-ediff-long-help-message))
       (should (string-match-p "y -answer what Claude asks" ecc-review-ediff-long-help-message)))))
 

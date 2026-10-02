@@ -56,6 +56,7 @@
 (require 'subr-x)
 (require 'ecc-core)
 (require 'ecc-review)
+(require 'ecc-visit)
 
 (defcustom ecc-review-files-width 32
   "How many columns the files pane of a review takes.
@@ -222,6 +223,11 @@ one, the sweep finds which of them it left."
     (when-let* (((= (length windows) 1))
                 (pane (ecc-review-files--pane-beside (car windows))))
       (ecc-review-files--take-down pane))))
+
+(cl-defgeneric ecc-review-files-open-file (entry)
+  "Open the file ENTRY of this review, the file itself rather than its change.
+The diff review opens it beside the session, as RET on its source does."
+  (ecc-visit-open (expand-file-name (plist-get entry :path)) nil ecc-review--session))
 
 (cl-defgeneric ecc-review-files-give-keyboard ()
   "Select the window of this review that its keys are typed in."
@@ -432,6 +438,7 @@ On `ecc-review-after-draw-hook': the files or their comments changed."
 (defvar ecc-review-files-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET") #'ecc-review-files-visit)
+    (define-key map (kbd "o") #'ecc-review-files-open)
     (define-key map (kbd "n") #'ecc-review-files-next)
     (define-key map (kbd "p") #'ecc-review-files-previous)
     (define-key map (kbd "s") #'ecc-review-files-toggle)
@@ -550,7 +557,7 @@ WIDTH is the width of the pane and NOTES the comments of the review."
     (add-text-properties 0 (length line)
                          (list 'ecc-review-file path
                                'mouse-face 'highlight
-                               'help-echo "RET or mouse-1: go to this file"
+                               'help-echo "RET or mouse-1: go to this file, o: open it"
                                'keymap ecc-review-files--line-map)
                          line)
     line))
@@ -678,6 +685,15 @@ EVENT is the click, when it was one."
   (pcase-let ((`(,review . ,entry) (ecc-review-files--entry-at event)))
     (with-current-buffer review
       (ecc-review-files-goto entry t))))
+
+(defun ecc-review-files-open (&optional event)
+  "Open the file on this line of the list, not its change: the file as it is.
+RET moves the review to the file; this leaves the review where it is.
+EVENT is the click, when it was one."
+  (interactive (list (and (mouse-event-p last-nonmenu-event) last-nonmenu-event)))
+  (pcase-let ((`(,review . ,entry) (ecc-review-files--entry-at event)))
+    (with-current-buffer review
+      (ecc-review-files-open-file entry))))
 
 (defun ecc-review-files--step (count)
   "Move COUNT files down the list and show that file in the review.
