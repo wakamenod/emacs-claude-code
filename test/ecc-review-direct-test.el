@@ -845,6 +845,28 @@ Walking the display over the whole distance stalled a large review."
           (ecc-review-direct-test--move control 'B 56)
           (should (> walked 0)))))))
 
+(ert-deftest ecc-review-direct-test-a-move-above-the-window-goes-as-far-on-both ()
+  "Point moved above the start of its window puts the other side as far above.
+Redisplay then scrolls the two the same way; the other side's line was
+put at the very top of its window instead."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (let ((left (ecc-review-direct-test--window control 'A))
+            (right (ecc-review-direct-test--window control 'B))
+            (above (lambda (window)
+                     (with-current-buffer (window-buffer window)
+                       (count-lines (save-excursion (goto-char (window-point window))
+                                                    (line-beginning-position))
+                                    (window-start window))))))
+        (set-window-start right (ecc-review-direct-test--position control 'B 50))
+        (ecc-review-direct-test--move control 'B 52)
+        ;; Three lines above the start of the right window.
+        (ecc-review-direct-test--move control 'B 47)
+        (should (= (ecc-review-direct-test--line-of left) 47))
+        (should (= (funcall above right) 3))
+        (should (= (funcall above left) 3))))))
+
 (ert-deftest ecc-review-direct-test-a-visiting-buffer-too-large-opens-unshifted ()
   "The size limit holds for a buffer visiting the file as for the file on disk."
   (skip-unless (executable-find "git"))

@@ -25,6 +25,15 @@ e "(demo-goto 'B 12)"; sleep 2
 e "(demo-type 'B \"c\" \"Name the generator\")"; sleep 4
 e "(demo-report-comments)"; sleep 4
 
+say "   ... and the other side counts the comment's rows: point on the left, right above it the right has a comment"; sleep 5
+e "(demo-goto 'A 13)"; sleep 3
+e "(demo-report \"point on left L13, a comment above right L13\")"; sleep 4
+e "(demo-goto 'A 45)"; sleep 2
+e "(demo-type 'A \"c\" \"Why drop these?\")"; sleep 4
+e "(demo-goto 'B 50)"; sleep 2
+e "(demo-goto 'B 46)"; sleep 3
+e "(demo-report \"point on right L46, a comment above left L46\")"; sleep 4
+
 say "4. Point into another difference: it becomes current, the left side follows, the right does not scroll"; sleep 5
 e "(demo-goto 'B 31)"; sleep 3
 e "(demo-report \"point on right L31, in a difference\")"; sleep 4

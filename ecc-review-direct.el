@@ -304,10 +304,15 @@ The measure of `ecc-review-direct--rows': rows of the screen near
 POSITION, lines of the buffer far from it.  Run in WINDOW's buffer."
   (save-excursion
     (goto-char position)
-    (if (> (abs rows) (window-body-height window))
-        (forward-line (- rows))
-      (vertical-motion (- (max 0 (- rows (ecc-review-direct--strings-rows window position))))
-                       window))
+    (cond ((> (abs rows) (window-body-height window))
+           (forward-line (- rows)))
+          ;; The line is above the start: the start goes as far below it.
+          ((< rows 0)
+           (vertical-motion (- rows) window))
+          (t
+           (vertical-motion (- (max 0 (- rows (ecc-review-direct--strings-rows
+                                                window position))))
+                            window)))
     (point)))
 
 (defun ecc-review-direct--align (window side position other)
