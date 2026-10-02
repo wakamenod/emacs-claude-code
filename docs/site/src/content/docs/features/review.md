@@ -237,9 +237,9 @@ Both buffers are read-only, so ediff's `b` copy command does nothing here, and `
 
 ### Reading in the two windows
 
-The review opens with the keyboard in the right window. Every key of the control panel works in both windows, and the keyboard stays where you typed it, even when ediff lays out its windows again. Digits give a count, as in the panel: `3j` jumps to the third difference.
+The review opens with the keyboard in the right window. Every key of the control panel works in both windows, and the keyboard stays where you typed it, even when ediff lays out its windows again. Digits give a count, as in the panel: `3j` jumps to the third difference. `SPC` and `DEL` work like `n` and `p`.
 
-Moving point drives the review. When point enters a difference, that difference becomes the current one: it gets the stronger colour, the bar in the fringe and its number in the panel. The window you are reading does not scroll. The other window moves so that the matching line is at the same height. A removed line matches the place the change took it from. Between differences, the other window shows the same line of the file, and the current difference stays the one you read last. `n` and `p` then go to the next difference below point or the previous one above it. This works for any command that moves point, such as `C-n`, `M-<` or a click. During an isearch the other window follows only when `C-s` stops on a match and when the search ends, not as you type. Scrolling one window with `C-v`, `M-v` or the mouse wheel does not move the other yet. `v` and `V` scroll both, and `C-l` lines them up again.
+Moving point drives the review. When point enters a difference, that difference becomes the current one: it gets the stronger colour, the bar in the fringe and its number in the panel. The window you are reading does not scroll. The other window moves so that the matching line is on the same row of the screen, even when a comment or a wrapped line takes extra rows on one side. A removed line matches the place the change took it from. Between differences, the other window shows the same line of the file, and the current difference stays the one you read last. `n` and `p` then go to the next difference below point or the previous one above it. This works for any command that moves point, such as `C-n`, `M-<` or a click. During an isearch the other window follows only when `C-s` stops on a match and when the search ends, not as you type. Scrolling one window with `C-v`, `M-v` or the mouse wheel does not move the other yet. `v` and `V` scroll both, and `C-l` lines them up again.
 
 `RET` opens the file at the line point is on, as the file is now. If the review is of commits, or the files changed after the review read them, ecc moves the line through those later changes. A line of the left side opens where it is now, and a removed line opens where it was. The file opens in a frame of its own, the same frame each time while it is open. The review keeps its frame, its windows and the keyboard.
 
@@ -254,7 +254,7 @@ In a window, `c` comments on the line at point: on the left for a line the chang
 | `a` | Show or hide Claude's comments |
 | `l` | Jump to a comment |
 | `d` | Remove a comment on the line at point, else on the current difference (`C-u d`, or off every difference: any comment) |
-| `RET` | In a window, open the file at the line at point, in a frame of its own |
+| `RET` | Open the file in a frame of its own: in a window at the line at point, in the panel at the current difference |
 | `v` / `V` | Scroll both windows |
 | `n` / `p` / `j` | Next or previous difference (from point, in a window), or the numbered one, skipping the files a filter hides |
 | `s` | Show or hide the list of files (see [Listing and filtering the files](#listing-and-filtering-the-files)) |

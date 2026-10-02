@@ -366,7 +366,8 @@ Verified against **Claude Code CLI 2.1.281**.
   `C-c C-c`, `C-c C-k`, `v`, `V`, `C-l`, `|`, `m`, `h`, `@`, `*`, `<`,
   `>`, `##`, `#c` -- run in the control buffer as from the panel, with
   the keyboard kept in the window or given back to it when ediff lays its
-  windows out again. Digits are a prefix argument there, as in the panel.
+  windows out again. Digits are a prefix argument there, as in the panel,
+  and `SPC` and `DEL` go on and back as `n` and `p` do.
   `c` in a window comments on the line at point -- the old side on the
   left, the new on the right, as `c` on a line of the diff review -- and
   says there is nothing to comment on a line both sides share; `c` in
@@ -376,24 +377,34 @@ Verified against **Claude Code CLI 2.1.281**.
   becomes the current one -- its colour, its bar, its number -- without
   ediff's select, which lays both windows out again; the window being
   read stays as it is, and the other is put at the line that stands
-  against point, at the same height. A line taken out stands against the
+  against point, at the same height on the screen -- counted in rows, so
+  that a comment under a line of one side, a wrapped line or a hidden file
+  does not set the two apart. A line taken out stands against the
   place it was taken from. In the lines both sides share, the other side
   is put on the same line of the file, and the current difference stays
   the one read last; `n` and `p` then go from point to the difference
   below or above it. Any command that moves point is followed that way --
   `C-n`, `M-<`, a click; an isearch only when `C-s` stops on the next
   match and when the search ends. Scrolling one window -- `C-v`, `M-v`, the
-  wheel -- is not followed yet; `v` and `V` scroll both. `RET` opens the
+  wheel -- is not followed yet; `v` and `V` scroll both and put the
+  other side against point again. Nothing the review does by itself --
+  marking what changed in the differences on the screen, following the
+  files, a filter hiding the difference being read -- moves the cursor or
+  scrolls either window. `RET` opens the
   file the line is in, at that line as the file is now: a review of
   commits, or of a working tree changed since it was read, carries the
   line through what changed after (`ecc-visit-shift-through`), and a line
   of the left side opens where it stands now, or where it was. The file
   goes in a frame of its own, the same one each time while it is there
   (`ecc-review-direct--file-window`), and the review keeps its frame, its
-  windows and its keyboard. Each window has a header line of keys, the
+  windows and its keyboard. A file too large to follow a line through
+  (`ecc-diff-max-file-size`) opens at the line the review shows, and says
+  so. `RET` in the control panel opens the file of the current
+  difference. Each window has a header line of keys, the
   left one for reading and your comments, the right one for Claude,
   opening, sending and closing; the control panel says which difference
-  is current, how many there are and what the filter hides, and `?`
+  is current, how many there are and what the filter hides -- after every
+  change of either, reading again included -- and `?`
   shows every key, in a window as in the panel. `o` in the files pane
   opens the file itself, at its first change in an ediff review and
   beside the session in the diff review; `RET` there still moves the
@@ -561,8 +572,13 @@ Verified against **Claude Code CLI 2.1.281**.
   differences ran over the end of a file, files created in it had lines
   on the old side, and comments went to the wrong file. Each file is now
   diffed on its own: the files that differ go into a directory on each
-  side, one `diff -r` with ediff's program and options compares the two,
-  and the hunks are moved to where each file begins. The same review now
+  side, one `diff -r` with the review's own program and options compares
+  the two, and the hunks are moved to where each file begins. A file diff
+  calls binary -- a NUL past the bytes git looks at -- is one difference,
+  the whole file; diff in trouble is an error with what it said, and a
+  line of its output that is no part of a diff is one that names the
+  file. Reading a review again no longer writes the two sides whole to
+  temporary files. The same review now
   has 326 differences in all 59 files, and opening it takes the same
   time (0.48 s before, 0.46 s after; the 57 files of
   `scripts/bench-review-ediff.el`, 0.44 s and 0.45 s).
