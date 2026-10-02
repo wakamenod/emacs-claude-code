@@ -83,7 +83,11 @@ screen's.  nil shows no pane, wherever it would go."
   "How many columns the reply pane right of an ediff review takes.
 It is on the right while the two sides of the review are one above the
 other (`ecc-review-ediff-layout'), and under them when the frame cannot
-spare the columns (`ecc-review-talk-min-diff-width')."
+spare the columns (`ecc-review-talk-min-diff-width').  75 is for a
+frame of 155 columns or more, which leaves the diff 80; a narrower one
+has the pane under the review, `ecc-review-talk-reply-height' lines
+high.  Fewer columns keep the pane on the right of a narrower frame,
+with Claude's reply wrapped shorter."
   :type 'integer
   :group 'ecc)
 

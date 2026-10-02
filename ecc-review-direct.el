@@ -730,24 +730,29 @@ shown keeps the point its buffer had."
        ("x" . "delete") ("l" . "list") ("a" . "Claude's") ("s" . "files")
        ("/" . "filter"))
     (B ("RET" . "open") ("T" . "tour") ("t" . "next") ("M" . "message")
-       ("u/d" . "reply") ("v/V" . "scroll") ("C-c C-c" . "send") ("!" . "reread") ("q" . "quit")
-       ("?" . "all keys")))
+       ("C-c C-c" . "send") ("q" . "quit") ("u/d" . "reply") ("v/V" . "scroll")
+       ("!" . "reread") ("?" . "all keys")))
   "The keys the header line of each window of an ediff review shows.
 For each side, (KEY . WHAT) in the order they are shown.  Every key
 works in either window, so the two lines are one list cut in two: the
 left has reading and your comments, the right Claude, the files, sending
 and closing.  The most used come first, so that a narrow window loses
-the least of them at its right edge.")
+the least of them at its right edge.  The right one ends with the key
+of the help, which a window too narrow for them all keeps: it drops the
+keys before it, from the last (`ecc-review-direct--header-line').")
+
+(defun ecc-review-direct--key-pieces (side)
+  "Return the keys the header line of SIDE shows, a string for each.
+Faces are put on the strings here; no font-lock runs in a review."
+  (mapcar (lambda (key)
+            (concat (propertize (car key) 'face 'bold)
+                    " "
+                    (propertize (cdr key) 'face 'ecc-dim-face)))
+          (alist-get side ecc-review-direct-header-keys)))
 
 (defun ecc-review-direct--keys (side)
-  "Return the keys the header line of SIDE shows, as one string.
-Faces are put on the string here; no font-lock runs in a review."
-  (mapconcat (lambda (key)
-               (concat (propertize (car key) 'face 'bold)
-                       " "
-                       (propertize (cdr key) 'face 'ecc-dim-face)))
-             (alist-get side ecc-review-direct-header-keys)
-             "  "))
+  "Return the keys the header line of SIDE shows, as one string."
+  (string-join (ecc-review-direct--key-pieces side) "  "))
 
 (defun ecc-review-direct--to-the-right (text)
   "Return a space that runs up to where TEXT, put after it, ends at the right edge.
@@ -789,26 +794,42 @@ put together by (`ecc-review-direct--align') are not counted in it."
       (concat " " keys))))
 
 (defvar-local ecc-review-direct--header-keys nil
-  "The keys of the header line of this side, a string.")
+  "The keys of the header line of this side, a string for each.")
 
 (defvar-local ecc-review-direct--header-status nil
   "Where the review is, for the header line of this side, or nil.")
 
+(defun ecc-review-direct--fit-keys (pieces width)
+  "Return the keys PIECES as the header line has them, in WIDTH columns, or nil.
+The last of them -- the help -- is kept, and the ones before it are
+dropped from the last until the rest fit."
+  (let ((pieces (copy-sequence pieces))
+        (text nil))
+    (while (and pieces
+                (> (string-width (setq text (concat " " (string-join pieces "  "))))
+                   width)
+                (cdr pieces))
+      (setq pieces (nconc (butlast pieces 2) (last pieces))))
+    (and pieces (<= (string-width text) width) text)))
+
 (defun ecc-review-direct--header-line (&optional window)
   "Return the header line of the right side in WINDOW, the selected one by default.
 The keys, and where the review is at the right end.  Where WINDOW is too
-narrow for both, where the review is comes first and the keys after
-it, as many as fit: with the panel out of sight, nothing else says it.
-Worked out as the header line is drawn, from two strings made when the
+narrow for both, the keys before the last, the help, are left out from
+the last until they fit; where it is too narrow for the help and where
+the review is, where the review is comes first and the keys after it,
+as many as fit: with the panel out of sight, nothing else says it.
+Worked out as the header line is drawn, from the strings made when the
 difference or the layout changes (`ecc-review-direct-refresh-headers'),
 so that a window made narrower is followed at once."
-  (let ((keys ecc-review-direct--header-keys)
+  (let ((pieces ecc-review-direct--header-keys)
         (status ecc-review-direct--header-status))
-    (cond ((null status) keys)
-          ((<= (+ (string-width keys) (string-width status))
-               (window-width window))
-           (concat keys (ecc-review-direct--to-the-right status) status))
-          (t (concat (substring status 1) "│" keys)))))
+    (if (null status)
+        (concat " " (string-join pieces "  "))
+      (if-let* ((keys (ecc-review-direct--fit-keys
+                       pieces (- (window-width window) (string-width status)))))
+          (concat keys (ecc-review-direct--to-the-right status) status)
+        (concat (substring status 1) "│ " (string-join pieces "  "))))))
 
 (defun ecc-review-direct-header-text (buffer &optional window)
   "Return the header line BUFFER, a side of a review, shows in WINDOW, as a string.
@@ -828,7 +849,7 @@ difference changes, from the hooks of the control buffer; nothing that
 would come out the same is set again."
   (with-current-buffer control
     (let ((left (ecc-review-direct--header 'A (not (ecc-review-ediff-stacked-p control))))
-          (keys (ecc-review-direct--header 'B))
+          (keys (ecc-review-direct--key-pieces 'B))
           (status (ecc-review-direct--status control)))
       (when (buffer-live-p ediff-buffer-A)
         (with-current-buffer ediff-buffer-A
