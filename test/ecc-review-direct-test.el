@@ -782,6 +782,201 @@ the other name said the two were one file."
       (delete-file link)
       (delete-directory real t))))
 
+;;;; Review round 2
+
+(ert-deftest ecc-review-direct-test-a-comment-above-the-line-counts-its-rows ()
+  "The rows of a comment drawn right above a line are counted, on both sides.
+`count-screen-lines' leaves out the strings at the end of what it
+counts, and batch draws no overlay string at all: what is counted here
+is the review's own count of them (`ecc-review-direct--strings-rows')."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (let ((left (ecc-review-direct-test--window control 'A))
+            (right (ecc-review-direct-test--window control 'B)))
+        (with-current-buffer control
+          (ecc-review-add-note 'user "first\nsecond"
+                               (seq-find (lambda (line) (and (eq (plist-get line :side) 'new)
+                                                             (eql (plist-get line :line) 3)))
+                                         (ecc-review-lines)))
+          (ecc-review--draw-notes))
+        (let* ((bol (lambda (side line) (ecc-review-direct-test--position control side line)))
+               (strings (with-current-buffer (window-buffer right)
+                          (ecc-review-direct--strings-rows right (funcall bol 'B 4)))))
+          ;; The comment is under line 3 of the right side: above line 4.
+          (should (> strings 0))
+          (set-window-start right (funcall bol 'B 1))
+          (with-current-buffer (window-buffer right)
+            (should (= (ecc-review-direct--rows right (funcall bol 'B 4))
+                       (+ 3 strings))))
+          ;; Point on line 4 of the left: the right side's line 4 is put on
+          ;; the same row, its comment counted.
+          (set-window-start left (funcall bol 'A 1))
+          (ecc-review-direct-test--move control 'A 6)
+          (ecc-review-direct-test--move control 'A 4)
+          (should (= (with-current-buffer (window-buffer left)
+                       (ecc-review-direct--rows left (funcall bol 'A 4)))
+                     (with-current-buffer (window-buffer right)
+                       (ecc-review-direct--rows right (funcall bol 'B 4))))))))))
+
+(ert-deftest ecc-review-direct-test-a-far-move-does-not-walk-the-screen ()
+  "Far from the window the two sides are put together by lines of the buffer.
+Walking the display over the whole distance stalled a large review."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (let ((right (ecc-review-direct-test--window control 'B))
+            (walked 0)
+            (count (symbol-function 'count-screen-lines))
+            (motion (symbol-function 'vertical-motion)))
+        (set-window-start right (ecc-review-direct-test--position control 'B 1))
+        (ecc-review-direct-test--move control 'B 2)
+        (cl-letf (((symbol-function 'count-screen-lines)
+                   (lambda (&rest args) (cl-incf walked) (apply count args)))
+                  ((symbol-function 'vertical-motion)
+                   (lambda (&rest args) (cl-incf walked) (apply motion args))))
+          ;; Sixty lines down from a window of a dozen.
+          (ecc-review-direct-test--move control 'B 58 'end-of-buffer)
+          (should (zerop walked))
+          (should (= (ecc-review-direct-test--line-of (ecc-review-direct-test--window control 'A))
+                     58))
+          ;; Next to point, the screen is counted.
+          (set-window-start right (ecc-review-direct-test--position control 'B 55))
+          (ecc-review-direct-test--move control 'B 56)
+          (should (> walked 0)))))))
+
+(ert-deftest ecc-review-direct-test-a-visiting-buffer-too-large-opens-unshifted ()
+  "The size limit holds for a buffer visiting the file as for the file on disk."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (ecc-review-direct-test--reading-files
+        (let* ((file (file-truename (expand-file-name "a.txt" directory)))
+               (buffer (find-file-noselect file)))
+          (unwind-protect
+              (progn
+                (with-current-buffer buffer
+                  (goto-char (point-min))
+                  (insert "top1\ntop2\n"))
+                (with-current-buffer control
+                  (should (equal (ecc-review-direct-source
+                                  'B (ecc-review-direct-test--position control 'B 22))
+                                 (cons file 24)))
+                  (let ((ecc-diff-max-file-size 10))
+                    (should (equal (ecc-review-direct-source
+                                    'B (ecc-review-direct-test--position control 'B 22))
+                                   (cons file 22))))))
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer)))))))
+
+(ert-deftest ecc-review-direct-test-v-does-not-change-the-difference ()
+  "v puts the other side against point again and selects no difference.
+The scroll may drag point into another difference; a scroll is not followed."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (ecc-review-direct-test--move control 'B 3)
+      (should (= (buffer-local-value 'ediff-current-difference control) 0))
+      (let ((target (ecc-review-direct-test--position control 'B 55)))
+        (cl-letf (((symbol-function 'ediff-scroll-vertically)
+                   (lambda (&optional _arg)
+                     (interactive "P")
+                     (with-selected-window ediff-window-B
+                       (goto-char target)))))
+          (ecc-review-direct-test--type control 'B "v")))
+      (should (= (buffer-local-value 'ediff-current-difference control) 0))
+      (should (= (ecc-review-direct-test--line-of (ecc-review-direct-test--window control 'A))
+                 55)))))
+
+(ert-deftest ecc-review-direct-test-putting-back-sets-only-what-moved ()
+  "Nothing that did not move is set again: no window is marked for redisplay."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (let ((set 0))
+        (with-current-buffer control
+          (let ((places (ecc-review-ediff--places)))
+            (cl-letf (((symbol-function 'set-window-start)
+                       (lambda (&rest _) (cl-incf set)))
+                      ((symbol-function 'set-window-point)
+                       (lambda (&rest _) (cl-incf set))))
+              (ecc-review-ediff--put-back places))))
+        (should (zerop set))))))
+
+(ert-deftest ecc-review-direct-test-the-panel-is-written-once-a-change ()
+  "Point going into a new difference writes the panel once."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (let ((writes 0)
+            (write (symbol-function 'ecc-review-ediff--write-help)))
+        (cl-letf (((symbol-function 'ecc-review-ediff--write-help)
+                   (lambda () (cl-incf writes) (funcall write))))
+          (ecc-review-direct-test--move control 'B 22))
+        (should (= (buffer-local-value 'ediff-current-difference control) 1))
+        (should (= writes 1))))))
+
+(ert-deftest ecc-review-direct-test-what-cannot-be-followed-is-told-apart ()
+  "An unreadable file opens unshifted and says why; a directory is refused."
+  (skip-unless (and (executable-find "git") (not (zerop (user-uid)))))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (ecc-review-direct-test--reading-files
+        (let ((file (file-truename (expand-file-name "a.txt" directory)))
+              (said nil))
+          (with-current-buffer control
+            (unwind-protect
+                (progn
+                  (set-file-modes file 0)
+                  (cl-letf (((symbol-function 'message)
+                             (lambda (format &rest args)
+                               (push (apply #'format-message format args) said))))
+                    (should (equal (ecc-review-direct-source
+                                    'B (ecc-review-direct-test--position control 'B 22))
+                                   (cons file 22))))
+                  (should (seq-find (lambda (text) (string-search "cannot be read" text)) said)))
+              (set-file-modes file #o644))
+            (delete-file file)
+            (make-directory file)
+            (should-error (ecc-review-direct-source
+                           'B (ecc-review-direct-test--position control 'B 22))
+                          :type 'user-error)))))))
+
+(ert-deftest ecc-review-direct-test-a-deletion-at-the-end-opens-its-own-file ()
+  "RET on lines taken out at the end of a file opens that file, not the next.
+With no blank line between files, the place of such a difference on the
+right is the separator of the next file."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (let ((ecc-review-ediff-file-spacing 0))
+      (ecc-review-direct-test--with-files session control
+          (list (list "c.txt" "one\ntwo\nthree\n" "one\ntwo\n")
+                (list "d.txt" "x\n" "y\n"))
+        (let ((opened nil))
+          (with-current-buffer control
+            (let ((unit (seq-find (lambda (unit) (equal (plist-get unit :path) "c.txt"))
+                                  (ecc-review-units))))
+              (ediff-jump-to-difference (1+ (plist-get unit :number)))
+              (cl-letf (((symbol-function 'ecc-review-direct-open-file)
+                         (lambda (file line) (setq opened (cons file line)))))
+                (call-interactively (key-binding (kbd "RET"))))))
+          (should (equal (file-name-nondirectory (car opened)) "c.txt"))
+          ;; Where the line was: after the two that are left.
+          (should (equal (cdr opened) 3)))))))
+
+(ert-deftest ecc-review-direct-test-the-docstrings-show-their-quotes ()
+  "No docstring of this work shows the stray = of a single-escaped quote."
+  (dolist (function '(ecc-visit-open ecc-visit-shift-through ecc-review--read-comment
+                      ecc-review-ediff--compute-differences))
+    (let ((text (documentation function)))
+      (should-not (string-match-p "=['’]" text)))))
+
+(ert-deftest ecc-review-direct-test-a-whole-file-hunk ()
+  "A file diff calls binary is the hunk that takes it all out and puts it all in."
+  (should (equal (ecc-review-ediff--whole-file "a\nb\n" "c\n") "1,2c1,1"))
+  (should (equal (ecc-review-ediff--whole-file "" "c\n") "0a1,1"))
+  (should (equal (ecc-review-ediff--whole-file "a\n" "") "1,1d0")))
+
 ;;;; Two sessions
 
 (ert-deftest ecc-review-direct-test-each-window-drives-its-own-review ()

@@ -379,7 +379,9 @@ Verified against **Claude Code CLI 2.1.281**.
   read stays as it is, and the other is put at the line that stands
   against point, at the same height on the screen -- counted in rows, so
   that a comment under a line of one side, a wrapped line or a hidden file
-  does not set the two apart. A line taken out stands against the
+  does not set the two apart. Far from the window -- `M->`, a jump, a
+  search -- they are put together by lines of the buffer, and redisplay
+  settles the rest. A line taken out stands against the
   place it was taken from. In the lines both sides share, the other side
   is put on the same line of the file, and the current difference stays
   the one read last; `n` and `p` then go from point to the difference
@@ -387,7 +389,8 @@ Verified against **Claude Code CLI 2.1.281**.
   `C-n`, `M-<`, a click; an isearch only when `C-s` stops on the next
   match and when the search ends. Scrolling one window -- `C-v`, `M-v`, the
   wheel -- is not followed yet; `v` and `V` scroll both and put the
-  other side against point again. Nothing the review does by itself --
+  other side against point again, without changing the current
+  difference. Nothing the review does by itself --
   marking what changed in the differences on the screen, following the
   files, a filter hiding the difference being read -- moves the cursor or
   scrolls either window. `RET` opens the
@@ -397,9 +400,10 @@ Verified against **Claude Code CLI 2.1.281**.
   of the left side opens where it stands now, or where it was. The file
   goes in a frame of its own, the same one each time while it is there
   (`ecc-review-direct--file-window`), and the review keeps its frame, its
-  windows and its keyboard. A file too large to follow a line through
-  (`ecc-diff-max-file-size`) opens at the line the review shows, and says
-  so. `RET` in the control panel opens the file of the current
+  windows and its keyboard. A file -- or a buffer visiting it -- too
+  large to follow a line through (`ecc-diff-max-file-size`), a binary one
+  and an unreadable one open at the line the review shows, and say which;
+  a path that is no longer a regular file is refused. `RET` in the control panel opens the file of the current
   difference. Each window has a header line of keys, the
   left one for reading and your comments, the right one for Claude,
   opening, sending and closing; the control panel says which difference

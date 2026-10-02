@@ -2007,7 +2007,7 @@ edited or answered."
 
 (defun ecc-review--read-comment (line)
   "Settle what \\`c' on LINE does and read the text; return (TEXT PLAN).
-The arguments of `ecc-review-comment\=', read the way it reads them: the
+The arguments of `ecc-review-comment\\=', read the way it reads them: the
 plan first, then the comment, offered for editing when it is one of
 yours already."
   (let* ((plan (ecc-review--comment-plan line))

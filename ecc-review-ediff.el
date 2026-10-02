@@ -830,14 +830,23 @@ for a side on no window.  Run in the control buffer."
 
 (defun ecc-review-ediff--put-back (places)
   "Put the two sides back where PLACES, of `ecc-review-ediff--places', says.
-A position past the end of a buffer that has shrunk is its end."
+A position past the end of a buffer that has shrunk is its end.  Only
+what moved is set: setting a window's start marks it for redisplay and
+throws away its end, and this runs on every slice of refining and every
+select of the review's own."
   (pcase-dolist (`(,buffer ,point ,window ,window-point ,window-start) places)
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
-        (goto-char (min point (point-max)))
+        (let ((point (min point (point-max))))
+          (unless (= (point) point)
+            (goto-char point)))
         (when (and (window-live-p window) (eq (window-buffer window) buffer))
-          (set-window-start window (min window-start (point-max)) t)
-          (set-window-point window (min window-point (point-max))))))))
+          (let ((window-start (min window-start (point-max)))
+                (window-point (min window-point (point-max))))
+            (unless (= (window-start window) window-start)
+              (set-window-start window window-start t))
+            (unless (= (window-point window) window-point)
+              (set-window-point window window-point))))))))
 
 (defmacro ecc-review-ediff--keeping-points (&rest body)
   "Run BODY in the control buffer and put the two sides back where they were.
@@ -862,11 +871,13 @@ markers: the text does not change."
 ediff's select without its recentring, and with the two sides kept
 where they were (`ecc-review-ediff--keeping-points').  FLAG is ediff's:
 `unselect-only' leaves the one it was on and selects nothing.  The panel
-is told (`ecc-review-ediff--status-changed').  Run in the control
-buffer."
+is told once: by `ediff-select-hook' when N is a difference that is
+selected, and here when nothing is (`ecc-review-ediff--status-changed').
+Run in the control buffer."
   (ecc-review-ediff--keeping-points
     (ediff-unselect-and-select-difference n flag 'no-recenter))
-  (ecc-review-ediff--status-changed))
+  (when (or (eq flag 'unselect-only) (not (ediff-valid-difference-p n)))
+    (ecc-review-ediff--status-changed)))
 
 (defun ecc-review-ediff--refine-shown (&optional deadline)
   "Refine the differences on the screen that ediff has not, and mark them.
@@ -1942,11 +1953,10 @@ the review, or any in a review whose changes have all gone."
 (defun ecc-review-ediff-visit ()
   "Open the file of the difference ediff is on, at its first line on the right.
 As the file is now, in the frame the files of a review open in
-\(`ecc-review-direct-visit' opens the file of the line at point)."
+\(`ecc-review-direct-open-unit'; `ecc-review-direct-visit' opens the file
+of the line at point)."
   (interactive)
-  (let ((unit (ecc-review-ediff--current-unit)))
-    (pcase-let ((`(,file . ,line) (ecc-review-direct-source 'B (plist-get unit :b-beg))))
-      (ecc-review-direct-open-file file line))))
+  (ecc-review-direct-open-unit (ecc-review-ediff--current-unit)))
 
 (defun ecc-review-ediff-copy-refused ()
   "Say why `b\\=' does nothing in a review.
@@ -2419,8 +2429,8 @@ error that says it."
   "Return the hunk of a diff that takes out all of A and puts in all of B.
 What a file diff calls binary is shown as: one difference, the whole
 file, rather than none.  A and B are the texts of the two sides."
-  (let ((a-lines (seq-count (lambda (c) (eq c ?\n)) a))
-        (b-lines (seq-count (lambda (c) (eq c ?\n)) b)))
+  (let ((a-lines (cl-count ?\n a))
+        (b-lines (cl-count ?\n b)))
     (cond ((zerop a-lines) (format "0a1,%d" b-lines))
           ((zerop b-lines) (format "1,%dd0" a-lines))
           (t (format "1,%dc1,%d" a-lines b-lines)))))
@@ -3008,10 +3018,10 @@ moves by too.  A place whose file has gone is left at the top."
 
 (defun ecc-review-ediff--compute-differences ()
   "Have ediff compute the differences of the two sides of this review again.
-The steps of `ediff-update-diffs\=' without its recentring, and without
+The steps of `ediff-update-diffs\\=' without its recentring, and without
 the writing of the two buffers whole to files: the differences are
 computed a file at a time from the buffers themselves
-\(`ecc-review-ediff--setup-diff-regions\='), which takes no file.  None is
+\(`ecc-review-ediff--setup-diff-regions\\='), which takes no file.  None is
 selected afterwards."
   (dolist (overlay (append ediff-wide-bounds ediff-narrow-bounds))
     ;; The bounds of the comparison spanned the old text; the erase left
@@ -3102,12 +3112,14 @@ so are the difference being read and the place of each side."
         (setq n (min (1- ediff-number-of-differences)
                      (max 0 (1- (ediff-diff-at-point
                                  'B (ecc-review-ediff--right-point)))))))
-      (when n
-        (ecc-review-ediff-select-in-place n)))
+      (if n
+          (ecc-review-ediff-select-in-place n)
+        ;; Nothing selected says nothing to the panel, and the count
+        ;; has changed.
+        (ecc-review-ediff--status-changed)))
     ;; The files that changed went in plain.
     (ecc-review-ediff--after-write)
     (ediff-refresh-mode-lines)
-    (ecc-review-ediff--status-changed)
     (setq ecc-review--fingerprint (ecc-review-ediff--state hash)
           ecc-review--stale nil
           ecc-review--failed nil)
