@@ -767,6 +767,22 @@ otherwise is no part of the diff."
         (ecc-review-ediff--compute-differences))
       (should (= ediff-number-of-differences 1)))))
 
+(ert-deftest ecc-review-ediff-test-recentering-keeps-the-control-buffer ()
+  "Before Emacs 31, recentering one side made the selected window's buffer current.
+With the keyboard in a side that broke every recentre; the review keeps
+the current buffer around it, as Emacs 31 does."
+  (let ((side (get-buffer-create " *ecc-review-ediff-test-side*")))
+    (unwind-protect
+        (with-temp-buffer
+          (let ((control (current-buffer)))
+            (ecc-review-ediff--recenter-one-window (lambda (_type) (set-buffer side)) 'B)
+            (should (eq (current-buffer) control))))
+      (kill-buffer side)))
+  (should (eq (< emacs-major-version 31)
+              (and (advice-member-p #'ecc-review-ediff--recenter-one-window
+                                    'ediff-recenter-one-window)
+                   t))))
+
 ;;;; Binary and oversized files
 
 (ert-deftest ecc-review-ediff-test-binary-and-oversize-are-named ()

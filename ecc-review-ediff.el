@@ -2526,6 +2526,26 @@ buffers, which ediff writes to FILE-A and FILE-B and is not read here
     (ediff-convert-diffs-to-overlays
      (ediff-extract-diffs ediff-diff-buffer ediff-word-mode ediff-narrow-bounds))))
 
+;;;; ediff before Emacs 31 from a window of the review
+
+(defun ecc-review-ediff--recenter-one-window (recenter buf-type)
+  "Call RECENTER, ediff's own, on BUF-TYPE, and keep the current buffer.
+Before Emacs 31 `ediff-recenter-one-window' goes to the window of the
+side and back to the window that was selected, assuming that is the
+control panel's (\"returns to the window it was called from (which was
+the control window)\"), and going back makes its buffer the current
+one.  With the keyboard in a window of the review, that is a side: the
+rest of `ediff-recenter' then read ediff's variables in the side, where
+they are not set, and said \"You have killed a vital Ediff buffer\" --
+n, j, ? and | in a window, on Emacs 29.1, 29.4 and 30.1 (CI,
+2026-10-02).  Emacs 31 keeps the current buffer around the call itself,
+which is all this does."
+  (save-current-buffer
+    (funcall recenter buf-type)))
+
+(when (< emacs-major-version 31)
+  (advice-add 'ediff-recenter-one-window :around #'ecc-review-ediff--recenter-one-window))
+
 ;;;; Opening and closing
 
 (defvar ecc-review-ediff-progress-regexp
