@@ -211,7 +211,7 @@ Each turn replaces the last one. The whole conversation stays in the transcript.
       ecc-review-talk-reply-height 16)
 ```
 
-In an ediff review, `u` scrolls the pane back to what Claude said earlier, and `d` scrolls it on. While you are scrolled back, the pane stays where you put it as Claude goes on. Once `d` brings the end into view, or a new turn starts, it follows the end again.
+In an ediff review, `u` scrolls the pane back to what Claude said earlier, and `d` scrolls it on. You do not have to select the pane for this. Inside the pane, `u`, `d`, `DEL` and `SPC` do the same. While the end of the reply is in view, the pane follows it as Claude goes on. Once you scroll back, with these keys or with the mouse wheel, the pane keeps the same lines in view. When the end is in view again, or a new turn starts, it follows the end again. A pane that `|` moves keeps its place.
 
 To keep the whole frame for the diff, put the pane in a frame of its own. Each review has a frame of its own, which closes with that review. The frame never takes the focus, so the keyboard stays in the review, and `y` is pressed there:
 
@@ -241,10 +241,10 @@ The review opens with the old side above the new one, each as wide as the frame,
 
 ```
  n/p diff  j jump  { } comments  c comment  x delete  l list  a Claude's  s files  / filter
- RET open  T tour  t next  M message  u/d reply  v/V scroll  C-c C-c send  ! reread  q quit  ? all keys
+ RET open  T tour  t next  M message  C-c C-c send  q quit  u/d reply  v/V scroll  ! reread  ? all keys
 ```
 
-The left line has the keys for reading and for your comments, and the right line has the keys for Claude, opening, sending and closing. The most used keys come first, so a narrow window loses the least used ones. Side by side, the left line is aligned to the right edge of its window, so the two lines meet in the middle. The header line of the window with the keyboard, the lower one or the right one, ends with where you are, such as `3/12`, and what a filter hides. When the window is too narrow for both, where you are comes first.
+The left line has the keys for reading and for your comments, and the right line has the keys for Claude, opening, sending and closing. The most used keys come first, so a narrow window loses the least used ones. The right line always keeps `? all keys` at its end: a narrow window drops the keys before it. Side by side, the left line is aligned to the right edge of its window, so the two lines meet in the middle. The header line of the window with the keyboard, the lower one or the right one, ends with where you are, such as `3/12`, and what a filter hides. When the window is too narrow even for `? all keys` and where you are, where you are comes first.
 
 The ediff control panel is not shown. `?` opens it with every key, and `?` again closes it. A review shows the panel in the review's frame, whatever `ediff-window-setup-function` says, so no control frame appears.
 

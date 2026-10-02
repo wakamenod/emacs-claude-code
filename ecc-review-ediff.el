@@ -1926,7 +1926,9 @@ the review, or any in a review whose changes have all gone."
                                         ecc-review--notes))))
          (note (ecc-review--pick-note
                 (cond (here)
-                      (unit (user-error "No comment on this difference; C-u d offers them all"))
+                      (unit (user-error "%s" (substitute-command-keys "\
+No comment on this difference; \\[universal-argument] \\[ecc-review-ediff-remove-comment] \
+offers them all")))
                       ((ecc-review--ordered (seq-filter #'ecc-review--visible-p
                                                         ecc-review--notes)))
                       (t (user-error "No comment in this review")))
@@ -2847,10 +2849,11 @@ ediff lays out its windows; quitting puts back what was on the screen."
 			 #'ecc-review-ediff--status-changed nil t)
                (ediff-recenter)
                ;; `ediff-mode-map' is local to this control buffer, so these
-               ;; keys reach no other ediff session.  c, d, l, {, } and ! are
-               ;; the ones the diff review has; ediff has none of the first
-               ;; five, and ! is its own "compute the differences again", which
-               ;; for a review is reading the files again.
+               ;; keys reach no other ediff session.  c, l, {, } and ! are
+               ;; the ones the diff review has, and x is its d; ediff has none
+               ;; of c, x, l, { and }, and ! is its own "compute the
+               ;; differences again", which for a review is reading the files
+               ;; again.
                (define-key ediff-mode-map (kbd "c") #'ecc-review-ediff-comment)
                ;; x, not d: d scrolls the reply pane on, with u.
                (define-key ediff-mode-map (kbd "x") #'ecc-review-ediff-remove-comment)
@@ -2870,7 +2873,7 @@ ediff lays out its windows; quitting puts back what was on the screen."
                ;; there is nothing to lose by the question and nothing to ask.
                (define-key ediff-mode-map (kbd "q") #'ecc-review-quit)
                ;; mouse-2 over a line of the help looks the command up in
-               ;; the ediff manual, which knows nothing of c, d or l and
+               ;; the ediff manual, which knows nothing of c, x or l and
                ;; answers them with "Undocumented command!", and so did RET
                ;; until it opened the file (below).  Silenced rather
                ;; than pointed somewhere else: what the ECC keys do is on the

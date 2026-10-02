@@ -189,7 +189,10 @@ command is run, with `this-command' COMMAND, `next-line' by default."
           (should-not (string-search "\n" right))
           ;; Side by side, the left keys are put at the right edge.
           (should (string-search "n/p diff  j jump  { } comments  c comment" left))
-          (should (string-search "RET open  T tour  t next  M message" right))
+          (should (string-search "RET open  T tour  t next  M message"
+                                 (ecc-review-direct--keys 'B)))
+          ;; A window of 40 columns keeps the first keys and the help.
+          (should (string-search "RET open  T tour" right))
           (should (string-search "? all keys" right))
           ;; Where the review is, on the right one.
           (should (string-search "-/4" right))
@@ -1153,8 +1156,9 @@ with them; reading again and q work as ever."
 ;;;; Fixes after review
 
 (ert-deftest ecc-review-direct-test-a-narrow-window-shows-the-status-first ()
-  "Too narrow for the keys and the status, the right header starts with the status.
-Wide enough, the status is at the right end, after every key."
+  "Too narrow for every key, the right header keeps ? and the status, dropping keys before ?.
+Wide enough, the status is at the right end, after every key; too narrow
+even for ? and the status, it starts with the status."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
     (ecc-review-direct-test--with-review session control
@@ -1166,11 +1170,72 @@ Wide enough, the status is at the right end, after every key."
         (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 200)))
           (let ((text (ecc-review-direct-header-text buffer window)))
             (should (string-prefix-p " RET open" text))
+            (should (string-search "! reread  ? all keys" text))
             (should (string-suffix-p "  4/4 " text))))
         (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 40)))
           (let ((text (ecc-review-direct-header-text buffer window)))
+            (should (string-prefix-p " RET open  T tour  ? all keys" text))
+            (should-not (string-search "reread" text))
+            (should (string-suffix-p "  4/4 " text))))
+        (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 15)))
+          (let ((text (ecc-review-direct-header-text buffer window)))
             (should (string-prefix-p " 4/4 " text))
             (should (string-search "RET open" text))))))))
+
+(ert-deftest ecc-review-direct-test-a-stacked-160-column-frame-keeps-the-help ()
+  "Stacked in a frame of 160 columns, beside the reply pane, ? and the status are in the header.
+Batch has a frame of 80 columns: the width the right window has there
+is given to the header line."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (let* ((buffer (buffer-local-value 'ediff-buffer-B control))
+             (window (ecc-review-direct-test--window control 'B))
+             ;; The frame less the pane and the scroll bar of the window.
+             (width (- 160 (default-value 'ecc-review-talk-reply-width) 1)))
+        (cl-letf (((symbol-function 'window-width) (lambda (&rest _) width)))
+          (let ((text (ecc-review-direct-header-text buffer window)))
+            (should (string-search "? all keys" text))
+            (should (string-suffix-p "  -/4 " text))
+            (should (string-search "C-c C-c send" text))
+            (should (<= (string-width text) width))))))))
+
+(ert-deftest ecc-review-direct-test-the-right-header-is-fitted-once-a-width ()
+  "Drawing the right header line again at the same width fits the keys no more.
+Another width, other keys or another status fit them again, and at any
+width what is drawn, keys and status, is no wider than the window."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (let* ((buffer (buffer-local-value 'ediff-buffer-B control))
+             (window (ecc-review-direct-test--window control 'B))
+             (width 60)
+             (fitted 0)
+             (fit (symbol-function 'ecc-review-direct--fit-keys)))
+        (cl-letf (((symbol-function 'window-width) (lambda (&rest _) width))
+                  ((symbol-function 'ecc-review-direct--fit-keys)
+                   (lambda (&rest args) (cl-incf fitted) (apply fit args))))
+          (let ((text (ecc-review-direct-header-text buffer window)))
+            (should (= fitted 1))
+            (should (equal (ecc-review-direct-header-text buffer window) text))
+            (should (= fitted 1))
+            (setq width 70)
+            (ecc-review-direct-header-text buffer window)
+            (should (= fitted 2))
+            ;; The difference changes: so does the status.
+            (ecc-review-direct-test--move control 'B 55)
+            (ecc-review-direct-header-text buffer window)
+            (should (= fitted 3))))
+        (dolist (columns (number-sequence 25 120 5))
+          (cl-letf (((symbol-function 'window-width) (lambda (&rest _) columns)))
+            (let ((text (ecc-review-direct-header-text buffer window)))
+              (should (string-search "? all keys" text))
+              ;; The space aligned to the status takes no room where the
+              ;; keys reach it already; it is not counted.
+              (should (<= (- (string-width text)
+                             (cl-count-if (lambda (at) (get-text-property at 'display text))
+                                          (number-sequence 0 (1- (length text)))))
+                          columns)))))))))
 
 ;; A command that leaves the keyboard elsewhere on purpose, run through
 ;; the relay.
