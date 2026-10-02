@@ -205,8 +205,9 @@ Verified against **Claude Code CLI 2.1.281**.
   counts only its own changes again. Its first choice, `+ new session`,
   starts a session in the menu's project with `ecc-start` -- named as
   `ecc-start` names it, asked for a name when the project has one already
-  -- leaves the selected window selected and the menu open, and turns the
-  menu to it, so that the comments go there; it has the review tools, so
+  -- leaves the user where the menu was, back in its tab when `ecc-start`
+  went to the tab of a Space of its own, with the selected window
+  selected and the menu open, and turns the menu to it, so that the comments go there; it has the review tools, so
   `T` works at once. `-f` asks for the files to keep once
   the comparison is chosen, out of those it shows, and `-e` opens this
   one review in ediff, or as a diff, the other way from
@@ -347,9 +348,13 @@ Verified against **Claude Code CLI 2.1.281**.
   shows no pane in either) -- at the bottom too when the frame cannot
   leave the diff 80 columns beside it (`ecc-review-talk-min-diff-width`).
   `ecc-review-talk-reply-place` set to `frame` puts it in a frame of its
-  own instead, the same one for every review while it is there, closed
-  with the review, made with `no-focus-on-map` and never selected, so the
-  keyboard stays in the review and `y` is typed there. It shows the latest turn of the session of
+  own instead, one for each review, named after its pane, used again while
+  it is there and closed with that review alone, made with
+  `no-focus-on-map` and never selected, so the
+  keyboard stays in the review and `y` is typed there. `s` showing or
+  hiding the files pane, and the frame resized, move the pane to the side
+  the width now asks for (`ecc-review-files-toggled-functions`, and
+  `window-size-change-functions` of the new side's buffer). It shows the latest turn of the session of
   the review as it streams -- what you sent on a line, what Claude says,
   and each tool call on a line of its own, such as `review_navigate →
   foo.el:12` -- and keeps its end in view. Each turn replaces the last;
@@ -386,9 +391,15 @@ Verified against **Claude Code CLI 2.1.281**.
   `n`, `p`, `j`, `v` and `C-l` lay nothing out and `|`, `m` and `?` lay it
   out once each. A review is laid out the plain way, its panel a window of
   the review's frame, whatever `ediff-window-setup-function` says for other
-  ediffs: a control frame cannot be taken away, since `ediff-recenter`
-  gives it the focus at every `n` and `p`, which makes an invisible one
-  visible again.
+  ediffs -- its default as the review opens, whichever buffer is current,
+  and again before every layout, as `ediff-toggle-multiframe` sets every
+  session there is: a control frame cannot be taken away, since
+  `ediff-recenter` gives it the focus at every `n` and `p`, which makes an
+  invisible one visible again. `C-c C-k` in the message `C-u C-c C-c`
+  opens goes back to the review laid out again, the panel out of sight
+  and the keyboard in the new side (`ecc-review-go-back`), where it popped
+  to the control buffer and left the panel on the screen with the
+  keyboard in it.
 
 - An ediff review is read in its two windows, which have its keys
   (`ecc-review-direct-mode`). ediff keeps its keys in the control panel,
@@ -443,7 +454,9 @@ Verified against **Claude Code CLI 2.1.281**.
   left one is put at the right edge of its window (`:align-to`), so that
   the two meet in the middle. The header line of the new side ends with
   which difference is current out of how many, `3/12`, and what the
-  filter hides -- after every change of either, reading again included --
+  filter hides -- after every change of either, reading again included;
+  a window too narrow for the keys and that puts it first, and the keys
+  after it, worked out as the header line is drawn --
   and `?` shows every key, in a window as in the panel. `o` in the files pane
   opens the file itself, at its first change in an ediff review and
   beside the session in the diff review; `RET` there still moves the

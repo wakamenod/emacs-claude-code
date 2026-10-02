@@ -211,7 +211,7 @@ Each turn replaces the last one. The whole conversation stays in the transcript.
       ecc-review-talk-reply-height 12)
 ```
 
-To keep the whole frame for the diff, put the pane in a frame of its own. ecc reuses that frame for each review and closes it with the review. The frame never takes the focus, so the keyboard stays in the review, and `y` is pressed there:
+To keep the whole frame for the diff, put the pane in a frame of its own. Each review has a frame of its own, which closes with that review. The frame never takes the focus, so the keyboard stays in the review, and `y` is pressed there:
 
 ```elisp
 (setq ecc-review-talk-reply-place 'frame)
@@ -242,7 +242,7 @@ The review opens with the old side above the new one, each as wide as the frame,
  RET open  T tour  t next  M message  v/V scroll  C-c C-c send  ! reread  q quit  ? all keys
 ```
 
-The left line has the keys for reading and for your comments, and the right line has the keys for Claude, opening, sending and closing. The most used keys come first, so a narrow window loses the least used ones. Side by side, the left line is aligned to the right edge of its window, so the two lines meet in the middle. The header line of the window with the keyboard, the lower one or the right one, ends with where you are, such as `3/12`, and what a filter hides.
+The left line has the keys for reading and for your comments, and the right line has the keys for Claude, opening, sending and closing. The most used keys come first, so a narrow window loses the least used ones. Side by side, the left line is aligned to the right edge of its window, so the two lines meet in the middle. The header line of the window with the keyboard, the lower one or the right one, ends with where you are, such as `3/12`, and what a filter hides. When the window is too narrow for both, where you are comes first.
 
 The ediff control panel is not shown. `?` opens it with every key, and `?` again closes it. A review shows the panel in the review's frame, whatever `ediff-window-setup-function` says, so no control frame appears.
 

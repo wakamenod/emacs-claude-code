@@ -83,7 +83,7 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 | `ecc-review-ediff-layout` | `'stacked` | How an ediff review opens: `'stacked` puts the old side above the new one with Claude's reply pane on the right, `'side-by-side` puts them left and right with the pane at the bottom. `\|` switches in an open review |
 | `ecc-review-talk-reply-width` | `60` | Width in columns of the pane right of a stacked ediff review that shows Claude's reply. A frame that would leave the diff fewer than 80 columns has the pane at the bottom instead |
 | `ecc-review-talk-reply-height` | `8` | Height in lines of the pane under a side-by-side ediff review that shows Claude's reply; `nil` shows no pane in either layout |
-| `ecc-review-talk-reply-place` | `'auto` | Where the reply pane goes: `'auto` beside the review as the layout says, `'frame` in a frame of its own, reused and closed with the review, which never takes the focus |
+| `ecc-review-talk-reply-place` | `'auto` | Where the reply pane goes: `'auto` beside the review as the layout says, `'frame` in a frame of its own for each review, closed with it, which never takes the focus |
 
 ## Windows
 
