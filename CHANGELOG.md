@@ -555,10 +555,10 @@ Verified against **Claude Code CLI 2.1.281**.
   likeliest as the default, so that RET answers Claude. `a` shows or hides Claude's
   comments instead of saying that a review reads, which `b` still says;
   `{` and `}` move to the previous and next comment -- each one, its
-  difference and its line -- and `!` reads the review again. `d` offers
+  difference and its line -- and `!` reads the review again. `x` offers
   the outdated comments of the file as well, and off every difference, or
   with `C-u`, every comment of the review that is shown; `C-u d` does that
-  in the diff review too. A submodule, and a file git will not give, are
+  in the diff review. A submodule, and a file git will not give, are
   named on their separator line rather than shown as created or deleted.
   A changed `ecc-review-max-bytes` or `ecc-review-ediff-fontify` shows at
   the next `!`. Two ediff reviews of one session have two sides each. When
