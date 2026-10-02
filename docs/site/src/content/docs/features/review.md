@@ -91,7 +91,7 @@ To turn this off and read the diff only with `g`:
 
 ## Listing and filtering the files
 
-`s` shows the files of the review in a list immediately left of the diff, as Hunk's files pane does. It works in the diff buffer and in the ediff control panel.
+`s` shows the files of the review in a list immediately left of the diff, as Hunk's files pane does. It works in the diff buffer, and in an ediff review from either window or the control panel.
 
 ```
  Files (3 of 5)  /review
@@ -102,7 +102,7 @@ To turn this off and read the diff only with `g`:
 
 Each line shows what happened to the file: `M` changed, `A` added, `D` deleted, or `R` renamed with its former name. Then come the lines added and removed, and your comments and Claude's as `yours·Claude's`. A `!` marks a file with an outdated comment. `▸` marks the file you are reading, the one point is in or the one of the current ediff difference, and it moves as you move.
 
-In the list, `RET` or a click goes to that file and back to the review. `n` and `p` show the next or previous file and keep you in the list. `/` filters, `g` writes the list again, and `s` or `q` hides it.
+In the list, `RET` or a click goes to that file and back to the review, and `o` opens the file itself: in ediff at its first change, in a frame of its own. `n` and `p` show the next or previous file and keep you in the list. `/` filters, `g` writes the list again, and `s` or `q` hides it.
 
 The list is always on the left of the diff. In ediff the review has the frame to itself, so the list is a side window at the left edge, and `|` and `m` leave it in place. When `ecc-review-ediff-full-frame` is `nil`, the list is split off the left side of the review instead. In the diff buffer the list is split off the left of the review's window. When you hide the list, its columns go back to the diff. The list closes when the review leaves its window, for example with `q`. If the window is too narrow for the list, the review opens without it and `/` still works.
 
@@ -114,7 +114,7 @@ The list starts hidden. `s` shows it, and every review you open afterwards shows
 
 ecc writes the list again whenever it reads the review again and whenever a comment comes or goes.
 
-`/` keeps only the files whose path, former path or one of Claude's comments contains what you type, ignoring case, as in Hunk. The list appears and narrows as you type. `RET` hides the other files of the review, and an empty `RET` shows every file again. The filter hides the files without reading the diff again. Their comments are kept and still sent by `C-c C-c`. The header line of the diff buffer says how many files are hidden, as `/review: 2 files hidden by filter`, and so does a third line of the ediff control panel.
+`/` keeps only the files whose path, former path or one of Claude's comments contains what you type, ignoring case, as in Hunk. The list appears and narrows as you type. `RET` hides the other files of the review, and an empty `RET` shows every file again. The filter hides the files without reading the diff again. Their comments are kept and still sent by `C-c C-c`. The header line of the diff buffer says how many files are hidden, as `/review: 2 files hidden by filter`, and so does the ediff control panel.
 
 Moving skips the hidden files: `n`, `p`, `N` and `P` in the diff buffer, `n`, `p` and `j` in ediff, and `{` and `}` in both. `review_hunks` and `review_open` tell Claude about the filter. Its `next_comment` and `prev_comment` skip the hidden files, and it cannot scroll the review to one of them. The filter stays when the review is read again.
 
@@ -185,7 +185,7 @@ The tools also work on a review you have open in ediff. There a hunk is one edif
 
 ## Talking to Claude from the review
 
-An ediff review takes the whole frame, so the session and its prompt are out of sight while you read. Hunk keeps the agent in a second terminal. In ecc you talk to Claude from the review itself. These keys work in the diff buffer and in the ediff control panel, and they always go to the session of the review:
+An ediff review takes the whole frame, so the session and its prompt are out of sight while you read. Hunk keeps the agent in a second terminal. In ecc you talk to Claude from the review itself. These keys work in the diff buffer and anywhere in an ediff review, and they always go to the session of the review:
 
 | Key | Action |
 |---|---|
@@ -204,7 +204,7 @@ The cache is now keyed by path, so a renamed file is read again.
   review_comment → ecc-review-ediff.el:252: This drops the old entry
 ```
 
-Each turn replaces the last one. The whole conversation stays in the transcript. When Claude asks for permission, asks a question, or has a plan to approve, the pane shows the request in full, and `y` in the control panel answers it: allow or deny, or pick an answer in the minibuffer. The pane is never selected, so the keys stay in the control panel. It stays when ediff lays out its windows again, and it closes with the review. The pane is `ecc-review-talk-reply-height` (8) lines high, and `nil` turns it off:
+Each turn replaces the last one. The whole conversation stays in the transcript. When Claude asks for permission, asks a question, or has a plan to approve, the pane shows the request in full, and `y` in the review answers it: allow or deny, or pick an answer in the minibuffer. The pane is never selected, so the keyboard stays where you are reading. It stays when ediff lays out its windows again, and it closes with the review. The pane is `ecc-review-talk-reply-height` (8) lines high, and `nil` turns it off:
 
 ```elisp
 (setq ecc-review-talk-reply-height 12)
@@ -220,29 +220,43 @@ The diff buffer has the session beside it, so it has no pane.
 (setq ecc-review-style 'ediff)
 ```
 
-All files in the review open in a single ediff session instead of one session per file. The original contents are concatenated into the left buffer, and the new contents into the right buffer. A separator line like `═══ path ═══` marks each file, preceded by a blank line so files do not run together. Because all changes are in one session, `n` and `p` move through every difference across the entire review, crossing directly from one file into the next. Any file that git considers binary, or that is larger than `ecc-review-max-bytes`, appears only as a separator line, such as `═══ photo.png (binary, not shown) ═══`, and contains no differences.
+All files in the review open in a single ediff session instead of one session per file. The original contents are concatenated into the left buffer, and the new contents into the right buffer. A separator line like `═══ path ═══` marks each file, preceded by a blank line so files do not run together. Because all changes are in one session, `n` and `p` move through every difference across the entire review, crossing directly from one file into the next. Each file is still compared on its own, so a difference never runs from one file into the next. Any file that git considers binary, or that is larger than `ecc-review-max-bytes`, appears only as a separator line, such as `═══ photo.png (binary, not shown) ═══`, and contains no differences.
 
-The two buffers appear side by side. `ecc` sets `ediff-split-window-function` only in the review control buffer, so all other ediff sessions keep your configured window layout. The control panel lists the keys of a review in two lines:
+The two buffers appear side by side. `ecc` sets `ediff-split-window-function` only in the review control buffer, so all other ediff sessions keep your configured window layout. Each window has a header line with keys. Every key works in either window, so the two lines split one list between them:
 
 ```
- n/p diff   c comment   { } comments   a Claude's   s files   / filter
- T tour   t next   M message   C-c C-c send   q quit   ! reread   ? all keys
+ n/p diff  j jump  { } comments  c comment  d delete  l list  a Claude's  s files  / filter
+ RET open  T tour  t next  M message  v/V scroll  C-c C-c send  ! reread  q quit  ? all keys
 ```
+
+The left line has the keys for reading and for your comments, and the right line has the keys for Claude, opening, sending and closing. The most used keys come first, so a narrow window loses the least used ones. The control panel shows where you are, such as ` Difference 3 of 12   ? all keys`, and what a filter hides. `?` shows every key in the panel.
 
 Each file is coloured by its own major mode. The review does not wait for that: it colours what is on the screen first and the rest in the background, pausing while you type. A file with very long lines, such as a minified script, stays uncoloured. In the current difference and in every other difference on the screen, the words that changed are shown in bold. Their shade stays clearly apart from the highlight of the current difference, whatever your theme.
 
 Both buffers are read-only, so ediff's `b` copy command does nothing here, and `a` shows or hides Claude's comments instead. You read the changes, add comments, and send them. Claude then updates the files on disk using the prompt generated from your comments.
 
-Your comment is on the whole current difference and appears under it on the right. If the most recent comment in that difference is Claude's and you have not answered it, `c` replies to it. Whenever there is a comment to answer or edit, `c` asks what to do, with the most likely choice as the default, so `RET` replies to Claude. You can also choose a new comment. Claude's comments appear under their lines, on the left for a removed line and on the right for an added one, as `▎ #4 Claude: text`. `review_navigate` moves to the difference and the line without selecting a window. The review follows the files like the diff buffer and keeps the current difference, the place of each side, and the comments.
+### Reading in the two windows
+
+The review opens with the keyboard in the right window. Every key of the control panel works in both windows, and the keyboard stays where you typed it, even when ediff lays out its windows again. Digits give a count, as in the panel: `3j` jumps to the third difference.
+
+Moving point drives the review. When point enters a difference, that difference becomes the current one: it gets the stronger colour, the bar in the fringe and its number in the panel. The window you are reading does not scroll. The other window moves so that the matching line is at the same height. A removed line matches the place the change took it from. Between differences, the other window shows the same line of the file, and the current difference stays the one you read last. `n` and `p` then go to the next difference below point or the previous one above it. This works for any command that moves point, such as `C-n`, `M-<` or a click. During an isearch the other window follows only when `C-s` stops on a match and when the search ends, not as you type. Scrolling one window with `C-v`, `M-v` or the mouse wheel does not move the other yet. `v` and `V` scroll both, and `C-l` lines them up again.
+
+`RET` opens the file at the line point is on, as the file is now. If the review is of commits, or the files changed after the review read them, ecc moves the line through those later changes. A line of the left side opens where it is now, and a removed line opens where it was. The file opens in a frame of its own, the same frame each time while it is open. The review keeps its frame, its windows and the keyboard.
+
+### Comments in ediff
+
+In a window, `c` comments on the line at point: on the left for a line the change removed, on the right for a line it added, as `c` on a line of the diff buffer. On a line both sides share, there is nothing to comment on, and `c` says so. In the control panel, `c` comments on the whole current difference and the comment appears under it on the right. If the most recent comment in that difference is Claude's and you have not answered it, the panel's `c` replies to it. Whenever there is a comment to answer or edit, it asks what to do, with the most likely choice as the default, so `RET` replies to Claude. You can also choose a new comment. Claude's comments appear under their lines, on the left for a removed line and on the right for an added one, as `▎ #4 Claude: text`. `review_navigate` moves to the difference and the line without selecting a window. The review follows the files like the diff buffer and keeps the current difference, the place of each side, and the comments.
 
 | Key | Action |
 |---|---|
-| `c` | Comment on the current difference (press again to edit it), or reply to Claude's most recent comment there |
+| `c` | In a window, comment on the line at point. In the panel, comment on the current difference, or reply to Claude's most recent comment there. Press again to edit your comment |
 | `{` / `}` | Previous / next comment |
 | `a` | Show or hide Claude's comments |
 | `l` | Jump to a comment |
-| `d` | Remove a comment on the current difference (`C-u d`, or off every difference: any comment) |
-| `n` / `p` / `j` | Next, previous, or numbered difference, skipping the files a filter hides |
+| `d` | Remove a comment on the line at point, else on the current difference (`C-u d`, or off every difference: any comment) |
+| `RET` | In a window, open the file at the line at point, in a frame of its own |
+| `v` / `V` | Scroll both windows |
+| `n` / `p` / `j` | Next or previous difference (from point, in a window), or the numbered one, skipping the files a filter hides |
 | `s` | Show or hide the list of files (see [Listing and filtering the files](#listing-and-filtering-the-files)) |
 | `/` | Keep only the files that match a filter |
 | `T` / `t` / `M` | Ask Claude for a tour, its next stop, or send a message (see [Talking to Claude from the review](#talking-to-claude-from-the-review)) |
@@ -253,7 +267,7 @@ Your comment is on the whole current difference and appears under it on the righ
 | `q` | Quit the review |
 | `?` | Show the full help (press again to hide it) |
 
-Comments work much as they do in the diff buffer, except that a comment of yours belongs to a whole difference rather than to one line. They include the file name and line numbers, and the prompt sent to the session has the same form. Sending comments, pressing `C-c C-k`, or pressing `q` restores the window configuration you had before opening the review. There is no `g` command here. `!` reads the review again.
+Comments work as they do in the diff buffer, on a line or on a whole difference. They include the file name and line numbers, and the prompt sent to the session has the same form. Sending comments, pressing `C-c C-k`, or pressing `q` restores the window configuration you had before opening the review. There is no `g` command here. `!` reads the review again.
 
 ## Reviewing proposals before approval
 

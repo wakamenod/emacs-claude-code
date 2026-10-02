@@ -268,7 +268,8 @@ Verified against **Claude Code CLI 2.1.281**.
   tool result, whatever the tool.
 
 - The files of a review, listed and filtered, as in Hunk. `s` in a review
-  -- the diff review or the control panel of an ediff review -- shows a
+  -- the diff review, or a window or the control panel of an ediff
+  review -- shows a
   list of its files immediately left of the diff, in a buffer of its own,
   `*ecc-review-files: REVIEW*`: one line a file with what happened to it
   (`M`, `A`, `D`, or `R` with its former name), the lines added and
@@ -276,7 +277,8 @@ Verified against **Claude Code CLI 2.1.281**.
   one of them is outdated, under `Files (SHOWN of ALL)`. `▸` marks the
   file being read -- the one point is in, or the one of the current
   difference -- and moves with it, Claude's `review_navigate` included.
-  `RET` or a click on a line goes to that file and back to the review; `n`
+  `RET` or a click on a line goes to that file and back to the review --
+  in ediff to its right window -- and `o` opens the file itself; `n`
   and `p` there show the next and the previous file and keep the keyboard
   in the list. In ediff the list is a side window on the left, which `|`
   and `m` leave where it is; with `ecc-review-ediff-full-frame` nil it is
@@ -313,14 +315,14 @@ Verified against **Claude Code CLI 2.1.281**.
   `review_navigate`'s `next_comment` and `prev_comment` pass over their
   comments, and `review_navigate` to one of them fails and says why. The
   header line of the diff review says `/FILTER: N files hidden by
-  filter`, and so does a third line of the ediff control panel.
+  filter`, and so does the line of the ediff control panel.
   `review_hunks` and `review_open` tell Claude the filter, how many files
   it hides and which (`ecc-review-agent-filter-text`). A filter holds
   across every reading of the review again.
 
 - Talking to Claude from a review, which in ediff hides the session and
-  its prompt. `T` in a review -- the diff review or the control panel of
-  an ediff review -- asks the session of the review for a tour
+  its prompt. `T` in a review -- the diff review, or a window or the
+  control panel of an ediff review -- asks the session of the review for a tour
   (`ecc-review-talk-tour-prompt`): the changes in order of importance, each
   stop shown with `review_navigate` and explained, a `review_comment` on
   what needs attention, and a stop until you ask for the next one, which
@@ -340,7 +342,7 @@ Verified against **Claude Code CLI 2.1.281**.
   foo.el:12` -- and keeps its end in view. Each turn replaces the last;
   the whole conversation stays in the transcript. What the session waits
   for -- a permission, Bash included, printed whole; a question with its
-  options; a plan -- is shown at the end, and `y` in the control panel
+  options; a plan -- is shown at the end, and `y` in the review
   answers it: allow or deny, approve or deny, or each question read in the
   minibuffer, collected apart from the question buffer -- which keeps
   what you chose there -- and sent the way it sends them once every
@@ -354,6 +356,48 @@ Verified against **Claude Code CLI 2.1.281**.
   windows out again, as `|` and `m` do, so `n` and `p` leave its window
   and its height alone; and it goes with the review. The diff review has
   the session beside it and no pane.
+
+- An ediff review is read in its two windows, which have its keys
+  (`ecc-review-direct-mode`). ediff keeps its keys in the control panel,
+  and ecc gave the panel the keyboard, so `c` could only be about a whole
+  difference. Now the review opens with the keyboard in the right window,
+  and every key of the panel works in both windows -- `n`, `p`, `j`, `{`,
+  `}`, `a`, `s`, `/`, `T`, `t`, `M`, `y`, `l`, `!`, `?`, `i`, `q`,
+  `C-c C-c`, `C-c C-k`, `v`, `V`, `C-l`, `|`, `m`, `h`, `@`, `*`, `<`,
+  `>`, `##`, `#c` -- run in the control buffer as from the panel, with
+  the keyboard kept in the window or given back to it when ediff lays its
+  windows out again. Digits are a prefix argument there, as in the panel.
+  `c` in a window comments on the line at point -- the old side on the
+  left, the new on the right, as `c` on a line of the diff review -- and
+  says there is nothing to comment on a line both sides share; `c` in
+  the panel still comments on the whole difference. `d` removes a
+  comment of the line at point first. Moving point drives the review:
+  after a command in a window, a difference that point has gone into
+  becomes the current one -- its colour, its bar, its number -- without
+  ediff's select, which lays both windows out again; the window being
+  read stays as it is, and the other is put at the line that stands
+  against point, at the same height. A line taken out stands against the
+  place it was taken from. In the lines both sides share, the other side
+  is put on the same line of the file, and the current difference stays
+  the one read last; `n` and `p` then go from point to the difference
+  below or above it. Any command that moves point is followed that way --
+  `C-n`, `M-<`, a click; an isearch only when `C-s` stops on the next
+  match and when the search ends. Scrolling one window -- `C-v`, `M-v`, the
+  wheel -- is not followed yet; `v` and `V` scroll both. `RET` opens the
+  file the line is in, at that line as the file is now: a review of
+  commits, or of a working tree changed since it was read, carries the
+  line through what changed after (`ecc-visit-shift-through`), and a line
+  of the left side opens where it stands now, or where it was. The file
+  goes in a frame of its own, the same one each time while it is there
+  (`ecc-review-direct--file-window`), and the review keeps its frame, its
+  windows and its keyboard. Each window has a header line of keys, the
+  left one for reading and your comments, the right one for Claude,
+  opening, sending and closing; the control panel says which difference
+  is current, how many there are and what the filter hides, and `?`
+  shows every key, in a window as in the panel. `o` in the files pane
+  opens the file itself, at its first change in an ediff review and
+  beside the session in the diff review; `RET` there still moves the
+  review.
 
 ### Changed
 
@@ -408,9 +452,10 @@ Verified against **Claude Code CLI 2.1.281**.
   numbered, kept across a refresh by the same rules, and listed, removed
   and sent the same way, in the order of the review: by place, a comment
   on the whole difference first, then those on the lines it takes out and
-  puts in, by line. `c` still comments the whole current difference;
-  where the latest comment there is Claude's and you have not answered
-  it, `c` answers it. Whenever there is a comment to answer or edit, `c`
+  puts in, by line. `c` in the control panel comments the whole current
+  difference, and `c` in a window the line at point (above); where the
+  latest comment there is Claude's and you have not answered it, `c` in
+  the panel answers it. Whenever there is a comment to answer or edit, `c`
   asks what to do -- answer it, edit yours, or a new comment -- with the
   likeliest as the default, so that RET answers Claude. `a` shows or hides Claude's
   comments instead of saying that a review reads, which `b` still says;
@@ -507,6 +552,20 @@ Verified against **Claude Code CLI 2.1.281**.
   already shows is selected there rather than shown twice.
 
 ### Fixed
+
+- An ediff review no longer gives a difference to the wrong file. ediff
+  diffed the two sides whole, every file one after the other, and diff
+  paired lines of one file with lines of another across the separators
+  between them, where files were much alike and one grew by a lot: a
+  review of 59 files showed differences in 44, 1,611 of its 1,642
+  differences ran over the end of a file, files created in it had lines
+  on the old side, and comments went to the wrong file. Each file is now
+  diffed on its own: the files that differ go into a directory on each
+  side, one `diff -r` with ediff's program and options compares the two,
+  and the hunks are moved to where each file begins. The same review now
+  has 326 differences in all 59 files, and opening it takes the same
+  time (0.48 s before, 0.46 s after; the 57 files of
+  `scripts/bench-review-ediff.el`, 0.44 s and 0.45 s).
 
 - A request the CLI takes back while you are being asked about it -- an
   interrupt closes it while a reason for denying, an answer to a question
