@@ -858,6 +858,78 @@ opened in another, and that is where the user stays."
           (tab-bar-mode (if was 1 -1))
           (mapc #'ecc-test-cleanup-session started))))))
 
+(defmacro ecc-review-menu-test--with-tabs (&rest body)
+  "Run BODY with Spaces on and two tabs, \"parent\" and \"menu\", in \"menu\".
+The tab bar is left as the tests of Spaces leave it."
+  (declare (indent 0))
+  `(let ((ecc-use-spaces t)
+         (was tab-bar-mode))
+     (unwind-protect
+         (progn
+           (tab-bar-rename-tab "parent")
+           (tab-bar-new-tab)
+           (tab-bar-rename-tab "menu")
+           ,@body)
+       (dolist (other (funcall tab-bar-tabs-function))
+         (unless (eq (car other) 'current-tab)
+           (tab-bar-close-tab-by-name (alist-get 'name other))))
+       (tab-bar-rename-tab "")
+       (tab-bar-mode (if was 1 -1)))))
+
+(ert-deftest ecc-review-menu-test-a-new-session-with-a-parent-space ()
+  "A worktree's Space brings its repository's tab first: the menu's tab is found again.
+`ecc-start' selects the parent's tab and makes the new tab beside it,
+so the menu's tab is neither the recent one nor at its old index."
+  (skip-unless (executable-find "git"))
+  (ecc-review-menu-test--with-directory directory
+    (ecc-review-menu-test--repo directory)
+    (ecc-test-with-fake-session first
+      (setf (ecc-session-project-root first) directory)
+      (ecc-review-menu-test--with-tabs
+        (let ((started nil)
+              (selected (selected-window)))
+          (unwind-protect
+              (let ((ecc-review-menu--state (ecc-review-menu-make-state first directory)))
+                (cl-letf (((symbol-function 'completing-read)
+                           (lambda (_prompt table &rest _) (car (all-completions "" table))))
+                          ((symbol-function 'read-string) (lambda (&rest _) "second"))
+                          ((symbol-function 'ecc-start)
+                           (lambda (root name)
+                             (tab-bar-select-tab-by-name "parent")
+                             (tab-bar-new-tab)
+                             (tab-bar-rename-tab "worktree")
+                             (let ((session (ecc-model-create-session
+                                             :name name :project-root root)))
+                               (push session started)
+                               session))))
+                  (ecc-review-menu-switch-session (ecc-review-menu--read-session)))
+                (should (equal (alist-get 'name (tab-bar--current-tab)) "menu"))
+                (should (eq (selected-window) selected))
+                (should (eq (plist-get ecc-review-menu--state :session) (car started))))
+            (mapc #'ecc-test-cleanup-session started)))))))
+
+(ert-deftest ecc-review-menu-test-a-new-session-that-fails-goes-back ()
+  "`ecc-start' failing after it switched tabs leaves the user in the menu's tab."
+  (skip-unless (executable-find "git"))
+  (ecc-review-menu-test--with-directory directory
+    (ecc-review-menu-test--repo directory)
+    (ecc-test-with-fake-session first
+      (setf (ecc-session-project-root first) directory)
+      (ecc-review-menu-test--with-tabs
+        (let ((selected (selected-window))
+              (ecc-review-menu--state (ecc-review-menu-make-state first directory)))
+          (cl-letf (((symbol-function 'completing-read)
+                     (lambda (_prompt table &rest _) (car (all-completions "" table))))
+                    ((symbol-function 'read-string) (lambda (&rest _) "second"))
+                    ((symbol-function 'ecc-start)
+                     (lambda (&rest _)
+                       (tab-bar-new-tab)
+                       (error "The CLI would not start"))))
+            (should-error (ecc-review-menu-switch-session (ecc-review-menu--read-session))))
+          (should (equal (alist-get 'name (tab-bar--current-tab)) "menu"))
+          (should (eq (selected-window) selected))
+          (should (eq (plist-get ecc-review-menu--state :session) first)))))))
+
 (ert-deftest ecc-review-menu-test-context ()
   "The git choices review the buffer's project; only D falls back elsewhere.
 A buffer in a project with no session, and a session in another: w

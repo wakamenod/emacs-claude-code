@@ -831,16 +831,24 @@ would come out the same is set again."
       (when (buffer-live-p ediff-buffer-A)
         (with-current-buffer ediff-buffer-A
           (unless (equal-including-properties header-line-format left)
-            (setq header-line-format left))))
+            (setq header-line-format left)
+            (force-mode-line-update))))
       (when (buffer-live-p ediff-buffer-B)
         (with-current-buffer ediff-buffer-B
-          (unless (equal-including-properties ecc-review-direct--header-keys keys)
-            (setq ecc-review-direct--header-keys keys))
-          (unless (equal-including-properties ecc-review-direct--header-status status)
-            (setq ecc-review-direct--header-status status)
-            (force-mode-line-update))
-          (unless (equal header-line-format '(:eval (ecc-review-direct--header-line)))
-            (setq header-line-format '(:eval (ecc-review-direct--header-line)))))))))
+          (let ((changed nil))
+            (unless (equal-including-properties ecc-review-direct--header-keys keys)
+              (setq ecc-review-direct--header-keys keys
+                    changed t))
+            (unless (equal-including-properties ecc-review-direct--header-status status)
+              (setq ecc-review-direct--header-status status
+                    changed t))
+            (unless (equal header-line-format '(:eval (ecc-review-direct--header-line)))
+              (setq header-line-format '(:eval (ecc-review-direct--header-line))
+                    changed t))
+            ;; What the construct reads changed, not the construct itself:
+            ;; redisplay would not draw the header line again on its own.
+            (when changed
+              (force-mode-line-update))))))))
 
 ;;;; The mode
 

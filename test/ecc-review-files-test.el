@@ -1139,6 +1139,30 @@ is swept away."
           (ecc-test-cleanup-session two)
           (ecc-review-files-test--kill-buffers))))))
 
+
+(ert-deftest ecc-review-files-test-s-is-autoloaded ()
+  "The autoloads `make autoloads' writes have `ecc-review-files-toggle' as a command."
+  (require 'loaddefs-gen)
+  (let* ((dir (file-name-directory (locate-library "ecc-review-files.el" t)))
+         (tmp (make-temp-file "ecc-autoloads" t))
+         (out (expand-file-name "ecc-autoloads.el" tmp)))
+    (unwind-protect
+        (progn
+          (let ((inhibit-message t))
+            (loaddefs-generate dir out))
+          (with-temp-buffer
+            (insert-file-contents out)
+            (should (search-forward "(autoload 'ecc-review-files-toggle " nil t))
+            (goto-char (match-beginning 0))
+            ;; (autoload 'NAME FILE DOC INTERACTIVE), FILE named relative
+            ;; to the output, which is elsewhere here.
+            (let ((form (read (current-buffer))))
+              (should (string-suffix-p "ecc-review-files" (nth 2 form)))
+              (should (eq (nth 4 form) t)))
+            (goto-char (point-min))
+            (should-not (search-forward "ecc-review-files-toggled-functions" nil t))))
+      (delete-directory tmp t))))
+
 (provide 'ecc-review-files-test)
 
 ;;; ecc-review-files-test.el ends here

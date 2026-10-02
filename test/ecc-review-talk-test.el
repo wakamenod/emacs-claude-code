@@ -434,10 +434,18 @@ The keyboard stays where it was, and | leaves the frame alone."
           (ecc-review-ediff-quit first)
           (should (equal deleted '(frame-1 frame-2))))))))
 
-(ert-deftest ecc-review-talk-test-s-moves-the-pane-when-the-diff-gets-narrow ()
+(defun ecc-review-talk-test--resized (control)
+  "Run what redisplay runs when the right window of the review CONTROL changed size.
+Batch does no redisplay, which is what runs `window-size-change-functions'."
+  (with-current-buffer control
+    (with-current-buffer ediff-buffer-B
+      (run-hook-with-args 'window-size-change-functions ediff-window-B))))
+
+(ert-deftest ecc-review-talk-test-s-and-q-move-the-pane-when-the-diff-gets-narrow ()
   "The files pane shown by s leaves the stacked diff too narrow: the pane goes under.
-Hidden again, the pane goes back to the right; a frame resized is
-checked the same way."
+q in the files pane gives the columns back, and the pane goes back to
+the right; a frame made narrower is checked the same way.  Each is seen
+as the right window changing size."
   (skip-unless (executable-find "git"))
   (ecc-review-talk-test--with-sessions one _two
     (let ((ecc-review-talk-test--layout 'stacked)
@@ -450,19 +458,78 @@ checked the same way."
                       (window-parameter (get-buffer-window (ecc-review-talk-test--pane control))
                                         'window-side))))
           (should (eq (funcall side) 'right))
-          (ecc-review-files-toggle)
-          (should (eq (funcall side) 'bottom))
-          (should (ecc-review-talk-test--stacked-p control))
-          (ecc-review-files-toggle)
-          (should (eq (funcall side) 'right))
-          ;; The frame narrower: what redisplay runs when a window of
-          ;; the right side changes size.
           (should (memq #'ecc-review-talk--size-changed
                         (buffer-local-value 'window-size-change-functions ediff-buffer-B)))
+          (ecc-review-files-toggle)
+          (ecc-review-talk-test--resized control)
+          (should (eq (funcall side) 'bottom))
+          (should (ecc-review-talk-test--stacked-p control))
+          ;; q in the files pane.
+          (with-selected-window (ecc-review-files--pane-window control)
+            (call-interactively (key-binding (kbd "q"))))
+          (should-not (ecc-review-files--pane-window control))
+          (ecc-review-talk-test--resized control)
+          (should (eq (funcall side) 'right))
+          ;; The frame narrower.
           (let ((ecc-review-talk-min-diff-width 70))
-            (with-current-buffer ediff-buffer-B
-              (ecc-review-talk--size-changed ediff-window-B)))
+            (ecc-review-talk-test--resized control))
           (should (eq (funcall side) 'bottom)))))))
+
+(ert-deftest ecc-review-talk-test-a-pane-moved-keeps-the-keyboard ()
+  "A reply pane that has the keyboard as it moves has it again on its new side."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((ecc-review-talk-test--layout 'stacked)
+          (ecc-review-talk-reply-width 20)
+          (ecc-review-talk-min-diff-width 40))
+      (ecc-review-talk-test--with-ediff one control
+        (let ((pane (ecc-review-talk-test--pane control)))
+          (select-window (get-buffer-window pane))
+          (let ((ecc-review-talk-min-diff-width 70))
+            (ecc-review-talk-test--resized control))
+          (should (eq (window-parameter (get-buffer-window pane) 'window-side) 'bottom))
+          (should (eq (window-buffer (selected-window)) pane)))))))
+
+(ert-deftest ecc-review-talk-test-another-review-s-files-pane-moves-nothing ()
+  "Two sessions' reviews: the files pane of one leaves the reply pane of the other where it is."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one two
+    (let ((ecc-review-talk-test--layout 'stacked)
+          (ecc-review-talk-reply-width 20)
+          (ecc-review-talk-min-diff-width 40)
+          (ecc-review-files-shown nil)
+          (ecc-review-files-width 32))
+      (ecc-review-talk-test--with-ediff one first
+        (ecc-review-talk-test--with-ediff two second
+          ;; The second review's files pane: `ecc-review-files-shown' is t
+          ;; for every review from now on.
+          (ecc-review-files-toggle)
+          (should ecc-review-files-shown)
+          (ecc-review-talk-test--resized second)
+          (should (eq (window-parameter (get-buffer-window (ecc-review-talk-test--pane second))
+                                        'window-side)
+                      'bottom))
+          (ecc-review-ediff-quit second))
+        ;; Back on the screen, the first has no files pane, and its pane
+        ;; stays on the right.
+        (should-not (ecc-review-files--pane-window first))
+        (ecc-review-talk-test--resized first)
+        (should (eq (window-parameter (get-buffer-window (ecc-review-talk-test--pane first))
+                                      'window-side)
+                    'right))))))
+
+(ert-deftest ecc-review-talk-test-a-frame-function-of-no-argument ()
+  "A `ecc-review-talk-make-frame-function' of no argument still works, and the frame is named."
+  (let* ((named nil)
+         (ecc-review-talk-make-frame-function (lambda () 'a-frame)))
+    (cl-letf (((symbol-function 'set-frame-parameter)
+               (lambda (frame parameter value) (push (list frame parameter value) named))))
+      (should (eq (ecc-review-talk--new-frame "*ecc-review-reply: x*") 'a-frame))
+      (should (equal named '((a-frame name "*ecc-review-reply: x*")))))
+    (let ((ecc-review-talk-make-frame-function (lambda (name) (list 'made name))))
+      (should (equal (ecc-review-talk--new-frame "n") '(made "n"))))
+    (let ((ecc-review-talk-make-frame-function (lambda (&rest args) args)))
+      (should (equal (ecc-review-talk--new-frame "n") '("n"))))))
 
 (ert-deftest ecc-review-talk-test-no-pane-at-height-nil ()
   "With `ecc-review-talk-reply-height' nil an ediff review shows no pane."

@@ -1282,4 +1282,30 @@ instead, and the review would be laid out first with the user's default."
         (setq-default ediff-window-setup-function default)
         (kill-buffer other)))))
 
+(ert-deftest ecc-review-direct-test-a-header-changed-is-drawn-again ()
+  "Each change of what the right header line reads asks for it to be drawn again.
+The status, the keys, and the construct itself; nothing changed asks
+for nothing."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (let ((buffer (buffer-local-value 'ediff-buffer-B control))
+            (asked 0))
+        (cl-letf (((symbol-function 'force-mode-line-update)
+                   (lambda (&rest _) (cl-incf asked))))
+          (ecc-review-direct-refresh-headers control)
+          (should (= asked 0))
+          (with-current-buffer buffer
+            (setq ecc-review-direct--header-keys ""))
+          (ecc-review-direct-refresh-headers control)
+          (should (= asked 1))
+          (with-current-buffer buffer
+            (setq header-line-format nil))
+          (ecc-review-direct-refresh-headers control)
+          (should (= asked 2))
+          (with-current-buffer buffer
+            (setq ecc-review-direct--header-status nil))
+          (ecc-review-direct-refresh-headers control)
+          (should (= asked 3)))))))
+
 ;;; ecc-review-direct-test.el ends here

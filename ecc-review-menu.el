@@ -689,6 +689,20 @@ project)."
                                  (car (rassq (plist-get state :session) labels)))
                 labels))))
 
+(defun ecc-review-menu--back-to-tab (index name)
+  "Select again the tab that was the INDEXth, 0 counting, and was called NAME.
+`ecc-start' may have made tabs on either side of it -- a worktree's
+Space brings its repository's -- so the tab now at INDEX is taken when
+it has that name, else the first tab of that name, else the one at
+INDEX.  Nothing is selected when that tab is the current one."
+  (let* ((tabs (funcall tab-bar-tabs-function))
+         (target (cond ((equal (alist-get 'name (nth index tabs)) name) index)
+                       ((seq-position tabs name
+                                      (lambda (tab name) (equal (alist-get 'name tab) name))))
+                       (t (min index (1- (length tabs)))))))
+    (unless (= target (tab-bar--current-tab-index))
+      (tab-bar-select-tab (1+ target)))))
+
 (defun ecc-review-menu--start-session ()
   "Start a session in the project of the menu and return it.
 With `ecc-start', as \\[ecc-start] would, asking for a name when the
@@ -696,14 +710,17 @@ project has a session already.  The session is shown where a new one
 is, and the user stays where the menu was opened: in its tab, with its
 window selected, the menu open over it.  With `ecc-use-spaces' the
 session may have gone to a Space of its own, in a tab `ecc-start'
-switched to; that is switched back from."
+switched to; that is switched back from, by the index and the name the
+menu's tab had (`ecc-review-menu--back-to-tab'), and so it is when
+`ecc-start' fails part of the way."
   (let ((directory (or (plist-get (ecc-review-menu--current-state) :directory)
                        (user-error "The menu is about no project")))
-        (window (selected-window)))
-    (prog1 (ecc-start directory (ecc-window-read-session-name directory))
-      ;; A window of a tab that is not the current one is not live.
-      (unless (window-live-p window)
-        (tab-bar-switch-to-recent-tab))
+        (window (selected-window))
+        (index (tab-bar--current-tab-index))
+        (name (alist-get 'name (tab-bar--current-tab))))
+    (unwind-protect
+        (ecc-start directory (ecc-window-read-session-name directory))
+      (ecc-review-menu--back-to-tab index name)
       (when (window-live-p window)
         (select-window window)))))
 
