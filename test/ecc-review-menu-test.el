@@ -734,7 +734,9 @@ and send the comments to the other."
                                (setq offered (all-completions "" table))
                                (car (last offered)))))
                     (ecc-review-menu-set-session (ecc-review-menu--read-session)))
-                  (should (string-prefix-p "test" (car offered)))
+                  ;; After the choice of a new session.
+                  (should (equal (car offered) "+ new session"))
+                  (should (string-prefix-p "test" (cadr offered)))
                   ;; The whole menu is the other project's now.
                   (should (eq (plist-get ecc-review-menu--state :session) second))
                   (should (equal (plist-get ecc-review-menu--state :directory) elsewhere))
@@ -770,6 +772,50 @@ and send the comments to the other."
               (should (eq (plist-get ecc-review-menu--state :session) second))
               (should (equal (plist-get ecc-review-menu--state :base) "develop")))
           (ecc-test-cleanup-session second))))))
+
+(ert-deftest ecc-review-menu-test-s-starts-a-new-session ()
+  "S offers a new session first, which starts in the menu's project and gets the comments.
+The project has a session already, so the new one is asked a name, as
+\\[ecc-start] asks it; the window that was selected stays selected."
+  (skip-unless (executable-find "git"))
+  (ecc-review-menu-test--with-directory directory
+    (ecc-review-menu-test--repo directory)
+    (ecc-test-with-fake-session first
+      (setf (ecc-session-project-root first) directory)
+      (let ((started nil)
+            (offered nil)
+            (selected (selected-window)))
+        (unwind-protect
+            (let ((ecc-review-menu--state (ecc-review-menu-make-state first directory)))
+              (cl-letf (((symbol-function 'completing-read)
+                         (lambda (_prompt table &rest _)
+                           (setq offered (all-completions "" table))
+                           (car offered)))
+                        ((symbol-function 'read-string)
+                         (lambda (&rest _) "second"))
+                        ((symbol-function 'ecc-start)
+                         (lambda (root name)
+                           (let ((session (ecc-model-create-session
+                                           :name name :project-root root)))
+                             (push session started)
+                             ;; Where a new session is shown.
+                             (select-window (split-window))
+                             session))))
+                (ecc-review-menu-switch-session (ecc-review-menu--read-session)))
+              (should (equal (car offered) "+ new session"))
+              (should (= (length started) 1))
+              (let ((second (car started)))
+                (should (equal (ecc-session-name second) "second"))
+                (should (equal (ecc-session-project-root second) directory))
+                (should (eq (plist-get ecc-review-menu--state :session) second))
+                (should (eq (plist-get ecc-review-menu--state :d-session) second))
+                (should (string-search "second gets the comments"
+                                       (substring-no-properties (ecc-review-menu--header)))))
+              (should (eq (selected-window) selected))
+              ;; The first is still there, and still offered.
+              (should (memq first (ecc-model-sessions))))
+          (delete-other-windows selected)
+          (mapc #'ecc-test-cleanup-session started))))))
 
 (ert-deftest ecc-review-menu-test-context ()
   "The git choices review the buffer's project; only D falls back elsewhere.
