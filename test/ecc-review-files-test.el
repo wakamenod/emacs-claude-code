@@ -853,7 +853,7 @@ is swept away."
         (ecc-review-files-test--kill-buffers)))))
 
 (ert-deftest ecc-review-files-test-hiding-the-pane-in-ediff-keeps-the-keys ()
-  "s in the pane of an ediff review hands the keyboard to the control panel."
+  "s in the pane of an ediff review hands the keyboard to its right window."
   (skip-unless (executable-find "git"))
   (ecc-review-files-test--with-pane
     (ecc-review-files-test--with-ediff session control
@@ -861,7 +861,7 @@ is swept away."
       (select-window (ecc-review-files--pane-window control))
       (with-current-buffer (window-buffer (selected-window))
         (ecc-review-files-toggle))
-      (should (eq (selected-window) (buffer-local-value 'ediff-control-window control))))))
+      (should (eq (selected-window) (buffer-local-value 'ediff-window-B control))))))
 
 (ert-deftest ecc-review-files-test-the-cost-of-what-is-hidden ()
   "Hidden differences are looked up in one vector; a hidden pane is not written."

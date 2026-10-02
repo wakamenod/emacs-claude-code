@@ -263,20 +263,23 @@ batch frame, 24 of them, does not have to spare."
                   ;; standard string unless it is composed again there.
                   (should-not (equal ediff-brief-help-message
                                      ediff-brief-message-string))
-                  ;; Two lines: the keys a review is read with.
-                  (should (equal (split-string ediff-brief-help-message "\n")
-                                 '(" n/p diff   c comment   { } comments   a Claude's   s files   / filter"
-                                   " T tour   t next   M message   C-c C-c send   q quit   ! reread   ? all keys")))
+                  ;; One line, and no key but ?: the keys are on the
+                  ;; header lines of the two windows.  Where the review
+                  ;; is, and it follows the difference.
+                  (should (equal ediff-brief-help-message
+                                 " 1 difference, none selected   ? all keys"))
                   ;; And it is in the panel, not only in the variable:
                   ;; `ediff-setup' writes the help out before it runs
                   ;; the startup hooks.
                   (should (equal ediff-help-message ediff-brief-help-message))
-                  (should (string-match-p (regexp-quote "C-c C-c send")
-                                          (buffer-string)))
-                  (should (string-match-p (regexp-quote "s files   / filter")
+                  (should (string-match-p (regexp-quote "none selected") (buffer-string)))
+                  (ediff-unselect-and-select-difference 0 nil 'no-recenter)
+                  (should (string-match-p (regexp-quote " Difference 1 of 1   ? all keys")
                                           (buffer-string)))
                   (ediff-toggle-help)
-                  (should (string-match-p (regexp-quote "c -comment on this diff")
+                  (should (string-match-p (regexp-quote "c -comment on the line/diff")
+                                          (buffer-string)))
+                  (should (string-match-p (regexp-quote "Every key works in both windows")
                                           (buffer-string)))
                   (ediff-toggle-help)
                   ;; And no other ediff session is touched.
@@ -1067,17 +1070,22 @@ Open its ediff review and return the control buffer."
 (ert-deftest ecc-review-ediff-test-follows-the-files ()
   "A change marks the ediff review stale and the timer reads it in place.
 The comments, the difference being read and the line each side is on
-stay; nothing about the windows changes but what they show."
+stay; nothing about the windows changes but what they show.  Faces, as
+a graphical Emacs has them: without them ediff marks the current
+difference by writing flags into the text, which moves the point of the
+window that has the keyboard."
   (skip-unless (executable-find "git"))
   (ecc-review-ediff-test--with-ediff
     (ecc-test-with-fake-session session
       (ecc-review-ediff-test--with-directory directory
         (ecc-review-ediff-test--with-watch
-          (let ((control nil))
+          (let ((control nil)
+                (ediff-force-faces t))
             (unwind-protect
                 (progn
                   (setq control (ecc-review-ediff-test--rich session directory))
                   (with-current-buffer control
+                    (ecc-review-ediff-test--as-a-gui)
                     (ecc-review-add-note 'claude "A new line"
                                          (ecc-review-ediff-test--line 'new 7))
                     (ecc-review--draw-notes)

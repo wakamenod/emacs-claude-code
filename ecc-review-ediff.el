@@ -36,10 +36,12 @@
 ;;
 ;; To the comments and to Claude, a difference is a hunk and its lines
 ;; are the lines it takes out and puts in.  Claude's comments over MCP
-;; (`ecc-review-agent.el') go under their line on the side it is on;
-;; the user's c is about the whole difference, the keys of ediff going
-;; to its control panel, and answers Claude when Claude has spoken
-;; there.  An open ediff review follows the files as the diff review
+;; (`ecc-review-agent.el') go under their line on the side it is on, and
+;; so do the user's: the review is read in its two windows, which have
+;; the keys of the control panel and c on the line at point
+;; (`ecc-review-direct.el').  c in the control panel, which has no line
+;; to stand on, is about the whole difference, and answers Claude when
+;; Claude has spoken there.  An open ediff review follows the files as the diff review
 ;; does, read again into the same two buffers with the difference being
 ;; read and the place of each side kept.  The one thing Claude cannot do
 ;; is open one: ediff takes the frame and the keyboard.
@@ -91,6 +93,7 @@
 (require 'ecc-review)
 (require 'ecc-review-files)
 (require 'ecc-review-talk)
+(require 'ecc-review-direct)
 
 ;;;; The two trees a review compares
 
@@ -1931,18 +1934,10 @@ what the review shows; there are no renames, the review being made with
     (when-let* ((point (and ecc-review-ediff--sections (ecc-review-ediff--right-point))))
       (car (ecc-review-ediff--file-place 'B point)))))
 
-(defun ecc-review-ediff--give-the-control-panel-the-keyboard ()
-  "Select the control panel of this review, and its frame when it has one."
-  (when (window-live-p ediff-control-window)
-    (select-window ediff-control-window)
-    (when (and (display-graphic-p) (not (eq (window-frame ediff-control-window)
-                                            (selected-frame))))
-      (select-frame-set-input-focus (window-frame ediff-control-window)))))
-
 (cl-defmethod ecc-review-files-goto (entry select &context (major-mode ediff-mode))
   "Put this review on the first difference of the file ENTRY.
 A file with no difference -- one named and not shown -- is scrolled to
-on both sides.  SELECT hands the control panel the keyboard."
+on both sides.  SELECT hands the right window the keyboard."
   (let* ((path (plist-get entry :path))
          (unit (seq-find (lambda (unit) (equal (plist-get unit :path) path))
                          (ecc-review-units))))
@@ -1953,7 +1948,7 @@ on both sides.  SELECT hands the control panel the keyboard."
          side (or (ecc-review-ediff--separator-position side path) 1))))
     (ecc-review-files--follow)
     (when select
-      (ecc-review-ediff--give-the-control-panel-the-keyboard))))
+      (ecc-review-direct-give-keyboard (current-buffer) 'B))))
 
 (defun ecc-review-ediff--section-bounds (side path)
   "Return (BEG . END), where the file PATH runs on SIDE, `A' or `B'."
@@ -2198,10 +2193,10 @@ recentres, which fits the panel to its new help."
     (ediff-recenter 'no-rehighlight))))
 
 (cl-defmethod ecc-review-files-give-keyboard (&context (major-mode ediff-mode))
-  "Give the control panel of this ediff review the keyboard, where its keys are."
-  (ecc-review-ediff--give-the-control-panel-the-keyboard))
+  "Give the right window of this ediff review the keyboard, where it is read."
+  (ecc-review-direct-give-keyboard (current-buffer) 'B))
 
-;;;; The help ? shows
+;;;; The help ? shows, and the status
 
 ;; ediff's own help is written for the ediff a two-way comparison
 ;; usually is: it offers a and b, rx, wx and wd and ~, none of which do
@@ -2210,34 +2205,34 @@ recentres, which fits the panel to its new help."
 ;; comment keys, C-c C-c and C-c C-k, or that q closes a review without
 ;; asking.  The layout below is ediff's, so that ? still looks like
 ;; ediff's help, with only the commands this review really has on it.
+;;
+;; The keys are taught by the header lines of the two windows, where
+;; they are typed (`ecc-review-direct.el'); the panel, with the help
+;; off, says where the review is.
 
 (defconst ecc-review-ediff-long-help-message
   "    Move around      |      Toggle features      |          Comments
 =====================|===========================|=============================
-p,DEL -previous diff |     | -vert/horiz split   |      c -comment on this diff
+p,DEL -previous diff |     | -vert/horiz split   |  c -comment on the line/diff
     n,SPC -next diff |         h -highlighting   |     d -remove a comment here
      j -jump to diff |      @ -auto-refinement   |  { } -previous, next comment
        C-l -recenter |        * -refine region   |         l -list the comments
    v/V -scroll up/dn |   ## -ignore whitespace   |     a -show or hide Claude's
    </> -scroll lt/rt |         #c -ignore case   |   C-c C-c -send the comments
   s -list the files  |         m -wide display   |     C-c C-k -drop the review
- / -filter the files |                           |          q -close the review
+ / -filter the files |      RET -open the file   |          q -close the review
 =====================|===========================|=============================
     i -status info   |     ? -help off           |      ! -read the files again
 -------------------------------------------------------------------------------
   T -ask Claude for a tour of the review       t -the next stop of the tour
   M -say something to Claude                   y -answer what Claude asks
 -------------------------------------------------------------------------------
-Both buffers are read-only: a review reads, comments and sends, and writes
-nothing.  Claude changes the files, from the prompt the comments are sent as."
+Every key works in both windows of the files as well as here.  In a window,
+c comments on the line at point and d removes its comment, RET opens the
+file in a frame of its own, and moving point brings the other side along.
+Here, c is about the whole difference.  Both buffers are read-only: Claude
+changes the files, from the comments you send."
   "What `?\\=' shows in the control panel of an ediff review.")
-
-(defconst ecc-review-ediff-brief-help-message
-  " n/p diff   c comment   { } comments   a Claude's   s files   / filter
- T tour   t next   M message   C-c C-c send   q quit   ! reread   ? all keys"
-  "What the control panel of an ediff review says with the help off.
-Two lines, so that the keys a review is read with are in sight without
-\\`?'; a filter in force adds a third (`ecc-review-ediff--brief-help-message').")
 
 (defun ecc-review-ediff--long-help-message ()
   "Return the long help of an ediff review.
@@ -2245,13 +2240,31 @@ This is what `ediff-long-help-message-function\\=' is set to."
   ecc-review-ediff-long-help-message)
 
 (defun ecc-review-ediff--brief-help-message ()
-  "Return the brief help of an ediff review, and the filter in force.
-This is what `ediff-brief-help-message-function\\=' is set to; it is
-read in the control buffer of the review."
-  (concat ecc-review-ediff-brief-help-message
+  "Return what the control panel of an ediff review says with the help off.
+Where the review is and what the filter hides, on one line: the keys
+are on the header lines of the two windows (`ecc-review-direct--header'),
+and all of them behind \\`?'.  This is what
+`ediff-brief-help-message-function\\=' is set to; it is read in the
+control buffer of the review, and written again whenever the difference
+changes (`ecc-review-ediff--status-changed')."
+  (concat " "
+          (cond ((zerop ediff-number-of-differences) "No difference")
+                ((ediff-valid-difference-p ediff-current-difference)
+                 (format "Difference %d of %d"
+                         (1+ ediff-current-difference) ediff-number-of-differences))
+                (t (format "%s, none selected"
+                           (ecc-review--count ediff-number-of-differences "difference"))))
           (when ecc-review--filter
-            (format "\n /%s: %s hidden by filter" ecc-review--filter
-                    (ecc-review--count (length ecc-review--hidden) "file")))))
+            (format "   /%s: %s hidden by filter" ecc-review--filter
+                    (ecc-review--count (length ecc-review--hidden) "file")))
+          "   ? all keys"))
+
+(defun ecc-review-ediff--status-changed ()
+  "Write the brief help again: the difference it names is no longer the one.
+On `ediff-select-hook' of the control buffer.  The long help says
+nothing that changes, and is left as it is."
+  (unless ediff-use-long-help-message
+    (ecc-review-ediff--write-help)))
 
 ;;;; Opening and closing
 
@@ -2331,8 +2344,8 @@ first."
 
 (defun ecc-review-ediff--take-the-keyboard (frame)
   "Give FRAME the input focus again, now that the review is closed.
-On a graphical Emacs the control panel is a frame of its own, and it is
-the frame that holds the keyboard while the review is being read.
+On a graphical Emacs the control panel is a frame of its own, which a
+command of ediff hands the focus whenever it lays out the windows.
 `ediff-cleanup-mess\\=' deletes it and selects the frame the two sides
 were shown in, but it selects it within Emacs only: the window system is
 never told, so no frame is the one it considers focused.  A frame that
@@ -2431,10 +2444,15 @@ ediff lays out its windows; quitting puts back what was on the screen."
           (dolist (buffer (list base now))
             (with-current-buffer buffer
               (setq-local ecc-review--part-of control)))
+          ;; The keys of the review in its two windows, and point
+          ;; driving it there.
+          (ecc-review-direct-setup control)
           ;; The bar beside the current difference, and then the same
           ;; function for the difference the review opens on: ediff has
           ;; selected it before these hooks run.
           (add-hook 'ediff-select-hook #'ecc-review-ediff--mark-current nil t)
+          ;; The panel says which difference this is.
+          (add-hook 'ediff-select-hook #'ecc-review-ediff--status-changed nil t)
           ;; Both of these are read out of the control buffer of this
           ;; session as well (`ediff-defvar-local'), so no other ediff's ?
           ;; changes.
@@ -2533,6 +2551,12 @@ ediff lays out its windows; quitting puts back what was on the screen."
               (add-hook 'window-scroll-functions #'ecc-review-ediff--scrolled nil t)))
           (ecc-review-ediff--after-write)
           (run-hook-with-args 'ecc-review-displayed-functions control)))))
+    ;; ediff leaves the keyboard in its control panel, and on a
+    ;; graphical Emacs the focus in its control frame.  The review is
+    ;; read in its windows, which have the keys; the panel is the help
+    ;; and the state.  This is the one place the review takes the
+    ;; keyboard: only the user opens one.
+    (ecc-review-direct-give-keyboard control 'B)
     control))
 
 (defvar ecc-review-ediff--replacing nil
