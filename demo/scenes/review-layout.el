@@ -77,8 +77,8 @@ lays itself out the plain way whatever it says."
         ecc-review-talk-reply-place 'auto
         ecc-review-ediff-layout 'stacked
         ecc-review-talk-make-frame-function
-        (lambda ()
-          (make-frame `((name . "ecc review reply")
+        (lambda (name)
+          (make-frame `((name . ,name)
                         (width . ,ecc-review-talk-reply-width) (height . 30)
                         (minibuffer . nil) (no-focus-on-map . t) (unsplittable . t)))))
   (demo-fresh-repository)
@@ -176,7 +176,7 @@ lays itself out the plain way whatever it says."
                          (buffer-local-value 'header-line-format ediff-buffer-A))))
       (demo-say (format "[%s] B header: %s" label
                         (demo-header-string
-                         (buffer-local-value 'header-line-format ediff-buffer-B))))))
+                         (ecc-review-direct-header-text ediff-buffer-B))))))
   nil)
 
 ;;;; Doing
@@ -209,10 +209,9 @@ Scheduled, so that the server has its answer before the keys run."
 
 (defun demo-report-closed (label)
   "Say, under LABEL, the frames left once the review is closed."
-  (demo-say (format "[%s] frames %s; reply frame %S; selected frame %S" label
+  (demo-say (format "[%s] frames %s; selected frame %S" label
                     (mapconcat (lambda (frame) (format "%S" (frame-parameter frame 'name)))
                                (seq-filter #'frame-visible-p (frame-list)) ", ")
-                    ecc-review-talk--frame
                     (frame-parameter (selected-frame) 'name)))
   nil)
 

@@ -434,6 +434,10 @@ argument and the key typed reach COMMAND as they would from the panel."
         (window (selected-window)))
     (unwind-protect
         (with-current-buffer control
+          ;; Only a panel taken off the screen by this command counts:
+          ;; one taken by a layout of before -- the opening, a move of
+          ;; Claude's -- is no reason to take the keyboard back now.
+          (setq ecc-review-direct--panel-had-the-keyboard nil)
           (setq this-command command)
           (call-interactively command))
       (ecc-review-direct--keep-the-keyboard control side window))
@@ -771,38 +775,72 @@ where the window is too narrow to put it at the right edge."
                           'face 'ecc-dim-face))
             " ")))
 
-(defun ecc-review-direct--header (side &optional right status)
+(defun ecc-review-direct--header (side &optional right)
   "Return the header line of the window of SIDE: the keys it is read with.
 RIGHT puts the keys at the right edge of the window, where they meet
 those of the other side in the middle when the two are side by side.
-STATUS, a string, goes at the right end (`ecc-review-direct--status').
 A header line is no line of the buffer, so the lines the two sides are
 put together by (`ecc-review-direct--align') are not counted in it."
   (let ((keys (ecc-review-direct--keys side)))
-    (concat (if right
-                (concat (ecc-review-direct--to-the-right (concat keys " ")) keys " ")
-              (concat " " keys))
-            (when status
-              (concat (ecc-review-direct--to-the-right status) status)))))
+    (if right
+        (concat (ecc-review-direct--to-the-right (concat keys " ")) keys " ")
+      (concat " " keys))))
+
+(defvar-local ecc-review-direct--header-keys nil
+  "The keys of the header line of this side, a string.")
+
+(defvar-local ecc-review-direct--header-status nil
+  "Where the review is, for the header line of this side, or nil.")
+
+(defun ecc-review-direct--header-line (&optional window)
+  "Return the header line of the right side in WINDOW, the selected one by default.
+The keys, and where the review is at the right end.  Where WINDOW is too
+narrow for both, where the review is comes first and the keys after
+it, as many as fit: with the panel out of sight, nothing else says it.
+Worked out as the header line is drawn, from two strings made when the
+difference or the layout changes (`ecc-review-direct-refresh-headers'),
+so that a window made narrower is followed at once."
+  (let ((keys ecc-review-direct--header-keys)
+        (status ecc-review-direct--header-status))
+    (cond ((null status) keys)
+          ((<= (+ (string-width keys) (string-width status))
+               (window-width window))
+           (concat keys (ecc-review-direct--to-the-right status) status))
+          (t (concat (substring status 1) "│" keys)))))
+
+(defun ecc-review-direct-header-text (buffer &optional window)
+  "Return the header line BUFFER, a side of a review, shows in WINDOW, as a string.
+WINDOW is the window of BUFFER by default."
+  (with-current-buffer buffer
+    (if (stringp header-line-format)
+        header-line-format
+      (ecc-review-direct--header-line (or window (get-buffer-window buffer t))))))
 
 (defun ecc-review-direct-refresh-headers (control)
   "Write the header lines of the two windows of the review in CONTROL again.
 The left one is put at the right edge while the two sides are side by
 side and at the left while one is above the other; the right one --
-the window that has the keyboard -- ends with where the review is.
-Run as the layout or the difference changes, from the hooks of the
-control buffer; a header line that would come out the same is not set
-again.  A string, not a construct worked out at every redisplay."
+the window that has the keyboard -- ends with where the review is
+\(`ecc-review-direct--header-line').  Run as the layout or the
+difference changes, from the hooks of the control buffer; nothing that
+would come out the same is set again."
   (with-current-buffer control
-    (let ((side-by-side (not (ecc-review-ediff-stacked-p control)))
+    (let ((left (ecc-review-direct--header 'A (not (ecc-review-ediff-stacked-p control))))
+          (keys (ecc-review-direct--header 'B))
           (status (ecc-review-direct--status control)))
-      (pcase-dolist (`(,buffer . ,header)
-                     (list (cons ediff-buffer-A (ecc-review-direct--header 'A side-by-side))
-                           (cons ediff-buffer-B (ecc-review-direct--header 'B nil status))))
-        (when (buffer-live-p buffer)
-          (with-current-buffer buffer
-            (unless (equal-including-properties header-line-format header)
-              (setq header-line-format header))))))))
+      (when (buffer-live-p ediff-buffer-A)
+        (with-current-buffer ediff-buffer-A
+          (unless (equal-including-properties header-line-format left)
+            (setq header-line-format left))))
+      (when (buffer-live-p ediff-buffer-B)
+        (with-current-buffer ediff-buffer-B
+          (unless (equal-including-properties ecc-review-direct--header-keys keys)
+            (setq ecc-review-direct--header-keys keys))
+          (unless (equal-including-properties ecc-review-direct--header-status status)
+            (setq ecc-review-direct--header-status status)
+            (force-mode-line-update))
+          (unless (equal header-line-format '(:eval (ecc-review-direct--header-line)))
+            (setq header-line-format '(:eval (ecc-review-direct--header-line)))))))))
 
 ;;;; The mode
 

@@ -643,6 +643,11 @@ On `ecc-review-displayed-functions'."
 (add-hook 'ecc-review-displayed-functions #'ecc-review-files--on-displayed)
 
 ;;;###autoload
+(defvar ecc-review-files-toggled-functions nil
+  "Functions run with the review whose files pane \\`s' has shown or hidden.
+What else shares the frame with the review -- the reply pane of an
+ediff review -- may want another place now.")
+
 (defun ecc-review-files-toggle ()
   "Show or hide the list of the files of this review.
 The list sits immediately left of the review, and the choice holds for
@@ -654,7 +659,8 @@ every review opened afterwards, for as long as Emacs runs."
                (ecc-review-files--hide-pane review))
       (setq ecc-review-files-shown t)
       (unless (ecc-review-files--show review)
-        (user-error "The review is not on the screen, or its window is too narrow for the list")))))
+        (user-error "The review is not on the screen, or its window is too narrow for the list")))
+    (run-hook-with-args 'ecc-review-files-toggled-functions review)))
 
 (defun ecc-review-files-rebuild ()
   "Write the list of the files again."

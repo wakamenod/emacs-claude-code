@@ -966,6 +966,11 @@ OTHERS is a predicate on a buffer: another review on the screen that
 gives up its window to this one (`ecc-window-show-review-quietly')."
   (ecc-window-show-review-quietly (current-buffer) session others))
 
+(cl-defgeneric ecc-review-go-back ()
+  "Put the keyboard back in this review, which something else had it from.
+The diff review is popped to; an ediff review has its own way."
+  (pop-to-buffer (current-buffer)))
+
 (cl-defgeneric ecc-review-takes-the-screen-p ()
   "Return non-nil when this review cannot be opened without taking the screen.
 Such a review is read again where it is, never opened afresh by
@@ -2394,11 +2399,8 @@ stand, and the key that says send sends."
     (set-buffer-modified-p nil)
     (ecc-perm-close-buffer (current-buffer))
     (when (buffer-live-p review)
-      (pop-to-buffer review)
-      ;; An ediff review has no window of its own to pop to: the control
-      ;; buffer is one of three, and only ediff can lay them out again.
-      (when (derived-mode-p 'ediff-mode)
-        (ediff-recenter)))))
+      (with-current-buffer review
+        (ecc-review-go-back)))))
 
 ;;;; Opening a review
 

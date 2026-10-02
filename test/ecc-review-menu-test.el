@@ -817,6 +817,47 @@ The project has a session already, so the new one is asked a name, as
           (delete-other-windows selected)
           (mapc #'ecc-test-cleanup-session started))))))
 
+(ert-deftest ecc-review-menu-test-a-new-session-in-a-space-of-its-own ()
+  "With Spaces, a new session that went to a tab of its own leaves the user in the menu's.
+`ecc-start' there selects the tab of the session's Space; the menu was
+opened in another, and that is where the user stays."
+  (skip-unless (executable-find "git"))
+  (ecc-review-menu-test--with-directory directory
+    (ecc-review-menu-test--repo directory)
+    (ecc-test-with-fake-session first
+      (setf (ecc-session-project-root first) directory)
+      (let ((ecc-use-spaces t)
+            (was tab-bar-mode)
+            (started nil)
+            (tabs (length (funcall tab-bar-tabs-function)))
+            (tab (tab-bar--current-tab-index))
+            (selected (selected-window)))
+        (unwind-protect
+            (let ((ecc-review-menu--state (ecc-review-menu-make-state first directory)))
+              (cl-letf (((symbol-function 'completing-read)
+                         (lambda (_prompt table &rest _) (car (all-completions "" table))))
+                        ((symbol-function 'read-string) (lambda (&rest _) "second"))
+                        ((symbol-function 'ecc-start)
+                         (lambda (root name)
+                           (tab-bar-new-tab)
+                           (let ((session (ecc-model-create-session
+                                           :name name :project-root root)))
+                             (push session started)
+                             session))))
+                (ecc-review-menu-switch-session (ecc-review-menu--read-session)))
+              (should (= (length (funcall tab-bar-tabs-function)) (1+ tabs)))
+              (should (= (tab-bar--current-tab-index) tab))
+              (should (eq (selected-window) selected))
+              (should (eq (plist-get ecc-review-menu--state :session) (car started))))
+          ;; As the tests of Spaces leave the tab bar: one tab, no name,
+          ;; the mode as it was.
+          (dolist (other (funcall tab-bar-tabs-function))
+            (unless (eq (car other) 'current-tab)
+              (tab-bar-close-tab-by-name (alist-get 'name other))))
+          (tab-bar-rename-tab "")
+          (tab-bar-mode (if was 1 -1))
+          (mapc #'ecc-test-cleanup-session started))))))
+
 (ert-deftest ecc-review-menu-test-context ()
   "The git choices review the buffer's project; only D falls back elsewhere.
 A buffer in a project with no session, and a session in another: w

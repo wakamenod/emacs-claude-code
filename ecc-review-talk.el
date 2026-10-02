@@ -66,6 +66,7 @@
 (require 'ecc-review-agent)
 
 (defvar ediff-window-A)
+(defvar ediff-buffer-B)
 (defvar ecc-review-files-shown)
 (defvar ecc-review-files-width)
 (declare-function ediff-keep-window-config "ediff-wind" (control-buf))
@@ -304,7 +305,7 @@ alone: only the side windows of a review's frame go."
   (dolist (window (get-buffer-window-list pane nil t))
     (if (eq (window-parameter window 'ecc-review-talk) 'frame)
         (unless side-only
-          (ecc-review-talk--close-frame (window-frame window)))
+          (ecc-review-talk--close-frame pane))
       (ecc-review-pane-take-down window '(ecc-review-talk)))))
 
 (defun ecc-review-talk--review-killed ()
@@ -349,16 +350,19 @@ Run in the control buffer."
       (set-window-parameter window 'ecc-review-talk side))
     window))
 
-(defvar ecc-review-talk--frame nil
-  "The frame of its own the reply panes are shown in, or nil.")
+(defvar-local ecc-review-talk--frame nil
+  "The frame of its own this reply pane is shown in, or nil.
+Each pane has its own: two reviews open at once, of one session or of
+two, each keep their reply where it was, and closing one closes its
+frame alone.")
 
 (defvar ecc-review-talk-make-frame-function #'ecc-review-talk--make-frame
-  "The function that makes the frame of the reply pane; it returns the frame.
-Called with no argument, from the frame of the review.")
+  "The function that makes the frame of a reply pane; it returns the frame.
+Called with the name of the frame, from the frame of the review.")
 
-(defun ecc-review-talk--make-frame ()
-  "Make the frame the reply pane is shown in, without giving it the focus."
-  (make-frame `((name . "Claude")
+(defun ecc-review-talk--make-frame (name)
+  "Make the frame NAME a reply pane is shown in, without giving it the focus."
+  (make-frame `((name . ,name)
                 (width . ,ecc-review-talk-reply-width)
                 (height . 30)
                 (minibuffer . nil)
@@ -367,34 +371,39 @@ Called with no argument, from the frame of the review.")
 
 (defun ecc-review-talk--frame-window (frame)
   "Return the window the reply pane is shown in, in FRAME, its frame of its own.
-Its one window."
-  (frame-root-window frame))
+A live one: its only window as it is made, or the first, should
+something on `after-make-frame-functions' have split it."
+  (frame-first-window frame))
 
 (defun ecc-review-talk--in-frame (pane)
-  "Show PANE in the frame of its own, made when there is none; return its window.
-The frame is the same one for every review while it is there.  Nothing
-is selected and no frame is given the focus: the keyboard stays in the
-window of the review it was in, which is selected again should making
-the frame have moved it."
+  "Show PANE in its frame of its own, made when it has none; return its window.
+The frame is named after the pane, which is named after the review,
+and used again while it is there.
+Nothing is selected and no frame is given the focus: the keyboard stays
+in the window of the review it was in, which is selected again should
+making the frame have moved it."
   (let ((selected (selected-window)))
-    (unless (frame-live-p ecc-review-talk--frame)
-      (setq ecc-review-talk--frame (funcall ecc-review-talk-make-frame-function)))
-    (let ((window (ecc-review-talk--frame-window ecc-review-talk--frame)))
-      (set-window-dedicated-p window nil)
-      (set-window-buffer window pane)
-      (set-window-dedicated-p window t)
-      (set-window-parameter window 'ecc-review-talk 'frame)
-      (unless (eq (selected-window) selected)
-        (select-window selected))
-      window)))
+    (with-current-buffer pane
+      (unless (frame-live-p ecc-review-talk--frame)
+        (setq ecc-review-talk--frame
+              (funcall ecc-review-talk-make-frame-function (buffer-name pane))))
+      (let ((window (ecc-review-talk--frame-window ecc-review-talk--frame)))
+        (set-window-dedicated-p window nil)
+        (set-window-buffer window pane)
+        (set-window-dedicated-p window t)
+        (set-window-parameter window 'ecc-review-talk 'frame)
+        (unless (eq (selected-window) selected)
+          (select-window selected))
+        window))))
 
-(defun ecc-review-talk--close-frame (frame)
-  "Delete FRAME, the frame of its own of the reply pane, and forget it.
-Whichever frame has the focus keeps it: FRAME never had it."
-  (when (eq frame ecc-review-talk--frame)
-    (setq ecc-review-talk--frame nil))
-  (when (frame-live-p frame)
-    (delete-frame frame)))
+(defun ecc-review-talk--close-frame (pane)
+  "Delete the frame of its own of the reply PANE, and forget it.
+Whichever frame has the focus keeps it: that frame never had it."
+  (with-current-buffer pane
+    (let ((frame ecc-review-talk--frame))
+      (setq ecc-review-talk--frame nil)
+      (when (frame-live-p frame)
+        (delete-frame frame)))))
 
 (defun ecc-review-talk--show-pane (review)
   "Show the reply pane of REVIEW and return its window.
@@ -425,10 +434,41 @@ On `ecc-review-displayed-functions'."
     (with-current-buffer review
       (when (derived-mode-p 'ediff-mode)
         (add-hook 'ediff-before-setup-windows-hook #'ecc-review-talk--leave-the-frame nil t)
-        (add-hook 'ediff-after-setup-windows-hook #'ecc-review-talk--keep-the-pane nil t)))
+        (add-hook 'ediff-after-setup-windows-hook #'ecc-review-talk--keep-the-pane nil t)
+        (when (buffer-live-p ediff-buffer-B)
+          (with-current-buffer ediff-buffer-B
+            (add-hook 'window-size-change-functions #'ecc-review-talk--size-changed nil t)))))
     (ecc-review-talk--show-pane review)))
 
 (add-hook 'ecc-review-displayed-functions #'ecc-review-talk--on-displayed)
+
+(defun ecc-review-talk--recheck-side (review)
+  "Move the reply pane of REVIEW to the side `ecc-review-talk--side' says now.
+The side is worked out as ediff lays the windows out; the files pane
+shown or hidden, and the frame made wider or narrower, change what the
+diff is left without ediff laying anything out.  A pane in a frame of
+its own, or on the side it should be, is left as it is."
+  (when (buffer-live-p review)
+    (with-current-buffer review
+      (when-let* ((pane ecc-review-talk--pane)
+                  ((buffer-live-p pane))
+                  ((window-live-p ediff-window-A))
+                  (window (seq-find (lambda (window)
+                                      (memq (window-parameter window 'ecc-review-talk)
+                                            '(right bottom)))
+                                    (get-buffer-window-list pane nil t))))
+        (unless (eq (window-parameter window 'ecc-review-talk) (ecc-review-talk--side review))
+          (ecc-review-talk--take-down pane 'side-only)
+          (ecc-review-talk--show-pane review))))))
+
+(add-hook 'ecc-review-files-toggled-functions #'ecc-review-talk--recheck-side)
+
+(defun ecc-review-talk--size-changed (_window)
+  "Check the side of the reply pane once a window of the right side changed size.
+On `window-size-change-functions' of the buffer of the right side of an
+ediff review, whose window takes what the frame is made wider or
+narrower by.  Run as redisplay finds the change, not on a timer."
+  (ecc-review-talk--recheck-side ecc-review--part-of))
 
 (defun ecc-review-talk--leave-the-frame ()
   "Take the reply pane off the frame when ediff is about to lay out its windows.

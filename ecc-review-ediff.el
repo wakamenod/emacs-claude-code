@@ -2254,6 +2254,17 @@ which would lay the windows out again, and says it when what is hidden
     (ecc-review-ediff--leave-the-pane)
     (ediff-recenter 'no-rehighlight))))
 
+(cl-defmethod ecc-review-go-back (&context (major-mode ediff-mode))
+  "Lay this ediff review out again and give its right window the keyboard.
+Its buffer is the control buffer, which `pop-to-buffer' would put on the
+screen with the keyboard in it, where the review keeps it out of sight
+\(`ecc-review-ediff--hide-the-panel').  The layout is made afresh, as
+whatever was in the way may have taken a window of it."
+  (setq ediff-window-config-saved "")
+  (ecc-review-ediff--leave-the-pane)
+  (ediff-recenter 'no-rehighlight)
+  (ecc-review-direct-give-keyboard (current-buffer) 'B))
+
 (cl-defmethod ecc-review-files-give-keyboard (&context (major-mode ediff-mode))
   "Give the right window of this ediff review the keyboard, where it is read."
   (ecc-review-direct-give-keyboard (current-buffer) 'B))
@@ -2345,6 +2356,16 @@ the panel says nothing that changes."
 ;; of the review's frame (`ecc-review-ediff-open'), whatever
 ;; `ediff-window-setup-function' says for other ediffs.
 
+(defun ecc-review-ediff--keep-it-plain ()
+  "Lay this review out the plain way, whatever was asked of every ediff.
+On `ediff-before-setup-windows-hook' of the control buffer, which runs
+before ediff reads how to lay the windows out.  `ediff-toggle-multiframe'
+sets that for every session there is, reviews included, and a panel in
+a frame of its own is one the review cannot take off the screen
+\(`ecc-review-ediff--hide-the-panel')."
+  (unless (eq ediff-window-setup-function #'ediff-setup-windows-plain)
+    (setq ediff-window-setup-function #'ediff-setup-windows-plain)))
+
 (defun ecc-review-ediff--hide-the-panel ()
   "Take the control panel of this review off the screen, unless ? shows the help.
 On `ediff-after-setup-windows-hook' of the control buffer.  The long help
@@ -2361,7 +2382,7 @@ after this hook: the control buffer stays current."
             (set-window-parameter window 'mode-line-format 'none)
             (let ((window-min-height 1))
               (fit-window-to-buffer window)))
-        (when (window-deletable-p window)
+        (when (eq (window-deletable-p window) t)
           (let ((live (format "%S" window)))
             (save-current-buffer
               ;; ediff left the keyboard in its panel: it goes to the
@@ -2716,9 +2737,12 @@ ediff lays out its windows; quitting puts back what was on the screen."
      ;; The plain layout, whose control panel is a window that can be
      ;; taken off the screen, rather than a frame that cannot ("The
      ;; control panel, out of sight").  ediff makes the variable local
-     ;; to the control buffer as it sets up, with the value it has then,
-     ;; so this review keeps it and no other ediff sees it.
-     (let ((ediff-window-setup-function #'ediff-setup-windows-plain))
+     ;; to the control buffer as it sets up, with the default value it
+     ;; has then, so this review keeps it and no other ediff sees it.
+     ;; The default, not whatever binding is current: in the control
+     ;; buffer of another ediff the variable is local, and a `let' there
+     ;; binds that buffer's value and leaves the default alone.
+     (cl-letf (((default-value 'ediff-window-setup-function) #'ediff-setup-windows-plain))
        ;; ediff sets the function it computes the differences with as it
        ;; sets up, and computes them before any hook of ours runs: for as
        ;; long as this review is opened, that function is the review's own
@@ -2800,6 +2824,8 @@ ediff lays out its windows; quitting puts back what was on the screen."
                ;; the two windows following the layout -- the key help
                ;; of the left meets that of the right in the middle
                ;; when they are side by side -- and the difference.
+               (add-hook 'ediff-before-setup-windows-hook
+                         #'ecc-review-ediff--keep-it-plain nil t)
                (add-hook 'ediff-after-setup-windows-hook
 			 #'ecc-review-ediff--hide-the-panel 90 t)
                (add-hook 'ediff-after-setup-windows-hook

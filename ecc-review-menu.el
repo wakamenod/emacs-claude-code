@@ -691,14 +691,21 @@ project)."
 
 (defun ecc-review-menu--start-session ()
   "Start a session in the project of the menu and return it.
-With `ecc-start', as \[ecc-start] would, asking for a name when the
-project has a session already; the session is shown where a new one
-is, and the window that was selected stays selected, the menu open over
-it."
+With `ecc-start', as \\[ecc-start] would, asking for a name when the
+project has a session already.  The session is shown where a new one
+is, and the user stays where the menu was opened: in its tab, with its
+window selected, the menu open over it.  With `ecc-use-spaces' the
+session may have gone to a Space of its own, in a tab `ecc-start'
+switched to; that is switched back from."
   (let ((directory (or (plist-get (ecc-review-menu--current-state) :directory)
-                       (user-error "The menu is about no project"))))
-    (save-selected-window
-      (ecc-start directory (ecc-window-read-session-name directory)))))
+                       (user-error "The menu is about no project")))
+        (window (selected-window)))
+    (prog1 (ecc-start directory (ecc-window-read-session-name directory))
+      ;; A window of a tab that is not the current one is not live.
+      (unless (window-live-p window)
+        (tab-bar-switch-to-recent-tab))
+      (when (window-live-p window)
+        (select-window window)))))
 
 ;;;; The menu
 

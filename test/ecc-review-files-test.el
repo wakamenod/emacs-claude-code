@@ -584,7 +584,7 @@ keeps the filter."
           (re-search-forward "═══ c.txt")
           (should-not (invisible-p (point)))))
       (should (string-search "/NEEDLE: 2 hidden"
-                             (buffer-local-value 'header-line-format ediff-buffer-B)))
+                             (ecc-review-direct-header-text ediff-buffer-B)))
       (should-error (ecc-review-ediff-previous-difference) :type 'user-error)
       (should (= ediff-current-difference 2))
       ;; j to a hidden one goes to the first one kept after it.
@@ -599,7 +599,7 @@ keeps the filter."
       (ecc-review-ediff-next-difference)
       (should (= ediff-current-difference 2))
       (should-not (string-search "hidden"
-                                 (buffer-local-value 'header-line-format ediff-buffer-B))))))
+                                 (ecc-review-direct-header-text ediff-buffer-B))))))
 
 (ert-deftest ecc-review-files-test-ediff-filter-holds-across-reading-again ()
   "A filtered ediff review read again hides the same files, and draws no comment there."
@@ -833,7 +833,7 @@ is swept away."
         (ecc-review--draw-notes)
         (should (= ediff-current-difference 2))
         (should (string-search "/zzz: 2 hidden"
-                               (buffer-local-value 'header-line-format ediff-buffer-B)))))))
+                               (ecc-review-direct-header-text ediff-buffer-B)))))))
 
 (ert-deftest ecc-review-files-test-the-mark-after-a-reading-again ()
   "Read again with point in the last file, the pane marks that file."
