@@ -404,6 +404,28 @@ The current difference stays the one read last."
         (ecc-review-direct-test--move control 'B 56)
         (should (= (ecc-review-direct-test--line-of left) 56))))))
 
+(ert-deftest ecc-review-direct-test-refining-leaves-the-cursor-alone ()
+  "Marking what changed in the differences on the screen does not move point.
+ediff goes to each difference it refines, and the point of the right
+side is the cursor of the window that has the keyboard."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (let ((right (ecc-review-direct-test--window control 'B)))
+        (with-current-buffer control
+          (setq ediff-auto-refine 'on))
+        (ecc-review-direct-test--move control 'B 10)
+        (let ((point (window-point right)))
+          (with-current-buffer control
+            (should (ecc-review-ediff--refine-shown))
+            ;; It did refine: what changed in line 3 is marked.
+            (should (ediff-get-fine-diff-vector 0 'B)))
+          (should (eq (selected-window) right))
+          (should (= (window-point right) point)))
+        ;; Nor does point making a difference current.
+        (ecc-review-direct-test--move control 'B 55)
+        (should (= (ecc-review-direct-test--line-of right) 55))))))
+
 ;;;; Opening the file
 
 (ert-deftest ecc-review-direct-test-a-line-is-found-in-the-file ()

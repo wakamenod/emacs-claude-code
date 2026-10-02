@@ -811,6 +811,35 @@ the current difference alone, as `h' cycles them."
       (not (eq ediff-highlighting-style 'face))
       (not ediff-highlight-all-diffs)))
 
+(defmacro ecc-review-ediff--keeping-points (&rest body)
+  "Run BODY in the control buffer and put the points of the two sides back.
+ediff marks what changed in a difference by going to it in each side
+\(`ediff-set-fine-overlays-in-one-buffer' calls `goto-char' with no
+`save-excursion'), and the point of a buffer is the point of its window
+when that window is the selected one -- which the right window of a
+review is, the keyboard being there (`ecc-review-direct.el').  Refining
+the differences on the screen took the reader's cursor to the last of
+them (2026-10-02).  Positions, not markers: the text does not change."
+  (declare (indent 0) (debug t))
+  (let ((points (make-symbol "points")))
+    `(let ((,points (mapcar (lambda (buffer)
+                              (and (buffer-live-p buffer)
+                                   (cons buffer (with-current-buffer buffer (point)))))
+                            (list ediff-buffer-A ediff-buffer-B))))
+       (unwind-protect (progn ,@body)
+         (pcase-dolist (`(,buffer . ,point) (delq nil ,points))
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer
+               (goto-char (min point (point-max))))))))))
+
+(defun ecc-review-ediff-select-in-place (n)
+  "Make difference N the current one, scrolling and moving nothing.
+ediff's select without its recentring, and with the points of the two
+sides kept (`ecc-review-ediff--keeping-points').  Run in the control
+buffer."
+  (ecc-review-ediff--keeping-points
+    (ediff-unselect-and-select-difference n nil 'no-recenter)))
+
 (defun ecc-review-ediff--refine-shown (&optional deadline)
   "Refine the differences on the screen that ediff has not, and mark them.
 Run in the control buffer.  Each is visited once: refined, or passed
@@ -844,7 +873,8 @@ The review follows ediff there as everywhere."
             (puthash n t ecc-review-ediff--refined)
             ;; The current one is ediff's own.
             (unless (eql n ediff-current-difference)
-              (ediff-install-fine-diff-if-necessary n))))))
+              (ecc-review-ediff--keeping-points
+                (ediff-install-fine-diff-if-necessary n)))))))
     t))
 
 (defun ecc-review-ediff--keep-refined ()
@@ -1640,7 +1670,7 @@ file."
       (let ((n (plist-get hunk :number))
             (side (plist-get line :side)))
         (unless (eql n ediff-current-difference)
-          (ediff-unselect-and-select-difference n nil 'no-recenter))
+          (ecc-review-ediff-select-in-place n))
         (ecc-review-ediff--show-position
          'A (if (eq side 'old) (plist-get line :position) (plist-get hunk :a-beg)))
         (ecc-review-ediff--show-position
