@@ -382,7 +382,12 @@ window of the frame there is, at the top, which ediff does not lay out."
                        (setq window (display-buffer-in-side-window
                                      (get-buffer-create (format " *%s*" frame))
                                      `((side . top) (slot . ,(length holders)) (window-height . 3)
-                                       (window-parameters . ((no-delete-other-windows . t))))))
+                                       ;; As a frame of its own is: out of
+                                       ;; the way of ediff's layout, whose
+                                       ;; `other-window' before Emacs 31
+                                       ;; would go into it.
+                                       (window-parameters . ((no-delete-other-windows . t)
+                                                             (no-other-window . t))))))
                        (setf (alist-get frame holders) window))
                      window)))
                 ((symbol-function 'delete-frame)

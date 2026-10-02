@@ -317,7 +317,9 @@ Verified against **Claude Code CLI 2.1.281**.
   `SPC`, `DEL`, `<backspace>`, `<delete>`, `S-SPC`, `j`, `ga`, `gb`),
   step over them -- a negative count still going back -- and say so when
   nothing kept lies further, `j`, `ga` and `gb` too when the filter keeps
-  no difference at all; a drawing
+  no difference at all; `ga` and `gb` with point above the first
+  difference go to the first one kept, where ediff's own refused them as
+  a bad difference number, 0; a drawing
   that comes to hide the file being read -- a comment of Claude's that
   matched gone, the review read again -- steps off it; `{`, `}` and
   `review_navigate`'s `next_comment` and `prev_comment` pass over their

@@ -1024,6 +1024,32 @@ is swept away."
                          "Every difference is in a file the filter hides")))
         (should (= ediff-current-difference -1))))))
 
+(ert-deftest ecc-review-files-test-ga-above-the-first-difference ()
+  "ga with point above the first difference goes to the first one the filter keeps.
+`ediff-diff-at-point' answers 0 there, which ediff's own ga refuses as a
+bad difference number; with every file hidden it is the filter's error."
+  (skip-unless (executable-find "git"))
+  (ecc-review-files-test--with-pane
+    (ecc-review-files-test--with-ediff session control
+      (let ((top (lambda ()
+                   (with-current-buffer ediff-buffer-A (goto-char (point-min)))
+                   (set-window-point ediff-window-A 1))))
+        (funcall top)
+        (let ((last-command-event ?a))
+          (ecc-review-ediff-jump-to-difference-at-point nil))
+        (should (= ediff-current-difference 0))
+        (ecc-review-files-set-filter control "c.txt")
+        (funcall top)
+        (let ((last-command-event ?a))
+          (ecc-review-ediff-jump-to-difference-at-point nil))
+        (should (= ediff-current-difference 2))
+        (ecc-review-files-set-filter control "zzz")
+        (funcall top)
+        (let ((last-command-event ?a))
+          (should (equal (cadr (should-error (ecc-review-ediff-jump-to-difference-at-point nil)
+                                             :type 'user-error))
+                         "Every difference is in a file the filter hides")))))))
+
 (ert-deftest ecc-review-files-test-a-pane-alone-in-its-frame-is-given-back ()
   "A stale pane that is the last window of its frame shows another buffer."
   (ecc-review-files-test--with-pane

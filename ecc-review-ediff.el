@@ -2197,10 +2197,24 @@ keeps no difference at all; what that means is the caller's to say."
   "Go to the difference at point of a side, as ediff's ga and gb do.
 When the filter hides it, to the nearest one it keeps, each side keeping
 the point ga or gb gave it where that is not hidden; when it keeps none,
-back to where the review was, and that is said.  ARG is ediff's."
+back to where the review was, and that is said.  ARG is ediff's.
+
+Point above the first difference, nearer the top, is no difference to
+`ediff-diff-at-point', which answers 0 for it, and ediff's own command
+then says \"Bad diff region number, 0\" (in every version, 29.1 to 32,
+2026-10-02): there the review goes to the first difference the filter
+keeps, or says that it keeps none."
   (interactive "P")
   (let ((was ediff-current-difference))
-    (funcall-interactively #'ediff-jump-to-difference-at-point arg)
+    (if (< (ediff-diff-at-point (ediff-char-to-buftype last-command-event) nil
+                                (and arg 'after))
+           1)
+        (ediff-jump-to-difference
+         (1+ (or (ecc-review-ediff--nearest-shown-difference 0)
+                 (user-error (if ecc-review--hidden
+                                 "Every difference is in a file the filter hides"
+                               "No difference to go to")))))
+      (funcall-interactively #'ediff-jump-to-difference-at-point arg))
     (when (ecc-review-ediff--hidden-difference-p ediff-current-difference)
       (let ((target (ecc-review-ediff--nearest-shown-difference ediff-current-difference))
             (points (mapcar (lambda (window)
