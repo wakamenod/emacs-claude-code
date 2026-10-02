@@ -126,16 +126,19 @@ Called by demo.el."
                       (demo-control-buffer)))
 
 (defun demo-place (side)
-  "Return \"LINE (row ROW)\": the line of the file SIDE's window has point on."
+  "Return \"LINE row ROW\": the line SIDE's window has point on, and its screen row.
+The row is counted on the screen, comments and wrapped lines included,
+which is how the two sides are put together."
   (let* ((control (demo-control-buffer))
          (window (demo-side-window side)))
     (with-current-buffer control
       (format "L%s row %d"
               (cdr (ecc-review-ediff--file-place side (window-point window)))
               (with-current-buffer (window-buffer window)
-                (count-lines (window-start window)
-                             (save-excursion (goto-char (window-point window))
-                                             (line-beginning-position))))))))
+                (count-screen-lines (window-start window)
+                                    (save-excursion (goto-char (window-point window))
+                                                    (line-beginning-position))
+                                    nil window))))))
 
 (defun demo-report (label)
   "Say, under LABEL, the keyboard, the difference and where each side is."
