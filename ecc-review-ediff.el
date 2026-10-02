@@ -2301,7 +2301,7 @@ whatever was in the way may have taken a window of it."
   "    Move around      |      Toggle features      |          Comments
 =====================|===========================|=============================
 p,DEL -previous diff |     | -vert/horiz split   |  c -comment on the line/diff
-    n,SPC -next diff |         h -highlighting   |     d -remove a comment here
+    n,SPC -next diff |         h -highlighting   |     x -remove a comment here
      j -jump to diff |      @ -auto-refinement   |  { } -previous, next comment
        C-l -recenter |        * -refine region   |         l -list the comments
    v/V -scroll up/dn |   ## -ignore whitespace   |     a -show or hide Claude's
@@ -2313,9 +2313,10 @@ p,DEL -previous diff |     | -vert/horiz split   |  c -comment on the line/diff
 -------------------------------------------------------------------------------
   T -ask Claude for a tour of the review       t -the next stop of the tour
   M -say something to Claude                   y -answer what Claude asks
+  u -scroll Claude's reply back                d -scroll it on again
 -------------------------------------------------------------------------------
 Every key works in both windows of the files as well as here.  In a window,
-c comments on the line at point, d removes its comment, RET opens the file
+c comments on the line at point, x removes its comment, RET opens the file
 at that line in a frame of its own, and moving point brings the other side
 along.  Here, c is about the whole difference and RET opens its file.  Both
 buffers are read-only: Claude changes the files, from the comments you send."
@@ -2851,7 +2852,10 @@ ediff lays out its windows; quitting puts back what was on the screen."
                ;; five, and ! is its own "compute the differences again", which
                ;; for a review is reading the files again.
                (define-key ediff-mode-map (kbd "c") #'ecc-review-ediff-comment)
-               (define-key ediff-mode-map (kbd "d") #'ecc-review-ediff-remove-comment)
+               ;; x, not d: d scrolls the reply pane on, with u.
+               (define-key ediff-mode-map (kbd "x") #'ecc-review-ediff-remove-comment)
+               (define-key ediff-mode-map (kbd "u") #'ecc-review-talk-scroll-back)
+               (define-key ediff-mode-map (kbd "d") #'ecc-review-talk-scroll-on)
                (define-key ediff-mode-map (kbd "l") #'ecc-review-ediff-list-comments)
                (define-key ediff-mode-map (kbd "{") #'ecc-review-ediff-previous-comment)
                (define-key ediff-mode-map (kbd "}") #'ecc-review-ediff-next-comment)
