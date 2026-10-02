@@ -203,14 +203,18 @@ Verified against **Claude Code CLI 2.1.281**.
   the project's sessions offered first, so what is compared and where the
   comments go are always one project; a session of the same project
   counts only its own changes again. Its first choice, `+ new session`,
-  starts a session in the menu's project with `ecc-start` -- named as
+  asks the name of a session to start in the menu's project -- named as
   `ecc-start` names it, asked for a name when the project has one already
-  -- leaves the user where the menu was, back in its tab when `ecc-start`
-  went to the tab of a Space of its own, or to the tab of a worktree's
-  repository first, or failed part of the way -- found again by the index
-  and the name it had -- with the selected window selected and the menu
-  open, and turns the menu to it, so that the comments go there; it has the review tools, so
-  `T` works at once. `-f` asks for the files to keep once
+  -- and turns the menu to it, the heading saying so, with `D` off while
+  it has nothing to review; it starts nothing until a review is opened,
+  as the git choices start one, so a menu quit with `C-g` leaves no
+  session behind.
+  Opening a review starts it with `ecc-start` and opens the review where
+  the menu was, back in its tab when `ecc-start` went to the tab of a
+  Space of its own, or to the tab of a worktree's repository first, or
+  failed part of the way -- found again by the index and the name it had
+  -- with the selected window selected, and the comments go to it; it
+  has the review tools, so `T` works at once. `-f` asks for the files to keep once
   the comparison is chosen, out of those it shows, and `-e` opens this
   one review in ediff, or as a diff, the other way from
   `ecc-review-style`, which is left alone. Outside git only `D` can be

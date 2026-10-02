@@ -773,54 +773,151 @@ and send the comments to the other."
               (should (equal (plist-get ecc-review-menu--state :base) "develop")))
           (ecc-test-cleanup-session second))))))
 
-(ert-deftest ecc-review-menu-test-s-starts-a-new-session ()
-  "S offers a new session first, which starts in the menu's project and gets the comments.
+(defmacro ecc-review-menu-test--new-session (started &rest body)
+  "Run BODY with S answered by \"+ new session\" named \"second\".
+`ecc-start' makes a fake session, pushes it on STARTED, and selects a
+window of its own, where a new session is shown; the sessions it made
+are cleaned up afterwards."
+  (declare (indent 1))
+  `(let ((,started nil))
+     (unwind-protect
+         (cl-letf (((symbol-function 'completing-read)
+                    (lambda (_prompt table &rest _) (car (all-completions "" table))))
+                   ((symbol-function 'read-string) (lambda (&rest _) "second"))
+                   ((symbol-function 'ecc-start)
+                    (lambda (root name)
+                      (let ((session (ecc-model-create-session
+                                      :name name :project-root root)))
+                        (push session ,started)
+                        (select-window (split-window))
+                        session))))
+           ,@body)
+       (mapc #'ecc-test-cleanup-session ,started))))
+
+(ert-deftest ecc-review-menu-test-s-new-session-starts-when-the-review-opens ()
+  "S offers a new session first, asks its name, and starts it only with a review.
 The project has a session already, so the new one is asked a name, as
-\\[ecc-start] asks it; the window that was selected stays selected."
+\\[ecc-start] asks it.  Until a review opens nothing is started and D,
+which has nothing to review, is off; w then starts exactly one session,
+in the menu's project, under that name, and the comments go to it, in
+the window that was selected."
   (skip-unless (executable-find "git"))
   (ecc-review-menu-test--with-directory directory
     (ecc-review-menu-test--repo directory)
     (ecc-test-with-fake-session first
       (setf (ecc-session-project-root first) directory)
-      (let ((started nil)
+      (let ((selected (selected-window))
             (offered nil)
-            (selected (selected-window)))
+            (before (length (ecc-model-sessions))))
         (unwind-protect
-            (let ((ecc-review-menu--state (ecc-review-menu-make-state first directory)))
-              (cl-letf (((symbol-function 'completing-read)
-                         (lambda (_prompt table &rest _)
-                           (setq offered (all-completions "" table))
-                           (car offered)))
-                        ((symbol-function 'read-string)
-                         (lambda (&rest _) "second"))
-                        ((symbol-function 'ecc-start)
-                         (lambda (root name)
-                           (let ((session (ecc-model-create-session
-                                           :name name :project-root root)))
-                             (push session started)
-                             ;; Where a new session is shown.
-                             (select-window (split-window))
-                             session))))
-                (ecc-review-menu-switch-session (ecc-review-menu--read-session)))
-              (should (equal (car offered) "+ new session"))
-              (should (= (length started) 1))
-              (let ((second (car started)))
-                (should (equal (ecc-session-name second) "second"))
-                (should (equal (ecc-session-project-root second) directory))
+            (ecc-review-menu-test--new-session started
+              (ecc-review-menu-test--capturing calls
+                (let ((ecc-review-menu--state (ecc-review-menu-make-state first directory)))
+                  (cl-letf (((symbol-function 'completing-read)
+                             (lambda (_prompt table &rest _)
+                               (setq offered (all-completions "" table))
+                               (car offered))))
+                    (ecc-review-menu-switch-session (ecc-review-menu--read-session)))
+                  (should (equal (car offered) "+ new session"))
+                  (should-not started)
+                  (should (= (length (ecc-model-sessions)) before))
+                  (should (equal (plist-get ecc-review-menu--state :new-session) "second"))
+                  (should-not (plist-get ecc-review-menu--state :session))
+                  (should (ecc-review-menu--no-session-p))
+                  (should-error (ecc-review-menu-session-changes nil) :type 'user-error)
+                  (should-not started)
+                  (let ((header (substring-no-properties (ecc-review-menu--header))))
+                    (should (string-search "a new session second gets the comments" header))
+                    (should (string-search "started when the review opens" header)))
+                  (ecc-review-menu-uncommitted nil)
+                  (should (= (length started) 1))
+                  (should (= (length (ecc-model-sessions)) (1+ before)))
+                  (let ((second (car started)))
+                    (should (equal (ecc-session-name second) "second"))
+                    (should (equal (ecc-session-project-root second) directory))
+                    (should (equal (cddr (pop calls)) (list second "HEAD" directory nil))))
+                  (should (eq (selected-window) selected))
+                  ;; The first is still there, and was not sent the comments.
+                  (should (memq first (ecc-model-sessions))))))
+          (delete-other-windows selected))))))
+
+(ert-deftest ecc-review-menu-test-s-new-session-then-quit-starts-nothing ()
+  "S to a new session, then C-g: no session is started, nor kept for later.
+Another S, to a session that is there, forgets the new one too."
+  (skip-unless (executable-find "git"))
+  (ecc-review-menu-test--with-directory directory
+    (ecc-review-menu-test--repo directory)
+    (ecc-test-with-fake-session first
+      (setf (ecc-session-project-root first) directory)
+      (let ((second (ecc-model-create-session :name "other" :project-root directory))
+            (before nil))
+        (unwind-protect
+            (ecc-review-menu-test--new-session started
+              (setq before (length (ecc-model-sessions)))
+              ;; S, new, then S again to a session that is there.
+              (let ((ecc-review-menu--state (ecc-review-menu-make-state first directory)))
+                (ecc-review-menu-switch-session 'new)
+                (should (equal (plist-get ecc-review-menu--state :new-session) "second"))
+                (ecc-review-menu-switch-session second)
+                (should-not (plist-get ecc-review-menu--state :new-session))
                 (should (eq (plist-get ecc-review-menu--state :session) second))
-                (should (eq (plist-get ecc-review-menu--state :d-session) second))
-                (should (string-search "second gets the comments"
+                (should (string-search "other gets the comments"
                                        (substring-no-properties (ecc-review-menu--header)))))
-              (should (eq (selected-window) selected))
-              ;; The first is still there, and still offered.
-              (should (memq first (ecc-model-sessions))))
-          (delete-other-windows selected)
-          (mapc #'ecc-test-cleanup-session started))))))
+              ;; S, new, then C-g.
+              (setq ecc-review-menu--state (ecc-review-menu-make-state first directory))
+              (unwind-protect
+                  (progn
+                    (ecc-review-menu-switch-session 'new)
+                    (let ((transient--prefix nil))
+                      (ecc-review-menu--forget-state))
+                    (should-not ecc-review-menu--state))
+                (setq ecc-review-menu--state nil))
+              (should-not started)
+              (should (= (length (ecc-model-sessions)) before)))
+          (ecc-test-cleanup-session second))))))
+
+(ert-deftest ecc-review-menu-test-a-new-session-of-a-first-project ()
+  "In a project with no session, S to a new one asks no name: `ecc-start' gives it.
+D there reviews the session used last, of another project; once S chose
+a new session, D is off and the heading speaks of the new one."
+  (skip-unless (executable-find "git"))
+  (ecc-review-menu-test--with-directory directory
+    (ecc-review-menu-test--with-directory elsewhere
+      (ecc-review-menu-test--repo directory)
+      (ecc-test-with-fake-session first
+        (setf (ecc-session-project-root first) elsewhere)
+        (let ((selected (selected-window))
+              (named 'unasked))
+          (unwind-protect
+              (ecc-review-menu-test--new-session started
+                (ecc-review-menu-test--capturing calls
+                  (let ((ecc-review-menu--state
+                         (ecc-review-menu-make-state nil directory first)))
+                    (should-not (ecc-review-menu--no-session-p))
+                    (cl-letf (((symbol-function 'read-string)
+                               (lambda (&rest _) (error "Asked a name"))))
+                      (ecc-review-menu-switch-session 'new))
+                    (should (eq (plist-get ecc-review-menu--state :new-session) t))
+                    (should (ecc-review-menu--no-session-p))
+                    (should (string-search "a new session gets the comments"
+                                           (substring-no-properties
+                                            (ecc-review-menu--header))))
+                    (cl-letf* ((start (symbol-function 'ecc-start))
+                               ((symbol-function 'ecc-start)
+                                (lambda (root name)
+                                  (setq named name)
+                                  (funcall start root "proj"))))
+                      (ecc-review-menu-uncommitted nil))
+                    (should-not named)
+                    (should (= (length started) 1))
+                    (should (equal (cddr (pop calls))
+                                   (list (car started) "HEAD" directory nil))))))
+            (delete-other-windows selected)))))))
 
 (ert-deftest ecc-review-menu-test-a-new-session-in-a-space-of-its-own ()
-  "With Spaces, a new session that went to a tab of its own leaves the user in the menu's.
+  "With Spaces, a new session that went to a tab of its own leaves the review in the menu's.
 `ecc-start' there selects the tab of the session's Space; the menu was
-opened in another, and that is where the user stays."
+opened in another, and that is where the review opens."
   (skip-unless (executable-find "git"))
   (ecc-review-menu-test--with-directory directory
     (ecc-review-menu-test--repo directory)
@@ -831,7 +928,8 @@ opened in another, and that is where the user stays."
             (started nil)
             (tabs (length (funcall tab-bar-tabs-function)))
             (tab (tab-bar--current-tab-index))
-            (selected (selected-window)))
+            (selected (selected-window))
+            (where nil))
         (unwind-protect
             (let ((ecc-review-menu--state (ecc-review-menu-make-state first directory)))
               (cl-letf (((symbol-function 'completing-read)
@@ -843,12 +941,16 @@ opened in another, and that is where the user stays."
                            (let ((session (ecc-model-create-session
                                            :name name :project-root root)))
                              (push session started)
-                             session))))
-                (ecc-review-menu-switch-session (ecc-review-menu--read-session)))
+                             session)))
+                        ((symbol-function 'ecc-review-range)
+                         (lambda (session &rest _)
+                           (setq where (list session (tab-bar--current-tab-index)
+                                             (selected-window))))))
+                (ecc-review-menu-switch-session (ecc-review-menu--read-session))
+                (should-not started)
+                (ecc-review-menu-uncommitted nil))
               (should (= (length (funcall tab-bar-tabs-function)) (1+ tabs)))
-              (should (= (tab-bar--current-tab-index) tab))
-              (should (eq (selected-window) selected))
-              (should (eq (plist-get ecc-review-menu--state :session) (car started))))
+              (should (equal where (list (car started) tab selected))))
           ;; As the tests of Spaces leave the tab bar: one tab, no name,
           ;; the mode as it was.
           (dolist (other (funcall tab-bar-tabs-function))
@@ -902,10 +1004,12 @@ so the menu's tab is neither the recent one nor at its old index."
                                              :name name :project-root root)))
                                (push session started)
                                session))))
-                  (ecc-review-menu-switch-session (ecc-review-menu--read-session)))
+                  (ecc-review-menu-test--capturing calls
+                    (ecc-review-menu-switch-session (ecc-review-menu--read-session))
+                    (ecc-review-menu-uncommitted nil)
+                    (should (eq (nth 2 (pop calls)) (car started)))))
                 (should (equal (alist-get 'name (tab-bar--current-tab)) "menu"))
-                (should (eq (selected-window) selected))
-                (should (eq (plist-get ecc-review-menu--state :session) (car started))))
+                (should (eq (selected-window) selected)))
             (mapc #'ecc-test-cleanup-session started)))))))
 
 (ert-deftest ecc-review-menu-test-a-new-session-that-fails-goes-back ()
@@ -925,10 +1029,12 @@ so the menu's tab is neither the recent one nor at its old index."
                      (lambda (&rest _)
                        (tab-bar-new-tab)
                        (error "The CLI would not start"))))
-            (should-error (ecc-review-menu-switch-session (ecc-review-menu--read-session))))
+            (ecc-review-menu-test--capturing calls
+              (ecc-review-menu-switch-session (ecc-review-menu--read-session))
+              (should-error (ecc-review-menu-uncommitted nil))
+              (should-not calls)))
           (should (equal (alist-get 'name (tab-bar--current-tab)) "menu"))
-          (should (eq (selected-window) selected))
-          (should (eq (plist-get ecc-review-menu--state :session) first)))))))
+          (should (eq (selected-window) selected)))))))
 
 (ert-deftest ecc-review-menu-test-context ()
   "The git choices review the buffer's project; only D falls back elsewhere.
