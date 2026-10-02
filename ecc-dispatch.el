@@ -861,6 +861,7 @@ twelve-line clip could not even cut -- base64 is one line."
       (unless error-p
         (dolist (path (ecc-dispatch--bash-changed-paths node))
           (run-hook-with-args 'ecc-sync-file-changed-hook session path)))
+      (run-hook-with-args 'ecc-tool-finished-hook session node)
       node)))
 
 (defun ecc-dispatch--bash-edit-diff (session node result)
@@ -1038,13 +1039,16 @@ nothing to apply (CLI 2.1.281, 2026-10-01)."
 
 (defun ecc-dispatch-auto-approve-p (session request)
   "Return non-nil when SESSION may allow REQUEST without asking.
-A turn wide approval covers `ecc-turn-approve-tools', and a tool the
-user allowed for the whole session is never asked about again ."
+A turn wide approval covers `ecc-turn-approve-tools', a tool the user
+allowed for the whole session is never asked about again, and a module
+may allow a tool of its own through `ecc-request-allow-functions'."
   (let ((name (ecc-request-tool-name request)))
     (and (eq (ecc-request-kind request) 'permission)
          (or (and (ecc-session-auto-approve-turn session)
                   (member name ecc-turn-approve-tools))
-             (member name (ecc-session-auto-approve-kinds session)))
+             (member name (ecc-session-auto-approve-kinds session))
+             (run-hook-with-args-until-success 'ecc-request-allow-functions
+                                               session request))
          t)))
 
 (defun ecc-dispatch--auto-allow (session request)

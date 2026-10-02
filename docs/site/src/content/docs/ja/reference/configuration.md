@@ -77,6 +77,13 @@ M-x customize-group RET ecc
 | 変数 | 既定値 | 説明 |
 |---|---|---|
 | `ecc-review-style` | `'diff` | `ecc-review` と `ecc-review-worktree` での変更の表示方法。`'diff` は 1 つの読み取り専用 `diff-mode` バッファを使い、`'ediff` はレビュー対象の全ファイルを 1 つの ediff セッションで左右に並べて表示します。どちらも読み取り専用で、送信されるプロンプトは同一です |
+| `ecc-review-menu-count-session-changes` | `t` | non-nil なら、レビューのメニュー（`C-c c D`）に、セッション開始以降に変更されたファイルの数を表示します。数えるには作業ツリーのスナップショットが必要で、300 ファイルのリポジトリで約 35 ms、20,000 ファイルで約 70 ms かかります。メニューが開くのが遅くなる場合は `nil` にしてください |
+| `ecc-review-auto-refresh` | `t` | non-nil なら、開いているレビューは、そのセッションのツールの完了、ターンの終了、リポジトリのファイルの保存のたびに diff を読み直します。コメントと読んでいた位置は保たれます。見えていないレビューは表示されたときに読み直します。ediff のレビューも追従します。`nil` なら `g` のときだけ読み直します |
+| `ecc-review-files-width` | `32` | `s` でレビューの横に出すファイルの一覧の幅（桁数） |
+| `ecc-review-ediff-layout` | `'stacked` | ediff のレビューを開いたときの並び。`'stacked` は変更前を上・変更後を下に並べ、Claude の返答の欄を右に出す。`'side-by-side` は左右に並べ、欄を下に出す。開いたレビューでは `\|` で切り替わる |
+| `ecc-review-talk-reply-width` | `75` | 上下に並べた ediff のレビューの右に出す、Claude の返答の欄の幅（桁数）。diff の幅が 80 桁を切るほどフレームが狭いときは、欄を下に出す |
+| `ecc-review-talk-reply-height` | `12` | 左右に並べた ediff のレビューの下に出す、Claude の返答の欄の高さ（行数）。`nil` でどちらの並びでも欄を出さない |
+| `ecc-review-talk-reply-place` | `'auto` | 返答の欄を出す場所。`'auto` は並びに合わせてレビューの横、`'frame` はレビューごとの別のフレーム。そのレビューと一緒に閉じ、フォーカスを取らない |
 
 ## ウィンドウ分割
 
@@ -103,7 +110,7 @@ M-x customize-group RET ecc
 
 ## MCP サーバー
 
-ecc はループバックインターフェイスで動作するインプロセス MCP サーバーを起動し、各セッションに自動登録できます。これにより、Claude は Emacs のエディタコンテキスト（`xref`、`imenu`、`tree-sitter`、プロジェクト情報、診断情報など）を直接参照できます。
+ecc はループバックインターフェイスで動作するインプロセス MCP サーバーを起動し、各セッションに自動登録できます。これにより、Claude は Emacs のエディタコンテキスト（`xref`、`imenu`、`tree-sitter`、プロジェクト情報、診断情報など）を直接参照できます。Claude が[レビューバッファにコメントを付ける](/emacs-claude-code/ja/features/review/#claude-のコメント)こともできます。
 
 | 変数 | 既定値 | 説明 |
 |---|---|---|

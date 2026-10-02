@@ -377,6 +377,26 @@ over it before `ecc-restore' could be run (third review of PR #94)."
                        (buffer-string))
                      text)))))
 
+(ert-deftest ecc-restore-test-an-empty-file-is-nothing-saved ()
+  "An empty state file reads as no state, without a word about it.
+`make-temp-file' makes one, which the demo Emacs pointed
+`ecc-restore-file' at and was told it could not read."
+  (ecc-restore-test--with-world
+    (dolist (text '("" "\n  \n"))
+      (with-temp-file ecc-restore-file (insert text))
+      (let ((said nil))
+        (cl-letf (((symbol-function 'message)
+                   (lambda (&rest args) (push (apply #'format args) said))))
+          (should-not (ecc-restore--read)))
+        (should-not said)))
+    ;; Something that is there and is not a state still says so.
+    (with-temp-file ecc-restore-file (insert "(:version"))
+    (let ((said nil))
+      (cl-letf (((symbol-function 'message)
+                 (lambda (&rest args) (push (apply #'format args) said))))
+        (should-not (ecc-restore--read)))
+      (should (string-search "cannot read" (car said))))))
+
 (ert-deftest ecc-restore-test-a-tab-writes-nothing-in-an-emacs-without-sessions ()
   "An Emacs with no session of its own does not write the file at all.
 Not even the same state again: the file is left as the last Emacs

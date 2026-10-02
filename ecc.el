@@ -87,6 +87,14 @@
 (require 'ecc-tui)
 (require 'ecc-transient)
 
+;; The review tools register themselves with the MCP server when they
+;; are loaded, and a tool registered after a session's CLI has listed the
+;; tools is one that session never sees.  So they are loaded here, with
+;; everything else, rather than with the first review opened.
+(require 'ecc-review-agent)
+(require 'ecc-review-menu)
+(require 'ecc-review-talk)
+
 ;; The version is written once, in the Version header above, because that
 ;; is the one package.el and `package-vc-install' read.  Repeating it in a
 ;; constant here would mean a release that says two different things, so

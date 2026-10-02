@@ -134,6 +134,38 @@
                              "Bash" '((command . "ls"))))
       (should (= 1 (length (ecc-session-pending session)))))))
 
+(ert-deftest ecc-dispatch-test-a-request-can-be-allowed ()
+  "An allowing function answers a permission before anybody is asked."
+  (ecc-test-with-fake-session session
+    (let ((ecc-request-allow-functions
+           (list (lambda (_session request)
+                   (equal (ecc-request-tool-name request) "mcp__x__harmless")))))
+      (ecc-dispatch session (ecc-dispatch-test--can-use-tool
+                             "mcp__x__harmless" '((a . 1))))
+      (let ((response (alist-get 'response
+                                 (alist-get 'response
+                                            (car (ecc-test-sent-messages))))))
+        (should (equal (alist-get 'behavior response) "allow"))
+        (should (equal (alist-get 'updatedInput response) '((a . 1)))))
+      (should-not (ecc-session-pending session))
+      ;; The transcript says so.
+      (should (seq-find (lambda (node)
+                          (eq (ecc-model-node-get node 'kind) 'auto-allow))
+                        (hash-table-values (ecc-session-nodes session))))
+      ;; Anything else is asked about as before.
+      (ecc-dispatch session (ecc-dispatch-test--can-use-tool
+                             "Bash" '((command . "ls"))))
+      (should (= 1 (length (ecc-session-pending session))))
+      ;; And a refusal comes first.
+      (let ((ecc-request-refuse-functions (list (lambda (&rest _) "no"))))
+        (ecc-dispatch session (ecc-dispatch-test--can-use-tool
+                               "mcp__x__harmless" '((a . 1))))
+        (should (equal (alist-get 'behavior
+                                  (alist-get 'response
+                                             (alist-get 'response
+                                                        (car (last (ecc-test-sent-messages))))))
+                       "deny"))))))
+
 (ert-deftest ecc-dispatch-test-file-changed-hook ()
   "A successful write tells the rest of Emacs to reload the file."
   (ecc-test-with-fake-session session
@@ -996,6 +1028,29 @@ been waiting."
         (should-not (alist-get 'source (aref result 1)))
         (ecc-dispatch-test--no-base64 node)))))
 
+(ert-deftest ecc-dispatch-test-tool-finished-hook ()
+  "Every tool result runs `ecc-tool-finished-hook', a shell command's too."
+  (ecc-test-with-fake-session session
+    (let* ((heard nil)
+           (ecc-tool-finished-hook
+            (list (lambda (session node)
+                    (push (cons (ecc-session-name session)
+                                (ecc-model-node-get node 'name))
+                          heard)))))
+      (ecc-model-begin-turn session "消して")
+      (ecc-dispatch session
+                    '((type . "assistant") (uuid . "u1")
+                      (message . ((content . [((type . "tool_use") (id . "t1")
+                                               (name . "Bash")
+                                               (input . ((command . "rm a.txt"))))])))))
+      (should-not heard)
+      (ecc-dispatch session
+                    '((type . "user")
+                      (message . ((content . [((type . "tool_result")
+                                               (tool_use_id . "t1")
+                                               (content . "done"))])))))
+      (should (equal heard '(("test" . "Bash")))))))
+
 ;;;; Files and tasks from tool_use_result
 
 (ert-deftest ecc-dispatch-test-edit-records-hunk-and-snapshot ()
@@ -1283,6 +1338,26 @@ showed with no hunks."
         ;; The recorded files are not on this machine, and a file that is
         ;; not there is not reloaded (`ecc-dispatch-test-bash-reloads').
         (should-not changed)))))
+
+(ert-deftest ecc-dispatch-test-bash-edit-diff-then-tool-finished ()
+  "A Bash result runs `ecc-tool-finished-hook' after its `bashEditDiff' is read.
+The hook is given the node with the files the command changed already
+on it, which is what lets a review hear a shell command by its files."
+  (ecc-test-with-fake-session session
+    (let (heard)
+      (let ((ecc-tool-finished-hook
+             (list (lambda (_session node)
+                     (push (cons (ecc-model-node-get node 'name)
+                                 (plist-get (ecc-model-node-get node 'bash-edit)
+                                            :changed))
+                           heard)))))
+        (ecc-test-dispatch session "bash-edit-diff" "bash"))
+      ;; Two commands: three files, then eight.
+      (should (equal '(3 8)
+                     (sort (mapcar (lambda (call) (length (cdr call)))
+                                   (seq-filter (lambda (call) (equal (car call) "Bash"))
+                                               heard))
+                           #'<))))))
 
 (ert-deftest ecc-dispatch-test-bash-without-edit-diff ()
   "A Bash result with no `bashEditDiff' notes no file and reloads nothing."

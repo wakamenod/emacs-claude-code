@@ -77,6 +77,13 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 | Variable | Default | Description |
 |---|---|---|
 | `ecc-review-style` | `'diff` | How `ecc-review` and `ecc-review-worktree` show changes. `'diff` uses a single read-only `diff-mode` buffer. `'ediff` displays every file in the review side by side in a single ediff session. Both are read-only and send the same prompt |
+| `ecc-review-menu-count-session-changes` | `t` | When non-nil, the review menu (`C-c c D`) shows how many files the session changed since it started. Counting them takes a snapshot of the working tree, about 35 ms in a repository of 300 files and 70 ms in one of 20,000. Set it to `nil` where that makes the menu slow to open |
+| `ecc-review-auto-refresh` | `t` | When non-nil, an open review reads the diff again when a tool of its session finishes, a turn ends, or a file of its repository is saved, keeping the comments and your place. A hidden review is read when it is shown. A review in ediff follows them too. `nil` reads it only with `g` |
+| `ecc-review-files-width` | `32` | Width in columns of the list of files that `s` shows beside a review |
+| `ecc-review-ediff-layout` | `'stacked` | How an ediff review opens: `'stacked` puts the old side above the new one with Claude's reply pane on the right, `'side-by-side` puts them left and right with the pane at the bottom. `\|` switches in an open review |
+| `ecc-review-talk-reply-width` | `75` | Width in columns of the pane right of a stacked ediff review that shows Claude's reply. A frame that would leave the diff fewer than 80 columns has the pane at the bottom instead |
+| `ecc-review-talk-reply-height` | `12` | Height in lines of the pane under a side-by-side ediff review that shows Claude's reply; `nil` shows no pane in either layout |
+| `ecc-review-talk-reply-place` | `'auto` | Where the reply pane goes: `'auto` beside the review as the layout says, `'frame` in a frame of its own for each review, closed with it, which never takes the focus |
 
 ## Windows
 
@@ -103,7 +110,7 @@ Both options accept `'window` or `'posframe`. `'posframe` renders the buffer as 
 
 ## The MCP server
 
-ecc can run an in-process MCP server on the loopback interface and register it with each session, allowing Claude to query Emacs for editor context: `xref`, `imenu`, `tree-sitter`, project metadata, and diagnostics.
+ecc can run an in-process MCP server on the loopback interface and register it with each session, allowing Claude to query Emacs for editor context: `xref`, `imenu`, `tree-sitter`, project metadata, and diagnostics. It also lets Claude [comment on the review buffer](/emacs-claude-code/features/review/#comments-from-claude).
 
 | Variable | Default | Description |
 |---|---|---|

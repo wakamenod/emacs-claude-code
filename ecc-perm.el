@@ -75,14 +75,27 @@ shortcut.  Nil remembers every tool.")
 
 ;;;; Responding (the one place that answers)
 
+(defun ecc-perm-ensure-waiting (request)
+  "Signal a `user-error' unless REQUEST is still waiting for an answer."
+  (unless (memq request (ecc-session-pending (ecc-request-session request)))
+    (user-error "That request is no longer waiting")))
+
 (cl-defun ecc-perm-respond (request behavior &key message updated-input
                                     updated-permissions)
   "Answer REQUEST with BEHAVIOR, which is `allow' or `deny'.
 MESSAGE is the reason shown to Claude when denying; for an allow it is
 only kept in the transcript as what was answered.  UPDATED-INPUT
 replaces the tool input of an allow, and defaults to echoing back what
-the CLI sent.  UPDATED-PERMISSIONS is a vector of permission updates."
+the CLI sent.  UPDATED-PERMISSIONS is a vector of permission updates.
+
+A request no longer waiting is not answered: a `user-error' says so and
+nothing is sent.  Every answer comes here after whatever it asked the
+user -- a reason, an answer, whether to save a buffer first -- and the
+CLI may have taken the request back meanwhile, an interrupt closing it
+\(`ecc-model-abandon-requests\='); an answer then would go to a request
+id nothing is waiting on, and resolve the request a second time."
   (let ((session (ecc-request-session request)))
+    (ecc-perm-ensure-waiting request)
     (ecc-proc-send-json
      session
      (pcase behavior
@@ -702,23 +715,30 @@ Signals a `user-error' naming the first question left unanswered."
 The questions are echoed back unchanged; only `answers' is added,
 keyed by the question text, a multiSelect answer joined by \", \"."
   (interactive)
-  (let* ((request ecc-question--request)
-         (session (ecc-request-session request))
-         (buffer (current-buffer))
-         (pairs (ecc-question-answers)))
-    (unless (memq request (ecc-session-pending session))
-      (user-error "This question was answered already"))
-    (when-let* ((node (ecc-request-node request)))
-      (ecc-model-node-put node 'answers pairs))
-    (ecc-perm-respond request 'allow
-                      :updated-input (append (ecc-request-input request)
-                                             (list (cons 'answers
-                                                         (ecc-protocol-answers pairs))))
-                      :message (concat "answered: "
-                                       (mapconcat #'cdr pairs " · ")))
-    (message "Answer sent")
+  (let ((buffer (current-buffer))
+        (pairs (ecc-question-send-answers ecc-question--request (ecc-question-answers))))
     (ecc-perm-close-buffer buffer)
     pairs))
+
+(defun ecc-question-send-answers (request pairs)
+  "Answer the question REQUEST with PAIRS and return them.
+PAIRS is an alist of question text to answer, a multiSelect answer
+joined by \", \"; the questions are echoed back unchanged and only
+`answers' is added.  What the question buffer sends, and what anything
+else that collects the answers its own way sends too."
+  ;; Before the answers go on the node: those of a request no longer
+  ;; waiting would be drawn as if they had been given.
+  (ecc-perm-ensure-waiting request)
+  (when-let* ((node (ecc-request-node request)))
+    (ecc-model-node-put node 'answers pairs))
+  (ecc-perm-respond request 'allow
+                    :updated-input (append (ecc-request-input request)
+                                           (list (cons 'answers
+                                                       (ecc-protocol-answers pairs))))
+                    :message (concat "answered: "
+                                     (mapconcat #'cdr pairs " · ")))
+  (message "Answer sent")
+  pairs)
 
 (defun ecc-question-cancel (&optional reason)
   "Refuse to answer the question, telling Claude REASON."

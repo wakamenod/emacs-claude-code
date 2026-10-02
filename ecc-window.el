@@ -587,6 +587,144 @@ happens to the session windows and where point lands."
          (select-window session-window))))
     window))
 
+(defun ecc-window-show-review-quietly (buffer session &optional replaceable)
+  "Show the review in BUFFER beside SESSION without moving anybody.
+Returns the window that shows it, or nil.  This is how a review Claude
+opened or moved reaches the screen: the user is somewhere else -- very
+likely typing in the prompt -- so nothing is selected, no session
+window is hidden, and `ecc-window-review-focus\=' and
+`ecc-window-hide-on-review\=' are not consulted, both being about a
+review the user asked for.
+
+A review already on a visible frame is left where it is.  Otherwise it
+is shown only when SESSION is on the screen of the selected frame --
+which is the tab showing, so no tab or Space is ever gone to -- and
+never in the window the user is in: the selected one, or the one the
+minibuffer was entered from.  REPLACEABLE, a predicate on a buffer,
+names what may be put out of its window -- another review of the same
+session, so that a second review takes the window of the first rather
+than dividing the session again.  Then the widest window holding
+nothing of this package, then a new one divided off the session\='s.
+Not `ecc-window-display-beside-session\=': under `spaces\=' that selects
+the Space of the session, and may pick the very window the user is
+typing in, which would then take their next keys.  Where there is no
+such window the review waits in its buffer, and nil says so.
+
+A rule of the user\='s own in `display-buffer-alist\=' that matches
+BUFFER is followed instead (`ecc-window--display-by-rule\=') -- as long
+as it too leaves the user\='s window, and tab, alone."
+  (or (get-buffer-window buffer 'visible)
+      (when-let* ((session-buffer (ecc-session-buffer session))
+                  ((buffer-live-p session-buffer))
+                  (session-window (get-buffer-window session-buffer)))
+        (if (ecc-window--user-rule-p buffer)
+            (ecc-window--display-by-rule buffer)
+          (pcase (ecc-window--quiet-review-window session-window replaceable)
+            (`(,window . ,type)
+             ;; `window' for a window made for it, so that `quit-window'
+             ;; deletes it; `reuse' for one it borrowed, so that the
+             ;; buffer that was there comes back.  A new window also
+             ;; forgets the buffer `split-window' gave it to begin with,
+             ;; as `display-buffer' has it forget: with that one in its
+             ;; history `quit-window' shows it again rather than deleting
+             ;; the window (Emacs 32.0.50, 2026-10-01).
+             (display-buffer-record-window type window buffer)
+             (set-window-buffer window buffer)
+             (when (eq type 'window)
+               (set-window-prev-buffers window nil))
+             window))))))
+
+(defun ecc-window--users-windows ()
+  "Return the windows the user is working in.
+The selected one, and while the minibuffer is active the one it was
+entered from -- the window a \\[find-file] or an \\[execute-extended-command] goes back to."
+  (delq nil (list (selected-window) (minibuffer-selected-window))))
+
+(defun ecc-window--quiet-review-window (session-window replaceable)
+  "Return (WINDOW . TYPE) for a review to go in quietly beside SESSION-WINDOW.
+TYPE is `reuse\=' for a window that shows something else now and `window\='
+for one divided off SESSION-WINDOW.  REPLACEABLE is the predicate of
+`ecc-window-show-review-quietly\='.  Nil when there is none."
+  (let* ((users (ecc-window--users-windows))
+         (free (seq-filter (lambda (window)
+                             (and (not (memq window users))
+                                  (not (window-parameter window 'window-side))
+                                  (not (window-dedicated-p window))))
+                           (window-list nil 'no-minibuffer)))
+         (widest (lambda (windows)
+                   (car (sort windows (lambda (a b) (> (window-total-width a)
+                                                       (window-total-width b))))))))
+    (if-let* ((window (or (and replaceable
+                               (funcall widest
+                                        (seq-filter (lambda (window)
+                                                      (funcall replaceable
+                                                               (window-buffer window)))
+                                                    free)))
+                          (funcall widest
+                                   (seq-remove (lambda (window)
+                                                 (ecc-window-own-buffer-p
+                                                  (window-buffer window)))
+                                               free)))))
+        (cons window 'reuse)
+      (when-let* ((window (ecc-window--split-quietly session-window)))
+        (cons window 'window)))))
+
+(defvar ecc-window-quiet-split-min-height 8
+  "Fewest lines each half has when a review divides a session window.")
+
+(defun ecc-window--split-quietly (session-window)
+  "Divide SESSION-WINDOW for a review and return the new window, or nil.
+To the right when it has room for two columns of 80, which is what a
+diff wants to be read in; below it when it has room for two halves of
+`ecc-window-quiet-split-min-height\=' lines; not at all otherwise, nor
+when it is a side window.  The selected window stays selected and keeps
+its buffer: the new window is the other half.  The room is measured
+first, so that a window too small to divide is an answer and not an
+error, and any other error of `split-window\=' is left to be seen."
+  (unless (window-parameter session-window 'window-side)
+    (let ((direction
+           (cond ((>= (window-total-width session-window) 160) 'right)
+                 ((>= (window-total-height session-window)
+                      (* 2 (max ecc-window-quiet-split-min-height window-min-height)))
+                  'below))))
+      (when direction
+        (split-window session-window nil direction)))))
+
+(defun ecc-window--user-rule-p (buffer)
+  "Return non-nil when `display-buffer-alist\=' has a rule for BUFFER."
+  (seq-some (lambda (entry)
+              (buffer-match-p (car entry) (buffer-name buffer) nil))
+            display-buffer-alist))
+
+(defun ecc-window--display-by-rule (buffer)
+  "Show BUFFER the way the user\='s `display-buffer-alist\=' says, or not at all.
+Returns the window, or nil.  The rule is followed through
+`display-buffer\=' with the selected window kept and no other frame
+switched to; afterwards the window the user is in has to hold what it
+held, and the tab has to be the one it was.  A rule that took either --
+it is theirs, and may say anything -- is undone, and the review waits in
+its buffer."
+  (let* ((users (mapcar (lambda (window) (cons window (window-buffer window)))
+                        (ecc-window--users-windows)))
+         (configuration (current-window-configuration))
+         (tab (and (fboundp 'tab-bar--current-tab-index) (tab-bar--current-tab-index)))
+         (window (save-selected-window
+                   (display-buffer buffer '(nil (inhibit-switch-frame . t)
+                                                (inhibit-same-window . t)))))
+         (now (and (fboundp 'tab-bar--current-tab-index) (tab-bar--current-tab-index))))
+    (if (and (window-live-p window)
+             (equal tab now)
+             (not (assq window users))
+             (seq-every-p (lambda (user)
+                            (and (window-live-p (car user))
+                                 (eq (window-buffer (car user)) (cdr user))))
+                          users))
+        window
+      (unless (equal tab now)
+        (tab-bar-select-tab (1+ tab)))
+      (set-window-configuration configuration)
+      nil)))
+
 (defun ecc-window-session-buffers (session)
   "Return the live buffers of SESSION that are shown in a window of their own."
   (seq-filter #'buffer-live-p

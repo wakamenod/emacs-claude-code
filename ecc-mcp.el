@@ -112,8 +112,12 @@ The CLI prefixes the tools with it: `mcp__emacs__xref_find_references'.")
   "Publish FUNCTION to Claude as the tool called NAME.
 DESCRIPTION is what the model reads to decide whether to call it.
 ARGS is a list of (ARG-NAME TYPE ARG-DESCRIPTION &optional REQUIRED),
-where TYPE is a JSON schema type such as \"string\" or \"integer\";
+where TYPE is a JSON schema type such as \"string\" or \"integer\",
+or a whole JSON schema as an alist -- an array of objects is
+\=`((type . \"array\") (items . ((type . \"object\") ...)))\=';
 FUNCTION is called with the values in that order and returns a string.
+An array arrives as a vector and an object as an alist, the way
+`ecc--json-read\=' reads them, so a tool never parses JSON itself.
 Registering a name again replaces what was there."
   (puthash name
            (make-ecc-mcp-tool :name name :description description
@@ -146,7 +150,9 @@ decide whether a registered tool is published."
     (dolist (arg (ecc-mcp-tool-args tool))
       (pcase-let ((`(,name ,type ,description . ,rest) arg))
         (push (cons (intern name)
-                    `((type . ,type) (description . ,description)))
+                    (if (stringp type)
+                        `((type . ,type) (description . ,description))
+                      (append type `((description . ,description)))))
               properties)
         (when (car rest) (push name required))))
     `((type . "object")
@@ -159,6 +165,41 @@ decide whether a registered tool is published."
     (description . ,(or (ecc-mcp-tool-description tool)
                         (ecc-mcp-tool-name tool)))
     (inputSchema . ,(ecc-mcp-tool-schema tool))))
+
+;;;; What the server tells the model
+
+;; A tool description says what one tool does; the instructions of the
+;; server say how its tools go together -- which to call first, what to
+;; do with what another one returned.  Claude Code puts them in the
+;; system prompt, under "MCP Server Instructions", as a section headed
+;; by the server name.  Confirmed for the HTTP server --mcp-config gives
+;; a `claude -p\=' session on 2026-10-01, against CLI 2.1.281: the
+;; paragraph came back word for word when the model was asked for it.
+
+(defvar ecc-mcp--instructions nil
+  "Alist of a name to (TEXT . TOOLS), the latest registered first.
+See `ecc-mcp-define-instructions\='.")
+
+(defun ecc-mcp-define-instructions (name text tools)
+  "Register TEXT as the paragraph NAME of the instructions of the server.
+TEXT is a string, or a symbol whose value is one -- read when a session
+initializes, so that a `setq\=' of it takes effect on the next session.
+TOOLS names the tools the paragraph is about: it is left out when none
+of them is published, since a paragraph pointing at tools the model has
+not got is worse than none.  Registering NAME again replaces it."
+  (setf (alist-get name ecc-mcp--instructions nil nil #'equal) (cons text tools))
+  name)
+
+(defun ecc-mcp-instructions ()
+  "Return the instructions of the server, or nil when there are none."
+  (let ((published (mapcar #'ecc-mcp-tool-name (ecc-mcp-published-tools)))
+        (paragraphs nil))
+    (pcase-dolist (`(,_name ,text . ,tools) (reverse ecc-mcp--instructions))
+      (when (seq-some (lambda (tool) (member tool published)) tools)
+        (let ((text (if (symbolp text) (symbol-value text) text)))
+          (when (and (stringp text) (not (string-empty-p text)))
+            (push text paragraphs)))))
+    (and paragraphs (string-join (nreverse paragraphs) "\n\n"))))
 
 ;;;; Running a tool
 
@@ -250,10 +291,14 @@ the server down with it."
     (error . ((code . ,code) (message . ,message)))))
 
 (defun ecc-mcp--server-info ()
-  "Return what this server says about itself."
-  `((protocolVersion . ,ecc-mcp-protocol-version)
-    (capabilities . ((tools . ((listChanged . :false)))))
-    (serverInfo . ((name . ,ecc-mcp-server-name) (version . "0.1.0")))))
+  "Return what this server says about itself.
+The instructions are there only when some module has a paragraph to
+give whose tools are published (`ecc-mcp-instructions\=')."
+  (let ((instructions (ecc-mcp-instructions)))
+    `((protocolVersion . ,ecc-mcp-protocol-version)
+      (capabilities . ((tools . ((listChanged . :false)))))
+      (serverInfo . ((name . ,ecc-mcp-server-name) (version . "0.1.0")))
+      ,@(and instructions `((instructions . ,instructions))))))
 
 (defun ecc-mcp-handle-request (request)
   "Answer the JSON-RPC REQUEST, an alist, or return nil for a notification."

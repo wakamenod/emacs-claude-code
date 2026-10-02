@@ -166,15 +166,18 @@ most recently used first."
 (defun ecc-restore--read (&optional file)
   "Return the state saved in FILE, or nil.
 FILE defaults to `ecc-restore-file'.  A file this version cannot read is
-said so and taken for none."
+said so and taken for none.  An empty one is nothing saved, and quietly
+so: `make-temp-file' makes the file before anything is written to it."
   (let ((file (or file ecc-restore-file)))
     (when (file-readable-p file)
       (condition-case error
           (let ((state (with-temp-buffer
                          (insert-file-contents file)
-                         (read (current-buffer)))))
-            (if (and (listp state)
-                     (eql (plist-get state :version) ecc-restore--version))
+                         (unless (string-blank-p (buffer-string))
+                           (read (current-buffer))))))
+            (if (or (null state)
+                    (and (listp state)
+                         (eql (plist-get state :version) ecc-restore--version)))
                 state
               (message "ecc: %s is not a state this version reads"
                        (abbreviate-file-name file))
