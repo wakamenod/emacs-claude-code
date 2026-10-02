@@ -93,6 +93,7 @@
 ;; everything else, rather than with the first review opened.
 (require 'ecc-review-agent)
 (require 'ecc-review-menu)
+(require 'ecc-review-talk)
 
 ;; The version is written once, in the Version header above, because that
 ;; is the one package.el and `package-vc-install' read.  Repeating it in a

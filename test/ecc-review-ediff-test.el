@@ -54,6 +54,14 @@
   `(let ((ediff-window-setup-function #'ediff-setup-windows-plain))
      ,@body))
 
+(defmacro ecc-review-ediff-test--with-ediff-and-no-pane (&rest body)
+  "Run BODY as `ecc-review-ediff-test--with-ediff' does, without the reply pane.
+For what counts on being on the screen at once: the pane takes lines a
+batch frame, 24 of them, does not have to spare."
+  (declare (indent 0))
+  `(let ((ecc-review-talk-reply-height nil))
+     (ecc-review-ediff-test--with-ediff ,@body)))
+
 (defun ecc-review-ediff-test--repository (directory)
   "Make DIRECTORY a git repository with one commit of x.txt and gone.txt."
   (ecc-review-ediff-test--git directory "init" "-q")
@@ -258,7 +266,7 @@
                   ;; Two lines: the keys a review is read with.
                   (should (equal (split-string ediff-brief-help-message "\n")
                                  '(" n/p diff   c comment   { } comments   a Claude's   s files   / filter"
-                                   " ! reread   C-c C-c send   q quit   ? all keys")))
+                                   " T tour   t next   M message   C-c C-c send   q quit   ! reread   ? all keys")))
                   ;; And it is in the panel, not only in the variable:
                   ;; `ediff-setup' writes the help out before it runs
                   ;; the startup hooks.
@@ -1447,7 +1455,7 @@ With more than one comment to answer or edit, which is asked."
   "Reading the review again fontifies only the files that changed, and an
 unchanged review reads no file at all."
   (skip-unless (executable-find "git"))
-  (ecc-review-ediff-test--with-ediff
+  (ecc-review-ediff-test--with-ediff-and-no-pane
     (ecc-test-with-fake-session session
       (ecc-review-ediff-test--with-directory directory
         (let ((control nil)

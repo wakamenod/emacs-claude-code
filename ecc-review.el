@@ -78,6 +78,9 @@
 (declare-function ecc-start "ecc" (&optional directory name))
 (autoload 'ecc-review-files-toggle "ecc-review-files" nil t)
 (autoload 'ecc-review-files-filter "ecc-review-files" nil t)
+(autoload 'ecc-review-talk-tour "ecc-review-talk" nil t)
+(autoload 'ecc-review-talk-next "ecc-review-talk" nil t)
+(autoload 'ecc-review-talk-message "ecc-review-talk" nil t)
 (declare-function ediff-recenter "ediff-util" (&optional no-rehighlight))
 (declare-function ecc-review-ediff-buffer "ecc-review-ediff" (session &optional paths))
 (declare-function ecc-review-ediff-worktree-buffer "ecc-review-ediff"
@@ -997,6 +1000,16 @@ changed stays open when its changes have gone."
     (define-key map (kbd "p") #'ecc-review-previous-hunk)
     (define-key map (kbd "N") #'ecc-review-next-file)
     (define-key map (kbd "P") #'ecc-review-previous-file)
+    ;; Talking to the session of the review without going to its prompt
+    ;; (`ecc-review-talk.el').  t and M rather than N and m: N is the
+    ;; next file just above, and m is ediff's wide display, and the keys
+    ;; are the same in both kinds of review (decided 2026-10-02).
+    (define-key map (kbd "T") #'ecc-review-talk-tour)
+    (define-key map (kbd "t") #'ecc-review-talk-next)
+    (define-key map (kbd "M") #'ecc-review-talk-message)
+    ;; The header line has room for the keys used most; ? lists every
+    ;; one, as it does in the control panel of an ediff review.
+    (define-key map (kbd "?") #'ecc-review-help)
     ;; `diff-mode' edits its buffer from these, read-only or not: they
     ;; bind `inhibit-read-only'.  A review is a copy of what git said, and
     ;; one stray k would leave it saying something else; u and @ revert
@@ -1088,6 +1101,51 @@ on, point and the window are left as they were and that is said."
   (ecc-review--past-hidden (- (or count 1)) #'diff-file-next #'diff-file-prev
                            diff-file-header-re "file"))
 
+(defconst ecc-review-long-help-message
+  "Move around                          Comments
+  n / p     next, previous hunk        c         comment on this line (@@: the hunk)
+  N / P     next, previous file        { / }     previous, next comment
+  RET / o   go to the source           d         remove a comment here
+  s         list the files             l         jump to a comment
+  /         filter the files           a         show or hide Claude's
+  g         read the diff again        C-c C-c   send the comments
+  q         bury the review            C-u C-c C-c  edit them, then send
+                                       C-c C-k   drop the review
+Claude
+  T         ask for a tour of the review
+  t         the next stop of the tour
+  M         say something to Claude
+
+The review is read-only: it shows what git says.  Claude changes the
+files, from the prompt the comments are sent as."
+  "What \\`?' shows in a diff review of files.")
+
+(defconst ecc-review-proposal-long-help-message
+  "Move around                          Comments
+  n / p     next, previous hunk        c         comment on this line (@@: the hunk)
+  RET / o   go to the source           { / }     previous, next comment
+  q         bury the review            d         remove a comment here
+                                       l         jump to a comment
+The proposal                           C-c C-c   send the comments as a deny
+  e         edit it and apply it       C-u C-c C-c  edit them, then deny
+                                       C-c C-k   drop the review
+
+This reviews one change Claude proposes.  The comments go back as the
+reason it is refused: C-c C-c denies the proposal.  e is the way to
+accept it, changed or not."
+  "What \\`?' shows in the review of one proposal.")
+
+(defun ecc-review-help ()
+  "Show every key of this diff review in the help window.
+The review of a proposal has keys of its own, and sending its comments
+denies the proposal."
+  (interactive)
+  (let ((text (if ecc-review--request
+                  ecc-review-proposal-long-help-message
+                ecc-review-long-help-message)))
+    (with-help-window (help-buffer)
+      (princ text))))
+
 (defun ecc-review-read-only ()
   "Say that the review cannot be edited, in place of a `diff-mode' edit."
   (interactive)
@@ -1155,8 +1213,50 @@ not from who asked for it, so the review the menu opens and the one
                  'face 'warning))
    (propertize (if ecc-review--request
                    "  ·  c comment  e edit and apply  C-c C-c send as deny (C-u edits)  n/p hunk  RET source"
-                 "  ·  c comment  { } comments  a Claude's  s files  / filter  d delete  C-c C-c send  n/p hunk")
+                 "  ·  c comment  { } comments  d delete  n/p hunk  s files  / filter  T tour  t next  M message  C-c C-c send  ? all keys")
                'face 'ecc-dim-face))))
+
+(defun ecc-review-pane-name (review kind)
+  "Return the name of the KIND pane of REVIEW: \"*ecc-review-KIND: ...*\".
+What follows the colon is what follows it in the name of the review
+itself, so that a pane says which review it belongs to."
+  (with-current-buffer review
+    (let ((name (ecc-review-buffer-name ecc-review--session nil ecc-review--range
+                                        ecc-review--label)))
+      (format "*ecc-review-%s: %s" kind (substring name (length "*ecc-review: "))))))
+
+(defun ecc-review-pane-buffer (review kind mode review-var)
+  "Make the KIND pane of REVIEW, a buffer in MODE, and return it.
+REVIEW-VAR is the buffer-local variable of MODE that says which review
+a pane belongs to; it is set to REVIEW.  The pane is named
+`ecc-review-pane-name\=', unless a live pane of another review has
+that name already, which happens to two reviews of one session and one
+range read under different labels: then it gets a name of its own."
+  (let* ((name (ecc-review-pane-name review kind))
+         (taken (get-buffer name))
+         (owner (and taken (buffer-local-value review-var taken)))
+         (pane (if (and (buffer-live-p owner) (not (eq owner review)))
+                   (generate-new-buffer name)
+                 (get-buffer-create name))))
+    (with-current-buffer pane
+      (funcall mode)
+      (set review-var review))
+    pane))
+
+(defun ecc-review-pane-take-down (window &optional parameters)
+  "Take the pane in WINDOW off the screen.
+Deleted, or, where it cannot be -- the last window of its frame -- given
+back to another buffer, so that no stale pane stays dedicated there.
+The window parameters a pane sets go first: `no-other-window\=',
+`no-delete-other-windows\=' and the PARAMETERS of its own, so that a
+window given back is one that \\[other-window] reaches and
+\\[delete-other-windows] deletes."
+  (dolist (parameter (append '(no-other-window no-delete-other-windows) parameters))
+    (set-window-parameter window parameter nil))
+  (if (eq (window-deletable-p window) t)
+      (delete-window window)
+    (set-window-dedicated-p window nil)
+    (switch-to-prev-buffer window 'bury)))
 
 (defun ecc-review--count (n noun)
   "Return N NOUNs in words: \"1 comment\", \"2 comments\"."

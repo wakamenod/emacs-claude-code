@@ -355,6 +355,36 @@ not remembered: Bash is not worth a blanket approval."
                                                          (buffer-string))))
         (should (equal (alist-get 'behavior (ecc-test-response 0)) "allow"))))))
 
+(ert-deftest ecc-perm-test-a-request-taken-back-meanwhile-is-not-answered ()
+  "A request abandoned while the user is asked about it is answered by nobody.
+Through `ecc-perm-allow', whose question about the unsaved buffer comes
+after the request was found, and `ecc-perm-deny', whose reason does."
+  (ecc-test-with-fake-session session
+    (ecc-perm-test--with-modified-file file _buffer
+      (let ((request (ecc-test-add-request session "Write"))
+            (resolved 0))
+        (setf (ecc-request-input request) `((file_path . ,file) (content . "new")))
+        (let ((ecc-request-resolved-hook
+               (cons (lambda (_session r) (when (eq r request) (cl-incf resolved)))
+                     ecc-request-resolved-hook)))
+          (cl-letf (((symbol-function 'read-multiple-choice)
+                     (lambda (&rest _)
+                       (ecc-model-abandon-requests session "the turn was interrupted")
+                       '(?a "allow anyway"))))
+            (should (equal (cadr (should-error (ecc-perm-allow) :type 'user-error))
+                           "That request is no longer waiting"))))
+        (should (= resolved 1))
+        (should (eq (ecc-node-status (ecc-request-node request)) 'denied))
+        (should-not ecc-test-sent)))
+    (let ((request (ecc-test-add-request session "Bash" '((command . "ls")))))
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (&rest _)
+                   (ecc-model-abandon-requests session "the turn was interrupted")
+                   "no")))
+        (should-error (call-interactively #'ecc-perm-deny) :type 'user-error))
+      (should-not (memq request (ecc-session-pending session)))
+      (should-not ecc-test-sent))))
+
 (ert-deftest ecc-perm-test-unsaved-check-only-for-file-tools ()
   "A Bash request never asks about buffers, whatever is unsaved."
   (ecc-test-with-fake-session session

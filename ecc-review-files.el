@@ -194,12 +194,7 @@ goes (`ecc-review-files--sweep')."
   "Take the files pane WINDOW off the screen.
 Deleted, or, where it cannot be -- the last window of its frame -- given
 back to another buffer, so that no stale pane stays dedicated there."
-  (set-window-parameter window 'ecc-review-files-beside nil)
-  (set-window-parameter window 'ecc-review-files nil)
-  (if (eq (window-deletable-p window) t)
-      (delete-window window)
-    (set-window-dedicated-p window nil)
-    (switch-to-prev-buffer window 'bury)))
+  (ecc-review-pane-take-down window '(ecc-review-files ecc-review-files-beside)))
 
 (defun ecc-review-files--sweep (frame)
   "Take down the files panes of FRAME whose review has left the window beside them.
@@ -471,30 +466,13 @@ On `ecc-review-after-draw-hook': the files or their comments changed."
                     "The review of this list has gone")))
     review))
 
-(defun ecc-review-files--pane-name (review)
-  "Return the name of the files pane of REVIEW."
-  (with-current-buffer review
-    (let ((name (ecc-review-buffer-name ecc-review--session nil ecc-review--range
-                                        ecc-review--label)))
-      (format "*ecc-review-files: %s"
-              (substring name (length "*ecc-review: "))))))
-
 (defun ecc-review-files--pane-buffer (review)
   "Return the files pane of REVIEW, made when it has none."
   (with-current-buffer review
     (if (buffer-live-p ecc-review-files--pane)
         ecc-review-files--pane
-      (let* ((name (ecc-review-files--pane-name review))
-             (taken (get-buffer name))
-             (pane (if (and taken (buffer-live-p (buffer-local-value
-                                                  'ecc-review-files--review taken))
-                            (not (eq (buffer-local-value 'ecc-review-files--review taken)
-                                     review)))
-                       (generate-new-buffer name)
-                     (get-buffer-create name))))
-        (with-current-buffer pane
-          (ecc-review-files-mode)
-          (setq ecc-review-files--review review))
+      (let ((pane (ecc-review-pane-buffer review "files" #'ecc-review-files-mode
+                                          'ecc-review-files--review)))
         (add-hook 'kill-buffer-hook #'ecc-review-files--review-killed nil t)
         (setq ecc-review-files--pane pane)))))
 

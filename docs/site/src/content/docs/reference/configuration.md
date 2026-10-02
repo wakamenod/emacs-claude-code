@@ -80,6 +80,7 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 | `ecc-review-menu-count-session-changes` | `t` | When non-nil, the review menu (`C-c c D`) shows how many files the session changed since it started. Counting them takes a snapshot of the working tree, about 35 ms in a repository of 300 files and 70 ms in one of 20,000. Set it to `nil` where that makes the menu slow to open |
 | `ecc-review-auto-refresh` | `t` | When non-nil, an open review reads the diff again when a tool of its session finishes, a turn ends, or a file of its repository is saved, keeping the comments and your place. A hidden review is read when it is shown. A review in ediff follows them too. `nil` reads it only with `g` |
 | `ecc-review-files-width` | `32` | Width in columns of the list of files that `s` shows beside a review |
+| `ecc-review-talk-reply-height` | `8` | Height in lines of the pane under an ediff review that shows Claude's reply; `nil` shows no pane |
 
 ## Windows
 
