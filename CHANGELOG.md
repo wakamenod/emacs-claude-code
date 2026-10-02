@@ -206,8 +206,10 @@ Verified against **Claude Code CLI 2.1.281**.
   starts a session in the menu's project with `ecc-start` -- named as
   `ecc-start` names it, asked for a name when the project has one already
   -- leaves the user where the menu was, back in its tab when `ecc-start`
-  went to the tab of a Space of its own, with the selected window
-  selected and the menu open, and turns the menu to it, so that the comments go there; it has the review tools, so
+  went to the tab of a Space of its own, or to the tab of a worktree's
+  repository first, or failed part of the way -- found again by the index
+  and the name it had -- with the selected window selected and the menu
+  open, and turns the menu to it, so that the comments go there; it has the review tools, so
   `T` works at once. `-f` asks for the files to keep once
   the comparison is chosen, out of those it shows, and `-e` opens this
   one review in ediff, or as a diff, the other way from
@@ -351,10 +353,14 @@ Verified against **Claude Code CLI 2.1.281**.
   own instead, one for each review, named after its pane, used again while
   it is there and closed with that review alone, made with
   `no-focus-on-map` and never selected, so the
-  keyboard stays in the review and `y` is typed there. `s` showing or
-  hiding the files pane, and the frame resized, move the pane to the side
-  the width now asks for (`ecc-review-files-toggled-functions`, and
-  `window-size-change-functions` of the new side's buffer). It shows the latest turn of the session of
+  keyboard stays in the review and `y` is typed there.
+  `ecc-review-talk-make-frame-function` is called with the frame's name,
+  or, taking no argument, with none, and the frame is named after. The
+  files pane of the review itself, as wide as it is, counts against the
+  diff; `s` or `q` showing or hiding it, and the frame resized, move the
+  pane to the side the width now asks for, seen as the window of the new
+  side changing size (`window-size-change-functions` of its buffer), and
+  a pane that had the keyboard has it again on its new side. It shows the latest turn of the session of
   the review as it streams -- what you sent on a line, what Claude says,
   and each tool call on a line of its own, such as `review_navigate →
   foo.el:12` -- and keeps its end in view. Each turn replaces the last;
@@ -456,7 +462,8 @@ Verified against **Claude Code CLI 2.1.281**.
   which difference is current out of how many, `3/12`, and what the
   filter hides -- after every change of either, reading again included;
   a window too narrow for the keys and that puts it first, and the keys
-  after it, worked out as the header line is drawn --
+  after it, worked out as the header line is drawn, and drawn again
+  whenever what it reads changes --
   and `?` shows every key, in a window as in the panel. `o` in the files pane
   opens the file itself, at its first change in an ediff review and
   beside the session in the diff review; `RET` there still moves the
