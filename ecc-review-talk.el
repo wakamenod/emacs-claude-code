@@ -63,6 +63,7 @@
 (require 'ecc-review-agent)
 
 (defvar ediff-window-A)
+(declare-function ediff-keep-window-config "ediff-wind" (control-buf))
 
 (defcustom ecc-review-talk-reply-height 8
   "How many lines the reply pane under an ediff review takes, or nil for none.
@@ -146,33 +147,33 @@ a request whole."
   (or (car (ecc-session-pending session))
       (user-error "%s is not waiting for anything" (ecc-session-name session))))
 
-(defun ecc-review-talk--answer-question (request)
-  "Answer the question REQUEST through the minibuffer, one question at a time.
-The answers are put in the buffer `ecc-question-open' makes and sent
-from there, so they go back the way the question buffer sends them.
-A buffer made here and left unsent is killed."
-  (let* ((existed (ecc-question-buffer request))
-         (buffer (ecc-question-open request))
-         (sent nil))
-    (unwind-protect
-        (with-current-buffer buffer
-          (let ((index 0))
-            (dolist (question (ecc-question-questions request))
-              (let ((labels (ecc-perm-question-options question))
-                    (prompt (format "%s " (or (alist-get 'question question) "Answer:"))))
-                (if (ecc-question--multi-p question)
-                    (dolist (answer (completing-read-multiple prompt labels))
-                      (ecc-question-set-answer index (string-trim answer)))
-                  (let ((answer (string-trim (completing-read prompt labels))))
-                    (when (string-empty-p answer)
-                      (user-error "No answer given"))
-                    (ecc-question-set-answer index answer))))
-              (cl-incf index)))
-          (prog1 (ecc-question-submit)
-            (setq sent t)))
-      (unless (or sent existed)
-        (when (buffer-live-p buffer)
-          (kill-buffer buffer))))))
+(defun ecc-review-talk--still-waiting (request)
+  "Signal a `user-error' unless REQUEST is still waiting for an answer.
+Asked after the minibuffer has been read: the CLI may have taken the
+request back meanwhile -- an interrupt, a hook's decision -- and an
+answer to it then would answer nothing and mark it resolved twice."
+  (unless (memq request (ecc-session-pending (ecc-request-session request)))
+    (user-error "That request is no longer waiting")))
+
+(defun ecc-review-talk--read-answers (request)
+  "Read an answer to each question of REQUEST in the minibuffer.
+Return them as `ecc-question-send-answers' takes them.  They are
+collected here, not in the question buffer of the session, which keeps
+whatever the user has chosen there; a \\[keyboard-quit] part way leaves
+nothing changed."
+  (mapcar
+   (lambda (question)
+     (let* ((labels (ecc-perm-question-options question))
+            (prompt (format "%s " (or (alist-get 'question question) "Answer:")))
+            (answers (seq-remove #'string-empty-p
+                                 (mapcar #'string-trim
+                                         (if (ecc-question--multi-p question)
+                                             (completing-read-multiple prompt labels)
+                                           (list (completing-read prompt labels)))))))
+       (unless answers
+         (user-error "No answer given"))
+       (cons (alist-get 'question question) (string-join answers ", "))))
+   (ecc-question-questions request)))
 
 (defun ecc-review-talk-answer ()
   "Answer what the session of this review is waiting for.
@@ -180,22 +181,30 @@ A permission or a plan is allowed or denied, a question is answered in
 the minibuffer.  What is answered is the one the reply pane shows."
   (interactive)
   (let* ((session (ecc-review-talk--session))
-         (request (ecc-review-talk--request session)))
+         (request (ecc-review-talk--request session))
+         (summary (ecc-answer-summary request)))
     (if (eq (ecc-request-kind request) 'question)
-        (ecc-review-talk--answer-question request)
-      (let ((plan (eq (ecc-request-kind request) 'plan)))
-        (pcase (car (read-multiple-choice
-                     (format "%s: %s" (ecc-session-name session) (ecc-answer-summary request))
-                     (if plan
-                         '((?y "approve" "Approve the plan as it stands")
-                           (?n "deny" "Refuse the plan and say why"))
-                       '((?y "allow" "Let Claude use the tool this once")
-                         (?n "deny" "Refuse and say why")))))
-          (?y (ecc-perm-allow-request request)
-              (message "%s: %s" (if plan "Approved" "Allowed") (ecc-answer-summary request)))
-          (?n (ecc-perm-respond request 'deny
-                                :message (read-string "Reason for denying (may be empty): "))
-              (message "Denied: %s" (ecc-answer-summary request))))))))
+        (let ((pairs (ecc-review-talk--read-answers request)))
+          (ecc-review-talk--still-waiting request)
+          (ecc-question-send-answers request pairs))
+      (let* ((plan (eq (ecc-request-kind request) 'plan))
+             (choice (car (read-multiple-choice
+                           (format "%s: %s" (ecc-session-name session) summary)
+                           (if plan
+                               '((?y "approve" "Approve the plan as it stands")
+                                 (?n "deny" "Refuse the plan and say why"))
+                             '((?y "allow" "Let Claude use the tool this once")
+                               (?n "deny" "Refuse and say why")))))))
+        (pcase choice
+          (?y (ecc-review-talk--still-waiting request)
+              (pcase (ecc-perm-allow-request request)
+                ('deny (message "Denied: %s (the buffer has unsaved changes)" summary))
+                ('save (message "Saved the buffer and allowed: %s" summary))
+                (_ (message "%s: %s" (if plan "Approved" "Allowed") summary))))
+          (?n (let ((reason (read-string "Reason for denying (may be empty): ")))
+                (ecc-review-talk--still-waiting request)
+                (ecc-perm-respond request 'deny :message reason)
+                (message "Denied: %s" summary))))))))
 
 ;;;; The pane
 
@@ -257,30 +266,23 @@ other change writes the pane again.")
   (with-current-buffer review
     (if (buffer-live-p ecc-review-talk--pane)
         ecc-review-talk--pane
-      (let* ((name (ecc-review-pane-name review "reply"))
-             (taken (get-buffer name))
-             (pane (if (and taken
-                            (buffer-live-p (buffer-local-value 'ecc-review-talk--review taken))
-                            (not (eq (buffer-local-value 'ecc-review-talk--review taken)
-                                     review)))
-                       (generate-new-buffer name)
-                     (get-buffer-create name)))
-            (session ecc-review--session))
+      (let ((pane (ecc-review-pane-buffer review "reply" #'ecc-review-talk-mode
+                                          'ecc-review-talk--review)))
         (with-current-buffer pane
-          (ecc-review-talk-mode)
-          (setq ecc-review-talk--review review
-                ecc-review-talk--of session))
-        (push pane ecc-review-talk--panes)
+          (setq ecc-review-talk--of (buffer-local-value 'ecc-review--session review)))
+        (cl-pushnew pane ecc-review-talk--panes)
         (add-hook 'kill-buffer-hook #'ecc-review-talk--review-killed nil t)
         (ecc-review-talk--write pane)
         (setq ecc-review-talk--pane pane)))))
 
+(defun ecc-review-talk--take-down (pane)
+  "Take every window showing the reply PANE off the screen."
+  (mapc #'ecc-review-pane-take-down (get-buffer-window-list pane nil t)))
+
 (defun ecc-review-talk--review-killed ()
   "Kill the reply pane of this review with it, and the window it is in."
   (when (buffer-live-p ecc-review-talk--pane)
-    (dolist (window (get-buffer-window-list ecc-review-talk--pane nil t))
-      (when (eq (window-deletable-p window) t)
-        (delete-window window)))
+    (ecc-review-talk--take-down ecc-review-talk--pane)
     (kill-buffer ecc-review-talk--pane)))
 
 (defun ecc-review-talk--show-pane (review)
@@ -321,17 +323,22 @@ On `ecc-review-displayed-functions'."
 (add-hook 'ecc-review-displayed-functions #'ecc-review-talk--on-displayed)
 
 (defun ecc-review-talk--leave-the-frame ()
-  "Take the reply pane off the frame before ediff lays out its windows.
+  "Take the reply pane off the frame when ediff is about to lay out its windows.
 On `ediff-before-setup-windows-hook\\=' of the control buffer.  ediff
 puts its control panel in the lowest window of the frame
 \(`ediff-select-lowest-window\\='), and with the pane there the panel
 took the window of the left side instead: after | the review showed
-the control buffer where its old text had been."
+the control buffer where its old text had been.
+
+The hook is run on every recentre, n and p included, and most of them
+lay nothing out: the pane is taken down only when ediff will, which it
+decides with `ediff-keep-window-config\\=' just after this hook.  A pane
+taken down and put back on every key would resize the windows twice a
+key and lose the height the user gave it."
   (when-let* ((pane ecc-review-talk--pane)
-              ((buffer-live-p pane)))
-    (dolist (window (get-buffer-window-list pane nil t))
-      (when (eq (window-deletable-p window) t)
-        (delete-window window)))))
+              ((buffer-live-p pane))
+              ((not (ediff-keep-window-config (current-buffer)))))
+    (ecc-review-talk--take-down pane)))
 
 (defun ecc-review-talk--keep-the-pane ()
   "Show the reply pane again once ediff has laid out its windows.
@@ -515,26 +522,39 @@ the window's own width."
                           (vertical-motion (- (max 1 (1- (window-body-height window))))
                                            window)
                           (point))
-                        t)))
-  (force-mode-line-update t))
+                        t))))
 
 ;;;;; Following the session
 
 (defun ecc-review-talk--panes-of (session)
-  "Return the live reply panes showing SESSION."
-  (seq-filter (lambda (pane)
-                (and (buffer-live-p pane)
-                     (eq (buffer-local-value 'ecc-review-talk--of pane) session)))
+  "Return the live reply panes showing SESSION, forgetting any that died."
+  (setq ecc-review-talk--panes (seq-filter #'buffer-live-p ecc-review-talk--panes))
+  (seq-filter (lambda (pane) (eq (buffer-local-value 'ecc-review-talk--of pane) session))
               ecc-review-talk--panes))
 
 (defun ecc-review-talk--on-change (session &rest _)
-  "Write the panes of SESSION again: a turn, a node or a request came or went."
+  "Write the panes of SESSION again: a turn began, or a request came or went."
   (mapc #'ecc-review-talk--write (ecc-review-talk--panes-of session)))
 
+(defun ecc-review-talk--shown-p (session node)
+  "Return non-nil when NODE of SESSION is one the reply pane shows.
+What Claude says in the turn and the calls of its steps; not a
+subagent's nodes, which the pane never shows, nor a request, which
+`ecc-request-added-hook\\=' and `ecc-request-resolved-hook\\=' bring --
+answering one changes its node as well, and the pane would be written
+twice."
+  (let ((turn (ecc-review-talk--turn session))
+        (parent (ecc-node-parent node)))
+    (and (memq (ecc-node-type node) '(text tool agent))
+         (or (eq parent turn)
+             (and (ecc-node-p parent)
+                  (eq (ecc-node-type parent) 'step)
+                  (eq (ecc-node-parent parent) turn))))))
+
 (defun ecc-review-talk--on-node (session node)
-  "Write the panes of SESSION again when NODE is in the turn they show."
+  "Write the panes of SESSION again when NODE is one they show."
   (when-let* ((panes (ecc-review-talk--panes-of session)))
-    (when (eq (ecc-model-turn-of node) (ecc-review-talk--turn session))
+    (when (ecc-review-talk--shown-p session node)
       (mapc #'ecc-review-talk--write panes))))
 
 (defun ecc-review-talk--on-delta (session node text)
@@ -556,16 +576,17 @@ what the pane ends with, else the pane is written again."
               (ecc-review-talk--follow pane))
           (ecc-review-talk--write pane))))))
 
-(dolist (hook '(ecc-turn-started-hook ecc-turn-finished-hook
-                ecc-request-added-hook ecc-request-resolved-hook))
+(dolist (hook '(ecc-turn-started-hook ecc-request-added-hook ecc-request-resolved-hook))
   (add-hook hook #'ecc-review-talk--on-change))
 (add-hook 'ecc-node-added-hook #'ecc-review-talk--on-node)
 (add-hook 'ecc-node-updated-hook #'ecc-review-talk--on-node)
 (add-hook 'ecc-stream-delta-hook #'ecc-review-talk--on-delta)
+
 (defun ecc-review-talk--on-state (session &rest _)
-  "Say the new state of SESSION in the mode line of its panes."
-  (when (ecc-review-talk--panes-of session)
-    (force-mode-line-update t)))
+  "Say the new state of SESSION in the mode line of its panes, and no other."
+  (dolist (pane (ecc-review-talk--panes-of session))
+    (with-current-buffer pane
+      (force-mode-line-update))))
 
 (add-hook 'ecc-session-state-changed-hook #'ecc-review-talk--on-state)
 

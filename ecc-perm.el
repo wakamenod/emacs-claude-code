@@ -702,23 +702,29 @@ Signals a `user-error' naming the first question left unanswered."
 The questions are echoed back unchanged; only `answers' is added,
 keyed by the question text, a multiSelect answer joined by \", \"."
   (interactive)
-  (let* ((request ecc-question--request)
-         (session (ecc-request-session request))
-         (buffer (current-buffer))
-         (pairs (ecc-question-answers)))
-    (unless (memq request (ecc-session-pending session))
-      (user-error "This question was answered already"))
-    (when-let* ((node (ecc-request-node request)))
-      (ecc-model-node-put node 'answers pairs))
-    (ecc-perm-respond request 'allow
-                      :updated-input (append (ecc-request-input request)
-                                             (list (cons 'answers
-                                                         (ecc-protocol-answers pairs))))
-                      :message (concat "answered: "
-                                       (mapconcat #'cdr pairs " · ")))
-    (message "Answer sent")
+  (let ((buffer (current-buffer))
+        (pairs (ecc-question-send-answers ecc-question--request (ecc-question-answers))))
     (ecc-perm-close-buffer buffer)
     pairs))
+
+(defun ecc-question-send-answers (request pairs)
+  "Answer the question REQUEST with PAIRS and return them.
+PAIRS is an alist of question text to answer, a multiSelect answer
+joined by \", \"; the questions are echoed back unchanged and only
+`answers' is added.  What the question buffer sends, and what anything
+else that collects the answers its own way sends too."
+  (unless (memq request (ecc-session-pending (ecc-request-session request)))
+    (user-error "This question was answered already"))
+  (when-let* ((node (ecc-request-node request)))
+    (ecc-model-node-put node 'answers pairs))
+  (ecc-perm-respond request 'allow
+                    :updated-input (append (ecc-request-input request)
+                                           (list (cons 'answers
+                                                       (ecc-protocol-answers pairs))))
+                    :message (concat "answered: "
+                                     (mapconcat #'cdr pairs " · ")))
+  (message "Answer sent")
+  pairs)
 
 (defun ecc-question-cancel (&optional reason)
   "Refuse to answer the question, telling Claude REASON."

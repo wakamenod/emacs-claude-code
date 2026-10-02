@@ -342,10 +342,17 @@ Verified against **Claude Code CLI 2.1.281**.
   for -- a permission, Bash included, printed whole; a question with its
   options; a plan -- is shown at the end, and `y` in the control panel
   answers it: allow or deny, approve or deny, or each question read in the
-  minibuffer and sent the way the question buffer sends it. Only that
+  minibuffer, collected apart from the question buffer -- which keeps
+  what you chose there -- and sent the way it sends them once every
+  question has an answer. A request taken back while `y` asks -- an
+  interrupt, say -- is not answered after all, and `y` says so; an allow
+  that the unsaved buffer check turned into a deny says denied. Only that
   session's replies and requests reach the pane, and `y` answers no other.
-  The pane is never selected, ediff laying its windows out again with `|`
-  or `m` puts it back at the bottom, and it goes with the review. The diff review has the session beside it and no
+  The pane is written again only for what it shows, and a streamed piece
+  is appended without touching any mode line. It is never selected; it is
+  taken down and put back at the bottom only when ediff really lays its
+  windows out again, as `|` and `m` do, so `n` and `p` leave its window
+  and its height alone; and it goes with the review. The diff review has the session beside it and no
   pane.
 
 ### Changed
@@ -461,10 +468,12 @@ Verified against **Claude Code CLI 2.1.281**.
   in two lines, ` n/p diff   c comment   { } comments   a Claude's   s files
   / filter` and ` T tour   t next   M message   C-c C-c send   q quit
   ! reread   ? all keys`, where it said ` c -comment   C-c C-c -send
-  q -quit   ? -help`. `?` lists `s`, `/`, `T`, `t`, `M` and `y` too, and
-  the header line of the diff review names `s files`, `/ filter`, `T tour`,
-  `t next` and `M message` in place of `l list`, `d delete`, `n/p hunk`,
-  `(C-u edits)` and `RET source`, which still work.
+  q -quit   ? -help`. `?` lists `s`, `/`, `T`, `t`, `M` and `y` too. The
+  header line of the diff review names `s files`, `/ filter`, `T tour`,
+  `t next`, `M message` and `? all keys` in place of `a Claude's`,
+  `l list`, `(C-u edits)` and `RET source`, which still work, and `?` in
+  the diff review lists every one of its keys in the help window, as `?`
+  does in the ediff control panel.
 
 - `s` in the diff review shows the list of files (above) where it said
   that the review is read-only: it was `diff-split-hunk` of `diff-mode`.

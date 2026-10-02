@@ -1007,6 +1007,9 @@ changed stays open when its changes have gone."
     (define-key map (kbd "T") #'ecc-review-talk-tour)
     (define-key map (kbd "t") #'ecc-review-talk-next)
     (define-key map (kbd "M") #'ecc-review-talk-message)
+    ;; The header line has room for the keys used most; ? lists every
+    ;; one, as it does in the control panel of an ediff review.
+    (define-key map (kbd "?") #'ecc-review-help)
     ;; `diff-mode' edits its buffer from these, read-only or not: they
     ;; bind `inhibit-read-only'.  A review is a copy of what git said, and
     ;; one stray k would leave it saying something else; u and @ revert
@@ -1098,6 +1101,30 @@ on, point and the window are left as they were and that is said."
   (ecc-review--past-hidden (- (or count 1)) #'diff-file-next #'diff-file-prev
                            diff-file-header-re "file"))
 
+(defconst ecc-review-long-help-message
+  "Move around                          Comments
+  n / p     next, previous hunk        c         comment on this line (@@: the hunk)
+  N / P     next, previous file        { / }     previous, next comment
+  RET / o   go to the source           d         remove a comment here
+  s         list the files             l         jump to a comment
+  /         filter the files           a         show or hide Claude's
+  g         read the diff again        C-c C-c   send the comments
+                                       C-c C-k   drop the review
+Claude                                 q         bury the review
+  T         ask for a tour of the review
+  t         the next stop of the tour  In the review of one proposal
+  M         say something to Claude    e         edit the proposal and apply it
+
+The review is read-only: it shows what git says.  Claude changes the
+files, from the prompt the comments are sent as."
+  "What \`?' shows in a diff review.")
+
+(defun ecc-review-help ()
+  "Show every key of the diff review in the help window."
+  (interactive)
+  (with-help-window (help-buffer)
+    (princ ecc-review-long-help-message)))
+
 (defun ecc-review-read-only ()
   "Say that the review cannot be edited, in place of a `diff-mode' edit."
   (interactive)
@@ -1165,7 +1192,7 @@ not from who asked for it, so the review the menu opens and the one
                  'face 'warning))
    (propertize (if ecc-review--request
                    "  ·  c comment  e edit and apply  C-c C-c send as deny (C-u edits)  n/p hunk  RET source"
-                 "  ·  c comment  { } comments  a Claude's  s files  / filter  T tour  t next  M message  C-c C-c send")
+                 "  ·  c comment  { } comments  d delete  n/p hunk  s files  / filter  T tour  t next  M message  C-c C-c send  ? all keys")
                'face 'ecc-dim-face))))
 
 (defun ecc-review-pane-name (review kind)
@@ -1176,6 +1203,33 @@ itself, so that a pane says which review it belongs to."
     (let ((name (ecc-review-buffer-name ecc-review--session nil ecc-review--range
                                         ecc-review--label)))
       (format "*ecc-review-%s: %s" kind (substring name (length "*ecc-review: "))))))
+
+(defun ecc-review-pane-buffer (review kind mode review-var)
+  "Make the KIND pane of REVIEW, a buffer in MODE, and return it.
+REVIEW-VAR is the buffer-local variable of MODE that says which review
+a pane belongs to; it is set to REVIEW.  The pane is named
+`ecc-review-pane-name\=', unless a live pane of another review has
+that name already, which happens to two reviews of one session and one
+range read under different labels: then it gets a name of its own."
+  (let* ((name (ecc-review-pane-name review kind))
+         (taken (get-buffer name))
+         (owner (and taken (buffer-local-value review-var taken)))
+         (pane (if (and (buffer-live-p owner) (not (eq owner review)))
+                   (generate-new-buffer name)
+                 (get-buffer-create name))))
+    (with-current-buffer pane
+      (funcall mode)
+      (set review-var review))
+    pane))
+
+(defun ecc-review-pane-take-down (window)
+  "Take the pane in WINDOW off the screen.
+Deleted, or, where it cannot be -- the last window of its frame -- given
+back to another buffer, so that no stale pane stays dedicated there."
+  (if (eq (window-deletable-p window) t)
+      (delete-window window)
+    (set-window-dedicated-p window nil)
+    (switch-to-prev-buffer window 'bury)))
 
 (defun ecc-review--count (n noun)
   "Return N NOUNs in words: \"1 comment\", \"2 comments\"."

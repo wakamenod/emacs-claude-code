@@ -67,6 +67,7 @@ Outside a Git repository there is no tree to compare against, so files are diffe
 | `C-c C-k` | Drop the review and its comments |
 | `g` | Read the diff again (see [Following the files](#following-the-files)) |
 | `q` | Bury the buffer |
+| `?` | List every key of the review |
 
 The buffer uses read-only `diff-mode`: `n` and `p` move between hunks, `N` and `P` between files, and `RET` jumps to the source. All four skip the files a filter hides.
 

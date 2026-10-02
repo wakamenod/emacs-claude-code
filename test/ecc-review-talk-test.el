@@ -18,6 +18,7 @@
 (require 'ecc-review-ediff)
 (require 'ecc-review-talk)
 (require 'ecc-session)
+(require 'ecc-review-files)
 
 ;;;; Helpers
 
@@ -88,17 +89,25 @@ What each sends is in `ecc-review-talk-test--sent', with the session."
     (cdr result)))
 
 (defun ecc-review-talk-test--ediff (session directory)
-  "Open the ediff review of a.txt, which SESSION changed in DIRECTORY."
+  "Open the ediff review of a.txt, which SESSION changed twice in DIRECTORY."
   (ecc-review-talk-test--git directory "init" "-q")
   (ecc-review-talk-test--git directory "config" "user.email" "t@example.com")
   (ecc-review-talk-test--git directory "config" "user.name" "t")
-  (with-temp-file (concat directory "a.txt") (insert "one\ntwo\nthree\n"))
+  (with-temp-file (concat directory "a.txt") (insert (ecc-review-talk-test--lines nil)))
   (ecc-review-talk-test--git directory "add" ".")
   (ecc-review-talk-test--git directory "commit" "-q" "-m" "init")
   (setf (ecc-session-project-root session) directory)
   (should (ecc-review-ensure-baseline session))
-  (with-temp-file (concat directory "a.txt") (insert "one\nTWO\nthree\n"))
+  (with-temp-file (concat directory "a.txt") (insert (ecc-review-talk-test--lines t)))
   (ecc-review-ediff-buffer session))
+
+(defun ecc-review-talk-test--lines (changed)
+  "Return twelve lines, the second and the eleventh upcased when CHANGED.
+Two differences, far enough apart to stay two."
+  (mapconcat (lambda (n)
+               (let ((line (format "line %d" n)))
+                 (if (and changed (memq n '(2 11))) (upcase line) line)))
+             (number-sequence 1 12) "\n"))
 
 (defmacro ecc-review-talk-test--with-ediff (session control &rest body)
   "Run BODY in CONTROL, the ediff review of one file of SESSION."
@@ -412,31 +421,260 @@ Return the text node."
         (should (equal (alist-get 'message response) "not now")))
       (should-error (ecc-review-talk-answer) :type 'user-error))))
 
+(defconst ecc-review-talk-test--questions
+  '((questions . [((question . "Which cache?") (header . "Cache") (multiSelect . :false)
+                   (options . [((label . "LRU") (description . "Least recently used"))
+                               ((label . "TTL"))]))
+                  ((question . "Which stores?") (header . "Stores") (multiSelect . t)
+                   (options . [((label . "Disk")) ((label . "Memory"))]))]))
+  "Two questions, the second taking several answers.")
+
 (ert-deftest ecc-review-talk-test-a-question-is-answered-from-the-pane ()
-  "A question is shown with its options, and y answers it in the minibuffer."
+  "A question is shown with its options, and y answers each in the minibuffer."
   (skip-unless (executable-find "git"))
   (ecc-review-talk-test--with-sessions one _two
     (ecc-review-talk-test--with-ediff one control
       (ecc-model-begin-turn one "ask me")
-      (ecc-test-add-request
-       one "AskUserQuestion"
-       '((questions . [((question . "Which cache?") (header . "Cache") (multiSelect . :false)
-                        (options . [((label . "LRU") (description . "Least recently used"))
-                                    ((label . "TTL"))]))])))
-      (let ((text (ecc-review-talk-test--pane-text control)))
-        (should (string-search "Which cache?" text))
-        (should (string-search "  1. LRU — Least recently used" text))
-        (should (string-search "  2. TTL" text))
-        (should (string-search "y answers it here" text)))
-      (cl-letf (((symbol-function #'completing-read) (lambda (&rest _) "TTL")))
-        (ecc-review-talk-answer))
-      (should-not (ecc-session-pending one))
-      (let ((response (car (last (ecc-review-talk-test--responses one)))))
-        (should (equal (alist-get 'behavior response) "allow"))
-        (should (equal (alist-get 'Which\ cache\?
-                                  (alist-get 'answers (alist-get 'updatedInput response)))
-                       "TTL")))
-      (should-not (get-buffer (ecc-question-buffer-name one))))))
+      (let ((request (ecc-test-add-request one "AskUserQuestion"
+                                           ecc-review-talk-test--questions)))
+        (let ((text (ecc-review-talk-test--pane-text control)))
+          (should (string-search "Which cache?" text))
+          (should (string-search "  1. LRU — Least recently used" text))
+          (should (string-search "  2. TTL" text))
+          (should (string-search "y answers it here" text)))
+        ;; The user had ticked Disk in the question buffer; the pane's
+        ;; answer is its own, not a toggle of that one.
+        (with-current-buffer (ecc-question-open request)
+          (ecc-question-set-answer 1 "Disk"))
+        (cl-letf (((symbol-function #'completing-read) (lambda (&rest _) "TTL"))
+                  ((symbol-function #'completing-read-multiple)
+                   (lambda (&rest _) '("Disk" "Memory"))))
+          (ecc-review-talk-answer))
+        (should-not (ecc-session-pending one))
+        (let* ((response (car (last (ecc-review-talk-test--responses one))))
+               (answers (alist-get 'answers (alist-get 'updatedInput response))))
+          (should (equal (alist-get 'behavior response) "allow"))
+          (should (equal (alist-get 'Which\ cache\? answers) "TTL"))
+          (should (equal (alist-get 'Which\ stores\? answers) "Disk, Memory")))
+        ;; Answered, the question buffer goes, as it does when answered anywhere.
+        (should-not (ecc-question-buffer request))))))
+
+(ert-deftest ecc-review-talk-test-a-question-left-half-way-changes-nothing ()
+  "C-g on the second question sends nothing and leaves the question buffer alone."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (ecc-review-talk-test--with-ediff one _control
+      (ecc-model-begin-turn one "ask me")
+      (let* ((request (ecc-test-add-request one "AskUserQuestion"
+                                            ecc-review-talk-test--questions))
+             (buffer (ecc-question-open request)))
+        (with-current-buffer buffer
+          (ecc-question-set-answer 0 "LRU"))
+        (cl-letf (((symbol-function #'completing-read) (lambda (&rest _) "TTL"))
+                  ((symbol-function #'completing-read-multiple)
+                   (lambda (&rest _) (signal 'quit nil))))
+          ;; A quit is no error, and `should-error' would let it through.
+          (should (eq (condition-case nil (ecc-review-talk-answer) (quit 'quit)) 'quit)))
+        (should (memq request (ecc-session-pending one)))
+        (should-not (ecc-review-talk-test--responses one))
+        (with-current-buffer buffer
+          (should (equal ecc-question--answers [("LRU") nil])))
+        ;; An empty answer is no answer.
+        (cl-letf (((symbol-function #'completing-read) (lambda (&rest _) "TTL"))
+                  ((symbol-function #'completing-read-multiple) (lambda (&rest _) nil)))
+          (should-error (ecc-review-talk-answer) :type 'user-error))
+        (should-not (ecc-review-talk-test--responses one))))))
+
+(ert-deftest ecc-review-talk-test-a-request-taken-back-is-not-answered ()
+  "A request the CLI takes back while y asks is not answered after all."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (ecc-review-talk-test--with-ediff one _control
+      (ecc-model-begin-turn one "clean up")
+      (dolist (choice '(?y ?n))
+        (let ((request (ecc-test-add-request one "Bash" '((command . "make clean"))))
+              (resolved 0))
+          (cl-letf (((symbol-function #'read-multiple-choice)
+                     (lambda (&rest _)
+                       (ecc-model-abandon-requests one "the turn was interrupted")
+                       (list choice)))
+                    ((symbol-function #'read-string) (lambda (&rest _) "")))
+            (let ((ecc-request-resolved-hook
+                   (cons (lambda (_session r) (when (eq r request) (cl-incf resolved)))
+                         ecc-request-resolved-hook)))
+              (should (equal (cadr (should-error (ecc-review-talk-answer) :type 'user-error))
+                             "That request is no longer waiting"))
+              (should (<= resolved 1)))))
+        (should-not (ecc-review-talk-test--responses one))))))
+
+(ert-deftest ecc-review-talk-test-an-allow-that-became-a-deny-says-so ()
+  "y on a change to a file with unsaved changes, answered d, says denied."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (ecc-review-talk-test--with-ediff one _control
+      (ecc-model-begin-turn one "edit")
+      (ecc-test-add-request one "Edit" '((file_path . "/tmp/a.txt")
+                                         (old_string . "a") (new_string . "b")))
+      (let ((said nil))
+        (cl-letf (((symbol-function #'read-multiple-choice) (lambda (&rest _) '(?y "allow")))
+                  ((symbol-function #'ecc-perm--unsaved-choice) (lambda (_request) 'deny))
+                  ((symbol-function #'message)
+                   (lambda (format &rest args) (setq said (apply #'format-message format args)))))
+          (ecc-review-talk-answer))
+        (should (string-prefix-p "Denied: " said))
+        (should (string-search "unsaved changes" said)))
+      (should (equal (alist-get 'behavior (car (last (ecc-review-talk-test--responses one))))
+                     "deny")))))
+
+(ert-deftest ecc-review-talk-test-moving-keeps-the-pane-window ()
+  "n, p and a recentre leave the pane's window, and the height given it, alone."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (ecc-review-talk-test--with-ediff one control
+      (let* ((pane (ecc-review-talk-test--pane control))
+             (window (get-buffer-window pane))
+             (shown 0))
+        (should (= ediff-number-of-differences 2))
+        ;; The user makes it taller.
+        (window-resize window 2)
+        (let ((height (window-total-height window))
+              (display (symbol-function 'display-buffer-in-side-window)))
+          (cl-letf (((symbol-function 'display-buffer-in-side-window)
+                     (lambda (&rest args) (cl-incf shown) (apply display args))))
+            (ecc-review-ediff-next-difference)
+            (ecc-review-ediff-previous-difference)
+            (ediff-recenter)
+            (let ((ecc-mcp--session-id (ecc-session-id one)))
+              (ecc-mcp-call-tool "review_navigate" '((file . "a.txt") (line . 11)))))
+          (should (zerop shown))
+          (should (eq (get-buffer-window pane) window))
+          (should (= (window-total-height window) height)))))))
+
+(ert-deftest ecc-review-talk-test-both-panes ()
+  "The files pane on the left and the reply pane at the bottom, through n, p, | and q."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((ecc-review-files-shown nil)
+          (ecc-review-files-width 20))
+      (ecc-review-talk-test--with-ediff one control
+        (ecc-review-files-toggle)
+        (let ((files (buffer-local-value 'ecc-review-files--pane control))
+              (reply (ecc-review-talk-test--pane control)))
+          (cl-flet ((check ()
+                      (should (eq (window-parameter (get-buffer-window files) 'window-side) 'left))
+                      (should (eq (window-parameter (get-buffer-window reply) 'window-side) 'bottom))
+                      (should (eq (window-buffer ediff-window-A) ediff-buffer-A))
+                      (should (eq (window-buffer ediff-window-B) ediff-buffer-B))
+                      (should (eq (window-buffer ediff-control-window) control))))
+            (check)
+            (ecc-review-ediff-next-difference)
+            (ecc-review-ediff-previous-difference)
+            (check)
+            (ediff-toggle-split)
+            (check)
+            (ediff-toggle-split)
+            (check))
+          (ecc-review-ediff-quit control)
+          (should-not (buffer-live-p files))
+          (should-not (buffer-live-p reply))
+          (should-not (seq-find (lambda (window)
+                                  (or (window-parameter window 'ecc-review-files)
+                                      (window-parameter window 'ecc-review-talk)))
+                                (window-list))))))))
+
+(ert-deftest ecc-review-talk-test-only-what-the-pane-shows-writes-it ()
+  "A subagent's nodes write nothing; an answered request writes the pane once."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (ecc-review-talk-test--with-ediff one _control
+      (ecc-model-begin-turn one "work")
+      (let* ((agent (ecc-review-talk-test--call one "Agent" '((description . "look around"))))
+             (writes 0)
+             (write (symbol-function 'ecc-review-talk--write)))
+        (cl-letf (((symbol-function 'ecc-review-talk--write)
+                   (lambda (pane) (cl-incf writes) (funcall write pane))))
+          (setf (ecc-node-type agent) 'agent)
+          (let ((inner (ecc-model-add-node one :type 'text :parent agent :status 'done
+                                           :data '((text . "inside")))))
+            (ecc-model-node-changed one inner))
+          (ecc-model-add-node one :type 'thinking :status 'done :data '((text . "hm")))
+          (should (zerop writes))
+          (let ((request (ecc-test-add-request one "Bash" '((command . "ls")))))
+            (setq writes 0)
+            (ecc-perm-respond request 'allow)
+            (should (= writes 1))))))))
+
+(ert-deftest ecc-review-talk-test-mode-lines-are-left-alone ()
+  "A delta updates no mode line; a change of state only the pane's own."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (ecc-review-talk-test--with-ediff one control
+      (ecc-model-begin-turn one "talk")
+      ;; Other modules have mode lines of their own to update on a change
+      ;; of state, so what is counted is what the pane's functions do.
+      (let ((node (ecc-review-talk-test--say one "Hello"))
+            (pane (ecc-review-talk-test--pane control))
+            (calls nil))
+        (cl-letf* ((update (symbol-function 'force-mode-line-update))
+                   ((symbol-function 'force-mode-line-update)
+                    (lambda (&optional all) (push (cons (current-buffer) all) calls)
+                      (funcall update))))
+          (ecc-review-talk--on-delta one node " there")
+          (should-not calls)
+          (ecc-review-talk--on-state one 'running))
+        (should (equal calls (list (cons pane nil))))))))
+
+(ert-deftest ecc-review-talk-test-a-pane-is-listed-once ()
+  "A pane buffer taken up again is listed once, and a killed one is forgotten."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (ecc-review-talk-test--with-ediff one control
+      (let ((pane (ecc-review-talk-test--pane control)))
+        (setq ecc-review-talk--pane nil)
+        (should (eq (ecc-review-talk--pane-buffer control) pane))
+        (should (= (seq-count (lambda (buffer) (eq buffer pane)) ecc-review-talk--panes) 1))
+        (let ((other (get-buffer-create " *ecc-review-talk-test dead*")))
+          (push other ecc-review-talk--panes)
+          (kill-buffer other)
+          (ecc-review-talk--panes-of one)
+          (should-not (memq other ecc-review-talk--panes)))))))
+
+(ert-deftest ecc-review-talk-test-a-pane-name-taken-by-another-review ()
+  "Two reviews whose panes would share a name get two panes."
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((first (ecc-review-talk-test--diff-review one))
+          (second (generate-new-buffer "*ecc-review: test*")))
+      (with-current-buffer second
+        (ecc-review-mode)
+        (setq ecc-review--session one))
+      (let ((a (ecc-review-pane-buffer first "files" #'ecc-review-files-mode
+                                       'ecc-review-files--review))
+            (b (ecc-review-pane-buffer second "files" #'ecc-review-files-mode
+                                       'ecc-review-files--review)))
+        (should-not (eq a b))
+        (should (equal (buffer-name a) "*ecc-review-files: test*"))
+        (should (eq (buffer-local-value 'ecc-review-files--review b) second))
+        (should (eq (ecc-review-pane-buffer first "files" #'ecc-review-files-mode
+                                            'ecc-review-files--review)
+                    a))
+        (kill-buffer a)
+        (kill-buffer b))
+      (kill-buffer second))))
+
+(ert-deftest ecc-review-talk-test-question-mark-lists-every-key ()
+  "? in the diff review lists every key; the header line keeps n/p and d."
+  (ecc-review-talk-test--with-sessions one _two
+    (with-current-buffer (ecc-review-talk-test--diff-review one)
+      (should (eq (key-binding (kbd "?")) #'ecc-review-help))
+      (let ((header (ecc-review--header-line)))
+        (dolist (key '("n/p hunk" "d delete" "T tour" "t next" "M message" "? all keys"))
+          (should (string-search key header))))
+      (save-window-excursion
+        (ecc-review-help)
+        (with-current-buffer (help-buffer)
+          (dolist (key '("n / p" "N / P" "RET / o" "{ / }" "C-c C-c" "C-c C-k"
+                         "T " "t " "M " "a " "d " "l " "s " "/ " "g " "e "))
+            (should (string-search key (buffer-string)))))))))
 
 (provide 'ecc-review-talk-test)
 
