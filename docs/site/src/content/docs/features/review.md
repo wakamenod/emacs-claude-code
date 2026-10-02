@@ -204,12 +204,14 @@ The cache is now keyed by path, so a renamed file is read again.
   review_comment → ecc-review-ediff.el:252: This drops the old entry
 ```
 
-Each turn replaces the last one. The whole conversation stays in the transcript. When Claude asks for permission, asks a question, or has a plan to approve, the pane shows the request in full, and `y` in the review answers it: allow or deny, or pick an answer in the minibuffer. The pane is never selected, so the keyboard stays where you are reading. It moves with the layout when `|` changes it, and it closes with the review. On the right the pane is `ecc-review-talk-reply-width` (60) columns wide, and at the bottom `ecc-review-talk-reply-height` (8) lines high. When the frame is too narrow to leave the diff 80 columns beside the pane, the pane goes to the bottom. A height of `nil` turns the pane off:
+Each turn replaces the last one. The whole conversation stays in the transcript. When Claude asks for permission, asks a question, or has a plan to approve, the pane shows the request in full, and `y` in the review answers it: allow or deny, or pick an answer in the minibuffer. The pane is never selected, so the keyboard stays where you are reading. It moves with the layout when `|` changes it, and it closes with the review. On the right the pane is `ecc-review-talk-reply-width` (75) columns wide, and at the bottom `ecc-review-talk-reply-height` (12) lines high. When the frame is too narrow to leave the diff 80 columns beside the pane, the pane goes to the bottom. A height of `nil` turns the pane off:
 
 ```elisp
-(setq ecc-review-talk-reply-width 70
-      ecc-review-talk-reply-height 12)
+(setq ecc-review-talk-reply-width 90
+      ecc-review-talk-reply-height 16)
 ```
+
+In an ediff review, `u` scrolls the pane back to what Claude said earlier, and `d` scrolls it on. While you are scrolled back, the pane stays where you put it as Claude goes on. Once `d` brings the end into view, or a new turn starts, it follows the end again.
 
 To keep the whole frame for the diff, put the pane in a frame of its own. Each review has a frame of its own, which closes with that review. The frame never takes the focus, so the keyboard stays in the review, and `y` is pressed there:
 
@@ -238,8 +240,8 @@ The review opens with the old side above the new one, each as wide as the frame,
 `ecc` sets `ediff-split-window-function` only in the review control buffer, so all other ediff sessions keep your configured window layout. Each window has a header line with keys. Every key works in either window, so the two lines split one list between them:
 
 ```
- n/p diff  j jump  { } comments  c comment  d delete  l list  a Claude's  s files  / filter
- RET open  T tour  t next  M message  v/V scroll  C-c C-c send  ! reread  q quit  ? all keys
+ n/p diff  j jump  { } comments  c comment  x delete  l list  a Claude's  s files  / filter
+ RET open  T tour  t next  M message  u/d reply  v/V scroll  C-c C-c send  ! reread  q quit  ? all keys
 ```
 
 The left line has the keys for reading and for your comments, and the right line has the keys for Claude, opening, sending and closing. The most used keys come first, so a narrow window loses the least used ones. Side by side, the left line is aligned to the right edge of its window, so the two lines meet in the middle. The header line of the window with the keyboard, the lower one or the right one, ends with where you are, such as `3/12`, and what a filter hides. When the window is too narrow for both, where you are comes first.
@@ -268,7 +270,8 @@ In a window, `c` comments on the line at point: on the left for a line the chang
 | `{` / `}` | Previous / next comment |
 | `a` | Show or hide Claude's comments |
 | `l` | Jump to a comment |
-| `d` | Remove a comment on the line at point, else on the current difference (`C-u d`, or off every difference: any comment) |
+| `x` | Remove a comment on the line at point, else on the current difference (`C-u x`, or off every difference: any comment). It is `d` in the diff buffer |
+| `u` / `d` | Scroll the reply pane back / on |
 | `RET` | Open the file in a frame of its own: in a window at the line at point, in the panel that `?` shows at the current difference |
 | `v` / `V` | Scroll both windows |
 | `n` / `p` / `j` | Next or previous difference (from point, in a window), or the numbered one, skipping the files a filter hides |
