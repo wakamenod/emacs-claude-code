@@ -91,7 +91,7 @@ To turn this off and read the diff only with `g`:
 
 ## Listing and filtering the files
 
-`s` shows the files of the review in a list immediately left of the diff, as Hunk's files pane does. It works in the diff buffer, and in an ediff review from either window or the control panel.
+`s` shows the files of the review in a list immediately left of the diff, so you can take in a review of many files at a glance: what happened to each file, how much changed, and where the comments are. It works in the diff buffer, and in an ediff review from either window or the control panel.
 
 ```
  Files (3 of 5)  /review
@@ -114,7 +114,7 @@ The list starts hidden. `s` shows it, and every review you open afterwards shows
 
 ecc writes the list again whenever it reads the review again and whenever a comment comes or goes.
 
-`/` keeps only the files whose path, former path or one of Claude's comments contains what you type, ignoring case, as in Hunk. The list appears and narrows as you type. `RET` hides the other files of the review, and an empty `RET` shows every file again. The filter hides the files without reading the diff again. Their comments are kept and still sent by `C-c C-c`. The header line of the diff buffer says how many files are hidden, as `/review: 2 files hidden by filter`. In ediff, the header line of the window with the keyboard says `/review: 2 hidden`.
+`/` keeps only the files whose path, former path or one of Claude's comments contains what you type, ignoring case, so you can find a file by what Claude said about it as well as by its name. The list appears and narrows as you type. `RET` hides the other files of the review, and an empty `RET` shows every file again. The filter hides the files without reading the diff again. Their comments are kept and still sent by `C-c C-c`. The header line of the diff buffer says how many files are hidden, as `/review: 2 files hidden by filter`. In ediff, the header line of the window with the keyboard says `/review: 2 hidden`.
 
 Moving skips the hidden files: `n`, `p`, `N` and `P` in the diff buffer, `n`, `p` and `j` in ediff, and `{` and `}` in both. `review_hunks` and `review_open` tell Claude about the filter. Its `next_comment` and `prev_comment` skip the hidden files, and it cannot scroll the review to one of them. The filter stays when the review is read again.
 
@@ -185,7 +185,7 @@ The tools also work on a review you have open in ediff. There a hunk is one edif
 
 ## Talking to Claude from the review
 
-An ediff review takes the whole frame, so the session and its prompt are out of sight while you read. Hunk keeps the agent in a second terminal. In ecc you talk to Claude from the review itself. These keys work in the diff buffer and anywhere in an ediff review, and they always go to the session of the review:
+An ediff review takes the whole frame, so the session and its prompt are out of sight while you read. Rather than leave the review to ask Claude about it, you talk to Claude from the review itself. These keys work in the diff buffer and anywhere in an ediff review, and they always go to the session of the review:
 
 | Key | Action |
 |---|---|

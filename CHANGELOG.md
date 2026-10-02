@@ -108,9 +108,9 @@ Verified against **Claude Code CLI 2.1.281**.
   are allowed without asking and noted as `auto-allowed` in the transcript;
   `ecc-review-agent-auto-allow` set to `nil` asks instead. Claude's comments
   have a face of their own, `ecc-review-agent-comment-face`, and `a` hides
-  them. Only the user's comments are sent with `C-c C-c`. The tools come
-  from Hunk (github.com/modem-dev/hunk), where an agent annotates a diff
-  somebody is reading in a terminal.
+  them. Only the user's comments are sent with `C-c C-c`. A remark of
+  Claude's lands on the line it is about, in the diff the user is reading,
+  rather than in the transcript with a file and a line number to look up.
 
 - A comment in the review buffer belongs to a line. `c` on a removed line
   comments the old side, on an added or a context line the new side, and on
@@ -275,7 +275,7 @@ Verified against **Claude Code CLI 2.1.281**.
 - `ecc-tool-finished-hook`, run with the session and the tool node on every
   tool result, whatever the tool.
 
-- The files of a review, listed and filtered, as in Hunk. `s` in a review
+- The files of a review, listed and filtered. `s` in a review
   -- the diff review, or a window or the control panel of an ediff
   review -- shows a
   list of its files immediately left of the diff, in a buffer of its own,
@@ -306,9 +306,10 @@ Verified against **Claude Code CLI 2.1.281**.
   screen; out of sight, it is written when it is shown.
 
 - `/` in a review keeps only the files whose path, former path, or one of
-  Claude's comments on them contains what is typed, ignoring case (Hunk's
-  rule). The list of files shows, narrowed, as it is typed, and is put
-  back as it was afterwards; `RET` hides the rest of the review, and an
+  Claude's comments on them contains what is typed, ignoring case, so a
+  file is found by what Claude said about it as well as by its name. The
+  list of files shows, narrowed, as it is typed, and is put back as it was
+  afterwards; `RET` hides the rest of the review, and an
   empty `RET` shows every file again. The files are hidden, not read
   again: in the diff review with an invisibility spec of their own, in
   ediff both halves of each. Their comments are kept and sent by
@@ -683,7 +684,8 @@ Verified against **Claude Code CLI 2.1.281**.
 - A review of commits (`C-u G` with `a..b`, `a...b` or `REV^!`) listed the
   untracked files of the working tree, which belong to none of those
   commits. They are now appended only when the range involves the working
-  tree, which git decides (`git rev-parse --revs-only`, as Hunk does).
+  tree, which git decides: `git rev-parse --revs-only` names one revision
+  and no excluded one.
 
 - A session with no process behind it -- a recording opened with `h` to be
   read -- said `✗ exited (code ?)` and "Exited with code ?", as if a CLI had

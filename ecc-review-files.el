@@ -25,8 +25,8 @@
 
 ;;; Commentary:
 
-;; The files pane and the file filter of a review, after Hunk's
-;; (github.com/modem-dev/hunk): s shows a list of the files beside the
+;; The files pane and the file filter of a review, for a review of more
+;; files than one screen holds: s shows a list of the files beside the
 ;; diff -- what happened to each, how many lines, how many comments --
 ;; and / narrows the review to the files whose path, former path or
 ;; Claude's comments contain what is typed.
@@ -370,9 +370,9 @@ where its first hunk begins."
 
 (defun ecc-review-files--matches-p (entry filter notes)
   "Return non-nil when ENTRY is one of the files FILTER keeps.
-Hunk's rule (`reviewFileMatchesFilter'): FILTER, ignoring case, is in
-the path, the former path, or the text of one of Claude's NOTES on the
-file.  An empty FILTER keeps every file."
+FILTER, ignoring case, is in the path, the former path, or the text of
+one of Claude's NOTES on the file, so that a file is found by what Claude
+said about it as well as by its name.  An empty FILTER keeps every file."
   (or (null filter)
       (string-empty-p filter)
       (let ((wanted (downcase filter))

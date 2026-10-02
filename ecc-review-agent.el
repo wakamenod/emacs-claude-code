@@ -29,9 +29,9 @@
 ;; Claude as a prompt (`ecc-review-send'); this file is the other
 ;; direction.  Over the MCP server of this Emacs (`ecc-mcp.el'), Claude
 ;; can open the review, put comments on its lines, move the user's view
-;; to a place in it, and read, remove or clear comments -- the way Hunk
-;; (github.com/modem-dev/hunk) lets an agent annotate a diff somebody is
-;; reading in a terminal.
+;; to a place in it, and read, remove or clear comments.  A remark lands
+;; on the line it is about, in the diff the user is reading, rather than
+;; in the transcript with a file and a line number to look up.
 ;;
 ;; A tool works on the review of the session that called it: the URL
 ;; every session reaches the server at carries the session id

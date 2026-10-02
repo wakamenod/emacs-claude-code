@@ -25,11 +25,10 @@
 
 ;;; Commentary:
 
-;; Hunk (github.com/modem-dev/hunk) has the diff in one terminal and
-;; the agent in another, and the user asks the agent about the diff
-;; from the second.  An ediff review takes the whole frame
-;; (`ecc-review-ediff-full-frame'), which hides the session and its
-;; prompt, so here the asking is done from the review itself:
+;; An ediff review takes the whole frame (`ecc-review-ediff-full-frame'),
+;; which hides the session and its prompt.  Asking Claude about the diff
+;; would mean leaving the review, so the asking is done from the review
+;; itself:
 ;;
 ;; - T asks Claude for a tour of the review (`ecc-review-talk-tour-prompt'),
 ;;   t for its next stop, and M reads a line and sends it.  They go to
