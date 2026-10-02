@@ -681,6 +681,92 @@ given lines of the old side, and the old one none."
                                        (ecc-review-units)))))
             (ecc-review-ediff-test--quit control)))))))
 
+(defmacro ecc-review-ediff-test--with-one-file (session control old new &rest body)
+  "Run BODY with CONTROL the ediff review of x.txt that SESSION took from OLD to NEW."
+  (declare (indent 4))
+  `(ecc-review-ediff-test--with-ediff
+     (ecc-review-ediff-test--with-directory directory
+       (let ((,control nil))
+         (unwind-protect
+             (progn
+               (ecc-review-ediff-test--git directory "init" "-q")
+               (ecc-review-ediff-test--git directory "config" "user.email" "t@example.com")
+               (ecc-review-ediff-test--git directory "config" "user.name" "t")
+               (ecc-review-ediff-test--write (concat directory "x.txt") ,old)
+               (ecc-review-ediff-test--git directory "add" "x.txt")
+               (ecc-review-ediff-test--git directory "commit" "-q" "-m" "x")
+               (setf (ecc-session-project-root ,session) directory)
+               (should (ecc-review-ensure-baseline ,session))
+               (ecc-review-ediff-test--write (concat directory "x.txt") ,new)
+               (setq ,control (ecc-review-ediff-buffer ,session))
+               (with-current-buffer ,control
+                 ,@body))
+           (ecc-review-ediff-test--quit ,control))))))
+
+(ert-deftest ecc-review-ediff-test-the-diff-options-are-the-review-s-own ()
+  "The review diffs with its own options, not with those another ediff set.
+ediff keeps them in each control buffer, and `#c' in another ediff sets
+the default; read from anywhere but the review's control buffer, a
+review ignoring case stopped ignoring it."
+  (skip-unless (and (executable-find "git") (executable-find ediff-diff-program)))
+  (ecc-test-with-fake-session session
+    (ecc-review-ediff-test--with-one-file session control "Hello\nworld\n" "hello\nworld\n"
+      (should (= ediff-number-of-differences 1))
+      (let ((default (default-value 'ediff-actual-diff-options)))
+        (unwind-protect
+            (progn
+              (setq ediff-actual-diff-options "-i")
+              (setq-default ediff-actual-diff-options "")
+              (ecc-review-ediff--compute-differences)
+              (should (= ediff-number-of-differences 0)))
+          (setq-default ediff-actual-diff-options default))))))
+
+(ert-deftest ecc-review-ediff-test-a-file-diff-calls-binary-is-one-difference ()
+  "A file git reads as text and diff as binary is one difference, the whole file.
+git looks for a NUL in the first 8000 bytes only."
+  (skip-unless (and (executable-find "git") (executable-find ediff-diff-program)))
+  (ecc-test-with-fake-session session
+    (let ((text (concat (make-string 9000 ?a) "\n" "x\0y\n")))
+      (ecc-review-ediff-test--with-one-file session control
+          (concat "one\n" text) (concat "two\n" text)
+        (should (>= ediff-number-of-differences 1))
+        (should (seq-every-p #'ecc-review-ediff-test--within-its-file (ecc-review-units)))))))
+
+(ert-deftest ecc-review-ediff-test-trouble-in-diff-is-said ()
+  "diff exiting with 2 is an error with what it said; what it says on stderr
+otherwise is no part of the diff."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-ediff-test--with-one-file session control "one\n" "two\n"
+      (let ((script (make-temp-file "ecc-review-diff" nil ".sh")))
+        (unwind-protect
+            (progn
+              (set-file-modes script #o755)
+              (ecc-review-ediff-test--write
+               script "#!/bin/sh\necho 'a warning' >&2\necho 'diff -r a/000000 b/000000'\necho 1c1\nexit 1\n")
+              (setq-local ediff-diff-program script)
+              (ecc-review-ediff--compute-differences)
+              (should (= ediff-number-of-differences 1))
+              (ecc-review-ediff-test--write script "#!/bin/sh\necho 'no such thing' >&2\nexit 2\n")
+              (let ((error (should-error (ecc-review-ediff--compute-differences))))
+                (should (string-search "no such thing" (error-message-string error))))
+              ;; A line that is no part of a diff names the review's file.
+              (ecc-review-ediff-test--write
+               script "#!/bin/sh\necho 'diff -r a/000000 b/000000'\necho 'what is this'\nexit 1\n")
+              (let ((error (should-error (ecc-review-ediff--compute-differences))))
+                (should (string-search "x.txt" (error-message-string error)))))
+          (delete-file script))))))
+
+(ert-deftest ecc-review-ediff-test-reading-again-writes-no-whole-buffer ()
+  "The differences are computed from the buffers, with no file of either whole."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-ediff-test--with-one-file session control "one\n" "two\n"
+      (cl-letf (((symbol-function 'ediff-make-temp-file)
+                 (lambda (&rest _) (error "A whole side was written out"))))
+        (ecc-review-ediff--compute-differences))
+      (should (= ediff-number-of-differences 1)))))
+
 ;;;; Binary and oversized files
 
 (ert-deftest ecc-review-ediff-test-binary-and-oversize-are-named ()

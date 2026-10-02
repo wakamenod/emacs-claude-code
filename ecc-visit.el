@@ -376,28 +376,30 @@ every redraw."
 
 ;;;; Opening
 
-(defun ecc-visit-open (path &optional line session)
+(defun ecc-visit-open (path &optional line session where)
   "Open PATH beside SESSION at LINE, and return its window.
 A video or a sound is played by the machine instead
 \(`ecc-image-open-externally\='), LINE is ignored and nil is returned:
 a buffer of one would show its bytes.
 The window is chosen as every buffer opened out of a conversation is
-\(`ecc-window-display-beside-session\\=').  With LINE the point goes to
-it, the window is scrolled to put it in the middle and the line
-flashes; without it the buffer keeps the point it had."
+\(`ecc-window-display-beside-session\=') -- or by WHERE, a function
+called with the buffer that shows it and returns the window, for a
+caller with somewhere else to put it.  With LINE the point goes to it,
+the window is scrolled to put it in the middle and the line flashes;
+without it the buffer keeps the point it had."
   (unless (file-exists-p path)
     (user-error "No such file: %s" (abbreviate-file-name path)))
   (if (ecc-image-plays-outside-p path)
       (progn (ecc-image-open-externally path) nil)
-    (ecc-visit--open-in-buffer path line session)))
+    (ecc-visit--open-in-buffer path line session where)))
 
-(defun ecc-visit--open-in-buffer (path line session)
-  "Visit PATH beside SESSION at LINE, and return its window."
+(defun ecc-visit--open-in-buffer (path line session &optional where)
+  "Visit PATH beside SESSION at LINE, or where WHERE puts it; return its window."
   (let* ((buffer (find-file-noselect path))
-         (window (if session
-                     (ecc-window-display-beside-session buffer session)
-                   (pop-to-buffer buffer)
-                   (get-buffer-window buffer))))
+         (window (cond (where (funcall where buffer))
+                       (session (ecc-window-display-beside-session buffer session))
+                       (t (pop-to-buffer buffer)
+                          (get-buffer-window buffer)))))
     (when (and line (window-live-p window))
       (ecc-visit-show-line window line))
     window))

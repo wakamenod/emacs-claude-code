@@ -76,7 +76,6 @@
 (require 'ediff)
 (require 'ecc-core)
 (require 'ecc-diff)
-(require 'ecc-image)
 (require 'ecc-review)
 (require 'ecc-review-files)
 (require 'ecc-visit)
@@ -85,11 +84,11 @@
 ;; rather than required: they are only ever reached from a review that
 ;; file opened.
 (defvar ecc-review-ediff--buffers)
-(defvar ecc-review-ediff-file-spacing)
+(defvar ecc-review-ediff--sections)
+(declare-function ecc-review-ediff--section-texts "ecc-review-ediff" (buffer sections index))
 (declare-function ecc-review-ediff--file-place "ecc-review-ediff" (side position))
-(declare-function ecc-review-ediff--section-bounds "ecc-review-ediff" (side path))
 (declare-function ecc-review-ediff--unit-lines "ecc-review-ediff" (unit))
-(declare-function ecc-review-ediff-select-in-place "ecc-review-ediff" (n))
+(declare-function ecc-review-ediff-select-in-place "ecc-review-ediff" (n &optional flag))
 (declare-function ecc-review-ediff-remove-comment "ecc-review-ediff" (&optional all))
 (declare-function ecc-review-ediff-next-difference "ecc-review-ediff" (&optional arg))
 (declare-function ecc-review-ediff-previous-difference "ecc-review-ediff" (&optional arg))
@@ -134,12 +133,20 @@ graphical Emacs, and the keys typed next would go there."
   (when (buffer-live-p control)
     (when-let* ((window (with-current-buffer control
                           (ecc-review-direct--window (or side 'B)))))
-      (let ((frame (window-frame window)))
-        (unless (eq frame (selected-frame))
-          (if (display-graphic-p frame)
-              (select-frame-set-input-focus frame)
-            (select-frame frame)))
-        (select-window window)))))
+      (ecc-review-direct--select window)
+      ;; Where ediff put the two sides is where they stand together:
+      ;; the first command, whatever it is, is no move of point.
+      (with-current-buffer control
+        (ecc-review-direct--remember)))))
+
+(defun ecc-review-direct--select (window)
+  "Select WINDOW, and give its frame the input focus when another frame has it."
+  (let ((frame (window-frame window)))
+    (unless (eq frame (selected-frame))
+      (if (display-graphic-p frame)
+          (select-frame-set-input-focus frame)
+        (select-frame frame)))
+    (select-window window)))
 
 ;;;; Where the two sides stand against each other
 
@@ -247,7 +254,11 @@ them where they are -- ediff, or this package."
 (defun ecc-review-direct--align (window side position other)
   "Show OTHER at the height the line of POSITION is at in WINDOW.
 WINDOW shows SIDE and is left alone; OTHER is a position of the other
-side, whose window is scrolled.  Where the line of POSITION is off the
+side, whose window is scrolled.  The height is counted in lines of the
+screen, not of the buffer: a comment drawn under a line of one side
+only, a line wrapped in a half-width window and a file the filter hides
+take up rows the other side does not have, and counting buffer lines
+put the two lines rows apart.  Where the line of POSITION is off the
 window -- point moved past its edge, and redisplay has not scrolled it
 yet -- OTHER is put as far off the other window, without forcing its
 start, so that redisplay scrolls both the same way.  Run in the control
@@ -257,12 +268,12 @@ buffer."
            (rows (with-current-buffer (window-buffer window)
                    (let ((bol (save-excursion (goto-char position) (line-beginning-position))))
                      (if (>= bol start)
-                         (count-lines start bol)
-                       (- (count-lines bol start))))))
+                         (count-screen-lines start bol nil window)
+                       (- (count-screen-lines bol start nil window))))))
            (other-start (with-current-buffer (window-buffer other-window)
                           (save-excursion
                             (goto-char other)
-                            (forward-line (- rows))
+                            (vertical-motion (- rows) other-window)
                             (point)))))
       (set-window-start other-window other-start t)
       (set-window-point other-window other))))
@@ -354,7 +365,14 @@ argument and the key typed reach COMMAND as they would from the panel."
         (with-current-buffer control
           (setq this-command command)
           (call-interactively command))
-      (ecc-review-direct--keep-the-keyboard control side window))))
+      (ecc-review-direct--keep-the-keyboard control side window))
+    ;; ediff scrolls each side by an amount of its own, worked out from
+    ;; the sizes of the current difference, and the two came apart by a
+    ;; row (2026-10-02): the other side is put against this one again.
+    (when (and (eq command 'ediff-scroll-vertically)
+               (eq (selected-window) window)
+               (buffer-live-p control))
+      (ecc-review-direct--follow-logged))))
 
 (defun ecc-review-direct-relay ()
   "Do what the key just typed does in the control panel of this review."
@@ -384,7 +402,7 @@ the control buffer."
                        ((< k 0) -1)
                        (t (1+ k)))))
       (unless (eql from ediff-current-difference)
-        (ediff-unselect-and-select-difference from 'unselect-only 'no-recenter)))))
+        (ecc-review-ediff-select-in-place from 'unselect-only)))))
 
 (defun ecc-review-direct--step (forward)
   "Go to the next difference below point, FORWARD, or the one above it.
@@ -405,7 +423,7 @@ review is left on the difference it was on."
        (when (buffer-live-p control)
          (with-current-buffer control
            (unless (eql ediff-current-difference was)
-             (ediff-unselect-and-select-difference was nil 'no-recenter))))
+             (ecc-review-ediff-select-in-place was))))
        (signal (car error) (cdr error))))))
 
 (defun ecc-review-direct-next-difference (&optional _arg)
@@ -475,33 +493,23 @@ comment of the review is offered."
 
 (defun ecc-review-direct--section-text (path)
   "Return what the right side of this review holds of PATH, or nil.
+Read the way the differences are computed (`ecc-review-ediff--section-texts').
 Run in the control buffer."
-  (pcase-let ((`(,beg . ,end) (ecc-review-ediff--section-bounds 'B path)))
-    (when beg
-      (with-current-buffer (cdr ecc-review-ediff--buffers)
-        (let ((from (save-excursion (goto-char beg) (forward-line 1) (point)))
-              (to (if (= end (point-max))
-                      end
-                    ;; The blank lines in front of the next file.
-                    (save-excursion
-                      (goto-char end)
-                      (forward-line (- (max 0 ecc-review-ediff-file-spacing)))
-                      (point)))))
-          (buffer-substring-no-properties from (max from to)))))))
+  (when-let* ((tail (member (assoc path ecc-review-ediff--sections)
+                            ecc-review-ediff--sections)))
+    (cdar (ecc-review-ediff--section-texts (cdr ecc-review-ediff--buffers)
+                                           (seq-take tail 2) 2))))
 
 (defun ecc-review-direct--file-text (file)
   "Return what FILE holds now: its buffer when one visits it, else the disk.
-Nil for a file that is not there, cannot be read or is binary."
+Nil for a file that is not there, cannot be read, is binary or is too
+large to diff a line through (`ecc-diff-file-content')."
   (if-let* ((buffer (find-buffer-visiting file)))
       (with-current-buffer buffer
         (save-restriction
           (widen)
           (buffer-substring-no-properties (point-min) (point-max))))
-    (when (and (file-readable-p file) (not (file-directory-p file))
-               (not (ecc-diff-binary-p file)))
-      (with-temp-buffer
-        (insert-file-contents file)
-        (buffer-string)))))
+    (ecc-diff-file-content file)))
 
 (defun ecc-review-direct-line-now (line shown now)
   "Return where LINE of SHOWN, a file as the review shows it, is in NOW.
@@ -526,10 +534,12 @@ which for a line taken out is where it was.  Run in the control buffer."
                     (user-error "Not in a file of the review")))
          (file (expand-file-name (car place)))
          (line (max 1 (cdr place)))
-         (shown (ecc-review-direct--section-text (car place))))
-    (cons file (if shown
-                   (ecc-review-direct-line-now line shown (ecc-review-direct--file-text file))
-                 line))))
+         (shown (ecc-review-direct--section-text (car place)))
+         (now (and shown (file-exists-p file) (ecc-review-direct--file-text file))))
+    (when (and shown (file-exists-p file) (null now))
+      (message "%s is too large or binary to follow: opened at the line the review shows"
+               (car place)))
+    (cons file (if now (ecc-review-direct-line-now line shown now) line))))
 
 (defvar ecc-review-direct-make-frame-function #'make-frame
   "The function that makes the frame the files of an ediff review open in.
@@ -560,26 +570,24 @@ while it is there."
     (setq ecc-review-direct--files-frame (funcall ecc-review-direct-make-frame-function)))
   (frame-selected-window ecc-review-direct--files-frame))
 
+(defun ecc-review-direct--show-file (buffer)
+  "Show BUFFER where the files of an ediff review open; select it, return it.
+The `where' of `ecc-visit-open'."
+  (let ((window (ecc-review-direct--file-window)))
+    (set-window-buffer window buffer)
+    (ecc-review-direct--select window)
+    window))
+
 (defun ecc-review-direct-open-file (file line)
   "Show FILE at LINE where the files of an ediff review open, and go there.
-LINE nil keeps the point the buffer had.  A video or a sound is played
-by the machine instead, as everywhere else."
-  (unless (file-exists-p file)
-    (user-error "No such file now: %s" (abbreviate-file-name file)))
-  (if (ecc-image-plays-outside-p file)
-      (progn (ecc-image-open-externally file) nil)
-    (let* ((buffer (find-file-noselect file))
-           (window (ecc-review-direct--file-window))
-           (frame (window-frame window)))
-      (set-window-buffer window buffer)
-      (unless (eq frame (selected-frame))
-        (if (display-graphic-p frame)
-            (select-frame-set-input-focus frame)
-          (select-frame frame)))
-      (select-window window)
-      (when line
-        (ecc-visit-show-line window line))
-      window)))
+LINE nil keeps the point the buffer had.  FILE is opened under the name
+a buffer visits it by already, if one does: a name through a symbolic
+link -- /tmp on macOS -- would visit it again and say that the two
+names are one file.  The rest is `ecc-visit-open', a video or a sound
+played by the machine."
+  (let ((visiting (find-buffer-visiting file)))
+    (ecc-visit-open (if visiting (buffer-file-name visiting) file) line nil
+                    #'ecc-review-direct--show-file)))
 
 (defun ecc-review-direct-visit ()
   "Open the file the line at point is in, at that line as the file is now.
@@ -655,6 +663,9 @@ Each does there what it does in the panel, wherever that is bound
       (define-key map (kbd key) #'ecc-review-direct-relay))
     (define-key map (kbd "n") #'ecc-review-direct-next-difference)
     (define-key map (kbd "p") #'ecc-review-direct-previous-difference)
+    ;; ediff's own second keys for them, which its help shows.
+    (define-key map (kbd "SPC") #'ecc-review-direct-next-difference)
+    (define-key map (kbd "DEL") #'ecc-review-direct-previous-difference)
     (define-key map (kbd "c") #'ecc-review-direct-comment)
     (define-key map (kbd "d") #'ecc-review-direct-remove-comment)
     (define-key map (kbd "RET") #'ecc-review-direct-visit)

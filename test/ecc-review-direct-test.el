@@ -56,26 +56,43 @@ lines put in after line 20, lines 40 and 41 taken out, line 55 changed.
 On the right, line 21 and 22 are the new ones, and line 55 is line 55
 again.")
 
-(defun ecc-review-direct-test--repository (directory)
-  "Make DIRECTORY a repository with a.txt of sixty lines committed."
+(defun ecc-review-direct-test--repository (directory &optional extra)
+  "Make DIRECTORY a repository with a.txt of sixty lines committed.
+EXTRA is a list of (NAME OLD NEW): more files, committed as OLD."
   (ecc-review-direct-test--git directory "init" "-q")
   (ecc-review-direct-test--git directory "config" "user.email" "t@example.com")
   (ecc-review-direct-test--git directory "config" "user.name" "t")
   (ecc-review-direct-test--write (concat directory "a.txt") (ecc-review-direct-test--lines))
-  (ecc-review-direct-test--git directory "add" "a.txt")
+  (pcase-dolist (`(,name ,old ,_) extra)
+    (ecc-review-direct-test--write (concat directory name) old))
+  (ecc-review-direct-test--git directory "add" ".")
   (ecc-review-direct-test--git directory "commit" "-q" "-m" "init"))
 
-(defun ecc-review-direct-test--open (session directory)
+(defun ecc-review-direct-test--open (session directory &optional extra)
   "Have SESSION change a.txt in DIRECTORY and open its ediff review.
+EXTRA is a list of (NAME OLD NEW): more files, changed from OLD to NEW.
 Return the control buffer, with ediff highlighting with faces."
-  (ecc-review-direct-test--repository directory)
+  (ecc-review-direct-test--repository directory extra)
   (setf (ecc-session-project-root session) directory)
   (should (ecc-review-ensure-baseline session))
   (ecc-review-direct-test--write (concat directory "a.txt") ecc-review-direct-test--changed)
+  (pcase-dolist (`(,name ,_ ,new) extra)
+    (ecc-review-direct-test--write (concat directory name) new))
   (let ((control (ecc-review-ediff-buffer session)))
     (with-current-buffer control
       (setq ediff-highlighting-style 'face))
     control))
+
+(defconst ecc-review-direct-test--file-content (symbol-function 'ecc-diff-file-content)
+  "`ecc-diff-file-content' itself, which a fake session stands in for.")
+
+(defmacro ecc-review-direct-test--reading-files (&rest body)
+  "Run BODY with `ecc-diff-file-content' reading the disk again.
+`ecc-test-with-fake-session' makes it read nothing, for the replays of
+recorded sessions; RET reads the file a review is of."
+  (declare (indent 0))
+  `(cl-letf (((symbol-function 'ecc-diff-file-content) ecc-review-direct-test--file-content))
+     ,@body))
 
 (defun ecc-review-direct-test--kill-buffers ()
   "Kill every buffer a review left behind."
@@ -433,6 +450,7 @@ side is the cursor of the window that has the keyboard."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
     (ecc-review-direct-test--with-review session control
+      (ecc-review-direct-test--reading-files
       (with-current-buffer control
         (let ((file (file-truename (expand-file-name "a.txt" directory))))
           (should (equal (ecc-review-direct-source
@@ -451,7 +469,7 @@ side is the cursor of the window that has the keyboard."
           (ecc-review-direct-test--write file (concat "top1\ntop2\n" ecc-review-direct-test--changed))
           (should (equal (ecc-review-direct-source
                           'B (ecc-review-direct-test--position control 'B 22))
-                         (cons file 24))))))))
+                         (cons file 24)))))))))
 
 (ert-deftest ecc-review-direct-test-a-review-of-commits-follows-later-changes ()
   "A review of a commit opens a line where it is now, after what came later."
@@ -474,10 +492,12 @@ side is the cursor of the window that has the keyboard."
                                                    ecc-review-direct-test--changed))
             (setf (ecc-session-project-root session) directory)
             (setq control (ecc-review-ediff-worktree-buffer session "HEAD^!" directory))
-            (with-current-buffer control
-              (should (equal (ecc-review-direct-source
-                              'B (ecc-review-direct-test--position control 'B 55))
-                             (cons (file-truename (expand-file-name "a.txt" directory)) 60)))))
+            (ecc-review-direct-test--reading-files
+              (with-current-buffer control
+                (should (equal (ecc-review-direct-source
+                                'B (ecc-review-direct-test--position control 'B 55))
+                               (cons (file-truename (expand-file-name "a.txt" directory))
+                                     60))))))
         (when (buffer-live-p control)
           (ecc-review-ediff-quit control))
         (ecc-review-direct-test--kill-buffers)
@@ -549,6 +569,218 @@ side is the cursor of the window that has the keyboard."
           (ecc-review-files-open-file (list :path "a.txt"))))
       (should (equal opened (list (expand-file-name "a.txt" temporary-file-directory)
                                   nil session))))))
+
+;;;; Review round 1
+
+(defun ecc-review-direct-test--view (window)
+  "Return (POINT . START) of WINDOW."
+  (cons (window-point window) (window-start window)))
+
+(ert-deftest ecc-review-direct-test-reading-again-leaves-the-cursor-alone ()
+  "Following the files moves no cursor.
+Reading the review again selects the difference being read without the
+user asking, and ediff refines it by going to it in each side."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (let ((right (ecc-review-direct-test--window control 'B)))
+        (with-current-buffer control
+          (setq ediff-auto-refine 'on))
+        ;; Read on the right, on the last difference of a.txt.
+        (ecc-review-direct-test--move control 'B 55)
+        (set-window-start right (ecc-review-direct-test--position control 'B 50))
+        (let ((view (ecc-review-direct-test--view right)))
+          ;; Claude changes a line below the one being read.
+          (ecc-review-direct-test--write
+           (concat directory "a.txt")
+           (replace-regexp-in-string "^l58$" "l58 changed" ecc-review-direct-test--changed))
+          (with-current-buffer control
+            (ecc-review-reread t)
+            (should (= ediff-current-difference 3)))
+          (should (equal (ecc-review-direct-test--view right) view)))))))
+
+(defmacro ecc-review-direct-test--with-files (session control extra &rest body)
+  "Run BODY with CONTROL the ediff review SESSION made of a.txt and EXTRA.
+EXTRA is what `ecc-review-direct-test--open' takes."
+  (declare (indent 3))
+  `(let ((directory (file-name-as-directory (make-temp-file "ecc-review-direct" t)))
+         (ediff-window-setup-function #'ediff-setup-windows-plain)
+         (ediff-force-faces t)
+         (ecc-review-talk-reply-height nil)
+         (ecc-review-files-shown nil)
+         (,control nil))
+     (unwind-protect
+         (save-window-excursion
+           (delete-other-windows)
+           (setq ,control (ecc-review-direct-test--open ,session directory ,extra))
+           ,@body)
+       (when (buffer-live-p ,control)
+         (ecc-review-ediff-quit ,control))
+       (ecc-review-direct-test--kill-buffers)
+       (delete-directory directory t))))
+
+(ert-deftest ecc-review-direct-test-a-filter-leaves-the-cursor-alone ()
+  "A filter that hides the difference being read moves no cursor.
+The review goes to the nearest difference it keeps, which ediff refines
+by going to it in each side."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-files session control
+        (list (list "b.txt" (ecc-review-direct-test--lines)
+                    (ecc-review-direct-test--lines (lambda (n) (and (= n 5) "l5 b\n")))))
+      (with-current-buffer control
+        (setq ediff-auto-refine 'on))
+      (let ((right (ecc-review-direct-test--window control 'B)))
+        (ecc-review-direct-test--move control 'B 55)
+        (let ((view (ecc-review-direct-test--view right)))
+          (with-current-buffer control
+            (setq ecc-review--filter "b.txt")
+            (let ((ecc-review-files--applying t))
+              (ecc-review--draw-notes))
+            (ecc-review-files-filter-applied 'changed)
+            (should (equal (plist-get (nth ediff-current-difference (ecc-review-units)) :path)
+                           "b.txt")))
+          (should (equal (ecc-review-direct-test--view right) view)))))))
+
+(ert-deftest ecc-review-direct-test-the-other-side-is-aligned-by-screen-rows ()
+  "The two sides are put together by the rows of the screen, not lines.
+A line wrapped on one side takes rows the other does not have.  So does
+a comment drawn under a line of one side, which batch, drawing no
+overlay string, cannot count."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-files session control
+        (list (list "c.txt" (ecc-review-direct-test--lines)
+                    (ecc-review-direct-test--lines
+                     (lambda (n) (and (= n 3) (concat (make-string 200 ?x) "\n"))))))
+      (let* ((left (ecc-review-direct-test--window control 'A))
+             (right (ecc-review-direct-test--window control 'B))
+             (at (lambda (side line)
+                   (with-current-buffer control
+                     (ecc-review-ediff--file-position side (cons "c.txt" line)))))
+             (rows (lambda (window)
+                     (with-current-buffer (window-buffer window)
+                       (count-screen-lines (window-start window)
+                                           (save-excursion
+                                             (goto-char (window-point window))
+                                             (line-beginning-position))
+                                           nil window)))))
+        (dolist (window (list left right))
+          (with-current-buffer (window-buffer window)
+            ;; Batch's side windows are narrower than the 50 columns
+            ;; under which `truncate-partial-width-windows' truncates.
+            (setq-local truncate-partial-width-windows nil)
+            (setq truncate-lines nil)))
+        (set-window-start right (funcall at 'B 1))
+        (select-window right)
+        (goto-char (funcall at 'B 8))
+        (let ((this-command 'next-line))
+          (run-hooks 'post-command-hook))
+        ;; The long line takes rows on the right only.
+        (should (> (funcall rows right) 7))
+        (should (= (window-point left) (funcall at 'A 8)))
+        (should (= (funcall rows left) (funcall rows right)))))))
+
+(ert-deftest ecc-review-direct-test-the-first-command-moves-nothing ()
+  "Where ediff put the windows is taken as where they stand together.
+The first command after the review opens, or after the files pane hands
+the keyboard back, is no move of point."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (let ((left (ecc-review-direct-test--window control 'A))
+            (right (ecc-review-direct-test--window control 'B)))
+        (with-current-buffer (window-buffer right)
+          (should (eql ecc-review-direct--aligned
+                       (save-excursion (goto-char (window-point right))
+                                       (line-beginning-position)))))
+        ;; ediff puts the left side where it will, and C-g leaves it.
+        (with-current-buffer control
+          (ecc-review-files-goto (car (ecc-review-files-entries)) t))
+        (set-window-start left (ecc-review-direct-test--position control 'A 2))
+        (let ((view (ecc-review-direct-test--view left)))
+          (select-window right)
+          (let ((this-command 'keyboard-quit))
+            (run-hooks 'post-command-hook))
+          (should (equal (ecc-review-direct-test--view left) view)))))))
+
+(ert-deftest ecc-review-direct-test-spc-and-del-and-the-panel-s-ret ()
+  "SPC and DEL in a window go on and back, and RET in the panel opens the file."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (ecc-review-direct-test--type control 'B "SPC")
+      (should (= (buffer-local-value 'ediff-current-difference control) 0))
+      (ecc-review-direct-test--type control 'B "SPC")
+      (ecc-review-direct-test--type control 'B "DEL")
+      (should (= (buffer-local-value 'ediff-current-difference control) 0))
+      (let ((opened nil))
+        (cl-letf (((symbol-function 'ecc-review-direct-open-file)
+                   (lambda (file line) (setq opened (cons file line)))))
+          (with-current-buffer control
+            (ediff-jump-to-difference 2)
+            (call-interactively (key-binding (kbd "RET")))))
+        (should (equal opened (cons (file-truename (expand-file-name "a.txt" directory)) 21)))))))
+
+(ert-deftest ecc-review-direct-test-the-panel-says-the-difference-after-any-change ()
+  "The status of the panel follows a reading again and a quiet change of difference."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (ecc-review-direct-test--move control 'B 55)
+      (should (string-search "Difference 4 of 4" (with-current-buffer control (buffer-string))))
+      ;; Off the difference, n goes from point: the panel is told of the
+      ;; one n starts from, and then of where n went.
+      (ecc-review-direct-test--move control 'B 10)
+      (ecc-review-direct-test--type control 'B "n")
+      (should (string-search "Difference 2 of 4" (with-current-buffer control (buffer-string))))
+      ;; A fifth difference, read again: the count follows.
+      (ecc-review-direct-test--write
+       (concat directory "a.txt")
+       (replace-regexp-in-string "^l58$" "l58 changed" ecc-review-direct-test--changed))
+      (with-current-buffer control
+        (ecc-review-reread t)
+        (should (string-search "of 5" (buffer-string)))))))
+
+(ert-deftest ecc-review-direct-test-a-file-too-large-opens-unshifted ()
+  "A file too large to diff a line through opens at the line the review shows."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-review session control
+      (ecc-review-direct-test--reading-files
+        (let ((file (file-truename (expand-file-name "a.txt" directory)))
+              (ecc-diff-max-file-size 10))
+          (ecc-review-direct-test--write file (concat "top1\ntop2\n" ecc-review-direct-test--changed))
+          (with-current-buffer control
+            (should (equal (ecc-review-direct-source
+                            'B (ecc-review-direct-test--position control 'B 22))
+                           (cons file 22)))))))))
+
+(ert-deftest ecc-review-direct-test-a-file-through-a-link-is-the-buffer-visiting-it ()
+  "A file opened by another name of a directory is the buffer that visits it.
+/tmp is a link to /private/tmp on macOS, and the file opened again under
+the other name said the two were one file."
+  (let* ((real (file-name-as-directory (file-truename (make-temp-file "ecc-review-direct" t))))
+         (link (concat (directory-file-name real) "-link"))
+         (file (concat real "a.txt"))
+         (messages nil))
+    (unwind-protect
+        (progn
+          (ecc-review-direct-test--write file "one\ntwo\n")
+          (make-symbolic-link real link)
+          (let ((visiting (find-file-noselect file)))
+            (save-window-excursion
+              (cl-letf (((symbol-function 'ecc-review-direct--file-window)
+                         (lambda () (selected-window)))
+                        ((symbol-function 'message)
+                         (lambda (format &rest args)
+                           (push (apply #'format-message format args) messages))))
+                (let ((window (ecc-review-direct-open-file (concat link "/a.txt") 2)))
+                  (should (eq (window-buffer window) visiting)))))
+            (should-not (seq-find (lambda (text) (string-search "same file" text)) messages))
+            (kill-buffer visiting)))
+      (delete-file link)
+      (delete-directory real t))))
 
 ;;;; Two sessions
 
