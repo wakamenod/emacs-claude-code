@@ -344,16 +344,16 @@ Verified against **Claude Code CLI 2.1.281**.
   answers it: allow or deny, approve or deny, or each question read in the
   minibuffer, collected apart from the question buffer -- which keeps
   what you chose there -- and sent the way it sends them once every
-  question has an answer. A request taken back while `y` asks -- an
-  interrupt, say -- is not answered after all, and `y` says so; an allow
-  that the unsaved buffer check turned into a deny says denied. Only that
+  question has an answer, each answer once. A request taken back while
+  `y` asks is not answered after all (below); an allow that the unsaved
+  buffer check turned into a deny says denied. Only that
   session's replies and requests reach the pane, and `y` answers no other.
   The pane is written again only for what it shows, and a streamed piece
   is appended without touching any mode line. It is never selected; it is
   taken down and put back at the bottom only when ediff really lays its
   windows out again, as `|` and `m` do, so `n` and `p` leave its window
-  and its height alone; and it goes with the review. The diff review has the session beside it and no
-  pane.
+  and its height alone; and it goes with the review. The diff review has
+  the session beside it and no pane.
 
 ### Changed
 
@@ -469,11 +469,15 @@ Verified against **Claude Code CLI 2.1.281**.
   / filter` and ` T tour   t next   M message   C-c C-c send   q quit
   ! reread   ? all keys`, where it said ` c -comment   C-c C-c -send
   q -quit   ? -help`. `?` lists `s`, `/`, `T`, `t`, `M` and `y` too. The
-  header line of the diff review names `s files`, `/ filter`, `T tour`,
-  `t next`, `M message` and `? all keys` in place of `a Claude's`,
-  `l list`, `(C-u edits)` and `RET source`, which still work, and `?` in
-  the diff review lists every one of its keys in the help window, as `?`
-  does in the ediff control panel.
+  header line of the diff review, which said ` c comment  l list  d delete
+  C-c C-c send (C-u edits)  n/p hunk  RET source`, says ` c comment  { }
+  comments  d delete  n/p hunk  s files  / filter  T tour  t next
+  M message  C-c C-c send  ? all keys`; `l`, `C-u C-c C-c` and `RET` still
+  work. `?` in the diff review lists every one of its keys in the help
+  window, as `?` does in the ediff control panel; in the review of a
+  proposal it lists that review's own -- `C-c C-c` sending the comments as
+  a deny, `C-u C-c C-c` editing them first, `e` editing the proposal and
+  applying it -- and its header line is as it was.
 
 - `s` in the diff review shows the list of files (above) where it said
   that the review is read-only: it was `diff-split-hunk` of `diff-mode`.
@@ -503,6 +507,17 @@ Verified against **Claude Code CLI 2.1.281**.
   already shows is selected there rather than shown twice.
 
 ### Fixed
+
+- A request the CLI takes back while you are being asked about it -- an
+  interrupt closes it while a reason for denying, an answer to a question
+  or whether to save a buffer first is being read -- is no longer
+  answered after all. The answer went to a request id nothing was
+  waiting on, a denied request was marked done, and
+  `ecc-request-resolved-hook` ran twice. Every answer goes through
+  `ecc-perm-respond`, which now says "That request is no longer waiting"
+  and sends nothing, wherever it was answered from: the transcript, the
+  question and plan buffers, the dashboard, the sidebar, `C-c c a` and
+  `d`, and the reply pane of a review.
 
 - In an ediff review, what changed inside a line of the current difference
   could not be seen under a theme that gives the fine differences nearly

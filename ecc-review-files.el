@@ -194,9 +194,7 @@ goes (`ecc-review-files--sweep')."
   "Take the files pane WINDOW off the screen.
 Deleted, or, where it cannot be -- the last window of its frame -- given
 back to another buffer, so that no stale pane stays dedicated there."
-  (set-window-parameter window 'ecc-review-files-beside nil)
-  (set-window-parameter window 'ecc-review-files nil)
-  (ecc-review-pane-take-down window))
+  (ecc-review-pane-take-down window '(ecc-review-files ecc-review-files-beside)))
 
 (defun ecc-review-files--sweep (frame)
   "Take down the files panes of FRAME whose review has left the window beside them.

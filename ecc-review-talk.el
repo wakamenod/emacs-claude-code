@@ -147,14 +147,6 @@ a request whole."
   (or (car (ecc-session-pending session))
       (user-error "%s is not waiting for anything" (ecc-session-name session))))
 
-(defun ecc-review-talk--still-waiting (request)
-  "Signal a `user-error' unless REQUEST is still waiting for an answer.
-Asked after the minibuffer has been read: the CLI may have taken the
-request back meanwhile -- an interrupt, a hook's decision -- and an
-answer to it then would answer nothing and mark it resolved twice."
-  (unless (memq request (ecc-session-pending (ecc-request-session request)))
-    (user-error "That request is no longer waiting")))
-
 (defun ecc-review-talk--read-answers (request)
   "Read an answer to each question of REQUEST in the minibuffer.
 Return them as `ecc-question-send-answers' takes them.  They are
@@ -172,7 +164,7 @@ nothing changed."
                                            (list (completing-read prompt labels)))))))
        (unless answers
          (user-error "No answer given"))
-       (cons (alist-get 'question question) (string-join answers ", "))))
+       (cons (alist-get 'question question) (string-join (delete-dups answers) ", "))))
    (ecc-question-questions request)))
 
 (defun ecc-review-talk-answer ()
@@ -184,9 +176,9 @@ the minibuffer.  What is answered is the one the reply pane shows."
          (request (ecc-review-talk--request session))
          (summary (ecc-answer-summary request)))
     (if (eq (ecc-request-kind request) 'question)
-        (let ((pairs (ecc-review-talk--read-answers request)))
-          (ecc-review-talk--still-waiting request)
-          (ecc-question-send-answers request pairs))
+        ;; A request the CLI took back while the minibuffer was read is
+        ;; refused by `ecc-perm-respond', where every answer goes.
+        (ecc-question-send-answers request (ecc-review-talk--read-answers request))
       (let* ((plan (eq (ecc-request-kind request) 'plan))
              (choice (car (read-multiple-choice
                            (format "%s: %s" (ecc-session-name session) summary)
@@ -196,15 +188,13 @@ the minibuffer.  What is answered is the one the reply pane shows."
                              '((?y "allow" "Let Claude use the tool this once")
                                (?n "deny" "Refuse and say why")))))))
         (pcase choice
-          (?y (ecc-review-talk--still-waiting request)
-              (pcase (ecc-perm-allow-request request)
+          (?y (pcase (ecc-perm-allow-request request)
                 ('deny (message "Denied: %s (the buffer has unsaved changes)" summary))
                 ('save (message "Saved the buffer and allowed: %s" summary))
                 (_ (message "%s: %s" (if plan "Approved" "Allowed") summary))))
-          (?n (let ((reason (read-string "Reason for denying (may be empty): ")))
-                (ecc-review-talk--still-waiting request)
-                (ecc-perm-respond request 'deny :message reason)
-                (message "Denied: %s" summary))))))))
+          (?n (ecc-perm-respond request 'deny
+                                :message (read-string "Reason for denying (may be empty): "))
+              (message "Denied: %s" summary)))))))
 
 ;;;; The pane
 
@@ -277,7 +267,8 @@ other change writes the pane again.")
 
 (defun ecc-review-talk--take-down (pane)
   "Take every window showing the reply PANE off the screen."
-  (mapc #'ecc-review-pane-take-down (get-buffer-window-list pane nil t)))
+  (dolist (window (get-buffer-window-list pane nil t))
+    (ecc-review-pane-take-down window '(ecc-review-talk))))
 
 (defun ecc-review-talk--review-killed ()
   "Kill the reply pane of this review with it, and the window it is in."
@@ -527,8 +518,9 @@ the window's own width."
 ;;;;; Following the session
 
 (defun ecc-review-talk--panes-of (session)
-  "Return the live reply panes showing SESSION, forgetting any that died."
-  (setq ecc-review-talk--panes (seq-filter #'buffer-live-p ecc-review-talk--panes))
+  "Return the reply panes showing SESSION.
+A filter and nothing more: it runs on every streamed piece, and a pane
+leaves the list as it is killed (`ecc-review-talk--forget')."
   (seq-filter (lambda (pane) (eq (buffer-local-value 'ecc-review-talk--of pane) session))
               ecc-review-talk--panes))
 

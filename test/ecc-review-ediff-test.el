@@ -54,6 +54,14 @@
   `(let ((ediff-window-setup-function #'ediff-setup-windows-plain))
      ,@body))
 
+(defmacro ecc-review-ediff-test--with-ediff-and-no-pane (&rest body)
+  "Run BODY as `ecc-review-ediff-test--with-ediff' does, without the reply pane.
+For what counts on being on the screen at once: the pane takes lines a
+batch frame, 24 of them, does not have to spare."
+  (declare (indent 0))
+  `(let ((ecc-review-talk-reply-height nil))
+     (ecc-review-ediff-test--with-ediff ,@body)))
+
 (defun ecc-review-ediff-test--repository (directory)
   "Make DIRECTORY a git repository with one commit of x.txt and gone.txt."
   (ecc-review-ediff-test--git directory "init" "-q")
@@ -1447,45 +1455,42 @@ With more than one comment to answer or edit, which is asked."
   "Reading the review again fontifies only the files that changed, and an
 unchanged review reads no file at all."
   (skip-unless (executable-find "git"))
-  ;; Without the reply pane: what is on the screen is coloured at once,
-  ;; and the pane leaves x.txt below the bottom of a 24-line batch frame.
-  (let ((ecc-review-talk-reply-height nil))
-    (ecc-review-ediff-test--with-ediff
-     (ecc-test-with-fake-session session
-				 (ecc-review-ediff-test--with-directory directory
-									(let ((control nil)
-									      (coloured nil)
-									      (read 0))
-									  (unwind-protect
-									      (progn
-										(setq control (ecc-review-ediff-test--rich session directory))
-										(ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
-										(with-current-buffer control
-										  (ecc-review-reread t)
-										  (cl-letf* ((fontify (symbol-function 'ecc-review-ediff--fontify-buffer))
-											     ((symbol-function 'ecc-review-ediff--fontify-buffer)
-											      (lambda (text path)
-												(push path coloured)
-												(funcall fontify text path)))
-											     (git (symbol-function 'ecc-review--git))
-											     ((symbol-function 'ecc-review--git)
-											      (lambda (directory &rest args)
-												(when (equal (car args) "cat-file") (cl-incf read))
-												(apply git directory args)))
-											     (run (symbol-function 'call-process-region))
-											     ((symbol-function 'call-process-region)
-											      (lambda (&rest args)
-												(when (member "cat-file" args) (cl-incf read))
-												(apply run args))))
-										    (ecc-review-reread t)
-										    (should (zerop read))
-										    (should-not coloured)
-										    (ecc-review-ediff-test--write (concat directory "x.txt") "three\n")
-										    (ecc-review-reread t)
-										    (should (equal (delete-dups coloured) '("x.txt")))
-										    ;; Its size, then its text: two processes.
-										    (should (= read 2)))))
-									    (ecc-review-ediff-test--quit control))))))))
+  (ecc-review-ediff-test--with-ediff-and-no-pane
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil)
+              (coloured nil)
+              (read 0))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
+                (with-current-buffer control
+                  (ecc-review-reread t)
+                  (cl-letf* ((fontify (symbol-function 'ecc-review-ediff--fontify-buffer))
+                             ((symbol-function 'ecc-review-ediff--fontify-buffer)
+                              (lambda (text path)
+                                (push path coloured)
+                                (funcall fontify text path)))
+                             (git (symbol-function 'ecc-review--git))
+                             ((symbol-function 'ecc-review--git)
+                              (lambda (directory &rest args)
+                                (when (equal (car args) "cat-file") (cl-incf read))
+                                (apply git directory args)))
+                             (run (symbol-function 'call-process-region))
+                             ((symbol-function 'call-process-region)
+                              (lambda (&rest args)
+                                (when (member "cat-file" args) (cl-incf read))
+                                (apply run args))))
+                    (ecc-review-reread t)
+                    (should (zerop read))
+                    (should-not coloured)
+                    (ecc-review-ediff-test--write (concat directory "x.txt") "three\n")
+                    (ecc-review-reread t)
+                    (should (equal (delete-dups coloured) '("x.txt")))
+                    ;; Its size, then its text: two processes.
+                    (should (= read 2)))))
+            (ecc-review-ediff-test--quit control)))))))
 
 (ert-deftest ecc-review-ediff-test-says-nothing-as-the-diff-review-does ()
   "Both styles of review name a review with nothing in it alike."

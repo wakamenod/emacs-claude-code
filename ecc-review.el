@@ -1109,21 +1109,42 @@ on, point and the window are left as they were and that is said."
   s         list the files             l         jump to a comment
   /         filter the files           a         show or hide Claude's
   g         read the diff again        C-c C-c   send the comments
+  q         bury the review            C-u C-c C-c  edit them, then send
                                        C-c C-k   drop the review
-Claude                                 q         bury the review
+Claude
   T         ask for a tour of the review
-  t         the next stop of the tour  In the review of one proposal
-  M         say something to Claude    e         edit the proposal and apply it
+  t         the next stop of the tour
+  M         say something to Claude
 
 The review is read-only: it shows what git says.  Claude changes the
 files, from the prompt the comments are sent as."
-  "What \`?' shows in a diff review.")
+  "What \\`?' shows in a diff review of files.")
+
+(defconst ecc-review-proposal-long-help-message
+  "Move around                          Comments
+  n / p     next, previous hunk        c         comment on this line (@@: the hunk)
+  RET / o   go to the source           { / }     previous, next comment
+  q         bury the review            d         remove a comment here
+                                       l         jump to a comment
+The proposal                           C-c C-c   send the comments as a deny
+  e         edit it and apply it       C-u C-c C-c  edit them, then deny
+                                       C-c C-k   drop the review
+
+This reviews one change Claude proposes.  The comments go back as the
+reason it is refused: C-c C-c denies the proposal.  e is the way to
+accept it, changed or not."
+  "What \\`?' shows in the review of one proposal.")
 
 (defun ecc-review-help ()
-  "Show every key of the diff review in the help window."
+  "Show every key of this diff review in the help window.
+The review of a proposal has keys of its own, and sending its comments
+denies the proposal."
   (interactive)
-  (with-help-window (help-buffer)
-    (princ ecc-review-long-help-message)))
+  (let ((text (if ecc-review--request
+                  ecc-review-proposal-long-help-message
+                ecc-review-long-help-message)))
+    (with-help-window (help-buffer)
+      (princ text))))
 
 (defun ecc-review-read-only ()
   "Say that the review cannot be edited, in place of a `diff-mode' edit."
@@ -1222,10 +1243,16 @@ range read under different labels: then it gets a name of its own."
       (set review-var review))
     pane))
 
-(defun ecc-review-pane-take-down (window)
+(defun ecc-review-pane-take-down (window &optional parameters)
   "Take the pane in WINDOW off the screen.
 Deleted, or, where it cannot be -- the last window of its frame -- given
-back to another buffer, so that no stale pane stays dedicated there."
+back to another buffer, so that no stale pane stays dedicated there.
+The window parameters a pane sets go first: `no-other-window\=',
+`no-delete-other-windows\=' and the PARAMETERS of its own, so that a
+window given back is one that \\[other-window] reaches and
+\\[delete-other-windows] deletes."
+  (dolist (parameter (append '(no-other-window no-delete-other-windows) parameters))
+    (set-window-parameter window parameter nil))
   (if (eq (window-deletable-p window) t)
       (delete-window window)
     (set-window-dedicated-p window nil)

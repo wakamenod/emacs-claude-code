@@ -406,8 +406,15 @@ Return the text node."
           (should (string-search "Claude asks to use Bash:" text))
           (should (string-search command text))
           (should (string-search "y allows or denies it here" text)))
-        (cl-letf (((symbol-function #'read-multiple-choice) (lambda (&rest _) '(?y "allow"))))
-          (ecc-review-talk-answer))
+        ;; A request that is waiting is answered through the shared guard,
+        ;; and resolved once.
+        (let ((resolved 0))
+          (let ((ecc-request-resolved-hook
+                 (cons (lambda (&rest _) (cl-incf resolved)) ecc-request-resolved-hook)))
+            (cl-letf (((symbol-function #'read-multiple-choice)
+                       (lambda (&rest _) '(?y "allow"))))
+              (ecc-review-talk-answer)))
+          (should (= resolved 1)))
         (should-not (ecc-session-pending one))
         (should (equal (alist-get 'behavior (car (last (ecc-review-talk-test--responses one))))
                        "allow"))
@@ -448,7 +455,7 @@ Return the text node."
           (ecc-question-set-answer 1 "Disk"))
         (cl-letf (((symbol-function #'completing-read) (lambda (&rest _) "TTL"))
                   ((symbol-function #'completing-read-multiple)
-                   (lambda (&rest _) '("Disk" "Memory"))))
+                   (lambda (&rest _) '("Disk" "Memory" "Disk"))))
           (ecc-review-talk-answer))
         (should-not (ecc-session-pending one))
         (let* ((response (car (last (ecc-review-talk-test--responses one))))
@@ -505,7 +512,49 @@ Return the text node."
               (should (equal (cadr (should-error (ecc-review-talk-answer) :type 'user-error))
                              "That request is no longer waiting"))
               (should (<= resolved 1)))))
-        (should-not (ecc-review-talk-test--responses one))))))
+        (should-not (ecc-review-talk-test--responses one)))
+      ;; A question, with the same words: one check, in `ecc-perm-respond'.
+      (ecc-test-add-request one "AskUserQuestion" ecc-review-talk-test--questions)
+      (cl-letf (((symbol-function #'completing-read) (lambda (&rest _) "TTL"))
+                ((symbol-function #'completing-read-multiple)
+                 (lambda (&rest _)
+                   (ecc-model-abandon-requests one "the turn was interrupted")
+                   '("Disk"))))
+        (should (equal (cadr (should-error (ecc-review-talk-answer) :type 'user-error))
+                       "That request is no longer waiting")))
+      (should-not (ecc-review-talk-test--responses one)))))
+
+(ert-deftest ecc-review-talk-test-taken-back-while-asked-about-the-buffer ()
+  "y on a file with unsaved changes, the request taken back while that is asked."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (ecc-review-talk-test--with-ediff one _control
+      (ecc-model-begin-turn one "edit")
+      (let* ((file (make-temp-file "ecc-review-talk" nil ".txt" "one\n"))
+             (buffer (find-file-noselect file))
+             (request (ecc-test-add-request one "Write" `((file_path . ,file)
+                                                          (content . "two\n"))))
+             (asked 0))
+        (unwind-protect
+            (progn
+              (with-current-buffer buffer (insert "unsaved "))
+              (cl-letf (((symbol-function #'read-multiple-choice)
+                         (lambda (&rest _)
+                           (cl-incf asked)
+                           (if (= asked 1)
+                               '(?y "allow")
+                             ;; The second question, about the buffer.
+                             (ecc-model-abandon-requests one "the turn was interrupted")
+                             '(?a "allow anyway")))))
+                (should (equal (cadr (should-error (ecc-review-talk-answer)
+                                                   :type 'user-error))
+                               "That request is no longer waiting")))
+              (should (= asked 2))
+              (should (eq (ecc-node-status (ecc-request-node request)) 'denied))
+              (should-not (ecc-review-talk-test--responses one)))
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer)
+          (delete-file file))))))
 
 (ert-deftest ecc-review-talk-test-an-allow-that-became-a-deny-says-so ()
   "y on a change to a file with unsaved changes, answered d, says denied."
@@ -633,11 +682,32 @@ Return the text node."
         (setq ecc-review-talk--pane nil)
         (should (eq (ecc-review-talk--pane-buffer control) pane))
         (should (= (seq-count (lambda (buffer) (eq buffer pane)) ecc-review-talk--panes) 1))
-        (let ((other (get-buffer-create " *ecc-review-talk-test dead*")))
-          (push other ecc-review-talk--panes)
-          (kill-buffer other)
+        ;; Looking the panes up changes nothing; killing one takes it off.
+        (let ((list ecc-review-talk--panes))
           (ecc-review-talk--panes-of one)
-          (should-not (memq other ecc-review-talk--panes)))))))
+          (should (eq ecc-review-talk--panes list)))
+        (kill-buffer pane)
+        (should-not (memq pane ecc-review-talk--panes))))))
+
+(ert-deftest ecc-review-talk-test-a-pane-given-back-keeps-no-parameters ()
+  "A pane alone in its frame is given back with none of its window parameters."
+  (save-window-excursion
+    (delete-other-windows)
+    (let ((window (selected-window))
+          (pane (get-buffer-create " *ecc-review-talk-test pane*")))
+      (unwind-protect
+          (progn
+            (set-window-buffer window pane)
+            (set-window-dedicated-p window t)
+            (dolist (parameter '(no-other-window no-delete-other-windows ecc-review-talk))
+              (set-window-parameter window parameter t))
+            (ecc-review-pane-take-down window '(ecc-review-talk))
+            (should (window-live-p window))
+            (should-not (eq (window-buffer window) pane))
+            (should-not (window-dedicated-p window))
+            (dolist (parameter '(no-other-window no-delete-other-windows ecc-review-talk))
+              (should-not (window-parameter window parameter))))
+        (kill-buffer pane)))))
 
 (ert-deftest ecc-review-talk-test-a-pane-name-taken-by-another-review ()
   "Two reviews whose panes would share a name get two panes."
@@ -675,6 +745,26 @@ Return the text node."
           (dolist (key '("n / p" "N / P" "RET / o" "{ / }" "C-c C-c" "C-c C-k"
                          "T " "t " "M " "a " "d " "l " "s " "/ " "g " "e "))
             (should (string-search key (buffer-string)))))))))
+
+(ert-deftest ecc-review-talk-test-a-proposal-has-help-of-its-own ()
+  "? in the review of a proposal says that C-c C-c denies, and lists e."
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((review (ecc-review-talk-test--diff-review one)))
+      (with-current-buffer review
+        (save-window-excursion
+          (ecc-review-help)
+          (let ((text (with-current-buffer (help-buffer) (buffer-string))))
+            (should (string-search "C-u C-c C-c" text))
+            (should (string-search "send the comments\n" text))
+            (should-not (string-search "deny" text))))
+        (setq ecc-review--request (ecc-test-add-request one "Edit"))
+        (save-window-excursion
+          (ecc-review-help)
+          (let ((text (with-current-buffer (help-buffer) (buffer-string))))
+            (should (string-search "send the comments as a deny" text))
+            (should (string-search "C-u C-c C-c  edit them, then deny" text))
+            (should (string-search "e         edit it and apply it" text))
+            (should-not (string-search "T         ask for a tour" text))))))))
 
 (provide 'ecc-review-talk-test)
 
