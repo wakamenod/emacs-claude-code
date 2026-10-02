@@ -536,6 +536,48 @@ as the right window changing size."
     (let ((ecc-review-talk-make-frame-function (lambda (&rest args) args)))
       (should (equal (ecc-review-talk--new-frame "n") '("n"))))))
 
+(ert-deftest ecc-review-talk-test-u-and-d-scroll-the-pane ()
+  "u scrolls the reply pane back and holds it there as Claude goes on; d scrolls it on.
+Reaching the end, the pane follows its end again; so it does when a turn
+begins.  Typed in a window of the review, the keyboard stays there."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((ecc-review-talk-reply-height 6))
+      (ecc-review-talk-test--with-ediff one control
+        (let* ((pane (ecc-review-talk-test--pane control))
+               (window (get-buffer-window pane))
+               (right (with-current-buffer control ediff-window-B))
+               (end-shown (lambda ()
+                            (with-current-buffer pane
+                              (ecc-review-talk--end-shown-p window)))))
+          (should (eq (key-binding (kbd "u")) #'ecc-review-talk-scroll-back))
+          (should (eq (key-binding (kbd "d")) #'ecc-review-talk-scroll-on))
+          (ecc-review-talk-tour)
+          (ecc-review-talk-test--say
+           one (mapconcat (lambda (n) (format "Line %d of the reply." n))
+                          (number-sequence 1 40) "\n"))
+          (should (funcall end-shown))
+          (select-window right)
+          (execute-kbd-macro (kbd "u"))
+          (should (eq (selected-window) right))
+          (should-not (funcall end-shown))
+          (should (buffer-local-value 'ecc-review-talk--held pane))
+          ;; Claude goes on; the pane stays where it was put.
+          (let ((start (window-start window)))
+            (ecc-review-talk-test--say one "More.")
+            (should (= (window-start window) start)))
+          (dotimes (_ 20)
+            (unless (funcall end-shown)
+              (execute-kbd-macro (kbd "d"))))
+          (should (funcall end-shown))
+          (should-not (buffer-local-value 'ecc-review-talk--held pane))
+          (should (eq (selected-window) right))
+          ;; Held again, a new turn lets it go.
+          (execute-kbd-macro (kbd "u"))
+          (should (buffer-local-value 'ecc-review-talk--held pane))
+          (ecc-model-begin-turn one "Next stop.")
+          (should-not (buffer-local-value 'ecc-review-talk--held pane)))))))
+
 (ert-deftest ecc-review-talk-test-no-pane-at-height-nil ()
   "With `ecc-review-talk-reply-height' nil an ediff review shows no pane."
   (skip-unless (executable-find "git"))
@@ -544,6 +586,7 @@ as the right window changing size."
       (ecc-review-talk-test--with-ediff one control
         (ecc-review-talk-tour)
         (should-not (ecc-review-talk-test--pane control))
+        (should-error (ecc-review-talk-scroll-back) :type 'user-error)
         (should (equal (ecc-review-talk-test--prompts one)
                        (list ecc-review-talk-tour-prompt)))))))
 

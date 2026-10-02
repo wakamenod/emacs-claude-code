@@ -81,8 +81,8 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 | `ecc-review-auto-refresh` | `t` | When non-nil, an open review reads the diff again when a tool of its session finishes, a turn ends, or a file of its repository is saved, keeping the comments and your place. A hidden review is read when it is shown. A review in ediff follows them too. `nil` reads it only with `g` |
 | `ecc-review-files-width` | `32` | Width in columns of the list of files that `s` shows beside a review |
 | `ecc-review-ediff-layout` | `'stacked` | How an ediff review opens: `'stacked` puts the old side above the new one with Claude's reply pane on the right, `'side-by-side` puts them left and right with the pane at the bottom. `\|` switches in an open review |
-| `ecc-review-talk-reply-width` | `60` | Width in columns of the pane right of a stacked ediff review that shows Claude's reply. A frame that would leave the diff fewer than 80 columns has the pane at the bottom instead |
-| `ecc-review-talk-reply-height` | `8` | Height in lines of the pane under a side-by-side ediff review that shows Claude's reply; `nil` shows no pane in either layout |
+| `ecc-review-talk-reply-width` | `75` | Width in columns of the pane right of a stacked ediff review that shows Claude's reply. A frame that would leave the diff fewer than 80 columns has the pane at the bottom instead |
+| `ecc-review-talk-reply-height` | `12` | Height in lines of the pane under a side-by-side ediff review that shows Claude's reply; `nil` shows no pane in either layout |
 | `ecc-review-talk-reply-place` | `'auto` | Where the reply pane goes: `'auto` beside the review as the layout says, `'frame` in a frame of its own for each review, closed with it, which never takes the focus |
 
 ## Windows

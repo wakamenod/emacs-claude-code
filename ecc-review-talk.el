@@ -71,7 +71,7 @@
 (declare-function ecc-review-ediff-stacked-p "ecc-review-ediff" (&optional control))
 (declare-function ecc-review-files--pane-window "ecc-review-files" (review))
 
-(defcustom ecc-review-talk-reply-height 8
+(defcustom ecc-review-talk-reply-height 12
   "How many lines the reply pane under an ediff review takes, or nil for none.
 The pane shows what Claude says while the review hides the session; it
 is under the review while the two sides are side by side.  The lines it
@@ -80,7 +80,7 @@ screen's.  nil shows no pane, wherever it would go."
   :type '(choice (integer :tag "Lines") (const :tag "No pane" nil))
   :group 'ecc)
 
-(defcustom ecc-review-talk-reply-width 60
+(defcustom ecc-review-talk-reply-width 75
   "How many columns the reply pane right of an ediff review takes.
 It is on the right while the two sides of the review are one above the
 other (`ecc-review-ediff-layout'), and under them when the frame cannot
@@ -249,6 +249,12 @@ other change writes the pane again.")
 
 (defvar-local ecc-review-talk--tail-end nil
   "Where the next piece of `ecc-review-talk--tail' goes.")
+
+(defvar-local ecc-review-talk--held nil
+  "Non-nil while the user has scrolled this pane back with \\`u'.
+The pane is not put at its end then -- what streams in would take the
+reader away from what they went back to -- until \\`d' brings its end
+into view again or another turn begins.")
 
 (defvar ecc-review-talk-mode-map
   (let ((map (make-sparse-keymap)))
@@ -513,6 +519,63 @@ On `ediff-after-setup-windows-hook\\=' of the control buffer."
   (when (buffer-live-p ecc-review-talk--pane)
     (ecc-review-talk--show-pane (current-buffer))))
 
+(defun ecc-review-talk--end-shown-p (window)
+  "Return non-nil when the end of the pane WINDOW shows is in it.
+Counted in rows of the screen from its start, which needs no redisplay."
+  (<= (count-screen-lines (window-start window) (point-max) nil window)
+      (window-body-height window)))
+
+;;;;; Scrolling it
+
+(defun ecc-review-talk--pane-window ()
+  "Return the window of the reply pane of this review, or signal there is none."
+  (ecc-review-talk--session)
+  (or (and (buffer-live-p ecc-review-talk--pane)
+           (car (get-buffer-window-list ecc-review-talk--pane nil t)))
+      (user-error "This review shows no reply pane")))
+
+(defun ecc-review-talk--scroll (back)
+  "Scroll the reply pane of this review half its height, BACK or on.
+Back holds the pane where it is put (`ecc-review-talk--held'); on, to
+where its end is in view, lets it follow its end again.  The start of
+its window is moved, rows of the screen at a time, and nothing is
+selected: the keyboard stays in the review."
+  (let* ((window (ecc-review-talk--pane-window))
+         (pane (window-buffer window))
+         (lines (max 1 (/ (window-body-height window) 2))))
+    (with-current-buffer pane
+      (let ((start (window-start window)))
+        (if back
+            (if (= start (point-min))
+                (user-error "At the start of Claude's reply")
+              (setq ecc-review-talk--held t))
+          (when (ecc-review-talk--end-shown-p window)
+            (setq ecc-review-talk--held nil)
+            (user-error "At the end of Claude's reply")))
+        (let ((new (save-excursion
+                     (goto-char start)
+                     (vertical-motion (if back (- lines) lines) window)
+                     (point))))
+          (set-window-start window new)
+          ;; Where redisplay would not scroll the window back to.
+          (set-window-point window new))
+        (when (and (not back) (ecc-review-talk--end-shown-p window))
+          (setq ecc-review-talk--held nil)
+          (ecc-review-talk--to-the-end pane))))))
+
+(defun ecc-review-talk-scroll-back ()
+  "Scroll the reply pane back, to what Claude said before.
+It stays there as Claude goes on, until \\[ecc-review-talk-scroll-on]
+brings its end into view again or another turn begins."
+  (interactive)
+  (ecc-review-talk--scroll t))
+
+(defun ecc-review-talk-scroll-on ()
+  "Scroll the reply pane on, toward the end of what Claude says.
+Reaching the end, it follows what comes in again."
+  (interactive)
+  (ecc-review-talk--scroll nil))
+
 ;;;;; What it says
 
 (defun ecc-review-talk--short-name (name)
@@ -650,10 +713,15 @@ transcript's heading says."
   (car (last (ecc-session-turns session))))
 
 (defun ecc-review-talk--write (pane)
-  "Write the reply PANE again from its session's latest turn."
+  "Write the reply PANE again from its session's latest turn.
+While it is held (`ecc-review-talk--held') each window keeps the start
+it had: the text before it is written the same again."
   (with-current-buffer pane
     (let* ((session ecc-review-talk--of)
            (turn (ecc-review-talk--turn session))
+           (starts (and ecc-review-talk--held
+                        (mapcar (lambda (window) (cons window (window-start window)))
+                                (get-buffer-window-list pane nil t))))
            (inhibit-read-only t))
       (erase-buffer)
       (setq ecc-review-talk--tail nil)
@@ -672,13 +740,25 @@ transcript's heading says."
           (ecc-review-talk--insert-node child)))
       (ecc-review-talk--insert-requests session)
       (unless ecc-review-talk--tail
-        (set-marker ecc-review-talk--tail-end nil))))
+        (set-marker ecc-review-talk--tail-end nil))
+      (pcase-dolist (`(,window . ,start) starts)
+        (let ((start (min start (point-max))))
+          (set-window-start window start t)
+          ;; Where redisplay would not scroll the window to.
+          (set-window-point window start)))))
   (ecc-review-talk--follow pane))
 
 (defun ecc-review-talk--follow (pane)
   "Put the end of PANE at the bottom of every window showing it.
 No window is selected for it: the start is reckoned from the end in
-the window's own width."
+the window's own width.  Not while the pane is held: the user is
+reading further up (`ecc-review-talk--held')."
+  (with-current-buffer pane
+    (unless ecc-review-talk--held
+      (ecc-review-talk--to-the-end pane))))
+
+(defun ecc-review-talk--to-the-end (pane)
+  "Put the end of PANE at the bottom of every window showing it."
   (with-current-buffer pane
     (goto-char (point-max))
     (dolist (window (get-buffer-window-list pane nil t))
@@ -746,6 +826,16 @@ what the pane ends with, else the pane is written again."
 
 (dolist (hook '(ecc-turn-started-hook ecc-request-added-hook ecc-request-resolved-hook))
   (add-hook hook #'ecc-review-talk--on-change))
+
+(defun ecc-review-talk--on-turn (session &rest _)
+  "Let the panes of SESSION follow their end again: another turn began.
+Before `ecc-review-talk--on-change' writes them, which it is added in
+front of."
+  (dolist (pane (ecc-review-talk--panes-of session))
+    (with-current-buffer pane
+      (setq ecc-review-talk--held nil))))
+
+(add-hook 'ecc-turn-started-hook #'ecc-review-talk--on-turn)
 (add-hook 'ecc-node-added-hook #'ecc-review-talk--on-node)
 (add-hook 'ecc-node-updated-hook #'ecc-review-talk--on-node)
 (add-hook 'ecc-stream-delta-hook #'ecc-review-talk--on-delta)

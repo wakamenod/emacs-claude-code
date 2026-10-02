@@ -347,8 +347,8 @@ Verified against **Claude Code CLI 2.1.281**.
 
 - The reply pane of an ediff review, `*ecc-review-reply: REVIEW*`: a side
   window on the right while the two sides are stacked,
-  `ecc-review-talk-reply-width` columns wide (60), and at the bottom while
-  they are side by side, `ecc-review-talk-reply-height` lines high (8; nil
+  `ecc-review-talk-reply-width` columns wide (75), and at the bottom while
+  they are side by side, `ecc-review-talk-reply-height` lines high (12; nil
   shows no pane in either) -- at the bottom too when the frame cannot
   leave the diff 80 columns beside it (`ecc-review-talk-min-diff-width`).
   `ecc-review-talk-reply-place` set to `frame` puts it in a frame of its
@@ -423,8 +423,11 @@ Verified against **Claude Code CLI 2.1.281**.
   `c` in a window comments on the line at point -- the old side on the
   left, the new on the right, as `c` on a line of the diff review -- and
   says there is nothing to comment on a line both sides share; `c` in
-  the panel still comments on the whole difference. `d` removes a
-  comment of the line at point first. Moving point drives the review:
+  the panel still comments on the whole difference. `x` removes a
+  comment of the line at point first -- `d` in the diff review; in ediff
+  `u` and `d` scroll the reply pane back and on, and a pane scrolled back
+  stays where it was put as Claude goes on, until `d` brings its end into
+  view again or another turn begins. Moving point drives the review:
   after a command in a window, a difference that point has gone into
   becomes the current one -- its colour, its bar, its number -- without
   ediff's select, which lays both windows out again; the window being

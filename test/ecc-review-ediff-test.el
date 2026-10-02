@@ -246,7 +246,7 @@ batch frame, 24 of them, does not have to spare."
                 (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
                 (setq control (ecc-review-ediff-buffer session))
                 (with-current-buffer control
-                  (dolist (key '("c -comment" "d -remove" "l -list"
+                  (dolist (key '("c -comment" "x -remove" "l -list"
                                  "C-c C-c -send" "C-c C-k -drop"
                                  "q -close" "n,SPC -next diff"
                                  "s -list the files" "/ -filter the files"))
@@ -971,7 +971,7 @@ the current buffer around it, as Emacs 31 does."
                 (setq control (ecc-review-ediff-test--setup session directory))
                 (with-current-buffer control
                   (should (eq (key-binding (kbd "c")) #'ecc-review-ediff-comment))
-                  (should (eq (key-binding (kbd "d"))
+                  (should (eq (key-binding (kbd "x"))
                               #'ecc-review-ediff-remove-comment))
                   (should (eq (key-binding (kbd "l"))
                               #'ecc-review-ediff-list-comments))
@@ -1174,7 +1174,7 @@ Open its ediff review and return the control buffer."
                     (dolist (key '(("a" . ecc-review-toggle-agent)
                                    ("{" . ecc-review-ediff-previous-comment)
                                    ("}" . ecc-review-ediff-next-comment)
-                                   ("d" . ecc-review-ediff-remove-comment)
+                                   ("x" . ecc-review-ediff-remove-comment)
                                    ("l" . ecc-review-ediff-list-comments)
                                    ("!" . ecc-review-refresh)))
                       (should (eq (key-binding (kbd (car key))) (cdr key))))

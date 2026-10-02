@@ -81,8 +81,8 @@ M-x customize-group RET ecc
 | `ecc-review-auto-refresh` | `t` | non-nil なら、開いているレビューは、そのセッションのツールの完了、ターンの終了、リポジトリのファイルの保存のたびに diff を読み直します。コメントと読んでいた位置は保たれます。見えていないレビューは表示されたときに読み直します。ediff のレビューも追従します。`nil` なら `g` のときだけ読み直します |
 | `ecc-review-files-width` | `32` | `s` でレビューの横に出すファイルの一覧の幅（桁数） |
 | `ecc-review-ediff-layout` | `'stacked` | ediff のレビューを開いたときの並び。`'stacked` は変更前を上・変更後を下に並べ、Claude の返答の欄を右に出す。`'side-by-side` は左右に並べ、欄を下に出す。開いたレビューでは `\|` で切り替わる |
-| `ecc-review-talk-reply-width` | `60` | 上下に並べた ediff のレビューの右に出す、Claude の返答の欄の幅（桁数）。diff の幅が 80 桁を切るほどフレームが狭いときは、欄を下に出す |
-| `ecc-review-talk-reply-height` | `8` | 左右に並べた ediff のレビューの下に出す、Claude の返答の欄の高さ（行数）。`nil` でどちらの並びでも欄を出さない |
+| `ecc-review-talk-reply-width` | `75` | 上下に並べた ediff のレビューの右に出す、Claude の返答の欄の幅（桁数）。diff の幅が 80 桁を切るほどフレームが狭いときは、欄を下に出す |
+| `ecc-review-talk-reply-height` | `12` | 左右に並べた ediff のレビューの下に出す、Claude の返答の欄の高さ（行数）。`nil` でどちらの並びでも欄を出さない |
 | `ecc-review-talk-reply-place` | `'auto` | 返答の欄を出す場所。`'auto` は並びに合わせてレビューの横、`'frame` はレビューごとの別のフレーム。そのレビューと一緒に閉じ、フォーカスを取らない |
 
 ## ウィンドウ分割

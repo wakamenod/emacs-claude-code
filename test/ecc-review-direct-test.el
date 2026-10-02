@@ -293,8 +293,9 @@ command is run, with `this-command' COMMAND, `next-line' by default."
       (select-window (ecc-review-direct-test--window control 'B))
       (should-error (call-interactively #'ecc-review-direct-comment) :type 'user-error))))
 
-(ert-deftest ecc-review-direct-test-d-takes-the-comment-of-the-line ()
-  "d in a window removes the comment of the line at point, not another of its difference."
+(ert-deftest ecc-review-direct-test-x-takes-the-comment-of-the-line ()
+  "x in a window removes the comment of the line at point, not another of its difference.
+It is d in the diff review; in ediff, d scrolls the reply pane."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
     (ecc-review-direct-test--with-review session control
@@ -304,7 +305,7 @@ command is run, with `this-command' COMMAND, `next-line' by default."
       (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "second")))
         (ecc-review-direct-test--move control 'B 22)
         (ecc-review-direct-test--type control 'B "c"))
-      (ecc-review-direct-test--type control 'B "d")
+      (ecc-review-direct-test--type control 'B "x")
       (with-current-buffer control
         (should (equal (mapcar #'ecc-review-note-text ecc-review--notes) '("first")))))))
 

@@ -35,10 +35,12 @@
 ;; - `ecc-review-direct-mode' is on in both.  Its keys are those of the
 ;;   control panel, looked up in the panel's keymap and run in the
 ;;   control buffer, the way ediff's commands expect to be run; the
-;;   keyboard stays in the window they were typed in.  c, d and RET are
+;;   keyboard stays in the window they were typed in.  c, x and RET are
 ;;   the windows' own: c comments on the line at point -- the old side
-;;   on the left, the new on the right, as the diff review does -- d
+;;   on the left, the new on the right, as the diff review does -- x
 ;;   removes the comments of that line first, and RET opens the file.
+;;   (d is the diff review's key for that; here d and u scroll the
+;;   reply pane, `ecc-review-talk.el'.)
 ;;   The review opens with the keyboard in the right window; the header
 ;;   lines show the keys and where the review is, and the panel is out
 ;;   of sight but for the help ? shows (`ecc-review-ediff.el').
@@ -549,7 +551,7 @@ sides share there is nothing to comment on."
 (defun ecc-review-direct-remove-comment (&optional all)
   "Remove a comment on the line at point, whoever wrote it.
 When the line carries none, a comment of the current difference, as
-\\`d' in the control panel does.  With a prefix argument ALL every
+\\`x' in the control panel does.  With a prefix argument ALL every
 comment of the review is offered."
   (interactive "P")
   (let* ((control (ecc-review-direct--control))
@@ -725,10 +727,10 @@ shown keeps the point its buffer had."
 
 (defvar ecc-review-direct-header-keys
   '((A ("n/p" . "diff") ("j" . "jump") ("{ }" . "comments") ("c" . "comment")
-       ("d" . "delete") ("l" . "list") ("a" . "Claude's") ("s" . "files")
+       ("x" . "delete") ("l" . "list") ("a" . "Claude's") ("s" . "files")
        ("/" . "filter"))
     (B ("RET" . "open") ("T" . "tour") ("t" . "next") ("M" . "message")
-       ("v/V" . "scroll") ("C-c C-c" . "send") ("!" . "reread") ("q" . "quit")
+       ("u/d" . "reply") ("v/V" . "scroll") ("C-c C-c" . "send") ("!" . "reread") ("q" . "quit")
        ("?" . "all keys")))
   "The keys the header line of each window of an ediff review shows.
 For each side, (KEY . WHAT) in the order they are shown.  Every key
@@ -853,7 +855,7 @@ would come out the same is set again."
 ;;;; The mode
 
 (defvar ecc-review-direct-relayed-keys
-  '("j" "{" "}" "a" "b" "s" "/" "T" "t" "M" "y" "l" "!" "?" "i" "q"
+  '("j" "{" "}" "a" "b" "s" "/" "T" "t" "M" "y" "u" "d" "l" "!" "?" "i" "q"
     "v" "V" "C-l" "|" "m" "h" "@" "*" "<" ">" "##" "#c" "#h" "#f"
     "C-c C-c" "C-c C-k")
   "The keys of the control panel that the two windows of a review have too.
@@ -874,7 +876,7 @@ Each does there what it does in the panel, wherever that is bound
     (define-key map (kbd "SPC") #'ecc-review-direct-next-difference)
     (define-key map (kbd "DEL") #'ecc-review-direct-previous-difference)
     (define-key map (kbd "c") #'ecc-review-direct-comment)
-    (define-key map (kbd "d") #'ecc-review-direct-remove-comment)
+    (define-key map (kbd "x") #'ecc-review-direct-remove-comment)
     (define-key map (kbd "RET") #'ecc-review-direct-visit)
     map)
   "Keymap of `ecc-review-direct-mode'.")
@@ -883,7 +885,7 @@ Each does there what it does in the panel, wherever that is bound
   "The keys of an ediff review in its two windows, and point driving it.
 On in both buffers of an ediff review.  The keys of the control panel
 do there what they do in the panel; \\`c' comments on the line at
-point, \\`d' removes a comment of it and \\`RET' opens its file; moving
+point, \\`x' removes a comment of it and \\`RET' opens its file; moving
 point makes the difference it is in the current one and puts the other
 window against it.
 
