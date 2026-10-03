@@ -248,7 +248,8 @@ a `webp` under `_astro/` with the base already in the URL.
 ## The videos and their subtitles
 
 A scene that moves is a video: `public/videos/NAME.mp4` (H.264, `yuv420p`,
-`+faststart`, no audio), with `NAME.en.vtt` and `NAME.ja.vtt` beside it.
+`+faststart`, no audio), with its first frame as the poster `NAME.webp`, and
+`NAME.en.vtt` and `NAME.ja.vtt` beside it.
 Markdown image syntax cannot carry a video, and Astro's image pipeline does not
 process one, so the files are served from `public/` unchanged. A page that
 shows a video is `.mdx` and uses the component:
@@ -260,10 +261,21 @@ import Video from '../../../components/Video.astro';
 ```
 
 `Video.astro` puts the `base` in front of the URLs — nothing else does for a
-file in `public/` — plays the video muted and looping like the GIFs it
-replaced, gives it `controls` so that the subtitles can be switched, and turns
-on the track of the page's language: English on an English page, Japanese
-under `/ja/`. `label` is the video's accessible name, written like alt text.
+file in `public/` — and shows the poster until the reader presses play; a
+video does not start by itself, and loads only its metadata until then. It
+plays muted and looping, has `controls` so that the subtitles can be
+switched, and turns on the track of the page's language: English on an
+English page, Japanese under `/ja/`. `label` is the video's accessible name,
+written like alt text.
+
+A browser sizes the subtitles from the height of the video, and a video as
+wide as the content column made them larger than the text around them, so
+`::cue` sets them to 0.85rem, a little under the body text, on a translucent
+dark background. `font-size`, `color` and `background-color` are among the
+properties `::cue` accepts in Chrome, Firefox and Safari. Safari lets the
+reader's caption style in the system's accessibility settings override the
+page. This is from the browsers' documentation, not from a test in each
+(2026-10-03).
 
 The text of the subtitles is written by hand; the times are not.
 In a scene in `scripts/docshots.sh`, `cue` marks where each subtitle starts.

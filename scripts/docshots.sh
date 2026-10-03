@@ -6,15 +6,18 @@
 # Writes the stills into docs/site/src/assets and the short videos into
 # docs/site/public/videos, or both into the directory given.  A video is
 # an mp4 (H.264, yuv420p, no audio) encoded from the frames captured
-# while the scene plays.  Beside each one are its subtitles, NAME.en.vtt
-# and NAME.ja.vtt, written by hand; this script writes their cue times,
-# from the `cue' marks in the scene, and leaves their text alone.
+# while the scene plays, and NAME.webp beside it is its first frame, the
+# poster the page shows until the video is played.  Beside each one are
+# its subtitles, NAME.en.vtt and NAME.ja.vtt, written by hand; this
+# script writes their cue times, from the `cue' marks in the scene, and
+# leaves their text alone.
 #
 # Opens a throwaway GUI Emacs, walks it through each scene and captures
 # the frame.  No CLI and no network are involved, so it costs nothing and
 # comes out the same every time.
 #
-# macOS only.  It needs `screencapture' and `ffmpeg', and the terminal
+# macOS only.  It needs `screencapture', `ffmpeg' and `cwebp' (brew
+# install webp: Homebrew's ffmpeg has no WebP encoder), and the terminal
 # running this needs Screen Recording permission (System Settings ->
 # Privacy & Security -> Screen Recording); without it screencapture says
 # "could not create image from display".
@@ -141,8 +144,20 @@ video() {
         -vf "scale=1200:-2:flags=lanczos,format=yuv420p" \
         -c:v libx264 -preset slow -crf 30 -an -movflags +faststart \
         "$videodir/$scene.mp4"
+    poster
     retime
     rm -rf "${frames:?}/${scene:?}" "${frames:?}/${scene:?}.cues"
+}
+
+# Write the first frame of the video as its poster.  It is taken from
+# the mp4 rather than from the first capture so that it is the picture
+# the video opens on, scaled the same.  WebP at quality 80 is a seventh
+# of the size of the same frame as a PNG (2026-10-03).
+poster() {
+    ffmpeg -hide_banner -loglevel error -y -i "$videodir/$scene.mp4" \
+        -frames:v 1 "$frames/$scene.poster.png"
+    cwebp -quiet -q 80 "$frames/$scene.poster.png" -o "$videodir/$scene.webp"
+    rm -f "${frames:?}/${scene:?}.poster.png"
 }
 
 # Write the times of the cue marks into the subtitles of the scene.  The
