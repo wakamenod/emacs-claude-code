@@ -116,7 +116,11 @@ needs my attention.  Then stop and wait: I will ask for the next stop."
   "What the key T of a review sends to the session of the review.")
 
 (defvar ecc-review-talk-next-prompt "Next stop."
-  "What the key t of a review sends to the session of the review.")
+  "What the key t of a review sends to the session of the review.
+Where the user is follows it (`ecc-review-talk--where').")
+
+(defvar ecc-review-talk-where-label "Where I am in the review:"
+  "What the place of the user in the review is introduced by, after t and M.")
 
 (defface ecc-review-talk-speaker-face
   '((t :inherit ecc-heading-face))
@@ -138,6 +142,29 @@ A tour is made of them; without MCP the model has none to call."
     (user-error "A tour needs the review tools: turn on `ecc-mcp-enabled' and start %s again"
                 (ecc-session-name session))))
 
+;; The model would otherwise spend its first calls asking for what this
+;; Emacs knows: where the user is, with t and M.  A round trip of a tool
+;; took 2-5 s (2026-10-02).
+
+(defun ecc-review-talk--where ()
+  "Return the block that says where the user is in this review, or nil.
+The file, the line and its side, and the hunk with its @@ header and its
+number among the hunks of the file (`ecc-review-place-at-point'); the
+patch is not in it.  A quote block like the context a prompt is given
+\(`ecc-context-format')."
+  (when-let* ((place (ecc-review-place-at-point))
+              (path (plist-get place :path)))
+    (let ((hunk (plist-get place :hunk))
+          (line (plist-get place :line)))
+      (concat "\n\n---\n" ecc-review-talk-where-label (format " `%s`" path)
+              (when line
+                (format " L%d (%s side)" line (plist-get place :side)))
+              (cond (hunk
+                     (let ((number (ecc-review-hunk-number hunk)))
+                       (format ", hunk %d/%d `%s`" (car number) (cdr number)
+                               (plist-get hunk :header))))
+                    (line ", outside any hunk"))))))
+
 (defun ecc-review-talk-send (text)
   "Send TEXT to the session of this review as a prompt, and show the pane.
 Sent the way `ecc-send' sends a prompt typed in the minibuffer, which
@@ -158,19 +185,20 @@ stop (`ecc-review-talk-next')."
 
 ;;;###autoload
 (defun ecc-review-talk-next ()
-  "Ask Claude for the next stop of the tour."
+  "Ask Claude for the next stop of the tour, saying where the user is."
   (interactive)
   (ecc-review-talk--needs-tools (ecc-review-talk--session))
-  (ecc-review-talk-send ecc-review-talk-next-prompt))
+  (ecc-review-talk-send (concat ecc-review-talk-next-prompt (ecc-review-talk--where))))
 
 ;;;###autoload
 (defun ecc-review-talk-message (text)
-  "Send TEXT, read in the minibuffer, to the session of this review."
+  "Send TEXT, read in the minibuffer, to the session of this review.
+Where the user is in the review goes with it (`ecc-review-talk--where')."
   (interactive
    (list (read-string (format "To %s: " (ecc-session-name (ecc-review-talk--session))))))
   (when (string-empty-p (string-trim text))
     (user-error "Prompt is empty"))
-  (ecc-review-talk-send text))
+  (ecc-review-talk-send (concat text (ecc-review-talk--where))))
 
 ;;;; Answering what Claude waits for
 

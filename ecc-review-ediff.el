@@ -1611,6 +1611,33 @@ the lines it covers on each side."
           (ecc-review-ediff--lines-of (plist-get hunk :new-count)
                                       (plist-get hunk :start) (plist-get hunk :end))))
 
+(cl-defmethod ecc-review-place-at-point (&context (major-mode ediff-mode))
+  "Return where the user is in this ediff review, as a plist, or nil.
+The point of the side the keyboard is in, the left being `old' and the
+right `new'; the right when it is in neither, as in the control panel.
+The hunk is the difference point is on, none in the lines both sides
+share, and the line is counted in the file point is in, on that side."
+  (let* ((side (if (and (window-live-p ediff-window-A)
+                        (eq (selected-window) ediff-window-A))
+                   'A
+                 'B))
+         (buffer (ecc-review-direct--buffer side))
+         (window (ecc-review-direct--window side)))
+    (when (buffer-live-p buffer)
+      (let* ((position (if window
+                           (window-point window)
+                         (with-current-buffer buffer (point))))
+             (number (with-current-buffer buffer (line-number-at-pos position)))
+             (index (if (eq side 'A) 1 2))
+             (section (ecc-review-ediff--section-at ecc-review-ediff--sections number index))
+             (line (and section (- number (nth index section))))
+             (n (ecc-review-direct--difference-near side position)))
+        (when section
+          (list :path (car section)
+                :hunk (and n (nth n (ecc-review-units)))
+                :line (and (> line 0) line)
+                :side (and (> line 0) (if (eq side 'A) 'old 'new))))))))
+
 ;;;; Where a comment is drawn
 
 (defun ecc-review-ediff--separator-position (side path)

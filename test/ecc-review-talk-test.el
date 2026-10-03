@@ -69,6 +69,10 @@ What each sends is in `ecc-review-talk-test--sent', with the session."
                         (alist-get 'content (alist-get 'message (cdr entry)))))
                     (reverse ecc-review-talk-test--sent))))
 
+(defun ecc-review-talk-test--opening (prompt)
+  "Return PROMPT up to what T, t or M put after it: the hunks, or where the user is."
+  (car (split-string prompt "\n\n---\n")))
+
 (defun ecc-review-talk-test--responses (session)
   "Return the control responses SESSION sent, oldest first."
   (delq nil (mapcar (lambda (entry)
@@ -207,11 +211,13 @@ Return the text node."
       (ecc-review-talk-test--diff-review two)
       (with-current-buffer review-one
         (ecc-review-talk-tour)
-        (should (equal (ecc-review-talk-test--prompts one)
+        (should (equal (mapcar #'ecc-review-talk-test--opening
+                               (ecc-review-talk-test--prompts one))
                        (list ecc-review-talk-tour-prompt)))
         (ecc-model-finish-turn one nil)
         (ecc-review-talk-next)
-        (should (equal (ecc-review-talk-test--prompts one)
+        (should (equal (mapcar #'ecc-review-talk-test--opening
+                               (ecc-review-talk-test--prompts one))
                        (list ecc-review-talk-tour-prompt ecc-review-talk-next-prompt))))
       (should-not (ecc-review-talk-test--prompts two))
       ;; The tour is in the words the instructions use for the tools.
@@ -226,7 +232,9 @@ Return the text node."
       (with-current-buffer (ecc-review-talk-test--diff-review one)
         (cl-letf (((symbol-function #'read-string) (lambda (&rest _) "why this line?")))
           (call-interactively #'ecc-review-talk-message))
-        (should (equal (ecc-review-talk-test--prompts one) '("why this line? [prepared]")))
+        (should (equal (ecc-review-talk-test--prompts one)
+                       (list (concat "why this line?\n\n---\n" ecc-review-talk-where-label
+                                     " `a.txt` [prepared]"))))
         (should-error (ecc-review-talk-message "  ") :type 'user-error)))
     (should-not (ecc-review-talk-test--prompts two))))
 
@@ -241,7 +249,8 @@ Return the text node."
           (ecc-review-talk-tour))
         (should (string-search "queued at position 1" said)))
       (should-not (ecc-review-talk-test--prompts one))
-      (should (equal (ecc-session-input-queue one) (list ecc-review-talk-tour-prompt))))))
+      (should (equal (mapcar #'ecc-review-talk-test--opening (ecc-session-input-queue one))
+                     (list ecc-review-talk-tour-prompt))))))
 
 (ert-deftest ecc-review-talk-test-no-tour-without-the-tools ()
   "Without MCP there is nothing to tour with, and T says so; M still sends."
@@ -252,7 +261,9 @@ Return the text node."
         (should-error (ecc-review-talk-next) :type 'user-error)
         (should-not (ecc-review-talk-test--prompts one))
         (ecc-review-talk-message "hello")
-        (should (equal (ecc-review-talk-test--prompts one) '("hello")))))))
+        (should (equal (mapcar #'ecc-review-talk-test--opening
+                               (ecc-review-talk-test--prompts one))
+                       '("hello")))))))
 
 (ert-deftest ecc-review-talk-test-the-diff-review-has-no-pane ()
   "A diff review has the session beside it, and no reply pane."
@@ -266,6 +277,109 @@ Return the text node."
       (should-not (seq-find (lambda (buffer)
                               (string-prefix-p "*ecc-review-reply" (buffer-name buffer)))
                             (buffer-list))))))
+
+;;;; What goes with what is sent
+
+(defconst ecc-review-talk-test--two-hunks
+  "diff --git a/a.txt b/a.txt
+--- a/a.txt
++++ b/a.txt
+@@ -1,3 +1,3 @@
+ one
+-two
++TWO
+ three
+@@ -10,3 +10,3 @@
+ ten
+-eleven
++ELEVEN
+ twelve
+"
+  "A diff of one file with two hunks.")
+
+(defun ecc-review-talk-test--where (path line side hunk total header)
+  "Return the block that says the user is on LINE of SIDE of PATH.
+In hunk HUNK of TOTAL, whose @@ line is HEADER; LINE nil for a header,
+HUNK nil for none."
+  (concat "\n\n---\n" ecc-review-talk-where-label (format " `%s`" path)
+          (if line (format " L%d (%s side)" line side) "")
+          (cond (hunk (format ", hunk %d/%d `%s`" hunk total header))
+                (line ", outside any hunk")
+                (t ""))))
+
+(defun ecc-review-talk-test--say-from (line text)
+  "Put point at the start of the line that is LINE, and send TEXT with M."
+  (goto-char (point-min))
+  (re-search-forward (concat "^" (regexp-quote line) "$"))
+  (beginning-of-line)
+  (cl-letf (((symbol-function #'read-string) (lambda (&rest _) text)))
+    (call-interactively #'ecc-review-talk-message)))
+
+(ert-deftest ecc-review-talk-test-m-and-t-say-where-in-the-diff-review ()
+  "M and t carry the file, the line at point, its side and its hunk."
+  (ecc-review-talk-test--with-sessions one _two
+    (with-current-buffer (ecc-review--fill (get-buffer-create (ecc-review-buffer-name one))
+                                           one ecc-review-talk-test--two-hunks
+                                           temporary-file-directory)
+      (ecc-review-talk-test--say-from "-two" "why?")
+      (ecc-model-finish-turn one nil)
+      (ecc-review-talk-test--say-from "+ELEVEN" "and this?")
+      (ecc-model-finish-turn one nil)
+      (ecc-review-talk-test--say-from "@@ -10,3 +10,3 @@" "this hunk?")
+      (ecc-model-finish-turn one nil)
+      (ecc-review-talk-next)
+      (should (equal (ecc-review-talk-test--prompts one)
+                     (list (concat "why?" (ecc-review-talk-test--where
+                                           "a.txt" 2 'old 1 2 "@@ -1,3 +1,3 @@"))
+                           (concat "and this?" (ecc-review-talk-test--where
+                                                "a.txt" 11 'new 2 2 "@@ -10,3 +10,3 @@"))
+                           ;; On the @@ line, the hunk and no line.
+                           (concat "this hunk?" (ecc-review-talk-test--where
+                                                 "a.txt" nil nil 2 2 "@@ -10,3 +10,3 @@"))
+                           ;; t says where point still is.
+                           (concat ecc-review-talk-next-prompt
+                                   (ecc-review-talk-test--where
+                                    "a.txt" nil nil 2 2 "@@ -10,3 +10,3 @@"))))))))
+
+(ert-deftest ecc-review-talk-test-m-and-t-say-where-in-the-ediff-review ()
+  "In an ediff review, the side of the window the keyboard is in, and its line."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (ecc-review-talk-test--with-ediff one control
+      (let* ((units (ecc-review-units))
+             (first (nth 0 units))
+             (second (nth 1 units))
+             (left ediff-window-A)
+             (right ediff-window-B))
+        (should (= (length units) 2))
+        (should (string-prefix-p "@@ " (plist-get first :header)))
+        ;; Line 2 on the left: the first difference, as it was.
+        (select-window left)
+        (set-window-point left (plist-get first :a-beg))
+        (with-current-buffer control
+          (ecc-review-talk-message "why?"))
+        (ecc-model-finish-turn one nil)
+        ;; Line 11 on the right: the second, as it is now.
+        (select-window right)
+        (set-window-point right (plist-get second :b-beg))
+        (with-current-buffer control
+          (ecc-review-talk-next))
+        (ecc-model-finish-turn one nil)
+        ;; Line 5 on the right, which both sides share.
+        (with-current-buffer (window-buffer right)
+          (goto-char (point-min))
+          (re-search-forward "^line 5$")
+          (set-window-point right (line-beginning-position)))
+        (with-current-buffer control
+          (ecc-review-talk-message "and here?"))
+        (should (equal (ecc-review-talk-test--prompts one)
+                       (list (concat "why?" (ecc-review-talk-test--where
+                                             "a.txt" 2 'old 1 2 (plist-get first :header)))
+                             (concat ecc-review-talk-next-prompt
+                                     (ecc-review-talk-test--where
+                                      "a.txt" 11 'new 2 2 (plist-get second :header)))
+                             (concat "and here?" (ecc-review-talk-test--where
+                                                  "a.txt" 5 'new nil nil nil)))))))))
 
 ;;;; The pane
 
@@ -865,7 +979,8 @@ What is kept is the side window's, whichever window is taken down last."
         (ecc-review-talk-tour)
         (should-not (ecc-review-talk-test--pane control))
         (should-error (ecc-review-talk-scroll-back) :type 'user-error)
-        (should (equal (ecc-review-talk-test--prompts one)
+        (should (equal (mapcar #'ecc-review-talk-test--opening
+                               (ecc-review-talk-test--prompts one))
                        (list ecc-review-talk-tour-prompt)))))))
 
 (ert-deftest ecc-review-talk-test-the-pane-streams-the-latest-reply ()
