@@ -59,7 +59,9 @@ d='%s'
 printf '%%s|%%s\\n' \"$PWD\" \"$*\" >> \"$d/log\"
 if [ -f \"$d/fail\" ]; then cat \"$d/fail\" >&2; exit 4; fi
 case \"$1 $2\" in
-  'pr list') cat \"$d/list.json\" ;;
+  'pr list') if [ \"$3\" = --search ]; then
+               if [ -f \"$d/search.json\" ]; then cat \"$d/search.json\"; else echo '[]'; fi
+             else cat \"$d/list.json\"; fi ;;
   'pr view') if [ -f \"$d/view-$3.json\" ]; then cat \"$d/view-$3.json\";
              else echo \"no pull request $3\" >&2; exit 1; fi ;;
   *) echo \"unexpected: $*\" >&2; exit 2 ;;
@@ -67,8 +69,9 @@ esac
 "
   "The fake gh, formatted with the directory of its answers.
 It logs each call as DIRECTORY|ARGS to log, fails with the text of fail
-when there is one, and answers `pr list' with list.json and `pr view N'
-with view-N.json.")
+when there is one, and answers `pr list' with list.json, `pr list
+--search' with search.json (none found when there is none) and `pr view
+N' with view-N.json.")
 
 (defmacro ecc-review-pr-test--with-gh (dir &rest body)
   "Run BODY with a fake gh whose answers are in the directory DIR.
@@ -92,7 +95,8 @@ git may fetch only from a local path."
 
 (defun ecc-review-pr-test--log (dir)
   "Return the calls the fake gh in DIR logged, as (DIRECTORY . ARGS) strings."
-  (let ((log (expand-file-name "log" dir)))
+  (let ((log (expand-file-name "log" dir))
+        (coding-system-for-read 'utf-8))
     (and (file-exists-p log)
          (with-temp-buffer
            (insert-file-contents log)
@@ -104,8 +108,22 @@ git may fetch only from a local path."
           (list :number number :title title :headRefName head :baseRefName base
                 :headRefOid head-oid :baseRefOid base-oid
                 :author (list :login "someone" :name "Some One")
-                :isDraft :false :isCrossRepository :false
+                :state "OPEN" :isDraft :false :isCrossRepository :false
                 :url (format "https://github.com/o/r/pull/%d" number))))
+
+(defmacro ecc-review-pr-test--asking (answers asked &rest body)
+  "Run BODY with `completing-read' giving ANSWERS one by one.
+ASKED is bound to the questions put, last first, each (PROMPT
+CANDIDATES DEFAULT); an answer of nil takes the default."
+  (declare (indent 2))
+  `(let ((queue ,answers) (,asked nil))
+     (cl-letf (((symbol-function 'completing-read)
+                (lambda (prompt table &optional _pred _match _initial _history default
+                                &rest _)
+                  (push (list prompt (all-completions "" table) default) ,asked)
+                  (unless queue (ert-fail "Asked once more than expected"))
+                  (or (pop queue) default))))
+       ,@body)))
 
 (defun ecc-review-pr-test--upstream (directory)
   "Make the GitHub of the tests under DIRECTORY and a clone of it.
@@ -180,6 +198,16 @@ request.  Return (WORK BASE-OID HEAD-OID)."
                    "#113  fix(review): タブと 改行  fix/x → feat/y  @someone"))
     (should (equal (ecc-review-pr-line (cadr prs))
                    "#7  [draft] 草稿  draft → develop  @someone"))
+    ;; A closed or merged one says so; an open one says nothing.
+    (let ((prs (ecc-review-pr-parse
+                (json-serialize
+                 (vector (ecc-review-pr-test--pr 1 "m" "h" "main" "1" "2" :state "MERGED")
+                         (ecc-review-pr-test--pr 2 "c" "h" "main" "1" "2" :state "CLOSED"
+                                                 :isDraft t))))))
+      (should (equal (mapcar (lambda (pr) (plist-get pr :state)) prs) '(merged closed)))
+      (should (equal (mapcar #'ecc-review-pr-line prs)
+                     '("#1  [merged] m  h → main  @someone"
+                       "#2  [closed] [draft] c  h → main  @someone"))))
     ;; One object, what `gh pr view' prints, is a list of one.
     (should (equal (mapcar (lambda (pr) (plist-get pr :number))
                            (ecc-review-pr-parse (json-serialize (ecc-review-pr-test--pr
@@ -209,20 +237,23 @@ A number typed that is not listed is asked of gh by itself."
           (should (equal (plist-get pr :number) 3))
           (should (equal (car seen) "#3  mine  feature → develop  @someone"))
           (should (equal (mapcar (lambda (line) (substring line 0 2)) (cadr seen))
-                         '("#9" "#8" "#3"))))
+                         (list (substring ecc-review-pr-search-label 0 2)
+                               "#9" "#8" "#3"))))
         ;; A fork's main is not the main checked out here.
         (setq answer "9")
         (should (equal (plist-get (ecc-review-pr-read dir "main") :number) 9))
         (should-not (car seen))
         (setq answer "#42")
         (should (equal (plist-get (ecc-review-pr-read dir "main") :title) "merged"))
-        (setq answer "nonsense")
+        (setq answer "")
         (should-error (ecc-review-pr-read dir "main") :type 'user-error)))
     ;; gh ran in the project, and was never asked to fetch or check out.
     (let ((log (ecc-review-pr-test--log dir)))
       (should (string-prefix-p (concat (directory-file-name dir) "|pr list --json ")
                                (car log)))
       (should (seq-some (lambda (line) (string-search "|pr view 42 --json" line)) log))
+      ;; A number is never searched for.
+      (should-not (seq-some (lambda (line) (string-search "--search" line)) log))
       (should-not (seq-some (lambda (line) (string-search "checkout" line)) log)))))
 
 (ert-deftest ecc-review-pr-test-gh-error-is-surfaced ()
@@ -235,6 +266,86 @@ A number typed that is not listed is asked of gh by itself."
   (ecc-review-pr-test--with-gh dir
     (let ((err (should-error (ecc-review-pr-view dir 77) :type 'user-error)))
       (should (string-search "no pull request 77" (cadr err))))))
+
+;;;; Searching
+
+(ert-deftest ecc-review-pr-test-search-entry-asks-and-searches ()
+  "The search entry is first; choosing it asks for words and searches all states.
+What is found is offered the same way, the entry first again, and a
+Japanese query and title go through gh intact."
+  (ecc-review-pr-test--with-gh dir
+    (ecc-review-pr-test--answer
+     dir "list.json" (list (ecc-review-pr-test--pr 9 "nine" "other" "develop" "1" "2")))
+    (ecc-review-pr-test--answer
+     dir "search.json"
+     (list (ecc-review-pr-test--pr 50 "認証の修正" "fix/auth" "develop" "3" "4" :state "MERGED")
+           (ecc-review-pr-test--pr 49 "古い案" "old" "develop" "5" "6" :state "CLOSED")))
+    (let ((queries nil)
+          (default-process-coding-system '(latin-1 . latin-1))
+          (locale-coding-system 'latin-1))
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (prompt &rest _) (push prompt queries) "is:merged 認証")))
+        (ecc-review-pr-test--asking (list ecc-review-pr-search-label
+                                          "#50  [merged] 認証の修正  fix/auth → develop  @someone")
+            asked
+          (let ((pr (ecc-review-pr-read dir "main")))
+            (should (equal (plist-get pr :number) 50))
+            (should (eq (plist-get pr :state) 'merged))
+            (should (equal (plist-get pr :title) "認証の修正")))
+          (setq asked (reverse asked))
+          (should (equal (nth 1 (car asked))
+                         (list ecc-review-pr-search-label
+                               "#9  nine  other → develop  @someone")))
+          (should (string-search "\"is:merged 認証\"" (car (nth 1 asked))))
+          (should (equal (nth 1 (nth 1 asked))
+                         (list ecc-review-pr-search-label
+                               "#50  [merged] 認証の修正  fix/auth → develop  @someone"
+                               "#49  [closed] 古い案  old → develop  @someone")))))
+      (should (= (length queries) 1))
+      (should (string-search "is:merged" (car queries))))
+    (should (member (concat (directory-file-name dir)
+                            "|pr list --search is:merged 認証 --state all --json "
+                            ecc-review-pr-fields)
+                    (ecc-review-pr-test--log dir)))))
+
+(ert-deftest ecc-review-pr-test-typed-words-search ()
+  "Words that are no line and no number search in one step, and again from the results."
+  (ecc-review-pr-test--with-gh dir
+    (ecc-review-pr-test--answer
+     dir "list.json" (list (ecc-review-pr-test--pr 9 "nine" "other" "develop" "1" "2")))
+    (ecc-review-pr-test--answer
+     dir "search.json" (list (ecc-review-pr-test--pr 3 "three" "t" "develop" "1" "2")))
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (&rest _) (ert-fail "Asked for words that were typed"))))
+      (ecc-review-pr-test--asking '("  author:me  " "label:bug" "3") asked
+        (should (equal (plist-get (ecc-review-pr-read dir "main") :number) 3))
+        (should (= (length asked) 3))
+        (should (equal (car (nth 1 (car asked))) ecc-review-pr-search-label))))
+    (let ((searches (seq-filter (lambda (line) (string-search "--search" line))
+                                (ecc-review-pr-test--log dir))))
+      (should (equal (mapcar (lambda (line)
+                               (cadr (split-string line "--search \\| --state")))
+                             searches)
+                     '("author:me" "label:bug")))
+      (should-not (seq-some (lambda (line) (string-search "pr view" line))
+                            (ecc-review-pr-test--log dir))))))
+
+(ert-deftest ecc-review-pr-test-search-finding-nothing-asks-again ()
+  "A search that finds nothing says so, and the question is put again."
+  (ecc-review-pr-test--with-gh dir
+    (ecc-review-pr-test--answer
+     dir "list.json" (list (ecc-review-pr-test--pr 9 "nine" "other" "develop" "1" "2")))
+    (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "")))
+      ;; An empty search asks the list again without running gh.
+      (ecc-review-pr-test--asking (list "no such thing" ecc-review-pr-search-label "9") asked
+        (should (equal (plist-get (ecc-review-pr-read dir "main") :number) 9))
+        (setq asked (reverse asked))
+        (should (string-prefix-p "No pull request matches \"no such thing\""
+                                 (car (nth 1 asked))))
+        (should (equal (nth 1 (nth 1 asked)) (nth 1 (car asked))))))
+    (should (= (seq-count (lambda (line) (string-search "--search" line))
+                          (ecc-review-pr-test--log dir))
+               1))))
 
 ;;;; Where a pull request is reviewed
 
@@ -365,6 +476,29 @@ A number typed that is not listed is asked of gh by itself."
 
 ;;;; Less usual pull requests
 
+(ert-deftest ecc-review-pr-test-merged-pr-is-base-to-head ()
+  "A merged PR is BASE...HEAD by id, fetched once, even on a branch of its name."
+  (skip-unless (executable-find "git"))
+  (ecc-review-pr-test--with-gh dir
+    (seq-let (work base head) (ecc-review-pr-test--upstream dir)
+      ;; A branch called as the head was, but newer work: not the PR.
+      (ecc-review-pr-test--git work "checkout" "-q" "-b" "topic")
+      (let ((pr (car (ecc-review-pr-parse
+                      (json-serialize (ecc-review-pr-test--pr 1 "済み" "topic" "main"
+                                                              head base :state "MERGED"))))))
+        (should-not (ecc-review-pr-own-p pr "topic"))
+        (should-not (ecc-review-pr--has-commit-p work head))
+        (should (equal (ecc-review-pr-range work pr "topic")
+                       (cons (format "%s...%s" base head) "PR #1 済み")))
+        (should (ecc-review-pr--has-commit-p work head))
+        ;; Not fetched again: the remote is not even asked.
+        (ecc-review-pr-test--git work "remote" "set-url" "origin"
+                                 (expand-file-name "gone/o/r.git" dir))
+        (should (equal (car (ecc-review-pr-range work pr "topic"))
+                       (format "%s...%s" base head)))
+        ;; The default of a search is never a closed or merged one.
+        (should-not (ecc-review-pr-default (list pr) "topic"))))))
+
 (ert-deftest ecc-review-pr-test-no-open-pr-asks-for-a-number ()
   "With no open pull request the question says so, and a number still works."
   (ecc-review-pr-test--with-gh dir
@@ -375,7 +509,7 @@ A number typed that is not listed is asked of gh by itself."
       (cl-letf (((symbol-function 'completing-read)
                  (lambda (p &rest _) (setq prompt p) "5")))
         (should (equal (plist-get (ecc-review-pr-read dir "main") :number) 5))
-        (should (string-prefix-p "No open pull request; type a number" prompt))))))
+        (should (string-prefix-p "No open pull request; type a number or words" prompt))))))
 
 (ert-deftest ecc-review-pr-test-gh-output-is-utf-8 ()
   "A Japanese title through gh comes out right whatever Emacs decodes with."
