@@ -38,7 +38,7 @@ face は挿入時に付き、`M-x customize` でカスタマイズできます�
 - **[グローバル操作](https://wakamenod.github.io/emacs-claude-code/ja/reference/key-bindings/):** どのバッファからでも保留中のツール実行リクエストを許可・拒否できます。
 - **[セッション管理](https://wakamenod.github.io/emacs-claude-code/ja/features/sessions/):** 同時に動いている複数のセッションをダッシュボードから管理できます。
 - **[Space と worktree](https://wakamenod.github.io/emacs-claude-code/ja/features/spaces/):** プロジェクトごとに Emacs のタブ（Space）が割り当てられ、その中のウィンドウ配置は並べたまま保たれます（`ecc-use-spaces`、既定で有効）。サイドバーには全プロジェクトとセッションが動作状況とともに並び、`ecc-start-worktree` はリポジトリの隣にブランチをチェックアウトして独立した Space として開きます。
-- **安全なデフォルト設定:** 自動承認は存在せず、勝手に許可されることはありません。答えられなくなったリクエストは拒否として記録されます。内蔵のループバック MCP サーバーは既定で無効で、Elisp の評価には明示的な有効化が必要です。
+- **安全なデフォルト設定:** `default` の[権限モード](https://wakamenod.github.io/emacs-claude-code/ja/features/permissions/#権限モード)では、Claude はファイルを編集したりコマンドを実行したりする前に許可を求めます。答えられなくなったリクエストは拒否として記録されます。ほかのモードでは、その一部を確認なしで通します。内蔵のループバック MCP サーバーは既定で無効です。有効にすると、そのレビューのツールはファイルを書かないので確認なしで許可されます。Elisp の評価には明示的な有効化が必要です。
 
 ## 動作要件
 

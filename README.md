@@ -37,7 +37,7 @@ The transcript is ordinary buffer text, so search, `occur`, narrowing, copying, 
 - **[Global access](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/):** Approve or deny pending tool requests from any buffer.
 - **[Session management](https://wakamenod.github.io/emacs-claude-code/features/sessions/):** Manage multiple concurrent sessions from a dashboard.
 - **[Spaces and worktrees](https://wakamenod.github.io/emacs-claude-code/features/spaces/):** Every project gets an Emacs tab of its own -- a Space -- and the windows in it stay where you put them (`ecc-use-spaces`, on by default). A sidebar lists every project and session with what each is doing, and `ecc-start-worktree` checks a branch out beside the repository and opens it as a Space of its own.
-- **Safe defaults:** Nothing is approved without you -- there is no auto-approval, and a request that can no longer be answered is recorded as denied. The built-in loopback MCP server is disabled by default, and evaluating Elisp requires explicit opt-in.
+- **Safe defaults:** In the `default` [permission mode](https://wakamenod.github.io/emacs-claude-code/features/permissions/#permission-modes), Claude asks before it edits a file or runs a command, and a request that can no longer be answered is recorded as denied. Other modes let some of these through without asking. The built-in loopback MCP server is disabled by default. When it is on, its review tools are allowed without asking, since they write no files. Evaluating Elisp requires explicit opt-in.
 
 ## Requirements
 
