@@ -107,8 +107,8 @@ There is no `i18n` collection because the site has no UI string overrides, and
 no `404.md` because Starlight's built-in 404 page is fine. Do not chase them.
 
 A page missing from `ja/` is not an error either: Starlight falls back to the
-English page at the Japanese URL, so `/ja/start/overview/` exists the moment
-`start/overview.md` does. It is a fallback, not a translation — the build
+English page at the Japanese URL, so `/ja/start/first-session/` exists the moment
+`start/first-session.md` does. It is a fallback, not a translation — the build
 output listing a `/ja/` route proves nothing about whether the Japanese page
 was written.
 

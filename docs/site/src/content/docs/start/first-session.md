@@ -21,7 +21,7 @@ To include code, write `@region` or `@cursor` in the prompt, or send the region 
 
 ## Allow a permission
 
-Before Claude edits a file or runs a command, the transcript shows the request with its diff or command, and the session's tab blinks. Nothing happens until you answer.
+A new session starts in the `default` permission mode, unless `ecc-permission-mode` or your Claude Code settings say otherwise. There, before Claude edits a file or runs a command, the transcript shows the request with its diff or command, and the session's tab blinks until you answer.
 
 Press `a` on the request to allow it once, or `d` to deny it. In the prompt region the same is `C-c C-a` and `C-c C-d`, and from any buffer `C-c c a` and `C-c c d`. [Permissions and plans](/emacs-claude-code/features/permissions/) covers the other answers, such as editing the proposal first.
 

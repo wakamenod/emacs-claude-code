@@ -73,7 +73,7 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 
 ## 動作確認
 
-プロジェクトのファイルを開いて `M-x ecc-start` を実行し、下のプロンプト領域にメッセージを入力して `C-c C-c` を押します。続きは[最初のセッション](/emacs-claude-code/ja/start/overview/)にあります。
+プロジェクトのファイルを開いて `M-x ecc-start` を実行し、下のプロンプト領域にメッセージを入力して `C-c C-c` を押します。続きは[最初のセッション](/emacs-claude-code/ja/start/first-session/)にあります。
 
 CLI が起動しないときは、`M-x ecc-show-log`（`C-c ?` → `L`）で、ecc が実行したコマンドと CLI が返したものを確認できます。
 

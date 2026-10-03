@@ -73,7 +73,7 @@ The built-in MCP server, on the loopback interface, lets Claude read `xref` refe
 
 ## Verifying the setup
 
-Open a file of a project, run `M-x ecc-start`, type a message in the prompt region at the bottom and press `C-c C-c`. [A first session](/emacs-claude-code/start/overview/) goes on from there.
+Open a file of a project, run `M-x ecc-start`, type a message in the prompt region at the bottom and press `C-c C-c`. [A first session](/emacs-claude-code/start/first-session/) goes on from there.
 
 If the CLI does not start, `M-x ecc-show-log` (`C-c ?` then `L`) shows the command ecc ran and what the CLI wrote back.
 
