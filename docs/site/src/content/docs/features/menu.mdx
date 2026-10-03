@@ -7,7 +7,7 @@ sidebar:
 
 import Video from '../../../components/Video.astro';
 
-Pressing `C-c ?` opens the transient menu (built using [transient](https://magit.vc/manual/transient/), the same menu library used by Magit). It provides discoverable access to every command in ecc.
+Pressing `C-c ?` opens the transient menu (built using [transient](https://magit.vc/manual/transient/), the same menu library used by Magit). It lists every command in ecc.
 
 ![The transient menu open under a session, showing its six groups: Session, Send, Review, Respond, View and Config](../../../assets/menu.png)
 
@@ -41,7 +41,7 @@ Lists conversations available to resume.
 Each entry shows its name, last active time, and directory (or initial prompt for recordings). Use the `-f` switch to branch a new conversation from the selected one instead of continuing it. With keybindings, `C-c c r` resumes directly and `C-u C-c c r` branches instead.
 
 :::caution[Resuming an active session branches history]
-If two processes write to the same session ID simultaneously, the recording can become corrupted since the CLI does not use file locking. This state is indicated by ◉; ecc asks for confirmation before resuming.
+If two processes write to the same session ID simultaneously, the recording can become corrupted, because the CLI does not lock the file. ◉ marks this state; ecc asks for confirmation before resuming.
 :::
 
 ### `k` — Kill
@@ -66,7 +66,7 @@ Hands off the conversation to [ghostel](https://github.com/dakra/ghostel), which
 
 <Video name="handover" label="A session handed over: the CLI's own interface takes the window, with the conversation resumed" />
 
-The turn is interrupted and the Emacs process is stopped before the terminal resumes the session to prevent branching history. The transcript continues tracking terminal activity while active.
+To keep the history from branching, ecc interrupts the turn and stops its own process before the terminal resumes the session. While the terminal runs, the transcript keeps following it.
 
 ### `u` — Reclaim session
 
@@ -74,7 +74,7 @@ Imports new exchanges from the terminal session and resumes it headless in Emacs
 
 ## Send
 
-These commands are intended to be run from source code buffers, sending context directly to the resolved session without interrupting active turns (subsequent prompts are queued).
+Run these commands from source code buffers. They send context to the resolved session without interrupting a running turn (later prompts are queued).
 
 ### `s` `x` `g` `f` — Sending from a buffer
 
@@ -98,11 +98,11 @@ def greet(name):
 ```
 ````
 
-A prefix argument prompts for an instruction to prepend to the code (`C-u g`), or prompts for the target session (`C-u s`). `f` offers to save the buffer first, ensuring the CLI reads the latest changes from disk.
+A prefix argument prompts for an instruction to prepend to the code (`C-u g`), or prompts for the target session (`C-u s`). `f` offers to save the buffer first, so the CLI reads the latest changes from disk.
 
 ### `e` — Fix error at point
 
-Sends diagnostics on the current line alongside surrounding context code. Queries Flymake first, then Flycheck, and finally any overlay help text at point.
+Sends the diagnostics on the current line with the code around it. It queries Flymake first, then Flycheck, and finally any overlay help text at point.
 
 <Video name="fix-error" label="The checker marks a line, the diagnostic is sent, and the fix comes back as an edit waiting to be allowed" />
 
@@ -170,7 +170,7 @@ See [Other features](/emacs-claude-code/features/other/#usage).
 
 ### `L` — Log
 
-View raw JSON protocol logs with timestamps (`<<` for incoming messages, `>>` for outgoing). This is the primary diagnostic buffer for troubleshooting and bug reports.
+View raw JSON protocol logs with timestamps (`<<` for incoming messages, `>>` for outgoing). This is the main buffer for troubleshooting and bug reports.
 
 ## Config
 
@@ -180,7 +180,7 @@ Change the active model for the running session without restarting.
 
 ### `p` — Permission mode
 
-Switch the permission mode for the running session. (In session buffers, press `S-TAB` to cycle modes directly).
+Switch the permission mode for the running session. In session buffers, `S-TAB` cycles the modes directly.
 
 ### `o` `O` `K` — Remote Control
 

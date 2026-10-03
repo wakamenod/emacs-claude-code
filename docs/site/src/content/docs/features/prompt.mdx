@@ -7,7 +7,7 @@ sidebar:
 
 import Video from '../../../components/Video.astro';
 
-A session buffer contains the transcript at the top, a prompt input area below a divider, and a footer at the bottom. The transcript is read-only text with its own local keymap attached via text properties, allowing single keys to trigger commands. The prompt area has no such property and follows the major mode map (binding only `RET`, `TAB`, movement keys, and `C-c C-` prefixes), so normal character typing is preserved.
+A session buffer contains the transcript at the top, a prompt input area below a divider, and a footer at the bottom. The transcript is read-only text with its own local keymap attached via text properties, so single keys run commands. The prompt area has no such property and follows the major mode map (binding only `RET`, `TAB`, movement keys, and `C-c C-` prefixes), so keys type characters as usual.
 
 ## The prompt region
 
@@ -40,7 +40,7 @@ The CLI may suggest a follow-up prompt after a turn or two. Suggestions appear i
 
 <Video name="suggestion" label="A suggestion standing in the empty prompt region, taken with C-c C-s and sent" />
 
-Suggestions appear only when `ecc-prompt-suggestions-enabled` is non-nil (which passes `--prompt-suggestions` to the CLI). Note that not all models support suggestions.
+Suggestions appear only when `ecc-prompt-suggestions-enabled` is non-nil (which passes `--prompt-suggestions` to the CLI). Not all models support suggestions.
 
 ### Prefix keybindings (C-c C-)
 
@@ -64,7 +64,7 @@ Suggestions appear only when `ecc-prompt-suggestions-enabled` is non-nil (which 
 
 <Video name="at-cursor" label="A prompt with @cursor in it: the reference becomes the file and the line the point was on, and the code goes with it" />
 
-`@` in a prompt references context for Claude to read. `TAB` completes available references — including those listed below, as well as project files.
+`@` in a prompt references context for Claude to read. `TAB` completes the references listed below and project files.
 
 | Reference | Description |
 |---|---|
@@ -84,7 +84,7 @@ The region, cursor, and diagnostics are captured from the buffer you were editin
 
 Typing `/` at the beginning of the prompt displays the command menu; `TAB` completes slash commands anywhere in the prompt. Each command includes its description from the CLI.
 
-`/model`, `/effort`, `/permissions`, `/config`, and `/btw` prompt for their argument first, as the CLI responds with usage instructions when invoked without arguments. Terminal-only commands are omitted from the completion list, though you can still run them by typing the full command.
+`/model`, `/effort`, `/permissions`, `/config`, and `/btw` prompt for their argument first, because the CLI answers with usage instructions when it gets no argument. Terminal-only commands are omitted from the completion list, though you can still run them by typing the full command.
 
 A few commands that the CLI does not list are handled directly by Emacs and never reach the model: `/btw`, `/hooks`, `/plugins`, `/login`, `/logout`, `/auth-status`, and `/resume`.
 
@@ -104,7 +104,7 @@ The active turn is not interrupted: the `/btw` response arrives in a separate vi
 
 Emacs stops the running CLI process first (interrupting any active turn and waiting for it to finish), because two processes on one session ID silently branch a recording. If a conversation already has turns or queued prompts, Emacs asks for confirmation before leaving it. The conversation you leave is preserved, and `ecc-history-open` can read it again.
 
-`/resume <session-id>` resumes the recording by ID without prompting. This works well with Spaces: opening a project with nothing running starts a fresh session, and `/resume` lets you return to the previous one.
+`/resume <session-id>` resumes the recording by ID without prompting. With Spaces, opening a project with nothing running starts a fresh session, and `/resume` returns you to the previous one.
 
 ### While a turn runs
 
@@ -128,13 +128,13 @@ A GIF animates as soon as it is displayed and loops as long as it is on screen. 
 
 ### The footer
 
-Below the prompt area sits a horizontal divider, showing the current permission mode on the left and the active model on the right. `S-TAB` cycles through `default`, `acceptEdits`, `plan`, and `auto`. (`bypassPermissions` is omitted from the cycle to avoid accidental activation; use `ecc-set-permission-mode` to select it). An empty prompt area displays placeholder text rendered via overlays rather than buffer text.
+Below the prompt area sits a horizontal divider, showing the current permission mode on the left and the active model on the right. `S-TAB` cycles through `default`, `acceptEdits`, `plan`, and `auto`. The cycle skips `bypassPermissions` so you do not turn it on by accident. Select it with `ecc-set-permission-mode`. An empty prompt area displays placeholder text rendered via overlays rather than buffer text.
 
 ## The transcript
 
 <Video name="fold" label="The transcript folding: everything collapsed, then opened a level at a time, then one node folded and unfolded with TAB" />
 
-The transcript is standard read-only buffer text, so `isearch`, `occur`, narrowing, and `M-w` work just as they do anywhere in Emacs.
+The transcript is standard read-only buffer text, so `isearch`, `occur`, narrowing, and `M-w` work as they do anywhere in Emacs.
 
 ### Folding
 
@@ -206,7 +206,7 @@ Nodes awaiting user input have an active local keymap when point is inside them:
 | `r` | Allow matching rule (saves pattern to project settings) |
 | `c` / `e` | Comment on proposal / edit before allowing |
 
-These bindings use keys unassigned elsewhere in the transcript so existing commands are never shadowed. Because point position selects the active keymap, commands are strictly scoped to avoid accidental triggers. See [Review and plan mode](/emacs-claude-code/features/review/) for details on `c` and `e`.
+These keys are not bound elsewhere in the transcript, so they shadow no other command. They act only while point is inside the request node. See [Review and plan mode](/emacs-claude-code/features/review/) for details on `c` and `e`.
 
 Questions are answered in a dedicated buffer opened with `RET`: press `1`–`9` to choose an option, `SPC` to toggle multiple-choice items, `o` to type a custom answer, and `C-c C-c` to send.
 

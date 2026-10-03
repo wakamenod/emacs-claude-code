@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-Every `defcustom` in ecc is listed below, organized by functional area. All settings belong to the `ecc` customization group:
+This page lists every `defcustom` in ecc, grouped by area. All settings belong to the `ecc` customization group:
 
 ```
 M-x customize-group RET ecc
@@ -22,7 +22,7 @@ M-x customize-group RET ecc
 | `ecc-command-wrapper-function` | `nil` | Hook function to transform the CLI command invocation before execution. Receives `(command-list project-root)` and returns the modified command list. When `nil`, commands run unchanged |
 | `ecc-disabled-plugins` | `nil` | List of plugin identifiers (`"name@marketplace"`) to disable for sessions started by ecc. Applied per session, so plugins stay enabled in the terminal client |
 
-There is deliberately **no setting for the default model**. The model is determined by your Claude Code settings for new sessions, and by the last assistant turn for resumed sessions. Passing `--model` unconditionally would override user selections permanently, undoing in-session `/model` changes. Use `ecc-set-model` (or `m` in the menu) to change the model for a running session instead.
+There is deliberately no setting for the default model. The model is determined by your Claude Code settings for new sessions, and by the last assistant turn for resumed sessions. Passing `--model` unconditionally would override user selections permanently, undoing in-session `/model` changes. Use `ecc-set-model` (or `m` in the menu) to change the model for a running session instead.
 
 Similarly, there is no setting for session cost budgets; budgets belong in Claude Code settings.
 
@@ -32,7 +32,7 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 |---|---|---|
 | `ecc-chat-return-sends` | `nil` | When `nil` (default), `RET` inserts a newline and `C-c C-c` sends. When `t`, `RET` sends immediately (matching the terminal client) |
 | `ecc-chat-text-width` | `100` | Maximum line width for rendered text, or `nil` to use full window width. Surplus space is padded into the right margin so adjacent window layouts remain unaffected |
-| `ecc-chat-line-spacing` | `0.15` | Additional line spacing below each line, following standard `line-spacing` semantics (e.g., float value represents a fraction of line height). `nil` disables added spacing |
+| `ecc-chat-line-spacing` | `0.15` | Additional line spacing below each line, following standard `line-spacing` semantics (a float is a fraction of the line height). `nil` disables added spacing |
 | `ecc-render-result-max-lines` | `12` | Maximum lines displayed for a tool result preview. The full result is always accessible with `RET` |
 | `ecc-render-inhibit-inline-diff` | `nil` | When `nil` (default), a call that changes a file -- Edit, MultiEdit, Write, NotebookEdit -- comes up showing its diff. When `t`, those calls come up folded and `TAB` opens them |
 | `ecc-render-diff-max-lines` | `40` | Maximum lines displayed for inline diffs in tool and permission blocks. The full diff is always accessible with `RET` |
@@ -49,7 +49,7 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 | `ecc-prompt-suggestion-display` | `t` | When non-nil, displays ghost text suggestions from the CLI in the prompt area. Requires `ecc-prompt-suggestions-enabled` |
 | `ecc-mode-line-format` | `nil` | Format string for session status in the mode line. `nil` disables mode line display |
 
-`ecc-mode-line-format` is `nil` by default because mode line space is limited, the same metrics are already visible in the header line, and duplicating them across both clutters the interface. If desired, configure it with the following format specifiers:
+`ecc-mode-line-format` is `nil` by default because mode line space is limited and the header line already shows the same metrics. To turn it on, use these format specifiers:
 
 | Spec | Meaning |
 |---|---|
@@ -69,7 +69,7 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 | `ecc-notify-level` | `'message` | Notification verbosity: `'message` logs a single echo-area message, `'pulse` also flashes the transcript, `'desktop` sends a desktop system notification, and `nil` disables notifications |
 | `ecc-notify-events` | `'(turn-finished request exited)` | List of events triggering notifications: turn completion, pending requests, or process exits |
 | `ecc-notify-suppress-when-focused` | `t` | When non-nil, suppresses desktop notifications while Emacs has input focus |
-| `ecc-notify-sound` | `nil` | System sound name played with desktop notifications, or `nil` for silence (e.g. `"Glass"` on macOS) |
+| `ecc-notify-sound` | `nil` | System sound name played with desktop notifications, or `nil` for silence (for example `"Glass"` on macOS) |
 | `ecc-notify-function` | `#'ecc-notify-default` | Custom notification dispatch function with signature `(SESSION EVENT TEXT)`. Overriding this replaces default notification handling entirely |
 
 ## Reviews
@@ -88,9 +88,9 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 | `ecc-use-spaces` | `t` | When non-nil, each project gets a tab on the tab bar (a Space), leaving the windows inside it alone. When nil, ecc uses the older layout: transcripts appear in side windows with roles (main, sub-1, sub-2) assigned for a project, with no tabs, sidebar, or worktree commands. See [Spaces and worktrees](/emacs-claude-code/features/spaces/) |
 | `ecc-space-always-session` | `t` | Whether a Space always holds a session, with `ecc-use-spaces` on. When non-nil, opening a Space with nothing running starts a session, and closing its last session closes the Space. When nil, a Space opens showing only its source files, and stays open until the project's last buffer is killed as well |
 | `ecc-space-session-min-width` | `80` | Columns a session window needs, with `ecc-use-spaces` on, before the row of transcripts is split again. If there is no room for another column this wide, the new session reuses an existing window (the one whose session was worked in least recently) rather than making every transcript narrower. `window-min-width` sets the lower limit |
-| `ecc-sidebar-width` | `28` | Width of the sidebar, in columns. Twenty-eight columns of a 13-inch laptop at a large font and of a 34-inch display are not the same fraction of the frame, and the names a project has are not the same length for everybody |
+| `ecc-sidebar-width` | `28` | Width of the sidebar, in columns. 28 columns take a different share of the frame on a 13-inch laptop with a large font than on a 34-inch display, and project names differ in length |
 
-The default value of `ecc-window-large-frame-min-height` (80 lines) is calibrated to differentiate laptop screens from larger external displays: a 14-inch screen typically fits ~58 lines and a 16-inch screen ~67 lines, whereas standard desktop monitors accommodate 110+ lines.
+The default value of `ecc-window-large-frame-min-height` (80 lines) separates laptop screens from larger external displays: a 14-inch screen typically fits ~58 lines and a 16-inch screen ~67 lines, whereas standard desktop monitors accommodate 110+ lines.
 
 ## Side buffers and popups
 
@@ -103,13 +103,13 @@ Both options accept `'window` or `'posframe`. `'posframe` renders the buffer as 
 
 ## The MCP server
 
-ecc can run an in-process MCP server on the loopback interface and register it with each session, allowing Claude to query Emacs for editor context: `xref`, `imenu`, `tree-sitter`, project metadata, and diagnostics.
+ecc can run an in-process MCP server on the loopback interface and register it with each session, so Claude can query Emacs for editor context: `xref`, `imenu`, `tree-sitter`, project metadata, and diagnostics.
 
 | Variable | Default | Description |
 |---|---|---|
 | `ecc-mcp-enabled` | `nil` | When non-nil, registers the built-in MCP server with every session started. Starts on first use and stops via `ecc-mcp-stop` |
 | `ecc-mcp-enable-execute-code` | `nil` | When non-nil, exposes the MCP tool allowing Claude to evaluate arbitrary Elisp |
-| `ecc-mcp-excluded-tools` | `nil` | List of tool names to exclude from MCP registration. Exclude any tools that introduce noticeable latency here |
+| `ecc-mcp-excluded-tools` | `nil` | List of tool names to exclude from MCP registration. Use it for tools that add noticeable latency |
 
 :::caution[Two independent decisions]
 `ecc-mcp-enable-execute-code` is not enabled by `ecc-mcp-enabled`. Because code executed via this tool runs with full user permissions in Emacs, server activation and code execution require separate explicit opt-ins.

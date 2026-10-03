@@ -31,16 +31,16 @@ Press `r` in the [transient menu](/emacs-claude-code/features/menu/#r--resume) o
 Each entry displays its name, last modified time, and directory (or the initial prompt for historical recordings). Use `-f` to branch a new conversation from the selection instead of resuming it directly.
 
 :::caution[Resuming an active conversation branches history]
-If two processes write to the same session ID simultaneously, the recording can become corrupted since the CLI does not use file locking. This state is indicated by ◉; ecc asks for confirmation before resuming.
+If two processes write to the same session ID simultaneously, the recording can become corrupted, because the CLI does not lock the file. ◉ marks this state; ecc asks for confirmation before resuming.
 :::
 
-Session recordings are stored by Claude Code under `~/.claude/projects`, meaning conversations started in the terminal CLI are listed here as well. Each recording forms a conversation tree: editing, interrupting, and resuming create new branches.
+Session recordings are stored by Claude Code under `~/.claude/projects`, so conversations started in the terminal CLI are listed here too. Each recording forms a conversation tree: editing, interrupting, and resuming create new branches.
 
 `h` inspects a recording without launching a process, and `r` from within that buffer resumes it. If a CLI process terminates unexpectedly, ecc prompts to resume it.
 
 ## Searching past conversations
 
-If you remember what was discussed rather than the session name, you can search past conversations by their message text. Press `/` in the transient menu, `C-c c /`, or run `M-x ecc-search`. Matching conversations in the current project are displayed newest first, showing matching lines and context; press `RET` or `o` to open the conversation at point. Providing a prefix argument (`C-u`) searches across all projects instead of just the current one.
+If you remember what was discussed rather than the session name, you can search past conversations by their message text. Press `/` in the transient menu, `C-c c /`, or run `M-x ecc-search`. Matching conversations in the current project are displayed newest first, showing matching lines and context; press `RET` or `o` to open the conversation at point. A prefix argument (`C-u`) searches all projects instead of the current one.
 
 ```
 3 sessions said permission prompt in ~/Projects/emacs-claude-code/
@@ -61,12 +61,12 @@ Dashboard columns  2026-09-06 10:22  f6743727  1 hit
 | `n` / `p` | Move to the next or previous session |
 | `g` | Re-run search |
 
-Search queries match against conversation text—specifically user prompts and assistant responses. Tool results, raw tool-call JSON, and file contents read by the model are excluded so searches do not match every session that happened to inspect a given file. Searches are case-insensitive literal string matches, not regular expressions.
+Searches match conversation text: user prompts and assistant responses. Tool results, raw tool-call JSON, and file contents read by the model are excluded so searches do not match every session that happened to inspect a given file. Searches are case-insensitive literal string matches, not regular expressions.
 
-To keep searches fast across session recordings that may contain tens of thousands of messages, ecc first uses `rg` or `grep` to identify candidate recording files, then parses only the matching lines within those files. Even across projects with a hundred session recordings totaling over 100 MB, queries complete in well under a second. If neither search tool is available on `PATH`, ecc falls back to reading each recording directly, which produces identical results at a slower speed.
+To keep searches fast across session recordings that may contain tens of thousands of messages, ecc first uses `rg` or `grep` to identify candidate recording files, then parses only the matching lines within those files. Even across projects with a hundred session recordings totaling over 100 MB, queries complete in well under a second. If neither search tool is available on `PATH`, ecc falls back to reading each recording directly, which gives the same results more slowly.
 
 :::note[Abandoned conversation branches are also searched]
-Determining which messages belong to the active line of conversation requires parsing the entire recording, which would defeat fast search pre-filtering. As a result, matches in conversation branches that were rewound or abandoned will still appear in results and open the corresponding session.
+Determining which messages belong to the active line of conversation requires parsing the entire recording, which the fast pre-filter avoids. Matches in conversation branches that were rewound or abandoned therefore still appear in results and open the corresponding session.
 :::
 
 ## The dashboard
@@ -119,7 +119,7 @@ Each session appears as a tab in the tab line of its project's session windows.
 | `✗` | Process terminated | Red |
 | (none) | Idle | Dimmed |
 
-The tab for the active session window is bold and underlined; active background sessions use a muted green. Set `ecc-tab-blink` to `nil` to disable blinking.
+The tab for the active session window is bold and underlined; active background sessions use a muted green. Set `ecc-tab-blink` to `nil` to stop the blinking.
 
 Tabs stay in creation order so their positions remain stable. Clicking a tab with `mouse-1` switches the window to that session. Inside a session buffer, `C-c C-t` (`ecc-switch-session`) does the same. Clicking the `x` button prompts to stop the session; the window stays where it is and moves to the tab beside the one that closed — the tab to its right, or the one to its left when it was the rightmost. A tab another window of the frame is already showing is skipped, so the same transcript never ends up in two windows. The window closes with its tab only when there is nothing left for it to show.
 
@@ -137,7 +137,7 @@ Under the tab line, the header line displays the session's current status on the
 
 `M-x ecc-focus-project` resets the frame to show only one project, for a frame full of transcripts from other projects. It kills nothing and stops no processes.
 
-Spaces took the job over: every project has a tab to itself, so switching to that tab is all the focusing there is. See [Spaces and worktrees](/emacs-claude-code/features/spaces/).
+With Spaces, every project has a tab of its own, and switching to that tab does the same job. See [Spaces and worktrees](/emacs-claude-code/features/spaces/).
 
 ## Pending request indicators
 
@@ -147,6 +147,6 @@ Spaces took the job over: every project has a tab to itself, so switching to tha
 
 `n` and `N` jump to the next waiting request, either globally or within the current project. Both work from any buffer via `ecc-global-map`, as do `a`, `d`, and `1`–`4`.
 
-All three indicators are active by default so waiting sessions never go unnoticed.
+All three indicators are on by default.
 
 All configuration options mentioned here are detailed in the [configuration reference](/emacs-claude-code/reference/configuration/).

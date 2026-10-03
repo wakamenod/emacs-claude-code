@@ -12,9 +12,9 @@ A session buffer displays the transcript at the top and the prompt input area be
 a divider. The transcript is read-only text, so `isearch`, `occur`, narrowing,
 and `M-w` work as they do anywhere in Emacs. Because the transcript is not an input
 area, single keys act as immediate commands — `n`, `p`, `TAB`, `a`, `d`. In the
-prompt area, normal character typing is preserved.
+prompt area, keys type characters as usual.
 
-A few things worth knowing before you start:
+Before you start:
 
 - **Permission prompts default to deny.** Answer them with `C-c C-a` (allow) or `C-c C-d` (deny)
   within the session, or from any buffer via `ecc-global-map`.
@@ -24,4 +24,4 @@ A few things worth knowing before you start:
   the CLI's native interface, and `ecc-tui-return` brings it back.
 
 See the [installation guide](/emacs-claude-code/start/installation/) to get started,
-or explore the [transient menu](/emacs-claude-code/features/menu/) to see all available commands.
+or see the [transient menu](/emacs-claude-code/features/menu/) for all available commands.
