@@ -38,4 +38,6 @@ These keys work in the diff buffer and in an ediff review, and always go to the 
 | `t` | Ask for the next stop of the tour |
 | `M` | Type a message in the minibuffer and send it as a prompt |
 
+`T` sends the review's hunks with their patches, so Claude can plan every stop at once. Past `ecc-review-talk-patch-limit` (20000 characters) it sends only the list. `t` and `M` tell Claude where you are: the file, the line at point and its side, and the hunk.
+
 While the session is busy, the prompt waits in its queue. `T` and `t` need the MCP server. In ediff, Claude's answer streams into the [reply pane](/emacs-claude-code/features/review-ediff/#the-reply-pane); the diff buffer has the session beside it instead.
