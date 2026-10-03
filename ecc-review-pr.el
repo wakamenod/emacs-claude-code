@@ -33,9 +33,12 @@
 ;; what the user is told.
 ;;
 ;; The question offers the open pull requests, gh's first page, and
-;; before them a choice that searches; words typed that are no line
-;; and no number search as well, in GitHub's syntax, open, closed and
-;; merged ones alike.  gh runs when the answer is given, not as it is
+;; before them a choice that searches; words submitted that are no
+;; line and no number search as well, in GitHub's syntax, open, closed
+;; and merged ones alike.  A completion UI that starts with a candidate
+;; selected returns it on RET whenever one matches the words, so there
+;; they are submitted as typed with that UI's own key (vertico M-RET);
+;; no key is bound here, M-s being `next-matching-history-element'.  gh runs when the answer is given, not as it is
 ;; typed: `completing-read' has no way to change its candidates while
 ;; it waits, and `ecc-review-pr--complete', the one place the question
 ;; is put, is what a search as one types would take the place of.

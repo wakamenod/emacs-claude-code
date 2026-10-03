@@ -282,8 +282,14 @@ Verified against **Claude Code CLI 2.1.281**.
   not a fork's branch of the same name. First among the candidates is
   `Search pull requests…` (`ecc-review-pr-search-label`), which asks for
   words in GitHub's search syntax (`is:merged`, `author:`, `label:`, ...);
-  words typed at the list that are neither a candidate nor a number search
-  in one step. A search runs `gh pr list --search QUERY --state all
+  words submitted at the list that are neither a candidate nor a number
+  search in one step. That holds when no candidate matches them: a UI that
+  starts with a candidate selected, such as vertico, returns it on `RET`
+  and filters the search entry away, so there the words are submitted as
+  typed with the UI's own key (vertico `M-RET`, icomplete and fido `M-j`,
+  ivy `C-M-j`), or `Search pull requests…` is chosen before typing. No key
+  is bound for it: `M-s` in the minibuffer is
+  `next-matching-history-element`. A search runs `gh pr list --search QUERY --state all
   --json ...` when the answer is given, never as it is typed, and offers
   what it finds the same way, the search entry first again; one that
   finds nothing says `No pull request matches "QUERY"` in the prompt and
