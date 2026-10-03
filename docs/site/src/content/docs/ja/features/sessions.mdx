@@ -123,7 +123,7 @@ Dashboard columns  2026-09-06 10:22  f6743727  1 hit
 
 <Video name="switch" label="セッションウィンドウが別のセッションに切り替わり、選択タブが greet から notes へ移動してトランスクリプトが置き換わる様子" />
 
-`(setq ecc-tab-line-scope 'all)` で、どのタブラインにもすべてのセッションを並べます。Emacs のタブバーにもセッションの状態を示すには、`ecc-tab-bar-state` を `t` に、`tab-bar-tab-name-function` を `#'ecc-tab-bar-tab-name` にします。
+`(setq ecc-tab-line-scope 'all)` で、どのタブラインにもすべてのセッションを並べます。Emacs のタブバーにもセッションの状態を示すには、`ecc-tab-bar-state` を `t` にします。あわせて `tab-bar-tab-name-function` を `#'ecc-tab-bar-tab-name` にしてください。
 
 タブの下のヘッダー行には、セッションの状態、プロジェクト、コンテキストウィンドウの残りが表示されます。残りは少なくなると黄色、さらに赤に変わります。
 

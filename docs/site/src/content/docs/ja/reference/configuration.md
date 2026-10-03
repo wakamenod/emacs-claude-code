@@ -79,7 +79,7 @@ M-x customize-group RET ecc
 |---|---|---|
 | `ecc-review-style` | `'diff` | `'diff` はレビューを 1 つの `diff-mode` バッファで、`'ediff` は [ediff で](/emacs-claude-code/ja/features/review-ediff/)開く |
 | `ecc-review-menu-count-session-changes` | `t` | レビューのメニューの `D` の横に、セッションが変えたファイルの数を表示。メニューが開くのが遅くなるなら `nil` |
-| `ecc-review-auto-refresh` | `t` | ファイルが変わったかもしれないときに、開いているレビューを読み直す。`nil` なら `g` でだけ読み直す |
+| `ecc-review-auto-refresh` | `t` | セッションのツールやターンが終わったとき、ファイルを保存したときに、開いているレビューを読み直す。`nil` なら `g` でだけ読み直す |
 | `ecc-review-files-width` | `32` | レビューの横のファイルの一覧の幅 |
 | `ecc-review-ediff-layout` | `'stacked` | ediff のレビューを開くときの並び: `'stacked` か `'side-by-side` |
 | `ecc-review-talk-reply-width` | `75` | 上下に並べた ediff のレビューの右に置く返答の欄の幅 |

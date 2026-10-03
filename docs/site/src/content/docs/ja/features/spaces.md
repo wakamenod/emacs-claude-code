@@ -64,7 +64,7 @@ git の worktree は、リポジトリの別のブランチを持つもう 1 つ
 
 `ecc-start-worktree` は既存のブランチを候補に出します。既存のブランチはそのままチェックアウトし、新しいブランチは `HEAD` から作ります。別の worktree がすでにそのブランチを持っていれば、そこでセッションを始めるかを尋ねます。
 
-worktree は `ecc-worktree-directory`（デフォルトは `.claude/worktrees`）に置きます。相対パスならリポジトリの下（`<repo>/.claude/worktrees/feat-x`）、絶対パスならすべてのリポジトリで共有します（`<directory>/<repository>/feat-x`）。
+worktree は `ecc-worktree-directory`（デフォルトは `.claude/worktrees`）に置きます。相対パスならリポジトリの下（`<repo>/.claude/worktrees/feat-x`）に置きます。絶対パスならすべてのリポジトリで共有します（`<directory>/<repository>/feat-x`）。
 
 worktree の最後のセッションが終わると、ecc はその worktree を削除するか尋ねます。**ブランチは削除しません**。worktree の削除で消えるのはディレクトリだけです。未コミットの変更や未追跡のファイルがあれば、ecc は worktree の名前を示してもう一度尋ねてから、削除を強制します。
 
