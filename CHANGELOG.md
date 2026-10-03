@@ -11,6 +11,21 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+### Fixed
+
+- Installing ecc with package-vc byte-compiled everything under `demo/`,
+  `scripts/`, `test/` and `docs/` along with the package: 72 files, 49 of
+  which failed, since a demo scene or a test is not meant to be compiled
+  on its own. A `.elpaignore` now keeps those directories out, and only
+  the `ecc-*.el` at the top are compiled. Its lines are globs (`demo/*`)
+  because package.el turns each line into a regexp anchored at both ends
+  of the full path, which a bare `demo` would match only as the directory
+  itself. Native compilation does not read `.elpaignore`: with
+  `package-native-compile` set, those files are still native-compiled in
+  the background.
+
 ## [0.3.4] - 2026-09-27
 
 Verified against **Claude Code CLI 2.1.281**.
