@@ -32,6 +32,14 @@
 ;; what it says when it fails -- not logged in, no GitHub remote -- is
 ;; what the user is told.
 ;;
+;; The question offers the open pull requests, gh's first page, and
+;; before them a choice that searches; words typed that are no line
+;; and no number search as well, in GitHub's syntax, open, closed and
+;; merged ones alike.  gh runs when the answer is given, not as it is
+;; typed: `completing-read' has no way to change its candidates while
+;; it waits, and `ecc-review-pr--complete', the one place the question
+;; is put, is what a search as one types would take the place of.
+;;
 ;; The diff is made by the local git, from the commits gh names: what a
 ;; review shows on the left and on the right are whole files, which a
 ;; patch from `gh pr diff' does not have.  A pull request of another
@@ -53,11 +61,17 @@
   "The gh program `p' in `ecc-review-menu' asks for pull requests.")
 
 (defvar ecc-review-pr-fields
-  "number,title,headRefName,baseRefName,headRefOid,baseRefOid,author,isDraft,isCrossRepository,url"
+  "number,title,state,headRefName,baseRefName,headRefOid,baseRefOid,author,isDraft,isCrossRepository,url"
   "The fields of a pull request asked of gh, as its --json takes them.")
+
+(defvar ecc-review-pr-search-label "Search pull requests…"
+  "The choice of `p' in `ecc-review-menu' that asks for words to search with.")
 
 (defvar ecc-review-pr--history nil
   "Pull requests typed at the question of `p'.")
+
+(defvar ecc-review-pr--search-history nil
+  "Searches typed at the question of `p'.")
 
 (defun ecc-review-pr-available-p ()
   "Return non-nil when gh is installed, so that `p' is offered."
@@ -103,12 +117,14 @@ Neither program may ask anything: there is no terminal to answer on."
 
 (defun ecc-review-pr--parse-one (object)
   "Return the pull request OBJECT of gh's JSON as a plist.
-:number, :title, :head and :base (the branch names), :head-oid and
-:base-oid, :author (a login), :draft, :cross (the head is in another
-repository) and :url."
+:number, :title, :state (`open', `closed' or `merged'), :head and
+:base (the branch names), :head-oid and :base-oid, :author (a login),
+:draft, :cross (the head is in another repository) and :url."
   (let ((get (lambda (key) (plist-get object key))))
     (list :number (funcall get :number)
           :title (or (funcall get :title) "")
+          :state (when-let* ((state (funcall get :state)))
+                   (intern (downcase state)))
           :head (funcall get :headRefName)
           :base (funcall get :baseRefName)
           :head-oid (funcall get :headRefOid)
@@ -130,6 +146,13 @@ JSON is an array of them or one; see `ecc-review-pr--parse-one'."
   "Return the open pull requests of the repository of ROOT, as gh orders them."
   (ecc-review-pr-parse (ecc-review-pr--gh root "pr" "list" "--json" ecc-review-pr-fields)))
 
+(defun ecc-review-pr-search (root query)
+  "Return the pull requests of the repository of ROOT that QUERY finds.
+QUERY is in GitHub's search syntax, and open, closed and merged ones
+alike are found, as gh orders them."
+  (ecc-review-pr-parse (ecc-review-pr--gh root "pr" "list" "--search" query
+                                          "--state" "all" "--json" ecc-review-pr-fields)))
+
 (defun ecc-review-pr-view (root number)
   "Return the pull request NUMBER of the repository of ROOT, open or not."
   (car (ecc-review-pr-parse (ecc-review-pr--gh root "pr" "view" (number-to-string number)
@@ -138,11 +161,15 @@ JSON is an array of them or one; see `ecc-review-pr--parse-one'."
 ;;;; Asking which
 
 (defun ecc-review-pr-line (pr)
-  "Return PR as a line to choose: number, title, branches and author.
-The title is put on one line: a tab or a newline in it would break the
-list."
-  (format "#%d  %s%s  %s → %s  @%s"
+  "Return PR as a line to choose: number, state, title, branches and author.
+The state is said when the pull request is closed or merged.  The title
+is put on one line: a tab or a newline in it would break the list."
+  (format "#%d  %s%s%s  %s → %s  @%s"
           (plist-get pr :number)
+          (pcase (plist-get pr :state)
+            ('merged "[merged] ")
+            ('closed "[closed] ")
+            (_ ""))
           (if (plist-get pr :draft) "[draft] " "")
           (ecc--truncate (string-trim (replace-regexp-in-string
                                        "[ \t\n\r]+" " " (plist-get pr :title)))
@@ -153,10 +180,13 @@ list."
 (defun ecc-review-pr-own-p (pr branch)
   "Return non-nil when PR is of BRANCH, the branch checked out here.
 Its head has that name and is in this repository, not in a fork: the
-main of a fork is not the main checked out here."
+main of a fork is not the main checked out here.  A closed or merged
+pull request is what it was, BASE...HEAD, whatever is checked out now:
+a branch of that name may be newer work, or the next pull request."
   (and branch
        (equal (plist-get pr :head) branch)
-       (not (plist-get pr :cross))))
+       (not (plist-get pr :cross))
+       (memq (plist-get pr :state) '(nil open))))
 
 (defun ecc-review-pr-default (prs branch)
   "Return the one of PRS that is of BRANCH (`ecc-review-pr-own-p'), or nil."
@@ -165,33 +195,75 @@ main of a fork is not the main checked out here."
 (defun ecc-review-pr-choose (root answer prs)
   "Return the pull request ANSWER names in ROOT, PRS being those offered.
 A line of PRS is that one; a number, with or without #, is the one of
-PRS of that number, or asked of gh -- a closed or merged one is not
-listed."
-  (let ((answer (string-trim answer)))
-    (or (seq-find (lambda (pr) (equal (ecc-review-pr-line pr) answer)) prs)
-        (save-match-data
-          (if (string-match "\\`#?\\([0-9]+\\)\\b" answer)
-              (let ((number (string-to-number (match-string 1 answer))))
-                (or (seq-find (lambda (pr) (eql (plist-get pr :number) number)) prs)
-                    (ecc-review-pr-view root number)))
-            (user-error "Choose a pull request, or type its number"))))))
+PRS of that number, or asked of gh -- a closed or merged one need not
+be listed.  `ecc-review-pr-search-label' is (search), and other words
+are (search . WORDS), to be searched for."
+  (save-match-data
+    (let ((answer (string-trim answer)))
+      (cond ((string-empty-p answer)
+             (user-error "Choose a pull request, type its number or words to search"))
+            ((equal answer ecc-review-pr-search-label) (list 'search))
+            ((seq-find (lambda (pr) (equal (ecc-review-pr-line pr) answer)) prs))
+            ((string-match "\\`#?\\([0-9]+\\)\\'" answer)
+             (let ((number (string-to-number (match-string 1 answer))))
+               (or (seq-find (lambda (pr) (eql (plist-get pr :number) number)) prs)
+                   (ecc-review-pr-view root number))))
+            (t (cons 'search answer))))))
+
+(defun ecc-review-pr--complete (prompt prs default table-function)
+  "Ask with PROMPT for one of PRS and return the answer, a string.
+DEFAULT, a line, is taken on an empty answer, and
+`ecc-review-pr-search-label' comes first; TABLE-FUNCTION makes the
+completion table of the lines, in their order.  This is the one place
+the question is put, for one that searches as the words are typed to
+take."
+  (let ((lines (cons ecc-review-pr-search-label (mapcar #'ecc-review-pr-line prs))))
+    (completing-read prompt (if table-function (funcall table-function lines) lines)
+                     nil nil nil 'ecc-review-pr--history default)))
+
+(defun ecc-review-pr--read-query ()
+  "Ask for the words to search pull requests with."
+  (read-string "Search pull requests (GitHub search: is:merged, author:NAME, label:NAME…): "
+               nil 'ecc-review-pr--search-history))
 
 (defun ecc-review-pr-read (root branch &optional table-function)
   "Ask for a pull request of the repository of ROOT and return it.
 The open ones are offered as gh lists them, the one of BRANCH, the
-branch checked out, by default.  TABLE-FUNCTION makes the completion
-table of the lines, in their order."
-  (let* ((prs (ecc-review-pr-list root))
-         (lines (mapcar #'ecc-review-pr-line prs))
-         (default (when-let* ((pr (ecc-review-pr-default prs branch)))
-                    (ecc-review-pr-line pr)))
-         (answer (completing-read (if prs
-                                      (format-prompt "Review the pull request (or its number)"
-                                                     default)
-                                    "No open pull request; type a number: ")
-                                  (if table-function (funcall table-function lines) lines)
-                                  nil nil nil 'ecc-review-pr--history default)))
-    (ecc-review-pr-choose root answer prs)))
+branch checked out, by default, after `ecc-review-pr-search-label'.
+That, or words that are no line and no number, search open, closed and
+merged ones alike (`ecc-review-pr-search'), and what is found is
+offered the same way; a search that finds nothing says so and the
+question is put again.  gh runs only on an answer, never on a key.
+TABLE-FUNCTION makes the completion table of the lines, in their
+order."
+  (let ((prs (ecc-review-pr-list root))
+        (query nil)
+        (missed nil)
+        (chosen nil))
+    (while (not chosen)
+      (let* ((default (when-let* ((pr (ecc-review-pr-default prs branch)))
+                        (ecc-review-pr-line pr)))
+             (prompt (cond (missed
+                            (format-prompt "No pull request matches \"%s\"; search again or choose"
+                                           default missed))
+                           (query
+                            (format-prompt "Pull requests matching \"%s\"" default query))
+                           (prs
+                            (format-prompt "Review the pull request (or its number, or words)"
+                                           default))
+                           (t "No open pull request; type a number or words to search: ")))
+             (answer (ecc-review-pr-choose
+                      root (ecc-review-pr--complete prompt prs default table-function) prs)))
+        (setq missed nil)
+        (if (not (eq (car-safe answer) 'search))
+            (setq chosen answer)
+          (let ((words (string-trim (or (cdr answer) (ecc-review-pr--read-query)))))
+            (unless (string-empty-p words)
+              (let ((found (ecc-review-pr-search root words)))
+                (if found
+                    (setq prs found query words)
+                  (setq missed words))))))))
+    chosen))
 
 ;;;; Having the commits
 
