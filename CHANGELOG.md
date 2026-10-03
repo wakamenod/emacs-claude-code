@@ -244,8 +244,10 @@ Verified against **Claude Code CLI 2.1.281**.
   its working tree: the range is the commit where the two part, which `git diff`
   compares with the working tree, so uncommitted and untracked files are
   in the review. Another branch is `BASE...BRANCH`, what a pull request
-  shows. `c` asks for a commit out of the last 100 and then for the last
-  one to review with it; the default, the same commit, is that commit
+  shows. `c` asks for a commit out of the last 2000
+  (`ecc-review-menu-commit-count`; any other name git resolves, such as
+  a full hash or a tag, is taken too) and then for the last one to
+  review with it; the default, the same commit, is that commit
   alone (`X^!`), and another is `X^..Y`, `X` included, in whichever order
   they were picked. The range is made of the commit ids, so the review
   stays on its commits when `HEAD` moves. The first commit of a
