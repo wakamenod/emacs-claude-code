@@ -381,6 +381,33 @@ HUNK nil for none."
                              (concat "and here?" (ecc-review-talk-test--where
                                                   "a.txt" 5 'new nil nil nil)))))))))
 
+(ert-deftest ecc-review-talk-test-t-sends-the-hunks-with-their-patches ()
+  "T sends the files and hunks of the review, with each patch while they fit."
+  (ecc-review-talk-test--with-sessions one _two
+    (with-current-buffer (ecc-review--fill (get-buffer-create (ecc-review-buffer-name one))
+                                           one ecc-review-talk-test--two-hunks
+                                           temporary-file-directory)
+      (ecc-review-talk-tour)
+      (let ((sent (car (ecc-review-talk-test--prompts one))))
+        (should (string-prefix-p ecc-review-talk-tour-prompt sent))
+        ;; What review_hunks with include_patch says, word for word.
+        (should (string-suffix-p (concat "\n\n---\n" (ecc-review-agent--summary nil t)) sent))
+        (should (string-search "a.txt\n  hunk 1  @@ -1,3 +1,3 @@" sent))
+        (should (string-search "  hunk 2  @@ -10,3 +10,3 @@" sent))
+        (should (string-search "-two\n+TWO" sent))
+        (should (string-search "-eleven\n+ELEVEN" sent))
+        (should-not (string-search ecc-review-talk-no-patch-note sent)))
+      (ecc-model-finish-turn one nil)
+      ;; Over the limit, the list alone, and how to get the patches.
+      (let ((ecc-review-talk-patch-limit 100))
+        (ecc-review-talk-tour))
+      (let ((sent (cadr (ecc-review-talk-test--prompts one))))
+        (should (string-prefix-p ecc-review-talk-tour-prompt sent))
+        (should (string-search "  hunk 2  @@ -10,3 +10,3 @@" sent))
+        (should-not (string-search "+TWO" sent))
+        (should-not (string-search "+ELEVEN" sent))
+        (should (string-suffix-p ecc-review-talk-no-patch-note sent))))))
+
 ;;;; The pane
 
 (ert-deftest ecc-review-talk-test-the-pane-is-a-bottom-side-window ()
