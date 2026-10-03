@@ -1,13 +1,13 @@
 WEBVTT
 
-00:00:00.000 --> 00:00:01.910
+00:00:00.000 --> 00:00:02.000
 A region marked in the source
 
-00:00:01.910 --> 00:00:04.990
+00:00:02.000 --> 00:00:06.800
 In the menu (C-c c ?), l asks a question in the minibuffer
 
-00:00:04.990 --> 00:00:07.680
+00:00:06.800 --> 00:00:09.500
 Waiting for the answer
 
-00:00:07.680 --> 00:00:17.300
+00:00:09.500 --> 00:00:19.100
 The answer appears in an overlay over the code

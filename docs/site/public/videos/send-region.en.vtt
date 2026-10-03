@@ -1,13 +1,13 @@
 WEBVTT
 
-00:00:00.000 --> 00:00:02.230
+00:00:00.000 --> 00:00:02.200
 A region marked in the source
 
-00:00:02.230 --> 00:00:06.440
+00:00:02.200 --> 00:00:08.100
 In the menu (C-c c ?), C-u g asks for an instruction
 
-00:00:06.440 --> 00:00:08.930
+00:00:08.100 --> 00:00:11.700
 The code and the instruction arrive in the transcript
 
-00:00:08.930 --> 00:00:18.500
+00:00:11.700 --> 00:00:21.300
 The answer streams back

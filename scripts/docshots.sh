@@ -10,7 +10,8 @@
 # poster the page shows until the video is played.  Beside each one are
 # its subtitles, NAME.en.vtt and NAME.ja.vtt, written by hand; this
 # script writes their cue times, from the `cue' marks in the scene, and
-# leaves their text alone.
+# leaves their text alone.  Each step is held, by repeating its last
+# frame, until its subtitle can be read (`readable_frames').
 #
 # Opens a throwaway GUI Emacs, walks it through each scene and captures
 # the frame.  No CLI and no network are involved, so it costs nothing and
@@ -151,15 +152,77 @@ hold() {
 # recording at the user's request (2026-10-03).  The controls are a fixed
 # CSS height, so the band is a share of the width, iw*58/900, rounded up
 # to an even number: 58 rows at 900 wide, 78 at 1200.
+video_width=1200
+
 video() {
+    stretch
     ffmpeg -hide_banner -loglevel error -y \
         -framerate "$fps" -pattern_type glob -i "$frames/$scene/*.png" \
-        -vf "scale=1200:-2:flags=lanczos,pad=iw:ih+2*ceil(iw*29/900):0:0:color=0x1a1b26,format=yuv420p" \
+        -vf "scale=$video_width:-2:flags=lanczos,pad=iw:ih+2*ceil(iw*29/900):0:0:color=0x1a1b26,format=yuv420p" \
         -c:v libx264 -preset slow -crf 30 -an -movflags +faststart \
         "$videodir/$scene.mp4"
     poster
     retime
     rm -rf "${frames:?}/${scene:?}" "${frames:?}/${scene:?}.cues"
+}
+
+# How long a subtitle has to stay on screen to be read, in frames:
+# at least 1.5 seconds, and at least 15 characters a second of its English
+# or 7 of its Japanese, whichever asks for longer, since one video serves
+# both tracks.  15 a second is a little under what subtitles for adults
+# are usually held to, because the reader is also watching the frame;
+# Japanese is read at about half the characters a second.  The scenes
+# were paced for GIFs without captions, with steps of 0.3 to 1 second,
+# and 113 of the cues were too short to read by this rule (2026-10-03).
+readable_frames() {
+    local LC_ALL=en_US.UTF-8
+    local en=$1 ja=$2 ms=1500
+    (( ${#en} * 1000 / 15 > ms )) && ms=$(( ${#en} * 1000 / 15 ))
+    (( ${#ja} * 1000 / 7 > ms )) && ms=$(( ${#ja} * 1000 / 7 ))
+    echo $(( (ms * fps + 999) / 1000 ))
+}
+
+# The text of each cue of a .vtt, one line per cue.
+cue_texts() { awk 'p { print; p = 0 } / --> / { p = 1 }' "$1"; }
+
+# Hold the last frame of each step until its subtitle can be read, by
+# repeating that frame, and move the cue marks to match.  It is done to
+# the frames rather than by holding longer while capturing, because the
+# steps of several scenes run inside Emacs on its own timers
+# (`shot-script'): a longer hold in this script would not wait for them,
+# only move the cue away from the step it names.  The motion inside a
+# step keeps its speed; only the still end of it grows.  A scene whose
+# subtitles do not have one cue per mark is left as captured, and
+# `retime' then names it.
+stretch() {
+    local marks="$frames/$scene.cues" out="$frames/$scene.stretched"
+    local en_vtt="$videodir/$scene.en.vtt" ja_vtt="$videodir/$scene.ja.vtt"
+    local -a start en ja moved
+    local k i last need m=0
+    [ -f "$marks" ] && [ -f "$en_vtt" ] && [ -f "$ja_vtt" ] || return 0
+    mapfile -t start < "$marks"
+    mapfile -t en < <(cue_texts "$en_vtt")
+    mapfile -t ja < <(cue_texts "$ja_vtt")
+    [ ${#start[@]} -eq ${#en[@]} ] && [ ${#en[@]} -eq ${#ja[@]} ] || return 0
+    mkdir -p "$out"
+    for k in "${!start[@]}"; do
+        last=${start[k+1]:-$n}
+        moved+=("$m")
+        for (( i = start[k] + 1; i <= last; i++ )); do
+            m=$((m + 1))
+            ln "$(printf '%s/%s/%04d.png' "$frames" "$scene" "$i")" "$(printf '%s/%04d.png' "$out" "$m")"
+        done
+        need=$(readable_frames "${en[k]}" "${ja[k]}")
+        (( last < 1 )) && last=1
+        for (( i = $(( ${start[k+1]:-$n} - start[k] )); i < need; i++ )); do
+            m=$((m + 1))
+            ln "$(printf '%s/%s/%04d.png' "$frames" "$scene" "$last")" "$(printf '%s/%04d.png' "$out" "$m")"
+        done
+    done
+    rm -rf "${frames:?}/${scene:?}"
+    mv "$out" "$frames/$scene"
+    printf '%s\n' "${moved[@]}" > "$marks"
+    n=$m
 }
 
 # Write the first frame of the video as its poster.  It is taken from

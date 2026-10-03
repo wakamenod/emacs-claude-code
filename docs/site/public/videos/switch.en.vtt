@@ -1,16 +1,16 @@
 WEBVTT
 
-00:00:00.000 --> 00:00:01.100
+00:00:00.000 --> 00:00:03.800
 The window shows the session greet
 
-00:00:01.100 --> 00:00:04.590
+00:00:03.800 --> 00:00:10.300
 In the session buffer, C-c C-t lists the sessions, and typing narrows them to notes
 
-00:00:04.590 --> 00:00:06.290
+00:00:10.300 --> 00:00:14.600
 The window now shows notes, and its tab is selected
 
-00:00:06.290 --> 00:00:09.210
+00:00:14.600 --> 00:00:18.100
 C-c C-t again, back to greet
 
-00:00:09.210 --> 00:00:11.000
+00:00:18.100 --> 00:00:20.400
 greet is back in the window

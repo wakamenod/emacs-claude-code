@@ -1,16 +1,16 @@
 WEBVTT
 
-00:00:00.000 --> 00:00:01.010
+00:00:00.000 --> 00:00:02.600
 Claude asks two questions
 
-00:00:01.010 --> 00:00:02.010
+00:00:02.600 --> 00:00:06.600
 On the question, press RET to open it in a buffer of its own
 
-00:00:02.010 --> 00:00:02.680
+00:00:06.600 --> 00:00:10.200
 Press 1 to choose Emacs for the first question
 
-00:00:02.680 --> 00:00:04.360
+00:00:10.200 --> 00:00:16.100
 Press 1 and 2 to toggle Elisp and Python for the second
 
-00:00:04.360 --> 00:00:05.700
+00:00:16.100 --> 00:00:19.600
 C-c C-c sends the answers, and the turn finishes

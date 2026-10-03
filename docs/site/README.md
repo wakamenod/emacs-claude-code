@@ -305,7 +305,18 @@ A long hold that runs a sequence inside Emacs (`shot-script`) is cut into
 pieces at the times the sequence schedules its steps, so that a cue can fall
 in the middle of it; the comment above each such hold names those times.
 
+Each subtitle stays on screen long enough to be read: at least 1.5 seconds,
+and at least 15 characters a second of its English or 7 of its Japanese,
+whichever asks for longer. The scenes were paced for GIFs without captions,
+in steps of 0.3 to 1 second, so before encoding the script repeats the last
+frame of each step until its cue meets that rule (`readable_frames` and
+`stretch`, where the reason is written down). It works on the frames rather
+than on the holds because the steps scheduled inside Emacs would not wait for
+a longer hold. The motion inside a step keeps its speed. A scene changed to
+add a step needs no new numbers: the time comes from the cue's text.
+
 The videos in the tree on 2026-10-03 were converted from the GIFs that came
 before them, at 900 pixels wide, with the cue times scaled from the holds to
-the length each GIF really had. The next run of a scene encodes it from its
+the length each GIF really had, and then stretched by the rule above: 228
+seconds of video became 345. The next run of a scene encodes it from its
 frames at 1200 pixels.
