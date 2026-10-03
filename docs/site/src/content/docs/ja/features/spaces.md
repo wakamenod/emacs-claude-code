@@ -1,8 +1,6 @@
 ---
 title: Space と worktree
 description: プロジェクトごとのタブ、全プロジェクトとセッションを並べるサイドバー、セッションを置ける git の worktree。
-sidebar:
-  order: 8
 ---
 
 **Space** は、Emacs のタブを 1 つ持つプロジェクトです。git の worktree も専用の Space になり、元のリポジトリの下に表示されます。Space はデフォルトでオンです（`ecc-use-spaces`）。使わないときのレイアウトは[最後](#space-を使わないとき)にまとめています。

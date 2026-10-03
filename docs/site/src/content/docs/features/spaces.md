@@ -1,8 +1,6 @@
 ---
 title: Spaces and worktrees
 description: One tab per project, a sidebar listing every project and session, and git worktrees a session can live in.
-sidebar:
-  order: 8
 ---
 
 A **Space** is a project with an Emacs tab of its own. A git worktree is a Space of its own too, shown under its repository. Spaces are on by default (`ecc-use-spaces`); the layout without them is described [at the end](#without-spaces).
