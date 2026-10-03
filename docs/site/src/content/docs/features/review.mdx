@@ -49,7 +49,7 @@ The diff comes from your local git, not from `gh pr diff`, so the review has who
 
 ### When the changes are not on disk
 
-Your comments go to a session whose Claude edits the files on disk. When the right side of a review is a commit rather than your working tree, as with somebody else's pull request, `b` with another branch, `c` of an older commit, or `r` of two commits, those lines are not in your files. The header line then says so (`the right side is a1b2c3d, not checked out here`, or `fix/x (a1b2c3d)` for the head of a pull request, so you know what to check out), and so does the end of the right window's header line in ediff. The prompt your comments go in adds a sentence telling Claude the changes are not in the working tree and to ask before editing anything, without checking anything out itself. A review whose right side is the commit at `HEAD` says nothing, since your files hold that commit.
+Your comments go to a session whose Claude edits the files on disk. When the right side of a review is a commit rather than your working tree, as with somebody else's pull request, `b` with another branch, `c` of an older commit, or `r` of two commits, those lines are not in your files. The header line then says so (`the right side is a1b2c3d, not checked out here`, or `fix/x (a1b2c3d)` for the head of a pull request, so you know what to check out), and so does the right window's mode line in ediff. The prompt your comments go in adds a sentence telling Claude the changes are not in the working tree and to ask before editing anything, without checking anything out itself. A review whose right side is the commit at `HEAD` says nothing, since your files hold that commit.
 
 The count beside `D` needs a snapshot of the working tree. It took 35 ms in a repository of 300 files and 70 ms in one of 20,000 files. The other counts come from a single `git status`. To leave the `D` count out, set `ecc-review-menu-count-session-changes` to `nil`.
 
@@ -129,7 +129,7 @@ The list starts hidden. `s` shows it, and every review you open afterwards shows
 
 ecc writes the list again whenever it reads the review again and whenever a comment comes or goes.
 
-`/` keeps only the files whose path, former path or one of Claude's comments contains what you type, ignoring case. The list appears and narrows as you type. `RET` hides the other files of the review, and an empty `RET` shows every file again. The filter hides the files without reading the diff again. Their comments are kept and still sent by `C-c C-c`. The header line of the diff buffer says how many files are hidden, as `/review: 2 files hidden by filter`. In ediff, the header line of the window with the keyboard says `/review: 2 hidden`.
+`/` keeps only the files whose path, former path or one of Claude's comments contains what you type, ignoring case. The list appears and narrows as you type. `RET` hides the other files of the review, and an empty `RET` shows every file again. The filter hides the files without reading the diff again. Their comments are kept and still sent by `C-c C-c`. The header line of the diff buffer says how many files are hidden, as `/review: 2 files hidden by filter`. In ediff, the mode line of the right window says `/review: 2 hidden`.
 
 Moving skips the hidden files: `n`, `p`, `N` and `P` in the diff buffer, `n`, `p` and `j` in ediff, and `{` and `}` in both. `review_hunks` and `review_open` tell Claude about the filter. Its `next_comment` and `prev_comment` skip the hidden files, and it cannot scroll the review to one of them. The filter stays when the review is read again.
 
@@ -215,7 +215,7 @@ An ediff review takes the whole frame, so the session and its prompt are out of 
 
 They are sent like a prompt typed in the minibuffer: while the session is busy, the prompt waits in its queue. `T` and `t` need the MCP server (`ecc-mcp-enabled`), because a tour is made of the review tools.
 
-In an ediff review, a pane beside the diff shows the session's latest reply as it streams, with each tool call on a line of its own. The pane is on the right while the two sides are stacked and at the bottom while they are side by side:
+In an ediff review, a pane beside the diff shows the session's latest reply as it streams, with each tool call on a line of its own. It is coloured as the transcript is: Markdown in a finished reply, tool names, and your prompt. The pane is on the right while the two sides are stacked and at the bottom while they are side by side:
 
 ```
 › Next stop.
@@ -257,14 +257,22 @@ The review opens with the old side above the new one, each as wide as the frame,
 (setq ecc-review-ediff-layout 'side-by-side)   ; the default is 'stacked
 ```
 
-`ecc` sets `ediff-split-window-function` only in the review control buffer, so all other ediff sessions keep your configured window layout. Each window has a header line with keys. Every key works in either window, so the two lines split one list between them:
+`ecc` sets `ediff-split-window-function` only in the review control buffer, so all other ediff sessions keep your configured window layout. Each window has a header line with keys and nothing else. Every key works in either window. Stacked, both windows show the same line, every key that fits, the most used first:
 
 ```
- n/p diff  j jump  { } comments  c comment  x delete  l list  a Claude's  s files  / filter
- RET open  T tour  t next  M message  C-c C-c send  q quit  u/d reply  v/V scroll  ! reread  ? all keys
+ n/p diff  c comment  C-c C-c send  q quit  RET open  j jump  { } comments  x delete  l list  ...  ? all keys
 ```
 
-The left line has the keys for reading and for your comments, and the right line has the keys for Claude, opening, sending and closing. The most used keys come first, so a narrow window loses the least used ones. The right line always keeps `? all keys` at its end: a narrow window drops the keys before it. Side by side, the left line is aligned to the right edge of its window, so the two lines meet in the middle. The header line of the window with the keyboard, the lower one or the right one, ends with where you are, such as `3/12`, and what a filter hides. When the window is too narrow even for `? all keys` and where you are, where you are comes first.
+Side by side, the two lines split the list between them:
+
+```
+ n/p diff  c comment  j jump  { } comments  x delete  l list  a Claude's  s files  / filter
+ C-c C-c send  q quit  RET open  T tour  t next  M message  u/d reply  v/V scroll  ! reread  ? all keys
+```
+
+The left line has the keys for reading and for your comments, and the right line has the keys for Claude, opening, sending and closing, and the left line is aligned to the right edge of its window, so the two lines meet in the middle. A line always keeps `? all keys` at its end: a narrow window drops the keys before it, the least used first.
+
+The mode line of each window shows the path of the file its cursor is in, so the file stays in sight after its `═══ path ═══` line has scrolled away. The mode line of the lower or right window goes on with where you are, such as `3/12`, and what a filter hides.
 
 The ediff control panel is not shown. `?` opens it with every key, and `?` again closes it. A review shows the panel in the review's frame, whatever `ediff-window-setup-function` says, so no control frame appears.
 
@@ -276,7 +284,7 @@ Both buffers are read-only, so ediff's `b` copy command does nothing here, and `
 
 The review opens with the keyboard in the new side, the lower window or the right one. Every key of the control panel works in both windows, and the keyboard stays where you typed it, even when ediff lays out its windows again. Digits give a count, as in the panel: `3j` jumps to the third difference. `SPC` and `DEL` work like `n` and `p`.
 
-Moving point drives the review. When point enters a difference, that difference becomes the current one: it gets the stronger colour, the bar in the fringe and its number in the header line. The window you are reading does not scroll. The other window moves so that the matching line is on the same row of the screen, even when a comment or a wrapped line takes extra rows on one side. A removed line matches the place the change took it from. Between differences, the other window shows the same line of the file, and the current difference stays the one you read last. `n` and `p` then go to the next difference below point or the previous one above it. This works for any command that moves point, such as `C-n`, `M-<` or a click. During an isearch the other window follows only when `C-s` stops on a match and when the search ends, not as you type. Scrolling one window with `C-v`, `M-v` or the mouse wheel does not move the other yet. `v` and `V` scroll both, and `C-l` lines them up again.
+Moving point drives the review. When point enters a difference, that difference becomes the current one: it gets the stronger colour, the bar in the fringe and its number in the mode line. The window you are reading does not scroll. The other window moves so that the matching line is on the same row of the screen, even when a comment or a wrapped line takes extra rows on one side. A removed line matches the place the change took it from. Between differences, the other window shows the same line of the file, and the current difference stays the one you read last. `n` and `p` then go to the next difference below point or the previous one above it. This works for any command that moves point, such as `C-n`, `M-<` or a click. During an isearch the other window follows only when `C-s` stops on a match and when the search ends, not as you type. Scrolling one window with `C-v`, `M-v` or the mouse wheel does not move the other yet. `v` and `V` scroll both, and `C-l` lines them up again.
 
 `RET` opens the file at the line point is on, as the file is now. If the review is of commits, or the files changed after the review read them, ecc moves the line through those later changes. A line of the left side opens where it is now, and a removed line opens where it was. The file opens in a frame of its own, the same frame each time while it is open. The review keeps its frame, its windows and the keyboard.
 

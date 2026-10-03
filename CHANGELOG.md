@@ -328,8 +328,7 @@ Verified against **Claude Code CLI 2.1.281**.
   `the right side is a1b2c3d, not checked out here`, the head of a pull
   request named by its branch, as in `fix/x (a1b2c3d)`
   (`ecc-review-name-side`); an ediff review puts
-  `right: a1b2c3d, not checked out` at the end of the right window's header
-  line; `review_hunks` tells Claude the same; and the prompt the comments
+  `right: a1b2c3d, not checked out` on the right window's mode line; `review_hunks` tells Claude the same; and the prompt the comments
   are sent in adds `ecc-review-elsewhere-note` under its first line, telling
   Claude that the lines are not in the working tree and to ask before
   editing, without checking anything out itself. A review of the working
@@ -390,8 +389,8 @@ Verified against **Claude Code CLI 2.1.281**.
   `review_navigate`'s `next_comment` and `prev_comment` pass over their
   comments, and `review_navigate` to one of them fails and says why. The
   header line of the diff review says `/FILTER: N files hidden by
-  filter`, and an ediff review says `/FILTER: N hidden` at the right end
-  of the header line of the window with the keyboard.
+  filter`, and an ediff review says `/FILTER: N hidden` on the mode line
+  of its right window.
   `review_hunks` and `review_open` tell Claude the filter, how many files
   it hides and which (`ecc-review-agent-filter-text`). A filter holds
   across every reading of the review again.
@@ -430,7 +429,12 @@ Verified against **Claude Code CLI 2.1.281**.
   a pane that had the keyboard has it again on its new side. It shows the latest turn of the session of
   the review as it streams -- what you sent on a line, what Claude says,
   and each tool call on a line of its own, such as `review_navigate →
-  foo.el:12` -- and keeps its end in view. `u` and `d` in the review scroll
+  foo.el:12` -- and keeps its end in view. It is coloured as the
+  transcript is: the prompt in `ecc-user-face`, the reply in
+  `ecc-assistant-face` while it streams and with its Markdown fontified
+  over that once it is done -- once a reply while its text stays the
+  same, however often the pane is written -- and the name of each call in
+  `ecc-tool-face`. `u` and `d` in the review scroll
   it back and on without selecting it, and so do `u`, `d`, `DEL` and `SPC`
   in the pane. Each window of the pane is asked before every change
   whether its end is in view: one that shows it follows it, and one
@@ -463,8 +467,9 @@ Verified against **Claude Code CLI 2.1.281**.
   rows the two sides are put together by and the keyboard follow either
   layout.
 
-- The control panel of an ediff review is out of sight: the keys and where
-  the review is are on the header lines of its two windows, and `?` shows
+- The control panel of an ediff review is out of sight: the keys are on the
+  header lines of its two windows and where the review is on the mode line
+  of the right one, and `?` shows
   the panel with every key, without a mode line, until `?` again. The
   panel's window is deleted after each layout, and ediff is told the layout
   is the one it made -- the print of the window in
@@ -530,19 +535,24 @@ Verified against **Claude Code CLI 2.1.281**.
   large to follow a line through (`ecc-diff-max-file-size`), a binary one
   and an unreadable one open at the line the review shows, and say which;
   a path that is no longer a regular file is refused. `RET` in the control panel opens the file of the current
-  difference. Each window has a header line of keys, the
-  left one for reading and your comments, the right one for Claude,
-  opening, sending and closing; while the two sides are side by side the
-  left one is put at the right edge of its window (`:align-to`), so that
-  the two meet in the middle. The header line of the new side ends with
-  which difference is current out of how many, `3/12`, and what the
-  filter hides -- after every change of either, reading again included;
-  a window too narrow for every key and that leaves out the keys before
-  the last, `? all keys`, from the one before it until the rest fit, and
-  one too narrow even for `?` and that puts it first and the keys after
-  it, worked out as the header line is drawn, and drawn again
-  whenever what it reads changes --
-  and `?` shows every key, in a window as in the panel. `o` in the files pane
+  difference. Each window has a header line of keys and nothing else,
+  the most used first (`ecc-review-direct-header-keys`). One above the
+  other, both windows show the same line: every key, as many as the width
+  has room for. Side by side, the keys are cut in two, the left one for
+  reading and your comments, the right one for Claude, opening, sending
+  and closing, and the left one is put at the right edge of its window
+  (`:align-to`), so that the two meet in the middle. A window too narrow
+  for every key leaves out the keys before the last, `? all keys`, from
+  the one before it until the rest fit, worked out as the header line is
+  drawn and kept for the next draw of the same width. The mode line of
+  each window says the path of the file its point is in -- the separator
+  line `═══ path ═══` scrolls away with the top of the file -- read off
+  the text after every command, for both windows, and after every change
+  of the review, not as the mode line is drawn; the blank line in front
+  of a file belongs to the file above. The mode line of the new side goes
+  on with which difference is current out of how many, `3/12`, and what
+  the filter hides -- after every change of either, reading again
+  included -- and `?` shows every key, in a window as in the panel. `o` in the files pane
   opens the file itself, at its first change in an ediff review and
   beside the session in the diff review; `RET` there still moves the
   review.
