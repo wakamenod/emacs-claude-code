@@ -18,6 +18,8 @@ export default defineConfig({
 		'/ja/features/menu': '/emacs-claude-code/ja/reference/menu/',
 		'/start/overview': '/emacs-claude-code/start/first-session/',
 		'/ja/start/overview': '/emacs-claude-code/ja/start/first-session/',
+		'/features/approval': '/emacs-claude-code/features/permissions/',
+		'/ja/features/approval': '/emacs-claude-code/ja/features/permissions/',
 	},
 
 	integrations: [
