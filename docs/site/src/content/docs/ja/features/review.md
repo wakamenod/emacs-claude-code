@@ -139,7 +139,12 @@ Comment: the docstring still says hi
 
 ## コミットや範囲に対してレビューする
 
-`ecc-review` がセッション開始時点を起点とするのに対し、こちらはデフォルトで直前のコミットを起点とします。レビューのメニューで `w` を押す（`C-c c D w`）か、`M-x ecc-review-range` を実行します。専用のキーはありません。割り当てるには `(define-key ecc-global-map "G" #'ecc-review-range)` とします。
+`ecc-review` がセッション開始時点を起点とするのに対し、こちらはデフォルトで直前のコミットを起点とします。レビューのメニューで `w` を押す（`C-c c D w`）か、`M-x ecc-review-range` を実行します。専用のキーはありません。割り当てるには次のようにします:
+
+```elisp
+(with-eval-after-load 'ecc-answer
+  (define-key ecc-global-map "G" #'ecc-review-range))
+```
 
 プロジェクトのリポジトリ全体を `HEAD` と比較し、ステージの有無にかかわらず未コミットの変更がすべて表示され、未追跡ファイルも含まれます（`.gitignore` の除外対象は含まれません。バイナリファイルや `ecc-review-max-bytes` を超えるファイルは、内容ではなくファイル名のみ表示されます）。まだ 1 つもコミットがないリポジトリでは空のツリーと比較されるため、プロジェクト最初のコードをコミット前にレビューできます。
 

@@ -139,7 +139,12 @@ There, `C-c C-c` sends the prompt as it stands, while `C-c C-k` returns to the d
 
 ## Reviewing against a commit or a range
 
-Where `ecc-review` starts from the moment the session began, `ecc-review-range` starts from the last commit by default. Press `w` in the review menu (`C-c c D w`), or run `M-x ecc-review-range`. There is no key of its own; to bind one, `(define-key ecc-global-map "G" #'ecc-review-range)`.
+Where `ecc-review` starts from the moment the session began, `ecc-review-range` starts from the last commit by default. Press `w` in the review menu (`C-c c D w`), or run `M-x ecc-review-range`. There is no key of its own; to bind one:
+
+```elisp
+(with-eval-after-load 'ecc-answer
+  (define-key ecc-global-map "G" #'ecc-review-range))
+```
 
 This diffs the project's entire repository against `HEAD` — every uncommitted change, staged or unstaged, plus the untracked files (those `.gitignore` excludes are left out; a binary file, or one larger than `ecc-review-max-bytes`, is named rather than printed). A repository with no commits yet is compared against the empty tree, so the first code written in a project can be reviewed before it is committed.
 

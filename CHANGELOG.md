@@ -551,8 +551,14 @@ Verified against **Claude Code CLI 2.1.281**.
   `ecc-review-worktree`, `ecc-review-worktree-buffer`,
   `ecc-review-worktree-session`, `ecc-review-ediff-worktree-buffer` and
   the variable `ecc-review-worktree-default-range`, now
-  `ecc-review-default-range`. To have the key back:
-  `(define-key ecc-global-map "G" #'ecc-review-range)`.
+  `ecc-review-default-range`. To have the key back -- the map is
+  autoloaded as a keymap, and the variable is there only once
+  `ecc-answer` is loaded:
+
+  ```elisp
+  (with-eval-after-load 'ecc-answer
+    (define-key ecc-global-map "G" #'ecc-review-range))
+  ```
 
 - The comments of an ediff review are the comments of the diff review:
   numbered, kept across a refresh by the same rules, and listed, removed
