@@ -742,6 +742,18 @@ as UTF-8 whatever the locale. What gh says
   time (0.48 s before, 0.46 s after; the 57 files of
   `scripts/bench-review-ediff.el`, 0.44 s and 0.45 s).
 
+- A session read back from its recording is rooted in the directory it
+  started in. It took the working directory of the recording's last
+  lines, and since the CLI reports the directory a Bash `cd` left the
+  session in as its working directory (2.1.272), a session whose model
+  ran `cd` into a worktree came back rooted in the worktree, named after
+  it, listed among that project's recordings, and could not be resumed:
+  `--resume` ran there and the CLI looked for the recording under that
+  directory, not the one it is filed under. The `cwd` a recording is
+  described by is now its first one, which the scan looks for before it
+  reads the end of the file, and `/resume` offers the recordings of a
+  session's root before those of the directory the CLI reports.
+
 - A request the CLI takes back while you are being asked about it -- an
   interrupt closes it while a reason for denying, an answer to a question
   or whether to save a buffer first is being read -- is no longer

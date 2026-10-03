@@ -516,15 +516,23 @@ list, the dashboard, the paging index or the search."
   "Fold LINE of a history file into the summary alist INFO.
 Only the keys a line actually carries are set, so that INFO can be
 built from the first lines of a file and then from the last ones, the
-later value winning.  The keys are `session-id', `cwd', `title',
-`prompt', `cost', `model' and `time'."
+later value winning -- except `cwd', where the first value stays.  The
+keys are `session-id', `cwd', `title', `prompt', `cost', `model' and
+`time'.
+
+The `cwd' a recording belongs to is the one its session started in: the
+CLI files the recording under that directory, and `--resume' has to run
+there to find it.  The lines after a Bash `cd' carry the directory the
+tool was left in instead (CLI 2.1.272, confirmed 2026-09-16), so a later
+`cwd' says where a tool ran and not where the session lives."
   (condition-case nil
       (let* ((object (ecc--json-read line))
              (type (and (consp object) (alist-get 'type object)))
              (set (lambda (key value) (when value (setf (alist-get key info) value)))))
         (when (consp object)
           (funcall set 'session-id (alist-get 'sessionId object))
-          (funcall set 'cwd (alist-get 'cwd object))
+          (unless (alist-get 'cwd info)
+            (funcall set 'cwd (alist-get 'cwd object)))
           (funcall set 'time (ecc-protocol-history-timestamp object))
           (pcase type
             ("ai-title" (funcall set 'title (alist-get 'aiTitle object)))
