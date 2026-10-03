@@ -2,7 +2,7 @@
 title: Spaces and worktrees
 description: One tab per project, a sidebar listing every project and session, and git worktrees a session can live in.
 sidebar:
-  order: 5
+  order: 6
 ---
 
 A **Space** is a project with an Emacs tab of its own. A tab is a named window arrangement of the frame. [`tab-bar-show`](#the-bar-itself-is-yours) decides whether the strip at the top of the frame is drawn. A git worktree is its own Space, shown under the repository it came from.

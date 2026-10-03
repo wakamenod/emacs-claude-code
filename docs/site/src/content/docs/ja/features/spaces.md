@@ -2,7 +2,7 @@
 title: Space と worktree
 description: プロジェクトごとに 1 つのタブ、すべてのプロジェクトとセッションを並べるサイドバー、セッションの作業場所になる git worktree。
 sidebar:
-  order: 5
+  order: 6
 ---
 
 **Space** は、専用の Emacs タブを持つプロジェクトです。タブは、フレームのウィンドウ配置に名前を付けたものです。フレーム上端の帯を出すかどうかは [`tab-bar-show`](#タブバーを出すかは自分で決める) で決まります。git worktree はそれ自体が 1 つの Space になり、元のリポジトリの下に表示されます。
