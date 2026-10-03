@@ -400,10 +400,22 @@ Verified against **Claude Code CLI 2.1.281**.
   its prompt. `T` in a review -- the diff review, or a window or the
   control panel of an ediff review -- asks the session of the review for a tour
   (`ecc-review-talk-tour-prompt`): the changes in order of importance, each
-  stop shown with `review_navigate` and explained, a `review_comment` on
-  what needs attention, and a stop until you ask for the next one, which
-  is `t` (`ecc-review-talk-next-prompt`). `M` reads a line in the
-  minibuffer and sends it as a prompt. All three go to the session of the
+  stop shown with `review_navigate` first and then explained, the comments
+  on what needs attention in one `review_comment_apply` call, and a stop
+  until you ask for the next one, which is `t`
+  (`ecc-review-talk-next-prompt`). `M` reads a line in the minibuffer and
+  sends it as a prompt. `T` sends the files and hunks of the review with
+  the tour prompt, each with its patch, as `review_hunks` with
+  `include_patch` gives them, and the prompt asks Claude to plan every stop
+  in that first turn and keep to the plan without fetching the diff again.
+  Over `ecc-review-talk-patch-limit` characters (20000) the hunks go
+  without their patches, and Claude is told to call `review_hunks` for
+  them. `t` and `M` say where you are: the file, the line at point and its
+  side -- in ediff, the side of the window the keyboard is in, the right
+  one from the control panel -- and the hunk, by its `@@` line and its
+  number among the hunks of the file (`ecc-review-place-at-point`). Tool
+  calls spent finding what Emacs already knew made a tour take 13-35 s to
+  begin and a question 41 s to answer. All three go to the session of the
   review and are sent as `ecc-send` sends: queued while a turn runs, and
   with what `ecc-prepare-prompt-functions` adds. `T` and `t` need the
   review tools, and without `ecc-mcp-enabled` they say so and send
