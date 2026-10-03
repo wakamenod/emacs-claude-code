@@ -1,11 +1,11 @@
 ---
 title: Key bindings
-description: Global keybindings accessible from any buffer, and configuration instructions.
+description: The global keymap, bound to a prefix of your choice, for the commands you need from any buffer.
 sidebar:
   order: 1
 ---
 
-`ecc-global-map` is a prefix keymap for the commands you need while editing other files. With it you answer permission prompts and switch to active sessions without going to their buffers first. Bind it to any prefix; the README recommends `C-c c`:
+`ecc-global-map` holds the commands you need while editing other files: answering requests, going to a session, opening a review. Bind it to a prefix; the [installation page](/emacs-claude-code/start/installation/#initial-configuration) uses `C-c c`:
 
 ```elisp
 (use-package ecc
@@ -20,18 +20,16 @@ Or, without `use-package`:
 
 | Key | Action |
 |---|---|
-| `c` / `r` / `R` | Start session / resume (`C-u r` to fork the conversation) / rename |
-| `v` / `i` / `t` | Focus prompt / interrupt turn / hand over to terminal |
-| `a` / `d` | Allow or deny oldest pending request |
-| `1`–`4` | Select corresponding option for pending question |
-| `n` / `N` | Jump to next pending request (globally or within current project) |
-| `B` / `D` / `h` / `U` | Open dashboard / choose what to review / view history / check usage |
-| `j` / `b` / `z` / `V` | Go to a Space / open the sidebar / zoom this window / put this Space's windows back in order (see [Spaces and worktrees](/emacs-claude-code/features/spaces/)) |
-| `/` | Search past conversations by message content |
-| `?` | Open transient menu |
+| `c` / `r` / `R` | Start a session / resume one (`C-u r` forks it) / rename |
+| `v` / `i` / `t` | Go to the prompt / interrupt the turn / hand over to the terminal |
+| `a` / `d` | Allow or deny the oldest waiting request |
+| `1`–`4` | Answer a waiting question with that option |
+| `n` / `N` | Jump to the next waiting request (anywhere / in this project) |
+| `B` / `D` / `h` / `U` | Dashboard / review menu / read a recording / usage |
+| `j` / `b` / `z` / `V` | [Spaces](/emacs-claude-code/features/spaces/): go to one / the sidebar / zoom this window / reset this Space's windows |
+| `/` | Search past conversations |
+| `?` | Open the [menu](/emacs-claude-code/reference/menu/), which has every command |
 
-The keys are the same as in the [transient menu](/emacs-claude-code/features/menu/). `?` opens the transient menu itself, which reaches every ecc command from outside a session buffer.
+The keys mean the same in the menu. The worktree commands are under `?` then `W`.
 
-Infrequently used commands are not listed here. To create, open, or remove a worktree, press `?` then `W`. To switch a window to another session, press `C-c C-t` inside a session buffer. To focus one project with `ecc-use-spaces` off, run `M-x ecc-focus-project`.
-
-For buffer-local bindings inside session buffers, see [Prompt and transcript](/emacs-claude-code/features/prompt/).
+The keys inside a session buffer are on [Prompt and transcript](/emacs-claude-code/features/prompt/).

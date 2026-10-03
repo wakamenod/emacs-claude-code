@@ -32,13 +32,13 @@ face は挿入時に付き、`M-x customize` でカスタマイズできます�
 ### 主な機能
 
 - **[Diff レビュー](https://wakamenod.github.io/emacs-claude-code/ja/features/review/):** セッション中の変更を、編集・シェルコマンド・スクリプトのどれによるものでも、すべて 1 つの `diff-mode` バッファで確認できます。`C-c c D` で開くメニューでは、比べる対象を選べます。対象は、未コミット・ステージ済み・未ステージの変更、今のブランチと別のブランチ、GitHub のプルリクエスト（`gh` CLI があるとき）、コミット、範囲です。行やハンク全体にコメントを付け、まとめて 1 つのプロンプトとして送信できます。`s` で diff の横にファイルの一覧を出し、`/` でフィルタに合わないファイルを隠せます。開いているレビューは、ファイルの変更に合わせて更新されます。MCP サーバーを有効にすると、Claude もレビューの行にコメントを付け、話題にしている箇所までスクロールできます。レビューで `T` を押すと Claude が変更を 1 か所ずつ案内し、`M` でレビューを離れずに Claude へメッセージを送れます。`ecc-review-style` を設定すると、同じレビューを ediff で開き、全ファイルを 1 つのセッションで表示できます。画面に見えている差分では、行の中で変わった語も示されます。変更前を上、変更後を下に並べ、`|` で左右に並べ替えられます。ediff でも、Claude のコメントとファイルの変更への追従は同じように働きます。diff の横の欄に Claude の返答が表示され、許可の要求にもその場で答えられます。キーは ediff の左右どちらのウィンドウでも使えます。`c` でポイントの行にコメントを付けられ、ポイントを動かすと反対側も同じ場所に合わせて動きます。`RET` でその行のファイルを別のフレームに開きます。
-- **[インタラクティブな編集](https://wakamenod.github.io/emacs-claude-code/ja/features/approval/#適用前の提案をレビューする):** 提案されたファイル編集を適用前に確認・修正できます。
+- **[インタラクティブな編集](https://wakamenod.github.io/emacs-claude-code/ja/features/permissions/#許可する前に提案を編集する):** 提案されたファイル編集を適用前に確認・修正できます。
 - **[ソースへジャンプ](https://wakamenod.github.io/emacs-claude-code/ja/features/prompt/#ソースを開く):** diff の行、ファイルを扱うツール呼び出しの見出し、Claude の返答中のパス（`foo.el:12`）で `RET` を押すかクリックすると、そのファイルを該当行で開きます。あとから同じファイルが変更されても、行番号はそれに合わせて補正します。
-- **[プランモード](https://wakamenod.github.io/emacs-claude-code/ja/features/approval/#プランモード):** 提案された計画を、編集可能なバッファで確認・調整できます。
+- **[プランモード](https://wakamenod.github.io/emacs-claude-code/ja/features/permissions/#プランモード):** 提案された計画を、編集可能なバッファで確認・調整できます。
 - **[グローバル操作](https://wakamenod.github.io/emacs-claude-code/ja/reference/key-bindings/):** どのバッファからでも保留中のツール実行リクエストを許可・拒否できます。
 - **[セッション管理](https://wakamenod.github.io/emacs-claude-code/ja/features/sessions/):** 同時に動いている複数のセッションをダッシュボードから管理できます。
 - **[Space と worktree](https://wakamenod.github.io/emacs-claude-code/ja/features/spaces/):** プロジェクトごとに Emacs のタブ（Space）が割り当てられ、その中のウィンドウ配置は並べたまま保たれます（`ecc-use-spaces`、既定で有効）。サイドバーには全プロジェクトとセッションが動作状況とともに並び、`ecc-start-worktree` はリポジトリの隣にブランチをチェックアウトして独立した Space として開きます。
-- **安全なデフォルト設定:** 自動承認は存在せず、勝手に許可されることはありません。答えられなくなったリクエストは拒否として記録されます。内蔵のループバック MCP サーバーは既定で無効で、Elisp の評価には明示的な有効化が必要です。
+- **安全なデフォルト設定:** `default` の[権限モード](https://wakamenod.github.io/emacs-claude-code/ja/features/permissions/#権限モード)では、Claude はファイルを編集したりコマンドを実行したりする前に許可を求めます。答えられなくなったリクエストは拒否として記録されます。ほかのモードでは、その一部を確認なしで通します。内蔵のループバック MCP サーバーは既定で無効です。有効にすると、そのレビューのツールはファイルを書かないので確認なしで許可されます。Elisp の評価には明示的な有効化が必要です。
 
 ## 動作要件
 

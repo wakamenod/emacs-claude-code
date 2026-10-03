@@ -2,15 +2,15 @@
 title: Installation
 description: System requirements, installation instructions, and recommended initial configuration.
 sidebar:
-  order: 2
+  order: 1
 ---
 
 ## Requirements
 
-- **Emacs 29.1 or later.** `transient` is built into Emacs 29.1+, and ecc requires no other external packages.
-- **The [Claude Code CLI](https://docs.claude.com/en/docs/claude-code)**, available on your `PATH` or configured via `ecc-executable`.
+- **Emacs 29.1 or later.** ecc needs no other package; `transient` is part of Emacs.
+- **The [Claude Code CLI](https://docs.claude.com/en/docs/claude-code)**, on your `PATH` or set in `ecc-executable`.
 
-These are the only hard requirements. The following packages are optional:
+These packages are optional:
 
 | Package | Feature |
 |---|---|
@@ -21,9 +21,7 @@ These are the only hard requirements. The following packages are optional:
 
 ## Installation
 
-ecc is not currently on MELPA; install it directly from the Git repository.
-
-Note that the repository name is `emacs-claude-code` while the package name is `ecc`. Package managers that infer the package name from the repository URL must be configured explicitly.
+ecc is not on MELPA; install it from the Git repository. The repository is `emacs-claude-code` and the package is `ecc`, so a package manager that takes the name from the URL needs to be told.
 
 ### Emacs 30 and later
 
@@ -33,7 +31,7 @@ Note that the repository name is `emacs-claude-code` while the package name is `
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest))
 ```
 
-Use `:rev "<commit-sha>"` to pin a specific commit instead of tracking the latest changes.
+`:rev "<commit-sha>"` pins a commit.
 
 ### Emacs 29
 
@@ -41,7 +39,7 @@ Use `:rev "<commit-sha>"` to pin a specific commit instead of tracking the lates
 M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 ```
 
-Then configure it with a standard `use-package` declaration (without `:vc`).
+Then configure it with `use-package` without `:vc`.
 
 ### straight.el
 
@@ -52,7 +50,7 @@ Then configure it with a standard `use-package` declaration (without `:vc`).
 
 ## Initial configuration
 
-Because `M-x ecc-start` is autoloaded, ecc works without any extra configuration. The first thing to add is a binding for the global keymap:
+`M-x ecc-start` is autoloaded, so ecc works without configuration. Bind the global keymap to a prefix:
 
 ```elisp
 (use-package ecc
@@ -61,11 +59,11 @@ Because `M-x ecc-start` is autoloaded, ecc works without any extra configuration
   :bind-keymap ("C-c c" . ecc-global-map))
 ```
 
-`ecc-global-map` lets you respond to permission prompts, jump to waiting sessions, and open the dashboard from any buffer. See the [key binding reference](/emacs-claude-code/reference/key-bindings/) for all available bindings.
+`ecc-global-map` answers requests, jumps to waiting sessions and opens the dashboard from any buffer. The site writes its keys with `C-c c`; see [Key bindings](/emacs-claude-code/reference/key-bindings/).
 
 ## Enabling the MCP server
 
-The built-in loopback MCP server lets Claude query Emacs for editor context: `xref` references, `imenu` symbols, and `flymake` diagnostics. It also lets Claude [hand a piece of work to a session in a worktree of its own](/emacs-claude-code/features/spaces/#handing-work-to-a-session-in-a-worktree). It is disabled by default. Evaluating arbitrary Elisp requires an additional explicit opt-in:
+The built-in MCP server, on the loopback interface, lets Claude read `xref` references, `imenu` symbols and diagnostics from Emacs, [work in the review](/emacs-claude-code/features/review-claude/), and [hand work to a session in a worktree](/emacs-claude-code/features/spaces/#handing-work-to-a-session-in-a-worktree). It is off by default, and evaluating Elisp is a separate opt-in:
 
 ```elisp
 (setq ecc-mcp-enabled t)
@@ -75,10 +73,8 @@ The built-in loopback MCP server lets Claude query Emacs for editor context: `xr
 
 ## Verifying the setup
 
-1. Open any file in a project.
-2. Run `M-x ecc-start`.
-3. Type a message in the bottom prompt area and press `C-c C-c`.
+Open a file of a project, run `M-x ecc-start`, type a message in the prompt region at the bottom and press `C-c C-c`. [A first session](/emacs-claude-code/start/first-session/) goes on from there.
 
-If the CLI fails to start, check the session log buffer (`C-c ?` then `L`, or `M-x ecc-show-log`), which records the exact command executed and the raw output received from the CLI process.
+If the CLI does not start, `M-x ecc-show-log` (`C-c ?` then `L`) shows the command ecc ran and what the CLI wrote back.
 
-For all other options, run `M-x customize-group RET ecc` or consult the [configuration reference](/emacs-claude-code/reference/configuration/). `C-c ?` inside any session opens the transient menu, which shows all commands and their keybindings.
+Every setting is in `M-x customize-group RET ecc` and on the [configuration page](/emacs-claude-code/reference/configuration/).
