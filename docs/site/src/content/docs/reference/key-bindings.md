@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-`ecc-global-map` is a prefix keymap for the commands you need while editing other files. With it you answer permission prompts and switch to active sessions without going to their buffers first. Bind it to any prefix; the README recommends `C-c c`:
+`ecc-global-map` is a prefix keymap for the commands you need while editing other files. With it you answer permission prompts and switch to active sessions without going to their buffers first. Bind it to any prefix; the [installation page](/emacs-claude-code/start/installation/#initial-configuration) uses `C-c c`:
 
 ```elisp
 (use-package ecc

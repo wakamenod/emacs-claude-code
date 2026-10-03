@@ -38,6 +38,7 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 | `ecc-render-diff-max-lines` | `40` | Maximum lines displayed for inline diffs in tool and permission blocks. The full diff is always accessible with `RET` |
 | `ecc-diff-context-lines` | `3` | Lines of context displayed around modifications in the transcript |
 | `ecc-stream-throttle` | `0.05` | Interval in seconds to buffer streaming deltas before redrawing. Zero renders each delta immediately |
+| `ecc-show-hook-events` | `nil` | When non-nil, the transcript shows each hook firing, with its exit code and output. The hooks run either way. Read when a session starts |
 | `ecc-render-debounce` | `0.1` | Debounce delay in seconds before redrawing the active transcript region |
 | `ecc-image-inline` | `t` | When `t`, images in the transcript are shown. When `nil`, only the line naming the file is shown. That line is shown either way |
 
@@ -89,15 +90,16 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 
 | Variable | Default | Description |
 |---|---|---|
-| `ecc-window-large-frame-min-height` | `80` | Minimum frame height (in lines) required before allocating a third session window. Below this threshold, sessions share two windows and the tab line provides navigation |
-| `ecc-window-sub-height` | `0.33` | Height of the third session window (as a fraction or line count). Taken from the primary frame area (typically code buffers) rather than the side session column |
-| `ecc-tab-line-scope` | `'project` | Scope of sessions shown in a session window's tab line. `'project` lists sessions for that window's own project; `'all` lists all open sessions in Emacs |
+| `ecc-window-large-frame-min-height` | `80` | With `ecc-use-spaces` off: minimum frame height (in lines) required before allocating a third session window. Below this threshold, sessions share two windows and the tab line provides navigation |
+| `ecc-window-sub-height` | `0.33` | With `ecc-use-spaces` off: height of the third session window (as a fraction or line count). Taken from the primary frame area (typically code buffers) rather than the side session column |
 | `ecc-use-spaces` | `t` | When non-nil, each project gets a tab on the tab bar (a Space), leaving the windows inside it alone. When nil, ecc uses the older layout: transcripts appear in side windows with roles (main, sub-1, sub-2) assigned for a project, with no tabs, sidebar, or worktree commands. See [Spaces and worktrees](/emacs-claude-code/features/spaces/) |
 | `ecc-space-always-session` | `t` | Whether a Space always holds a session, with `ecc-use-spaces` on. When non-nil, opening a Space with nothing running starts a session, and closing its last session closes the Space. When nil, a Space opens showing only its source files, and stays open until the project's last buffer is killed as well |
 | `ecc-space-session-min-width` | `80` | Columns a session window needs, with `ecc-use-spaces` on, before the row of transcripts is split again. If there is no room for another column this wide, the new session reuses an existing window (the one whose session was worked in least recently) rather than making every transcript narrower. `window-min-width` sets the lower limit |
 | `ecc-sidebar-width` | `28` | Width of the sidebar, in columns. 28 columns take a different share of the frame on a 13-inch laptop with a large font than on a 34-inch display, and project names differ in length |
 
 The default value of `ecc-window-large-frame-min-height` (80 lines) separates laptop screens from larger external displays: a 14-inch screen typically fits ~58 lines and a 16-inch screen ~67 lines, whereas standard desktop monitors accommodate 110+ lines.
+
+`ecc-tab-line-scope` is not in customize; set it with `setq`. `'project` (the default) lists a session window's own project's sessions in its tab line, and `'all` lists every session.
 
 ## Side buffers and popups
 
