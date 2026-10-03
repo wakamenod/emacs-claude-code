@@ -730,17 +730,14 @@ when the head range stopped short of it."
         (should (equal (alist-get 'cwd info)
                        "/private/var/folders/4v/6r7_g65n4jz15_y1z350h0340000gn/T/ecc-history-2m0x5w0z"))))))
 
-(defvar ecc-history-test--skip nil
-  "Lines naming no `cwd' at the front of the recording `ecc-history-test--with-moved-cwd' writes.")
-
 (defmacro ecc-history-test--with-moved-cwd (vars &rest body)
   "Run BODY over a recording whose `cwd' changes after its first lines.
-VARS is (FILE START LATER): the recording, the directory it starts in
-and the one a Bash `cd' moved it to.  The recording is long enough that
-a scan reads only its ends.  It opens with `ecc-history-test--skip'
-lines that name no `cwd'."
-  (declare (indent 1) (debug ((symbolp symbolp symbolp) body)))
-  (pcase-let ((`(,file ,start ,later) vars))
+VARS is (FILE START LATER [SKIP]): the recording, the directory it
+starts in and the one a Bash `cd' moved it to, and how many lines that
+name no `cwd' it opens with, 0 when left out.  The recording is long
+enough that a scan reads only its ends."
+  (declare (indent 1) (debug ((symbolp symbolp symbolp &optional form) body)))
+  (pcase-let ((`(,file ,start ,later ,skip) vars))
     `(let* ((root (make-temp-file "ecc-history-dir" t))
             (,start (file-name-as-directory
                      (file-truename (make-temp-file "ecc-history-start" t))))
@@ -763,7 +760,7 @@ lines that name no `cwd'."
                                                     (content . ,(format "prompt %d %s" n
                                                                         (make-string 200 ?x))))))))
                              (insert "\n"))))
-                 (dotimes (n (or ecc-history-test--skip 0))
+                 (dotimes (n ,(or skip 0))
                    (funcall line nil n))
                  (dotimes (n 20) (funcall line ,start n))
                  ;; The model ran `cd' in Bash; every line from here on
@@ -803,12 +800,11 @@ a directory whose recordings it is not among."
 (ert-deftest ecc-history-test-first-cwd-past-the-head-range ()
   "A first `cwd' past the head range is looked for before the tail's.
 Otherwise the tail, which names only the later directory, answers."
-  (let ((ecc-history-test--skip 20))
-    (ecc-history-test--with-moved-cwd (file start _later)
-      (let ((ecc-history-scan-head-bytes 2048)
-            (ecc-history-scan-tail-bytes 2048))
-        (should (equal (directory-file-name start)
-                       (alist-get 'cwd (ecc-history-scan-file file))))))))
+  (ecc-history-test--with-moved-cwd (file start _later 20)
+    (let ((ecc-history-scan-head-bytes 2048)
+          (ecc-history-scan-tail-bytes 2048))
+      (should (equal (directory-file-name start)
+                     (alist-get 'cwd (ecc-history-scan-file file)))))))
 
 (ert-deftest ecc-history-test-recordings-of-the-starting-project ()
   "A recording is listed under the project it started in, not the later one."

@@ -466,7 +466,11 @@ The alist also carries `file', `session-id' and `mtime'.
 The `cwd' is the first one the file names, the directory the session
 started in: that is the project the recording belongs to and where
 `--resume' finds it.  The last lines carry whatever directory a Bash
-`cd' left the session in (see `ecc-protocol-history-info')."
+`cd' left the session in (see `ecc-protocol-history-info').  Only a
+file that names no `cwd' in its first `ecc-history-scan-cwd-bytes' is
+described by the first one its last lines name, which may be one a
+`cd' moved to: a recording listed under a later directory is better
+than one a project filter drops."
   (let ((info (list (cons 'file file)
                     (cons 'mtime (file-attribute-modification-time
                                   (file-attributes file)))))
