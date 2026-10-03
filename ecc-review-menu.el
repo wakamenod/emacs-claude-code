@@ -28,7 +28,8 @@
 ;; `ecc-review-menu' is where a review starts.  It asks what to compare
 ;; before anything is opened -- what the session changed since it
 ;; started, the working tree against HEAD, what is staged or not, this
-;; branch against the one it forked from, a commit, or a range typed by
+;; branch against the one it forked from, a pull request of GitHub when
+;; gh is installed (`ecc-review-pr'), a commit, or a range typed by
 ;; hand -- and says how many files each would show.  A menu is about
 ;; one session and its project: the session's changes, that project's
 ;; working tree and branches, and that session to send the comments to.
@@ -52,6 +53,7 @@
 (require 'ecc-model)
 (require 'ecc-window)
 (require 'ecc-review)
+(require 'ecc-review-pr)
 
 (declare-function ecc-start "ecc" (&optional directory name))
 
@@ -81,6 +83,7 @@ origin/main is what has not been pushed.  See
     (unstaged . "unstaged")
     (staged . "staged")
     (branch . "this branch vs %s")
+    (pr . "a pull request…")
     (commit . "a commit…")
     (range . "a range…"))
   "What each choice of the menu compares, in the words the menu uses.")
@@ -842,6 +845,28 @@ ARGS are the arguments of the menu, and STATE its state
         (ecc-review-name-fork root (car range) (cdr range)))
       (ecc-review-menu-open 'branch (car range) args ecc-review-menu--state))))
 
+(transient-define-suffix ecc-review-menu-pull-request (pr args &optional state)
+  "Review the pull request PR, a plist of `ecc-review-pr-parse'.
+Asked of gh with completion (`ecc-review-pr-read'), and compared as
+`ecc-review-pr-range' says.  Offered only when gh is installed.
+ARGS are the arguments of the menu, and STATE its state
+\(`ecc-review-menu--with-state')."
+  :description (lambda () (ecc-review-menu--describe 'pr))
+  :if #'ecc-review-pr-available-p
+  :inapt-if #'ecc-review-menu--outside-git-p
+  (interactive
+   (ecc-review-menu--with-state nil
+     (let ((args (transient-args 'ecc-review-menu)))
+       (list (ecc-review-pr-read (ecc-review-menu--root)
+                                 (plist-get ecc-review-menu--state :branch)
+                                 #'ecc-review-menu--in-order)
+             args ecc-review-menu--state))))
+  (ecc-review-menu--with-state state
+    (let* ((root (ecc-review-menu--root))
+           (range (ecc-review-pr-range root pr (plist-get ecc-review-menu--state :branch))))
+      (ecc-review-name-fork root (car range) (cdr range))
+      (ecc-review-menu-open 'pr (car range) args ecc-review-menu--state))))
+
 (transient-define-suffix ecc-review-menu-commit (from to args &optional state)
   "Review the commit FROM, or FROM through TO (`ecc-review-menu-commit-range').
 ARGS are the arguments of the menu, and STATE its state
@@ -931,6 +956,7 @@ review the other way from `ecc-review-style'."
     ("u" ecc-review-menu-unstaged)
     ("s" ecc-review-menu-staged)
     ("b" ecc-review-menu-branch)
+    ("p" ecc-review-menu-pull-request)
     ("c" ecc-review-menu-commit)
     ("r" ecc-review-menu-range)]
    ["Options"
