@@ -1,0 +1,56 @@
+---
+// A scene video from public/videos, with its English and Japanese
+// subtitles.  scripts/docshots.sh writes NAME.mp4, its first frame as
+// NAME.webp, and the cue times of NAME.en.vtt and NAME.ja.vtt; the
+// page's language picks the track that is on when the video starts.
+// It does not start by itself: the poster stands in until it is played.
+//
+//   <Video name="switch" label="What the video shows" />
+//
+// public/ is not run through Astro's pipeline, so nothing puts the base
+// in front of these URLs but this file.
+interface Props {
+	name: string;
+	label: string;
+}
+
+const { name, label } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const url = (file: string) => `${base}/videos/${file}`;
+const ja = Astro.locals.starlightRoute.lang === 'ja';
+---
+
+<video
+	class="ecc-video"
+	src={url(`${name}.mp4`)}
+	poster={url(`${name}.webp`)}
+	aria-label={label}
+	title={label}
+	muted
+	loop
+	playsinline
+	controls
+	preload="metadata"
+>
+	<track kind="subtitles" srclang="en" label="English" src={url(`${name}.en.vtt`)} default={!ja} />
+	<track kind="subtitles" srclang="ja" label="日本語" src={url(`${name}.ja.vtt`)} default={ja} />
+</video>
+
+<style>
+	.ecc-video {
+		display: block;
+		width: 100%;
+		height: auto;
+		border-radius: 0.25rem;
+	}
+
+	/* A browser sizes cues from the height of the video, and the video
+	   spans the content column, which made them larger than the text
+	   around it.  0.85rem is a little under Starlight's body text (1rem). */
+	.ecc-video::cue {
+		font-size: 0.85rem;
+		line-height: 1.4;
+		color: #fff;
+		background-color: rgb(0 0 0 / 0.7);
+	}
+</style>

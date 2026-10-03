@@ -35,6 +35,8 @@ src/content/docs/
   start/                 Start here
   reference/             Reference
   ja/                    the same tree, in Japanese
+src/components/
+  Video.astro            a scene video with its two subtitle tracks
 ```
 
 Each directory is one sidebar group, declared in `astro.config.mjs`. A group is
@@ -105,14 +107,14 @@ was written.
 
 There are two generators, and neither takes a picture by hand.
 
-`scripts/docshots.sh` makes the site's own pictures, into `src/assets`. It
-opens a throwaway GUI Emacs in the bottom right corner of the screen — the
-rest of the screen stays yours — walks it through a scene and captures the
-frame.
+`scripts/docshots.sh` makes the site's own pictures: the stills into
+`src/assets` and the videos into `public/videos`. It opens a throwaway GUI
+Emacs in the bottom right corner of the screen — the rest of the screen stays
+yours — walks it through a scene and captures the frame.
 
 What is captured is a rectangle of the screen, not the window, so leave that
 corner alone while it runs — a window of your own crossing it lands in the
-picture, and a frame that comes up empty stops the animation dead.
+picture, and a frame that comes up empty stops the video dead.
 
 Take one scene rather than all of them: taking all runs the real CLI four
 times and takes about five minutes, which is five minutes of that corner.
@@ -125,11 +127,10 @@ The scenes are `switch`, `menu`, `capabilities`, `send-region`, `fix-error`,
 `inline`, `rewrite`, `at-cursor`, `context`, `image`, `btw`, `suggestion`,
 `sessions`, `prompt`, `permission`, `question`, `review`, `proposal`, `plan`,
 `files`, `timeline`, `handover`, `resume`, `sidebar`, `spaces`, `usecase` and
-`overview`. A scene is not
-always one picture: `sessions` takes `tabs.png` and `dashboard.png`, and
-`prompt` takes `fold.gif` and `slash.png`. `spaces` is a still of the
-layout the Spaces page opens with: it widens the frame, opens a tab for each
-of two projects and the sidebar, and puts both back afterwards.
+`overview`. A scene is not always one picture: `sessions` takes `tabs.png` and
+`dashboard.png`, and `prompt` takes `fold.mp4` and `slash.png`. `spaces` is a
+still of the layout the Spaces page opens with: it widens the frame, opens a
+tab for each of two projects and the sidebar, and puts both back afterwards.
 
 `overview` is the odd one. It is the wide still of a whole session that the
 site's front page and `README.md` both carry, and the only scene that changes
@@ -192,16 +193,14 @@ What it knows, and what is worth not learning again:
   replays a fixture, which carries a recorded one.
 - **`hold <seconds>` is the only way to capture.** It takes real frames at
   `fps` (10) for that long; there is no way to write the same frame out
-  twice, because doing so makes an animation no smoother and only longer.
+  twice, because doing so makes a video no smoother and only longer.
   A scene is written in the seconds it should last.
-- **Keep changing, or the extra frames buy nothing.** Repeated frames are
-  merged back into one long frame when Astro converts the animation, so a
-  state that sits still is one frame however fast it was captured -- the
-  ANMF count of the built webp is the number of *distinct* pictures the
-  scene had. Raising the rate from 3 to 10 left `switch`, `focus`,
-  `review`, `files`, `capabilities` and `rewrite` with exactly the unique
-  frames they had before (2026-09-13): their steps are instantaneous and
-  then held, so there was no motion between them to sample. Where
+- **Keep changing, or the extra frames buy nothing.** A state that sits
+  still is the same picture however fast it was captured. Raising the rate
+  from 3 to 10 left `switch`, `review`, `files`, `capabilities` and
+  `rewrite` with exactly the distinct frames they had before (2026-09-13,
+  counted when the scenes were still GIFs): their steps are instantaneous
+  and then held, so there was no motion between them to sample. Where
   something really moves -- the CLI streaming an answer, a posframe
   arriving, a diff opening -- the same change roughly tripled them
   (`fix-error` 15 -> 45, `send-region` 17 -> 42, `question` 13 -> 40).
@@ -211,7 +210,7 @@ What it knows, and what is worth not learning again:
   spoils every picture after it -- a run of all of them once put `Error running
   timer 'ecc-render--timer-fired': (wrong-type-argument integer-or-marker-p
   nil)` across the bottom of seven animations and froze the nine after that,
-  while the same scenes taken one at a time came out clean (2026-09-12).  It
+  while the same scenes taken one at a time came out clean (2026-09-12). It
   happened again on the 10fps run: every step of `review` onwards timed out,
   and the run had to be killed to stop `still` overwriting good pictures with
   a frozen screen, while `SCENES="review proposal plan files"` and
@@ -220,15 +219,14 @@ What it knows, and what is worth not learning again:
   ever shown up in a long run.
 
 `docs/images/session.png` is generated by `scripts/screenshot.sh`, not taken by
-hand. README.md carries no animation any more -- `session.gif` was dropped with
-the 0.3.0 pictures -- and the still it does carry, `overview.png`, comes from
-the `overview` scene of `docs/site/README.md`'s own generator above. It opens a throwaway GUI Emacs,
-replays recorded fixtures through the real dispatch and renderer, and drives
-the frame through `emacsclient` one step at a time, capturing at 10fps
-while each step plays out. No CLI, no network, and the same output every
-time.
+hand. It opens a throwaway GUI Emacs, replays recorded fixtures through the
+real dispatch and renderer, and drives the frame through `emacsclient` one step
+at a time, capturing at 10fps while each step plays out. No CLI, no network,
+and the same output every time. README.md carries no animation any more --
+`session.gif` was dropped with the 0.3.0 pictures -- and the still it does
+carry, `overview.png`, comes from the `overview` scene of `scripts/docshots.sh`.
 
-It is macOS only. It needs `ffmpeg`, and the terminal running it needs Screen
+`scripts/screenshot.sh` is macOS only. It needs `ffmpeg`, and the terminal running it needs Screen
 Recording permission (System Settings → Privacy & Security → Screen Recording);
 without that, `screencapture` says "could not create image from display" and
 the frames come out empty.
@@ -241,9 +239,84 @@ Emacs -- but a machine without them takes the pictures in whatever it falls
 back to. Ligatures are not part of it: this is an NS build without
 HarfBuzz, and it composes none.
 
-Those two live outside the Astro project, so the site does not reference them.
-The site's own pictures are in `src/assets` and are linked from a page with a
+The two files in `docs/images/` live outside the Astro project, so the site
+does not reference them.
+The site's stills are in `src/assets` and are linked from a page with a
 relative path (`../../../assets/menu.png`). Astro rewrites them: a PNG becomes
-a `webp` under `_astro/` with the base already in the URL, and an animated GIF
-becomes an animated webp -- check for `ANMF` chunks in the output if an
-animation ever looks still.
+a `webp` under `_astro/` with the base already in the URL.
+
+## The videos and their subtitles
+
+A scene that moves is a video: `public/videos/NAME.mp4` (H.264, `yuv420p`,
+`+faststart`, no audio), with its first frame as the poster `NAME.webp`, and
+`NAME.en.vtt` and `NAME.ja.vtt` beside it.
+Markdown image syntax cannot carry a video, and Astro's image pipeline does not
+process one, so the files are served from `public/` unchanged. A page that
+shows a video is `.mdx` and uses the component:
+
+```mdx
+import Video from '../../../components/Video.astro';
+
+<Video name="switch" label="What the video shows, as the alt text would" />
+```
+
+`Video.astro` puts the `base` in front of the URLs — nothing else does for a
+file in `public/` — and shows the poster until the reader presses play; a
+video does not start by itself, and loads only its metadata until then. It
+plays muted and looping, has `controls` so that the subtitles can be
+switched, and turns on the track of the page's language: English on an
+English page, Japanese under `/ja/`. `label` is the video's accessible name,
+written like alt text.
+
+Every video has a band of the theme's background below the picture, about 46
+CSS pixels high at the 720px width of the content column (58 rows of a video
+900 wide, 78 of one 1200 wide). The browser's control bar and the subtitles
+are drawn over the bottom of a video, and without the band they covered the
+echo area and the mode line. The band holds a control bar, or a line of
+subtitles while the controls are hidden; with both showing, the subtitle sits
+above the controls and covers the echo area and part of the mode line. It
+was 80 pixels, enough for both, and was made two text rows lower to keep the
+frame short (2026-10-03). Native controls cannot be put below a video, and
+controls of our own would need JavaScript, so the frame is made taller instead.
+On a screen narrower than the column the band shrinks with the video and the
+controls cover part of the picture again.
+
+A browser sizes the subtitles from the height of the video, and a video as
+wide as the content column made them larger than the text around them, so
+`::cue` sets them to 0.85rem, a little under the body text, on a translucent
+dark background. `font-size`, `color` and `background-color` are among the
+properties `::cue` accepts in Chrome, Firefox and Safari. Safari lets the
+reader's caption style in the system's accessibility settings override the
+page. This is from the browsers' documentation, not from a test in each
+(2026-10-03).
+
+The text of the subtitles is written by hand; the times are not.
+In a scene in `scripts/docshots.sh`, `cue` marks where each subtitle starts.
+Once the video is encoded, the script turns the frame count at the Nth mark
+into a time and writes it into the Nth timing line of both `.vtt` files. A
+capture slower than 10fps makes the video shorter than the seconds the holds
+asked for, which is why the times come from frames. When a scene and its
+subtitles no longer have the same number of cues, the script reports the file
+and leaves it alone, so adding a step to a scene means adding a cue to both
+files, in the same place. A cue says in a few words what is happening at that
+moment; run new text through the proofread skill, in English and Japanese.
+
+A long hold that runs a sequence inside Emacs (`shot-script`) is cut into
+pieces at the times the sequence schedules its steps, so that a cue can fall
+in the middle of it; the comment above each such hold names those times.
+
+Each subtitle stays on screen long enough to be read: at least 1.5 seconds,
+and at least 15 characters a second of its English or 7 of its Japanese,
+whichever asks for longer. The scenes were paced for GIFs without captions,
+in steps of 0.3 to 1 second, so before encoding the script repeats the last
+frame of each step until its cue meets that rule (`readable_frames` and
+`stretch`, where the reason is written down). It works on the frames rather
+than on the holds because the steps scheduled inside Emacs would not wait for
+a longer hold. The motion inside a step keeps its speed. A scene changed to
+add a step needs no new numbers: the time comes from the cue's text.
+
+The videos in the tree on 2026-10-03 were converted from the GIFs that came
+before them, at 900 pixels wide, with the cue times scaled from the holds to
+the length each GIF really had, and then stretched by the rule above: 228
+seconds of video became 345. The next run of a scene encodes it from its
+frames at 1200 pixels.

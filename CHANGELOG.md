@@ -712,6 +712,17 @@ as UTF-8 whatever the locale. What gh says
 
 ### Fixed
 
+- Installing ecc with package-vc byte-compiled everything under `demo/`,
+  `scripts/`, `test/` and `docs/` along with the package: 72 files, 49 of
+  which failed, since a demo scene or a test is not meant to be compiled
+  on its own. A `.elpaignore` now keeps those directories out, and only
+  the `ecc-*.el` at the top are compiled. Its lines are globs (`demo/*`)
+  because package.el turns each line into a regexp anchored at both ends
+  of the full path, which a bare `demo` would match only as the directory
+  itself. Native compilation does not read `.elpaignore`: with
+  `package-native-compile` set, those files are still native-compiled in
+  the background.
+
 - An ediff review no longer gives a difference to the wrong file. ediff
   diffed the two sides whole, every file one after the other, and diff
   paired lines of one file with lines of another across the separators

@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-ecc で提供されるすべての `defcustom` を機能別に分類して掲載します。すべての設定は `ecc` カスタマイズグループに属します:
+このページには、ecc のすべての `defcustom` を分野ごとに載せています。どの設定も `ecc` カスタマイズグループに属します:
 
 ```
 M-x customize-group RET ecc
@@ -16,48 +16,48 @@ M-x customize-group RET ecc
 | 変数 | 既定値 | 説明 |
 |---|---|---|
 | `ecc-executable` | `"claude"` | Claude Code CLI の実行可能ファイル名、またはそのフルパス |
-| `ecc-permission-mode` | `nil` | `--permission-mode` に渡す初期モード。`nil` は CLI 側の既定値を維持します。指定可能な値: `"default"`, `"acceptEdits"`, `"plan"`, `"auto"`, `"bypassPermissions"` |
-| `ecc-plan-default-mode` | `"acceptEdits"` | モードを明示的に指定せずにプランを承認した際、切り替え先となる権限モード。`nil` を指定すると変更要求なしで承認され、CLI はプランモードを抜けてデフォルトモードに戻ります |
-| `ecc-prompt-suggestions-enabled` | `nil` | 非 nil の場合、CLI に `--prompt-suggestions` を渡して提案プロンプトを有効化します |
-| `ecc-command-wrapper-function` | `nil` | CLI コマンドの実行直前にコマンドラインを書き換えるフック関数。`(command-list project-root)` を引数として受け取り、実行するコマンドリストを返します。`nil` の場合は変更せず実行します |
-| `ecc-disabled-plugins` | `nil` | ecc 経由で開始するセッションで無効化するプラグイン識別子（`"name@marketplace"`）のリスト。セッションごとに適用されるため、ターミナル等で直接開くセッションには影響しません |
+| `ecc-permission-mode` | `nil` | `--permission-mode` で渡す最初のモード。`nil` なら CLI のデフォルトのまま。指定できる値: `"default"`, `"acceptEdits"`, `"plan"`, `"auto"`, `"bypassPermissions"` |
+| `ecc-plan-default-mode` | `"acceptEdits"` | モードを選ばずにプランを承認したときに切り替える権限モード。`nil` ならモードの変更を求めずに承認し、CLI はデフォルトモードに戻る |
+| `ecc-prompt-suggestions-enabled` | `nil` | 非 nil なら、CLI に `--prompt-suggestions` を渡して次のプロンプトの提案を有効にする |
+| `ecc-command-wrapper-function` | `nil` | CLI を起動する直前にコマンドを書き換える関数。`(command-list project-root)` を受け取り、書き換えたコマンドのリストを返す。`nil` ならそのまま実行する |
+| `ecc-disabled-plugins` | `nil` | ecc が開始するセッションで無効にするプラグインの識別子（`"name@marketplace"`）のリスト。セッションごとに適用されるので、ターミナルクライアントではプラグインは有効のまま |
 
-**モデルを固定する設定はあえて用意していません。** 新規セッションのモデルは Claude Code 側の設定から、再開したセッションのモデルはその履歴の最後のアシスタントターンから取得されます。ここで `--model` を無条件に渡してしまうとユーザーの意図を常に上書きし、セッション中の `/model` コマンドによる変更も失われてしまうためです。実行中のセッションのモデルを変更したい場合は、`ecc-set-model`（またはメニューの `m`）を使用してください。
+デフォルトのモデルを決める設定は、あえて用意していません。新しいセッションのモデルは Claude Code の設定で、再開したセッションのモデルは最後のアシスタントのターンで決まります。`--model` を常に渡すと、ユーザーの選択をずっと上書きし、セッション中に `/model` で変えた分も元に戻してしまいます。実行中のセッションのモデルを変えるには、`ecc-set-model`（メニューの `m`）を使ってください。
 
-同様に、コスト上限（予算）の設定もありません。コスト制限は Claude Code 本体の設定で管理してください。
+同じ理由で、セッションのコストの上限を決める設定もありません。上限は Claude Code の設定で決めます。
 
 ## トランスクリプト
 
 | 変数 | 既定値 | 説明 |
 |---|---|---|
-| `ecc-chat-return-sends` | `nil` | `nil`（デフォルト）の場合、`RET` は改行を挿入し、`C-c C-c` で送信します。`t` の場合、ターミナルクライアントと同様に `RET` で即座に送信します |
-| `ecc-chat-text-width` | `100` | テキストを描画する最大桁数（カラム数）。`nil` の場合はウィンドウ幅いっぱいに描画します。余剰幅は右マージンに割り当てられるため、隣接するウィンドウのレイアウトには影響しません |
-| `ecc-chat-line-spacing` | `0.15` | 各行の下に追加する行間。Emacs 標準の `line-spacing` と同様に解釈されます（浮動小数点数は行高に対する比率）。`nil` で余白なし |
-| `ecc-render-result-max-lines` | `12` | ツール実行結果のプレビュー表示行数。全文はいつでも `RET` で確認できます |
-| `ecc-render-inhibit-inline-diff` | `nil` | `nil`（デフォルト）の場合、ファイルを変更する呼び出し（Edit・MultiEdit・Write・NotebookEdit と、CLI がファイルの変更を報告した Bash）は diff を開いた状態で表示します。`t` の場合は折りたたんだ状態で表示し、`TAB` で開きます |
-| `ecc-render-diff-max-lines` | `40` | ツールや権限ブロック内にインライン表示する diff の最大行数。全文はいつでも `RET` で確認できます |
+| `ecc-chat-return-sends` | `nil` | `nil`（デフォルト）なら、`RET` で改行し、`C-c C-c` で送信する。`t` なら、ターミナルクライアントと同じく `RET` ですぐに送信する |
+| `ecc-chat-text-width` | `100` | テキストを描画する最大の桁数。`nil` ならウィンドウの幅いっぱいに描画する。余った幅は右マージンになるので、隣のウィンドウの配置には影響しない |
+| `ecc-chat-line-spacing` | `0.15` | 各行の下に足す行間。Emacs 標準の `line-spacing` と同じ解釈（浮動小数点数は行の高さに対する比率）。`nil` なら足さない |
+| `ecc-render-result-max-lines` | `12` | ツールの結果のプレビューに表示する最大行数。全文はいつでも `RET` で見られる |
+| `ecc-render-inhibit-inline-diff` | `nil` | `nil`（デフォルト）なら、ファイルを変更する呼び出し（Edit・MultiEdit・Write・NotebookEdit と、CLI がファイルの変更を報告した Bash）は diff を開いた状態で表示する。`t` なら折りたたんで表示し、`TAB` で開く |
+| `ecc-render-diff-max-lines` | `40` | ツールと権限のブロックにインラインで表示する diff の最大行数。全文はいつでも `RET` で見られる |
 | `ecc-diff-context-lines` | `3` | トランスクリプト内の変更箇所の前後に表示する文脈行数 |
-| `ecc-stream-throttle` | `0.05` | ストリーミング差分を描画前にバッファリングする秒数。0 を指定すると受信した差分を即座に描画します |
-| `ecc-render-debounce` | `0.1` | アクティブなトランスクリプト領域を再描画するまでのデバウンス待機時間（秒） |
-| `ecc-image-inline` | `t` | `t` の場合はトランスクリプト内の画像を表示します。`nil` の場合はファイル名の行だけを表示します（この行はどちらの場合も表示されます） |
+| `ecc-stream-throttle` | `0.05` | ストリーミングの差分を、再描画の前にためておく秒数。0 なら差分ごとにすぐ描画する |
+| `ecc-render-debounce` | `0.1` | トランスクリプトの動いている部分を再描画するまでのデバウンスの待ち時間（秒） |
+| `ecc-image-inline` | `t` | `t` ならトランスクリプトの画像を表示する。`nil` ならファイル名の行だけを表示する（この行はどちらでも表示される） |
 
 ## ヘッダーラインとモードライン
 
 | 変数 | 既定値 | 説明 |
 |---|---|---|
-| `ecc-hint-context-indicator` | `t` | 非 nil の場合、セッションのヘッダーラインに残りのコンテキスト容量を表示します |
-| `ecc-prompt-suggestion-display` | `t` | 非 nil の場合、プロンプト領域に CLI からの提案をゴーストテキストとして表示します（`ecc-prompt-suggestions-enabled` が有効なセッションのみ） |
-| `ecc-mode-line-format` | `nil` | モードラインにセッション情報を表示するフォーマット文字列。`nil` は何も表示しません |
+| `ecc-hint-context-indicator` | `t` | 非 nil なら、セッションのヘッダーラインにコンテキストの残りを表示する |
+| `ecc-prompt-suggestion-display` | `t` | 非 nil なら、CLI からの提案をプロンプト領域にゴーストテキストで表示する。`ecc-prompt-suggestions-enabled` が必要 |
+| `ecc-mode-line-format` | `nil` | モードラインにセッションの状態を表示する書式文字列。`nil` なら表示しない |
 
-`ecc-mode-line-format` の既定値が `nil` なのは、モードラインの表示領域が限られており、同様の数値がすでにヘッダーラインに表示されているためです（両方に表示すると画面が煩雑になります）。モードラインに表示したい場合は、以下の指定子を含む書式文字列を設定してください:
+`ecc-mode-line-format` のデフォルトが `nil` なのは、モードラインの場所が限られていて、同じ数値がすでにヘッダーラインに出ているからです。表示するには、次の指定子を使います:
 
 | 指定子 | 意味 |
 |---|---|
 | `%n` | セッション名 |
-| `%m` | 使用中モデル |
+| `%m` | 使用中のモデル |
 | `%p` | 権限モード |
-| `%l` | 残りコンテキスト容量（パーセント） |
-| `%t` | コンテキスト内の消費トークン数 |
+| `%l` | コンテキストの残り（パーセント） |
+| `%t` | コンテキストウィンドウ内のトークンの合計 |
 | `%c` | 累計コスト |
 | `%r` | レート制限の使用率 |
 | `%s` | セッションの状態 |
@@ -66,19 +66,19 @@ M-x customize-group RET ecc
 
 | 変数 | 既定値 | 説明 |
 |---|---|---|
-| `ecc-notify-level` | `'message` | 通知の詳細度: `'message` はエコーエリアに 1 行表示、`'pulse` はさらにトランスクリプトを点滅、`'desktop` は OS のデスクトップ通知を発行、`nil` は無通知 |
-| `ecc-notify-events` | `'(turn-finished request exited)` | 通知対象とするイベントのリスト: ターンの完了、回答待ちリクエストの発生、セッションの停止 |
-| `ecc-notify-suppress-when-focused` | `t` | 非 nil の場合、Emacs がフォーカスされている間はデスクトップ通知を抑制します |
+| `ecc-notify-level` | `'message` | 通知の強さ: `'message` はエコーエリアに 1 行表示、`'pulse` はそれに加えてトランスクリプトを点滅、`'desktop` は OS のデスクトップ通知、`nil` は通知しない |
+| `ecc-notify-events` | `'(turn-finished request exited)` | 通知するイベントのリスト: ターンの完了、待機中のリクエスト、プロセスの終了 |
+| `ecc-notify-suppress-when-focused` | `t` | 非 nil なら、Emacs にフォーカスがある間はデスクトップ通知を出さない |
 | `ecc-notify-sound` | `nil` | デスクトップ通知時に再生するシステムサウンド名（macOS では `"Glass"` など）。`nil` で無音 |
-| `ecc-notify-function` | `#'ecc-notify-default` | `(SESSION EVENT TEXT)` を引数に呼び出されるカスタム通知関数。設定するとデフォルトの通知処理を完全に置き換えます |
+| `ecc-notify-function` | `#'ecc-notify-default` | `(SESSION EVENT TEXT)` を引数に呼ばれる通知関数。変えるとデフォルトの通知処理をすべて置き換える |
 
 ## レビュー
 
 | 変数 | 既定値 | 説明 |
 |---|---|---|
-| `ecc-review-style` | `'diff` | `ecc-review` と `ecc-review-range` での変更の表示方法。`'diff` は 1 つの読み取り専用 `diff-mode` バッファを使い、`'ediff` はレビュー対象の全ファイルを 1 つの ediff セッションで左右に並べて表示します。どちらも読み取り専用で、送信されるプロンプトは同一です |
-| `ecc-review-menu-count-session-changes` | `t` | non-nil なら、レビューのメニュー（`C-c c D`）に、セッション開始以降に変更されたファイルの数を表示します。数えるには作業ツリーのスナップショットが必要で、300 ファイルのリポジトリで約 35 ms、20,000 ファイルで約 70 ms かかります。メニューが開くのが遅くなる場合は `nil` にしてください |
-| `ecc-review-auto-refresh` | `t` | non-nil なら、開いているレビューは、そのセッションのツールの完了、ターンの終了、リポジトリのファイルの保存のたびに diff を読み直します。コメントと読んでいた位置は保たれます。見えていないレビューは表示されたときに読み直します。ediff のレビューも追従します。`nil` なら `g` のときだけ読み直します |
+| `ecc-review-style` | `'diff` | `ecc-review` と `ecc-review-range` の変更の表示方法。`'diff` は読み取り専用の `diff-mode` バッファ 1 つを使い、`'ediff` はレビューするすべてのファイルを 1 つの ediff セッションで左右に並べる。どちらも読み取り専用で、送るプロンプトも同じ |
+| `ecc-review-menu-count-session-changes` | `t` | non-nil なら、レビューのメニュー（`C-c c D`）に、セッション開始以降に変更されたファイルの数を表示する。数えるには作業ツリーのスナップショットが必要で、300 ファイルのリポジトリで約 35 ms、20,000 ファイルで約 70 ms かかる。メニューが開くのが遅いときは `nil` にする |
+| `ecc-review-auto-refresh` | `t` | non-nil なら、開いているレビューは、そのセッションのツールの完了、ターンの終了、リポジトリのファイルの保存のたびに diff を読み直す。コメントと読んでいた位置は保たれる。見えていないレビューは表示されたときに読み直す。ediff のレビューも追従する。`nil` なら `g` のときだけ読み直す |
 | `ecc-review-files-width` | `32` | `s` でレビューの横に出すファイルの一覧の幅（桁数） |
 | `ecc-review-ediff-layout` | `'stacked` | ediff のレビューを開いたときの並び。`'stacked` は変更前を上・変更後を下に並べ、Claude の返答の欄を右に出す。`'side-by-side` は左右に並べ、欄を下に出す。開いたレビューでは `\|` で切り替わる |
 | `ecc-review-talk-reply-width` | `75` | 上下に並べた ediff のレビューの右に出す、Claude の返答の欄の幅（桁数）。diff の幅が 80 桁を切るほどフレームが狭いときは、欄を下に出す |
@@ -89,44 +89,44 @@ M-x customize-group RET ecc
 
 | 変数 | 既定値 | 説明 |
 |---|---|---|
-| `ecc-window-large-frame-min-height` | `80` | 3 つめのセッションウィンドウを開くために必要なフレームの最小高さ（行数）。この値を下回る場合は 2 つのウィンドウを共有し、残りのセッションはタブラインから切り替えます |
-| `ecc-window-sub-height` | `0.33` | 3 つめのセッションウィンドウの高さ（比率または行数）。セッション列ではなく、フレームの主要領域（主にコードバッファ側）から分割して確保されます |
-| `ecc-tab-line-scope` | `'project` | セッションウィンドウのタブラインに表示するセッションの範囲。`'project` はそのウィンドウ自身のプロジェクトのセッションのみ、`'all` は Emacs で開いている全セッション |
-| `ecc-use-spaces` | `t` | 非 nil の場合、プロジェクトごとにタブバーのタブ（Space）を割り当て、内部のウィンドウ配置は変更しません。nil の場合、従来のレイアウトを使用します。トランスクリプトはプロジェクトに割り当てられた役割（main、sub-1、sub-2）を持つサイドウィンドウに表示され、タブやサイドバー、worktree コマンドは使用できません。[Space と worktree](/emacs-claude-code/ja/features/spaces/) を参照 |
-| `ecc-space-always-session` | `t` | `ecc-use-spaces` が有効なとき、Space が常にセッションを保持するかどうか。非 nil の場合、実行中のセッションがない Space を開くとセッションを開始し、最後のセッションを閉じると Space も閉じます。nil の場合、Space はソースファイルのみを表示して開き、プロジェクトの最後のバッファが kill されるまで開いたままになります |
-| `ecc-space-session-min-width` | `80` | `ecc-use-spaces` が有効なとき、トランスクリプトの並びをさらに分割するためにセッションウィンドウが必要とする桁数。この幅の列を確保できない場合は、すべてのトランスクリプトを狭くするのではなく、直近で最も操作されていないセッションのウィンドウを再利用します。`window-min-width` がこの値の下限です |
-| `ecc-sidebar-width` | `28` | サイドバーの幅（桁数）。大きなフォントの 13 インチと 34 インチのディスプレイでは、28 桁が画面に占める割合は同じではありませんし、プロジェクト名の長さも人それぞれです |
+| `ecc-window-large-frame-min-height` | `80` | 3 つ目のセッションウィンドウを開くのに必要なフレームの最小の高さ（行数）。これより低いと、セッションは 2 つのウィンドウを分け合い、タブラインで切り替える |
+| `ecc-window-sub-height` | `0.33` | 3 つ目のセッションウィンドウの高さ（比率または行数）。セッションの列ではなく、フレームの主な領域（たいていはコードのバッファ）から取る |
+| `ecc-tab-line-scope` | `'project` | セッションウィンドウのタブラインに並べるセッションの範囲。`'project` はそのウィンドウのプロジェクトのセッションだけ、`'all` は Emacs で開いているすべてのセッション |
+| `ecc-use-spaces` | `t` | 非 nil なら、プロジェクトごとにタブバーのタブ（Space）を作り、その中のウィンドウには手を出さない。nil なら以前のレイアウトになる。トランスクリプトは、プロジェクトに割り当てた役割（main、sub-1、sub-2）を持つサイドウィンドウに表示され、タブ、サイドバー、worktree のコマンドはない。[Space と worktree](/emacs-claude-code/ja/features/spaces/) を参照 |
+| `ecc-space-always-session` | `t` | `ecc-use-spaces` がオンのとき、Space に常にセッションを置くか。非 nil なら、何も動いていない Space を開くとセッションを始め、最後のセッションを閉じると Space も閉じる。nil なら、Space はソースファイルだけを表示して開き、プロジェクトの最後のバッファを kill するまで開いたまま |
+| `ecc-space-session-min-width` | `80` | `ecc-use-spaces` がオンのとき、トランスクリプトの並びをさらに分割するのにセッションウィンドウが必要とする桁数。この幅の列がもう取れなければ、すべてのトランスクリプトを狭くするのではなく、いちばん長く操作していないセッションのウィンドウを使い回す。下限は `window-min-width` |
+| `ecc-sidebar-width` | `28` | サイドバーの幅（桁数）。大きなフォントの 13 インチのノートと 34 インチのディスプレイでは、28 桁がフレームに占める割合が違う。プロジェクト名の長さもさまざま |
 
-`ecc-window-large-frame-min-height` の既定値（80行）は、ノートPCの画面と外付け大画面ディスプレイを自動判別するための値です。14インチ画面はおよそ58行、16インチはおよそ67行であるのに対し、外部デスクトップディスプレイでは110行以上表示できます。
+`ecc-window-large-frame-min-height` のデフォルト（80 行）は、ノート PC の画面と大きな外部ディスプレイを分ける値です。14 インチの画面はおよそ 58 行、16 インチはおよそ 67 行ですが、一般的なデスクトップのモニターでは 110 行以上表示できます。
 
 ## ポップアップおよび補助バッファ
 
 | 変数 | 既定値 | 説明 |
 |---|---|---|
-| `ecc-btw-display` | `'window` | `/btw` サイドクエリの回答を表示する形式（`'window` または `'posframe`） |
-| `ecc-usage-display` | `'window` | `ecc-usage` レポートを表示する形式（`'window` または `'posframe`） |
+| `ecc-btw-display` | `'window` | `/btw` のサイドクエリの表示方法（`'window` または `'posframe`） |
+| `ecc-usage-display` | `'window` | `ecc-usage` のレポートの表示方法（`'window` または `'posframe`） |
 
-どちらも `'window` または `'posframe` を指定できます。`'posframe` はバッファをフレーム上に浮かぶポップアップとして表示します（[posframe](https://github.com/tumashu/posframe) パッケージと GUI 環境が必要です）。posframe が利用できない環境では自動的に通常のウィンドウ分割にフォールバックします。
+どちらも `'window` または `'posframe` を指定できます。`'posframe` はバッファをフレームの上に浮かぶポップアップで表示します（[posframe](https://github.com/tumashu/posframe) パッケージとグラフィカルなフレームが必要です）。posframe が使えないときは、通常のウィンドウ分割になります。
 
 ## MCP サーバー
 
-ecc はループバックインターフェイスで動作するインプロセス MCP サーバーを起動し、各セッションに自動登録できます。これにより、Claude は Emacs のエディタコンテキスト（`xref`、`imenu`、`tree-sitter`、プロジェクト情報、診断情報など）を直接参照できます。Claude が[レビューバッファにコメントを付ける](/emacs-claude-code/ja/features/review/#claude-のコメント)こともできます。
+ecc は、ループバックインターフェイスで動くインプロセスの MCP サーバーを起動し、各セッションに登録できます。これで Claude は、Emacs にエディタの情報（`xref`、`imenu`、`tree-sitter`、プロジェクトの情報、診断）を問い合わせられます。Claude が[レビューバッファにコメントを付ける](/emacs-claude-code/ja/features/review/#claude-のコメント)こともできます。
 
 | 変数 | 既定値 | 説明 |
 |---|---|---|
-| `ecc-mcp-enabled` | `nil` | 非 nil の場合、開始する全セッションに内蔵 MCP サーバーを登録します。初回要求時に自動起動し、`ecc-mcp-stop` で停止できます |
-| `ecc-mcp-enable-execute-code` | `nil` | 非 nil の場合、Claude から任意の Elisp を評価できるツールを公開します |
-| `ecc-mcp-excluded-tools` | `nil` | 登録から除外するツール名のリスト。実行時間が長く体感遅延の原因となるツールはここに指定します |
+| `ecc-mcp-enabled` | `nil` | 非 nil なら、開始するすべてのセッションに内蔵の MCP サーバーを登録する。最初に使われたときに起動し、`ecc-mcp-stop` で止まる |
+| `ecc-mcp-enable-execute-code` | `nil` | 非 nil なら、Claude が任意の Elisp を評価できる MCP ツールを公開する |
+| `ecc-mcp-excluded-tools` | `nil` | MCP の登録から外すツール名のリスト。目に見えて遅くなるツールに使う |
 
-:::caution[2つの独立した設定]
-`ecc-mcp-enable-execute-code` は、`ecc-mcp-enabled` を有効にしても自動的には有効化されません。このツールで実行されるコードは Emacs の実行権限をそのまま持つため、サーバーの起動とコード実行の許可は安全のために個別に明示的な設定が必要です。
+:::caution[2 つの独立した設定]
+`ecc-mcp-enabled` をオンにしても、`ecc-mcp-enable-execute-code` はオンになりません。このツールで実行するコードは Emacs の中でユーザーの権限をすべて持つので、サーバーの起動とコードの実行は、それぞれ明示的に許可する必要があります。
 :::
 
 ## ログ設定
 
 | 変数 | 既定値 | 説明 |
 |---|---|---|
-| `ecc-log-max-lines` | `5000` | セッションログバッファに保持する最大行数。`nil` を指定するとすべてのログを無制限に保持します |
-| `ecc-debug` | `nil` | 非 nil の場合、生のプロトコルメッセージに加えて内部の診断トレースもログに記録します |
+| `ecc-log-max-lines` | `5000` | セッションのログバッファに残す最大行数。`nil` なら制限なし |
+| `ecc-debug` | `nil` | 非 nil なら、生のプロトコルメッセージに加えて内部の診断トレースもログに残す |
 
-`ecc-show-log` を実行すると、現在のバッファが接続しているセッションのプロトコルログを確認できます。イベント処理の失敗が暗黙のうちに握りつぶされることはありません。ログとトランスクリプト上の `unknown` ノードの両方に必ず記録されます。
+`ecc-show-log` は、現在のバッファに結び付いたセッションの生のプロトコルログを表示します。処理に失敗したイベントが黙って捨てられることはありません。ログに残り、トランスクリプトには `unknown` ノードとして表示されます。

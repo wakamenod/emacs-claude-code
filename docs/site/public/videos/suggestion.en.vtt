@@ -1,0 +1,13 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:04.800
+The CLI's suggestion stands in the empty prompt as ghost text
+
+00:00:04.800 --> 00:00:08.800
+In the prompt, C-c C-s turns it into a draft
+
+00:00:08.800 --> 00:00:10.300
+Sending the draft
+
+00:00:10.300 --> 00:00:23.100
+Claude starts on it and asks to write a file
