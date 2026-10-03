@@ -1616,7 +1616,10 @@ the lines it covers on each side."
 The point of the side the keyboard is in, the left being `old' and the
 right `new'; the right when it is in neither, as in the control panel.
 The hunk is the difference point is on, none in the lines both sides
-share, and the line is counted in the file point is in, on that side."
+share, and the line is counted in the file point is in, on that side.
+On the separator of a file, or on the blank lines in front of the next
+one (`ecc-review-ediff-file-spacing'), which belong to the file above,
+there is the file and no line."
   (let* ((side (if (and (window-live-p ediff-window-A)
                         (eq (selected-window) ediff-window-A))
                    'A
@@ -1630,13 +1633,21 @@ share, and the line is counted in the file point is in, on that side."
              (number (with-current-buffer buffer (line-number-at-pos position)))
              (index (if (eq side 'A) 1 2))
              (section (ecc-review-ediff--section-at ecc-review-ediff--sections number index))
+             (next (cadr (memq section ecc-review-ediff--sections)))
              (line (and section (- number (nth index section))))
+             (line (and section (> line 0)
+                        ;; The last line of the file's text is the one
+                        ;; above the spacing in front of the next file.
+                        (or (null next)
+                            (< number (- (nth index next)
+                                         (max 0 ecc-review-ediff-file-spacing))))
+                        line))
              (n (ecc-review-direct--difference-near side position)))
         (when section
           (list :path (car section)
                 :hunk (and n (nth n (ecc-review-units)))
-                :line (and (> line 0) line)
-                :side (and (> line 0) (if (eq side 'A) 'old 'new))))))))
+                :line line
+                :side (and line (if (eq side 'A) 'old 'new))))))))
 
 ;;;; Where a comment is drawn
 

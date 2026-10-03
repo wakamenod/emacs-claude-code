@@ -381,6 +381,56 @@ HUNK nil for none."
                              (concat "and here?" (ecc-review-talk-test--where
                                                   "a.txt" 5 'new nil nil nil)))))))))
 
+;; The blank line in front of the next file comes before its separator,
+;; and is the file above's: there is no line of it there.
+(ert-deftest ecc-review-talk-test-m-between-two-files-of-an-ediff-review ()
+  "On the spacing between two files, M says the file above and no line."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((directory (file-name-as-directory (make-temp-file "ecc-review-talk" t)))
+          (ediff-window-setup-function #'ediff-setup-windows-plain)
+          (ecc-review-ediff-file-spacing 1)
+          (control nil))
+      (unwind-protect
+          (save-window-excursion
+            (delete-other-windows)
+            (ecc-review-talk-test--git directory "init" "-q")
+            (ecc-review-talk-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-talk-test--git directory "config" "user.name" "t")
+            (dolist (file '("a.txt" "b.txt"))
+              (with-temp-file (concat directory file)
+                (insert (ecc-review-talk-test--lines nil) "\n")))
+            (ecc-review-talk-test--git directory "add" ".")
+            (ecc-review-talk-test--git directory "commit" "-q" "-m" "init")
+            (setf (ecc-session-project-root one) directory)
+            (should (ecc-review-ensure-baseline one))
+            (dolist (file '("a.txt" "b.txt"))
+              (with-temp-file (concat directory file)
+                (insert (ecc-review-talk-test--lines t) "\n")))
+            (setq control (ecc-review-ediff-buffer one))
+            (let* ((right (buffer-local-value 'ediff-window-B control))
+                   (sections (buffer-local-value 'ecc-review-ediff--sections control))
+                   (b (nth 2 (assoc "b.txt" sections))))
+              (should (equal (mapcar #'car sections) '("a.txt" "b.txt")))
+              (select-window right)
+              ;; The line above the separator of b.txt, and the last of a.txt.
+              (dolist (above '(1 2))
+                (with-current-buffer (window-buffer right)
+                  (goto-char (point-min))
+                  (forward-line (- b above 1))
+                  (set-window-point right (point)))
+                (with-current-buffer control
+                  (ecc-review-talk-message "here?"))
+                (ecc-model-finish-turn one nil))
+              (should (equal (ecc-review-talk-test--prompts one)
+                             (list (concat "here?" (ecc-review-talk-test--where
+                                                    "a.txt" nil nil nil nil nil))
+                                   (concat "here?" (ecc-review-talk-test--where
+                                                    "a.txt" 12 'new nil nil nil)))))))
+        (when (buffer-live-p control)
+          (ecc-review-ediff-quit control))
+        (delete-directory directory t)))))
+
 (ert-deftest ecc-review-talk-test-t-sends-the-hunks-with-their-patches ()
   "T sends the files and hunks of the review, with each patch while they fit."
   (ecc-review-talk-test--with-sessions one _two
