@@ -136,6 +136,8 @@ the recording and its branches. The one rule to carry in: **a second process run
   English one is not done until the Japanese one matches. The code blocks, the command
   and `defcustom` names and the factual cells of the comparison table are identical in
   both; only the prose, the table headings and the code comments are translated.
+- A change that touches `docs/site/` follows "Writing a page" in `docs/site/README.md`:
+  the site says what a user does, not how ecc decides.
 
 ## How a release goes
 
