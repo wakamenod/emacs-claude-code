@@ -215,6 +215,8 @@ An ediff review takes the whole frame, so the session and its prompt are out of 
 
 They are sent like a prompt typed in the minibuffer: while the session is busy, the prompt waits in its queue. `T` and `t` need the MCP server (`ecc-mcp-enabled`), because a tour is made of the review tools.
 
+`T` sends the files and hunks of the review along with the request, each with its patch, so Claude can plan every stop at once instead of asking for the diff first. When the patches come to more than `ecc-review-talk-patch-limit` characters (20000), only the list is sent and Claude fetches the patches itself. `t` and `M` tell Claude where you are: the file, the line at point and its side, and the hunk. In ediff, the side is that of the window you are typing in.
+
 In an ediff review, a pane beside the diff shows the session's latest reply as it streams, with each tool call on a line of its own. The pane is on the right while the two sides are stacked and at the bottom while they are side by side:
 
 ```

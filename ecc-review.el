@@ -963,6 +963,38 @@ hunk is among them, as the line a comment on the whole hunk is on."
   (format "%s  new L%d-L%d" (plist-get hunk :header)
           (plist-get hunk :start) (plist-get hunk :end)))
 
+(cl-defgeneric ecc-review-place-at-point ()
+  "Return where the user is in this review, as a plist, or nil.
+:path is the file, relative to the review; :hunk the hunk the user is
+in, as `ecc-review-units' has it, or nil between hunks; :line the
+number of the line they are on, and :side the side it counts on, `old'
+or `new' -- nil, both of them, on a header.  In the diff review it is
+the line at point, on the side of that line; a file header is the file
+it begins, and nothing after the last hunk."
+  (if-let* ((bounds (ecc-review--hunk-bounds)))
+      (let* ((hunk (ecc-review-hunk-at (car bounds) (cdr bounds)))
+             (bol (line-beginning-position))
+             (line (seq-find (lambda (line) (eql (plist-get line :position) bol))
+                             (ecc-review--hunk-lines hunk))))
+        (list :path (plist-get hunk :path) :hunk hunk
+              :line (plist-get line :line) :side (plist-get line :side)))
+    (save-excursion
+      (beginning-of-line)
+      (when (re-search-forward ecc-review--hunk-regexp nil t)
+        (list :path (ecc-review--hunk-path (match-beginning 0)))))))
+
+(defun ecc-review-hunk-number (hunk)
+  "Return (N . TOTAL): HUNK is hunk N of the TOTAL hunks of its file.
+Counted from 1, the way `review_hunks' numbers them."
+  (let* ((path (plist-get hunk :path))
+         (key (ecc-review--hunk-key hunk))
+         (hunks (seq-filter (lambda (other) (equal (plist-get other :path) path))
+                            (ecc-review-units))))
+    (cons (1+ (or (seq-position hunks key
+                                (lambda (other key) (equal (ecc-review--hunk-key other) key)))
+                  -1))
+          (length hunks))))
+
 (cl-defgeneric ecc-review--note-place (note line lines)
   "Return (BUFFER BEG END PROPERTY KEY) for drawing NOTE, put on LINE.
 LINE is nil for an outdated comment, and LINES are all the lines of the
