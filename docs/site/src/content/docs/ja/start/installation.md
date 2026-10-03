@@ -10,7 +10,7 @@ sidebar:
 - **Emacs 29.1 以降。** `transient` は Emacs 29.1 以降に同梱されており、ほかに必要な外部パッケージはありません。
 - **[Claude Code CLI](https://docs.claude.com/en/docs/claude-code)。** `PATH` の通った場所に置くか、`ecc-executable` で指定します。
 
-必須なのはこの2つだけです。次のパッケージは任意です:
+必須なのはこの2 つだけです。次のパッケージは任意です:
 
 | パッケージ | 機能 |
 |---|---|
