@@ -26,9 +26,10 @@
 ;;; Commentary:
 
 ;; RET or a click on code in the transcript opens the file it is about,
-;; at the line: a line of the diff of an Edit or a Write, the heading of
-;; a call that names a file, a line of the Files section or of a
-;; permission request, and a path the model wrote in its reply.
+;; at the line: a line of the diff of an Edit, a Write or a Bash command
+;; that changed a file, the heading of a call that names a file, a line
+;; of the Files section or of a permission request, and a path the model
+;; wrote in its reply.
 ;;
 ;; A diff line carries nothing that says where it is from.  The Files
 ;; section is drawn again at every redraw of the live region, and a
@@ -36,14 +37,19 @@
 ;; so the line is read back when RET is pressed instead: the number
 ;; drawn at its start in the `numbered' style, or the lines counted from
 ;; the @@ header above it in the `unified' one.  The file is the one of
-;; the node, the row or the request the line belongs to.  What a click
-;; follows is decided the same way, by `ecc-visit-follow-link-p' as the
-;; `follow-link' of the transcript, with no `mouse-face' on the lines.
+;; the node, the row or the request the line belongs to -- for a Bash
+;; command, which names none, the one on the line over its diff.  What a
+;; click follows is decided the same way, by `ecc-visit-follow-link-p' as
+;; the `follow-link' of the transcript, with no `mouse-face' on the lines.
 ;;
 ;; A number drawn in a diff is where the line stood once that change was
 ;; made.  Every change the session made to the file after it is in
 ;; `ecc-file-entry-patches', and the line is moved through those, so it
 ;; lands where the line is now.
+;;
+;; A video or a sound is not visited: a buffer of it would show its
+;; bytes, so `ecc-visit-open' hands it to the machine's own player, the
+;; way RET on a video drawn in the transcript does.
 
 ;;; Code:
 
@@ -57,6 +63,7 @@
 (require 'ecc-chat)
 (require 'ecc-markdown)
 (require 'ecc-window)
+(require 'ecc-image)
 
 ;;;; Reading a diff line back
 
@@ -162,15 +169,28 @@ PATH."
          (later (and entry (cdr (memq patch (ecc-file-entry-patches entry))))))
     (dolist (next later line)
       (when (ecc-visit--usable-patch-p next)
-        (let ((delta 0))
-          (seq-doseq (hunk next)
-            (let ((old-start (alist-get 'oldStart hunk))
-                  (old-lines (alist-get 'oldLines hunk))
-                  (new-lines (alist-get 'newLines hunk)))
-              (when (and (numberp old-start) (numberp old-lines) (numberp new-lines)
-                         (>= line (+ old-start old-lines)))
-                (cl-incf delta (- new-lines old-lines)))))
-          (setq line (max 1 (+ line delta))))))))
+        (setq line (ecc-visit-shift-through
+                    line
+                    (seq-keep (lambda (hunk)
+                                (let ((old-start (alist-get 'oldStart hunk))
+                                      (old-lines (alist-get 'oldLines hunk))
+                                      (new-lines (alist-get 'newLines hunk)))
+                                  (and (numberp old-start) (numberp old-lines)
+                                       (numberp new-lines)
+                                       (list old-start old-lines nil new-lines))))
+                              next)))))))
+
+(defun ecc-visit-shift-through (line hunks)
+  "Return LINE moved through one change, made of HUNKS.
+Each hunk is (OLD-START OLD-COUNT NEW-START NEW-COUNT ...), the shape of
+`ecc-diff-hunks\\=', in the file before the change.  The hunks above LINE
+move it by what they added less what they removed; a line inside a hunk
+is left where it is, which is the place the change was made."
+  (let ((delta 0))
+    (pcase-dolist (`(,old-start ,old-count ,_ ,new-count) hunks)
+      (when (>= line (+ old-start old-count))
+        (cl-incf delta (- new-count old-count))))
+    (max 1 (+ line delta))))
 
 (defun ecc-visit--first-change (patch)
   "Return the first line PATCH changed, in the file as it left it, or nil.
@@ -186,13 +206,6 @@ around."
       (and (numberp start) (max 1 (+ start (length lead)))))))
 
 ;;;; What point is on
-
-(defun ecc-visit--input-path (input)
-  "Return the file the tool INPUT names, or nil."
-  (let ((path (and (consp input)
-                   (or (alist-get 'file_path input)
-                       (alist-get 'notebook_path input)))))
-    (and (stringp path) (not (string-empty-p path)) path)))
 
 (defun ecc-visit--node-input (node)
   "Return the input of the call NODE is about: its own, or its request\\='s."
@@ -221,7 +234,7 @@ blank line added at the end one line too far down."
       (and (or old new) line))))
 
 (defun ecc-visit--edit-line (content edit)
-  "Return the line of CONTENT the EDIT, an alist of an Edit\='s strings, is at."
+  "Return the line of CONTENT the EDIT, an alist of an Edit\\='s strings, is at."
   (or (ecc-diff--line-of content (alist-get 'new_string edit))
       (ecc-diff--line-of content (alist-get 'old_string edit))))
 
@@ -230,7 +243,7 @@ blank line added at the end one line too far down."
 A Read opens where it started reading; a change opens at the first
 line it changed, moved through what came after it.  A change the CLI
 has not reported a patch for -- one still running, or a Write of a new
-file, whose `structuredPatch\=' is empty -- is worked out from the file
+file, whose `structuredPatch\\=' is empty -- is worked out from the file
 it changed: the file before it against the same file with the change
 laid on.  An Edit or a MultiEdit with no file before it to lay the
 change on is looked for in the file as it is, which cannot find an edit
@@ -284,6 +297,24 @@ says which one the point is in."
         (setq patches (cdr patches)))
       (car found))))
 
+(defun ecc-visit--changed-file ()
+  "Return (PATH . PATCH) of the file a Bash call changed that point is in.
+A Bash call names no file of its own: the line over each file\\='s diff
+carries it (`ecc-render--insert-bash-edit\\='), and the lines are walked
+up to the nearest such line without leaving the node.  Nil when there
+is none."
+  (save-excursion
+    (beginning-of-line)
+    (let ((id (ecc-chat-node-id-at-point))
+          found)
+      (while (and id (not found))
+        (setq found (get-text-property (point) 'ecc-changed-file))
+        (unless (or found
+                    (and (zerop (forward-line -1))
+                         (equal (ecc-chat-node-id-at-point) id)))
+          (setq id nil)))
+      found)))
+
 (defun ecc-visit-target-at-point ()
   "Return what RET at point opens, as (PATH . LINE), or nil.
 LINE is nil when there is no line to go to.  Asked in order: a path
@@ -295,7 +326,10 @@ taken against `default-directory\\=', the directory of the session."
          (row (ecc-chat-file-at-point))
          (node (and (not row) (ecc-chat-node-at-point)))
          (input (and node (ecc-visit--node-input node)))
-         (path (or row (ecc-visit--input-path input)))
+         (changed (and node (eq (ecc-node-type node) 'tool)
+                       (not (ecc-tool-input-path input))
+                       (ecc-visit--changed-file)))
+         (path (or row (ecc-tool-input-path input) (car changed)))
          (heading (and (ecc-chat-heading-at-point)
                        (equal (ecc-chat-heading-at-point)
                               (ecc-chat-node-id-at-point)))))
@@ -306,6 +340,13 @@ taken against `default-directory\\=', the directory of the session."
      (heading (and (eq (ecc-node-type node) 'tool)
                    (cons path (and session
                                    (ecc-visit--heading-line session node path)))))
+     ;; The line that names a file a Bash call changed opens it where
+     ;; the change starts, as the heading of an Edit does.
+     ((and changed (get-text-property (line-beginning-position) 'ecc-changed-file))
+      (cons path (and session
+                      (ecc-visit-shift-line session path
+                                            (ecc-visit--first-change (cdr changed))
+                                            (cdr changed)))))
      ((ecc-visit--line-tag)
       (let ((line (and (not (ecc-visit--notebook-p input))
                        (ecc-visit--diff-line))))
@@ -316,7 +357,9 @@ taken against `default-directory\\=', the directory of the session."
                                           (ecc-visit--files-patch session path)))
                ((eq (ecc-node-type node) 'tool)
                 (ecc-visit-shift-line session path line
-                                      (ecc-model-node-get node 'patch)))
+                                      (if changed
+                                          (cdr changed)
+                                        (ecc-model-node-get node 'patch))))
                (t line))))))))
 
 (defun ecc-visit-follow-link-p (pos)
@@ -333,26 +376,41 @@ every redraw."
 
 ;;;; Opening
 
-(defun ecc-visit-open (path &optional line session)
+(defun ecc-visit-open (path &optional line session where)
   "Open PATH beside SESSION at LINE, and return its window.
+A video or a sound is played by the machine instead
+\(`ecc-image-open-externally\\='), LINE is ignored and nil is returned:
+a buffer of one would show its bytes.
 The window is chosen as every buffer opened out of a conversation is
-\(`ecc-window-display-beside-session\\=').  With LINE the point goes to
-it, the window is scrolled to put it in the middle and the line
-flashes; without it the buffer keeps the point it had."
+\(`ecc-window-display-beside-session\\=') -- or by WHERE, a function
+called with the buffer that shows it and returns the window, for a
+caller with somewhere else to put it.  With LINE the point goes to it,
+the window is scrolled to put it in the middle and the line flashes;
+without it the buffer keeps the point it had."
   (unless (file-exists-p path)
     (user-error "No such file: %s" (abbreviate-file-name path)))
+  (if (ecc-image-plays-outside-p path)
+      (progn (ecc-image-open-externally path) nil)
+    (ecc-visit--open-in-buffer path line session where)))
+
+(defun ecc-visit--open-in-buffer (path line session &optional where)
+  "Visit PATH beside SESSION at LINE, or where WHERE puts it; return its window."
   (let* ((buffer (find-file-noselect path))
-         (window (if session
-                     (ecc-window-display-beside-session buffer session)
-                   (pop-to-buffer buffer)
-                   (get-buffer-window buffer))))
+         (window (cond (where (funcall where buffer))
+                       (session (ecc-window-display-beside-session buffer session))
+                       (t (pop-to-buffer buffer)
+                          (get-buffer-window buffer)))))
     (when (and line (window-live-p window))
-      (with-selected-window window
-        (goto-char (point-min))
-        (forward-line (1- line))
-        (recenter)
-        (pulse-momentary-highlight-one-line (point))))
+      (ecc-visit-show-line window line))
     window))
+
+(defun ecc-visit-show-line (window line)
+  "Put the point of WINDOW on LINE, in the middle of it, and flash the line."
+  (with-selected-window window
+    (goto-char (point-min))
+    (forward-line (1- line))
+    (recenter)
+    (pulse-momentary-highlight-one-line (point))))
 
 (provide 'ecc-visit)
 

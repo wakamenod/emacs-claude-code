@@ -97,6 +97,44 @@ This is what makes the allow response possible."
                   '((message . ((content . "hi")))))
                  '(((type . "text") (text . "hi"))))))
 
+;;;; What a Bash call changed
+
+(ert-deftest ecc-protocol-test-bash-edit-diff ()
+  "The files a Bash result says it changed are read into a plist.
+The recording has one command that updates, deletes and creates a file,
+and one that changes eight, past the five the CLI shows hunks for."
+  (let* ((results (delq nil (mapcar (lambda (message)
+                                      (alist-get 'tool_use_result message))
+                                    (ecc-test-fixture-messages "bash-edit-diff"))))
+         (first (ecc-protocol-bash-edit-diff (nth 0 results)))
+         (second (ecc-protocol-bash-edit-diff (nth 1 results))))
+    (should (equal (mapcar (lambda (file)
+                             (cons (file-name-nondirectory (plist-get file :path))
+                                   (plist-get file :change)))
+                           (plist-get first :files))
+                   '(("a.txt" . updated) ("b.txt" . deleted) ("new.txt" . created))))
+    (should (equal (append (plist-get (car (plist-get first :files)) :patch) nil)
+                   (list '((oldStart . 1) (oldLines . 4) (newStart . 1) (newLines . 4)
+                           (lines . [" line one" "-line two" "+line TWO"
+                                     " line three" " line four"])))))
+    (should (= 0 (plist-get first :more)))
+    (should (= 5 (length (plist-get second :files))))
+    (should (= 3 (plist-get second :more)))
+    ;; Every file changed is named, the three without hunks too.
+    (should (equal (mapcar #'file-name-nondirectory (plist-get second :changed))
+                   '("m1.txt" "m2.txt" "m3.txt" "m4.txt" "m5.txt"
+                     "m6.txt" "m7.txt" "m8.txt")))
+    (should-not (plist-get second :unavailable))
+    ;; A result that says nothing of files, and one that could not tell.
+    (should-not (ecc-protocol-bash-edit-diff '((stdout . "") (stderr . ""))))
+    (should-not (ecc-protocol-bash-edit-diff "Error: exit 1"))
+    (let ((diff (ecc-protocol-bash-edit-diff
+                 '((bashEditDiff . ((files . []) (moreFiles . 0)
+                                    (unavailable . t)))))))
+      (should (plist-get diff :unavailable))
+      (should-not (plist-get diff :files))
+      (should-not (plist-get diff :skipped)))))
+
 ;;;; Serializing
 
 (ert-deftest ecc-protocol-test-initialize ()

@@ -25,7 +25,7 @@ Or, without `use-package`:
 | `a` / `d` | Allow or deny oldest pending request |
 | `1`–`4` | Select corresponding option for pending question |
 | `n` / `N` | Jump to next pending request (globally or within current project) |
-| `B` / `D` / `G` / `h` / `U` | Open dashboard / review the session's diffs / review the working tree / view history / check usage |
+| `B` / `D` / `G` / `h` / `U` | Open dashboard / choose what to review / review the uncommitted changes / view history / check usage |
 | `j` / `b` / `z` / `V` | Go to a Space / open the sidebar / zoom this window / put this Space's windows back in order (see [Spaces and worktrees](/emacs-claude-code/features/spaces/)) |
 | `/` | Search past conversations by message content |
 | `?` | Open transient menu |

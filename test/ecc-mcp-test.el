@@ -18,6 +18,7 @@
   "Run BODY with a tool registry of its own, restoring the real one after."
   (declare (indent 0) (debug t))
   `(let ((ecc-mcp-tools (make-hash-table :test #'equal))
+         (ecc-mcp--instructions nil)
          (ecc-mcp-excluded-tools nil)
          (ecc-mcp-enable-execute-code nil))
      ,@body))
@@ -160,6 +161,55 @@ The answer comes back as (STATUS . BODY-STRING)."
                       (ecc-mcp-published-tools)))
     (should (equal (cdr (ecc-mcp-call-tool "execute_code" '((code . "(+ 1 2)"))))
                    "3"))))
+
+(ert-deftest ecc-mcp-test-array-arguments ()
+  "A TYPE may be a whole schema; an array of objects arrives as a vector of alists."
+  (ecc-mcp-test-with-registry
+    (ecc-mcp-define-tool
+     :name "count"
+     :description "Counts."
+     :args '(("items" ((type . "array")
+                       (items . ((type . "object")
+                                 (properties . ((name . ((type . "string"))))))))
+              "What to count" t))
+     :function (lambda (items)
+                 (mapconcat (lambda (item) (alist-get 'name item)) items "+")))
+    (let ((schema (alist-get 'items (alist-get 'properties
+                                               (ecc-mcp-tool-schema (ecc-mcp-tool "count"))))))
+      (should (equal (alist-get 'type schema) "array"))
+      (should (equal (alist-get 'type (alist-get 'items schema)) "object"))
+      (should (equal (alist-get 'description schema) "What to count")))
+    ;; Through the JSON-RPC layer, the way the CLI sends it.
+    (let ((answer (ecc-mcp-handle-request
+                   (ecc--json-read
+                    "{\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"count\",\"arguments\":{\"items\":[{\"name\":\"a\"},{\"name\":\"b\"}]}}}"))))
+      (should (equal (alist-get 'text (aref (alist-get 'content (alist-get 'result answer)) 0))
+                     "a+b")))))
+
+(ert-deftest ecc-mcp-test-instructions ()
+  "initialize carries the paragraphs whose tools are published, and only those."
+  (ecc-mcp-test-with-registry
+    (let ((text-of (lambda ()
+                     (alist-get 'instructions
+                                (alist-get 'result
+                                           (ecc-mcp-handle-request
+                                            '((id . 1) (method . "initialize"))))))))
+      ;; Nothing registered: no instructions at all.
+      (should-not (funcall text-of))
+      (should-not (assq 'instructions (ecc-mcp--server-info)))
+      (ecc-mcp-define-tool :name "one" :description "." :args nil :function #'ignore)
+      (ecc-mcp-define-tool :name "two" :description "." :args nil :function #'ignore)
+      (defvar ecc-mcp-test--second-paragraph)
+      (let ((ecc-mcp-test--second-paragraph "Then two."))
+        (ecc-mcp-define-instructions "first" "Use one." '("one"))
+        (ecc-mcp-define-instructions "second" 'ecc-mcp-test--second-paragraph '("two"))
+        (should (equal (funcall text-of) "Use one.\n\nThen two."))
+        ;; A variable is read when asked, so a setq takes effect.
+        (setq ecc-mcp-test--second-paragraph "Two, now.")
+        (should (equal (funcall text-of) "Use one.\n\nTwo, now."))
+        ;; A paragraph about tools nobody publishes is left out.
+        (let ((ecc-mcp-excluded-tools '("one")))
+          (should (equal (funcall text-of) "Two, now.")))))))
 
 ;;;; JSON-RPC
 

@@ -34,7 +34,7 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 | `ecc-chat-text-width` | `100` | Maximum line width for rendered text, or `nil` to use full window width. Surplus space is padded into the right margin so adjacent window layouts remain unaffected |
 | `ecc-chat-line-spacing` | `0.15` | Additional line spacing below each line, following standard `line-spacing` semantics (a float is a fraction of the line height). `nil` disables added spacing |
 | `ecc-render-result-max-lines` | `12` | Maximum lines displayed for a tool result preview. The full result is always accessible with `RET` |
-| `ecc-render-inhibit-inline-diff` | `nil` | When `nil` (default), a call that changes a file -- Edit, MultiEdit, Write, NotebookEdit -- comes up showing its diff. When `t`, those calls come up folded and `TAB` opens them |
+| `ecc-render-inhibit-inline-diff` | `nil` | When `nil` (default), a call that changes a file -- Edit, MultiEdit, Write, NotebookEdit, and a Bash command the CLI reports file changes for -- comes up showing its diff. When `t`, those calls come up folded and `TAB` opens them |
 | `ecc-render-diff-max-lines` | `40` | Maximum lines displayed for inline diffs in tool and permission blocks. The full diff is always accessible with `RET` |
 | `ecc-diff-context-lines` | `3` | Lines of context displayed around modifications in the transcript |
 | `ecc-stream-throttle` | `0.05` | Interval in seconds to buffer streaming deltas before redrawing. Zero renders each delta immediately |
@@ -77,6 +77,13 @@ Similarly, there is no setting for session cost budgets; budgets belong in Claud
 | Variable | Default | Description |
 |---|---|---|
 | `ecc-review-style` | `'diff` | How `ecc-review` and `ecc-review-worktree` show changes. `'diff` uses a single read-only `diff-mode` buffer. `'ediff` displays every file in the review side by side in a single ediff session. Both are read-only and send the same prompt |
+| `ecc-review-menu-count-session-changes` | `t` | When non-nil, the review menu (`C-c c D`) shows how many files the session changed since it started. Counting them takes a snapshot of the working tree, about 35 ms in a repository of 300 files and 70 ms in one of 20,000. Set it to `nil` where that makes the menu slow to open |
+| `ecc-review-auto-refresh` | `t` | When non-nil, an open review reads the diff again when a tool of its session finishes, a turn ends, or a file of its repository is saved, keeping the comments and your place. A hidden review is read when it is shown. A review in ediff follows them too. `nil` reads it only with `g` |
+| `ecc-review-files-width` | `32` | Width in columns of the list of files that `s` shows beside a review |
+| `ecc-review-ediff-layout` | `'stacked` | How an ediff review opens: `'stacked` puts the old side above the new one with Claude's reply pane on the right, `'side-by-side` puts them left and right with the pane at the bottom. `\|` switches in an open review |
+| `ecc-review-talk-reply-width` | `75` | Width in columns of the pane right of a stacked ediff review that shows Claude's reply. A frame that would leave the diff fewer than 80 columns has the pane at the bottom instead |
+| `ecc-review-talk-reply-height` | `12` | Height in lines of the pane under a side-by-side ediff review that shows Claude's reply; `nil` shows no pane in either layout |
+| `ecc-review-talk-reply-place` | `'auto` | Where the reply pane goes: `'auto` beside the review as the layout says, `'frame` in a frame of its own for each review, closed with it, which never takes the focus |
 
 ## Windows
 
@@ -103,7 +110,7 @@ Both options accept `'window` or `'posframe`. `'posframe` renders the buffer as 
 
 ## The MCP server
 
-ecc can run an in-process MCP server on the loopback interface and register it with each session, so Claude can query Emacs for editor context: `xref`, `imenu`, `tree-sitter`, project metadata, and diagnostics.
+ecc can run an in-process MCP server on the loopback interface and register it with each session, so Claude can query Emacs for editor context: `xref`, `imenu`, `tree-sitter`, project metadata, and diagnostics. It also lets Claude [comment on the review buffer](/emacs-claude-code/features/review/#comments-from-claude).
 
 | Variable | Default | Description |
 |---|---|---|

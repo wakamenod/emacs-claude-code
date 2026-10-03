@@ -115,7 +115,8 @@ The whole diff is always available with RET."
 (defcustom ecc-render-inhibit-inline-diff nil
   "Non-nil folds the diff of a call that changes a file.
 The diff is drawn either way and TAB opens it; this says whether an
-Edit, a MultiEdit, a Write and a NotebookEdit come up showing it.
+Edit, a MultiEdit, a Write, a NotebookEdit and a Bash command the CLI
+reports a file change for come up showing it.
 
 Nil, the default, is what the CLI does: it shows what it wrote the
 moment it writes it, and a change nobody is shown is a change nobody
@@ -890,8 +891,9 @@ appended at its end, which is where a streamed delta lands."
              ;; every node of the transcript at every redraw.
              (not (and (not ecc-render-inhibit-inline-diff)
                        (eq (ecc-node-type node) 'tool)
-                       (ecc-diff-tool-p (ecc-model-node-get node 'name)
-                                        (ecc-model-node-get node 'input))))
+                       (or (ecc-diff-tool-p (ecc-model-node-get node 'name)
+                                            (ecc-model-node-get node 'input))
+                           (ecc-render--bash-edit-files node))))
              t)))))
 
 (defun ecc-render--wanted-hidden-p (id)
@@ -1511,10 +1513,96 @@ diff when the caller has built it already, to build it only once."
               (ecc-render--clip text ecc-render-result-max-lines)
               (concat body "→ ")
               (if error-p 'ecc-error-face 'ecc-dim-face))))))
+    ;; Under the output, as the CLI draws it.
+    (ecc-render--insert-bash-edit node body)
     ;; The pictures come after the clip, never through it: a result of
     ;; thirteen lines must not be what decides whether a screenshot is
     ;; seen.
     (ecc-render--insert-tool-images node body)))
+
+;;;; What a Bash command changed
+
+(defun ecc-render--bash-edit-files (node)
+  "Return the files the CLI says the Bash NODE changed and showed hunks of.
+Each is a plist of `ecc-protocol-bash-edit-diff'."
+  (plist-get (ecc-model-node-get node 'bash-edit) :files))
+
+(defun ecc-render--bash-edit-heading (file)
+  "Return the line that names FILE, a file a Bash command changed.
+The words are the CLI\='s: \"Updated a.txt (+1 -1)\", \"Created\" for a
+new file and \"Deleted\" for one removed."
+  (let* ((path (plist-get file :path))
+         (counts (ecc-diff-patch-counts (plist-get file :patch))))
+    (concat (propertize (pcase (plist-get file :change)
+                          ('created "Created ")
+                          ('deleted "Deleted ")
+                          (_ "Updated "))
+                        'face 'ecc-dim-face)
+            (propertize (ecc-render--file-label path)
+                        'face 'ecc-tool-face 'mouse-face 'highlight)
+            (propertize (format " (+%d -%d)" (car counts) (cdr counts))
+                        'face 'ecc-dim-face))))
+
+(defun ecc-render--bash-edit-notes (diff)
+  "Return the lines that say what of the Bash change DIFF is not drawn.
+The words and the order are the CLI\='s own (2.1.286): a command it
+could not diff at all gets one line and nothing else; otherwise the
+files past the ones shown are counted, and a command that ran beside
+another in the same repository says its diff may hold the other\='s."
+  (let* ((files (plist-get diff :files))
+         (more (plist-get diff :more))
+         (unavailable (plist-get diff :unavailable))
+         (shared-note (concat "(another command ran in this repository at the"
+                              " same time; a change made by either may show"
+                              " under either result)"))
+         (count (lambda (n) (format "%d %s" n (if (= n 1) "file" "files")))))
+    (if (or (plist-get diff :skipped)
+            (and (or unavailable (plist-get diff :shared)) (null files)))
+        (list (cond ((plist-get diff :skipped)
+                     "(file diff skipped for this git command)")
+                    ((and unavailable (> more 0))
+                     (format "(file diff unavailable for this command; %s changed)"
+                             (funcall count more)))
+                    (unavailable "(file diff unavailable for this command)")
+                    (t shared-note)))
+      (delq nil
+            (list (when (> more 0)
+                    (concat (if files
+                                (format "… %d more %s changed"
+                                        more (if (= more 1) "file" "files"))
+                              (format "%s changed (binary, mode only or too large to show)"
+                                      (funcall count more)))
+                            (if unavailable " (part of the diff is unavailable)" "")))
+                  (and (plist-get diff :shared) shared-note))))))
+
+(defun ecc-render--insert-bash-edit (node body &optional whole)
+  "Insert under BODY what the CLI says the Bash NODE changed.
+One block per file, its line and then its diff, each clipped to
+`ecc-render-diff-max-lines\=' as an Edit\='s is unless WHOLE, and under
+them what the CLI said of the rest (`ecc-render--bash-edit-notes\=').
+Nothing for a call the CLI reported no change for."
+  (when-let* ((diff (ecc-model-node-get node 'bash-edit)))
+    (dolist (file (plist-get diff :files))
+      ;; The line carries the file and its patch, which is how
+      ;; `ecc-visit' knows which file the diff lines under it are of: a
+      ;; Bash call names no file of its own.
+      (let ((start (point)))
+        (insert (ecc-render--hang (concat body (ecc-render--bash-edit-heading file))
+                                  body)
+                "\n")
+        (put-text-property start (point) 'ecc-changed-file
+                           (cons (plist-get file :path) (plist-get file :patch))))
+      (let ((patch (plist-get file :patch)))
+        (when (> (length patch) 0)
+          (ecc-render--insert-lines
+           (if whole
+               (ecc-diff-from-patch patch)
+             (ecc-render--clip (ecc-diff-from-patch patch) ecc-render-diff-max-lines))
+           body 'ecc-dim-face))))
+    (dolist (note (ecc-render--bash-edit-notes diff))
+      (insert (ecc-render--hang (propertize (concat body note) 'face 'ecc-dim-face)
+                                body)
+              "\n"))))
 
 (defvar ecc-image-max-per-node 6
   "Most images drawn under one tool call.
@@ -2126,10 +2214,16 @@ this way.")
     ;; alone stays, because the way back out of it is named nowhere
     ;; else.
     (when (eq (ecc-session-state session) 'exited)
-      (propertize (format "Exited with code %s; R resumes it"
-                          (or (alist-get 'exit-status (ecc-session-progress session))
-                              "?"))
-                  'face 'ecc-error-face))))
+      (if-let* ((status (alist-get 'exit-status (ecc-session-progress session))))
+          (propertize (format "Exited with code %s; R resumes it" status)
+                      'face 'ecc-error-face)
+        ;; No status is no process: a session read back from its
+        ;; recording, which has not run in this Emacs.  Nothing went
+        ;; wrong with it, and a `code ?' said something had.
+        (propertize (if (ecc-model-option session :restored nil)
+                        "Restored; a prompt or R starts it"
+                      "Not running; R resumes it")
+                    'face 'ecc-dim-face)))))
 
 (defun ecc-render--tail-lines (session)
   "Return the lines drawn at the end of the transcript of SESSION."
@@ -2188,9 +2282,15 @@ no turn, so nothing freezes them."
       ('handoff (propertize "⇄ handed over to the terminal" 'face 'ecc-pending-face))
       ('idle (propertize "○ idle" 'face 'ecc-dim-face))
       ('starting (propertize "○ starting…" 'face 'ecc-dim-face))
-      ('exited (propertize (format "✗ exited (code %s)"
-                                   (or (alist-get 'exit-status progress) "?"))
-                           'face 'ecc-error-face))
+      ('exited (if-let* ((status (alist-get 'exit-status progress)))
+                   (propertize (format "✗ exited (code %s)" status)
+                               'face 'ecc-error-face)
+                 ;; Read back from a recording and never run here; see
+                 ;; `ecc-render--tail-string'.
+                 (propertize (if (ecc-model-option session :restored nil)
+                                 "○ restored"
+                               "○ not running")
+                             'face 'ecc-dim-face)))
       ('compacting (propertize "⟲ compacting…" 'face 'ecc-running-face))
       ((or 'waiting-permission 'waiting-question 'waiting-plan)
        (propertize
@@ -2331,7 +2431,12 @@ so it is spelled out with its kind."
            (ecc-session-state session))
     ((or 'idle 'starting) nil)
     ('handoff (propertize "⇄ terminal" 'face 'ecc-pending-face))
-    ('exited (propertize "✗ exited" 'face 'ecc-error-face))
+    ('exited (cond ((alist-get 'exit-status (ecc-session-progress session))
+                    (propertize "✗ exited" 'face 'ecc-error-face))
+                   ;; No process has run here; see `ecc-render--tail-string'.
+                   ((ecc-model-option session :restored nil)
+                    (propertize "○ restored" 'face 'ecc-dim-face))
+                   (t (propertize "○ not running" 'face 'ecc-dim-face))))
     ('compacting (propertize "⟲ compacting" 'face 'ecc-running-face))
     ((or 'waiting-permission 'waiting-question 'waiting-plan)
      (let ((n (length (ecc-session-pending session))))

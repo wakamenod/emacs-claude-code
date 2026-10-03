@@ -219,6 +219,14 @@ session never touches."
     (should (equal (ecc-config-directory)
                    (file-name-as-directory (expand-file-name "~/.claude"))))))
 
+(ert-deftest ecc-core-test-tool-input-path ()
+  "The file a tool names: file_path, else notebook_path, never an empty one."
+  (should (equal (ecc-tool-input-path '((file_path . "a.el"))) "a.el"))
+  (should (equal (ecc-tool-input-path '((notebook_path . "n.ipynb"))) "n.ipynb"))
+  (should-not (ecc-tool-input-path '((file_path . ""))))
+  (should-not (ecc-tool-input-path '((command . "ls"))))
+  (should-not (ecc-tool-input-path "not an alist")))
+
 (provide 'ecc-core-test)
 
 ;;; ecc-core-test.el ends here

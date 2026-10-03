@@ -85,6 +85,19 @@ Emacs handles itself, and can say so in a sentence the model can act
 on.  A refusal that only says no belongs to the user, who can say it
 themselves.")
 
+(defvar ecc-request-allow-functions nil
+  "Functions given a session and a request before anybody is asked.
+The first one to return non-nil allows the request: the CLI is sent an
+allow, the transcript keeps an \"auto-allowed\" note, and nothing is put
+in front of the user.  Only a permission is asked about -- a question or
+a plan wants an answer, not a yes.
+
+The counterpart of `ecc-request-refuse-functions\=', which is asked
+first: a request one module refuses is not allowed by another.  It is
+for a tool whose every call is harmless by construction -- one of this
+Emacs\=' own that writes no file -- and not for a judgement about a
+particular call, which is the user\='s.")
+
 (defvar ecc-prepare-prompt-functions nil
   "Functions given a session and a prompt, returning the prompt to send.
 Each is called in turn with what the one before it returned, and what
@@ -123,6 +136,11 @@ worth what it costs: a line on every prompt is a line on every prompt.")
 
 (defvar ecc-turn-finished-hook nil
   "Functions run with a session and the turn that just finished.")
+
+(defvar ecc-tool-finished-hook nil
+  "Functions run with a session and the tool node whose result just arrived.
+Any tool, whatever it did: a shell command changes files as much as an
+edit does, and `ecc-files-updated-hook\=' hears only of the file tools.")
 
 (defvar ecc-usage-hook nil
   "Functions run with a session when token usage or cost changed.")
@@ -807,9 +825,10 @@ entry exists.  Returns the entry, or nil when PATH is not a string."
   "Record that Claude changed PATH of SESSION from OLD to NEW.
 PATCH is the structuredPatch the CLI reported, when it did.  The line
 counts of the Files section come from PATCH when there is one.
-ORIGINAL is the whole file before this change, or nil for a file that
-did not exist; the first change of a file keeps it as what the session
-started from."
+ORIGINAL is the whole file before this change, nil for a file that
+did not exist, or `unknown' when it is not known (a Bash command's);
+the first change that knows it keeps it as what the session started
+from."
   (when-let* ((entry (ecc-model-note-file session path nil)))
     (setf (ecc-file-entry-hunks entry)
           (nconc (ecc-file-entry-hunks entry) (list (cons old new))))

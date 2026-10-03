@@ -13,6 +13,639 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 ## [Unreleased]
 
+Verified against **Claude Code CLI 2.1.281**.
+
+### Added
+
+- A Bash command that changed files now shows what it changed, as the CLI's
+  own TUI does, from the `bashEditDiff` the CLI puts in the result. Under the
+  command's output, each file gets a line in the CLI's words
+  (`Updated a.txt (+1 -1)`, `Created`, `Deleted`) and its diff, numbered and
+  clipped like an Edit's. The call comes up unfolded unless
+  `ecc-render-inhibit-inline-diff` is set. The CLI shows hunks for at most
+  five files and ecc counts the rest (`… 3 more files changed`). It also
+  passes on what the CLI says when it could not make a diff. Each file goes
+  into the Files section with its hunks, and an open buffer visiting it is
+  reverted unless the command deleted the file. `RET` on a diff line opens the file at that line, moved through
+  later changes, and `RET` on the file's line opens it at its first change.
+  `o` shows the whole diff.
+
+  Most sessions will not show these diffs as things stand. ecc starts the
+  CLI in `default` mode, and there the CLI never sends `bashEditDiff`. It
+  sends it in `auto` and `bypassPermissions` only, and there only behind an
+  experiment flag of the CLI that follows the model (Opus 5.5 had it; Sonnet
+  and Haiku did not). `"bashEditDiffEnabled": true` in the user's
+  `~/.claude/settings.json`, or passed with `--settings`, turns it on in
+  every mode; a project's `.claude/settings.json` does not. ecc does not set
+  it: it is a setting of Claude Code. Either way the file must be inside a
+  git repository. Verified against Claude Code CLI 2.1.286.
+
+- `M-x ecc-restore` brings back the Spaces and sessions that were open when
+  Emacs last exited. The Spaces open in the order of their tabs, with their
+  sessions laid out as a Space lays them out; under `ecc-use-spaces` nil only
+  the sessions come back. Each session is read from its recording and comes
+  back stopped: no CLI starts until a prompt is sent to it or `R` is pressed,
+  and the question about a session another process is running is asked
+  then, one session at a time. A session already open is left alone and
+  counted in the message, and one whose directory is gone is skipped and
+  named. A saved session that is open only to be read (`h`) is not counted
+  as open: it becomes the restored session, in the buffer it already has. A restored session says
+  `○ restored` and "Restored; a prompt or R starts it" rather than calling
+  itself exited, and the tab line and the sidebar draw it the same way: a
+  dim `○` and the word `restored`, not the red `✗` of a CLI that died. A
+  Space folds it under an exit and over an idle session. The mode line says
+  `○ restored` too.
+
+- What is open is saved to `ecc-restore-file` (`ecc-state.eld` under
+  `user-emacs-directory`, Lisp data) whenever a session starts or is killed
+  and whenever a tab opens or closes, so a crash leaves it current.
+  It holds the Space roots in tab order and each session's id, name, root
+  and cwd, all taken from memory: no recording is read and git is not asked.
+  A save that would write the same text again is skipped, and an empty
+  file is read as nothing saved. At exit the file
+  is written once more and then left alone, so the sessions Emacs takes down
+  with it are not saved as closed. Nothing is written at all by an Emacs
+  that has had no session of its own and has not run `ecc-restore`: one
+  that only opened a tab or read a recording leaves the file as the last
+  Emacs wrote it, even a file it cannot read. Until `ecc-restore` has run,
+  the state the last Emacs left is kept in every write, the one at exit
+  included, so starting a session first, or quitting before restoring, does
+  not lose it. A batch Emacs saves nothing (`ecc-restore-enabled`).
+  A write costs about 0.2 ms with ten sessions in five Spaces, and one with
+  nothing to write about 0.02 ms, which is also what the exit hook adds when
+  the file is already current.
+
+- Claude can comment on the review. With the MCP server on
+  (`ecc-mcp-enabled`), the model is offered `review_open`, `review_hunks`,
+  `review_comment`, `review_comment_apply`, `review_navigate`,
+  `review_list_comments`, `review_remove_comment` and
+  `review_clear_comments`: it opens the review of its session -- what the
+  session changed, the working tree against a range, or what is staged
+  (`staged`), of every file or only some (`paths`) -- puts
+  comments on lines or hunks, answers a comment with `reply_to`, scrolls
+  the review to a place, and reads or removes comments. It never writes or
+  changes a comment of the user's. A tool works on the review of the session
+  that calls it. The review it opens or moves is shown beside the session
+  without being selected and without hiding a session window: never in the
+  window you are in (nor the one the minibuffer was entered from), never by
+  going to another tab or Space, and not at all when the session is not on
+  the screen or there is no other window to take. It takes the window of
+  another review of the session first, a free window next, and divides the
+  session's window last; `q` deletes a window made for it. A
+  `display-buffer-alist` rule of yours for the review is followed, as long
+  as it leaves your window and tab alone. The review then waits in its
+  buffer at the place Claude chose. The tools
+  read a review open in ediff (`ecc-review-style` `ediff`) as well: a hunk
+  there is one difference, `review_hunks` gives its ediff number and the
+  lines it covers on each side, Claude's line comments are drawn under
+  their line on the side it is on, and `review_navigate` puts ediff on the
+  difference and both sides on the line without recentring it, laying its
+  windows out again or selecting any. `review_open` never starts ediff,
+  which takes the frame and the keyboard: it reads the session's ediff
+  review again where it is and says so -- and that a range or files asked
+  for were not applied -- or, with none open, opens the diff review as
+  above. The tools write no file, so they
+  are allowed without asking and noted as `auto-allowed` in the transcript;
+  `ecc-review-agent-auto-allow` set to `nil` asks instead. Claude's comments
+  have a face of their own, `ecc-review-agent-comment-face`, and `a` hides
+  them. Only the user's comments are sent with `C-c C-c`. A remark of
+  Claude's lands on the line it is about, in the diff the user is reading,
+  rather than in the transcript with a file and a line number to look up.
+
+- A comment in the review buffer belongs to a line. `c` on a removed line
+  comments the old side, on an added or a context line the new side, and on
+  the `@@` line the whole hunk, as before. Every comment has a number that is
+  not used again, `{` and `}` move between comments, and the header line
+  counts yours and Claude's. A line comment is sent headed by its line,
+  `## foo.el  L42 (new)`, with the whole hunk under it; a reply quotes the
+  comment of Claude's it answers. What `c` does is settled when it is
+  pressed: a comment from Claude arriving on the line while you type does
+  not turn yours into a reply, and a line that goes away meanwhile leaves
+  your text kept as outdated.
+
+- The MCP server's `initialize` carries instructions, the paragraphs modules
+  register with `ecc-mcp-define-instructions`, each left out while none of its
+  tools is published. Claude Code puts them in the system prompt for an HTTP
+  server given by `--mcp-config` (checked with `claude -p` on 2026-10-01).
+  An argument of an MCP tool may be declared with a whole JSON schema, so a
+  tool can take an array of objects.
+
+- `ecc-request-allow-functions`, the counterpart of
+  `ecc-request-refuse-functions`: a module allows a tool of its own that is
+  harmless by construction, through the same path as a tool approved for
+  the turn.
+
+- An open diff review follows the files (`ecc-review-auto-refresh`, on by
+  default). It reads the diff again when a tool of its session finishes --
+  a shell command as much as an edit, but not a tool that only reads, such
+  as Read or Grep (`ecc-review-unchanging-tools`), nor the review tools
+  (`ecc-review-unchanging-tool-functions`) -- when a turn in which such a
+  tool finished ends, and when a file of its repository is saved in Emacs. A
+  session working in the same repository counts too, and so does an edit
+  of a file in it by a session rooted above it. Comments and place are
+  kept as `g` keeps them. The changes are gathered into one read by a
+  single timer that runs once, 0.5 s later
+  (`ecc-review-auto-refresh-delay`), and waits again while you are typing;
+  it never repeats. Only a review on the screen is read; one out of sight is
+  marked stale and read when it is shown. A diff that has not changed is
+  not put in again, so the buffer is not modified and its overlays stay,
+  and the review buffer keeps no undo. The keys of `diff-mode` that edit
+  the buffer or revert a hunk in the file (`k`, `K`, `R`, `u`, `@`, and
+  their `C-c` neighbours) say that the review is read-only, and a review
+  edited anyway is put right by `g`. Nothing is displayed, selected or
+  divided by it. A review whose changes have all gone stays open and says
+  so, where `g` and opening it still refuse. A review that cannot be read
+  says why in its header line, once in the echo area, and waits for `g`,
+  which reads it again and, when its diff has gone meanwhile, shows it
+  empty.
+  A review in ediff (`ecc-review-style` `ediff`) follows the files the same
+  way: its two sides are written again and ediff computes the differences
+  again without recentring, so nothing is selected or laid out again and
+  the keyboard is not taken; the difference being read, the line each side
+  is on and the comments are kept, and `!` reads it again after a failure.
+  The review of a proposal is never read again. One read of
+  a diff of 1,000 hunks (65 KB) took 0.06 s and of 10,000 hunks (650 KB)
+  0.22 s, measured with `benchmark-run` in batch.
+
+- `C-u G` (`ecc-review-worktree`) takes `--staged` or `--cached` for what
+  is staged alone -- the index against `HEAD`, without untracked files, in
+  a buffer named `staged changes` -- and asks after the range for the
+  files to review, out of those the range would show; none is every file.
+  `g` keeps the files. A range starting with `-` is refused, so no git
+  option reaches git. `ecc-review-worktree-buffer` takes the files as
+  PATHS, and a range may be the symbol `staged`. The files, given to
+  `review_open` or to the review, are absolute or relative to the
+  directory the session works in, inside git and outside it, and a
+  symbolic link git tracks is the link and not its target.
+
+- `ecc-review-menu`, where a review starts: `D` in `C-c c` and in
+  `ecc-menu` opens it, and it asks what to compare before anything is
+  opened. `D` is what changed since the session started, so `C-c c D D` is
+  what `C-c c D` was; `w` everything uncommitted (against `HEAD`); `u` what
+  is not staged; `s` what is staged; `b` this branch against another; `c` a
+  commit; `r` a range typed as `C-u G` takes it. Each line says how many
+  files it would show. One `git status` gives the counts of `w`, `u` and
+  `s`, untracked files included; `b` counts the diff of its fork against
+  the working tree and the untracked files, which is what its review
+  shows. A count that fails shows `?` and the echo area says why; it
+  never reads as "nothing". The count of `D` takes a snapshot of the
+  working tree: 35 ms on a repository of 300 files and 70 ms on one of
+  20000. `ecc-review-menu-count-session-changes`, a setting, leaves it
+  out. Opening the menu on this repository runs 14 git processes in
+  117 ms, 60 ms without the `D` count.
+
+  The git choices review the project of the current buffer and send the
+  comments to its session, the rule of `G`: with no session there, they
+  offer to start one, as `G` does. `D` reviews that session, or, when the
+  project has none, the session used last, which is what `C-c c D`
+  reviewed before; the heading says which session each is about, and the
+  project. `S` turns the whole menu to another session and its project,
+  the project's sessions offered first, so what is compared and where the
+  comments go are always one project; a session of the same project
+  counts only its own changes again. Its first choice, `+ new session`,
+  starts a session in the menu's project with `ecc-start` -- named as
+  `ecc-start` names it, asked for a name when the project has one already
+  -- leaves the user where the menu was, back in its tab when `ecc-start`
+  went to the tab of a Space of its own, or to the tab of a worktree's
+  repository first, or failed part of the way -- found again by the index
+  and the name it had -- with the selected window selected and the menu
+  open, and turns the menu to it, so that the comments go there; it has the review tools, so
+  `T` works at once. `-f` asks for the files to keep once
+  the comparison is chosen, out of those it shows, and `-e` opens this
+  one review in ediff, or as a diff, the other way from
+  `ecc-review-style`, which is left alone. Outside git only `D` can be
+  chosen, and the heading says why. The choice made last is marked
+  `(last)` and the cursor of the menu starts on it, so `RET` opens it
+  again. What the menu is about is dropped when it closes, and kept when
+  it is only suspended -- `C-h`, a switch of frame -- so that it comes
+  back as it was. A choice run with `M-x` reads only where to review, not
+  the counts, and `S` with no menu open says so and does nothing.
+
+  `b` asks first for the base, the before side (`Base, the before side
+  (default develop): `), by default the branch the current one most likely
+  forked from. The candidates are `develop`, `main`,
+  `master` (`ecc-review-menu-base-candidates`), the branch `origin/HEAD`
+  points at, and the upstream of the current branch when that branch is
+  one of them, so that `main` is compared with `origin/main`, where its
+  unpushed commits show. A candidate ahead of `HEAD` is left out --
+  `develop` when you are on `main` and `develop` has gone on -- and one at
+  `HEAD` itself, the branch a new one was just cut from, stays. Of these,
+  the one `HEAD` has the fewest commits beyond wins, the one whose own tip
+  is nearer of a tie. A local branch that wins while it is behind its
+  upstream, with no commit of its own, gives way to the upstream: a
+  `develop` four commits behind `origin/develop` put the commits not
+  pulled yet into the review of a branch cut from `origin/develop`, 57
+  files where 46 had changed. The upstream is held to the same rule as
+  every candidate, so one that already holds `HEAD` -- a feature merged
+  into `origin/develop` since -- is not taken, and the local branch
+  stays. With no guess, `b` asks with no default. It
+  then asks for the after side (`Changes on, the after side (default
+  feature with its working tree): `), by default the current branch with
+  its working tree: the range is the commit where the two part, which `git diff`
+  compares with the working tree, so uncommitted and untracked files are
+  in the review. Another branch is `BASE...BRANCH`, what a pull request
+  shows. `c` asks for a commit out of the last 100 and then for the last
+  one to review with it; the default, the same commit, is that commit
+  alone (`X^!`), and another is `X^..Y`, `X` included, in whichever order
+  they were picked. The range is made of the commit ids, so the review
+  stays on its commits when `HEAD` moves. The first commit of a
+  repository, which has no parent, is compared with the empty tree. `b`
+  and `c` refuse a name starting with `-`; `--staged` is for `r`. Each
+  branch `b` offers says beside it how far it is from its upstream --
+  `develop  (4 behind origin/develop)`, `(2 ahead of origin/develop)`,
+  both, or `(origin/develop is gone)` -- asked of git, all of them in one
+  `git for-each-ref`, the first time a list shows one, so opening the
+  menu asks nothing of the kind. It is a completion annotation: what is
+  typed and returned is the name alone.
+
+  A review of the working tree is named after what it compares, not after
+  how it was asked for (`ecc-review-range-label`): a range of commit ids
+  is called by the short id and subject of a commit (`X^!`), the short ids
+  of a span, or, for the fork `b` compares with, `BASE + working tree`, so
+  an id written short or in full and a review opened by the menu or by
+  Claude's `review_open` are one buffer, and Claude's comments land in
+  the review being read. A range of names, such as `HEAD` or
+  `main...HEAD`, is still its own name.
+
+  The description of `review_open` (`ecc-review-agent-open-description`)
+  names the arguments of each choice, so that asking Claude for "the staged
+  changes", "this whole branch" or "just this commit" opens what `s`,
+  `b RET RET` and `c X RET` open.
+
+- `ecc-tool-finished-hook`, run with the session and the tool node on every
+  tool result, whatever the tool.
+
+- The files of a review, listed and filtered. `s` in a review
+  -- the diff review, or a window or the control panel of an ediff
+  review -- shows a
+  list of its files immediately left of the diff, in a buffer of its own,
+  `*ecc-review-files: REVIEW*`: one line a file with what happened to it
+  (`M`, `A`, `D`, or `R` with its former name), the lines added and
+  removed, your comments and Claude's as `yours·Claude's`, and `!` when
+  one of them is outdated, under `Files (SHOWN of ALL)`. `▸` marks the
+  file being read -- the one point is in, or the one of the current
+  difference -- and moves with it, Claude's `review_navigate` included.
+  `RET` or a click on a line goes to that file and back to the review --
+  in ediff to its right window -- and `o` opens the file itself; `n`
+  and `p` there show the next and the previous file and keep the keyboard
+  in the list. In ediff the list is a side window on the left, which `|`
+  and `m` leave where it is; with `ecc-review-ediff-full-frame` nil it is
+  split off the left side and put back whenever ediff lays its windows out
+  again. In the diff review it is split off the left of the review's
+  window, so it sits between whatever is on the left and the diff; taken
+  down, its columns go back to the diff. It goes with the review's window:
+  `q`, another buffer taking that window, or the window deleted takes the
+  list down too, and another review coming into the window takes the
+  list's window over rather than splitting a second one off. Where the
+  window is too narrow for it, nothing fails: a review opens without it,
+  and `/` filters without it and says so. It is hidden at first, `s`
+  toggles it, and the choice holds for the next review opened, until
+  Emacs exits. Its width is `ecc-review-files-width` (32 columns). It is
+  written again whenever the review is read again -- the files followed,
+  `g`, `!` -- and whenever a comment comes or goes, while it is on the
+  screen; out of sight, it is written when it is shown.
+
+- `/` in a review keeps only the files whose path, former path, or one of
+  Claude's comments on them contains what is typed, ignoring case, so a
+  file is found by what Claude said about it as well as by its name. The
+  list of files shows, narrowed, as it is typed, and is put back as it was
+  afterwards; `RET` hides the rest of the review, and an
+  empty `RET` shows every file again. The files are hidden, not read
+  again: in the diff review with an invisibility spec of their own, in
+  ediff both halves of each. Their comments are kept and sent by
+  `C-c C-c`, and not drawn. `n`, `p`, `N` and `P` in the diff review, and
+  in ediff every key of its next, previous and jump commands (`n`, `p`,
+  `SPC`, `DEL`, `<backspace>`, `<delete>`, `S-SPC`, `j`, `ga`, `gb`),
+  step over them -- a negative count still going back -- and say so when
+  nothing kept lies further, `j`, `ga` and `gb` too when the filter keeps
+  no difference at all; `ga` and `gb` with point above the first
+  difference go to the first one kept, where ediff's own refused them as
+  a bad difference number, 0; a drawing
+  that comes to hide the file being read -- a comment of Claude's that
+  matched gone, the review read again -- steps off it; `{`, `}` and
+  `review_navigate`'s `next_comment` and `prev_comment` pass over their
+  comments, and `review_navigate` to one of them fails and says why. The
+  header line of the diff review says `/FILTER: N files hidden by
+  filter`, and an ediff review says `/FILTER: N hidden` at the right end
+  of the header line of the window with the keyboard.
+  `review_hunks` and `review_open` tell Claude the filter, how many files
+  it hides and which (`ecc-review-agent-filter-text`). A filter holds
+  across every reading of the review again.
+
+- Talking to Claude from a review, which in ediff hides the session and
+  its prompt. `T` in a review -- the diff review, or a window or the
+  control panel of an ediff review -- asks the session of the review for a tour
+  (`ecc-review-talk-tour-prompt`): the changes in order of importance, each
+  stop shown with `review_navigate` and explained, a `review_comment` on
+  what needs attention, and a stop until you ask for the next one, which
+  is `t` (`ecc-review-talk-next-prompt`). `M` reads a line in the
+  minibuffer and sends it as a prompt. All three go to the session of the
+  review and are sent as `ecc-send` sends: queued while a turn runs, and
+  with what `ecc-prepare-prompt-functions` adds. `T` and `t` need the
+  review tools, and without `ecc-mcp-enabled` they say so and send
+  nothing. The plan's `N` and `m` were taken -- `N` is the next file of
+  the diff review and `m` ediff's wide display -- so they are `t` and `M`.
+
+- The reply pane of an ediff review, `*ecc-review-reply: REVIEW*`: a side
+  window on the right while the two sides are stacked,
+  `ecc-review-talk-reply-width` columns wide (75), and at the bottom while
+  they are side by side, `ecc-review-talk-reply-height` lines high (12; nil
+  shows no pane in either) -- at the bottom too when the frame cannot
+  leave the diff 80 columns beside it (`ecc-review-talk-min-diff-width`).
+  `ecc-review-talk-reply-place` set to `frame` puts it in a frame of its
+  own instead, one for each review, named after its pane, used again while
+  it is there and closed with that review alone, made with
+  `no-focus-on-map` and never selected, so the
+  keyboard stays in the review and `y` is typed there.
+  `ecc-review-talk-make-frame-function` is called with the frame's name,
+  or, taking no argument, with none, and the frame is named after. The
+  files pane of the review itself, as wide as it is, counts against the
+  diff; `s` or `q` showing or hiding it, and the frame resized, move the
+  pane to the side the width now asks for, seen as the window of the new
+  side changing size (`window-size-change-functions` of its buffer), and
+  a pane that had the keyboard has it again on its new side. It shows the latest turn of the session of
+  the review as it streams -- what you sent on a line, what Claude says,
+  and each tool call on a line of its own, such as `review_navigate →
+  foo.el:12` -- and keeps its end in view. `u` and `d` in the review scroll
+  it back and on without selecting it, and so do `u`, `d`, `DEL` and `SPC`
+  in the pane. Each window of the pane is asked before every change
+  whether its end is in view: one that shows it follows it, and one
+  scrolled back any way -- those keys, the mouse wheel -- keeps the lines
+  it shows, by line, so that a call line above them losing its ` …` moves
+  nothing. A pane taken down and put back, as `|` does, shows the lines it
+  showed, or its end. A new turn brings every window of that session's
+  panes to the end, and another session's are left alone. Each turn replaces the last;
+  the whole conversation stays in the transcript. What the session waits
+  for -- a permission, Bash included, printed whole; a question with its
+  options; a plan -- is shown at the end, and `y` in the review
+  answers it: allow or deny, approve or deny, or each question read in the
+  minibuffer, collected apart from the question buffer -- which keeps
+  what you chose there -- and sent the way it sends them once every
+  question has an answer, each answer once. A request taken back while
+  `y` asks is not answered after all (below); an allow that the unsaved
+  buffer check turned into a deny says denied. Only that
+  session's replies and requests reach the pane, and `y` answers no other.
+  The pane is written again only for what it shows, and a streamed piece
+  is appended without touching any mode line. It is never selected; it is
+  taken down and put back, on the side the layout asks for, only when
+  ediff really lays its windows out again, as `|` and `m` do, so `n` and `p` leave its window
+  and its height alone; and it goes with the review. The diff review has
+  the session beside it and no pane.
+
+- An ediff review opens with the old side above the new one, each the width
+  of the frame, and the reply pane on the right (`ecc-review-ediff-layout`,
+  `stacked`); `|` puts them side by side with the pane under them, and back.
+  `side-by-side` opens it the way it opened before. The files pane, the
+  rows the two sides are put together by and the keyboard follow either
+  layout.
+
+- The control panel of an ediff review is out of sight: the keys and where
+  the review is are on the header lines of its two windows, and `?` shows
+  the panel with every key, without a mode line, until `?` again. The
+  panel's window is deleted after each layout, and ediff is told the layout
+  is the one it made -- the print of the window in
+  `ediff-window-config-saved` said again as the window is now -- so that
+  `n`, `p`, `j`, `v` and `C-l` lay nothing out and `|`, `m` and `?` lay it
+  out once each. A review is laid out the plain way, its panel a window of
+  the review's frame, whatever `ediff-window-setup-function` says for other
+  ediffs -- its default as the review opens, whichever buffer is current,
+  and again before every layout, as `ediff-toggle-multiframe` sets every
+  session there is: a control frame cannot be taken away, since
+  `ediff-recenter` gives it the focus at every `n` and `p`, which makes an
+  invisible one visible again. `C-c C-k` in the message `C-u C-c C-c`
+  opens goes back to the review laid out again, the panel out of sight
+  and the keyboard in the new side (`ecc-review-go-back`), where it popped
+  to the control buffer and left the panel on the screen with the
+  keyboard in it.
+
+- An ediff review is read in its two windows, which have its keys
+  (`ecc-review-direct-mode`). ediff keeps its keys in the control panel,
+  and ecc gave the panel the keyboard, so `c` could only be about a whole
+  difference. Now the review opens with the keyboard in the window of the
+  new side, and every key of the panel works in both windows -- `n`, `p`, `j`, `{`,
+  `}`, `a`, `s`, `/`, `T`, `t`, `M`, `y`, `u`, `d`, `l`, `!`, `?`, `i`, `q`,
+  `C-c C-c`, `C-c C-k`, `v`, `V`, `C-l`, `|`, `m`, `h`, `@`, `*`, `<`,
+  `>`, `##`, `#c` -- run in the control buffer as from the panel, with
+  the keyboard kept in the window or given back to it when ediff lays its
+  windows out again. Digits are a prefix argument there, as in the panel,
+  and `SPC` and `DEL` go on and back as `n` and `p` do.
+  `c` in a window comments on the line at point -- the old side on the
+  left, the new on the right, as `c` on a line of the diff review -- and
+  says there is nothing to comment on a line both sides share; `c` in
+  the panel still comments on the whole difference. `x` removes a
+  comment of the line at point first -- `d` in the diff review; in ediff
+  `u` and `d` scroll the reply pane back and on (above). Moving point drives the review:
+  after a command in a window, a difference that point has gone into
+  becomes the current one -- its colour, its bar, its number -- without
+  ediff's select, which lays both windows out again; the window being
+  read stays as it is, and the other is put at the line that stands
+  against point, at the same height on the screen -- counted in rows, so
+  that a comment under a line of one side, a wrapped line or a hidden file
+  does not set the two apart. Far from the window -- `M->`, a jump, a
+  search -- they are put together by lines of the buffer, and redisplay
+  settles the rest. A line taken out stands against the
+  place it was taken from. In the lines both sides share, the other side
+  is put on the same line of the file, and the current difference stays
+  the one read last; `n` and `p` then go from point to the difference
+  below or above it. Any command that moves point is followed that way --
+  `C-n`, `M-<`, a click; an isearch only when `C-s` stops on the next
+  match and when the search ends. Scrolling one window -- `C-v`, `M-v`, the
+  wheel -- is not followed yet; `v` and `V` scroll both and put the
+  other side against point again, without changing the current
+  difference. Nothing the review does by itself --
+  marking what changed in the differences on the screen, following the
+  files, a filter hiding the difference being read -- moves the cursor or
+  scrolls either window. `RET` opens the
+  file the line is in, at that line as the file is now: a review of
+  commits, or of a working tree changed since it was read, carries the
+  line through what changed after (`ecc-visit-shift-through`), and a line
+  of the left side opens where it stands now, or where it was. The file
+  goes in a frame of its own, the same one each time while it is there
+  (`ecc-review-direct--file-window`), and the review keeps its frame, its
+  windows and its keyboard. A file -- or a buffer visiting it -- too
+  large to follow a line through (`ecc-diff-max-file-size`), a binary one
+  and an unreadable one open at the line the review shows, and say which;
+  a path that is no longer a regular file is refused. `RET` in the control panel opens the file of the current
+  difference. Each window has a header line of keys, the
+  left one for reading and your comments, the right one for Claude,
+  opening, sending and closing; while the two sides are side by side the
+  left one is put at the right edge of its window (`:align-to`), so that
+  the two meet in the middle. The header line of the new side ends with
+  which difference is current out of how many, `3/12`, and what the
+  filter hides -- after every change of either, reading again included;
+  a window too narrow for every key and that leaves out the keys before
+  the last, `? all keys`, from the one before it until the rest fit, and
+  one too narrow even for `?` and that puts it first and the keys after
+  it, worked out as the header line is drawn, and drawn again
+  whenever what it reads changes --
+  and `?` shows every key, in a window as in the panel. `o` in the files pane
+  opens the file itself, at its first change in an ediff review and
+  beside the session in the diff review; `RET` there still moves the
+  review.
+
+### Changed
+
+- **Breaking.** `d` in an ediff review no longer removes a comment: it
+  scrolls the reply pane on, as `u` scrolls it back (above). `x` removes a
+  comment there -- in the control panel, a comment of the current
+  difference; in a window, one of the line at point first -- and `C-u x`
+  offers every comment of the review. The diff review keeps `d`.
+
+- `ecc-review-ediff-layout` replaces `ecc-review-ediff-split-window-function`:
+  `stacked` or `side-by-side` rather than a split function, and nil, ediff's
+  own layout, is gone. An ediff review no longer has a control frame on a
+  graphical Emacs (above).
+
+- An ediff review opens sooner. Both sides of every file are read by two
+  git processes instead of one each: `git cat-file --batch-check` for the
+  sizes, then `git cat-file --batch` for the blobs within
+  `ecc-review-max-bytes`, so a blob too large to show is never read. The
+  files go in uncoloured: what is on the screen is coloured before the
+  review is shown, for 0.2 s at most, and the rest a slice of 50 ms at a
+  time, on a timer that runs once and sets itself again for as long as
+  anything is left -- never a repeating one. A file is fontified 100
+  lines at a time, so a large one takes many slices rather than one long
+  wait, and both the first pass and a slice stop after a chunk as soon as
+  there is input waiting. A slice can be quit with `C-g`, and the file
+  is taken up again from that chunk; a quit of the first pass leaves the
+  rest to the timer. A file with a line over 4,000 characters is left
+  uncoloured (`ecc-review-ediff-fontify-max-line`). A file coloured before
+  goes in with its colours, and one read again after a change is coloured
+  later like the rest; either way only the faces are carried over, not
+  the `invisible`, `display` or `help-echo` a mode puts on its text, and
+  colouring a chunk at a time gives what colouring a file at once does.
+  The buffers files are fontified in go with the review, also when a side
+  is killed or setting a mode up is quit. ediff's "Processing difference
+  region N of M" and "Computing differences" are not shown while a review
+  is built or read again (`ecc-review-ediff-progress-regexp`); they still
+  go to `*Messages*`, and nothing else said meanwhile is hidden. Opening
+  a review of 57 files (24,639 lines against 35,897) took 1.70 s in batch
+  and takes 0.33 s: reading the two sides 0.80 s and now 0.06 s, writing
+  them 0.69 s and now 0.04 s, ediff 0.13 s as before
+  (`scripts/bench-review-ediff.el`).
+
+- An ediff review marks what changed inside the lines of every difference
+  on the screen, not only the current one (`ecc-review-ediff-refine-shown`).
+  They are refined as they come into view -- once the review opens, after
+  a move, after a scroll -- by a timer that runs once and gives way to the
+  keyboard, never all of them at once: each takes a diff process. Each is
+  visited once until the differences are computed again, and what ediff
+  says of it goes neither to the echo area nor to `*Messages*`.
+  `ediff-auto-refine-limit` holds for them as for the current one; `@` at
+  "hidden", or `h` leaving the other differences unpainted, clears them,
+  and turning either back refines what is on the screen again. A
+  difference ediff leaves stays marked.
+
+- `D` in `C-c c` (`ecc-global-map`) and in `ecc-menu` opens
+  `ecc-review-menu` instead of `ecc-review`; `D` there is `ecc-review` of
+  the session the menu names, which is the session of the buffer or its
+  project, else the one used last, as before. `G` still opens
+  `ecc-review-worktree` directly, the same as `w` in the menu.
+  `M-x ecc-review` and `M-x ecc-review-worktree` are unchanged.
+
+- The comments of an ediff review are the comments of the diff review:
+  numbered, kept across a refresh by the same rules, and listed, removed
+  and sent the same way, in the order of the review: by place, a comment
+  on the whole difference first, then those on the lines it takes out and
+  puts in, by line. `c` in the control panel comments the whole current
+  difference, and `c` in a window the line at point (above); where the
+  latest comment there is Claude's and you have not answered it, `c` in
+  the panel answers it. Whenever there is a comment to answer or edit, `c`
+  asks what to do -- answer it, edit yours, or a new comment -- with the
+  likeliest as the default, so that RET answers Claude. `a` shows or hides Claude's
+  comments instead of saying that a review reads, which `b` still says;
+  `{` and `}` move to the previous and next comment -- each one, its
+  difference and its line -- and `!` reads the review again. `x` offers
+  the outdated comments of the file as well, and off every difference, or
+  with `C-u`, every comment of the review that is shown; `C-u d` does that
+  in the diff review. A submodule, and a file git will not give, are
+  named on their separator line rather than shown as created or deleted.
+  A changed `ecc-review-max-bytes` or `ecc-review-ediff-fontify` shows at
+  the next `!`. Two ediff reviews of one session have two sides each. When
+  ediff computes the differences again itself (`##`, `#c`), the comments
+  are drawn again on the new ones. A reading of an ediff review that
+  finds the same two trees reads no file, and one that finds a change
+  reads and colours only the files that changed: a review of 40 files
+  read again took 0.68 s unchanged and 0.80 s with one file changed, and
+  takes 0.04 s and 0.08 s (`benchmark-run`, batch).
+
+- The review of what is not staged (`C-u G` with an empty range) is named
+  `*ecc-review: SESSION (unstaged changes)*`, not `(unstaged)`, and the
+  review of what is staged `(staged changes)`: with a space in them,
+  neither can be the name of a branch, whose review would otherwise share
+  the buffer and its comments. Code that looks the buffer up by name has
+  to use the new one.
+
+- `c` in the review buffer comments the line at point instead of the hunk
+  around it. On the `@@` line it still comments the whole hunk, and a
+  comment on a whole hunk is sent in the same form as before.
+
+- `g` no longer drops a comment whose hunk header changed ("Dropped N
+  comments whose hunk is gone"). A comment stays on its line while that
+  line says what it said between the same neighbouring lines; otherwise it
+  goes to the nearest line that does, no further than
+  `ecc-review-note-max-shift` (100) lines, so a change higher up in the file
+  moves it instead of losing it, and a comment on a blank line or a lone
+  brace does not wander off to another. A neighbour that is not known -- at
+  the first or last line of a hunk -- is not compared, so hunks merging or
+  splitting leave a comment where it was. A comment on a whole hunk goes to
+  the hunk with the same `@@` line, else to a hunk over the same lines of
+  the old side -- the baseline, which lines put in above do not move, so a
+  hunk put in above does not take the comment -- one that says the same
+  first when there are several; a hunk that only adds is found by where
+  it adds. A comment whose line has gone is kept, marked
+  outdated, above the first hunk of its file, and is still sent with
+  `(outdated)` and the hunk as it was.
+
+- Reading the review again -- `g`, `ecc-review` or `ecc-review-worktree` on
+  a review that is open, or Claude's `review_open` -- keeps your place: point,
+  and in each window showing the review its point and how far down the
+  window it was, go back to the same line by the same rule. It used to go
+  to the top. A window of the review in another tab's saved configuration is
+  out of reach and shows the review from the top when that tab comes back.
+
+- The control panel of an ediff review says the keys a review is read with
+  in two lines, ` n/p diff   c comment   { } comments   a Claude's   s files
+  / filter` and ` T tour   t next   M message   C-c C-c send   q quit
+  ! reread   ? all keys`, where it said ` c -comment   C-c C-c -send
+  q -quit   ? -help`. `?` lists `s`, `/`, `T`, `t`, `M` and `y` too. The
+  header line of the diff review, which said ` c comment  l list  d delete
+  C-c C-c send (C-u edits)  n/p hunk  RET source`, says ` c comment  { }
+  comments  d delete  n/p hunk  s files  / filter  T tour  t next
+  M message  C-c C-c send  ? all keys`; `l`, `C-u C-c C-c` and `RET` still
+  work. `?` in the diff review lists every one of its keys in the help
+  window, as `?` does in the ediff control panel; in the review of a
+  proposal it lists that review's own -- `C-c C-c` sending the comments as
+  a deny, `C-u C-c C-c` editing them first, `e` editing the proposal and
+  applying it -- and its header line is as it was.
+
+- `s` in the diff review shows the list of files (above) where it said
+  that the review is read-only: it was `diff-split-hunk` of `diff-mode`.
+
+- `{` and `}` in the review buffer move between comments. `diff-mode` has
+  them moving between files, which `N` and `P` still do.
+
+- `RET` or a click on a path to a video or a sound -- a path in Claude's
+  reply, a Files row, a tool heading -- plays the file in the machine's own
+  player (`open` on macOS, `browse-url-of-file` elsewhere) instead of
+  visiting it in a buffer of raw bytes. A line number after such a path is
+  ignored, and a missing file is still an error. The video extensions are
+  `ecc-image-video-extensions`; the sound ones are the new variable
+  `ecc-image-audio-extensions` (mp3, wav, m4a, aac, flac, ogg, oga, opus,
+  aiff, aif). A gif is still drawn in Emacs, and a sound is never drawn in
+  the transcript.
+
+- `C-c C-t` (`ecc-switch-session`) offers the tabs of the window it
+  switches -- the sessions of that window's project, or every session under
+  `ecc-tab-line-scope` `all` -- less the one the window already shows, and
+  `C-u C-c C-t` offers every session. It used to offer every session of
+  every project, the one already shown included, so that with one session
+  in the project the command took that one without asking and did nothing.
+  A window whose project has no other session is now refused with a pointer
+  to `C-u C-c C-t`. Under `ecc-use-spaces` a session from another project
+  is still shown in its own Space, and one another window of the Space
+  already shows is selected there rather than shown twice.
+
 ### Fixed
 
 - Installing ecc with package-vc byte-compiled everything under `demo/`,
@@ -25,6 +658,71 @@ that CLI, and the CLI moves without anybody upgrading ecc.
   itself. Native compilation does not read `.elpaignore`: with
   `package-native-compile` set, those files are still native-compiled in
   the background.
+
+- An ediff review no longer gives a difference to the wrong file. ediff
+  diffed the two sides whole, every file one after the other, and diff
+  paired lines of one file with lines of another across the separators
+  between them, where files were much alike and one grew by a lot: a
+  review of 59 files showed differences in 44, 1,611 of its 1,642
+  differences ran over the end of a file, files created in it had lines
+  on the old side, and comments went to the wrong file. Each file is now
+  diffed on its own: the files that differ go into a directory on each
+  side, one `diff -r` with the review's own program and options compares
+  the two, and the hunks are moved to where each file begins. A file diff
+  calls binary -- a NUL past the bytes git looks at -- is one difference,
+  the whole file; diff in trouble is an error with what it said, and a
+  line of its output that is no part of a diff is one that names the
+  file. Reading a review again no longer writes the two sides whole to
+  temporary files. The same review now
+  has 326 differences in all 59 files, and opening it takes the same
+  time (0.48 s before, 0.46 s after; the 57 files of
+  `scripts/bench-review-ediff.el`, 0.44 s and 0.45 s).
+
+- A request the CLI takes back while you are being asked about it -- an
+  interrupt closes it while a reason for denying, an answer to a question
+  or whether to save a buffer first is being read -- is no longer
+  answered after all. The answer went to a request id nothing was
+  waiting on, a denied request was marked done, and
+  `ecc-request-resolved-hook` ran twice. Every answer goes through
+  `ecc-perm-respond`, which now says "That request is no longer waiting"
+  and sends nothing, wherever it was answered from: the transcript, the
+  question and plan buffers, the dashboard, the sidebar, `C-c c a` and
+  `d`, and the reply pane of a review.
+
+- In an ediff review, what changed inside a line of the current difference
+  could not be seen under a theme that gives the fine differences nearly
+  the colour of the current one: modus-vivendi gives `ediff-fine-diff-B`
+  `#034f2f`, and the review lightened the current difference to about the
+  same. The two fine-difference faces are now remapped too, in the two
+  buffers of the review alone (`ecc-review-ediff-fine-diff-faces`): the
+  background of `diff-refine-removed` or `diff-refine-added`, carried at
+  least 12 points of lightness from the current difference and from the
+  differences around it (`ecc-review-ediff-fine-diff-contrast`), in bold.
+  Under modus-vivendi the words that changed on the right become `#039759`
+  against a current difference of `#00512d`. The colours are worked out from the colours as
+  written, not from the nearest the display can show.
+
+- A review of one commit in ediff (`C-u G` with `REV^!` and
+  `ecc-review-style` `ediff`) failed with "Git cannot diff against"; it
+  compares the commit with its first parent, as the diff review does.
+
+- A review of commits (`C-u G` with `a..b`, `a...b` or `REV^!`) listed the
+  untracked files of the working tree, which belong to none of those
+  commits. They are now appended only when the range involves the working
+  tree, which git decides: `git rev-parse --revs-only` names one revision
+  and no excluded one.
+
+- A session with no process behind it -- a recording opened with `h` to be
+  read -- said `✗ exited (code ?)` and "Exited with code ?", as if a CLI had
+  died with a code nobody knew. There was no CLI. It now says `○ not
+  running` and "Not running; R resumes it"; an exit that has a code still
+  names it.
+
+- Every call to an MCP tool that answers with content blocks -- the
+  `review_*` tools of ecc's own server among them -- left an `unknown: user
+  (Wrong type argument: listp, ...)` line in the transcript. The CLI
+  reports such a tool's `tool_use_result` as the array of those blocks,
+  and it was read as an object. It is now read only when it is one.
 
 ## [0.3.4] - 2026-09-27
 
