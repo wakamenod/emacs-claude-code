@@ -21,7 +21,7 @@ import Video from '../../../../components/Video.astro';
 
 セッションはプロジェクトのソースの隣に開きます。あとは普段どおり、質問し、読み、答えます。会話が実装の段階に入ったら、作業をこのウィンドウから切り出します。
 
-「worktree を切ってそこでやって」のように worktree を頼みます。[Emacs の MCP サーバー](/emacs-claude-code/ja/start/installation/)が有効（`ecc-mcp-enabled`）なら、Claude が `start_worktree_session` を呼び出します。Emacs は worktree を作り、リポジトリの下に専用の Space として開き、そこでセッションを始めて指示を渡します。元の会話には引き渡し先が報告され、会話はそのまま続きます。
+「worktree を切ってそこでやって」のように worktree を頼みます。[Emacs の MCP サーバー](/emacs-claude-code/ja/start/installation/#mcp-サーバーの有効化)が有効（`ecc-mcp-enabled`）なら、Claude が `start_worktree_session` を呼び出します。Emacs は worktree を作り、リポジトリの下に専用の Space として開き、そこでセッションを始めて指示を渡します。元の会話には引き渡し先が報告され、会話はそのまま続きます。
 
 ![worktree が専用の Space になった状態: リポジトリの隣に並ぶタブ、サイドバーのリポジトリ下に追加された行、そこで動くセッション](../../../../assets/usecase-worktree.png)
 

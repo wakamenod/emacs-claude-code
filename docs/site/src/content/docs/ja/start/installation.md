@@ -2,15 +2,15 @@
 title: インストール
 description: 動作要件、インストール手順、おすすめの初期設定。
 sidebar:
-  order: 2
+  order: 1
 ---
 
 ## 動作要件
 
-- **Emacs 29.1 以降。** `transient` は Emacs 29.1 以降に同梱されており、ほかに必要な外部パッケージはありません。
-- **[Claude Code CLI](https://docs.claude.com/en/docs/claude-code)。** `PATH` の通った場所に置くか、`ecc-executable` で指定します。
+- **Emacs 29.1 以降。** ほかのパッケージは要りません。`transient` は Emacs に含まれています。
+- **[Claude Code CLI](https://docs.claude.com/en/docs/claude-code)。** `PATH` に置くか、`ecc-executable` で指定します。
 
-必須なのはこの 2 つだけです。次のパッケージは任意です:
+次のパッケージは任意です。
 
 | パッケージ | 機能 |
 |---|---|
@@ -21,9 +21,7 @@ sidebar:
 
 ## インストール手順
 
-ecc は現在 MELPA に登録されていません。Git リポジトリから直接インストールしてください。
-
-リポジトリ名は `emacs-claude-code`、パッケージ名は `ecc` です。リポジトリ名からパッケージ名を自動推測するパッケージマネージャーでは、パッケージ名を明示的に指定する必要があります。
+ecc は MELPA にないので、Git リポジトリからインストールします。リポジトリは `emacs-claude-code`、パッケージは `ecc` なので、URL から名前を取るパッケージマネージャーにはパッケージ名を指定してください。
 
 ### Emacs 30 以降
 
@@ -33,7 +31,7 @@ ecc は現在 MELPA に登録されていません。Git リポジトリから�
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest))
 ```
 
-最新を追いかけずに特定のコミットに固定するには、`:rev "<commit-sha>"` を指定します。
+`:rev "<commit-sha>"` でコミットを固定できます。
 
 ### Emacs 29
 
@@ -41,7 +39,7 @@ ecc は現在 MELPA に登録されていません。Git リポジトリから�
 M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 ```
 
-そのあとは、通常の `use-package` 宣言（`:vc` なし）で設定します。
+そのあとは `:vc` なしの `use-package` で設定します。
 
 ### straight.el
 
@@ -52,7 +50,7 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 
 ## 最初の設定
 
-`M-x ecc-start` は autoload されるので、設定を書かなくても動きます。最初に入れておくと便利なのは、グローバルキーマップの割り当てです:
+`M-x ecc-start` は autoload されるので、設定なしでも動きます。グローバルキーマップをプレフィクスに割り当ててください。
 
 ```elisp
 (use-package ecc
@@ -61,11 +59,11 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
   :bind-keymap ("C-c c" . ecc-global-map))
 ```
 
-`ecc-global-map` があれば、権限の確認への応答、待機中のセッションへの移動、ダッシュボードの表示をどのバッファからでもできます。止まっているセッションを探し回る必要はありません。すべてのキーは[キーバインド一覧](/emacs-claude-code/ja/reference/key-bindings/)にあります。
+`ecc-global-map` で、リクエストへの応答、応答待ちのセッションへの移動、ダッシュボードの表示をどのバッファからでもできます。このサイトではキーを `C-c c` で書いています。[キーバインド](/emacs-claude-code/ja/reference/key-bindings/)を参照してください。
 
 ## MCP サーバーの有効化
 
-内蔵のループバック MCP サーバーを使うと、Claude は Emacs にエディタの情報（`xref` の参照、`imenu` のシンボル、`flymake` の診断）を問い合わせられます。また、Claude が[作業を専用の worktree のセッションに引き渡す](/emacs-claude-code/ja/features/spaces/#作業を-worktree-のセッションに引き渡す)こともできます。デフォルトでは無効です。任意の Elisp の評価は、さらに別の設定で明示的に許可する必要があります:
+ループバックインターフェイスで動く内蔵の MCP サーバーを使うと、Claude は Emacs から `xref` の参照、`imenu` のシンボル、診断を読み、[レビューで作業し](/emacs-claude-code/ja/features/review-claude/)、[作業を worktree のセッションに引き渡せます](/emacs-claude-code/ja/features/spaces/#作業を-worktree-のセッションに引き渡す)。デフォルトでは無効で、Elisp の評価はさらに別に有効にします。
 
 ```elisp
 (setq ecc-mcp-enabled t)
@@ -75,10 +73,8 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 
 ## 動作確認
 
-1. プロジェクト内の任意のファイルを開きます。
-2. `M-x ecc-start` を実行します。
-3. 下部のプロンプト領域にメッセージを入力し、`C-c C-c` を押します。
+プロジェクトのファイルを開いて `M-x ecc-start` を実行し、下のプロンプト領域にメッセージを入力して `C-c C-c` を押します。続きは[最初のセッション](/emacs-claude-code/ja/start/overview/)にあります。
 
-CLI が起動しない場合は、セッションのログバッファ（`C-c ?` のあと `L`、または `M-x ecc-show-log`）を確認してください。実際に実行したコマンドと、CLI プロセスから受け取った生の出力が記録されています。
+CLI が起動しないときは、`M-x ecc-show-log`（`C-c ?` → `L`）で、ecc が実行したコマンドと CLI が返したものを確認できます。
 
-そのほかの設定は、`M-x customize-group RET ecc` か[設定リファレンス](/emacs-claude-code/ja/reference/configuration/)で確認できます。セッション内で `C-c ?` を押すと Transient メニューが開き、すべてのコマンドとそのキーが表示されます。
+すべての設定は `M-x customize-group RET ecc` と[設定のページ](/emacs-claude-code/ja/reference/configuration/)にあります。

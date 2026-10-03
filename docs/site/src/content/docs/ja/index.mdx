@@ -43,10 +43,10 @@ hero:
            style="width:100%;height:auto;border-radius:0.5rem" />
   actions:
     - text: はじめる
-      link: /emacs-claude-code/ja/start/overview/
+      link: /emacs-claude-code/ja/start/installation/
       icon: right-arrow
     - text: 機能一覧
-      link: /emacs-claude-code/ja/features/menu/
+      link: /emacs-claude-code/ja/features/sessions/
       icon: right-arrow
       variant: minimal
     - text: GitHub で見る
@@ -57,34 +57,34 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-ecc は `claude` をヘッドレスで起動し、stream-json プロトコルでパイプ越しにやり取りして、会話を普通の Emacs バッファに描画します。トランスクリプトは読み取り専用のテキストなので、`isearch`、`occur`、`M-w` が Emacs のほかの場所と同じように使えます。権限の確認、diff、プランには、トランスクリプトからでも編集中のファイルからでも、キー 1 つで答えられます。
+ecc は `claude` をヘッドレスで起動し、stream-json プロトコルでパイプ越しにやり取りして、会話を普通の Emacs バッファに描画します。トランスクリプトは読み取り専用のテキストなので、`isearch`、`occur`、`M-w` が使えます。権限のリクエスト、diff、プランには、トランスクリプトからでも編集中のファイルからでも、キー 1 つで答えられます。
 
 <CardGrid>
   <Card title="どのバッファからでも応答">
-    保留中の権限リクエストはすべてのモードラインに表示され、`C-c c a` を押せばバッファを切り替えずに許可できます。
-    [キーバインド一覧](/emacs-claude-code/ja/reference/key-bindings/)
+    モードラインに全セッションの応答待ちのリクエストの数が出て、`C-c c a` でどこからでも最も古いものを許可できます。
+    [権限とプラン](/emacs-claude-code/ja/features/permissions/)
   </Card>
-  <Card title="変更内容を diff で正確に把握">
-    セッションの変更をすべて 1 つの diff で確認し、ハンクごとにコメントを付けて、1 つのプロンプトとして送り返せます。
-    [レビューとプランモード](/emacs-claude-code/ja/features/review/)
+  <Card title="変更をレビュー">
+    セッションの変更を、どう変えたかにかかわらず 1 つの diff で表示します。行にコメントを付け、1 つのプロンプトとして送れます。
+    [変更のレビュー](/emacs-claude-code/ja/features/review/)
   </Card>
-  <Card title="エディタの文脈を直接送信">
-    `@region`・`@cursor`・`@diagnostics` はプロンプトの送信前に展開されます。回答をコードのすぐ上にオーバーレイで表示することもできます。
-    [プロンプトとトランスクリプト](/emacs-claude-code/ja/features/prompt/)
+  <Card title="コードから送る">
+    リージョンを送る、ポイントのエラーを直す、プロンプトに `@region`・`@cursor`・`@diagnostics` を書く。
+    [コードから送る](/emacs-claude-code/ja/features/send/)
   </Card>
-  <Card title="複数セッションを並行管理">
-    1 つにまとまったダッシュボード、セッションごとのタブ、応答待ちのセッションを示す表示で、並行する複数のタスクを追えます。
+  <Card title="複数のセッション">
+    ダッシュボード、セッションごとのタブ、応答待ちのセッションに付く印。
     [セッション管理](/emacs-claude-code/ja/features/sessions/)
   </Card>
   <Card title="ターミナルへ引き渡す">
-    `ecc-tui-open` で会話を CLI 本来の画面に引き渡し、`ecc-tui-return` で Emacs に戻します。
-    [Transient メニュー](/emacs-claude-code/ja/features/menu/)
+    `ecc-tui-open` で会話を CLI 本来の画面に引き渡し、`ecc-tui-return` で取り戻します。
+    [引き渡し](/emacs-claude-code/ja/features/sessions/#ターミナルへ引き渡す)
   </Card>
-  <Card title="デフォルトで安全">
-    権限の確認はデフォルトで拒否、ループバック MCP サーバーはデフォルトで無効です。Elisp の評価には明示的な許可が必要です。
-    [設定リファレンス](/emacs-claude-code/ja/reference/configuration/)
+  <Card title="有効にするまでオフ">
+    リクエストは許可しない限り拒否されます。MCP サーバーは無効で、Elisp の評価はさらに別に有効にします。
+    [設定](/emacs-claude-code/ja/reference/configuration/)
   </Card>
 </CardGrid>
 
-必要なのは Emacs 29.1 以降と `claude` CLI だけで、外部パッケージは要りません。
-まず[概要](/emacs-claude-code/ja/start/overview/)を読み、次に[インストール手順](/emacs-claude-code/ja/start/installation/)を確認してください。
+必要なのは Emacs 29.1 以降と `claude` CLI だけで、ほかのパッケージは要りません。
+まず[インストール](/emacs-claude-code/ja/start/installation/)、次に[最初のセッション](/emacs-claude-code/ja/start/overview/)へ進んでください。
