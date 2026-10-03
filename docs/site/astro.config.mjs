@@ -10,6 +10,14 @@ export default defineConfig({
 	site: 'https://wakamenod.github.io',
 	base: '/emacs-claude-code',
 
+	// Pages that moved.  The keys are routes inside the base; the
+	// destinations carry it, since Astro writes them into the redirect
+	// page as they are.
+	redirects: {
+		'/features/menu': '/emacs-claude-code/reference/menu/',
+		'/ja/features/menu': '/emacs-claude-code/ja/reference/menu/',
+	},
+
 	integrations: [
 		starlight({
 			title: 'ecc',
