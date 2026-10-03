@@ -1407,7 +1407,7 @@ mode line; nothing changed asks for nothing."
 (ert-deftest ecc-review-direct-test-the-mode-line-says-the-file-at-point ()
   "Each mode line says the file its window's point is in, the right one then the status.
 A move in one window moves the other, and both say the file they are in
-afterwards; n and p into another file, too."
+afterwards; n and p into another file, too, and a move of Claude's."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
     (ecc-review-direct-test--with-files session control
@@ -1436,7 +1436,15 @@ afterwards; n and p into another file, too."
       (ecc-review-direct-test--type control 'B "n")
       (should (equal (ecc-review-direct-test--paths control) '("b.txt" "b.txt")))
       (ecc-review-direct-test--type control 'B "p")
-      (should (equal (ecc-review-direct-test--paths control) '("a.txt" "a.txt"))))))
+      (should (equal (ecc-review-direct-test--paths control) '("a.txt" "a.txt")))
+      ;; Moved with no command, as Claude's review_navigate moves it.
+      (with-current-buffer control
+        (ecc-review-move-to
+         (car (ecc-review-ediff--unit-lines
+               (seq-find (lambda (unit) (equal (plist-get unit :path) "b.txt"))
+                         (ecc-review-units))))
+         nil))
+      (should (equal (ecc-review-direct-test--paths control) '("b.txt" "b.txt"))))))
 
 (ert-deftest ecc-review-direct-test-the-blank-line-before-a-file-is-the-file-above ()
   "The blank line in front of a separator says the file above; the separator its own.

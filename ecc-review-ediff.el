@@ -889,11 +889,13 @@ where they were (`ecc-review-ediff--keeping-points').  FLAG is ediff's:
 `unselect-only' leaves the one it was on and selects nothing.  The panel
 is told once: by `ediff-select-hook' when N is a difference that is
 selected, and here when nothing is (`ecc-review-ediff--status-changed').
-Run in the control buffer."
+The hook runs before the two sides are put back, so the mode lines are
+told the file at point once they are.  Run in the control buffer."
   (ecc-review-ediff--keeping-points
     (ediff-unselect-and-select-difference n flag 'no-recenter))
-  (when (or (eq flag 'unselect-only) (not (ediff-valid-difference-p n)))
-    (ecc-review-ediff--status-changed)))
+  (if (or (eq flag 'unselect-only) (not (ediff-valid-difference-p n)))
+      (ecc-review-ediff--status-changed)
+    (ecc-review-direct--refresh-paths (current-buffer))))
 
 (defun ecc-review-ediff--refine-shown (&optional deadline)
   "Refine the differences on the screen that ediff has not, and mark them.
@@ -1694,7 +1696,9 @@ there; while it has not moved since, KEY is where the review is read.")
 (defun ecc-review-ediff--show-position (side position)
   "Put POSITION of SIDE, `A' or `B', a quarter of the way down its window.
 The point of the buffer moves too, so that a side out of sight shows it
-when it comes back; no window is selected."
+when it comes back; no window is selected, and no command runs after
+it, so the mode lines are told the file at point here.  Run in the
+control buffer."
   (let ((buffer (if (eq side 'A) ediff-buffer-A ediff-buffer-B))
         (window (if (eq side 'A) ediff-window-A ediff-window-B)))
     (when (buffer-live-p buffer)
@@ -1702,7 +1706,8 @@ when it comes back; no window is selected."
         (goto-char position))
       (when (and (window-live-p window) (eq (window-buffer window) buffer))
         (set-window-point window position)
-        (set-window-start window (ecc-review--window-start window position))))))
+        (set-window-start window (ecc-review--window-start window position)))
+      (ecc-review-direct--refresh-paths (current-buffer)))))
 
 (cl-defmethod ecc-review-move-to (place _window &context (major-mode ediff-mode))
   "Move the ediff review to PLACE, a comment or a line, selecting no window.
