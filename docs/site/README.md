@@ -112,6 +112,10 @@ The Japanese page follows the English one and is written once the English has
 settled. Until it exists, Starlight serves the English page at the Japanese
 URL, so a missing translation is not a broken link.
 
+Once the wording of a change has settled, run the `proofread` skill over the
+pages it touched: Vale for the English, textlint for the Japanese. Keep the
+house style where a finding goes against it, such as the missing Oxford comma.
+
 ## Two warnings that are not problems
 
 `make docs-build` prints these every time and exits 0:
