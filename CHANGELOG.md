@@ -280,30 +280,37 @@ Verified against **Claude Code CLI 2.1.281**.
   draft marked `[draft]`, a tab or a newline in a title made a space. The
   default is the pull request whose head is the branch checked out, not a
   fork's branch of the same name. A number typed is looked up with
-  `gh pr view N`, so a merged or closed one can be reviewed. What gh says
+  `gh pr view N`, so a merged or closed one can be reviewed; with none
+open, the question says so and asks for a number. gh's output is read
+as UTF-8 whatever the locale. What gh says
   when it fails -- not logged in, no GitHub remote -- is the `user-error`.
   The diff is made by the local git, not `gh pr diff`, so the review has
   whole files for ediff and `-f`, `-e`, comments and sending work as for
   `b`. Another branch's pull request is `BASE_OID...HEAD_OID`, GitHub's
   "Files changed", named `PR #N title`; for a merged one gh's `baseRefOid`
   is the base as it was at the merge, so the range still shows its
-  changes (#113, checked 2026-10-03 with gh 2.100.0). When either commit
-  is missing, `git fetch --refmap= REMOTE pull/N/head BASE` fetches them
-  into `FETCH_HEAD` alone, from the remote whose URL is the pull request's
+  changes (#113, checked 2026-10-03 with gh 2.100.0). Only a missing
+  commit is fetched, with `git fetch --refmap= REMOTE pull/N/head` for the
+  head and then the base branch for a base still missing, into
+  `FETCH_HEAD` alone, from the remote whose URL is the pull request's
   repository, else from that repository's address: no ref, no branch,
-  `HEAD` and the files untouched, and a commit still missing afterwards
-  is an error. The pull request of the branch checked out is reviewed as
-  `b` of the current branch is, the commit where `HEAD` parts from the
-  base against the working tree, named `PR #N: develop + working tree`,
-  so that what is not pushed is in it and its lines are those of the files
-  on disk.
+  `HEAD` and the files untouched. The base branch of a merged pull request
+  may be gone, and its fetch failing is an error only when the base is
+  still missing after it. The pull request of the branch checked out is
+  reviewed as `b` of the current branch is, the commit where `HEAD` parts
+  from the base against the working tree, and is named as `b` names it,
+  `develop + working tree`, so that the two are one review in one buffer;
+  what is not pushed is in it and its lines are those of the files on
+  disk.
 
 - A review whose right side is not the files on disk says so: another
   branch's pull request, `b` of another branch, `c` of a commit other than
   `HEAD`, `r` of two commits, and the same ranges opened by Claude with
   `review_open` (`ecc-review-elsewhere`). Its header line is
   `Review (RANGE)` rather than `Working tree (RANGE)` and adds
-  `the right side is a1b2c3d, not checked out here`; an ediff review puts
+  `the right side is a1b2c3d, not checked out here`, the head of a pull
+  request named by its branch, as in `fix/x (a1b2c3d)`
+  (`ecc-review-name-side`); an ediff review puts
   `right: a1b2c3d, not checked out` at the end of the right window's header
   line; `review_hunks` tells Claude the same; and the prompt the comments
   are sent in adds `ecc-review-elsewhere-note` under its first line, telling
