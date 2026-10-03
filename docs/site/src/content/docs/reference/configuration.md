@@ -1,134 +1,130 @@
 ---
 title: Configuration
-description: Complete reference of all customize settings and variables in ecc.
+description: Every customize setting of ecc, grouped by area.
 sidebar:
-  order: 2
+  order: 3
 ---
 
-This page lists every `defcustom` in ecc, grouped by area. All settings belong to the `ecc` customization group:
+This page lists every `defcustom` of ecc. They are all in the `ecc` group:
 
 ```
 M-x customize-group RET ecc
 ```
 
+The feature pages also name a few variables that are not in customize; set those with `setq`.
+
 ## The CLI and the session
 
 | Variable | Default | Description |
 |---|---|---|
-| `ecc-executable` | `"claude"` | Path to, or name of, the Claude Code CLI executable |
-| `ecc-permission-mode` | `nil` | Initial mode passed via `--permission-mode`. When `nil`, the CLI default is preserved. Supported values: `"default"`, `"acceptEdits"`, `"plan"`, `"auto"`, and `"bypassPermissions"` |
-| `ecc-plan-default-mode` | `"acceptEdits"` | Permission mode switched to when a plan is approved without explicitly selecting a target mode. When `nil`, approvals do not request a mode change (causing the CLI to return to default mode) |
-| `ecc-prompt-suggestions-enabled` | `nil` | When non-nil, passes `--prompt-suggestions` to the CLI to enable follow-up suggestions |
-| `ecc-command-wrapper-function` | `nil` | Hook function to transform the CLI command invocation before execution. Receives `(command-list project-root)` and returns the modified command list. When `nil`, commands run unchanged |
-| `ecc-disabled-plugins` | `nil` | List of plugin identifiers (`"name@marketplace"`) to disable for sessions started by ecc. Applied per session, so plugins stay enabled in the terminal client |
+| `ecc-executable` | `"claude"` | The Claude Code CLI: a name on `PATH` or a path |
+| `ecc-permission-mode` | `nil` | The mode a session starts in (`--permission-mode`): `"default"`, `"acceptEdits"`, `"plan"`, `"auto"` or `"bypassPermissions"`. `nil` keeps the CLI's default |
+| `ecc-plan-default-mode` | `"acceptEdits"` | The mode an approved plan switches to when you choose none. `nil` asks for no change, and the CLI goes back to its default mode |
+| `ecc-prompt-suggestions-enabled` | `nil` | Non-nil passes `--prompt-suggestions`, so the CLI suggests a next prompt |
+| `ecc-command-wrapper-function` | `nil` | A function that receives `(command-list project-root)` and returns the command to run instead |
+| `ecc-disabled-plugins` | `nil` | Plugins (`"name@marketplace"`) to turn off in the sessions ecc starts. The terminal client keeps them |
 
-There is deliberately no setting for the default model. The model is determined by your Claude Code settings for new sessions, and by the last assistant turn for resumed sessions. Passing `--model` unconditionally would override user selections permanently, undoing in-session `/model` changes. Use `ecc-set-model` (or `m` in the menu) to change the model for a running session instead.
-
-Similarly, there is no setting for session cost budgets; budgets belong in Claude Code settings.
+There is no setting for the model or for a budget: both belong to your Claude Code settings. A resumed session keeps the model of its last turn. To change the model of a running session, use `m` in the menu or `/model`.
 
 ## The transcript
 
 | Variable | Default | Description |
 |---|---|---|
-| `ecc-chat-return-sends` | `nil` | When `nil` (default), `RET` inserts a newline and `C-c C-c` sends. When `t`, `RET` sends immediately (matching the terminal client) |
-| `ecc-chat-text-width` | `100` | Maximum line width for rendered text, or `nil` to use full window width. Surplus space is padded into the right margin so adjacent window layouts remain unaffected |
-| `ecc-chat-line-spacing` | `0.15` | Additional line spacing below each line, following standard `line-spacing` semantics (a float is a fraction of the line height). `nil` disables added spacing |
-| `ecc-render-result-max-lines` | `12` | Maximum lines displayed for a tool result preview. The full result is always accessible with `RET` |
-| `ecc-render-inhibit-inline-diff` | `nil` | When `nil` (default), a call that changes a file -- Edit, MultiEdit, Write, NotebookEdit, and a Bash command the CLI reports file changes for -- comes up showing its diff. When `t`, those calls come up folded and `TAB` opens them |
-| `ecc-render-diff-max-lines` | `40` | Maximum lines displayed for inline diffs in tool and permission blocks. The full diff is always accessible with `RET` |
-| `ecc-diff-context-lines` | `3` | Lines of context displayed around modifications in the transcript |
-| `ecc-stream-throttle` | `0.05` | Interval in seconds to buffer streaming deltas before redrawing. Zero renders each delta immediately |
-| `ecc-show-hook-events` | `nil` | When non-nil, the transcript shows each hook firing, with its exit code and output. The hooks run either way. Read when a session starts |
-| `ecc-render-debounce` | `0.1` | Debounce delay in seconds before redrawing the active transcript region |
-| `ecc-image-inline` | `t` | When `t`, images in the transcript are shown. When `nil`, only the line naming the file is shown. That line is shown either way |
+| `ecc-chat-return-sends` | `nil` | `t` makes `RET` send, as in the terminal client; `C-c C-c` always sends |
+| `ecc-chat-text-width` | `100` | Width of the text in columns; `nil` uses the whole window |
+| `ecc-chat-line-spacing` | `0.15` | Extra space below each line, as in `line-spacing`; `nil` adds none |
+| `ecc-render-result-max-lines` | `12` | Lines shown of a tool result; `RET` shows all of it |
+| `ecc-render-inhibit-inline-diff` | `nil` | `t` shows the calls that change a file folded; `TAB` opens them |
+| `ecc-render-diff-max-lines` | `40` | Lines shown of a diff in a tool call or a request; `RET` shows all of it |
+| `ecc-diff-context-lines` | `3` | Context lines around a change in the transcript |
+| `ecc-stream-throttle` | `0.05` | Seconds to gather streamed text before drawing it; `0` draws each piece |
+| `ecc-render-debounce` | `0.1` | Seconds to wait before redrawing the part of the transcript that is changing |
+| `ecc-show-hook-events` | `nil` | Non-nil shows each hook that fires, with its exit code and output. The hooks run either way. Read when a session starts |
+| `ecc-image-inline` | `t` | `nil` shows only the line naming each image or video |
 
 ## Header line and mode line
 
 | Variable | Default | Description |
 |---|---|---|
-| `ecc-hint-context-indicator` | `t` | When non-nil, displays remaining context capacity in the session header line |
-| `ecc-prompt-suggestion-display` | `t` | When non-nil, displays ghost text suggestions from the CLI in the prompt area. Requires `ecc-prompt-suggestions-enabled` |
-| `ecc-mode-line-format` | `nil` | Format string for session status in the mode line. `nil` disables mode line display |
+| `ecc-hint-context-indicator` | `t` | Show the context window left in the header line |
+| `ecc-prompt-suggestion-display` | `t` | Show the CLI's suggestion in the empty prompt region (needs `ecc-prompt-suggestions-enabled`) |
+| `ecc-mode-line-format` | `nil` | A format for the session in the mode line; `nil` shows none |
 
-`ecc-mode-line-format` is `nil` by default because mode line space is limited and the header line already shows the same metrics. To turn it on, use these format specifiers:
+`ecc-mode-line-format` takes these specifiers:
 
 | Spec | Meaning |
 |---|---|
 | `%n` | Session name |
-| `%m` | Active model |
+| `%m` | Model |
 | `%p` | Permission mode |
-| `%l` | Remaining context capacity (percentage) |
-| `%t` | Total tokens in context window |
-| `%c` | Cumulative cost |
-| `%r` | Rate limit utilization |
+| `%l` | Context window left, as a percentage |
+| `%t` | Tokens in the context window |
+| `%c` | Cost so far |
+| `%r` | Rate limit used |
 | `%s` | Session state |
 
 ## Notifications
 
 | Variable | Default | Description |
 |---|---|---|
-| `ecc-notify-level` | `'message` | Notification verbosity: `'message` logs a single echo-area message, `'pulse` also flashes the transcript, `'desktop` sends a desktop system notification, and `nil` disables notifications |
-| `ecc-notify-events` | `'(turn-finished request exited)` | List of events triggering notifications: turn completion, pending requests, or process exits |
-| `ecc-notify-suppress-when-focused` | `t` | When non-nil, suppresses desktop notifications while Emacs has input focus |
-| `ecc-notify-sound` | `nil` | System sound name played with desktop notifications, or `nil` for silence (for example `"Glass"` on macOS) |
-| `ecc-notify-function` | `#'ecc-notify-default` | Custom notification dispatch function with signature `(SESSION EVENT TEXT)`. Overriding this replaces default notification handling entirely |
+| `ecc-notify-level` | `'message` | `'message` in the echo area, `'pulse` also flashes the transcript, `'desktop` a desktop notification, `nil` none |
+| `ecc-notify-events` | `'(turn-finished request exited)` | What notifies: a finished turn, a request, a process that exited |
+| `ecc-notify-suppress-when-focused` | `t` | No desktop notification while Emacs has the focus |
+| `ecc-notify-sound` | `nil` | A system sound for desktop notifications, such as `"Glass"` on macOS |
+| `ecc-notify-function` | `#'ecc-notify-default` | A function of `(SESSION EVENT TEXT)` that replaces the notification |
 
 ## Reviews
 
 | Variable | Default | Description |
 |---|---|---|
-| `ecc-review-style` | `'diff` | How `ecc-review` and `ecc-review-range` show changes. `'diff` uses a single read-only `diff-mode` buffer. `'ediff` displays every file in the review side by side in a single ediff session. Both are read-only and send the same prompt |
-| `ecc-review-menu-count-session-changes` | `t` | When non-nil, the review menu (`C-c c D`) shows how many files the session changed since it started. Counting them takes a snapshot of the working tree, about 35 ms in a repository of 300 files and 70 ms in one of 20,000. Set it to `nil` where that makes the menu slow to open |
-| `ecc-review-auto-refresh` | `t` | When non-nil, an open review reads the diff again when a tool of its session finishes, a turn ends, or a file of its repository is saved, keeping the comments and your place. A hidden review is read when it is shown. A review in ediff follows them too. `nil` reads it only with `g` |
-| `ecc-review-files-width` | `32` | Width in columns of the list of files that `s` shows beside a review |
-| `ecc-review-ediff-layout` | `'stacked` | How an ediff review opens: `'stacked` puts the old side above the new one with Claude's reply pane on the right, `'side-by-side` puts them left and right with the pane at the bottom. `\|` switches in an open review |
-| `ecc-review-talk-reply-width` | `75` | Width in columns of the pane right of a stacked ediff review that shows Claude's reply. A frame that would leave the diff fewer than 80 columns has the pane at the bottom instead |
-| `ecc-review-talk-reply-height` | `12` | Height in lines of the pane under a side-by-side ediff review that shows Claude's reply; `nil` shows no pane in either layout |
-| `ecc-review-talk-reply-place` | `'auto` | Where the reply pane goes: `'auto` beside the review as the layout says, `'frame` in a frame of its own for each review, closed with it, which never takes the focus |
+| `ecc-review-style` | `'diff` | `'diff` opens a review as one `diff-mode` buffer, `'ediff` [in ediff](/emacs-claude-code/features/review-ediff/) |
+| `ecc-review-menu-count-session-changes` | `t` | Show beside `D` in the review menu how many files the session changed. `nil` if it makes the menu slow to open |
+| `ecc-review-auto-refresh` | `t` | Read an open review again when its files may have changed; `nil` reads it only with `g` |
+| `ecc-review-files-width` | `32` | Width of the list of files beside a review |
+| `ecc-review-ediff-layout` | `'stacked` | `'stacked` or `'side-by-side`: how an ediff review opens |
+| `ecc-review-talk-reply-width` | `75` | Width of the reply pane right of a stacked ediff review |
+| `ecc-review-talk-reply-height` | `12` | Height of the reply pane under a side-by-side ediff review; `nil` shows no pane |
+| `ecc-review-talk-reply-place` | `'auto` | `'frame` puts the reply pane in a frame of its own |
 
 ## Windows
 
 | Variable | Default | Description |
 |---|---|---|
-| `ecc-window-large-frame-min-height` | `80` | With `ecc-use-spaces` off: minimum frame height (in lines) required before allocating a third session window. Below this threshold, sessions share two windows and the tab line provides navigation |
-| `ecc-window-sub-height` | `0.33` | With `ecc-use-spaces` off: height of the third session window (as a fraction or line count). Taken from the primary frame area (typically code buffers) rather than the side session column |
-| `ecc-use-spaces` | `t` | When non-nil, each project gets a tab on the tab bar (a Space), leaving the windows inside it alone. When nil, ecc uses the older layout: transcripts appear in side windows with roles (main, sub-1, sub-2) assigned for a project, with no tabs, sidebar, or worktree commands. See [Spaces and worktrees](/emacs-claude-code/features/spaces/) |
-| `ecc-space-always-session` | `t` | Whether a Space always holds a session, with `ecc-use-spaces` on. When non-nil, opening a Space with nothing running starts a session, and closing its last session closes the Space. When nil, a Space opens showing only its source files, and stays open until the project's last buffer is killed as well |
-| `ecc-space-session-min-width` | `80` | Columns a session window needs, with `ecc-use-spaces` on, before the row of transcripts is split again. If there is no room for another column this wide, the new session reuses an existing window (the one whose session was worked in least recently) rather than making every transcript narrower. `window-min-width` sets the lower limit |
-| `ecc-sidebar-width` | `28` | Width of the sidebar, in columns. 28 columns take a different share of the frame on a 13-inch laptop with a large font than on a 34-inch display, and project names differ in length |
-
-The default value of `ecc-window-large-frame-min-height` (80 lines) separates laptop screens from larger external displays: a 14-inch screen typically fits ~58 lines and a 16-inch screen ~67 lines, whereas standard desktop monitors accommodate 110+ lines.
-
-`ecc-tab-line-scope` is not in customize; set it with `setq`. `'project` (the default) lists a session window's own project's sessions in its tab line, and `'all` lists every session.
+| `ecc-use-spaces` | `t` | A tab for each project. `nil` uses the [older layout](/emacs-claude-code/features/spaces/#without-spaces) |
+| `ecc-space-always-session` | `t` | Opening a Space with nothing running starts a session, and closing its last session closes the Space |
+| `ecc-space-session-min-width` | `80` | The narrowest a transcript is made before a new session reuses a window instead |
+| `ecc-sidebar-width` | `28` | Width of the sidebar |
+| `ecc-window-large-frame-min-height` | `80` | With Spaces off: frame height in lines needed for a third session window |
+| `ecc-window-sub-height` | `0.33` | With Spaces off: height of the third session window |
 
 ## Side buffers and popups
 
 | Variable | Default | Description |
 |---|---|---|
-| `ecc-btw-display` | `'window` | Display mode for `/btw` side-queries (`'window` or `'posframe`) |
-| `ecc-usage-display` | `'window` | Display mode for `ecc-usage` reports (`'window` or `'posframe`) |
+| `ecc-btw-display` | `'window` | Where `/btw` answers appear |
+| `ecc-usage-display` | `'window` | Where the usage report appears |
 
-Both options accept `'window` or `'posframe`. `'posframe` renders the buffer as a floating popup over the frame (requires the [posframe](https://github.com/tumashu/posframe) package and a graphical frame). If posframe is unavailable, ecc falls back to standard window splits.
+Both take `'window` or `'posframe`, a popup over the frame. `'posframe` needs the [posframe](https://github.com/tumashu/posframe) package and a graphical frame; without them, ecc uses a window.
 
 ## The MCP server
 
-ecc can run an in-process MCP server on the loopback interface and register it with each session, so Claude can query Emacs for editor context: `xref`, `imenu`, `tree-sitter`, project metadata, and diagnostics. It also lets Claude [comment on the review buffer](/emacs-claude-code/features/review/#comments-from-claude).
+ecc can run an MCP server on the loopback interface and register it with each session. Claude then reads Emacs's `xref`, `imenu`, tree-sitter, project and diagnostics, [works in the review](/emacs-claude-code/features/review-claude/), and [hands work to a worktree](/emacs-claude-code/features/spaces/#handing-work-to-a-session-in-a-worktree).
 
 | Variable | Default | Description |
 |---|---|---|
-| `ecc-mcp-enabled` | `nil` | When non-nil, registers the built-in MCP server with every session started. Starts on first use and stops via `ecc-mcp-stop` |
-| `ecc-mcp-enable-execute-code` | `nil` | When non-nil, exposes the MCP tool allowing Claude to evaluate arbitrary Elisp |
-| `ecc-mcp-excluded-tools` | `nil` | List of tool names to exclude from MCP registration. Use it for tools that add noticeable latency |
+| `ecc-mcp-enabled` | `nil` | Register the server with every session. It starts on first use; `M-x ecc-mcp-stop` stops it |
+| `ecc-mcp-enable-execute-code` | `nil` | Offer the tool that lets Claude evaluate any Elisp |
+| `ecc-mcp-excluded-tools` | `nil` | Tool names to leave out, such as tools that are slow |
 
-:::caution[Two independent decisions]
-`ecc-mcp-enable-execute-code` is not enabled by `ecc-mcp-enabled`. Because code executed via this tool runs with full user permissions in Emacs, server activation and code execution require separate explicit opt-ins.
+:::caution[Two separate opt-ins]
+`ecc-mcp-enabled` does not turn on `ecc-mcp-enable-execute-code`. Code run through that tool has all your permissions in Emacs.
 :::
 
 ## Logging
 
 | Variable | Default | Description |
 |---|---|---|
-| `ecc-log-max-lines` | `5000` | Maximum lines retained in session log buffers. `nil` keeps unlimited log history |
-| `ecc-debug` | `nil` | When non-nil, logs internal diagnostic traces alongside raw protocol messages |
+| `ecc-log-max-lines` | `5000` | Lines kept in a session's log buffer; `nil` keeps all |
+| `ecc-debug` | `nil` | Also log ecc's internal traces |
 
-`ecc-show-log` displays the raw protocol log for the session associated with the current buffer. Failed dispatches are never dropped silently: they remain visible in the log and appear as `unknown` nodes in the transcript.
+`M-x ecc-show-log` (`L` in the menu) shows the session's protocol log. A message ecc fails to handle stays in the log and shows as an `unknown` node in the transcript.

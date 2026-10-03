@@ -32,12 +32,21 @@ must never start needing a JavaScript toolchain. A fresh checkout has no
 ```
 src/content/docs/
   index.mdx              the English landing page (template: splash)
-  start/                 Start here
-  reference/             Reference
+  start/                 Start here: installation, a first session
+  features/              Features: one page for each thing a user does
+  reference/             Reference: key bindings, the transient menu, settings
+  usecases/              Use cases: a piece of work from start to end
   ja/                    the same tree, in Japanese
 src/components/
   Video.astro            a scene video with its two subtitle tracks
 ```
+
+A feature page says what a user does and the keys and settings for it; the
+algorithms, timings and layout rules behind it belong in docstrings and the
+CHANGELOG. The review is three pages (the diff, ediff, Claude in the review),
+and the transient menu is a reference page that links to the feature pages.
+A page that moves leaves an entry in `redirects` in `astro.config.mjs`, for
+both locales.
 
 Each directory is one sidebar group, declared in `astro.config.mjs`. A group is
 an object with a `label`, a `translations: { ja: … }` for the Japanese label,

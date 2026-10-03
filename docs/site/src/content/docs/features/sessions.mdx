@@ -1,59 +1,74 @@
 ---
 title: Session management
-description: Starting, resuming, switching, and managing Claude Code sessions in Emacs.
+description: Starting, resuming, searching, restoring and switching between Claude Code sessions in Emacs.
 sidebar:
-  order: 2
+  order: 1
 ---
 
 import Video from '../../../components/Video.astro';
 
-A session consists of a running `claude` process, its transcript buffer, and its session name. The initial session in a project is automatically named after the project directory; subsequent sessions prompt for a name. Killing a session buffer terminates the CLI process, but the conversation history remains saved on disk.
+A session is a running `claude` process, its buffer and its name. The first session in a project is named after the project directory; later ones ask for a name. Killing a session stops the process; the conversation stays on disk.
+
+| Key | Command | Action |
+|---|---|---|
+| `C-c c c` | `ecc-start` | Start a session in the current buffer's project (`C-u`: choose the directory) |
+| `C-c c r` | `ecc-resume` | Resume a conversation (`C-u`: fork it) |
+| `C-c c R` | `ecc-rename-session` | Rename the session |
+| `C-c c v` | `ecc-show-session` | Show the session's window and move point to the prompt |
+| `C-c c i` | `ecc-interrupt` | Interrupt the turn, keeping the work done so far |
+| `C-c c ?` then `k` | `ecc-kill` | Stop the process and kill the session's buffers |
+| `C-c c t` | `ecc-tui-open` | [Hand over to the terminal](#handing-over-to-the-terminal) |
 
 ## Where a session starts
 
-`C-c c c` (`ecc-start`) starts a session in the project of your current buffer. It uses the buffer's file or directory, or falls back to the last buffer that visited one. Starting from a transcript, the dashboard, a help window, or the scratch buffer uses that same fallback. A prefix argument (`C-u C-c c c`) prompts for a directory, offering that project as the default.
+`C-c c c` starts in the project of the current buffer's file or directory. From a buffer without one (a transcript, the dashboard, `*scratch*`) it uses the last buffer that had one. `C-u C-c c c` asks for the directory.
 
-Check where your session starts: **a session's directory is fixed when the CLI starts** and cannot be changed afterwards. If you start in the wrong project, you must kill the session and start over. The echo area reports the starting directory, and the header line displays the project name for the life of the session.
+:::caution[The directory is fixed when the CLI starts]
+A session cannot move to another directory. If it started in the wrong project, kill it and start again there. The echo area names the directory, and the header line names the project.
+:::
 
 ## Resuming conversations
 
-Press `r` in the [transient menu](/emacs-claude-code/features/menu/#r--resume) or run `M-x ecc-resume-menu`. The picker lists active sessions in this Emacs instance first, followed by recorded conversations in this project, sorted by most recent activity.
+`C-c c r`, or `r` in the menu, lists the sessions of this Emacs first, then the recorded conversations of this project, most recent first.
 
 ![The resume picker, listing five conversations, each with an icon for its state](../../../assets/resume.png)
 
 | Icon | State |
 |---|---|
-| ▶ | Active session running in this Emacs instance |
-| ● | Terminated session buffer in this Emacs instance |
-| ◉ | Active conversation running in another process |
-| ↺ | Recorded conversation on disk |
+| ▶ | Running in this Emacs |
+| ● | Stopped, with its buffer still in this Emacs |
+| ◉ | Running in another process |
+| ↺ | Recorded on disk |
 
-Each entry displays its name, last modified time, and directory (or the initial prompt for historical recordings). Use `-f` to branch a new conversation from the selection instead of resuming it directly.
+Each entry shows its name, when it was last active, and its directory or first prompt. `-f` in the menu, or `C-u C-c c r`, forks a new conversation from the one you pick instead of continuing it.
 
-:::caution[Resuming an active conversation branches history]
-If two processes write to the same session ID simultaneously, the recording can become corrupted, because the CLI does not lock the file. ◉ marks this state; ecc asks for confirmation before resuming.
+:::caution[Resuming a running conversation forks it]
+Two processes writing to one session ID branch its recording, and the CLI does not lock the file. ◉ marks such a conversation, and ecc asks before resuming it.
 :::
 
-Session recordings are stored by Claude Code under `~/.claude/projects`, so conversations started in the terminal CLI are listed here too. Each recording forms a conversation tree: editing, interrupting, and resuming create new branches.
+Recordings live under `~/.claude/projects`, so conversations from the terminal client are listed too. `C-c c h` opens a recording to read without starting a process; `r` in it resumes it. When a CLI process dies, ecc offers to resume it.
 
-`h` inspects a recording without launching a process, and `r` from within that buffer resumes it. If a CLI process terminates unexpectedly, ecc prompts to resume it.
+## Handing over to the terminal
+
+`C-c c t` hands the conversation to [ghostel](https://github.com/dakra/ghostel), which shows the CLI's own interface in an Emacs buffer. ecc interrupts the turn and stops its own process first, so the conversation does not fork, and the transcript keeps following the terminal.
+
+<Video name="handover" label="A session handed over: the CLI's own interface takes the window, with the conversation resumed" />
+
+`u` in the menu (`ecc-tui-return`) reads what the terminal added and resumes the session in Emacs. If the terminal is still running, the session comes back when it exits.
 
 ## Bringing sessions back after a restart
 
-ecc saves the open Spaces and sessions to `ecc-state.eld` in `user-emacs-directory`. It rewrites the file each time a session starts or is killed and each time a tab opens or closes, so the file stays current even after a crash. Only an Emacs that has had a session of its own, or has run `ecc-restore`, writes to the file. An Emacs that only opens a tab or reads a recording leaves it as it was.
+ecc saves the open Spaces and sessions to `ecc-state.eld` in `user-emacs-directory` whenever a session or a tab opens or closes. `M-x ecc-restore` brings them back:
 
-Run `M-x ecc-restore` to bring them back:
+- The Spaces open in their old order, with their sessions. With `ecc-use-spaces` off, only the sessions come back.
+- Each session comes back stopped. Its CLI starts when you send a prompt or press `R`.
+- A session that is already open, or whose directory is gone, is skipped. Running the command twice does no harm.
 
-- The Spaces open in their old tab order, with their sessions side by side. With `ecc-use-spaces` off, only the sessions come back.
-- Each session is read from its recording and comes back stopped. Its CLI starts only when you send a prompt or press `R`. That is also when ecc checks whether another process is running the same conversation.
-- ecc skips a session that is already open, so running the command twice does no harm. A recording you opened with `h` to read does not count as open: it becomes the restored session, in the buffer it already has.
-- ecc skips a session or Space whose directory no longer exists, and names it in the message.
-
-A session you kill yourself leaves the file, so what comes back is what was open when Emacs exited. Sessions that an earlier Emacs saved and you have not restored yet stay in the file until you restore them. Starting other sessions first, or quitting Emacs first, does not drop them. To restore on every start, call `(ecc-restore)` from your init file.
+A session you kill yourself is not saved. Sessions an earlier Emacs saved stay in the file until you restore them. To restore on every start, call `(ecc-restore)` from your init file.
 
 ## Searching past conversations
 
-If you remember what was discussed rather than the session name, you can search past conversations by their message text. Press `/` in the transient menu, `C-c c /`, or run `M-x ecc-search`. Matching conversations in the current project are displayed newest first, showing matching lines and context; press `RET` or `o` to open the conversation at point. A prefix argument (`C-u`) searches all projects instead of the current one.
+`C-c c /` (`ecc-search`) searches the prompts and replies of this project's recorded conversations; `C-u` searches every project. The match is literal and ignores case. Tool results and file contents are not searched.
 
 ```
 3 sessions said permission prompt in ~/Projects/emacs-claude-code/
@@ -66,101 +81,58 @@ Dashboard columns  2026-09-06 10:22  f6743727  1 hit
     ‹ …an idle row is dimmed, and a permission prompt puts `!` in the gutter…
 ```
 
-`›` marks user prompts, and `‹` marks Claude's responses. Each block's header displays the conversation title, last modified date and time, the abbreviated session ID, and the total match count.
-
-| Key | Action |
-|---|---|
-| `RET` / `o` | Open the recorded conversation at point |
-| `n` / `p` | Move to the next or previous session |
-| `g` | Re-run search |
-
-Searches match conversation text: user prompts and assistant responses. Tool results, raw tool-call JSON, and file contents read by the model are excluded so searches do not match every session that happened to inspect a given file. Searches are case-insensitive literal string matches, not regular expressions.
-
-To keep searches fast across session recordings that may contain tens of thousands of messages, ecc first uses `rg` or `grep` to identify candidate recording files, then parses only the matching lines within those files. Even across projects with a hundred session recordings totaling over 100 MB, queries complete in well under a second. If neither search tool is available on `PATH`, ecc falls back to reading each recording directly, which gives the same results more slowly.
-
-:::note[Abandoned conversation branches are also searched]
-Determining which messages belong to the active line of conversation requires parsing the entire recording, which the fast pre-filter avoids. Matches in conversation branches that were rewound or abandoned therefore still appear in results and open the corresponding session.
-:::
+`›` marks your prompts and `‹` Claude's replies. `RET` or `o` opens the conversation, `n` and `p` move between conversations, and `g` searches again. Abandoned branches are searched too.
 
 ## The dashboard
 
-Open the dashboard with `B` in the transient menu, `C-c c B`, or `M-x ecc-dashboard`.
+`C-c c B` (`ecc-dashboard`) lists the sessions of this Emacs.
 
 ![The dashboard listing four sessions: one waiting for an answer, one running, one idle and one that has exited](../../../assets/dashboard.png)
 
-The dashboard lists all sessions managed by this Emacs instance. It reads directly from internal state without polling. Conversations in other processes or saved on disk can be accessed via `r` or `h`.
-
-| Column | Description |
-|---|---|
-| Name | Session name (as shown in tabs and the mode line) |
-| State | Current activity and whether user input is pending |
-| Project | Directory basename (full path is shown in tooltip) |
-| Model | Active model reported by the CLI |
-| Last prompt | Prompt submitted in the most recent turn |
-| Updated | Timestamp of the most recent response |
-| Cost | Cumulative session cost |
-
-Waiting sessions appear at the top, followed by remaining sessions sorted by recent activity. The gutter marks `!` for sessions awaiting user response and `▶` for the currently visible session; idle rows are dimmed. The header line displays aggregate state counts, total cost, and current rate limit headroom based on data received from the CLI.
+Each row shows the name, state, project, model, last prompt, last answer time and cost. Sessions waiting for you come first, marked `!`. The header line totals the states and the cost, and shows the rate limits.
 
 | Key | Action |
 |---|---|
-| `RET` | Switch to session |
-| `+` | Start new session |
-| `k` | Kill session process |
-| `D` | Delete session recording from disk |
-| `r` | Rename session |
-| `R` | Resume session |
-| `a` / `d` | Allow or deny oldest pending request |
-| `C` / `S` | View session capabilities / skills |
-| `U` | View usage and rate limits |
-| `g` | Refresh dashboard |
-
-`k` stops the process while keeping the recording on disk so it can still be resumed via `r`, and asks first, since stopping a session takes its window and transcript with it. `D` permanently deletes the recording file.
-
-`a` and `d` ask what they are about to answer before answering it — set `ecc-answer-confirm` to `nil` to skip that — and they leave the tools listed in `ecc-answer-exclude-tools` (`Bash` by default) alone: a shell command is read in the transcript, which `RET` opens, rather than answered from a summary cut to fit a column. The sidebar's `a` and `d` behave identically. See [Prompt and transcript](/emacs-claude-code/features/prompt/) for what answering sends.
+| `RET` | Switch to the session |
+| `+` | Start a session |
+| `k` | Stop the session (asks first); the recording stays |
+| `D` | Delete the session's recording from disk |
+| `r` / `R` | Rename / resume the session |
+| `a` / `d` | Allow or deny its oldest request ([details](/emacs-claude-code/features/permissions/#answering-a-request)) |
+| `C` / `S` | Show its [capabilities](/emacs-claude-code/features/other/#capabilities) / skills |
+| `U` | Show [usage](/emacs-claude-code/features/other/#usage) |
+| `g` | Refresh |
 
 ## The tab line
 
-Each session appears as a tab in the tab line of its project's session windows.
+Each session window has a tab for each session of its project.
 
 ![A session window whose tab line carries four tabs, each coloured by what its session is doing](../../../assets/tabs.png)
 
-| Mark | State | Color |
+| Mark | State | Colour |
 |---|---|---|
-| `⚠` | Awaiting user input | Flashing warning highlight |
-| `▶` | Busy / working | Green |
-| `✗` | Process terminated | Red |
-| `○` | Restored by `ecc-restore`, not started yet | Dimmed |
+| `⚠` | Waiting for you | Blinking warning |
+| `▶` | Working | Green |
+| `✗` | Process ended | Red |
+| `○` | Restored, not started yet | Dimmed |
 | (none) | Idle | Dimmed |
 
-The tab for the active session window is bold and underlined; active background sessions use a muted green. Set `ecc-tab-blink` to `nil` to stop the blinking.
+The tab of the session in the window is bold and underlined. `(setq ecc-tab-blink nil)` stops the blinking.
 
-Tabs stay in creation order so their positions remain stable. Clicking a tab with `mouse-1` switches the window to that session. Inside a session buffer, `C-c C-t` (`ecc-switch-session`) lets you pick from the window's other tabs. `C-u C-c C-t` lists every session. With `ecc-use-spaces` on, a session from another project opens in that project's Space instead of this window. Clicking the `x` button prompts to stop the session; the window stays where it is and moves to the tab beside the one that closed — the tab to its right, or the one to its left when it was the rightmost. A tab another window of the frame is already showing is skipped, so the same transcript never ends up in two windows. The window closes with its tab only when there is nothing left for it to show.
+Clicking a tab switches the window to that session. `C-c C-t` in a session buffer chooses from the window's tabs, and `C-u C-c C-t` from every session; with Spaces on, a session of another project opens in that project's Space. The `x` on a tab stops the session, and the window moves to the next tab.
 
 <Video name="switch" label="The session window changing from one session to another: the selected tab moves from greet to notes and the transcript is replaced" />
 
-To show session state in the global Emacs tab bar, set `ecc-tab-bar-state` and use `tab-bar-tab-name-function #'ecc-tab-bar-tab-name`.
+`(setq ecc-tab-line-scope 'all)` lists every session in each tab line. To mark session state in the Emacs tab bar too, set `ecc-tab-bar-state` to `t` and `tab-bar-tab-name-function` to `#'ecc-tab-bar-tab-name`.
 
-A window's tabs list only that window's own project's sessions. Two session windows side by side in different projects show separate rows, and neither lists the other's sessions. Set `ecc-tab-line-scope` to `'all` to list every session in a single row.
+The header line under the tabs shows the session's status, the project, and the context window left, which turns amber and then red.
 
-You can still reach a session outside the scope with `C-u C-c C-t` (`ecc-switch-session`), the dashboard (`C-c c B`), or `C-c c n` (`ecc-next-attention`). Its tab is not on screen, so it cannot blink when waiting for an answer. The mode line `⚠ecc:N` count and notifications still report it.
+## Waiting sessions
 
-Under the tab line, the header line displays the session's current status on the left, the project name beside it, and the remaining context window capacity on the right (turning amber and red as capacity diminishes).
+A session waiting for an answer shows in three places:
 
-## Focusing one project
+- `⚠ecc:N` in every mode line counts the waiting requests of all sessions; clicking it opens the dashboard.
+- Its tab blinks.
+- A notification, set by `ecc-notify-level` (`'message`, `'pulse`, `'desktop` or `nil`) and `ecc-notify-events`.
 
-`M-x ecc-focus-project` resets the frame to show only one project, for a frame full of transcripts from other projects. It kills nothing and stops no processes.
-
-With Spaces on, you do not need it: every project has a tab of its own, and switching to that tab does the same job. See [Spaces and worktrees](/emacs-claude-code/features/spaces/).
-
-## Pending request indicators
-
-- `⚠ecc:N` in the mode line: `N` indicates total pending requests across all sessions. Clicking it opens the dashboard.
-- Notifications: Configurable via `ecc-notify-level` (`'message`, `'pulse`, `'desktop`, or `nil`) and `ecc-notify-events` (turn completion, pending requests, or process termination).
-- Visual tab indicators: The tab marks described above.
-
-`n` and `N` jump to the next waiting request, either globally or within the current project. Both work from any buffer via `ecc-global-map`, as do `a`, `d`, and `1`–`4`.
-
-All three indicators are on by default.
-
-All configuration options mentioned here are detailed in the [configuration reference](/emacs-claude-code/reference/configuration/).
+`C-c c n` jumps to the next waiting request, and `C-c c N` to the next one in this project.
