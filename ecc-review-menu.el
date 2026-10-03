@@ -74,8 +74,14 @@ of the current branch when that is itself one of them -- main against
 origin/main is what has not been pushed.  See
 `ecc-review-menu-guess-base' for how one is chosen.")
 
-(defvar ecc-review-menu-commit-count 100
-  "How many recent commits `c' in `ecc-review-menu' offers.")
+(defvar ecc-review-menu-commit-count 2000
+  "How many recent commits `c' in `ecc-review-menu' offers.
+The cost is opening the prompt, one `git log', and filtering the list at
+each key: about 20 ms to open and 2 ms a key at 2000 (measured
+2026-10-03 with the substring style; orderless is slower).  A commit outside
+the list is still taken: the prompt does not require a match, and any
+name git resolves -- a full hash, HEAD~3000, a tag -- is reviewed, as
+`ecc-review-menu-commit-range' resolves it with rev-parse.")
 
 (defconst ecc-review-menu--labels
   '((session . "since the session started")
