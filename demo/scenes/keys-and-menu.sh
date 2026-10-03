@@ -21,7 +21,7 @@ say "2. B is the dashboard -- the same list, in the form that does not stay on t
 e "(demo-report-moved-keys)"; sleep 9
 say "C-c c r resumes at once now; C-u C-c c r forks.  b and B are the pair to watch"; sleep 8
 
-say "3. The two reviews: since the session started, and since the last commit"; sleep 5
+say "3. The review menu: D since the session started, w since the last commit"; sleep 5
 e "(demo-report-review-keys)"; sleep 8
 
 say "4. And the keys whose commands went away"; sleep 4

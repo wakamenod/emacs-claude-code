@@ -818,7 +818,7 @@ the current buffer around it, as Emacs 31 does."
 ;;;; The trees a working tree review compares
 
 (ert-deftest ecc-review-ediff-test-trees ()
-  "Every range `ecc-review-worktree' takes resolves to two trees."
+  "Every range `ecc-review-range' takes resolves to two trees."
   (skip-unless (executable-find "git"))
   (ecc-review-ediff-test--with-directory directory
     (ecc-review-ediff-test--repository directory)
@@ -875,7 +875,7 @@ the current buffer around it, as Emacs 31 does."
                 (ecc-review-ediff-test--git directory "add" "gone.txt")
                 (ecc-review-ediff-test--write (concat directory "new.txt") "hello\n")
                 (setf (ecc-session-project-root session) directory)
-                (setq control (ecc-review-ediff-worktree-buffer session))
+                (setq control (ecc-review-ediff-range-buffer session))
                 (with-current-buffer control
                   (should (equal ecc-review--range "HEAD"))
                   (should (equal (mapcar #'car ecc-review-ediff--sections)
@@ -883,7 +883,7 @@ the current buffer around it, as Emacs 31 does."
                   (should (= ediff-number-of-differences 3)))
                 (ecc-review-ediff-test--quit control)
                 ;; Without a revision only what is not staged is shown.
-                (setq control (ecc-review-ediff-worktree-buffer session ""))
+                (setq control (ecc-review-ediff-range-buffer session ""))
                 (with-current-buffer control
                   (should (equal (mapcar #'car ecc-review-ediff--sections)
                                  '("new.txt" "x.txt")))))
@@ -1577,7 +1577,7 @@ With more than one comment to answer or edit, which is asked."
           (unwind-protect
               (progn
                 (setq one (ecc-review-ediff-test--rich session directory))
-                (setq two (ecc-review-ediff-worktree-buffer session ""))
+                (setq two (ecc-review-ediff-range-buffer session ""))
                 (let ((sides (lambda (control)
                                (buffer-local-value 'ecc-review-ediff--buffers control))))
                   (should-not (memq (car (funcall sides one))
@@ -1700,7 +1700,7 @@ unchanged review reads no file at all."
       (ecc-review-ediff-test--repository directory)
       (setf (ecc-session-project-root session) directory)
       (dolist (range '(staged "" "HEAD"))
-        (let ((diff (plist-get (ecc-review--worktree-content session range nil nil)
+        (let ((diff (plist-get (ecc-review--range-content session range nil nil)
                                :nothing))
               (ediff (plist-get (ecc-review-ediff--content session range nil nil)
                                 :nothing)))

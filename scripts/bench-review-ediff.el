@@ -5,7 +5,7 @@
 ;; Opens an ediff review of two commits of this repository in batch and
 ;; times its steps one by one: reading both sides from git, fontifying
 ;; every file, writing the two buffers, and ediff's own diff and
-;; regions; then the whole of `ecc-review-ediff-worktree-buffer', which
+;; regions; then the whole of `ecc-review-ediff-range-buffer', which
 ;; is what the user waits for.  The numbers of Phase 5 of the review
 ;; work were measured with it on 2026-10-01; run it again before and
 ;; after a change to `ecc-review-ediff.el':
@@ -86,7 +86,7 @@
     (ecc-test-with-fake-session session
       (setf (ecc-session-project-root session) root)
       (let ((control (ecc-bench-review--time "open the review, all of it"
-                       (ecc-review-ediff-worktree-buffer
+                       (ecc-review-ediff-range-buffer
                         session ecc-bench-review-range root))))
         (ecc-review-ediff-quit control)))))
 

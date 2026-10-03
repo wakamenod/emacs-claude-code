@@ -100,7 +100,7 @@ Called by demo.el."
 
 (defun demo-open-ediff ()
   "Open the review of everything uncommitted, in ediff, as G opens it."
-  (ecc-review-worktree demo-session "HEAD" demo-root)
+  (ecc-review-range demo-session "HEAD" demo-root)
   (let ((window (demo-side-window 'B)))
     (demo-say (format "right point just after opening: %d (window %d, start %d)"
                       (with-current-buffer (window-buffer window) (point))

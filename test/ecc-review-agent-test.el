@@ -797,7 +797,7 @@ and a review_open without paths is answered, not failed."
         (ecc-review-agent-test--git other "commit" "-q" "-m" "init")
         (ecc-review-agent-test--write (concat other "f.txt") "two\n")
         (ecc-review-agent-test--write (concat other "g.txt") "two\n")
-        (setq control (ecc-review-ediff-worktree-buffer session "HEAD" other (list "f.txt")))
+        (setq control (ecc-review-ediff-range-buffer session "HEAD" other (list "f.txt")))
         (unwind-protect
             (progn
               (should-not (string-search "were not applied"
