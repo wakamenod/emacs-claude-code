@@ -505,14 +505,26 @@ itself otherwise."
           ((string-match "\\`\\(.+\\)\\^!\\'" range) (match-string 1 range))
           (t range))))
 
+(defvar ecc-review--side-names (make-hash-table :test #'equal)
+  "Hash of (ROOT . COMMIT) to the name of COMMIT as the right side of a review.
+`ecc-review-name-side\=' fills it, and `ecc-review-elsewhere\=' reads it.")
+
+(defun ecc-review-name-side (root commit name)
+  "Call the full id COMMIT of ROOT by NAME when it is the right side of a review.
+The head of a pull request is reviewed by its id, which says nothing to
+somebody who has to check it out: `ecc-review-pr-range\=' gives it the
+name of its branch here."
+  (puthash (cons root commit) name ecc-review--side-names))
+
 (defun ecc-review-elsewhere (root range)
   "Return the right side of a review of ROOT against RANGE when it is not here.
 Nil when the files on disk are what the review shows on its right: a
 review of the working tree (`ecc-review--range-includes-worktree-p'),
 of what is staged, or of commits that end at HEAD.  Otherwise the
 revision on the right (`ecc-review--right-revision'), a name as it was
-written and an id as its short id: a branch not checked out, a pull
-request, a commit of the past.  Comments on such a review are about
+written and an id as its short id, after the name
+`ecc-review-name-side' gave it when there is one: a branch not checked
+out, a pull request, a commit of the past.  Comments on such a review are about
 lines that are in none of the files Claude edits, and the review and
 its prompt say so (`ecc-review-elsewhere-note')."
   (when (and root (stringp range) (not (string-empty-p range))
@@ -523,7 +535,9 @@ its prompt say so (`ecc-review-elsewhere-note')."
        ((null commit) right)
        ((equal commit (ecc-review--commit root "HEAD")) nil)
        ((string-prefix-p (downcase right) commit)
-        (ecc-review--commit-line root commit))
+        (let ((short (ecc-review--commit-line root commit))
+              (name (gethash (cons root commit) ecc-review--side-names)))
+          (if name (format "%s (%s)" name short) short)))
        (t right)))))
 
 ;;;; What the working tree held at one moment

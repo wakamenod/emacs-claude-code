@@ -73,7 +73,12 @@ Neither program may ask anything: there is no terminal to answer on."
         (process-environment (append '("GH_PROMPT_DISABLED=1" "GH_NO_UPDATE_NOTIFIER=1"
                                        "NO_COLOR=1" "GIT_TERMINAL_PROMPT=0")
                                      process-environment))
-        (default-directory (file-name-as-directory directory)))
+        (default-directory (file-name-as-directory directory))
+        ;; gh prints its JSON in UTF-8 whatever the locale says, and a
+        ;; GUI Emacs started without LANG would read a Japanese title
+        ;; through another coding system.
+        (coding-system-for-read 'utf-8)
+        (coding-system-for-write 'utf-8))
     (unwind-protect
         (with-temp-buffer
           (let ((code (condition-case err
@@ -180,8 +185,10 @@ table of the lines, in their order."
          (lines (mapcar #'ecc-review-pr-line prs))
          (default (when-let* ((pr (ecc-review-pr-default prs branch)))
                     (ecc-review-pr-line pr)))
-         (answer (completing-read (format-prompt "Review the pull request (or its number)"
-                                                 default)
+         (answer (completing-read (if prs
+                                      (format-prompt "Review the pull request (or its number)"
+                                                     default)
+                                    "No open pull request; type a number: ")
                                   (if table-function (funcall table-function lines) lines)
                                   nil nil nil 'ecc-review-pr--history default)))
     (ecc-review-pr-choose root answer prs)))
@@ -236,23 +243,37 @@ fetched from by its address."
 
 (defun ecc-review-pr-fetch (root pr oids)
   "Make sure the repository of ROOT has OIDS, the commits of PR it needs.
-When one is missing, the head of PR and its base branch are fetched
-from its repository (`ecc-review-pr-remote') into FETCH_HEAD alone:
-refs/pull/N/head is there for a pull request from a fork as well, and
+Only what is missing is fetched, from its repository
+\(`ecc-review-pr-remote') into FETCH_HEAD alone: refs/pull/N/head for
+the head -- there for a pull request from a fork as well -- and then,
+when the base is still missing, the base branch, whose commit is often
+one the head brought along.  The base branch of a merged pull request
+may have been deleted since; that fetch failing is an error only when
+the base is still missing after it, and the error says what git said.
 --refmap= keeps git from moving the remote-tracking branch of the base
-on the way.  Nothing is fetched when all of them are here.  Return
-non-nil when something was fetched."
+on the way.  Return non-nil when something was fetched."
   (when (seq-remove (lambda (oid) (ecc-review-pr--has-commit-p root oid)) oids)
-    (let ((remote (ecc-review-pr-remote root (plist-get pr :url))))
-      (message "Fetching pull request #%d from %s..." (plist-get pr :number) remote)
-      (ecc-review-pr--run ecc-review-git-executable root
-                          "fetch" "--quiet" "--no-tags" "--recurse-submodules=no" "--refmap=" remote
-                          (format "pull/%d/head" (plist-get pr :number))
-                          (plist-get pr :base))
+    (let* ((number (plist-get pr :number))
+           (remote (ecc-review-pr-remote root (plist-get pr :url)))
+           (missing (lambda (key)
+                      (let ((oid (plist-get pr key)))
+                        (and (member oid oids) (not (ecc-review-pr--has-commit-p root oid))))))
+           (fetch (lambda (refspec)
+                    (ecc-review-pr--run ecc-review-git-executable root
+                                        "fetch" "--quiet" "--no-tags" "--recurse-submodules=no"
+                                        "--refmap=" remote refspec)))
+           (failed nil))
+      (message "Fetching pull request #%d from %s..." number remote)
+      (when (funcall missing :head-oid)
+        (funcall fetch (format "pull/%d/head" number)))
+      (when (funcall missing :base-oid)
+        (condition-case err
+            (funcall fetch (plist-get pr :base))
+          (user-error (setq failed (error-message-string err)))))
       (dolist (oid oids)
         (unless (ecc-review-pr--has-commit-p root oid)
-          (user-error "Pull request #%d: %s is not in %s even after fetching it"
-                      (plist-get pr :number) oid remote)))
+          (user-error "Pull request #%d: %s is not in %s even after fetching it%s"
+                      number oid remote (if failed (concat "; " failed) ""))))
       t)))
 
 ;;;; What a pull request compares
@@ -274,11 +295,16 @@ commits are fetched first if need be (`ecc-review-pr-fetch')."
     (if (ecc-review-pr-own-p pr branch)
         (progn
           (ecc-review-pr-fetch root pr (list base-oid))
+          ;; Called as `b' calls the same commit, not after the pull
+          ;; request: the review is named by what it compares, and `b'
+          ;; and `p' of one fork are one review in one buffer, whichever
+          ;; opened it first.
           (cons (or (ecc-review--merge-base root base-oid "HEAD")
                     (user-error "Pull request #%d: %s and HEAD have no commit in common"
                                 number (plist-get pr :base)))
-                (format "PR #%d: %s + working tree" number (plist-get pr :base))))
+                (format "%s + working tree" (plist-get pr :base))))
       (ecc-review-pr-fetch root pr (list base-oid head-oid))
+      (ecc-review-name-side root head-oid (plist-get pr :head))
       (cons (format "%s...%s" base-oid head-oid)
             (format "PR #%d %s" number
                     (ecc--truncate (string-trim (replace-regexp-in-string

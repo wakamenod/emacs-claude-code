@@ -313,9 +313,11 @@ A number typed that is not listed is asked of gh by itself."
                     ;; b.txt of the PR; c.txt, on main since, is not in it.
                     (should (string-search "b/b.txt" (buffer-string)))
                     (should-not (string-search "c.txt" (buffer-string)))
+                    ;; The head by its branch, so that it is known what to check out.
                     (should (equal ecc-review--elsewhere
-                                   (ecc-review-pr-test--git work "rev-parse" "--short"
-                                                            head)))
+                                   (format "topic (%s)"
+                                           (ecc-review-pr-test--git work "rev-parse" "--short"
+                                                                    head))))
                     (should (string-search "not checked out here"
                                            (ecc-review--header-line)))))
               (ecc-review-pr-test--kill-reviews))))))))
@@ -337,7 +339,10 @@ A number typed that is not listed is asked of gh by itself."
              (fork (ecc-review-pr-test--git work "merge-base" base "HEAD")))
         (should (ecc-review-pr-own-p pr "topic"))
         (should (equal (ecc-review-pr-range work pr "topic")
-                       (cons fork "PR #1: main + working tree")))
+                       (cons fork "main + working tree")))
+        ;; Named as b names the same comparison: one review, one buffer.
+        (should (equal (ecc-review-menu-branch-range work "main")
+                       (cons fork "main + working tree")))
         (ecc-test-with-fake-session session
           (setf (ecc-session-project-root session) work)
           (let ((ecc-review-menu--state (ecc-review-menu-make-state session work))
@@ -349,7 +354,7 @@ A number typed that is not listed is asked of gh by itself."
                   (progn
                     (ecc-review-menu-pull-request pr nil)
                     (should (equal (buffer-name shown)
-                                   "*ecc-review: test (PR #1: main + working tree)*"))
+                                   "*ecc-review: test (main + working tree)*"))
                     (with-current-buffer shown
                       (should (string-search "b, edited" (buffer-string)))
                       (should (string-search "b/d.txt" (buffer-string)))
@@ -357,6 +362,67 @@ A number typed that is not listed is asked of gh by itself."
                       (should-not (string-search "not checked out"
                                                  (ecc-review--header-line)))))
                 (ecc-review-pr-test--kill-reviews)))))))))
+
+;;;; Less usual pull requests
+
+(ert-deftest ecc-review-pr-test-no-open-pr-asks-for-a-number ()
+  "With no open pull request the question says so, and a number still works."
+  (ecc-review-pr-test--with-gh dir
+    (ecc-review-pr-test--answer dir "list.json" nil)
+    (ecc-review-pr-test--answer dir "view-5.json"
+                                (ecc-review-pr-test--pr 5 "old" "h" "main" "1" "2"))
+    (let ((prompt nil))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (p &rest _) (setq prompt p) "5")))
+        (should (equal (plist-get (ecc-review-pr-read dir "main") :number) 5))
+        (should (string-prefix-p "No open pull request; type a number" prompt))))))
+
+(ert-deftest ecc-review-pr-test-gh-output-is-utf-8 ()
+  "A Japanese title through gh comes out right whatever Emacs decodes with."
+  (ecc-review-pr-test--with-gh dir
+    (ecc-review-pr-test--answer
+     dir "list.json" (list (ecc-review-pr-test--pr 1 "日本語のタイトル" "h" "main" "1" "2")))
+    (let ((default-process-coding-system '(latin-1 . latin-1))
+          (process-coding-system-alist nil)
+          (locale-coding-system 'latin-1))
+      (should (equal (plist-get (car (ecc-review-pr-list dir)) :title)
+                     "日本語のタイトル")))))
+
+(ert-deftest ecc-review-pr-test-fetch-with-the-base-branch-gone ()
+  "A merged PR whose base branch is gone: the head brings the base along.
+Only what is missing is fetched, and a base still missing is an error
+that says what git said."
+  (skip-unless (executable-find "git"))
+  (ecc-review-pr-test--with-gh dir
+    (seq-let (work _base _head) (ecc-review-pr-test--upstream dir)
+      (let* ((seed (file-name-as-directory (expand-file-name "seed" dir)))
+             ;; The base the PR was merged into, on no branch any more,
+             ;; and a head on top of it.
+             (gone-base (progn (ecc-review-pr-test--git seed "checkout" "-q" "-b" "release" "main~1")
+                               (ecc-review-pr-test--commit seed "r.txt" "r
+")))
+             (head (ecc-review-pr-test--commit seed "s.txt" "s
+"))
+             (pr (progn (ecc-review-pr-test--git seed "push" "-q" "origin"
+                                                 "HEAD:refs/pull/2/head")
+                        (car (ecc-review-pr-parse
+                              (json-serialize (ecc-review-pr-test--pr 2 "t" "release2" "release"
+                                                                      head gone-base)))))))
+        (should-not (ecc-review-pr--has-commit-p work gone-base))
+        ;; The base branch release is on no remote: fetching it would fail.
+        (should (ecc-review-pr-fetch work pr (list gone-base head)))
+        (should (ecc-review-pr--has-commit-p work gone-base))
+        ;; A base nothing brings: git's own words are in the error.
+        (let* ((lone (progn (ecc-review-pr-test--git seed "checkout" "-q" "--orphan" "lone")
+                            (ecc-review-pr-test--commit seed "l.txt" "l
+")))
+               (pr (car (ecc-review-pr-parse
+                         (json-serialize (ecc-review-pr-test--pr 2 "t" "release2" "release"
+                                                                 head lone)))))
+               (err (should-error (ecc-review-pr-fetch work pr (list lone head))
+                                  :type 'user-error)))
+          (should (string-search "even after fetching it; git fetch" (cadr err)))
+          (should (string-search "release" (cadr err))))))))
 
 ;;;; Saying the right side is not on disk
 
@@ -411,7 +477,7 @@ Return the full ids of the three commits."
         (cl-letf (((symbol-function 'ecc-window-display-review) #'ignore))
           (unwind-protect
               (progn
-                (with-current-buffer (ecc-review-worktree-buffer session "main...develop" directory)
+                (with-current-buffer (ecc-review-range-buffer session "main...develop" directory)
                   (setq-local ecc-review--comments-function (lambda () (list comment)))
                   (should (equal ecc-review--elsewhere "develop"))
                   (let ((header (ecc-review--header-line)))
@@ -426,7 +492,7 @@ Return the full ids of the three commits."
                     (should (string-search "do not check anything out yourself" prompt)))
                   (should (string-search "not checked out here" (ecc-review-agent--what))))
                 ;; The working tree against HEAD says none of it.
-                (with-current-buffer (ecc-review-worktree-buffer session "HEAD" directory)
+                (with-current-buffer (ecc-review-range-buffer session "HEAD" directory)
                   (setq-local ecc-review--comments-function (lambda () (list comment)))
                   (should-not ecc-review--elsewhere)
                   (should (string-search "Working tree (HEAD)"
@@ -451,7 +517,7 @@ Return the full ids of the three commits."
         (unwind-protect
             (save-window-excursion
               (delete-other-windows)
-              (setq control (ecc-review-ediff-worktree-buffer session "main...develop"
+              (setq control (ecc-review-ediff-range-buffer session "main...develop"
                                                               directory))
               (with-current-buffer control
                 (should (equal ecc-review--elsewhere "develop"))
