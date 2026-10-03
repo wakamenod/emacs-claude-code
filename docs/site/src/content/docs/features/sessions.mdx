@@ -119,7 +119,7 @@ Each session window has a tab for each session of its project.
 
 The tab of the session in the window is bold and underlined. `(setq ecc-tab-blink nil)` stops the blinking.
 
-Clicking a tab switches the window to that session. `C-c C-t` in a session buffer chooses from the window's tabs, and `C-u C-c C-t` from every session; with Spaces on, a session of another project opens in that project's Space. The `x` on a tab stops the session, and the window moves to the next tab.
+Clicking a tab switches the window to that session. `C-c C-t` in a session buffer chooses from the window's tabs, and `C-u C-c C-t` from every session; with Spaces on, a session of another project opens in that project's Space. The `x` on a tab asks, then stops the session, and the window moves to the next tab. `(setq ecc-tab-close-confirm nil)` skips the question.
 
 <Video name="switch" label="The session window changing from one session to another: the selected tab moves from greet to notes and the transcript is replaced" />
 

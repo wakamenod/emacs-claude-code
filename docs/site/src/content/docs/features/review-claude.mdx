@@ -24,7 +24,7 @@ Claude cannot write or change your comments, but it can remove them. Each sessio
 | `review_remove_comment` | Removes one comment, including one of yours it has dealt with |
 | `review_clear_comments` | Removes Claude's comments, and yours only when asked |
 
-`review_open` takes the same comparisons as the [review menu](/emacs-claude-code/features/review/#choosing-what-to-compare): ask for "the staged changes", "this whole branch" or "just this commit". A review Claude opens appears beside the session without taking the keyboard or the window you are in. If there is no free window, it waits in its buffer.
+`review_open` takes the same comparisons as the [review menu](/emacs-claude-code/features/review/#choosing-what-to-compare): ask for "the staged changes", "this whole branch" or "just this commit". A review Claude opens appears beside the session without taking the keyboard or the window you are in. It follows a `display-buffer-alist` rule of yours for review buffers, as long as the rule leaves your window and tab alone. If there is no free window, the review waits in its buffer.
 
 The tools write no files, so they are allowed without asking, and the transcript records each call as `auto-allowed`. To be asked as for any other tool, set `ecc-review-agent-auto-allow` to `nil`.
 

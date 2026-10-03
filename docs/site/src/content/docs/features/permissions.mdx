@@ -7,7 +7,7 @@ sidebar:
 
 import Video from '../../../components/Video.astro';
 
-Before Claude edits a file or runs a command, it asks. The request appears in the transcript with its diff or command, and the session is marked as waiting in its tab, the mode line (`⚠ecc:N`) and the [sidebar](/emacs-claude-code/features/spaces/#the-sidebar). Nothing is allowed without you: a request that can no longer be answered is recorded as denied.
+In the `default` [permission mode](#permission-modes), Claude asks before it edits a file or runs a command. Other modes let some of these through without asking. The request appears in the transcript with its diff or command, and the session is marked as waiting in its tab, the mode line (`⚠ecc:N`) and the [sidebar](/emacs-claude-code/features/spaces/#the-sidebar). A request that can no longer be answered is recorded as denied.
 
 ## Answering a request
 
