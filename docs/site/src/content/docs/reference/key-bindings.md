@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-`ecc-global-map` is a prefix keymap containing commands you frequently need while editing other files — allowing you to respond to permission prompts and switch to active sessions without navigating to their buffers first. Bind it to any convenient prefix; the README recommends `C-c c`:
+`ecc-global-map` is a prefix keymap for the commands you need while editing other files. With it you answer permission prompts and switch to active sessions without going to their buffers first. Bind it to any prefix; the README recommends `C-c c`:
 
 ```elisp
 (use-package ecc
@@ -30,7 +30,7 @@ Or, without `use-package`:
 | `/` | Search past conversations by message content |
 | `?` | Open transient menu |
 
-Keybindings correspond directly to commands in the [transient menu](/emacs-claude-code/features/menu/), ensuring consistent mnemonic shortcuts across Emacs. `?` opens the transient menu itself, providing quick access to all ecc commands from outside a session buffer.
+The keys are the same as in the [transient menu](/emacs-claude-code/features/menu/). `?` opens the transient menu itself, which reaches every ecc command from outside a session buffer.
 
 Infrequently used commands are not listed here. To create, open, or remove a worktree, press `?` then `W`. To switch a window to another session, press `C-c C-t` inside a session buffer. To focus one project with `ecc-use-spaces` off, run `M-x ecc-focus-project`.
 

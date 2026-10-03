@@ -1,0 +1,234 @@
+---
+title: Prompt and transcript
+description: How to interact with the prompt input area and transcript in a session buffer.
+sidebar:
+  order: 3
+---
+
+import Video from '../../../components/Video.astro';
+
+A session buffer contains the transcript at the top, a prompt input area below a divider, and a footer at the bottom. The transcript is read-only text with its own local keymap attached via text properties, so single keys run commands. The prompt area has no such property and follows the major mode map (binding only `RET`, `TAB`, movement keys, and `C-c C-` prefixes), so keys type characters as usual.
+
+## The prompt region
+
+### Writing and sending
+
+| Key | Action |
+|---|---|
+| `RET` | Insert newline (or send, if `ecc-chat-return-sends` is enabled) |
+| `S-RET`, `C-j` | Insert newline |
+| `C-c C-c` | Send prompt |
+| `C-c C-k` | Clear prompt area |
+| `C-k` | Kill visual line (bounded by prompt area) |
+| `C-a` / `C-e` | Move to beginning / end of visual line |
+| `TAB` | Complete slash command or `@` reference |
+| `/` | Insert slash (shows commands when pressed at an empty prompt) |
+
+### Prompt history and suggestions
+
+| Key | Action |
+|---|---|
+| `M-p` / `M-n`, `C-<up>` / `C-<down>` | Previous or next prompt from history |
+| `C-c C-r` | Select from history and insert at point |
+| `C-c C-s` | Accept CLI prompt suggestion |
+
+Prompt history is shared across all sessions, so a prompt typed in one session is immediately available in another.
+
+`M-p` replaces the entire prompt area, which makes older entries impractical to reach. `C-c C-r` (`ecc-prompt-history-insert`) shows history as a completion list, one line per prompt, newest first, and inserts the full chosen prompt at point. Any text already written stays where it is.
+
+The CLI may suggest a follow-up prompt after a turn or two. Suggestions appear in the empty prompt area as ghost text; press `C-c C-s` to accept it as an editable draft.
+
+<Video name="suggestion" label="A suggestion standing in the empty prompt region, taken with C-c C-s and sent" />
+
+Suggestions appear only when `ecc-prompt-suggestions-enabled` is non-nil (which passes `--prompt-suggestions` to the CLI). Not all models support suggestions.
+
+### Prefix keybindings (C-c C-)
+
+| Key | Action |
+|---|---|
+| `C-c C-q` | Show queued prompts |
+| `C-c C-z` | Interrupt running turn (`C-c C-g` is deliberately unbound: it cancels the prefix, as everywhere else) |
+| `C-c C-x` | Toggle editor context attachment |
+| `C-c C-i` | Insert image |
+| `C-c C-a` / `C-c C-d` | Allow or deny pending request |
+| `C-c C-n` / `C-c C-p` | Move to next / previous turn |
+| `C-c C-b` | Show `/btw` side-queries |
+| `C-c C-t` | Switch window to another session |
+| `C-c C-e` | Export conversation as Markdown |
+| `S-TAB` | Cycle permission mode |
+| `C-c ?` | Open transient menu |
+
+`C-c C-a` and `C-c C-d` allow responding without leaving the prompt area: they answer the request at point if one exists, otherwise the oldest pending request in this session, or finally the oldest across all sessions.
+
+### `@` references
+
+<Video name="at-cursor" label="A prompt with @cursor in it: the reference becomes the file and the line the point was on, and the code goes with it" />
+
+`@` in a prompt references context for Claude to read. `TAB` completes the references listed below and project files.
+
+| Reference | Description |
+|---|---|
+| `@region` | Active region, formatted as a quoted code block |
+| `@cursor` | Current line at point, including surrounding context lines |
+| `@diagnostics` | Diagnostics (Flymake/Flycheck) for the current buffer |
+| `@path:10-40` | Specific lines (e.g. 10–40) of the named file |
+| `@path` | File path reference resolved directly by the CLI |
+
+Emacs expands the first four references before sending: each reference is replaced by a short label in the prompt, and the referenced content is appended in a quoted block below a divider (duplicate references share a single block). The echo area confirms attached content and warns if `@region` was used without an active selection.
+
+The region, cursor, and diagnostics are captured from the buffer you were editing before switching to the session buffer.
+
+### Slash commands
+
+![The slash command list open over a session, each command with the description the CLI gave it](../../../assets/slash.png)
+
+Typing `/` at the beginning of the prompt displays the command menu; `TAB` completes slash commands anywhere in the prompt. Each command includes its description from the CLI.
+
+`/model`, `/effort`, `/permissions`, `/config`, and `/btw` prompt for their argument first, because the CLI answers with usage instructions when it gets no argument. Terminal-only commands are omitted from the completion list, though you can still run them by typing the full command.
+
+A few commands that the CLI does not list are handled directly by Emacs and never reach the model: `/btw`, `/hooks`, `/plugins`, `/login`, `/logout`, `/auth-status`, and `/resume`.
+
+### Side questions with `/btw`
+
+Sending `/btw <question>` runs a side-query without adding to the main conversation. Emacs intercepts the command and invokes a lightweight CLI instance that shares earlier context but runs without tool access. Neither the question nor the answer is recorded in the transcript or session history.
+
+<Video name="btw" label="A turn still running while a side question is asked and answered beside it" />
+
+The active turn is not interrupted: the `/btw` response arrives in a separate view while the transcript continues streaming. Press `C-c C-b` to review session side-queries: `a` asks another question, `c` copies the answer, `k` cancels an in-flight query, `x` clears the list, and `q` dismisses the buffer. `ecc-btw-display` controls whether responses appear in a floating popup (via posframe) or an ordinary window.
+
+`/btw` queries are single-shot: follow-up questions include only the last few exchanges (`ecc-btw-history-limit`).
+
+### Another conversation with `/resume`
+
+`/resume` asks which recorded conversation from this project to continue, and switches the current window to it. The window, tab, buffer, and session name stay as they are; only the conversation in them changes. This matches what `/resume` does in the terminal client. The CLI offers no such command to headless clients, so `/resume` here is ecc's own, implemented in Emacs.
+
+Emacs stops the running CLI process first (interrupting any active turn and waiting for it to finish), because two processes on one session ID silently branch a recording. If a conversation already has turns or queued prompts, Emacs asks for confirmation before leaving it. The conversation you leave is preserved, and `ecc-history-open` can read it again.
+
+`/resume <session-id>` resumes the recording by ID without prompting. With Spaces, opening a project with nothing running starts a fresh session, and `/resume` returns you to the previous one.
+
+### While a turn runs
+
+Prompts sent while Claude is working are queued rather than interrupting the turn; the echo area reports the queue position. Press `C-c C-q` to view the queue. Turns initiated via Remote Control are queued the same way and identified in notifications.
+
+### Images and editor context
+
+Images pasted, dragged into the buffer, or inserted with `C-c C-i` are saved under `ecc-image-dir` and passed to the CLI as file paths. `ecc-image-cleanup` determines whether session images are deleted when the session ends.
+
+<Video name="image" label="The picture open beside the session, inserted into the prompt as a path, and described in the answer" />
+
+Images are displayed in the transcript as well as sent. Images attached to a prompt appear under the prompt band that asked about them. Images that Claude sends back appear under the call that produced them. These include an `image` block in a message, the result of a `Read` of a `.png`, and a screenshot from an MCP tool. Base64 data never reaches the buffer: the payload is written to the session's image directory, and the transcript holds the path.
+
+If `ffmpeg` is on `PATH`, the first frame of a video is shown, and `RET` opens the video in an external player. If `ffmpeg` is not available, only the line naming the file is shown. Extracting the frame runs in a subprocess without blocking, so the line remains until the frame is ready.
+
+A GIF animates as soon as it is displayed and loops as long as it is on screen. Pressing `I` on a GIF stops or starts it again. `I` controls only animation. `RET` opens the file: a still image in `image-mode` and a video in an external player. `ecc-image-inline` (also `I` in the menu) turns off image display, leaving only the line naming the file. Displayed images are limited in height, and their width follows `ecc-chat-text-width`.
+
+`C-c C-x` toggles editor context for the buffer: when enabled, the current file and line number are automatically included with each prompt.
+
+<Video name="context" label="C-c C-x turning the context on, and the next prompt carrying the file and line with it" />
+
+### The footer
+
+Below the prompt area sits a horizontal divider, showing the current permission mode on the left and the active model on the right. `S-TAB` cycles through `default`, `acceptEdits`, `plan`, and `auto`. The cycle skips `bypassPermissions` so you do not turn it on by accident. Select it with `ecc-set-permission-mode`. An empty prompt area displays placeholder text rendered via overlays rather than buffer text.
+
+## The transcript
+
+<Video name="fold" label="The transcript folding: everything collapsed, then opened a level at a time, then one node folded and unfolded with TAB" />
+
+The transcript is standard read-only buffer text, so `isearch`, `occur`, narrowing, and `M-w` work as they do anywhere in Emacs.
+
+### Folding
+
+| Key | Action |
+|---|---|
+| `TAB` | Fold or unfold node at point |
+| `1`–`4` | Expand tree to specified depth |
+| `+` / `-` | Expand or collapse all nodes |
+
+### Navigation
+
+| Key | Action |
+|---|---|
+| `n` / `p` | Next or previous heading |
+| `M-n` / `M-p` | Next or previous sibling at current depth |
+| `^` | Up to parent heading |
+| `]` / `[` | Next or previous block |
+| `T` | Jump to turn by prompt |
+| `F` / `P` | Jump to Files section / Plan section |
+| `SPC` / `DEL` | Scroll down / up |
+| `v` / `i` | Move point to prompt area |
+
+### Acting on items at point
+
+| Key | Action |
+|---|---|
+| `RET` | Visit item at point: a link, the source of a diff line or a path (see [Opening the source](#opening-the-source)), a subagent transcript, or the full tool result |
+| `o` | Show the full details of the node at point (input, diff, and result) |
+| `mouse-1` / `mouse-2` | Follow the clicked link, diff line, or file heading |
+| `w` | Copy code block at point (or entire response) |
+| `I` | Toggle GIF animation at point |
+| `a` | Allow pending request |
+| `d` | Deny request at point (or view diff if not on a request) |
+| `g` | Redraw transcript |
+| `L` | View raw protocol log |
+| `t` / `R` | Hand over to terminal client / resume session |
+| `C-c C-k` | Clear prompt area (the same as in the prompt: one key, one meaning in the buffer) |
+| `S-TAB` | Cycle permission mode |
+| `q` | Bury buffer |
+| `?` | Open transient menu |
+
+### Opening the source
+
+Press `RET` on code in the transcript, or click it, to open the file next to the session. Point moves to the line, and the line flashes briefly.
+
+| Point on | Opens |
+|---|---|
+| A diff line of an Edit, MultiEdit, Write, NotebookEdit, or Bash command | That line. A removed line opens where it used to be. |
+| The `Updated`/`Created`/`Deleted` line over a Bash command's diff | The first changed line of that file |
+| The heading of a tool call that names a file | For Read, the line at its `offset`. For an edit, the first changed line. |
+| A diff line in the Files section or in a permission request | That line |
+| A path in Claude's reply (`foo.el:12`, `a/b.el`, `x.el#L3`, also inside backticks) | The file, relative to the session directory, at the given line |
+
+A line number in a diff refers to the file right after that change. ecc adjusts it for later changes the session made to the same file, so the file opens where the line is now. ecc checks a path in a reply only when you follow it, and a missing file is an error. Paths inside fenced code blocks are not links. To turn path links off, set the variable `ecc-markdown-linkify-paths` to nil with `setq`.
+
+A video or a sound file (`clip.mp4`, `take.mp3`) does not open in Emacs: `RET` plays it in the machine's own player, as it does for a video drawn in the transcript, and ignores the line number.
+
+A Bash command shows the files it changed under its output only when the CLI reports them, and by default it does not. ecc starts the CLI in `default` mode, where Claude Code CLI 2.1.286 never reports them. It reports them in `auto` and `bypassPermissions` modes only, and there only behind an experiment flag of the CLI that depends on the model. To see them in every mode, add `"bashEditDiffEnabled": true` to your `~/.claude/settings.json`, or pass it with `--settings`. A project's `.claude/settings.json` does not turn it on. ecc does not set it for you, because it is a Claude Code setting. In every case the file must be inside a git repository.
+
+On a heading without a file, such as Bash, `RET` still shows the full tool result. `o` shows it on any node.
+
+### On a pending request node
+
+Nodes awaiting user input have an active local keymap when point is inside them:
+
+<Video name="permission" label="A permission to write a file, allowed with a, and the turn finishing" />
+
+| Key | Action |
+|---|---|
+| `RET` | Inspect proposal (opens an answer buffer for questions) |
+| `a` / `d` | Allow once / deny |
+| `A` | Always allow this tool for the session |
+| `u` | Allow all requests until current turn finishes |
+| `r` | Allow matching rule (saves pattern to project settings) |
+| `c` / `e` | Comment on proposal / edit before allowing |
+
+These keys are not bound elsewhere in the transcript, so they shadow no other command. They act only while point is inside the request node. See [Reviewing proposals before approval](/emacs-claude-code/features/approval/#reviewing-proposals-before-approval) for details on `c` and `e`.
+
+Questions are answered in a dedicated buffer opened with `RET`: press `1`–`9` to choose an option, `SPC` to toggle multiple-choice items, `o` to type a custom answer, and `C-c C-c` to send.
+
+<Video name="question" label="A question with two questions: one option chosen, two toggled on the second, and the answers sent" />
+
+### The Files section
+
+<Video name="files" label="The Files section: a file unfolded to its diff, then reviewed on its own" />
+
+The bottom of the transcript lists the files touched during the session: the path, operations performed (`R×n` reads, `E×n` edits, `W×n` writes), and lines changed (`+n −n`). `TAB` expands a file's cumulative diff, `RET` visits it, and `d` reviews it on its own. On a diff line, `RET` opens the file at that line, and `SPC` scrolls.
+
+Pressing `F` in the transcript or in the menu jumps there. Setting `ecc-render-summary-position` to `'top` places the section at the top instead.
+
+### The Timeline
+
+`T` in the transcript lists turns by their prompts and jumps to the selected one. `C-c C-n` and `C-c C-p` step through them.
+
+![The turn picker, listing the turns of the session by their prompts](../../../assets/timeline.png)
+
+All commands accessible outside the session buffer are documented in the [transient menu reference](/emacs-claude-code/features/menu/).

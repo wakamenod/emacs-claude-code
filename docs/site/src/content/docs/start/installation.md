@@ -52,7 +52,7 @@ Then configure it with a standard `use-package` declaration (without `:vc`).
 
 ## Initial configuration
 
-Because `M-x ecc-start` is autoloaded, ecc works without any extra configuration. The most useful initial addition is binding the global keymap:
+Because `M-x ecc-start` is autoloaded, ecc works without any extra configuration. The first thing to add is a binding for the global keymap:
 
 ```elisp
 (use-package ecc
@@ -61,7 +61,7 @@ Because `M-x ecc-start` is autoloaded, ecc works without any extra configuration
   :bind-keymap ("C-c c" . ecc-global-map))
 ```
 
-`ecc-global-map` lets you respond to permission prompts, jump to waiting sessions, and open the dashboard from any buffer — so you never have to search for a paused session. See the [key binding reference](/emacs-claude-code/reference/key-bindings/) for all available bindings.
+`ecc-global-map` lets you respond to permission prompts, jump to waiting sessions, and open the dashboard from any buffer. See the [key binding reference](/emacs-claude-code/reference/key-bindings/) for all available bindings.
 
 ## Enabling the MCP server
 
@@ -81,4 +81,4 @@ The built-in loopback MCP server lets Claude query Emacs for editor context: `xr
 
 If the CLI fails to start, check the session log buffer (`C-c ?` then `L`, or `M-x ecc-show-log`), which records the exact command executed and the raw output received from the CLI process.
 
-For all other options, run `M-x customize-group RET ecc` or consult the [configuration reference](/emacs-claude-code/reference/configuration/). Pressing `C-c ?` inside any session opens the transient menu, showing all commands and their keybindings.
+For all other options, run `M-x customize-group RET ecc` or consult the [configuration reference](/emacs-claude-code/reference/configuration/). `C-c ?` inside any session opens the transient menu, which shows all commands and their keybindings.

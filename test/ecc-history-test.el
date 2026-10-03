@@ -457,12 +457,13 @@ would otherwise hide everything said before it."
             (insert "{\"type\": \"last\"}\n"))
           (let* ((ecc-history-scan-head-bytes 200)
                  (ecc-history-scan-tail-bytes 200)
-                 (edges (ecc-history--edges file)))
+                 (edges (ecc-history--edges file))
+                 (lines (append (car edges) (cdr edges))))
             ;; Both ends are there and whole; the middle is not.
-            (should (string-search "\"first\"" (car edges)))
-            (should (string-search "\"last\"" (car (last edges))))
-            (should (< (length edges) 10))
-            (dolist (line edges)
+            (should (string-search "\"first\"" (caar edges)))
+            (should (string-search "\"last\"" (car (last (cdr edges)))))
+            (should (< (length lines) 10))
+            (dolist (line lines)
               (should (ecc--json-read line)))))
       (delete-file file))))
 
@@ -470,7 +471,7 @@ would otherwise hide everything said before it."
   "A recording smaller than the two ranges is read whole."
   (let ((ecc-history-scan-head-bytes 65536)
         (ecc-history-scan-tail-bytes 65536))
-    (should (equal (ecc-history-lines ecc-history-test-file)
+    (should (equal (cons (ecc-history-lines ecc-history-test-file) nil)
                    (ecc-history--edges ecc-history-test-file)))))
 
 ;;;; Finding and describing the files
@@ -728,6 +729,92 @@ when the head range stopped short of it."
       (let ((info (ecc-history-scan-file file)))
         (should (equal (alist-get 'cwd info)
                        "/private/var/folders/4v/6r7_g65n4jz15_y1z350h0340000gn/T/ecc-history-2m0x5w0z"))))))
+
+(defmacro ecc-history-test--with-moved-cwd (vars &rest body)
+  "Run BODY over a recording whose `cwd' changes after its first lines.
+VARS is (FILE START LATER [SKIP]): the recording, the directory it
+starts in and the one a Bash `cd' moved it to, and how many lines that
+name no `cwd' it opens with, 0 when left out.  The recording is long
+enough that a scan reads only its ends."
+  (declare (indent 1) (debug ((symbolp symbolp symbolp &optional form) body)))
+  (pcase-let ((`(,file ,start ,later ,skip) vars))
+    `(let* ((root (make-temp-file "ecc-history-dir" t))
+            (,start (file-name-as-directory
+                     (file-truename (make-temp-file "ecc-history-start" t))))
+            (,later (file-name-as-directory
+                     (file-truename (make-temp-file "ecc-history-later" t))))
+            (,file (expand-file-name "-tmp-start/9a0b1c2d-0000-4000-8000-000000000001.jsonl"
+                                     root))
+            (ecc-history-directory root)
+            (ecc-history--files (make-hash-table :test #'equal)))
+       (unwind-protect
+           (progn
+             (make-directory (file-name-directory ,file) t)
+             (with-temp-file ,file
+               (let ((line (lambda (cwd n)
+                             (insert (json-serialize
+                                      `((type . "user")
+                                        ,@(and cwd `((cwd . ,(directory-file-name cwd))))
+                                        (sessionId . "9a0b1c2d-0000-4000-8000-000000000001")
+                                        (message . ((role . "user")
+                                                    (content . ,(format "prompt %d %s" n
+                                                                        (make-string 200 ?x))))))))
+                             (insert "\n"))))
+                 (dotimes (n ,(or skip 0))
+                   (funcall line nil n))
+                 (dotimes (n 20) (funcall line ,start n))
+                 ;; The model ran `cd' in Bash; every line from here on
+                 ;; names where the tool was left.
+                 (dotimes (n 200) (funcall line ,later n))))
+             ,@body)
+         (delete-directory root t)
+         (delete-directory ,start t)
+         (delete-directory ,later t)))))
+
+(ert-deftest ecc-history-test-root-is-where-the-session-started ()
+  "A recording read back is rooted where its session started.
+The lines after a Bash `cd' name the directory the tool was left in;
+taking that as the root named the session after it and ran --resume in
+a directory whose recordings it is not among."
+  (ecc-history-test--with-moved-cwd (file start later)
+    (let ((ecc-history-scan-head-bytes 2048)
+          (ecc-history-scan-tail-bytes 2048)
+          (ecc--sessions (make-hash-table :test #'equal))
+          (ecc--session-order nil))
+      (should (equal (directory-file-name start)
+                     (alist-get 'cwd (ecc-history-scan-file file))))
+      (let ((session (ecc-history-session (file-name-base file) file)))
+        (unwind-protect
+            (progn
+              (should (equal start
+                             (file-name-as-directory
+                              (ecc-session-project-root session))))
+              (should (equal (file-name-nondirectory (directory-file-name start))
+                             (ecc-session-name session))))
+          (ecc-test-cleanup-session session)))
+      ;; Read whole, the file says the same.
+      (let ((ecc-history-scan-head-bytes 1048576))
+        (should (equal (directory-file-name start)
+                       (alist-get 'cwd (ecc-history-scan-file file))))))))
+
+(ert-deftest ecc-history-test-first-cwd-past-the-head-range ()
+  "A first `cwd' past the head range is looked for before the tail's.
+Otherwise the tail, which names only the later directory, answers."
+  (ecc-history-test--with-moved-cwd (file start _later 20)
+    (let ((ecc-history-scan-head-bytes 2048)
+          (ecc-history-scan-tail-bytes 2048))
+      (should (equal (directory-file-name start)
+                     (alist-get 'cwd (ecc-history-scan-file file)))))))
+
+(ert-deftest ecc-history-test-recordings-of-the-starting-project ()
+  "A recording is listed under the project it started in, not the later one."
+  (ecc-history-test--with-moved-cwd (file start later)
+    (let ((ecc-history-scan-head-bytes 2048)
+          (ecc-history-scan-tail-bytes 2048))
+      (should (equal (list file)
+                     (mapcar (lambda (info) (alist-get 'file info))
+                             (ecc-history-recordings start))))
+      (should-not (ecc-history-recordings later)))))
 
 (defmacro ecc-history-test--with-take-over (var &rest body)
   "Run BODY with VAR a session that can be carried on with another recording.

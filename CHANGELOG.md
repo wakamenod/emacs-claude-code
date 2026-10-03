@@ -729,6 +729,17 @@ Verified against **Claude Code CLI 2.1.281**.
 
 ### Fixed
 
+- Installing ecc with package-vc byte-compiled everything under `demo/`,
+  `scripts/`, `test/` and `docs/` along with the package: 72 files, 49 of
+  which failed, since a demo scene or a test is not meant to be compiled
+  on its own. A `.elpaignore` now keeps those directories out, and only
+  the `ecc-*.el` at the top are compiled. Its lines are globs (`demo/*`)
+  because package.el turns each line into a regexp anchored at both ends
+  of the full path, which a bare `demo` would match only as the directory
+  itself. Native compilation does not read `.elpaignore`: with
+  `package-native-compile` set, those files are still native-compiled in
+  the background.
+
 - An ediff review no longer gives a difference to the wrong file. ediff
   diffed the two sides whole, every file one after the other, and diff
   paired lines of one file with lines of another across the separators
@@ -747,6 +758,18 @@ Verified against **Claude Code CLI 2.1.281**.
   has 326 differences in all 59 files, and opening it takes the same
   time (0.48 s before, 0.46 s after; the 57 files of
   `scripts/bench-review-ediff.el`, 0.44 s and 0.45 s).
+
+- A session read back from its recording is rooted in the directory it
+  started in. It took the working directory of the recording's last
+  lines, and since the CLI reports the directory a Bash `cd` left the
+  session in as its working directory (2.1.272), a session whose model
+  ran `cd` into a worktree came back rooted in the worktree, named after
+  it, listed among that project's recordings, and could not be resumed:
+  `--resume` ran there and the CLI looked for the recording under that
+  directory, not the one it is filed under. The `cwd` a recording is
+  described by is now its first one, which the scan looks for before it
+  reads the end of the file, and `/resume` offers the recordings of a
+  session's root before those of the directory the CLI reports.
 
 - A request the CLI takes back while you are being asked about it -- an
   interrupt closes it while a reason for denying, an answer to a question

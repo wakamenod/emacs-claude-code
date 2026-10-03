@@ -1,22 +1,33 @@
 #!/usr/bin/env bash
-# Make the pictures the documentation site points at.
+# Make the pictures and the videos the documentation site points at.
 #
 #   scripts/docshots.sh [outdir]
 #
-# Writes the stills and the short animations the site points at into
-# docs/site/src/assets (or into the directory given).
+# Writes the stills into docs/site/src/assets and the short videos into
+# docs/site/public/videos, or both into the directory given.  A video is
+# an mp4 (H.264, yuv420p, no audio) encoded from the frames captured
+# while the scene plays, and NAME.webp beside it is its first frame, the
+# poster the page shows until the video is played.  Beside each one are
+# its subtitles, NAME.en.vtt and NAME.ja.vtt, written by hand; this
+# script writes their cue times, from the `cue' marks in the scene, and
+# leaves their text alone.  Each step is held, by repeating its last
+# frame, until its subtitle can be read (`readable_frames').
 #
 # Opens a throwaway GUI Emacs, walks it through each scene and captures
 # the frame.  No CLI and no network are involved, so it costs nothing and
 # comes out the same every time.
 #
-# macOS only.  It needs `screencapture' and `ffmpeg', and the terminal
+# macOS only.  It needs `screencapture', `ffmpeg' and `cwebp' (brew
+# install webp: Homebrew's ffmpeg has no WebP encoder), and the terminal
 # running this needs Screen Recording permission (System Settings ->
 # Privacy & Security -> Screen Recording); without it screencapture says
 # "could not create image from display".
 set -euo pipefail
 
 outdir=${1:-docs/site/src/assets}
+# The videos are not processed by Astro's image pipeline, so they and
+# their subtitles are served as they are, from public/.
+videodir=${1:-docs/site/public/videos}
 # The conversation the hand-off scene resumes in the terminal.  It is
 # recorded once, in the demo project, and kept: the CLI can only
 # --resume a conversation it has really had.
@@ -66,26 +77,32 @@ want() {
     case " $SCENES " in *" $1 "*) return 0 ;; *) return 1 ;; esac
 }
 
-# Start a new animation; the frames of each live in a directory of their own.
+# Start a new video; the frames of each live in a directory of their own.
 # The frame is asked where it is first, as it is before a still: the
 # position read at startup can be stale by the time a scene runs -- the
 # corner the frame is placed in is settled by the window system, not by
-# Emacs -- and every frame of the animation would then be cut off on one
+# Emacs -- and every frame of the video would then be cut off on one
 # side (confirmed 2026-09-11).
 scene() {
     scene=$1
     n=0
     mkdir -p "$frames/$scene"
+    rm -f "${frames:?}/${scene:?}.cues"
     regeom
 }
 
-# How many frames a second the animations are captured and played at.
+# Start the next subtitle here.  The frames captured so far are its
+# start time, and the next mark, or the end of the video, is its end.
+# A scene marks one cue per cue in its .vtt files, in the same order;
+# the first mark comes before the first hold.
+cue() { echo "$n" >> "$frames/$scene.cues"; }
+
+# How many frames a second the videos are captured and played at.
 # `screencapture' takes about 80ms a frame on this machine (20 frames in
 # 1.635s, measured 2026-09-13), so 10 is close to what a capture loop can
-# really sustain.  It is also a whole 10 centiseconds of delay, which is
-# what the GIF format stores: a delay is an integer of 1/100s, so only
-# the rates 100/n exist at all -- 15fps is not one of them, and is
-# written out as 16.66.
+# really sustain.  A frame that takes longer leaves the video shorter
+# than the scene was, which is why the subtitles are timed by frame
+# count rather than by the seconds the holds ask for.
 fps=10
 
 # "1.5" -> 1500.  Bash has no decimals, and the holds below are written
@@ -100,9 +117,8 @@ ms_of() {
 now_ms() { local t=${EPOCHREALTIME/[.,]/}; echo $((10#${t:0:${#t}-3})); }
 
 # Capture frames for $1 seconds at $fps.  Every frame is a real capture:
-# writing the same frame out twice to hold a state makes the animation no
-# smoother, and the site's converter merges the repeats back into one
-# long frame anyway.  A step that settles -- a window rearranging, a
+# writing the same frame out twice to hold a state makes the video no
+# smoother, only longer.  A step that settles -- a window rearranging, a
 # posframe arriving -- is then actually seen settling.
 hold() {
     local end frame next left
@@ -118,13 +134,137 @@ hold() {
     done
 }
 
-# Assemble the frames of the current scene into an animation.
-gif() {
+# Encode the frames of the current scene into a video, and time its
+# subtitles.  yuv420p and +faststart are what every browser plays and
+# starts before the whole file is in; the scale keeps both sides even,
+# which yuv420p needs.  A screen is mostly flat colour, so -crf 30 stays
+# legible at a small size.
+#
+# A band of the theme's background (doom-tokyo-night's #1a1b26) is added
+# below the picture.  A browser draws its controls and the subtitles over
+# the bottom of a video, which is where the echo area and the mode line
+# are; the band gives them somewhere else to go.  It is about 46 CSS
+# pixels at the width the site shows a video, the 45rem (720px) content
+# column: room for a control bar of 40 to 46 with nothing hidden, or for a
+# line of subtitles while the controls are away.  With both on screen the
+# subtitle covers the echo area and part of the mode line.  It was 80,
+# which cleared both at once, and was taken down by two text rows of the
+# recording at the user's request (2026-10-03).  The controls are a fixed
+# CSS height, so the band is a share of the width, iw*58/900, rounded up
+# to an even number: 58 rows at 900 wide, 78 at 1200.
+video_width=1200
+
+video() {
+    stretch
     ffmpeg -hide_banner -loglevel error -y \
         -framerate "$fps" -pattern_type glob -i "$frames/$scene/*.png" \
-        -vf "scale=900:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=bayer" \
-        -loop 0 "$outdir/$scene.gif"
-    rm -rf "${frames:?}/$scene"
+        -vf "scale=$video_width:-2:flags=lanczos,pad=iw:ih+2*ceil(iw*29/900):0:0:color=0x1a1b26,format=yuv420p" \
+        -c:v libx264 -preset slow -crf 30 -an -movflags +faststart \
+        "$videodir/$scene.mp4"
+    poster
+    retime
+    rm -rf "${frames:?}/${scene:?}" "${frames:?}/${scene:?}.cues"
+}
+
+# How long a subtitle has to stay on screen to be read, in frames:
+# at least 1.5 seconds, and at least 15 characters a second of its English
+# or 7 of its Japanese, whichever asks for longer, since one video serves
+# both tracks.  15 a second is a little under what subtitles for adults
+# are usually held to, because the reader is also watching the frame;
+# Japanese is read at about half the characters a second.  The scenes
+# were paced for GIFs without captions, with steps of 0.3 to 1 second,
+# and 113 of the cues were too short to read by this rule (2026-10-03).
+readable_frames() {
+    local LC_ALL=en_US.UTF-8
+    local en=$1 ja=$2 ms=1500
+    (( ${#en} * 1000 / 15 > ms )) && ms=$(( ${#en} * 1000 / 15 ))
+    (( ${#ja} * 1000 / 7 > ms )) && ms=$(( ${#ja} * 1000 / 7 ))
+    echo $(( (ms * fps + 999) / 1000 ))
+}
+
+# The text of each cue of a .vtt, one line per cue.
+cue_texts() { awk 'p { print; p = 0 } / --> / { p = 1 }' "$1"; }
+
+# Hold the last frame of each step until its subtitle can be read, by
+# repeating that frame, and move the cue marks to match.  It is done to
+# the frames rather than by holding longer while capturing, because the
+# steps of several scenes run inside Emacs on its own timers
+# (`shot-script'): a longer hold in this script would not wait for them,
+# only move the cue away from the step it names.  The motion inside a
+# step keeps its speed; only the still end of it grows.  A scene whose
+# subtitles do not have one cue per mark is left as captured, and
+# `retime' then names it.
+stretch() {
+    local marks="$frames/$scene.cues" out="$frames/$scene.stretched"
+    local en_vtt="$videodir/$scene.en.vtt" ja_vtt="$videodir/$scene.ja.vtt"
+    local -a start en ja moved
+    local k i last need m=0
+    [ -f "$marks" ] && [ -f "$en_vtt" ] && [ -f "$ja_vtt" ] || return 0
+    mapfile -t start < "$marks"
+    mapfile -t en < <(cue_texts "$en_vtt")
+    mapfile -t ja < <(cue_texts "$ja_vtt")
+    [ ${#start[@]} -eq ${#en[@]} ] && [ ${#en[@]} -eq ${#ja[@]} ] || return 0
+    mkdir -p "$out"
+    for k in "${!start[@]}"; do
+        last=${start[k+1]:-$n}
+        moved+=("$m")
+        for (( i = start[k] + 1; i <= last; i++ )); do
+            m=$((m + 1))
+            ln "$(printf '%s/%s/%04d.png' "$frames" "$scene" "$i")" "$(printf '%s/%04d.png' "$out" "$m")"
+        done
+        need=$(readable_frames "${en[k]}" "${ja[k]}")
+        (( last < 1 )) && last=1
+        for (( i = $(( ${start[k+1]:-$n} - start[k] )); i < need; i++ )); do
+            m=$((m + 1))
+            ln "$(printf '%s/%s/%04d.png' "$frames" "$scene" "$last")" "$(printf '%s/%04d.png' "$out" "$m")"
+        done
+    done
+    rm -rf "${frames:?}/${scene:?}"
+    mv "$out" "$frames/$scene"
+    printf '%s\n' "${moved[@]}" > "$marks"
+    n=$m
+}
+
+# Write the first frame of the video as its poster.  It is taken from
+# the mp4 rather than from the first capture so that it is the picture
+# the video opens on, scaled the same.  WebP at quality 80 is a seventh
+# of the size of the same frame as a PNG (2026-10-03).
+poster() {
+    ffmpeg -hide_banner -loglevel error -y -i "$videodir/$scene.mp4" \
+        -frames:v 1 "$frames/$scene.poster.png"
+    cwebp -quiet -q 80 "$frames/$scene.poster.png" -o "$videodir/$scene.webp"
+    rm -f "${frames:?}/${scene:?}.poster.png"
+}
+
+# Write the times of the cue marks into the subtitles of the scene.  The
+# Nth timing line of each .vtt gets the Nth mark; a file whose number of
+# cues differs from the number of marks is left as it was and named, as
+# the scene and its subtitles no longer agree.
+retime() {
+    local vtt
+    [ -f "$frames/$scene.cues" ] || return 0
+    for vtt in "$videodir/$scene".*.vtt; do
+        [ -f "$vtt" ] || continue
+        if awk -v fps="$fps" -v total="$n" '
+            function ts(f,  s) {
+                s = f / fps
+                return sprintf("%02d:%02d:%06.3f", int(s / 3600), int(s / 60) % 60, s - int(s / 60) * 60)
+            }
+            NR == FNR { start[++marks] = $1; next }
+            / --> / {
+                if (++cues > marks) next
+                print ts(start[cues]) " --> " ts(cues < marks ? start[cues + 1] : total)
+                next
+            }
+            { print }
+            END { exit cues != marks }
+        ' "$frames/$scene.cues" "$vtt" > "$vtt.new"; then
+            mv "$vtt.new" "$vtt"
+        else
+            rm -f "$vtt.new"
+            echo "   $vtt: its cues and the scene's marks differ; left alone" >&2
+        fi
+    done
 }
 
 # Ask the frame where it is now.  The menu and the minibuffer resize it,
@@ -163,39 +303,20 @@ done
 [ -f "$geom" ] || { echo "the frame never reported its geometry" >&2; exit 1; }
 read -r X Y W H _cols _lines < "$geom" || true
 
-mkdir -p "$outdir"
+mkdir -p "$outdir" "$videodir"
 
 if want switch; then
-    # 1. Switching a window from one session to another, as an animation.
-    # Frames that repeat are merged into one long frame by the time the site
-    # has converted the animation, so a scene has to keep changing: type a
-    # letter at a time, and go back the way it came rather than holding the
-    # last picture.  Capturing at 10fps does not change that -- a state
-    # that sits still is still one frame once it is converted.
+    # 1. Switching a window from one session to another.  A scene has to
+    # keep changing or the extra seconds buy nothing: type a letter at a
+    # time, and go back the way it came rather than holding the last
+    # picture.  The sequence runs inside Emacs, so its long hold is cut
+    # where shot-scene-switch-sequence opens the picker (0.5s), presses
+    # RET (4.2s), opens it again (6.0s) and presses RET again (9.1s).
     scene switch
-    e '(shot-scene-switch-start)'      ; hold 0.67
+    cue; e '(shot-scene-switch-start)'      ; hold 0.67
     e '(shot-scene-switch-sequence)'
-    hold 11
-    gif
-fi
-
-if want focus; then
-    # Two projects crowding one frame, then `ecc-focus-project' picking
-    # one of them: the other project's window goes, this project's other
-    # session takes its place, and the source on the left changes with
-    # them.  It replays fixtures, so it costs nothing.
-    scene focus
-    # The scene rearranges the whole frame, and screencapture can still
-    # hand back the frame as it was a moment ago; the pause is what
-    # keeps the crowded "before" out of the opening frames.
-    e '(shot-scene-focus-start)'      ; sleep 1.5; hold 1.33
-    e '(shot-scene-focus-sequence)'
-    hold 9
-    hold 1                            # hold the tidied frame
-    gif
-    # The scenes below list every session there is, so the second
-    # project has to go before them.
-    e '(shot-scene-focus-end)'        ; sleep 1
+    hold 0.5; cue; hold 3.7; cue; hold 1.8; cue; hold 3.1; cue; hold 1.9
+    video
 fi
 
 if want menu; then
@@ -215,17 +336,17 @@ if want send-region; then
     # 3. Sending the region from a source buffer.  This one runs the real
     # CLI: the point of the picture is the answer coming back.
     scene send-region
-    e '(shot-scene-send-region-point)'  ; hold 0.67
+    cue; e '(shot-scene-send-region-point)'  ; hold 0.67
     e '(shot-scene-send-region-mark)'   ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.67
-    e '(shot-scene-send-region-sequence)'
+    cue; e '(shot-scene-send-region-sequence)'
     # The typing and then the answer streaming in are the motion, so the
-    # frames are taken while they happen rather than after.
-    hold 5
-    hold 12
-    gif
+    # frames are taken while they happen rather than after.  The question
+    # is sent at 4.2s, and the answer starts a few seconds later.
+    hold 4.4; cue; hold 2.6; cue; hold 10
+    video
     e '(shot-dump-live-log)'
 fi
 
@@ -234,72 +355,72 @@ if want fix-error; then
     # the checker really is run; only the checker is the standard library
     # rather than something installed.
     scene fix-error
-    e '(shot-scene-fix-error-open)'     ; sleep 3; hold 1
+    cue; e '(shot-scene-fix-error-open)'     ; sleep 3; hold 1
     e '(shot-scene-fix-error-point)'    ; hold 0.67
-    e '(shot-scene-fix-error)'          ; hold 0.67
-    hold 10
+    cue; e '(shot-scene-fix-error)'          ; hold 0.67
+    hold 1.5; cue; hold 4; cue; hold 4.5
     # Allowing it is part of the scene: the edit is made, the buffer picks
     # it up, and the checker has nothing left to complain about.  It also
     # leaves nothing waiting, which would blink through every picture taken
     # after this one.
-    e '(shot-scene-allow)'              ; sleep 1; hold 0.67
+    cue; e '(shot-scene-allow)'              ; sleep 1; hold 0.67
     hold 8
-    e '(shot-scene-recheck)'            ; sleep 2; hold 1.33
-    gif
+    cue; e '(shot-scene-recheck)'            ; sleep 2; hold 1.33
+    video
 fi
 
 if want inline; then
     # 5. Asking about the region and being answered where the code is.
     scene inline
-    e '(shot-scene-send-region-point)'  ; hold 0.33
+    cue; e '(shot-scene-send-region-point)'  ; hold 0.33
     e '(shot-scene-send-region-mark)'   ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.67
-    e '(shot-scene-inline-sequence)'
-    hold 4
-    hold 12
-    gif
+    cue; e '(shot-scene-inline-sequence)'
+    # The question is sent at 3.0s.
+    hold 3.2; cue; hold 2.8; cue; hold 10
+    video
 fi
 
 if want rewrite; then
     # 6. Rewriting the region, and accepting what comes back.
     scene rewrite
-    e '(shot-scene-send-region-point)'  ; hold 0.33
+    cue; e '(shot-scene-send-region-point)'  ; hold 0.33
     e '(shot-scene-send-region-mark)'   ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.67
-    e '(shot-scene-rewrite-sequence)'
-    hold 4
-    hold 10
-    e '(shot-scene-accept)'             ; sleep 1; hold 1.33
-    gif
+    cue; e '(shot-scene-rewrite-sequence)'
+    # The instruction is sent at 3.0s.
+    hold 3.2; cue; hold 2.8; cue; hold 8
+    cue; e '(shot-scene-accept)'             ; sleep 1; hold 1.33
+    video
 fi
 
 if want at-cursor; then
     # An @ reference: the point stands in the source, the prompt says
     # @cursor, and what is sent carries the line it was on.
     scene at-cursor
-    e '(shot-scene-cursor-point 7)'          ; hold 0.67
-    e '(shot-prompt-type "What does ")'      ; hold 0.33
+    cue; e '(shot-scene-cursor-point 7)'          ; hold 0.67
+    cue; e '(shot-prompt-type "What does ")'      ; hold 0.33
     e '(shot-prompt-type "@cursor")'         ; hold 0.33
     e '(shot-prompt-type " return?")'        ; hold 0.67
-    e '(shot-prompt-send)'                   ; hold 0.67
-    hold 12
-    gif
+    cue; e '(shot-prompt-send)'                   ; hold 0.67
+    hold 4.5; cue; hold 7.5
+    video
 fi
 
 if want context; then
     # The editor context, attached to every prompt while it is on.
     scene context
-    e '(shot-scene-cursor-point 6)'                                  ; hold 0.67
-    e '(shot-prompt-command (quote ecc-prompt-toggle-context))'      ; hold 1
-    e '(shot-prompt-type "Where am I?")'                             ; hold 0.67
+    cue; e '(shot-scene-cursor-point 6)'                                  ; hold 0.67
+    cue; e '(shot-prompt-command (quote ecc-prompt-toggle-context))'      ; hold 1
+    cue; e '(shot-prompt-type "Where am I?")'                             ; hold 0.67
     e '(shot-prompt-send)'                                           ; hold 0.67
-    hold 12
-    e '(shot-prompt-command (quote ecc-prompt-toggle-context))'      ; hold 0.67
-    gif
+    hold 4; cue; hold 8
+    cue; e '(shot-prompt-command (quote ecc-prompt-toggle-context))'      ; hold 0.67
+    video
 fi
 
 if want image; then
@@ -307,12 +428,12 @@ if want image; then
     # picture is opened beside the session first: without it the scene
     # is one line of text appearing in the prompt region.  The session
     scene image
-    e '(shot-scene-image-open)'                             ; hold 1
-    e '(shot-scene-insert-image)'                           ; hold 1
-    e '(shot-prompt-type "What is in this image? One line.")'; hold 0.67
+    cue; e '(shot-scene-image-open)'                             ; hold 1
+    cue; e '(shot-scene-insert-image)'                           ; hold 1
+    cue; e '(shot-prompt-type "What is in this image? One line.")'; hold 0.67
     e '(shot-prompt-send)'                                  ; hold 0.67
-    hold 12
-    gif
+    hold 1.5; cue; hold 10.5
+    video
 fi
 
 if want suggestion; then
@@ -335,23 +456,24 @@ if want suggestion; then
         fi
     done
     scene suggestion
-    hold 1
-    e '(shot-prompt-command (quote ecc-hint-accept-suggestion))' ; hold 1.33
-    e '(shot-prompt-send)'                                       ; hold 0.67
-    hold 14
-    gif
+    cue; hold 1
+    cue; e '(shot-prompt-command (quote ecc-hint-accept-suggestion))' ; hold 1.33
+    cue; e '(shot-prompt-send)'                                       ; hold 0.67
+    hold 0.5; cue; hold 13.5
+    video
 fi
 
 if want btw; then
     # A question asked beside a turn that is running, answered without
     # interrupting it.
     scene btw
-    e '(shot-scene-btw-turn)'   ; hold 0.67
+    cue; e '(shot-scene-btw-turn)'   ; hold 0.67
     hold 3
-    e '(shot-scene-btw-sequence (list "what does " "farewell " "return?"))'
-    hold 6.4
+    cue; e '(shot-scene-btw-sequence (list "what does " "farewell " "return?"))'
+    # The question is sent at 3.6s.
+    hold 3.8; cue; hold 2.6
     hold 10
-    gif
+    video
     # The answer floats in a posframe, and a posframe outlives every
     # window command: without this it lies over every scene after it.
     e '(shot-scene-btw-end)'
@@ -360,12 +482,12 @@ fi
 if want capabilities; then
     # What the session can do: the list the CLI reported in system/init.
     scene capabilities
-    e '(shot-scene-capabilities)'                        ; sleep 1; hold 1.33
-    e '(shot-scene-capabilities-toggle "Slash commands")'; hold 1
+    cue; e '(shot-scene-capabilities)'                        ; sleep 1; hold 1.33
+    cue; e '(shot-scene-capabilities-toggle "Slash commands")'; hold 1
     e '(shot-scene-capabilities-toggle "Skills")'        ; hold 1
     e '(shot-scene-capabilities-toggle "Agents")'        ; hold 1
     e '(shot-scene-capabilities-toggle "Skills")'        ; hold 1.33
-    gif
+    video
 fi
 
 if want sessions; then
@@ -384,16 +506,16 @@ if want prompt; then
     # It comes first because the scene after it leaves a picker on the
     # screen.
     scene fold
-    e '(shot-scene-fold-start)'                         ; hold 0.67
-    e '(shot-scene-fold (quote ecc-chat-collapse-all))' ; hold 1
-    e '(shot-scene-fold (quote ecc-chat-show-level-2))' ; hold 0.67
+    cue; e '(shot-scene-fold-start)'                         ; hold 0.67
+    cue; e '(shot-scene-fold (quote ecc-chat-collapse-all))' ; hold 1
+    cue; e '(shot-scene-fold (quote ecc-chat-show-level-2))' ; hold 0.67
     e '(shot-scene-fold (quote ecc-chat-show-level-3))' ; hold 0.67
+    cue; e '(shot-scene-fold (quote ecc-chat-next-heading))' ; hold 0.33
     e '(shot-scene-fold (quote ecc-chat-next-heading))' ; hold 0.33
-    e '(shot-scene-fold (quote ecc-chat-next-heading))' ; hold 0.33
+    cue; e '(shot-scene-fold (quote ecc-chat-toggle))'       ; hold 1
     e '(shot-scene-fold (quote ecc-chat-toggle))'       ; hold 1
-    e '(shot-scene-fold (quote ecc-chat-toggle))'       ; hold 1
-    e '(shot-scene-fold (quote ecc-chat-expand-all))'   ; hold 1
-    gif
+    cue; e '(shot-scene-fold (quote ecc-chat-expand-all))'   ; hold 1
+    video
 
     # The slash command list, open over a session.  Like the resume
     # picker, it stays on the screen until it is dismissed.
@@ -406,68 +528,69 @@ fi
 # answered here as a user would, and played to its end afterwards.
 if want permission; then
     scene permission
-    e '(shot-scene-permission)'        ; sleep 1; hold 1
-    e '(shot-scene-permission-allow)'  ; hold 0.67
-    e '(shot-scene-permission-finish)' ; sleep 1; hold 1.33
-    gif
+    cue; e '(shot-scene-permission)'        ; sleep 1; hold 1
+    cue; e '(shot-scene-permission-allow)'  ; hold 0.67
+    cue; e '(shot-scene-permission-finish)' ; sleep 1; hold 1.33
+    video
 fi
 
 if want question; then
     scene question
-    e '(shot-scene-question)'            ; sleep 1; hold 1
-    e '(shot-scene-question-open)'       ; sleep 1; hold 1
-    e '(shot-scene-question-choose 1)'   ; hold 0.67
-    e '(shot-scene-question-choose 1)'   ; hold 0.67
+    cue; e '(shot-scene-question)'            ; sleep 1; hold 1
+    cue; e '(shot-scene-question-open)'       ; sleep 1; hold 1
+    cue; e '(shot-scene-question-choose 1)'   ; hold 0.67
+    cue; e '(shot-scene-question-choose 1)'   ; hold 0.67
     e '(shot-scene-question-choose 2)'   ; hold 1
-    e '(shot-scene-question-submit)'     ; sleep 1; hold 1.33
-    gif
+    cue; e '(shot-scene-question-submit)'     ; sleep 1; hold 1.33
+    video
 fi
 
 if want review; then
     # Every change of the session as one diff, a comment on a hunk, and
     # the prompt that would go out.
     scene review
-    e '(shot-scene-review)'        ; sleep 1; hold 1
-    e '(shot-scene-review-comment (list "the docstring " "still says hi"))'
+    cue; e '(shot-scene-review)'        ; sleep 1; hold 1
+    cue; e '(shot-scene-review-comment (list "the docstring " "still says hi"))'
     hold 4.8
-    e '(shot-scene-review-hunk)'   ; hold 1
-    e '(shot-scene-review-send)'   ; sleep 1; hold 1.67
-    gif
+    cue; e '(shot-scene-review-hunk)'   ; hold 1
+    cue; e '(shot-scene-review-send)'   ; sleep 1; hold 1.67
+    video
 fi
 
 if want proposal; then
     # The text of a proposal, changed before it is allowed.
     scene proposal
-    e '(shot-scene-proposal)'       ; sleep 1; hold 1
-    e '(shot-scene-proposal-edit)'  ; sleep 1; hold 1
-    e '(shot-scene-proposal-type " and ")'     ; hold 0.33
+    cue; e '(shot-scene-proposal)'       ; sleep 1; hold 1
+    cue; e '(shot-scene-proposal-edit)'  ; sleep 1; hold 1
+    cue; e '(shot-scene-proposal-type " and ")'     ; hold 0.33
     e '(shot-scene-proposal-type "hello")'     ; hold 1
-    e '(shot-scene-proposal-apply)' ; sleep 1; hold 1.33
-    gif
+    cue; e '(shot-scene-proposal-apply)' ; sleep 1; hold 1.33
+    video
 fi
 
 if want plan; then
-    # A plan, a comment on one of its lines, the mode it is approved
-    # into, and the approval.
+    # A plan, a comment on one of its lines, the mode it would be
+    # approved into, and C-c C-c -- which, with a comment there, sends
+    # the plan back with it rather than approving it.
     scene plan
-    e '(shot-scene-plan)'               ; sleep 1; hold 1.33
-    e '(shot-scene-plan-comment 3 (list "add a " "docstring " "to each"))'
+    cue; e '(shot-scene-plan)'               ; sleep 1; hold 1.33
+    cue; e '(shot-scene-plan-comment 3 (list "add a " "docstring " "to each"))'
     hold 4.8
     hold 0.67
-    e '(shot-scene-plan-mode-sequence)'
+    cue; e '(shot-scene-plan-mode-sequence)'
     hold 3.6
-    e '(shot-scene-plan-approve)'       ; sleep 1; hold 1.33
-    gif
+    cue; e '(shot-scene-plan-approve)'       ; sleep 1; hold 1.33
+    video
 fi
 
 if want files; then
     # The Files section: a row unfolded, then reviewed on its own.
     scene files
-    e '(shot-scene-files)'                                  ; sleep 1; hold 1
+    cue; e '(shot-scene-files)'                                  ; sleep 1; hold 1
     e '(shot-scene-files-key (quote ecc-chat-next-heading))'; hold 0.67
-    e '(shot-scene-files-key (quote ecc-chat-toggle))'      ; hold 1.33
-    e '(shot-scene-files-key (quote ecc-session-review-file))' ; sleep 1; hold 1.33
-    gif
+    cue; e '(shot-scene-files-key (quote ecc-chat-toggle))'      ; hold 1.33
+    cue; e '(shot-scene-files-key (quote ecc-session-review-file))' ; sleep 1; hold 1.33
+    video
 fi
 
 if want timeline; then
@@ -491,12 +614,12 @@ if want handover; then
     e '(shot-scene-quit)'           ; sleep 1
 
     scene handover
-    e '(shot-scene-handover-start)' ; sleep 1; hold 1
-    e '(shot-scene-handover)'       ; hold 0.33
+    cue; e '(shot-scene-handover-start)' ; sleep 1; hold 1
+    cue; e '(shot-scene-handover)'       ; hold 0.33
     # The CLI drawing itself is the motion here, so the frames are taken
     # while it comes up rather than after.
-    hold 10
-    gif
+    hold 1.2; cue; hold 8.8
+    video
 fi
 
 if want resume; then
@@ -509,17 +632,18 @@ fi
 
 if want usecase; then
     # The use-case page: going to a project that has only recordings, as
-    # an animation, and the Space a worktree hand-off leaves, as a still.
+    # a video, and the Space a worktree hand-off leaves, as a still.
     # The start scene resizes and moves the frame, so the rectangle is
     # measured after it rather than before: `scene' asks for the geometry
     # as it stands, and taking it first caught the screen behind the
     # frame (2026-09-18).
     e '(shot-scene-usecase-start)'   ; sleep 1
     scene usecase-goto
-    hold 1
+    cue; hold 1
     e '(shot-scene-usecase-goto)'
-    hold 8
-    gif
+    # The picker opens at 0.5s, and RET is pressed at 4.4s.
+    hold 0.5; cue; hold 3.9; cue; hold 3.6
+    video
     e '(shot-scene-quit)' ; sleep 1
     e '(shot-scene-usecase-worktree)' ; sleep 2; still "$outdir/usecase-worktree.png"
     e '(shot-scene-usecase-end)' ; sleep 1

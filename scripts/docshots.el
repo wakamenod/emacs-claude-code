@@ -691,9 +691,9 @@ the text has to be spelled."
   (shot-later (lambda () (call-interactively #'ecc-menu))))
 
 (defconst shot-other-root "/tmp/api-server"
-  "A second project, so that a frame can be crowded with two of them.
-`ecc-focus-project' is about several projects at once, which is the one
-thing a demo living in a single directory cannot show.")
+  "A second project, so that a frame can hold two of them.
+The Spaces and the sidebar are about several projects at once, which is
+the one thing a demo living in a single directory cannot show.")
 
 (defconst shot-other-file (expand-file-name "server.py" shot-other-root))
 
@@ -708,8 +708,8 @@ def handler(request):
 
 (defun shot-foreign-session (&optional fixture)
   "Create the second project and the session in it, once, and return it.
-The scenes that want two projects on the screen -- focusing one of
-them, the Spaces -- all want the same one.  FIXTURE is the recording to
+The scenes that want two projects on the screen -- the Spaces and the
+sidebar -- all want the same one.  FIXTURE is the recording to
 replay into it, `tool-use-write\=' by default: a scene whose own session
 was replayed from that one has to name another, since two sessions on
 one recording evict each other from the registry."
@@ -735,38 +735,6 @@ one recording evict each other from the registry."
     (setf (ecc-session-cwd shot-foreign)
           (file-name-as-directory shot-other-root)))
   shot-foreign)
-
-(defun shot-scene-focus-start ()
-  "Crowd the frame: two projects, a session of each, and the wrong source.
-This is the state the command is for.  The source on the left belongs
-to one project and the session in the main window to the other, which
-is what working in several projects at once leaves behind."
-  (shot-foreign-session)
-  (select-window (frame-first-window (selected-frame)))
-  (let ((ignore-window-parameters t))
-    (delete-other-windows))
-  ;; The source of the other project, so that the main window changing
-  ;; is part of what the picture shows.
-  (find-file shot-other-file)
-  ;; The foreign session takes the main window and this project's takes
-  ;; the one beside it: the frame is holding two projects at once, and
-  ;; neither row of tabs is the other's.
-  (ecc-window-select-session shot-foreign)
-  (ecc-window-select-session shot-main)
-  (select-window (get-buffer-window (get-file-buffer shot-other-file)))
-  (message nil)
-  (redisplay t))
-
-(defun shot-scene-focus-sequence ()
-  "Pick the demo project out of the two, and let the frame tidy itself."
-  (shot-script
-   (list (cons 0.5 (lambda () (call-interactively #'ecc-focus-project)))
-         (cons 2.5 (lambda () (shot-keys "g")))
-         (cons 3.1 (lambda () (shot-keys "r")))
-         (cons 3.7 (lambda () (shot-keys "e")))
-         (cons 5.0 (lambda () (shot-keys "RET")))
-         ;; The echo area says what was done; the frame is the answer.
-         (cons 6.0 (lambda () (redisplay t))))))
 
 (defun shot-scene-focus-end ()
   "Take the second project away again.

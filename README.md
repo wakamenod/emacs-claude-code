@@ -19,21 +19,21 @@ An Emacs client for the Claude Code CLI. Conversations run directly inside ordin
 
 ecc runs `claude` in headless mode, communicates over pipes using its stream-json protocol, and renders the session in a standard Emacs buffer.
 
-Because the transcript is standard buffer text, you can use regular Emacs workflows: search, `occur`, narrowing, copying, and exporting to Markdown. Buffer faces are applied on insertion and can be customized with `M-x customize`.
+The transcript is ordinary buffer text, so search, `occur`, narrowing, copying, and exporting to Markdown work as usual. ecc puts faces on at insertion, and you can customize them with `M-x customize`.
 
 ### Scope and Trade-offs
 
-- **No terminal emulation:** ecc does not replicate the CLI's terminal UI. Use `ecc-tui-open` to hand off a live session to a terminal and bring it back when finished.
+- **No terminal emulation:** ecc does not replicate the CLI's terminal UI. `ecc-tui-open` hands a live session to a terminal and takes it back when you are done.
 - **Claude Code only:** ecc speaks the Claude Code protocol directly; it is not a general-purpose LLM frontend.
-- **Built-in renderers:** Markdown, tables, and diffs are rendered using ecc's lightweight built-in parsers rather than heavyweight external dependencies.
-- **Direct protocol reflection:** Permission requests, usage metrics (`get_usage`), and conversation logs come directly from the CLI without guesswork.
+- **Built-in renderers:** ecc's own small parsers draw Markdown, tables, and diffs, without external packages.
+- **Direct protocol reflection:** Permission requests, usage figures (`get_usage`), and conversation logs come from the CLI as it reports them, not from guesswork.
 
 ### Key Features
 
-- **[Diff reviews](https://wakamenod.github.io/emacs-claude-code/features/review/):** Inspect all changes made during a session in a single `diff-mode` buffer, regardless of how they were made. Edits, shell commands, and scripts all read the same. `C-c c D` opens a menu to choose what to compare instead: uncommitted, staged or unstaged changes, the current branch against another, a GitHub pull request when the `gh` CLI is installed, a commit, or a range. Comment on lines or whole hunks and submit them as a single prompt. `s` lists the files beside the diff, and `/` hides the files that do not match a filter. The open review follows the files as they change. With the MCP server on, Claude can also comment on lines of the review and scroll to the place it is talking about. `T` in the review asks Claude for a tour of the changes, one stop at a time, and `M` sends it a message without leaving the review. Setting `ecc-review-style` opens the same review in ediff, with every file in one session and the words that changed marked in every difference on the screen. The old side is above the new one, and `|` puts them side by side. Claude's comments and following the files work there too, and a pane beside the diff shows Claude's reply and lets you answer its permission requests. The keys work in both ediff windows: `c` comments on the line at point, moving point brings the other side along, and `RET` opens the file at that line in a frame of its own.
-- **[Interactive edits](https://wakamenod.github.io/emacs-claude-code/features/review/#reviewing-a-proposal-before-it-is-applied):** Review and modify proposed file edits before approving them.
+- **[Diff reviews](https://wakamenod.github.io/emacs-claude-code/features/review/):** See every change a session made in one `diff-mode` buffer, whether it came from an edit, a shell command, or a script. `C-c c D` opens a menu to choose what to compare instead: uncommitted, staged or unstaged changes, the current branch against another, a GitHub pull request when the `gh` CLI is installed, a commit, or a range. Comment on lines or whole hunks and submit them as a single prompt. `s` lists the files beside the diff, and `/` hides the files that do not match a filter. The open review follows the files as they change. With the MCP server on, Claude can also comment on lines of the review and scroll to the place it is talking about. `T` in the review asks Claude for a tour of the changes, one stop at a time, and `M` sends it a message without leaving the review. Setting `ecc-review-style` opens the same review in ediff, with every file in one session and the words that changed marked in every difference on the screen. The old side is above the new one, and `|` puts them side by side. Claude's comments and following the files work there too, and a pane beside the diff shows Claude's reply and lets you answer its permission requests. The keys work in both ediff windows: `c` comments on the line at point, moving point brings the other side along, and `RET` opens the file at that line in a frame of its own.
+- **[Interactive edits](https://wakamenod.github.io/emacs-claude-code/features/approval/#reviewing-proposals-before-approval):** Review and modify proposed file edits before approving them.
 - **[Jump to source](https://wakamenod.github.io/emacs-claude-code/features/prompt/#opening-the-source):** Press `RET` on a diff line, on the heading of a tool call that names a file, or on a path in Claude's reply (`foo.el:12`), or click it, to open the file at that line. The line number accounts for later changes to the same file.
-- **[Plan mode](https://wakamenod.github.io/emacs-claude-code/features/review/#plan-mode):** Work through proposed execution plans in a writable buffer.
+- **[Plan mode](https://wakamenod.github.io/emacs-claude-code/features/approval/#plan-mode):** Read and adjust a proposed plan in a writable buffer.
 - **[Global access](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/):** Approve or deny pending tool requests from any buffer.
 - **[Session management](https://wakamenod.github.io/emacs-claude-code/features/sessions/):** Manage multiple concurrent sessions from a dashboard.
 - **[Spaces and worktrees](https://wakamenod.github.io/emacs-claude-code/features/spaces/):** Every project gets an Emacs tab of its own -- a Space -- and the windows in it stay where you put them (`ecc-use-spaces`, on by default). A sidebar lists every project and session with what each is doing, and `ecc-start-worktree` checks a branch out beside the repository and opens it as a Space of its own.
@@ -46,7 +46,7 @@ Because the transcript is standard buffer text, you can use regular Emacs workfl
 
 ### Optional Dependencies
 
-These packages enhance functionality when available, but ecc falls back gracefully if they are absent:
+ecc uses these packages when they are installed and works without them:
 
 - [ghostel](https://github.com/dakra/ghostel) — Terminal emulator for sessions handed over by `ecc-tui-open`.
 - [posframe](https://github.com/tumashu/posframe) — Floating popups for `/btw` side-queries and usage reports.
@@ -65,7 +65,7 @@ ecc is not currently on MELPA; install it directly from this repository.
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest))
 ```
 
-*Note: You can pin a specific commit by passing `:rev "<commit-sha>"`.*
+*To pin a specific commit, pass `:rev "<commit-sha>"`.*
 
 ### Emacs 29 (`package-vc-install`)
 
@@ -111,7 +111,7 @@ Because the repository name is `emacs-claude-code` while the package name is `ec
   (ecc-mcp-enabled t))
 ```
 
-For all other settings, check the [configuration reference](https://wakamenod.github.io/emacs-claude-code/reference/configuration/).
+For all other settings, see the [configuration reference](https://wakamenod.github.io/emacs-claude-code/reference/configuration/).
 
 ## Quickstart
 
@@ -123,10 +123,10 @@ For all other settings, check the [configuration reference](https://wakamenod.gi
 
 ## Key Bindings
 
-For prompt and transcript keybindings, see
+For the prompt and transcript key bindings, see
 [Prompt and transcript](https://wakamenod.github.io/emacs-claude-code/features/prompt/).
-For global keybindings accessible from any buffer, see the
-[keybindings reference](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/).
+For the global key bindings that work from any buffer, see the
+[key bindings reference](https://wakamenod.github.io/emacs-claude-code/reference/key-bindings/).
 
 ## Acknowledgements
 
