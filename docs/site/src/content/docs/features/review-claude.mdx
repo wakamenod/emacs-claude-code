@@ -1,0 +1,43 @@
+---
+title: Claude in the review
+description: Claude opens the review, comments on its lines, leads a tour, and answers from inside it.
+sidebar:
+  order: 7
+---
+
+With the [Emacs MCP server](/emacs-claude-code/start/installation/#enabling-the-mcp-server) on (`ecc-mcp-enabled`), the review works both ways: Claude can open it, comment on its lines and scroll it to the place it is talking about. Ask in plain words, for example "walk me through these changes in the review" or "review the diff and leave comments".
+
+## Claude's comments
+
+Claude's comments appear as `▎ #4 Claude: text`, in `ecc-review-agent-comment-face`. `c` on a line that has only Claude's comment replies to it, and the reply is indented under it. `a` hides Claude's comments and shows them again. `C-c C-c` sends only your comments.
+
+Claude cannot write or change your comments, but it can remove them. Each session works on its own review.
+
+| Tool | What Claude does with it |
+|---|---|
+| `review_open` | Opens the session's changes, a range, or the staged changes, optionally for some files, or reads the review again |
+| `review_hunks` | Lists the files and the numbered hunks, optionally with their text |
+| `review_comment` | Puts a comment on a line, on a hunk, or under another comment |
+| `review_comment_apply` | Puts several comments at once, or none when one of them is wrong |
+| `review_navigate` | Scrolls the review to a line, a hunk or a comment |
+| `review_list_comments` | Reads the comments |
+| `review_remove_comment` | Removes one comment, including one of yours it has dealt with |
+| `review_clear_comments` | Removes Claude's comments, and yours only when asked |
+
+`review_open` takes the same comparisons as the [review menu](/emacs-claude-code/features/review/#choosing-what-to-compare): ask for "the staged changes", "this whole branch" or "just this commit". A review Claude opens appears beside the session without taking the keyboard or the window you are in. If there is no free window, it waits in its buffer.
+
+The tools write no files, so they are allowed without asking, and the transcript records each call as `auto-allowed`. To be asked as for any other tool, set `ecc-review-agent-auto-allow` to `nil`.
+
+The tools work on an ediff review you have open, where a hunk is one ediff difference. Claude never starts ediff itself: without one open, `review_open` opens the diff buffer.
+
+## Talking to Claude from the review
+
+These keys work in the diff buffer and in an ediff review, and always go to the review's session:
+
+| Key | Action |
+|---|---|
+| `T` | Ask Claude for a tour of the changes, most important first. Claude shows each stop, explains it, comments on the lines that need attention, and waits |
+| `t` | Ask for the next stop of the tour |
+| `M` | Type a message in the minibuffer and send it as a prompt |
+
+While the session is busy, the prompt waits in its queue. `T` and `t` need the MCP server. In ediff, Claude's answer streams into the [reply pane](/emacs-claude-code/features/review-ediff/#the-reply-pane); the diff buffer has the session beside it instead.

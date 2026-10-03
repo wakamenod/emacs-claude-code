@@ -1,0 +1,74 @@
+---
+title: Sending from your code
+description: Send a line, the region or a file from the buffer you are editing, fix the error at point, ask inline, rewrite a region, and reference code in a prompt.
+sidebar:
+  order: 4
+---
+
+import Video from '../../../components/Video.astro';
+
+These commands run from the buffer you are editing. They send to the session of its project; when that is ambiguous, ecc asks once and remembers the answer for the buffer. A prompt sent while a turn runs waits in the queue.
+
+## Sending a line, the region or a file
+
+In the menu (`C-c c ?`):
+
+| Key | Sends |
+|---|---|
+| `s` | A line typed in the minibuffer (`C-u s` asks for the session) |
+| `x` | A line, with the current file and line |
+| `g` | The region, or the whole buffer, in a quoted block (`C-u g` asks for an instruction to put before it) |
+| `f` | The file as an `@path` reference for the CLI to read; offers to save the buffer first |
+
+<Video name="send-region" label="Sending the region: the marked code and the question arrive in the transcript, and the answer streams back" />
+
+`x` and `g` add the code in a block like this:
+
+````
+---
+Current context: hello.py L1-L3
+```python
+def greet(name):
+    return "hello " + name
+```
+````
+
+## Fixing the error at point
+
+`e` sends the diagnostics on the current line with the code around it, from Flymake, then Flycheck, then any help text at point.
+
+<Video name="fix-error" label="The checker marks a line, the diagnostic is sent, and the fix comes back as an edit waiting to be allowed" />
+
+## Asking inline
+
+`l` asks about the region or the file and shows the answer in an overlay above point, not in the transcript. `n` and `p` scroll it, `r` asks a follow-up, and `q` closes it. The question runs in a lightweight or a forked session, chosen once for each buffer.
+
+<Video name="inline" label="A question typed in the minibuffer, and the answer appearing in an overlay over the code" />
+
+## Rewriting a region
+
+`w` rewrites the region by an instruction. The replacement is shown in place, and `RET` writes it into the buffer. It runs without tools: the CLI returns the code and Emacs changes the buffer.
+
+<Video name="rewrite" label="The rewritten code shown above the original, then accepted with RET and written into the buffer" />
+
+## `@` references in a prompt
+
+<Video name="at-cursor" label="A prompt with @cursor in it: the reference becomes the file and the line the point was on, and the code goes with it" />
+
+In the prompt region, `@` points at code. `TAB` completes these references and project files:
+
+| Reference | Sends |
+|---|---|
+| `@region` | The active region, as a quoted code block |
+| `@cursor` | The line at point, with the lines around it |
+| `@diagnostics` | The Flymake or Flycheck diagnostics of the buffer |
+| `@path:10-40` | Lines 10–40 of the file |
+| `@path` | The path, for the CLI to read |
+
+Emacs expands the first four before sending: the reference becomes a short label, and the content goes in a quoted block under the prompt. They read the buffer you were editing before you went to the session. The echo area says what was attached, and warns when `@region` had no region.
+
+## Editor context
+
+`C-c C-x` in the session buffer turns on editor context: each prompt then carries the current file and line.
+
+<Video name="context" label="C-c C-x turning the context on, and the next prompt carrying the file and line with it" />
