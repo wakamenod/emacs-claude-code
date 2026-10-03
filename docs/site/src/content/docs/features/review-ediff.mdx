@@ -1,0 +1,78 @@
+---
+title: Reviewing in ediff
+description: The same review as two sides in ediff, with every file in one session and Claude's reply in a pane beside it.
+---
+
+`ecc-review-style` decides how the reviews of the [review menu](/emacs-claude-code/features/review/#choosing-what-to-compare) open. The default, `'diff`, is the diff buffer. `'ediff` shows the two sides in ediff:
+
+```elisp
+(setq ecc-review-style 'ediff)
+```
+
+`-e` in the menu switches the style for one review.
+
+Every file of the review is in one ediff session: the old contents in the left buffer, the new ones in the right, each file under a `═══ path ═══` line. `n` and `p` move through every difference of the review, from one file into the next. A binary file, or one larger than `ecc-review-max-bytes`, is only its separator line. Both sides are read-only, so ediff's copy commands do nothing; you comment and send, and Claude edits the files.
+
+The review takes the whole frame; set `ecc-review-ediff-full-frame` to `nil` to open it among the windows on the screen. Sending, `C-c C-k` and `q` give back the windows you had before.
+
+## The layout
+
+The review opens with the old side above the new one and Claude's reply pane on the right. `|` puts the sides side by side with the pane under them, and `|` again stacks them. To open side by side:
+
+```elisp
+(setq ecc-review-ediff-layout 'side-by-side)   ; the default is 'stacked
+```
+
+Each window's header line lists keys and nothing else, the most used first; a narrow window drops the keys before `? all keys`. Stacked, both windows show the same line, every key that fits; side by side, the keys are split between them. Each window's mode line shows the path of the file its cursor is in, and the lower or right one adds where you are, such as `3/12`, and what a filter hides. The ediff control panel is hidden; `?` shows it with every key and hides it again. Other ediff sessions keep your own window layout.
+
+Each file is colored by its major mode, and the words that changed are bold.
+
+## Reading in the two windows
+
+The keyboard starts in the new side. Every key works in both windows, and digits give a count: `3j` jumps to the third difference.
+
+Moving point drives the review. When point enters a difference, it becomes the current one, and the other window scrolls so that the matching line is on the same row. `n` and `p` go to the next difference below point or the previous one above it. Scrolling one window with `C-v` or the mouse does not move the other; `v` and `V` scroll both, and `C-l` lines them up again.
+
+`RET` opens the file at the line point is on, as the file is now, in a frame of its own. The review keeps its frame and the keyboard.
+
+| Key | Action |
+|---|---|
+| `c` | In a window, comment on the line at point. In the panel that `?` shows, comment on the current difference, or reply to Claude's latest comment there. Again to edit |
+| `{` / `}` | Previous / next comment |
+| `l` | Jump to a comment |
+| `x` | Remove a comment on the line at point, else on the current difference (`C-u x`: any comment). It is `d` in the diff buffer |
+| `a` | Show or hide Claude's comments |
+| `n` / `p` / `j` | Next or previous difference, or the numbered one |
+| `v` / `V` | Scroll both windows |
+| `RET` | Open the file in a frame of its own |
+| `s` / `/` | [List or filter the files](/emacs-claude-code/features/review/#listing-and-filtering-the-files) |
+| `T` / `t` / `M` | [Talk to Claude](/emacs-claude-code/features/review-claude/#talking-to-claude-from-the-review) |
+| `u` / `d` | Scroll the reply pane back / on |
+| `y` | Answer what Claude is waiting for, shown in the reply pane |
+| `\|` | Stack the sides, or put them side by side |
+| `!` | Read the files again (there is no `g`) |
+| `C-c C-c` | Send the comments as a prompt (`C-u C-c C-c` to edit it first) |
+| `C-c C-k` | Drop the review and its comments |
+| `q` | Quit the review |
+| `?` | Show or hide the control panel |
+
+`c` on a line both sides share has nothing to comment on, and says so. Comments, sending and [following the files](/emacs-claude-code/features/review/#following-the-files) work as in the diff buffer; the review keeps the current difference and the place of each side.
+
+## The reply pane
+
+The session is out of sight while ediff has the frame. A pane beside the diff shows the session's latest reply as it streams, one line for each tool call, colored as the transcript is: Markdown once the reply is done, the tool names, and your prompt:
+
+```
+› Next stop.
+The cache is now keyed by path, so a renamed file is read again.
+  review_navigate → ecc-review-ediff.el:248
+  review_comment → ecc-review-ediff.el:252: This drops the old entry
+```
+
+Each turn replaces the last; the whole conversation stays in the transcript. When Claude asks for permission, asks a question or has a plan to approve, the pane shows the request and `y` answers it. The pane is never selected. `u` and `d` scroll it from the review; once you scroll back, it stops following the end until the end is in view again.
+
+| Variable | Default | Description |
+|---|---|---|
+| `ecc-review-talk-reply-width` | `75` | Width of the pane on the right. In a frame too narrow to leave the diff 80 columns, the pane goes to the bottom |
+| `ecc-review-talk-reply-height` | `12` | Height of the pane at the bottom; `nil` turns the pane off |
+| `ecc-review-talk-reply-place` | `'auto` | `'frame` puts the pane in a frame of its own for each review, which never takes the focus |

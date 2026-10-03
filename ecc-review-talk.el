@@ -113,13 +113,34 @@ has it at the bottom instead.")
 
 (defvar ecc-review-talk-tour-prompt
   "Walk me through the changes in the review I have open, the most \
-important first.  For each stop, bring it into view with review_navigate, \
-explain it in a few sentences, and put a review_comment on any line that \
-needs my attention.  Then stop and wait: I will ask for the next stop."
-  "What the key T of a review sends to the session of the review.")
+important first.  The files and hunks of the review are below, with the \
+patch of each hunk when they fit: plan all the stops now, in this turn, \
+and keep to that plan when I ask for the next stop, without fetching the \
+diff again.  Read the code around a change only when its patch alone \
+cannot explain it.  For each stop, first bring it into view with \
+review_navigate -- the screen moves while you write -- then explain it \
+in a few sentences, and put the comments on the lines that need my \
+attention in one review_comment_apply call.  Then stop and wait: I will \
+ask for the next stop."
+  "What the key T of a review sends to the session of the review.
+The hunks of the review follow it (`ecc-review-talk--hunks').")
 
 (defvar ecc-review-talk-next-prompt "Next stop."
-  "What the key t of a review sends to the session of the review.")
+  "What the key t of a review sends to the session of the review.
+Where the user is follows it (`ecc-review-talk--where').")
+
+(defvar ecc-review-talk-patch-limit 20000
+  "The most characters of hunks T sends with the tour prompt.
+A review whose hunks with their patches come to more is sent as the list
+of its hunks alone, and `ecc-review-talk-no-patch-note' says so.")
+
+(defvar ecc-review-talk-no-patch-note
+  "The patches are left out, being too long to send at once: call \
+review_hunks with include_patch for them, a file at a time."
+  "What T says under the list of hunks it sends without their patches.")
+
+(defvar ecc-review-talk-where-label "Where I am in the review:"
+  "What the place of the user in the review is introduced by, after t and M.")
 
 (defface ecc-review-talk-speaker-face
   '((t :inherit ecc-heading-face))
@@ -141,6 +162,41 @@ A tour is made of them; without MCP the model has none to call."
     (user-error "A tour needs the review tools: turn on `ecc-mcp-enabled' and start %s again"
                 (ecc-session-name session))))
 
+;; The model would otherwise spend its first calls asking for what this
+;; Emacs knows: the hunks of the review, with T, and where the user is,
+;; with t and M.  A round trip of a tool took 2-5 s, and a tour opened
+;; with review_hunks and the files read again took 13-35 s (2026-10-02).
+
+(defun ecc-review-talk--hunks ()
+  "Return the files and hunks of this review, as `review_hunks' says them.
+With the patch of each hunk, as `include_patch' gives it, while the
+whole comes to no more than `ecc-review-talk-patch-limit' characters;
+without them, and `ecc-review-talk-no-patch-note' after, when it
+comes to more."
+  (let ((whole (ecc-review-agent--summary nil t)))
+    (if (<= (length whole) ecc-review-talk-patch-limit)
+        whole
+      (concat (ecc-review-agent--summary nil nil) "\n" ecc-review-talk-no-patch-note))))
+
+(defun ecc-review-talk--where ()
+  "Return the block that says where the user is in this review, or nil.
+The file, the line and its side, and the hunk with its @@ header and its
+number among the hunks of the file (`ecc-review-place-at-point'); the
+patch is not in it.  A quote block like the context a prompt is given
+\(`ecc-context-format')."
+  (when-let* ((place (ecc-review-place-at-point))
+              (path (plist-get place :path)))
+    (let ((hunk (plist-get place :hunk))
+          (line (plist-get place :line)))
+      (concat "\n\n---\n" ecc-review-talk-where-label (format " `%s`" path)
+              (when line
+                (format " L%d (%s side)" line (plist-get place :side)))
+              (cond (hunk
+                     (let ((number (ecc-review-hunk-number hunk)))
+                       (format ", hunk %d/%d `%s`" (car number) (cdr number)
+                               (plist-get hunk :header))))
+                    (line ", outside any hunk"))))))
+
 (defun ecc-review-talk-send (text)
   "Send TEXT to the session of this review as a prompt, and show the pane.
 Sent the way `ecc-send' sends a prompt typed in the minibuffer, which
@@ -154,26 +210,29 @@ queues it while a turn is running and says so."
   "Ask Claude for a tour of this review, one stop at a time.
 Claude shows each stop with `review_navigate', explains it, comments
 on the lines that need attention, and waits to be asked for the next
-stop (`ecc-review-talk-next')."
+stop (`ecc-review-talk-next').  The hunks of the review go with the
+asking (`ecc-review-talk--hunks'), for Claude to plan the stops from."
   (interactive)
   (ecc-review-talk--needs-tools (ecc-review-talk--session))
-  (ecc-review-talk-send ecc-review-talk-tour-prompt))
+  (ecc-review-talk-send (concat ecc-review-talk-tour-prompt "\n\n---\n"
+                                (ecc-review-talk--hunks))))
 
 ;;;###autoload
 (defun ecc-review-talk-next ()
-  "Ask Claude for the next stop of the tour."
+  "Ask Claude for the next stop of the tour, saying where the user is."
   (interactive)
   (ecc-review-talk--needs-tools (ecc-review-talk--session))
-  (ecc-review-talk-send ecc-review-talk-next-prompt))
+  (ecc-review-talk-send (concat ecc-review-talk-next-prompt (ecc-review-talk--where))))
 
 ;;;###autoload
 (defun ecc-review-talk-message (text)
-  "Send TEXT, read in the minibuffer, to the session of this review."
+  "Send TEXT, read in the minibuffer, to the session of this review.
+Where the user is in the review goes with it (`ecc-review-talk--where')."
   (interactive
    (list (read-string (format "To %s: " (ecc-session-name (ecc-review-talk--session))))))
   (when (string-empty-p (string-trim text))
     (user-error "Prompt is empty"))
-  (ecc-review-talk-send text))
+  (ecc-review-talk-send (concat text (ecc-review-talk--where))))
 
 ;;;; Answering what Claude waits for
 

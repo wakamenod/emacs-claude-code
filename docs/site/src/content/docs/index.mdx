@@ -45,10 +45,10 @@ hero:
            style="width:100%;height:auto;border-radius:0.5rem" />
   actions:
     - text: Get started
-      link: /emacs-claude-code/start/overview/
+      link: /emacs-claude-code/start/installation/
       icon: right-arrow
     - text: Features
-      link: /emacs-claude-code/features/menu/
+      link: /emacs-claude-code/features/sessions/
       icon: right-arrow
       variant: minimal
     - text: View on GitHub
@@ -59,45 +59,39 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-ecc runs `claude` headless, communicates over pipes using its stream-json protocol,
-and renders the conversation directly in ordinary Emacs buffers. The transcript is
-read-only text, so `isearch`, `occur`, and `M-w` work as they do anywhere in Emacs.
-Permission requests, diffs, and plans can be answered with a single keystroke, either
-from the transcript or from whatever file you are editing.
+ecc runs `claude` headless, talks to it over pipes in its stream-json protocol, and draws the conversation in an ordinary Emacs buffer. The transcript is read-only text, so `isearch`, `occur` and `M-w` work in it. A permission request, a diff or a plan is answered with one key, in the transcript or from the file you are editing.
 
 <CardGrid>
   <Card title="Answer from any buffer">
-    Pending permission requests appear in every mode line, and `C-c c a` lets you allow
-    them without switching buffers.
-    [Global keybindings](/emacs-claude-code/reference/key-bindings/)
+    The mode line counts the requests waiting in every session, and `C-c c a` allows
+    the oldest from wherever you are.
+    [Permissions and plans](/emacs-claude-code/features/permissions/)
   </Card>
-  <Card title="Review the change, not the claim">
-    Review all session changes in a unified diff, add comments hunk by hunk, and send
-    them back as a single prompt.
-    [Review](/emacs-claude-code/features/review/)
+  <Card title="Review the change">
+    Every change of a session in one diff, however it was made. Comment on lines and
+    send the comments as one prompt.
+    [Reviewing changes](/emacs-claude-code/features/review/)
   </Card>
-  <Card title="Send editor context">
-    `@region`, `@cursor`, and `@diagnostics` are expanded before the prompt is sent,
-    and answers can appear in an overlay directly above your code.
-    [Prompt and transcript](/emacs-claude-code/features/prompt/)
+  <Card title="Send from your code">
+    Send the region, fix the error at point, or write `@region`, `@cursor` and
+    `@diagnostics` in a prompt.
+    [Sending from your code](/emacs-claude-code/features/send/)
   </Card>
-  <Card title="Manage multiple sessions">
-    Track several concurrent tasks with one dashboard, per-session tabs,
-    and a mark on each session that is waiting for your response.
+  <Card title="Several sessions">
+    A dashboard, a tab for each session, and a mark on each session waiting for you.
     [Session management](/emacs-claude-code/features/sessions/)
   </Card>
-  <Card title="Hand off to the terminal">
-    `ecc-tui-open` hands off the conversation to the CLI's native interface, and
-    `ecc-tui-return` brings it back.
-    [Transient menu](/emacs-claude-code/features/menu/)
+  <Card title="Hand over to the terminal">
+    `ecc-tui-open` hands the conversation to the CLI's own interface, and
+    `ecc-tui-return` takes it back.
+    [Handing over](/emacs-claude-code/features/sessions/#handing-over-to-the-terminal)
   </Card>
-  <Card title="Safe by default">
-    Permission prompts default to deny, the loopback MCP server is disabled by default,
-    and evaluating Elisp requires explicit opt-in.
+  <Card title="Off until you turn it on">
+    Requests are denied unless you allow them. The MCP server is off, and evaluating
+    Elisp is a separate opt-in.
     [Configuration](/emacs-claude-code/reference/configuration/)
   </Card>
 </CardGrid>
 
-Emacs 29.1+ and the `claude` CLI are the only requirements; no external packages are needed.
-Start with the [overview](/emacs-claude-code/start/overview/), then check the
-[installation guide](/emacs-claude-code/start/installation/).
+ecc needs Emacs 29.1 or later and the `claude` CLI, and no other package. Start with the
+[installation](/emacs-claude-code/start/installation/), then [a first session](/emacs-claude-code/start/first-session/).
