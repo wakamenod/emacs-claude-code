@@ -33,7 +33,7 @@
 ;; one session and its project: the session's changes, that project's
 ;; working tree and branches, and that session to send the comments to.
 ;; `S' turns the whole menu to another session.  What it opens is `ecc-review' or
-;; `ecc-review-worktree' with the arguments chosen, and those are the
+;; `ecc-review-range' with the arguments chosen, and those are the
 ;; arguments `review_open' takes, so a review Claude is asked for in the
 ;; same words is the same review (`ecc-review-agent-open-description').
 ;;
@@ -432,9 +432,9 @@ the same commits by id opens the same review."
 (defun ecc-review-menu--context ()
   "Return what the menu opened here is about, as (SESSION D-SESSION DIRECTORY).
 DIRECTORY is the project of the current buffer and SESSION its session,
-nil when it has none -- `ecc-review-context', the rule of \\[ecc-review-worktree],
-which the git choices follow: they review this project, and with no
-session here they offer to start one, as \\`G' does.  D-SESSION is the
+nil when it has none -- `ecc-review-context', which the git choices
+follow as \\[ecc-review-range] does: they review this project, and with
+no session here they offer to start one.  D-SESSION is the
 session `D' reviews: SESSION, else the session used last, which is what
 \\`C-c c D' reviewed before it asked what to compare."
   (let ((context (ecc-review-context)))
@@ -545,9 +545,9 @@ nothing to turn, and it says so."
 (defun ecc-review-menu-open (choice range args &optional state)
   "Open the review CHOICE stands for, against RANGE, with the menu's ARGS.
 CHOICE `session' is `ecc-review' of the session of `D'; anything else
-is `ecc-review-worktree' of the menu's project against RANGE, the
+is `ecc-review-range' of the menu's project against RANGE, the
 comments going to its session, or to one offered to start there when
-it has none, as \\`G' does.  --files among ARGS asks for the files of
+it has none.  --files among ARGS asks for the files of
 that review to keep, and --ediff or --diff is the `ecc-review-style' of
 this review alone.  STATE is the menu's (`ecc-review-menu--with-state').
 CHOICE is remembered."
@@ -562,9 +562,9 @@ CHOICE is remembered."
                              (user-error "No session has changes to review"))))
             (ecc-review session (and files (ecc-review-read-paths session))))
         (let ((session (or (plist-get state :session)
-                           (ecc-review-worktree-session directory))))
-          (ecc-review-worktree session range directory
-                               (and files (ecc-review-worktree-read-paths
+                           (ecc-review-range-session directory))))
+          (ecc-review-range session range directory
+                               (and files (ecc-review-range-read-paths
                                            directory range))))))))
 
 ;;;; Asking
@@ -858,8 +858,8 @@ ARGS are the arguments of the menu, and STATE its state
                           args ecc-review-menu--state)))
 
 (transient-define-suffix ecc-review-menu-range (range args &optional state)
-  "Review the working tree against RANGE, typed as \\[universal-argument] \
-\\[ecc-review-worktree] takes it.
+  "Review the project against RANGE, typed as \\[universal-argument] \
+\\[ecc-review-range] takes it.
 ARGS are the arguments of the menu, and STATE its state
 \(`ecc-review-menu--with-state')."
   :description (lambda () (ecc-review-menu--describe 'range))
@@ -921,7 +921,7 @@ The menu is about one session and its project (`ecc-review-menu--context'),
 named in its heading; S turns it to another.  The counts are of the
 files each review would show.  What the session
 changed since it started is `ecc-review'; the rest is
-`ecc-review-worktree' against the range the choice names.  -f asks for
+`ecc-review-range' against the range the choice names.  -f asks for
 the files to keep once the comparison is chosen, and -e opens this one
 review the other way from `ecc-review-style'."
   [:description ecc-review-menu--header

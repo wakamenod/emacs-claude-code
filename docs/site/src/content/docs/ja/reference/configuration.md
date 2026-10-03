@@ -76,7 +76,7 @@ M-x customize-group RET ecc
 
 | 変数 | 既定値 | 説明 |
 |---|---|---|
-| `ecc-review-style` | `'diff` | `ecc-review` と `ecc-review-worktree` の変更の表示方法。`'diff` は読み取り専用の `diff-mode` バッファ 1 つを使い、`'ediff` はレビューするすべてのファイルを 1 つの ediff セッションで左右に並べる。どちらも読み取り専用で、送るプロンプトも同じ |
+| `ecc-review-style` | `'diff` | `ecc-review` と `ecc-review-range` の変更の表示方法。`'diff` は読み取り専用の `diff-mode` バッファ 1 つを使い、`'ediff` はレビューするすべてのファイルを 1 つの ediff セッションで左右に並べる。どちらも読み取り専用で、送るプロンプトも同じ |
 | `ecc-review-menu-count-session-changes` | `t` | non-nil なら、レビューのメニュー（`C-c c D`）に、セッション開始以降に変更されたファイルの数を表示する。数えるには作業ツリーのスナップショットが必要で、300 ファイルのリポジトリで約 35 ms、20,000 ファイルで約 70 ms かかる。メニューが開くのが遅いときは `nil` にする |
 | `ecc-review-auto-refresh` | `t` | non-nil なら、開いているレビューは、そのセッションのツールの完了、ターンの終了、リポジトリのファイルの保存のたびに diff を読み直す。コメントと読んでいた位置は保たれる。見えていないレビューは表示されたときに読み直す。ediff のレビューも追従する。`nil` なら `g` のときだけ読み直す |
 | `ecc-review-files-width` | `32` | `s` でレビューの横に出すファイルの一覧の幅（桁数） |

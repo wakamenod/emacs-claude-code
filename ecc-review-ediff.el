@@ -25,7 +25,7 @@
 
 ;;; Commentary:
 
-;; The other way `ecc-review' and `ecc-review-worktree' can show what
+;; The other way `ecc-review' and `ecc-review-range' can show what
 ;; changed, chosen with `ecc-review-style': ediff rather than one
 ;; unified diff.  Everything after that is the review of `ecc-review.el'
 ;; -- c comments a difference, C-c C-c sends every comment as one
@@ -103,7 +103,7 @@
 
 (defun ecc-review-ediff--trees (root range)
   "Return (LEFT . RIGHT), the two trees RANGE names in ROOT.
-RANGE is what `ecc-review-worktree\\=' is given: a revision like
+RANGE is what `ecc-review-range\\=' is given: a revision like
 \"HEAD\", a range like \"main...HEAD\", \"a..b\" or \"X^!\", the
 empty string for what is not staged yet, or `staged\\=' for what is.  A revision
 is compared with the working tree as it stands, so what git does not
@@ -378,11 +378,11 @@ blobs of the review on every reading.")
 (defun ecc-review-ediff-buffer-name (session side &optional range label)
   "Return the name of the SIDE buffer of the ediff review of SESSION.
 SIDE is `base' for what the files held and `now' for what they hold.
-RANGE is that of a review of the working tree, called LABEL when given
-\(`ecc-review-range-label\='): every review has its own
-two buffers, named the way `ecc-review-buffer-name\=' names the diff
+RANGE is that of a review by `ecc-review-range\=', called LABEL when
+given (`ecc-review-range-label\='): every review has its own two
+buffers, named the way `ecc-review-buffer-name\=' names the diff
 reviews, so that two ediff reviews of one session -- of what it changed
-and of the working tree -- do not write into each other's."
+and of a range -- do not write into each other's."
   (let ((name (ecc-review-buffer-name session nil range label)))
     (format "*ecc-review-%s:%s" side (substring name (length "*ecc-review:")))))
 
@@ -3033,14 +3033,17 @@ out side by side: the same baseline, the same working tree snapshot and
 the same errors."
   (ecc-review-ediff--start session (ecc-review-ediff--content session nil nil paths)))
 
-(defun ecc-review-ediff-worktree-buffer (session &optional range root paths)
-  "Open the working tree of ROOT as one ediff and return the control buffer.
+(define-obsolete-function-alias 'ecc-review-ediff-worktree-buffer
+  #'ecc-review-ediff-range-buffer "0.4.0")
+
+(defun ecc-review-ediff-range-buffer (session &optional range root paths)
+  "Open ROOT against RANGE as one ediff and return the control buffer.
 The comments go to SESSION.  RANGE defaults to
-`ecc-review-worktree-default-range\\=', and PATHS restrict it to those
-files.  This is `ecc-review-worktree-buffer\\=' laid out side by side."
+`ecc-review-default-range\\=', and PATHS restrict it to those
+files.  This is `ecc-review-range-buffer\\=' laid out side by side."
   (ecc-review-ediff--start
    session (ecc-review-ediff--content
-            session (or range ecc-review-worktree-default-range) root paths)))
+            session (or range ecc-review-default-range) root paths)))
 
 ;;;; Following the files
 

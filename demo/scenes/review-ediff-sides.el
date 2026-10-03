@@ -2,7 +2,7 @@
 
 ;;; Commentary:
 
-;; `ecc-review-style' set to `ediff' opens `D' and `G' as one ediff
+;; `ecc-review-style' set to `ediff' opens `D' and `w' as one ediff
 ;; session rather than one diff buffer, and this is the half of it that
 ;; is about the screen rather than the keys (demo/scenes/review-ediff-help.el
 ;; has the keys and the help): every file of the review in one pair of

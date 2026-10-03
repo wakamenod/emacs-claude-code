@@ -479,7 +479,7 @@ the user is not looking at the session."
                     "\n"
                     (ecc-review-agent--summary))))
       (let* ((buffer (if range
-                         (ecc-review-worktree-buffer session range nil paths)
+                         (ecc-review-range-buffer session range nil paths)
                        (ecc-review-buffer session paths)))
              (window (ecc-review-agent--show buffer session)))
         (puthash session buffer ecc-review-agent--opened)

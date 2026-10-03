@@ -63,6 +63,19 @@ Neither is in a git repository, so both are diffed from the records."
 
 ;;;; Pure functions
 
+(ert-deftest ecc-review-test-obsolete-range-names ()
+  "The names the range review had in 0.3 resolve to the new ones."
+  (require 'ecc-review-ediff)
+  (dolist (pair '((ecc-review-worktree . ecc-review-range)
+                  (ecc-review-worktree-buffer . ecc-review-range-buffer)
+                  (ecc-review-worktree-session . ecc-review-range-session)
+                  (ecc-review-ediff-worktree-buffer . ecc-review-ediff-range-buffer)))
+    (should (eq (symbol-function (car pair)) (cdr pair)))
+    (should (get (car pair) 'byte-obsolete-info)))
+  (should (eq (indirect-variable 'ecc-review-worktree-default-range)
+              'ecc-review-default-range))
+  (should (get 'ecc-review-worktree-default-range 'byte-obsolete-variable)))
+
 (ert-deftest ecc-review-test-hunk-range ()
   "The new side of a hunk header gives the line range shown in the message."
   (should (equal (ecc-review-hunk-range "@@ -10,3 +12,5 @@ def f():") '(12 . 16)))
@@ -380,7 +393,7 @@ carry the time of the index it was made from."
             (ecc-review-test--git directory "commit" "-q" "-m" "step")
             (ecc-review-test--write (concat directory "y.txt") "later\n")
             ;; Against HEAD the committed step is gone.
-            (let ((buffer (ecc-review-worktree-buffer session)))
+            (let ((buffer (ecc-review-range-buffer session)))
               (with-current-buffer buffer
                 (should-not (string-search "-one\n" (buffer-string)))))
             ;; Against the baseline it is still there, with the rest.
@@ -456,7 +469,7 @@ carry the time of the index it was made from."
             (let ((buffer (ecc-review-buffer session)))
               (with-current-buffer buffer
                 (should (string-search "\n-two\n+2\n" (buffer-string)))))
-            (let ((buffer (ecc-review-worktree-buffer session)))
+            (let ((buffer (ecc-review-range-buffer session)))
               (with-current-buffer buffer
                 (should (derived-mode-p 'ecc-review-mode))
                 (should (equal (buffer-name) "*ecc-review: test (HEAD)*"))
@@ -474,7 +487,7 @@ carry the time of the index it was made from."
                 (ecc-review-comment "rename this")
                 (should (string-search "rename this" (ecc-review-buffer-message)))))
             ;; Without a revision only what is not staged is shown.
-            (let ((buffer (ecc-review-worktree-buffer session "")))
+            (let ((buffer (ecc-review-range-buffer session "")))
               (with-current-buffer buffer
                 (should (equal (buffer-name) "*ecc-review: test (unstaged changes)*"))
                 (should (string-search "\n-two\n+2\n" (buffer-string)))
@@ -519,8 +532,8 @@ carry the time of the index it was made from."
         (let ((mine (ecc-model-create-session :name "mine" :project-root directory)))
           (unwind-protect
               (progn
-                (should (eq (ecc-review-worktree-session directory) mine))
-                (should (eq (ecc-review-worktree-session other) session)))
+                (should (eq (ecc-review-range-session directory) mine))
+                (should (eq (ecc-review-range-session other) session)))
             (ecc-test-cleanup-session mine)))))))
 
 (ert-deftest ecc-review-test-worktree-offers-a-session ()
@@ -530,12 +543,12 @@ carry the time of the index it was made from."
       (ecc-review-test--with-directory other
         (setf (ecc-session-project-root session) other)
         (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
-          (should-error (ecc-review-worktree-session directory) :type 'user-error))
+          (should-error (ecc-review-range-session directory) :type 'user-error))
         (let ((started nil))
           (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
                     ((symbol-function 'ecc-start)
                      (lambda (root &optional _name) (setq started root) session)))
-            (should (eq (ecc-review-worktree-session directory) session))
+            (should (eq (ecc-review-range-session directory) session))
             (should (equal started directory))))))))
 
 (ert-deftest ecc-review-test-worktree-context-lines ()
@@ -556,10 +569,10 @@ carry the time of the index it was made from."
             (ecc-review-test--write path "one\n2\n3\n4\n5\n6\nseven\n")
             (setf (ecc-session-project-root session) directory)
             (let ((ecc-review-context-lines 3))
-              (with-current-buffer (ecc-review-worktree-buffer session)
+              (with-current-buffer (ecc-review-range-buffer session)
                 (should (= (length (ecc-review-hunks)) 1))))
             (let ((ecc-review-context-lines 0))
-              (with-current-buffer (ecc-review-worktree-buffer session)
+              (with-current-buffer (ecc-review-range-buffer session)
                 (should (= (length (ecc-review-hunks)) 2))
                 ;; No context line came with them.
                 (should-not (string-search "\n 2\n" (buffer-string))))))
@@ -582,7 +595,7 @@ carry the time of the index it was made from."
             ;; own and hide that git never answered.
             (ecc-review-test--write (concat directory "new.txt") "hello\n")
             (setf (ecc-session-project-root session) directory)
-            (let ((error (should-error (ecc-review-worktree-buffer session "nope...HEAD")
+            (let ((error (should-error (ecc-review-range-buffer session "nope...HEAD")
                                        :type 'user-error)))
               (should (string-search "nope...HEAD" (error-message-string error)))))
         (ecc-review-test--kill-review-buffers)))))
@@ -598,7 +611,7 @@ carry the time of the index it was made from."
             (ecc-review-test--write (concat directory "x.txt") "one\ntwo\n")
             (setf (ecc-session-project-root session) directory)
             (should (ecc-review--unborn-p (ecc-review-git-root directory)))
-            (let ((buffer (ecc-review-worktree-buffer session)))
+            (let ((buffer (ecc-review-range-buffer session)))
               (with-current-buffer buffer
                 (should (derived-mode-p 'ecc-review-mode))
                 ;; The range is still HEAD to the eye: only what git was
@@ -624,7 +637,7 @@ carry the time of the index it was made from."
             (ecc-review-test--write (concat directory "new.txt") "hello\n")
             (ecc-review-test--git directory "add" "staged.txt")
             (setf (ecc-session-project-root session) directory)
-            (let ((buffer (ecc-review-worktree-buffer session)))
+            (let ((buffer (ecc-review-range-buffer session)))
               (with-current-buffer buffer
                 (let ((text (buffer-string)))
                   ;; The staged file comes from the diff against the empty
@@ -648,7 +661,7 @@ carry the time of the index it was made from."
             (ecc-review-test--git directory "init" "-q")
             (ecc-review-test--write (concat directory "new.txt") "hello\n")
             (setf (ecc-session-project-root session) directory)
-            (let ((error (should-error (ecc-review-worktree-buffer session "nope...HEAD")
+            (let ((error (should-error (ecc-review-range-buffer session "nope...HEAD")
                                        :type 'user-error)))
               (should (string-search "nope...HEAD" (error-message-string error)))))
         (ecc-review-test--kill-review-buffers)))))
@@ -659,7 +672,7 @@ carry the time of the index it was made from."
     (ecc-review-test--with-directory directory
       (setf (ecc-session-project-root session) directory)
       (cl-letf (((symbol-function 'ecc-review-git-root) (lambda (_path) nil)))
-        (should-error (ecc-review-worktree-buffer session) :type 'user-error)))))
+        (should-error (ecc-review-range-buffer session) :type 'user-error)))))
 
 ;;;; The review buffer
 
@@ -1559,10 +1572,10 @@ Returns the path of x.txt."
             (ecc-review-test--write (concat directory "new.txt") "hello\n")
             (setf (ecc-session-project-root session) directory)
             (dolist (range '("HEAD~1..HEAD" "HEAD~1...HEAD" "HEAD^!"))
-              (with-current-buffer (ecc-review-worktree-buffer session range)
+              (with-current-buffer (ecc-review-range-buffer session range)
                 (should (string-search "+beta" (buffer-string)))
                 (should-not (string-search "new.txt" (buffer-string)))))
-            (with-current-buffer (ecc-review-worktree-buffer session "HEAD~1")
+            (with-current-buffer (ecc-review-range-buffer session "HEAD~1")
               (should (string-search "+beta" (buffer-string)))
               (should (string-search "+hello" (buffer-string)))))
         (ecc-review-test--kill-review-buffers)))))
@@ -1579,7 +1592,7 @@ Returns the path of x.txt."
             (ecc-review-test--git directory "add" "y.txt")
             (ecc-review-test--write (concat directory "new.txt") "hello\n")
             (setf (ecc-session-project-root session) directory)
-            (with-current-buffer (ecc-review-worktree-buffer session "--cached")
+            (with-current-buffer (ecc-review-range-buffer session "--cached")
               (should (equal (buffer-name) "*ecc-review: test (staged changes)*"))
               (should (eq ecc-review--range 'staged))
               (should (string-search "Working tree (staged changes)" (ecc-review--header-line)))
@@ -1588,9 +1601,9 @@ Returns the path of x.txt."
               (should-not (string-search "hello" (buffer-string))))
             ;; Nothing staged is nothing to review.
             (ecc-review-test--git directory "reset" "-q")
-            (should-error (ecc-review-worktree-buffer session 'staged) :type 'user-error)
+            (should-error (ecc-review-range-buffer session 'staged) :type 'user-error)
             ;; An option is never handed to git.
-            (should-error (ecc-review-worktree-buffer session "--output=x")
+            (should-error (ecc-review-range-buffer session "--output=x")
                           :type 'user-error)
             (should-not (file-exists-p (concat directory "x"))))
         (ecc-review-test--kill-review-buffers)))))
@@ -1607,11 +1620,11 @@ Returns the path of x.txt."
             (ecc-review-test--write (concat directory "new.txt") "hello\n")
             (ecc-review-test--write (concat directory "other.txt") "other\n")
             (setf (ecc-session-project-root session) directory)
-            (should (equal (sort (ecc-review-worktree-paths directory "HEAD") #'string<)
+            (should (equal (sort (ecc-review-range-paths directory "HEAD") #'string<)
                            '("new.txt" "other.txt" "x.txt" "y.txt")))
-            (should (equal (ecc-review-worktree-paths directory "HEAD~1..HEAD")
+            (should (equal (ecc-review-range-paths directory "HEAD~1..HEAD")
                            '("y.txt")))
-            (with-current-buffer (ecc-review-worktree-buffer session "HEAD" nil
+            (with-current-buffer (ecc-review-range-buffer session "HEAD" nil
                                                              '("x.txt" "new.txt"))
               (should (equal ecc-review--paths '("x.txt" "new.txt")))
               (let ((text (buffer-string)))
@@ -1644,7 +1657,7 @@ Returns the path of x.txt."
                      (setq offered candidates)
                      '("x.txt"))))
           (let ((current-prefix-arg '(4)))
-            (should (equal (ecc-review-worktree--read-arguments)
+            (should (equal (ecc-review-range--read-arguments)
                            (list session 'staged directory
                                  (list (expand-file-name
                                         "x.txt" (ecc-review-git-root directory)))))))
@@ -1652,7 +1665,7 @@ Returns the path of x.txt."
           (should (equal offered '("x.txt")))
           (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "--output=x")))
             (let ((current-prefix-arg '(4)))
-              (should-error (ecc-review-worktree--read-arguments) :type 'user-error))))))))
+              (should-error (ecc-review-range--read-arguments) :type 'user-error))))))))
 
 ;;;; Following the files
 
@@ -1698,7 +1711,7 @@ windows changes: which is selected, what they show, how they are laid out."
               (let ((x (ecc-review-test--repo directory)))
                 (ecc-review-test--write x "one\n2\nthree\n")
                 (setf (ecc-session-project-root session) directory)
-                (let* ((review (ecc-review-worktree-buffer session "HEAD"))
+                (let* ((review (ecc-review-range-buffer session "HEAD"))
                        (selected (progn (delete-other-windows)
                                         (set-window-buffer (selected-window) other)
                                         (selected-window)))
@@ -1762,8 +1775,8 @@ A session marks its own reviews and those of its repository, not another's."
                   (ecc-review-test--write xa "one\nA\nthree\n")
                   (ecc-review-test--write xb "one\nB\nthree\n")
                   (setf (ecc-session-project-root one) a)
-                  (let ((review-one (ecc-review-worktree-buffer one "HEAD"))
-                        (review-two (ecc-review-worktree-buffer two "HEAD")))
+                  (let ((review-one (ecc-review-range-buffer one "HEAD"))
+                        (review-two (ecc-review-range-buffer two "HEAD")))
                     (delete-other-windows)
                     (set-window-buffer (selected-window) review-one)
                     ;; Another session of the same repository marks it;
@@ -1823,7 +1836,7 @@ A session marks its own reviews and those of its repository, not another's."
               (let ((x (ecc-review-test--repo directory)))
                 (ecc-review-test--write x "one\n2\nthree\n")
                 (setf (ecc-session-project-root session) directory)
-                (let ((review (ecc-review-worktree-buffer session "HEAD")))
+                (let ((review (ecc-review-range-buffer session "HEAD")))
                   (with-current-buffer (find-file-noselect (concat elsewhere "z.txt"))
                     (insert "z")
                     (save-buffer)
@@ -1848,7 +1861,7 @@ A session marks its own reviews and those of its repository, not another's."
               (let* ((x (ecc-review-test--repo directory))
                      (review (progn (ecc-review-test--write x "one\n2\nthree\n")
                                     (setf (ecc-session-project-root session) directory)
-                                    (ecc-review-worktree-buffer session "HEAD"))))
+                                    (ecc-review-range-buffer session "HEAD"))))
                 (set-window-buffer (selected-window) review)
                 (with-current-buffer review
                   (ecc-review-test--goto "+2")
@@ -1880,7 +1893,7 @@ A session marks its own reviews and those of its repository, not another's."
   (let ((x (ecc-review-test--repo directory)))
     (ecc-review-test--write x "one\n2\nthree\n")
     (setf (ecc-session-project-root session) directory)
-    (ecc-review-worktree-buffer session "HEAD")))
+    (ecc-review-range-buffer session "HEAD")))
 
 (ert-deftest ecc-review-test-watch-timer-waits-for-idleness-not-for-an-idle-period ()
   "After a long idle period the refresh still comes within the delay.
@@ -2045,7 +2058,7 @@ and makes no buffer."
             (should (string-search "+3" (with-current-buffer review (buffer-string))))
             (should-not (get-buffer "*ecc-review: test (HEAD)*"))
             (ecc-review-test--git directory "commit" "-q" "-a" "-m" "third")
-            (should-error (ecc-review-worktree-buffer session "HEAD") :type 'user-error)
+            (should-error (ecc-review-range-buffer session "HEAD") :type 'user-error)
             (should-not (get-buffer "*ecc-review: test (HEAD)*"))
             (ecc-review--reread review t)
             (should (string-search "No change against HEAD"
@@ -2070,8 +2083,8 @@ and makes no buffer."
             (ecc-review-test--write x "one\n2\nthree\n")
             (ecc-review-test--git directory "add" "x.txt")
             (setf (ecc-session-project-root session) directory)
-            (let ((index (ecc-review-worktree-buffer session 'staged))
-                  (branch (ecc-review-worktree-buffer session "staged")))
+            (let ((index (ecc-review-range-buffer session 'staged))
+                  (branch (ecc-review-range-buffer session "staged")))
               (should-not (eq index branch))
               (should (string-search "+beta" (with-current-buffer branch (buffer-string))))
               (should-not (string-search "+beta" (with-current-buffer index
@@ -2175,7 +2188,7 @@ and a tool's relative file_path likewise."
               (ecc-review-test--write (concat sub "foo.el") "foo\n")
               (ecc-review-test--write (concat directory "foo.el") "top\n")
               (setf (ecc-session-project-root session) sub)
-              (with-current-buffer (ecc-review-worktree-buffer session "HEAD" nil '("foo.el"))
+              (with-current-buffer (ecc-review-range-buffer session "HEAD" nil '("foo.el"))
                 (should (equal ecc-review--paths '("sub/foo.el")))
                 (should (string-search "+foo" (buffer-string)))
                 (should-not (string-search "+top" (buffer-string)))
@@ -2207,7 +2220,7 @@ and a tool's relative file_path likewise."
                                                  (ecc-review-git-root directory))
                            "link.txt"))
             (setf (ecc-session-project-root session) directory)
-            (with-current-buffer (ecc-review-worktree-buffer session "HEAD" nil '("link.txt"))
+            (with-current-buffer (ecc-review-range-buffer session "HEAD" nil '("link.txt"))
               (should (equal ecc-review--paths '("link.txt")))
               (should (string-search "link.txt" (buffer-string)))))
         (ecc-review-test--kill-review-buffers)))))
@@ -2230,7 +2243,7 @@ does wherever font-lock runs: `diff-refine' is left as it is."
             (ecc-review-test--git directory "commit" "-q" "-m" "init")
             (setf (ecc-session-project-root session) directory)
             (ecc-review-test--write (concat directory "x.txt") "one TWO three\n")
-            (with-current-buffer (ecc-review-worktree-buffer session)
+            (with-current-buffer (ecc-review-range-buffer session)
               (should diff-refine)
               ;; A batch Emacs runs no font-lock by itself; an Emacs with
               ;; `global-font-lock-mode' on does.

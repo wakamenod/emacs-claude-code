@@ -145,7 +145,7 @@
 
 (defun demo-open-ediff ()
   "Open the review of everything uncommitted, in ediff, as G opens it."
-  (ecc-review-worktree demo-session "HEAD" demo-root)
+  (ecc-review-range demo-session "HEAD" demo-root)
   nil)
 
 (defun demo-claude-comment ()
@@ -197,7 +197,7 @@ the way typing arrives while the minibuffer is open."
 (defun demo-open-diff ()
   "Open the same review as a diff, beside the session, as G opens it."
   (let ((ecc-review-style 'diff))
-    (ecc-review-worktree demo-session "HEAD" demo-root))
+    (ecc-review-range demo-session "HEAD" demo-root))
   nil)
 
 (defun demo-quit ()

@@ -908,7 +908,7 @@ anything Claude says about the change."
                   (with-temp-file greeting (insert "hello\nthere\n"))
                   (setf (ecc-session-project-root session) directory)
                   (save-window-excursion
-                    (let ((review (ecc-review-worktree-buffer session "HEAD" directory)))
+                    (let ((review (ecc-review-range-buffer session "HEAD" directory)))
                       (switch-to-buffer review)
                       (with-current-buffer review
                         (ecc-review-talk-tour))

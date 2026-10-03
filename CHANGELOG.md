@@ -167,12 +167,12 @@ Verified against **Claude Code CLI 2.1.281**.
   a diff of 1,000 hunks (65 KB) took 0.06 s and of 10,000 hunks (650 KB)
   0.22 s, measured with `benchmark-run` in batch.
 
-- `C-u G` (`ecc-review-worktree`) takes `--staged` or `--cached` for what
+- `C-u M-x ecc-review-range` takes `--staged` or `--cached` for what
   is staged alone -- the index against `HEAD`, without untracked files, in
   a buffer named `staged changes` -- and asks after the range for the
   files to review, out of those the range would show; none is every file.
   `g` keeps the files. A range starting with `-` is refused, so no git
-  option reaches git. `ecc-review-worktree-buffer` takes the files as
+  option reaches git. `ecc-review-range-buffer` takes the files as
   PATHS, and a range may be the symbol `staged`. The files, given to
   `review_open` or to the review, are absolute or relative to the
   directory the session works in, inside git and outside it, and a
@@ -183,7 +183,7 @@ Verified against **Claude Code CLI 2.1.281**.
   opened. `D` is what changed since the session started, so `C-c c D D` is
   what `C-c c D` was; `w` everything uncommitted (against `HEAD`); `u` what
   is not staged; `s` what is staged; `b` this branch against another; `c` a
-  commit; `r` a range typed as `C-u G` takes it. Each line says how many
+  commit; `r` a range typed as `C-u M-x ecc-review-range` takes it. Each line says how many
   files it would show. One `git status` gives the counts of `w`, `u` and
   `s`, untracked files included; `b` counts the diff of its fork against
   the working tree and the untracked files, which is what its review
@@ -195,8 +195,8 @@ Verified against **Claude Code CLI 2.1.281**.
   117 ms, 60 ms without the `D` count.
 
   The git choices review the project of the current buffer and send the
-  comments to its session, the rule of `G`: with no session there, they
-  offer to start one, as `G` does. `D` reviews that session, or, when the
+  comments to its session: with no session there, they offer to start
+  one. `D` reviews that session, or, when the
   project has none, the session used last, which is what `C-c c D`
   reviewed before; the heading says which session each is about, and the
   project. `S` turns the whole menu to another session and its project,
@@ -539,9 +539,26 @@ Verified against **Claude Code CLI 2.1.281**.
 - `D` in `C-c c` (`ecc-global-map`) and in `ecc-menu` opens
   `ecc-review-menu` instead of `ecc-review`; `D` there is `ecc-review` of
   the session the menu names, which is the session of the buffer or its
-  project, else the one used last, as before. `G` still opens
-  `ecc-review-worktree` directly, the same as `w` in the menu.
-  `M-x ecc-review` and `M-x ecc-review-worktree` are unchanged.
+  project, else the one used last, as before. `M-x ecc-review` is
+  unchanged.
+
+- **Breaking.** `G` is gone from `C-c c` (`ecc-global-map`) and from
+  `ecc-menu`: `C-c c D w` is the same review. The command stays, renamed
+  `ecc-review-range` -- it reviews the project against a git range, `HEAD`
+  by default, and some ranges have no working tree in them -- and
+  `M-x ecc-review-range`, `C-u` asking for the range and the files, and
+  Lisp calls work as before. The old names are obsolete aliases:
+  `ecc-review-worktree`, `ecc-review-worktree-buffer`,
+  `ecc-review-worktree-session`, `ecc-review-ediff-worktree-buffer` and
+  the variable `ecc-review-worktree-default-range`, now
+  `ecc-review-default-range`. To have the key back -- the map is
+  autoloaded as a keymap, and the variable is there only once
+  `ecc-answer` is loaded:
+
+  ```elisp
+  (with-eval-after-load 'ecc-answer
+    (define-key ecc-global-map "G" #'ecc-review-range))
+  ```
 
 - The comments of an ediff review are the comments of the diff review:
   numbered, kept across a refresh by the same rules, and listed, removed
@@ -569,7 +586,7 @@ Verified against **Claude Code CLI 2.1.281**.
   read again took 0.68 s unchanged and 0.80 s with one file changed, and
   takes 0.04 s and 0.08 s (`benchmark-run`, batch).
 
-- The review of what is not staged (`C-u G` with an empty range) is named
+- The review of what is not staged (`ecc-review-range` with an empty range) is named
   `*ecc-review: SESSION (unstaged changes)*`, not `(unstaged)`, and the
   review of what is staged `(staged changes)`: with a space in them,
   neither can be the name of a branch, whose review would otherwise share
@@ -597,7 +614,7 @@ Verified against **Claude Code CLI 2.1.281**.
   outdated, above the first hunk of its file, and is still sent with
   `(outdated)` and the hunk as it was.
 
-- Reading the review again -- `g`, `ecc-review` or `ecc-review-worktree` on
+- Reading the review again -- `g`, `ecc-review` or `ecc-review-range` on
   a review that is open, or Claude's `review_open` -- keeps your place: point,
   and in each window showing the review its point and how far down the
   window it was, go back to the same line by the same rule. It used to go
@@ -702,11 +719,11 @@ Verified against **Claude Code CLI 2.1.281**.
   against a current difference of `#00512d`. The colours are worked out from the colours as
   written, not from the nearest the display can show.
 
-- A review of one commit in ediff (`C-u G` with `REV^!` and
+- A review of one commit in ediff (`ecc-review-range` with `REV^!` and
   `ecc-review-style` `ediff`) failed with "Git cannot diff against"; it
   compares the commit with its first parent, as the diff review does.
 
-- A review of commits (`C-u G` with `a..b`, `a...b` or `REV^!`) listed the
+- A review of commits (`ecc-review-range` with `a..b`, `a...b` or `REV^!`) listed the
   untracked files of the working tree, which belong to none of those
   commits. They are now appended only when the range involves the working
   tree, which git decides: `git rev-parse --revs-only` names one revision

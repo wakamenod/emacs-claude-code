@@ -503,7 +503,7 @@ side is the cursor of the window that has the keyboard."
                                            (concat "a\nb\nc\nd\ne\n"
                                                    ecc-review-direct-test--changed))
             (setf (ecc-session-project-root session) directory)
-            (setq control (ecc-review-ediff-worktree-buffer session "HEAD^!" directory))
+            (setq control (ecc-review-ediff-range-buffer session "HEAD^!" directory))
             (ecc-review-direct-test--reading-files
               (with-current-buffer control
                 (should (equal (ecc-review-direct-source

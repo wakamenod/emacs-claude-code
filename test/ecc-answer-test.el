@@ -199,6 +199,25 @@ cookie of their own, and the ones defined elsewhere do."
                 (should (search-forward (format "(autoload '%s " command) nil t))))))
       (delete-directory tmp t))))
 
+(ert-deftest ecc-answer-test-bind-a-key-from-init ()
+  "The form the documentation gives to bind a key works in an init.
+`ecc-global-map\=' is autoloaded as a keymap: its function cell is
+there before the package is loaded, its value is not, so a plain
+`define-key\=' on it in an init signals void-variable.  This runs the
+documented form in an Emacs that has loaded only the autoloads."
+  (let* ((dir (file-name-directory (locate-library "ecc-answer.el" t)))
+         (autoloads (expand-file-name "ecc-autoloads.el" dir)))
+    (skip-unless (file-exists-p autoloads))
+    (with-temp-buffer
+      (should (zerop (call-process
+                      (expand-file-name invocation-name invocation-directory)
+                      nil t nil "-Q" "--batch" "-L" dir "-l" autoloads
+                      "--eval" "(with-eval-after-load 'ecc-answer
+                                  (define-key ecc-global-map \"G\" #'ecc-review-range))"
+                      "--eval" "(require 'ecc-answer)"
+                      "--eval" "(princ (lookup-key ecc-global-map \"G\"))")))
+      (should (string-suffix-p "ecc-review-range" (buffer-string))))))
+
 ;;;; The mode line
 
 (ert-deftest ecc-answer-test-mode-line-indicator ()

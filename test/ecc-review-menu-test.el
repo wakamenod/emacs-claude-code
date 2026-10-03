@@ -5,7 +5,7 @@
 ;; The menu cannot be driven in batch, so what its suffixes call is
 ;; tested instead: the ranges `b' and `c' build, the guess at the base
 ;; branch, the counts, the session the comments go to, and the arguments
-;; each suffix hands `ecc-review' or `ecc-review-worktree'.  The git
+;; each suffix hands `ecc-review' or `ecc-review-range'.  The git
 ;; cases build a throwaway repository.
 
 ;;; Code:
@@ -61,7 +61,7 @@ first."
     (list one two three)))
 
 (defmacro ecc-review-menu-test--capturing (calls &rest body)
-  "Run BODY with `ecc-review' and `ecc-review-worktree' recorded in CALLS.
+  "Run BODY with `ecc-review' and `ecc-review-range' recorded in CALLS.
 Each call is pushed as (COMMAND STYLE ARGS...), STYLE being the
 `ecc-review-style' it ran with.  `ecc-review-menu--last' is restored."
   (declare (indent 1))
@@ -71,9 +71,9 @@ Each call is pushed as (COMMAND STYLE ARGS...), STYLE being the
      (cl-letf (((symbol-function 'ecc-review)
                 (lambda (&rest args)
                   (push (cons 'ecc-review (cons ecc-review-style args)) ,calls)))
-               ((symbol-function 'ecc-review-worktree)
+               ((symbol-function 'ecc-review-range)
                 (lambda (&rest args)
-                  (push (cons 'ecc-review-worktree (cons ecc-review-style args))
+                  (push (cons 'ecc-review-range (cons ecc-review-style args))
                         ,calls))))
        ,@body)))
 
@@ -208,7 +208,7 @@ Each call is pushed as (COMMAND STYLE ARGS...), STYLE being the
         (ecc-review-menu-test--write directory "new.txt" "new\n")
         (ecc-review-menu-test--write directory "c.txt" "changed\n")
         (ecc-test-with-fake-session session
-          (let ((text (plist-get (ecc-review--worktree-content session fork root nil)
+          (let ((text (plist-get (ecc-review--range-content session fork root nil)
                                  :text)))
             (should (string-search "b/c.txt" text))
             (should (string-search "b/new.txt" text))
@@ -289,7 +289,7 @@ under the name it was given."
         (setf (ecc-session-project-root session) directory)
         (let* ((root (ecc-review-git-root directory))
                (range (ecc-review-menu-commit-range root "HEAD"))
-               (buffer (ecc-review-worktree-buffer session range directory)))
+               (buffer (ecc-review-range-buffer session range directory)))
           (unwind-protect
               (with-current-buffer buffer
                 (should (equal (buffer-name buffer)
@@ -598,7 +598,7 @@ rest ask nothing."
         (should (= (ecc-review-menu--branch-count root fork (ecc-review-menu--status root))
                    1))
         (ecc-test-with-fake-session session
-          (let ((text (plist-get (ecc-review--worktree-content session fork root nil) :text)))
+          (let ((text (plist-get (ecc-review--range-content session fork root nil) :text)))
             (should (string-search "b/u.txt" text))
             (should-not (string-search "c.txt" text))))))))
 
@@ -659,7 +659,7 @@ rest ask nothing."
             (should (eq ecc-review-menu--last 'session))
             (ecc-review-menu-uncommitted nil)
             (should (equal (pop calls)
-                           (list 'ecc-review-worktree 'diff session "HEAD" directory nil)))
+                           (list 'ecc-review-range 'diff session "HEAD" directory nil)))
             (should (eq ecc-review-menu--last 'worktree))
             (ecc-review-menu-unstaged nil)
             (should (equal (nth 3 (pop calls)) ""))
@@ -953,7 +953,7 @@ reviews this project as G would, and D reviews the session used last."
                 (should (string-search "D reviews test" (ecc-review-menu--header)))
                 (should-not (ecc-review-menu--no-session-p))
                 ;; w is G: this project, with a session offered here.
-                (cl-letf (((symbol-function 'ecc-review-worktree-session)
+                (cl-letf (((symbol-function 'ecc-review-range-session)
                            (lambda (root) (setq offered root) 'started)))
                   (ecc-review-menu-uncommitted nil))
                 (should (equal offered directory))

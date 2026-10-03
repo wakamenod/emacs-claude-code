@@ -107,7 +107,7 @@ lays itself out the plain way whatever it says."
 
 (defun demo-open-ediff ()
   "Open the review of everything uncommitted, in ediff, as G opens it."
-  (ecc-review-worktree demo-session "HEAD" demo-root)
+  (ecc-review-range demo-session "HEAD" demo-root)
   nil)
 
 ;;;; Looking
