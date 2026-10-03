@@ -33,8 +33,8 @@
 ;; `ecc-review' and `ecc-review-range' are the same review against
 ;; different bases: the first against what the working tree held when
 ;; the session started (`ecc-review-ensure-baseline'), so the commits made
-;; during it are still shown; the second against HEAD, so only what is
-;; uncommitted is.  Neither asks how a file was changed -- an edit, a
+;; during it are still shown; the second against HEAD by default, so
+;; only what is uncommitted is.  Neither asks how a file was changed -- an edit, a
 ;; shell command and a script all read alike -- because both compare
 ;; trees rather than replaying what the CLI reported doing.  Outside a
 ;; git repository there is no tree to compare, and only there is a file
@@ -2535,7 +2535,8 @@ files.
 
 This and `ecc-review-range\=' are the same review against different
 bases: this one against where the session started, so the commits made
-during it are still shown; that one against the last commit."
+during it are still shown; that one against the last commit by
+default, or any other range."
   (interactive
    (let ((session (ecc-review-session)))
      (list session (and current-prefix-arg (ecc-review-read-paths session)))))
