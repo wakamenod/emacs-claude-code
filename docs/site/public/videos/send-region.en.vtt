@@ -4,7 +4,7 @@ WEBVTT
 A region marked in the source
 
 00:00:02.230 --> 00:00:06.440
-C-u g asks for an instruction in the minibuffer
+In the menu (C-c c ?), C-u g asks for an instruction
 
 00:00:06.440 --> 00:00:08.930
 The code and the instruction arrive in the transcript

@@ -4,7 +4,7 @@ WEBVTT
 The point is on line 6 of the source
 
 00:00:00.640 --> 00:00:01.600
-C-c C-x turns the editor context on
+In the session buffer, C-c C-x turns the editor context on
 
 00:00:01.600 --> 00:00:06.710
 The prompt goes out with the file and line: hello.py L6

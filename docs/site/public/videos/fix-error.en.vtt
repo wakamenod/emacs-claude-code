@@ -4,7 +4,7 @@ WEBVTT
 Flymake marks an error on line 2
 
 00:00:01.580 --> 00:00:03.640
-Press e to send the diagnostic with the code around it
+In the menu (C-c c ?), e sends the diagnostic with the code around it
 
 00:00:03.640 --> 00:00:07.440
 Claude answers and proposes an edit

@@ -4,7 +4,7 @@ WEBVTT
 A region marked in the source
 
 00:00:01.930 --> 00:00:05.030
-Press w and type how to rewrite it
+In the menu (C-c c ?), w asks how to rewrite it
 
 00:00:05.030 --> 00:00:07.750
 Waiting for the rewrite
@@ -13,4 +13,4 @@ Waiting for the rewrite
 The new code appears above the original
 
 00:00:15.510 --> 00:00:16.800
-Press RET to accept it, and the buffer is rewritten
+Press RET on it to accept it, and the buffer is rewritten

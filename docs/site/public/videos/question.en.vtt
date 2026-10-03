@@ -4,7 +4,7 @@ WEBVTT
 Claude asks two questions
 
 00:00:01.010 --> 00:00:02.010
-Press RET to open them in a buffer of their own
+On the question, press RET to open it in a buffer of its own
 
 00:00:02.010 --> 00:00:02.680
 Press 1 to choose Emacs for the first question

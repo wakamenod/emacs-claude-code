@@ -268,6 +268,15 @@ switched, and turns on the track of the page's language: English on an
 English page, Japanese under `/ja/`. `label` is the video's accessible name,
 written like alt text.
 
+Every video has a band of the theme's background below the picture, 80 CSS
+pixels high at the 720px width of the content column (100 rows of a video
+900 wide, 134 of one 1200 wide). The browser's control bar and the subtitles
+are drawn over the bottom of a video, and without the band they covered the
+echo area and the mode line. Native controls cannot be put below a video, and
+controls of our own would need JavaScript, so the frame is made taller instead.
+On a screen narrower than the column the band shrinks with the video and the
+controls cover part of the picture again.
+
 A browser sizes the subtitles from the height of the video, and a video as
 wide as the content column made them larger than the text around them, so
 `::cue` sets them to 0.85rem, a little under the body text, on a translucent

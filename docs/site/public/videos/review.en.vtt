@@ -4,7 +4,7 @@ WEBVTT
 Every change of the session, as one diff
 
 00:00:00.960 --> 00:00:05.550
-Press c to comment on the hunk at point
+In the review, press c to comment on the hunk at point
 
 00:00:05.550 --> 00:00:06.500
 Press n to move to the next hunk

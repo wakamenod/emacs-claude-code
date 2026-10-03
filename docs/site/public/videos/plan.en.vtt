@@ -4,7 +4,7 @@ WEBVTT
 The plan opens in a buffer beside the session
 
 00:00:01.270 --> 00:00:06.490
-C-c C-a puts a comment on a line
+In the plan buffer, C-c C-a puts a comment on a line
 
 00:00:06.490 --> 00:00:09.930
 C-c C-p chooses the permission mode to approve with

@@ -4,7 +4,7 @@ WEBVTT
 The window shows the session greet
 
 00:00:01.100 --> 00:00:04.590
-C-c C-t lists the sessions, and typing narrows the list to notes
+In the session buffer, C-c C-t lists the sessions, and typing narrows them to notes
 
 00:00:04.590 --> 00:00:06.290
 The window now shows notes, and its tab is selected

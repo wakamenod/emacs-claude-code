@@ -138,10 +138,20 @@ hold() {
 # starts before the whole file is in; the scale keeps both sides even,
 # which yuv420p needs.  A screen is mostly flat colour, so -crf 30 stays
 # legible at a small size.
+#
+# A band of the theme's background (doom-tokyo-night's #1a1b26) is added
+# below the picture.  A browser draws its controls and the subtitles over
+# the bottom of a video, which is where the echo area and the mode line
+# are; the band gives them somewhere else to go.  It is 80 CSS pixels at
+# the width the site shows a video, the 45rem (720px) content column:
+# about 48 for the control bar, 22 for a line of subtitles at 0.85rem, and
+# a little air.  The controls are a fixed CSS height, so the band is a
+# share of the width, iw*80/720, rounded up to an even number: 134 rows at
+# 1200 wide, 100 at 900.
 video() {
     ffmpeg -hide_banner -loglevel error -y \
         -framerate "$fps" -pattern_type glob -i "$frames/$scene/*.png" \
-        -vf "scale=1200:-2:flags=lanczos,format=yuv420p" \
+        -vf "scale=1200:-2:flags=lanczos,pad=iw:ih+2*ceil(iw*40/720):0:0:color=0x1a1b26,format=yuv420p" \
         -c:v libx264 -preset slow -crf 30 -an -movflags +faststart \
         "$videodir/$scene.mp4"
     poster

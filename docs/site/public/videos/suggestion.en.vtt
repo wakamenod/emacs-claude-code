@@ -4,7 +4,7 @@ WEBVTT
 The CLI's suggestion stands in the empty prompt as ghost text
 
 00:00:00.950 --> 00:00:02.210
-C-c C-s turns it into a draft
+In the prompt, C-c C-s turns it into a draft
 
 00:00:02.210 --> 00:00:03.310
 Sending the draft
