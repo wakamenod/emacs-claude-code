@@ -38,10 +38,11 @@
 ;; and merged ones alike.  A completion UI that starts with a candidate
 ;; selected returns it on RET whenever one matches the words, so there
 ;; they are submitted as typed with that UI's own key (vertico M-RET);
-;; no key is bound here, M-s being `next-matching-history-element'.  gh runs when the answer is given, not as it is
-;; typed: `completing-read' has no way to change its candidates while
-;; it waits, and `ecc-review-pr--complete', the one place the question
-;; is put, is what a search as one types would take the place of.
+;; no key is bound here, M-s being `next-matching-history-element'.
+;; gh runs when the answer is given, not as it is typed:
+;; `completing-read' has no way to change its candidates while it
+;; waits, and `ecc-review-pr--complete', the one place the question is
+;; put, is what a search as one types would take the place of.
 ;;
 ;; The diff is made by the local git, from the commits gh names: what a
 ;; review shows on the left and on the right are whole files, which a
