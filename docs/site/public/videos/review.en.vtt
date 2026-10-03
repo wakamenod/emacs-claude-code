@@ -4,10 +4,10 @@ WEBVTT
 Every change of the session, as one diff
 
 00:00:00.960 --> 00:00:05.550
-c puts a comment on the hunk at point
+Press c to comment on the hunk at point
 
 00:00:05.550 --> 00:00:06.500
-n moves to the next hunk
+Press n to move to the next hunk
 
 00:00:06.500 --> 00:00:08.100
 C-u C-c C-c shows the prompt the comment becomes

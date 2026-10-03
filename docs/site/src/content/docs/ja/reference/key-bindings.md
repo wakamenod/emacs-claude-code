@@ -30,7 +30,7 @@ sidebar:
 | `/` | 過去の会話を発言内容から検索 |
 | `?` | Transient メニューを開く |
 
-キーは [Transient メニュー](/emacs-claude-code/ja/features/menu/)のコマンドと同じなので、Emacs のどこでも同じキーで覚えられます。`?` は Transient メニューそのものを開き、セッションバッファの外からすべての ecc コマンドを呼び出せます。
+キーは [Transient メニュー](/emacs-claude-code/ja/features/menu/)と同じです。`?` は Transient メニューそのものを開き、セッションバッファの外からすべての ecc コマンドを呼び出せます。
 
 たまにしか使わないコマンドはここに載せていません。worktree の作成・オープン・削除は、`?` のあと `W` を押します。ウィンドウを別のセッションに切り替えるには、セッションバッファ内で `C-c C-t` を押します。`ecc-use-spaces` がオフのときに 1 つのプロジェクトへ絞り込むには `M-x ecc-focus-project` を実行します。
 

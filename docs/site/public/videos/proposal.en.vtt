@@ -4,7 +4,7 @@ WEBVTT
 Claude asks to write a file
 
 00:00:01.010 --> 00:00:02.020
-e opens the proposed text in a buffer
+Press e to open the proposed text in a buffer
 
 00:00:02.020 --> 00:00:03.360
 Editing the text by hand

@@ -7,7 +7,7 @@ sidebar:
 
 **Space** は、専用の Emacs タブを持つプロジェクトです。タブは、フレームのウィンドウ配置に名前を付けたものです。フレーム上端の帯を出すかどうかは [`tab-bar-show`](#タブバーを出すかは自分で決める) で決まります。git worktree はそれ自体が 1 つの Space になり、元のリポジトリの下に表示されます。
 
-[`ecc-use-spaces`](/emacs-claude-code/ja/reference/configuration/#ecc-use-spaces) はデフォルトでオンです。オフにすると以前の配置になります。トランスクリプトはサイドウィンドウに表示され、タブ、サイドバー、worktree のコマンドはありません。
+[`ecc-use-spaces`](/emacs-claude-code/ja/reference/configuration/#ウィンドウ分割) はデフォルトでオンです。オフにすると以前の配置になります。トランスクリプトはサイドウィンドウに表示され、タブ、サイドバー、worktree のコマンドはありません。
 
 ```elisp
 (setq ecc-use-spaces nil)
@@ -38,7 +38,7 @@ sidebar:
 
 トランスクリプトの幅が `ecc-space-session-min-width` より狭くなることはありません。横に空きがなくなると、最も長く操作していないセッションがウィンドウを明け渡し、ウィンドウのないまま実行を続けます。そのセッションはサイドバーか `C-c c V` で戻せます。
 
-何も動いていない Space に移動すると、そこでセッションが始まります。これはデフォルトでオンの [`ecc-space-always-session`](/emacs-claude-code/ja/reference/configuration/#ecc-space-always-session) の働きで、この設定は最後のセッションを kill したときに Space を閉じもします。以前の会話を続けるには、開いたセッションで `/resume` と入力します。オフにすると、Space はソースだけで開き、そのプロジェクトの最後のバッファを kill するまで残ります。
+何も動いていない Space に移動すると、そこでセッションが始まります。これはデフォルトでオンの [`ecc-space-always-session`](/emacs-claude-code/ja/reference/configuration/#ウィンドウ分割) の働きです。この設定がオンなら、最後のセッションを kill すると Space も閉じます。以前の会話を続けるには、開いたセッションで `/resume` と入力します。オフにすると、Space はソースだけで開き、そのプロジェクトの最後のバッファを kill するまで残ります。
 
 | キー | コマンド | 動作 |
 |---|---|---|

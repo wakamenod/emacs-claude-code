@@ -4,16 +4,16 @@ WEBVTT
 The transcript, with the point on the first heading
 
 00:00:00.690 --> 00:00:01.730
-- folds everything
+Press - to fold everything
 
 00:00:01.730 --> 00:00:03.110
-2 and 3 open one level at a time
+Press 2, then 3, to open one level at a time
 
 00:00:03.110 --> 00:00:03.800
-n moves from heading to heading
+Press n to move from heading to heading
 
 00:00:03.800 --> 00:00:05.870
-TAB folds and unfolds one node
+Press TAB to fold and unfold one node
 
 00:00:05.870 --> 00:00:06.900
-+ unfolds everything
+Press + to unfold everything

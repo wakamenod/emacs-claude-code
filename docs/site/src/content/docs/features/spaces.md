@@ -7,7 +7,7 @@ sidebar:
 
 A **Space** is a project with an Emacs tab of its own. A tab is a named window arrangement of the frame. [`tab-bar-show`](#the-bar-itself-is-yours) decides whether the strip at the top of the frame is drawn. A git worktree is its own Space, shown under the repository it came from.
 
-[`ecc-use-spaces`](/emacs-claude-code/reference/configuration/#ecc-use-spaces) is on by default. Turn it off for the older layout: transcripts in side windows, with no tabs, no sidebar, and no worktree commands.
+[`ecc-use-spaces`](/emacs-claude-code/reference/configuration/#windows) is on by default. Turn it off for the older layout: transcripts in side windows, with no tabs, no sidebar, and no worktree commands.
 
 ```elisp
 (setq ecc-use-spaces nil)
@@ -38,7 +38,7 @@ Transcripts sit side by side: the first opens to the right of the source, each o
 
 No transcript is made narrower than `ecc-space-session-min-width`. When the row is full, the session worked in longest ago gives up its window and keeps running without one; the sidebar or `C-c c V` brings it back.
 
-Going to a Space with nothing running starts a session there. [`ecc-space-always-session`](/emacs-claude-code/reference/configuration/#ecc-space-always-session) does this. It is on by default, and it also closes a Space when its last session is killed. Type `/resume` in the session that opens to carry on an earlier conversation. Turn it off and a Space opens on the source alone and stays until you kill the project's last buffer.
+Going to a Space with nothing running starts a session there. [`ecc-space-always-session`](/emacs-claude-code/reference/configuration/#windows) does this. It is on by default, and it also closes a Space when its last session is killed. Type `/resume` in the session that opens to carry on an earlier conversation. Turn it off and a Space opens on the source alone and stays until you kill the project's last buffer.
 
 | Key | Command | What it does |
 |---|---|---|
