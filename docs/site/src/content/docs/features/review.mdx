@@ -39,7 +39,7 @@ The count beside `D` takes a snapshot of the working tree. To leave it out, set 
 
 ### When the changes are not on disk
 
-When the right side is a commit rather than your working tree (somebody else's pull request, another branch, an older commit), the header line says so, as in `the right side is a1b2c3d, not checked out here`. The prompt your comments go in tells Claude the changes are not in the working tree and to ask before editing anything.
+When the right side is a commit rather than your working tree (somebody else's pull request, another branch, an older commit), the header line says so (in ediff, the right window's mode line), as in `the right side is a1b2c3d, not checked out here`. The prompt your comments go in tells Claude the changes are not in the working tree and to ask before editing anything.
 
 ## Reviewing session changes
 
@@ -106,7 +106,7 @@ Each line shows what happened to the file (`M` changed, `A` added, `D` deleted, 
 
 Once shown, the list opens with every review until you hide it or Emacs exits. Its width is `ecc-review-files-width` (32).
 
-`/` keeps only the files whose path or one of Claude's comments contains what you type. An empty `RET` shows every file again. Hidden files keep their comments, which `C-c C-c` still sends, and moving between hunks and comments skips them. The header line says how many files are hidden.
+`/` keeps only the files whose path or one of Claude's comments contains what you type. An empty `RET` shows every file again. Hidden files keep their comments, which `C-c C-c` still sends, and moving between hunks and comments skips them. The header line says how many files are hidden; in ediff, the right window's mode line does.
 
 ## Sending comments
 

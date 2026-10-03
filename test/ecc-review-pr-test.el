@@ -656,7 +656,7 @@ Return the full ids of the three commits."
               (with-current-buffer control
                 (should (equal ecc-review--elsewhere "develop"))
                 (should (string-search "right: develop, not checked out"
-                                       (ecc-review-direct-header-text ediff-buffer-B)))
+                                       (ecc-review-direct-mode-line-text ediff-buffer-B)))
                 (should (string-search "Their right side, develop"
                                        (let ((ecc-review--comments-function
                                               (lambda () (list '(:path "b.txt" :start 1 :end 1
