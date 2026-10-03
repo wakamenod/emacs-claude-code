@@ -1,0 +1,13 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:01.010
+Claude asks to write a file
+
+00:00:01.010 --> 00:00:02.020
+e opens the proposed text in a buffer
+
+00:00:02.020 --> 00:00:03.360
+Editing the text by hand
+
+00:00:03.360 --> 00:00:04.700
+C-c C-c allows the write with the edited text

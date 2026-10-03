@@ -35,6 +35,8 @@ src/content/docs/
   start/                 Start here
   reference/             Reference
   ja/                    the same tree, in Japanese
+src/components/
+  Video.astro            a scene video with its two subtitle tracks
 ```
 
 Each directory is one sidebar group, declared in `astro.config.mjs`. A group is
@@ -105,14 +107,14 @@ was written.
 
 There are two generators, and neither takes a picture by hand.
 
-`scripts/docshots.sh` makes the site's own pictures, into `src/assets`. It
-opens a throwaway GUI Emacs in the bottom right corner of the screen — the
-rest of the screen stays yours — walks it through a scene and captures the
-frame.
+`scripts/docshots.sh` makes the site's own pictures: the stills into
+`src/assets` and the videos into `public/videos`. It opens a throwaway GUI
+Emacs in the bottom right corner of the screen — the rest of the screen stays
+yours — walks it through a scene and captures the frame.
 
 What is captured is a rectangle of the screen, not the window, so leave that
 corner alone while it runs — a window of your own crossing it lands in the
-picture, and a frame that comes up empty stops the animation dead.
+picture, and a frame that comes up empty stops the video dead.
 
 Take one scene rather than all of them: taking all runs the real CLI four
 times and takes about five minutes, which is five minutes of that corner.
@@ -127,7 +129,7 @@ The scenes are `switch`, `menu`, `capabilities`, `send-region`, `fix-error`,
 `files`, `timeline`, `handover`, `resume`, `sidebar`, `spaces`, `usecase` and
 `overview`. A scene is not
 always one picture: `sessions` takes `tabs.png` and `dashboard.png`, and
-`prompt` takes `fold.gif` and `slash.png`. `spaces` is a still of the
+`prompt` takes `fold.mp4` and `slash.png`. `spaces` is a still of the
 layout the Spaces page opens with: it widens the frame, opens a tab for each
 of two projects and the sidebar, and puts both back afterwards.
 
@@ -192,16 +194,14 @@ What it knows, and what is worth not learning again:
   replays a fixture, which carries a recorded one.
 - **`hold <seconds>` is the only way to capture.** It takes real frames at
   `fps` (10) for that long; there is no way to write the same frame out
-  twice, because doing so makes an animation no smoother and only longer.
+  twice, because doing so makes a video no smoother and only longer.
   A scene is written in the seconds it should last.
-- **Keep changing, or the extra frames buy nothing.** Repeated frames are
-  merged back into one long frame when Astro converts the animation, so a
-  state that sits still is one frame however fast it was captured -- the
-  ANMF count of the built webp is the number of *distinct* pictures the
-  scene had. Raising the rate from 3 to 10 left `switch`, `focus`,
-  `review`, `files`, `capabilities` and `rewrite` with exactly the unique
-  frames they had before (2026-09-13): their steps are instantaneous and
-  then held, so there was no motion between them to sample. Where
+- **Keep changing, or the extra frames buy nothing.** A state that sits
+  still is the same picture however fast it was captured. Raising the rate
+  from 3 to 10 left `switch`, `review`, `files`, `capabilities` and
+  `rewrite` with exactly the distinct frames they had before (2026-09-13,
+  counted when the scenes were still GIFs): their steps are instantaneous
+  and then held, so there was no motion between them to sample. Where
   something really moves -- the CLI streaming an answer, a posframe
   arriving, a diff opening -- the same change roughly tripled them
   (`fix-error` 15 -> 45, `send-region` 17 -> 42, `question` 13 -> 40).
@@ -242,8 +242,46 @@ back to. Ligatures are not part of it: this is an NS build without
 HarfBuzz, and it composes none.
 
 Those two live outside the Astro project, so the site does not reference them.
-The site's own pictures are in `src/assets` and are linked from a page with a
+The site's stills are in `src/assets` and are linked from a page with a
 relative path (`../../../assets/menu.png`). Astro rewrites them: a PNG becomes
-a `webp` under `_astro/` with the base already in the URL, and an animated GIF
-becomes an animated webp -- check for `ANMF` chunks in the output if an
-animation ever looks still.
+a `webp` under `_astro/` with the base already in the URL.
+
+## The videos and their subtitles
+
+A scene that moves is a video: `public/videos/NAME.mp4` (H.264, `yuv420p`,
+`+faststart`, no audio), with `NAME.en.vtt` and `NAME.ja.vtt` beside it.
+Markdown image syntax cannot carry a video and Astro's image pipeline does not
+touch one, so they are served from `public/` as they are, and a page that shows
+one is `.mdx` and uses the component:
+
+```mdx
+import Video from '../../../components/Video.astro';
+
+<Video name="switch" label="What the video shows, as the alt text would" />
+```
+
+`Video.astro` puts the `base` in front of the URLs — nothing else does for a
+file in `public/` — plays the video muted and looping like the GIFs it
+replaced, gives it `controls` so that the subtitles can be switched, and turns
+on the track of the page's language: English on an English page, Japanese
+under `/ja/`. `label` is the video's accessible name, written like alt text.
+
+The text of the subtitles is written by hand; the times are not.
+`scripts/docshots.sh` marks with `cue` where in a scene each subtitle starts,
+and once the video is encoded it writes the frame count at each mark into the
+Nth timing line of both `.vtt` files. A capture slower than 10fps makes the
+video shorter than the seconds the holds asked for, which is why the times
+come from frames. A scene and its subtitles that no longer have the same
+number of cues are reported and the `.vtt` left alone: adding a step to a
+scene means adding a cue to both files, in the same place. A cue says what is
+happening at that moment, in a few words; run new text through the proofread
+skill, English and Japanese both.
+
+A long hold that runs a sequence inside Emacs (`shot-script`) is cut into
+pieces so that a cue can fall in the middle of it, at the times the sequence
+schedules its steps; the comment above each such hold names them.
+
+The videos in the tree on 2026-10-03 were converted from the GIFs that came
+before them, 900 pixels wide, with the cue times scaled from the holds to the
+length each GIF really had; the next run of a scene encodes it from its frames
+at 1200.

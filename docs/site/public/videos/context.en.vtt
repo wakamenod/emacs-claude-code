@@ -1,0 +1,16 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:00.640
+The point is on line 6 of the source
+
+00:00:00.640 --> 00:00:01.600
+C-c C-x turns the editor context on
+
+00:00:01.600 --> 00:00:06.710
+The prompt goes out with the file and line: hello.py L6
+
+00:00:06.710 --> 00:00:14.360
+Claude answers from that position
+
+00:00:14.360 --> 00:00:15.000
+C-c C-x turns it off again

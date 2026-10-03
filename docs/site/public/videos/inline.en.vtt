@@ -1,0 +1,13 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:01.910
+A region marked in the source
+
+00:00:01.910 --> 00:00:04.990
+l asks a question in the minibuffer
+
+00:00:04.990 --> 00:00:07.680
+Waiting for the answer
+
+00:00:07.680 --> 00:00:17.300
+The answer appears in an overlay over the code

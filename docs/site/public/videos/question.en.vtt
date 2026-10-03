@@ -1,0 +1,16 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:01.010
+Claude asks two questions
+
+00:00:01.010 --> 00:00:02.010
+RET opens them in a buffer of their own
+
+00:00:02.010 --> 00:00:02.680
+1 chooses Emacs for the first question
+
+00:00:02.680 --> 00:00:04.360
+1 and 2 toggle Elisp and Python for the second
+
+00:00:04.360 --> 00:00:05.700
+C-c C-c sends the answers, and the turn finishes

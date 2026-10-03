@@ -1,0 +1,13 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:00.950
+The picture is open beside the session
+
+00:00:00.950 --> 00:00:01.900
+C-c C-i inserts it into the prompt as a path
+
+00:00:01.900 --> 00:00:04.610
+The prompt asks about the picture
+
+00:00:04.610 --> 00:00:14.600
+Claude describes the picture
