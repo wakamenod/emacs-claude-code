@@ -427,8 +427,10 @@ turn, so the end holds the current values.")
 
 (defun ecc-history--edges (file)
   "Return the first and last lines of FILE without reading the middle.
-A recording runs to megabytes and the session list describes dozens of
-them, so only `ecc-history-scan-head-bytes' from the front and
+The value is (HEAD . TAIL), two lists of lines; a file small enough to
+be read whole is all HEAD.  A recording runs to megabytes and the
+session list describes dozens of them, so only
+`ecc-history-scan-head-bytes' from the front and
 `ecc-history-scan-tail-bytes' from the back are read.  The line the
 two ranges cut through is dropped rather than guessed at."
   (let ((size (or (file-attribute-size (file-attributes file)) 0))
@@ -437,43 +439,52 @@ two ranges cut through is dropped rather than guessed at."
     (with-temp-buffer
       (let ((coding-system-for-read 'utf-8-unix))
         (if (<= size (+ head tail))
-            (insert-file-contents file)
+            (progn (insert-file-contents file)
+                   (cons (split-string (buffer-string) "\n" t) nil))
           (insert-file-contents file nil 0 head)
           ;; The last line of the head range was cut in the middle, so it
-          ;; is thrown away; the newline before it is kept, because the
-          ;; tail is about to be added after it.
+          ;; is thrown away.
           (goto-char (point-max))
           (if (search-backward "\n" nil t)
               (delete-region (1+ (point)) (point-max))
             (erase-buffer))
-          ;; The tail range starts in the middle of a line too, so its
-          ;; first whole line is the one after the first newline.
-          (let ((start (point-max)))
-            (goto-char start)
+          (let ((lines (split-string (buffer-string) "\n" t)))
+            (erase-buffer)
+            ;; The tail range starts in the middle of a line too, so its
+            ;; first whole line is the one after the first newline.
             (insert-file-contents file nil (- size tail) size)
-            (goto-char start)
+            (goto-char (point-min))
             (when (search-forward "\n" nil t)
-              (delete-region start (point))))))
-      (split-string (buffer-string) "\n" t))))
+              (delete-region (point-min) (point)))
+            (cons lines (split-string (buffer-string) "\n" t))))))))
 
 (defun ecc-history-scan-file (file)
   "Return what FILE says about itself, without reading all of it.
 The first lines say where the session ran, the last ones how it ended.
-The alist also carries `file', `session-id' and `mtime'."
+The alist also carries `file', `session-id' and `mtime'.
+
+The `cwd' is the first one the file names, the directory the session
+started in: that is the project the recording belongs to and where
+`--resume' finds it.  The last lines carry whatever directory a Bash
+`cd' left the session in (see `ecc-protocol-history-info')."
   (let ((info (list (cons 'file file)
                     (cons 'mtime (file-attribute-modification-time
-                                  (file-attributes file))))))
-    (dolist (line (ecc-history--edges file))
+                                  (file-attributes file)))))
+        (edges (ecc-history--edges file)))
+    (dolist (line (car edges))
       (setq info (ecc-protocol-history-info line info)))
     ;; The head range is not always far enough in to reach the line that
     ;; names the working directory: an attachment before the first
     ;; prompt can be hundreds of kilobytes on its own, and a project
     ;; filter that asks for the `cwd' drops the recording when it is
     ;; missing (measured 2026-09-15: the furthest one on this machine
-    ;; sat 13 KiB from the front).
+    ;; sat 13 KiB from the front).  It is looked for before the tail is
+    ;; read, which would otherwise give the last `cwd' instead.
     (unless (alist-get 'cwd info)
       (when-let* ((cwd (ecc-history--file-cwd file)))
         (setf (alist-get 'cwd info) cwd)))
+    (dolist (line (cdr edges))
+      (setq info (ecc-protocol-history-info line info)))
     ;; The name of the file is the id --resume takes.  What the lines say
     ;; is only what the session called itself while it was written, which
     ;; is not the same thing once a file has been copied or renamed.
@@ -493,10 +504,11 @@ machine, the furthest a `cwd\=' sat from the front was 13 KiB
 
 (defvar ecc-history--roots nil
   "Alist of a recording directory to what was last read from it.
-The value is (MTIME COUNT . ROOTS).  A `cwd\=' never changes once it is
-written, so the only thing that can change the answer for a directory
-is a file being added to it or taken away, which moves its mtime and
-its count.")
+The value is (MTIME COUNT . ROOTS).  The first `cwd\=' of a file never
+changes once it is written -- the later ones do, after a Bash `cd\=' --
+and only the first is read, so the only thing that can change the
+answer for a directory is a file being added to it or taken away, which
+moves its mtime and its count.")
 
 (defun ecc-history--file-cwd (file)
   "Return the directory the recording FILE was made in, or nil.
@@ -694,9 +706,13 @@ come newest first and are kept in that order."
   (let* ((infos (seq-remove (lambda (info)
                               (equal (alist-get 'session-id info)
                                      (ecc-session-id session)))
+                            ;; The root before the cwd the CLI reports,
+                            ;; as `ecc-session-directory' asks: after a
+                            ;; Bash `cd' that cwd is wherever the tool
+                            ;; was left, not the project.
                             (ecc-history-recordings
-                             (or (ecc-session-cwd session)
-                                 (ecc-session-project-root session)))))
+                             (or (ecc-session-project-root session)
+                                 (ecc-session-cwd session)))))
          (labels (mapcar (lambda (info)
                            (cons (ecc-history-recording-label info) info))
                          infos)))
