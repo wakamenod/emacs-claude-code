@@ -896,7 +896,10 @@ What is kept is the side window's, whichever window is taken down last."
         ;; Faces go on with the text.
         (with-current-buffer (ecc-review-talk-test--pane control)
           (goto-char (point-min))
+          ;; Under the prompt, which names the tools as well.
+          (forward-line 1)
           (search-forward "review_navigate")
+          (should (eq (get-text-property (match-beginning 0) 'face) 'ecc-tool-face))
           (should (eq (get-text-property (point) 'face) 'ecc-dim-face))))
       (ecc-model-finish-turn one nil)
       (ecc-model-begin-turn one "Next stop.")
@@ -905,6 +908,61 @@ What is kept is the side window's, whichever window is taken down last."
         (should (string-search "The second stop." text))
         (should-not (string-search "The cache" text))
         (should-not (string-search "review_navigate" text))))))
+
+(defun ecc-review-talk-test--faces-at (control string)
+  "Return the faces on the start of STRING in the reply pane of CONTROL, a list.
+Looked for under the prompt, which mentions the tools, unless STRING is it."
+  (with-current-buffer (ecc-review-talk-test--pane control)
+    (goto-char (point-min))
+    (unless (string-prefix-p "›" string)
+      (forward-line 1))
+    (search-forward string)
+    (ensure-list (get-text-property (match-beginning 0) 'face))))
+
+(ert-deftest ecc-review-talk-test-the-pane-is-coloured-as-the-transcript ()
+  "The reply is in `ecc-assistant-face', its Markdown fontified once it is done.
+The calls are in `ecc-tool-face' and the prompt in `ecc-user-face'.  The
+Markdown of a reply is fontified once while its text stays the same,
+however often the pane is written, and forgotten with its turn."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (ecc-review-talk-test--with-ediff one control
+      (ecc-review-talk-tour)
+      (let ((fontified 0)
+            (fontify (symbol-function 'ecc-markdown-fontify))
+            (node (ecc-review-talk-test--say one nil '("The **cache** "))))
+        (cl-letf (((symbol-function 'ecc-markdown-fontify)
+                   (lambda (text) (cl-incf fontified) (funcall fontify text))))
+          (should (equal (ecc-review-talk-test--faces-at control "› Walk") '(ecc-user-face)))
+          ;; Streaming: the face alone, on what is appended too.
+          (should (equal (ecc-review-talk-test--faces-at control "The **cache**")
+                         '(ecc-assistant-face)))
+          (ecc-model-append-stream one node "is new.")
+          (should (equal (ecc-review-talk-test--faces-at control "is new.")
+                         '(ecc-assistant-face)))
+          (should (= fontified 0))
+          ;; Done: the Markdown over the face.
+          (ecc-review-talk-test--finish-text one node "The **cache** is new.")
+          (should (= fontified 1))
+          (let ((faces (ecc-review-talk-test--faces-at control "cache")))
+            (should (memq 'ecc-assistant-face faces))
+            (should (cdr faces)))
+          (should (equal (ecc-review-talk-test--faces-at control "The")
+                         '(ecc-assistant-face)))
+          ;; A call writes the pane again, and the reply is not
+          ;; fontified again.
+          (ecc-review-talk-test--call one "Read" '((file_path . "/tmp/x/a.txt")))
+          (should (equal (ecc-review-talk-test--faces-at control "Read") '(ecc-tool-face)))
+          (should (= fontified 1))
+          (should (memq 'ecc-assistant-face (ecc-review-talk-test--faces-at control "cache")))
+          ;; Another turn: what was kept for this one goes.
+          (ecc-model-finish-turn one nil)
+          (ecc-model-begin-turn one "Next stop.")
+          (ecc-review-talk-test--finish-text
+           one (ecc-review-talk-test--say one "The second stop.") "The second stop.")
+          (with-current-buffer (ecc-review-talk-test--pane control)
+            (should-not (gethash (ecc-node-id node) ecc-render--markdown-cache))
+            (should (= (hash-table-count ecc-render--markdown-cache) 1))))))))
 
 (ert-deftest ecc-review-talk-test-the-pane-follows-its-end ()
   "A reply longer than the pane shows its last line."
