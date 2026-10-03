@@ -1,6 +1,6 @@
 ---
 title: Claude Code の Emacs クライアント
-description: Claude Code CLI を Emacs の中で動かします。会話も、権限の確認も、差分もプランも、通常の Emacs バッファの中で完結します。ターミナルエミュレータは不要です。
+description: Claude Code CLI を Emacs の中で動かします。会話、権限の確認、差分、プランはすべて普通の Emacs バッファに表示されます。ターミナルエミュレータは使いません。
 template: splash
 head:
   # The hero image is a screenshot, not a logo: Starlight renders an
@@ -36,7 +36,7 @@ head:
         "license": "https://www.gnu.org/licenses/gpl-3.0.html"
       }
 hero:
-  tagline: Claude Code CLI の Emacs クライアント。会話は通常の Emacs バッファ内で完結し、ターミナルエミュレータは不要です。
+  tagline: Claude Code CLI の Emacs クライアント。会話は普通の Emacs バッファの中で進み、ターミナルエミュレータは使いません。
   image:
     html: |
       <img src="/emacs-claude-code/overview.png" alt="セッション全体：左にソース、右に 2 つのプロンプト、それぞれが走らせたツール、許可された差分、そして返ってきた答え"
@@ -57,34 +57,34 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-ecc は `claude` をヘッドレスで起動し、stream-json プロトコルを用いてパイプ経由で通信し、会話を通常の Emacs バッファに描画します。トランスクリプトは読み取り専用テキストなので、`isearch` や `occur`、`M-w` など Emacs 標準の操作がそのまま利用できます。権限リクエストや diff、プランの確認も、トランスクリプト上や編集中の任意のファイルからキーひとつで応答できます。
+ecc は `claude` をヘッドレスで起動し、stream-json プロトコルでパイプ越しにやり取りして、会話を普通の Emacs バッファに描画します。トランスクリプトは読み取り専用のテキストなので、`isearch`、`occur`、`M-w` が Emacs のほかの場所と同じように使えます。権限の確認、diff、プランには、トランスクリプトからでも編集中のファイルからでも、キー1つで答えられます。
 
 <CardGrid>
   <Card title="どのバッファからでも応答">
-    保留中の承認リクエストはすべてのモードラインに通知され、`C-c c a` を押せばバッファを離れることなくその場で許可できます。
+    保留中の権限リクエストはすべてのモードラインに表示され、`C-c c a` を押せばバッファを切り替えずに許可できます。
     [キーバインド一覧](/emacs-claude-code/ja/reference/key-bindings/)
   </Card>
   <Card title="変更内容を diff で正確に把握">
-    セッション内で行われたすべての変更を 1 つの diff にまとめ、ハンクごとにインラインコメントを付けて 1 つのプロンプトとして差し戻せます。
+    セッションの変更をすべて 1 つの diff で確認し、ハンクごとにコメントを付けて、1 つのプロンプトとして送り返せます。
     [レビューとプランモード](/emacs-claude-code/ja/features/review/)
   </Card>
   <Card title="エディタの文脈を直接送信">
-    `@region`・`@cursor`・`@diagnostics` はプロンプト送信前に自動展開されます。回答をコードの直上にオーバーレイ表示することも可能です。
+    `@region`・`@cursor`・`@diagnostics` はプロンプトの送信前に展開されます。回答をコードのすぐ上にオーバーレイで表示することもできます。
     [プロンプトとトランスクリプト](/emacs-claude-code/ja/features/prompt/)
   </Card>
   <Card title="複数セッションを並行管理">
-    統合ダッシュボード、セッションごとのタブライン、応答待ちセッションの視覚的インジケーターで、複数のタスクをスムーズに並行管理できます。
+    1 つにまとまったダッシュボード、セッションごとのタブ、応答待ちのセッションを示す表示で、並行する複数のタスクを追えます。
     [セッション管理](/emacs-claude-code/ja/features/sessions/)
   </Card>
-  <Card title="ターミナルへの一時引き渡し">
-    `ecc-tui-open` で同じ会話を CLI 本来の TUI インターフェースへ引き渡し、完了後は `ecc-tui-return` で Emacs へ復帰できます。
+  <Card title="ターミナルへ引き渡す">
+    `ecc-tui-open` で会話を CLI 本来の画面に引き渡し、`ecc-tui-return` で Emacs に戻します。
     [Transient メニュー](/emacs-claude-code/ja/features/menu/)
   </Card>
-  <Card title="安全性を最優先にした設計">
-    権限リクエストはデフォルトで拒否、ループバック MCP サーバーは初期状態で無効、Elisp の評価には明示的な個別許可が必要です。
+  <Card title="デフォルトで安全">
+    権限の確認はデフォルトで拒否、ループバック MCP サーバーはデフォルトで無効です。Elisp の評価には明示的な許可が必要です。
     [設定リファレンス](/emacs-claude-code/ja/reference/configuration/)
   </Card>
 </CardGrid>
 
-動作に必要なのは Emacs 29.1 以降と `claude` CLI のみで、必須の外部パッケージはありません。
-まずは[概要](/emacs-claude-code/ja/start/overview/)をご覧ください。続いて[インストール手順](/emacs-claude-code/ja/start/installation/)をご確認いただけます。
+必要なのは Emacs 29.1 以降と `claude` CLI だけで、外部パッケージは要りません。
+まず[概要](/emacs-claude-code/ja/start/overview/)を読み、次に[インストール手順](/emacs-claude-code/ja/start/installation/)を確認してください。
