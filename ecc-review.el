@@ -109,6 +109,12 @@ it is one change to allow or refuse, not a tree to read through."
   "Review comments on the changes below.  Please act on each of them."
   "First line of the prompt the review comments are sent as.")
 
+(defvar ecc-review-elsewhere-note
+  "These changes are %s.  Their right side, %s, is not checked out here, so the lines below are not in the files of the working tree.  Ask before editing anything for them, and do not check anything out yourself."
+  "Second line of the prompt of a review whose right side is not on disk.
+Formatted with what the review is called and the revision on its right
+\(`ecc-review-elsewhere').")
+
 (defvar ecc-review-proposal-header
   "Review comments on the proposal below.  Please act on each of them and propose it again."
   "First line of the deny message built from comments on a proposal.")
@@ -385,6 +391,8 @@ starts with -, so no branch is mistaken for one.  The range typed at
 COMMIT is the full id of where a branch parted from its base, which is
 what `ecc-review-menu\=' compares a branch and its working tree with: an
 id that says nothing, so the menu says \"develop + working tree\" here.
+It may also be a range of full ids, as a pull request is reviewed by
+\(`ecc-review-pr-range\='), which is then called NAME as it is written.
 The name belongs to the commit, not to the caller, so a review of the
 same commit opened by Claude is called the same and is the same buffer."
   (puthash (cons root commit) name ecc-review--fork-names))
@@ -416,6 +424,7 @@ what it names moves, and the review moves with it."
     (let ((id "[0-9a-f]\\{4,64\\}"))
       (save-match-data
         (cond
+         ((gethash (cons root range) ecc-review--fork-names))
          ((string-match (format "\\`\\(%s\\)\\^!\\'" id) range)
           (when-let* ((commit (ecc-review--commit root (match-string 1 range))))
             (ecc-review--commit-line root commit t)))
@@ -484,6 +493,38 @@ So one line not starting with ^, and nothing more, is the working tree."
          (let ((lines (split-string output "\n" t)))
            (and (= (length lines) 1)
                 (not (string-prefix-p "^" (car lines))))))))))
+
+(defun ecc-review--right-revision (range)
+  "Return the revision on the right of RANGE, the side shown as it is now.
+B of A..B and A...B, HEAD when B is left out, X of X^!, and RANGE
+itself otherwise."
+  (save-match-data
+    (cond ((string-match "\\.\\.\\.?\\(.*\\)\\'" range)
+           (let ((right (match-string 1 range)))
+             (if (string-empty-p right) "HEAD" right)))
+          ((string-match "\\`\\(.+\\)\\^!\\'" range) (match-string 1 range))
+          (t range))))
+
+(defun ecc-review-elsewhere (root range)
+  "Return the right side of a review of ROOT against RANGE when it is not here.
+Nil when the files on disk are what the review shows on its right: a
+review of the working tree (`ecc-review--range-includes-worktree-p'),
+of what is staged, or of commits that end at HEAD.  Otherwise the
+revision on the right (`ecc-review--right-revision'), a name as it was
+written and an id as its short id: a branch not checked out, a pull
+request, a commit of the past.  Comments on such a review are about
+lines that are in none of the files Claude edits, and the review and
+its prompt say so (`ecc-review-elsewhere-note')."
+  (when (and root (stringp range) (not (string-empty-p range))
+             (not (ecc-review--range-includes-worktree-p root range)))
+    (let* ((right (ecc-review--right-revision range))
+           (commit (ecc-review--commit root right)))
+      (cond
+       ((null commit) right)
+       ((equal commit (ecc-review--commit root "HEAD")) nil)
+       ((string-prefix-p (downcase right) commit)
+        (ecc-review--commit-line root commit))
+       (t right)))))
 
 ;;;; What the working tree held at one moment
 
@@ -759,6 +800,10 @@ symbol `staged\=' is what is staged, the index against HEAD.")
 (defvar-local ecc-review--label nil
   "What this review of the working tree is called, if not its range.
 `ecc-review-range-label\=' of its range, for the header line.")
+
+(defvar-local ecc-review--elsewhere nil
+  "The right side of this review when it is not the files on disk, or nil.
+`ecc-review-elsewhere\=' of its range, for the header line and the prompt.")
 
 (defvar-local ecc-review--stale nil
   "Non-nil when the files may have changed since this review was read.")
@@ -1201,7 +1246,7 @@ not from who asked for it, so the review the menu opens and the one
    (propertize (format " %s: %s"
                        (cond (ecc-review--request "Proposal review")
                              (ecc-review--range
-                              (format "Working tree (%s)"
+                              (format (if ecc-review--elsewhere "Review (%s)" "Working tree (%s)")
                                       (ecc-review--range-name ecc-review--range
                                                               ecc-review--label)))
                              (t "Review"))
@@ -1209,6 +1254,9 @@ not from who asked for it, so the review the menu opens and the one
                            (ecc-session-name ecc-review--session)
                          "?"))
                'face 'ecc-heading-face)
+   (when ecc-review--elsewhere
+     (propertize (format "  ·  the right side is %s, not checked out here" ecc-review--elsewhere)
+                 'face 'warning))
    (when ecc-review--failed
      (propertize (format "  ·  could not read the diff: %s; g to retry" ecc-review--failed)
                  'face 'error))
@@ -1325,13 +1373,15 @@ the reading."
         (with-current-buffer buffer
           (setq ecc-review--stale nil
                 ecc-review--failed nil
-                ecc-review--label (plist-get content :label))
+                ecc-review--label (plist-get content :label)
+                ecc-review--elsewhere (plist-get content :elsewhere))
           (force-mode-line-update)
           buffer)
       (prog1 (ecc-review--fill buffer session text (plist-get content :root) nil
                                (plist-get content :paths) (plist-get content :range))
         (with-current-buffer buffer
-          (setq ecc-review--label (plist-get content :label)))))))
+          (setq ecc-review--label (plist-get content :label)
+                ecc-review--elsewhere (plist-get content :elsewhere)))))))
 
 (defun ecc-review--fill (buffer session text root &optional request paths range)
   "Put the diff TEXT into BUFFER for SESSION and draw its comments again.
@@ -2297,10 +2347,18 @@ reply quotes the comment it answers before its own."
      (t (format "In reply to #%d, which has since been removed\n" id)))))
 
 (defun ecc-review-buffer-message ()
-  "Return the prompt for the comments of the current review buffer, or nil."
+  "Return the prompt for the comments of the current review buffer, or nil.
+A review whose right side is not on disk says so under the first line
+\(`ecc-review-elsewhere-note')."
   (when-let* ((comments (funcall ecc-review--comments-function)))
-    (ecc-review-format-message comments
-                               (and ecc-review--request ecc-review-proposal-header))))
+    (ecc-review-format-message
+     comments
+     (cond (ecc-review--request ecc-review-proposal-header)
+           (ecc-review--elsewhere
+            (concat ecc-review-header "\n"
+                    (format ecc-review-elsewhere-note
+                            (ecc-review--range-name ecc-review--range ecc-review--label)
+                            ecc-review--elsewhere)))))))
 
 ;;;;; Confirming before sending
 
@@ -2441,6 +2499,7 @@ project of SESSION by default, and PATHS, absolute or relative to BASE
 The plist has :root, the root of the repository, nil for a review of
 SESSION outside git (and an error for a review of a range there);
 :range; :label, what the range is called (`ecc-review-range-label\=');
+:elsewhere, the right side when it is not on disk (`ecc-review-elsewhere\=');
 :paths, relative to :root when there is one and as given when
 not; :name, the name of the review buffer; and :nothing, what to say
 when there is no change to show."
@@ -2454,6 +2513,7 @@ when there is no change to show."
     (list :root root
           :range range
           :label label
+          :elsewhere (ecc-review-elsewhere root range)
           :paths (if root
                      (ecc-review--relative-paths
                       paths root (or base (if range directory
@@ -2893,6 +2953,7 @@ what relative PATHS are relative to: ROOT, else the project of SESSION."
                            ""))))
     (list :name (plist-get target :name)
           :label (plist-get target :label)
+          :elsewhere (plist-get target :elsewhere)
           :text (and (not (string-empty-p text)) text)
           :root root :paths paths :range range
           :nothing (plist-get target :nothing))))
