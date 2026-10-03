@@ -327,10 +327,11 @@ Verified against **Claude Code CLI 2.1.281**.
   `Review (RANGE)` rather than `Working tree (RANGE)` and adds
   `the right side is a1b2c3d, not checked out here`, the head of a pull
   request named by its branch, as in `fix/x (a1b2c3d)`
-  (`ecc-review-name-side`); an ediff review puts
-  `right: a1b2c3d, not checked out` on the right window's mode line; `review_hunks` tells Claude the same; and the prompt the comments
-  are sent in adds `ecc-review-elsewhere-note` under its first line, telling
-  Claude that the lines are not in the working tree and to ask before
+  (`ecc-review-name-side`); an ediff review puts `right: a1b2c3d, not
+  checked out` on the right window's mode line; `review_hunks` tells
+  Claude the same; and the prompt the comments are sent in adds
+  `ecc-review-elsewhere-note` under its first line, telling Claude that
+  the lines are not in the working tree and to ask before
   editing, without checking anything out itself. A review of the working
   tree, of what is staged, or of commits ending at `HEAD` says nothing.
   `ecc-review-name-fork` names a range of ids as well as a commit.

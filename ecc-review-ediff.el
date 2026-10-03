@@ -2367,8 +2367,9 @@ nothing that changes."
 
 ;; The panel had the help and the state; the keys are on the header
 ;; lines now and the state on the mode line of the right window, and
-;; with the brief help it would say "? all keys" and nothing else.  So it is not on the screen at all, unless ?
-;; asks for the long help, which it shows as ever, without a mode line.
+;; with the brief help it would say "? all keys" and nothing else.  So
+;; it is not on the screen at all, unless ? asks for the long help,
+;; which it shows as ever, without a mode line.
 ;;
 ;; ediff takes the window of its panel as part of the layout:
 ;; `ediff-keep-window-config' compares a print of it, with those of the
