@@ -10,7 +10,7 @@ Review changes as a single diff, comment on hunks that need work, and send all c
 `C-c c D` opens a menu where you choose what to compare. The two reviews used most often are the same review with a different base:
 
 - `D` in the menu — against **where the session started**, so work committed during the session is still shown.
-- `w` in the menu, or `C-c c G` directly — against **the last commit (`HEAD`)**, so only uncommitted changes are shown.
+- `w` in the menu — against **the last commit (`HEAD`)**, so only uncommitted changes are shown.
 
 Neither cares how a file was changed: an edit, a shell command and a script all show alike.
 
@@ -21,14 +21,14 @@ Neither cares how a file was changed: an edit, a shell command and a script all 
 | Key | Compares |
 |---|---|
 | `D` | Everything since the session started ([below](#reviewing-session-changes)) |
-| `w` | Uncommitted changes, staged or not, against `HEAD`, as `C-c c G` does |
+| `w` | Uncommitted changes, staged or not, against `HEAD`, as `M-x ecc-review-range` does |
 | `u` | Unstaged changes |
 | `s` | Staged changes |
 | `b` | This branch against another |
 | `c` | One commit, or a run of commits |
-| `r` | A range you type, as `C-u G` takes it |
+| `r` | A range you type, as `C-u M-x ecc-review-range` takes it |
 
-The git choices (`w` to `r`) review the project of the current buffer and send your comments to its session, as `G` does. If the project has no session yet, they offer to start one. `D` reviews that session, or the session you used last when the project has none. The heading names the session and the project. `S` switches the whole menu to another session and its project, with the sessions of the current project listed first, so the menu never compares one project and sends the comments to another. Its first choice, `+ new session`, starts a session in the menu's project and sends the comments there. The new session has the review tools, so `T` works right away. `-f` asks for the files to keep once you have chosen what to compare. `-e` opens this one review in ediff, or as a diff when `ecc-review-style` is `'ediff`, and leaves the setting as it is. Outside a Git repository you can choose only `D`, and the menu says why. The menu marks your last choice with `(last)` and puts the cursor on it, so `RET` opens it again. If a count fails, the line shows `?` and the echo area says why.
+The git choices (`w` to `r`) review the project of the current buffer and send your comments to its session. If the project has no session yet, they offer to start one. `D` reviews that session, or the session you used last when the project has none. The heading names the session and the project. `S` switches the whole menu to another session and its project, with the sessions of the current project listed first, so the menu never compares one project and sends the comments to another. Its first choice, `+ new session`, starts a session in the menu's project and sends the comments there. The new session has the review tools, so `T` works right away. `-f` asks for the files to keep once you have chosen what to compare. `-e` opens this one review in ediff, or as a diff when `ecc-review-style` is `'ediff`, and leaves the setting as it is. Outside a Git repository you can choose only `D`, and the menu says why. The menu marks your last choice with `(last)` and puts the cursor on it, so `RET` opens it again. If a count fails, the line shows `?` and the echo area says why.
 
 `b` first asks for the base, the before side. The default is the branch the current one most likely started from. The candidates are `develop`, `main`, `master` and the branch `origin/HEAD` points to. On one of those branches, its upstream is a candidate too, so on `main` the default is `origin/main`, where your unpushed commits show. The menu skips a candidate that is ahead of `HEAD`, such as `develop` when you are on `main` and `develop` has moved on. A candidate at `HEAD` itself stays: it is the branch you just created yours from. Of these, the one with the fewest commits up to `HEAD` wins. If that is a local branch that is behind its upstream and has no commits of its own, the default is the upstream instead: a local `develop` four commits behind `origin/develop` would put commits you have not pulled into the review. If no candidate remains, `b` asks for the branch with no default. Each branch in the list shows how far it is from its upstream, as in `develop  (4 behind origin/develop)`.
 
@@ -46,7 +46,7 @@ Press `D` in the review menu (`C-c c D D`), or run `M-x ecc-review`. To review o
 
 When the session starts, ecc records what the working tree held — a Git tree object written through a throwaway index, so nothing is stashed and neither the real index nor your files are touched. The review compares the tree as it stands now against that baseline. Work you had in progress before the session started is therefore left out, and a change is shown whether the CLI made it with an edit tool, a shell command or a script.
 
-Because the base is a moment rather than a commit, changes the session committed along the way are still shown; `G` would have lost them. Resuming a session keeps its baseline.
+Because the base is a moment rather than a commit, changes the session committed along the way are still shown; a review against `HEAD` would have lost them. Resuming a session keeps its baseline.
 
 Two caveats worth knowing. The base is a time, not an author, so another session working in the same directory shows up here too — separate Git worktrees keep them apart. And a file larger than `ecc-review-max-bytes` (200,000 by default) is named rather than printed, which is what usually happens to a lock file a package manager rewrote.
 
@@ -137,13 +137,13 @@ A line comment has its line in the heading, as in `## hello.py  L3 (new)`, and s
 
 There, `C-c C-c` sends the prompt as it stands, while `C-c C-k` returns to the diff.
 
-## Reviewing the working tree
+## Reviewing against a commit or a range
 
-Where `ecc-review` starts from the moment the session began, `ecc-review-worktree` starts from the last commit. Type `C-c c G`, press `w` in the review menu, or run `M-x ecc-review-worktree`.
+Where `ecc-review` starts from the moment the session began, `ecc-review-range` starts from the last commit by default. Press `w` in the review menu (`C-c c D w`), or run `M-x ecc-review-range`. There is no key of its own; to bind one, `(define-key ecc-global-map "G" #'ecc-review-range)`.
 
 This diffs the project's entire repository against `HEAD` — every uncommitted change, staged or unstaged, plus the untracked files (those `.gitignore` excludes are left out; a binary file, or one larger than `ecc-review-max-bytes`, is named rather than printed). A repository with no commits yet is compared against the empty tree, so the first code written in a project can be reviewed before it is committed.
 
-`C-u G` prompts for what to diff against, then for the files to include:
+`C-u M-x ecc-review-range` prompts for what to diff against, then for the files to include:
 
 - A revision such as `HEAD~1` compares it with the working tree, untracked files included.
 - A range such as `main...HEAD`, `HEAD~1..HEAD` or `HEAD^!` compares commits, without untracked files.
@@ -223,7 +223,7 @@ The diff buffer has the session beside it, so it has no pane.
 
 ## Opening the review in ediff
 
-`ecc-review-style` controls how the reviews of the review menu and `G` show changes. `-e` in the menu changes it for one review. The default, `'diff`, uses the single `diff-mode` buffer described above. Setting it to `'ediff` shows the files side by side instead:
+`ecc-review-style` controls how the reviews of the review menu and `ecc-review-range` show changes. `-e` in the menu changes it for one review. The default, `'diff`, uses the single `diff-mode` buffer described above. Setting it to `'ediff` shows the files side by side instead:
 
 ```elisp
 (setq ecc-review-style 'ediff)

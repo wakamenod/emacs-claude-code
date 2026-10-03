@@ -296,7 +296,7 @@ The call comes first, then the request that names it."
 
 (defun demo-open-ediff ()
   "Open the review of everything uncommitted, in ediff, as G opens it."
-  (ecc-review-worktree demo-session "HEAD" demo-root)
+  (ecc-review-range demo-session "HEAD" demo-root)
   nil)
 
 (defun demo-key (key &optional text)
