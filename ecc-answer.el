@@ -54,7 +54,6 @@
 (declare-function ecc-menu "ecc-transient" ())
 (declare-function ecc-resume "ecc" (session &optional fork))
 (declare-function ecc-review "ecc-review" (&optional session paths))
-(declare-function ecc-review-worktree "ecc-review" (&optional session range root paths))
 (declare-function ecc-review-menu "ecc-review-menu" ())
 (declare-function ecc-search "ecc-search" (query &optional everywhere))
 (declare-function ecc-sidebar-focus "ecc-sidebar" ())
@@ -281,11 +280,9 @@ question buffer opens with the first one answered."
     (define-key map (kbd "4") #'ecc-answer-option-4)
     ;; Looking around.
     (define-key map (kbd "B") #'ecc-dashboard)
-    ;; `D' asks what to compare -- `D' again is what changed since the
-    ;; session started -- and `G' beside it is the commonest answer
-    ;; without the question: what changed since the last commit.
+    ;; `D' asks what to compare: `D' again is what changed since the
+    ;; session started, `w' what changed since the last commit.
     (define-key map (kbd "D") #'ecc-review-menu)
-    (define-key map (kbd "G") #'ecc-review-worktree)
     (define-key map (kbd "h") #'ecc-history-open)
     (define-key map (kbd "/") #'ecc-search)
     (define-key map (kbd "U") #'ecc-usage)

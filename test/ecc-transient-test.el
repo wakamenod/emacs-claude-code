@@ -277,12 +277,10 @@ Remote Control was never trusted with."
 
 (ert-deftest ecc-transient-test-review-menu ()
   "D opens the review menu, whose D is the review it used to open.
-`C-c c D D' is what `C-c c D' was, and G stays beside it as the
-commonest choice without the question."
+`C-c c D D' is what `C-c c D' was."
   (let ((menu (ecc-transient-test--menu-keys))
         (review (ecc-transient-test--menu-keys 'ecc-review-menu "ecc-review-menu.el")))
     (should (eq (cdr (assoc "D" menu)) 'ecc-review-menu))
-    (should (eq (cdr (assoc "G" menu)) 'ecc-review-worktree))
     (should (eq (lookup-key ecc-global-map "D") 'ecc-review-menu))
     (should (equal (mapcar #'car review)
                    '("D" "w" "u" "s" "b" "c" "r" "-f" "-e" "-e" "S")))
@@ -304,6 +302,13 @@ commonest choice without the question."
                                             if-not)))))
       (should (eq diff-shown (eq style 'ediff)))
       (should (eq ediff-shown (eq style 'diff))))))
+
+(ert-deftest ecc-transient-test-no-g ()
+  "G is bound neither in `ecc-global-map' nor in `ecc-menu'.
+`C-c c D w' is the same review, and `ecc-review-range' stays a command."
+  (should-not (lookup-key ecc-global-map "G"))
+  (should-not (assoc "G" (ecc-transient-test--menu-keys)))
+  (should (commandp 'ecc-review-range)))
 
 (provide 'ecc-transient-test)
 
