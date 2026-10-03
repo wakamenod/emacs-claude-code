@@ -770,7 +770,8 @@ it takes no room, and TEXT follows."
 (defun ecc-review-direct--status (control)
   "Return where the review in CONTROL is, for the right end of a header line.
 The current difference out of how many -- `3/12', `-/12' with none
-current -- and what the filter hides, as `/FILTER: 2 hidden'.  It
+current -- what the filter hides, as `/FILTER: 2 hidden', and the
+right side when it is not on disk (`ecc-review-elsewhere').  It
 starts with two spaces, so that it stands apart from the keys even
 where the window is too narrow to put it at the right edge."
   (with-current-buffer control
@@ -787,6 +788,9 @@ where the window is too narrow to put it at the right edge."
               (propertize (format "  /%s: %d hidden" ecc-review--filter
                                   (length ecc-review--hidden))
                           'face 'ecc-dim-face))
+            (when ecc-review--elsewhere
+              (propertize (format "  right: %s, not checked out" ecc-review--elsewhere)
+                          'face 'warning))
             " ")))
 
 (defun ecc-review-direct--header (side &optional right)

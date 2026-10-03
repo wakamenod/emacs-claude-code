@@ -346,6 +346,9 @@ arguments of `review_comment'.  LINES are the lines of the review."
     ((null ecc-review--range) "everything changed since the session started")
     ((eq ecc-review--range 'staged) "what is staged")
     ((string-empty-p ecc-review--range) "what is not staged yet")
+    (ecc-review--elsewhere
+     (format "%s, whose right side, %s, is not checked out here"
+             ecc-review--range ecc-review--elsewhere))
     (t (format "the working tree against %s" ecc-review--range)))
    (when ecc-review--paths
      (format " in %s" (string-join ecc-review--paths ", ")))))

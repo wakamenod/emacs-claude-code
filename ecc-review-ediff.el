@@ -3023,7 +3023,9 @@ opened."
                                             (plist-get content :hash) cache)))
         (when (buffer-live-p control)
           (with-current-buffer control
-            (setq ecc-review--label (plist-get content :label))))
+            (setq ecc-review--label (plist-get content :label)
+                  ecc-review--elsewhere (plist-get content :elsewhere))
+            (ecc-review-direct-refresh-headers control)))
         control))))
 
 (defun ecc-review-ediff-buffer (session &optional paths)
@@ -3160,7 +3162,8 @@ never closed by being read."
                                              default-directory ecc-review--paths
                                              default-directory))
          (hash (plist-get content :hash)))
-    (setq ecc-review--label (plist-get content :label))
+    (setq ecc-review--label (plist-get content :label)
+          ecc-review--elsewhere (plist-get content :elsewhere))
     (if (equal ecc-review--fingerprint (ecc-review-ediff--state hash))
         (progn (setq ecc-review--stale nil
                      ecc-review--failed nil)
