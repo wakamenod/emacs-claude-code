@@ -90,6 +90,17 @@ knowing, what earns its place, or what the point is; no building to an effect.
 One or two sentences a section is usually enough, and a table beats a
 paragraph whenever the content is a list.
 
+The site is for somebody using ecc: what a key or a setting does, and the
+caution they need. How it decides — an algorithm, a timing, a threshold, the
+order of a list, where a window goes — belongs in the docstring, and the
+history in the CHANGELOG. A sentence a user would not act on differently does
+not go on the site.
+
+A feature PR adds to its page in the page's own register: a row in the table,
+or a sentence or two in the section. If it needs a paragraph of how, that
+paragraph is a docstring. A page past about 1,500 words is a sign it is two
+pages.
+
 Say what happens, not how the reader should feel about it. "Shows the
 session's window and moves point to the prompt region", not "the way back from
 wherever you have wandered to".
