@@ -268,11 +268,15 @@ switched, and turns on the track of the page's language: English on an
 English page, Japanese under `/ja/`. `label` is the video's accessible name,
 written like alt text.
 
-Every video has a band of the theme's background below the picture, 80 CSS
-pixels high at the 720px width of the content column (100 rows of a video
-900 wide, 134 of one 1200 wide). The browser's control bar and the subtitles
+Every video has a band of the theme's background below the picture, about 46
+CSS pixels high at the 720px width of the content column (58 rows of a video
+900 wide, 78 of one 1200 wide). The browser's control bar and the subtitles
 are drawn over the bottom of a video, and without the band they covered the
-echo area and the mode line. Native controls cannot be put below a video, and
+echo area and the mode line. The band holds a control bar, or a line of
+subtitles while the controls are hidden; with both showing, the subtitle sits
+above the controls and covers the echo area and part of the mode line. It
+was 80 pixels, enough for both, and was made two text rows lower to keep the
+frame short (2026-10-03). Native controls cannot be put below a video, and
 controls of our own would need JavaScript, so the frame is made taller instead.
 On a screen narrower than the column the band shrinks with the video and the
 controls cover part of the picture again.
