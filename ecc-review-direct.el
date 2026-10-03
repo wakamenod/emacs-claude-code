@@ -42,8 +42,9 @@
 ;;   (d is the diff review's key for that; here d and u scroll the
 ;;   reply pane, `ecc-review-talk.el'.)
 ;;   The review opens with the keyboard in the right window; the header
-;;   lines show the keys and where the review is, and the panel is out
-;;   of sight but for the help ? shows (`ecc-review-ediff.el').
+;;   lines show the keys, the mode lines the file at point and, on the
+;;   right, where the review is, and the panel is out of sight but for
+;;   the help ? shows (`ecc-review-ediff.el').
 ;;
 ;; - Point drives the review.  After a command in either window, a
 ;;   difference that point has gone into becomes the current one: its
@@ -377,9 +378,11 @@ is logged and shown instead."
 
 (defun ecc-review-direct--after-isearch ()
   "Follow point once the search has ended, unless it ended where it began.
-On `isearch-mode-end-hook' in a side of a review."
+On `isearch-mode-end-hook' in a side of a review.  The mode lines say
+the file it ended in."
   (unless (eql (line-beginning-position) ecc-review-direct--aligned)
-    (ecc-review-direct--follow-logged)))
+    (ecc-review-direct--follow-logged))
+  (ecc-review-direct--refresh-paths-logged))
 
 (defun ecc-review-direct--post-command ()
   "Follow point after a command, when it moved to another line.
@@ -387,7 +390,9 @@ On `post-command-hook' in a side of a review.  During an isearch only
 when it stops on the next match, \\`C-s' or \\`C-r', not as each character is
 typed; the end of a search is `ecc-review-direct--after-isearch'.  A
 command that scrolls one window is not followed: the line it leaves
-point on is taken as the place, and the next move goes from there."
+point on is taken as the place, and the next move goes from there.
+Whatever the command, the mode lines of both windows say the file their
+point is in afterwards (`ecc-review-direct--refresh-paths')."
   (cond
    ((bound-and-true-p isearch-mode)
     (when (memq this-command '(isearch-repeat-forward isearch-repeat-backward))
@@ -395,7 +400,8 @@ point on is taken as the place, and the next move goes from there."
    ((and (symbolp this-command) (get this-command 'scroll-command))
     (setq ecc-review-direct--aligned (line-beginning-position)))
    ((not (eql (line-beginning-position) ecc-review-direct--aligned))
-    (ecc-review-direct--follow-logged))))
+    (ecc-review-direct--follow-logged)))
+  (ecc-review-direct--refresh-paths-logged))
 
 ;;;; The keys
 
@@ -726,29 +732,31 @@ shown keeps the point its buffer had."
 ;;;; The keys on the screen
 
 (defvar ecc-review-direct-header-keys
-  '((A ("n/p" . "diff") ("j" . "jump") ("{ }" . "comments") ("c" . "comment")
-       ("x" . "delete") ("l" . "list") ("a" . "Claude's") ("s" . "files")
-       ("/" . "filter"))
-    (B ("RET" . "open") ("T" . "tour") ("t" . "next") ("M" . "message")
-       ("C-c C-c" . "send") ("q" . "quit") ("u/d" . "reply") ("v/V" . "scroll")
-       ("!" . "reread") ("?" . "all keys")))
-  "The keys the header line of each window of an ediff review shows.
-For each side, (KEY . WHAT) in the order they are shown.  Every key
-works in either window, so the two lines are one list cut in two: the
-left has reading and your comments, the right Claude, the files, sending
-and closing.  The most used come first, so that a narrow window loses
-the least of them at its right edge.  The right one ends with the key
-of the help, which a window too narrow for them all keeps: it drops the
-keys before it, from the last (`ecc-review-direct--header-line').")
+  '(("n/p" "diff" A) ("c" "comment" A) ("C-c C-c" "send" B) ("q" "quit" B)
+    ("RET" "open" B) ("j" "jump" A) ("{ }" "comments" A) ("x" "delete" A)
+    ("l" "list" A) ("a" "Claude's" A) ("T" "tour" B) ("t" "next" B)
+    ("M" "message" B) ("u/d" "reply" B) ("v/V" "scroll" B) ("s" "files" A)
+    ("/" "filter" A) ("!" "reread" B) ("?" "all keys" B))
+  "The keys the header lines of an ediff review show: (KEY WHAT SIDE).
+In the order they are shown, the most used first: a window too narrow
+for them all drops them from the end, all but the last, the key of the
+help (`ecc-review-direct--header-line').  One above the other, both
+windows show every key, the same line in each.  Side by side, every
+key working in either window, the two lines are this list cut in two by
+SIDE: the left, A, has reading and your comments, the right, B, Claude,
+the files, sending and closing.")
 
-(defun ecc-review-direct--key-pieces (side)
-  "Return the keys the header line of SIDE shows, a string for each.
-Faces are put on the strings here; no font-lock runs in a review."
-  (mapcar (lambda (key)
-            (concat (propertize (car key) 'face 'bold)
-                    " "
-                    (propertize (cdr key) 'face 'ecc-dim-face)))
-          (alist-get side ecc-review-direct-header-keys)))
+(defun ecc-review-direct--key-pieces (&optional side)
+  "Return the keys of SIDE the header lines show, a string for each.
+Every key when SIDE is nil.  Faces are put on the strings here; no
+font-lock runs in a review."
+  (delq nil
+        (mapcar (lambda (key)
+                  (when (or (null side) (eq (nth 2 key) side))
+                    (concat (propertize (nth 0 key) 'face 'bold)
+                            " "
+                            (propertize (nth 1 key) 'face 'ecc-dim-face))))
+                ecc-review-direct-header-keys)))
 
 (defun ecc-review-direct--join (pieces)
   "Return the keys PIECES as a header line has them: after a space, two apart.
@@ -767,32 +775,6 @@ Where what is before it reaches that place already -- a narrow window --
 it takes no room, and TEXT follows."
   (propertize " " 'display `(space :align-to (- right ,(string-width text)))))
 
-(defun ecc-review-direct--status (control)
-  "Return where the review in CONTROL is, for the right end of a header line.
-The current difference out of how many -- `3/12', `-/12' with none
-current -- what the filter hides, as `/FILTER: 2 hidden', and the
-right side when it is not on disk (`ecc-review-elsewhere').  It
-starts with two spaces, so that it stands apart from the keys even
-where the window is too narrow to put it at the right edge."
-  (with-current-buffer control
-    (concat "  "
-            (if (zerop ediff-number-of-differences)
-                (propertize "no difference" 'face 'ecc-dim-face)
-              (propertize (format "%s/%d"
-                                  (if (ediff-valid-difference-p ediff-current-difference)
-                                      (1+ ediff-current-difference)
-                                    "-")
-                                  ediff-number-of-differences)
-                          'face 'bold))
-            (when ecc-review--filter
-              (propertize (format "  /%s: %d hidden" ecc-review--filter
-                                  (length ecc-review--hidden))
-                          'face 'ecc-dim-face))
-            (when ecc-review--elsewhere
-              (propertize (format "  right: %s, not checked out" ecc-review--elsewhere)
-                          'face 'warning))
-            " ")))
-
 (defun ecc-review-direct--header (side &optional right)
   "Return the header line of the window of SIDE: the keys it is read with.
 RIGHT puts the keys at the right edge of the window, where they meet
@@ -805,16 +787,19 @@ put together by (`ecc-review-direct--align') are not counted in it."
       (ecc-review-direct--join (ecc-review-direct--key-pieces side)))))
 
 (defvar-local ecc-review-direct--header-keys nil
-  "The keys of the header line of this side, a string for each.")
+  "The keys of the header line of this side, a string for each.
+Nil where the header line is a string of its own: the left side, side
+by side.")
 
-(defvar-local ecc-review-direct--header-status nil
-  "Where the review is, for the header line of this side, or nil.")
+(defvar-local ecc-review-direct--mode-line-status nil
+  "Where the review is, for the mode line of this side, or nil.
+Only the right side has it (`ecc-review-direct--status').")
 
 (defvar-local ecc-review-direct--header-cache nil
-  "The last right header line drawn: (WIDTH PIECES STATUS . TEXT).
-Redisplay draws the header line far more often than the window, the
-keys or the status change, and each of those draws looks it up here
-rather than fitting the keys again (`ecc-review-direct--header-line').")
+  "The last header line fitted to its window: (WIDTH PIECES . TEXT).
+Redisplay draws the header line far more often than the window or the
+keys change, and each of those draws looks it up here rather than
+fitting the keys again (`ecc-review-direct--header-line').")
 
 (defun ecc-review-direct--fit-keys (pieces width)
   "Return the keys PIECES as the header line has them, in WIDTH columns, or nil.
@@ -830,34 +815,24 @@ dropped from the last until the rest fit."
     (and pieces (<= (string-width text) width) text)))
 
 (defun ecc-review-direct--header-line (&optional window)
-  "Return the header line of the right side in WINDOW, the selected one by default.
-The keys, and where the review is at the right end.  Where WINDOW is too
-narrow for both, the keys before the last, the help, are left out from
-the last until they fit; where it is too narrow for the help and where
-the review is, where the review is comes first and the keys after it,
-as many as fit: with the panel out of sight, nothing else says it.
-Worked out as the header line is drawn, from the strings made when the
-difference or the layout changes (`ecc-review-direct-refresh-headers'),
-so that a window made narrower is followed at once.  What it comes to
-is kept for the next draw of the same width, keys and status
-\(`ecc-review-direct--header-cache')."
+  "Return the header line of keys of this side in WINDOW, or the selected one.
+Where WINDOW is too narrow for them all, the keys before the last, the
+help, are left out from the last until they fit; too narrow for the
+help alone, it is cut at the edge.  Worked out as the header line is
+drawn, from the strings made when the layout changes
+\(`ecc-review-direct-refresh-headers'), so that a window made narrower
+is followed at once.  What it comes to is kept for the next draw of the
+same width and keys (`ecc-review-direct--header-cache')."
   (let ((pieces ecc-review-direct--header-keys)
-        (status ecc-review-direct--header-status)
         (width (window-width window))
         (cache ecc-review-direct--header-cache))
     (if (and cache
-             (eql (nth 0 cache) width)
-             (eq (nth 1 cache) pieces)
-             (eq (nth 2 cache) status))
-        (nthcdr 3 cache)
-      (let ((text
-             (if (null status)
-                 (ecc-review-direct--join pieces)
-               (if-let* ((keys (ecc-review-direct--fit-keys
-                                pieces (- width (string-width status)))))
-                   (concat keys (ecc-review-direct--to-the-right status) status)
-                 (concat (substring status 1) "│" (ecc-review-direct--join pieces))))))
-        (setq ecc-review-direct--header-cache (cl-list* width pieces status text))
+             (eql (car cache) width)
+             (eq (cadr cache) pieces))
+        (cddr cache)
+      (let ((text (or (ecc-review-direct--fit-keys pieces width)
+                      (ecc-review-direct--join (last pieces)))))
+        (setq ecc-review-direct--header-cache (cl-list* width pieces text))
         text))))
 
 (defun ecc-review-direct-header-text (buffer &optional window)
@@ -868,39 +843,158 @@ WINDOW is the window of BUFFER by default."
         header-line-format
       (ecc-review-direct--header-line (or window (get-buffer-window buffer t))))))
 
+(defun ecc-review-direct--set-header (buffer format keys)
+  "Give BUFFER, a side of a review, the header line FORMAT, fitting KEYS.
+Nothing that would come out the same is set again, and whatever changed
+asks for the header line to be drawn again: the construct reads KEYS,
+and redisplay would not see a change of them on its own."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (let ((changed nil))
+        (unless (equal-including-properties ecc-review-direct--header-keys keys)
+          (setq ecc-review-direct--header-keys keys
+                changed t))
+        (unless (equal-including-properties header-line-format format)
+          (setq header-line-format format
+                changed t))
+        (when changed
+          (force-mode-line-update))))))
+
 (defun ecc-review-direct-refresh-headers (control)
-  "Write the header lines of the two windows of the review in CONTROL again.
-The left one is put at the right edge while the two sides are side by
-side and at the left while one is above the other; the right one --
-the window that has the keyboard -- ends with where the review is
-\(`ecc-review-direct--header-line').  Run as the layout or the
-difference changes, from the hooks of the control buffer; nothing that
-would come out the same is set again."
+  "Write the header lines and the mode lines of the review in CONTROL again.
+One side above the other, both header lines are every key, fitted to
+the width (`ecc-review-direct--header-line').  Side by side, the left
+has its half of the keys at its right edge, where they meet the right
+one's in the middle, and the right one is fitted.  The header lines
+are keys and nothing else: where the review is goes to the mode line
+of the right window (`ecc-review-direct--refresh-paths').  Run as the
+layout or the difference changes, from the hooks of the control
+buffer; nothing that would come out the same is set again."
   (with-current-buffer control
-    (let ((left (ecc-review-direct--header 'A (not (ecc-review-ediff-stacked-p control))))
-          (keys (ecc-review-direct--key-pieces 'B))
-          (status (ecc-review-direct--status control)))
-      (when (buffer-live-p ediff-buffer-A)
-        (with-current-buffer ediff-buffer-A
-          (unless (equal-including-properties header-line-format left)
-            (setq header-line-format left)
-            (force-mode-line-update))))
+    (let* ((stacked (ecc-review-ediff-stacked-p control))
+           (fitted '(:eval (ecc-review-direct--header-line)))
+           (keys (ecc-review-direct--key-pieces (unless stacked 'B))))
+      (if stacked
+          (ecc-review-direct--set-header ediff-buffer-A fitted keys)
+        (ecc-review-direct--set-header ediff-buffer-A (ecc-review-direct--header 'A t) nil))
+      (ecc-review-direct--set-header ediff-buffer-B fitted keys)
       (when (buffer-live-p ediff-buffer-B)
-        (with-current-buffer ediff-buffer-B
-          (let ((changed nil))
-            (unless (equal-including-properties ecc-review-direct--header-keys keys)
-              (setq ecc-review-direct--header-keys keys
-                    changed t))
-            (unless (equal-including-properties ecc-review-direct--header-status status)
-              (setq ecc-review-direct--header-status status
-                    changed t))
-            (unless (equal header-line-format '(:eval (ecc-review-direct--header-line)))
-              (setq header-line-format '(:eval (ecc-review-direct--header-line))
-                    changed t))
-            ;; What the construct reads changed, not the construct itself:
-            ;; redisplay would not draw the header line again on its own.
-            (when changed
-              (force-mode-line-update))))))))
+        (let ((status (ecc-review-direct--status control)))
+          (with-current-buffer ediff-buffer-B
+            ;; The same string while it says the same: the mode line is
+            ;; made again only for a status that is not `eq'.
+            (unless (equal-including-properties ecc-review-direct--mode-line-status status)
+              (setq ecc-review-direct--mode-line-status status)))))
+      (ecc-review-direct--refresh-paths control))))
+
+;;;; The mode lines: the file at point, and where the review is
+
+;; The separator line of a file, `═══ path ═══', scrolls away with the
+;; first lines of the file, and the file being read was then nowhere on
+;; the screen.  So the mode line of each window says the file its point
+;; is in, read off the text (`ecc-review-path', put on by
+;; `ecc-review-ediff--insert'); the right one goes on with where the
+;; review is.  ediff writes the `mode-line-format' of the two buffers
+;; again at every select, as " A: " and its status before what was
+;; there (`ediff-refresh-mode-lines'), but never their
+;; `mode-line-buffer-identification', which is where this goes.  It is
+;; worked out after a command and when the review changes, not as the
+;; mode line is drawn.
+
+(defun ecc-review-direct--status (control)
+  "Return where the review in CONTROL is, for the right window's mode line.
+The current difference out of how many -- `3/12', `-/12' with none
+current -- what the filter hides, as `/FILTER: 2 hidden', and the right
+side when it is not on disk (`ecc-review-elsewhere')."
+  (with-current-buffer control
+    (concat (if (zerop ediff-number-of-differences)
+                (propertize "no difference" 'face 'ecc-dim-face)
+              (propertize (format "%s/%d"
+                                  (if (ediff-valid-difference-p ediff-current-difference)
+                                      (1+ ediff-current-difference)
+                                    "-")
+                                  ediff-number-of-differences)
+                          'face 'bold))
+            (when ecc-review--filter
+              (propertize (format "  /%s: %d hidden" ecc-review--filter
+                                  (length ecc-review--hidden))
+                          'face 'ecc-dim-face))
+            (when ecc-review--elsewhere
+              (propertize (format "  right: %s, not checked out" ecc-review--elsewhere)
+                          'face 'warning)))))
+
+(defvar-local ecc-review-direct--mode-line nil
+  "What the mode line of this side says for the buffer: (PATH STATUS . TEXT).
+PATH and STATUS are what TEXT was made of, so that a command that leaves
+both as they were makes nothing.")
+
+(defun ecc-review-direct-path-at (position)
+  "Return the path of the file POSITION of this side is in, or nil.
+At the end of the buffer, the file of the last character."
+  (or (get-text-property position 'ecc-review-path)
+      (and (> position (point-min))
+           (get-text-property (1- position) 'ecc-review-path))))
+
+(defun ecc-review-direct--mode-line-text (path status)
+  "Return what the mode line says of this side: PATH, then STATUS if any.
+The name of the buffer when there is no PATH, a review of nothing.
+A `%' in either is no %-construct."
+  (concat (propertize (string-replace "%" "%%" (or path (buffer-name)))
+                      'face 'mode-line-buffer-id)
+          (when status
+            (concat "  " (string-replace "%" "%%" status)))))
+
+(defun ecc-review-direct--refresh-paths (control)
+  "Say in the mode line of each side of the review in CONTROL its file at point.
+Its window's point, or the buffer's where it is not shown; the right one
+with where the review is after it (`ecc-review-direct--status').  The
+mode line is asked to be drawn again only where what it says changed."
+  (with-current-buffer control
+    (dolist (side '(A B))
+      (let ((buffer (ecc-review-direct--buffer side))
+            (window (ecc-review-direct--window side)))
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer
+            (let ((path (ecc-review-direct-path-at
+                         (if window (window-point window) (point))))
+                  (status ecc-review-direct--mode-line-status)
+                  (shown ecc-review-direct--mode-line))
+              (unless (and shown
+                           (equal (car shown) path)
+                           (eq (cadr shown) status))
+                (setq ecc-review-direct--mode-line
+                      (cl-list* path status
+                                (ecc-review-direct--mode-line-text path status)))
+                (force-mode-line-update)))))))))
+
+(defun ecc-review-direct--mode-line-id ()
+  "Return what the mode line of this side shows for the buffer.
+This is `mode-line-buffer-identification' in a side of a review."
+  (if ecc-review-direct--mode-line
+      (cddr ecc-review-direct--mode-line)
+    (default-value 'mode-line-buffer-identification)))
+
+(defun ecc-review-direct-mode-line-text (buffer)
+  "Return what the mode line of BUFFER, a side of a review, says for it.
+A string: the file at point, and on the right side where the review is,
+a `%' doubled.  What `mode-line-buffer-identification' gives the mode
+line, read without drawing it: `format-mode-line' draws nothing in
+batch."
+  (with-current-buffer buffer
+    (ecc-review-direct--mode-line-id)))
+
+(defun ecc-review-direct--refresh-paths-logged ()
+  "Say the file at point in the mode lines of this review, or log why not.
+On `post-command-hook' in a side of a review, after following point: a
+command in one window can move the other.  A function that signals is
+taken off the hook for good, so the error is logged and shown instead."
+  (condition-case error
+      (when (buffer-live-p ecc-review--part-of)
+        (ecc-review-direct--refresh-paths ecc-review--part-of))
+    (error
+     (ecc-log "review" "saying the file at point failed: %S" error)
+     (message "Saying the file at point in the review failed: %s"
+              (error-message-string error)))))
 
 ;;;; The mode
 
@@ -945,13 +1039,17 @@ window against it.
   (if ecc-review-direct-mode
       (progn
         (add-hook 'post-command-hook #'ecc-review-direct--post-command nil t)
-        (add-hook 'isearch-mode-end-hook #'ecc-review-direct--after-isearch nil t))
+        (add-hook 'isearch-mode-end-hook #'ecc-review-direct--after-isearch nil t)
+        ;; The file at point (`ecc-review-direct--refresh-paths').
+        (setq-local mode-line-buffer-identification '(:eval (ecc-review-direct--mode-line-id))))
     (remove-hook 'post-command-hook #'ecc-review-direct--post-command t)
-    (remove-hook 'isearch-mode-end-hook #'ecc-review-direct--after-isearch t)))
+    (remove-hook 'isearch-mode-end-hook #'ecc-review-direct--after-isearch t)
+    (kill-local-variable 'mode-line-buffer-identification)))
 
 (defun ecc-review-direct-setup (control)
   "Turn `ecc-review-direct-mode' on in the two sides of the review in CONTROL.
-Each is given the header line of its side (`ecc-review-direct-refresh-headers')."
+Each is given the header line of its side and the mode line of the
+file at point (`ecc-review-direct-refresh-headers')."
   (with-current-buffer control
     (dolist (buffer (list ediff-buffer-A ediff-buffer-B))
       (when (buffer-live-p buffer)

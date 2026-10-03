@@ -536,18 +536,24 @@ The blank lines are the same on both sides, so they are no difference of
 their own, and they belong to the file above -- a deletion at the end of
 one still reads against that file and not the next.")
 
-(defun ecc-review-ediff--insert (buffer separator text)
-  "Append SEPARATOR and TEXT to BUFFER; return (LINE BEG . END).
+(defun ecc-review-ediff--insert (buffer separator text path)
+  "Append SEPARATOR and TEXT, the file PATH, to BUFFER; return (LINE BEG . END).
 LINE is the line of SEPARATOR, and BEG and END are where TEXT went.
 `ecc-review-ediff-file-spacing\=' blank lines go in front of it unless
 BUFFER is still empty.  TEXT is given a closing newline when it lacks
-one, so that what follows starts a line of its own."
+one, so that what follows starts a line of its own.  The separator and
+the text carry PATH as `ecc-review-path', which the mode line of the
+window reads at point (`ecc-review-direct-path-at'); the blank lines
+carry the path of the file above, which they belong to."
   (with-current-buffer buffer
     (let ((inhibit-read-only t))
       (goto-char (point-max))
       (unless (= (point-min) (point-max))
-        (insert (make-string (max 0 ecc-review-ediff-file-spacing) ?\n)))
-      (let ((line (line-number-at-pos (point))))
+        (insert (propertize (make-string (max 0 ecc-review-ediff-file-spacing) ?\n)
+                            'ecc-review-path
+                            (get-text-property (1- (point)) 'ecc-review-path))))
+      (let ((line (line-number-at-pos (point)))
+            (start (point)))
         ;; No font-lock in a buffer of this package: the face goes on
         ;; the text as it is inserted, or once it is known
         ;; (`ecc-review-ediff--colour-later').
@@ -556,6 +562,7 @@ one, so that what follows starts a line of its own."
           (unless (string-empty-p text)
             (insert text)
             (unless (bolp) (insert "\n")))
+          (put-text-property start (point) 'ecc-review-path path)
           (cons line (cons beg (+ beg (length text)))))))))
 
 (defvar ecc-review-ediff-diff-faces t
@@ -1188,7 +1195,8 @@ was 0.7 s of the 1.7 s a review of 57 files took to open in batch, and
           (pcase-dolist (`(,buffer ,text ,blob) (list (list base before before-blob)
                                                       (list now after after-blob)))
             (let* ((known (ecc-review-ediff--known-colours path blob cache))
-                   (place (ecc-review-ediff--insert buffer separator (or known text))))
+                   (place (ecc-review-ediff--insert buffer separator (or known text)
+                                                       path)))
               (when (and (not known) ecc-review-ediff-fontify (not (string-empty-p text)))
                 (push (ecc-review-ediff--make-job
                        :beg (set-marker (make-marker) (cadr place) buffer)
@@ -2252,7 +2260,7 @@ When the filter hides it, to the nearest one it keeps
 (cl-defmethod ecc-review-files-filter-applied (&context (major-mode ediff-mode)
                                                         &optional quietly)
   "Move this review off a difference the filter now hides, and say what it hides.
-What it hides is on the header line of the right window
+What it hides is on the mode line of the right window
 \(`ecc-review-direct-refresh-headers').  QUIETLY -- a drawing no key of
 the user's asked for -- selects the difference without recentring,
 which would lay the windows out again, and says it when what is hidden
@@ -2296,8 +2304,9 @@ whatever was in the way may have taken a window of it."
 ;; ediff's help, with only the commands this review really has on it.
 ;;
 ;; The keys are taught by the header lines of the two windows, where
-;; they are typed (`ecc-review-direct.el'), and so is where the review
-;; is; the panel, with the help off, says ? and nothing else.
+;; they are typed (`ecc-review-direct.el'), and where the review is is
+;; said by the mode line of the right one; the panel, with the help
+;; off, says ? and nothing else.
 
 (defconst ecc-review-ediff-long-help-message
   "    Move around      |      Toggle features      |          Comments
@@ -2334,8 +2343,8 @@ This is what `ediff-long-help-message-function\\=' is set to."
 Only that \\`?' shows every key, and the panel is not on the screen
 then (`ecc-review-ediff--hide-the-panel'): the keys are on the header
 lines of the two windows, and where the review is -- which difference,
-what the filter hides -- at the right end of the header line of the
-window that has the keyboard (`ecc-review-direct-refresh-headers').
+what the filter hides -- on the mode line of the right window, after
+the file at its point (`ecc-review-direct-refresh-headers').
 This is what `ediff-brief-help-message-function\\=' is set to."
   " ? all keys")
 
@@ -2344,15 +2353,16 @@ This is what `ediff-brief-help-message-function\\=' is set to."
 On `ediff-select-hook' of the control buffer, and after every change of
 the current difference that runs no hook -- a select of none, an
 unselect alone -- and every computing of the differences.  What is said
-is on a header line (`ecc-review-direct-refresh-headers'); the help in
-the panel says nothing that changes."
+is on the mode line of the right window
+\(`ecc-review-direct-refresh-headers'); the help in the panel says
+nothing that changes."
   (ecc-review-direct-refresh-headers (current-buffer)))
 
 ;;;; The control panel, out of sight
 
-;; The panel had the help and the state; the keys and the state are on
-;; the header lines now, and with the brief help it would say "? all
-;; keys" and nothing else.  So it is not on the screen at all, unless ?
+;; The panel had the help and the state; the keys are on the header
+;; lines now and the state on the mode line of the right window, and
+;; with the brief help it would say "? all keys" and nothing else.  So it is not on the screen at all, unless ?
 ;; asks for the long help, which it shows as ever, without a mode line.
 ;;
 ;; ediff takes the window of its panel as part of the layout:
@@ -2837,10 +2847,11 @@ ediff lays out its windows; quitting puts back what was on the screen."
                ;; under ediff's own help, and turn into this one at the first
                ;; command that recentres.  It is the call `ediff-toggle-split'
                ;; and `ediff-toggle-help' both make for the same reason.
-               ;; The panel out of sight, and the header lines of
-               ;; the two windows following the layout -- the key help
-               ;; of the left meets that of the right in the middle
-               ;; when they are side by side -- and the difference.
+               ;; The panel out of sight, the header lines of the two
+               ;; windows following the layout -- the same keys in both
+               ;; when one is above the other, the key help of the left
+               ;; meeting that of the right in the middle when they are
+               ;; side by side -- and the mode lines the difference.
                (add-hook 'ediff-before-setup-windows-hook
                          #'ecc-review-ediff--keep-it-plain nil t)
                (add-hook 'ediff-after-setup-windows-hook

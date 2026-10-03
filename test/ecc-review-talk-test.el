@@ -189,11 +189,11 @@ Return the text node."
       (should (eq (key-binding (kbd "y")) #'ecc-review-talk-answer))
       (should (eq (key-binding (kbd "m")) #'ediff-toggle-wide-display))
       ;; The header line of the right window says them, as many as its
-      ;; width has room for, and so does ?.
+      ;; width has room for -- the most used first -- and so does ?.
       (should (string-search "T tour  t next  M message" (ecc-review-direct--keys 'B)))
-      (should (string-search "T tour"
-                             (ecc-review-direct-header-text
-                              (buffer-local-value 'ediff-buffer-B control))))
+      (should (string-prefix-p " C-c C-c send"
+                               (ecc-review-direct-header-text
+                                (buffer-local-value 'ediff-buffer-B control))))
       (should (string-match-p "T -ask Claude for a tour" ecc-review-ediff-long-help-message))
       (should (string-match-p "y -answer what Claude asks" ecc-review-ediff-long-help-message)))))
 
