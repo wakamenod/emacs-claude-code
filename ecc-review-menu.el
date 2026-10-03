@@ -77,7 +77,8 @@ origin/main is what has not been pushed.  See
 (defvar ecc-review-menu-commit-count 2000
   "How many recent commits `c' in `ecc-review-menu' offers.
 The cost is opening the prompt, one `git log', and filtering the list at
-each key: a few ms each at 2000 (measured 2026-10-03).  A commit outside
+each key: about 20 ms to open and 2 ms a key at 2000 (measured
+2026-10-03 with the substring style; orderless is slower).  A commit outside
 the list is still taken: the prompt does not require a match, and any
 name git resolves -- a full hash, HEAD~3000, a tag -- is reviewed, as
 `ecc-review-menu-commit-range' resolves it with rev-parse.")
