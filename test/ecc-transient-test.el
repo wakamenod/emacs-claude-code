@@ -283,7 +283,7 @@ Remote Control was never trusted with."
     (should (eq (cdr (assoc "D" menu)) 'ecc-review-menu))
     (should (eq (lookup-key ecc-global-map "D") 'ecc-review-menu))
     (should (equal (mapcar #'car review)
-                   '("D" "w" "u" "s" "b" "c" "r" "-f" "-e" "-e" "S")))
+                   '("D" "w" "u" "s" "b" "p" "c" "r" "-f" "-e" "-e" "S")))
     (should (eq (cdr (assoc "D" review)) 'ecc-review-menu-session-changes))
     (should (equal (cdr (assoc "-f" review)) "--files"))
     (dolist (cell review)

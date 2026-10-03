@@ -15,8 +15,8 @@ One feature per file, `ecc-<feature>.el`, with `test/ecc-<module>-test.el` besid
 rules:
 
 - `ecc-core.el` depends on no other `ecc-` module.
-- JSON is touched only by `ecc-protocol.el` and `ecc-proc.el`, plus the two that speak to
-  a process of their own (`ecc-mcp.el`, `ecc-inline.el`).
+- JSON is touched only by `ecc-protocol.el` and `ecc-proc.el`, plus the three that speak to
+  a process of their own (`ecc-mcp.el`, `ecc-inline.el`, `ecc-review-pr.el`).
 - `ecc-model.el` — the session, the Turn > Step > Tool tree, the pending-request queue
   and the hooks — knows nothing of JSON, processes or drawing, and never sees the buffer.
 - `ecc-render.el` alone draws the transcript; `ecc-chat.el` holds the major mode, the
