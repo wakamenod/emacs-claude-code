@@ -278,11 +278,21 @@ Verified against **Claude Code CLI 2.1.281**.
   `gh pr list --json ...` in the project and offers the open pull requests
   in gh's order, as `#113  fix(review): …  fix/x → develop  @someone`, a
   draft marked `[draft]`, a tab or a newline in a title made a space. The
-  default is the pull request whose head is the branch checked out, not a
-  fork's branch of the same name. A number typed is looked up with
-  `gh pr view N`, so a merged or closed one can be reviewed; with none
-open, the question says so and asks for a number. gh's output is read
-as UTF-8 whatever the locale. What gh says
+  default is the open pull request whose head is the branch checked out,
+  not a fork's branch of the same name. First among the candidates is
+  `Search pull requests…` (`ecc-review-pr-search-label`), which asks for
+  words in GitHub's search syntax (`is:merged`, `author:`, `label:`, ...);
+  words typed at the list that are neither a candidate nor a number search
+  in one step. A search runs `gh pr list --search QUERY --state all
+  --json ...` when the answer is given, never as it is typed, and offers
+  what it finds the same way, the search entry first again; one that
+  finds nothing says `No pull request matches "QUERY"` in the prompt and
+  asks again. A closed or merged pull request is marked `[closed]` or
+  `[merged]` on its line (`state` is among `ecc-review-pr-fields`). A
+  number typed, with or without `#`, is looked up with `gh pr view N`, so
+  a merged or closed one can be reviewed without searching; with none
+  open, the question says so and asks for a number or words. gh's output
+  is read as UTF-8 whatever the locale. What gh says
   when it fails -- not logged in, no GitHub remote -- is the `user-error`.
   The diff is made by the local git, not `gh pr diff`, so the review has
   whole files for ediff and `-f`, `-e`, comments and sending work as for
@@ -296,12 +306,13 @@ as UTF-8 whatever the locale. What gh says
   repository, else from that repository's address: no ref, no branch,
   `HEAD` and the files untouched. The base branch of a merged pull request
   may be gone, and its fetch failing is an error only when the base is
-  still missing after it. The pull request of the branch checked out is
+  still missing after it. The open pull request of the branch checked out is
   reviewed as `b` of the current branch is, the commit where `HEAD` parts
   from the base against the working tree, and is named as `b` names it,
   `develop + working tree`, so that the two are one review in one buffer;
   what is not pushed is in it and its lines are those of the files on
-  disk.
+  disk. A closed or merged one is `BASE_OID...HEAD_OID` even with a branch
+  of its head's name checked out, which may be newer work.
 
 - A review whose right side is not the files on disk says so: another
   branch's pull request, `b` of another branch, `c` of a commit other than
