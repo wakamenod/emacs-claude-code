@@ -211,14 +211,24 @@ Nodes awaiting user input have an active local keymap when point is inside them:
 | `r` | Allow matching rule (saves pattern to project settings) |
 | `c` / `e` | Comment on proposal / edit before allowing |
 
-These keys are not bound elsewhere in the transcript, so they shadow no other command. They act only while point is inside the request node. See [Review and plan mode](/emacs-claude-code/features/review/) for details on `c` and `e`.
+These keys are not bound elsewhere in the transcript, so they shadow no other command. They act only while point is inside the request node. See [Reviewing proposals before approval](/emacs-claude-code/features/approval/#reviewing-proposals-before-approval) for details on `c` and `e`.
 
 Questions are answered in a dedicated buffer opened with `RET`: press `1`–`9` to choose an option, `SPC` to toggle multiple-choice items, `o` to type a custom answer, and `C-c C-c` to send.
 
 <Video name="question" label="A question with two questions: one option chosen, two toggled on the second, and the answers sent" />
 
-### Files section
+### The Files section
 
-`RET` opens the selected file (at the line, when point is on a diff line), and `d` reviews its modifications in diff-mode. `TAB` toggles folding and `SPC` scrolls.
+<Video name="files" label="The Files section: a file unfolded to its diff, then reviewed on its own" />
+
+The bottom of the transcript lists the files touched during the session: the path, operations performed (`R×n` reads, `E×n` edits, `W×n` writes), and lines changed (`+n −n`). `TAB` expands a file's cumulative diff, `RET` visits it, and `d` reviews it on its own. On a diff line, `RET` opens the file at that line, and `SPC` scrolls.
+
+Pressing `F` in the transcript or in the menu jumps there. Setting `ecc-render-summary-position` to `'top` places the section at the top instead.
+
+### The Timeline
+
+`T` in the transcript lists turns by their prompts and jumps to the selected one. `C-c C-n` and `C-c C-p` step through them.
+
+![The turn picker, listing the turns of the session by their prompts](../../../assets/timeline.png)
 
 All commands accessible outside the session buffer are documented in the [transient menu reference](/emacs-claude-code/features/menu/).

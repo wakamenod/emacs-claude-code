@@ -1,13 +1,13 @@
 ---
-title: Review and plan mode
-description: Review proposed changes, inspect unified diffs across a session, and interact with plan mode.
+title: Review
+description: Review changes as one diff, comment on lines and hunks, and send the comments back as a single prompt.
 sidebar:
-  order: 4
+  order: 5
 ---
 
 import Video from '../../../components/Video.astro';
 
-Review changes as a single diff, comment on hunks that need work, and send all comments in a single prompt. The same buffer reviews what a session changed, the working tree it modified, or a single proposal before it is applied.
+Review changes as a single diff, comment on hunks that need work, and send all comments in a single prompt. The same buffer reviews what a session changed, the working tree it modified, or a single proposal before it is applied ([Proposals and plan mode](/emacs-claude-code/features/approval/)).
 
 `C-c c D` opens a menu where you choose what to compare. The two reviews used most often are the same review with a different base:
 
@@ -305,51 +305,6 @@ In a window, `c` comments on the line at point: on the left for a line the chang
 | `?` | Show the control panel with every key (press again to hide it) |
 
 Comments work as they do in the diff buffer, on a line or on a whole difference. They include the file name and line numbers, and the prompt sent to the session has the same form. Sending comments, pressing `C-c C-k`, or pressing `q` restores the window configuration you had before opening the review. There is no `g` command here. `!` reads the review again.
-
-## Reviewing proposals before approval
-
-<Video name="proposal" label="The text of a proposed Write, changed in a buffer and then allowed with the change" />
-
-While a tool permission request is pending in the transcript, pressing `c` on the request node reviews that change, and `e` opens its proposed content (see [Prompt and transcript](/emacs-claude-code/features/prompt/#on-a-pending-request-node)).
-
-Comments here are sent as the **reason for the denial**, so Claude can propose again instead of being corrected after the write.
-
-`e` opens the proposal in the target file's major mode. `C-c C-c` allows the change using your text instead of Claude's and sends a diff of what you altered; `C-c C-k` leaves the request pending.
-
-## Plan mode
-
-Exiting plan mode sends the plan as a request. ecc opens it in an editable buffer beside the session.
-
-<Video name="plan" label="A plan opened in its own buffer, a comment put on one of its lines, the permission mode chosen, and the plan sent back with the comment" />
-
-Feedback can take three forms: a line comment (`C-c C-a`, removed with `C-c C-r`), an inline `@claude: …` marker, or an edit to the plan itself (`C-c C-d` diffs it).
-
-With any feedback present, `C-c C-c` returns the plan with that feedback and requests a revision. Without feedback, it approves and prompts for a permission mode: `C-c C-p` chooses one; otherwise, `ecc-plan-default-mode` (`"acceptEdits"`) is used.
-
-| Key | Action |
-|---|---|
-| `C-c C-c` | Approve, or send any feedback |
-| `C-c C-k` | Reject with a reason, feedback included |
-| `C-c C-a` / `C-c C-r` | Add or remove a comment on this line |
-| `C-c C-d` | Diff your edits against the plan as proposed |
-| `C-c C-p` | Choose the permission mode to approve with |
-| `C-c C-n` | Next line changed since the previous plan |
-
-A new plan marks changed lines in the margin and shows `+N −N` in the header line.
-
-## The Files section
-
-<Video name="files" label="The Files section: a file unfolded to its diff, then reviewed on its own" />
-
-The bottom of the transcript lists the files touched during the session: the path, operations performed (`R×n` reads, `E×n` edits, `W×n` writes), and lines changed (`+n −n`). `TAB` expands a file's cumulative diff, `RET` visits it, and `d` reviews it on its own.
-
-Pressing `f` in the transcript (or `F` in the menu) jumps there. Setting `ecc-render-summary-position` to `'top` places the section at the top instead.
-
-## The Timeline
-
-`T` in the transcript lists turns by their prompts and jumps to the selected one. `C-c C-n` and `C-c C-p` step through them.
-
-![The turn picker, listing the turns of the session by their prompts](../../../assets/timeline.png)
 
 ## Window placement for reviews
 
