@@ -495,11 +495,13 @@ review, quit by \\`]' -- as a plist of :notes, :next-id and :positions."
 One per pull request, so that `p' of it again finds the reviews left
 open and the comments held.")
 
-(defun ecc-review-pr-walk (root pr branch whole)
+(defun ecc-review-pr-walk (root pr branch whole &optional commits)
   "Return the pull request PR of ROOT read a commit at a time.
 BRANCH is the branch checked out, and WHOLE the range the whole of PR
-is reviewed as (`ecc-review-pr-range').  The one made before for PR is
-returned, brought up to date with what PR and its commits are now."
+is reviewed as (`ecc-review-pr-range').  COMMITS are its commits, when
+they have been read already (`ecc-review-pr-commits').  The one made
+before for PR is returned, brought up to date with what PR and its
+commits are now."
   (let* ((key (cons root (plist-get pr :number)))
          (walk (or (gethash key ecc-review-pr--walks)
                    (puthash key (ecc-review-pr--make-walk
@@ -508,7 +510,8 @@ returned, brought up to date with what PR and its commits are now."
     (setf (ecc-review-pr-walk-pr walk) pr
           (ecc-review-pr-walk-own walk) (ecc-review-pr-own-p pr branch)
           (ecc-review-pr-walk-whole walk) whole
-          (ecc-review-pr-walk-commits walk) (ecc-review-pr-commits root pr branch))
+          (ecc-review-pr-walk-commits walk) (or commits
+                                                (ecc-review-pr-commits root pr branch)))
     walk))
 
 (defun ecc-review-pr--number (walk)

@@ -776,11 +776,17 @@ that change something, merges aside, oldest first."
                     (should ecc-review--walk)
                     (should (string-search "#1 as a whole, 3 commits"
                                            (ecc-review--header-line))))
-                  ;; The PR, then its second commit.
-                  (ecc-review-pr-test--asking
-                      (list "1" (format "2/3  %s  b.txt" (ecc-review-pr-test--short directory two)))
-                      asked
-                    (call-interactively #'ecc-review-menu-pull-request))
+                  ;; The PR, then its second commit; its commits read once.
+                  (let ((read 0)
+                        (commits (symbol-function 'ecc-review-pr-commits)))
+                    (cl-letf (((symbol-function 'ecc-review-pr-commits)
+                               (lambda (&rest args) (cl-incf read) (apply commits args))))
+                      (ecc-review-pr-test--asking
+                          (list "1" (format "2/3  %s  b.txt"
+                                            (ecc-review-pr-test--short directory two)))
+                          asked
+                        (call-interactively #'ecc-review-menu-pull-request)))
+                    (should (= read 1)))
                   (with-current-buffer (ecc-review-pr-test--shown)
                     (should (equal ecc-review--range (concat two "^!")))
                     (should (string-search "-one" (buffer-string)))

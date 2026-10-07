@@ -849,14 +849,15 @@ ARGS are the arguments of the menu, and STATE its state
         (ecc-review-name-fork root (car range) (cdr range)))
       (ecc-review-menu-open 'branch (car range) args ecc-review-menu--state))))
 
-(transient-define-suffix ecc-review-menu-pull-request (pr args &optional state commit)
+(transient-define-suffix ecc-review-menu-pull-request (pr args &optional state commit commits)
   "Review the pull request PR, a plist of `ecc-review-pr-parse'.
 Asked of gh with completion (`ecc-review-pr-read'), and compared as
 `ecc-review-pr-range' says.  Then one of its commits is asked for
 \(`ecc-review-pr-read-commit'), the whole of it by default: COMMIT, the
 id of one, is that commit alone.  Either way the review is one of the
 pull request read a commit at a time, \\`]' and \\`[' going through its
-commits (`ecc-review-pr-walk').  Offered only when gh is installed.
+commits (`ecc-review-pr-walk'); COMMITS are those the question offered,
+read again when not given.  Offered only when gh is installed.
 ARGS are the arguments of the menu, and STATE its state
 \(`ecc-review-menu--with-state')."
   :description (lambda () (ecc-review-menu--describe 'pr))
@@ -867,17 +868,17 @@ ARGS are the arguments of the menu, and STATE its state
      (let* ((args (transient-args 'ecc-review-menu))
             (root (ecc-review-menu--root))
             (branch (plist-get ecc-review-menu--state :branch))
-            (pr (ecc-review-pr-read root branch #'ecc-review-menu--in-order)))
+            (pr (ecc-review-pr-read root branch #'ecc-review-menu--in-order))
+            (commits (ecc-review-pr-commits root pr branch)))
        (list pr args ecc-review-menu--state
-             (plist-get (ecc-review-pr-read-commit
-                         pr (ecc-review-pr-commits root pr branch)
-                         #'ecc-review-menu--in-order)
-                        :id)))))
+             (plist-get (ecc-review-pr-read-commit pr commits #'ecc-review-menu--in-order)
+                        :id)
+             commits))))
   (ecc-review-menu--with-state state
     (let* ((root (ecc-review-menu--root))
            (branch (plist-get ecc-review-menu--state :branch))
            (range (ecc-review-pr-range root pr branch))
-           (walk (ecc-review-pr-walk root pr branch (car range))))
+           (walk (ecc-review-pr-walk root pr branch (car range) commits)))
       (ecc-review-name-fork root (car range) (cdr range))
       (ecc-review-pr-opening walk
         (ecc-review-menu-open 'pr (if commit
