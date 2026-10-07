@@ -188,14 +188,21 @@ command is run, with `this-command' COMMAND, `next-line' by default."
           (should-not (string-search "\n" left))
           (should-not (string-search "\n" right))
           ;; Side by side, the left keys are put at the right edge.
-          (should (string-search "n/p diff  j jump  { } comments  c comment" left))
-          (should (string-search "RET open  T tour  t next  M message"
+          (should (string-search "n/p diff  c comment  j jump  { } comments" left))
+          (should (string-search "C-c C-c send  q quit  RET open  T tour"
                                  (ecc-review-direct--keys 'B)))
           ;; A window of 40 columns keeps the first keys and the help.
-          (should (string-search "RET open  T tour" right))
+          (should (string-search "C-c C-c send  q quit" right))
           (should (string-search "? all keys" right))
-          ;; Where the review is, on the right one.
-          (should (string-search "-/4" right))
+          ;; Keys and nothing else: where the review is is on the mode
+          ;; line of the right one, after the file at point.
+          (should-not (string-search "/4" right))
+          (should (equal (substring-no-properties
+                          (ecc-review-direct-mode-line-text ediff-buffer-B))
+                         "a.txt  -/4"))
+          (should (equal (substring-no-properties
+                          (ecc-review-direct-mode-line-text ediff-buffer-A))
+                         "a.txt"))
           ;; Faces on the string, no font-lock.
           (should (eq (get-text-property 1 'face left) 'bold)))
         ;; The panel says ? and nothing else.
@@ -735,29 +742,29 @@ the keyboard back, is no move of point."
             (call-interactively (key-binding (kbd "RET")))))
         (should (equal opened (cons (file-truename (expand-file-name "a.txt" directory)) 21)))))))
 
-(ert-deftest ecc-review-direct-test-the-header-says-the-difference-after-any-change ()
+(ert-deftest ecc-review-direct-test-the-mode-line-says-the-difference-after-any-change ()
   "Where the review is follows a reading again and a quiet change of difference.
-It is at the end of the header line of the right window."
+It is on the mode line of the right window, after the file at point."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
     (ecc-review-direct-test--with-review session control
       (let ((status (lambda ()
-                      (buffer-local-value 'ecc-review-direct--header-status
-                                          (buffer-local-value 'ediff-buffer-B control)))))
+                      (ecc-review-direct-mode-line-text
+                       (buffer-local-value 'ediff-buffer-B control)))))
         (ecc-review-direct-test--move control 'B 55)
-        (should (string-suffix-p "  4/4 " (funcall status)))
-        ;; Off the difference, n goes from point: the header is told of
-        ;; the one n starts from, and then of where n went.
+        (should (string-suffix-p "  4/4" (funcall status)))
+        ;; Off the difference, n goes from point: the mode line is told
+        ;; of the one n starts from, and then of where n went.
         (ecc-review-direct-test--move control 'B 10)
         (ecc-review-direct-test--type control 'B "n")
-        (should (string-suffix-p "  2/4 " (funcall status)))
+        (should (string-suffix-p "  2/4" (funcall status)))
         ;; A fifth difference, read again: the count follows.
         (ecc-review-direct-test--write
          (concat directory "a.txt")
          (replace-regexp-in-string "^l58$" "l58 changed" ecc-review-direct-test--changed))
         (with-current-buffer control
           (ecc-review-reread t))
-        (should (string-match-p "/5 \\'" (funcall status)))))))
+        (should (string-match-p "/5\\'" (funcall status)))))))
 
 (ert-deftest ecc-review-direct-test-a-file-too-large-opens-unshifted ()
   "A file too large to diff a line through opens at the line the review shows."
@@ -1076,7 +1083,8 @@ Nor a key command written with one backslash, which reads as itself."
           (should (= (ecc-review-direct-test--row left) (ecc-review-direct-test--row right))))))))
 
 (ert-deftest ecc-review-direct-test-the-left-keys-meet-the-right-ones-side-by-side ()
-  "Side by side the left header is at the right edge; stacked, both are at the left.
+  "Side by side the left header is at the right edge; stacked, both are the same.
+One above the other, both windows show every key, fitted to the width.
 | from a window changes it, and keeps the keyboard there."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
@@ -1086,7 +1094,9 @@ Nor a key command written with one backslash, which reads as itself."
                         (ecc-review-direct-header-text
                          (buffer-local-value (if (eq side 'A) 'ediff-buffer-A 'ediff-buffer-B)
                                              control)))))
-          (should (string-prefix-p " n/p diff" (funcall header 'A)))
+          (should (string-prefix-p " n/p diff  c comment  C-c C-c send" (funcall header 'A)))
+          (should (string-suffix-p "? all keys" (funcall header 'A)))
+          (should (equal-including-properties (funcall header 'A) (funcall header 'B)))
           (should-not (ecc-review-direct-test--align-to (funcall header 'A)))
           (ecc-review-direct-test--type control 'B "|")
           (should (eq (selected-window) (ecc-review-direct-test--window control 'B)))
@@ -1096,10 +1106,12 @@ Nor a key command written with one backslash, which reads as itself."
             (should (equal (ecc-review-direct-test--align-to left)
                            `(- right ,(1+ (string-width (ecc-review-direct--keys 'A))))))
             (should (string-suffix-p "/ filter " left)))
-          ;; The right one is not moved.
-          (should (string-search "RET open" (funcall header 'B)))
+          ;; The right one is not moved, and has the other half.
+          (should (string-prefix-p " C-c C-c send" (funcall header 'B)))
+          (should-not (string-search "n/p diff" (funcall header 'B)))
           (ecc-review-direct-test--type control 'B "|")
-          (should-not (ecc-review-direct-test--align-to (funcall header 'A))))))))
+          (should-not (ecc-review-direct-test--align-to (funcall header 'A)))
+          (should (equal-including-properties (funcall header 'A) (funcall header 'B))))))))
 
 (ert-deftest ecc-review-direct-test-the-panel-is-out-of-sight ()
   "The control panel is on the screen only while ? shows the long help.
@@ -1155,10 +1167,9 @@ with them; reading again and q work as ever."
 
 ;;;; Fixes after review
 
-(ert-deftest ecc-review-direct-test-a-narrow-window-shows-the-status-first ()
-  "Too narrow for every key, the right header keeps ? and the status, dropping keys before ?.
-Wide enough, the status is at the right end, after every key; too narrow
-even for ? and the status, it starts with the status."
+(ert-deftest ecc-review-direct-test-a-narrow-window-keeps-the-help ()
+  "Too narrow for every key, the right header keeps ?, dropping keys before it.
+Too narrow even for ?, it is ? alone.  Keys and nothing else, at any width."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
     (ecc-review-direct-test--with-review session control
@@ -1169,41 +1180,43 @@ even for ? and the status, it starts with the status."
                        '(:eval (ecc-review-direct--header-line))))
         (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 200)))
           (let ((text (ecc-review-direct-header-text buffer window)))
-            (should (string-prefix-p " RET open" text))
-            (should (string-search "! reread  ? all keys" text))
-            (should (string-suffix-p "  4/4 " text))))
+            (should (string-prefix-p " C-c C-c send" text))
+            (should (string-suffix-p "! reread  ? all keys" text))))
         (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 40)))
-          (let ((text (ecc-review-direct-header-text buffer window)))
-            (should (string-prefix-p " RET open  T tour  ? all keys" text))
-            (should-not (string-search "reread" text))
-            (should (string-suffix-p "  4/4 " text))))
-        (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 15)))
-          (let ((text (ecc-review-direct-header-text buffer window)))
-            (should (string-prefix-p " 4/4 " text))
-            (should (string-search "RET open" text))))))))
+          (should (equal (ecc-review-direct-header-text buffer window)
+                         " C-c C-c send  q quit  ? all keys")))
+        (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 8)))
+          (should (equal (ecc-review-direct-header-text buffer window) " ? all keys")))))))
 
 (ert-deftest ecc-review-direct-test-a-stacked-160-column-frame-keeps-the-help ()
-  "Stacked in a frame of 160 columns, beside the reply pane, ? and the status are in the header.
-Batch has a frame of 80 columns: the width the right window has there
-is given to the header line."
+  "Stacked in a frame of 160 columns, beside the reply pane, both headers keep ?.
+They are the same line of every key, as many as fit, the most used
+first.  Batch has a frame of 80 columns: the width the windows have
+there is given to the header lines."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
-    (ecc-review-direct-test--with-review session control
-      (let* ((buffer (buffer-local-value 'ediff-buffer-B control))
-             (window (ecc-review-direct-test--window control 'B))
-             ;; The frame less the pane and the scroll bar of the window.
-             (width (- 160 (default-value 'ecc-review-talk-reply-width) 1)))
-        (cl-letf (((symbol-function 'window-width) (lambda (&rest _) width)))
-          (let ((text (ecc-review-direct-header-text buffer window)))
-            (should (string-search "? all keys" text))
-            (should (string-suffix-p "  -/4 " text))
-            (should (string-search "C-c C-c send" text))
-            (should (<= (string-width text) width))))))))
+    (let ((ecc-review-direct-test--layout 'stacked))
+      (ecc-review-direct-test--with-review session control
+        (let* ((left (buffer-local-value 'ediff-buffer-A control))
+               (right (buffer-local-value 'ediff-buffer-B control))
+               ;; The frame less the pane and the scroll bar of the window.
+               (width (- 160 (default-value 'ecc-review-talk-reply-width) 1)))
+          (cl-letf (((symbol-function 'window-width) (lambda (&rest _) width)))
+            (let ((text (ecc-review-direct-header-text
+                         right (ecc-review-direct-test--window control 'B))))
+              (should (equal-including-properties
+                       (ecc-review-direct-header-text
+                        left (ecc-review-direct-test--window control 'A))
+                       text))
+              (should (string-prefix-p " n/p diff  c comment  C-c C-c send  q quit" text))
+              (should (string-suffix-p "? all keys" text))
+              (should-not (string-search "/4" text))
+              (should (<= (string-width text) width)))))))))
 
 (ert-deftest ecc-review-direct-test-the-right-header-is-fitted-once-a-width ()
   "Drawing the right header line again at the same width fits the keys no more.
-Another width, other keys or another status fit them again, and at any
-width what is drawn, keys and status, is no wider than the window."
+Another width or other keys fit them again, another difference does not,
+and at any width what is drawn is no wider than the window."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
     (ecc-review-direct-test--with-review session control
@@ -1222,20 +1235,21 @@ width what is drawn, keys and status, is no wider than the window."
             (setq width 70)
             (ecc-review-direct-header-text buffer window)
             (should (= fitted 2))
-            ;; The difference changes: so does the status.
+            ;; The difference changes: the header line does not.
             (ecc-review-direct-test--move control 'B 55)
+            (ecc-review-direct-header-text buffer window)
+            (should (= fitted 2))
+            ;; The keys change.
+            (with-current-buffer buffer
+              (setq ecc-review-direct--header-keys
+                    (ecc-review-direct--key-pieces)))
             (ecc-review-direct-header-text buffer window)
             (should (= fitted 3))))
         (dolist (columns (number-sequence 25 120 5))
           (cl-letf (((symbol-function 'window-width) (lambda (&rest _) columns)))
             (let ((text (ecc-review-direct-header-text buffer window)))
               (should (string-search "? all keys" text))
-              ;; The space aligned to the status takes no room where the
-              ;; keys reach it already; it is not counted.
-              (should (<= (- (string-width text)
-                             (cl-count-if (lambda (at) (get-text-property at 'display text))
-                                          (number-sequence 0 (1- (length text)))))
-                          columns)))))))))
+              (should (<= (string-width text) columns)))))))))
 
 ;; A command that leaves the keyboard elsewhere on purpose, run through
 ;; the relay.
@@ -1349,9 +1363,9 @@ instead, and the review would be laid out first with the user's default."
         (kill-buffer other)))))
 
 (ert-deftest ecc-review-direct-test-a-header-changed-is-drawn-again ()
-  "Each change of what the right header line reads asks for it to be drawn again.
-The status, the keys, and the construct itself; nothing changed asks
-for nothing."
+  "Each change of what the right window's lines read asks for them to be drawn again.
+The keys and the construct of the header line, and the status of the
+mode line; nothing changed asks for nothing."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
     (ecc-review-direct-test--with-review session control
@@ -1370,8 +1384,90 @@ for nothing."
           (ecc-review-direct-refresh-headers control)
           (should (= asked 2))
           (with-current-buffer buffer
-            (setq ecc-review-direct--header-status nil))
+            (setq ecc-review-direct--mode-line-status nil))
           (ecc-review-direct-refresh-headers control)
           (should (= asked 3)))))))
+
+;;;; The file at point, on the mode line
+
+(defun ecc-review-direct-test--paths (control)
+  "Return the paths the mode lines of the review CONTROL say, left and right."
+  (mapcar (lambda (buffer)
+            (car (buffer-local-value 'ecc-review-direct--mode-line buffer)))
+          (with-current-buffer control (list ediff-buffer-A ediff-buffer-B))))
+
+(defun ecc-review-direct-test--move-to (control side path line)
+  "Put point on LINE of PATH on SIDE of CONTROL, as `next-line' would."
+  (select-window (ecc-review-direct-test--window control side))
+  (goto-char (with-current-buffer control
+               (ecc-review-ediff--file-position side (cons path line))))
+  (let ((this-command 'next-line))
+    (run-hooks 'post-command-hook)))
+
+(ert-deftest ecc-review-direct-test-the-mode-line-says-the-file-at-point ()
+  "Each mode line says the file its window's point is in, the right one then the status.
+A move in one window moves the other, and both say the file they are in
+afterwards; n and p into another file, too, and a move of Claude's."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-files session control
+        (list (list "b.txt" (ecc-review-direct-test--lines)
+                    (ecc-review-direct-test--lines (lambda (n) (and (= n 5) "l5 b\n")))))
+      (dolist (buffer (with-current-buffer control (list ediff-buffer-A ediff-buffer-B)))
+        (should (equal (buffer-local-value 'mode-line-buffer-identification buffer)
+                       '(:eval (ecc-review-direct--mode-line-id)))))
+      (ecc-review-direct-test--move-to control 'B "a.txt" 30)
+      (should (equal (ecc-review-direct-test--paths control) '("a.txt" "a.txt")))
+      (ecc-review-direct-test--move-to control 'B "b.txt" 3)
+      (should (equal (ecc-review-direct-test--paths control) '("b.txt" "b.txt")))
+      (should (string-match-p "\\`b\\.txt  [-0-9]+/5\\'"
+                              (substring-no-properties
+                               (ecc-review-direct-mode-line-text
+                                (buffer-local-value 'ediff-buffer-B control)))))
+      (should (equal (substring-no-properties
+                      (ecc-review-direct-mode-line-text
+                       (buffer-local-value 'ediff-buffer-A control)))
+                     "b.txt"))
+      ;; From the left window.
+      (ecc-review-direct-test--move-to control 'A "a.txt" 10)
+      (should (equal (ecc-review-direct-test--paths control) '("a.txt" "a.txt")))
+      ;; n from the last line of a.txt goes into b.txt, and p back.
+      (ecc-review-direct-test--move-to control 'B "a.txt" 58)
+      (ecc-review-direct-test--type control 'B "n")
+      (should (equal (ecc-review-direct-test--paths control) '("b.txt" "b.txt")))
+      (ecc-review-direct-test--type control 'B "p")
+      (should (equal (ecc-review-direct-test--paths control) '("a.txt" "a.txt")))
+      ;; Moved with no command, as Claude's review_navigate moves it.
+      (with-current-buffer control
+        (ecc-review-move-to
+         (car (ecc-review-ediff--unit-lines
+               (seq-find (lambda (unit) (equal (plist-get unit :path) "b.txt"))
+                         (ecc-review-units))))
+         nil))
+      (should (equal (ecc-review-direct-test--paths control) '("b.txt" "b.txt"))))))
+
+(ert-deftest ecc-review-direct-test-the-blank-line-before-a-file-is-the-file-above ()
+  "The blank line in front of a separator says the file above; the separator its own.
+The end of the buffer says the last file.  With no path, the mode line
+says the buffer's name, and a `%' in a path is no %-construct."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-direct-test--with-files session control
+        (list (list "b.txt" (ecc-review-direct-test--lines)
+                    (ecc-review-direct-test--lines (lambda (n) (and (= n 5) "l5 b\n")))))
+      (dolist (buffer (with-current-buffer control (list ediff-buffer-A ediff-buffer-B)))
+        (with-current-buffer buffer
+          (goto-char (point-min))
+          (should (equal (ecc-review-direct-path-at (point)) "a.txt"))
+          (re-search-forward "^═══ b\\.txt")
+          (let ((separator (line-beginning-position)))
+            (should (equal (ecc-review-direct-path-at separator) "b.txt"))
+            (should (equal (ecc-review-direct-path-at (1- separator)) "a.txt")))
+          (should (equal (ecc-review-direct-path-at (point-max)) "b.txt"))))))
+  (with-temp-buffer
+    (rename-buffer "no review here" t)
+    (should (equal (ecc-review-direct--mode-line-text nil nil) (buffer-name)))
+    (should (equal (substring-no-properties (ecc-review-direct--mode-line-text "50%.txt" "1/2"))
+                   "50%%.txt  1/2"))))
 
 ;;; ecc-review-direct-test.el ends here

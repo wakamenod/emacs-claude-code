@@ -23,7 +23,7 @@ The review opens with the old side above the new one and Claude's reply pane on 
 (setq ecc-review-ediff-layout 'side-by-side)   ; the default is 'stacked
 ```
 
-Each window's header line lists keys, and the one with the keyboard ends with where you are, such as `3/12`. The ediff control panel is hidden; `?` shows it with every key and hides it again. Other ediff sessions keep your own window layout.
+Each window's header line lists keys. The mode line shows the file the cursor is in; the lower or right window's mode line also shows where you are, such as `3/12`. The ediff control panel is hidden; `?` shows it with every key and hides it again. Other ediff sessions keep your own window layout.
 
 Each file is colored by its major mode, and the words that changed are bold.
 
@@ -60,7 +60,7 @@ Moving point drives the review. When point enters a difference, it becomes the c
 
 ## The reply pane
 
-The session is out of sight while ediff has the frame. A pane beside the diff shows the session's latest reply as it streams, one line for each tool call:
+The session is out of sight while ediff has the frame. A pane beside the diff shows the session's latest reply as it streams, one line for each tool call, colored as in the transcript:
 
 ```
 › Next stop.

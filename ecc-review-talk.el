@@ -45,7 +45,10 @@
 ;;   layout asks for, whenever ediff lays its windows out again, as | does,
 ;;   and it goes when the review is quit.  `ecc-review-talk-reply-place'
 ;;   puts it in a frame of its own instead.  It is never selected: the
-;;   keys of the review stay where they are typed.
+;;   keys of the review stay where they are typed.  It is coloured as
+;;   the transcript is: the reply in `ecc-assistant-face', its Markdown
+;;   once it is done, the calls in `ecc-tool-face' and the prompt in
+;;   `ecc-user-face'.
 ;;
 ;; A diff review shares the frame with the session, whose transcript is
 ;; beside it, so it has the keys and no pane.
@@ -345,6 +348,13 @@ turn begins.")
   (setq truncate-lines nil
         word-wrap t)
   (buffer-disable-undo)
+  ;; The Markdown of a finished reply, fontified once a node while its
+  ;; text stays the same (`ecc-render--fontify'): the pane is written
+  ;; whole at every change of the turn, and a reply with code fences is
+  ;; a temporary buffer and a major mode per fence.
+  (setq ecc-render--markdown-cache (make-hash-table :test #'equal)
+        ecc-render--markdown-used nil)
+  (add-to-invisibility-spec '(ecc-markup . nil))
   (setq mode-line-format '(:eval (ecc-review-talk--mode-line)))
   (add-hook 'kill-buffer-hook #'ecc-review-talk--forget nil t))
 
@@ -780,9 +790,11 @@ transcript's heading says."
   "Return the line of the reply pane for the tool or agent NODE."
   (let* ((name (or (ecc-model-node-get node 'name) "?"))
          (summary (ecc-review-talk-tool-summary name (ecc-model-node-get node 'input))))
-    (concat (propertize (concat "  " (ecc-review-talk--short-name name)
-                                (if (string-empty-p summary) "" (concat " → " summary)))
-                        'face 'ecc-dim-face)
+    (concat "  "
+            (propertize (ecc-review-talk--short-name name) 'face 'ecc-tool-face)
+            (if (string-empty-p summary)
+                ""
+              (propertize (concat " → " summary) 'face 'ecc-dim-face))
             (pcase (ecc-node-status node)
               ('running (propertize " …" 'face 'ecc-dim-face))
               ('error (propertize " ✗" 'face 'error))
@@ -790,14 +802,23 @@ transcript's heading says."
               (_ ""))
             "\n")))
 
+(defun ecc-review-talk--text-face (node)
+  "Return the face the text NODE is said in, the transcript's."
+  (if (ecc-model-node-get node 'synthetic) 'ecc-synthetic-face 'ecc-assistant-face))
+
 (defun ecc-review-talk--insert-node (node)
-  "Insert what the reply pane says of NODE, a child of the turn it shows."
+  "Insert what the reply pane says of NODE, a child of the turn it shows.
+Text as the transcript has it (`ecc-render--insert-text'): in its face
+while it streams, its Markdown fontified over that once it is done."
   (pcase (ecc-node-type node)
     ('text
-     (let ((text (or (ecc-model-streaming-text node) (ecc-model-node-get node 'text) "")))
+     (let ((text (or (ecc-model-streaming-text node) (ecc-model-node-get node 'text) ""))
+           (face (ecc-review-talk--text-face node)))
        (unless (and (string-empty-p text) (not (ecc-node-streaming node)))
          (unless (bobp) (insert "\n"))
-         (insert text "\n")
+         (if (ecc-node-streaming node)
+             (insert (propertize text 'face face) "\n")
+           (ecc-render--insert-lines (ecc-render--fontify (ecc-node-id node) text) "" face))
          (setq ecc-review-talk--tail node)
          (set-marker ecc-review-talk--tail-end (1- (point))))))
     ('step
@@ -896,11 +917,13 @@ end, and so does the window the pane is shown in next."
         (when-let* ((prompt (ecc-turn-prompt turn)))
           (unless (string-empty-p prompt)
             (insert (propertize (concat "› " (ecc--truncate (ecc-render--one-line prompt) 200))
-                                'face 'ecc-dim-face)
+                                'face 'ecc-user-face)
                     "\n")))
         (dolist (child (ecc-turn-children turn))
           (ecc-review-talk--insert-node child)))
       (ecc-review-talk--insert-requests session)
+      ;; What was fontified for a node no longer in the pane goes.
+      (ecc-render--sweep-fontified)
       (unless ecc-review-talk--tail
         (set-marker ecc-review-talk--tail-end nil))
       (pcase-dolist (`(,window . ,reading) windows)
@@ -972,7 +995,7 @@ what the pane ends with, else the pane is written again."
                     (inhibit-read-only t))
                 (save-excursion
                   (goto-char ecc-review-talk--tail-end)
-                  (insert text))
+                  (insert (propertize text 'face (ecc-review-talk--text-face node))))
                 (mapc #'ecc-review-talk--window-to-the-end following)))
           (ecc-review-talk--write pane))))))
 
