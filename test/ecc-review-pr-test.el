@@ -982,6 +982,38 @@ In STYLE, the diff by default.  Return the walk."
                       (should-not (string-search "unsent" (ecc-review--header-line)))))))
             (ecc-review-pr-test--kill-reviews)))))))
 
+(ert-deftest ecc-review-pr-test-one-group-a-commit ()
+  "Comments of one commit held by two reviews are sent under one heading."
+  (skip-unless (executable-find "git"))
+  (ecc-review-pr-test--with-directory directory
+    (seq-let (base head one) (ecc-review-pr-test--commits-repository directory)
+      (ecc-test-with-fake-session session
+        (setf (ecc-session-project-root session) directory)
+        (let ((ecc-review-style 'diff))
+          (unwind-protect
+              (ecc-review-pr-test--in-window
+                (let ((walk (ecc-review-pr-test--open-whole session directory base head)))
+                  (with-current-buffer (ecc-review-pr-test--shown)
+                    (ecc-review-pr-next-commit))
+                  (with-current-buffer (ecc-review-pr-test--shown)
+                    (ecc-review-pr-test--comment "in the diff")
+                    ;; As an ediff review of the same commit leaves them.
+                    (let ((note (ecc-review-note-create :id 1 :author 'user :text "in ediff"
+                                                        :path "b.txt" :hunk-text "+one"
+                                                        :hunk-range '(1 . 1))))
+                      (puthash ecc-review--range (list :notes (list note) :next-id 2)
+                               (ecc-review-pr-walk-held walk))))
+                  (let ((text (ecc-review-pr-message walk (ecc-review-pr--reviews walk))))
+                    (should (= 1 (with-temp-buffer
+                                   (insert text)
+                                   (how-many (regexp-quote
+                                              (format "# Commit 1/3 %s"
+                                                      (ecc-review-pr-test--short directory one)))
+                                             (point-min) (point-max)))))
+                    (should (string-search "Comment: in the diff" text))
+                    (should (string-search "Comment: in ediff" text)))))
+            (ecc-review-pr-test--kill-reviews)))))))
+
 (defun ecc-review-pr-test--control (walk)
   "Return the control buffer of the ediff review of WALK that is open."
   (seq-find (lambda (buffer)

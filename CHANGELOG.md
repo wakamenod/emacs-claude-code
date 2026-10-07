@@ -348,8 +348,9 @@ Verified against **Claude Code CLI 2.1.281**.
   request, open or left, as one prompt, so that Claude reads all of them
   before changing anything: `ecc-review-pr-commits-note` (and
   `ecc-review-pr-elsewhere-note` for a branch not checked out) under the
-  first line, then a group for each review, `# Commit 2/5 a1b2c3d: subject`,
-  holding its comments as a review's prompt holds them. Every review whose
+  first line, then a group for each commit, `# Commit 2/5 a1b2c3d: subject`,
+  holding its comments as a review's prompt holds them, a diff and an ediff
+  review of one commit together. Every review whose
   comments went is closed. `C-u C-c C-a` opens the prompt to be edited
   first. `]`, `[` and `C-c C-a` are keys of both kinds of review, in the
   ediff control panel and both of its windows, in the header lines' keys

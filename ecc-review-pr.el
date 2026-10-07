@@ -820,8 +820,9 @@ listed as it would list them."
 (defun ecc-review-pr-message (walk reviews)
   "Return the prompt carrying the comments of REVIEWS, of the pull request WALK.
 `ecc-review-header', what they are on (`ecc-review-pr-commits-note',
-`ecc-review-pr-elsewhere-note'), and then a group for each review, under
-the commit it is of, as `ecc-review-format-message' writes one review."
+`ecc-review-pr-elsewhere-note'), and then a group for each commit, as
+`ecc-review-format-message' writes one review.  Two reviews of one
+commit -- a diff review and an ediff one -- are one group."
   (let* ((pr (ecc-review-pr-walk-pr walk))
          (commits (ecc-review-pr-walk-commits walk))
          (total (length commits)))
@@ -835,16 +836,19 @@ the commit it is of, as `ecc-review-format-message' writes one review."
                                     (substring (plist-get pr :head-oid) 0 7)))))
      "\n\n"
      (mapconcat
-      (lambda (review)
-        (let ((index (plist-get review :index)))
-          (ecc-review-format-message
-           (ecc-review-pr--comments review)
-           (if (eq index 'whole)
-               (format "# The whole of #%d" (plist-get pr :number))
-             (let ((commit (nth index commits)))
-               (format "# Commit %d/%d %s: %s" (1+ index) total
-                       (plist-get commit :short) (plist-get commit :subject)))))))
-      reviews "\n\n"))))
+      (lambda (index)
+        (ecc-review-format-message
+         (mapcan (lambda (review)
+                   (and (equal (plist-get review :index) index)
+                        (ecc-review-pr--comments review)))
+                 reviews)
+         (if (eq index 'whole)
+             (format "# The whole of #%d" (plist-get pr :number))
+           (let ((commit (nth index commits)))
+             (format "# Commit %d/%d %s: %s" (1+ index) total
+                     (plist-get commit :short) (plist-get commit :subject))))))
+      (delete-dups (mapcar (lambda (review) (plist-get review :index)) reviews))
+      "\n\n"))))
 
 (defun ecc-review-pr--sent (walk reviews review)
   "Close REVIEWS of WALK, whose comments have been sent; REVIEW, this one, last.
