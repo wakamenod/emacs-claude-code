@@ -398,12 +398,11 @@ it is not given."
 (defun ecc-review-menu-commit-range (root from &optional to)
   "Return the range `c' reviews in ROOT: the commit FROM, or FROM through TO.
 TO nil, empty or the commit FROM is FROM alone, FROM^!, the change
-`git show' shows.  Otherwise it is FROM^..TO, FROM included; the two
-are put in order first, so that a TO older than FROM is the same span
-picked the other way round.  A commit with no parent -- the first of
-the repository -- is compared with the empty tree instead, which is
-what a parent would have held: FROM^! there names FROM alone, and git
-would compare it with the working tree.
+`git show' shows (`ecc-review-commit-alone').  Otherwise it is
+FROM^..TO, FROM included; the two are put in order first, so that a TO
+older than FROM is the same span picked the other way round.  A commit
+with no parent -- the first of the repository -- is compared with the
+empty tree instead, which is what a parent would have held.
 
 The range names the commits by their ids, not by the names typed: HEAD
 or main moves, and a review read again would show another commit under
@@ -421,16 +420,15 @@ the same commits by id opens the same review."
     (when (and to-id (eq 0 (car (ecc-review--git root "merge-base" "--is-ancestor"
                                                   to-id from-id))))
       (cl-rotatef from-id to-id))
-    (let ((parent (ecc-review--git-string root "rev-parse" "--verify" "--quiet"
-                                          (concat from-id "^"))))
-      (cond
-       ((and parent (null to-id)) (concat from-id "^!"))
-       (parent (format "%s^..%s" from-id to-id))
-       (t (format "%s..%s"
-                  (or (ecc-review--empty-tree root)
-                      (user-error "Cannot name the empty tree in %s"
-                                  (abbreviate-file-name root)))
-                  (or to-id from-id)))))))
+    (if (null to-id)
+        (ecc-review-commit-alone root from-id)
+      (if (ecc-review--git-string root "rev-parse" "--verify" "--quiet" (concat from-id "^"))
+          (format "%s^..%s" from-id to-id)
+        (format "%s..%s"
+                (or (ecc-review--empty-tree root)
+                    (user-error "Cannot name the empty tree in %s"
+                                (abbreviate-file-name root)))
+                to-id)))))
 
 ;;;; What the menu is about
 

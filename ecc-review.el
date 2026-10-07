@@ -402,6 +402,19 @@ same commit opened by Claude is called the same and is the same buffer."
   (ecc-review--git-string root "rev-parse" "--verify" "--quiet"
                           (concat revision "^{commit}")))
 
+(defun ecc-review-commit-alone (root commit)
+  "Return the range that reviews COMMIT of ROOT alone, a full id.
+COMMIT^!, the change `git show' shows; a commit with no parent -- the
+first of the repository -- is compared with the empty tree instead,
+which is what a parent would have held: COMMIT^! there names COMMIT
+alone, and git would compare it with the working tree."
+  (if (ecc-review--git-string root "rev-parse" "--verify" "--quiet" (concat commit "^"))
+      (concat commit "^!")
+    (format "%s..%s"
+            (or (ecc-review--empty-tree root)
+                (user-error "Cannot name the empty tree in %s" (abbreviate-file-name root)))
+            commit)))
+
 (defun ecc-review--commit-line (root commit &optional subject)
   "Return the short id of COMMIT in ROOT, and its SUBJECT when asked for."
   (ecc--truncate (or (ecc-review--git-string root "log" "-1" "--no-color"
@@ -2411,6 +2424,11 @@ A review whose right side is not on disk says so under the first line
 (defvar-local ecc-review-message--review nil
   "The review buffer whose comments this message carries.")
 
+(defvar-local ecc-review-message--sent-function nil
+  "What closes the reviews this message was made from once it is sent, or nil.
+Nil closes `ecc-review-message--review'; a message made from the
+comments of several reviews closes all of them (`ecc-review-pr-send-all').")
+
 (defvar ecc-review-message-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c C-c") #'ecc-review-message-send)
@@ -2462,13 +2480,23 @@ of its own first, to be read over and changed before it goes: the
 comments are the prompt, so the common case is to send them as they
 stand, and the key that says send sends."
   (interactive "P")
-  (let* ((session (or ecc-review--session (user-error "Not a review buffer")))
-         (text (or (ecc-review-buffer-message)
-                   (user-error "No comment to send; put one on a hunk with c")))
-         (review (current-buffer)))
+  (let ((session (or ecc-review--session (user-error "Not a review buffer"))))
+    (ecc-review-send-text session
+                          (or (ecc-review-buffer-message)
+                              (user-error "No comment to send; put one on a hunk with c"))
+                          (current-buffer) edit)))
+
+(defun ecc-review-send-text (session text review &optional edit sent)
+  "Send TEXT, made from the comments of REVIEW, to SESSION, and close REVIEW.
+As the deny of the proposal REVIEW is of, if it is one.  With EDIT the
+text is opened in a buffer of its own first, to be read over and
+changed before it goes, and \\`C-c C-k' there goes back to REVIEW.
+SENT, a function of no argument, closes what TEXT was made from once
+it has gone, in place of closing REVIEW.  Return TEXT when it was sent."
+  (let ((request (buffer-local-value 'ecc-review--request review)))
     (if (not edit)
-        (progn (ecc-review--deliver session text ecc-review--request)
-               (ecc-review--close review)
+        (progn (ecc-review--deliver session text request)
+               (if sent (funcall sent) (ecc-review--close review))
                text)
       (let ((buffer (get-buffer-create (ecc-review-message-buffer-name session))))
         (with-current-buffer buffer
@@ -2477,10 +2505,12 @@ stand, and the key that says send sends."
             (ecc-review-message-mode)
             (insert text)
             (setq ecc-render--session session
-                  ecc-review-message--review review)
+                  ecc-review-message--review review
+                  ecc-review-message--sent-function sent)
             (set-buffer-modified-p nil)
             (goto-char (point-min))))
-        (pop-to-buffer buffer)))))
+        (pop-to-buffer buffer)
+        nil))))
 
 (defun ecc-review-message-send ()
   "Send the text of this buffer and close the review it came from."
@@ -2490,11 +2520,12 @@ stand, and the key that says send sends."
          (text (string-trim (buffer-substring-no-properties (point-min) (point-max))))
          (request (and (buffer-live-p review)
                        (buffer-local-value 'ecc-review--request review)))
+         (sent ecc-review-message--sent-function)
          (message-buffer (current-buffer)))
     (ecc-review--deliver session text request)
     (set-buffer-modified-p nil)
     (ecc-perm-close-buffer message-buffer)
-    (ecc-review--close review)
+    (if sent (funcall sent) (ecc-review--close review))
     text))
 
 (defun ecc-review-message-cancel ()
