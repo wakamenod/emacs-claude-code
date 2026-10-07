@@ -294,14 +294,16 @@ means."
    ((seq-find (lambda (s) (eq (ecc-tab-state s) 'restored)) sessions) 'restored)
    (t 'idle)))
 
-(defun ecc-tab-mark-of-state (state)
+(defun ecc-tab-mark-of-state (state &optional fill)
   "Return the character that stands for STATE.
 A state with nothing to say gets no mark: a row of tabs is quieter
-when only the ones that want something are marked.  Somewhere with
-room to line the marks up -- the sidebar -- puts its own character in
-for the empty one."
+when only the ones that want something are marked.  Somewhere the mark
+opens a column of names -- the sidebar, the session picker -- passes
+FILL, and idle gets a `·\=' of its own, so that an idle name does not
+stand a column to the left of every other."
   (pcase state
-    ('attention "⚠") ('running "▶") ('exited "✗") ('restored "○") (_ "")))
+    ('attention "⚠") ('running "▶") ('exited "✗") ('restored "○")
+    (_ (if fill "·" ""))))
 
 (defun ecc-tab-mark (session)
   "Return the character that stands for the state of SESSION."
