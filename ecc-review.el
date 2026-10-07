@@ -82,6 +82,10 @@
 (autoload 'ecc-review-talk-tour "ecc-review-talk" nil t)
 (autoload 'ecc-review-talk-next "ecc-review-talk" nil t)
 (autoload 'ecc-review-talk-message "ecc-review-talk" nil t)
+(autoload 'ecc-review-pr-next-commit "ecc-review-pr" nil t)
+(autoload 'ecc-review-pr-previous-commit "ecc-review-pr" nil t)
+(autoload 'ecc-review-pr-send-all "ecc-review-pr" nil t)
+(declare-function ecc-review-pr-walk-status "ecc-review-pr" (&optional subject))
 (declare-function ediff-recenter "ediff-util" (&optional no-rehighlight))
 (declare-function ecc-review-ediff-buffer "ecc-review-ediff" (session &optional paths))
 (declare-function ecc-review-ediff-range-buffer "ecc-review-ediff"
@@ -832,6 +836,11 @@ symbol `staged\=' is what is staged, the index against HEAD.")
   "The right side of this review when it is not the files on disk, or nil.
 `ecc-review-elsewhere\=' of its range, for the header line and the prompt.")
 
+(defvar-local ecc-review--walk nil
+  "The pull request this review is a part of, read a commit at a time, or nil.
+An `ecc-review-pr-walk\=' of `ecc-review-pr.el\=': the whole of the pull
+request, or one of its commits, with \\`]' and \\`[' going between them.")
+
 (defvar-local ecc-review--stale nil
   "Non-nil when the files may have changed since this review was read.")
 
@@ -1117,6 +1126,13 @@ changed stays open when its changes have gone."
     (define-key map (kbd "T") #'ecc-review-talk-tour)
     (define-key map (kbd "t") #'ecc-review-talk-next)
     (define-key map (kbd "M") #'ecc-review-talk-message)
+    ;; A pull request read a commit at a time (`ecc-review-pr.el').
+    ;; C-c C-a was `diff-apply-hunk', which writes into the file the
+    ;; hunk is of: a review reads and comments, and Claude changes the
+    ;; files.
+    (define-key map (kbd "]") #'ecc-review-pr-next-commit)
+    (define-key map (kbd "[") #'ecc-review-pr-previous-commit)
+    (define-key map (kbd "C-c C-a") #'ecc-review-pr-send-all)
     ;; The header line has room for the keys used most; ? lists every
     ;; one, as it does in the control panel of an ediff review.
     (define-key map (kbd "?") #'ecc-review-help)
@@ -1220,11 +1236,15 @@ on, point and the window are left as they were and that is said."
   /         filter the files           a         show or hide Claude's
   g         read the diff again        C-c C-c   send the comments
   q         bury the review            C-u C-c C-c  edit them, then send
-                                       C-c C-k   drop the review
+  ] / [     next, previous commit      C-c C-k   drop the review
+                                       C-c C-a   send every commit's
 Claude
   T         ask for a tour of the review
   t         the next stop of the tour
   M         say something to Claude
+
+] and [ go through the commits of a pull request opened with p in the
+review menu, and C-c C-a sends the comments of all of them as one prompt.
 
 The review is read-only: it shows what git says.  Claude changes the
 files, from the prompt the comments are sent as."
@@ -1313,6 +1333,9 @@ not from who asked for it, so the review the menu opens and the one
                            (ecc-session-name ecc-review--session)
                          "?"))
                'face 'ecc-heading-face)
+   ;; Which commit of which pull request, and the comments of the others.
+   (when ecc-review--walk
+     (concat "  ·  " (ecc-review-pr-walk-status)))
    (when ecc-review--elsewhere
      (propertize (format "  ·  the right side is %s, not checked out here" ecc-review--elsewhere)
                  'face 'warning))
@@ -1326,7 +1349,9 @@ not from who asked for it, so the review the menu opens and the one
                  'face 'warning))
    (propertize (if ecc-review--request
                    "  ·  c comment  e edit and apply  C-c C-c send as deny (C-u edits)  n/p hunk  RET source"
-                 "  ·  c comment  { } comments  d delete  n/p hunk  s files  / filter  T tour  t next  M message  C-c C-c send  ? all keys")
+                 (concat "  ·  c comment  { } comments  d delete  n/p hunk  s files  / filter  T tour  t next  M message  C-c C-c send"
+                         (when ecc-review--walk "  ] [ commits  C-c C-a send all")
+                         "  ? all keys"))
                'face 'ecc-dim-face))))
 
 (defun ecc-review-pane-name (review kind)

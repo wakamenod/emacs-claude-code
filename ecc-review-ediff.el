@@ -2369,6 +2369,9 @@ p,DEL -previous diff |     | -vert/horiz split   |  c -comment on the line/diff
   M -say something to Claude                   y -answer what Claude asks
   u -scroll Claude's reply back                d -scroll it on again
 -------------------------------------------------------------------------------
+  ] -the next commit of the pull request       [ -the previous one
+  C-c C-a -send the comments of all its commits as one prompt
+-------------------------------------------------------------------------------
 Every key works in both windows of the files as well as here.  In a window,
 c comments on the line at point, x removes its comment, RET opens the file
 at that line in a frame of its own, and moving point brings the other side
@@ -2961,6 +2964,12 @@ ediff lays out its windows; quitting puts back what was on the screen."
                (define-key ediff-mode-map (kbd "t") #'ecc-review-talk-next)
                (define-key ediff-mode-map (kbd "M") #'ecc-review-talk-message)
                (define-key ediff-mode-map (kbd "y") #'ecc-review-talk-answer)
+               ;; The commits of a pull request (`ecc-review-pr.el').
+               ;; ediff binds neither ] nor [, and nothing under C-c
+               ;; (checked 2026-10-07).
+               (define-key ediff-mode-map (kbd "]") #'ecc-review-pr-next-commit)
+               (define-key ediff-mode-map (kbd "[") #'ecc-review-pr-previous-commit)
+               (define-key ediff-mode-map (kbd "C-c C-a") #'ecc-review-pr-send-all)
                ;; Remapped rather than rebound, so that every key ediff gives
                ;; them -- SPC, DEL, <backspace>, <delete>, S-SPC, ga, gb -- is
                ;; covered.

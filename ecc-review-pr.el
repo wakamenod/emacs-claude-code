@@ -54,12 +54,31 @@
 ;; have to be on their lines.  The commits are fetched only when this
 ;; repository does not have them, into FETCH_HEAD alone: no branch, no
 ;; ref, and the working tree and HEAD are not touched.
+;;
+;; A pull request is read a commit at a time as well.  Once one is
+;; chosen, `p' asks for one of its commits, the whole of it by default,
+;; and either way the review knows the pull request it is a part of
+;; (`ecc-review-pr-walk'): ] and [ open the next and the previous
+;; commit in its place, in the same window.  Each commit is a review of
+;; its own, X^!, with comments of its own: the diff review left by ] is
+;; kept while it holds any, and an ediff review, which takes the frame
+;; and is quit to make room for the next, leaves them with the pull
+;; request until it is opened again.  C-c C-c sends the comments of the
+;; one review; C-c C-a sends those of every review of the pull request
+;; as one prompt, a group per commit, so that Claude reads all of them
+;; before changing anything.
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'seq)
 (require 'ecc-core)
 (require 'ecc-review)
+
+(declare-function ecc-review-ediff-quit "ecc-review-ediff" (control))
+(declare-function ecc-review-ediff-range-buffer "ecc-review-ediff"
+                  (session &optional range root paths))
+(declare-function ecc-review-direct-refresh-headers "ecc-review-direct" (control))
 
 (defvar ecc-review-gh-executable "gh"
   "The gh program `p' in `ecc-review-menu' asks for pull requests.")
@@ -76,6 +95,9 @@
 
 (defvar ecc-review-pr--search-history nil
   "Searches typed at the question of `p'.")
+
+(defvar ecc-review-pr--commit-history nil
+  "Commits typed at the question of `p' that asks for one.")
 
 (defun ecc-review-pr-available-p ()
   "Return non-nil when gh is installed, so that `p' is offered."
@@ -386,6 +408,424 @@ commits are fetched first if need be (`ecc-review-pr-fetch')."
                     (ecc--truncate (string-trim (replace-regexp-in-string
                                                  "[ \t\n\r]+" " " (plist-get pr :title)))
                                    48))))))
+
+;;;; Its commits
+
+(defun ecc-review-pr-commits (root pr branch)
+  "Return the commits of PR in ROOT, oldest first, as plists.
+Each has :id, the full id, :short and :subject.  Merges are left out --
+a merge of the base into the branch, read alone, is all the base did
+in between -- and so are commits that change nothing, which have
+nothing to show.  PR of BRANCH (`ecc-review-pr-own-p') is its base to
+HEAD, the commits not pushed yet among them, as its review is; any
+other is its base to its head.  What is missing is fetched first
+\(`ecc-review-pr-fetch')."
+  (let* ((base (plist-get pr :base-oid))
+         (own (ecc-review-pr-own-p pr branch))
+         (head (if own "HEAD" (plist-get pr :head-oid))))
+    (unless (and (stringp base) (stringp head))
+      (user-error "gh named no commits for pull request #%s" (plist-get pr :number)))
+    (ecc-review-pr-fetch root pr (if own (list base) (list base head)))
+    (mapcar (lambda (line)
+              (pcase-let ((`(,id ,short ,subject) (split-string line "\x1f")))
+                (list :id id :short short :subject (or subject ""))))
+            (split-string
+             ;; --full-history with the path: of the commits that are no
+             ;; merge, those that change no file are what a path leaves
+             ;; out, and without it git would follow one side of a merge.
+             (ecc-review-pr--run ecc-review-git-executable root
+                                 "log" "--no-merges" "--full-history" "--reverse"
+                                 "--no-color" "--format=%H%x1f%h%x1f%s"
+                                 (format "%s..%s" base head) "--" ".")
+             "\n" t))))
+
+(defun ecc-review-pr-commit-line (commit index total)
+  "Return COMMIT, the INDEXth of TOTAL counted from 0, as a line to choose."
+  (format "%d/%d  %s  %s" (1+ index) total (plist-get commit :short)
+          (ecc--truncate (plist-get commit :subject) 72)))
+
+(defun ecc-review-pr--whole-line (pr commits)
+  "Return the choice of the whole of PR, whose commits are COMMITS."
+  (format "The whole of #%d (%s)" (plist-get pr :number)
+          (ecc-review--count (length commits) "commit")))
+
+(defun ecc-review-pr-read-commit (pr commits &optional table-function)
+  "Ask for one of COMMITS of PR, oldest first; return it, or nil for the whole.
+The whole of PR is offered first and taken on an empty answer, so RET
+reviews what `p' reviewed before it asked.  An id, or the start of one,
+names that commit.  With no commit there is nothing to ask.
+TABLE-FUNCTION makes the completion table of the lines, in their order."
+  (when commits
+    (let* ((whole (ecc-review-pr--whole-line pr commits))
+           (total (length commits))
+           (lines (seq-map-indexed (lambda (commit index)
+                                     (ecc-review-pr-commit-line commit index total))
+                                   commits))
+           (choices (cons whole lines))
+           (answer (string-trim
+                    (completing-read (format-prompt "Which commit of #%d" whole
+                                                    (plist-get pr :number))
+                                     (if table-function (funcall table-function choices) choices)
+                                     nil nil nil 'ecc-review-pr--commit-history whole)))
+           (word (car (split-string answer nil t))))
+      (cond ((or (null word) (equal answer whole)) nil)
+            ((let ((at (seq-position lines answer)))
+               (and at (nth at commits))))
+            ((and (string-match-p "\\`[0-9a-f]\\{4,64\\}\\'" word)
+                  (seq-find (lambda (commit) (string-prefix-p word (plist-get commit :id)))
+                            commits)))
+            (t (user-error "%s is no commit of #%d" answer (plist-get pr :number)))))))
+
+;;;; Reading it a commit at a time
+
+(cl-defstruct (ecc-review-pr-walk (:constructor ecc-review-pr--make-walk)
+                                  (:copier nil))
+  "A pull request read a commit at a time, which its reviews point at.
+ROOT is the repository and PR the plist of `ecc-review-pr-parse'; OWN
+is non-nil when it is of the branch checked out.  WHOLE is the range
+the whole of it is reviewed as, and COMMITS are its commits, oldest
+first (`ecc-review-pr-commits'), each with :range once it has been
+reviewed.  HELD is a hash of a range to the comments of its review
+when that review was closed to make room for another -- an ediff
+review, quit by \\`]' -- as a plist of :notes, :next-id and :positions."
+  root pr own whole commits held)
+
+(defvar ecc-review-pr--walks (make-hash-table :test #'equal)
+  "Hash of (ROOT . NUMBER) to the `ecc-review-pr-walk' of that pull request.
+One per pull request, so that `p' of it again finds the reviews left
+open and the comments held.")
+
+(defun ecc-review-pr-walk (root pr branch whole)
+  "Return the pull request PR of ROOT read a commit at a time.
+BRANCH is the branch checked out, and WHOLE the range the whole of PR
+is reviewed as (`ecc-review-pr-range').  The one made before for PR is
+returned, brought up to date with what PR and its commits are now."
+  (let* ((key (cons root (plist-get pr :number)))
+         (walk (or (gethash key ecc-review-pr--walks)
+                   (puthash key (ecc-review-pr--make-walk
+                                 :root root :held (make-hash-table :test #'equal))
+                            ecc-review-pr--walks))))
+    (setf (ecc-review-pr-walk-pr walk) pr
+          (ecc-review-pr-walk-own walk) (ecc-review-pr-own-p pr branch)
+          (ecc-review-pr-walk-whole walk) whole
+          (ecc-review-pr-walk-commits walk) (ecc-review-pr-commits root pr branch))
+    walk))
+
+(defun ecc-review-pr--number (walk)
+  "Return the number of the pull request of WALK."
+  (plist-get (ecc-review-pr-walk-pr walk) :number))
+
+(defun ecc-review-pr-commit-index (walk id)
+  "Return where the commit ID, full or the start of one, is among those of WALK."
+  (seq-position (ecc-review-pr-walk-commits walk) id
+                (lambda (commit id) (string-prefix-p id (plist-get commit :id)))))
+
+(defun ecc-review-pr-commit-range (walk index)
+  "Return the range the INDEXth commit of WALK is reviewed as.
+That commit alone, by its id (`ecc-review-commit-alone'), worked out
+the first time it is asked for."
+  (let ((commit (nth index (ecc-review-pr-walk-commits walk))))
+    (or (plist-get commit :range)
+        (let ((range (ecc-review-commit-alone (ecc-review-pr-walk-root walk)
+                                              (plist-get commit :id))))
+          (nconc commit (list :range range))
+          range))))
+
+(defun ecc-review-pr--index (walk range)
+  "Return what the review of RANGE is of WALK: `whole', a commit's index, or nil."
+  (cond ((equal range (ecc-review-pr-walk-whole walk)) 'whole)
+        ((stringp range)
+         (let ((id (ecc-review--right-revision range)))
+           (seq-position (ecc-review-pr-walk-commits walk) id
+                         (lambda (commit id) (equal (plist-get commit :id) id)))))))
+
+(defvar ecc-review-pr--opening nil
+  "The `ecc-review-pr-walk' the review being opened is a part of, or nil.")
+
+(defmacro ecc-review-pr-opening (walk &rest body)
+  "Run BODY, which opens a review, as a review of the pull request WALK.
+The review is told so as it comes on the screen
+\(`ecc-review-pr--on-displayed')."
+  (declare (indent 1) (debug t))
+  `(let ((ecc-review-pr--opening ,walk))
+     ,@body))
+
+(defun ecc-review-pr--adopt (walk review)
+  "Make REVIEW one of the pull request WALK.
+The comments held for its range, when it was closed to make room for
+another, are put back in it, unless it has comments of its own."
+  (with-current-buffer review
+    (setq ecc-review--walk walk)
+    (let* ((held (ecc-review-pr-walk-held walk))
+           (kept (gethash ecc-review--range held)))
+      (when (and kept (null ecc-review--notes))
+        (remhash ecc-review--range held)
+        (setq ecc-review--notes (plist-get kept :notes)
+              ecc-review--next-id (plist-get kept :next-id)
+              ecc-review--positions (plist-get kept :positions))
+        (ecc-review--draw-notes)))
+    (if (derived-mode-p 'ediff-mode)
+        (ecc-review-direct-refresh-headers review)
+      (force-mode-line-update))))
+
+(defun ecc-review-pr--on-displayed (review)
+  "Make REVIEW one of the pull request being opened, if one is.
+On `ecc-review-displayed-functions'."
+  (when ecc-review-pr--opening
+    (ecc-review-pr--adopt ecc-review-pr--opening review)))
+
+(add-hook 'ecc-review-displayed-functions #'ecc-review-pr--on-displayed)
+
+;;;;; Going from one commit to the next
+
+(defun ecc-review-pr--hold (walk)
+  "Keep the comments of this review with WALK, for when it is opened again."
+  (when ecc-review--notes
+    (puthash ecc-review--range
+             (list :notes ecc-review--notes :next-id ecc-review--next-id
+                   :positions ecc-review--positions)
+             (ecc-review-pr-walk-held walk))))
+
+(defun ecc-review-pr--leave (review)
+  "Kill REVIEW, a diff review just left, unless it has comments or is shown.
+One with comments is kept as it is, to be come back to or sent with
+the rest; one with none is opened again as easily."
+  (when (and (buffer-live-p review)
+             (null (buffer-local-value 'ecc-review--notes review))
+             (null (get-buffer-window review t)))
+    (kill-buffer review)))
+
+(defun ecc-review-pr--open-ediff (walk session range)
+  "Open the ediff review of RANGE, of the pull request WALK, for SESSION."
+  (require 'ecc-review-ediff)
+  (ecc-review-pr-opening walk
+    (ecc-review-ediff-range-buffer session range (ecc-review-pr-walk-root walk))))
+
+(defun ecc-review-pr--go (walk index)
+  "Open the review of the INDEXth commit of WALK in place of this one.
+A diff review is followed in its window by the next, and kept while it
+has comments (`ecc-review-pr--leave').  An ediff review takes the
+frame, so it is quit, its comments held by WALK, and the next opened
+in its place; if that cannot be opened, the one quit comes back."
+  (let* ((from (current-buffer))
+         (session ecc-review--session)
+         (root (ecc-review-pr-walk-root walk))
+         (range (ecc-review-pr-commit-range walk index)))
+    (if (derived-mode-p 'ediff-mode)
+        (let ((left ecc-review--range))
+          (ecc-review-pr--hold walk)
+          (ecc-review-ediff-quit from)
+          (condition-case err
+              (ecc-review-pr--open-ediff walk session range)
+            (error
+             (ecc-review-pr--open-ediff walk session left)
+             (signal (car err) (cdr err)))))
+      (let ((buffer (ecc-review-range-buffer session range root))
+            (window (if (eq (window-buffer) from) (selected-window) (get-buffer-window from))))
+        (ecc-review-pr--adopt walk buffer)
+        (if (not (window-live-p window))
+            (ecc-review--display buffer session)
+          (set-window-buffer window buffer)
+          (select-window window)
+          (run-hook-with-args 'ecc-review-displayed-functions buffer))
+        (ecc-review-pr--leave from)
+        buffer))))
+
+(defun ecc-review-pr--step (forward)
+  "Open the next commit of this pull request when FORWARD, else the previous.
+From the whole of it, the next is its first commit.  At either end,
+say so and stay."
+  (let* ((walk (or ecc-review--walk
+                   (user-error "This review is no pull request read a commit at a time; p in the review menu opens one")))
+         (number (ecc-review-pr--number walk))
+         (commits (ecc-review-pr-walk-commits walk))
+         (index (ecc-review-pr--index walk ecc-review--range))
+         (short (and (integerp index) (plist-get (nth index commits) :short))))
+    (ecc-review-pr--go
+     walk
+     (cond ((null commits) (user-error "#%d has no commit to read alone" number))
+           ((eq index 'whole)
+            (if forward 0 (user-error "This is the whole of #%d; ] goes to its first commit"
+                                      number)))
+           ((null index) (user-error "This review is no longer one of #%d" number))
+           (forward (if (< index (1- (length commits)))
+                        (1+ index)
+                      (user-error "%s is the last commit of #%d" short number)))
+           ((> index 0) (1- index))
+           (t (user-error "%s is the first commit of #%d" short number))))))
+
+(defun ecc-review-pr-next-commit ()
+  "Review the next commit of this pull request in place of this one.
+From the review of the whole of it, its first commit.  The comments of
+this one stay with it, and come back with it."
+  (interactive)
+  (ecc-review-pr--step t))
+
+(defun ecc-review-pr-previous-commit ()
+  "Review the previous commit of this pull request in place of this one.
+The comments of this one stay with it, and come back with it."
+  (interactive)
+  (ecc-review-pr--step nil))
+
+;;;;; What the reviews say
+
+(defun ecc-review-pr--reviews (walk)
+  "Return the reviews of WALK that hold comments, in the order of the pull request.
+The whole of it first, then its commits, oldest first.  Each is a
+plist: :index (`whole' or a commit's), :range, :review, the review
+buffer -- nil for one closed to make room for another, whose comments
+WALK holds -- and :notes, all its comments.  Only those with comments
+of yours are returned: Claude's are not sent."
+  (let ((found nil))
+    (dolist (buffer (buffer-list))
+      (when (and (eq (buffer-local-value 'ecc-review--walk buffer) walk)
+                 (ecc-review-buffer-p buffer))
+        (with-current-buffer buffer
+          (push (list :index (ecc-review-pr--index walk ecc-review--range)
+                      :range ecc-review--range :review buffer :notes ecc-review--notes)
+                found))))
+    (maphash (lambda (range kept)
+               (push (list :index (ecc-review-pr--index walk range) :range range
+                           :notes (plist-get kept :notes) :held kept)
+                     found))
+             (ecc-review-pr-walk-held walk))
+    (sort (seq-filter (lambda (review)
+                        (and (plist-get review :index)
+                             (seq-remove #'ecc-review--agent-p (plist-get review :notes))))
+                      found)
+          (lambda (a b)
+            (let ((a (plist-get a :index)) (b (plist-get b :index)))
+              (and (not (eq b 'whole)) (or (eq a 'whole) (< a b))))))))
+
+(defun ecc-review-pr--yours (review)
+  "Return how many comments of yours REVIEW, of `ecc-review-pr--reviews', holds."
+  (seq-count (lambda (note) (not (ecc-review--agent-p note))) (plist-get review :notes)))
+
+(defun ecc-review-pr--elsewhere (walk)
+  "Return the reviews of WALK with comments of yours, but this one's."
+  (let ((index (ecc-review-pr--index walk ecc-review--range)))
+    (seq-remove (lambda (review)
+                  (or (eq (plist-get review :review) (current-buffer))
+                      (equal (plist-get review :index) index)))
+                (ecc-review-pr--reviews walk))))
+
+(defun ecc-review-pr-walk-status (&optional subject)
+  "Return what this review says of the pull request it is a part of.
+Which commit it is, out of how many -- with its SUBJECT when asked
+for -- or that it is the whole, and how many comments of yours the
+other reviews of the pull request hold, which \\`C-c C-a' sends with these."
+  (let* ((walk ecc-review--walk)
+         (number (ecc-review-pr--number walk))
+         (commits (ecc-review-pr-walk-commits walk))
+         (index (ecc-review-pr--index walk ecc-review--range))
+         (others (ecc-review-pr--elsewhere walk)))
+    (concat
+     (propertize
+      (pcase index
+        ('whole (format "#%d as a whole, %s" number
+                        (ecc-review--count (length commits) "commit")))
+        ('nil (format "#%d" number))
+        (_ (format "#%d commit %d/%d%s" number (1+ index) (length commits)
+                   (if subject
+                       (concat ": " (ecc--truncate (plist-get (nth index commits) :subject) 40))
+                     ""))))
+      'face 'bold)
+     (when others
+       (let* ((whole (seq-find (lambda (review) (eq (plist-get review :index) 'whole)) others))
+              (count (length (if whole (remq whole others) others)))
+              (commits (and (> count 0)
+                            (format "%d %scommit%s" count (if (integerp index) "other " "")
+                                    (if (= count 1) "" "s")))))
+         (propertize (format "  unsent: %d in %s" (apply #'+ (mapcar #'ecc-review-pr--yours others))
+                             (cond ((and whole commits) (concat "the whole PR and " commits))
+                                   (whole "the whole PR")
+                                   (t commits)))
+                     'face 'warning))))))
+
+;;;;; Sending them all
+
+(defvar ecc-review-pr-commits-note
+  "They are on pull request #%d, %s, read a commit at a time: each group below is the whole of it or one of its commits, oldest first, and the lines of a commit are as it left them -- a later one may have changed them.  Read every group before changing anything: what is asked of one commit may be done, or have to be done differently, in a later one."
+  "What the prompt of the comments of every review of a pull request says first.
+Formatted with its number and title, after `ecc-review-header'.")
+
+(defvar ecc-review-pr-elsewhere-note
+  "Its head, %s, is not checked out here, so the lines below are not in the files of the working tree.  Ask before editing anything for them, and do not check anything out yourself."
+  "What that prompt says next of a pull request whose branch is not checked out.
+Formatted with its branch and the short id of its head.")
+
+(defun ecc-review-pr--comments (review)
+  "Return the comments of yours REVIEW, of `ecc-review-pr--reviews', would send.
+A review buffer lists its own; the comments held for one closed are
+listed as it would list them."
+  (if-let* ((buffer (plist-get review :review)))
+      (with-current-buffer buffer
+        (funcall ecc-review--comments-function))
+    (with-temp-buffer
+      (let ((kept (plist-get review :held)))
+        (setq ecc-review--notes (plist-get kept :notes)
+              ecc-review--positions (plist-get kept :positions))
+        (ecc-review-comments)))))
+
+(defun ecc-review-pr-message (walk reviews)
+  "Return the prompt carrying the comments of REVIEWS, of the pull request WALK.
+`ecc-review-header', what they are on (`ecc-review-pr-commits-note',
+`ecc-review-pr-elsewhere-note'), and then a group for each review, under
+the commit it is of, as `ecc-review-format-message' writes one review."
+  (let* ((pr (ecc-review-pr-walk-pr walk))
+         (commits (ecc-review-pr-walk-commits walk))
+         (total (length commits)))
+    (concat
+     ecc-review-header "\n"
+     (format ecc-review-pr-commits-note (plist-get pr :number)
+             (string-trim (replace-regexp-in-string "[ \t\n\r]+" " " (plist-get pr :title))))
+     (unless (ecc-review-pr-walk-own walk)
+       (concat "  " (format ecc-review-pr-elsewhere-note
+                            (format "%s (%s)" (plist-get pr :head)
+                                    (substring (plist-get pr :head-oid) 0 7)))))
+     "\n\n"
+     (mapconcat
+      (lambda (review)
+        (let ((index (plist-get review :index)))
+          (ecc-review-format-message
+           (ecc-review-pr--comments review)
+           (if (eq index 'whole)
+               (format "# The whole of #%d" (plist-get pr :number))
+             (let ((commit (nth index commits)))
+               (format "# Commit %d/%d %s: %s" (1+ index) total
+                       (plist-get commit :short) (plist-get commit :subject)))))))
+      reviews "\n\n"))))
+
+(defun ecc-review-pr--sent (walk reviews review)
+  "Close REVIEWS of WALK, whose comments have been sent; REVIEW, this one, last.
+A review open is closed as one whose comments have been sent is, and
+the comments held for one closed are dropped."
+  (let ((this nil))
+    (dolist (one reviews)
+      (let ((buffer (plist-get one :review)))
+        (cond ((null buffer) (remhash (plist-get one :range) (ecc-review-pr-walk-held walk)))
+              ((eq buffer review) (setq this buffer))
+              (t (ecc-review--close buffer)))))
+    (when this
+      (ecc-review--close this))))
+
+(defun ecc-review-pr-send-all (&optional edit)
+  "Send the comments of every review of this pull request as one prompt.
+The whole of it and each of its commits, open or left by \\`]' and \\`[',
+a group for each, so that Claude reads all of them before changing
+anything (`ecc-review-pr-message').  Each review whose comments went is
+closed, as \\[ecc-review-send] closes one.  With a prefix argument EDIT
+the prompt is opened to be read over and changed first."
+  (interactive "P")
+  (let* ((walk (or ecc-review--walk
+                   (user-error "This review is no pull request read a commit at a time; C-c C-c sends its comments")))
+         (session (or ecc-review--session (user-error "Not a review buffer")))
+         (reviews (or (ecc-review-pr--reviews walk)
+                      (user-error "No comment to send in any review of #%d; put one on a hunk with c"
+                                  (ecc-review-pr--number walk))))
+         (review (current-buffer)))
+    (ecc-review-send-text session (ecc-review-pr-message walk reviews) review edit
+                          (lambda () (ecc-review-pr--sent walk reviews review)))))
 
 (provide 'ecc-review-pr)
 

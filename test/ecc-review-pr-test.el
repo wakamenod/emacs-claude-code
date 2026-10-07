@@ -666,6 +666,365 @@ Return the full ids of the three commits."
             (ecc-review-ediff-quit control))
           (ecc-review-pr-test--kill-reviews))))))
 
+;;;; A commit at a time
+
+(defun ecc-review-pr-test--commits-repository (directory)
+  "Make DIRECTORY a repository whose topic is a pull request of three commits.
+main has a.txt and, later, c.txt; topic has b.txt, a merge of main, an
+empty commit, b.txt again and d.txt, and main is checked out.  Return
+\(BASE HEAD ONE TWO THREE): main, topic and the three commits of topic
+that change something, merges aside, oldest first."
+  (ecc-review-pr-test--git directory "init" "-q" "-b" "main")
+  (ecc-review-pr-test--identity directory)
+  (ecc-review-pr-test--commit directory "a.txt" "a\n")
+  (ecc-review-pr-test--git directory "checkout" "-q" "-b" "topic")
+  (let ((one (ecc-review-pr-test--commit directory "b.txt" "one\n")))
+    (ecc-review-pr-test--git directory "checkout" "-q" "main")
+    (let ((base (ecc-review-pr-test--commit directory "c.txt" "c\n")))
+      (ecc-review-pr-test--git directory "checkout" "-q" "topic")
+      (ecc-review-pr-test--git directory "merge" "-q" "--no-edit" "main")
+      (ecc-review-pr-test--git directory "commit" "-q" "--allow-empty" "-m" "nothing")
+      (let* ((two (ecc-review-pr-test--commit directory "b.txt" "two\n"))
+             (three (ecc-review-pr-test--commit directory "d.txt" "d\n")))
+        (ecc-review-pr-test--git directory "checkout" "-q" "main")
+        (list base three one two three)))))
+
+(defun ecc-review-pr-test--topic-pr (base head)
+  "Return the pull request of topic into main, BASE to HEAD, as gh would."
+  (car (ecc-review-pr-parse
+        (json-serialize (ecc-review-pr-test--pr 1 "トピック" "topic" "main" head base)))))
+
+(defun ecc-review-pr-test--short (directory id)
+  "Return the short id of ID in DIRECTORY."
+  (ecc-review-pr-test--git directory "rev-parse" "--short" id))
+
+(defmacro ecc-review-pr-test--in-window (&rest body)
+  "Run BODY with every review the user opens shown in the selected window."
+  (declare (indent 0))
+  `(save-window-excursion
+     (delete-other-windows)
+     (cl-letf (((symbol-function 'ecc-window-display-review)
+                (lambda (buffer &rest _)
+                  (set-window-buffer (selected-window) buffer)
+                  (selected-window))))
+       ,@body)))
+
+(defun ecc-review-pr-test--comment (text &optional side)
+  "Put TEXT on the first line of SIDE, `new' by default, of this review."
+  (let ((line (seq-find (lambda (line) (eq (plist-get line :side) (or side 'new)))
+                        (ecc-review-lines))))
+    (should line)
+    (prog1 (ecc-review-add-note 'user text line)
+      (ecc-review--draw-notes))))
+
+(defun ecc-review-pr-test--shown ()
+  "Return the review in the selected window."
+  (window-buffer (selected-window)))
+
+(ert-deftest ecc-review-pr-test-commits-offered-oldest-first ()
+  "The question offers the whole PR, then its commits but merges and empty ones."
+  (skip-unless (executable-find "git"))
+  (ecc-review-pr-test--with-directory directory
+    (seq-let (base head one two three) (ecc-review-pr-test--commits-repository directory)
+      (let* ((pr (ecc-review-pr-test--topic-pr base head))
+             (commits (ecc-review-pr-commits directory pr "main"))
+             (short (lambda (id) (ecc-review-pr-test--short directory id))))
+        (should (equal (mapcar (lambda (commit) (plist-get commit :id)) commits)
+                       (list one two three)))
+        (should (equal (plist-get (car commits) :subject) "b.txt"))
+        ;; RET is the whole of it, offered first.
+        (ecc-review-pr-test--asking '(nil) asked
+          (should-not (ecc-review-pr-read-commit pr commits))
+          (pcase-let ((`(,prompt ,candidates ,default) (car asked)))
+            (should (string-search "#1" prompt))
+            (should (equal default "The whole of #1 (3 commits)"))
+            (should (equal candidates
+                           (list "The whole of #1 (3 commits)"
+                                 (format "1/3  %s  b.txt" (funcall short one))
+                                 (format "2/3  %s  b.txt" (funcall short two))
+                                 (format "3/3  %s  d.txt" (funcall short three)))))))
+        ;; A line, or an id.
+        (ecc-review-pr-test--asking (list (format "2/3  %s  b.txt" (funcall short two))) asked
+          (should (equal (plist-get (ecc-review-pr-read-commit pr commits) :id) two)))
+        (ecc-review-pr-test--asking (list (funcall short three)) asked
+          (should (equal (plist-get (ecc-review-pr-read-commit pr commits) :id) three)))
+        (ecc-review-pr-test--asking '("nothing like it") asked
+          (should-error (ecc-review-pr-read-commit pr commits) :type 'user-error))
+        ;; No commit, no question.
+        (ecc-review-pr-test--asking '() asked
+          (should-not (ecc-review-pr-read-commit pr nil)))))))
+
+(ert-deftest ecc-review-pr-test-menu-reviews-one-commit ()
+  "p asks for a commit after the PR: RET is the whole, a commit is X^!, not on disk."
+  (skip-unless (executable-find "git"))
+  (ecc-review-pr-test--with-gh dir
+    (ecc-review-pr-test--with-directory directory
+      (seq-let (base head _one two _three) (ecc-review-pr-test--commits-repository directory)
+        (ecc-review-pr-test--answer
+         dir "list.json" (list (ecc-review-pr-test--pr 1 "トピック" "topic" "main" head base)))
+        (ecc-test-with-fake-session session
+          (setf (ecc-session-project-root session) directory)
+          (let ((ecc-review-menu--state (ecc-review-menu-make-state session directory))
+                (ecc-review-style 'diff))
+            (unwind-protect
+                (ecc-review-pr-test--in-window
+                  ;; The PR, then RET: the review of before.
+                  (ecc-review-pr-test--asking '("1" nil) asked
+                    (call-interactively #'ecc-review-menu-pull-request))
+                  (with-current-buffer (ecc-review-pr-test--shown)
+                    (should (equal ecc-review--range (format "%s...%s" base head)))
+                    (should ecc-review--walk)
+                    (should (string-search "#1 as a whole, 3 commits"
+                                           (ecc-review--header-line))))
+                  ;; The PR, then its second commit.
+                  (ecc-review-pr-test--asking
+                      (list "1" (format "2/3  %s  b.txt" (ecc-review-pr-test--short directory two)))
+                      asked
+                    (call-interactively #'ecc-review-menu-pull-request))
+                  (with-current-buffer (ecc-review-pr-test--shown)
+                    (should (equal ecc-review--range (concat two "^!")))
+                    (should (string-search "-one" (buffer-string)))
+                    (should (string-search "+two" (buffer-string)))
+                    (should-not (string-search "d.txt" (buffer-string)))
+                    (should (equal ecc-review--elsewhere
+                                   (ecc-review-pr-test--short directory two)))
+                    (let ((header (ecc-review--header-line)))
+                      (should (string-search "#1 commit 2/3" header))
+                      (should (string-search "not checked out here" header))
+                      (should (string-search "] [ commits" header)))))
+              (ecc-review-pr-test--kill-reviews))))))))
+
+(ert-deftest ecc-review-pr-test-own-pr-commit-is-not-the-working-tree ()
+  "A commit of the PR checked out says it is not on disk, but HEAD's own."
+  (skip-unless (executable-find "git"))
+  (ecc-review-pr-test--with-directory directory
+    (seq-let (base head one _two three) (ecc-review-pr-test--commits-repository directory)
+      (ecc-review-pr-test--git directory "checkout" "-q" "topic")
+      (let* ((pr (ecc-review-pr-test--topic-pr base head))
+             (walk (ecc-review-pr-walk directory pr "topic"
+                                       (car (ecc-review-pr-range directory pr "topic")))))
+        (should (ecc-review-pr-walk-own walk))
+        (should (= (length (ecc-review-pr-walk-commits walk)) 3))
+        (should (equal (ecc-review-elsewhere directory (ecc-review-pr-commit-range walk 0))
+                       (ecc-review-pr-test--short directory one)))
+        ;; The last is HEAD, whose files are the ones on disk.
+        (should (equal (ecc-review-pr-commit-range walk 2) (concat three "^!")))
+        (should-not (ecc-review-elsewhere directory (ecc-review-pr-commit-range walk 2)))))))
+
+(defun ecc-review-pr-test--open-whole (session directory base head &optional style)
+  "Open the whole of the topic PR of DIRECTORY for SESSION, as p and RET do.
+In STYLE, the diff by default.  Return the walk."
+  (let* ((pr (ecc-review-pr-test--topic-pr base head))
+         (ecc-review-menu--state (ecc-review-menu-make-state session directory))
+         (walk (ecc-review-pr-walk directory pr "main"
+                                   (car (ecc-review-pr-range directory pr "main")))))
+    (ecc-review-menu-pull-request pr (and (eq style 'ediff) '("--ediff")))
+    walk))
+
+(ert-deftest ecc-review-pr-test-walk-the-commits ()
+  "] and [ go through the commits in one window, stop at the ends, keep comments."
+  (skip-unless (executable-find "git"))
+  (ecc-review-pr-test--with-directory directory
+    (seq-let (base head one two three) (ecc-review-pr-test--commits-repository directory)
+      (ecc-test-with-fake-session session
+        (setf (ecc-session-project-root session) directory)
+        (let ((ecc-review-style 'diff))
+          (unwind-protect
+              (ecc-review-pr-test--in-window
+                (ecc-review-pr-test--open-whole session directory base head)
+                (let ((whole (ecc-review-pr-test--shown)))
+                  (with-current-buffer whole
+                    (should-error (ecc-review-pr-previous-commit) :type 'user-error)
+                    (ecc-review-pr-next-commit))
+                  ;; The whole had no comment and is gone.
+                  (should-not (buffer-live-p whole)))
+                (let ((first (ecc-review-pr-test--shown)))
+                  (with-current-buffer first
+                    (should (equal ecc-review--range (concat one "^!")))
+                    (should (string-search "#1 commit 1/3" (ecc-review--header-line)))
+                    (ecc-review-pr-test--comment "first commit's comment")
+                    (should-error (ecc-review-pr-previous-commit) :type 'user-error)
+                    (ecc-review-pr-next-commit))
+                  (with-current-buffer (ecc-review-pr-test--shown)
+                    (should (equal ecc-review--range (concat two "^!")))
+                    (should (string-search "unsent: 1 in 1 other commit"
+                                           (ecc-review--header-line)))
+                    (ecc-review-pr-next-commit))
+                  (let ((last (ecc-review-pr-test--shown)))
+                    (with-current-buffer last
+                      (should (equal ecc-review--range (concat three "^!")))
+                      (should (string-search "#1 commit 3/3" (ecc-review--header-line)))
+                      (should (string-match-p "last commit of #1"
+                                              (cadr (should-error (ecc-review-pr-next-commit)
+                                                                  :type 'user-error)))))
+                    (should (eq (ecc-review-pr-test--shown) last))
+                    (with-current-buffer last
+                      (ecc-review-pr-previous-commit)))
+                  (with-current-buffer (ecc-review-pr-test--shown)
+                    (should (equal ecc-review--range (concat two "^!")))
+                    (ecc-review-pr-previous-commit))
+                  ;; Back where the comment was made: the same review.
+                  (should (eq (ecc-review-pr-test--shown) first))
+                  (with-current-buffer first
+                    (should (equal (mapcar #'ecc-review-note-text ecc-review--notes)
+                                   '("first commit's comment"))))))
+            (ecc-review-pr-test--kill-reviews)))))))
+
+(ert-deftest ecc-review-pr-test-send-every-commit ()
+  "C-c C-a sends the comments of every review of the PR, grouped, and closes them."
+  (skip-unless (executable-find "git"))
+  (ecc-review-pr-test--with-directory directory
+    (seq-let (base head one _two three) (ecc-review-pr-test--commits-repository directory)
+      (ecc-test-with-fake-session session
+        (setf (ecc-session-project-root session) directory)
+        (let ((ecc-review-style 'diff)
+              (short (lambda (id) (ecc-review-pr-test--short directory id)))
+              (whole nil) (first nil) (second nil) (last nil))
+          (unwind-protect
+              (ecc-review-pr-test--in-window
+                (let ((walk (ecc-review-pr-test--open-whole session directory base head)))
+                  (setq whole (ecc-review-pr-test--shown))
+                  (with-current-buffer whole
+                    (ecc-review-pr-test--comment "全体について")
+                    (ecc-review-pr-next-commit))
+                  (setq first (ecc-review-pr-test--shown))
+                  (with-current-buffer first
+                    (ecc-review-pr-test--comment "on the first")
+                    (ecc-review-pr-next-commit))
+                  (setq second (ecc-review-pr-test--shown))
+                  (with-current-buffer second
+                    (ecc-review-pr-next-commit))
+                  (setq last (ecc-review-pr-test--shown))
+                  (with-current-buffer last
+                    (should (string-search "unsent: 2 in the whole PR and 1 other commit"
+                                           (ecc-review--header-line)))
+                    (ecc-review-pr-test--comment "on the last")
+                    ;; C-c C-c is this review's alone, and leaves the others.
+                    (should (eq (key-binding (kbd "C-c C-a")) #'ecc-review-pr-send-all))
+                    (should (eq (key-binding (kbd "]")) #'ecc-review-pr-next-commit))
+                    (should (eq (key-binding (kbd "[")) #'ecc-review-pr-previous-commit))
+                    (ecc-review-pr-send-all))
+                  (let* ((sent (car (ecc-test-sent-messages)))
+                         (text (alist-get 'content (alist-get 'message sent)))
+                         (at (lambda (string) (or (string-search string text)
+                                                  (ert-fail (format "%S not in %s" string text))))))
+                    (should (= (length (ecc-test-sent-messages)) 1))
+                    (should (string-prefix-p (concat ecc-review-header "\n"
+                                                     "They are on pull request #1, トピック")
+                                             text))
+                    ;; Grouped under their commits, in the order of the PR.
+                    (should (< (funcall at "# The whole of #1")
+                               (funcall at "Comment: 全体について")
+                               (funcall at (format "# Commit 1/3 %s: b.txt"
+                                                   (funcall short one)))
+                               (funcall at "Comment: on the first")
+                               (funcall at (format "# Commit 3/3 %s: d.txt"
+                                                   (funcall short three)))
+                               (funcall at "Comment: on the last")))
+                    ;; The hunks, as one review's prompt has them.
+                    (should (string-search "## d.txt" text))
+                    (should (string-search "+d" text))
+                    (should-not (string-search "Commit 2/3" text))
+                    ;; Its head is not checked out here.
+                    (should (string-search "Its head, topic (" text)))
+                  ;; Sent, so closed, but the one without a comment.
+                  (should-not (buffer-live-p whole))
+                  (should-not (buffer-live-p first))
+                  (should-not (buffer-live-p last))
+                  (should-error (with-current-buffer (ecc-review-range-buffer
+                                                      session (concat three "^!") directory)
+                                  (setq ecc-review--walk walk)
+                                  (ecc-review-pr-send-all))
+                                :type 'user-error)))
+            (ecc-review-pr-test--kill-reviews)))))))
+
+(defun ecc-review-pr-test--control (walk)
+  "Return the control buffer of the ediff review of WALK that is open."
+  (seq-find (lambda (buffer)
+              (and (eq (buffer-local-value 'ecc-review--walk buffer) walk)
+                   (with-current-buffer buffer (derived-mode-p 'ediff-mode))))
+            (buffer-list)))
+
+(ert-deftest ecc-review-pr-test-walk-in-ediff ()
+  "In ediff, ] and [ reopen the review in place and its comments come back."
+  (skip-unless (executable-find "git"))
+  (ecc-review-pr-test--with-directory directory
+    (seq-let (base head one two _three) (ecc-review-pr-test--commits-repository directory)
+      (ecc-test-with-fake-session session
+        (setf (ecc-session-project-root session) directory)
+        (let ((ediff-window-setup-function #'ediff-setup-windows-plain)
+              (ecc-review-ediff-layout 'side-by-side)
+              (ecc-review-talk-reply-height nil)
+              (ecc-review-style 'diff)
+              (walk nil))
+          (unwind-protect
+              (save-window-excursion
+                (delete-other-windows)
+                (setq walk (ecc-review-pr-test--open-whole session directory base head 'ediff))
+                (let ((control (ecc-review-pr-test--control walk)))
+                  (with-current-buffer control
+                    (should (equal ecc-review--range (format "%s...%s" base head)))
+                    ;; The keys, in the panel and relayed from both windows.
+                    (should (eq (key-binding (kbd "]")) #'ecc-review-pr-next-commit))
+                    (should (eq (key-binding (kbd "[")) #'ecc-review-pr-previous-commit))
+                    (should (eq (key-binding (kbd "C-c C-a")) #'ecc-review-pr-send-all))
+                    (dolist (side (list ediff-buffer-A ediff-buffer-B))
+                      (with-current-buffer side
+                        (dolist (key '("]" "[" "C-c C-a"))
+                          (should (eq (key-binding (kbd key)) #'ecc-review-direct-relay)))))
+                    (should (seq-find (lambda (piece) (string-prefix-p "] [" piece))
+                                      (ecc-review-direct--key-pieces)))
+                    (should (string-search "#1 as a whole"
+                                           (ecc-review-direct-mode-line-text ediff-buffer-B)))
+                    (ecc-review-pr-next-commit)))
+                (let ((control (ecc-review-pr-test--control walk)))
+                  (with-current-buffer control
+                    (should (equal ecc-review--range (concat one "^!")))
+                    (should (string-search "#1 commit 1/3: b.txt"
+                                           (ecc-review-direct-mode-line-text ediff-buffer-B)))
+                    (ecc-review-pr-test--comment "kept while away")
+                    (ecc-review-pr-next-commit)))
+                (let ((control (ecc-review-pr-test--control walk)))
+                  (with-current-buffer control
+                    (should (equal ecc-review--range (concat two "^!")))
+                    (should-not ecc-review--notes)
+                    (should (string-search "unsent: 1 in 1 other commit"
+                                           (ecc-review-direct-mode-line-text ediff-buffer-B)))
+                    ;; Held, and in what C-c C-a would send.
+                    (should (string-search "Comment: kept while away"
+                                           (ecc-review-pr-message
+                                            walk (ecc-review-pr--reviews walk))))
+                    (ecc-review-pr-previous-commit)))
+                (let ((control (ecc-review-pr-test--control walk)))
+                  (with-current-buffer control
+                    (should (equal ecc-review--range (concat one "^!")))
+                    (should (equal (mapcar #'ecc-review-note-text ecc-review--notes)
+                                   '("kept while away")))
+                    (should (zerop (hash-table-count (ecc-review-pr-walk-held walk))))
+                    (should-error (ecc-review-pr-previous-commit) :type 'user-error)
+                    ;; Still this one, not quit.
+                    (should (eq (ecc-review-pr-test--control walk) control)))))
+            (when-let* ((control (and walk (ecc-review-pr-test--control walk))))
+              (ecc-review-ediff-quit control))
+            (ecc-review-pr-test--kill-reviews)))))))
+
+(ert-deftest ecc-review-pr-test-commit-keys-outside-a-pr ()
+  "] [ and C-c C-a say what they are for in a review of no pull request."
+  (skip-unless (executable-find "git"))
+  (ecc-review-pr-test--with-directory directory
+    (ecc-review-pr-test--commits-repository directory)
+    (ecc-test-with-fake-session session
+      (setf (ecc-session-project-root session) directory)
+      (unwind-protect
+          (with-current-buffer (ecc-review-range-buffer session "main...topic" directory)
+            (dolist (command '(ecc-review-pr-next-commit ecc-review-pr-previous-commit
+                               ecc-review-pr-send-all))
+              (should-error (funcall command) :type 'user-error))
+            (should-not (string-search "] [" (ecc-review--header-line)))
+            (should (string-search "] / [" ecc-review-long-help-message))
+            (should (string-search "] -the next commit" ecc-review-ediff-long-help-message)))
+        (ecc-review-pr-test--kill-reviews)))))
+
 (provide 'ecc-review-pr-test)
 
 ;;; ecc-review-pr-test.el ends here
