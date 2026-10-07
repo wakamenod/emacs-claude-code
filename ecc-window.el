@@ -52,6 +52,13 @@
 (declare-function ecc-space-display-session "ecc-space" (session))
 (declare-function ecc-space-display-beside-session "ecc-space" (buffer session))
 (declare-function ecc-space-current-key "ecc-space" ())
+(declare-function ecc-space-tab "ecc-space" (space))
+(declare-function ecc-space-name "ecc-space" (space))
+;; `ecc-notify' is above this file as well, and requires it.
+(declare-function ecc-tab-state "ecc-notify" (session))
+(declare-function ecc-tab-mark-of-state "ecc-notify" (state &optional fill))
+(declare-function ecc-tab-faces-of-state "ecc-notify" (state current))
+(defvar ecc-tab--blink-phase)
 
 (defvar ecc-window-use-side-window t
   "Non-nil shows a transcript in a side window rather than an ordinary one.
@@ -955,26 +962,96 @@ being whatever they were left as."
   (seq-filter (lambda (session) (ecc-window-session-visible-p session frame))
               (ecc-model-sessions)))
 
-(defun ecc-window-session-label (session)
-  "Return the line SESSION is offered under when there is a choice."
-  (format "%-24s  %-8s %s"
-          (ecc--truncate (ecc-session-name session) 24)
-          (or (ecc-session-state session) "")
-          (abbreviate-file-name (or (ecc-session-project-root session) ""))))
+(defun ecc-window--session-group-title (key)
+  "Return the title the sessions of the project KEY are grouped under.
+Under `spaces\=' it is the Space: the name of its tab when it has one, so
+that the two agree, and otherwise the name the sidebar gives it -- the
+branch of a linked worktree, the project otherwise.  Under `classic\='
+it is the project."
+  (cond
+   ((string-empty-p key) "-")
+   (ecc-use-spaces
+    (require 'ecc-space)
+    (let ((space (ecc-space-of-root key)))
+      (or (ecc-space-tab space) (ecc-space-name space))))
+   (t (require 'ecc-render)
+      (ecc-render--project-name-1 key))))
+
+(defun ecc-window--session-groups (sessions)
+  "Return an alist of each project of SESSIONS to the title of its group.
+In the order the projects first come up among SESSIONS.  Two projects
+that would go by the same title -- the worktrees of two repositories
+both on `main\=' -- are told apart the way their tabs are, `main<2>\='."
+  (let ((groups nil))
+    (dolist (key (seq-uniq (mapcar #'ecc-window-session-project sessions)))
+      (let* ((base (ecc-window--session-group-title key))
+             (title base)
+             (n 1))
+        (while (rassoc title groups)
+          (setq n (1+ n)
+                title (format "%s<%d>" base n)))
+        (push (cons key title) groups)))
+    (nreverse groups)))
+
+(defun ecc-window--session-candidates (sessions)
+  "Return an alist of a candidate to its group title and session, for SESSIONS.
+The candidate is the title and the name, `Space/name\=': what keeps two
+sessions of one name in two projects apart, and what lets typing the
+name of a project narrow the list to it."
+  (let ((groups (ecc-window--session-groups sessions)))
+    (mapcar (lambda (session)
+              (let ((title (cdr (assoc (ecc-window-session-project session)
+                                       groups))))
+                (cons (concat title "/" (ecc-session-name session))
+                      (cons title session))))
+            sessions)))
+
+(defun ecc-window--session-line (session)
+  "Return SESSION as the picker shows it: the mark of its state, then its name.
+The mark is the one its tab and its sidebar row carry, at the moment of
+asking: no blinking.  Only the mark takes a face, so the name is left to
+the completion UI to highlight what matched."
+  (require 'ecc-notify)
+  (let* ((ecc-tab--blink-phase nil)
+         (state (ecc-tab-state session)))
+    (concat (propertize (ecc-tab-mark-of-state state t)
+                        'face (ecc-tab-faces-of-state state nil))
+            " " (ecc-session-name session))))
+
+(defun ecc-window--session-table (candidates)
+  "Return a completion table of CANDIDATES, grouped by Space and kept in order.
+CANDIDATES is what `ecc-window--session-candidates\=' returns.  The
+group title comes off the front of each line as it is shown, and the
+mark of the session\='s state goes in its place; neither the title nor
+the mark is shown twice or matched against what is typed but the title."
+  (lambda (string predicate action)
+    (if (eq action 'metadata)
+        `(metadata
+          (group-function
+           . ,(lambda (candidate transform)
+                (let ((entry (cdr (assoc candidate candidates))))
+                  (cond ((null entry) (if transform candidate ""))
+                        (transform (ecc-window--session-line (cdr entry)))
+                        (t (car entry))))))
+          ;; Most recently used first, which sorting would throw away.
+          (display-sort-function . identity)
+          (cycle-sort-function . identity))
+      (complete-with-action action candidates string predicate))))
 
 (defun ecc-window-read-session (&optional prompt sessions)
   "Ask which of SESSIONS to use, with PROMPT.
-SESSIONS defaults to every live session, most recently used first."
+SESSIONS defaults to every live session, most recently used first.  They
+are offered grouped by the Space they belong to -- the project under
+`classic\=' -- each under the mark of its state."
   (let ((sessions (or sessions (ecc-model-sessions))))
     (cond
      ((null sessions) (user-error "No session is running"))
      ((null (cdr sessions)) (car sessions))
-     (t (let* ((labels (mapcar (lambda (session)
-                                 (cons (ecc-window-session-label session) session))
-                               sessions))
+     (t (let* ((candidates (ecc-window--session-candidates sessions))
                (choice (completing-read (or prompt "Session: ")
-                                        (mapcar #'car labels) nil t)))
-          (cdr (assoc choice labels)))))))
+                                        (ecc-window--session-table candidates)
+                                        nil t)))
+          (cddr (assoc choice candidates)))))))
 
 (defun ecc-window-bound-session ()
   "Return the session this buffer was told to send to, or nil."
