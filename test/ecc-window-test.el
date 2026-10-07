@@ -586,13 +586,14 @@ groups come in the order their first session does."
           (ecc-window-test--picking "project-one/one"
             (should (eq (ecc-window-read-session nil (list three two one))
                         one))
+            ;; A group's sessions come together, in the order they came.
             (should (equal offered '("project-one/three"
-                                     "project-two/two"
-                                     "project-one/one")))
+                                     "project-one/one"
+                                     "project-two/two")))
             (let ((group (ecc-window-test--group-function table)))
               (should (equal (mapcar (lambda (c) (funcall group c nil))
                                      offered)
-                             '("project-one" "project-two" "project-one"))))
+                             '("project-one" "project-one" "project-two"))))
             (let ((metadata (completion-metadata "" table nil)))
               (should (eq (completion-metadata-get metadata
                                                    'display-sort-function)
@@ -604,7 +605,7 @@ groups come in the order their first session does."
 
 (ert-deftest ecc-window-test-picker-groups-by-space ()
   "Under `spaces' the group is the Space, and two of one name are told apart.
-The worktrees of two repositories both on `main' would carry the same
+Two repositories that are both called `main' would carry the same
 title; the second one met gets `main<2>', the way its tab would."
   (ecc-window-test--with-sessions one two
     (require 'ecc-space)
@@ -636,6 +637,67 @@ title; the second one met gets `main<2>', the way its tab would."
         (ecc-window-test--picking "main<3>/one"
           (should (eq (ecc-window-read-session) one))
           (should (equal offered '("main/two" "main<3>/one"))))))))
+
+(ert-deftest ecc-window-test-picker-names-a-worktree-after-its-repository ()
+  "A worktree's group is `repo › branch', and comes after its repository's.
+The sessions come in as the worktree, another project, then the
+repository; the worktree's group moves to follow the repository's, and
+takes the branch rather than the name of its tab.  Typing the name of
+the repository leaves the repository and its worktree."
+  (ecc-window-test--with-sessions one two
+    (require 'ecc-space)
+    (let* ((ecc-use-spaces t)
+           (three (ecc-model-create-session
+                   :name "three" :project-root "/tmp/project-three/"))
+           (main (ecc-window-session-project one))
+           (worktree (ecc-window-session-project two)))
+      (ecc-model-touch two)
+      (unwind-protect
+          (cl-letf (((symbol-function 'ecc-space-of-root)
+                     (lambda (root)
+                       (if (equal root worktree)
+                           (make-ecc-space :key root :root root
+                                           :name "feat/x" :parent main)
+                         (make-ecc-space
+                          :key root :root root
+                          :name (file-name-nondirectory
+                                 (directory-file-name root))))))
+                    ((symbol-function 'ecc-space-tab)
+                     (lambda (space)
+                       (and (equal (ecc-space-key space) worktree)
+                            "feat/x<2>"))))
+            (ecc-window-test--picking "project-one › feat/x/two"
+              (should (eq (ecc-window-read-session) two))
+              (should (equal offered '("project-three/three"
+                                       "project-one/one"
+                                       "project-one › feat/x/two")))
+              (should (equal (funcall (ecc-window-test--group-function table)
+                                      "project-one › feat/x/two" nil)
+                             "project-one › feat/x"))
+              (should (equal (all-completions "project-one" table)
+                             '("project-one/one" "project-one › feat/x/two")))))
+        (ecc-test-cleanup-session three)))))
+
+(ert-deftest ecc-window-test-picker-worktree-without-its-repository ()
+  "A worktree whose repository has no session stays where it came."
+  (ecc-window-test--with-sessions one two
+    (require 'ecc-space)
+    (let ((ecc-use-spaces t)
+          (worktree (ecc-window-session-project one)))
+      (cl-letf (((symbol-function 'ecc-space-of-root)
+                 (lambda (root)
+                   (if (equal root worktree)
+                       (make-ecc-space :key root :root root :name "feat/x"
+                                       :parent "/tmp/repository/")
+                     (make-ecc-space
+                      :key root :root root
+                      :name (file-name-nondirectory
+                             (directory-file-name root))))))
+                ((symbol-function 'ecc-space-tab) #'ignore))
+        (ecc-window-test--picking "project-two/two"
+          (ecc-window-read-session)
+          (should (equal offered '("project-two/two"
+                                   "repository › feat/x/one"))))))))
 
 (ert-deftest ecc-window-test-picker-shows-the-mark-not-the-group ()
   "A line is shown as the mark of the session's state and its name.
