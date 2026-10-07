@@ -656,15 +656,36 @@ face is on the mark alone."
         (should-not (get-text-property 2 'face running))
         (should-not (string-search "/tmp" running))))))
 
-(ert-deftest ecc-window-test-picker-tells-apart-one-name-in-two-projects ()
-  "Two sessions of one name in two projects can each be picked."
+(ert-deftest ecc-window-test-picker-keeps-the-match-highlighting ()
+  "The faces the completion UI put on a name survive the transform.
+vertico highlights what matched before it asks the `group-function'
+for the line to show; the line keeps them, where the name now stands."
   (ecc-window-test--with-sessions one two
-    (setf (ecc-session-name two) "one")
-    (ecc-window-test--picking "project-two/one"
-      (should (eq (ecc-window-read-session) two))
-      (should (equal offered '("project-two/one" "project-one/one"))))
-    (ecc-window-test--picking "project-one/one"
-      (should (eq (ecc-window-read-session) one)))))
+    (ecc-window-test--picking "project-two/two"
+      (ecc-window-read-session)
+      (let* ((group (ecc-window-test--group-function table))
+             (candidate (copy-sequence "project-two/two")))
+        (put-text-property 13 15 'face 'completions-common-part candidate)
+        (let ((line (funcall group candidate t)))
+          (should (equal line "▶ two"))
+          (should-not (get-text-property 2 'face line))
+          (should (eq (get-text-property 3 'face line)
+                      'completions-common-part))
+          (should (eq (get-text-property 4 'face line)
+                      'completions-common-part)))))))
+
+(ert-deftest ecc-window-test-picker-narrows-by-space ()
+  "Typing the name of a project leaves the sessions of that project."
+  (ecc-window-test--with-sessions one two
+    (let ((three (ecc-model-create-session
+                  :name "three" :project-root "/tmp/project-two/")))
+      (unwind-protect
+          (ecc-window-test--picking "project-two/two"
+            (ecc-window-read-session)
+            (should (equal (length offered) 3))
+            (should (equal (all-completions "project-two" table)
+                           '("project-two/three" "project-two/two"))))
+        (ecc-test-cleanup-session three)))))
 
 (ert-deftest ecc-window-test-picker-does-not-ask-about-one ()
   "A lone session is the answer without a question."

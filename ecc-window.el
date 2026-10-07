@@ -995,9 +995,8 @@ both on `main\=' -- are told apart the way their tabs are, `main<2>\='."
 
 (defun ecc-window--session-candidates (sessions)
   "Return an alist of a candidate to its group title and session, for SESSIONS.
-The candidate is the title and the name, `Space/name\=': what keeps two
-sessions of one name in two projects apart, and what lets typing the
-name of a project narrow the list to it."
+The candidate is the title and the name, `Space/name\=', so that typing
+the name of a Space narrows the list to its sessions."
   (let ((groups (ecc-window--session-groups sessions)))
     (mapcar (lambda (session)
               (let ((title (cdr (assoc (ecc-window-session-project session)
@@ -1006,24 +1005,27 @@ name of a project narrow the list to it."
                       (cons title session))))
             sessions)))
 
-(defun ecc-window--session-line (session)
-  "Return SESSION as the picker shows it: the mark of its state, then its name.
-The mark is the one its tab and its sidebar row carry, at the moment of
-asking: no blinking.  Only the mark takes a face, so the name is left to
-the completion UI to highlight what matched."
+(defun ecc-window--session-line (session name)
+  "Return SESSION as the picker shows it: the mark of its state, then NAME.
+NAME is the name as the candidate carries it, with whatever faces the
+completion UI put on it to show what matched: vertico highlights a
+candidate before it hands it to the `group-function\=' (confirmed
+2026-10-07), and a name taken from SESSION afresh would lose them.  The
+mark is the one its tab and its sidebar row carry, at the moment of
+asking: no blinking.  Only the mark takes a face of its own."
   (require 'ecc-notify)
   (let* ((ecc-tab--blink-phase nil)
          (state (ecc-tab-state session)))
     (concat (propertize (ecc-tab-mark-of-state state t)
                         'face (ecc-tab-faces-of-state state nil))
-            " " (ecc-session-name session))))
+            " " name)))
 
 (defun ecc-window--session-table (candidates)
   "Return a completion table of CANDIDATES, grouped by Space and kept in order.
-CANDIDATES is what `ecc-window--session-candidates\=' returns.  The
-group title comes off the front of each line as it is shown, and the
-mark of the session\='s state goes in its place; neither the title nor
-the mark is shown twice or matched against what is typed but the title."
+CANDIDATES is what `ecc-window--session-candidates\=' returns.  As a line
+is shown, the group title comes off its front and the mark of the
+session\='s state goes in its place.  The title is matched against what
+is typed, the mark is not."
   (lambda (string predicate action)
     (if (eq action 'metadata)
         `(metadata
@@ -1031,7 +1033,10 @@ the mark is shown twice or matched against what is typed but the title."
            . ,(lambda (candidate transform)
                 (let ((entry (cdr (assoc candidate candidates))))
                   (cond ((null entry) (if transform candidate ""))
-                        (transform (ecc-window--session-line (cdr entry)))
+                        (transform
+                         (ecc-window--session-line
+                          (cdr entry)
+                          (substring candidate (1+ (length (car entry))))))
                         (t (car entry))))))
           ;; Most recently used first, which sorting would throw away.
           (display-sort-function . identity)
