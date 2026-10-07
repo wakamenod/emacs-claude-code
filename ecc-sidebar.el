@@ -170,12 +170,8 @@ than trailing the spaces that would have led to it."
 (defun ecc-sidebar--mark (state)
   "Return the mark that stands for STATE in the sidebar.
 Idle takes a mark of its own -- the tab line leaves it blank -- because
-the mark opens the row here, and a blank one would put the name of an
-idle Space a column to the left of every other name."
-  (pcase state
-    ('nil " ")
-    ('idle "·")
-    (_ (ecc-tab-mark-of-state state))))
+the mark opens the row here.  A row with no state at all is left blank."
+  (if state (ecc-tab-mark-of-state state t) " "))
 
 ;;;; The Spaces
 

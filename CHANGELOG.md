@@ -574,6 +574,22 @@ Verified against **Claude Code CLI 2.1.281**.
 
 ### Changed
 
+- The session picker of `C-u C-c C-t` (`ecc-switch-session`) and of the
+  "Send to:" prompt groups the sessions by Space, or by project when
+  `ecc-use-spaces` is nil. A worktree's group is named after its repository
+  and its branch (`emacs-claude-code › feat/x`) and comes right after the
+  repository's group when that has sessions too; any other Space's group
+  takes its tab's name, or its own name when it has no tab. Under
+  `ecc-use-spaces` nil a worktree is a project of its own, named as before.
+  Two groups that would still share a name become `name` and `name<2>`.
+  Each line is the session's state mark, as the tab line and the sidebar
+  draw it (`⚠`, `▶`, `✗`, `○`, and `·` for idle), then its name; the state
+  word and the project path are gone. Within a group the sessions stay in
+  most-recently-used order. The candidate is `Group/name`, so typing a
+  repository's name narrows the list to it and its worktrees. The groups
+  show in a completion UI that reads `group-function`: vertico does, and
+  the default `*Completions*` does with `completions-group` set.
+
 - **Breaking.** `d` in an ediff review no longer removes a comment: it
   scrolls the reply pane on, as `u` scrolls it back (above). `x` removes a
   comment there -- in the control panel, a comment of the current

@@ -542,7 +542,7 @@ what brings its windows back."
         (cl-letf (((symbol-function 'completing-read)
                    (lambda (&rest _)
                      (setq asked (1+ asked))
-                     (ecc-window-session-label two))))
+                     "project-two/two")))
           (let ((default-directory "/tmp/project-one/"))
             (should (eq (ecc-window-resolve-session t) two))
             (should (= asked 1))
@@ -553,6 +553,208 @@ what brings its windows back."
             (should (eq (ecc-window-resolve-session t) two))
             (should (= asked 2))))))))
 
+
+;;;; The session picker
+
+(defmacro ecc-window-test--picking (choice &rest body)
+  "Run BODY with `completing-read' answering CHOICE.
+The table it was given is left in `table', and the candidates it holds,
+in the order they come out, in `offered'."
+  (declare (indent 1))
+  `(let ((table nil)
+         (offered nil))
+     (cl-letf (((symbol-function 'completing-read)
+                (lambda (_prompt collection &rest _)
+                  (setq table collection
+                        offered (all-completions "" collection))
+                  ,choice)))
+       ,@body)))
+
+(defun ecc-window-test--group-function (table)
+  "Return the `group-function' of the completion TABLE."
+  (completion-metadata-get (completion-metadata "" table nil)
+                           'group-function))
+
+(ert-deftest ecc-window-test-picker-groups-by-project ()
+  "Under `classic' the sessions are grouped under their project's name.
+The order they come in is kept, most recently used first, and the
+groups come in the order their first session does."
+  (ecc-window-test--with-sessions one two
+    (let ((three (ecc-model-create-session
+                  :name "three" :project-root "/tmp/project-one/")))
+      (unwind-protect
+          (ecc-window-test--picking "project-one/one"
+            (should (eq (ecc-window-read-session nil (list three two one))
+                        one))
+            ;; A group's sessions come together, in the order they came.
+            (should (equal offered '("project-one/three"
+                                     "project-one/one"
+                                     "project-two/two")))
+            (let ((group (ecc-window-test--group-function table)))
+              (should (equal (mapcar (lambda (c) (funcall group c nil))
+                                     offered)
+                             '("project-one" "project-one" "project-two"))))
+            (let ((metadata (completion-metadata "" table nil)))
+              (should (eq (completion-metadata-get metadata
+                                                   'display-sort-function)
+                          #'identity))
+              (should (eq (completion-metadata-get metadata
+                                                   'cycle-sort-function)
+                          #'identity))))
+        (ecc-test-cleanup-session three)))))
+
+(ert-deftest ecc-window-test-picker-groups-by-space ()
+  "Under `spaces' the group is the Space, and two of one name are told apart.
+Two repositories that are both called `main' would carry the same
+title; the second one met gets `main<2>', the way its tab would."
+  (ecc-window-test--with-sessions one two
+    (require 'ecc-space)
+    (let ((ecc-use-spaces t))
+      (cl-letf (((symbol-function 'ecc-space-of-root)
+                 (lambda (root)
+                   (make-ecc-space :key root :root root :name "main")))
+                ((symbol-function 'ecc-space-tab) #'ignore))
+        (ecc-window-test--picking "main<2>/one"
+          (should (eq (ecc-window-read-session) one))
+          (should (equal offered '("main/two" "main<2>/one")))
+          (let ((group (ecc-window-test--group-function table)))
+            (should (equal (funcall group "main/two" nil) "main"))
+            (should (equal (funcall group "main<2>/one" nil) "main<2>"))))))))
+
+(ert-deftest ecc-window-test-picker-group-takes-the-tab-name ()
+  "A Space with a tab is grouped under the name of that tab."
+  (ecc-window-test--with-sessions one two
+    (require 'ecc-space)
+    (let ((ecc-use-spaces t))
+      (cl-letf (((symbol-function 'ecc-space-of-root)
+                 (lambda (root)
+                   (make-ecc-space :key root :root root :name "main")))
+                ((symbol-function 'ecc-space-tab)
+                 (lambda (space)
+                   (and (equal (ecc-space-key space)
+                               (ecc-window-session-project one))
+                        "main<3>"))))
+        (ecc-window-test--picking "main<3>/one"
+          (should (eq (ecc-window-read-session) one))
+          (should (equal offered '("main/two" "main<3>/one"))))))))
+
+(ert-deftest ecc-window-test-picker-names-a-worktree-after-its-repository ()
+  "A worktree's group is `repo › branch', and comes after its repository's.
+The sessions come in as the worktree, another project, then the
+repository; the worktree's group moves to follow the repository's, and
+takes the branch rather than the name of its tab.  Typing the name of
+the repository leaves the repository and its worktree."
+  (ecc-window-test--with-sessions one two
+    (require 'ecc-space)
+    (let* ((ecc-use-spaces t)
+           (three (ecc-model-create-session
+                   :name "three" :project-root "/tmp/project-three/"))
+           (main (ecc-window-session-project one))
+           (worktree (ecc-window-session-project two)))
+      (ecc-model-touch two)
+      (unwind-protect
+          (cl-letf (((symbol-function 'ecc-space-of-root)
+                     (lambda (root)
+                       (if (equal root worktree)
+                           (make-ecc-space :key root :root root
+                                           :name "feat/x" :parent main)
+                         (make-ecc-space
+                          :key root :root root
+                          :name (file-name-nondirectory
+                                 (directory-file-name root))))))
+                    ((symbol-function 'ecc-space-tab)
+                     (lambda (space)
+                       (and (equal (ecc-space-key space) worktree)
+                            "feat/x<2>"))))
+            (ecc-window-test--picking "project-one › feat/x/two"
+              (should (eq (ecc-window-read-session) two))
+              (should (equal offered '("project-three/three"
+                                       "project-one/one"
+                                       "project-one › feat/x/two")))
+              (should (equal (funcall (ecc-window-test--group-function table)
+                                      "project-one › feat/x/two" nil)
+                             "project-one › feat/x"))
+              (should (equal (all-completions "project-one" table)
+                             '("project-one/one" "project-one › feat/x/two")))))
+        (ecc-test-cleanup-session three)))))
+
+(ert-deftest ecc-window-test-picker-worktree-without-its-repository ()
+  "A worktree whose repository has no session stays where it came."
+  (ecc-window-test--with-sessions one two
+    (require 'ecc-space)
+    (let ((ecc-use-spaces t)
+          (worktree (ecc-window-session-project one)))
+      (cl-letf (((symbol-function 'ecc-space-of-root)
+                 (lambda (root)
+                   (if (equal root worktree)
+                       (make-ecc-space :key root :root root :name "feat/x"
+                                       :parent "/tmp/repository/")
+                     (make-ecc-space
+                      :key root :root root
+                      :name (file-name-nondirectory
+                             (directory-file-name root))))))
+                ((symbol-function 'ecc-space-tab) #'ignore))
+        (ecc-window-test--picking "project-two/two"
+          (ecc-window-read-session)
+          (should (equal offered '("project-two/two"
+                                   "repository › feat/x/one"))))))))
+
+(ert-deftest ecc-window-test-picker-shows-the-mark-not-the-group ()
+  "A line is shown as the mark of the session's state and its name.
+The group title is not repeated on the line, there is no path, and the
+face is on the mark alone."
+  (ecc-window-test--with-sessions one two
+    (setf (ecc-session-state one) 'idle)
+    (ecc-window-test--picking "project-one/one"
+      (ecc-window-read-session)
+      (let* ((group (ecc-window-test--group-function table))
+             (idle (funcall group "project-one/one" t))
+             (running (funcall group "project-two/two" t)))
+        (should (equal idle "· one"))
+        (should (equal running "▶ two"))
+        (should (memq 'ecc-tab-idle-face
+                      (ensure-list (get-text-property 0 'face idle))))
+        (should (get-text-property 0 'face running))
+        (should-not (get-text-property 2 'face running))
+        (should-not (string-search "/tmp" running))))))
+
+(ert-deftest ecc-window-test-picker-keeps-the-match-highlighting ()
+  "The faces the completion UI put on a name survive the transform.
+vertico highlights what matched before it asks the `group-function'
+for the line to show; the line keeps them, where the name now stands."
+  (ecc-window-test--with-sessions one two
+    (ecc-window-test--picking "project-two/two"
+      (ecc-window-read-session)
+      (let* ((group (ecc-window-test--group-function table))
+             (candidate (copy-sequence "project-two/two")))
+        (put-text-property 13 15 'face 'completions-common-part candidate)
+        (let ((line (funcall group candidate t)))
+          (should (equal line "▶ two"))
+          (should-not (get-text-property 2 'face line))
+          (should (eq (get-text-property 3 'face line)
+                      'completions-common-part))
+          (should (eq (get-text-property 4 'face line)
+                      'completions-common-part)))))))
+
+(ert-deftest ecc-window-test-picker-narrows-by-space ()
+  "Typing the name of a project leaves the sessions of that project."
+  (ecc-window-test--with-sessions one two
+    (let ((three (ecc-model-create-session
+                  :name "three" :project-root "/tmp/project-two/")))
+      (unwind-protect
+          (ecc-window-test--picking "project-two/two"
+            (ecc-window-read-session)
+            (should (equal (length offered) 3))
+            (should (equal (all-completions "project-two" table)
+                           '("project-two/three" "project-two/two"))))
+        (ecc-test-cleanup-session three)))))
+
+(ert-deftest ecc-window-test-picker-does-not-ask-about-one ()
+  "A lone session is the answer without a question."
+  (ecc-window-test--with-sessions one two
+    (ecc-window-test--picking (error "Asked")
+      (should (eq (ecc-window-read-session nil (list one)) one))
+      (should-not table))))
 
 ;;;; Switching a window to another session
 
@@ -585,9 +787,9 @@ and
          (seq-uniq (list ,@(mapcar (lambda (binding) (nth 2 binding)) bindings)))
        (unwind-protect
            (cl-letf (((symbol-function 'completing-read)
-                      (lambda (_prompt labels &rest _)
-                        (setq offered labels)
-                        (car labels)))
+                      (lambda (_prompt table &rest _)
+                        (setq offered (all-completions "" table))
+                        (car offered)))
                      ((symbol-function 'ecc-window-select-session)
                       (lambda (session) (setq selected session) nil)))
              (set-window-buffer window
@@ -599,8 +801,11 @@ and
                    bindings)))))
 
 (defun ecc-window-test--offered-names (labels)
-  "Return the session names in the completion LABELS, sorted."
-  (sort (mapcar (lambda (label) (car (split-string label))) labels)
+  "Return the session names in the completion LABELS, sorted.
+A label is `Space/name\='; the Spaces here have no slash in them."
+  (sort (mapcar (lambda (label)
+                  (substring label (1+ (string-search "/" label))))
+                labels)
         #'string<))
 
 (ert-deftest ecc-window-test-switch-offers-this-row ()
@@ -615,7 +820,7 @@ to there."
     (call-interactively #'ecc-switch-session)
     (should (equal (ecc-window-test--offered-names offered) '("four" "three")))
     ;; Most recently used first, as `ecc-window-read-session' has it.
-    (should (string-prefix-p "four" (car offered)))
+    (should (equal (car offered) "project-one/four"))
     ;; A session of the row goes into this window.
     (should (eq (window-buffer window) (ecc-session-buffer four)))
     (should-not selected)))

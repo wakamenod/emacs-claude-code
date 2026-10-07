@@ -52,6 +52,14 @@
 (declare-function ecc-space-display-session "ecc-space" (session))
 (declare-function ecc-space-display-beside-session "ecc-space" (buffer session))
 (declare-function ecc-space-current-key "ecc-space" ())
+(declare-function ecc-space-tab "ecc-space" (space))
+(declare-function ecc-space-name "ecc-space" (space))
+(declare-function ecc-space-parent "ecc-space" (space))
+;; `ecc-notify' is above this file as well, and requires it.
+(declare-function ecc-tab-state "ecc-notify" (session))
+(declare-function ecc-tab-mark-of-state "ecc-notify" (state &optional fill))
+(declare-function ecc-tab-faces-of-state "ecc-notify" (state current))
+(defvar ecc-tab--blink-phase)
 
 (defvar ecc-window-use-side-window t
   "Non-nil shows a transcript in a side window rather than an ordinary one.
@@ -955,26 +963,131 @@ being whatever they were left as."
   (seq-filter (lambda (session) (ecc-window-session-visible-p session frame))
               (ecc-model-sessions)))
 
-(defun ecc-window-session-label (session)
-  "Return the line SESSION is offered under when there is a choice."
-  (format "%-24s  %-8s %s"
-          (ecc--truncate (ecc-session-name session) 24)
-          (or (ecc-session-state session) "")
-          (abbreviate-file-name (or (ecc-session-project-root session) ""))))
+(defun ecc-window--session-group (key)
+  "Return (TITLE . PARENT) for the group of the sessions of the project KEY.
+Under `spaces\=' the group is the Space.  A linked worktree is titled
+after the repository it belongs to and then its branch,
+`repo › branch\=', and PARENT is the key of that repository; any other
+Space goes by the name of its tab when it has one, so that the two
+agree, and otherwise by its name.  Under `classic\=' it is the project,
+with no PARENT: telling a worktree from its repository asks git, and
+nothing under `classic\=' reaches `ecc-worktree\='."
+  (cond
+   ((string-empty-p key) (list "-"))
+   (ecc-use-spaces
+    (require 'ecc-space)
+    (let* ((space (ecc-space-of-root key))
+           (parent (ecc-space-parent space)))
+      (if parent
+          ;; The branch and not the tab: a tab's `<2>' is there to tell
+          ;; tabs apart, and the repository in front already does.
+          (cons (concat (ecc-space-name (ecc-space-of-root parent))
+                        " › " (ecc-space-name space))
+                parent)
+        (list (or (ecc-space-tab space) (ecc-space-name space))))))
+   (t (require 'ecc-render)
+      (list (ecc-render--project-name-1 key)))))
+
+(defun ecc-window--session-groups (sessions)
+  "Return an alist of each project of SESSIONS to the title of its group.
+In the order the projects first come up among SESSIONS, except that a
+worktree follows its repository when that has sessions here too, the
+way the sidebar draws it.  Two projects that would still go by the
+same title are told apart the way their tabs are, `main<2>\='."
+  (let* ((groups (mapcar (lambda (key)
+                           (cons key (ecc-window--session-group key)))
+                         (seq-uniq (mapcar #'ecc-window-session-project
+                                           sessions))))
+         (keys (mapcar #'car groups))
+         (ordered nil)
+         (titled nil))
+    ;; The same walk as `ecc-space-list'.
+    (dolist (group groups)
+      (unless (member (cddr group) keys)
+        (push group ordered)
+        (dolist (child groups)
+          (when (equal (cddr child) (car group))
+            (push child ordered)))))
+    (dolist (group (nreverse ordered))
+      (let* ((base (cadr group))
+             (title base)
+             (n 1))
+        (while (rassoc title titled)
+          (setq n (1+ n)
+                title (format "%s<%d>" base n)))
+        (push (cons (car group) title) titled)))
+    (nreverse titled)))
+
+(defun ecc-window--session-candidates (sessions)
+  "Return an alist of a candidate to its group title and session, for SESSIONS.
+The candidate is the title and the name, `Space/name\=', so that typing
+the name of a Space narrows the list to its sessions -- and the name of
+a repository to its sessions and those of its worktrees.  A group\='s
+sessions come together, in the order of the groups, and keep the order
+of SESSIONS among themselves."
+  (mapcan (lambda (group)
+            (let ((title (cdr group)))
+              (mapcar (lambda (session)
+                        (cons (concat title "/" (ecc-session-name session))
+                              (cons title session)))
+                      (seq-filter (lambda (session)
+                                    (equal (ecc-window-session-project session)
+                                           (car group)))
+                                  sessions))))
+          (ecc-window--session-groups sessions)))
+
+(defun ecc-window--session-line (session name)
+  "Return SESSION as the picker shows it: the mark of its state, then NAME.
+NAME is the name as the candidate carries it, with whatever faces the
+completion UI put on it to show what matched: vertico highlights a
+candidate before it hands it to the `group-function\=' (confirmed
+2026-10-07), and a name taken from SESSION afresh would lose them.  The
+mark is the one its tab and its sidebar row carry, at the moment of
+asking: no blinking.  Only the mark takes a face of its own."
+  (require 'ecc-notify)
+  (let* ((ecc-tab--blink-phase nil)
+         (state (ecc-tab-state session)))
+    (concat (propertize (ecc-tab-mark-of-state state t)
+                        'face (ecc-tab-faces-of-state state nil))
+            " " name)))
+
+(defun ecc-window--session-table (candidates)
+  "Return a completion table of CANDIDATES, grouped by Space and kept in order.
+CANDIDATES is what `ecc-window--session-candidates\=' returns.  As a line
+is shown, the group title comes off its front and the mark of the
+session\='s state goes in its place.  The title is matched against what
+is typed, the mark is not."
+  (lambda (string predicate action)
+    (if (eq action 'metadata)
+        `(metadata
+          (group-function
+           . ,(lambda (candidate transform)
+                (let ((entry (cdr (assoc candidate candidates))))
+                  (cond ((null entry) (if transform candidate ""))
+                        (transform
+                         (ecc-window--session-line
+                          (cdr entry)
+                          (substring candidate (1+ (length (car entry))))))
+                        (t (car entry))))))
+          ;; Most recently used first, which sorting would throw away.
+          (display-sort-function . identity)
+          (cycle-sort-function . identity))
+      (complete-with-action action candidates string predicate))))
 
 (defun ecc-window-read-session (&optional prompt sessions)
   "Ask which of SESSIONS to use, with PROMPT.
-SESSIONS defaults to every live session, most recently used first."
+SESSIONS defaults to every live session, most recently used first.  They
+are offered grouped by the Space they belong to -- the project under
+`classic\=' -- each under the mark of its state."
   (let ((sessions (or sessions (ecc-model-sessions))))
     (cond
      ((null sessions) (user-error "No session is running"))
      ((null (cdr sessions)) (car sessions))
-     (t (let* ((labels (mapcar (lambda (session)
-                                 (cons (ecc-window-session-label session) session))
-                               sessions))
+     (t (let* ((candidates (ecc-window--session-candidates sessions))
                (choice (completing-read (or prompt "Session: ")
-                                        (mapcar #'car labels) nil t)))
-          (cdr (assoc choice labels)))))))
+                                        (ecc-window--session-table candidates)
+                                        nil t)))
+          (cddr (assoc choice candidates)))))))
 
 (defun ecc-window-bound-session ()
   "Return the session this buffer was told to send to, or nil."
