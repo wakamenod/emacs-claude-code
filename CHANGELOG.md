@@ -571,10 +571,9 @@ Verified against **Claude Code CLI 2.1.281**.
   session's state mark, as the tab line and the sidebar draw it (`⚠`, `▶`,
   `✗`, `○`, and `·` for idle), then its name; the state word and the project
   path are gone. The sessions stay in most-recently-used order. The
-  candidate is `Space/name`, so typing a Space's name narrows the list and
-  two sessions of one name in two projects can both be picked. The groups
-  show in a completion UI that reads `group-function`: vertico does, and
-  the default `*Completions*` does with `completions-group` set.
+  candidate is `Space/name`, so typing a Space's name narrows the list. The
+  groups show in a completion UI that reads `group-function`: vertico does,
+  and the default `*Completions*` does with `completions-group` set.
 
 - **Breaking.** `d` in an ediff review no longer removes a comment: it
   scrolls the reply pane on, as `u` scrolls it back (above). `x` removes a
