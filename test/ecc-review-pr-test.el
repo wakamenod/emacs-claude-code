@@ -944,6 +944,44 @@ In STYLE, the diff by default.  Return the walk."
                                 :type 'user-error)))
             (ecc-review-pr-test--kill-reviews)))))))
 
+(ert-deftest ecc-review-pr-test-unsent-count-is-kept ()
+  "The header line reads a kept count, which a comment or a kill elsewhere updates."
+  (skip-unless (executable-find "git"))
+  (ecc-review-pr-test--with-directory directory
+    (seq-let (base head) (ecc-review-pr-test--commits-repository directory)
+      (ecc-test-with-fake-session session
+        (setf (ecc-session-project-root session) directory)
+        (let ((ecc-review-style 'diff))
+          (unwind-protect
+              (ecc-review-pr-test--in-window
+                (ecc-review-pr-test--open-whole session directory base head)
+                (with-current-buffer (ecc-review-pr-test--shown)
+                  (ecc-review-pr-next-commit))
+                (let ((first (ecc-review-pr-test--shown)))
+                  (with-current-buffer first
+                    (ecc-review-pr-test--comment "one")
+                    (ecc-review-pr-next-commit))
+                  (let ((second (ecc-review-pr-test--shown)))
+                    (with-current-buffer second
+                      ;; Drawn without going through the buffers.
+                      (cl-letf (((symbol-function 'ecc-review-pr--reviews)
+                                 (lambda (&rest _) (ert-fail "counted in redisplay")))
+                                ((symbol-function 'buffer-list)
+                                 (lambda (&rest _) (ert-fail "buffer-list in redisplay"))))
+                        (should (string-search "unsent: 1 in 1 other commit"
+                                               (ecc-review--header-line)))))
+                    ;; A comment made in the other commit's review.
+                    (with-current-buffer first
+                      (ecc-review-pr-test--comment "two"))
+                    (with-current-buffer second
+                      (should (string-search "unsent: 2 in 1 other commit"
+                                             (ecc-review--header-line))))
+                    ;; That review dropped.
+                    (kill-buffer first)
+                    (with-current-buffer second
+                      (should-not (string-search "unsent" (ecc-review--header-line)))))))
+            (ecc-review-pr-test--kill-reviews)))))))
+
 (defun ecc-review-pr-test--control (walk)
   "Return the control buffer of the ediff review of WALK that is open."
   (seq-find (lambda (buffer)

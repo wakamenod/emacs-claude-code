@@ -487,8 +487,13 @@ the whole of it is reviewed as, and COMMITS are its commits, oldest
 first (`ecc-review-pr-commits'), each with :range once it has been
 reviewed.  HELD is a hash of a range to the comments of its review
 when that review was closed to make room for another -- an ediff
-review, quit by \\`]' -- as a plist of :notes, :next-id and :positions."
-  root pr own whole commits held)
+review, quit by \\`]' -- as a plist of :notes, :next-id and :positions.
+UNSENT is how many comments of yours each review holds, as an alist of
+its index to the count, worked out whenever it can change
+\(`ecc-review-pr--count'), t until it first is: the header lines read
+it as they are drawn, and redisplay is no time to go through every
+buffer."
+  root pr own whole commits held (unsent t))
 
 (defvar ecc-review-pr--walks (make-hash-table :test #'equal)
   "Hash of (ROOT . NUMBER) to the `ecc-review-pr-walk' of that pull request.
@@ -559,6 +564,7 @@ The comments held for its range, when it was closed to make room for
 another, are put back in it, unless it has comments of its own."
   (with-current-buffer review
     (setq ecc-review--walk walk)
+    (add-hook 'kill-buffer-hook #'ecc-review-pr--on-kill nil t)
     (let* ((held (ecc-review-pr-walk-held walk))
            (kept (gethash ecc-review--range held)))
       (when (and kept (null ecc-review--notes))
@@ -567,9 +573,7 @@ another, are put back in it, unless it has comments of its own."
               ecc-review--next-id (plist-get kept :next-id)
               ecc-review--positions (plist-get kept :positions))
         (ecc-review--draw-notes)))
-    (if (derived-mode-p 'ediff-mode)
-        (ecc-review-direct-refresh-headers review)
-      (force-mode-line-update))))
+    (ecc-review-pr--count walk)))
 
 (defun ecc-review-pr--on-displayed (review)
   "Make REVIEW one of the pull request being opened, if one is.
@@ -704,24 +708,67 @@ of yours are returned: Claude's are not sent."
   "Return how many comments of yours REVIEW, of `ecc-review-pr--reviews', holds."
   (seq-count (lambda (note) (not (ecc-review--agent-p note))) (plist-get review :notes)))
 
-(defun ecc-review-pr--elsewhere (walk)
-  "Return the reviews of WALK with comments of yours, but this one's."
+(defun ecc-review-pr--count (walk &optional dying)
+  "Count again the comments of yours the reviews of WALK hold, and say so.
+Kept in WALK (`ecc-review-pr-walk-unsent'), and every review of WALK
+open has its header line, or its mode line in ediff, drawn again.
+DYING is a review being killed, which is left out.  Run whenever the
+count can change: a comment made or removed in a review of WALK, a
+review of it opened, left, sent or killed."
+  (let ((reviews (seq-remove (lambda (review)
+                               (and dying (eq (plist-get review :review) dying)))
+                             (ecc-review-pr--reviews walk)))
+        (unsent nil))
+    (dolist (review reviews)
+      (cl-incf (alist-get (plist-get review :index) unsent 0 nil #'equal)
+               (ecc-review-pr--yours review)))
+    (setf (ecc-review-pr-walk-unsent walk) (nreverse unsent))
+    (dolist (buffer (buffer-list))
+      (when (and (not (eq buffer dying))
+                 (eq (buffer-local-value 'ecc-review--walk buffer) walk)
+                 (ecc-review-buffer-p buffer))
+        (with-current-buffer buffer
+          (if (derived-mode-p 'ediff-mode)
+              (ecc-review-direct-refresh-headers buffer)
+            (force-mode-line-update)))))))
+
+(defun ecc-review-pr--on-draw ()
+  "Count the comments of the pull request again, this review's being drawn.
+On `ecc-review-after-draw-hook', which every change of the comments of
+a review ends in."
+  (when ecc-review--walk
+    (ecc-review-pr--count ecc-review--walk)))
+
+(add-hook 'ecc-review-after-draw-hook #'ecc-review-pr--on-draw)
+
+(defun ecc-review-pr--on-kill ()
+  "Count the comments of the pull request again, without this review.
+On `kill-buffer-hook' of a review of a pull request."
+  (when ecc-review--walk
+    (ecc-review-pr--count ecc-review--walk (current-buffer))))
+
+(defun ecc-review-pr--unsent-elsewhere (walk)
+  "Return the counts of WALK of the reviews that are not this one, as kept.
+An alist of an index to a count of comments of yours, worked out first
+when it never has been (`ecc-review-pr--count')."
+  (when (eq (ecc-review-pr-walk-unsent walk) t)
+    (ecc-review-pr--count walk))
   (let ((index (ecc-review-pr--index walk ecc-review--range)))
-    (seq-remove (lambda (review)
-                  (or (eq (plist-get review :review) (current-buffer))
-                      (equal (plist-get review :index) index)))
-                (ecc-review-pr--reviews walk))))
+    (seq-remove (lambda (cell) (equal (car cell) index))
+                (ecc-review-pr-walk-unsent walk))))
 
 (defun ecc-review-pr-walk-status (&optional subject)
   "Return what this review says of the pull request it is a part of.
 Which commit it is, out of how many -- with its SUBJECT when asked
 for -- or that it is the whole, and how many comments of yours the
-other reviews of the pull request hold, which \\`C-c C-a' sends with these."
+other reviews of the pull request hold, which \\`C-c C-a' sends with these.
+Read off what is kept (`ecc-review-pr--count'): this is drawn with
+every redisplay of the header line."
   (let* ((walk ecc-review--walk)
          (number (ecc-review-pr--number walk))
          (commits (ecc-review-pr-walk-commits walk))
          (index (ecc-review-pr--index walk ecc-review--range))
-         (others (ecc-review-pr--elsewhere walk)))
+         (others (ecc-review-pr--unsent-elsewhere walk)))
     (concat
      (propertize
       (pcase index
@@ -734,12 +781,12 @@ other reviews of the pull request hold, which \\`C-c C-a' sends with these."
                      ""))))
       'face 'bold)
      (when others
-       (let* ((whole (seq-find (lambda (review) (eq (plist-get review :index) 'whole)) others))
+       (let* ((whole (assq 'whole others))
               (count (length (if whole (remq whole others) others)))
               (commits (and (> count 0)
                             (format "%d %scommit%s" count (if (integerp index) "other " "")
                                     (if (= count 1) "" "s")))))
-         (propertize (format "  unsent: %d in %s" (apply #'+ (mapcar #'ecc-review-pr--yours others))
+         (propertize (format "  unsent: %d in %s" (apply #'+ (mapcar #'cdr others))
                              (cond ((and whole commits) (concat "the whole PR and " commits))
                                    (whole "the whole PR")
                                    (t commits)))
@@ -810,7 +857,8 @@ the comments held for one closed are dropped."
               ((eq buffer review) (setq this buffer))
               (t (ecc-review--close buffer)))))
     (when this
-      (ecc-review--close this))))
+      (ecc-review--close this))
+    (ecc-review-pr--count walk)))
 
 (defun ecc-review-pr-send-all (&optional edit)
   "Send the comments of every review of this pull request as one prompt.
