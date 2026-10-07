@@ -563,6 +563,19 @@ Verified against **Claude Code CLI 2.1.281**.
 
 ### Changed
 
+- The session picker of `C-u C-c C-t` (`ecc-switch-session`) and of the
+  "Send to:" prompt groups the sessions by Space, under the Space's name
+  (its tab's name when it has a tab), or by project when `ecc-use-spaces`
+  is nil. Two Spaces that would share a name, such as two repositories'
+  worktrees on `main`, become `main` and `main<2>`. Each line is the
+  session's state mark, as the tab line and the sidebar draw it (`⚠`, `▶`,
+  `✗`, `○`, and `·` for idle), then its name; the state word and the project
+  path are gone. The sessions stay in most-recently-used order. The
+  candidate is `Space/name`, so typing a Space's name narrows the list and
+  two sessions of one name in two projects can both be picked. The groups
+  show in a completion UI that reads `group-function`: vertico does, and
+  the default `*Completions*` does with `completions-group` set.
+
 - **Breaking.** `d` in an ediff review no longer removes a comment: it
   scrolls the reply pane on, as `u` scrolls it back (above). `x` removes a
   comment there -- in the control panel, a comment of the current
