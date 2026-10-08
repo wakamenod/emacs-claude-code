@@ -988,6 +988,25 @@ nothing under `classic\=' reaches `ecc-worktree\='."
    (t (require 'ecc-render)
       (list (ecc-render--project-name-1 key)))))
 
+(defun ecc-window--sessions-by-use (sessions)
+  "Return SESSIONS, the one whose buffer was selected last first.
+`buffer-list' is kept in that order.  The registry is not: it moves a
+session to the front when it starts, not when it is used.  A session
+with no live buffer goes after the rest, and sessions that tie keep the
+order of SESSIONS."
+  (let ((rank (make-hash-table :test #'eq))
+        (n 0))
+    (dolist (buffer (buffer-list))
+      (puthash buffer (setq n (1+ n)) rank))
+    (mapcar #'cdr
+            ;; `sort' is stable.
+            (sort (mapcar (lambda (session)
+                            (cons (gethash (ecc-session-buffer session) rank
+                                           most-positive-fixnum)
+                                  session))
+                          sessions)
+                  (lambda (a b) (< (car a) (car b)))))))
+
 (defun ecc-window--session-groups (sessions)
   "Return an alist of each project of SESSIONS to the title of its group.
 In the order the projects first come up among SESSIONS, except that a
@@ -1076,10 +1095,13 @@ is typed, the mark is not."
 
 (defun ecc-window-read-session (&optional prompt sessions)
   "Ask which of SESSIONS to use, with PROMPT.
-SESSIONS defaults to every live session, most recently used first.  They
-are offered grouped by the Space they belong to -- the project under
-`classic\=' -- each under the mark of its state."
-  (let ((sessions (or sessions (ecc-model-sessions))))
+SESSIONS defaults to every live session.  They are offered most
+recently used first, by `ecc-window--sessions-by-use', grouped by the
+Space they belong to -- the project under `classic\=' -- each under the
+mark of its state.  A group comes where its most recently used session
+does."
+  (let ((sessions (ecc-window--sessions-by-use
+                   (or sessions (ecc-model-sessions)))))
     (cond
      ((null sessions) (user-error "No session is running"))
      ((null (cdr sessions)) (car sessions))
