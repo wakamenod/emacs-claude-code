@@ -2,9 +2,10 @@
 
 ;;; Commentary:
 
-;; What RET and a click on the transcript open: a line of a diff, the
-;; heading of a call that names a file, a line of the Files section or
-;; of a permission request, and a path the model wrote.
+;; What RET on the transcript opens: a line of a diff, the heading of a
+;; call that names a file, a line of the Files section or of a
+;; permission request, and a path the model wrote.  A click opens none
+;; of them.
 
 ;;; Code:
 
@@ -145,6 +146,11 @@ the lines, as it does for an Edit."
                        (cons (concat dir "b.txt") 1)))
         (should (equal (ecc-visit-test--target-after "✓ Bash" "Updated ")
                        (cons a 2)))
+        ;; A click opens nothing, so nothing lights up under the pointer.
+        (goto-char (point-min))
+        (search-forward "Updated ")
+        (should-not (text-property-not-all (point) (line-end-position)
+                                           'mouse-face nil))
         (should (equal (ecc-visit-test--target-after "✓ Bash" "Created ")
                        (cons (concat dir "new.txt") 1)))
         ;; A block after the first is the file it is under.
@@ -166,12 +172,14 @@ the lines, as it does for an Edit."
 
 (ert-deftest ecc-visit-test-headings ()
   "The heading of an Edit opens its first changed line; a Read opens at the top.
-A heading is a link, drawn with `mouse-face'; its body is not."
+Neither the heading nor its body carries a `mouse-face': a click opens
+nothing, so nothing lights up under the pointer."
   (ecc-visit-test--with-edit (session path)
     (goto-char (point-min))
     (search-forward "✓ Edit")
     (should (equal (ecc-visit-target-at-point) (cons path 3)))
-    (should (get-text-property (1- (line-end-position)) 'mouse-face))
+    (should-not (text-property-not-all (line-beginning-position)
+                                       (line-end-position) 'mouse-face nil))
     (forward-line 1)
     (should-not (get-text-property (point) 'mouse-face))
     (goto-char (point-min))
@@ -200,8 +208,7 @@ A heading is a link, drawn with `mouse-face'; its body is not."
       (should (equal (ecc-visit-target-at-point) '("/src/long.el" . 40)))
       (search-forward "✓ Bash")
       (should-not (ecc-visit-target-at-point))
-      (should-not (get-text-property (point) 'mouse-face))
-      (should-not (ecc-visit-follow-link-p (point))))))
+      (should-not (get-text-property (point) 'mouse-face)))))
 
 (ert-deftest ecc-visit-test-ret-on-headings ()
   "RET on a heading that names a file opens it; on any other it lays the node open.
@@ -373,23 +380,35 @@ at the end is found where it is."
 
 ;;;; Clicks
 
-(ert-deftest ecc-visit-test-follow-link-p ()
-  "A click follows a diff line and a heading with a file, and nothing else."
-  (ecc-visit-test--with-edit (session _path)
-    (goto-char (point-min))
-    (search-forward "✓ Edit")
-    (should (ecc-visit-follow-link-p (point)))
-    (search-forward "+    return \"hello")
-    (should (ecc-visit-follow-link-p (point)))
-    ;; No `mouse-face' on a diff line: the click is decided when it comes.
-    (should-not (get-text-property (point) 'mouse-face))
-    (search-forward "has been updated")
-    (should-not (ecc-visit-follow-link-p (point)))
-    (goto-char (point-min))
-    (search-forward "greet を直して")
-    (should-not (ecc-visit-follow-link-p (point)))
-    (search-forward "I need to read")
-    (should-not (ecc-visit-follow-link-p (point)))))
+(defun ecc-visit-test--click (pos)
+  "Click mouse-2 at POS in the current buffer, shown in the selected window."
+  (set-window-buffer (selected-window) (current-buffer))
+  (ecc-chat-follow-link (list 'mouse-2 (list (selected-window) pos '(0 . 0) 0))))
+
+(ert-deftest ecc-visit-test-a-click-opens-nothing ()
+  "A click on a diff line or a heading opens nothing; RET on the same place does.
+`follow-link' says no, so mouse-1 stays a click, and mouse-2 moves the
+point and stops there."
+  (ecc-visit-test--with-edit (session path)
+    (let (opened)
+      (cl-letf (((symbol-function 'ecc-visit-open)
+                 (lambda (file line &rest _) (push (cons file line) opened)))
+                ((symbol-function 'browse-url)
+                 (lambda (url &rest _) (push url opened))))
+        (goto-char (point-min))
+        (dolist (text '("✓ Edit" "+    return \"hello" "has been updated"))
+          (search-forward text)
+          (let ((pos (1- (point))))
+            (should-not (ecc-chat-url-p pos))
+            (should-not (get-char-property pos 'mouse-face))
+            (goto-char (point-min))
+            (ecc-visit-test--click pos)
+            (should (= (point) pos))))
+        (should-not opened)
+        (goto-char (point-min))
+        (search-forward "+    return \"hello")
+        (ecc-session-visit)
+        (should (equal opened (list (cons path 3))))))))
 
 ;;;; Paths in the reply
 
@@ -410,7 +429,9 @@ at the end is found where it is."
         (search-forward "ecc-session")
         (should (equal (ecc-visit-target-at-point)
                        (cons (expand-file-name "ecc-session.el" root) 163)))
-        (should (ecc-visit-follow-link-p (point)))
+        ;; RET alone opens it: no highlight, and nothing for a click.
+        (should-not (get-text-property (point) 'mouse-face))
+        (should-not (ecc-chat-url-p (point)))
         (search-forward "lisp/a")
         (should (equal (ecc-visit-target-at-point)
                        (list (expand-file-name "lisp/a/b.el" root))))

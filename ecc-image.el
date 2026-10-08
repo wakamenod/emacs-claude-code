@@ -425,7 +425,6 @@ Nothing is inserted here.  `ecc-render\=' is what draws."
          (string (propertize label
                              'face 'ecc-dim-face
                              'ecc-image-file path
-                             'mouse-face 'highlight
                              'help-echo (if (ecc-image-video-p path)
                                             "RET plays it outside Emacs"
                                           "RET opens it, v views it")))

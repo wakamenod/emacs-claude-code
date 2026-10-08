@@ -81,7 +81,6 @@
 (declare-function ecc-switch-session "ecc-window" (session))
 (declare-function ecc-session-visit "ecc-session" ())
 (declare-function ecc-session-show-detail "ecc-session" ())
-(declare-function ecc-visit-follow-link-p "ecc-visit" (pos))
 (declare-function ecc-session-refresh "ecc-session" ())
 (declare-function ecc-session-show-log "ecc-session" ())
 (declare-function ecc-session-resume "ecc-session" ())
@@ -272,13 +271,13 @@ no \\`C-c C-<letter>' free goes to `ecc-menu' rather than taking one.")
     ;; RET on a call that names a file opens the file; the node laid
     ;; open, which RET was on every heading before, is `o'.
     (define-key map (kbd "o") #'ecc-session-show-detail)
-    ;; A link is drawn with `mouse-face\=' and a line of a diff with
-    ;; nothing at all, so `follow-link\=' asks `ecc-visit-follow-link-p',
-    ;; which says yes to both and keeps mouse-1 from following anywhere
-    ;; else.  No link carries a keymap of its own: these two are the
-    ;; whole of the mouse side.
+    ;; A click follows a URL and nothing else: a file, a diff line or a
+    ;; picture opens on RET alone, so that a click that only meant to
+    ;; put the point somewhere does not take the source window with it.
+    ;; No link carries a keymap of its own: these two are the whole of
+    ;; the mouse side.
     (define-key map [mouse-2] #'ecc-chat-follow-link)
-    (define-key map [follow-link] #'ecc-visit-follow-link-p)
+    (define-key map [follow-link] #'ecc-chat-url-p)
     (define-key map (kbd "SPC") #'scroll-up-command)
     (define-key map (kbd "DEL") #'scroll-down-command)
     (define-key map (kbd "i") #'ecc-chat-goto-prompt)
@@ -916,13 +915,21 @@ The Files and Tasks rows are drawn without a node and give nil."
   "Return the id of the heading whose line the point is on, or nil."
   (get-text-property (line-beginning-position) 'ecc-heading))
 
+(defun ecc-chat-url-p (pos)
+  "Return t when POS is on a URL of the transcript.
+This is the `follow-link\=' of the transcript, and a URL is the one
+thing a click follows.  It is t rather than the URL because a string
+from `follow-link\=' turns mouse-1 into the first character of it."
+  (and (ecc-markdown-url-at-point pos) t))
+
 (defun ecc-chat-follow-link (event)
-  "Open what was clicked on in the transcript.
-The point goes where EVENT was, and `ecc-session-visit\=' decides what
-is there, so a click and a RET do the one thing."
+  "Follow the URL clicked on in the transcript.
+The point goes where EVENT was.  Anything else there -- a file, a line
+of a diff, a picture -- is left for RET (`ecc-session-visit\=')."
   (interactive "e")
   (mouse-set-point event)
-  (ecc-session-visit))
+  (when-let* ((url (ecc-markdown-url-at-point)))
+    (browse-url url)))
 
 ;;;; Folding
 

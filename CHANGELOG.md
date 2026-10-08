@@ -794,7 +794,7 @@ Verified against **Claude Code CLI 2.1.281**.
 - `{` and `}` in the review buffer move between comments. `diff-mode` has
   them moving between files, which `N` and `P` still do.
 
-- `RET` or a click on a path to a video or a sound -- a path in Claude's
+- `RET` on a path to a video or a sound -- a path in Claude's
   reply, a Files row, a tool heading -- plays the file in the machine's own
   player (`open` on macOS, `browse-url-of-file` elsewhere) instead of
   visiting it in a buffer of raw bytes. A line number after such a path is
@@ -814,6 +814,15 @@ Verified against **Claude Code CLI 2.1.281**.
   to `C-u C-c C-t`. Under `ecc-use-spaces` a session from another project
   is still shown in its own Space, and one another window of the Space
   already shows is selected there rather than shown twice.
+
+- A click in the transcript no longer opens a file in the source window:
+  `RET` alone does, unchanged. This covers a line of a diff -- of a call,
+  of the Files section or of a permission request -- the heading of a call
+  that names a file, the `Updated`/`Created`/`Deleted` line of a Bash
+  command, a path in Claude's reply, and an image or a video. A click that only meant to move
+  point took the source window with it. A URL in a reply still follows a
+  click, to the browser. None of the others is highlighted under the
+  pointer any more; the help text still names `RET`.
 
 ### Fixed
 

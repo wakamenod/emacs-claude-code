@@ -995,11 +995,12 @@ nothing, so the two keys no longer say the same thing."
           (should (equal inside "/tmp/shot.png")))))))
 
 (ert-deftest ecc-chat-test-ret-follows-a-link ()
-  "RET on a URL in the transcript opens it, and mouse-1 follows it too.
+  "RET on a URL in the transcript opens it, and a click follows it too.
 The link carries no keymap of its own: RET is the `ecc-session-visit\='
 the whole transcript answers with, and mouse-1 reaches the link through
-the `follow-link\=' entry, which reads the `mouse-face\=' a link carries
-\(`ecc-visit-follow-link-p\=')."
+the `follow-link\=' entry (`ecc-chat-url-p\='), which says yes to a URL
+and to nothing else.  It says t, not the URL: a string there would turn
+mouse-1 into its first character."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (ecc-model-begin-turn session "hello")
@@ -1023,11 +1024,18 @@ the `follow-link\=' entry, which reads the `mouse-face\=' a link carries
       (should (eq (lookup-key ecc-chat-transcript-map [mouse-2])
                   #'ecc-chat-follow-link))
       (should (eq (lookup-key ecc-chat-transcript-map [follow-link])
-                  #'ecc-visit-follow-link-p))
-      (should (ecc-visit-follow-link-p
-               (save-excursion (search-forward "https://example.com/a")
-                               (match-beginning 0))))
-      (should-not (ecc-visit-follow-link-p (point-min))))))
+                  #'ecc-chat-url-p))
+      (let ((link (save-excursion (search-forward "https://example.com/a")
+                                  (match-beginning 0)))
+            opened)
+        (should (eq (ecc-chat-url-p link) t))
+        (should-not (ecc-chat-url-p (point-min)))
+        (set-window-buffer (selected-window) (current-buffer))
+        (cl-letf (((symbol-function 'browse-url)
+                   (lambda (url &rest _) (setq opened url))))
+          (ecc-chat-follow-link
+           (list 'mouse-2 (list (selected-window) link '(0 . 0) 0))))
+        (should (equal opened "https://example.com/a"))))))
 
 (ert-deftest ecc-chat-test-interrupt-is-not-on-c-c-c-g ()
   "The interrupt is C-c C-z, and C-c C-g is left to `keyboard-quit'.
