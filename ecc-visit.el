@@ -25,11 +25,11 @@
 
 ;;; Commentary:
 
-;; RET or a click on code in the transcript opens the file it is about,
-;; at the line: a line of the diff of an Edit, a Write or a Bash command
-;; that changed a file, the heading of a call that names a file, a line
-;; of the Files section or of a permission request, and a path the model
-;; wrote in its reply.
+;; RET on code in the transcript opens the file it is about, at the
+;; line: a line of the diff of an Edit, a Write or a Bash command that
+;; changed a file, the heading of a call that names a file, a line of the
+;; Files section or of a permission request, and a path the model wrote
+;; in its reply.
 ;;
 ;; A diff line carries nothing that says where it is from.  The Files
 ;; section is drawn again at every redraw of the live region, and a
@@ -38,9 +38,14 @@
 ;; drawn at its start in the `numbered' style, or the lines counted from
 ;; the @@ header above it in the `unified' one.  The file is the one of
 ;; the node, the row or the request the line belongs to -- for a Bash
-;; command, which names none, the one on the line over its diff.  What a
-;; click follows is decided the same way, by `ecc-visit-follow-link-p' as
-;; the `follow-link' of the transcript, with no `mouse-face' on the lines.
+;; command, which names none, the one on the line over its diff.
+;;
+;; A click opens a path in a reply, which is drawn as a link with a
+;; `mouse-face', and none of the rest: a diff line, a heading or a Bash
+;; command's file line opens on RET alone, so that a click meant to put
+;; the point there does not take the source window with it.  None of
+;; them carries a `mouse-face' either, since a highlight under the
+;; pointer says a click would do something.
 ;;
 ;; A number drawn in a diff is where the line stood once that change was
 ;; made.  Every change the session made to the file after it is in
@@ -361,18 +366,6 @@ taken against `default-directory\\=', the directory of the session."
                                           (cdr changed)
                                         (ecc-model-node-get node 'patch))))
                (t line))))))))
-
-(defun ecc-visit-follow-link-p (pos)
-  "Return non-nil when a click at POS has something to open.
-This is the `follow-link\\=' of the transcript.  A link drawn with
-`mouse-face\\=' is one; so is a line of a diff that has a file behind
-it, which carries no `mouse-face\\=' so that nothing is put on it at
-every redraw."
-  (and (or (get-char-property pos 'mouse-face)
-           (save-excursion
-             (goto-char pos)
-             (and (ecc-visit--line-tag) (ecc-visit-target-at-point))))
-       t))
 
 ;;;; Opening
 

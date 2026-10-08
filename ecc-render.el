@@ -1452,29 +1452,11 @@ nothing left out rather than counted as zero (`ecc-diff-summary\=')."
                         'ecc-fold-cell t)
             " "
             (ecc-render--icon name)
-            (ecc-render--file-link
-             node
-             (concat
-              (propertize name 'face (if error-p 'ecc-error-face 'ecc-tool-face))
-              (if (string-empty-p summary)
-                  ""
-                (propertize (concat " · " summary) 'face 'ecc-dim-face))))
+            (propertize name 'face (if error-p 'ecc-error-face 'ecc-tool-face))
+            (if (string-empty-p summary)
+                ""
+              (propertize (concat " · " summary) 'face 'ecc-dim-face))
             (ecc-render--elapsed-mark node))))
-
-(defun ecc-render--file-link (node string)
-  "Return STRING, the name and summary of the tool NODE, as a link to its file.
-A call that names a file opens it on RET (`ecc-visit\='), and the
-`mouse-face\=' is what tells `follow-link\=' that a click does too.  It
-goes on the heading and on nothing under it: one property per call,
-where one per line of a diff would be paid for at every redraw of the
-Files section."
-  (let ((input (and (not (ecc-node-streaming node))
-                    (ecc-model-node-get node 'input))))
-    (when (and (consp input)
-               (or (stringp (alist-get 'file_path input))
-                   (stringp (alist-get 'notebook_path input))))
-      (put-text-property 0 (length string) 'mouse-face 'highlight string))
-    string))
 
 (defun ecc-render--insert-tool-body (node body &optional diff)
   "Insert the input and the result of the tool NODE, indented by BODY.
@@ -1539,7 +1521,7 @@ new file and \"Deleted\" for one removed."
                           (_ "Updated "))
                         'face 'ecc-dim-face)
             (propertize (ecc-render--file-label path)
-                        'face 'ecc-tool-face 'mouse-face 'highlight)
+                        'face 'ecc-tool-face)
             (propertize (format " (+%d -%d)" (car counts) (cdr counts))
                         'face 'ecc-dim-face))))
 

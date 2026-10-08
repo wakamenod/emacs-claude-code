@@ -88,7 +88,7 @@ The transcript is ordinary read-only text, so `isearch`, `occur`, narrowing and 
 | `F` / `P` | Jump to the [Files section](#the-files-section) / the plan |
 | `SPC` / `DEL` | Scroll down / up |
 | `v` / `i` | Go to the prompt region |
-| `RET`, click | Open what is at point: a link, a [source line](#opening-the-source), a subagent's transcript, or the full tool result |
+| `RET` | Open what is at point: a link, a [source line](#opening-the-source), a subagent's transcript, or the full tool result. A click opens a link, a path in Claude's reply or a picture |
 | `o` | Show the whole node: input, diff and result |
 | `w` | Copy the code block at point, or the whole response |
 | `I` | Stop or start the GIF at point |
@@ -105,7 +105,7 @@ On a request waiting for an answer, more keys apply: see [Permissions and plans]
 
 ### Opening the source
 
-`RET` on code in the transcript, or a click, opens the file beside the session at that line.
+`RET` on code in the transcript opens the file beside the session at that line. A click opens a path in Claude's reply and nothing else here, so clicking on a diff or a heading to move point leaves the source window as it is.
 
 | Point on | Opens |
 |---|---|
