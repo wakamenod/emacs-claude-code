@@ -293,11 +293,26 @@ Point is moved into the prompt region first when it is not there."
 (defun ecc-prompt-yank-image (mime data)
   "Save the pasted image DATA of type MIME and refer to it.
 The file is passed by path rather than inline: base64 in the prompt
-would be written into the recording of the conversation."
-  (let ((file (ecc-image-save (ecc-prompt-session) data mime)))
+would be written into the recording of the conversation.  A type the
+API does not take is converted to PNG first; where that cannot be
+done, the image is saved as it came and the message says why."
+  (let ((file (ecc-image-save-pasted (ecc-prompt-session) data mime)))
     (ecc-prompt-insert-reference file)
-    (message "Image saved to %s" (abbreviate-file-name file))
+    (if (ecc-image-sendable-p (concat "image/" (file-name-extension file)))
+        (message "Image saved to %s" (abbreviate-file-name file))
+      (let ((type (upcase (file-name-extension file))))
+        (message "Image saved as %s to %s: converting it to PNG needs \
+sips on macOS, and the API may not take %s"
+                 type (abbreviate-file-name file) type)))
     file))
+
+(defun ecc-prompt-yank-image-from-clipboard ()
+  "Save the image on the clipboard and insert an @ reference to it.
+What is saved is a PNG, or another type the API takes as it is."
+  (interactive)
+  (pcase-let ((`(,mime . ,data) (or (ecc-image-clipboard)
+                                    (user-error "No image on the clipboard"))))
+    (ecc-prompt-yank-image mime data)))
 
 (defun ecc-prompt-dnd-insert (url &optional _action)
   "Insert the dropped file URL as an @ reference."

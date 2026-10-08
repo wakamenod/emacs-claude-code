@@ -25,6 +25,7 @@ A session buffer has the transcript at the top, the prompt region below a divide
 | `C-c C-a` / `C-c C-d` | [Allow or deny](/emacs-claude-code/features/permissions/) a request |
 | `C-c C-x` | Turn [editor context](/emacs-claude-code/features/send/#editor-context) on or off |
 | `C-c C-i` | Insert an image |
+| `C-c C-y` | Paste the image on the clipboard |
 | `C-c C-b` | Show the `/btw` side questions |
 | `C-c C-n` / `C-c C-p` | Next / previous turn |
 | `C-c C-t` | Switch the window to another session |
@@ -62,7 +63,7 @@ Emacs handles these itself, and they never reach the model: `/btw`, `/hooks`, `/
 
 ## Images
 
-Images pasted, dropped into the buffer, or inserted with `C-c C-i` are saved under `ecc-image-dir` and sent to the CLI as paths. `ecc-image-cleanup` decides whether they are deleted when the session ends.
+`C-c C-y` pastes the image on the clipboard; `M-x yank-media` does the same. An image can also be dropped into the buffer or inserted from a file with `C-c C-i`. All of them are saved under `ecc-image-dir` and sent to the CLI as paths. A pasted image is saved as PNG: on macOS a screenshot reaches Emacs as TIFF, and `sips`, which comes with macOS, converts it. Without `sips` it is saved as TIFF, which the API may not accept. `ecc-image-cleanup` decides whether they are deleted when the session ends.
 
 <Video name="image" label="The picture open beside the session, inserted into the prompt as a path, and described in the answer" />
 

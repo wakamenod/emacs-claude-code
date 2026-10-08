@@ -958,6 +958,61 @@ OFFERED is bound to the list of labels the table held."
         (when (file-directory-p ecc-image-dir)
           (delete-directory ecc-image-dir t))))))
 
+(defmacro ecc-prompt-test--with-clipboard (selection &rest body)
+  "Run BODY with the clipboard holding SELECTION, an alist of type to data."
+  (declare (indent 1))
+  `(cl-letf (((symbol-function 'gui-get-selection)
+              (lambda (_ type) (alist-get type ,selection))))
+     ,@body))
+
+(ert-deftest ecc-prompt-test-clipboard-tiff-becomes-png ()
+  "C-c C-y saves a TIFF on the clipboard as a PNG and refers to it."
+  (ecc-test-with-fake-session session
+    (let ((ecc-image-dir (make-temp-file "ecc-images" t)))
+      (unwind-protect
+          (ecc-prompt-test--in-buffer session
+            (should (eq (key-binding (kbd "C-c C-y"))
+                        #'ecc-prompt-yank-image-from-clipboard))
+            (ecc-prompt-test--with-clipboard
+                '((TARGETS . [TARGETS image/tiff]) (image/tiff . "MM\0*tiff"))
+              (cl-letf (((symbol-function 'ecc-image-converter)
+                         (lambda () "/fake/sips"))
+                        ((symbol-function 'call-process)
+                         (lambda (&rest args)
+                           (with-temp-file (car (last args)) (insert "PNG"))
+                           0)))
+                (insert "これは")
+                (let ((file (ecc-prompt-yank-image-from-clipboard)))
+                  (should (equal (file-name-extension file) "png"))
+                  (should (file-exists-p file))
+                  (should (equal (ecc-chat-draft)
+                                 (format "これは @%s " file)))))))
+        (delete-directory ecc-image-dir t)))))
+
+(ert-deftest ecc-prompt-test-clipboard-png-is-kept ()
+  "A PNG on the clipboard is saved as it is, without converting."
+  (ecc-test-with-fake-session session
+    (let ((ecc-image-dir (make-temp-file "ecc-images" t)))
+      (unwind-protect
+          (ecc-prompt-test--in-buffer session
+            (ecc-prompt-test--with-clipboard
+                '((TARGETS . [TARGETS image/png]) (image/png . "\x89PNG-data"))
+              (cl-letf (((symbol-function 'ecc-image-converter)
+                         (lambda () (error "The converter was asked for"))))
+                (let ((file (ecc-prompt-yank-image-from-clipboard)))
+                  (should (equal (file-name-extension file) "png"))
+                  (should (string-search (concat "@" file) (ecc-chat-draft)))))))
+        (delete-directory ecc-image-dir t)))))
+
+(ert-deftest ecc-prompt-test-clipboard-without-image ()
+  "With no image on the clipboard, C-c C-y says so and inserts nothing."
+  (ecc-test-with-fake-session session
+    (ecc-prompt-test--in-buffer session
+      (ecc-prompt-test--with-clipboard
+          '((TARGETS . [TARGETS text/plain]) (text/plain . "hello"))
+        (should-error (ecc-prompt-yank-image-from-clipboard) :type 'user-error)
+        (should (equal (ecc-chat-draft) ""))))))
+
 ;;;; The editor context
 
 (ert-deftest ecc-prompt-test-context-toggle ()
