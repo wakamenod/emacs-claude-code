@@ -9,7 +9,7 @@
 # one asked for: the first Edit changed line 20, and the second put three
 # lines above it, so it is at 23 now.
 
-say "feat/visit-source -- RET and a click on code open the file at the line"; sleep 4
+say "feat/visit-source -- RET on code opens the file at the line; a click does not"; sleep 4
 e "(demo-frame)"; sleep 1
 e "(demo-open-session)"; sleep 3
 e "(demo-calls)"; sleep 5
@@ -55,13 +55,13 @@ e "(demo-back)"; sleep 1
 e "(demo-point-on \"Done.\" \"missing.py\")"; sleep 3
 e "(demo-ret-safely)"; sleep 4
 
-say "8. A click on a context line (def farewell, drawn as 23): no mouse-face, follow-link says yes"; sleep 4
+say "8. A click on a context line (def farewell, drawn as 23): no mouse-face, follow-link says no"; sleep 4
 e "(demo-back)"; e "(demo-park)"; sleep 1
 e "(demo-point-on \"✓ Edit\" \" def farewell\")"; sleep 3
 e "(demo-click)"; sleep 3
 e "(demo-report-opened)"; sleep 5
 
-say "9. A click on the result line under it: nothing to follow"; sleep 3
+say "9. A click on the result line under it: nothing to follow either"; sleep 3
 e "(demo-back)"; sleep 1
 e "(demo-point-on \"✓ Edit\" \"has been updated\")"; sleep 3
 e "(demo-click)"; sleep 4
