@@ -121,7 +121,7 @@ id nothing is waiting on, and resolve the request a second time."
 
 (defun ecc-perm-session ()
   "Return the session a command in this buffer is about, or nil.
-The session of the buffer wins, then the most recently used one."
+The session of the buffer wins, then the most recently started one."
   (or ecc-render--session (car (ecc-model-sessions))))
 
 (defun ecc-perm-request-at-point ()

@@ -212,7 +212,7 @@ to `ecc-space-list'."
     (1+ index)))
 
 (defun ecc-space-sessions (space)
-  "Return the sessions running in SPACE, most recently used first."
+  "Return the sessions running in SPACE, most recently started first."
   (ecc-window-project-sessions (ecc-space-root space)))
 
 (defun ecc-space-state (space)
@@ -345,7 +345,7 @@ go on running with no window, which is what the sidebar and
 
 (defun ecc-space--lay-out-sessions (space)
   "Stand the sessions of SPACE side by side in the tab just made.
-Most recently used first, to the right of the source, until the row has
+Most recently started first, to the right of the source, until the row has
 no room for another column of `ecc-space-session-min-width\='.  The ones
 that do not fit go on running with no window, which the sidebar and
 `ecc-space-reset-windows\=' bring back.
@@ -707,14 +707,14 @@ out of the sidebar, ten columns of it, in an 80-column frame (measured
               (window-width . ,width)))))
 
 (defun ecc-space--window-to-reuse (windows)
-  "Return the one of WINDOWS holding the session used longest ago.
+  "Return the one of WINDOWS holding the session started longest ago.
 What a Space gives up when the row is full: rather than divide a
-transcript into a column too narrow to read, the session nobody has
-worked in for longest hands its window over."
+transcript into a column too narrow to read, the oldest session hands
+its window over."
   (cl-labels ((age (window)
-                ;; `ecc-model-sessions' is most recently used first, so
-                ;; the shorter the tail from a session, the longer ago
-                ;; it was worked in.  A window whose session is gone
+                ;; `ecc-model-sessions' is most recently started first,
+                ;; so the shorter the tail from a session, the longer
+                ;; ago it started.  A window whose session is gone
                 ;; from the order has no tail at all and goes first.
                 (length (memq (ecc-window-buffer-session (window-buffer window))
                               (ecc-model-sessions)))))
@@ -872,7 +872,7 @@ sidebar -- stays where it is (verified 2026-09-14)."
 (defun ecc-space-reset-windows ()
   "Put this Space back to the arrangement a new tab gets.
 The source of the project on the left and the sessions of the Space
-beside it, most recently used first, until the row has no room for
+beside it, most recently started first, until the row has no room for
 another column of `ecc-space-session-min-width\=' -- the same rules the
 tab was dealt with, run by the same code, so the two cannot drift
 apart.  The sessions that do not fit go on running with no window.

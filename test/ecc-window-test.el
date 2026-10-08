@@ -756,6 +756,80 @@ for the line to show; the line keeps them, where the name now stands."
       (should (eq (ecc-window-read-session nil (list one)) one))
       (should-not table))))
 
+(defun ecc-window-test--use (&rest sessions)
+  "Make SESSIONS used in that order, the first the most recently.
+Each gets a buffer, and the buffers go to the end of `buffer-list' one
+after the other, which leaves them in this order among themselves."
+  (dolist (session sessions)
+    (bury-buffer (ecc-session-ensure-buffer session))))
+
+(ert-deftest ecc-window-test-picker-puts-the-last-used-first ()
+  "The session whose buffer was selected last comes first, and its group.
+The registry has them in the order they started, three, two, one; one
+was used last, so project-one comes first, and within it one comes
+before three, which started later."
+  (ecc-window-test--with-sessions one two
+    (let ((three (ecc-model-create-session
+                  :name "three" :project-root "/tmp/project-one/")))
+      (unwind-protect
+          (progn
+            (should (equal (ecc-model-sessions) (list three two one)))
+            (ecc-window-test--use one two three)
+            (ecc-window-test--picking "project-one/one"
+              (should (eq (ecc-window-read-session) one))
+              (should (equal offered '("project-one/one"
+                                       "project-one/three"
+                                       "project-two/two")))))
+        (ecc-test-cleanup-session three)))))
+
+(ert-deftest ecc-window-test-picker-puts-a-session-without-a-buffer-last ()
+  "A session with no buffer goes after those with one, even started last.
+four started last and has no buffer, so its group, project-three, is
+the last; three has none either and goes after one in project-one.
+Between the two without a buffer the registry's order stands."
+  (ecc-window-test--with-sessions one two
+    (let* ((three (ecc-model-create-session
+                   :name "three" :project-root "/tmp/project-one/"))
+           (four (ecc-model-create-session
+                  :name "four" :project-root "/tmp/project-three/")))
+      (unwind-protect
+          (progn
+            (ecc-window-test--use two one)
+            (ecc-window-test--picking "project-two/two"
+              (ecc-window-read-session)
+              (should (equal offered '("project-two/two"
+                                       "project-one/one"
+                                       "project-one/three"
+                                       "project-three/four")))))
+        (ecc-test-cleanup-session three)
+        (ecc-test-cleanup-session four)))))
+
+(ert-deftest ecc-window-test-picker-orders-a-group-by-use ()
+  "Within a group the sessions follow `buffer-list', not the registry.
+Using them in another order changes the order they are offered in,
+and with it which group comes first."
+  (ecc-window-test--with-sessions one two
+    (let* ((three (ecc-model-create-session
+                   :name "three" :project-root "/tmp/project-two/"))
+           (four (ecc-model-create-session
+                  :name "four" :project-root "/tmp/project-two/")))
+      (unwind-protect
+          (ecc-window-test--picking "project-two/two"
+            (ecc-window-test--use two four one three)
+            (ecc-window-read-session)
+            (should (equal offered '("project-two/two"
+                                     "project-two/four"
+                                     "project-two/three"
+                                     "project-one/one")))
+            (ecc-window-test--use one three two four)
+            (ecc-window-read-session)
+            (should (equal offered '("project-one/one"
+                                     "project-two/three"
+                                     "project-two/two"
+                                     "project-two/four"))))
+        (ecc-test-cleanup-session three)
+        (ecc-test-cleanup-session four)))))
+
 ;;;; Switching a window to another session
 
 (defmacro ecc-window-test--with-switch (bindings &rest body)

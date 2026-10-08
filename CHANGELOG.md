@@ -631,11 +631,15 @@ Verified against **Claude Code CLI 2.1.281**.
   Two groups that would still share a name become `name` and `name<2>`.
   Each line is the session's state mark, as the tab line and the sidebar
   draw it (`⚠`, `▶`, `✗`, `○`, and `·` for idle), then its name; the state
-  word and the project path are gone. Within a group the sessions stay in
-  most-recently-used order. The candidate is `Group/name`, so typing a
-  repository's name narrows the list to it and its worktrees. The groups
-  show in a completion UI that reads `group-function`: vertico does, and
-  the default `*Completions*` does with `completions-group` set.
+  word and the project path are gone. The sessions come most recently used
+  first, going by when their buffer was last selected rather than when they
+  started: the group of the last one used comes first, every other group
+  where its most recently used session falls, and within a group the same
+  order holds. A session with no buffer goes last. The candidate is
+  `Group/name`, so typing a repository's name narrows the list to it and its
+  worktrees. The groups show in a completion UI that reads `group-function`:
+  vertico does, and the default `*Completions*` does with
+  `completions-group` set.
 
 - **Breaking.** `d` in an ediff review no longer removes a comment: it
   scrolls the reply pane on, as `u` scrolls it back (above). `x` removes a

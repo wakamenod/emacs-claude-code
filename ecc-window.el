@@ -159,11 +159,11 @@ second only for a session that has no root of its own."
                               (ecc-session-cwd session))))
 
 (defun ecc-window-session-projects ()
-  "Return the projects that have a session, most recently used first."
+  "Return the projects that have a session, most recently started first."
   (seq-uniq (mapcar #'ecc-window-session-project (ecc-model-sessions))))
 
 (defun ecc-window-project-sessions (&optional root)
-  "Return the sessions whose project is ROOT, most recently used first.
+  "Return the sessions whose project is ROOT, most recently started first.
 ROOT defaults to the project of the current buffer.  It is matched as a
 project rather than as a path, so a session started in a subdirectory
 of ROOT is one of them."
@@ -988,6 +988,25 @@ nothing under `classic\=' reaches `ecc-worktree\='."
    (t (require 'ecc-render)
       (list (ecc-render--project-name-1 key)))))
 
+(defun ecc-window--sessions-by-use (sessions)
+  "Return SESSIONS, the one whose buffer was selected last first.
+`buffer-list' is kept in that order.  The registry is not: it moves a
+session to the front when it starts, not when it is used.  A session
+with no live buffer goes after the rest, and sessions that tie keep the
+order of SESSIONS."
+  (let ((rank (make-hash-table :test #'eq))
+        (n 0))
+    (dolist (buffer (buffer-list))
+      (puthash buffer (setq n (1+ n)) rank))
+    (mapcar #'cdr
+            ;; `sort' is stable.
+            (sort (mapcar (lambda (session)
+                            (cons (gethash (ecc-session-buffer session) rank
+                                           most-positive-fixnum)
+                                  session))
+                          sessions)
+                  (lambda (a b) (< (car a) (car b)))))))
+
 (defun ecc-window--session-groups (sessions)
   "Return an alist of each project of SESSIONS to the title of its group.
 In the order the projects first come up among SESSIONS, except that a
@@ -1076,10 +1095,13 @@ is typed, the mark is not."
 
 (defun ecc-window-read-session (&optional prompt sessions)
   "Ask which of SESSIONS to use, with PROMPT.
-SESSIONS defaults to every live session, most recently used first.  They
-are offered grouped by the Space they belong to -- the project under
-`classic\=' -- each under the mark of its state."
-  (let ((sessions (or sessions (ecc-model-sessions))))
+SESSIONS defaults to every live session.  They are offered most
+recently used first, by `ecc-window--sessions-by-use', grouped by the
+Space they belong to -- the project under `classic\=' -- each under the
+mark of its state.  A group comes where its most recently used session
+does."
+  (let ((sessions (ecc-window--sessions-by-use
+                   (or sessions (ecc-model-sessions)))))
     (cond
      ((null sessions) (user-error "No session is running"))
      ((null (cdr sessions)) (car sessions))
@@ -1097,7 +1119,7 @@ are offered grouped by the Space they belong to -- the project under
   "Return the session a command in this buffer should talk to.
 The order is: the session of this buffer, the session this buffer was
 bound to before, the only session of this project, the only session on
-screen, the most recently used one.  FORCE-ASK, a prefix argument in
+screen, the most recently started one.  FORCE-ASK, a prefix argument in
 the commands that take one, always asks; the answer is remembered in
 the buffer."
   (or (ecc-window-buffer-session)
@@ -1134,7 +1156,7 @@ showing."
 (defvar ecc-tab-line-scope)
 
 (defun ecc-window--switch-row (window)
-  "Return the sessions of the tab row of WINDOW, most recently used first.
+  "Return the sessions of the tab row of WINDOW, most recently started first.
 The row of the session WINDOW shows: its project, or every session when
 `ecc-tab-line-scope' is `all', which is what `ecc-tab-line--sessions'
 draws.  A WINDOW that shows no session has no row, and the project

@@ -309,9 +309,8 @@ answer while its state still says that it runs."
   (let ((sessions (ecc-model-sessions)))
     (pcase ecc-sidebar-sessions-sort
       ('priority
-       ;; Stable within a rank: `ecc-model-sessions' is most recently
-       ;; used first, which is the nearest thing the model keeps to the
-       ;; order the states last changed in.
+       ;; Stable within a rank, which keeps the order of
+       ;; `ecc-model-sessions': most recently started first.
        (let ((rank (lambda (session)
                      (pcase (ecc-tab-state session)
                        ('attention 0) ('running 1) ('idle 2) (_ 3)))))
