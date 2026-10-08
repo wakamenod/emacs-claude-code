@@ -398,12 +398,11 @@ it is not given."
 (defun ecc-review-menu-commit-range (root from &optional to)
   "Return the range `c' reviews in ROOT: the commit FROM, or FROM through TO.
 TO nil, empty or the commit FROM is FROM alone, FROM^!, the change
-`git show' shows.  Otherwise it is FROM^..TO, FROM included; the two
-are put in order first, so that a TO older than FROM is the same span
-picked the other way round.  A commit with no parent -- the first of
-the repository -- is compared with the empty tree instead, which is
-what a parent would have held: FROM^! there names FROM alone, and git
-would compare it with the working tree.
+`git show' shows (`ecc-review-commit-alone').  Otherwise it is
+FROM^..TO, FROM included; the two are put in order first, so that a TO
+older than FROM is the same span picked the other way round.  A commit
+with no parent -- the first of the repository -- is compared with the
+empty tree instead, which is what a parent would have held.
 
 The range names the commits by their ids, not by the names typed: HEAD
 or main moves, and a review read again would show another commit under
@@ -421,16 +420,15 @@ the same commits by id opens the same review."
     (when (and to-id (eq 0 (car (ecc-review--git root "merge-base" "--is-ancestor"
                                                   to-id from-id))))
       (cl-rotatef from-id to-id))
-    (let ((parent (ecc-review--git-string root "rev-parse" "--verify" "--quiet"
-                                          (concat from-id "^"))))
-      (cond
-       ((and parent (null to-id)) (concat from-id "^!"))
-       (parent (format "%s^..%s" from-id to-id))
-       (t (format "%s..%s"
-                  (or (ecc-review--empty-tree root)
-                      (user-error "Cannot name the empty tree in %s"
-                                  (abbreviate-file-name root)))
-                  (or to-id from-id)))))))
+    (if (null to-id)
+        (ecc-review-commit-alone root from-id)
+      (if (ecc-review--git-string root "rev-parse" "--verify" "--quiet" (concat from-id "^"))
+          (format "%s^..%s" from-id to-id)
+        (format "%s..%s"
+                (or (ecc-review--empty-tree root)
+                    (user-error "Cannot name the empty tree in %s"
+                                (abbreviate-file-name root)))
+                to-id)))))
 
 ;;;; What the menu is about
 
@@ -851,10 +849,15 @@ ARGS are the arguments of the menu, and STATE its state
         (ecc-review-name-fork root (car range) (cdr range)))
       (ecc-review-menu-open 'branch (car range) args ecc-review-menu--state))))
 
-(transient-define-suffix ecc-review-menu-pull-request (pr args &optional state)
+(transient-define-suffix ecc-review-menu-pull-request (pr args &optional state commit commits)
   "Review the pull request PR, a plist of `ecc-review-pr-parse'.
 Asked of gh with completion (`ecc-review-pr-read'), and compared as
-`ecc-review-pr-range' says.  Offered only when gh is installed.
+`ecc-review-pr-range' says.  Then one of its commits is asked for
+\(`ecc-review-pr-read-commit'), the whole of it by default: COMMIT, the
+id of one, is that commit alone.  Either way the review is one of the
+pull request read a commit at a time, \\`]' and \\`[' going through its
+commits (`ecc-review-pr-walk'); COMMITS are those the question offered,
+read again when not given.  Offered only when gh is installed.
 ARGS are the arguments of the menu, and STATE its state
 \(`ecc-review-menu--with-state')."
   :description (lambda () (ecc-review-menu--describe 'pr))
@@ -862,16 +865,29 @@ ARGS are the arguments of the menu, and STATE its state
   :inapt-if #'ecc-review-menu--outside-git-p
   (interactive
    (ecc-review-menu--with-state nil
-     (let ((args (transient-args 'ecc-review-menu)))
-       (list (ecc-review-pr-read (ecc-review-menu--root)
-                                 (plist-get ecc-review-menu--state :branch)
-                                 #'ecc-review-menu--in-order)
-             args ecc-review-menu--state))))
+     (let* ((args (transient-args 'ecc-review-menu))
+            (root (ecc-review-menu--root))
+            (branch (plist-get ecc-review-menu--state :branch))
+            (pr (ecc-review-pr-read root branch #'ecc-review-menu--in-order))
+            (commits (ecc-review-pr-commits root pr branch)))
+       (list pr args ecc-review-menu--state
+             (plist-get (ecc-review-pr-read-commit pr commits #'ecc-review-menu--in-order)
+                        :id)
+             commits))))
   (ecc-review-menu--with-state state
     (let* ((root (ecc-review-menu--root))
-           (range (ecc-review-pr-range root pr (plist-get ecc-review-menu--state :branch))))
+           (branch (plist-get ecc-review-menu--state :branch))
+           (range (ecc-review-pr-range root pr branch))
+           (walk (ecc-review-pr-walk root pr branch (car range) commits)))
       (ecc-review-name-fork root (car range) (cdr range))
-      (ecc-review-menu-open 'pr (car range) args ecc-review-menu--state))))
+      (ecc-review-pr-opening walk
+        (ecc-review-menu-open 'pr (if commit
+                                      (ecc-review-pr-commit-range
+                                       walk (or (ecc-review-pr-commit-index walk commit)
+                                                (user-error "%s is no commit of #%d"
+                                                            commit (plist-get pr :number))))
+                                    (car range))
+                              args ecc-review-menu--state)))))
 
 (transient-define-suffix ecc-review-menu-commit (from to args &optional state)
   "Review the commit FROM, or FROM through TO (`ecc-review-menu-commit-range').

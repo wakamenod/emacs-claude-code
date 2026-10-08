@@ -37,6 +37,12 @@ The count beside `D` takes a snapshot of the working tree. To leave it out, set 
 
 `p` lists the open pull requests, with the open pull request of your branch as the default. A number opens any pull request, merged and closed ones included. The first entry, `Search pull requests…`, searches every pull request, closed and merged ones too, in GitHub's search syntax such as `is:merged author:someone` or `label:bug`. Words you type that match no entry are searched too. A completion UI that keeps the first candidate selected needs its own key to submit the words as typed (`M-RET` in vertico, `M-j` in icomplete and fido, `C-M-j` in ivy), or choose the search entry before typing. Results mark `[closed]` and `[merged]`. The diff comes from your local git, which has whole files. ecc fetches only the commits that are missing, creates no branch, and leaves `HEAD` and your files alone. Your own branch's pull request opens the same review as `b`, against your working tree.
 
+### A pull request, one commit at a time
+
+After you choose a pull request, `p` asks which of its commits to review, oldest first. `RET` reviews the whole pull request, and choosing a commit reviews that commit alone. Merge commits and commits that change no file are not offered.
+
+In a review opened from `p`, `]` opens the next commit in the same window and `[` the previous one. From the whole pull request, `]` opens its first commit. The header line (in ediff, the right window's mode line) shows the commit, as in `#124 commit 2/5`, and how many unsent comments the other commits hold. Each commit keeps its comments while you move between them. `C-c C-c` sends the comments of the commit you are on. `C-c C-a` sends the comments of every commit as one prompt, grouped by commit, and closes those reviews.
+
 ### When the changes are not on disk
 
 When the right side is a commit rather than your working tree (somebody else's pull request, another branch, an older commit), the header line says so (in ediff, the right window's mode line), as in `the right side is a1b2c3d, not checked out here`. The prompt your comments go in tells Claude the changes are not in the working tree and to ask before editing anything.
@@ -61,7 +67,9 @@ Another session working in the same directory shows up here too; separate [workt
 | `T` / `t` / `M` | [Talk to Claude](/emacs-claude-code/features/review-claude/#talking-to-claude-from-the-review): a tour, its next stop, a message |
 | `e` | Edit the proposed content (reviewing one proposal) |
 | `g` | Read the diff again |
+| `]` / `[` | Next / previous commit of a [pull request](#a-pull-request-one-commit-at-a-time) |
 | `C-c C-c` | Send your comments as a prompt (`C-u C-c C-c` to edit it first) |
+| `C-c C-a` | Send the comments of every commit of the pull request |
 | `C-c C-k` | Drop the review and its comments |
 | `q` | Bury the buffer |
 | `?` | List every key of the review |

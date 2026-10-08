@@ -322,6 +322,41 @@ Verified against **Claude Code CLI 2.1.281**.
   disk. A closed or merged one is `BASE_OID...HEAD_OID` even with a branch
   of its head's name checked out, which may be newer work.
 
+- A pull request can be read a commit at a time. Once `p` has a pull
+  request, it asks which of its commits to review, oldest first, as
+  `2/5  a1b2c3d  fix(review): …`, after `The whole of #124 (5 commits)`, the
+  default: `RET` reviews what `p` reviewed before. The commits are
+  `git log --no-merges BASE..HEAD` by ids (`ecc-review-pr-commits`), `HEAD`
+  for the branch checked out, so what is not pushed is among them; merges
+  are left out, a merge of the base read alone being everything the base did,
+  and so are commits that change no file. One commit is reviewed alone, as
+  `X^!` (`ecc-review-commit-alone`, what `c` reviews one commit as), and says
+  it is not checked out unless it is `HEAD`. Either way the review belongs
+  to the pull request (`ecc-review-pr-walk`): `]` opens the next commit in
+  its place and `[` the previous, in the same window, `]` from the whole
+  going to the first commit; at either end they say it is the last or the
+  first of `#N` and stay. The header line of a diff review says
+  `#124 commit 2/5`, or `#124 as a whole, 5 commits`, and an ediff review
+  says it on the right window's mode line, with the commit's subject. Each
+  commit's review keeps its own comments: a diff review left with comments
+  stays open, one with none is killed, and an ediff review, quit to make
+  room for the next, leaves its comments with the pull request until `[` or
+  `]` opens it again. The header line counts the comments the other
+  reviews of the pull request hold, as `unsent: 3 in 2 other commits`.
+  `C-c C-c` sends this review's comments alone; `C-c C-a`
+  (`ecc-review-pr-send-all`) sends those of every review of the pull
+  request, open or left, as one prompt, so that Claude reads all of them
+  before changing anything: `ecc-review-pr-commits-note` (and
+  `ecc-review-pr-elsewhere-note` for a branch not checked out) under the
+  first line, then a group for each commit, `# Commit 2/5 a1b2c3d: subject`,
+  holding its comments as a review's prompt holds them, a diff and an ediff
+  review of one commit together. Every review whose
+  comments went is closed. `C-u C-c C-a` opens the prompt to be edited
+  first. `]`, `[` and `C-c C-a` are keys of both kinds of review, in the
+  ediff control panel and both of its windows, in the header lines' keys
+  and in `?`; in a diff review `C-c C-a` was `diff-apply-hunk`, which
+  writes into the file the hunk is of.
+
 - A review whose right side is not the files on disk says so: another
   branch's pull request, `b` of another branch, `c` of a commit other than
   `HEAD`, `r` of two commits, and the same ranges opened by Claude with

@@ -97,6 +97,7 @@
 (declare-function ecc-review-ediff-next-difference "ecc-review-ediff" (&optional arg))
 (declare-function ecc-review-ediff-stacked-p "ecc-review-ediff" (&optional control))
 (declare-function ecc-review-ediff-previous-difference "ecc-review-ediff" (&optional arg))
+(declare-function ecc-review-pr-walk-status "ecc-review-pr" (&optional subject))
 
 ;;;; The review a window belongs to
 
@@ -733,11 +734,13 @@ shown keeps the point its buffer had."
 
 (defvar ecc-review-direct-header-keys
   '(("n/p" "diff" A) ("c" "comment" A) ("C-c C-c" "send" B) ("q" "quit" B)
+    ("] [" "commits" B ecc-review--walk) ("C-c C-a" "send all" B ecc-review--walk)
     ("RET" "open" B) ("j" "jump" A) ("{ }" "comments" A) ("x" "delete" A)
     ("l" "list" A) ("a" "Claude's" A) ("T" "tour" B) ("t" "next" B)
     ("M" "message" B) ("u/d" "reply" B) ("v/V" "scroll" B) ("s" "files" A)
     ("/" "filter" A) ("!" "reread" B) ("?" "all keys" B))
-  "The keys the header lines of an ediff review show: (KEY WHAT SIDE).
+  "The keys the header lines of an ediff review show: (KEY WHAT SIDE [IF]).
+IF, a variable, shows the key only in a review where it is non-nil.
 In the order they are shown, the most used first: a window too narrow
 for them all drops them from the end, all but the last, the key of the
 help (`ecc-review-direct--header-line').  One above the other, both
@@ -748,11 +751,13 @@ the files, sending and closing.")
 
 (defun ecc-review-direct--key-pieces (&optional side)
   "Return the keys of SIDE the header lines show, a string for each.
-Every key when SIDE is nil.  Faces are put on the strings here; no
-font-lock runs in a review."
+Every key when SIDE is nil.  Run in the control buffer, where the
+variable a key is shown under is read.  Faces are put on the strings
+here; no font-lock runs in a review."
   (delq nil
         (mapcar (lambda (key)
-                  (when (or (null side) (eq (nth 2 key) side))
+                  (when (and (or (null side) (eq (nth 2 key) side))
+                             (or (null (nth 3 key)) (symbol-value (nth 3 key))))
                     (concat (propertize (nth 0 key) 'face 'bold)
                             " "
                             (propertize (nth 1 key) 'face 'ecc-dim-face))))
@@ -904,8 +909,9 @@ buffer; nothing that would come out the same is set again."
 (defun ecc-review-direct--status (control)
   "Return where the review in CONTROL is, for the right window's mode line.
 The current difference out of how many -- `3/12', `-/12' with none
-current -- what the filter hides, as `/FILTER: 2 hidden', and the right
-side when it is not on disk (`ecc-review-elsewhere')."
+current -- the commit of the pull request it is, when it is one
+\(`ecc-review-pr-walk-status'), what the filter hides, as `/FILTER: 2
+hidden', and the right side when it is not on disk (`ecc-review-elsewhere')."
   (with-current-buffer control
     (concat (if (zerop ediff-number-of-differences)
                 (propertize "no difference" 'face 'ecc-dim-face)
@@ -915,6 +921,8 @@ side when it is not on disk (`ecc-review-elsewhere')."
                                     "-")
                                   ediff-number-of-differences)
                           'face 'bold))
+            (when ecc-review--walk
+              (concat "  " (ecc-review-pr-walk-status t)))
             (when ecc-review--filter
               (propertize (format "  /%s: %d hidden" ecc-review--filter
                                   (length ecc-review--hidden))
@@ -1000,8 +1008,8 @@ taken off the hook for good, so the error is logged and shown instead."
 
 (defvar ecc-review-direct-relayed-keys
   '("j" "{" "}" "a" "b" "s" "/" "T" "t" "M" "y" "u" "d" "l" "!" "?" "i" "q"
-    "v" "V" "C-l" "|" "m" "h" "@" "*" "<" ">" "##" "#c" "#h" "#f"
-    "C-c C-c" "C-c C-k")
+    "v" "V" "C-l" "|" "m" "h" "@" "*" "<" ">" "##" "#c" "#h" "#f" "]" "["
+    "C-c C-c" "C-c C-k" "C-c C-a")
   "The keys of the control panel that the two windows of a review have too.
 Each does there what it does in the panel, wherever that is bound
 \(`ecc-review-direct-relay').")
