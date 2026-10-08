@@ -572,6 +572,18 @@ Verified against **Claude Code CLI 2.1.281**.
   beside the session in the diff review; `RET` there still moves the
   review.
 
+- `C-c C-y` in the prompt pastes the image on the clipboard: it is saved under
+  `ecc-image-dir` and an `@` reference to it is inserted, as `C-c C-i` does
+  for a file. With no image on the clipboard it says so. What is saved is a
+  type the API takes as it is (PNG, JPEG, GIF, WebP); any other type is
+  converted to PNG with `sips`, which comes with macOS. The NS port of Emacs
+  hands over a screenshot as `image/tiff` alone, 9.4 MB where the PNG on the
+  same pasteboard is 255 KB, so without the conversion a screenshot went out
+  as a TIFF. A conversion that fails is written to the session's log and
+  reported. `M-x yank-media`, which already pasted images into the prompt,
+  goes through the same path. Where there is no `sips` the image is saved as
+  it came and the message says the API may not take it.
+
 ### Changed
 
 - The session picker of `C-u C-c C-t` (`ecc-switch-session`) and of the
