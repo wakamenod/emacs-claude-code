@@ -40,10 +40,12 @@
 ;; the node, the row or the request the line belongs to -- for a Bash
 ;; command, which names none, the one on the line over its diff.
 ;;
-;; A click opens none of it: RET is the one way in, so that a click
-;; meant to put the point somewhere does not take the source window
-;; with it.  None of these targets carries a `mouse-face' either, since
-;; a highlight under the pointer says a click would do something.
+;; A click opens a path in a reply, which is drawn as a link with a
+;; `mouse-face', and none of the rest: a diff line, a heading or a Bash
+;; command's file line opens on RET alone, so that a click meant to put
+;; the point there does not take the source window with it.  None of
+;; them carries a `mouse-face' either, since a highlight under the
+;; pointer says a click would do something.
 ;;
 ;; A number drawn in a diff is where the line stood once that change was
 ;; made.  Every change the session made to the file after it is in

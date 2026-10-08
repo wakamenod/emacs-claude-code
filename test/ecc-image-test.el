@@ -135,9 +135,7 @@
       (should (equal (substring-no-properties string)
                      (ecc-image-label path 79)))
       (should-not (get-text-property 0 'display string))
-      (should (equal (get-text-property 0 'ecc-image-file string) path))
-      ;; RET opens it and a click does not, so nothing lights up.
-      (should-not (get-text-property 0 'mouse-face string)))
+      (should (equal (get-text-property 0 'ecc-image-file string) path)))
     ;; And with the setting off, nothing is drawn even in a window.
     (let ((ecc-image-inline nil))
       (should-not (ecc-image-available-p path)))))

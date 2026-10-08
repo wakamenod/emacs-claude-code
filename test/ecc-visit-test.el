@@ -4,8 +4,8 @@
 
 ;; What RET on the transcript opens: a line of a diff, the heading of a
 ;; call that names a file, a line of the Files section or of a
-;; permission request, and a path the model wrote.  A click opens none
-;; of them.
+;; permission request, and a path the model wrote.  A click opens the
+;; path and none of the others.
 
 ;;; Code:
 
@@ -399,7 +399,6 @@ point and stops there."
         (dolist (text '("✓ Edit" "+    return \"hello" "has been updated"))
           (search-forward text)
           (let ((pos (1- (point))))
-            (should-not (ecc-chat-url-p pos))
             (should-not (get-char-property pos 'mouse-face))
             (goto-char (point-min))
             (ecc-visit-test--click pos)
@@ -429,9 +428,8 @@ point and stops there."
         (search-forward "ecc-session")
         (should (equal (ecc-visit-target-at-point)
                        (cons (expand-file-name "ecc-session.el" root) 163)))
-        ;; RET alone opens it: no highlight, and nothing for a click.
-        (should-not (get-text-property (point) 'mouse-face))
-        (should-not (ecc-chat-url-p (point)))
+        ;; Drawn as a link, so a click opens it as well as RET.
+        (should (get-text-property (point) 'mouse-face))
         (search-forward "lisp/a")
         (should (equal (ecc-visit-target-at-point)
                        (list (expand-file-name "lisp/a/b.el" root))))
@@ -442,7 +440,13 @@ point and stops there."
                      (lambda (file line &rest _) (setq opened (cons file line)))))
             (goto-char (point-min))
             (search-forward "ecc-session")
-            (ecc-session-visit))
+            (ecc-session-visit)
+            (should (equal opened (cons (expand-file-name "ecc-session.el" root)
+                                        163)))
+            (setq opened nil)
+            (let ((pos (point)))
+              (goto-char (point-min))
+              (ecc-visit-test--click pos)))
           (should (equal opened (cons (expand-file-name "ecc-session.el" root)
                                       163))))))))
 

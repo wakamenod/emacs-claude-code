@@ -302,9 +302,8 @@ no opening one, because plenty carry a matched pair."
   "Make the text between START and END a link to URL.
 No keymap is put on: the transcript already answers RET with
 `ecc-session-visit\=', which asks `ecc-markdown-url-at-point\=' first,
-and a click with `ecc-chat-follow-link\='.  A URL is the one thing in
-the transcript a click follows, so it is the one that is highlighted
-under the pointer."
+and `mouse-face\=' is what tells `follow-link\=' that the first mouse
+button has something to follow here."
   (ecc-markdown--add-face start end 'ecc-markdown-link-face)
   (add-text-properties start end
                        (list 'mouse-face 'highlight
@@ -389,7 +388,9 @@ what follows it."
                         stop (match-end 0))))
               (put-text-property from stop 'ecc-file (cons token line))
               (ecc-markdown--add-face from stop 'ecc-markdown-link-face)
-              (put-text-property from stop 'help-echo (concat "RET: open " token))
+              (add-text-properties from stop
+                                   (list 'mouse-face 'highlight
+                                         'help-echo (concat "RET: open " token)))
               (goto-char (max (point) stop)))))))))
 
 (defun ecc-markdown-file-at-point (&optional pos)

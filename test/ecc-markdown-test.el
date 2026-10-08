@@ -172,8 +172,8 @@ here; `ecc-table-test' covers that."
 
 (ert-deftest ecc-markdown-test-a-bare-url-becomes-a-link ()
   "A URL in prose carries the URL, the link face and a mouse-face.
-A URL is the one thing in the transcript a click follows, so it is the
-one thing highlighted under the pointer; nothing carries a keymap."
+The mouse-face is what `follow-link\=' reads, so it is the difference
+between a link and the rest of the line; nothing carries a keymap."
   (let* ((source "See https://example.com/a for the rest.\n")
          (text (ecc-markdown-fontify source)))
     (should (equal (substring-no-properties text) source))
@@ -253,8 +253,7 @@ path; the full stop after one is not part of it."
     (should (equal (ecc-markdown-test--file-at text "a/b.el") '("a/b.el")))
     (should (equal (ecc-markdown-test--file-at text "foo.el") '("foo.el" . 3)))
     (should-not (ecc-markdown-test--file-at text ".\n"))
-    ;; A path opens on RET alone, so it is not highlighted under the pointer.
-    (should-not (get-text-property (string-search "a/b.el" text) 'mouse-face text))
+    (should (get-text-property (string-search "a/b.el" text) 'mouse-face text))
     (should-not (ecc-markdown-test--file-at text "See"))))
 
 (ert-deftest ecc-markdown-test-what-is-not-a-path ()

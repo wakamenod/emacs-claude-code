@@ -261,9 +261,9 @@ for in it."
 (defun demo-click ()
   "Click mouse-1 at point in the transcript, the way a real click arrives.
 `mouse-on-link-p' is asked what the click is, which is the question
-`follow-link' answers and batch cannot put; a link -- a URL, and
-nothing else in the transcript -- turns the click into the mouse-2 that
-`ecc-chat-follow-link' is bound to."
+`follow-link' answers and batch cannot put; a link -- text with a
+`mouse-face', which a diff line is not -- turns the click into the
+mouse-2 that `ecc-chat-follow-link' is bound to."
   (let ((window (demo-window-of (demo-transcript))))
     (with-selected-window window
       (let* ((posn (posn-at-point (window-point window) window))

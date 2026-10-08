@@ -971,6 +971,23 @@ first one threw out of `window-size-change-functions\='."
             (ecc-chat--set-margins window)
             (should-not (cdr (window-margins window)))))))))
 
+(ert-deftest ecc-chat-test-a-click-opens-the-picture ()
+  "A click on a picture opens it, as RET does: it is drawn as a link."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (with-current-buffer (ecc-session-buffer session)
+      (let ((path (ecc-test-image-file))
+            inside)
+        (cl-letf (((symbol-function 'find-file-other-window)
+                   (lambda (file) (setq inside file))))
+          (let ((inhibit-read-only t))
+            (goto-char (point-min))
+            (insert (ecc-image-string path 400 400) "\n"))
+          (set-window-buffer (selected-window) (current-buffer))
+          (ecc-chat-follow-link
+           (list 'mouse-2 (list (selected-window) (point-min) '(0 . 0) 0))))
+        (should (equal inside path))))))
+
 (ert-deftest ecc-chat-test-ret-opens-the-picture-at-point ()
   "RET on a picture opens it: a still in a buffer, a video outside Emacs.
 This is the whole of it -- `v\=' stops and starts what moves and opens
@@ -998,9 +1015,7 @@ nothing, so the two keys no longer say the same thing."
   "RET on a URL in the transcript opens it, and a click follows it too.
 The link carries no keymap of its own: RET is the `ecc-session-visit\='
 the whole transcript answers with, and mouse-1 reaches the link through
-the `follow-link\=' entry (`ecc-chat-url-p\='), which says yes to a URL
-and to nothing else.  It says t, not the URL: a string there would turn
-mouse-1 into its first character."
+the `follow-link\=' entry, which reads the `mouse-face\=' a link carries."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (ecc-model-begin-turn session "hello")
@@ -1024,12 +1039,12 @@ mouse-1 into its first character."
       (should (eq (lookup-key ecc-chat-transcript-map [mouse-2])
                   #'ecc-chat-follow-link))
       (should (eq (lookup-key ecc-chat-transcript-map [follow-link])
-                  #'ecc-chat-url-p))
+                  'mouse-face))
       (let ((link (save-excursion (search-forward "https://example.com/a")
                                   (match-beginning 0)))
             opened)
-        (should (eq (ecc-chat-url-p link) t))
-        (should-not (ecc-chat-url-p (point-min)))
+        (should (get-char-property link 'mouse-face))
+        (should-not (get-char-property (point-min) 'mouse-face))
         (set-window-buffer (selected-window) (current-buffer))
         (cl-letf (((symbol-function 'browse-url)
                    (lambda (url &rest _) (setq opened url))))
