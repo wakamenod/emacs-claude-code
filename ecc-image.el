@@ -339,7 +339,9 @@ A type the API takes is preferred over one that has to be converted."
   ;; with sips covers both, and takes 0.04 s for a 10 MB TIFF.
   (let* ((targets (gui-get-selection 'CLIPBOARD 'TARGETS))
          (images (cl-remove-if-not #'ecc-image--subtype
-                             (if (vectorp targets) (append targets nil) targets)))
+                                   (if (vectorp targets)
+                                       (append targets nil)
+                                     targets)))
          (mime (or (cl-find-if #'ecc-image-sendable-p images) (car images)))
          (data (and mime (gui-get-selection 'CLIPBOARD mime))))
     (when (and (stringp data) (> (length data) 0))
