@@ -636,10 +636,10 @@ Verified against **Claude Code CLI 2.1.281**.
   started: the group of the last one used comes first, every other group
   where its most recently used session falls, and within a group the same
   order holds. A session with no buffer goes last. The candidate is
-  `Group/name`, so typing a repository's name narrows the list to it and
-  its worktrees. The groups
-  show in a completion UI that reads `group-function`: vertico does, and
-  the default `*Completions*` does with `completions-group` set.
+  `Group/name`, so typing a repository's name narrows the list to it and its
+  worktrees. The groups show in a completion UI that reads `group-function`:
+  vertico does, and the default `*Completions*` does with
+  `completions-group` set.
 
 - **Breaking.** `d` in an ediff review no longer removes a comment: it
   scrolls the reply pane on, as `u` scrolls it back (above). `x` removes a
