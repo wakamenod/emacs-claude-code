@@ -235,6 +235,106 @@
     (let ((ecc-image-animate nil))
       (should-not (ecc-image-maybe-animate (point))))))
 
+;;;; What is pasted
+
+(defmacro ecc-image-test--with-converter (calls &rest body)
+  "Run BODY with a converter that writes \"PNG\" and records in CALLS.
+CALLS is a variable bound around BODY to the argument lists given to
+the converter, latest first.  No sips is run."
+  (declare (indent 1))
+  `(let ((,calls nil))
+     (cl-letf (((symbol-function 'ecc-image-converter) (lambda () "/fake/sips"))
+               ((symbol-function 'call-process)
+                (lambda (program _in _buffer _display &rest args)
+                  (push (cons program args) ,calls)
+                  (with-temp-file (car (last args)) (insert "PNG"))
+                  0)))
+       ,@body)))
+
+(ert-deftest ecc-image-test-sendable-types ()
+  "The API's own types go as they are; the rest are converted."
+  (should (ecc-image-sendable-p "image/png"))
+  (should (ecc-image-sendable-p 'image/jpeg))
+  (should (ecc-image-sendable-p "image/WebP"))
+  (should-not (ecc-image-sendable-p 'image/tiff))
+  (should-not (ecc-image-sendable-p "image/bmp"))
+  (should-not (ecc-image-sendable-p "text/plain")))
+
+(ert-deftest ecc-image-test-pasted-tiff-becomes-png ()
+  "A pasted TIFF is written as a PNG, and the TIFF does not stay."
+  (ecc-test-with-fake-session session
+    (ecc-image-test--with-dir
+      (ecc-image-test--with-converter calls
+        (let ((file (ecc-image-save-pasted session "MM\0*tiff" 'image/tiff)))
+          (should (equal (file-name-extension file) "png"))
+          (should (file-exists-p file))
+          (should (equal (car (car calls)) "/fake/sips"))
+          (should (equal (butlast (cdr (car calls)) 3)
+                         '("-s" "format" "png")))
+          (should-not (directory-files (ecc-session-image-dir session)
+                                       nil "\\.tiff\\'")))))))
+
+(ert-deftest ecc-image-test-pasted-png-is-not-converted ()
+  "A pasted PNG is written as it came, without the converter."
+  (ecc-test-with-fake-session session
+    (ecc-image-test--with-dir
+      (ecc-image-test--with-converter calls
+        (let ((file (ecc-image-save-pasted session "\x89PNG-data" "image/png")))
+          (should (equal (file-name-extension file) "png"))
+          (should-not calls)
+          (should (equal (with-temp-buffer
+                           (set-buffer-multibyte nil)
+                           (insert-file-contents-literally file)
+                           (buffer-string))
+                         "\x89PNG-data")))))))
+
+(ert-deftest ecc-image-test-failed-conversion-is-logged ()
+  "A conversion that fails says so in the log and in a user-error."
+  (ecc-test-with-fake-session session
+    (ecc-image-test--with-dir
+      (let ((log (ecc-log-buffer-name (ecc-session-name session))))
+        (unwind-protect
+            (cl-letf (((symbol-function 'ecc-image-converter)
+                       (lambda () "/fake/sips"))
+                      ;; sips exits 0 and writes nothing for a file it
+                      ;; cannot read: the missing file is the failure.
+                      ((symbol-function 'call-process)
+                       (lambda (&rest _)
+                         (insert "Warning: x.tiff not a valid file - skipping\n")
+                         0)))
+              (let ((err (should-error
+                          (ecc-image-save-pasted session "junk" 'image/tiff)
+                          :type 'user-error)))
+                (should (string-search "not a valid file" (cadr err))))
+              (should (string-search "not a valid file"
+                                     (with-current-buffer log (buffer-string))))
+              (should-not (directory-files (ecc-session-image-dir session)
+                                           nil "\\.\\(tiff\\|png\\)\\'")))
+          (when (get-buffer log) (kill-buffer log)))))))
+
+(ert-deftest ecc-image-test-pasted-tiff-without-converter ()
+  "With no converter, a TIFF is written as it came."
+  (ecc-test-with-fake-session session
+    (ecc-image-test--with-dir
+      (cl-letf (((symbol-function 'ecc-image-converter) #'ignore))
+        (should (equal (file-name-extension
+                        (ecc-image-save-pasted session "MM" 'image/tiff))
+                       "tiff"))))))
+
+(ert-deftest ecc-image-test-clipboard-prefers-a-sendable-type ()
+  "Of the image types on the clipboard, one the API takes is chosen."
+  (let ((selection nil))
+    (cl-letf (((symbol-function 'gui-get-selection)
+               (lambda (_ type) (alist-get type selection))))
+      (should-not (ecc-image-clipboard))
+      (setq selection '((TARGETS . [TARGETS text/plain]) (text/plain . "hi")))
+      (should-not (ecc-image-clipboard))
+      (setq selection '((TARGETS . [TARGETS image/tiff]) (image/tiff . "MM")))
+      (should (equal (ecc-image-clipboard) '(image/tiff . "MM")))
+      (setq selection '((TARGETS . [TARGETS image/tiff image/png])
+                        (image/tiff . "MM") (image/png . "PNG")))
+      (should (equal (ecc-image-clipboard) '(image/png . "PNG"))))))
+
 (provide 'ecc-image-test)
 
 ;;; ecc-image-test.el ends here
