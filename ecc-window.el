@@ -159,11 +159,11 @@ second only for a session that has no root of its own."
                               (ecc-session-cwd session))))
 
 (defun ecc-window-session-projects ()
-  "Return the projects that have a session, most recently used first."
+  "Return the projects that have a session, most recently started first."
   (seq-uniq (mapcar #'ecc-window-session-project (ecc-model-sessions))))
 
 (defun ecc-window-project-sessions (&optional root)
-  "Return the sessions whose project is ROOT, most recently used first.
+  "Return the sessions whose project is ROOT, most recently started first.
 ROOT defaults to the project of the current buffer.  It is matched as a
 project rather than as a path, so a session started in a subdirectory
 of ROOT is one of them."
@@ -1119,7 +1119,7 @@ does."
   "Return the session a command in this buffer should talk to.
 The order is: the session of this buffer, the session this buffer was
 bound to before, the only session of this project, the only session on
-screen, the most recently used one.  FORCE-ASK, a prefix argument in
+screen, the most recently started one.  FORCE-ASK, a prefix argument in
 the commands that take one, always asks; the answer is remembered in
 the buffer."
   (or (ecc-window-buffer-session)
@@ -1156,7 +1156,7 @@ showing."
 (defvar ecc-tab-line-scope)
 
 (defun ecc-window--switch-row (window)
-  "Return the sessions of the tab row of WINDOW, most recently used first.
+  "Return the sessions of the tab row of WINDOW, most recently started first.
 The row of the session WINDOW shows: its project, or every session when
 `ecc-tab-line-scope' is `all', which is what `ecc-tab-line--sessions'
 draws.  A WINDOW that shows no session has no row, and the project

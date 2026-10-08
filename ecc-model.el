@@ -250,9 +250,9 @@ resumed -- so this is not `ecc-session-exited-hook' by another name.")
                         ; one in `planFilePath'
   stream-blocks         ; hash: "PARENT:INDEX" -> node being streamed
   created               ; order this session was made in.  The registry
-                        ; is kept most recently used first, which is the
-                        ; wrong order for a row of tabs: they would
-                        ; shuffle every time one is used.  The tab line
+                        ; is kept most recently started first, which is
+                        ; the wrong order for a row of tabs: a new one
+                        ; would push the others along.  The tab line
                         ; sorts by this instead
   node-counter          ; counters for the ids of nodes and turns; the
   turn-counter)         ; ids have to be stable
@@ -316,13 +316,13 @@ the review of a file git does not track diffs against it."
   "Hash mapping a session id to its `ecc-session'.")
 
 (defvar ecc--session-order nil
-  "Session ids, most recently used first.")
+  "Session ids, most recently started first.")
 
 (defvar ecc--session-counter 0
   "How many sessions have been made, for the `created' of the next one.")
 
 (defun ecc-model-sessions ()
-  "Return the live sessions, most recently used first."
+  "Return the live sessions, most recently started first."
   (delq nil (mapcar (lambda (id) (gethash id ecc--sessions)) ecc--session-order)))
 
 (defun ecc-model-session (id)
@@ -330,7 +330,9 @@ the review of a file git does not track diffs against it."
   (gethash id ecc--sessions))
 
 (defun ecc-model-touch (session)
-  "Move SESSION to the front of the most-recently-used order."
+  "Move SESSION to the front of the registry.
+It is done when a session is made and when its id changes, so the
+registry is most recently started first."
   (let ((id (ecc-session-id session)))
     (setq ecc--session-order (cons id (delete id ecc--session-order)))))
 

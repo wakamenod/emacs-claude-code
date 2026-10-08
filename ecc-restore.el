@@ -142,7 +142,7 @@ and loading it to find that out would be loading it for nothing."
 (defun ecc-restore-state ()
   "Return what is open now, as it is saved.
 A plist of the Space roots in the order of their tabs and the sessions,
-most recently used first."
+most recently started first."
   (list :version ecc-restore--version
         :spaces (ecc-restore--space-roots)
         :sessions (mapcar #'ecc-restore--session-entry

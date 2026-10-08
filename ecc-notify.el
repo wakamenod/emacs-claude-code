@@ -370,9 +370,9 @@ The sessions of SESSION\='s own project, or every session there is when
 `ecc-tab-line-scope\=' says so or when SESSION is nil -- a tab line drawn
 in a buffer that is nobody\='s session.
 
-The registry is kept most recently used first, which is the wrong
-order for a row of tabs -- they would move about as one works -- so the
-sessions are put back into the order they were made in."
+The registry is kept most recently started first, which is the wrong
+order for a row of tabs -- a new one would push the others along -- so
+the sessions are put back into the order they were made in."
   (let ((sessions (if (and session (eq ecc-tab-line-scope 'project))
                       (ecc-window-project-sessions
                        (ecc-window-session-project session))
