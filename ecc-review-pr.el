@@ -66,7 +66,8 @@
 ;; request until it is opened again.  C-c C-c sends the comments of the
 ;; one review; C-c C-a sends those of every review of the pull request
 ;; as one prompt, a group per commit, so that Claude reads all of them
-;; before changing anything.
+;; before changing anything.  Either leaves the reviews as they are, the
+;; comments that went marked sent and left out of the next send.
 
 ;;; Code:
 
@@ -676,13 +677,16 @@ The comments of this one stay with it, and come back with it."
 
 ;;;;; What the reviews say
 
-(defun ecc-review-pr--reviews (walk)
-  "Return the reviews of WALK that hold comments, in the order of the pull request.
-The whole of it first, then its commits, oldest first.  Each is a
-plist: :index (`whole' or a commit's), :range, :review, the review
-buffer -- nil for one closed to make room for another, whose comments
-WALK holds -- and :notes, all its comments.  Only those with comments
-of yours are returned: Claude's are not sent."
+(defun ecc-review-pr--unsent (notes)
+  "Return those of NOTES that are yours and that no prompt has carried yet."
+  (seq-remove (lambda (note)
+                (or (ecc-review--agent-p note) (ecc-review-note-sent note)))
+              notes))
+
+(defun ecc-review-pr--every-review (walk)
+  "Return every review of WALK, open or held, with or without comments.
+Each is a plist as `ecc-review-pr--reviews' gives one; :index is nil
+for a review that is no longer one of WALK."
   (let ((found nil))
     (dolist (buffer (buffer-list))
       (when (and (eq (buffer-local-value 'ecc-review--walk buffer) walk)
@@ -696,17 +700,28 @@ of yours are returned: Claude's are not sent."
                            :notes (plist-get kept :notes) :held kept)
                      found))
              (ecc-review-pr-walk-held walk))
-    (sort (seq-filter (lambda (review)
-                        (and (plist-get review :index)
-                             (seq-remove #'ecc-review--agent-p (plist-get review :notes))))
-                      found)
+    found))
+
+(defun ecc-review-pr--reviews (walk)
+  "Return the reviews of WALK that hold comments, in the order of the pull request.
+The whole of it first, then its commits, oldest first.  Each is a
+plist: :index (`whole' or a commit's), :range, :review, the review
+buffer -- nil for one closed to make room for another, whose comments
+WALK holds -- and :notes, all its comments.  Only those with comments
+of yours not sent yet are returned: Claude's are not sent, and those a
+prompt has carried stay for Claude's replies."
+  (sort (seq-filter (lambda (review)
+                      (and (plist-get review :index)
+                           (ecc-review-pr--unsent (plist-get review :notes))))
+                    (ecc-review-pr--every-review walk))
           (lambda (a b)
             (let ((a (plist-get a :index)) (b (plist-get b :index)))
-              (and (not (eq b 'whole)) (or (eq a 'whole) (< a b))))))))
+              (and (not (eq b 'whole)) (or (eq a 'whole) (< a b)))))))
 
 (defun ecc-review-pr--yours (review)
-  "Return how many comments of yours REVIEW, of `ecc-review-pr--reviews', holds."
-  (seq-count (lambda (note) (not (ecc-review--agent-p note))) (plist-get review :notes)))
+  "Return how many comments of yours not sent yet REVIEW holds.
+REVIEW is one of `ecc-review-pr--reviews'."
+  (length (ecc-review-pr--unsent (plist-get review :notes))))
 
 (defun ecc-review-pr--count (walk &optional dying)
   "Count again the comments of yours the reviews of WALK hold, and say so.
@@ -760,8 +775,9 @@ when it never has been (`ecc-review-pr--count')."
 (defun ecc-review-pr-walk-status (&optional subject)
   "Return what this review says of the pull request it is a part of.
 Which commit it is, out of how many -- with its SUBJECT when asked
-for -- or that it is the whole, and how many comments of yours the
-other reviews of the pull request hold, which \\`C-c C-a' sends with these.
+for -- or that it is the whole, and how many comments of yours not sent
+yet the other reviews of the pull request hold, which \\`C-c C-a' sends
+with these.
 Read off what is kept (`ecc-review-pr--count'): this is drawn with
 every redisplay of the header line."
   (let* ((walk ecc-review--walk)
@@ -850,37 +866,45 @@ commit -- a diff review and an ediff one -- are one group."
       (delete-dups (mapcar (lambda (review) (plist-get review :index)) reviews))
       "\n\n"))))
 
-(defun ecc-review-pr--sent (walk reviews review)
-  "Close REVIEWS of WALK, whose comments have been sent; REVIEW, this one, last.
-A review open is closed as one whose comments have been sent is, and
-the comments held for one closed are dropped."
-  (let ((this nil))
-    (dolist (one reviews)
-      (let ((buffer (plist-get one :review)))
-        (cond ((null buffer) (remhash (plist-get one :range) (ecc-review-pr-walk-held walk)))
-              ((eq buffer review) (setq this buffer))
-              (t (ecc-review--close buffer)))))
-    (when this
-      (ecc-review--close this))
-    (ecc-review-pr--count walk)))
+(defun ecc-review-pr--sent (walk notes)
+  "Mark NOTES, of the reviews of WALK, sent: a prompt has carried them.
+They stay where they are, in a review open or held for one closed, for
+Claude\='s replies; each review open is drawn again."
+  (dolist (note notes)
+    (setf (ecc-review-note-sent note) t))
+  (dolist (review (ecc-review-pr--every-review walk))
+    (when-let* ((buffer (plist-get review :review)))
+      (when (seq-intersection notes (plist-get review :notes) #'eq)
+        (with-current-buffer buffer
+          (ecc-review--draw-notes)))))
+  (ecc-review-pr--count walk))
 
 (defun ecc-review-pr-send-all (&optional edit)
   "Send the comments of every review of this pull request as one prompt.
 The whole of it and each of its commits, open or left by \\`]' and \\`[',
 a group for each, so that Claude reads all of them before changing
-anything (`ecc-review-pr-message').  Each review whose comments went is
-closed, as \\[ecc-review-send] closes one.  With a prefix argument EDIT
-the prompt is opened to be read over and changed first."
+anything (`ecc-review-pr-message').  Only the comments not sent yet go,
+and the reviews stay as \\[ecc-review-send] leaves one: open, or held,
+those comments marked sent.  With a prefix argument EDIT the prompt is
+opened to be read over and changed first."
   (interactive "P")
   (let* ((walk (or ecc-review--walk
                    (user-error "This review is no pull request read a commit at a time; C-c C-c sends its comments")))
          (session (or ecc-review--session (user-error "Not a review buffer")))
          (reviews (or (ecc-review-pr--reviews walk)
-                      (user-error "No comment to send in any review of #%d; put one on a hunk with c"
-                                  (ecc-review-pr--number walk))))
-         (review (current-buffer)))
-    (ecc-review-send-text session (ecc-review-pr-message walk reviews) review edit
-                          (lambda () (ecc-review-pr--sent walk reviews review)))))
+                      (if (seq-some (lambda (review)
+                                      (seq-some #'ecc-review-note-sent (plist-get review :notes)))
+                                    (ecc-review-pr--every-review walk))
+                          (user-error "Nothing to send: every comment has been sent")
+                        (user-error "No comment to send in any review of #%d; put one on a hunk with c"
+                                    (ecc-review-pr--number walk)))))
+         ;; Taken now: a comment made while the prompt is read over is
+         ;; not in it, and is left for the next send.
+         (notes (mapcan (lambda (review)
+                          (ecc-review-pr--unsent (plist-get review :notes)))
+                        reviews)))
+    (ecc-review-send-text session (ecc-review-pr-message walk reviews) (current-buffer) edit
+                          (lambda () (ecc-review-pr--sent walk notes)))))
 
 (provide 'ecc-review-pr)
 

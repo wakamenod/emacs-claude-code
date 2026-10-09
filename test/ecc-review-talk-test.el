@@ -1560,7 +1560,7 @@ however often the pane is written, and forgotten with its turn."
           (ecc-review-help)
           (let ((text (with-current-buffer (help-buffer) (buffer-string))))
             (should (string-search "C-u C-c C-c" text))
-            (should (string-search "send the comments\n" text))
+            (should (string-search "send the new comments\n" text))
             (should-not (string-search "deny" text))))
         (setq ecc-review--request (ecc-test-add-request one "Edit"))
         (save-window-excursion

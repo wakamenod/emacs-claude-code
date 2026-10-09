@@ -979,7 +979,7 @@ the current buffer around it, as Emacs 31 does."
             (ecc-review-ediff-test--quit control)))))))
 
 (ert-deftest ecc-review-ediff-test-send ()
-  "C-c C-c sends the comments as the diff review would and closes the ediff."
+  "C-c C-c sends the comments as the diff review would and keeps the ediff open."
   (skip-unless (executable-find "git"))
   (ecc-review-ediff-test--with-ediff
     (ecc-test-with-fake-session session
@@ -1010,17 +1010,60 @@ the current buffer around it, as Emacs 31 does."
                       (should (equal (alist-get 'content (alist-get 'message sent))
                                      expected)))
                     (should (ecc-session-current-turn session))
-                    ;; The control buffer and both sides are gone, and
-                    ;; the screen is what it was.
+                    ;; The control buffer and both sides are still there,
+                    ;; the comment in them marked sent.
+                    (should (buffer-live-p control))
+                    (should (buffer-live-p base))
+                    (should (buffer-live-p now))
+                    (should (ecc-review-note-sent (car ecc-review--notes)))
+                    (should-not (ecc-review-comments))
+                    ;; Drawn dimmed in the side it is on.
+                    (let* ((overlay (car (ecc-review-comment-overlays)))
+                           (string (or (overlay-get overlay 'after-string)
+                                       (overlay-get overlay 'before-string))))
+                      (should (eq (get-text-property (string-search "#" string) 'face string)
+                                  'ecc-review-sent-comment-face)))
+                    ;; Nothing is left to send, and a new comment is
+                    ;; all the next send carries.
+                    (should-error (ecc-review-send) :type 'user-error)
+                    (ediff-jump-to-difference 1)
+                    (ecc-review-ediff-comment "and here")
+                    (let ((text (ecc-review-send)))
+                      (should (string-search "Comment: and here" text))
+                      (should-not (string-search "use a word" text)))
+                    ;; C-c C-k still closes it, and the screen is what it was.
+                    (ecc-review-quit)
                     (should-not (buffer-live-p control))
-                    (should-not (buffer-live-p base))
-                    (should-not (buffer-live-p now))
                     (should (compare-window-configurations
                              (current-window-configuration) windows)))))
             (ecc-review-ediff-test--quit control)))))))
 
+(ert-deftest ecc-review-ediff-test-sent-mark-survives-a-refill ()
+  "A sent comment is still sent after the two sides are read again."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--setup session directory))
+                (with-current-buffer control
+                  (ediff-jump-to-difference 2)
+                  (ecc-review-ediff-comment "use a word")
+                  (ecc-review-send)
+                  (ecc-review-ediff-test--write (concat directory "x.txt")
+                                                "two\nthree\n")
+                  (ecc-review-reread)
+                  (should (string-search "three" (with-current-buffer ediff-buffer-B
+                                                   (buffer-string))))
+                  (should (= (length ecc-review--notes) 1))
+                  (should (ecc-review-note-sent (car ecc-review--notes)))
+                  (should-not (ecc-review-comments))))
+            (ecc-review-ediff-test--quit control)))))))
+
 (ert-deftest ecc-review-ediff-test-send-editing-first ()
-  "C-u C-c C-c shows the prompt; cancelling leaves the ediff open."
+  "C-u C-c C-c shows the prompt; cancelling or sending leaves the ediff open."
   (skip-unless (executable-find "git"))
   (ecc-review-ediff-test--with-ediff
     (ecc-test-with-fake-session session
@@ -1044,13 +1087,16 @@ the current buffer around it, as Emacs 31 does."
                       (should-not (buffer-live-p message-buffer))
                       (should (buffer-live-p control))
                       (should-not ecc-test-sent)
-                      ;; And sending from there closes the ediff.
+                      ;; And sending from there goes back to it as well.
                       (with-current-buffer control (ecc-review-send t))
                       (with-current-buffer (get-buffer "*ecc-review-message: test*")
                         (goto-char (point-max))
                         (insert "\n\n全体: テストも足すこと")
                         (ecc-review-message-send))
-                      (should-not (buffer-live-p control))
+                      (should (buffer-live-p control))
+                      (should-not (get-buffer "*ecc-review-message: test*"))
+                      (should (ecc-review-note-sent
+                               (car (buffer-local-value 'ecc-review--notes control))))
                       (should (equal (alist-get 'content
                                                 (alist-get 'message
                                                            (car (ecc-test-sent-messages))))

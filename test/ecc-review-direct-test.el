@@ -1276,7 +1276,7 @@ and at any width what is drawn is no wider than the window."
 
 (ert-deftest ecc-review-direct-test-going-back-from-the-message-keeps-the-panel-hidden ()
   "C-c C-k in the message of an ediff review goes back with the panel hidden, B selected.
-C-c C-c there sends and closes the review."
+C-c C-c there sends and goes back the same way, the review left open."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
     (ecc-review-direct-test--with-review session control
@@ -1294,8 +1294,11 @@ C-c C-c there sends and closes the review."
         (ecc-review-send t))
       (with-current-buffer (window-buffer (selected-window))
         (ecc-review-message-send))
-      (should-not (buffer-live-p control))
-      (should-not (get-buffer-window control)))))
+      (should (buffer-live-p control))
+      (should-not (get-buffer-window control))
+      (should (eq (selected-window) (ecc-review-direct-test--window control 'B)))
+      (with-current-buffer control
+        (should (ecc-review-note-sent (car ecc-review--notes)))))))
 
 (ert-deftest ecc-review-direct-test-multiframe-asked-of-every-ediff-leaves-a-review-plain ()
   "`ediff-toggle-multiframe', which sets every ediff session, leaves a review laid out plain.

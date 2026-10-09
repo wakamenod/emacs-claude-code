@@ -610,12 +610,14 @@ window is moved without being selected (`ecc-review-move-to\=')."
   "Return NOTE as `review_list_comments' lists it, DEPTH replies deep."
   (let ((indent (make-string (* 2 depth) ?\s)))
     (concat indent
-            (format "#%d [%s] %s%s%s: "
+            (format "#%d [%s] %s%s%s%s: "
                     (ecc-review-note-id note)
                     (ecc-review-note-author note)
                     (ecc-review-note-where note)
                     (if (ecc-review-note-outdated note)
                         " (outdated: the line is no longer in the diff)" "")
+                    (if (ecc-review-note-sent note)
+                        " (sent: it came to you in a prompt already)" "")
                     (if (and (ecc-review-note-reply-to note) (zerop depth))
                         (format " (reply to #%d)" (ecc-review-note-reply-to note))
                       ""))
@@ -759,7 +761,7 @@ INCLUDE-USER-COMMENTS, a JSON boolean, removes the user\\='s as well."
    :function #'ecc-review-agent-navigate)
   (ecc-mcp-define-tool
    :name "review_list_comments"
-   :description "List the comments of the open review, one per line: id, author, place and text, a reply under the comment it answers, an outdated one (its line is no longer in the diff) marked.  A comment of the user's comes with the hunk it is on."
+   :description "List the comments of the open review, one per line: id, author, place and text, a reply under the comment it answers, an outdated one (its line is no longer in the diff) marked.  A comment of the user's comes with the hunk it is on, and is marked sent once the user has sent it to you as a prompt: the review stays open after that, with the comment in it for your reply_to."
    :args '(("author" ((type . "string") (enum . ["user" "claude"])) "Only this author's comments")
            ("file" "string" "Only this file's comments"))
    :function #'ecc-review-agent-list-comments)
