@@ -1257,7 +1257,8 @@ sent ones stay, dimmed, for Claude's replies, and the next C-c C-c sends
 only those made since.  q buries the review and C-c C-k drops it.
 
 ] and [ go through the commits of a pull request opened with p in the
-review menu, and C-c C-a sends the comments of all of them as one prompt.
+review menu, and C-c C-a sends the comments of all of them not sent yet
+as one prompt, keeping every review as C-c C-c keeps this one.
 
 The review is read-only: it shows what git says.  Claude changes the
 files, from the prompt the comments are sent as."
@@ -2029,7 +2030,9 @@ gone from the diff altogether."
                          (string-replace "\n" (concat "\n" prefix)
                                          (ecc-review-note-text note))
                          "\n")
-                 'face (if agent 'ecc-review-agent-comment-face 'ecc-review-comment-face))
+                 'face (cond (agent 'ecc-review-agent-comment-face)
+                             ((ecc-review-note-sent note) 'ecc-review-sent-comment-face)
+                             (t 'ecc-review-comment-face)))
      (mapconcat (lambda (child) (ecc-review--note-string child (1+ depth)))
                 (ecc-review--children note) ""))))
 
@@ -2487,9 +2490,9 @@ A review whose right side is not on disk says so under the first line
   "The review buffer whose comments this message carries.")
 
 (defvar-local ecc-review-message--sent-function nil
-  "What closes the reviews this message was made from once it is sent, or nil.
+  "What settles the reviews this message was made from once it is sent, or nil.
 Nil leaves `ecc-review-message--review' to `ecc-review--after-send'; a
-message made from the comments of several reviews closes all of them
+message made from the comments of several reviews marks theirs sent
 \(`ecc-review-pr-send-all').")
 
 (defvar-local ecc-review-message--notes nil
@@ -2580,8 +2583,8 @@ closed; otherwise REVIEW stays open, those comments marked sent
 \(`ecc-review--after-send').  With EDIT the text is opened in a buffer
 of its own first, to be read over and changed before it goes, and
 \\`C-c C-k' there goes back to REVIEW.  SENT, a function of no argument,
-closes what TEXT was made from once it has gone, in place of settling
-REVIEW.  Return TEXT when it was sent."
+settles what TEXT was made from once it has gone, in place of settling
+REVIEW alone.  Return TEXT when it was sent."
   (let ((request (buffer-local-value 'ecc-review--request review))
         (notes (with-current-buffer review (ecc-review--unsent-notes))))
     (if (not edit)
@@ -2619,12 +2622,10 @@ proposal is closed instead, the proposal being answered by the deny."
     (ecc-review--deliver session text request)
     (set-buffer-modified-p nil)
     (ecc-perm-close-buffer message-buffer)
-    (cond (sent (funcall sent))
-          (request (ecc-review--close review))
-          ((buffer-live-p review)
-           (ecc-review--after-send review notes)
-           (with-current-buffer review
-             (ecc-review-go-back))))
+    (if sent (funcall sent) (ecc-review--after-send review notes))
+    (when (and (buffer-live-p review) (not request))
+      (with-current-buffer review
+        (ecc-review-go-back)))
     text))
 
 (defun ecc-review-message-cancel ()

@@ -1017,6 +1017,12 @@ the current buffer around it, as Emacs 31 does."
                     (should (buffer-live-p now))
                     (should (ecc-review-note-sent (car ecc-review--notes)))
                     (should-not (ecc-review-comments))
+                    ;; Drawn dimmed in the side it is on.
+                    (let* ((overlay (car (ecc-review-comment-overlays)))
+                           (string (or (overlay-get overlay 'after-string)
+                                       (overlay-get overlay 'before-string))))
+                      (should (eq (get-text-property (string-search "#" string) 'face string)
+                                  'ecc-review-sent-comment-face)))
                     ;; Nothing is left to send, and a new comment is
                     ;; all the next send carries.
                     (should-error (ecc-review-send) :type 'user-error)

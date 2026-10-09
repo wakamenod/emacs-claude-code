@@ -809,6 +809,33 @@ carry the time of the index it was made from."
                 (should (ecc-session-current-turn session)))))
         (ecc-review-test--kill-review-buffers)))))
 
+(defun ecc-review-test--comment-faces ()
+  "Return the face each drawn comment of this review starts with, in order."
+  (mapcar (lambda (overlay)
+            (let ((string (or (overlay-get overlay 'after-string)
+                              (overlay-get overlay 'before-string))))
+              (get-text-property (string-search "#" string) 'face string)))
+          (sort (copy-sequence (ecc-review-comment-overlays))
+                (lambda (a b) (< (overlay-start a) (overlay-start b))))))
+
+(ert-deftest ecc-review-test-sent-comment-is-dimmed ()
+  "A sent comment is drawn in its own face; one made since in the usual one."
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((buffer (progn (ecc-review-test--two-files session directory)
+                               (ecc-review-buffer session))))
+            (with-current-buffer buffer
+              (diff-hunk-next)
+              (ecc-review-comment "sent")
+              (should (equal (ecc-review-test--comment-faces) '(ecc-review-comment-face)))
+              (ecc-review-send)
+              (diff-hunk-next)
+              (ecc-review-comment "not yet")
+              (should (equal (ecc-review-test--comment-faces)
+                             '(ecc-review-sent-comment-face ecc-review-comment-face)))))
+        (ecc-review-test--kill-review-buffers)))))
+
 (ert-deftest ecc-review-test-send-again-sends-the-new-ones ()
   "A second C-c C-c carries only the comments made since the first."
   (ecc-test-with-fake-session session
