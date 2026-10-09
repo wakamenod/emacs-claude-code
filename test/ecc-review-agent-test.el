@@ -445,6 +445,21 @@ The review buffer is current."
       (should (string-search "In reply to Claude's #4: fine" message))
       (should-not (string-search "Will do\n" message)))))
 
+(ert-deftest ecc-review-agent-test-a-sent-comment-is-listed-as-sent ()
+  "review_list_comments marks the user's comments a prompt has carried."
+  (ecc-review-agent-test--with-review session
+    (ecc-review-agent-test--goto "+TWO")
+    (ecc-review-comment "Keep it lower case")
+    (should-not (string-search "(sent"
+                               (ecc-review-agent-test--ok session "review_list_comments")))
+    (ecc-review-send)
+    (should (string-search "#1 [user] foo.el:2 (new) (sent: it came to you in a prompt already): Keep it lower case"
+                           (ecc-review-agent-test--ok
+                            session "review_list_comments" '((author . "user")))))
+    ;; The review is still there to answer it in.
+    (should (ecc-review-agent-test--ok
+             session "review_comment" '((reply_to . 1) (text . "Done"))))))
+
 (ert-deftest ecc-review-agent-test-review-tools-do-not-make-the-review-stale ()
   "A review tool's result is no reason to read the review again."
   (ecc-review-agent-test--with-review session

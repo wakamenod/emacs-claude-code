@@ -760,9 +760,21 @@ carry the time of the index it was made from."
                     ;; What is sent is the buffer, so an edit goes along.
                     (goto-char (point-max))
                     (insert "\n\n全体: テストも足すこと")
+                    ;; A comment made while the message is read over is
+                    ;; not in it, and is left for the next send.
+                    (with-current-buffer buffer
+                      (diff-hunk-next)
+                      (ecc-review-comment "later"))
                     (ecc-review-message-send))
                   (should-not (buffer-live-p message-buffer))
-                  (should-not (buffer-live-p buffer))
+                  ;; Back in the review, which stays open.
+                  (should (buffer-live-p buffer))
+                  (should (eq (window-buffer (selected-window)) buffer))
+                  (with-current-buffer buffer
+                    (should (equal (mapcar (lambda (comment) (plist-get comment :comment))
+                                           (ecc-review-comments))
+                                   '("later")))
+                    (should (ecc-review-note-sent (ecc-review-find-note 1))))
                   (let ((sent (car (ecc-test-sent-messages))))
                     (should (equal (alist-get 'type sent) "user"))
                     (should (equal (alist-get 'content (alist-get 'message sent))
@@ -771,7 +783,7 @@ carry the time of the index it was made from."
         (ecc-review-test--kill-review-buffers)))))
 
 (ert-deftest ecc-review-test-send ()
-  "C-c C-c without a prefix sends the comments and closes the review."
+  "C-c C-c without a prefix sends the comments and keeps the review open."
   (ecc-test-with-fake-session session
     (ecc-review-test--with-directory directory
       (unwind-protect
@@ -782,14 +794,103 @@ carry the time of the index it was made from."
               (ecc-review-comment "use a word")
               (let ((expected (ecc-review-format-message (ecc-review-comments))))
                 (ecc-review-send)
-                ;; No buffer to confirm in, and the review is done with.
+                ;; No buffer to confirm in, and the review stays, the
+                ;; comment in it marked sent.
                 (should-not (get-buffer "*ecc-review-message: test*"))
-                (should-not (buffer-live-p buffer))
+                (should (buffer-live-p buffer))
+                (should (= (length ecc-review--notes) 1))
+                (should (ecc-review-note-sent (car ecc-review--notes)))
+                (should (string-search "(1 sent)" (ecc-review--count-string)))
+                (should-not (ecc-review-comments))
                 (let ((sent (car (ecc-test-sent-messages))))
                   (should (equal (alist-get 'type sent) "user"))
                   (should (equal (alist-get 'content (alist-get 'message sent))
                                  expected)))
                 (should (ecc-session-current-turn session)))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-send-again-sends-the-new-ones ()
+  "A second C-c C-c carries only the comments made since the first."
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((buffer (progn (ecc-review-test--two-files session directory)
+                               (ecc-review-buffer session))))
+            (with-current-buffer buffer
+              (diff-hunk-next)
+              (ecc-review-comment "first round")
+              (ecc-review-send)
+              (diff-hunk-next)
+              (ecc-review-comment "second round")
+              ;; The first is a turn running by now, so this one is
+              ;; queued; what it carries is what the send returns.
+              (let ((text (ecc-review-send)))
+                (should (string-search "Comment: second round" text))
+                (should-not (string-search "first round" text)))
+              (should (seq-every-p #'ecc-review-note-sent ecc-review--notes))
+              (should (buffer-live-p buffer))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-send-with-nothing-left ()
+  "With every comment sent, C-c C-c says so and sends nothing; C-u too."
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((buffer (progn (ecc-review-test--two-files session directory)
+                               (ecc-review-buffer session))))
+            (with-current-buffer buffer
+              (diff-hunk-next)
+              (ecc-review-comment "once")
+              (ecc-review-send)
+              (setq ecc-test-sent nil)
+              (should (string-search "every comment has been sent"
+                                     (cadr (should-error (ecc-review-send)
+                                                         :type 'user-error))))
+              (should-error (ecc-review-send t) :type 'user-error)
+              (should-not (get-buffer "*ecc-review-message: test*"))
+              (should-not ecc-test-sent)
+              (should (buffer-live-p buffer))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-editing-a-sent-comment-unsends-it ()
+  "A sent comment that is edited is sent again, with its new text."
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((buffer (progn (ecc-review-test--two-files session directory)
+                               (ecc-review-buffer session))))
+            (with-current-buffer buffer
+              (diff-hunk-next)
+              (ecc-review-comment "draft")
+              (ecc-review-send)
+              (ecc-review-comment "final")
+              (should (= (length ecc-review--notes) 1))
+              (should-not (ecc-review-note-sent (car ecc-review--notes)))
+              (should (equal (mapcar (lambda (comment) (plist-get comment :comment))
+                                     (ecc-review-comments))
+                             '("final")))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-sent-mark-survives-a-refresh ()
+  "A sent comment is still sent, and still left out, after the diff is read again."
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let* ((paths (ecc-review-test--two-files session directory))
+                 (buffer (ecc-review-buffer session)))
+            (with-current-buffer buffer
+              (diff-hunk-next)
+              (ecc-review-comment "keep me")
+              (ecc-review-send)
+              (setf (ecc-file-entry-snapshot
+                     (gethash (cadr paths) (ecc-session-files session)))
+                    "hello\nworld\n")
+              (ecc-review-refresh)
+              (should (string-search "+world" (buffer-string)))
+              (should (ecc-review-note-sent (car ecc-review--notes)))
+              (should-not (ecc-review-note-outdated (car ecc-review--notes)))
+              (should-not (ecc-review-comments))
+              (should-error (ecc-review-send) :type 'user-error)))
         (ecc-review-test--kill-review-buffers)))))
 
 (ert-deftest ecc-review-test-send-queues-while-running ()

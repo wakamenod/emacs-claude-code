@@ -157,6 +157,13 @@ Inherited, like `ecc-review-comment-face\=', so that the theme decides
 the colour and the two authors never read alike."
   :group 'ecc)
 
+(defface ecc-review-sent-comment-face
+  '((t :inherit (ecc-dim-face ecc-review-comment-face)))
+  "Face of a comment of yours a prompt has carried to Claude already.
+Dimmed, so that what is still to be sent stands out; it stays in the
+review for Claude\='s replies."
+  :group 'ecc)
+
 (defface ecc-review-commented-hunk-face
   '((t :inherit diff-hunk-header :weight bold))
   "Face of the header of a hunk that carries a comment."
@@ -919,14 +926,15 @@ command of the review's own, so `post-command-hook\=' does not hear it.")
 (defvar-local ecc-review--decorations nil
   "Overlays marking the header of every hunk that carries a comment.")
 
-;; A review is a buffer that holds comments and is closed when they have
-;; been sent.  Both kinds keep their comments the same way, as
-;; `ecc-review-note's in `ecc-review--notes' of the buffer the review is
-;; driven from -- the diff buffer itself, or the control buffer of an
-;; ediff review -- and put them back with the same rules.  How one lists
-;; them and how one closes are these two slots: the diff buffer is
-;; killed, an ediff review is quit through ediff so that the windows
-;; come back.  What else differs -- where a line is, how a comment is
+;; A review is a buffer that holds comments and sends them, keeping
+;; them, marked sent, for Claude's replies.  Both kinds keep their
+;; comments the same way, as `ecc-review-note's in `ecc-review--notes' of
+;; the buffer the review is driven from -- the diff buffer itself, or the
+;; control buffer of an ediff review -- and put them back with the same
+;; rules.  How one lists them and how one closes -- on C-c C-k, or once
+;; the review of a proposal has sent its deny -- are these two slots: the
+;; diff buffer is killed, an ediff review is quit through ediff so that
+;; the windows come back.  What else differs -- where a line is, how a comment is
 ;; drawn, how the view is moved -- is the generic functions under "Kinds
 ;; of review" below, so that C-c C-c, the prompt shown to be confirmed,
 ;; C-c C-k and the tools of `ecc-review-agent.el' are the same code for
@@ -938,8 +946,9 @@ Called with no argument in the review buffer; returns the plists
 `ecc-review-format-message\=' takes.")
 
 (defvar-local ecc-review--close-function #'ecc-perm-close-buffer
-  "How this review buffer is closed once its comments have been sent.
-Called with the review buffer.")
+  "How this review buffer is closed.
+By \\[ecc-review-quit], or once the review of a proposal has denied it
+with its comments.  Called with the review buffer.")
 
 (defun ecc-review--close (review)
   "Close the review buffer REVIEW the way it asks to be closed."
@@ -1234,7 +1243,7 @@ on, point and the window are left as they were and that is said."
   RET / o   go to the source           d         remove a comment here
   s         list the files             l         jump to a comment
   /         filter the files           a         show or hide Claude's
-  g         read the diff again        C-c C-c   send the comments
+  g         read the diff again        C-c C-c   send the new comments
   q         bury the review            C-u C-c C-c  edit them, then send
   ] / [     next, previous commit      C-c C-k   drop the review
                                        C-c C-a   send every commit's
@@ -1242,6 +1251,10 @@ Claude
   T         ask for a tour of the review
   t         the next stop of the tour
   M         say something to Claude
+
+C-c C-c sends the comments not sent yet and keeps the review open: the
+sent ones stay, dimmed, for Claude's replies, and the next C-c C-c sends
+only those made since.  q buries the review and C-c C-k drops it.
 
 ] and [ go through the commits of a pull request opened with p in the
 review menu, and C-c C-a sends the comments of all of them as one prompt.
@@ -1404,14 +1417,18 @@ window given back is one that \\[other-window] reaches and
   "Return what the header line says about the comments of this buffer.
 Claude\='s are counted while they are hidden: hiding them is for reading
 the diff, not for forgetting that they are there."
-  (let ((yours 0) (claude 0) (outdated 0))
+  (let ((yours 0) (sent 0) (claude 0) (outdated 0))
     (dolist (note ecc-review--notes)
       (if (eq (ecc-review-note-author note) 'claude)
           (cl-incf claude)
-        (cl-incf yours))
+        (cl-incf yours)
+        (when (ecc-review-note-sent note)
+          (cl-incf sent)))
       (when (ecc-review-note-outdated note)
         (cl-incf outdated)))
     (concat (format "comments: %d yours" yours)
+            (when (> sent 0)
+              (format " (%d sent)" sent))
             (when (> claude 0)
               (format ", %d Claude's%s" claude
                       (if ecc-review--show-agent "" " (hidden)")))
@@ -1772,7 +1789,10 @@ and LINE name the line, LINE-TEXT is what it said and LINE-BEFORE and
 LINE-AFTER what the lines next to it said.  SIDE is nil for
 a comment on a whole hunk.  HUNK-KEY, HUNK-RANGE and HUNK-TEXT are the
 hunk it was in when last found -- its key, the lines of its new side
-and its text, which is what an outdated comment is still sent with."
+and its text, which is what an outdated comment is still sent with.
+SENT is non-nil once a prompt has carried the comment to Claude: it
+stays in the review, drawn dimmed, for Claude\='s replies to answer, and
+the next \\[ecc-review-send] leaves it out."
   id              ; an integer, unique in the buffer and never reused
   author          ; `user' or `claude'
   path side line line-text line-before line-after
@@ -1780,7 +1800,8 @@ and its text, which is what an outdated comment is still sent with."
   hunk-old-range  ; the lines of the old side the hunk covered, (LOW . HIGH)
   text
   reply-to        ; the id of the comment this one answers, or nil
-  outdated)       ; non-nil when no line of the diff matches any more
+  outdated        ; non-nil when no line of the diff matches any more
+  sent)           ; non-nil once a prompt has carried it
 
 (defun ecc-review--agent-p (note)
   "Return non-nil when NOTE is one of Claude's."
@@ -2192,7 +2213,7 @@ outdated rather than lost with the text."
     (when (string-empty-p text)
       (user-error "Empty comment"))
     (let ((note (if (and (eq kind 'edit) target)
-                    (progn (setf (ecc-review-note-text target) text) target)
+                    (ecc-review--edit-note target text)
                   (ecc-review-add-note 'user text (or line anchor)
                                        (and (eq kind 'reply) target id)))))
       (ecc-review--draw-notes lines)
@@ -2327,16 +2348,32 @@ file the filter hides are passed over."
             (when (ecc-review-note-outdated note)
               (list :outdated t)))))
 
+(defun ecc-review--edit-note (note text)
+  "Make TEXT the text of NOTE and return NOTE.
+A comment that had been sent is one to send again: what Claude read is
+not what it says any more."
+  (setf (ecc-review-note-text note) text
+        (ecc-review-note-sent note) nil)
+  note)
+
+(defun ecc-review--unsent-notes ()
+  "Return your comments of this buffer that no prompt has carried yet."
+  (seq-remove (lambda (note)
+                (or (ecc-review--agent-p note) (ecc-review-note-sent note)))
+              ecc-review--notes))
+
 (defun ecc-review-comments ()
-  "Return your comments of this buffer in the order of the diff.
+  "Return your comments of this buffer not sent yet, in the order of the diff.
 Claude\='s are left out: they are what Claude wrote, and the prompt is
-what you have to say.  Each is a plist: :path, :start and :end of the
+what you have to say.  So are those a prompt has carried already
+\(`ecc-review-note-sent'): they stay in the review for Claude's replies,
+and Claude has read them.  Each is a plist: :path, :start and :end of the
 hunk\='s new side, :header, :text being the whole hunk, :position and
 :comment; one on a line adds :side and :line, a reply :reply-to,
 :reply-author and :reply-text, and one that matches no line of the diff
 any more :outdated, its :text then being the hunk as it last was."
   (mapcar #'ecc-review--note-plist
-          (ecc-review--ordered (seq-remove #'ecc-review--agent-p ecc-review--notes))))
+          (ecc-review--ordered (ecc-review--unsent-notes))))
 
 (defun ecc-review--comment-label (comment)
   "Return the one line label of COMMENT used in the list."
@@ -2451,8 +2488,14 @@ A review whose right side is not on disk says so under the first line
 
 (defvar-local ecc-review-message--sent-function nil
   "What closes the reviews this message was made from once it is sent, or nil.
-Nil closes `ecc-review-message--review'; a message made from the
-comments of several reviews closes all of them (`ecc-review-pr-send-all').")
+Nil leaves `ecc-review-message--review' to `ecc-review--after-send'; a
+message made from the comments of several reviews closes all of them
+\(`ecc-review-pr-send-all').")
+
+(defvar-local ecc-review-message--notes nil
+  "The comments this message was made from, marked sent once it goes.
+Those of the review when the message was opened: one added while it is
+read over is not in the text, and is left for the next send.")
 
 (defvar ecc-review-message-mode-map
   (let ((map (make-sparse-keymap)))
@@ -2498,30 +2541,52 @@ nothing to send or the proposal has been answered already."
         (message "A turn is running; queued at position %d" outcome))))))
 
 (defun ecc-review-send (&optional edit)
-  "Send the comments of this review as one prompt and close it.
-In the review of a proposal they are sent as the message of the deny
-instead.  With a prefix argument EDIT the prompt is opened in a buffer
-of its own first, to be read over and changed before it goes: the
-comments are the prompt, so the common case is to send them as they
-stand, and the key that says send sends."
+  "Send the comments of this review not sent yet as one prompt.
+The review stays open, and the comments in it, drawn dimmed: Claude
+answers them there with replies, and \\[ecc-review-send] again sends only
+those made since.  In the review of a proposal they are sent as the
+message of the deny instead, and the review is closed, the proposal
+being answered.  With a prefix argument EDIT the prompt is opened in a
+buffer of its own first, to be read over and changed before it goes:
+the comments are the prompt, so the common case is to send them as
+they stand, and the key that says send sends."
   (interactive "P")
   (let ((session (or ecc-review--session (user-error "Not a review buffer"))))
     (ecc-review-send-text session
                           (or (ecc-review-buffer-message)
-                              (user-error "No comment to send; put one on a hunk with c"))
+                              (user-error (if (seq-some #'ecc-review-note-sent
+                                                        ecc-review--notes)
+                                              "Nothing to send: every comment has been sent"
+                                            "No comment to send; put one on a hunk with c")))
                           (current-buffer) edit)))
 
+(defun ecc-review--after-send (review notes)
+  "Settle REVIEW once a prompt made from its comments NOTES has gone.
+The review of a proposal is closed: the proposal has been answered.  A
+review of files stays open, NOTES marked sent and drawn again."
+  (when (buffer-live-p review)
+    (if (buffer-local-value 'ecc-review--request review)
+        (ecc-review--close review)
+      (with-current-buffer review
+        (dolist (note notes)
+          (setf (ecc-review-note-sent note) t))
+        (ecc-review--draw-notes)
+        (force-mode-line-update)))))
+
 (defun ecc-review-send-text (session text review &optional edit sent)
-  "Send TEXT, made from the comments of REVIEW, to SESSION, and close REVIEW.
-As the deny of the proposal REVIEW is of, if it is one.  With EDIT the
-text is opened in a buffer of its own first, to be read over and
-changed before it goes, and \\`C-c C-k' there goes back to REVIEW.
-SENT, a function of no argument, closes what TEXT was made from once
-it has gone, in place of closing REVIEW.  Return TEXT when it was sent."
-  (let ((request (buffer-local-value 'ecc-review--request review)))
+  "Send TEXT, made from the comments of REVIEW not sent yet, to SESSION.
+As the deny of the proposal REVIEW is of, if it is one, and REVIEW is
+closed; otherwise REVIEW stays open, those comments marked sent
+\(`ecc-review--after-send').  With EDIT the text is opened in a buffer
+of its own first, to be read over and changed before it goes, and
+\\`C-c C-k' there goes back to REVIEW.  SENT, a function of no argument,
+closes what TEXT was made from once it has gone, in place of settling
+REVIEW.  Return TEXT when it was sent."
+  (let ((request (buffer-local-value 'ecc-review--request review))
+        (notes (with-current-buffer review (ecc-review--unsent-notes))))
     (if (not edit)
         (progn (ecc-review--deliver session text request)
-               (if sent (funcall sent) (ecc-review--close review))
+               (if sent (funcall sent) (ecc-review--after-send review notes))
                text)
       (let ((buffer (get-buffer-create (ecc-review-message-buffer-name session))))
         (with-current-buffer buffer
@@ -2531,6 +2596,7 @@ it has gone, in place of closing REVIEW.  Return TEXT when it was sent."
             (insert text)
             (setq ecc-render--session session
                   ecc-review-message--review review
+                  ecc-review-message--notes notes
                   ecc-review-message--sent-function sent)
             (set-buffer-modified-p nil)
             (goto-char (point-min))))
@@ -2538,7 +2604,9 @@ it has gone, in place of closing REVIEW.  Return TEXT when it was sent."
         nil))))
 
 (defun ecc-review-message-send ()
-  "Send the text of this buffer and close the review it came from."
+  "Send the text of this buffer and go back to the review it came from.
+The comments it was made from are marked sent there.  The review of a
+proposal is closed instead, the proposal being answered by the deny."
   (interactive)
   (let* ((review ecc-review-message--review)
          (session (or ecc-render--session (user-error "Not a review message")))
@@ -2546,11 +2614,17 @@ it has gone, in place of closing REVIEW.  Return TEXT when it was sent."
          (request (and (buffer-live-p review)
                        (buffer-local-value 'ecc-review--request review)))
          (sent ecc-review-message--sent-function)
+         (notes ecc-review-message--notes)
          (message-buffer (current-buffer)))
     (ecc-review--deliver session text request)
     (set-buffer-modified-p nil)
     (ecc-perm-close-buffer message-buffer)
-    (if sent (funcall sent) (ecc-review--close review))
+    (cond (sent (funcall sent))
+          (request (ecc-review--close review))
+          ((buffer-live-p review)
+           (ecc-review--after-send review notes)
+           (with-current-buffer review
+             (ecc-review-go-back))))
     text))
 
 (defun ecc-review-message-cancel ()

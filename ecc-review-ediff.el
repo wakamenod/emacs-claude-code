@@ -1944,7 +1944,7 @@ for, found again by what it says."
     (when (string-empty-p text)
       (user-error "Empty comment"))
     (let ((note (if (and (eq kind 'edit) target)
-                    (progn (setf (ecc-review-note-text target) text) target)
+                    (ecc-review--edit-note target text)
                   (ecc-review-add-note 'user text (or line anchor)
                                        (and (eq kind 'reply) target id)))))
       (ecc-review--draw-notes lines)
@@ -2359,7 +2359,7 @@ p,DEL -previous diff |     | -vert/horiz split   |  c -comment on the line/diff
      j -jump to diff |      @ -auto-refinement   |  { } -previous, next comment
        C-l -recenter |        * -refine region   |         l -list the comments
    v/V -scroll up/dn |   ## -ignore whitespace   |     a -show or hide Claude's
-   </> -scroll lt/rt |         #c -ignore case   |   C-c C-c -send the comments
+   </> -scroll lt/rt |         #c -ignore case   |   C-c C-c -send new comments
   s -list the files  |         m -wide display   |     C-c C-k -drop the review
  / -filter the files |      RET -open the file   |          q -close the review
 =====================|===========================|=============================
@@ -2376,7 +2376,9 @@ Every key works in both windows of the files as well as here.  In a window,
 c comments on the line at point, x removes its comment, RET opens the file
 at that line in a frame of its own, and moving point brings the other side
 along.  Here, c is about the whole difference and RET opens its file.  Both
-buffers are read-only: Claude changes the files, from the comments you send."
+buffers are read-only: Claude changes the files, from the comments you send.
+C-c C-c sends those not sent yet and keeps the review open: the sent ones
+stay, dimmed, for Claude's replies."
   "What `?\\=' shows in the control panel of an ediff review.")
 
 (defun ecc-review-ediff--long-help-message ()
