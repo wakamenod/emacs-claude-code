@@ -41,7 +41,7 @@ The count beside `D` takes a snapshot of the working tree. To leave it out, set 
 
 After you choose a pull request, `p` asks which of its commits to review, oldest first. `RET` reviews the whole pull request, and choosing a commit reviews that commit alone. Merge commits and commits that change no file are not offered.
 
-In a review opened from `p`, `]` opens the next commit in the same window and `[` the previous one. From the whole pull request, `]` opens its first commit. The header line (in ediff, the right window's mode line) shows the commit, as in `#124 commit 2/5`, and how many unsent comments the other commits hold. Each commit keeps its comments while you move between them. `C-c C-c` sends the comments of the commit you are on. `C-c C-a` sends the comments of every commit as one prompt, grouped by commit, and closes those reviews.
+In a review opened from `p`, `]` opens the next commit in the same window and `[` the previous one. From the whole pull request, `]` opens its first commit. The header line (in ediff, the right window's mode line) shows the commit, as in `#124 commit 2/5`, and how many comments not sent yet the other commits hold. Each commit keeps its comments while you move between them. `C-c C-c` sends the comments of the commit you are on. `C-c C-a` sends the comments of every commit not sent yet as one prompt, grouped by commit. Like `C-c C-c`, it leaves the reviews open, with those comments marked sent.
 
 ### When the changes are not on disk
 

@@ -877,7 +877,7 @@ In STYLE, the diff by default.  Return the walk."
             (ecc-review-pr-test--kill-reviews)))))))
 
 (ert-deftest ecc-review-pr-test-send-every-commit ()
-  "C-c C-a sends the comments of every review of the PR, grouped, and closes them."
+  "C-c C-a sends the comments of every review of the PR, grouped, and keeps them."
   (skip-unless (executable-find "git"))
   (ecc-review-pr-test--with-directory directory
     (seq-let (base head one _two three) (ecc-review-pr-test--commits-repository directory)
@@ -933,15 +933,26 @@ In STYLE, the diff by default.  Return the walk."
                     (should-not (string-search "Commit 2/3" text))
                     ;; Its head is not checked out here.
                     (should (string-search "Its head, topic (" text)))
-                  ;; Sent, so closed, but the one without a comment.
-                  (should-not (buffer-live-p whole))
-                  (should-not (buffer-live-p first))
-                  (should-not (buffer-live-p last))
-                  (should-error (with-current-buffer (ecc-review-range-buffer
-                                                      session (concat three "^!") directory)
-                                  (setq ecc-review--walk walk)
-                                  (ecc-review-pr-send-all))
-                                :type 'user-error)))
+                  ;; Sent, and kept open, the comments marked sent.
+                  (dolist (review (list whole first last))
+                    (should (buffer-live-p review))
+                    (with-current-buffer review
+                      (should (seq-every-p #'ecc-review-note-sent ecc-review--notes))))
+                  (with-current-buffer last
+                    (should-not (string-search "unsent" (ecc-review--header-line)))
+                    (should (string-search "every comment has been sent"
+                                           (cadr (should-error (ecc-review-pr-send-all)
+                                                               :type 'user-error)))))
+                  ;; The next carries what was made since, under its commit alone.
+                  (with-current-buffer first
+                    (ecc-review-pr-test--comment "one more"))
+                  (with-current-buffer last
+                    (let ((text (ecc-review-pr-send-all)))
+                      (should (string-search "Comment: one more" text))
+                      (should-not (string-search "on the first" text))
+                      (should-not (string-search "# The whole of #1" text))
+                      (should-not (string-search "Commit 3/3" text))))
+                  (should (eq (ecc-review-pr-walk-unsent walk) nil))))
             (ecc-review-pr-test--kill-reviews)))))))
 
 (ert-deftest ecc-review-pr-test-unsent-count-is-kept ()
@@ -980,6 +991,49 @@ In STYLE, the diff by default.  Return the walk."
                     (kill-buffer first)
                     (with-current-buffer second
                       (should-not (string-search "unsent" (ecc-review--header-line)))))))
+            (ecc-review-pr-test--kill-reviews)))))))
+
+(ert-deftest ecc-review-pr-test-sent-comments-are-not-counted ()
+  "A comment C-c C-c sent leaves the count of the other reviews, held ones too."
+  (skip-unless (executable-find "git"))
+  (ecc-review-pr-test--with-directory directory
+    (seq-let (base head) (ecc-review-pr-test--commits-repository directory)
+      (ecc-test-with-fake-session session
+        (setf (ecc-session-project-root session) directory)
+        (let ((ecc-review-style 'diff))
+          (unwind-protect
+              (ecc-review-pr-test--in-window
+                (let ((walk (ecc-review-pr-test--open-whole session directory base head)))
+                  (with-current-buffer (ecc-review-pr-test--shown)
+                    (ecc-review-pr-next-commit))
+                  (let ((first (ecc-review-pr-test--shown))
+                        (held (ecc-review-note-create :id 1 :author 'user :text "held"
+                                                      :path "b.txt" :hunk-text "+two"
+                                                      :hunk-range '(1 . 1))))
+                    (with-current-buffer first
+                      (ecc-review-pr-test--comment "one")
+                      (ecc-review-pr-next-commit))
+                    ;; As an ediff review of the third commit leaves its comments.
+                    (puthash (ecc-review-pr-commit-range walk 2)
+                             (list :notes (list held) :next-id 2)
+                             (ecc-review-pr-walk-held walk))
+                    (let ((second (ecc-review-pr-test--shown)))
+                      (with-current-buffer first
+                        (ecc-review-send))
+                      (with-current-buffer second
+                        (should (string-search "unsent: 1 in 1 other commit"
+                                               (ecc-review--header-line))))
+                      (with-current-buffer first
+                        (ecc-review-pr-test--comment "two"))
+                      (with-current-buffer second
+                        (should (string-search "unsent: 2 in 2 other commits"
+                                               (ecc-review--header-line)))
+                        ;; C-c C-a marks a held comment too, and keeps it.
+                        (ecc-review-pr-send-all)
+                        (should-not (string-search "unsent" (ecc-review--header-line))))
+                      (should (ecc-review-note-sent held))
+                      (should (gethash (ecc-review-pr-commit-range walk 2)
+                                       (ecc-review-pr-walk-held walk)))))))
             (ecc-review-pr-test--kill-reviews)))))))
 
 (ert-deftest ecc-review-pr-test-one-group-a-commit ()
