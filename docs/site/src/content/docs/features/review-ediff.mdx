@@ -13,7 +13,7 @@ description: The same review as two sides in ediff, with every file in one sessi
 
 Every file of the review is in one ediff session: the old contents in the left buffer, the new ones in the right, each file under a `═══ path ═══` line. `n` and `p` move through every difference of the review, from one file into the next. A binary file, or one larger than `ecc-review-max-bytes`, is only its separator line. Both sides are read-only, so ediff's copy commands do nothing; you comment and send, and Claude edits the files.
 
-The review takes the whole frame; set `ecc-review-ediff-full-frame` to `nil` to open it among the windows on the screen. Sending, `C-c C-k` and `q` give back the windows you had before.
+The review takes the whole frame; set `ecc-review-ediff-full-frame` to `nil` to open it among the windows on the screen. `C-c C-k` and `q` give back the windows you had before; sending leaves the review open.
 
 ## The layout
 
@@ -52,7 +52,7 @@ Moving point drives the review. When point enters a difference, it becomes the c
 | `\|` | Stack the sides, or put them side by side |
 | `!` | Read the files again (there is no `g`) |
 | `]` / `[` | Next / previous commit of a [pull request](/emacs-claude-code/features/review/#a-pull-request-one-commit-at-a-time) |
-| `C-c C-c` | Send the comments as a prompt (`C-u C-c C-c` to edit it first) |
+| `C-c C-c` | Send the comments not sent yet as a prompt (`C-u C-c C-c` to edit it first) |
 | `C-c C-a` | Send the comments of every commit of the pull request |
 | `C-c C-k` | Drop the review and its comments |
 | `q` | Quit the review |

@@ -621,6 +621,20 @@ Verified against **Claude Code CLI 2.1.281**.
 
 ### Changed
 
+- `C-c C-c` in a review of files, diff or ediff, sends the comments and keeps
+  the review open; it used to close it. Claude answers each comment with a
+  reply in the review, and closing it hid that conversation. The sent
+  comments stay, drawn dimmed in `ecc-review-sent-comment-face`, and the
+  header line counts them (`comments: 3 yours (2 sent)`). The next `C-c C-c`
+  sends only the comments made since; with none left it says there is nothing
+  to send. `C-u C-c C-c` goes back to the review once the edited prompt is
+  sent, and a comment added while the prompt was being edited is left for the
+  next send. Editing a sent comment makes it unsent, so its new text goes out
+  with the next send. The mark survives `g`, the review following the files
+  and the ediff review being read again. `review_list_comments` marks a
+  user's comment that has been sent. `C-c C-k` drops the review and `q`
+  buries it, as before. The review of a proposal still closes on `C-c C-c`,
+  since the deny answers the proposal.
 - The session picker of `C-u C-c C-t` (`ecc-switch-session`) and of the
   "Send to:" prompt groups the sessions by Space, or by project when
   `ecc-use-spaces` is nil. A worktree's group is named after its repository

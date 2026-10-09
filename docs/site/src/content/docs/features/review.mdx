@@ -5,7 +5,7 @@ description: Review what a session changed, or any git comparison, as one diff, 
 
 import Video from '../../../components/Video.astro';
 
-A review shows changes as one read-only diff, however they were made: an edit, a shell command or a script. You comment on lines or hunks, and `C-c C-c` sends every comment to the session as one prompt. The same review opens [in ediff](/emacs-claude-code/features/review-ediff/), and [Claude can comment in it](/emacs-claude-code/features/review-claude/) too.
+A review shows changes as one read-only diff, however they were made: an edit, a shell command or a script. You comment on lines or hunks, and `C-c C-c` sends them to the session as one prompt. The same review opens [in ediff](/emacs-claude-code/features/review-ediff/), and [Claude can comment in it](/emacs-claude-code/features/review-claude/) too.
 
 ## Choosing what to compare
 
@@ -68,7 +68,7 @@ Another session working in the same directory shows up here too; separate [workt
 | `e` | Edit the proposed content (reviewing one proposal) |
 | `g` | Read the diff again |
 | `]` / `[` | Next / previous commit of a [pull request](#a-pull-request-one-commit-at-a-time) |
-| `C-c C-c` | Send your comments as a prompt (`C-u C-c C-c` to edit it first) |
+| `C-c C-c` | Send the comments not sent yet as a prompt (`C-u C-c C-c` to edit it first) |
 | `C-c C-a` | Send the comments of every commit of the pull request |
 | `C-c C-k` | Drop the review and its comments |
 | `q` | Bury the buffer |
@@ -118,7 +118,7 @@ Once shown, the list opens with every review until you hide it or Emacs exits. I
 
 ## Sending comments
 
-`C-c C-c` sends your comments as one prompt and closes the review. `C-u C-c C-c` opens the prompt in a buffer first, where `C-c C-c` sends it and `C-c C-k` returns to the diff:
+`C-c C-c` sends your comments as one prompt, and the review stays open. `C-u C-c C-c` opens the prompt in a buffer first, where `C-c C-c` sends it and `C-c C-k` returns to the diff without sending; either way you end up back in the diff:
 
 ````
 ## hello.py  L1-L6
@@ -132,6 +132,8 @@ Comment: the docstring still says hi
 ````
 
 Each comment carries its whole hunk. A line comment names its line, as in `## hello.py  L3 (new)`, and an outdated one ends with `(outdated)`.
+
+Sent comments stay in the review, dimmed in `ecc-review-sent-comment-face`, so Claude can [reply to them there](/emacs-claude-code/features/review-claude/). The header line counts them, as in `comments: 3 yours (2 sent)`. The next `C-c C-c` sends only the comments you made since; when there are none, it says there is nothing to send. Editing a sent comment makes it unsent, so the next send carries its new text. `C-c C-k` drops the review and `q` buries it.
 
 ## Reviewing against a commit or a range
 
