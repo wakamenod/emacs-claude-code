@@ -81,10 +81,11 @@ Without the MCP server, the CLI runs `git worktree add` itself and carries on in
 With the MCP server on, you can ask a session to remove the finished worktrees. The model first calls `list_worktrees` to see each worktree's changes, branch, sessions and Space. It then passes the paths you asked for to `remove_worktree`, which removes a worktree only when all of these hold:
 
 - It has no uncommitted changes and no untracked files.
-- Its branch went into the remote's `develop`, `main` or `master`, or its pull request was merged (checked with `gh`).
-- None of its sessions is busy.
+- No buffer visiting it has unsaved changes, and no prompt of its sessions holds an unsent draft.
+- Something was committed on its branch and went into the remote's `develop`, `main` or `master`, or its pull request into one of them was merged (checked with `gh`).
+- None of its sessions is busy, and no other session has moved into it.
 
-ecc stops the idle sessions and closes the Space. It leaves every other worktree in place, and the model tells you why. ecc deletes no branch.
+ecc stops the idle sessions and closes the Space. Buffers visiting its files stay open. It leaves every other worktree in place, and the model tells you why. ecc deletes no branch.
 
 :::caution
 Removing a worktree also deletes the files git ignores in it, such as compiled `.elc` files, `.claude/settings.local.json` and `node_modules`.

@@ -652,25 +652,45 @@ Verified against **Claude Code CLI 2.1.281**.
   step. `list_worktrees` describes each linked worktree of the session's
   repository: its path and branch, how many uncommitted or untracked files
   it has, whether its branch is merged and how that was found, the sessions
-  in it and their state, whether it has a Space, and whether
+  in it and their state, any session of another project standing in it, its
+  open and unsaved buffers, whether it has a Space, and whether
   `remove_worktree` would take it. `remove_worktree` takes a list of paths
-  and removes each one only when it is a linked worktree of this repository
-  (not the main checkout), `git status --porcelain` is empty, the branch is
-  merged and no session in it is running, starting or waiting on a request.
-  The idle, exited and restored sessions there are stopped, the Space is
-  closed when `ecc-use-spaces` is on, and `git worktree remove` runs without
-  `--force`. Nothing is asked: every other case is refused, with a reason, in
-  a line for that path. No branch is deleted. `git worktree remove` also
-  deletes the files git ignores, and the tool description and the server
-  instructions tell the model so.
+  and removes each one only when all of these hold:
+  - It is a linked worktree of this repository, not the main worktree.
+  - `git status --porcelain --untracked-files=all --ignore-submodules=none`
+    is empty. Both flags are given because, under
+    `status.showUntrackedFiles=no`, a plain `git status` hides an untracked
+    file that `git worktree remove` then deletes.
+  - No buffer visiting it has unsaved changes.
+  - No prompt of its sessions holds an unsent draft.
+  - No session in it is running, waiting on a request or running a
+    background task.
+  - No session of another project has its cwd in it.
+  - The branch is merged.
 
-  A branch counts as merged when its tip is an ancestor of `develop`, `main`
-  or `master`, or of the remote's `HEAD`, as the remote-tracking branches
-  have them (`ecc-worktree-integration-branches`). It also counts when `gh`
-  names a merged pull request of the branch whose head is that tip: a squash
-  merge leaves the branch's commits out of the base. Nothing is fetched. A
-  repository with no remote is refused, as is a branch that ancestry does
-  not settle when `gh` is missing or fails. The `gh` call is
+  The idle, exited and restored sessions there are stopped. The Space is
+  closed when `ecc-use-spaces` is on, and `git worktree remove` runs without
+  `--force`. Buffers visiting unchanged files are left open, and the answer
+  counts them. Nothing is asked: every other case is refused, and an error
+  fails only its own path, each with a line of its own. No branch is
+  deleted. `git worktree remove` also deletes the files git ignores, and the
+  tool description and the server instructions tell the model so.
+
+  "Merged" means that work committed on the branch has landed, in one of
+  two ways:
+  - The branch's reflog records a commit on it, and its tip is an ancestor
+    of `develop`, `main` or `master` (`ecc-worktree-integration-branches`),
+    or of the remote's `HEAD`, as the remote-tracking branches have them.
+    The remote is `origin`, or the only remote there is.
+  - `gh` names a pull request of the branch, merged into one of those
+    branches, whose head is that tip. A squash merge leaves the branch's
+    commits out of the base.
+
+  A worktree just made from `develop` is not merged: nothing was committed
+  on it. Nothing is fetched. A repository with no remote is refused, as is
+  a branch that ancestry does not settle when `gh` is missing, fails, or
+  gives no answer in `ecc-review-pr-merged-timeout` seconds. `gh` is asked
+  only about a worktree nothing else refuses. The `gh` call is
   `ecc-review-pr-merged`.
 
   `list_worktrees` is always allowed without asking. `remove_worktree` is
