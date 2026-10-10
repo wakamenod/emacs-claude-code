@@ -14,20 +14,30 @@
 # frame, until its subtitle can be read (`readable_frames').
 #
 # Opens a throwaway GUI Emacs, walks it through each scene and captures
-# the frame.  No CLI and no network are involved, so it costs nothing and
-# comes out the same every time.
+# the frame.  Most scenes replay recordings, so they cost nothing and
+# come out the same every time; the ones about an answer arriving run
+# the real CLI, with haiku and a budget.
 #
-# macOS only.  It needs `screencapture', `ffmpeg' and `cwebp' (brew
-# install webp: Homebrew's ffmpeg has no WebP encoder), and the terminal
-# running this needs Screen Recording permission (System Settings ->
-# Privacy & Security -> Screen Recording); without it screencapture says
-# "could not create image from display".
+# macOS only.  It needs `swiftc' (the Xcode command line tools), `ffmpeg'
+# and `cwebp' (brew install webp: Homebrew's ffmpeg has no WebP encoder),
+# and the terminal running this needs Screen Recording permission (System
+# Settings -> Privacy & Security -> Screen Recording); without it
+# record-window says it cannot see the windows.
+#
+# Only the Emacs this starts is in the pictures: its frame may be covered
+# by other windows, and the machine may be used while it runs.
 set -euo pipefail
 
-outdir=${1:-docs/site/src/assets}
+root=$(cd "$(dirname "$0")/.." && pwd)
+# Everything this makes is of the checkout the script is in, and goes
+# into that checkout, wherever it is started from.  The defaults were
+# relative to the current directory, so a run started anywhere else
+# wrote there (2026-10-10).  docshots.el makes sure the code in the
+# pictures is this checkout's too (`shot-foreign-ecc').
+outdir=${1:-$root/docs/site/src/assets}
 # The videos are not processed by Astro's image pipeline, so they and
 # their subtitles are served as they are, from public/.
-videodir=${1:-docs/site/public/videos}
+videodir=${1:-$root/docs/site/public/videos}
 # The conversation the hand-off scene resumes in the terminal.  It is
 # recorded once, in the demo project, and kept: the CLI can only
 # --resume a conversation it has really had.
@@ -36,11 +46,27 @@ handover_prompt="Name three things worth testing in a greeting function. One sho
 emacs_app=${EMACS_APP:-/opt/homebrew/Cellar/emacs-plus@32/32.0.50/Emacs.app}
 # emacs-plus keeps emacsclient beside the .app rather than inside it.
 emacsclient=${EMACSCLIENT:-$(command -v emacsclient || echo "${emacs_app%/*}/bin/emacsclient")}
-root=$(cd "$(dirname "$0")/.." && pwd)
 frames=$(mktemp -d -t ecc-docshot-frames)
 geom=$(mktemp -t ecc-docshot-geom); rm -f "$geom"
 err=$(mktemp -t ecc-docshot-err); rm -f "$err"
 n=0
+
+# The pictures are taken by demo/record-window.swift, the recorder of
+# demo/record.sh, built where that builds it.  It takes the frame's own
+# window, child frames included, and nothing that covers it: this used
+# to take a rectangle of the screen with `screencapture -R', which took
+# whatever was in that corner -- with the person at the machine using
+# it, their own Emacs, twice on 2026-10-10.  The frame is found by a
+# title of this run's own.
+recorder=$root/demo/.build/record-window
+if [ ! -x "$recorder" ] || [ "$root/demo/record-window.swift" -nt "$recorder" ]; then
+    echo "building $recorder" >&2
+    mkdir -p "$root/demo/.build"
+    swiftc -O -parse-as-library -o "$recorder" "$root/demo/record-window.swift" \
+        2>&1 | grep -v "^ld: warning" || true
+fi
+[ -x "$recorder" ] || { echo "could not build $recorder" >&2; exit 1; }
+title="ecc docshot $$ $RANDOM"
 
 # Both the recording and the terminal of the hand-off scene run the real
 # CLI, and a Claude Code session this script was started from would pass
@@ -52,7 +78,11 @@ for variable in $(env | sed -n 's/^\(CLAUDE[A-Z_]*\)=.*/\1/p'); do
     unset "$variable"
 done
 
-cleanup() { pkill -f 'scripts/docshots.el' 2>/dev/null || true; rm -rf "$frames"; }
+cleanup() {
+    [ -n "${capturing:-}" ] && kill -INT "$capturing" 2>/dev/null
+    pkill -f 'scripts/docshots.el' 2>/dev/null || true
+    rm -rf "$frames"
+}
 trap cleanup EXIT
 
 # A step that opens a minibuffer can leave `emacsclient' waiting for an
@@ -78,17 +108,24 @@ want() {
 }
 
 # Start a new video; the frames of each live in a directory of their own.
-# The frame is asked where it is first, as it is before a still: the
-# position read at startup can be stale by the time a scene runs -- the
-# corner the frame is placed in is settled by the window system, not by
-# Emacs -- and every frame of the video would then be cut off on one
-# side (confirmed 2026-09-11).
+# The frame is asked for its size first, as it is before a still: a scene
+# before this one may have resized it.
+# The frames are taken by `recorder', which films the whole time from here
+# to `video'; `hold' notes which of them belong in the video.
 scene() {
     scene=$1
     n=0
+    rm -rf "${frames:?}/${scene:?}" "${frames:?}/${scene:?}".*
     mkdir -p "$frames/$scene"
-    rm -f "${frames:?}/${scene:?}.cues"
     regeom
+    "$recorder" --title "$title" --fps "$fps" --frames "$frames/$scene.raw" 2>/dev/null &
+    capturing=$!
+    for _ in $(seq 1 100); do
+        [ -s "$frames/$scene.raw/started" ] && break
+        sleep 0.1
+    done
+    [ -s "$frames/$scene.raw/started" ] || { echo "$scene: no frame came" >&2; exit 1; }
+    started=$(cat "$frames/$scene.raw/started")
 }
 
 # Start the next subtitle here.  The frames captured so far are its
@@ -98,72 +135,99 @@ scene() {
 cue() { echo "$n" >> "$frames/$scene.cues"; }
 
 # How many frames a second the videos are captured and played at.
-# `screencapture' takes about 80ms a frame on this machine (20 frames in
-# 1.635s, measured 2026-09-13), so 10 is close to what a capture loop can
-# really sustain.  A frame that takes longer leaves the video shorter
-# than the scene was, which is why the subtitles are timed by frame
-# count rather than by the seconds the holds ask for.
 fps=10
-
-# "1.5" -> 1500.  Bash has no decimals, and the holds below are written
-# in seconds because that is what the scene is thinking in.
-ms_of() {
-    local whole=${1%%.*} frac=${1#*.}
-    [ "$frac" = "$1" ] && frac=0
-    frac=$(printf '%-3s' "${frac:0:3}" | tr ' ' 0)
-    echo $((10#$whole * 1000 + 10#$frac))
-}
 
 now_ms() { local t=${EPOCHREALTIME/[.,]/}; echo $((10#${t:0:${#t}-3})); }
 
-# Capture frames for $1 seconds at $fps.  Every frame is a real capture:
-# writing the same frame out twice to hold a state makes the video no
-# smoother, only longer.  A step that settles -- a window rearranging, a
-# posframe arriving -- is then actually seen settling.
+# Put $1 seconds of what is happening now into the video.  The frames
+# are the recorder's, taken the whole time; a hold takes the ones that fall
+# inside it.  What happens between two holds -- the `sleep' while a
+# scene sets itself up -- is filmed and left out, as it always was.
+# Every frame is a real capture: writing the same frame out twice to
+# hold a state makes the video no smoother, only longer.  A step that
+# settles -- a window rearranging, a posframe arriving -- is then
+# actually seen settling.
 hold() {
-    local end frame next left
-    frame=$((1000 / fps))
-    end=$(( $(now_ms) + $(ms_of "$1") ))
-    while :; do
-        next=$(( $(now_ms) + frame ))
+    local from to first last i step=$((1000 / fps))
+    from=$(now_ms)
+    sleep "$1"
+    to=$(now_ms)
+    # Frame I is the screen at `started' + (I - 1) * step.
+    first=$(( (from - started + step - 1) / step + 1 ))
+    last=$(( (to - started + step - 1) / step ))
+    (( last < first )) && last=$first
+    for (( i = first; i <= last; i++ )); do
+        echo "$i" >> "$frames/$scene.ticks"
         n=$((n + 1))
-        screencapture -x -R"$X,$Y,$W,$H" "$(printf '%s/%s/%04d.png' "$frames" "$scene" "$n")"
-        [ "$(now_ms)" -ge "$end" ] && break
-        left=$(( next - $(now_ms) ))
-        [ "$left" -gt 0 ] && sleep "0.$(printf '%03d' "$left")"
     done
+}
+
+# What to keep of a picture of the whole window, as an ffmpeg filter:
+# the rectangle `regeom' read, in points, turned into pixels by the
+# width of the picture against the width of the window.  The window's
+# corners are rounded and come out transparent, so the picture is put
+# on the theme's background first.
+keep() {
+    echo "format=rgba,split[a][b];[a]drawbox=c=0x1a1b26@1:t=fill:replace=1[bg];[bg][b]overlay=format=rgb,crop=w=iw*$CW/$OW:h=iw*$CH/$OW:x=iw*$CX/$OW:y=iw*$CY/$OW"
+}
+
+# Stop filming, and lay the frames the holds took out in order, as
+# $frames/$scene/0001.png on.  A frame the capture had not written by
+# the time it was stopped is the one before it again.
+cut() {
+    local i k=0 have=""
+    kill -INT "$capturing" 2>/dev/null || true
+    wait "$capturing" 2>/dev/null || true
+    while read -r i; do
+        k=$((k + 1))
+        [ -f "$(printf '%s/%04d.png' "$frames/$scene.raw" "$i")" ] \
+            && have=$(printf '%s/%04d.png' "$frames/$scene.raw" "$i")
+        [ -n "$have" ] || { echo "$scene: frame $i was never taken" >&2; exit 1; }
+        ln "$have" "$(printf '%s/%s/%04d.png' "$frames" "$scene" "$k")"
+    done < "$frames/$scene.ticks"
 }
 
 # Encode the frames of the current scene into a video, and time its
 # subtitles.  yuv420p and +faststart are what every browser plays and
 # starts before the whole file is in; the scale keeps both sides even,
-# which yuv420p needs.  A screen is mostly flat colour, so -crf 30 stays
-# legible at a small size.
+# which yuv420p needs.
+#
+# The site shows a video across its 45rem (720 CSS pixel) content
+# column, so a display of two pixels to the point wants 1440: that is
+# the width, or the width of the capture if it is narrower -- nothing is
+# made larger than it was taken.  The frame is 916 points wide, which is
+# 1832 pixels on a Retina screen, so it comes out at 1440 there and at
+# 916 on a screen of one pixel to the point, whatever machine runs this.
+# -crf 20 keeps monospaced text clean at that size; a screen is mostly
+# flat colour, so a video is still a few hundred kilobytes.  The videos
+# were 900 wide at -crf 30 until 2026-10-10, and their text was soft.
 #
 # A band of the theme's background (doom-tokyo-night's #1a1b26) is added
 # below the picture.  A browser draws its controls and the subtitles over
 # the bottom of a video, which is where the echo area and the mode line
 # are; the band gives them somewhere else to go.  It is about 46 CSS
-# pixels at the width the site shows a video, the 45rem (720px) content
-# column: room for a control bar of 40 to 46 with nothing hidden, or for a
-# line of subtitles while the controls are away.  With both on screen the
-# subtitle covers the echo area and part of the mode line.  It was 80,
-# which cleared both at once, and was taken down by two text rows of the
-# recording at the user's request (2026-10-03).  The controls are a fixed
-# CSS height, so the band is a share of the width, iw*58/900, rounded up
-# to an even number: 58 rows at 900 wide, 78 at 1200.
-video_width=1200
+# pixels at the width the site shows a video: room for a control bar of
+# 40 to 46 with nothing hidden, or for a line of subtitles while the
+# controls are away.  With both on screen the subtitle covers the echo
+# area and part of the mode line.  It was 80, which cleared both at
+# once, and was taken down by two text rows of the recording at the
+# user's request (2026-10-03).  The controls are a fixed CSS height, so
+# the band is a share of the width, iw*58/900, rounded up to an even
+# number: 94 rows at 1440 wide, 47 CSS pixels.
+video_width=1440
+video_crf=20
 
 video() {
+    cut
     stretch
     ffmpeg -hide_banner -loglevel error -y \
         -framerate "$fps" -pattern_type glob -i "$frames/$scene/*.png" \
-        -vf "scale=$video_width:-2:flags=lanczos,pad=iw:ih+2*ceil(iw*29/900):0:0:color=0x1a1b26,format=yuv420p" \
-        -c:v libx264 -preset slow -crf 30 -an -movflags +faststart \
+        -vf "$(keep),scale=w='trunc(min($video_width,iw)/2)*2':h=-2:flags=lanczos,pad=iw:ih+2*ceil(iw*29/900):0:0:color=0x1a1b26,format=yuv420p" \
+        -c:v libx264 -preset slow -crf "$video_crf" -an -movflags +faststart \
         "$videodir/$scene.mp4"
     poster
     retime
-    rm -rf "${frames:?}/${scene:?}" "${frames:?}/${scene:?}.cues"
+    rm -rf "${frames:?}/${scene:?}" "${frames:?}/${scene:?}".*
 }
 
 # How long a subtitle has to stay on screen to be read, in frames:
@@ -271,13 +335,21 @@ retime() {
 # and a frame that would grow past the bottom of the screen is moved.
 regeom() {
     e '(shot-report-geometry)'
-    read -r X Y W H _cols _lines < "$geom"
+    read -r CX CY CW CH OW < "$geom"
 }
 
-# Capture one frame to a file of its own.
+# Capture one frame to a file of its own, at the full resolution of the
+# screen: Astro scales a still for the page.
 still() {
     regeom
-    screencapture -x -R"$X,$Y,$W,$H" "$1"
+    shoot "$1"
+}
+
+shoot() {
+    "$recorder" --title "$title" --shot "$frames/shot.png" 2>/dev/null
+    ffmpeg -hide_banner -loglevel error -y -i "$frames/shot.png" \
+        -vf "$(keep)" -frames:v 1 "$1"
+    rm -f "$frames/shot.png"
 }
 
 if [ -z "$(ls "$HOME"/.claude/projects/*/"$handover_id".jsonl 2>/dev/null)" ]; then
@@ -292,7 +364,7 @@ pkill -f 'scripts/docshots.el' 2>/dev/null || true
 rm -f "${TMPDIR:-/tmp}/emacs$(id -u)/ecc-docshot"
 
 open -n -a "$emacs_app" --args -Q --chdir "$root" \
-  --eval "(setq shot-geometry-file \"$geom\" shot-error-file \"$err\")" \
+  --eval "(setq shot-geometry-file \"$geom\" shot-error-file \"$err\" shot-frame-title \"$title\")" \
   -l "$root/scripts/docshots.el"
 
 for _ in $(seq 1 30); do
@@ -301,7 +373,7 @@ for _ in $(seq 1 30); do
     sleep 1
 done
 [ -f "$geom" ] || { echo "the frame never reported its geometry" >&2; exit 1; }
-read -r X Y W H _cols _lines < "$geom" || true
+read -r CX CY CW CH OW < "$geom" || true
 
 mkdir -p "$outdir" "$videodir"
 
@@ -655,8 +727,8 @@ if want sidebar; then
     # rectangle captured is the sidebar window rather than the frame.
     e '(shot-scene-sidebar)' ; sleep 2
     e '(shot-report-sidebar-geometry)'
-    read -r X Y W H _cols _lines < "$geom"
-    screencapture -x -R"$X,$Y,$W,$H" "$outdir/sidebar.png"
+    read -r CX CY CW CH OW < "$geom"
+    shoot "$outdir/sidebar.png"
     e '(shot-scene-sidebar-end)' ; sleep 1
 fi
 
@@ -686,4 +758,12 @@ if want overview; then
     e '(shot-scene-overview-end)'
 fi
 
-echo "wrote the pictures of ${SCENES:-every scene} into $outdir"
+# A module is loaded when a scene first needs it, so the check that
+# every ecc file came from this checkout is made again at the end.
+foreign=$(timeout 25 "$emacsclient" -s ecc-docshot -e '(shot-foreign-ecc)' 2>/dev/null || echo unknown)
+if [ "$foreign" != nil ]; then
+    echo "not this checkout's ecc: $foreign" >&2
+    exit 1
+fi
+
+echo "wrote the pictures of ${SCENES:-every scene} from $root into $outdir and $videodir"

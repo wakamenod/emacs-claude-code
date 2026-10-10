@@ -37,13 +37,37 @@
 (defvar shot-error-file "/tmp/ecc-docshot-error.txt"
   "Where a failure during setup is written.")
 
-(setq package-user-dir (expand-file-name "~/.emacs.d/elpa"))
+(defvar shot-frame-title "ecc docshot"
+  "The title of the frame, which is how the recorder finds its window.
+The wrapper makes it one of this run's own: the recorder takes the first
+window of Emacs whose title contains it, and the Emacs of the person at
+the machine is Emacs too.")
+
+;; The pictures are of the checkout this was started in, and of nothing
+;; else.  The packages are wanted for the theme, the mode line and the
+;; completion UI, but an ecc installed among them would be activated
+;; too: its directory, compiled, on `load-path', and its autoloads
+;; loaded.  The checkout went in front of it and won, but only by that
+;; order, and a module the checkout no longer has would still have been
+;; found there.  So the installed one is not activated at all, a stale
+;; .elc in the checkout loses to its .el, and `shot-foreign-ecc' is
+;; checked before the first picture (2026-10-10).
+(setq package-user-dir (expand-file-name "~/.emacs.d/elpa")
+      package-load-list '((ecc nil) all)
+      load-prefer-newer t)
 (package-initialize)
 (add-to-list 'load-path default-directory)
 (add-to-list 'load-path (expand-file-name "test" default-directory))
 (require 'ecc)
 (require 'ecc-test-helpers)
 (require 'server)
+
+(defun shot-foreign-ecc ()
+  "Return every ecc file loaded from outside this checkout."
+  (seq-filter (lambda (file)
+                (and (string-match-p "/ecc\\(-[a-z-]+\\)?\\.elc?\\'" file)
+                     (not (file-in-directory-p file shot-repository))))
+              (mapcar #'car load-history)))
 
 ;; The pictures should show the completion UI most users of this package
 ;; have, rather than the one a bare Emacs falls back to: the candidates
@@ -84,7 +108,7 @@
       ecc-visual-enable-spinner nil
       ecc-chat-text-width 64
       inhibit-startup-screen t
-      frame-title-format "ecc")
+      frame-title-format shot-frame-title)
 
 (defconst shot-root "/tmp/greet"
   "The demo project.  The fixture's sandbox paths are rewritten to it.")
@@ -251,6 +275,13 @@ splitting the frame here: a session window carries a role, and the
 commands that move a session between windows look for that role.  A
 hand-made split has none of it, and the pictures would show something
 no user has."
+  ;; The sidebar every Space opens with is a column the pictures of one
+  ;; feature cannot spare at this width; it has scenes of its own
+  ;; (`shot-scene-sidebar', `shot-scene-spaces').  Left there, it is
+  ;; also the frame's first window, and the layout below went into a
+  ;; frame of its own (2026-10-10).
+  (when (fboundp 'ecc-sidebar-hide)
+    (ecc-sidebar-hide))
   ;; A scene before this one may have left the point somewhere that is
   ;; not an ordinary window -- a minibuffer, the child frame the
   ;; completion list is drawn in -- and window commands run from there
@@ -908,22 +939,22 @@ waiting for an answer -- everything the two lists can say."
 
 (defun shot-report-sidebar-geometry ()
   "Write where the sidebar window is, for a picture of it alone.
-The wrapper captures a rectangle of the screen, and the frame around
-the sidebar is not what this one is of."
+The same five numbers as `shot-report-geometry', for the sidebar window
+rather than the whole frame."
   (unless (active-minibuffer-window)
     (message nil))
   (redisplay t)
   (let* ((window (get-buffer-window ecc-sidebar-buffer-name))
+         (outer (frame-edges nil 'outer-edges))
          (inner (frame-edges nil 'inner-edges))
          (edges (window-pixel-edges window)))
     (with-temp-file shot-geometry-file
-      (insert (format "%d %d %d %d %d %d\n"
-                      (+ (nth 0 inner) (nth 0 edges))
-                      (+ (nth 1 inner) (nth 1 edges))
+      (insert (format "%d %d %d %d %d\n"
+                      (+ (- (nth 0 inner) (nth 0 outer)) (nth 0 edges))
+                      (+ (- (nth 1 inner) (nth 1 outer)) (nth 1 edges))
                       (- (nth 2 edges) (nth 0 edges))
                       (- (nth 3 edges) (nth 1 edges))
-                      (window-width window)
-                      (window-height window))))))
+                      (- (nth 2 outer) (nth 0 outer)))))))
 
 (defun shot-scene-sidebar-end ()
   "Take the extra sessions, the sidebar and the invented git away again."
@@ -1125,35 +1156,31 @@ it out from under the rectangle being captured."
     (set-frame-position (selected-frame) x y)))
 
 (defun shot-report-geometry ()
-  "Write where the frame is now, for the wrapper to capture.
-Opening the menu, or a minibuffer with a list under it, resizes the
-frame and can move it, so the rectangle is asked for again before every
+  "Write which part of the frame's window is the picture.
+The recorder takes the whole window, title bar and all, so this says
+what to keep of it: X, Y, the width and the height of the rectangle,
+from the top left of the window, and the width of the window, all in
+points -- the picture is in pixels, and the last number is what says
+how many to the point.  Opening the menu, or a minibuffer with a list
+under it, resizes the frame, so this is asked for again before every
 picture rather than once at the start."
   ;; Whatever was last said in the echo area would be in the picture,
   ;; and for a still taken early in a run that is Emacs's own greeting.
   (unless (active-minibuffer-window)
     (message nil))
   (redisplay t)
-  ;; `frame-position' is the outer window, title bar included, while
-  ;; `frame-pixel-height' is only the text area -- capturing that
-  ;; rectangle loses the last line of the frame to the height of the
-  ;; title bar.  `frame-geometry' reports the outer window as one thing.
   (let* ((geometry (frame-geometry))
-         (position (alist-get 'outer-position geometry))
          (size (alist-get 'outer-size geometry))
          ;; The title bar is left out of the picture.  macOS writes the
          ;; new size into it whenever the frame is resized -- opening
          ;; the menu resizes it -- and nothing in Emacs clears that
          ;; again, so a picture that includes it says "(144 x 38)".
-         (title-bar (or (cdr (alist-get 'title-bar-size geometry)) 0)))
+         (title-bar (or (cdr (alist-get 'title-bar-size geometry)) 0))
+         (width (or (car size) (frame-pixel-width)))
+         (height (or (cdr size) (frame-pixel-height))))
     (with-temp-file shot-geometry-file
-      (insert (format "%d %d %d %d %d %d"
-                      (or (car position) (car (frame-position)))
-                      (+ (or (cdr position) (cdr (frame-position))) title-bar)
-                      (or (car size) (frame-pixel-width))
-                      (- (or (cdr size) (frame-pixel-height)) title-bar)
-                      (frame-width) (frame-height))
-              "\n"))))
+      (insert (format "%d %d %d %d %d\n"
+                      0 title-bar width (- height title-bar) width)))))
 
 (defun shot-scene-handover-start ()
   "Read the recorded conversation back and show it, as a session would be."
@@ -1848,6 +1875,8 @@ so that several turns are in view at once rather than the tail of one."
   (setq-default line-spacing 0.1)
   ;; Tall enough for `ecc-menu', which is two rows of columns and the
   ;; longest of them has ten lines.
+  (when-let* ((foreign (shot-foreign-ecc)))
+    (error "Not this checkout's ecc: %S" foreign))
   (set-frame-size (selected-frame) 112 44)
   (redisplay t)
   (shot-place-frame-bottom-right)
