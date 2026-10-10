@@ -31,9 +31,10 @@
 ;; itself:
 ;;
 ;; - T asks Claude for a tour of the review (`ecc-review-talk-tour-prompt'),
-;;   t for its next stop, and M reads a line and sends it.  They go to
-;;   the session of the review and are sent the way a prompt typed in
-;;   the minibuffer is (`ecc-send'): queued while a turn runs.
+;;   t for its next stop, and M reads a line and sends it, with the
+;;   lines the region selects when it is active, or where point is.
+;;   They go to the session of the review and are sent the way a prompt
+;;   typed in the minibuffer is (`ecc-send'): queued while a turn runs.
 ;;
 ;; - In an ediff review a pane shows the latest reply of that session
 ;;   as it streams, each tool call on a line of its own, and whatever
@@ -142,6 +143,28 @@ review_hunks with include_patch for them, a file at a time."
 (defvar ecc-review-talk-where-label "Where I am in the review:"
   "What the place of the user in the review is introduced by, after t and M.")
 
+(defvar ecc-review-talk-region-label "The lines I have selected in the review"
+  "What the lines selected in a review are introduced by, after M.
+The side of an ediff review follows it (`ecc-review-talk-region-sides').")
+
+(defvar ecc-review-talk-region-sides
+  '((old . ", on the left, as the files were before the changes")
+    (new . ", on the right, as the files are after the changes"))
+  "What says which side of an ediff review the lines selected are on.
+A line marked - or + there is in a difference, and a line marked with
+a space is the same on both sides.")
+
+(defvar ecc-review-talk-region-limit 10000
+  "The most characters of selected lines M sends with the message.
+A selection whose lines come to more is sent as the files and lines it
+covers alone, and `ecc-review-talk-region-no-lines-note' says so.")
+
+(defvar ecc-review-talk-region-no-lines-note
+  "The lines themselves are left out, being too many to send at once: \
+read them from the files, or from the patch of the hunks (review_hunks \
+with include_patch)."
+  "What M says under the lines it names without their text.")
+
 (defface ecc-review-talk-speaker-face
   '((t :inherit ecc-heading-face))
   "Face of the name in front of what Claude says in the reply pane."
@@ -197,6 +220,76 @@ patch is not in it.  A quote block like the context a prompt is given
                                (plist-get hunk :header))))
                     (line ", outside any hunk"))))))
 
+(defun ecc-review-talk--range (lines side)
+  "Return \"L3-L5 (SIDE side)\" for the LINES on SIDE, or nil for none."
+  (when-let* ((numbers (delq nil (mapcar (lambda (line)
+                                           (and (eq (plist-get line :side) side)
+                                                (plist-get line :line)))
+                                         lines))))
+    (let ((low (apply #'min numbers))
+          (high (apply #'max numbers)))
+      (format "%s (%s side)"
+              (if (= low high) (format "L%d" low) (format "L%d-L%d" low high))
+              side))))
+
+(defun ecc-review-talk--region-groups (region)
+  "Return the lines of REGION, a `ecc-review-region' plist, in groups.
+A group for each file, and in the diff review for each hunk of it: the
+diff review lists its lines by hunk, the two sides of an ediff review by
+file."
+  (let ((by-hunk (null (plist-get region :side)))
+        (groups nil))
+    (dolist (line (plist-get region :lines))
+      (let ((key (cons (plist-get line :path)
+                       (and by-hunk (ecc-review--hunk-key (plist-get line :hunk))))))
+        (if (equal key (car (car groups)))
+            (push line (cdr (car groups)))
+          (push (list key line) groups))))
+    (nreverse (mapcar (lambda (group) (nreverse (cdr group))) groups))))
+
+(defun ecc-review-talk--region-block (region)
+  "Return the block that gives Claude the lines of REGION, or nil for none.
+REGION is what `ecc-review-region' returns.  For each file and hunk,
+the file and the lines selected on each side (`old' for the lines taken
+out, `new' for the lines put in and the context), the hunk with its @@
+header in the diff review, and the lines with their markers in a fenced
+diff block.  Without the lines when all of them come to more than
+`ecc-review-talk-region-limit' characters, and
+`ecc-review-talk-region-no-lines-note' after."
+  (when (plist-get region :lines)
+    (let* ((groups (ecc-review-talk--region-groups region))
+           (bodies (mapcar (lambda (group)
+                             (mapconcat (lambda (line)
+                                          (concat (string (plist-get line :marker))
+                                                  (plist-get line :text)))
+                                        group "\n"))
+                           groups))
+           (with-lines (<= (apply #'+ (mapcar #'length bodies))
+                           ecc-review-talk-region-limit)))
+      (concat
+       "\n\n---\n" ecc-review-talk-region-label
+       (alist-get (plist-get region :side) ecc-review-talk-region-sides) ":"
+       (string-join
+        (cl-mapcar
+         (lambda (group body)
+           (let* ((first (car group))
+                  (hunk (plist-get first :hunk))
+                  (fence (ecc-review--fence body)))
+             (concat
+              (format "\n\n`%s` " (plist-get first :path))
+              (string-join (delq nil (list (ecc-review-talk--range group 'old)
+                                           (ecc-review-talk--range group 'new)))
+                           ", ")
+              (when (and hunk (null (plist-get region :side)))
+                (let ((number (ecc-review-hunk-number hunk)))
+                  (format ", hunk %d/%d `%s`" (car number) (cdr number)
+                          (plist-get hunk :header))))
+              (when with-lines
+                (format "\n%sdiff\n%s\n%s" fence body fence)))))
+         groups bodies))
+       (unless with-lines
+         (concat "\n\n" ecc-review-talk-region-no-lines-note))))))
+
 (defun ecc-review-talk-send (text)
   "Send TEXT to the session of this review as a prompt, and show the pane.
 Sent the way `ecc-send' sends a prompt typed in the minibuffer, which
@@ -227,12 +320,29 @@ asking (`ecc-review-talk--hunks'), for Claude to plan the stops from."
 ;;;###autoload
 (defun ecc-review-talk-message (text)
   "Send TEXT, read in the minibuffer, to the session of this review.
-Where the user is in the review goes with it (`ecc-review-talk--where')."
+With the region active, the lines it selects go with it
+\(`ecc-review-talk--region-block'), and the mark is deactivated once
+it is sent; in an ediff review, the region of the window the keyboard
+is in.  Otherwise, or when the region holds no line of the files --
+only headers, or the separators of an ediff review -- where the user is
+in the review goes with it (`ecc-review-talk--where')."
   (interactive
-   (list (read-string (format "To %s: " (ecc-session-name (ecc-review-talk--session))))))
+   (let* ((name (ecc-session-name (ecc-review-talk--session)))
+          (count (length (plist-get (ecc-review-region) :lines))))
+     (list (read-string (format "To %s%s: " name
+                                (if (zerop count)
+                                    ""
+                                  (format " (%d line%s selected)"
+                                          count (if (= count 1) "" "s"))))))))
   (when (string-empty-p (string-trim text))
     (user-error "Prompt is empty"))
-  (ecc-review-talk-send (concat text (ecc-review-talk--where))))
+  (ecc-review-talk--session)
+  (let ((region (ecc-review-region)))
+    (ecc-review-talk-send (concat text (or (ecc-review-talk--region-block region)
+                                           (ecc-review-talk--where))))
+    (when region
+      (with-current-buffer (plist-get region :buffer)
+        (deactivate-mark)))))
 
 ;;;; Answering what Claude waits for
 

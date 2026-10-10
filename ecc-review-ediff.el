@@ -1641,23 +1641,77 @@ there is the file and no line."
                            (window-point window)
                          (with-current-buffer buffer (point))))
              (number (with-current-buffer buffer (line-number-at-pos position)))
-             (index (if (eq side 'A) 1 2))
-             (section (ecc-review-ediff--section-at ecc-review-ediff--sections number index))
-             (next (cadr (memq section ecc-review-ediff--sections)))
-             (line (and section (- number (nth index section))))
-             (line (and section (> line 0)
-                        ;; The last line of the file's text is the one
-                        ;; above the spacing in front of the next file.
-                        (or (null next)
-                            (< number (- (nth index next)
-                                         (max 0 ecc-review-ediff-file-spacing))))
-                        line))
+             (place (ecc-review-ediff--file-line (if (eq side 'A) 1 2) number))
+             (line (cdr place))
              (n (ecc-review-direct--difference-near side position)))
-        (when section
-          (list :path (car section)
+        (when place
+          (list :path (car place)
                 :hunk (and n (nth n (ecc-review-units)))
                 :line line
                 :side (and line (if (eq side 'A) 'old 'new))))))))
+
+(defun ecc-review-ediff--file-line (index number)
+  "Return (PATH . LINE) for the line NUMBER of the side INDEX, or nil.
+INDEX is 1 for the left and 2 for the right.  PATH is the file the line
+is in and LINE its number in that file: nil on the separator of the
+file, or on the blank lines in front of the next one, which belong to
+the file above (`ecc-review-ediff-file-spacing').  Nil altogether with
+no file."
+  (when-let* ((section (ecc-review-ediff--section-at ecc-review-ediff--sections number index)))
+    (let ((next (cadr (memq section ecc-review-ediff--sections)))
+          (line (- number (nth index section))))
+      (cons (car section)
+            (and (> line 0)
+                 ;; The last line of the file's text is the one above
+                 ;; the spacing in front of the next file.
+                 (or (null next)
+                     (< number (- (nth index next)
+                                  (max 0 ecc-review-ediff-file-spacing))))
+                 line)))))
+
+(cl-defmethod ecc-review-region (&context (major-mode ediff-mode))
+  "Return the lines selected in the window of a side of this ediff review.
+As the diff review's (`ecc-review-region'), from the region of the side
+the keyboard is in; in the control panel there is none.  :side is
+`old' for the left and `new' for the right, and :lines are the lines of
+the files the region touches on that side, the separators and the
+spacing between files left out.  The marker of a line in a difference
+is - on the left and + on the right, a space on a line both sides
+share; :hunk is that difference, or nil."
+  (when-let* ((side (seq-find (lambda (side)
+                                (eq (selected-window) (ecc-review-direct--window side)))
+                              '(A B)))
+              (buffer (ecc-review-direct--buffer side))
+              ((with-current-buffer buffer (use-region-p))))
+    (let ((index (if (eq side 'A) 1 2))
+          (rows nil))
+      (with-current-buffer buffer
+        (save-excursion
+          (let ((end (region-end)))
+            (goto-char (region-beginning))
+            (beginning-of-line)
+            (let ((number (line-number-at-pos)))
+              (while (and (< (point) end) (not (eobp)))
+                (push (list (point) number
+                            (buffer-substring-no-properties (point) (line-end-position)))
+                      rows)
+                (cl-incf number)
+                (forward-line 1))))))
+      (list :buffer buffer
+            :side (if (eq side 'A) 'old 'new)
+            :lines
+            (mapcan
+             (pcase-lambda (`(,position ,number ,text))
+               (when-let* ((place (ecc-review-ediff--file-line index number))
+                           ((cdr place)))
+                 (let ((n (ecc-review-direct--difference-at side position)))
+                   (list (list :path (car place)
+                               :side (if (eq side 'A) 'old 'new)
+                               :line (cdr place)
+                               :text text
+                               :marker (cond ((null n) ?\s) ((eq side 'A) ?-) (t ?+))
+                               :hunk (and n (nth n (ecc-review-units))))))))
+             (nreverse rows))))))
 
 ;;;; Where a comment is drawn
 
@@ -2374,9 +2428,10 @@ p,DEL -previous diff |     | -vert/horiz split   |  c -comment on the line/diff
 -------------------------------------------------------------------------------
 Every key works in both windows of the files as well as here.  In a window,
 c comments on the line at point, x removes its comment, RET opens the file
-at that line in a frame of its own, and moving point brings the other side
-along.  Here, c is about the whole difference and RET opens its file.  Both
-buffers are read-only: Claude changes the files, from the comments you send.
+at that line in a frame of its own, M sends the lines of the region with
+what you say, and moving point brings the other side along.  Here, c is
+about the whole difference and RET opens its file.  Both buffers are
+read-only: Claude changes the files, from the comments you send.
 C-c C-c sends those not sent yet and keeps the review open: the sent ones
 stay, dimmed, for Claude's replies."
   "What `?\\=' shows in the control panel of an ediff review.")
