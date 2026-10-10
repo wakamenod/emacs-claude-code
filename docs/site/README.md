@@ -140,15 +140,21 @@ There are two generators, and neither takes a picture by hand.
 
 `scripts/docshots.sh` makes the site's own pictures: the stills into
 `src/assets` and the videos into `public/videos`. It opens a throwaway GUI
-Emacs in the bottom right corner of the screen — the rest of the screen stays
-yours — walks it through a scene and captures the frame.
+Emacs, walks it through a scene and captures the frame. It loads the ecc of
+the checkout it is in and nothing else -- an installed ecc is not activated,
+and the run stops if a file of one was loaded -- and writes into that
+checkout, wherever it is started from.
 
-What is captured is a rectangle of the screen, not the window, so leave that
-corner alone while it runs — a window of your own crossing it lands in the
-picture, and a frame that comes up empty stops the video dead.
+What is captured is the frame's own window, through `demo/record-window.swift`
+(its `--frames` mode for a video, `--shot` for a still), found by a title of
+the run's own. Its child frames -- the completion list, a posframe -- are in
+the picture; nothing else is, even where it covers the frame, so the machine
+can be used while it runs. It took a rectangle of the screen with
+`screencapture -R` until 2026-10-10, and with somebody using the machine that
+rectangle held their own Emacs.
 
-Take one scene rather than all of them: taking all runs the real CLI four
-times and takes about five minutes, which is five minutes of that corner.
+Take one scene rather than all of them: taking all runs the real CLI several
+times and takes about ten minutes.
 
 ```
 SCENES="menu resume" scripts/docshots.sh
@@ -194,11 +200,11 @@ What it knows, and what is worth not learning again:
 - **Anything that asks a question blocks the same way.** `ecc-answer-allow`
   confirms before answering, so the scene that allows an edit uses
   `ecc-perm-allow`, the transcript's own `a`.
-- **The frame is asked where it is again before every picture**: the menu
-  resizes it, and a frame that would grow past the bottom of the screen is
-  moved. The title bar is left out of the rectangle, because macOS writes the
-  new size into it when a frame is resized and nothing in Emacs clears that.
-  The echo area is cleared before a still, or an early one carries Emacs's own
+- **The frame is asked for its size again before every picture**: the menu
+  resizes it. The title bar is cut off the picture, because macOS writes the
+  new size into it when a frame is resized and nothing in Emacs clears that,
+  and the window's rounded corners are put on the theme's background. The
+  echo area is cleared before a still, or an early one carries Emacs's own
   greeting.
 - **A scene runs to the end.** A permission left waiting goes on blinking, and
   every picture taken after it has a blinking corner.
@@ -206,10 +212,14 @@ What it knows, and what is worth not learning again:
   `split-window-right`: a session window carries a role, and the commands that
   move a session between windows look for it. `ecc--enable-session-modes` is
   called too, or the pictures have no tab line — which every real session has.
+  The Spaces are on, as they are by default, but the scenes of one feature hide
+  the sidebar: at the width of the frame it takes a column the feature needs.
+  The sidebar and the Spaces have scenes of their own.
 - **The scenes that need an answer run the real CLI**, with `--model haiku` and
   a budget. The hand-off one needs a conversation the CLI can `--resume`
-  (recorded into `/tmp/greet` on the first run and kept), the demo folder
-  trusted in `~/.claude.json`, and every `CLAUDE*` variable unset before
+  (recorded into `/tmp/records` on the first run and kept), the demo folder
+  `/tmp/records` trusted by the CLI (`cd /tmp/records && claude` once, and
+  answer that you trust it), and every `CLAUDE*` variable unset before
   anything starts — macOS `open` passes the environment on, and
   `CLAUDE_CODE_CHILD_SESSION` puts "Transcript saving is off" across the top of
   the picture.
@@ -222,10 +232,25 @@ What it knows, and what is worth not learning again:
 - **Do not put a real session's capabilities in a picture.** They are the
   skills, agents and plugins of whoever runs this. The capabilities scene
   replays a fixture, which carries a recorded one.
-- **`hold <seconds>` is the only way to capture.** It takes real frames at
-  `fps` (10) for that long; there is no way to write the same frame out
-  twice, because doing so makes a video no smoother and only longer.
-  A scene is written in the seconds it should last.
+- **`hold <seconds>` is the only way to capture.** The recorder films from
+  `scene` to `video` at `fps` (10), and a hold keeps the frames that fall
+  inside it; what happens between two holds, such as the `sleep` while a
+  scene sets itself up, is left out. There is no way to write the same frame
+  out twice, because doing so makes a video no smoother and only longer. A
+  scene is written in the seconds it should last.
+- **What is on the screen is a project of real code**, `/tmp/records`: a
+  module that reads delimited records, a report with a syntax error, a CLI
+  over them, and a second project, `/tmp/api-server`. Their sources are
+  `scripts/docshots-project`. The conversations the scenes replay are the
+  site's own, `scripts/docshots-fixtures`, recorded over that code by
+  `scripts/docshots-fixtures.sh` so that they tell one story; the ERT tests
+  never read them, and the scenes never read `test/fixtures` except for the
+  usage report. A recording carries no MCP server, skill or plugin of the
+  machine it was made on, and the script writes the home directory as `~`
+  and drops the account from the `initialize` answer; look at a new one
+  before committing it all the same. Where a recording asks for permission
+  is found by its content, so a scene does not change when a conversation is
+  recorded again.
 - **Keep changing, or the extra frames buy nothing.** A state that sits
   still is the same picture however fast it was captured. Raising the rate
   from 3 to 10 left `switch`, `review`, `files`, `capabilities` and
@@ -299,9 +324,9 @@ switched, and turns on the track of the page's language: English on an
 English page, Japanese under `/ja/`. `label` is the video's accessible name,
 written like alt text.
 
-Every video has a band of the theme's background below the picture, about 46
-CSS pixels high at the 720px width of the content column (58 rows of a video
-900 wide, 78 of one 1200 wide). The browser's control bar and the subtitles
+Every video has a band of the theme's background below the picture, about 47
+CSS pixels high at the 720px width of the content column (94 rows of a video
+1440 wide). The browser's control bar and the subtitles
 are drawn over the bottom of a video, and without the band they covered the
 echo area and the mode line. The band holds a control bar, or a line of
 subtitles while the controls are hidden; with both showing, the subtitle sits
@@ -346,8 +371,17 @@ than on the holds because the steps scheduled inside Emacs would not wait for
 a longer hold. The motion inside a step keeps its speed. A scene changed to
 add a step needs no new numbers: the time comes from the cue's text.
 
-The videos in the tree on 2026-10-03 were converted from the GIFs that came
-before them, at 900 pixels wide, with the cue times scaled from the holds to
-the length each GIF really had, and then stretched by the rule above: 228
-seconds of video became 345. The next run of a scene encodes it from its
-frames at 1200 pixels.
+A video is 1440 pixels wide: the content column is 720 CSS pixels, and a
+display of two pixels to the point shows that as 1440. The frame is 916
+points wide, 1832 pixels on such a display, so the video is a little smaller
+than what was captured; on a display of one pixel to the point it is the
+capture's own 916, since nothing is made larger than it was taken. It is
+encoded at `-crf 20`, which keeps monospaced text clean; a screen is mostly
+flat colour, so the twenty videos come to about 7 MB. The poster is the
+first frame of the video, at the same width.
+
+Until 2026-10-10 the videos in the tree were not this script's: on
+2026-10-03 they were converted from the GIFs of 2026-09-13, at 900 pixels
+and `-crf 30`, and encoded again from those GIFs twice after that. They
+showed the ecc of that day for a month. Every video and still now comes from
+a run of the script.
