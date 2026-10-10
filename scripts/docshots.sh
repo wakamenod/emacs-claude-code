@@ -185,6 +185,53 @@ keep() {
     echo "format=rgba,split[a][b];[a]drawbox=c=0x1a1b26@1:t=fill:replace=1[bg];[bg][b]overlay=format=rgb,crop=w=iw*$CW/$OW:h=iw*$CH/$OW:x=iw*$CX/$OW:y=iw*$CY/$OW"
 }
 
+# Is CONDITION, a form, true in the scene Emacs?
+holds() {
+    timeout 25 "$emacsclient" -s ecc-docshot -e "$1" 2>/dev/null | grep -qx t
+}
+
+# Film until CONDITION holds, at most MAX seconds: what the CLI answers
+# takes as long as it takes -- five seconds in one run, forty in the
+# next (2026-10-10).  Of a wait longer than three seconds only its first
+# and its last one and a half are kept, so a slow answer is a short cut
+# in the video rather than half a minute of a spinner.  Ending on the
+# ceiling is said, since the scene after it would start with the turn
+# still running.  WHOLE as a third argument keeps every frame, for a
+# wait that is the motion -- an answer streaming in.
+hold_until() {
+    local condition=$1 max=$2 whole=${3:-} start keep=$((15 * fps / 10)) total
+    local deadline=$(( $(now_ms) + max * 1000 ))
+    start=$n
+    while ! holds "$condition"; do
+        if [ "$(now_ms)" -ge "$deadline" ]; then
+            echo "   $scene: $condition still false after ${max}s" >&2
+            break
+        fi
+        hold 0.5
+    done
+    total=$((n - start))
+    if [ -z "$whole" ] && [ "$total" -gt $((2 * keep)) ]; then
+        awk -v from="$start" -v keep="$keep" -v to="$n" \
+            'NR <= from + keep || NR > to - keep' \
+            "$frames/$scene.ticks" > "$frames/$scene.ticks.new"
+        mv "$frames/$scene.ticks.new" "$frames/$scene.ticks"
+        n=$((start + 2 * keep))
+    fi
+}
+
+# Wait, without filming, until CONDITION holds, at most MAX seconds.
+wait_until() {
+    local condition=$1 max=$2 waited=0
+    until holds "$condition"; do
+        if [ "$waited" -ge "$max" ]; then
+            echo "   $condition still false after ${max}s" >&2
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+}
+
 # Stop filming, and lay the frames the holds took out in order, as
 # $frames/$scene/0001.png on.  A frame the capture had not written by
 # the time it was stopped is the one before it again.
@@ -427,6 +474,8 @@ if want send-region || want fix-error || want inline || want rewrite \
 fi
 
 if want send-region; then
+    # Not before the turn of the scene before it has ended.
+    wait_until '(shot-live-idle-p)' 120
     # 3. Sending the region from a source buffer.  This one runs the real
     # CLI: the point of the picture is the answer coming back.
     scene send-region
@@ -441,13 +490,16 @@ if want send-region; then
     cue; e '(shot-scene-send-region-sequence)'
     # The typing and then the answer streaming in are the motion, so the
     # frames are taken while they happen rather than after.  The question
-    # is sent at 4.2s, and the answer starts a few seconds later.
-    hold 4.4; cue; hold 2.6; cue; hold 10
+    # is sent at 4.2s.
+    hold 4.4; cue; hold_until '(shot-live-answering-p)' 90
+    cue; hold_until '(shot-live-idle-p)' 90 whole; hold 2
     video
     e '(shot-dump-live-log)'
 fi
 
 if want fix-error; then
+    # Not before the turn of the scene before it has ended.
+    wait_until '(shot-live-idle-p)' 120
     # 4. Fixing the error a checker found.  The file really is broken and
     # the checker really is run; only the checker is the standard library
     # rather than something installed.
@@ -455,18 +507,21 @@ if want fix-error; then
     cue; e '(shot-scene-fix-error-open)'     ; sleep 3; hold 1
     e '(shot-scene-fix-error-point)'    ; hold 0.67
     cue; e '(shot-scene-fix-error)'          ; hold 0.67
-    hold 1.5; cue; hold 4; cue; hold 4.5
+    hold 1.5; cue; hold_until '(or (shot-live-answering-p) (shot-live-waiting-p))' 90
+    cue; hold_until '(shot-live-waiting-p)' 90; hold 1
     # Allowing it is part of the scene: the edit is made, the buffer picks
     # it up, and the checker has nothing left to complain about.  It also
     # leaves nothing waiting, which would blink through every picture taken
     # after this one.
     cue; e '(shot-scene-allow)'              ; sleep 1; hold 0.67
-    hold 8
+    hold_until '(shot-live-idle-p)' 90; hold 1
     cue; e '(shot-scene-recheck)'            ; sleep 2; hold 1.33
     video
 fi
 
 if want inline; then
+    # Not before the turn of the scene before it has ended.
+    wait_until '(shot-live-idle-p)' 120
     # 5. Asking about the region and being answered where the code is.
     scene inline
     cue; e '(shot-scene-send-region-point)'  ; hold 0.33
@@ -478,13 +533,14 @@ if want inline; then
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.67
     cue; e '(shot-scene-inline-sequence)'
-    # The question is sent at 3.0s, and the answer took about eleven
-    # seconds to come back (2026-10-10).
-    hold 3.2; cue; hold 9.8; cue; hold 8
+    # The question is sent at 3.0s.
+    hold 3.2; cue; hold_until '(shot-inline-done-p)' 90; cue; hold 4
     video
 fi
 
 if want rewrite; then
+    # Not before the turn of the scene before it has ended.
+    wait_until '(shot-live-idle-p)' 120
     # 6. Rewriting the region, and accepting what comes back.
     scene rewrite
     cue; e '(shot-scene-send-region-point)'  ; hold 0.33
@@ -497,12 +553,14 @@ if want rewrite; then
     e '(shot-scene-send-region-extend)' ; hold 0.67
     cue; e '(shot-scene-rewrite-sequence)'
     # The instruction is sent at 3.0s.
-    hold 3.2; cue; hold 2.8; cue; hold 8
+    hold 3.2; cue; hold_until '(shot-rewrite-ready-p)' 90; cue; hold 4
     cue; e '(shot-scene-accept)'             ; sleep 1; hold 1.33
     video
 fi
 
 if want at-cursor; then
+    # Not before the turn of the scene before it has ended.
+    wait_until '(shot-live-idle-p)' 120
     # An @ reference: the point stands in the source, the prompt says
     # @cursor, and what is sent carries the line it was on.
     scene at-cursor
@@ -511,23 +569,27 @@ if want at-cursor; then
     e '(shot-prompt-type "@cursor")'         ; hold 0.33
     e '(shot-prompt-type " give an empty field?")' ; hold 0.67
     cue; e '(shot-prompt-send)'                   ; hold 0.67
-    hold 4.5; cue; hold 7.5
+    hold 2; cue; hold_until '(shot-live-idle-p)' 90; hold 2
     video
 fi
 
 if want context; then
+    # Not before the turn of the scene before it has ended.
+    wait_until '(shot-live-idle-p)' 120
     # The editor context, attached to every prompt while it is on.
     scene context
     cue; e '(shot-scene-cursor-point 20)'                                 ; hold 0.67
     cue; e '(shot-prompt-command (quote ecc-prompt-toggle-context))'      ; hold 1
     cue; e '(shot-prompt-type "Where am I?")'                             ; hold 0.67
     e '(shot-prompt-send)'                                           ; hold 0.67
-    hold 4; cue; hold 8
+    hold 2; cue; hold_until '(shot-live-idle-p)' 90; hold 2
     cue; e '(shot-prompt-command (quote ecc-prompt-toggle-context))'      ; hold 0.67
     video
 fi
 
 if want image; then
+    # Not before the turn of the scene before it has ended.
+    wait_until '(shot-live-idle-p)' 120
     # An image in a prompt.  It goes by path rather than inline, so the
     # picture is opened beside the session first: without it the scene
     # is one line of text appearing in the prompt region.  The session
@@ -536,7 +598,7 @@ if want image; then
     cue; e '(shot-scene-insert-image)'                           ; hold 1
     cue; e '(shot-prompt-type "What is in this image? One line.")'; hold 0.67
     e '(shot-prompt-send)'                                  ; hold 0.67
-    hold 1.5; cue; hold 10.5
+    hold 1.5; cue; hold_until '(shot-live-idle-p)' 90; hold 2
     video
 fi
 
@@ -568,6 +630,8 @@ if want suggestion; then
 fi
 
 if want btw; then
+    # Not before the turn of the scene before it has ended.
+    wait_until '(shot-live-idle-p)' 120
     # A question asked beside a turn that is running, answered without
     # interrupting it.
     scene btw
@@ -575,8 +639,7 @@ if want btw; then
     hold 3
     cue; e '(shot-scene-btw-sequence (list "does " "read_records " "skip comments?"))'
     # The question is sent at 3.6s.
-    hold 3.8; cue; hold 2.6
-    hold 10
+    hold 3.8; cue; hold_until '(shot-btw-answered-p)' 90; hold 4
     video
     # The answer floats in a posframe, and a posframe outlives every
     # window command: without this it lies over every scene after it.

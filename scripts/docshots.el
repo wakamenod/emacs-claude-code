@@ -514,6 +514,55 @@ image by reference, so nothing of the picture is otherwise on screen."
       (ecc-chat-update-placeholder)
       (redisplay t))))
 
+(defun shot-turn-has (session type)
+  "Return non-nil when the last turn of SESSION holds a node of TYPE."
+  (when-let* ((turn (car (last (ecc-session-turns session)))))
+    (cl-labels ((walk (nodes)
+                  (seq-some (lambda (node)
+                              (or (eq (ecc-node-type node) type)
+                                  (walk (ecc-node-children node))))
+                            nodes)))
+      (walk (ecc-turn-children turn)))))
+
+;; What the wrapper waits for, rather than a fixed number of seconds: an
+;; answer took five seconds in one run and twenty in the next, and a
+;; scene that moved on before it came left every scene after it queued
+;; behind a turn still thinking (2026-10-10).
+
+(defun shot-live-idle-p ()
+  "Return non-nil when the live session has nothing running."
+  (and shot-live (eq (ecc-session-state shot-live) 'idle)
+       (null (ecc-session-pending shot-live))))
+
+(defun shot-live-answering-p ()
+  "Return non-nil once the live session's turn has text, or has ended."
+  (and shot-live
+       (or (shot-turn-has shot-live 'text)
+           (eq (ecc-session-state shot-live) 'idle))))
+
+(defun shot-live-waiting-p ()
+  "Return non-nil when the live session waits for a permission."
+  (and shot-live (ecc-session-pending shot-live) t))
+
+(defun shot-rewrite-ready-p ()
+  "Return non-nil once the rewrite of the demo source has come back."
+  (when-let* ((buffer (get-file-buffer shot-file)))
+    (and (buffer-local-value 'ecc-rewrite--code buffer) t)))
+
+(defun shot-inline-done-p ()
+  "Return non-nil once the inline answer over the demo source is complete."
+  (when-let* ((buffer (get-file-buffer shot-file))
+              (session (buffer-local-value 'ecc-inline--session buffer)))
+    (and (eq (ecc-session-state session) 'idle)
+         (not (string-empty-p (buffer-local-value 'ecc-inline--text buffer))))))
+
+(defun shot-btw-answered-p ()
+  "Return non-nil once the side question of the live session is answered."
+  (and shot-live
+       (null (gethash shot-live ecc-btw--inflight))
+       (gethash shot-live ecc-btw--exchanges)
+       t))
+
 (defun shot-suggestion-p ()
   "Return non-nil once the CLI has suggested a prompt.
 The wrapper asks until it has one: a suggestion arrives when the CLI
