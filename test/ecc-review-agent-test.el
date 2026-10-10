@@ -874,6 +874,29 @@ and a review_open without paths is answered, not failed."
     (should-not (string-search "review_open"
                                (or (alist-get 'instructions (ecc-mcp--server-info)) "")))))
 
+(ert-deftest ecc-review-agent-test-opens-only-when-asked ()
+  "The model is told to open the review when the user asks for it, not after an edit.
+The instructions and review_open's description say so alike, and the
+instructions still say how to read and answer the user's comments, which
+C-c C-c and M rely on."
+  (require 'ecc)
+  (let ((instructions (ecc-mcp-instructions))
+        (description (alist-get 'description
+                                (ecc-mcp-tool-object (ecc-mcp-tool "review_open")))))
+    (should-not (string-search "asked to explain, walk through or review changes"
+                               instructions))
+    (dolist (text (list instructions description))
+      (should (string-search "only when the user asks for the review" text))
+      (should (string-search "a review they have open" text)))
+    (should (string-search "summing up what you have just changed is not"
+                           instructions))
+    (should (string-search "not to explain or sum up changes you have just made"
+                           description))
+    (dolist (words '("review_comment " "review_comment_apply" "review_navigate"
+                     "review_list_comments with author \"user\""
+                     "review_remove_comment" "reply_to"))
+      (should (string-search words instructions)))))
+
 (ert-deftest ecc-review-agent-test-allowed-without-asking ()
   "A review tool is allowed at once; another tool of the server is still asked."
   (ecc-test-with-fake-session session

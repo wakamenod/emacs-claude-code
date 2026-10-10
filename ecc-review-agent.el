@@ -73,22 +73,35 @@ a setting.  Set it to nil to be asked about them like any other tool.")
 (defvar ecc-review-agent-instructions
   "The user reads changes in an Emacs review: a unified diff, or the two \
 sides in ediff, which they comment on and whose comments come to you as \
-a prompt.  When \
-you are asked to explain, walk through or review changes, call \
-review_open, put each remark on the line it is about with review_comment \
-\(or several at once with review_comment_apply), and use review_navigate \
-to bring the place you are talking about into view.  Keep a comment to \
-what that line needs; the rest belongs in your answer.  To read what the \
-user left, call review_list_comments with author \"user\"; once you have \
-dealt with one, remove it with review_remove_comment.  You cannot write \
-or change the user's comments; answer one with reply_to."
+a prompt.  Call review_open only when the user asks for the review -- \
+to see changes in it or in Emacs, or to have you comment on them there \
+-- or when their prompt is about a review they have open.  Explaining or summing up what \
+you have just changed is not such a request: answer in your reply and \
+leave the review closed.  In the review, put each remark on the line it \
+is about with review_comment (or several at once with \
+review_comment_apply), and use review_navigate to bring the place you \
+are talking about into view.  Keep a comment to what that line needs; \
+the rest belongs in your answer.  To read what the user left, call \
+review_list_comments with author \"user\"; once you have dealt with one, \
+remove it with review_remove_comment.  You cannot write or change the \
+user's comments; answer one with reply_to."
   "The paragraph the MCP server gives the model about the review tools.
+It says when to open the review as `ecc-review-agent-open-description'
+does: when the user asks for it.  Told to open one whenever it was asked
+to explain changes, the model took its own summary after an edit for
+such a request, and the review it opened took the user's source window
+\(`ecc-window-show-review-quietly').  The rest is what `ecc-review-send'
+and M rely on: the user's comments are read with review_list_comments
+and answered with reply_to.
 A sentence sent to the model, so a variable and not a setting.  It is
 read when a session starts, so a `setq\\=' takes effect on the next one.")
 
 (defvar ecc-review-agent-open-description
   "Open the changes as a diff in the user's Emacs review buffer, or read \
-it again when it is open; the comments on it are kept.  The user starts \
+it again when it is open; the comments on it are kept.  Call it only \
+when the user asks for the review, or when their prompt is about a \
+review they have open, not to explain or sum up changes you have just \
+made.  The user starts \
 a review from a menu of what to compare, and each choice there is these \
 arguments, so ask for the same review in the same words:
 - everything this session changed since it started, commits included: \
@@ -107,7 +120,8 @@ as `git diff` takes it.
 paths keeps only those files, relative to the repository.  The user's \
 focus is left alone.  Returns the files and hunks, as review_hunks does."
   "The description of the tool `review_open\=', which the model reads.
-It names, for each choice of `ecc-review-menu', the arguments that open
+It says when to call the tool as `ecc-review-agent-instructions' does,
+and names, for each choice of `ecc-review-menu', the arguments that open
 the same review, so that \"review what is staged\", \"this whole
 branch\" or \"just this commit\" open what s, b RET RET and c X RET
 open.  A sentence sent to the model, so a variable and not a setting; it
