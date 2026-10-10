@@ -112,16 +112,9 @@ Verified against **Claude Code CLI 2.1.281**.
   Claude's lands on the line it is about, in the diff the user is reading,
   rather than in the transcript with a file and a line number to look up.
 
-- A comment in the review buffer belongs to a line. `c` on a removed line
-  comments the old side, on an added or a context line the new side, and on
-  the `@@` line the whole hunk, as before. Every comment has a number that is
-  not used again, `{` and `}` move between comments, and the header line
-  counts yours and Claude's. A line comment is sent headed by its line,
-  `## foo.el  L42 (new)`, with the whole hunk under it; a reply quotes the
-  comment of Claude's it answers. What `c` does is settled when it is
-  pressed: a comment from Claude arriving on the line while you type does
-  not turn yours into a reply, and a line that goes away meanwhile leaves
-  your text kept as outdated.
+- Every comment in the review buffer has a number that is not used again,
+  and the header line counts yours and Claude's. A reply is sent quoting
+  the comment of Claude's it answers.
 
 - The MCP server's `initialize` carries instructions, the paragraphs modules
   register with `ecc-mcp-define-instructions`, each left out while none of its
@@ -178,10 +171,10 @@ Verified against **Claude Code CLI 2.1.281**.
   directory the session works in, inside git and outside it, and a
   symbolic link git tracks is the link and not its target.
 
-- `ecc-review-menu`, where a review starts: `D` in `C-c c` and in
-  `ecc-menu` opens it, and it asks what to compare before anything is
-  opened. `D` is what changed since the session started, so `C-c c D D` is
-  what `C-c c D` was; `w` everything uncommitted (against `HEAD`); `u` what
+- `ecc-review-menu`, where a review starts, on `D` in `C-c c` and in
+  `ecc-menu` (under Changed). It asks what to compare before anything is
+  opened. `D` is what changed since the session started; `w` everything
+  uncommitted (against `HEAD`); `u` what
   is not staged; `s` what is staged; `b` this branch against another; `c` a
   commit; `r` a range typed as `C-u M-x ecc-review-range` takes it. Each line says how many
   files it would show. One `git status` gives the counts of `w`, `u` and
@@ -521,13 +514,6 @@ Verified against **Claude Code CLI 2.1.281**.
   and its height alone; and it goes with the review. The diff review has
   the session beside it and no pane.
 
-- An ediff review opens with the old side above the new one, each the width
-  of the frame, and the reply pane on the right (`ecc-review-ediff-layout`,
-  `stacked`); `|` puts them side by side with the pane under them, and back.
-  `side-by-side` opens it the way it opened before. The files pane, the
-  rows the two sides are put together by and the keyboard follow either
-  layout.
-
 - The control panel of an ediff review is out of sight: the keys are on the
   header lines of its two windows and where the review is on the mode line
   of the right one, and `?` shows
@@ -644,8 +630,7 @@ Verified against **Claude Code CLI 2.1.281**.
   with the next send. The mark survives `g`, the review following the files
   and the ediff review being read again. `review_list_comments` marks a
   user's comment that has been sent. `C-c C-k` drops the review and `q`
-  buries it, as before. `C-c C-a` in the review of a pull request's commit
-  behaves the same way across its reviews. The review of a proposal still
+  buries it, as before. The review of a proposal still
   closes on `C-c C-c`, since the deny answers the proposal.
 - The session picker of `C-u C-c C-t` (`ecc-switch-session`) and of the
   "Send to:" prompt groups the sessions by Space, or by project when
@@ -673,10 +658,16 @@ Verified against **Claude Code CLI 2.1.281**.
   difference; in a window, one of the line at point first -- and `C-u x`
   offers every comment of the review. The diff review keeps `d`.
 
-- `ecc-review-ediff-layout` replaces `ecc-review-ediff-split-window-function`:
-  `stacked` or `side-by-side` rather than a split function, and nil, ediff's
-  own layout, is gone. An ediff review no longer has a control frame on a
-  graphical Emacs (above).
+- **Breaking.** An ediff review opens with the old side above the new one,
+  each the width of the frame, and the reply pane on the right; `|` puts
+  them side by side with the pane under them, and back. The setting is
+  `ecc-review-ediff-layout`, `stacked` (the default) or `side-by-side`, the
+  way it opened before, and it replaces
+  `ecc-review-ediff-split-window-function`: a layout rather than a split
+  function, and nil, ediff's own layout, is gone. The files pane, the rows
+  the two sides are put together by and the keyboard follow either layout.
+  An ediff review no longer has a control frame on a graphical Emacs
+  (above).
 
 - An ediff review opens sooner. Both sides of every file are read by two
   git processes instead of one each: `git cat-file --batch-check` for the
@@ -721,8 +712,8 @@ Verified against **Claude Code CLI 2.1.281**.
 - `D` in `C-c c` (`ecc-global-map`) and in `ecc-menu` opens
   `ecc-review-menu` instead of `ecc-review`; `D` there is `ecc-review` of
   the session the menu names, which is the session of the buffer or its
-  project, else the one used last, as before. `M-x ecc-review` is
-  unchanged.
+  project, else the one used last, as before, so `C-c c D D` is what
+  `C-c c D` was. `M-x ecc-review` is unchanged.
 
 - **Breaking.** `G` is gone from `C-c c` (`ecc-global-map`) and from
   `ecc-menu`: `C-c c D w` is the same review. The command stays, renamed
@@ -776,8 +767,14 @@ Verified against **Claude Code CLI 2.1.281**.
   to use the new one.
 
 - `c` in the review buffer comments the line at point instead of the hunk
-  around it. On the `@@` line it still comments the whole hunk, and a
-  comment on a whole hunk is sent in the same form as before.
+  around it: on a removed line the old side, on an added or a context line
+  the new side. On the `@@` line it still comments the whole hunk, and a
+  comment on a whole hunk is sent in the same form as before. A line
+  comment is sent headed by its line, `## foo.el  L42 (new)`, with the
+  whole hunk under it. What `c` does is settled when it is pressed: a
+  comment from Claude arriving on the line while you type does not turn
+  yours into a reply, and a line that goes away meanwhile leaves your text
+  kept as outdated.
 
 - `g` no longer drops a comment whose hunk header changed ("Dropped N
   comments whose hunk is gone"). A comment stays on its line while that
@@ -803,15 +800,15 @@ Verified against **Claude Code CLI 2.1.281**.
   to the top. A window of the review in another tab's saved configuration is
   out of reach and shows the review from the top when that tab comes back.
 
-- The control panel of an ediff review says the keys a review is read with
-  in two lines, ` n/p diff   c comment   { } comments   a Claude's   s files
-  / filter` and ` T tour   t next   M message   C-c C-c send   q quit
-  ! reread   ? all keys`, where it said ` c -comment   C-c C-c -send
-  q -quit   ? -help`. `?` lists `s`, `/`, `T`, `t`, `M` and `y` too. The
-  header line of the diff review, which said ` c comment  l list  d delete
-  C-c C-c send (C-u edits)  n/p hunk  RET source`, says ` c comment  { }
-  comments  d delete  n/p hunk  s files  / filter  T tour  t next
-  M message  C-c C-c send  ? all keys`; `l`, `C-u C-c C-c` and `RET` still
+- The control panel of an ediff review, which said ` c -comment
+  C-c C-c -send   q -quit   ? -help`, is out of sight: its keys are on the
+  header lines of the review's two windows, and `?` shows the panel with
+  every key (above). The header line of the diff review, which said
+  ` c comment  l list  d delete C-c C-c send (C-u edits)  n/p hunk  RET
+  source`, says ` c comment  { } comments  d delete  n/p hunk  s files
+  / filter  T tour  t next  M message  C-c C-c send  ? all keys`, with
+  `] [ commits  C-c C-a send all` before `? all keys` in a review of a pull
+  request's commits; `l`, `C-u C-c C-c` and `RET` still
   work. `?` in the diff review lists every one of its keys in the help
   window, as `?` does in the ediff control panel; in the review of a
   proposal it lists that review's own -- `C-c C-c` sending the comments as
@@ -921,11 +918,13 @@ Verified against **Claude Code CLI 2.1.281**.
   against a current difference of `#00512d`. The colours are worked out from the colours as
   written, not from the nearest the display can show.
 
-- A review of one commit in ediff (`ecc-review-range` with `REV^!` and
+- A review of one commit in ediff (`ecc-review-range`, then
+  `ecc-review-worktree`, with `REV^!` and
   `ecc-review-style` `ediff`) failed with "Git cannot diff against"; it
   compares the commit with its first parent, as the diff review does.
 
-- A review of commits (`ecc-review-range` with `a..b`, `a...b` or `REV^!`) listed the
+- A review of commits (`ecc-review-range`, then `ecc-review-worktree`, with
+  `a..b`, `a...b` or `REV^!`) listed the
   untracked files of the working tree, which belong to none of those
   commits. They are now appended only when the range involves the working
   tree, which git decides: `git rev-parse --revs-only` names one revision
