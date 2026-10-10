@@ -133,18 +133,22 @@ stopped when its time is up, and that is a `user-error'."
            (deadline (+ (float-time) ecc-review-pr--timeout)))
       (unwind-protect
           (progn
+            ;; An integer JUST-THIS-ONE runs no timer while it waits: this
+            ;; is a tool in the middle of its work, and a timer of
+            ;; anything else -- one that starts a session, say -- has no
+            ;; business running inside it.
             (while (and (process-live-p process) (< (float-time) deadline))
-              (accept-process-output process 0.05))
+              (accept-process-output process 0.05 nil 1))
             (when (process-live-p process)
               (delete-process process)
               (user-error "%s gave no answer in %s seconds"
                           (file-name-nondirectory program)
                           ecc-review-pr--timeout))
             ;; What is still in the pipes after the exit.
-            (while (accept-process-output process 0 nil t))
+            (while (accept-process-output process 0 nil 1))
             (when-let* ((pipe (get-buffer-process errors)))
               (while (and (process-live-p pipe)
-                          (accept-process-output pipe 0.05))))
+                          (accept-process-output pipe 0.05 nil 1))))
             (with-current-buffer errors
               (write-region nil nil stderr nil 'silent))
             (process-exit-status process))
