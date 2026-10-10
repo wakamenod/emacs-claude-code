@@ -6,8 +6,8 @@ A region marked in the source
 00:00:03.000 --> 00:00:07.800
 In the menu (C-c c ?), l asks a question in the minibuffer
 
-00:00:07.800 --> 00:00:17.600
+00:00:07.800 --> 00:00:10.800
 Waiting for the answer
 
-00:00:17.600 --> 00:00:25.600
+00:00:10.800 --> 00:00:14.800
 The answer appears in an overlay over the code

@@ -6,11 +6,11 @@ The point is on line 20 of the source
 00:00:02.600 --> 00:00:08.200
 In the session buffer, C-c C-x turns the editor context on
 
-00:00:08.200 --> 00:00:13.500
+00:00:08.200 --> 00:00:13.400
 The prompt goes out with the file and line: reader.py L20
 
-00:00:13.500 --> 00:00:21.500
+00:00:13.400 --> 00:00:18.400
 Claude answers from that position
 
-00:00:21.500 --> 00:00:24.300
+00:00:18.400 --> 00:00:21.200
 C-c C-x turns it off again
