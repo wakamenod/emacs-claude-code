@@ -3,11 +3,11 @@ WEBVTT
 00:00:00.000 --> 00:00:03.000
 The plan opens in a buffer beside the session
 
-00:00:03.000 --> 00:00:08.200
+00:00:03.000 --> 00:00:08.600
 In the plan buffer, C-c C-a puts a comment on a line
 
-00:00:08.200 --> 00:00:11.600
+00:00:08.600 --> 00:00:12.200
 C-c C-p chooses the permission mode to approve with
 
-00:00:11.600 --> 00:00:15.400
+00:00:12.200 --> 00:00:16.000
 C-c C-c sends the plan back with the comment

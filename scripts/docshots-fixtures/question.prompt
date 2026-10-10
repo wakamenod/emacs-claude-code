@@ -1,0 +1,1 @@
+I want read_records to handle quoted fields. Before changing anything, use AskUserQuestion to ask me two things at once: whether to switch to the csv module or keep the hand-written parser, and, as a multiple choice, which quote characters to accept. Then say in one or two sentences what you would do, and stop.
