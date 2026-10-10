@@ -119,7 +119,7 @@ The tab of the session in the window is bold and underlined. `(setq ecc-tab-blin
 
 Clicking a tab switches the window to that session. `C-c C-t` in a session buffer chooses from the window's tabs, and `C-u C-c C-t` from every session; with Spaces on, a session of another project opens in that project's Space. The `x` on a tab asks, then stops the session, and the window moves to the next tab. `(setq ecc-tab-close-confirm nil)` skips the question.
 
-<Video name="switch" label="The session window changing from one session to another: the selected tab moves from greet to notes and the transcript is replaced" />
+<Video name="switch" label="The session window changing from one session to another: the selected tab moves from records to notes and the transcript is replaced" />
 
 `(setq ecc-tab-line-scope 'all)` lists every session in each tab line. To mark session state in the Emacs tab bar too, set `ecc-tab-bar-state` to `t` and `tab-bar-tab-name-function` to `#'ecc-tab-bar-tab-name`.
 
