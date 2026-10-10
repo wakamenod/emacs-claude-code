@@ -2,7 +2,21 @@
 //
 //   record-window --title "ecc demo" --out demo/x.mp4 [--fps 10] [--width 1456]
 //   record-window --title "ecc demo" --shot /tmp/x.png
+//   record-window --title "ecc docshot" --frames DIR [--fps 10]
 //   record-window --list
+//
+// `--frames' is for scripts/docshots.sh, which cuts its videos out of
+// the frames itself and encodes them once: DIR/0001.png on, one per
+// 1/fps of a second at the window's full resolution, until SIGINT or
+// SIGTERM, and DIR/started, the epoch milliseconds of the first.  Frame
+// N is the window N-1 ticks after that, a tick it missed being the
+// frame before it again, so a time can be turned into a frame number.
+// An mp4 from `--out' would be encoded twice on its way to the site,
+// and monospaced text does not survive that.
+//
+// The window's child frames -- a posframe, a completion list in a frame
+// of its own -- are part of its content and are in the picture
+// (2026-10-10).
 //
 // `--shot' is one picture rather than a recording, and is how a window
 // that has stopped redrawing is looked at: a stream only hands over a
@@ -33,7 +47,10 @@ import AVFoundation
 import AppKit
 import CoreMedia
 import Foundation
+import ImageIO
 import ScreenCaptureKit
+import UniformTypeIdentifiers
+import VideoToolbox
 
 // MARK: - Arguments
 
@@ -45,6 +62,7 @@ struct Options {
     var width: Int = 1456
     var list = false
     var shot: String?
+    var frames: String?
 }
 
 func parseArguments() -> Options {
@@ -68,6 +86,7 @@ func parseArguments() -> Options {
         case "--width": options.width = Int(value()) ?? 1456
         case "--list": options.list = true
         case "--shot": options.shot = value()
+        case "--frames": options.frames = value()
         default:
             FileHandle.standardError.write("unknown argument: \(argument)\n".data(using: .utf8)!)
             exit(2)
@@ -239,6 +258,95 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
     var outputQueue: DispatchQueue { queue }
 }
 
+// MARK: - Writing frames
+
+/// Keeps the last picture the stream handed over, and writes it out once
+/// a tick for `--frames'.
+final class FrameWriter: NSObject, SCStreamOutput, SCStreamDelegate {
+    private let directory: String
+    private let step: Int64
+    private let lock = NSLock()
+    private var latest: CGImage?
+    private var written: CGImage?
+    private var start: Int64 = 0
+    private var count = 0
+    // One at a time, so that a repeat can be a link to the file before.
+    let writing = DispatchQueue(label: "record-window.png")
+
+    init(directory: String, fps: Int) {
+        self.directory = directory
+        step = Int64(1000 / max(1, fps))
+        try? FileManager.default.createDirectory(atPath: directory,
+                                                 withIntermediateDirectories: true)
+    }
+
+    func stream(_ stream: SCStream, didOutputSampleBuffer buffer: CMSampleBuffer,
+                of type: SCStreamOutputType) {
+        guard type == .screen, CMSampleBufferIsValid(buffer),
+              let attachments = CMSampleBufferGetSampleAttachmentsArray(
+                buffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
+              let raw = attachments.first?[.status] as? Int,
+              SCFrameStatus(rawValue: raw) == .complete,
+              let pixels = CMSampleBufferGetImageBuffer(buffer) else { return }
+        var image: CGImage?
+        VTCreateCGImageFromCVPixelBuffer(pixels, options: nil, imageOut: &image)
+        guard let image else { return }
+        lock.lock(); latest = image; lock.unlock()
+    }
+
+    func stream(_ stream: SCStream, didStopWithError error: Error) {
+        note("the stream stopped: \(error.localizedDescription)")
+    }
+
+    private func path(_ number: Int) -> String {
+        String(format: "%@/%04d.png", directory, number)
+    }
+
+    /// Write the frames due by now: the latest picture, and the one
+    /// before it again for any tick that went by without one.
+    func tick() {
+        lock.lock(); let image = latest; lock.unlock()
+        guard let image else { return }
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        if start == 0 {
+            start = now
+            try? "\(now)\n".write(toFile: "\(directory)/started",
+                                   atomically: true, encoding: .utf8)
+        }
+        let due = Int((now - start) / step) + 1
+        while count < due - 1, written != nil {
+            count += 1
+            repeatFrame(count)
+        }
+        count += 1
+        if image === written {
+            repeatFrame(count)
+        } else {
+            written = image
+            let target = path(count)
+            writing.async {
+                let url = URL(fileURLWithPath: target) as CFURL
+                if let destination = CGImageDestinationCreateWithURL(
+                    url, UTType.png.identifier as CFString, 1, nil) {
+                    CGImageDestinationAddImage(destination, image, nil)
+                    CGImageDestinationFinalize(destination)
+                }
+            }
+        }
+    }
+
+    private func repeatFrame(_ number: Int) {
+        let source = path(number - 1), target = path(number)
+        writing.async { try? FileManager.default.linkItem(atPath: source, toPath: target) }
+    }
+
+    /// Wait for the files, then hand back how many there are.
+    func finish(_ done: @escaping (Int) -> Void) {
+        let total = count
+        writing.async { done(total) }
+    }
+}
+
 // MARK: - Finding the window
 
 func windows(_ options: Options) async throws -> [SCWindow] {
@@ -319,6 +427,54 @@ struct Main {
             } catch {
                 fail("cannot take the picture: \(error.localizedDescription)")
             }
+        }
+
+        if let directory = options.frames {
+            let configuration = SCStreamConfiguration()
+            configuration.width = Int(window.frame.width) * 2
+            configuration.height = Int(window.frame.height) * 2
+            configuration.minimumFrameInterval = CMTime(value: 1,
+                                                        timescale: CMTimeScale(options.fps))
+            configuration.pixelFormat = kCVPixelFormatType_32BGRA
+            configuration.showsCursor = false
+            configuration.scalesToFit = true
+            configuration.queueDepth = 6
+            configuration.capturesAudio = false
+            let writer = FrameWriter(directory: directory, fps: options.fps)
+            let stream = SCStream(filter: SCContentFilter(desktopIndependentWindow: window),
+                                  configuration: configuration, delegate: writer)
+            do {
+                try stream.addStreamOutput(writer, type: .screen,
+                                           sampleHandlerQueue: DispatchQueue(label: "record-window.frames"))
+                try await stream.startCapture()
+            } catch {
+                fail("cannot record that window: \(error.localizedDescription)")
+            }
+            let ticking = DispatchQueue(label: "record-window.tick")
+            let tick = DispatchSource.makeTimerSource(queue: ticking)
+            tick.schedule(deadline: .now(), repeating: 1.0 / Double(options.fps))
+            tick.setEventHandler { writer.tick() }
+            tick.resume()
+            signal(SIGINT, SIG_IGN)
+            signal(SIGTERM, SIG_IGN)
+            var sources: [DispatchSourceSignal] = []
+            for number in [SIGINT, SIGTERM] {
+                let source = DispatchSource.makeSignalSource(signal: number, queue: ticking)
+                source.setEventHandler {
+                    tick.cancel()
+                    Task {
+                        try? await stream.stopCapture()
+                        writer.finish { frames in
+                            note("wrote \(frames) frames to \(directory)")
+                            exit(frames == 0 ? 3 : 0)
+                        }
+                    }
+                }
+                source.resume()
+                sources.append(source)
+            }
+            _ = sources
+            while true { try? await Task.sleep(nanoseconds: 3_600_000_000_000) }
         }
 
         // H.264 wants even numbers, and the window is measured in points:
