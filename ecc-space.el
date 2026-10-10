@@ -178,6 +178,10 @@ down the screen."
             (push child ordered)))))
     (nreverse ordered)))
 
+(defun ecc-space-at-p (root)
+  "Return non-nil when the project ROOT belongs to has a Space."
+  (and (member (ecc-window-project-key root) (ecc-space--keys)) t))
+
 (defun ecc-space-child-p (space &optional spaces)
   "Return non-nil when SPACE is drawn under a parent among SPACES.
 A worktree whose repository has no Space of its own is not a child of
