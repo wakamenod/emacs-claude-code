@@ -36,8 +36,15 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 # pictures is this checkout's too (`shot-foreign-ecc').
 outdir=${1:-$root/docs/site/src/assets}
 # The videos are not processed by Astro's image pipeline, so they and
-# their subtitles are served as they are, from public/.
-videodir=${1:-$root/docs/site/public/videos}
+# their subtitles are served as they are, from public/.  Given a
+# directory, the videos go into videos/ under it, with a copy of their
+# subtitles: `stretch' reads their text and `retime' writes their times.
+videodir=$root/docs/site/public/videos
+if [ -n "${1:-}" ]; then
+    mkdir -p "$1/videos"
+    cp "$videodir"/*.vtt "$1/videos/"
+    videodir=$1/videos
+fi
 # The conversation the hand-off scene resumes in the terminal.  It is
 # recorded once, in the demo project, and kept: the CLI can only
 # --resume a conversation it has really had.
@@ -67,6 +74,13 @@ if [ ! -x "$recorder" ] || [ "$root/demo/record-window.swift" -nt "$recorder" ];
 fi
 [ -x "$recorder" ] || { echo "could not build $recorder" >&2; exit 1; }
 title="ecc docshot $$ $RANDOM"
+# The display the frame stands on: the one with the most pixels to the
+# point, since the pictures are taken in its pixels.  A frame left on a
+# screen of one pixel to the point beside a Retina one came out at half
+# the width (2026-10-10).
+display=$("$recorder" --displays | sort -k5 -nr | head -1)
+read -r display_x display_y _ _ display_scale <<< "$display"
+echo "taking the pictures on the display at $display_x,$display_y ($display_scale pixels to the point)" >&2
 
 # Both the recording and the terminal of the hand-off scene run the real
 # CLI, and a Claude Code session this script was started from would pass
@@ -118,7 +132,7 @@ scene() {
     rm -rf "${frames:?}/${scene:?}" "${frames:?}/${scene:?}".*
     mkdir -p "$frames/$scene"
     regeom
-    "$recorder" --title "$title" --fps "$fps" --frames "$frames/$scene.raw" 2>/dev/null &
+    "$recorder" --title "$title" --fps "$fps" --frames "$frames/$scene.raw" &
     capturing=$!
     for _ in $(seq 1 100); do
         [ -s "$frames/$scene.raw/started" ] && break
@@ -178,6 +192,12 @@ cut() {
     local i k=0 have=""
     kill -INT "$capturing" 2>/dev/null || true
     wait "$capturing" 2>/dev/null || true
+    # The recorder takes the window at the size it had when the scene
+    # began; a frame that changed size after that is scaled into it.
+    if [ -e "$frames/$scene.raw/resized" ]; then
+        echo "$scene: the frame changed size during the scene; nothing written" >&2
+        exit 1
+    fi
     while read -r i; do
         k=$((k + 1))
         [ -f "$(printf '%s/%04d.png' "$frames/$scene.raw" "$i")" ] \
@@ -198,6 +218,7 @@ cut() {
 # made larger than it was taken.  The frame is 916 points wide, which is
 # 1832 pixels on a Retina screen, so it comes out at 1440 there and at
 # 916 on a screen of one pixel to the point, whatever machine runs this.
+# The frame is put on the display with the most pixels to the point.
 # -crf 20 keeps monospaced text clean at that size; a screen is mostly
 # flat colour, so a video is still a few hundred kilobytes.  The videos
 # were 900 wide at -crf 30 until 2026-10-10, and their text was soft.
@@ -364,7 +385,7 @@ pkill -f 'scripts/docshots.el' 2>/dev/null || true
 rm -f "${TMPDIR:-/tmp}/emacs$(id -u)/ecc-docshot"
 
 open -n -a "$emacs_app" --args -Q --chdir "$root" \
-  --eval "(setq shot-geometry-file \"$geom\" shot-error-file \"$err\" shot-frame-title \"$title\")" \
+  --eval "(setq shot-geometry-file \"$geom\" shot-error-file \"$err\" shot-frame-title \"$title\" shot-display-origin (quote ($display_x . $display_y)))" \
   -l "$root/scripts/docshots.el"
 
 for _ in $(seq 1 30); do

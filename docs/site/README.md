@@ -153,6 +153,17 @@ can be used while it runs. It took a rectangle of the screen with
 `screencapture -R` until 2026-10-10, and with somebody using the machine that
 rectangle held their own Emacs.
 
+The frame is put on the display with the most pixels to the point, since the
+pictures are taken in that display's pixels. A frame that changes size in the
+middle of a video stops the run: the recorder keeps the size the scene began
+with, and would scale the rest into it.
+
+The scene Emacs reads no Claude Code settings of the machine: ecc's settings
+directory is `scripts/docshots-project/claude`, and the live sessions start
+with `--setting-sources project,local --strict-mcp-config`. Given a directory,
+`scripts/docshots.sh DIR` writes the stills into it and the videos, with a
+copy of their subtitles, into `DIR/videos`.
+
 Take one scene rather than all of them: taking all runs the real CLI several
 times and takes about ten minutes.
 

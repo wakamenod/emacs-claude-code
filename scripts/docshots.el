@@ -128,6 +128,13 @@ that scripts/docshots-fixtures.sh records its sessions over the same
 code these scenes show.  Written for this and nobody's but this
 repository's.")
 
+;; What ecc reads of the Claude Code settings -- the model a session
+;; not started yet is drawn with, above all -- is this directory's, not
+;; the settings of whoever runs this: the footer of the hand-off scene
+;; said the model of the machine it was made on (2026-10-10).  Haiku is
+;; what the hand-off conversation and the Send scenes run.
+(setq ecc-protocol-user-directory (expand-file-name "claude" shot-project-files))
+
 (defconst shot-fixtures (expand-file-name "scripts/docshots-fixtures" shot-repository)
   "The recordings these scenes replay, made by scripts/docshots-fixtures.sh.
 Not test/fixtures: those are the ERT tests', and what they record is
@@ -172,23 +179,30 @@ beside a transcript.")
 (defvar shot-other nil "The second session, so that switching has somewhere to go.")
 
 (defun shot-fixture (name)
-  "Return recording NAME as parsed messages.
-One of `shot-fixtures', or, for what carries no story -- the usage
-report -- a test fixture of that name."
+  "Return recording NAME of `shot-fixtures' as parsed messages.
+A name that is not there is an error: falling back to a test fixture of
+that name put a recording made for something else, its sandbox paths
+and all, into a picture of the site."
   (let ((file (expand-file-name (concat name ".jsonl") shot-fixtures)))
-    (delq nil
-          (mapcar #'ecc-protocol-parse-line
-                  (if (file-exists-p file)
-                      (split-string (shot-read file) "\n" t)
-                    (ecc-test-fixture-lines name))))))
+    (unless (file-exists-p file)
+      (error "No such docs fixture: %s" file))
+    (delq nil (mapcar #'ecc-protocol-parse-line
+                      (split-string (shot-read file) "\n" t)))))
 
-(defun shot-request-index (fixture)
-  "Return the 1-based position of the first permission FIXTURE asks for.
+(defun shot-test-fixture (name)
+  "Return test fixture NAME as parsed messages, for what tells no story.
+Only the usage report is one: its numbers are invented and it carries
+no path.  Read through the test helpers, as the tests read it."
+  (ecc-test-fixture-messages name))
+
+(defun shot-request-index (messages fixture)
+  "Return the 1-based position of the first permission MESSAGES ask for.
 The scenes stop a recording there, answer it as a user would, and play
-the rest; counted by hand, the positions broke with every recording."
+the rest; counted by hand, the positions broke with every recording.
+FIXTURE names the recording in the error when there is none."
   (let ((index 0))
     (catch 'found
-      (dolist (message (shot-fixture fixture))
+      (dolist (message messages)
         (setq index (1+ index))
         (when (equal (alist-get 'type message) "control_request")
           (throw 'found index)))
@@ -196,23 +210,25 @@ the rest; counted by hand, the positions broke with every recording."
 
 (defun shot-play-to-request (session fixture)
   "Play FIXTURE into SESSION up to the permission it asks for."
-  (shot-play session fixture 1 (shot-request-index fixture)))
+  (let ((messages (shot-fixture fixture)))
+    (shot-play session fixture 1 (shot-request-index messages fixture) messages)))
 
 (defun shot-play-after-request (session fixture)
   "Play the rest of FIXTURE into SESSION, after its permission."
-  (shot-play session fixture (1+ (shot-request-index fixture))))
+  (let ((messages (shot-fixture fixture)))
+    (shot-play session fixture (1+ (shot-request-index messages fixture))
+               nil messages)))
 
-(defun shot-play (session fixture &optional from to)
+(defun shot-play (session fixture &optional from to messages)
   "Dispatch the messages of FIXTURE into SESSION and draw the result.
 FROM and TO, 1-based and inclusive, narrow it to part of the recording.
-The turn it plays is given the prompt it was recorded with, which the
-stream never says back: without it the heading reads \"(resumed)\"."
-  (let ((messages (shot-fixture fixture))
-        (prompt (expand-file-name (concat fixture ".prompt") shot-fixtures)))
+MESSAGES is FIXTURE already read, when the caller has it.  The turn it
+plays is given the prompt it was recorded with, which the stream never
+says back: without it the heading reads \"(resumed)\"."
+  (let ((messages (or messages (shot-fixture fixture))))
     (dolist (message (seq-subseq messages (1- (or from 1)) (or to (length messages))))
       (ecc-dispatch session message))
-    (when-let* (((file-exists-p prompt))
-                (turn (car (last (ecc-session-turns session))))
+    (when-let* ((turn (car (last (ecc-session-turns session))))
                 ((not (ecc-turn-prompt turn))))
       (setf (ecc-turn-prompt turn) (shot-prompt-of fixture))
       (ecc-render-refresh session)))
@@ -331,6 +347,11 @@ no user has."
 
 (defvar shot-live nil "The session the Send scenes send to.")
 
+(defconst shot-live-isolation '("--setting-sources" "project,local" "--strict-mcp-config")
+  "What keeps the Claude Code settings of this machine out of a live session.
+Its permission rules, hooks, skills and MCP servers would otherwise be
+in the scene, and differ from one machine to the next.")
+
 (defun shot-start-live ()
   "Start a real session in the demo project and show it.
 The replayed sessions are killed first, so that this one can have the
@@ -344,13 +365,14 @@ name of the project rather than `records<2>'."
                    ;; settings of the machine this was made on, and the
                    ;; transcript then opens with the session's own
                    ;; claude.ai URL across it.
-                   :options '(:model "haiku"
+                   :options `(:model "haiku"
                               :remote-control nil
                               ;; The CLI offers a prompt only when it is
                               ;; asked to; the scene that takes one waits
                               ;; for it to arrive.
                               :prompt-suggestions t
-                              :extra-args ("--max-budget-usd" "0.30"))))
+                              :extra-args ("--max-budget-usd" "0.30"
+                                           . ,shot-live-isolation))))
   (ecc-session-ensure-buffer shot-live)
   (ecc-proc-start shot-live)
   (ecc--enable-session-modes)
@@ -368,9 +390,13 @@ either way).  The budget is larger to match, and still a budget."
   (setq shot-live (ecc-model-create-session
                    :project-root shot-root
                    :name shot-project
-                   :options '(:remote-control nil
+                   ;; Named, so that it does not depend on the settings
+                   ;; of the machine; haiku sends no suggestion.
+                   :options `(:model "opus"
+                              :remote-control nil
                               :prompt-suggestions t
-                              :extra-args ("--max-budget-usd" "0.50"))))
+                              :extra-args ("--max-budget-usd" "0.50"
+                                           . ,shot-live-isolation))))
   (ecc-session-ensure-buffer shot-live)
   (ecc-proc-start shot-live)
   (ecc--enable-session-modes)
@@ -686,6 +712,9 @@ the demo project the first time it is needed, and it stays there.")
 
 (defvar shot-third nil "A third session, for the switch scene's picker.")
 
+(defvar shot-saved-completion-styles nil
+  "`completion-styles' as it was before the switch scene changed it.")
+
 (defun shot-scene-switch-start ()
   "The frame showing the first session, before anything is switched.
 A third session is made for the scene: with one other session in the
@@ -693,8 +722,11 @@ row, `ecc-switch-session' goes straight to it and asks nothing, and the
 picker is what the scene is about."
   ;; A candidate begins with the mark of its session's state, so a name
   ;; typed from its first letter matches nothing under the default
-  ;; prefix completion, and the picker stayed open (2026-10-10).
-  (setq completion-styles '(substring basic))
+  ;; prefix completion, and the picker stayed open (2026-10-10).  The
+  ;; scenes after it get the styles back: a whole run and a run of one
+  ;; scene would otherwise complete differently.
+  (setq shot-saved-completion-styles completion-styles
+        completion-styles '(substring basic))
   (unless shot-third
     (setq shot-third (ecc-model-create-session :name "server"
                                                :project-root shot-root))
@@ -703,7 +735,10 @@ picker is what the scene is about."
   (shot-show shot-main))
 
 (defun shot-scene-switch-end ()
-  "Take the third session away again; no other scene has it."
+  "Take the third session away again, and put the completion styles back."
+  (when shot-saved-completion-styles
+    (setq completion-styles shot-saved-completion-styles
+          shot-saved-completion-styles nil))
   (when shot-third
     (ecc-model-remove-session shot-third)
     (when (buffer-live-p (ecc-session-buffer shot-third))
@@ -847,7 +882,7 @@ one Space laid out underneath them."
   ;; 80 columns, and no screen this is run on fits that twice beside the
   ;; rest -- so the picture is taken with the width the frame can really
   ;; give two of them.
-  (let* ((area (frame-monitor-workarea))
+  (let* ((area (shot-workarea))
          (columns (min 170 (/ (- (nth 2 area) 48) (frame-char-width)))))
     (set-frame-size (selected-frame) columns 32)
     (setq ecc-space-session-min-width 44))
@@ -1066,7 +1101,7 @@ what the scene is about."
                       (recenter -1)))
                   session))
               '((name . shot-usecase)))
-  (let* ((area (frame-monitor-workarea))
+  (let* ((area (shot-workarea))
          (columns (min 150 (/ (- (nth 2 area) 48) (frame-char-width)))))
     (set-frame-size (selected-frame) columns 34)
     (setq ecc-space-session-min-width 44))
@@ -1076,7 +1111,8 @@ what the scene is about."
   ;; nothing for the name typed in the middle of it: `api\=' matched no
   ;; candidate and the minibuffer stayed open through the rest of the
   ;; run (measured 2026-09-18).
-  (setq completion-styles '(substring basic))
+  (setq shot-saved-completion-styles completion-styles
+        completion-styles '(substring basic))
   (ecc-space-select (ecc-space-of-root shot-root))
   (ecc-sidebar-show)
   (ecc-space-reset-windows)
@@ -1128,7 +1164,11 @@ under the repository it came from."
 
 (defun shot-scene-usecase-end ()
   "Take the use-case sessions, the tabs and the invented answers away."
-  (setq completion-styles (default-value 'completion-styles))
+  ;; Not `default-value': `completion-styles' is not buffer-local, and
+  ;; its default is the value this scene set.
+  (when shot-saved-completion-styles
+    (setq completion-styles shot-saved-completion-styles
+          shot-saved-completion-styles nil))
   (dolist (function '(ecc-space-past-projects ecc-start))
     (advice-remove function 'shot-usecase))
   (when shot-usecase-session
@@ -1188,15 +1228,30 @@ a completion UI over it does not always get to read one."
      (let ((ecc-render--session nil))
        (with-temp-buffer (ecc-read-session "Resume: "))))))
 
+(defvar shot-display-origin nil
+  "The top left of the display the frame is to stand on, as (X . Y).
+The wrapper names the one with the most pixels to the point, which is
+what the pictures are taken in: on a screen of one pixel to the point
+the frame came out at 916 pixels where a Retina screen beside it gave
+1832 (2026-10-10).  Nil leaves the frame where Emacs put it.")
+
+(defun shot-workarea ()
+  "Return the work area of the monitor the pictures are taken on.
+The one `shot-display-origin' names, or the frame's own."
+  (or (and shot-display-origin
+           (seq-some (lambda (monitor)
+                       (let ((geometry (alist-get 'geometry monitor)))
+                         (and (= (nth 0 geometry) (car shot-display-origin))
+                              (= (nth 1 geometry) (cdr shot-display-origin))
+                              (alist-get 'workarea monitor))))
+                     (display-monitor-attributes-list)))
+      (frame-monitor-workarea)))
+
 (defun shot-place-frame-bottom-right ()
-  "Put the frame in the bottom right corner of its monitor.
-The capture is a region of the screen, so the frame has to stand
-somewhere nothing else will be doing anything -- the rest of the screen
-belongs to whoever is running this.  The bottom margin is generous
-because the frame grows downwards when the minibuffer does, and a frame
-that would grow past the screen is moved instead -- which would shift
-it out from under the rectangle being captured."
-  (let* ((area (frame-monitor-workarea))
+  "Put the frame in the bottom right corner of the monitor of the pictures.
+The bottom margin is generous because the frame grows downwards when the
+minibuffer does, and a frame that would grow past the screen is moved."
+  (let* ((area (shot-workarea))
          (margin-x 24)
          (margin-y 260)
          (x (max (nth 0 area)
@@ -1256,7 +1311,7 @@ carries the plan of whoever runs this, what it has cost and which of
 their projects has been spending it."
   (shot-show shot-main)
   (setq ecc-usage-display 'posframe)
-  (let* ((message (car (shot-fixture "usage")))
+  (let* ((message (car (shot-test-fixture "usage")))
          (response (alist-get 'response (alist-get 'response message)))
          (buffer (get-buffer-create ecc-usage-buffer-name)))
     (with-current-buffer buffer
@@ -1832,7 +1887,7 @@ so that several turns are in view at once rather than the tail of one."
   ;; And a session of the project running, so that the Sessions list
   ;; carries all three marks rather than a column of grey dots.
   (ecc-model-set-state shot-other 'running)
-  (let* ((area (frame-monitor-workarea))
+  (let* ((area (shot-workarea))
          (columns (min 160 (/ (- (nth 2 area) 48) (frame-char-width))))
          (limit (/ (- (nth 3 area) 40) (frame-char-height))))
     (set-frame-size (selected-frame) columns limit)
@@ -1867,7 +1922,7 @@ so that several turns are in view at once rather than the tail of one."
                          (not (pos-visible-in-window-p (point-min) window))))
         (set-frame-size (selected-frame) columns
                         (min limit (+ 4 (frame-height)))))))
-  (let ((area (frame-monitor-workarea)))
+  (let ((area (shot-workarea)))
     (set-frame-position (selected-frame)
                         (max (nth 0 area)
                              (- (+ (nth 0 area) (nth 2 area))
@@ -1891,7 +1946,7 @@ so that several turns are in view at once rather than the tail of one."
       ;; column it really has: the loop above measured a transcript 17
       ;; columns wide, so the frame it settled on opened this one in the
       ;; middle of a sentence.
-      (let ((limit (/ (- (nth 3 (frame-monitor-workarea)) 40)
+      (let ((limit (/ (- (nth 3 (shot-workarea)) 40)
                       (frame-char-height))))
         (while (and (< (frame-height) limit)
                     (progn (goto-char (point-max))
@@ -1946,8 +2001,9 @@ so that several turns are in view at once rather than the tail of one."
   ;; A light inline session and a rewrite each run a CLI of their own,
   ;; and both are asked for the cheap model, as this file's sessions are.
   (setq ecc-inline-binding 'light
-        ecc-inline-light-args '("--tools" "" "--model" "haiku"
-                                "--max-budget-usd" "0.10")
+        ecc-inline-light-args `("--tools" "" "--model" "haiku"
+                                "--max-budget-usd" "0.10"
+                                . ,shot-live-isolation)
         ecc-rewrite-model "haiku")
   ;; The candidates are worth seeing as a list.
   (cond
