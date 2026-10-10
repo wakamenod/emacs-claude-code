@@ -52,12 +52,17 @@ WHAT names the thing waited for in the error message."
                                       (car (last (ecc-session-turns session)))))
                       "a result"))
 
+(defvar ecc-test-live-directory nil
+  "The directory a live session starts in, or nil for the temporary one.")
+
 (defmacro ecc-test-live-with-session (var &rest body)
-  "Run BODY with VAR bound to a started session, killed afterwards."
+  "Run BODY with VAR bound to a started session, killed afterwards.
+The session starts in `ecc-test-live-directory'."
   (declare (indent 1) (debug (symbolp body)))
   `(let* ((ecc--sessions (make-hash-table :test #'equal))
           (ecc--session-order nil)
-          (default-directory temporary-file-directory)
+          (default-directory (or ecc-test-live-directory
+                                 temporary-file-directory))
           ;; The icons and the spinner depend on what this machine has
           ;; and on the instant; the tests below compare the text of the
           ;; transcript, so they run without them.
@@ -68,7 +73,7 @@ WHAT names the thing waited for in the error message."
           (ecc-visual-enable-flash nil)
           (,var (ecc-model-create-session
                  :name "live"
-                 :project-root temporary-file-directory
+                 :project-root default-directory
                  :options ecc-test-live-options)))
      (unwind-protect
          (progn
@@ -921,6 +926,58 @@ anything Claude says about the change."
                   (kill-buffer buffer)))
               (delete-directory directory t))))
       (ecc-mcp-stop))))
+
+(ert-deftest ecc-test-live-review-open-when-asked ()
+  "Claude leaves the review closed after an edit, and opens it when asked.
+The first prompt has Claude change a file and explain the change, which
+is not asking for the review; the second asks for it.  What the model
+chooses is a judgement and not a guarantee.  The test runs opus: with
+the text that told the model to open the review when asked to explain
+changes, opus opened it on the first prompt in 3 runs of 3 and haiku in
+none of 6, so haiku could not tell the two texts apart (CLI 2.1.290,
+2026-10-10)."
+  :tags '(live)
+  (skip-unless (executable-find "git"))
+  (require 'ecc-mcp)
+  (require 'ecc-review-agent)
+  (let* ((ecc-test-live-options (plist-put (copy-sequence ecc-test-live-options)
+                                           :model "opus"))
+         (ecc-mcp-port 0)
+         (ecc-mcp-enabled t)
+         (ecc-permission-mode "acceptEdits")
+         (ecc-test-live-directory (file-name-as-directory
+                                   (file-truename (make-temp-file "ecc-live-asked" t))))
+         (greeting (concat ecc-test-live-directory "greeting.txt"))
+         (review-open (format "mcp__%s__review_open" ecc-mcp-server-name)))
+    (unwind-protect
+        (progn
+          (ecc-test-live-git ecc-test-live-directory "init" "-q")
+          (ecc-test-live-git ecc-test-live-directory "config" "user.email" "t@example.com")
+          (ecc-test-live-git ecc-test-live-directory "config" "user.name" "t")
+          (with-temp-file greeting (insert "hello\nworld\n"))
+          (ecc-test-live-git ecc-test-live-directory "add" ".")
+          (ecc-test-live-git ecc-test-live-directory "commit" "-q" "-m" "init")
+          (ecc-test-live-with-session session
+            (unwind-protect
+                (progn
+                  (ecc-proc-send-prompt
+                   session
+                   "Use the Edit tool to change the word world to there in \
+greeting.txt.  Do not run any commands.  Then explain the change to \
+me.")
+                  (let ((turn (ecc-test-live-wait-for-result session)))
+                    (should (equal (ecc-test-live-file-string greeting)
+                                   "hello\nthere"))
+                    (should-not (member review-open (ecc-test-live--tool-names turn)))
+                    (should-not (get-buffer (ecc-review-buffer-name session))))
+                  (ecc-proc-send-prompt session "Open the changes in the review.")
+                  (let ((turn (ecc-test-live-wait-for-result session)))
+                    (should-not (ecc-session-pending session))
+                    (should (member review-open (ecc-test-live--tool-names turn)))
+                    (should (get-buffer (ecc-review-buffer-name session)))))
+              (ecc-test-live--kill-review session))))
+      (ecc-mcp-stop)
+      (delete-directory ecc-test-live-directory t))))
 
 (defun ecc-test-live--kill-review (session)
   "Kill the review buffer of SESSION, if there is one."

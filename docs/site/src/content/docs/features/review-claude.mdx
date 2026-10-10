@@ -3,7 +3,7 @@ title: Claude in the review
 description: Claude opens the review, comments on its lines, leads a tour, and answers from inside it.
 ---
 
-With the [Emacs MCP server](/emacs-claude-code/start/installation/#enabling-the-mcp-server) on (`ecc-mcp-enabled`), the review works both ways: Claude can open it, comment on its lines and scroll it to the place it is talking about. Ask in plain words, for example "walk me through these changes in the review" or "review the diff and leave comments".
+With the [Emacs MCP server](/emacs-claude-code/start/installation/#enabling-the-mcp-server) on (`ecc-mcp-enabled`), the review works both ways: Claude can open it, comment on its lines and scroll it to the place it is talking about. It opens the review when you ask for it, not after each change it makes. Ask in plain words, for example "walk me through these changes in the review" or "review the diff and leave comments".
 
 ## Claude's comments
 
@@ -36,8 +36,10 @@ These keys work in the diff buffer and in an ediff review, and always go to the 
 |---|---|
 | `T` | Ask Claude for a tour of the changes, most important first. Claude shows each stop, explains it, comments on the lines that need attention, and waits |
 | `t` | Ask for the next stop of the tour |
-| `M` | Type a message in the minibuffer and send it as a prompt |
+| `M` | Type a message in the minibuffer and send it as a prompt. With the region active, the message is about the selected lines |
 
 `T` sends the review's hunks with their patches, so Claude can plan every stop at once. Past `ecc-review-talk-patch-limit` (20000 characters) it sends only the list. `t` and `M` tell Claude where you are: the file, the line at point and its side, and the hunk.
+
+With the region active, `M` sends the selected lines instead: for each file and hunk, the line numbers on each side and the lines with their `+` and `-` markers. In ediff, select the lines in the left or the right window, and Claude learns which side they are on. Past `ecc-review-talk-region-limit` (10000 characters), `M` sends only the line numbers. Sending the message deactivates the region.
 
 While the session is busy, the prompt waits in its queue. `T` and `t` need the MCP server. In ediff, Claude's answer streams into the [reply pane](/emacs-claude-code/features/review-ediff/#the-reply-pane); the diff buffer has the session beside it instead.

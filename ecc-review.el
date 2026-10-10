@@ -1014,6 +1014,38 @@ it begins, and nothing after the last hunk."
       (when (re-search-forward ecc-review--hunk-regexp nil t)
         (list :path (ecc-review--hunk-path (match-beginning 0)))))))
 
+(cl-defgeneric ecc-review-region ()
+  "Return the lines of this review the user has selected, or nil.
+Nil without an active region (`use-region-p'); otherwise a plist:
+:buffer is the buffer the region is in, :side the side it is on in a
+review that shows the two apart, `old' or `new' (nil in the diff
+review), and :lines the lines it touches, in order.  Each line is a
+plist of :path, :side and :line as `ecc-review-place-at-point' names
+them, :text without its marker, :marker, the character a diff puts in
+front of it, and :hunk, the hunk it is in or nil.  In the diff review
+those are the lines of the hunks the region touches, the @@ headers and
+the file headers left out, so a region over nothing else has no lines;
+a region that ends at the start of a line leaves that line out."
+  (when (use-region-p)
+    (let ((beg (save-excursion (goto-char (region-beginning)) (line-beginning-position)))
+          (end (region-end)))
+      (list :buffer (current-buffer)
+            :side nil
+            :lines (mapcan
+                    (lambda (hunk)
+                      (when (and (< (plist-get hunk :position) end)
+                                 (> (plist-get hunk :bound) beg))
+                        (mapcan (lambda (line)
+                                  (when-let* ((side (plist-get line :side))
+                                              ((<= beg (plist-get line :position)))
+                                              ((< (plist-get line :position) end)))
+                                    (list (append (list :marker (cond ((eq side 'old) ?-)
+                                                                      ((plist-get line :old-line) ?\s)
+                                                                      (t ?+)))
+                                                  line))))
+                                (ecc-review--hunk-lines hunk))))
+                    (ecc-review-units))))))
+
 (defun ecc-review-hunk-number (hunk)
   "Return (N . TOTAL): HUNK is hunk N of the TOTAL hunks of its file.
 Counted from 1, the way `review_hunks' numbers them."
@@ -1250,7 +1282,7 @@ on, point and the window are left as they were and that is said."
 Claude
   T         ask for a tour of the review
   t         the next stop of the tour
-  M         say something to Claude
+  M         say something to Claude, about the region when it is active
 
 C-c C-c sends the comments not sent yet and keeps the review open: the
 sent ones stay, dimmed, for Claude's replies, and the next C-c C-c sends

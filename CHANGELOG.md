@@ -111,6 +111,15 @@ Verified against **Claude Code CLI 2.1.281**.
   them. Only the user's comments are sent with `C-c C-c`. A remark of
   Claude's lands on the line it is about, in the diff the user is reading,
   rather than in the transcript with a file and a line number to look up.
+  The model is told to open the review only when the user asks for it -- to
+  see changes there or in Emacs, or to have them commented on there -- or
+  when the prompt is about a review the user has open, and not to explain or
+  sum up changes it has just made: told to open it whenever it was asked to
+  explain changes, it took its own summary after an edit for such a request,
+  and the review took the window of the source being edited. The
+  instructions and the description of `review_open` say this alike, and are
+  read when a session starts: a session started before the change keeps the
+  old text until it is restarted.
 
 - Every comment in the review buffer has a number that is not used again,
   and the header line counts yours and Claude's. A reply is sent quoting
@@ -462,6 +471,29 @@ Verified against **Claude Code CLI 2.1.281**.
   review tools, and without `ecc-mcp-enabled` they say so and send
   nothing. The plan's `N` and `m` were taken -- `N` is the next file of
   the diff review and `m` ediff's wide display -- so they are `t` and `M`.
+
+  `M` with the region active (`use-region-p`) sends the lines the region
+  selects, for asking Claude about exactly those. What follows the message
+  is then the selected lines in place of where point is: for each file,
+  and in the diff review each hunk, the path, the lines on each side
+  (`L10-L12 (new side)` for added and context lines, `(old side)` for
+  removed ones), the hunk by its `@@` line and number, and the lines
+  themselves with their `+`/`-`/space markers in a fenced `diff` block
+  (`ecc-review--fence`, so backticks in the code cannot close it). In an
+  ediff review the region is the one in the window the keyboard is in, and
+  the block names the side: the left, as the files were, or the right, as
+  they are; a line in a difference is marked `-` on the left and `+` on the
+  right, a line both sides share with a space. `M` typed in the control
+  panel sends no region. A region over headers, separators or the
+  spacing between files only, with no line of a file in it, is sent as no
+  region: where point is. Over `ecc-review-talk-region-limit` characters of
+  lines (10000) the files and lines are named without the lines, and
+  `ecc-review-talk-region-no-lines-note` says so. The minibuffer says how
+  many lines go with the message (`To NAME (3 lines selected): `), and the
+  mark is deactivated once the message is sent. The words sent are
+  `ecc-review-talk-region-label` and `ecc-review-talk-region-sides`, and the
+  lines are read by the generic `ecc-review-region`, one method for each
+  kind of review.
 
 - The reply pane of an ediff review, `*ecc-review-reply: REVIEW*`: a side
   window on the right while the two sides are stacked,
