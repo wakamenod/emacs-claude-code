@@ -64,6 +64,11 @@ The process the session would run is pretended to be alive until
                   ((symbol-function 'ecc-tui--open-ghostel)
                    #'ecc-tui-test--fake-terminal))
          (unwind-protect (progn ,@body)
+           ;; A terminal ending schedules the way back on a timer, and a
+           ;; test that has seen what it wanted may leave before it
+           ;; fires.  Left behind, it fires in a later test, outside the
+           ;; stubs here, and starts the real CLI.
+           (cancel-function-timers #'ecc-tui-return)
            (ecc-tui-follow-stop ,var)
            (when-let* ((buffer (get-buffer (ecc-tui-buffer-name ,var))))
              (when-let* ((process (get-buffer-process buffer)))

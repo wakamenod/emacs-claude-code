@@ -76,6 +76,23 @@ Without the MCP server, the CLI runs `git worktree add` itself and carries on in
 
 [A day in a Space](/emacs-claude-code/usecases/spaces/) follows a piece of work through this.
 
+## Removing finished worktrees
+
+With the MCP server on, you can ask a session to remove the finished worktrees. The model first calls `list_worktrees` to see each worktree's changes, branch, sessions and Space. It then passes the paths you asked for to `remove_worktree`, which removes a worktree only when all of these hold:
+
+- It has no uncommitted changes and no untracked files.
+- No buffer visiting it has unsaved changes, and no prompt of its sessions holds an unsent draft.
+- Something was committed on its branch and went into the remote's `develop`, `main` or `master`, or its pull request into one of them was merged (checked with `gh`).
+- None of its sessions is busy, and no other session has moved into it.
+
+ecc stops the idle sessions and closes the Space. Buffers visiting its files stay open. It leaves every other worktree in place, and the model tells you why. ecc deletes no branch.
+
+:::caution
+Removing a worktree also deletes the files git ignores in it, such as compiled `.elc` files, `.claude/settings.local.json` and `node_modules`.
+:::
+
+`remove_worktree` runs without asking while `ecc-worktree-auto-allow-removal` is on, which it is by default. A `claude` started outside ecc with the Emacs MCP server needs `mcp__emacs__remove_worktree` in its permission allow list.
+
 ## Without Spaces
 
 ```elisp

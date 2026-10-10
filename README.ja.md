@@ -38,8 +38,8 @@ face は挿入時に付き、`M-x customize` でカスタマイズできます�
 - **[プランモード](https://wakamenod.github.io/emacs-claude-code/ja/features/permissions/#プランモード):** 提案された計画を、編集可能なバッファで確認・調整できます。
 - **[グローバル操作](https://wakamenod.github.io/emacs-claude-code/ja/reference/key-bindings/):** どのバッファからでも保留中のツール実行リクエストを許可・拒否できます。
 - **[セッション管理](https://wakamenod.github.io/emacs-claude-code/ja/features/sessions/):** 同時に動いている複数のセッションをダッシュボードから管理できます。
-- **[Space と worktree](https://wakamenod.github.io/emacs-claude-code/ja/features/spaces/):** プロジェクトごとに Emacs のタブ（Space）が割り当てられ、その中のウィンドウ配置は並べたまま保たれます（`ecc-use-spaces`、既定で有効）。サイドバーには全プロジェクトとセッションが動作状況とともに並び、`ecc-start-worktree` はリポジトリの隣にブランチをチェックアウトして独立した Space として開きます。
-- **安全なデフォルト設定:** `default` の[権限モード](https://wakamenod.github.io/emacs-claude-code/ja/features/permissions/#権限モード)では、Claude はファイルを編集したりコマンドを実行したりする前に許可を求めます。答えられなくなったリクエストは拒否として記録されます。ほかのモードでは、その一部を確認なしで通します。内蔵のループバック MCP サーバーは既定で無効です。有効にすると、そのレビューのツールはファイルを書かないので確認なしで許可されます。Elisp の評価には明示的な有効化が必要です。
+- **[Space と worktree](https://wakamenod.github.io/emacs-claude-code/ja/features/spaces/):** プロジェクトごとに Emacs のタブ（Space）が割り当てられ、その中のウィンドウ配置は並べたまま保たれます（`ecc-use-spaces`、既定で有効）。サイドバーには全プロジェクトとセッションが動作状況とともに並び、`ecc-start-worktree` はリポジトリの隣にブランチをチェックアウトして独立した Space として開きます。MCP サーバーを有効にすると、Claude は `list_worktrees` で worktree を一覧し、作業の終わったものを `remove_worktree` で削除します。
+- **安全なデフォルト設定:** `default` の[権限モード](https://wakamenod.github.io/emacs-claude-code/ja/features/permissions/#権限モード)では、Claude はファイルを編集したりコマンドを実行したりする前に許可を求めます。答えられなくなったリクエストは拒否として記録されます。ほかのモードでは、その一部を確認なしで通します。内蔵のループバック MCP サーバーは既定で無効です。有効にすると、そのレビューのツールはファイルを書かないので確認なしで許可されます。`remove_worktree` も確認なしで許可されます（`ecc-worktree-auto-allow-removal`）。削除するのは、ブランチがマージ済みで作業中のセッションがない worktree だけです。コミットしていない変更や追跡していないファイル、未保存のバッファ、送っていない下書きがあれば削除しません。ブランチは削除しません。ただし git が無視するファイルはその worktree ごと消えます。ecc の外で起動した `claude` からこのサーバーを使う場合は、権限の許可リストに `mcp__emacs__remove_worktree` を加えてください。Elisp の評価には明示的な有効化が必要です。
 
 ## 動作要件
 

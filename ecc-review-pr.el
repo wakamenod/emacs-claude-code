@@ -106,6 +106,56 @@
 
 ;;;; Running gh and git
 
+(defvar ecc-review-pr--timeout nil
+  "Seconds a run of gh or git may take before it is stopped, or nil.
+Nil, no limit, is right where a person pressed a key and can press C-g.
+A tool the model calls has nobody at the keyboard, so it binds this:
+a gh that cannot reach GitHub would otherwise hold Emacs until the
+network gave up.")
+
+(defvar ecc-review-pr-merged-timeout 15
+  "Seconds `ecc-review-pr-merged' waits for gh.")
+
+(defun ecc-review-pr--call (program args stderr)
+  "Run PROGRAM with ARGS, output into the current buffer and STDERR, a file.
+Returns the exit code.  Under `ecc-review-pr--timeout' the process is
+stopped when its time is up, and that is a `user-error'."
+  (if (null ecc-review-pr--timeout)
+      (apply #'call-process program nil (list t stderr) nil args)
+    (let* ((errors (generate-new-buffer " *ecc-review-pr stderr*"))
+           (process (make-process :name "ecc-review-pr"
+                                  :buffer (current-buffer)
+                                  :command (cons program args)
+                                  :stderr errors
+                                  :connection-type 'pipe
+                                  :noquery t
+                                  :sentinel #'ignore))
+           (deadline (+ (float-time) ecc-review-pr--timeout)))
+      (unwind-protect
+          (progn
+            ;; An integer JUST-THIS-ONE runs no timer while it waits: this
+            ;; is a tool in the middle of its work, and a timer of
+            ;; anything else -- one that starts a session, say -- has no
+            ;; business running inside it.
+            (while (and (process-live-p process) (< (float-time) deadline))
+              (accept-process-output process 0.05 nil 1))
+            (when (process-live-p process)
+              (delete-process process)
+              (user-error "%s gave no answer in %s seconds"
+                          (file-name-nondirectory program)
+                          ecc-review-pr--timeout))
+            ;; What is still in the pipes after the exit.
+            (while (accept-process-output process 0 nil 1))
+            (when-let* ((pipe (get-buffer-process errors)))
+              (while (and (process-live-p pipe)
+                          (accept-process-output pipe 0.05 nil 1))))
+            (with-current-buffer errors
+              (write-region nil nil stderr nil 'silent))
+            (process-exit-status process))
+        (when-let* ((pipe (get-buffer-process errors)))
+          (delete-process pipe))
+        (kill-buffer errors)))))
+
 (defun ecc-review-pr--run (program directory &rest args)
   "Run PROGRAM with ARGS in DIRECTORY and return what it prints.
 A failure is a `user-error' carrying what PROGRAM said on stderr.
@@ -123,7 +173,7 @@ Neither program may ask anything: there is no terminal to answer on."
     (unwind-protect
         (with-temp-buffer
           (let ((code (condition-case err
-                          (apply #'call-process program nil (list t stderr) nil args)
+                          (ecc-review-pr--call program args stderr)
                         (file-error
                          (user-error "Cannot run %s: %s" program (error-message-string err))))))
             (unless (eq code 0)
@@ -184,6 +234,19 @@ alike are found, as gh orders them."
   "Return the pull request NUMBER of the repository of ROOT, open or not."
   (car (ecc-review-pr-parse (ecc-review-pr--gh root "pr" "view" (number-to-string number)
                                                "--json" ecc-review-pr-fields))))
+
+(defun ecc-review-pr-merged (root branch)
+  "Return the merged pull requests whose head is BRANCH, in the repository of ROOT.
+What `ecc-worktree' asks before it removes a worktree on BRANCH: a
+branch that was squashed into its base has commits that are no
+ancestors of it, and the pull request is then the only record that it
+went in.  The JSON is read here, this file being one of the few that
+read any.  gh is given `ecc-review-pr-merged-timeout' seconds: the
+caller is a tool, with nobody at the keyboard to press C-g."
+  (let ((ecc-review-pr--timeout ecc-review-pr-merged-timeout))
+    (ecc-review-pr-parse (ecc-review-pr--gh root "pr" "list" "--head" branch
+                                            "--state" "merged"
+                                            "--json" ecc-review-pr-fields))))
 
 ;;;; Asking which
 

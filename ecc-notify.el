@@ -268,15 +268,8 @@ step.")
 
 (defun ecc-tab-state (session)
   "Return `attention', `running', `exited', `restored' or `idle' for SESSION.
-`restored' is a session `ecc-restore' brought back that has not run
-since: stopped, but nothing went wrong with it, so it is not drawn as
-the error an exit is."
-  (cond
-   ((ecc-session-pending session) 'attention)
-   ((memq (ecc-session-state session) '(starting running compacting)) 'running)
-   ((eq (ecc-session-state session) 'exited)
-    (if (ecc-model-option session :restored nil) 'restored 'exited))
-   (t 'idle)))
+What the tab of SESSION is drawn as: `ecc-model-activity'."
+  (ecc-model-activity session))
 
 (defun ecc-tab-state-roll-up (sessions)
   "Return the one state that stands for SESSIONS, or nil when there are none.

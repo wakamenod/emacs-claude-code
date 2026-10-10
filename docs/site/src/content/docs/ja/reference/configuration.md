@@ -115,6 +115,7 @@ ecc はループバックインターフェイスで MCP サーバーを動か�
 | `ecc-mcp-enabled` | `nil` | すべてのセッションにサーバーを登録する。最初に使うときに起動し、`M-x ecc-mcp-stop` で止める |
 | `ecc-mcp-enable-execute-code` | `nil` | Claude に任意の Elisp を評価させるツールを提供する |
 | `ecc-mcp-excluded-tools` | `nil` | 登録しないツールの名前。遅いツールなど |
+| `ecc-worktree-auto-allow-removal` | `t` | `remove_worktree` が[終わった worktree を削除する](/emacs-claude-code/ja/features/spaces/#終わった-worktree-を削除する)ときに確認しない |
 
 :::caution[2 つの別々の有効化]
 `ecc-mcp-enabled` は `ecc-mcp-enable-execute-code` を有効にしません。そのツールで動くコードは、Emacs でユーザーと同じ権限を持ちます。
