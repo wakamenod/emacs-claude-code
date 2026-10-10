@@ -80,8 +80,8 @@ Verified against **Claude Code CLI 2.1.281**.
   `review_comment`, `review_comment_apply`, `review_navigate`,
   `review_list_comments`, `review_remove_comment` and
   `review_clear_comments`: it opens the review of its session -- what the
-  session changed, the working tree against a range, or what is staged
-  (`staged`), of every file or only some (`paths`) -- puts
+  session changed, the working tree against a revision, a range of
+  commits, or what is staged (`staged`), of every file or only some (`paths`) -- puts
   comments on lines or hunks, answers a comment with `reply_to`, scrolls
   the review to a place, and reads or removes comments. It never writes or
   changes a comment of the user's. A tool works on the review of the session
@@ -203,14 +203,18 @@ Verified against **Claude Code CLI 2.1.281**.
   the project's sessions offered first, so what is compared and where the
   comments go are always one project; a session of the same project
   counts only its own changes again. Its first choice, `+ new session`,
-  starts a session in the menu's project with `ecc-start` -- named as
+  asks the name of a session to start in the menu's project -- named as
   `ecc-start` names it, asked for a name when the project has one already
-  -- leaves the user where the menu was, back in its tab when `ecc-start`
-  went to the tab of a Space of its own, or to the tab of a worktree's
-  repository first, or failed part of the way -- found again by the index
-  and the name it had -- with the selected window selected and the menu
-  open, and turns the menu to it, so that the comments go there; it has the review tools, so
-  `T` works at once. `-f` asks for the files to keep once
+  -- and turns the menu to it, the heading saying so, with `D` off while
+  it has nothing to review; it starts nothing until a review is opened,
+  as the git choices start one, so a menu quit with `C-g` leaves no
+  session behind.
+  Opening a review starts it with `ecc-start` and opens the review where
+  the menu was, back in its tab when `ecc-start` went to the tab of a
+  Space of its own, or to the tab of a worktree's repository first, or
+  failed part of the way -- found again by the index and the name it had
+  -- with the selected window selected, and the comments go to it; it
+  has the review tools, so `T` works at once. `-f` asks for the files to keep once
   the comparison is chosen, out of those it shows, and `-e` opens this
   one review in ediff, or as a diff, the other way from
   `ecc-review-style`, which is left alone. Outside git only `D` can be
@@ -272,7 +276,11 @@ Verified against **Claude Code CLI 2.1.281**.
   The description of `review_open` (`ecc-review-agent-open-description`)
   names the arguments of each choice, so that asking Claude for "the staged
   changes", "this whole branch" or "just this commit" opens what `s`,
-  `b RET RET` and `c X RET` open.
+  `b RET RET` and `c X RET` open. What `review_open` and `review_hunks`
+  say the review is of follows git, as the untracked files do
+  (`ecc-review--range-includes-worktree-p`): a range of commits -- `X^!`,
+  `A..B`, `A...B` -- is "the commits" it names, as typed, and only a range
+  that reads the working tree is "the working tree against" it.
 
 - `p` in `ecc-review-menu` reviews a GitHub pull request. It is offered only
   when the `gh` CLI is on `PATH` (`ecc-review-gh-executable`); gh is not a

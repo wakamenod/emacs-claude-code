@@ -340,16 +340,28 @@ arguments of `review_comment'.  LINES are the lines of the review."
 ;;;; The tools
 
 (defun ecc-review-agent--what ()
-  "Return what the review of this buffer compares, in words."
+  "Return what the review of this buffer compares, in words.
+A range of commits -- \"A..B\", \"A...B\", \"REV^!\" -- is not the
+working tree against anything, and git is asked which a range is
+\(`ecc-review--range-includes-worktree-p'), in the repository of the
+buffer, its `default-directory'.  Once at most: a review whose right
+side is not checked out (`ecc-review--elsewhere') is of commits already,
+and the bare \"HEAD\", which `ecc-review--effective-range' makes the
+empty tree in a repository with no commit yet, is the working tree
+without asking.  The range is given
+as it was typed, for the model to hand back to review_open."
   (concat
    (cond
     ((null ecc-review--range) "everything changed since the session started")
     ((eq ecc-review--range 'staged) "what is staged")
     ((string-empty-p ecc-review--range) "what is not staged yet")
     (ecc-review--elsewhere
-     (format "%s, whose right side, %s, is not checked out here"
+     (format "the commits %s, whose right side, %s, is not checked out here"
              ecc-review--range ecc-review--elsewhere))
-    (t (format "the working tree against %s" ecc-review--range)))
+    ((or (equal ecc-review--range "HEAD")
+         (ecc-review--range-includes-worktree-p default-directory ecc-review--range))
+     (format "the working tree against %s" ecc-review--range))
+    (t (format "the commits %s" ecc-review--range)))
    (when ecc-review--paths
      (format " in %s" (string-join ecc-review--paths ", ")))))
 
@@ -375,14 +387,15 @@ sent to the model, so a variable and not a setting.")
               (ecc-review--count (length ecc-review--hidden) "file"))
     ""))
 
-(defun ecc-review-agent--summary (&optional file include-patch)
+(defun ecc-review-agent--summary (&optional file include-patch what)
   "Return the files and hunks of this review, of FILE alone when given.
-INCLUDE-PATCH adds the text of each hunk."
+INCLUDE-PATCH adds the text of each hunk.  WHAT is
+`ecc-review-agent--what', when the caller has it already."
   (let* ((paths (if file (list (ecc-review-agent--path file)) (ecc-review-agent--paths)))
          (hunks (ecc-review-units)))
     (concat
      (format "Review of %s: %s, %s; comments: %s.\n"
-             (ecc-review-agent--what)
+             (or what (ecc-review-agent--what))
              (ecc-review--count (length (ecc-review-agent--paths)) "file")
              (ecc-review--count (length hunks) "hunk")
              (ecc-review-agent--counts))
@@ -448,8 +461,9 @@ that cannot be read are not the review\='s; nothing here signals."
 (defun ecc-review-agent-open (range staged paths)
   "Open the review of the session calling and return what it holds.
 RANGE nil reviews everything changed since the session started; a
-string is what git diffs the working tree against, \"\" meaning what is
-not staged.  STAGED, a JSON boolean, reviews what is staged instead.
+string is what `git diff' is given: a revision the working tree is
+compared with, a range of commits, or \"\" for what is not staged.
+STAGED, a JSON boolean, reviews what is staged instead.
 PATHS, an array of file names relative to the repository, restrict the
 review to those.  A review that is open already is read again, its
 comments kept.  The review is shown the quiet way, or not at all when
@@ -475,12 +489,12 @@ the user is not looking at the session."
                            (ecc-review-agent--same-paths paths))))
             (ecc-review-reread)
             (puthash session held ecc-review-agent--opened)
-            (concat ecc-review-agent-in-place-text
-                    (unless same
-                      (concat "  " (format ecc-review-agent-not-applied-text
-                                           (ecc-review-agent--what))))
-                    "\n"
-                    (ecc-review-agent--summary))))
+            (let ((what (ecc-review-agent--what)))
+              (concat ecc-review-agent-in-place-text
+                      (unless same
+                        (concat "  " (format ecc-review-agent-not-applied-text what)))
+                      "\n"
+                      (ecc-review-agent--summary nil nil what)))))
       (let* ((buffer (if range
                          (ecc-review-range-buffer session range nil paths)
                        (ecc-review-buffer session paths)))
