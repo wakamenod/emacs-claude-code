@@ -431,6 +431,223 @@ HUNK nil for none."
           (ecc-review-ediff-quit control))
         (delete-directory directory t)))))
 
+;;;; What M sends with a region
+
+(defconst ecc-review-talk-test--two-files
+  "diff --git a/a.txt b/a.txt
+--- a/a.txt
++++ b/a.txt
+@@ -1,3 +1,4 @@
+ one
+-two
++TWO
++TWO and a half
+ three
+@@ -10,3 +11,3 @@
+ ten
+-eleven
++ELEVEN
+ twelve
+diff --git a/b.txt b/b.txt
+--- a/b.txt
++++ b/b.txt
+@@ -5,2 +5,2 @@
+-five
++FIVE
+ six
+"
+  "A diff of two files, the first with two hunks.")
+
+(defun ecc-review-talk-test--region-review (session)
+  "Return a diff review of SESSION, filled with `ecc-review-talk-test--two-files'."
+  (ecc-review--fill (get-buffer-create (ecc-review-buffer-name session))
+                    session ecc-review-talk-test--two-files temporary-file-directory))
+
+(defun ecc-review-talk-test--select (from to)
+  "Make the region run from the start of the line FROM to the end of the line TO.
+Both are the whole text of a line of the current buffer."
+  (goto-char (point-min))
+  (re-search-forward (concat "^" (regexp-quote from) "$"))
+  (beginning-of-line)
+  (set-mark (point))
+  (re-search-forward (concat "^" (regexp-quote to) "$"))
+  (activate-mark))
+
+(defun ecc-review-talk-test--say-about (text)
+  "Send TEXT with M as it is typed; return the prompt the minibuffer showed."
+  (let ((shown nil))
+    (cl-letf (((symbol-function #'read-string)
+               (lambda (prompt &rest _) (setq shown prompt) text)))
+      (call-interactively #'ecc-review-talk-message))
+    shown))
+
+(defun ecc-review-talk-test--selected (label &rest groups)
+  "Return the block M sends for GROUPS of selected lines, after LABEL.
+Each group is (HEADING . LINES): HEADING says the file and the lines,
+LINES are the lines with their markers."
+  (concat "\n\n---\n" label ":"
+          (mapconcat (lambda (group)
+                       (format "\n\n%s\n```diff\n%s\n```"
+                               (car group) (string-join (cdr group) "\n")))
+                     groups "")))
+
+(ert-deftest ecc-review-talk-test-m-sends-the-lines-selected-in-the-diff-review ()
+  "With a region, M sends its lines: added, removed, or both with the context."
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((transient-mark-mode t))
+      (with-current-buffer (ecc-review-talk-test--region-review one)
+        (ecc-review-talk-test--select "+TWO" "+TWO and a half")
+        (should (string-suffix-p " (2 lines selected): "
+                                 (ecc-review-talk-test--say-about "added?")))
+        (should-not (region-active-p))
+        (ecc-model-finish-turn one nil)
+        (ecc-review-talk-test--select "-eleven" "-eleven")
+        (should (string-suffix-p " (1 line selected): "
+                                 (ecc-review-talk-test--say-about "removed?")))
+        (ecc-model-finish-turn one nil)
+        (ecc-review-talk-test--select " one" " three")
+        (ecc-review-talk-test--say-about "all of it?")
+        (should (equal
+                 (ecc-review-talk-test--prompts one)
+                 (list (concat "added?" (ecc-review-talk-test--selected
+                                         ecc-review-talk-region-label
+                                         '("`a.txt` L2-L3 (new side), hunk 1/2 `@@ -1,3 +1,4 @@`"
+                                           "+TWO" "+TWO and a half")))
+                       (concat "removed?" (ecc-review-talk-test--selected
+                                           ecc-review-talk-region-label
+                                           '("`a.txt` L11 (old side), hunk 2/2 `@@ -10,3 +11,3 @@`"
+                                             "-eleven")))
+                       ;; The context is counted on the new side.
+                       (concat "all of it?" (ecc-review-talk-test--selected
+                                             ecc-review-talk-region-label
+                                             '("`a.txt` L2 (old side), L1-L4 (new side), hunk 1/2 `@@ -1,3 +1,4 @@`"
+                                               " one" "-two" "+TWO" "+TWO and a half" " three"))))))))))
+
+(ert-deftest ecc-review-talk-test-m-lists-a-region-by-hunk-and-file ()
+  "A region across hunks and files is listed a hunk at a time, headers left out."
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((transient-mark-mode t))
+      (with-current-buffer (ecc-review-talk-test--region-review one)
+        (ecc-review-talk-test--select " three" "-five")
+        (ecc-review-talk-test--say-about "these?")
+        (should (equal
+                 (ecc-review-talk-test--prompts one)
+                 (list (concat "these?" (ecc-review-talk-test--selected
+                                         ecc-review-talk-region-label
+                                         '("`a.txt` L4 (new side), hunk 1/2 `@@ -1,3 +1,4 @@`"
+                                           " three")
+                                         '("`a.txt` L11 (old side), L11-L13 (new side), hunk 2/2 `@@ -10,3 +11,3 @@`"
+                                           " ten" "-eleven" "+ELEVEN" " twelve")
+                                         '("`b.txt` L5 (old side), hunk 1/1 `@@ -5,2 +5,2 @@`"
+                                           "-five"))))))))))
+
+(ert-deftest ecc-review-talk-test-m-without-a-region-says-where ()
+  "No region, an inactive one, or one over headers alone: M says where point is."
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((transient-mark-mode t))
+      (with-current-buffer (ecc-review-talk-test--region-review one)
+        ;; A mark that is not active is no region.
+        (ecc-review-talk-test--select "+TWO" "+TWO and a half")
+        (deactivate-mark)
+        (should (string-suffix-p (format "To %s: " (ecc-session-name one)) (ecc-review-talk-test--say-about "here?")))
+        (ecc-model-finish-turn one nil)
+        ;; The headers of b.txt hold no line of it.
+        (ecc-review-talk-test--select "diff --git a/b.txt b/b.txt" "+++ b/b.txt")
+        (should (string-suffix-p (format "To %s: " (ecc-session-name one)) (ecc-review-talk-test--say-about "headers?")))
+        (should-not (region-active-p))
+        (should (equal (ecc-review-talk-test--prompts one)
+                       (list (concat "here?" (ecc-review-talk-test--where
+                                              "a.txt" 3 'new 1 2 "@@ -1,3 +1,4 @@"))
+                             (concat "headers?" (ecc-review-talk-test--where
+                                                 "b.txt" nil nil nil nil nil)))))))))
+
+(ert-deftest ecc-review-talk-test-m-names-the-lines-of-a-long-region ()
+  "Over `ecc-review-talk-region-limit', the lines are named and not sent."
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((transient-mark-mode t)
+          (ecc-review-talk-region-limit 20))
+      (with-current-buffer (ecc-review-talk-test--region-review one)
+        (ecc-review-talk-test--select " one" "+FIVE")
+        (ecc-review-talk-test--say-about "too much?")
+        (should-not (region-active-p))
+        (should (equal
+                 (ecc-review-talk-test--prompts one)
+                 (list (concat "too much?\n\n---\n" ecc-review-talk-region-label ":"
+                               "\n\n`a.txt` L2 (old side), L1-L4 (new side), hunk 1/2 `@@ -1,3 +1,4 @@`"
+                               "\n\n`a.txt` L11 (old side), L11-L13 (new side), hunk 2/2 `@@ -10,3 +11,3 @@`"
+                               "\n\n`b.txt` L5 (old side), L5 (new side), hunk 1/1 `@@ -5,2 +5,2 @@`"
+                               "\n\n" ecc-review-talk-region-no-lines-note))))))))
+
+(ert-deftest ecc-review-talk-test-m-fences-the-lines-past-their-backticks ()
+  "A line with a fence in it is sent in a longer fence."
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((transient-mark-mode t))
+      (with-current-buffer (ecc-review--fill (get-buffer-create (ecc-review-buffer-name one))
+                                             one "diff --git a/a.md b/a.md
+--- a/a.md
++++ b/a.md
+@@ -1 +1 @@
+-old
++```
+" temporary-file-directory)
+        (ecc-review-talk-test--select "-old" "+```")
+        (ecc-review-talk-test--say-about "fence?")
+        (should (string-suffix-p "````diff\n-old\n+```\n````"
+                                 (car (ecc-review-talk-test--prompts one))))))))
+
+(defun ecc-review-talk-test--select-in (window from to)
+  "Select WINDOW and make the region of its buffer run from line FROM to line TO.
+From the start of FROM to the end of TO, each the whole text of a line."
+  (select-window window)
+  (with-current-buffer (window-buffer window)
+    (ecc-review-talk-test--select from to)
+    (set-window-point window (point))))
+
+(ert-deftest ecc-review-talk-test-m-sends-the-lines-selected-in-the-ediff-review ()
+  "In an ediff review, the lines of the side the region is in, and that side."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((transient-mark-mode t))
+      (ecc-review-talk-test--with-ediff one control
+        (let ((left ediff-window-A)
+              (right ediff-window-B))
+          (ecc-review-talk-test--select-in left "line 1" "line 3")
+          (with-current-buffer control
+            (should (string-suffix-p " (3 lines selected): "
+                                     (ecc-review-talk-test--say-about "before?"))))
+          (should-not (buffer-local-value 'mark-active (window-buffer left)))
+          (ecc-model-finish-turn one nil)
+          (ecc-review-talk-test--select-in right "line 10" "line 12")
+          (with-current-buffer control
+            (ecc-review-talk-test--say-about "after?"))
+          (should-not (buffer-local-value 'mark-active (window-buffer right)))
+          (should (equal
+                   (ecc-review-talk-test--prompts one)
+                   (list (concat "before?" (ecc-review-talk-test--selected
+                                            (concat ecc-review-talk-region-label
+                                                    (alist-get 'old ecc-review-talk-region-sides))
+                                            '("`a.txt` L1-L3 (old side)"
+                                              " line 1" "-line 2" " line 3")))
+                         (concat "after?" (ecc-review-talk-test--selected
+                                           (concat ecc-review-talk-region-label
+                                                   (alist-get 'new ecc-review-talk-region-sides))
+                                           '("`a.txt` L10-L12 (new side)"
+                                             " line 10" "+LINE 11" " line 12")))))))))))
+
+(ert-deftest ecc-review-talk-test-m-in-the-ediff-panel-has-no-region ()
+  "A region left in a side does not go with M typed in the control panel."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((transient-mark-mode t))
+      (ecc-review-talk-test--with-ediff one control
+        (ecc-review-talk-test--select-in ediff-window-A "line 1" "line 3")
+        ;; Another window of the right side, which is no side of it.
+        (select-window (split-window ediff-window-B))
+        (with-current-buffer control
+          (should (string-suffix-p (format "To %s: " (ecc-session-name one)) (ecc-review-talk-test--say-about "here?"))))
+        (should (string-prefix-p (concat "here?\n\n---\n" ecc-review-talk-where-label)
+                                 (car (ecc-review-talk-test--prompts one))))))))
+
 (ert-deftest ecc-review-talk-test-t-sends-the-hunks-with-their-patches ()
   "T sends the files and hunks of the review, with each patch while they fit."
   (ecc-review-talk-test--with-sessions one _two
