@@ -1,13 +1,13 @@
 WEBVTT
 
-00:00:00.000 --> 00:00:02.500
-The point is on line 7 of the source
+00:00:00.000 --> 00:00:02.600
+The point is on line 11 of the source
 
-00:00:02.500 --> 00:00:05.100
+00:00:02.600 --> 00:00:05.200
 The prompt says @cursor
 
-00:00:05.100 --> 00:00:11.000
-@cursor goes out as hello.py L7, with the code of that line
+00:00:05.200 --> 00:00:11.400
+@cursor goes out as reader.py L11, with the code of that line
 
-00:00:11.000 --> 00:00:18.300
+00:00:11.400 --> 00:00:18.900
 Claude answers about that line

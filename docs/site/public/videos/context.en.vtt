@@ -1,16 +1,16 @@
 WEBVTT
 
-00:00:00.000 --> 00:00:02.500
-The point is on line 6 of the source
+00:00:00.000 --> 00:00:02.600
+The point is on line 20 of the source
 
-00:00:02.500 --> 00:00:08.100
+00:00:02.600 --> 00:00:08.200
 In the session buffer, C-c C-x turns the editor context on
 
-00:00:08.100 --> 00:00:13.200
-The prompt goes out with the file and line: hello.py L6
+00:00:08.200 --> 00:00:13.500
+The prompt goes out with the file and line: reader.py L20
 
-00:00:13.200 --> 00:00:20.900
+00:00:13.500 --> 00:00:21.500
 Claude answers from that position
 
-00:00:20.900 --> 00:00:23.700
+00:00:21.500 --> 00:00:24.300
 C-c C-x turns it off again

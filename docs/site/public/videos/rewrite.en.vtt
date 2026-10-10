@@ -1,16 +1,16 @@
 WEBVTT
 
-00:00:00.000 --> 00:00:02.000
+00:00:00.000 --> 00:00:03.100
 A region marked in the source
 
-00:00:02.000 --> 00:00:06.800
+00:00:03.100 --> 00:00:07.900
 In the menu (C-c c ?), w asks how to rewrite it
 
-00:00:06.800 --> 00:00:09.600
+00:00:07.900 --> 00:00:10.700
 Waiting for the rewrite
 
-00:00:09.600 --> 00:00:17.300
+00:00:10.700 --> 00:00:18.800
 The new code appears above the original
 
-00:00:17.300 --> 00:00:21.100
+00:00:18.800 --> 00:00:22.600
 Press RET on it to accept it, and the buffer is rewritten
