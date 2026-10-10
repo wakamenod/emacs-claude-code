@@ -101,7 +101,8 @@ the machine is Emacs too.")
       ecc-visual-enable-spinner nil
       ecc-chat-text-width 64
       inhibit-startup-screen t
-      frame-title-format shot-frame-title)
+      frame-title-format shot-frame-title
+      icon-title-format shot-frame-title)
 
 (defconst shot-project "records"
   "The name of the demo project, which the main session is named after.")
@@ -286,6 +287,10 @@ no user has."
     (delete-other-windows))
   (find-file shot-file)
   (let ((window (ecc-window-select-session session)))
+    ;; Showing a session lays its Space out, sidebar and all, and the
+    ;; sidebar is put back by it; it goes again here.
+    (when (fboundp 'ecc-sidebar-hide)
+      (ecc-sidebar-hide))
     (when (window-live-p window)
       (with-selected-window window
         (ecc-chat--set-margins window)
@@ -376,11 +381,17 @@ either way).  The budget is larger to match, and still a budget."
 A file that is not on screen yet is put in the window that is not a
 session window: the scenes open more than one file, and only the first
 of them is there because `shot-show' put it there."
+  ;; Not a window with a role, nor a side window, nor one with ecc's own
+  ;; buffer in it: under the Spaces a transcript's window carries no
+  ;; role, and the broken file of the fix-error scene took the
+  ;; transcript's place (2026-10-10).
   (let* ((buffer (find-file-noselect (or file shot-file)))
          (window (or (get-buffer-window buffer)
                      (seq-find (lambda (window)
-                                 (not (window-parameter window
-                                                        'ecc-window-role)))
+                                 (not (or (window-parameter window 'ecc-window-role)
+                                          (window-parameter window 'window-side)
+                                          (ecc-window-own-buffer-p
+                                           (window-buffer window)))))
                                (window-list nil 'no-minibuffer)))))
     (when (window-live-p window)
       (select-window window)
@@ -421,9 +432,20 @@ fed to a read loop."
       (call-interactively command)
       (redisplay t))))
 
+(defun shot-restore-source ()
+  "Put the demo source back as the recorded edit left it.
+The rewrite scene changes it for real, and the scenes after it would
+otherwise show the rewritten signature."
+  (unless (equal (shot-read shot-file) shot-after)
+    (with-temp-file shot-file (insert shot-after)))
+  (when-let* ((buffer (get-file-buffer shot-file)))
+    (with-current-buffer buffer
+      (revert-buffer t t t))))
+
 (defun shot-scene-cursor-point (line)
   "Put the point on LINE of the demo source, with nothing marked.
 `@cursor' reads the buffer the user last worked in, which is this one."
+  (shot-restore-source)
   (with-selected-window (shot-source-window)
     (deactivate-mark)
     (goto-char (point-min))
@@ -471,6 +493,7 @@ feels like offering one, not on a schedule."
 
 (defun shot-scene-send-region-point ()
   "Put the point at the start of `parse_line', with nothing marked."
+  (shot-restore-source)
   (with-selected-window (shot-source-window)
     (deactivate-mark)
     (goto-char (point-min))
@@ -585,6 +608,15 @@ except SyntaxError as error:
   "Open the broken file with flymake on, and wait for it to report."
   (with-temp-file shot-broken-file (insert shot-broken))
   (setq python-flymake-command (list "python3" "-c" shot-python-checker))
+  ;; A backend that runs code is turned off in a file Emacs has not been
+  ;; told to trust: "Disabling python-flymake in report.py (untrusted
+  ;; content)", and the scene sent nothing (Emacs 32, 2026-10-10).
+  (when (boundp 'trusted-content)
+    ;; Both spellings: the check reads the file's true name, and /tmp
+    ;; is /private/tmp on macOS.
+    (setq trusted-content
+          (list (file-name-as-directory shot-root)
+                (file-name-as-directory (file-truename shot-root)))))
   (with-selected-window (shot-source-window shot-broken-file)
     (flymake-mode 1)
     (flymake-start)
@@ -649,8 +681,32 @@ the demo project the first time it is needed, and it stays there.")
 
 ;;;; The scenes the wrapper calls
 
+(defvar shot-third nil "A third session, for the switch scene's picker.")
+
 (defun shot-scene-switch-start ()
-  "The frame showing the first session, before anything is switched."
+  "The frame showing the first session, before anything is switched.
+A third session is made for the scene: with one other session in the
+row, `ecc-switch-session' goes straight to it and asks nothing, and the
+picker is what the scene is about."
+  ;; A candidate begins with the mark of its session's state, so a name
+  ;; typed from its first letter matches nothing under the default
+  ;; prefix completion, and the picker stayed open (2026-10-10).
+  (setq completion-styles '(substring basic))
+  (unless shot-third
+    (setq shot-third (ecc-model-create-session :name "server"
+                                               :project-root shot-root))
+    (ecc-session-ensure-buffer shot-third)
+    (shot-play-allowed shot-third "background"))
+  (shot-show shot-main))
+
+(defun shot-scene-switch-end ()
+  "Take the third session away again; no other scene has it."
+  (when shot-third
+    (ecc-model-remove-session shot-third)
+    (when (buffer-live-p (ecc-session-buffer shot-third))
+      (let ((kill-buffer-query-functions nil))
+        (kill-buffer (ecc-session-buffer shot-third))))
+    (setq shot-third nil))
   (shot-show shot-main))
 
 (defun shot-script (steps)
@@ -746,7 +802,7 @@ one recording evict each other from the registry."
     ;; in the registry under it, and two sessions replaying one
     ;; recording means the second quietly evicts the first (confirmed
     ;; 2026-09-13).
-    (shot-play shot-foreign (or fixture "write"))
+    (shot-play-allowed shot-foreign (or fixture "write"))
     ;; Every fixture was recorded in one sandbox and every sandbox path
     ;; is rewritten to the demo project, so the init message of the
     ;; recording puts this session back in it -- which is where a
@@ -1054,7 +1110,7 @@ under the repository it came from."
       ;; session on one recording evicts the first from the registry --
       ;; which took the main session out of the Sessions list
       ;; (2026-09-18).
-      (shot-play session "background")
+      (shot-play-allowed session "background")
       (push session shot-worktree-sessions)
       (ecc-space-select (ecc-space-of-root root))
       (ecc-sidebar-show)
@@ -1176,6 +1232,10 @@ picture rather than once at the start."
 (defun shot-scene-handover-start ()
   "Read the recorded conversation back and show it, as a session would be."
   (setq shot-handover (ecc-history-session shot-handover-id))
+  ;; The recording says /private/tmp/records, which macOS answers for
+  ;; /tmp/records, and a second Space opened for it.
+  (setf (ecc-session-project-root shot-handover) (file-name-as-directory shot-root)
+        (ecc-session-cwd shot-handover) (file-name-as-directory shot-root))
   (ecc-session-ensure-buffer shot-handover)
   (ecc-render-refresh shot-handover)
   (shot-show shot-handover))
@@ -1276,15 +1336,19 @@ so.  The second session is left alone, so the tab line still has one."
   (shot-play-after-request shot-main "edit")
   shot-main)
 
-(defun shot-play-write (session)
-  "Replay the recording that writes a file into SESSION, permission and all.
+(defun shot-play-allowed (session fixture)
+  "Replay FIXTURE into SESSION, allowing the permission it asks for.
 Played straight through it ends with the permission nobody answered,
 which the renderer rightly draws as denied -- a failure in a picture
 that is not about one."
-  (shot-play-to-request session "write")
+  (shot-play-to-request session fixture)
   (dolist (request (copy-sequence (ecc-session-pending session)))
     (ecc-perm-allow-request request))
-  (shot-play-after-request session "write"))
+  (shot-play-after-request session fixture))
+
+(defun shot-play-write (session)
+  "Replay the recording that writes a file into SESSION, permission and all."
+  (shot-play-allowed session "write"))
 
 
 (defun shot-review-window ()
@@ -1696,6 +1760,26 @@ and every picture taken after it has a blinking corner."
   (ecc-model-set-state shot-main 'idle)
   (shot-show shot-main))
 
+(defun shot-fold-tools (session)
+  "Fold every tool call in the transcript of SESSION to its heading.
+What the tools did is still there, a line each.  The permission of the
+first turn keeps its diff, the edit the picture is about; the ones after
+it are folded too, since the file the second turn writes is thirteen
+lines drawn in full, and the first turn of the overview went off the
+top of a screen of 900 points (2026-10-10)."
+  (with-current-buffer (ecc-session-buffer session)
+    (let ((first t))
+      (cl-labels ((walk (nodes)
+                    (dolist (node nodes)
+                      (when (or (eq (ecc-node-type node) 'tool)
+                                (and (not first)
+                                     (eq (ecc-node-type node) 'permission)))
+                        (ecc-render-hide-node (ecc-node-id node)))
+                      (walk (ecc-node-children node)))))
+        (dolist (turn (ecc-session-turns session))
+          (walk (ecc-turn-children turn))
+          (setq first nil))))))
+
 (defun shot-scene-overview ()
   "One picture of a whole session, for the front page and for README.md.
 Smaller type and as much of the screen as the capture can safely have,
@@ -1708,6 +1792,7 @@ so that several turns are in view at once rather than the tail of one."
   ;; A second turn, so the picture shows a conversation rather than an
   ;; exchange: the edit `shot-reset-main\=' replays, then the write.
   (shot-play-write shot-main)
+  (shot-fold-tools shot-main)
   ;; Wide, and as tall as the conversation is.  Sized to the screen
   ;; instead, the bottom two thirds of the picture came out empty.
   ;; This one stands at the top of the screen and takes nearly all of its
@@ -1730,9 +1815,8 @@ so that several turns are in view at once rather than the tail of one."
   ;; marks of the two lists are the colour in the picture.
   (let ((root (shot-worktree-root "feat-x")))
     (make-directory root t)
-    (unless (file-exists-p (expand-file-name "pipeline.py" root))
-      (with-temp-file (expand-file-name "pipeline.py" root)
-        (insert shot-hero-source)))
+    (with-temp-file (expand-file-name "summary.py" root)
+      (insert shot-hero-source))
     (unless (seq-find (lambda (session)
                         (equal (ecc-session-name session) "feat-x"))
                       (ecc-model-sessions))
@@ -1762,8 +1846,7 @@ so that several turns are in view at once rather than the tail of one."
     ;; reader meets before anything is explained.
     (when-let* ((window (get-buffer-window (get-file-buffer shot-file))))
       (with-selected-window window
-        (unless (file-exists-p shot-hero-file)
-          (with-temp-file shot-hero-file (insert shot-hero-source)))
+        (with-temp-file shot-hero-file (insert shot-hero-source))
         (find-file shot-hero-file)))
     (ecc-sidebar-show)
     (when-let* ((window (get-buffer-window (ecc-session-buffer shot-main))))
@@ -1847,6 +1930,11 @@ so that several turns are in view at once rather than the tail of one."
   ;; longest of them has ten lines.
   (when-let* ((foreign (shot-foreign-ecc)))
     (error "Not this checkout's ecc: %S" foreign))
+  ;; The title formats are not always what the title is: with a
+  ;; completion list open in a frame of its own, the frame lost the
+  ;; title the recorder finds it by, and the picture was never taken
+  ;; (2026-10-10).  A name of the frame's own is its title throughout.
+  (set-frame-parameter nil 'name shot-frame-title)
   (set-frame-size (selected-frame) 112 44)
   (redisplay t)
   (shot-place-frame-bottom-right)

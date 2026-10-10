@@ -21,7 +21,7 @@ class Summary:
     rows: int = 0
     keys: Counter[str] = field(default_factory=Counter)
 
-    def most_common(self, n: int = 5) -> list[tuple[str, int]]:
+    def most_common(self, n: int = 5):
         return self.keys.most_common(n)
 
 

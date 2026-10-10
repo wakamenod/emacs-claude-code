@@ -79,7 +79,7 @@ for variable in $(env | sed -n 's/^\(CLAUDE[A-Z_]*\)=.*/\1/p'); do
 done
 
 cleanup() {
-    [ -n "${capturing:-}" ] && kill -INT "$capturing" 2>/dev/null
+    if [ -n "${capturing:-}" ]; then kill -INT "$capturing" 2>/dev/null || true; fi
     pkill -f 'scripts/docshots.el' 2>/dev/null || true
     rm -rf "$frames"
 }
@@ -346,7 +346,7 @@ still() {
 }
 
 shoot() {
-    "$recorder" --title "$title" --shot "$frames/shot.png" 2>/dev/null
+    "$recorder" --title "$title" --shot "$frames/shot.png" 2>&1 | grep -v "^record-window: wrote" >&2 || true
     ffmpeg -hide_banner -loglevel error -y -i "$frames/shot.png" \
         -vf "$(keep)" -frames:v 1 "$1"
     rm -f "$frames/shot.png"
@@ -389,6 +389,7 @@ if want switch; then
     e '(shot-scene-switch-sequence)'
     hold 0.5; cue; hold 3.7; cue; hold 1.8; cue; hold 3.1; cue; hold 1.9
     video
+    e '(shot-scene-switch-end)'
 fi
 
 if want menu; then
@@ -410,6 +411,8 @@ if want send-region; then
     scene send-region
     cue; e '(shot-scene-send-region-point)'  ; hold 0.67
     e '(shot-scene-send-region-mark)'   ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
@@ -450,6 +453,8 @@ if want inline; then
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.67
     cue; e '(shot-scene-inline-sequence)'
     # The question is sent at 3.0s.
@@ -465,6 +470,8 @@ if want rewrite; then
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.67
     cue; e '(shot-scene-rewrite-sequence)'
     # The instruction is sent at 3.0s.
@@ -477,7 +484,7 @@ if want at-cursor; then
     # An @ reference: the point stands in the source, the prompt says
     # @cursor, and what is sent carries the line it was on.
     scene at-cursor
-    cue; e '(shot-scene-cursor-point 9)'          ; hold 0.67
+    cue; e '(shot-scene-cursor-point 11)'          ; hold 0.67
     cue; e '(shot-prompt-type "Can ")'            ; hold 0.33
     e '(shot-prompt-type "@cursor")'         ; hold 0.33
     e '(shot-prompt-type " give an empty field?")' ; hold 0.67
@@ -489,7 +496,7 @@ fi
 if want context; then
     # The editor context, attached to every prompt while it is on.
     scene context
-    cue; e '(shot-scene-cursor-point 18)'                                 ; hold 0.67
+    cue; e '(shot-scene-cursor-point 20)'                                 ; hold 0.67
     cue; e '(shot-prompt-command (quote ecc-prompt-toggle-context))'      ; hold 1
     cue; e '(shot-prompt-type "Where am I?")'                             ; hold 0.67
     e '(shot-prompt-send)'                                           ; hold 0.67
