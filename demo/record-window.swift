@@ -4,6 +4,7 @@
 //   record-window --title "ecc demo" --shot /tmp/x.png
 //   record-window --title "ecc docshot" --frames DIR [--fps 10]
 //   record-window --list
+//   record-window --displays
 //
 // `--frames' is for scripts/docshots.sh, which cuts its videos out of
 // the frames itself and encodes them once: DIR/0001.png on, one per
@@ -11,12 +12,16 @@
 // SIGTERM, and DIR/started, the epoch milliseconds of the first.  Frame
 // N is the window N-1 ticks after that, a tick it missed being the
 // frame before it again, so a time can be turned into a frame number.
+// A window that changes size meanwhile is said, and DIR/resized left.
 // An mp4 from `--out' would be encoded twice on its way to the site,
 // and monospaced text does not survive that.
 //
 // The window's child frames -- a posframe, a completion list in a frame
 // of its own -- are part of its content and are in the picture
 // (2026-10-10).
+//
+// `--displays' prints a line per display, its top left, its size in
+// points and its pixels to the point: X Y W H SCALE.
 //
 // `--shot' is one picture rather than a recording, and is how a window
 // that has stopped redrawing is looked at: a stream only hands over a
@@ -61,6 +66,7 @@ struct Options {
     var fps: Int = 10
     var width: Int = 1456
     var list = false
+    var displays = false
     var shot: String?
     var frames: String?
 }
@@ -85,6 +91,7 @@ func parseArguments() -> Options {
         case "--fps": options.fps = Int(value()) ?? 10
         case "--width": options.width = Int(value()) ?? 1456
         case "--list": options.list = true
+        case "--displays": options.displays = true
         case "--shot": options.shot = value()
         case "--frames": options.frames = value()
         default:
@@ -270,6 +277,8 @@ final class FrameWriter: NSObject, SCStreamOutput, SCStreamDelegate {
     private var written: CGImage?
     private var start: Int64 = 0
     private var count = 0
+    private var size: CGSize?
+    private var resized = false
     // One at a time, so that a repeat can be a link to the file before.
     let writing = DispatchQueue(label: "record-window.png")
 
@@ -288,6 +297,23 @@ final class FrameWriter: NSObject, SCStreamOutput, SCStreamDelegate {
               let raw = attachments.first?[.status] as? Int,
               SCFrameStatus(rawValue: raw) == .complete,
               let pixels = CMSampleBufferGetImageBuffer(buffer) else { return }
+        // The size is fixed when the stream starts, and a window that
+        // changes size under it comes out scaled into that size: the
+        // frames before and after no longer match, and a crop measured
+        // at the start cuts the wrong part.  It is said, and left in the
+        // directory for the caller to refuse.
+        if let raw = attachments.first?[.contentRect],
+           let rect = CGRect(dictionaryRepresentation: raw as! CFDictionary) {
+            if size == nil {
+                size = rect.size
+            } else if !resized, rect.size != size {
+                resized = true
+                note("the window changed size during the recording: "
+                     + "\(size!) became \(rect.size)")
+                FileManager.default.createFile(atPath: "\(directory)/resized",
+                                               contents: nil)
+            }
+        }
         var image: CGImage?
         VTCreateCGImageFromCVPixelBuffer(pixels, options: nil, imageOut: &image)
         guard let image else { return }
@@ -349,6 +375,23 @@ final class FrameWriter: NSObject, SCStreamOutput, SCStreamDelegate {
 
 // MARK: - Finding the window
 
+/// The size of WINDOW in the pixels of the screen it is on.  A still and
+/// the frames are taken at that size: twice the points was right on a
+/// Retina screen and made every picture on any other an upscale.  The
+/// scale is the display's -- its mode in pixels over its size in points
+/// -- because `pointPixelScale' of a filter of one window said 1.0 on a
+/// Retina screen (2026-10-10).
+func pixelSize(_ window: SCWindow, _ displays: [SCDisplay]) -> (Int, Int) {
+    let centre = CGPoint(x: window.frame.midX, y: window.frame.midY)
+    var scale: CGFloat = 1
+    if let display = displays.first(where: { $0.frame.contains(centre) }) ?? displays.first,
+       let mode = CGDisplayCopyDisplayMode(display.displayID), mode.width > 0 {
+        scale = CGFloat(mode.pixelWidth) / CGFloat(mode.width)
+    }
+    return (Int((window.frame.width * scale).rounded()),
+            Int((window.frame.height * scale).rounded()))
+}
+
 func windows(_ options: Options) async throws -> [SCWindow] {
     // `onScreenWindowsOnly: false' is the point of this: a window that
     // is covered is still a window to record.
@@ -376,6 +419,20 @@ struct Main {
         let application = NSApplication.shared
         application.setActivationPolicy(.prohibited)
 
+        if options.displays {
+            let content = try? await SCShareableContent.excludingDesktopWindows(
+                false, onScreenWindowsOnly: false)
+            for display in content?.displays ?? [] {
+                var scale: CGFloat = 1
+                if let mode = CGDisplayCopyDisplayMode(display.displayID), mode.width > 0 {
+                    scale = CGFloat(mode.pixelWidth) / CGFloat(mode.width)
+                }
+                print("\(Int(display.frame.minX)) \(Int(display.frame.minY)) "
+                      + "\(Int(display.frame.width)) \(Int(display.frame.height)) \(scale)")
+            }
+            exit(0)
+        }
+
         if options.list {
             let content = try? await SCShareableContent.excludingDesktopWindows(
                 false, onScreenWindowsOnly: false)
@@ -402,18 +459,19 @@ struct Main {
         guard let window = found.first else {
             fail("no window of \(options.app ?? "any application") is called \(options.title)")
         }
+        let displays = (try? await SCShareableContent.excludingDesktopWindows(
+            false, onScreenWindowsOnly: false))?.displays ?? []
 
         if let path = options.shot {
             let configuration = SCStreamConfiguration()
-            configuration.width = Int(window.frame.width) * 2
-            configuration.height = Int(window.frame.height) * 2
+            let filter = SCContentFilter(desktopIndependentWindow: window)
+            (configuration.width, configuration.height) = pixelSize(window, displays)
             configuration.pixelFormat = kCVPixelFormatType_32BGRA
             configuration.minimumFrameInterval = CMTime(value: 1, timescale: 60)
             configuration.queueDepth = 6
             configuration.capturesAudio = false
             configuration.showsCursor = false
             configuration.scalesToFit = true
-            let filter = SCContentFilter(desktopIndependentWindow: window)
             do {
                 let image = try await SCScreenshotManager.captureImage(
                     contentFilter: filter, configuration: configuration)
@@ -431,8 +489,8 @@ struct Main {
 
         if let directory = options.frames {
             let configuration = SCStreamConfiguration()
-            configuration.width = Int(window.frame.width) * 2
-            configuration.height = Int(window.frame.height) * 2
+            let filter = SCContentFilter(desktopIndependentWindow: window)
+            (configuration.width, configuration.height) = pixelSize(window, displays)
             configuration.minimumFrameInterval = CMTime(value: 1,
                                                         timescale: CMTimeScale(options.fps))
             configuration.pixelFormat = kCVPixelFormatType_32BGRA
@@ -441,8 +499,8 @@ struct Main {
             configuration.queueDepth = 6
             configuration.capturesAudio = false
             let writer = FrameWriter(directory: directory, fps: options.fps)
-            let stream = SCStream(filter: SCContentFilter(desktopIndependentWindow: window),
-                                  configuration: configuration, delegate: writer)
+            let stream = SCStream(filter: filter, configuration: configuration,
+                                  delegate: writer)
             do {
                 try stream.addStreamOutput(writer, type: .screen,
                                            sampleHandlerQueue: DispatchQueue(label: "record-window.frames"))
