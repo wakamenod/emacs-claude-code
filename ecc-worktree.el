@@ -61,6 +61,10 @@
 (declare-function ecc-mcp-tool-name "ecc-mcp" (tool))
 (declare-function ecc-history-file "ecc-history" (session-id))
 (declare-function ecc-space-forget "ecc-space" (root))
+(declare-function ecc-space-at-p "ecc-space" (root))
+(declare-function ecc-mcp-define-instructions "ecc-mcp" (name text tools))
+(declare-function ecc-review-pr-available-p "ecc-review-pr" ())
+(declare-function ecc-review-pr-merged "ecc-review-pr" (root branch))
 ;; Bound around the kill loop below: a Space closing itself halfway
 ;; through a removal would take the tab out from under the command.
 (defvar ecc-space--closing)
@@ -90,6 +94,7 @@ question.")
   branch      ; the branch it is on, without refs/heads/, or nil
   main-p      ; non-nil for the main worktree, which git lists first
   detached-p  ; non-nil when HEAD is not on a branch
+  locked-p    ; git's reason, or t, when the worktree is locked, else nil
   prunable-p) ; git's reason when the worktree is gone, else nil
 
 (defun ecc-worktree--git (directory &rest args)
@@ -131,8 +136,8 @@ order git prints them in.  A record is a `worktree PATH' line followed
 by the attributes of that worktree -- `HEAD', `branch', `detached',
 `bare', `locked' and `prunable' -- and a blank line ends it.  An
 attribute this package has no use for is skipped rather than refused:
-git adds them (`locked' carries a reason here, put there by Claude
-Code's own worktree, 2026-09-14)."
+git adds them.  `locked' may carry a reason, put there by Claude Code's
+own worktree (2026-09-14), and the reason is kept."
   (let ((entries nil)
         (current nil))
     (dolist (line (split-string (or string "") "\n"))
@@ -149,6 +154,10 @@ Code's own worktree, 2026-09-14)."
               (ecc-worktree--short-branch (substring line (length "branch ")))))
        ((equal line "detached")
         (setf (ecc-worktree-entry-detached-p current) t))
+       ((string-prefix-p "locked" line)
+        (setf (ecc-worktree-entry-locked-p current)
+              (let ((reason (string-trim (substring line (length "locked")))))
+                (if (string-empty-p reason) t reason))))
        ((string-prefix-p "prunable" line)
         (setf (ecc-worktree-entry-prunable-p current)
               (or (string-trim (substring line (length "prunable"))) t)))))
@@ -850,6 +859,438 @@ sessions run in, which is why the line is worth its tokens."
     text))
 
 (add-hook 'ecc-prepare-prompt-functions #'ecc-worktree-prompt-hint)
+
+;;;; Removing the finished ones from inside a session
+
+;; The user asks a session to clear away the worktrees whose work is
+;; done.  `ecc-remove-worktree' asks before each one, which is right for
+;; a person at the keyboard and of no use to a model; the two tools here
+;; ask nothing and refuse instead.  What `remove_worktree' takes is a
+;; worktree that can lose nothing: no change git has not got, a branch
+;; that is merged, and no session in the middle of a turn or waiting on
+;; an answer.  Anything else is refused with its reason, and a refusal
+;; is a result.  The branch is never touched.
+;;
+;; What `git worktree remove' does delete beyond that is what git
+;; ignores -- compiled files, a settings.local.json, node_modules -- and
+;; both the tool and the paragraph of instructions say so to the model.
+;;
+;; Merged means one of two things, and neither needs the network:
+;;
+;; - the tip of the branch is an ancestor of an integration branch as
+;;   the remote has it (`ecc-worktree-integration-branches', and the
+;;   remote's own HEAD), which is a merge or a fast-forward;
+;;
+;; - gh names a merged pull request of the branch whose head is the tip,
+;;   or has the tip in it.  A squash merge leaves the commits of the
+;;   branch out of the base -- `feat/switch-session-scope' went in as
+;;   PR #101 with 8 of its commits no ancestors of develop -- and the
+;;   pull request is then the only record that it went in.  A branch
+;;   that has commits after its pull request was merged is not merged.
+;;
+;; Nothing is fetched, so a remote-tracking branch that is behind can
+;; only refuse.  No remote, or no gh when ancestry does not settle it,
+;; is a refusal rather than a guess.
+
+(defvar ecc-mcp-server-name)
+
+(defcustom ecc-worktree-auto-allow-removal t
+  "Non-nil allows the MCP tool `remove_worktree' without asking.
+The tool removes a worktree only when nothing in it would be lost: no
+uncommitted change or untracked file, a branch that is merged, and no
+session busy in it -- and it deletes no branch.  What it does delete is
+the files git ignores in the worktree: build output, a local settings
+file, installed dependencies.  Whether that may go without a question
+is a judgement about safety, which is why this is a setting.
+
+It is on because the tool's own refusals are what make a removal safe,
+and a question for each worktree is what the tool exists to spare.  Set
+it to nil to be asked about each call like any other tool.
+
+`list_worktrees' only reads, and is allowed whatever this says.  A
+session this Emacs did not start -- `claude' run in a terminal with the
+Emacs MCP server -- never asks this Emacs: it needs
+mcp__emacs__remove_worktree in its own permission allow list."
+  :type 'boolean
+  :group 'ecc)
+
+(defvar ecc-worktree-integration-branches '("develop" "main" "master")
+  "The branches a finished branch is merged into, by their names on the remote.
+A branch whose tip is an ancestor of one of these as the remote has it,
+or of the remote's own HEAD, is merged.  Only the remote-tracking
+branches are asked: a local one may hold commits nobody has pushed.")
+
+(defun ecc-worktree--session-state (session)
+  "Return what SESSION is doing, in the words a model is told.
+`waiting' on a request, `starting', `running', `exited', `restored' or
+`idle'.  `ecc-tab-state' says the same for the tab line, which this
+file is below and does not load; a session starting is told apart here,
+the model having no other way to know why it is busy."
+  (cond
+   ((or (ecc-session-pending session)
+        (memq (ecc-session-state session)
+              '(waiting-permission waiting-question waiting-plan)))
+    'waiting)
+   ((eq (ecc-session-state session) 'starting) 'starting)
+   ((memq (ecc-session-state session) '(running compacting)) 'running)
+   ((eq (ecc-session-state session) 'exited)
+    (if (ecc-model-option session :restored nil) 'restored 'exited))
+   (t 'idle)))
+
+(defun ecc-worktree--changes (root)
+  "Return how many files `git status --porcelain' names in ROOT, or nil.
+Untracked files count: `git worktree remove' refuses them as it refuses
+a modification.  Nil when git could not answer."
+  (when-let* ((output (ecc-worktree--output root "status" "--porcelain")))
+    (length (split-string output "\n" t))))
+
+(defun ecc-worktree--remote (root branch)
+  "Return the remote BRANCH of the repository ROOT is checked against, or nil.
+The remote of its upstream, else origin, and nil when there is neither."
+  (let ((remotes (split-string (or (ecc-worktree--output root "remote") "")
+                               "\n" t))
+        (own (and branch
+                  (ecc-worktree--output root "config" "--get"
+                                        (format "branch.%s.remote" branch)))))
+    (cond ((member own remotes) own)
+          ((member "origin" remotes) "origin"))))
+
+(defun ecc-worktree--integration-refs (root remote)
+  "Return the integration branches of REMOTE that ROOT has, as REMOTE/NAME."
+  (let* ((head (ecc-worktree--output root "symbolic-ref" "--quiet" "--short"
+                                     (format "refs/remotes/%s/HEAD" remote)))
+         (names (append (and head (not (string-empty-p head)) (list head))
+                        (mapcar (lambda (name) (format "%s/%s" remote name))
+                                ecc-worktree-integration-branches))))
+    (seq-filter (lambda (ref)
+                  (ecc-worktree--output root "rev-parse" "--verify" "--quiet"
+                                        (concat "refs/remotes/" ref)))
+                (delete-dups names))))
+
+(defun ecc-worktree--ancestor-p (root commit of)
+  "Return non-nil when COMMIT is an ancestor of OF in the repository ROOT."
+  (eq 0 (car-safe (ecc-worktree--git root "merge-base" "--is-ancestor"
+                                     commit of))))
+
+(defun ecc-worktree-merged (root branch tip)
+  "Say whether TIP, the head of BRANCH in the repository ROOT, is merged.
+Returns (MERGED . HOW), HOW a sentence saying how that was settled, or
+why it could not be.  BRANCH is nil for a detached HEAD, which only
+ancestry can settle.  The two ways a branch counts as merged are in the
+comment above."
+  (let* ((remote (ecc-worktree--remote root branch))
+         (refs (and remote (ecc-worktree--integration-refs root remote)))
+         (in (seq-find (lambda (ref)
+                         (ecc-worktree--ancestor-p
+                          root tip (concat "refs/remotes/" ref)))
+                       refs))
+         (not-in (if refs
+                     (format "not in %s" (string-join refs ", "))
+                   (format "%s has none of %s" remote
+                           (string-join ecc-worktree-integration-branches
+                                        ", ")))))
+    (cond
+     ((null remote) (cons nil "the repository has no remote to check against"))
+     (in (cons t (format "its tip is in %s" in)))
+     ((null branch) (cons nil (format "detached HEAD %s" not-in)))
+     (t (ecc-worktree--merged-by-pull-request root branch tip not-in)))))
+
+(defun ecc-worktree--merged-by-pull-request (root branch tip not-in)
+  "Ask gh whether BRANCH of ROOT went in through a pull request at TIP.
+NOT-IN says what ancestry found, for the answer when gh does not settle
+it either.  The JSON gh prints is read in `ecc-review-pr', loaded only
+now: this file is below the review."
+  (require 'ecc-review-pr)
+  (if (not (ecc-review-pr-available-p))
+      (cons nil (format "%s, and gh is not installed to ask about its \
+pull request" not-in))
+    (condition-case err
+        (let* ((prs (ecc-review-pr-merged root branch))
+               (pr (seq-find
+                    (lambda (pr)
+                      (when-let* ((head (plist-get pr :head-oid)))
+                        (or (equal head tip)
+                            (ecc-worktree--ancestor-p root tip head))))
+                    prs)))
+          (cond
+           (pr (cons t (format "pull request #%s was merged with its tip"
+                               (plist-get pr :number))))
+           (prs (cons nil (format "pull request #%s was merged, but the \
+branch has commits after it" (plist-get (car prs) :number))))
+           (t (cons nil (format "%s, and gh knows no merged pull request \
+of %s" not-in branch)))))
+      (user-error
+       (ecc-log "worktree" "gh failed: %s" (error-message-string err))
+       (cons nil (format "%s, and gh failed: %s" not-in
+                         (error-message-string err)))))))
+
+(defun ecc-worktree--space-p (root)
+  "Return non-nil when the worktree ROOT has a Space.
+Nil under `classic', where `ecc-space' is not loaded at all."
+  (when ecc-use-spaces
+    (require 'ecc-space)
+    (ecc-space-at-p root)))
+
+(defun ecc-worktree--inspect (main entry)
+  "Return what is known of the linked worktree ENTRY of the repository MAIN.
+A plist: :changes (a count, or nil when git could not say), :merged and
+:how (see `ecc-worktree-merged'), :sessions and :space.  Nothing for a
+worktree whose directory is gone."
+  (let ((root (ecc-worktree-entry-path entry)))
+    (unless (ecc-worktree-entry-prunable-p entry)
+      (let ((tip (ecc-worktree--output root "rev-parse" "HEAD")))
+        (pcase-let ((`(,merged . ,how)
+                     (if tip
+                         (ecc-worktree-merged
+                          main (and (not (ecc-worktree-entry-detached-p entry))
+                                    (ecc-worktree-entry-branch entry))
+                          tip)
+                       (cons nil "git could not read its HEAD"))))
+          (list :changes (ecc-worktree--changes root)
+                :merged merged :how how
+                :sessions (ecc-worktree-sessions root)
+                :space (ecc-worktree--space-p root)))))))
+
+(defun ecc-worktree--refusal (entry facts)
+  "Return why the worktree ENTRY may not be removed, or nil when it may.
+FACTS is what `ecc-worktree--inspect' found."
+  (let* ((changes (plist-get facts :changes))
+         (busy (seq-find (lambda (session)
+                           (memq (ecc-worktree--session-state session)
+                                 '(waiting starting running)))
+                         (plist-get facts :sessions))))
+    (cond
+     ((ecc-worktree-entry-main-p entry) "it is the main checkout")
+     ((ecc-worktree-entry-prunable-p entry)
+      (format "its directory is gone (%s); `git worktree prune' clears the \
+record" (ecc-worktree-entry-prunable-p entry)))
+     ((ecc-worktree-entry-locked-p entry)
+      (format "it is locked%s"
+              (if (stringp (ecc-worktree-entry-locked-p entry))
+                  (format " (%s)" (ecc-worktree-entry-locked-p entry))
+                "")))
+     ((null changes) "git status failed in it")
+     ((> changes 0)
+      (format "dirty: %d file%s uncommitted or untracked"
+              changes (if (= 1 changes) "" "s")))
+     ((not (plist-get facts :merged))
+      (format "not merged: %s" (plist-get facts :how)))
+     (busy
+      (format "session %s is %s%s" (ecc-session-name busy)
+              (if (eq (ecc-worktree--session-state busy) 'waiting)
+                  "waiting on a request"
+                (ecc-worktree--session-state busy))
+              (if (and (fboundp 'ecc-mcp-session) (eq busy (ecc-mcp-session)))
+                  ", and it is the session calling this tool"
+                ""))))))
+
+(defun ecc-worktree--mcp-entries ()
+  "Return the worktrees of the repository the calling session works in.
+Main first, asked of git afresh.  The root is the project the session
+was started in and not the cwd the CLI reports, for the reason
+`ecc-worktree-mcp-delegate' gives."
+  (let* ((session (and (fboundp 'ecc-mcp-session) (ecc-mcp-session)))
+         (root (or (and session (ecc-session-project-root session))
+                   default-directory)))
+    (ecc-worktree-forget)
+    (or (ecc-worktree-list root)
+        (user-error "%s is not in a git repository"
+                    (abbreviate-file-name root)))))
+
+(defun ecc-worktree--describe (entry facts)
+  "Return the lines `list_worktrees' gives the linked worktree ENTRY.
+FACTS is what `ecc-worktree--inspect' found."
+  (let* ((changes (plist-get facts :changes))
+         (sessions (plist-get facts :sessions))
+         (refusal (ecc-worktree--refusal entry facts)))
+    (string-join
+     (delq nil
+           (list
+            (format "%s (%s)" (ecc-worktree-entry-path entry)
+                    (if (ecc-worktree-entry-branch entry)
+                        (format "branch %s" (ecc-worktree-entry-branch entry))
+                      "detached HEAD"))
+            (when (ecc-worktree-entry-prunable-p entry)
+              (format "  missing: %s" (ecc-worktree-entry-prunable-p entry)))
+            (when (ecc-worktree-entry-locked-p entry)
+              (format "  locked: %s"
+                      (if (stringp (ecc-worktree-entry-locked-p entry))
+                          (ecc-worktree-entry-locked-p entry)
+                        "yes")))
+            (when facts
+              (format "  changes: %s"
+                      (cond ((null changes) "unknown, git status failed")
+                            ((zerop changes) "none")
+                            (t (format "%d file%s uncommitted or untracked"
+                                       changes (if (= 1 changes) "" "s"))))))
+            (when facts
+              (format "  merged: %s -- %s"
+                      (if (plist-get facts :merged) "yes" "no")
+                      (plist-get facts :how)))
+            (when facts
+              (format "  sessions: %s"
+                      (if sessions
+                          (mapconcat (lambda (session)
+                                       (format "%s (%s)"
+                                               (ecc-session-name session)
+                                               (ecc-worktree--session-state
+                                                session)))
+                                     sessions ", ")
+                        "none")))
+            (when (and facts ecc-use-spaces)
+              (format "  Space: %s" (if (plist-get facts :space) "yes" "no")))
+            (format "  removable: %s"
+                    (if refusal (format "no -- %s" refusal) "yes"))))
+     "\n")))
+
+(defun ecc-worktree-mcp-list ()
+  "Describe the linked worktrees of the calling session's repository.
+The MCP tool `list_worktrees'."
+  (let* ((entries (ecc-worktree--mcp-entries))
+         (main (ecc-worktree-entry-path (car entries)))
+         (linked (cdr entries)))
+    (concat (format "Repository: %s (the main checkout, never removed)\n\n"
+                    main)
+            (if linked
+                (mapconcat (lambda (entry)
+                             (ecc-worktree--describe
+                              entry (ecc-worktree--inspect main entry)))
+                           linked "\n\n")
+              "It has no linked worktree."))))
+
+(defun ecc-worktree--entry-at (entries path)
+  "Return the worktree among ENTRIES checked out at PATH, or nil.
+Through `file-truename', as `ecc-worktree-main' compares."
+  (let ((wanted (file-truename (file-name-as-directory path))))
+    (seq-find (lambda (entry)
+                (equal (file-truename (ecc-worktree-entry-path entry)) wanted))
+              entries)))
+
+(defun ecc-worktree--remove-quietly (main root sessions)
+  "Stop SESSIONS, close the Space of ROOT and remove it from MAIN.
+Returns nil when the worktree is gone, or git's refusal.  Never
+`--force': whoever calls this has made sure git has nothing to refuse
+over changes, and anything git still refuses is reported, not insisted
+on."
+  ;; `ecc-space--closing' both closes the Spaces quietly and keeps
+  ;; `ecc-worktree--session-removed' from offering what this is about to
+  ;; do anyway, as in `ecc-remove-worktree'.
+  (when sessions
+    (require 'ecc)
+    (let ((ecc-space--closing t))
+      (mapc #'ecc-kill sessions)))
+  (ecc-worktree--forget-space root)
+  (let ((result (ecc-worktree--git main "worktree" "remove" root)))
+    (ecc-worktree-forget)
+    (if (eq 0 (car-safe result))
+        (progn (run-hook-with-args 'ecc-worktree-removed-hook root)
+               nil)
+      (if result (string-trim (cdr result)) "git could not be run"))))
+
+(defun ecc-worktree--remove-one (main entries path)
+  "Remove the worktree at PATH, a linked one of MAIN among ENTRIES.
+Returns the line that reports what happened.  Everything that can
+refuse is asked before anything is stopped."
+  (let* ((expanded (expand-file-name path main))
+         (entry (ecc-worktree--entry-at entries expanded))
+         (facts (and entry (not (ecc-worktree-entry-main-p entry))
+                     (ecc-worktree--inspect main entry)))
+         (refusal (if entry
+                      (ecc-worktree--refusal entry facts)
+                    "not a worktree of this repository")))
+    (if refusal
+        (format "refused %s: %s" path refusal)
+      (let* ((root (ecc-worktree-entry-path entry))
+             (sessions (plist-get facts :sessions))
+             (names (mapcar #'ecc-session-name sessions))
+             (failed (ecc-worktree--remove-quietly main root sessions)))
+        (if failed
+            (format "refused %s: git: %s%s" root failed
+                    (if names
+                        (format " (its sessions %s were stopped)"
+                                (string-join names ", "))
+                      ""))
+          (format "removed %s (%s kept; merged: %s%s%s)"
+                  root
+                  (if (ecc-worktree-entry-branch entry)
+                      (format "branch %s" (ecc-worktree-entry-branch entry))
+                    "no branch, detached HEAD")
+                  (plist-get facts :how)
+                  (if names
+                      (format "; stopped %s" (string-join names ", "))
+                    "")
+                  (if (plist-get facts :space) "; closed its Space" "")))))))
+
+(defun ecc-worktree-mcp-remove (paths)
+  "Remove the worktrees at PATHS that have nothing to lose.
+The MCP tool `remove_worktree'.  PATHS is a vector of paths, absolute
+or relative to the main checkout; a string is one path.  The answer is
+a line for each, removed or refused with the reason, and nothing is
+asked."
+  (let* ((paths (if (stringp paths) (list paths) (append paths nil)))
+         (entries (ecc-worktree--mcp-entries))
+         (main (ecc-worktree-entry-path (car entries))))
+    (when (null paths)
+      (user-error "No path to remove"))
+    (mapconcat (lambda (path)
+                 (prog1 (ecc-worktree--remove-one main entries path)
+                   ;; What went is no longer there to match the next path.
+                   (setq entries (ecc-worktree-list main))))
+               paths "\n")))
+
+(defvar ecc-worktree-removal-instructions
+  "To clear away worktrees whose work is finished, call list_worktrees \
+first: it says of each linked worktree of this repository whether it has \
+uncommitted or untracked files, whether its branch is merged and how \
+that was found, which sessions work in it, and whether it can be \
+removed.  Then call remove_worktree with the paths the user asked for, \
+and only those.  It removes a worktree only when nothing in it would be \
+lost -- no changes, a merged branch, no session busy in it -- stops the \
+idle sessions there and closes its window; the branch is kept.  \
+Anything else is refused with the reason: report the refusal, and do not \
+run `git worktree remove' or --force yourself.  Removing a worktree also \
+deletes the files git ignores in it, such as compiled .elc files, \
+.claude/settings.local.json and node_modules; say so when they may \
+matter."
+  "The paragraph of the server instructions about removing worktrees.
+A sentence sent to the model, so a variable and not a setting.")
+
+(defun ecc-worktree-register-removal-tools ()
+  "Publish `list_worktrees\=' and `remove_worktree\=' to the model."
+  (ecc-mcp-define-tool
+   :name "list_worktrees"
+   :description "List the linked git worktrees of this project's repository.  For each: its path and branch, how many uncommitted or untracked files it has, whether its branch is merged and how that was found (its tip in an integration branch of the remote, or a merged pull request), the sessions of this Emacs working in it and their state (running, starting, waiting, idle, exited, restored), whether it has a Space, and whether remove_worktree would remove it or why not.  Call it before remove_worktree and tell the user which worktrees are finished."
+   :args nil
+   :function #'ecc-worktree-mcp-list)
+  (ecc-mcp-define-tool
+   :name "remove_worktree"
+   :description "Remove finished git worktrees of this project's repository, without asking.  Each path is removed only when it is a linked worktree of this repository (not the main checkout), git status shows no uncommitted or untracked file, its branch is merged (its tip in an integration branch of the remote, or a pull request merged with that tip), and no session in it is running or waiting on a request.  Its idle sessions are stopped and its Space is closed; the branch is never deleted and --force is never used.  Anything else is refused, and the answer gives a line per path: removed, or refused with the reason.  `git worktree remove' also deletes the files git ignores in the worktree -- compiled .elc files, .claude/settings.local.json, node_modules and the like.  Call list_worktrees first, and remove only the worktrees the user asked you to."
+   :args '(("paths" ((type . "array") (items . ((type . "string"))))
+            "The worktrees to remove, as list_worktrees gives their paths"
+            t))
+   :function #'ecc-worktree-mcp-remove)
+  (ecc-mcp-define-instructions "worktree-removal"
+                               'ecc-worktree-removal-instructions
+                               '("list_worktrees" "remove_worktree")))
+
+(with-eval-after-load 'ecc-mcp (ecc-worktree-register-removal-tools))
+
+(defun ecc-worktree-allow-request (_session request)
+  "Return non-nil when REQUEST calls a worktree tool that may go unasked.
+On `ecc-request-allow-functions\='.  `list_worktrees\=' only reads and is
+always allowed; `remove_worktree\=' is allowed while
+`ecc-worktree-auto-allow-removal\=' says so.  The CLI names a tool
+mcp__SERVER__TOOL, and the prefix is made from `ecc-mcp-server-name\='."
+  (when (boundp 'ecc-mcp-server-name)
+    (let ((name (ecc-request-tool-name request))
+          (prefix (format "mcp__%s__" ecc-mcp-server-name)))
+      (and (stringp name)
+           (string-prefix-p prefix name)
+           (pcase (substring name (length prefix))
+             ("list_worktrees" t)
+             ("remove_worktree" (and ecc-worktree-auto-allow-removal t)))))))
+
+(add-hook 'ecc-request-allow-functions #'ecc-worktree-allow-request)
 
 ;;;; Commands
 
