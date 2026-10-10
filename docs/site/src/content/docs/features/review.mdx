@@ -25,9 +25,9 @@ A review shows changes as one read-only diff, however they were made: an edit, a
 | `-f` | Choose the files to keep |
 | `-e` | Open this one review in ediff (or as a diff when `ecc-review-style` is `'ediff`) |
 
-The review is of the current buffer's project, and the comments go to its session; with none, ecc offers to start one. `S` chooses another session, or `+ new session`, which asks for a name and starts the session only when you open a review, so quitting the menu with `C-g` leaves nothing running. Until then `D` is off. Outside a Git repository only `D` is offered. A count that fails shows `?`, and the echo area says why.
+The review is of the current buffer's project, and the comments go to its session; with none, ecc offers to start one. `S` chooses another session, or `+ new session`, which asks for a name; the session starts when you open a review, and until then `D` is off. Outside a Git repository only `D` is offered. A count that fails shows `?`, and the echo area says why.
 
-The count beside `D` takes a snapshot of the working tree. To leave it out, set `ecc-review-menu-count-session-changes` to `nil`.
+Counting the files beside `D` can make the menu slow to open on a large repository; set `ecc-review-menu-count-session-changes` to `nil` to leave it out.
 
 ### A branch, a commit, a pull request
 
@@ -35,7 +35,7 @@ The count beside `D` takes a snapshot of the working tree. To leave it out, set 
 
 `c` asks for a commit, then for the last commit to include. `RET` at the second question reviews the one commit; a second commit reviews both and every commit between them. The list holds the last 2000 commits. For another one, type its full hash, a tag or any revision git resolves, such as `HEAD~3000`. Fetch it first if your repository does not have it yet.
 
-`p` lists the open pull requests, with the open pull request of your branch as the default. A number opens any pull request, merged and closed ones included. The first entry, `Search pull requests…`, searches every pull request, closed and merged ones too, in GitHub's search syntax such as `is:merged author:someone` or `label:bug`. Words you type that match no entry are searched too. A completion UI that keeps the first candidate selected needs its own key to submit the words as typed (`M-RET` in vertico, `M-j` in icomplete and fido, `C-M-j` in ivy), or choose the search entry before typing. Results mark `[closed]` and `[merged]`. The diff comes from your local git, which has whole files. ecc fetches only the commits that are missing, creates no branch, and leaves `HEAD` and your files alone. Your own branch's pull request opens the same review as `b`, against your working tree.
+`p` lists the open pull requests, with the open pull request of your branch as the default. A number opens any pull request, merged and closed ones included. The first entry, `Search pull requests…`, searches every pull request, closed and merged ones too, in GitHub's search syntax such as `is:merged author:someone` or `label:bug`. Words you type that match no entry are searched too. A completion UI that keeps the first candidate selected needs its own key to submit the words as typed (`M-RET` in vertico, `M-j` in icomplete and fido, `C-M-j` in ivy), or choose the search entry before typing. Results mark `[closed]` and `[merged]`. ecc fetches the commits that are missing, creates no branch, and leaves `HEAD` and your files alone. Your own branch's pull request opens the same review as `b`, against your working tree.
 
 ### A pull request, one commit at a time
 
