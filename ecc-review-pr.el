@@ -185,6 +185,17 @@ alike are found, as gh orders them."
   (car (ecc-review-pr-parse (ecc-review-pr--gh root "pr" "view" (number-to-string number)
                                                "--json" ecc-review-pr-fields))))
 
+(defun ecc-review-pr-merged (root branch)
+  "Return the merged pull requests whose head is BRANCH, in the repository of ROOT.
+What `ecc-worktree' asks before it removes a worktree on BRANCH: a
+branch that was squashed into its base has commits that are no
+ancestors of it, and the pull request is then the only record that it
+went in.  The JSON is read here, this file being one of the few that
+read any."
+  (ecc-review-pr-parse (ecc-review-pr--gh root "pr" "list" "--head" branch
+                                          "--state" "merged"
+                                          "--json" ecc-review-pr-fields)))
+
 ;;;; Asking which
 
 (defun ecc-review-pr-line (pr)
