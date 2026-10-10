@@ -872,7 +872,7 @@ first has already taken away."
 ;;;; Removing the finished ones from inside a session
 
 (defmacro ecc-worktree-test--with-repository (var &rest body)
-  "Run BODY with VAR a repository whose origin/develop has its one commit.
+  "Run BODY with VAR a repository with an origin, its develop at the first commit.
 No session registry, project cache or Space is inherited, nothing may
 ask a question -- `remove_worktree' never asks -- and gh is one that is
 not installed unless BODY says otherwise."
@@ -910,10 +910,23 @@ not installed unless BODY says otherwise."
   (ecc-worktree-test--git directory "commit" "-q" "-m" file)
   (string-trim (ecc-worktree-test--git directory "rev-parse" "HEAD")))
 
+(defun ecc-worktree-test--finished (directory branch)
+  "Make a worktree of DIRECTORY on BRANCH whose work has landed, and return it.
+A commit is made on BRANCH, merged into main, and main is what
+origin/develop holds."
+  (let ((path (ecc-worktree-create directory branch)))
+    (ecc-worktree-test--commit path (concat (ecc-worktree-slug branch) ".txt"))
+    (ecc-worktree-test--git directory "merge" "-q" "--no-edit" branch)
+    (ecc-worktree-test--git directory "update-ref" "refs/remotes/origin/develop"
+                            "HEAD")
+    (ecc-worktree-forget)
+    path))
+
 (defmacro ecc-worktree-test--with-gh (answer &rest body)
   "Run BODY with a fake gh that prints ANSWER, a JSON string.
-ANSWER may be (:fail TEXT), and gh then fails saying TEXT.  The calls
-land in `gh-calls', one string of arguments each."
+ANSWER may be (:fail TEXT), and gh then fails saying TEXT, or (:sleep
+SECONDS), and gh says nothing for that long.  The calls land in
+`gh-calls', one string of arguments each."
   (declare (indent 1))
   `(let* ((gh-dir (make-temp-file "ecc-worktree-gh" t))
           (script (expand-file-name "gh" gh-dir))
@@ -921,13 +934,14 @@ land in `gh-calls', one string of arguments each."
      (unwind-protect
          (progn
            (with-temp-file (expand-file-name "answer" gh-dir)
-             (insert (if (stringp answer) answer (cadr answer))))
+             (insert (if (stringp answer) answer (format "%s" (cadr answer)))))
            (with-temp-file script
              (insert (format "#!/bin/sh\necho \"$*\" >> '%s/log'\n%s\n"
                              gh-dir
-                             (if (stringp answer)
-                                 (format "cat '%s/answer'" gh-dir)
-                               (format "cat '%s/answer' >&2; exit 1" gh-dir)))))
+                             (pcase answer
+                               ((pred stringp) (format "cat '%s/answer'" gh-dir))
+                               (`(:sleep ,seconds) (format "sleep %s" seconds))
+                               (_ (format "cat '%s/answer' >&2; exit 1" gh-dir))))))
            (set-file-modes script #o755)
            (let ((ecc-review-gh-executable script))
              (cl-flet ((gh-calls ()
@@ -940,11 +954,12 @@ land in `gh-calls', one string of arguments each."
                ,@body)))
        (delete-directory gh-dir t))))
 
-(defun ecc-worktree-test--merged-json (number head)
-  "Return gh's JSON for one merged pull request NUMBER whose head is HEAD."
+(defun ecc-worktree-test--merged-json (number head &optional base)
+  "Return gh's JSON for one merged pull request NUMBER whose head is HEAD.
+Its base is BASE, develop by default."
   (json-serialize
    (vector `((number . ,number) (title . "x") (state . "MERGED")
-             (headRefName . "feat/x") (baseRefName . "develop")
+             (headRefName . "feat/x") (baseRefName . ,(or base "develop"))
              (headRefOid . ,head) (baseRefOid . "0")
              (author . ((login . "u"))) (isDraft . :false)
              (isCrossRepository . :false) (url . "https://example.com")))))
@@ -964,16 +979,16 @@ land in `gh-calls', one string of arguments each."
                         "worktree /r\nHEAD 1\n\nworktree /r/w\nHEAD 2\nlocked\n"))))))
 
 (ert-deftest ecc-worktree-test-mcp-remove-a-merged-worktree ()
-  "A clean worktree whose tip is in origin/develop goes, its branch stays."
+  "A clean worktree whose commit is in origin/develop goes, its branch stays."
   (skip-unless (executable-find "git"))
   (ecc-worktree-test--with-repository directory
-    (let* ((path (ecc-worktree-create directory "feat/x"))
+    (let* ((path (ecc-worktree-test--finished directory "feat/x"))
            (caller (ecc-worktree-test--idle-session :name "caller"
-                                             :project-root directory))
+                                                    :project-root directory))
            (ecc-mcp--session-id (ecc-session-id caller))
            (removed nil)
            (ecc-worktree-removed-hook (list (lambda (p) (push p removed))))
-           ;; A path relative to the main checkout names it as well.
+           ;; A path relative to the main worktree names it as well.
            (lines (ecc-worktree-test--remove ".claude/worktrees/feat-x")))
       (should (= 1 (length lines)))
       (should (string-match-p "\\`removed .*feat-x/ (branch feat/x kept; merged: its tip is in origin/develop)\\'"
@@ -985,18 +1000,76 @@ land in `gh-calls', one string of arguments each."
       (should (equal '("caller") (mapcar #'ecc-session-name
                                          (ecc-model-sessions)))))))
 
-(ert-deftest ecc-worktree-test-mcp-remove-refuses-dirty ()
-  "Uncommitted and untracked files are counted, and the worktree stays."
+(ert-deftest ecc-worktree-test-mcp-remove-refuses-a-fresh-worktree ()
+  "A branch nobody committed on is work not started, not work merged.
+Its tip is the commit it was made from, which origin/develop holds as
+well; what tells the two apart is that the reflog of the branch records
+no commit."
   (skip-unless (executable-find "git"))
   (ecc-worktree-test--with-repository directory
     (let ((path (ecc-worktree-create directory "feat/x")))
-      (with-temp-file (expand-file-name "new.txt" path) (insert "x"))
+      (ecc-worktree-test--idle-session :name "reader" :project-root path)
+      (should (string-match-p
+               ": not merged: its tip is in origin/develop, but no commit was made on feat/x, and gh is not installed"
+               (car (ecc-worktree-test--remove path))))
+      ;; Nor is a branch that only took in work made elsewhere.
+      (let ((other (ecc-worktree-test--finished directory "feat/other")))
+        (ignore other)
+        (ecc-worktree-test--git path "merge" "-q" "--ff-only" "main")
+        (should (string-match-p ": not merged: .*no commit was made on feat/x"
+                                (car (ecc-worktree-test--remove path)))))
+      (should (file-directory-p path))
+      (should (= 1 (length (ecc-model-sessions)))))))
+
+(ert-deftest ecc-worktree-test-mcp-remove-refuses-dirty ()
+  "Uncommitted and untracked files are counted, and the worktree stays.
+However git is configured to show them: under
+status.showUntrackedFiles=no a plain `git status' hides an untracked
+file that `git worktree remove' would then delete."
+  (skip-unless (executable-find "git"))
+  (ecc-worktree-test--with-repository directory
+    (let ((path (ecc-worktree-test--finished directory "feat/x")))
+      (ecc-worktree-test--git directory "config" "status.showUntrackedFiles" "no")
+      (with-temp-file (expand-file-name "new/deep.txt" path)
+        (make-directory (expand-file-name "new" path) t)
+        (insert "x"))
       (should (string-match-p "refused .*: dirty: 1 file uncommitted or untracked\\'"
                               (car (ecc-worktree-test--remove path))))
       (with-temp-file (expand-file-name "a.txt" path) (insert "changed"))
       (should (string-match-p ": dirty: 2 files uncommitted or untracked\\'"
                               (car (ecc-worktree-test--remove path))))
-      (should (file-directory-p path)))))
+      (should (file-exists-p (expand-file-name "new/deep.txt" path))))))
+
+(ert-deftest ecc-worktree-test-mcp-remove-refuses-unsaved-work ()
+  "A buffer with unsaved changes or a prompt with a draft keeps the worktree.
+A buffer with nothing unsaved is left open and counted."
+  (skip-unless (executable-find "git"))
+  (ecc-worktree-test--with-repository directory
+    (let* ((path (ecc-worktree-test--finished directory "feat/x"))
+           (buffer (find-file-noselect (expand-file-name "a.txt" path)))
+           (session (ecc-worktree-test--idle-session :name "drafting"
+                                                     :project-root path)))
+      (unwind-protect
+          (progn
+            (with-current-buffer buffer (insert "unsaved "))
+            (should (string-match-p ": unsaved changes in a.txt\\'"
+                                    (car (ecc-worktree-test--remove path))))
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (cl-letf (((symbol-function 'ecc-chat-draft)
+                       (lambda () "half a sentence")))
+              (setf (ecc-session-buffer session)
+                    (get-buffer-create " *ecc-worktree-test session*"))
+              (should (string-match-p
+                       ": session drafting has an unsent draft in its prompt\\'"
+                       (car (ecc-worktree-test--remove path)))))
+            (should (file-directory-p path))
+            (cl-letf (((symbol-function 'ecc-chat-draft) (lambda () "  \n")))
+              (should (string-match-p
+                       "\\`removed .*; stopped drafting; 1 open buffer left visiting deleted files)\\'"
+                       (car (ecc-worktree-test--remove path)))))
+            (should (buffer-live-p buffer)))
+        (with-current-buffer buffer (set-buffer-modified-p nil))
+        (kill-buffer buffer)))))
 
 (ert-deftest ecc-worktree-test-mcp-remove-refuses-unmerged ()
   "A branch with commits of its own needs a merged pull request, and gh."
@@ -1020,12 +1093,26 @@ land in `gh-calls', one string of arguments each."
       (ecc-worktree-test--with-gh '(:fail "not logged in")
         (should (string-match-p ": not merged: .*gh failed: .*not logged in"
                                 (car (ecc-worktree-test--remove path)))))
+      ;; Nor is a gh that gives no answer waited for.
+      (ecc-worktree-test--with-gh '(:sleep 5)
+        (let ((ecc-review-pr-merged-timeout 0.3)
+              (start (float-time)))
+          (should (string-match-p ": not merged: .*gh failed: gh gave no answer in 0.3 seconds"
+                                  (car (ecc-worktree-test--remove path))))
+          (should (< (- (float-time) start) 3))))
+      ;; gh is not asked about a worktree refused for another reason.
+      (with-temp-file (expand-file-name "new.txt" path) (insert "x"))
+      (ecc-worktree-test--with-gh "[]"
+        (should (string-match-p ": dirty: " (car (ecc-worktree-test--remove path))))
+        (should (string-match-p "gh was not asked" (ecc-worktree-mcp-list)))
+        (should-not (gh-calls)))
       (should (file-directory-p path)))))
 
 (ert-deftest ecc-worktree-test-mcp-remove-a-squashed-branch ()
-  "A pull request merged with the tip of the branch is merged.
+  "A pull request into an integration branch merged with the tip is merged.
 Squashed, the commits are no ancestors of the base; with commits after
-the merge, the branch has work the pull request did not take."
+the merge, the branch has work the pull request did not take; and a
+pull request merged into another feature branch has not landed."
   (skip-unless (executable-find "git"))
   (ecc-worktree-test--with-repository directory
     (let* ((path (ecc-worktree-create directory "feat/x"))
@@ -1033,13 +1120,19 @@ the merge, the branch has work the pull request did not take."
       (ecc-worktree-test--commit path "c.txt")
       (ecc-worktree-test--with-gh (ecc-worktree-test--merged-json 101 merged)
         (should (string-match-p
-                 ": not merged: pull request #101 was merged, but the branch has commits after it\\'"
+                 ": not merged: pull request #101 was merged into develop, but the branch has commits after it\\'"
                  (car (ecc-worktree-test--remove path)))))
       (should (file-directory-p path))
       (ecc-worktree-test--git path "reset" "-q" "--hard" merged)
+      (ecc-worktree-test--with-gh (ecc-worktree-test--merged-json
+                                   102 merged "feat/base")
+        (should (string-match-p
+                 ": not merged: not in origin/develop; pull request #102 was merged into feat/base, which is no integration branch\\'"
+                 (car (ecc-worktree-test--remove path)))))
+      (should (file-directory-p path))
       (ecc-worktree-test--with-gh (ecc-worktree-test--merged-json 101 merged)
         (should (string-match-p
-                 "\\`removed .*merged: pull request #101 was merged with its tip)\\'"
+                 "\\`removed .*merged: pull request #101 into develop was merged with its tip)\\'"
                  (car (ecc-worktree-test--remove path)))))
       (should-not (file-directory-p path))
       (should (member "feat/x" (ecc-worktree-branches directory))))))
@@ -1048,21 +1141,21 @@ the merge, the branch has work the pull request did not take."
   "With no remote there is nothing to be merged into, and no guess."
   (skip-unless (executable-find "git"))
   (ecc-worktree-test--with-repository directory
-    (ecc-worktree-test--git directory "remote" "remove" "origin")
-    (let ((path (ecc-worktree-create directory "feat/x")))
+    (let ((path (ecc-worktree-test--finished directory "feat/x")))
+      (ecc-worktree-test--git directory "remote" "remove" "origin")
       (should (string-match-p ": not merged: the repository has no remote"
                               (car (ecc-worktree-test--remove path))))
       (should (file-directory-p path)))))
 
 (ert-deftest ecc-worktree-test-mcp-remove-refuses-what-is-no-linked-worktree ()
-  "The main checkout, a directory of no worktree and a locked one stay."
+  "The main worktree, a directory of no worktree and a locked one stay."
   (skip-unless (executable-find "git"))
   (ecc-worktree-test--with-repository directory
-    (let ((path (ecc-worktree-create directory "feat/x"))
+    (let ((path (ecc-worktree-test--finished directory "feat/x"))
           (elsewhere (make-temp-file "ecc-worktree-elsewhere" t)))
       (unwind-protect
           (progn
-            (should (string-match-p ": it is the main checkout\\'"
+            (should (string-match-p ": it is the main worktree\\'"
                                     (car (ecc-worktree-test--remove directory))))
             (should (string-match-p ": not a worktree of this repository\\'"
                                     (car (ecc-worktree-test--remove elsewhere))))
@@ -1082,11 +1175,11 @@ the merge, the branch has work the pull request did not take."
   "Idle, exited and restored sessions are stopped, and the worktree goes."
   (skip-unless (executable-find "git"))
   (ecc-worktree-test--with-repository directory
-    (let* ((path (ecc-worktree-create directory "feat/x"))
+    (let* ((path (ecc-worktree-test--finished directory "feat/x"))
            (one (ecc-worktree-test--idle-session :name "one" :project-root path))
            (two (ecc-worktree-test--idle-session :name "two" :project-root path))
            (three (ecc-worktree-test--idle-session :name "three" :project-root path
-                                            :options '(:restored t))))
+                                                   :options '(:restored t))))
       (ignore one)
       (setf (ecc-session-state two) 'exited
             (ecc-session-state three) 'exited)
@@ -1097,39 +1190,64 @@ the merge, the branch has work the pull request did not take."
       (should-not (file-directory-p path)))))
 
 (ert-deftest ecc-worktree-test-mcp-remove-refuses-a-busy-session ()
-  "A session running a turn or waiting on an answer keeps the worktree.
+  "A session running, waiting on an answer or running a task keeps the worktree.
 Nothing is stopped: the idle session beside the busy one is still there."
   (skip-unless (executable-find "git"))
   (ecc-worktree-test--with-repository directory
-    (let* ((path (ecc-worktree-create directory "feat/x"))
+    (let* ((path (ecc-worktree-test--finished directory "feat/x"))
            (idle (ecc-worktree-test--idle-session :name "idle" :project-root path))
            (busy (ecc-worktree-test--idle-session :name "busy" :project-root path)))
       (ignore idle)
-      (setf (ecc-session-state busy) 'running)
-      (should (string-match-p ": session busy is running\\'"
-                              (car (ecc-worktree-test--remove path))))
-      (setf (ecc-session-state busy) 'starting)
-      (should (string-match-p ": session busy is starting\\'"
-                              (car (ecc-worktree-test--remove path))))
+      (dolist (state '(running starting compacting))
+        (setf (ecc-session-state busy) state)
+        (should (string-match-p ": session busy is running\\'"
+                                (car (ecc-worktree-test--remove path)))))
       (setf (ecc-session-state busy) 'idle
             (ecc-session-pending busy) (list 'request))
       (should (string-match-p ": session busy is waiting on a request\\'"
                               (car (ecc-worktree-test--remove path))))
+      ;; The turn is over, but an agent it started in the background is not.
+      (setf (ecc-session-pending busy) nil)
+      (let ((agent (ecc-model-add-node busy :id "toolu_a" :type 'agent
+                                       :status 'done
+                                       :data '((task . ((task_id . "a")))))))
+        (setf (ecc-session-state busy) 'idle)
+        (should (string-match-p
+                 ": session busy is idle with 1 background task still running\\'"
+                 (car (ecc-worktree-test--remove path))))
+        (ecc-model-node-put agent 'task-status "completed"))
       ;; The session calling the tool from inside the worktree is said to be.
-      (setf (ecc-session-pending busy) nil
-            (ecc-session-state busy) 'running)
+      (setf (ecc-session-state busy) 'running)
       (let ((ecc-mcp--session-id (ecc-session-id busy)))
-        (should (string-match-p "is running, and it is the session calling this tool\\'"
+        (should (string-match-p ": session busy (the one calling this tool) is running\\'"
                                 (car (ecc-worktree-test--remove path)))))
       (should (= 2 (length (ecc-model-sessions))))
       (should (file-directory-p path)))))
+
+(ert-deftest ecc-worktree-test-mcp-remove-refuses-a-session-standing-in-it ()
+  "A session of another project whose cwd is in the worktree keeps it.
+The CLI follows a Bash `cd' into the worktree; the session is not one of
+the worktree's to stop, and would be left in a directory that is gone."
+  (skip-unless (executable-find "git"))
+  (ecc-worktree-test--with-repository directory
+    (let* ((path (ecc-worktree-test--finished directory "feat/x"))
+           (caller (ecc-worktree-test--idle-session :name "caller"
+                                                    :project-root directory))
+           (ecc-mcp--session-id (ecc-session-id caller)))
+      (setf (ecc-session-cwd caller) (expand-file-name "sub" path))
+      (should (string-match-p ": session caller (the one calling this tool), of another project, has its working directory in it\\'"
+                              (car (ecc-worktree-test--remove path))))
+      ;; A stopped one is standing nowhere.
+      (setf (ecc-session-state caller) 'exited)
+      (should (string-match-p "\\`removed " (car (ecc-worktree-test--remove path))))
+      (should (equal '("caller") (mapcar #'ecc-session-name (ecc-model-sessions)))))))
 
 (ert-deftest ecc-worktree-test-mcp-remove-two-in-one-call ()
   "Two worktrees in one call: the finished one goes, the other is refused.
 Each with a session of its own; only the removed one's is stopped."
   (skip-unless (executable-find "git"))
   (ecc-worktree-test--with-repository directory
-    (let* ((done (ecc-worktree-create directory "feat/done"))
+    (let* ((done (ecc-worktree-test--finished directory "feat/done"))
            (open (ecc-worktree-create directory "feat/open")))
       (ecc-worktree-test--idle-session :name "done-session" :project-root done)
       (ecc-worktree-test--idle-session :name "open-session" :project-root open)
@@ -1144,12 +1262,49 @@ Each with a session of its own; only the removed one's is stopped."
       (should (equal '("open-session")
                      (mapcar #'ecc-session-name (ecc-model-sessions)))))))
 
+(ert-deftest ecc-worktree-test-mcp-remove-an-error-is-one-path ()
+  "An error removing one worktree is that path's line; the others go on.
+The model is told what was removed before it, and the error is logged."
+  (skip-unless (executable-find "git"))
+  (ecc-worktree-test--with-repository directory
+    (let* ((one (ecc-worktree-test--finished directory "feat/one"))
+           (two (ecc-worktree-test--finished directory "feat/two"))
+           (three (ecc-worktree-test--finished directory "feat/three"))
+           (logged nil))
+      (ecc-worktree-test--idle-session :name "two-session" :project-root two)
+      (cl-letf* ((kill (symbol-function #'ecc-kill))
+                 ((symbol-function #'ecc-kill)
+                  (lambda (session)
+                    (if (equal (ecc-session-name session) "two-session")
+                        (error "Cannot kill %s" (ecc-session-name session))
+                      (funcall kill session))))
+                 ((symbol-function #'ecc-log)
+                  (lambda (_name format &rest args)
+                    (push (apply #'format format args) logged))))
+        (let ((lines (ecc-worktree-test--remove one two three)))
+          (should (string-match-p "\\`removed .*feat-one/" (nth 0 lines)))
+          (should (string-match-p "\\`failed .*feat-two/?: Cannot kill two-session; the worktree is still there\\'"
+                                  (nth 1 lines)))
+          (should (string-match-p "\\`removed .*feat-three/" (nth 2 lines)))
+          (should (seq-find (lambda (line) (string-match-p "Cannot kill" line))
+                            logged))
+          ;; A worktree that cannot be described says so, and the rest
+          ;; are described.
+          (cl-letf* ((changes (symbol-function #'ecc-worktree--changes))
+                     ((symbol-function #'ecc-worktree--changes)
+                      (lambda (root)
+                        (if (string-match-p "feat-two" root)
+                            (error "Broken")
+                          (funcall changes root)))))
+            (should (string-match-p "feat-two/ (branch feat/two)\n  error: Broken"
+                                    (ecc-worktree-mcp-list)))))))))
+
 (ert-deftest ecc-worktree-test-mcp-remove-closes-the-space ()
   "Under Spaces the Space is closed while the directory is still there.
 Under `classic' nothing reaches `ecc-space'."
   (skip-unless (executable-find "git"))
   (ecc-worktree-test--with-repository directory
-    (let ((path (ecc-worktree-create directory "feat/x"))
+    (let ((path (ecc-worktree-test--finished directory "feat/x"))
           (forgotten nil))
       (let ((ecc-use-spaces t))
         (cl-letf (((symbol-function 'ecc-space-at-p) (lambda (_root) t))
@@ -1161,7 +1316,7 @@ Under `classic' nothing reaches `ecc-space'."
       (should (equal (mapcar #'cdr forgotten) '(t)))
       (should (equal (file-truename (caar forgotten)) (file-truename path)))
       (should-not (file-directory-p path))
-      (let ((path (ecc-worktree-create directory "feat/y")))
+      (let ((path (ecc-worktree-test--finished directory "feat/y")))
         (cl-letf (((symbol-function 'ecc-space-at-p)
                    (lambda (_root) (error "No Space under classic")))
                   ((symbol-function 'ecc-space-forget)
@@ -1174,14 +1329,14 @@ Under `classic' nothing reaches `ecc-space'."
   "Every linked worktree is described with what decides its removal."
   (skip-unless (executable-find "git"))
   (ecc-worktree-test--with-repository directory
-    (let* ((done (ecc-worktree-create directory "feat/done"))
+    (let* ((done (ecc-worktree-test--finished directory "feat/done"))
            (dirty (ecc-worktree-create directory "feat/dirty"))
            (caller (ecc-worktree-test--idle-session :name "caller"
-                                             :project-root done))
+                                                    :project-root done))
            (ecc-mcp--session-id (ecc-session-id caller)))
       (with-temp-file (expand-file-name "new.txt" dirty) (insert "x"))
       (let ((text (ecc-worktree-mcp-list)))
-        (should (string-match-p "\\`Repository: .* (the main checkout, never removed)"
+        (should (string-match-p "\\`Repository: .* (the main worktree, never removed)"
                                 text))
         (should (string-match-p "feat-done/ (branch feat/done)
   changes: none
@@ -1190,7 +1345,7 @@ Under `classic' nothing reaches `ecc-space'."
   removable: yes" text))
         (should (string-match-p "feat-dirty/ (branch feat/dirty)
   changes: 1 file uncommitted or untracked
-  merged: yes -- its tip is in origin/develop
+  merged: no -- its tip is in origin/develop, but no commit was made on feat/dirty; gh was not asked, the worktree being refused for another reason
   sessions: none
   removable: no -- dirty: 1 file uncommitted or untracked" text))
         ;; The Space line is there only when there are Spaces.
