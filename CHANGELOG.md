@@ -648,6 +648,38 @@ Verified against **Claude Code CLI 2.1.281**.
   goes through the same path. Where there is no `sips` the image is saved as
   it came and the message says the API may not take it.
 
+- With the MCP server on, the model can clear away finished worktrees in one
+  step. `list_worktrees` describes each linked worktree of the session's
+  repository: its path and branch, how many uncommitted or untracked files
+  it has, whether its branch is merged and how that was found, the sessions
+  in it and their state, whether it has a Space, and whether
+  `remove_worktree` would take it. `remove_worktree` takes a list of paths
+  and removes each one only when it is a linked worktree of this repository
+  (not the main checkout), `git status --porcelain` is empty, the branch is
+  merged and no session in it is running, starting or waiting on a request.
+  The idle, exited and restored sessions there are stopped, the Space is
+  closed when `ecc-use-spaces` is on, and `git worktree remove` runs without
+  `--force`. Nothing is asked: every other case is refused, with a reason, in
+  a line for that path. No branch is deleted. `git worktree remove` also
+  deletes the files git ignores, and the tool description and the server
+  instructions tell the model so.
+
+  A branch counts as merged when its tip is an ancestor of `develop`, `main`
+  or `master`, or of the remote's `HEAD`, as the remote-tracking branches
+  have them (`ecc-worktree-integration-branches`). It also counts when `gh`
+  names a merged pull request of the branch whose head is that tip: a squash
+  merge leaves the branch's commits out of the base. Nothing is fetched. A
+  repository with no remote is refused, as is a branch that ancestry does
+  not settle when `gh` is missing or fails. The `gh` call is
+  `ecc-review-pr-merged`.
+
+  `list_worktrees` is always allowed without asking. `remove_worktree` is
+  allowed while the new `ecc-worktree-auto-allow-removal` is non-nil, which
+  it is by default. A `claude` started outside ecc with the Emacs MCP server
+  needs `mcp__emacs__remove_worktree` in its own permission allow list.
+  Written against Claude Code CLI 2.1.290 and tested in batch; not yet run
+  in a live session.
+
 ### Changed
 
 - `C-c C-c` in a review of files, diff or ediff, sends the comments and keeps

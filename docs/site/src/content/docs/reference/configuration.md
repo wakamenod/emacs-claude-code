@@ -115,6 +115,7 @@ ecc can run an MCP server on the loopback interface and register it with each se
 | `ecc-mcp-enabled` | `nil` | Register the server with every session. It starts on first use; `M-x ecc-mcp-stop` stops it |
 | `ecc-mcp-enable-execute-code` | `nil` | Offer the tool that lets Claude evaluate any Elisp |
 | `ecc-mcp-excluded-tools` | `nil` | Tool names to leave out, such as tools that are slow |
+| `ecc-worktree-auto-allow-removal` | `t` | Let `remove_worktree` [remove finished worktrees](/emacs-claude-code/features/spaces/#removing-finished-worktrees) without asking |
 
 :::caution[Two separate opt-ins]
 `ecc-mcp-enabled` does not turn on `ecc-mcp-enable-execute-code`. Code run through that tool has all your permissions in Emacs.

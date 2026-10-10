@@ -76,6 +76,22 @@ MCP サーバーがなければ、CLI が自分で `git worktree add` を実行�
 
 [Space で 1 つの仕事を終えるまで](/emacs-claude-code/ja/usecases/spaces/)で、この流れを追っています。
 
+## 終わった worktree を削除する
+
+MCP サーバーが有効なら、終わった worktree の削除をセッションに頼めます。モデルはまず `list_worktrees` で各 worktree の変更、ブランチ、セッション、Space を確かめます。そのうえで頼まれたパスを `remove_worktree` に渡します。削除するのは、次の条件をすべて満たす worktree だけです。
+
+- コミットしていない変更も、追跡していないファイルもない
+- ブランチがリモートの `develop`・`main`・`master` に取り込まれているか、そのプルリクエストがマージ済み（`gh` で確認）
+- 作業中のセッションがない
+
+待機中のセッションは止まり、Space は閉じます。条件を満たさない worktree はそのまま残り、モデルがその理由を伝えます。ブランチは削除しません。
+
+:::caution
+worktree を削除すると、git が無視するファイルも一緒に消えます。コンパイル済みの `.elc`、`.claude/settings.local.json`、`node_modules` などです。
+:::
+
+`ecc-worktree-auto-allow-removal` が有効な間（既定で有効）、`remove_worktree` は確認なしで動きます。ecc の外で起動した `claude` から Emacs の MCP サーバーを使う場合は、権限の許可リストに `mcp__emacs__remove_worktree` を加えてください。
+
 ## Space を使わないとき
 
 ```elisp
