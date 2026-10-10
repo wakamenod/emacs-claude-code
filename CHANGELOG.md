@@ -111,6 +111,15 @@ Verified against **Claude Code CLI 2.1.281**.
   them. Only the user's comments are sent with `C-c C-c`. A remark of
   Claude's lands on the line it is about, in the diff the user is reading,
   rather than in the transcript with a file and a line number to look up.
+  The model is told to open the review only when the user asks for it -- to
+  see changes there or in Emacs, or to have them commented on there -- or
+  when the prompt is about a review the user has open, and not to explain or
+  sum up changes it has just made: told to open it whenever it was asked to
+  explain changes, it took its own summary after an edit for such a request,
+  and the review took the window of the source being edited. The
+  instructions and the description of `review_open` say this alike, and are
+  read when a session starts: a session started before the change keeps the
+  old text until it is restarted.
 
 - A comment in the review buffer belongs to a line. `c` on a removed line
   comments the old side, on an added or a context line the new side, and on
