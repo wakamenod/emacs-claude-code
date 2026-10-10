@@ -576,7 +576,12 @@ file is untracked, so its diff comes from the records and not from git."
                   (should (string-search "## farewell.txt  L1-L1\n```diff\n@@ -1 +1 @@\n-bye\n+ciao\n```\nComment: Use the word adios instead of ciao." text))
                   (should (string-search "## greeting.txt  L1-L1\n" text)))
                 (ecc-review-message-send)))
-            (should-not (buffer-live-p review))
+            ;; The review stays open, both comments in it marked sent.
+            (should (buffer-live-p review))
+            (with-current-buffer review
+              (should-not (ecc-review-comments))
+              (should (ecc-review-note-sent (ecc-review-find-note 1)))
+              (should (ecc-review-note-sent (ecc-review-find-note 2))))
             (ecc-test-live-wait-for-result session)
             (should (equal (ecc-test-live-file-string farewell) "adios"))
             (should (equal (ecc-test-live-file-string greeting) "hey"))
