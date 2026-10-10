@@ -81,32 +81,42 @@ open(path, "w").writelines(lines)
 
 # record NAME POLICY PROMPT [record-fixture options...]; options for the
 # CLI itself go in the array `cli'.
+#
+# The recording is made in a directory of its own and moved into place
+# only once it has passed the check below: one that names this machine
+# is thrown away, and the fixture it would have replaced is left as it
+# was.
 cli=()
+work=$(mktemp -d -t ecc-docshots-fixtures)
 record() {
     local name=$1 policy=$2 prompt=$3
     shift 3
     echo "== $name" >&2
-    printf '%s\n' "$prompt" > "$out/$name.prompt"
+    printf '%s\n' "$prompt" > "$work/$name.prompt"
     (cd "$project" && "$root/scripts/record-fixture.sh" \
-        --out "$out/$name.jsonl" --prompt "$prompt" --policy "$policy" \
-        --model "$model" --budget 2 "${plugins[@]}" "$@" \
+        --out "$work/$name.jsonl" --prompt "$prompt" --policy "$policy" \
+        --model "$model" --budget 2 ${plugins[@]+"${plugins[@]}"} "$@" \
         -- --strict-mcp-config --setting-sources project,local ${cli[@]+"${cli[@]}"})
-    scrub "$out/$name.jsonl"
+    scrub "$work/$name.jsonl"
     # What a tool printed is the machine's -- `ls -l' names the owner of
     # every file -- and the prompts can only make that less likely.
-    if grep -qw -e "$USER" -e "$(hostname -s)" -e "$(git config user.email || echo "$USER")" "$out/$name.jsonl"; then
+    if grep -qw -e "$USER" -e "$(hostname -s)" -e "$(git config user.email || echo "$USER")" "$work/$name.jsonl"; then
         echo "   $name.jsonl names this machine or its user; take it again" >&2
+        rm -f "$work/$name.jsonl" "$work/$name.prompt"
         return 1
     fi
+    mv "$work/$name.jsonl" "$work/$name.prompt" "$out/"
 }
 
-names=("$@")
 wanted() {
-    [ ${#names[@]} -eq 0 ] && return 0
-    case " ${names[*]} " in *" $1 "*) return 0 ;; *) return 1 ;; esac
+    [ -z "$names" ] && return 0
+    case " $names " in *" $1 "*) return 0 ;; *) return 1 ;; esac
 }
+names="$*"
 
 mkdir -p "$out"
+# The project is put back however the run ends, a failed check included.
+trap 'reset; rm -rf "$work"' EXIT
 
 if wanted edit; then
     reset
@@ -159,5 +169,4 @@ if wanted background; then
     pkill -f '^[^ ]*[Pp]ython[0-9.]* -m http.server 8000$' 2>/dev/null || true
 fi
 
-reset
-echo "recorded ${names[*]:-every fixture} into $out" >&2
+echo "recorded ${names:-every fixture} into $out" >&2
