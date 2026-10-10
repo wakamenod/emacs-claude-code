@@ -1,0 +1,1 @@
+Write cli.py, a small argparse script that prints the records of a file named on the command line, one per line, tab-separated. reader.py has read_records. Do not run it.

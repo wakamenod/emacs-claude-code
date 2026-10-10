@@ -1,0 +1,1 @@
+parse_line in reader.py should ignore a trailing delimiter: "a,b," should give two fields, not three. Make that change.

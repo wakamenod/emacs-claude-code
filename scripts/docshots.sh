@@ -41,8 +41,8 @@ videodir=${1:-$root/docs/site/public/videos}
 # The conversation the hand-off scene resumes in the terminal.  It is
 # recorded once, in the demo project, and kept: the CLI can only
 # --resume a conversation it has really had.
-handover_id=7c3d9e21-4b5a-4f18-9c62-1d0e8a7f5b34
-handover_prompt="Name three things worth testing in a greeting function. One short line each, no code."
+handover_id=47497a40-9f64-4203-b040-ebf68c77354e
+handover_prompt="Name three things worth testing in parse_line in reader.py. One short line each, no code."
 emacs_app=${EMACS_APP:-/opt/homebrew/Cellar/emacs-plus@32/32.0.50/Emacs.app}
 # emacs-plus keeps emacsclient beside the .app rather than inside it.
 emacsclient=${EMACSCLIENT:-$(command -v emacsclient || echo "${emacs_app%/*}/bin/emacsclient")}
@@ -354,8 +354,8 @@ shoot() {
 
 if [ -z "$(ls "$HOME"/.claude/projects/*/"$handover_id".jsonl 2>/dev/null)" ]; then
     echo "recording the conversation the hand-off scene resumes..." >&2
-    mkdir -p /tmp/greet
-    (cd /tmp/greet && claude -p --session-id "$handover_id" \
+    mkdir -p /tmp/records
+    (cd /tmp/records && claude -p --session-id "$handover_id" \
          --model haiku --max-budget-usd 0.10 "$handover_prompt" >/dev/null)
 fi
 
@@ -412,6 +412,7 @@ if want send-region; then
     e '(shot-scene-send-region-mark)'   ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.67
     cue; e '(shot-scene-send-region-sequence)'
     # The typing and then the answer streaming in are the motion, so the
@@ -448,6 +449,7 @@ if want inline; then
     e '(shot-scene-send-region-mark)'   ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.67
     cue; e '(shot-scene-inline-sequence)'
     # The question is sent at 3.0s.
@@ -462,6 +464,7 @@ if want rewrite; then
     e '(shot-scene-send-region-mark)'   ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.67
     cue; e '(shot-scene-rewrite-sequence)'
     # The instruction is sent at 3.0s.
@@ -474,10 +477,10 @@ if want at-cursor; then
     # An @ reference: the point stands in the source, the prompt says
     # @cursor, and what is sent carries the line it was on.
     scene at-cursor
-    cue; e '(shot-scene-cursor-point 7)'          ; hold 0.67
-    cue; e '(shot-prompt-type "What does ")'      ; hold 0.33
+    cue; e '(shot-scene-cursor-point 9)'          ; hold 0.67
+    cue; e '(shot-prompt-type "Can ")'            ; hold 0.33
     e '(shot-prompt-type "@cursor")'         ; hold 0.33
-    e '(shot-prompt-type " return?")'        ; hold 0.67
+    e '(shot-prompt-type " give an empty field?")' ; hold 0.67
     cue; e '(shot-prompt-send)'                   ; hold 0.67
     hold 4.5; cue; hold 7.5
     video
@@ -486,7 +489,7 @@ fi
 if want context; then
     # The editor context, attached to every prompt while it is on.
     scene context
-    cue; e '(shot-scene-cursor-point 6)'                                  ; hold 0.67
+    cue; e '(shot-scene-cursor-point 18)'                                 ; hold 0.67
     cue; e '(shot-prompt-command (quote ecc-prompt-toggle-context))'      ; hold 1
     cue; e '(shot-prompt-type "Where am I?")'                             ; hold 0.67
     e '(shot-prompt-send)'                                           ; hold 0.67
@@ -515,7 +518,7 @@ if want suggestion; then
     e '(shot-start-live-default)' ; sleep 5
     # Two turns: no suggestion came after one of them, and the CLI
     # offered one after the second (confirmed 2026-09-11).
-    e '(shot-prompt-type "Read hello.py and say in one line what it does.")'
+    e '(shot-prompt-type "Read reader.py and say in one line what it does.")'
     e '(shot-prompt-send)'  ; sleep 30
     e '(shot-prompt-type "Good. What next?")'
     e '(shot-prompt-send)'
@@ -541,7 +544,7 @@ if want btw; then
     scene btw
     cue; e '(shot-scene-btw-turn)'   ; hold 0.67
     hold 3
-    cue; e '(shot-scene-btw-sequence (list "what does " "farewell " "return?"))'
+    cue; e '(shot-scene-btw-sequence (list "does " "read_records " "skip comments?"))'
     # The question is sent at 3.6s.
     hold 3.8; cue; hold 2.6
     hold 10
@@ -618,11 +621,11 @@ if want question; then
 fi
 
 if want review; then
-    # Every change of the session as one diff, a comment on a hunk, and
+    # Every change of the session as one diff, a comment on a line, and
     # the prompt that would go out.
     scene review
     cue; e '(shot-scene-review)'        ; sleep 1; hold 1
-    cue; e '(shot-scene-review-comment (list "the docstring " "still says hi"))'
+    cue; e '(shot-scene-review-comment (list "what about " "two trailing " "commas?"))'
     hold 4.8
     cue; e '(shot-scene-review-hunk)'   ; hold 1
     cue; e '(shot-scene-review-send)'   ; sleep 1; hold 1.67
@@ -634,8 +637,8 @@ if want proposal; then
     scene proposal
     cue; e '(shot-scene-proposal)'       ; sleep 1; hold 1
     cue; e '(shot-scene-proposal-edit)'  ; sleep 1; hold 1
-    cue; e '(shot-scene-proposal-type " and ")'     ; hold 0.33
-    e '(shot-scene-proposal-type "hello")'     ; hold 1
+    cue; e '(shot-scene-proposal-type "\n\n\ndef test_parse_line_empty():\n")' ; hold 0.33
+    e '(shot-scene-proposal-type "    assert parse_line(\"\") == []\n")' ; hold 1
     cue; e '(shot-scene-proposal-apply)' ; sleep 1; hold 1.33
     video
 fi
@@ -646,7 +649,7 @@ if want plan; then
     # the plan back with it rather than approving it.
     scene plan
     cue; e '(shot-scene-plan)'               ; sleep 1; hold 1.33
-    cue; e '(shot-scene-plan-comment 3 (list "add a " "docstring " "to each"))'
+    cue; e '(shot-scene-plan-comment 4 (list "make strict " "keyword-" "only"))'
     hold 4.8
     hold 0.67
     cue; e '(shot-scene-plan-mode-sequence)'

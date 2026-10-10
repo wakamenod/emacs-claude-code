@@ -1,0 +1,1 @@
+Plan a strict mode for read_records: when a row has the wrong number of fields, raise an error that names the file and the line. Read reader.py yourself rather than starting an agent. Keep the plan short: a title, then four or five numbered steps of one short line each, and no other sections.
