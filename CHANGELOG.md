@@ -462,6 +462,29 @@ Verified against **Claude Code CLI 2.1.281**.
   nothing. The plan's `N` and `m` were taken -- `N` is the next file of
   the diff review and `m` ediff's wide display -- so they are `t` and `M`.
 
+- `M` in a review sends the lines the region selects, for asking Claude about
+  exactly those. With the region active (`use-region-p`), what follows the
+  message is the selected lines in place of where point is: for each file,
+  and in the diff review each hunk, the path, the lines on each side
+  (`L10-L12 (new side)` for added and context lines, `(old side)` for
+  removed ones), the hunk by its `@@` line and number, and the lines
+  themselves with their `+`/`-`/space markers in a fenced `diff` block
+  (`ecc-review--fence`, so backticks in the code cannot close it). In an
+  ediff review the region is the one in the window the keyboard is in, and
+  the block names the side: the left, as the files were, or the right, as
+  they are; a line in a difference is marked `-` on the left and `+` on the
+  right, a line both sides share with a space. `M` typed in the control
+  panel sends no region. A region over headers, separators or the
+  spacing between files only, with no line of a file in it, is sent as no
+  region: where point is. Over `ecc-review-talk-region-limit` characters of
+  lines (10000) the files and lines are named without the lines, and
+  `ecc-review-talk-region-no-lines-note` says so. The minibuffer says how
+  many lines go with the message (`To NAME (3 lines selected): `), and the
+  mark is deactivated once the message is sent. The words sent are
+  `ecc-review-talk-region-label` and `ecc-review-talk-region-sides`, and the
+  lines are read by the generic `ecc-review-region`, one method for each
+  kind of review.
+
 - The reply pane of an ediff review, `*ecc-review-reply: REVIEW*`: a side
   window on the right while the two sides are stacked,
   `ecc-review-talk-reply-width` columns wide (75), and at the bottom while
