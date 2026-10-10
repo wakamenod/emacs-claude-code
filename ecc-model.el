@@ -475,6 +475,20 @@ response said."
     (setq pairs (cddr pairs)))
   (ecc-session-remote-control session))
 
+(defun ecc-model-activity (session)
+  "Return `attention', `running', `exited', `restored' or `idle' for SESSION.
+`attention' is a session with a request waiting for an answer, and
+`running' one that is starting, working on a turn or compacting.
+`restored' is a session `ecc-restore' brought back that has not run
+since: stopped, but nothing went wrong with it, so it is not drawn as
+the error an exit is."
+  (cond
+   ((ecc-session-pending session) 'attention)
+   ((memq (ecc-session-state session) '(starting running compacting)) 'running)
+   ((eq (ecc-session-state session) 'exited)
+    (if (ecc-model-option session :restored nil) 'restored 'exited))
+   (t 'idle)))
+
 (defun ecc-model-set-state (session state)
   "Set the state of SESSION to STATE and announce the change."
   (let ((old (ecc-session-state session)))
@@ -662,6 +676,27 @@ node is registered so that a later message can find it by ID."
 (defun ecc-model-node-put (node key value)
   "Set KEY to VALUE in the data of NODE."
   (setf (alist-get key (ecc-node-data node)) value))
+
+(defvar ecc-model-finished-task-statuses '("completed" "failed" "killed" "stopped")
+  "The statuses with which the CLI reports a task as over.
+A task_started carries no status at all, and a task_notification ends
+it with one of these: \"completed\" in the recordings of 2.1.265.  Any
+other status, or none, is a task still running, so that a status the CLI
+adds later is taken for work going on rather than for work done.")
+
+(defun ecc-model-running-tasks (session)
+  "Return the tool nodes of SESSION whose task is still running.
+A subagent or a backgrounded shell command reports as a task, and goes
+on after the turn that started it has ended: a session whose turn is
+over is not idle while one of these is still at work."
+  (let ((nodes nil))
+    (maphash (lambda (_id node)
+               (when (and (ecc-model-node-get node 'task)
+                          (not (member (ecc-model-node-get node 'task-status)
+                                       ecc-model-finished-task-statuses)))
+                 (push node nodes)))
+             (ecc-session-nodes session))
+    nodes))
 
 (defun ecc-model-turn-of (node)
   "Return the turn NODE belongs to, or nil."
