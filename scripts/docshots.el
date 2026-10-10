@@ -436,6 +436,9 @@ fed to a read loop."
   "Put the demo source back as the recorded edit left it.
 The rewrite scene changes it for real, and the scenes after it would
 otherwise show the rewritten signature."
+  ;; The inline answer of the scene before is still over the code.
+  (when (fboundp 'ecc-inline-quit)
+    (ecc-inline-quit))
   (unless (equal (shot-read shot-file) shot-after)
     (with-temp-file shot-file (insert shot-after)))
   (when-let* ((buffer (get-file-buffer shot-file)))

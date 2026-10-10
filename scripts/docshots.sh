@@ -457,8 +457,9 @@ if want inline; then
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.67
     cue; e '(shot-scene-inline-sequence)'
-    # The question is sent at 3.0s.
-    hold 3.2; cue; hold 2.8; cue; hold 10
+    # The question is sent at 3.0s, and the answer took about eleven
+    # seconds to come back (2026-10-10).
+    hold 3.2; cue; hold 9.8; cue; hold 8
     video
 fi
 
