@@ -90,7 +90,7 @@ There is no setting for the model or for a budget: both belong to your Claude Co
 
 | Variable | Default | Description |
 |---|---|---|
-| `ecc-use-spaces` | `t` | A tab for each project. `nil` uses the [older layout](/emacs-claude-code/features/spaces/#without-spaces) |
+| `ecc-use-spaces` | `t` | A tab for each project. `nil` opens transcripts in [side windows, without tabs](/emacs-claude-code/features/spaces/#without-spaces) |
 | `ecc-space-always-session` | `t` | Opening a Space with nothing running starts a session, and closing its last session closes the Space |
 | `ecc-space-session-min-width` | `80` | The narrowest a transcript is made before a new session reuses a window instead |
 | `ecc-sidebar-width` | `28` | Width of the sidebar |
