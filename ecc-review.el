@@ -210,6 +210,17 @@ Returns nil when git cannot be run at all."
           (file-error (ecc-log "review" "git failed: %s" (error-message-string err))
                       nil))))))
 
+(defconst ecc-review--diff-options
+  '("--no-color" "--no-ext-diff" "--inter-hunk-context=0"
+    "--src-prefix=a/" "--dst-prefix=b/")
+  "What every diff a review reads is made with, whatever the user's git says.
+The review parses what git prints, so the settings that change it are
+put back: `color.diff' and `diff.external' would write something else,
+`diff.interHunkContext' would fuse two hunks with the unchanged lines
+between them, which then read as changed, and `diff.noprefix' or
+`diff.mnemonicPrefix' would name the files without the a/ and b/ the
+review takes off.")
+
 (defun ecc-review--git-string (directory &rest args)
   "Return what git ARGS in DIRECTORY print, trimmed.
 Nil when git fails or prints nothing."
@@ -281,8 +292,9 @@ RANGE is what to diff against.  This is `ecc-review-git-diff\=' without
 the judgement: a caller that has to tell a diff that is empty from one
 git refused to make -- an unknown revision, say -- reads the code."
   (apply #'ecc-review--git root
-         (append (list "diff" "--no-color" "--no-ext-diff"
-                       (format "-U%d" (max 0 ecc-review-context-lines)))
+         (append (list "diff")
+                 ecc-review--diff-options
+                 (list (format "-U%d" (max 0 ecc-review-context-lines)))
                  (ecc-review--range-arguments range)
                  (list "--")
                  (mapcar (lambda (path) (ecc-review--relative path root)) paths))))
@@ -344,9 +356,10 @@ printed.  PATHS, relative to ROOT, restrict it to those files."
          (t
           ;; --no-index exits 1 when the two sides differ, which is
           ;; every time here, so only a larger code is a failure.
-          (pcase (ecc-review--git root "diff" "--no-color" "--no-ext-diff"
-                                  (format "-U%d" (max 0 ecc-review-context-lines))
-                                  "--no-index" "--" "/dev/null" path)
+          (pcase (apply #'ecc-review--git root "diff"
+                        (append ecc-review--diff-options
+                                (list (format "-U%d" (max 0 ecc-review-context-lines))
+                                      "--no-index" "--" "/dev/null" path)))
             ((and `(,code . ,diff)
                   (guard (and (memq code '(0 1)) (not (string-empty-p diff)))))
              (push diff texts)))))))
@@ -689,8 +702,9 @@ that hid them would hide the whole of what happened to it."
       (let* ((diff (and shown
                         (pcase (apply #'ecc-review--git root
                                       (append
-                                       (list "diff" "--no-color" "--no-ext-diff"
-                                             "--no-renames"
+                                       (list "diff")
+                                       ecc-review--diff-options
+                                       (list "--no-renames"
                                              (format "-U%d"
                                                      (max 0 ecc-review-context-lines))
                                              base now "--")
@@ -2045,8 +2059,8 @@ and `unknown' when git cannot say, which is logged."
                  (to (ecc-review--object-id to)))
              (cond ((not (and from to)) 'unknown)
                    ((equal from to) nil)
-                   (t (pcase (ecc-review--git default-directory "diff" "--no-color"
-                                              "--no-ext-diff" "-U0" from to)
+                   (t (pcase (apply #'ecc-review--git default-directory "diff"
+                                     (append ecc-review--diff-options (list "-U0" from to)))
                         (`(0 . ,output) (ecc-review-map-base-hunks output))
                         (result (ecc-log "review" "diff of %s and %s failed: %S"
                                          from to result)

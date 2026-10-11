@@ -1731,6 +1731,41 @@ the same number later, put in somewhere else, is not that line."
                 (should (ecc-review-note-outdated (car ecc-review--notes))))))
         (ecc-review-test--kill-review-buffers)))))
 
+(ert-deftest ecc-review-test-the-users-diff-settings-do-not-reach-the-review ()
+  "The review reads the same diff whatever the repository's diff settings say.
+With `diff.interHunkContext' git fuses two hunks a line apart and shows
+the line between them among the changed ones; `diff.noprefix' and
+`diff.mnemonicPrefix' name the files otherwise."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((x (concat directory "x.txt")))
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (ecc-review-test--git directory "config" "diff.interHunkContext" "2")
+            (ecc-review-test--git directory "config" "diff.noprefix" "true")
+            (ecc-review-test--git directory "config" "diff.mnemonicPrefix" "true")
+            (ecc-review-test--write x "1\n2\n3\n4\n5\n")
+            (ecc-review-test--git directory "add" "x.txt")
+            (ecc-review-test--git directory "commit" "-q" "-m" "init")
+            (let ((first (string-trim (ecc-review-test--git directory "rev-parse" "HEAD:x.txt"))))
+              (ecc-review-test--write x "1\nTWO\n3\nFOUR\n5\n")
+              (setf (ecc-session-project-root session) directory)
+              (with-current-buffer (ecc-review-range-buffer session "HEAD")
+                (should (equal (mapcar (lambda (hunk)
+                                         (list (plist-get hunk :path) (plist-get hunk :header)))
+                                       (ecc-review-hunks))
+                               '(("x.txt" "@@ -2 +2 @@") ("x.txt" "@@ -4 +4 @@"))))
+                ;; The diff of two old sides is read the same way.
+                (ecc-review-test--git directory "commit" "-q" "-a" "-m" "two")
+                (let ((second (string-trim
+                               (ecc-review-test--git directory "rev-parse" "HEAD:x.txt"))))
+                  (should (equal (ecc-review--base-hunks first second)
+                                 '((2 1 2 1) (4 1 4 1))))))))
+        (ecc-review-test--kill-review-buffers)))))
+
 (ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
   "Remembering the place reads the hunk it is in, not the whole diff."
   (ecc-review-test--with-review session
