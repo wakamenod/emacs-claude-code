@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Assisted-by: Claude Code:claude-opus-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -3573,7 +3574,7 @@ As the deny of the proposal REVIEW is of, if it is one, and REVIEW is
 closed; otherwise REVIEW stays open, those comments marked sent
 \(`ecc-review--after-send').  With EDIT the text is opened in a buffer
 of its own first, to be read over and changed before it goes, and
-\\`C-c C-k' there goes back to REVIEW.  SENT, a function of no argument,
+\\`C-c C-k\=' there goes back to REVIEW.  SENT, a function of no argument,
 settles what TEXT was made from once it has gone, in place of settling
 REVIEW alone.  Return TEXT when it was sent."
   (let ((request (buffer-local-value 'ecc-review--request review))
@@ -4095,7 +4096,8 @@ no session, starting one is offered."
 (defun ecc-review--range-content (session range root paths &optional base)
   "Read what a review of a range holds; see `ecc-review--show\='.
 The arguments are those of `ecc-review-range-buffer\=', and BASE is
-what relative PATHS are relative to: ROOT, else the project of SESSION."
+what relative PATHS are relative to: ROOT, else the project of SESSION.
+RANGE nil is `ecc-review-default-range\='."
   (let* ((target (ecc-review--target
                   session (or range ecc-review-default-range) root paths base))
          (range (plist-get target :range))
