@@ -647,14 +647,11 @@ if want btw; then
 fi
 
 if want capabilities; then
-    # What the session can do: the list the CLI reported in system/init.
-    scene capabilities
-    cue; e '(shot-scene-capabilities)'                        ; sleep 1; hold 1.33
-    cue; e '(shot-scene-capabilities-toggle "Slash commands")'; hold 1
-    e '(shot-scene-capabilities-toggle "Skills")'        ; hold 1
-    e '(shot-scene-capabilities-toggle "Agents")'        ; hold 1
-    e '(shot-scene-capabilities-toggle "Skills")'        ; hold 1.33
-    video
+    # What the session can do: the list the CLI reported in system/init,
+    # the longest group folded so that the others are in view.
+    e '(shot-scene-capabilities)'                         ; sleep 1
+    e '(shot-scene-capabilities-toggle "Slash commands")' ; sleep 1
+    still "$outdir/capabilities.png"
 fi
 
 if want sessions; then
@@ -758,6 +755,77 @@ if want files; then
     cue; e '(shot-scene-files-key (quote ecc-chat-toggle))'      ; hold 1.33
     cue; e '(shot-scene-files-key (quote ecc-session-review-file))' ; sleep 1; hold 1.33
     video
+fi
+
+# The scenes of the review that need git: the menu's counts, its
+# questions, a pull request read a commit at a time, the list of the
+# files and ediff.  Each makes the demo project a repository with a
+# history and pull requests of its own (`shot-git-project') and puts it
+# back at its end.
+if want review-menu; then
+    # The menu with its counts, the commit and pull-request questions,
+    # and the second commit of a pull request with a comment on each of
+    # the first two.  The questions are scheduled inside Emacs; each
+    # still is taken while one is open.
+    e '(shot-scene-git-start)'                 ; sleep 2
+    e '(shot-scene-review-menu)'               ; sleep 3; still "$outdir/review-menu.png"
+    e '(shot-scene-quit)'                      ; sleep 1
+    e '(shot-scene-review-menu-key "c")'       ; sleep 4; still "$outdir/review-commits.png"
+    e '(shot-scene-quit)'                      ; sleep 1
+    e '(shot-scene-review-menu-key "p")'       ; sleep 4; still "$outdir/review-prs.png"
+    e '(shot-scene-review-pr-sequence)'        ; sleep 7
+    e '(shot-scene-review-pr-comments)'        ; sleep 2; still "$outdir/review-pr-commit.png"
+    e '(shot-scene-git-end)'                   ; sleep 1
+fi
+
+if want review-files; then
+    # The list of the files beside the diff: s shows it, RET goes to a
+    # file, / filters as it is typed.  The filter is scheduled inside
+    # Emacs: / at 0.5s, the words from 1.6s, RET at 3.0s.
+    e '(shot-scene-git-start)'                 ; sleep 2
+    scene review-files
+    cue; e '(shot-scene-review-worktree)'      ; sleep 1; hold 1
+    cue; e '(shot-scene-review-press "s")'     ; hold 1.33
+    cue; e '(shot-scene-files-pane-press "test_reader" "RET")' ; hold 1.33
+    cue; e '(shot-scene-review-filter-sequence (list "rea" "der"))'
+    hold 0.5; hold 2.5; cue; hold 1.5
+    video
+    e '(shot-scene-git-end)'                   ; sleep 1
+fi
+
+if want ediff; then
+    # The review in ediff: a still of the layout, then a video each of
+    # moving through it, commenting on either side, and the layout
+    # turned side by side and back.
+    e '(shot-scene-git-start)'                 ; sleep 2
+    e '(shot-scene-ediff)'                     ; sleep 3; still "$outdir/review-ediff.png"
+
+    scene ediff-move
+    cue; hold 1
+    cue; e '(shot-scene-ediff-press (quote new) "n")'   ; hold 1
+    e '(shot-scene-ediff-press (quote new) "n")'        ; hold 1
+    cue; e '(shot-scene-ediff-press (quote new) "p")'   ; hold 1
+    cue; e '(shot-scene-ediff-press (quote new) "C-n")' ; hold 0.5
+    e '(shot-scene-ediff-press (quote new) "C-n")'      ; hold 0.5
+    e '(shot-scene-ediff-press (quote new) "C-n")'      ; hold 1
+    video
+
+    # Comments: the line is reached at 0.3s, c at 1.2s, the words from
+    # 2.6s and RET 0.8s after the last; twice, the new side and the old.
+    scene ediff-comment
+    cue; hold 0.5
+    e '(shot-scene-ediff-comment-sequence (quote new) "^    if fields and" (list "and with " "two of them?"))'
+    hold 1.2; cue; hold 3.4; hold 1
+    cue; e '(shot-scene-ediff-comment-sequence (quote old) "^    return column_total(rows, index) / len" (list "this raised " "on no rows"))'
+    hold 1.2; cue; hold 3.4; hold 1
+    video
+
+    scene ediff-layout
+    cue; hold 1
+    cue; e '(shot-scene-ediff-press (quote new) "|")' ; hold 2
+    cue; e '(shot-scene-ediff-press (quote new) "|")' ; hold 1.5
+    video
+    e '(shot-scene-git-end)'                   ; sleep 1
 fi
 
 if want timeline; then

@@ -86,8 +86,17 @@ the machine is Emacs too.")
 ;; this font the closing bracket of the process segment lands half off
 ;; the edge; a mode line of its own, ending in two spaces, is the least
 ;; invasive way back.
+;; The two sides of an ediff review say in the mode line which file the
+;; point is in and where the review is, in
+;; `mode-line-buffer-identification'; doom-modeline's buffer-info does
+;; not read it, and those pictures said only the buffer's name.
+(doom-modeline-def-segment shot-buffer-info
+  "What ecc puts in a side of an ediff review, else doom-modeline's own."
+  (if (bound-and-true-p ecc-review-direct--mode-line)
+      (concat (doom-modeline-spc) (cddr ecc-review-direct--mode-line))
+    (doom-modeline-segment--buffer-info)))
 (doom-modeline-def-modeline 'shot-main-line
-  '(bar modals buffer-info buffer-position selection-info)
+  '(bar modals shot-buffer-info buffer-position selection-info)
   '(misc-info major-mode process "  "))
 (doom-modeline-set-modeline 'shot-main-line t)
 
@@ -1417,8 +1426,12 @@ scheduled inside Emacs."
 
 ;;;; Reviewing what changed, a proposal and a plan
 
-(defun shot-reset-main ()
+(defun shot-reset-main (&optional baseline)
   "Build the main session again from its recording, so a scene starts clean.
+With BASELINE, the session takes what the working tree holds before the
+recorded edit as the start of its review, as a session `ecc-start'
+starts in a repository does: the scenes of the review in a repository
+need it, and a replayed session has none of its own.
 The scenes share one Emacs and a session keeps what an earlier one
 replayed into it: the Files section grew a plan file and a second
 write, and a scene that had ended mid-turn left the state line saying
@@ -1437,6 +1450,8 @@ so.  The second session is left alone, so the tab line still has one."
   (with-temp-file shot-file (insert shot-before))
   (setq shot-main (ecc-model-create-session :name shot-project
                                             :project-root shot-root))
+  (when baseline
+    (ecc-review-ensure-baseline shot-main))
   (ecc-session-ensure-buffer shot-main)
   (shot-play-to-request shot-main "edit")
   (shot-allow shot-main)
@@ -1614,6 +1629,384 @@ inside Emacs like the other scenes that answer a prompt."
       (goto-char (point-max))
       (recenter -1)))
   (redisplay t))
+
+;;;; The review in a repository
+
+;; The review menu counts what git says, and the commits and the pull
+;; requests it offers are git's too.  The demo project is no repository
+;; for the other scenes -- the Spaces scenes answer for git themselves
+;; (`shot-fake-git') -- so these make it one for as long as they run,
+;; with a history of its own, and take it away again
+;; (`shot-git-project-end').  The history is written with no
+;; configuration of this machine's and at fixed dates, so its commits
+;; have the same ids in every run and nobody's name in them.
+
+(defconst shot-git-environment
+  '("GIT_AUTHOR_NAME=Mika" "GIT_AUTHOR_EMAIL=mika@example.com"
+    "GIT_COMMITTER_NAME=Mika" "GIT_COMMITTER_EMAIL=mika@example.com"
+    "GIT_CONFIG_GLOBAL=/dev/null" "GIT_CONFIG_NOSYSTEM=1")
+  "The environment the demo history is written in.")
+
+(defvar shot-git-clock 0 "How many commits the demo history has; it dates the next.")
+
+(defconst shot-gh (expand-file-name "ecc-docshot-gh" temporary-file-directory)
+  "A gh of the scenes' own, answering `pr list' and `pr view' with
+`shot-git-pull-requests' and asking GitHub nothing.")
+
+(defun shot-git (&rest args)
+  "Run git with ARGS in the demo project and return what it prints."
+  (let* ((default-directory (file-name-as-directory shot-root))
+         (date (format "2026-09-%02dT10:00:00Z" (+ 10 shot-git-clock)))
+         (process-environment (append shot-git-environment
+                                      (list (concat "GIT_AUTHOR_DATE=" date)
+                                            (concat "GIT_COMMITTER_DATE=" date))
+                                      process-environment)))
+    (with-temp-buffer
+      (unless (zerop (apply #'process-file "git" nil t nil args))
+        (error "git %s: %s" (string-join args " ") (buffer-string)))
+      (string-trim (buffer-string)))))
+
+(defun shot-git-write (file text)
+  "Write TEXT into FILE of the demo project."
+  (with-temp-file (expand-file-name file shot-root)
+    (insert text)))
+
+(defun shot-git-commit (subject &rest files)
+  "Write FILES, (NAME TEXT ...), into the demo project and commit them as SUBJECT."
+  (while files
+    (shot-git-write (car files) (cadr files))
+    (shot-git "add" (car files))
+    (setq files (cddr files)))
+  (setq shot-git-clock (1+ shot-git-clock))
+  (shot-git "commit" "-q" "-m" subject))
+
+(defun shot-written-file (fixture)
+  "Return what the Write of FIXTURE put in its file."
+  (catch 'found
+    (dolist (message (shot-fixture fixture))
+      (when (equal (alist-get 'type message) "assistant")
+        (dolist (block (append (alist-get 'content (alist-get 'message message)) nil))
+          (when (equal (alist-get 'name block) "Write")
+            (throw 'found (alist-get 'content (alist-get 'input block)))))))))
+
+(defun shot-edited (text &rest pairs)
+  "Return TEXT with each FROM of PAIRS, (FROM TO ...), replaced by its TO."
+  (while pairs
+    (unless (string-search (car pairs) text)
+      (error "Not in the text: %S" (car pairs)))
+    (setq text (string-replace (car pairs) (cadr pairs) text)
+          pairs (cddr pairs)))
+  text)
+
+(defconst shot-report-source
+  (shot-edited shot-broken "float(row[index] for" "float(row[index]) for")
+  "The report as it would have been committed: the scenes about the
+error break it on purpose.")
+
+(defconst shot-summary-skipped
+  (shot-edited shot-hero-source
+               "    rows: int = 0\n" "    rows: int = 0\n    skipped: int = 0\n"
+               "            log.warning(\"%s: a row with no key\", path)\n"
+               "            log.warning(\"%s: a row with no key\", path)\n            summary.skipped += 1\n")
+  "The summary of the pull request: it counts the rows it skips.")
+
+(defvar shot-git-pull-requests nil
+  "The pull requests the scenes' gh lists, as gh prints them.")
+
+(defun shot-git-pull-request (number title branch author &optional draft)
+  "Return pull request NUMBER of BRANCH into main as gh prints one."
+  (list :number number :title title :state "OPEN"
+        :headRefName branch :baseRefName "main"
+        :headRefOid (shot-git "rev-parse" branch)
+        :baseRefOid (shot-git "rev-parse" "main")
+        :author (list :login author) :isDraft (if draft t :false)
+        :isCrossRepository :false
+        :url (format "https://github.com/example/records/pull/%d" number)))
+
+(defun shot-git-write-gh ()
+  "Write `shot-gh' and point the review at it."
+  (let ((json (json-serialize (vconcat shot-git-pull-requests))))
+    (with-temp-file shot-gh
+      (insert "#!/bin/sh\n# The pull requests of the docshots scenes.\n"
+              "case \"$1 $2\" in\n"
+              "  'pr list') cat <<'EOF'\n" json "\nEOF\n;;\n"
+              "  'pr view') cat <<'EOF'\n"
+              (json-serialize (car shot-git-pull-requests)) "\nEOF\n;;\n"
+              "  *) echo \"unexpected: $*\" >&2; exit 2 ;;\nesac\n")))
+  (set-file-modes shot-gh #o755)
+  (setq ecc-review-gh-executable shot-gh))
+
+(defun shot-git-project ()
+  "Make the demo project a repository with a history and pull requests.
+main has the project in four commits; three branches, each a pull
+request, go off it.  main is checked out, with a change to the report
+staged before the session starts.  What the session changes is
+`shot-reset-main''s to make."
+  (require 'ecc-review-menu)
+  (require 'ecc-review-pr)
+  (shot-git-project-end)
+  (setq shot-git-clock 0)
+  (dolist (file '("reader.py" "summary.py" "report.py"))
+    (delete-file (expand-file-name file shot-root)))
+  (let ((image (expand-file-name "coffee.png" shot-root)))
+    (when (file-exists-p image)
+      (delete-file image)))
+  (shot-git "init" "-q" "-b" "main")
+  ;; What other scenes leave in the directory -- the worktrees of the
+  ;; sidebar's -- is no file of the project, and would be counted.
+  (with-temp-file (expand-file-name ".git/info/exclude" shot-root)
+    (insert ".claude/\n"))
+  (shot-git-commit "reader: split a line into fields"
+                   "reader.py" (concat (car (split-string shot-before "\n\n\ndef read_records")) "\n"))
+  (shot-git-commit "reader: read the records of a file" "reader.py"
+                   (shot-edited shot-before
+                                "    Blank lines and lines starting with # are\n    skipped.\"\"\""
+                                "    Blank lines are skipped.\"\"\""
+                                "if line.strip() and line[0] != \"#\":" "if line.strip():"))
+  (shot-git-commit "reader: skip comment lines" "reader.py" shot-before)
+  (shot-git-commit "summary: count the rows of a file by key" "summary.py" shot-hero-source)
+  (shot-git-commit "report: column totals and means" "report.py" shot-report-source)
+  (shot-git "checkout" "-q" "-b" "trailing-delimiter")
+  (shot-git-commit "reader: drop the field after a trailing delimiter" "reader.py" shot-after)
+  (shot-git-commit "test: lines that end in a delimiter" "test_reader.py" (shot-written-file "write"))
+  (shot-git-commit "summary: count the rows it skips" "summary.py" shot-summary-skipped)
+  (shot-git "checkout" "-q" "-b" "report-median" "main")
+  (shot-git-commit "report: the median of a column" "report.py"
+                   (concat shot-report-source
+                           "\n\ndef column_median(rows, index):\n"
+                           "    values = sorted(float(row[index]) for row in rows)\n"
+                           "    middle = len(values) // 2\n"
+                           "    if len(values) % 2:\n"
+                           "        return values[middle]\n"
+                           "    return (values[middle - 1] + values[middle]) / 2\n"))
+  (shot-git "checkout" "-q" "-b" "readme" "main")
+  (shot-git-commit "docs: a README" "README.md"
+                   "# records\n\nRead delimited records, and summarise them.\n")
+  (shot-git "checkout" "-q" "main")
+  (setq shot-git-pull-requests
+        (list (shot-git-pull-request 12 "Ignore a trailing delimiter" "trailing-delimiter" "mika")
+              (shot-git-pull-request 11 "The median of a column" "report-median" "sam")
+              (shot-git-pull-request 9 "A README" "readme" "lee" t)))
+  (shot-git-write-gh)
+  (shot-git-write "report.py" (shot-edited shot-report-source
+                                           "/ len(rows)" "/ max(len(rows), 1)"))
+  (shot-git "add" "report.py")
+  (when-let* ((buffer (get-file-buffer shot-file)))
+    (with-current-buffer buffer (revert-buffer t t t))))
+
+(defun shot-git-project-end ()
+  "Make the demo project the directory of files the other scenes know."
+  (delete-directory (expand-file-name ".git" shot-root) t)
+  (dolist (file '("test_reader.py" "README.md"))
+    (when (file-exists-p (expand-file-name file shot-root))
+      (delete-file (expand-file-name file shot-root))))
+  (shot-git-write "reader.py" shot-before)
+  (shot-git-write "summary.py" shot-hero-source)
+  (shot-git-write "report.py" shot-broken)
+  (setq ecc-review-gh-executable "gh")
+  (dolist (file (list shot-file shot-hero-file shot-broken-file))
+    (when-let* ((buffer (get-file-buffer file)))
+      (with-current-buffer buffer (revert-buffer t t t)))))
+
+(defun shot-scene-git-start ()
+  "Make the repository and a session that changed two files of it.
+The session's edit and the test file it wrote are on disk, as they
+would be: a review in a repository reads the files, not the recording."
+  (shot-git-project)
+  (shot-reset-main t)
+  (shot-play-write shot-main)
+  (shot-git-write "test_reader.py" (shot-written-file "write"))
+  (shot-show shot-main))
+
+(defun shot-scene-review-menu ()
+  "Open the review menu from the source of the project."
+  (shot-show shot-main)
+  (shot-source-window)
+  (shot-later (lambda () (call-interactively #'ecc-review-menu))))
+
+(defun shot-scene-review-menu-key (key)
+  "Open the review menu and press KEY in it, which asks a question.
+Scheduled whole, as the menu and the minibuffer read their keys from
+the command loop rather than from the server."
+  (shot-show shot-main)
+  (shot-source-window)
+  (shot-script
+   (list (cons 0.5 (lambda () (call-interactively #'ecc-review-menu)))
+         (cons 2.0 (lambda () (shot-keys key))))))
+
+(defun shot-scene-review-pr-sequence ()
+  "Choose pull request #12 in the menu's question, then its second commit.
+The questions are the ones of `p' already open: the pull requests,
+`Search pull requests…' first, then the commits, the whole first."
+  (shot-script
+   (list (cons 0.5 (lambda () (shot-keys "C-n")))
+         (cons 1.0 (lambda () (shot-keys "RET")))
+         (cons 3.0 (lambda () (shot-keys "C-n")))
+         (cons 3.5 (lambda () (shot-keys "C-n")))
+         (cons 4.5 (lambda () (shot-keys "RET"))))))
+
+(defun shot-review-buffer-window ()
+  "Return the window of a review buffer on the screen, selecting it."
+  (when-let* ((window (seq-find (lambda (window)
+                                  (with-current-buffer (window-buffer window)
+                                    (derived-mode-p 'ecc-review-mode)))
+                                (window-list nil 'no-minibuffer))))
+    (select-window window)
+    window))
+
+(defun shot-review-comment-on (regexp text)
+  "Put the comment TEXT on the first line of the review matching REGEXP."
+  (with-selected-window (shot-review-buffer-window)
+    (goto-char (point-min))
+    (when (re-search-forward regexp nil t)
+      (beginning-of-line)
+      (ecc-review-comment text))
+    (redisplay t)))
+
+(defun shot-scene-review-pr-comments ()
+  "Comment on the first commit of the pull request and on the second.
+The header line of the second then says what the first holds."
+  (with-selected-window (shot-review-buffer-window)
+    (ecc-review-pr-previous-commit))
+  (shot-review-comment-on "^\\+    if fields and" "Only when the last field is empty?")
+  (with-selected-window (shot-review-buffer-window)
+    (ecc-review-pr-next-commit))
+  (shot-review-comment-on "^\\+def test_parse_line_trailing" "A line with two trailing commas too")
+  ;; The header line is the picture, and beside the session it was
+  ;; cut off after the subject of the commit.
+  (with-selected-window (shot-review-buffer-window)
+    (let ((ignore-window-parameters t))
+      (delete-other-windows))
+    (goto-char (point-min))
+    (redisplay t)))
+
+;;;; The list of the files
+
+(defun shot-files-pane-window ()
+  "Return the window of the list of the files of a review, selecting it."
+  (when-let* ((window (seq-find (lambda (window)
+                                  (with-current-buffer (window-buffer window)
+                                    (derived-mode-p 'ecc-review-files-mode)))
+                                (window-list nil 'no-minibuffer))))
+    (select-window window)
+    window))
+
+(defun shot-scene-review-worktree ()
+  "Open every uncommitted change of the project as one diff, the list hidden.
+Three files rather than the session's two, so that the list has
+something to filter."
+  (setq ecc-review-files-shown nil)
+  (shot-show shot-main)
+  (shot-source-window)
+  (let ((ecc-review-style 'diff))
+    (ecc-review-range shot-main "HEAD" (file-name-as-directory shot-root)))
+  ;; The review has the frame, as with `ecc-window-hide-on-review': in a
+  ;; third of it, beside the source and the session, the list left the
+  ;; diff twenty columns.
+  (with-selected-window (shot-review-buffer-window)
+    (let ((ignore-window-parameters t))
+      (delete-other-windows))
+    (goto-char (point-min))
+    (ignore-errors (diff-hunk-next))
+    (redisplay t)))
+
+(defun shot-scene-review-press (keys)
+  "Press KEYS in the review buffer, as typed there."
+  (shot-review-buffer-window)
+  (shot-keys keys))
+
+(defun shot-scene-files-pane-press (line keys)
+  "Put the point on the line of the list naming LINE, and press KEYS there."
+  (when (shot-files-pane-window)
+    (goto-char (point-min))
+    (when (search-forward line nil t)
+      (beginning-of-line))
+    (redisplay t)
+    (shot-keys keys)))
+
+(defun shot-scene-review-filter-sequence (chunks)
+  "Press / in the review and type CHUNKS of a filter, then RET."
+  (let ((typing (shot-typing-steps 1.0 chunks)))
+    (shot-script
+     (append (list (cons 0.5 (lambda () (shot-scene-review-press "/"))))
+             typing
+             (list (cons (+ 0.8 (car (car (last typing))))
+                         (lambda () (shot-keys "RET"))))))))
+
+;;;; The review in ediff
+
+(defun shot-ediff-control ()
+  "Return the control buffer of the ediff review."
+  (seq-find (lambda (buffer)
+              (eq (buffer-local-value 'major-mode buffer) 'ediff-mode))
+            (buffer-list)))
+
+(defun shot-ediff-window (side)
+  "Return the window of SIDE, `old' or `new', of the ediff review, selecting it."
+  (when-let* ((control (shot-ediff-control))
+              (buffer (buffer-local-value (if (eq side 'old) 'ediff-buffer-A 'ediff-buffer-B)
+                                          control))
+              (window (get-buffer-window buffer)))
+    (select-window window)
+    window))
+
+(defun shot-scene-ediff ()
+  "Open every uncommitted change in ediff, stacked, with the reply pane.
+The report's change replaces a line, which the session's two do not:
+the old side has a line to comment on only there."
+  (setq ecc-review-files-shown nil
+        ecc-review-ediff-layout 'stacked)
+  (shot-show shot-main)
+  (shot-source-window)
+  (let ((ecc-review-style 'ediff))
+    (ecc-review-range shot-main "HEAD" (file-name-as-directory shot-root)))
+  (shot-ediff-window 'new)
+  (redisplay t))
+
+(defun shot-scene-ediff-press (side keys)
+  "Press KEYS in the window of SIDE of the ediff review."
+  (shot-ediff-window side)
+  (shot-keys keys))
+
+(defun shot-scene-ediff-end ()
+  "Quit the ediff review, which gives the windows back."
+  (when-let* ((control (shot-ediff-control)))
+    (with-current-buffer control
+      (ecc-review-ediff-quit control)))
+  (shot-show shot-main))
+
+(defun shot-scene-ediff-comment-sequence (side regexp chunks)
+  "Comment on the line of SIDE matching REGEXP, typing CHUNKS.
+The point is put on the line before it and moved on with C-n, so that
+the review follows the point as it does when the reader moves it."
+  (let ((typing (shot-typing-steps 2.0 chunks)))
+    (shot-script
+     (append (list (cons 0.3 (lambda ()
+                               (when (shot-ediff-window side)
+                                 (goto-char (point-min))
+                                 (when (re-search-forward regexp nil t)
+                                   (forward-line -1))
+                                 (shot-keys "C-n"))))
+                   (cons 1.2 (lambda () (shot-keys "c"))))
+             typing
+             (list (cons (+ 0.8 (car (car (last typing))))
+                         (lambda () (shot-keys "RET"))))))))
+
+(defun shot-scene-git-end ()
+  "Close every review, and make the demo project the directory it was.
+A review holding comments asks before it goes; nobody is there to
+answer, and the comments are the scene's."
+  (let ((kill-buffer-query-functions nil))
+    (when-let* ((control (shot-ediff-control)))
+      (ignore-errors (ecc-review-ediff-quit control)))
+    (dolist (buffer (buffer-list))
+      (when (and (buffer-live-p buffer)
+                 (with-current-buffer buffer
+                   (derived-mode-p 'ecc-review-mode 'ecc-review-files-mode 'ecc-review-talk-mode)))
+        (kill-buffer buffer))))
+  (shot-git-project-end)
+  (shot-reset-main)
+  (shot-show shot-main))
 
 ;;;; The Files section and the Timeline
 
