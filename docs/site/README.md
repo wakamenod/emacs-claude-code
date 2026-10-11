@@ -263,7 +263,10 @@ What it knows, and what is worth not learning again:
   sonnet session with ecc's MCP server registered (the one server
   `--strict-mcp-config` lets in), have it make a change off camera, and film
   the model calling the review tools. What Claude writes differs from take to
-  take, so look at the video and fit the subtitles to it. A wait the
+  take, so look at the video and fit the subtitles to it. The use case's
+  session is asked for a small change and told to keep its comments short
+  (`shot-usecase-change-prompt`, `shot-usecase-brevity`): with no such word,
+  a take left comments of a paragraph wrapped over half the review. A wait the
   wrapper films at a quarter of its frames (`hold_until ... fast`) keeps a
   turn of a minute to a few seconds of motion.
 - **What is on the screen is a project of real code**, `/tmp/records`: a

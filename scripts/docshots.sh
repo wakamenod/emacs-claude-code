@@ -870,22 +870,26 @@ if want ediff-live; then
 fi
 
 if want usecase-review; then
-    # The use case of the review with Claude: a change made, a walk
-    # through it in the review, a reply on one of Claude's comments, and
-    # the review following the files when Claude acts on it.
-    e '(shot-start-live-review "acceptEdits")' ; sleep 5
+    # The use case of the review with Claude: a small change made off
+    # camera, the review opened with C-c c D D, Claude's tour (T, then
+    # t), a reply on one of its comments, and the review following the
+    # files when Claude acts on it.
+    e '(shot-start-live-review "acceptEdits" shot-usecase-brevity)' ; sleep 5
     wait_until '(shot-live-idle-p)' 60
-    e '(shot-live-change)'                     ; sleep 5
+    e '(shot-live-change shot-usecase-change-prompt)' ; sleep 5
     wait_until '(shot-live-settled-p)' 240
     e '(shot-scene-usecase-layout)'            ; sleep 1
 
     scene usecase-review
     cue; hold 2
-    # The words go in from 0.6s, and the prompt is sent at 2.6s.
-    cue; e '(shot-scene-usecase-review-ask (list "Walk me through " "this change in the review, " "and comment where I should look."))'
-    hold 3.5
-    cue; hold_until '(shot-live-idle-p)' 240 fast; hold 1.5
-    # } at 0.3s, c at 1.2s, the words from 2.2s, RET 0.8s after them.
+    # The menu opens at 0.5s, D is pressed at 2.0s, and the windows are
+    # narrowed again at 3.0s.
+    cue; e '(shot-scene-usecase-open-review)'  ; hold 3.6
+    cue; e '(shot-scene-usecase-review-press "T")' ; hold 1.5
+    hold_until '(shot-live-idle-p)' 240 fast; hold 1
+    cue; e '(shot-scene-usecase-review-press "t")' ; hold 1.5
+    hold_until '(shot-live-idle-p)' 240 fast; hold 1
+    # c at 1.2s, the words from 2.2s, RET 0.8s after them.
     cue; e '(shot-scene-usecase-reply-sequence (list "Why only one? " "Answer here, then drop " "every empty field at the end."))'
     hold 4.6
     cue; e '(shot-scene-usecase-review-press "C-c C-c")' ; hold 1.5

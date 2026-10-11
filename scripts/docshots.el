@@ -2036,10 +2036,24 @@ permission left unanswered there held the run for four minutes."
       (ecc-perm-allow-request request)))
   (shot-live-idle-p))
 
-(defun shot-start-live-review (mode)
+(defconst shot-usecase-change-prompt
+  "Make two small edits to reader.py and nothing else. In parse_line, just before the return, add: if fields and fields[-1] == \"\": then fields.pop() on the next line. In the docstring of read_records, add a last line: A trailing delimiter adds no field. Use the Edit tool, and add no tests."
+  "The change the use case of the review starts from.
+One file, two hunks a few lines long, no line past sixty columns: the
+review beside the session has room for that, and a tour of two stops
+has a next stop for t to go to.")
+
+(defconst shot-usecase-brevity
+  "In the review, keep each comment to one short line, at most two comments a stop, and say what a stop is about in two sentences or fewer."
+  "What the use case's session is told on top of its system prompt.
+The tour asks for comments where they are needed, and a take left them
+paragraphs long, wrapped over half the review (2026-10-11).")
+
+(defun shot-start-live-review (mode &optional system)
   "Start a real session in the demo repository, the MCP server on.
-MODE is the permission mode it starts in.  Every other session goes,
-as in `shot-start-live'; the scene's end makes them again."
+MODE is the permission mode it starts in, and SYSTEM, when given, is
+appended to its system prompt.  Every other session goes, as in
+`shot-start-live'; the scene's end makes them again."
   (require 'ecc-mcp)
   (require 'ecc-review-agent)
   (require 'ecc-review-talk)
@@ -2054,6 +2068,8 @@ as in `shot-start-live'; the scene's end makes them again."
                               :remote-control nil
                               :permission-mode ,mode
                               :extra-args ("--max-budget-usd" "3.00"
+                                           ,@(and system
+                                                  (list "--append-system-prompt" system))
                                            . ,shot-live-isolation))))
   ;; What `ecc-start' does in a repository: the review of the session
   ;; is of what it changes from here.
@@ -2063,9 +2079,10 @@ as in `shot-start-live'; the scene's end makes them again."
   (ecc--enable-session-modes)
   (shot-show shot-live))
 
-(defun shot-live-change ()
-  "Ask the live session for the change the review scenes are about."
-  (shot-prompt-type shot-review-change-prompt)
+(defun shot-live-change (&optional prompt)
+  "Ask the live session for the change the review scenes are about.
+PROMPT is that change, `shot-review-change-prompt' unless given."
+  (shot-prompt-type (or prompt shot-review-change-prompt))
   (shot-prompt-send))
 
 (defun shot-live-set-mode (mode)
@@ -2111,11 +2128,22 @@ as in `shot-start-live'; the scene's end makes them again."
    (list (cons 0.3 (lambda () (shot-scene-ediff-press 'new "y")))
          (cons 1.8 (lambda () (shot-keys "y"))))))
 
-(defvar shot-usecase-session-width 40
+(defvar shot-usecase-session-width 46
   "Columns the session keeps in the use case of the review.
 The review Claude opens takes the source's window, and at half the
 frame its lines and Claude's comments ran past the edge and wrapped
-over many lines (2026-10-11); the transcript reads well narrower.")
+over many lines (2026-10-11); the transcript reads well narrower.  At
+forty the footer's model name went onto a line of its own.")
+
+(defun shot-scene-usecase-open-review ()
+  "Open the review of what the live session changed as a user does: C-c c D D.
+From the source, whose project the menu is about; the menu and its key
+are scheduled, as the menu reads its keys from the command loop."
+  (shot-source-window)
+  (shot-script
+   (list (cons 0.5 (lambda () (call-interactively #'ecc-review-menu)))
+         (cons 2.0 (lambda () (shot-keys "D")))
+         (cons 3.0 #'shot-scene-usecase-layout))))
 
 (defun shot-usecase-narrow-session (&rest _)
   "Narrow the live session's window again once a review is on the screen.
