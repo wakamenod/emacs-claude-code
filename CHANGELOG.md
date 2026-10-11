@@ -897,14 +897,17 @@ Verified against **Claude Code CLI 2.1.281**.
   still matched and a comment on the old side is outdated. A diff that
   names no blob -- the one made from what a session recorded, a patch for
   each edit, each numbered against the file as its edit found it -- is
-  matched by the text and order of its lines alone. When git cannot
+  matched by the text and order of its lines alone, and two of its lines
+  at one number, or two hunks with one header, are two places. When git cannot
   say, or carrying a file fails, none of the comments of that file moves:
   they go outdated where they were and why is in the log. A comment on a
   whole hunk follows the hunk most of its lines are in now while more than
   half of the lines it changed stayed -- the lines of context around them
   do not count -- and once half or more changed again or went it is
   outdated.
-  The comments are carried once, when the diff is read; a review whose
+  The comments are carried once, when the diff is read; a comment being
+  typed while the review turns to another proposal is not put on that
+  one, and is left in the kill ring; a review whose
   buffer was edited since -- by a key that got past its keymap -- says so
   and waits for `g` rather than putting a comment on a line of something
   else; an ediff review whose reading failed halfway is read whole by the
@@ -980,12 +983,15 @@ Verified against **Claude Code CLI 2.1.281**.
 
 - The diff review reads git's diff the same whatever the repository's
   settings say: it asks for `--inter-hunk-context=0`, `--no-textconv` and
-  the `a/` and `b/` prefixes, as well as `--no-color` and `--no-ext-diff`.
-  With `diff.mnemonicPrefix` the files were named `i/x.el` or `w/x.el`,
-  which no file is; with `diff.interHunkContext` two changes a few lines
-  apart came as one hunk with the unchanged lines between them; and a
-  textconv driver in `.gitattributes` showed what the driver made of a
-  file rather than its lines.
+  the `a/` and `b/` prefixes, as well as `--no-color` and `--no-ext-diff`,
+  and runs it with `core.quotePath` off. With `diff.mnemonicPrefix` the
+  files were named `i/x.el` or `w/x.el`, which no file is; with
+  `diff.interHunkContext` two changes a few lines apart came as one hunk
+  with the unchanged lines between them; a textconv driver in
+  `.gitattributes` showed what the driver made of a file rather than its
+  lines; and a file named past ASCII, `日本.txt`, was shown and looked for
+  as `"b/\346\227\245\346\234\254.txt"`. A file whose name has a space
+  is no longer listed with git's tab at the end of its name.
 
 - `TAB` after `@` offered the project's files as
   `../../../private/tmp/x/readme.md` when the project spelt its root
