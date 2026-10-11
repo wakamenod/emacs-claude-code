@@ -197,7 +197,10 @@ holds() {
 # in the video rather than half a minute of a spinner.  Ending on the
 # ceiling is said, since the scene after it would start with the turn
 # still running.  WHOLE as a third argument keeps every frame, for a
-# wait that is the motion -- an answer streaming in.
+# wait that is the motion -- an answer streaming in; FAST keeps one
+# frame in four and the last one and a half seconds whole, for a turn
+# whose motion is the point but which takes a minute -- Claude working
+# through a review.
 hold_until() {
     local condition=$1 max=$2 whole=${3:-} start keep=$((15 * fps / 10)) total
     local deadline=$(( $(now_ms) + max * 1000 ))
@@ -210,7 +213,13 @@ hold_until() {
         hold 0.5
     done
     total=$((n - start))
-    if [ -z "$whole" ] && [ "$total" -gt $((2 * keep)) ]; then
+    if [ "$whole" = fast ] && [ "$total" -gt $((2 * keep)) ]; then
+        awk -v from="$start" -v keep="$keep" -v to="$n" \
+            'NR <= from || NR > to - keep || (NR - from) % 4 == 0' \
+            "$frames/$scene.ticks" > "$frames/$scene.ticks.new"
+        mv "$frames/$scene.ticks.new" "$frames/$scene.ticks"
+        n=$(wc -l < "$frames/$scene.ticks" | tr -d ' ')
+    elif [ -z "$whole" ] && [ "$total" -gt $((2 * keep)) ]; then
         awk -v from="$start" -v keep="$keep" -v to="$n" \
             'NR <= from + keep || NR > to - keep' \
             "$frames/$scene.ticks" > "$frames/$scene.ticks.new"
@@ -826,6 +835,63 @@ if want ediff; then
     cue; e '(shot-scene-ediff-press (quote new) "|")' ; hold 1.5
     video
     e '(shot-scene-git-end)'                   ; sleep 1
+fi
+
+# Claude in the review, live: the model calls the review tools of the
+# scene Emacs over its MCP server.  Each scene starts a sonnet session
+# in the demo repository and has it make a change before the filming
+# starts, and its end makes the replayed sessions again.
+if want ediff-live; then
+    e '(shot-start-live-review "acceptEdits")' ; sleep 5
+    wait_until '(shot-live-idle-p)' 60
+    e '(shot-live-change)'                     ; sleep 5
+    wait_until '(shot-live-settled-p)' 240
+    e '(shot-live-set-mode "default")'         ; sleep 1
+    e '(shot-scene-live-ediff)'                ; sleep 3
+
+    # T asks for a tour; the answer streams into the reply pane.
+    scene ediff-reply
+    cue; hold 1
+    cue; e '(shot-scene-ediff-press (quote new) "T")' ; hold 2
+    cue; hold_until '(shot-live-idle-p)' 240 fast; hold 2
+    video
+
+    # M asks for an edit; the pane shows the permission, and y answers
+    # it without leaving the review.  The message is typed from 1.6s and
+    # sent 0.8s after its last words.
+    scene ediff-permission
+    cue; e '(shot-scene-ediff-message-sequence (list "Say in the docstring " "that a trailing " "delimiter is dropped."))'
+    hold 4
+    cue; hold_until '(shot-live-waiting-p)' 120 fast; hold 1.5
+    cue; e '(shot-scene-ediff-answer-sequence)' ; hold 2.5
+    cue; hold_until '(shot-live-idle-p)' 120 fast; hold 2
+    video
+    e '(shot-scene-live-review-end)'           ; sleep 2
+fi
+
+if want usecase-review; then
+    # The use case of the review with Claude: a change made, a walk
+    # through it in the review, a reply on one of Claude's comments, and
+    # the review following the files when Claude acts on it.
+    e '(shot-start-live-review "acceptEdits")' ; sleep 5
+    wait_until '(shot-live-idle-p)' 60
+    e '(shot-live-change)'                     ; sleep 5
+    wait_until '(shot-live-settled-p)' 240
+
+    scene usecase-review
+    cue; hold 2
+    # The words go in from 0.6s, and the prompt is sent at 2.6s.
+    cue; e '(shot-scene-usecase-review-ask (list "Walk me through " "this change in the review, " "and comment where I should look."))'
+    hold 3.5
+    cue; hold_until '(shot-live-idle-p)' 240 fast; hold 1.5
+    # } at 0.3s, c at 1.2s, the words from 2.2s, RET 0.8s after them.
+    cue; e '(shot-scene-usecase-reply-sequence (list "Why only one? " "Answer here, then drop " "every empty field at the end."))'
+    hold 4.6
+    cue; e '(shot-scene-usecase-review-press "C-c C-c")' ; hold 1.5
+    cue; hold_until '(shot-live-idle-p)' 240 fast; hold 1
+    cue; hold 2.5
+    video
+    e '(shot-scene-live-review-end)'           ; sleep 2
 fi
 
 if want timeline; then

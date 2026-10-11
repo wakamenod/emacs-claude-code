@@ -1992,8 +1992,8 @@ the review follows the point as it does when the reader moves it."
              (list (cons (+ 0.8 (car (car (last typing))))
                          (lambda () (shot-keys "RET"))))))))
 
-(defun shot-scene-git-end ()
-  "Close every review, and make the demo project the directory it was.
+(defun shot-close-reviews ()
+  "Close every review.
 A review holding comments asks before it goes; nobody is there to
 answer, and the comments are the scene's."
   (let ((kill-buffer-query-functions nil))
@@ -2003,9 +2003,160 @@ answer, and the comments are the scene's."
       (when (and (buffer-live-p buffer)
                  (with-current-buffer buffer
                    (derived-mode-p 'ecc-review-mode 'ecc-review-files-mode 'ecc-review-talk-mode)))
-        (kill-buffer buffer))))
+        (kill-buffer buffer)))))
+
+(defun shot-scene-git-end ()
+  "Close every review, and make the demo project the directory it was."
+  (shot-close-reviews)
   (shot-git-project-end)
   (shot-reset-main)
+  (shot-show shot-main))
+
+;;;; Claude in the review, live
+
+;; Claude opening the review, commenting on it and answering from the
+;; reply pane is the model calling the review tools of this Emacs, so
+;; these scenes run the real CLI with ecc's MCP server registered.
+;; --strict-mcp-config keeps every server of the machine out, and the
+;; one ecc passes with --mcp-config is then the only one.  Sonnet rather
+;; than haiku: what is being shown is a review worth reading.
+
+(defconst shot-review-change-prompt
+  "parse_line keeps an empty last field when a line ends in the delimiter. Drop it, and add pytest tests for parse_line in test_reader.py. Use the Edit and Write tools, and do not run anything."
+  "The change Claude makes before the review scenes start.
+It names the tools: one take made the edit with a Python script run
+through Bash, which acceptEdits does not cover (2026-10-11).")
+
+(defun shot-live-settled-p ()
+  "Allow whatever the live session asks, and say whether it is idle.
+What the wrapper waits on while the change is made, off camera: a
+permission left unanswered there held the run for four minutes."
+  (when shot-live
+    (dolist (request (copy-sequence (ecc-session-pending shot-live)))
+      (ecc-perm-allow-request request)))
+  (shot-live-idle-p))
+
+(defun shot-start-live-review (mode)
+  "Start a real session in the demo repository, the MCP server on.
+MODE is the permission mode it starts in.  Every other session goes,
+as in `shot-start-live'; the scene's end makes them again."
+  (require 'ecc-mcp)
+  (require 'ecc-review-agent)
+  (require 'ecc-review-talk)
+  (dolist (session (ecc-model-sessions))
+    (ecc-kill session))
+  (shot-git-project)
+  (setq shot-live (ecc-model-create-session
+                   :project-root shot-root
+                   :name shot-project
+                   :options `(:model "sonnet"
+                              :mcp t
+                              :remote-control nil
+                              :permission-mode ,mode
+                              :extra-args ("--max-budget-usd" "3.00"
+                                           . ,shot-live-isolation))))
+  ;; What `ecc-start' does in a repository: the review of the session
+  ;; is of what it changes from here.
+  (ecc-review-ensure-baseline shot-live)
+  (ecc-session-ensure-buffer shot-live)
+  (ecc-proc-start shot-live)
+  (ecc--enable-session-modes)
+  (shot-show shot-live))
+
+(defun shot-live-change ()
+  "Ask the live session for the change the review scenes are about."
+  (shot-prompt-type shot-review-change-prompt)
+  (shot-prompt-send))
+
+(defun shot-live-set-mode (mode)
+  "Put the live session in the permission mode MODE."
+  (ecc-proc-set-permission-mode shot-live mode))
+
+(defun shot-live-review-window ()
+  "Return the window of the live session's diff review, selecting it."
+  (when-let* ((buffer (get-buffer (ecc-review-buffer-name shot-live)))
+              (window (get-buffer-window buffer)))
+    (select-window window)
+    window))
+
+(defun shot-live-review-shown-p ()
+  "Return non-nil once the live session's review is on the screen."
+  (and (get-buffer (ecc-review-buffer-name shot-live))
+       (get-buffer-window (ecc-review-buffer-name shot-live))
+       t))
+
+(defun shot-scene-live-ediff ()
+  "Open what the live session changed in ediff, stacked, with the reply pane."
+  (setq ecc-review-files-shown nil
+        ecc-review-ediff-layout 'stacked)
+  (shot-show shot-live)
+  (shot-source-window)
+  (let ((ecc-review-style 'ediff))
+    (ecc-review shot-live))
+  (shot-ediff-window 'new)
+  (redisplay t))
+
+(defun shot-scene-ediff-message-sequence (chunks)
+  "Press M in the new side of the ediff review and type CHUNKS, then RET."
+  (let ((typing (shot-typing-steps 1.0 chunks)))
+    (shot-script
+     (append (list (cons 0.5 (lambda () (shot-scene-ediff-press 'new "M"))))
+             typing
+             (list (cons (+ 0.8 (car (car (last typing))))
+                         (lambda () (shot-keys "RET"))))))))
+
+(defun shot-scene-ediff-answer-sequence ()
+  "Press y in the new side, and y again for allow."
+  (shot-script
+   (list (cons 0.3 (lambda () (shot-scene-ediff-press 'new "y")))
+         (cons 1.8 (lambda () (shot-keys "y"))))))
+
+(defun shot-scene-usecase-review-ask (chunks)
+  "Type CHUNKS into the prompt region of the live session and send it."
+  (let ((time 0.0))
+    (shot-script
+     (append (mapcar (lambda (chunk)
+                       (setq time (+ time 0.6))
+                       (cons time (lambda () (shot-prompt-type chunk))))
+                     chunks)
+             (list (cons (+ time 0.8) #'shot-prompt-send))))))
+
+(defun shot-scene-usecase-reply-sequence (chunks)
+  "Comment with CHUNKS on the line of the review that tests the last field.
+That is the line of the change Claude made, whatever words it chose,
+and the one its comments are most likely on: c on a line that holds
+only Claude's comment answers it, else comments on the line.  Without
+such a line, } goes to Claude's first comment instead."
+  (let ((typing (shot-typing-steps 1.6 chunks)))
+    (shot-script
+     (append (list (cons 0.3 (lambda ()
+                               (when (shot-live-review-window)
+                                 (goto-char (point-min))
+                                 ;; Straight onto the line: C-n from the line
+                                 ;; above went into the comment drawn under
+                                 ;; it, and c answered that one instead.
+                                 (if (re-search-forward "^\\+.*fields\\[-1\\]" nil t)
+                                     (beginning-of-line)
+                                   (shot-keys "}")))))
+                   (cons 1.2 (lambda () (shot-keys "c"))))
+             typing
+             (list (cons (+ 0.8 (car (car (last typing))))
+                         (lambda () (shot-keys "RET"))))))))
+
+(defun shot-scene-usecase-review-press (keys)
+  "Press KEYS in the live session's review."
+  (shot-live-review-window)
+  (shot-keys keys))
+
+(defun shot-scene-live-review-end ()
+  "Stop the live session and make the scenes' own sessions again."
+  (shot-dump-log shot-live "/tmp/ecc-docshot-live-review.log")
+  (shot-close-reviews)
+  (dolist (session (ecc-model-sessions))
+    (ecc-kill session))
+  (setq shot-live nil)
+  (shot-git-project-end)
+  (shot-prepare)
   (shot-show shot-main))
 
 ;;;; The Files section and the Timeline
