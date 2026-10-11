@@ -11,6 +11,51 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.290**.
+
+### Fixed
+
+- A comment in the review of a proposal could move onto another line that
+  only read like its own. When the file changed on disk while the
+  permission waited and the proposal was reviewed again, both readings
+  took what the session had recorded of the file for their old side, so
+  a comment on a `}` was carried by its number onto another `}`. A
+  proposal's comments are now carried from the file as the proposal found
+  it, and by their text when that is not known.
+
+- Redrawing a review whose text changed since it was read -- a reading
+  that stopped, a key that got past the keymap -- was an error, raised
+  after the command had done its work and with every comment taken off
+  the screen. `C-c C-c` had sent the prompt and marked the comments sent,
+  and showed none of them; `C-c C-a` in a pull request stopped at
+  the first such review, left the rest undrawn and did not count again;
+  the files filter, removing a comment and hiding Claude's failed the
+  same way. What is drawn now stays as it is, the echo area says that `g`
+  reads the review again, and the command finishes; Claude's
+  `review_remove_comment` and `review_clear_comments` say the same.
+
+- `c` on a comment of yours, in a review being read again, sent the edit
+  to the kill ring instead of making it. An edit needs no line, and is
+  made.
+
+- A comment on a very large file froze Emacs for seconds at the next `g`
+  after a commit moved the file's old side: both blobs were read whole
+  and compared line by line. Their sizes are asked first, as the ediff
+  review does, and two of which one is over `ecc-review-max-bytes` are not
+  read or compared; the comments of that file are outdated, and the log
+  says so once.
+
+- `review_hunks` gave two hunks with one `@@` header -- two patches at one
+  line of a file the session changed outside git -- the same comment count.
+  Each hunk counts its own.
+
+- A file outside git with DEL in its name was named in the review's own
+  header as it is, and one with BEL, VT, FF or CR with an octal escape;
+  git writes `\177`, `\a`, `\v`, `\f` and `\r`, and the review now
+  writes them so.
+
 ## [0.4.0] - 2026-10-12
 
 Verified against **Claude Code CLI 2.1.290**.
@@ -916,20 +961,15 @@ Verified against **Claude Code CLI 2.1.290**.
   each edit, each numbered against the file as its edit found it -- is
   matched by the text and order of its lines alone, and two of its lines
   at one number, or two hunks with one header, are two places -- and a
-  comment marks the `@@` line of its own hunk alone, and `review_hunks`
-  counts it there; a file
+  comment marks the `@@` line of its own hunk alone; a file
   outside git whose original the session recorded has that for its one
-  old side, and a proposal has the file as the proposal found it, so a
-  proposal reviewed again after its file changed on disk carries its
-  comments from that. The old blobs of a session over several repositories are
+  old side. The old blobs of a session over several repositories are
   compared in the repository of each file, whose names, from the second
   repository on, are given from the first (`../two/x.txt`). When git cannot
   say, or carrying a file fails, none of the comments of that file moves:
   they go outdated where they were and why is in the log; a repository git
   failed in is not asked again for each file in the same reading, and the
-  next reading asks again. Two old sides of which one is over
-  `ecc-review-max-bytes` are not read or compared: the comments of that
-  file go outdated, and the log says so once. A comment on a
+  next reading asks again. A comment on a
   whole hunk follows the hunk most of its lines are in now while more than
   half of the lines it changed stayed -- the lines of context around them
   do not count -- and once half or more changed again or went it is
@@ -945,9 +985,7 @@ Verified against **Claude Code CLI 2.1.290**.
   the kill ring alone, so that a yank does not make a second copy; a review whose
   buffer was edited since -- by a key that got past its keymap -- says so
   and waits for `g` rather than putting a comment on a line of something
-  else, though a comment of yours can still be edited there, and what is
-  drawn stays as it is until then, whatever asked to draw it -- sending,
-  removing a comment, the files filter -- which is done all the same; an ediff review whose reading failed halfway is read whole by the
+  else; an ediff review whose reading failed halfway is read whole by the
   next `g`. The ediff review carries its comments the same way, each time
   ediff computes the differences. Each comment is carried from the reading
   it was last on, whichever review that was: the comments of a pull
