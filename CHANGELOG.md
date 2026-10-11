@@ -892,13 +892,17 @@ Verified against **Claude Code CLI 2.1.281**.
   another line reads like it -- a blank line or a lone brace does not
   wander off to another. When the old side itself moved, as when a commit
   lands under a review of what is not committed, the two blobs are diffed
-  and the lines carried through that; when git cannot say, the comments
-  of that file go outdated. A comment on a whole hunk goes to the hunk
-  most of its lines are in now. The ediff review carries its comments the
-  same way. A comment whose line has gone is kept, marked outdated, above
-  the first hunk of its file, is still sent with `(outdated)` and the hunk
-  as it was, and comes back when the same line is back at the same
-  number.
+  and the lines carried through that. When the old side appears or goes,
+  as when an untracked file is added to the index, the lines put in are
+  still matched and a comment on the old side is outdated. When git cannot
+  say, or carrying a file fails, the comments of that file go outdated and
+  why is in the log. A comment on a whole hunk goes to the hunk most of
+  its lines are in now. The ediff review carries its comments the same
+  way. A comment whose line has gone is kept, marked outdated, above the
+  first hunk of its file, and is still sent with `(outdated)` and the hunk
+  as it was. It comes back when the line it was last on, carried from that
+  reading, is there again -- the change undone -- and not for a line that
+  only reads like it somewhere else.
 
 - Reading the review again -- `g`, `ecc-review` or `ecc-review-range` on
   a review that is open, or Claude's `review_open` -- keeps your place: point,
