@@ -3,6 +3,8 @@ title: Reviewing in ediff
 description: The same review as two sides in ediff, with every file in one session and Claude's reply in a pane beside it.
 ---
 
+import Video from '../../../components/Video.astro';
+
 `ecc-review-style` decides how the reviews of the [review menu](/emacs-claude-code/features/review/#choosing-what-to-compare) open. The default, `'diff`, is the diff buffer. `'ediff` shows the two sides in ediff:
 
 ```elisp
@@ -11,29 +13,47 @@ description: The same review as two sides in ediff, with every file in one sessi
 
 `-e` in the menu switches the style for one review.
 
-Every file of the review is in one ediff session: the old contents in the left buffer, the new ones in the right, each file under a `═══ path ═══` line. `n` and `p` move through every difference of the review, from one file into the next. A binary file, or one larger than `ecc-review-max-bytes`, is only its separator line. Both sides are read-only, so ediff's copy commands do nothing; you comment and send, and Claude edits the files.
+Every file of the review is in one ediff session: the old contents in one window, the new ones in the other, each file under a `═══ path ═══` line. A binary file, or one larger than `ecc-review-max-bytes`, is only its separator line. Both sides are read-only, so ediff's copy commands do nothing; you comment and send, and Claude edits the files.
 
 The review takes the whole frame; set `ecc-review-ediff-full-frame` to `nil` to open it among the windows on the screen. `C-c C-k` and `q` give back the windows you had before; sending leaves the review open.
 
 ## The layout
 
-The review opens with the old side above the new one and Claude's reply pane on the right. `|` puts the sides side by side with the pane under them, and `|` again stacks them. To open side by side:
+The review opens with the old side above the new one and Claude's [reply pane](#the-reply-pane) beside them, at the bottom when the frame is too narrow to put it on the right.
+
+![An ediff review stacked: reader.py as it was above, as it is now below with the two added lines highlighted, each window with a line of keys at the top, and Claude's last reply in a pane on the right](../../../assets/review-ediff.png)
+
+Each window's header line lists keys. The mode line shows the file the cursor is in; the lower or right window's mode line also shows where you are, such as `3/12`. The ediff control panel is hidden; `?` shows it with every key and hides it again. Other ediff sessions keep your own window layout.
+
+Each file is colored as its major mode colors it, and the words that changed are bold.
+
+`|` puts the sides side by side with the pane under them, and `|` again stacks them:
+
+<Video name="ediff-layout" label="The two sides of an ediff review turned from one above the other to side by side with |, and back" />
+
+To open side by side:
 
 ```elisp
 (setq ecc-review-ediff-layout 'side-by-side)   ; the default is 'stacked
 ```
 
-Each window's header line lists keys. The mode line shows the file the cursor is in; the lower or right window's mode line also shows where you are, such as `3/12`. The ediff control panel is hidden; `?` shows it with every key and hides it again. Other ediff sessions keep your own window layout.
-
-Each file is colored by its major mode, and the words that changed are bold.
-
 ## Reading in the two windows
 
 The keyboard starts in the new side. Every key works in both windows, and digits give a count: `3j` jumps to the third difference.
 
-Moving point drives the review. When point enters a difference, it becomes the current one, and the other window scrolls so that the matching line is on the same row. `n` and `p` go to the next difference below point or the previous one above it. Scrolling one window with `C-v` or the mouse does not move the other; `v` and `V` scroll both, and `C-l` lines them up again.
+<Video name="ediff-move" label="n and p moving through the differences of an ediff review from one file into the next, and the other side following the cursor line for line" />
+
+Moving point drives the review. When point enters a difference, it becomes the current one, and the other window scrolls so that the matching line is on the same row. `n` and `p` go to the next difference below point or the previous one above it, from one file into the next. Scrolling one window with `C-v` or the mouse does not move the other; `v` and `V` scroll both, and `C-l` lines them up again.
 
 `RET` opens the file at the line point is on, as the file is now, in a frame of its own. The review keeps its frame and the keyboard.
+
+## Commenting
+
+`c` comments on the line at point: in the old window on the line as it was, in the new one on the line as it is. `c` on a line both sides share has nothing to comment on, and says so.
+
+<Video name="ediff-comment" label="c on an added line of the new side and on a replaced line of the old side, each comment appearing under its line" />
+
+In the panel that `?` shows, `c` comments on the current difference, or replies to Claude's latest comment there. Comments, sending and [following the files](/emacs-claude-code/features/review/#following-the-files) work as in the diff buffer; the review keeps the current difference and the place of each side.
 
 | Key | Action |
 |---|---|
@@ -58,20 +78,17 @@ Moving point drives the review. When point enters a difference, it becomes the c
 | `q` | Quit the review |
 | `?` | Show or hide the control panel |
 
-`c` on a line both sides share has nothing to comment on, and says so. Comments, sending and [following the files](/emacs-claude-code/features/review/#following-the-files) work as in the diff buffer; the review keeps the current difference and the place of each side.
-
 ## The reply pane
 
-The session is out of sight while ediff has the frame. A pane beside the diff shows the session's latest reply as it streams, one line for each tool call, colored as in the transcript:
+The session is out of sight while ediff has the frame. The pane shows the session's latest reply as it streams, one line for each tool call, colored as in the transcript:
 
-```
-› Next stop.
-The cache is keyed by path, so a renamed file is read again.
-  review_navigate → ecc-review-ediff.el:248
-  review_comment → ecc-review-ediff.el:252: This drops the old entry
-```
+<Video name="ediff-reply" label="T pressed in an ediff review, and Claude's tour streaming into the reply pane at the bottom, with a line for each tool it calls" />
 
-Each turn replaces the last; the whole conversation stays in the transcript. When Claude asks for permission, asks a question or has a plan to approve, the pane shows the request and `y` answers it. The pane is never selected. `u` and `d` scroll it from the review; once you scroll back, it stops following the end until the end is in view again.
+Each turn replaces the last; the whole conversation stays in the transcript. The pane is never selected. `u` and `d` scroll it from the review; once you scroll back, it stops following the end until the end is in view again.
+
+When Claude asks for permission, asks a question or has a plan to approve, the pane shows the request and `y` answers it, without leaving the review:
+
+<Video name="ediff-permission" label="A message sent with M, Claude asking in the reply pane to edit the file, y allowing it, and the review reading the changed file again" />
 
 | Variable | Default | Description |
 |---|---|---|

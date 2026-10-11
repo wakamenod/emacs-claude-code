@@ -86,8 +86,17 @@ the machine is Emacs too.")
 ;; this font the closing bracket of the process segment lands half off
 ;; the edge; a mode line of its own, ending in two spaces, is the least
 ;; invasive way back.
+;; The two sides of an ediff review say in the mode line which file the
+;; point is in and where the review is, in
+;; `mode-line-buffer-identification'; doom-modeline's buffer-info does
+;; not read it, and those pictures said only the buffer's name.
+(doom-modeline-def-segment shot-buffer-info
+  "What ecc puts in a side of an ediff review, else doom-modeline's own."
+  (if (bound-and-true-p ecc-review-direct--mode-line)
+      (concat (doom-modeline-spc) (cddr ecc-review-direct--mode-line))
+    (doom-modeline-segment--buffer-info)))
 (doom-modeline-def-modeline 'shot-main-line
-  '(bar modals buffer-info buffer-position selection-info)
+  '(bar modals shot-buffer-info buffer-position selection-info)
   '(misc-info major-mode process "  "))
 (doom-modeline-set-modeline 'shot-main-line t)
 
@@ -1070,24 +1079,73 @@ waiting for an answer -- everything the two lists can say."
   (message nil)
   (redisplay t))
 
-(defun shot-report-sidebar-geometry ()
-  "Write where the sidebar window is, for a picture of it alone.
-The same five numbers as `shot-report-geometry', for the sidebar window
-rather than the whole frame."
+(defun shot-report-window-geometry (window &optional fit)
+  "Write where WINDOW is, for a picture of it alone.
+The same five numbers as `shot-report-geometry', for WINDOW rather than
+the whole frame.  With FIT, the picture ends under the last line of
+text, its header line kept and its mode line and empty rows left out:
+a still of one buffer is shown larger than one of the frame, and the
+rows under the text would only make it taller."
   (unless (active-minibuffer-window)
     (message nil))
   (redisplay t)
-  (let* ((window (get-buffer-window ecc-sidebar-buffer-name))
-         (outer (frame-edges nil 'outer-edges))
+  (let* ((outer (frame-edges nil 'outer-edges))
          (inner (frame-edges nil 'inner-edges))
-         (edges (window-pixel-edges window)))
+         (edges (window-pixel-edges window))
+         (height (- (nth 3 edges) (nth 1 edges))))
+    (when fit
+      (setq height (min height
+                        (+ (window-header-line-height window)
+                           (cdr (window-text-pixel-size window (window-start window) nil nil nil nil))
+                           (default-line-height)))))
     (with-temp-file shot-geometry-file
       (insert (format "%d %d %d %d %d\n"
                       (+ (- (nth 0 inner) (nth 0 outer)) (nth 0 edges))
                       (+ (- (nth 1 inner) (nth 1 outer)) (nth 1 edges))
                       (- (nth 2 edges) (nth 0 edges))
-                      (- (nth 3 edges) (nth 1 edges))
+                      height
                       (- (nth 2 outer) (nth 0 outer)))))))
+
+(defun shot-report-ediff-sides-geometry ()
+  "Write where the two sides of the ediff review are, for a picture of them.
+The rectangle around both windows, header lines and mode lines in it:
+on a frame wide enough for the reply pane beside them, a video of the
+frame shows its text at half the size of the page's, and the videos of
+moving through the sides and commenting on them are about the sides."
+  (unless (active-minibuffer-window)
+    (message nil))
+  (redisplay t)
+  (let* ((control (shot-ediff-control))
+         (windows (mapcar (lambda (variable)
+                            (get-buffer-window (buffer-local-value variable control)))
+                          '(ediff-buffer-A ediff-buffer-B)))
+         (edges (mapcar #'window-pixel-edges windows))
+         (outer (frame-edges nil 'outer-edges))
+         (inner (frame-edges nil 'inner-edges))
+         (left (apply #'min (mapcar #'car edges)))
+         (top (apply #'min (mapcar #'cadr edges)))
+         (right (apply #'max (mapcar #'caddr edges)))
+         (bottom (apply #'max (mapcar #'cadddr edges))))
+    (with-temp-file shot-geometry-file
+      (insert (format "%d %d %d %d %d\n"
+                      (+ (- (nth 0 inner) (nth 0 outer)) left)
+                      (+ (- (nth 1 inner) (nth 1 outer)) top)
+                      (- right left)
+                      (- bottom top)
+                      (- (nth 2 outer) (nth 0 outer)))))))
+
+(defun shot-report-sidebar-geometry ()
+  "Write where the sidebar window is, for a picture of it alone."
+  (shot-report-window-geometry (get-buffer-window ecc-sidebar-buffer-name)))
+
+(defun shot-report-mode-geometry (mode)
+  "Write where the window of a buffer in MODE is, fitted to its text.
+For a still of one buffer: `crop_still' in the wrapper."
+  (when-let* ((window (seq-find (lambda (window)
+                                  (with-current-buffer (window-buffer window)
+                                    (derived-mode-p mode)))
+                                (window-list nil 'no-minibuffer))))
+    (shot-report-window-geometry window t)))
 
 (defun shot-scene-sidebar-end ()
   "Take the extra sessions, the sidebar and the invented git away again."
@@ -1417,8 +1475,12 @@ scheduled inside Emacs."
 
 ;;;; Reviewing what changed, a proposal and a plan
 
-(defun shot-reset-main ()
+(defun shot-reset-main (&optional baseline)
   "Build the main session again from its recording, so a scene starts clean.
+With BASELINE, the session takes what the working tree holds before the
+recorded edit as the start of its review, as a session `ecc-start'
+starts in a repository does: the scenes of the review in a repository
+need it, and a replayed session has none of its own.
 The scenes share one Emacs and a session keeps what an earlier one
 replayed into it: the Files section grew a plan file and a second
 write, and a scene that had ended mid-turn left the state line saying
@@ -1437,6 +1499,8 @@ so.  The second session is left alone, so the tab line still has one."
   (with-temp-file shot-file (insert shot-before))
   (setq shot-main (ecc-model-create-session :name shot-project
                                             :project-root shot-root))
+  (when baseline
+    (ecc-review-ensure-baseline shot-main))
   (ecc-session-ensure-buffer shot-main)
   (shot-play-to-request shot-main "edit")
   (shot-allow shot-main)
@@ -1457,62 +1521,6 @@ that is not about one."
   "Replay the recording that writes a file into SESSION, permission and all."
   (shot-play-allowed session "write"))
 
-
-(defun shot-review-window ()
-  "Return the window of the review buffer of the main session, selecting it."
-  (when-let* ((buffer (get-buffer (ecc-review-buffer-name shot-main)))
-              (window (get-buffer-window buffer)))
-    (select-window window)
-    window))
-
-(defun shot-scene-review ()
-  "Open every change of the session as one diff.
-A second file is replayed in first, so that the diff has more than one
-hunk to walk."
-  (shot-reset-main)
-  (shot-show shot-main)
-  (shot-play-write shot-main)
-  (ecc-review shot-main)
-  (when-let* ((window (shot-review-window)))
-    (with-selected-window window
-      (goto-char (point-min))
-      (ignore-errors (diff-hunk-next))
-      (redisplay t))))
-
-(defun shot-scene-review-hunk ()
-  "Move to the next hunk, as n does."
-  (when-let* ((window (shot-review-window)))
-    (with-selected-window window
-      (ignore-errors (diff-hunk-next))
-      (redisplay t))))
-
-(defun shot-scene-review-comment (chunks)
-  "Comment on the added line of the hunk at point, typing CHUNKS.
-On the @@ line \`c' comments on the whole hunk; on any other line, on
-that line, which is what is shown."
-  (let ((typing (shot-typing-steps 1.0 chunks)))
-    (shot-script
-     (append (list (cons 0.5 (lambda ()
-                               (with-selected-window (shot-review-window)
-                                 (when (re-search-forward "^\\+" nil t)
-                                   (beginning-of-line))
-                                 (call-interactively #'ecc-review-comment)))))
-             typing
-             (list (cons (+ 0.8 (car (car (last typing))))
-                         (lambda () (shot-keys "RET"))))))))
-
-(defun shot-scene-review-send ()
-  "Ask to send the comments, which shows the prompt before it goes.
-The prefix argument is what opens that buffer; plain \`C-c C-c\=' sends."
-  (when-let* ((window (shot-review-window)))
-    (with-selected-window window
-      (let ((current-prefix-arg '(4)))
-        (call-interactively #'ecc-review-send))))
-  (when-let* ((buffer (get-buffer (ecc-review-message-buffer-name shot-main)))
-              (window (get-buffer-window buffer)))
-    (select-window window)
-    (goto-char (point-min)))
-  (redisplay t))
 
 (defun shot-scene-proposal ()
   "Stop a recording at the file it asks to write, and go to the request."
@@ -1614,6 +1622,742 @@ inside Emacs like the other scenes that answer a prompt."
       (goto-char (point-max))
       (recenter -1)))
   (redisplay t))
+
+;;;; The review in a repository
+
+;; The review menu counts what git says, and the commits and the pull
+;; requests it offers are git's too.  The demo project is no repository
+;; for the other scenes -- the Spaces scenes answer for git themselves
+;; (`shot-fake-git') -- so these make it one for as long as they run,
+;; with a history of its own, and take it away again
+;; (`shot-git-project-end').  The history is written with no
+;; configuration of this machine's and at fixed dates, so its commits
+;; have the same ids in every run and nobody's name in them.
+
+(defconst shot-git-environment
+  '("GIT_AUTHOR_NAME=Mika" "GIT_AUTHOR_EMAIL=mika@example.com"
+    "GIT_COMMITTER_NAME=Mika" "GIT_COMMITTER_EMAIL=mika@example.com"
+    "GIT_CONFIG_GLOBAL=/dev/null" "GIT_CONFIG_NOSYSTEM=1")
+  "The environment the demo history is written in.")
+
+(defvar shot-git-clock 0 "How many commits the demo history has; it dates the next.")
+
+(defconst shot-gh (expand-file-name "ecc-docshot-gh" temporary-file-directory)
+  "A gh of the scenes' own, answering `pr list' and `pr view' with
+`shot-git-pull-requests' and asking GitHub nothing.")
+
+(defun shot-git (&rest args)
+  "Run git with ARGS in the demo project and return what it prints."
+  (let* ((default-directory (file-name-as-directory shot-root))
+         (date (format "2026-09-%02dT10:00:00Z" (+ 10 shot-git-clock)))
+         (process-environment (append shot-git-environment
+                                      (list (concat "GIT_AUTHOR_DATE=" date)
+                                            (concat "GIT_COMMITTER_DATE=" date))
+                                      process-environment)))
+    (with-temp-buffer
+      (unless (zerop (apply #'process-file "git" nil t nil args))
+        (error "git %s: %s" (string-join args " ") (buffer-string)))
+      (string-trim (buffer-string)))))
+
+(defun shot-git-write (file text)
+  "Write TEXT into FILE of the demo project."
+  (with-temp-file (expand-file-name file shot-root)
+    (insert text)))
+
+(defun shot-git-commit (subject &rest files)
+  "Write FILES, (NAME TEXT ...), into the demo project and commit them as SUBJECT."
+  (while files
+    (shot-git-write (car files) (cadr files))
+    (shot-git "add" (car files))
+    (setq files (cddr files)))
+  (setq shot-git-clock (1+ shot-git-clock))
+  (shot-git "commit" "-q" "-m" subject))
+
+(defun shot-written-file (fixture)
+  "Return what the Write of FIXTURE put in its file."
+  (catch 'found
+    (dolist (message (shot-fixture fixture))
+      (when (equal (alist-get 'type message) "assistant")
+        (dolist (block (append (alist-get 'content (alist-get 'message message)) nil))
+          (when (equal (alist-get 'name block) "Write")
+            (throw 'found (alist-get 'content (alist-get 'input block)))))))))
+
+(defun shot-edited (text &rest pairs)
+  "Return TEXT with each FROM of PAIRS, (FROM TO ...), replaced by its TO."
+  (while pairs
+    (unless (string-search (car pairs) text)
+      (error "Not in the text: %S" (car pairs)))
+    (setq text (string-replace (car pairs) (cadr pairs) text)
+          pairs (cddr pairs)))
+  text)
+
+(defconst shot-report-source
+  (shot-edited shot-broken "float(row[index] for" "float(row[index]) for")
+  "The report as it would have been committed: the scenes about the
+error break it on purpose.")
+
+(defconst shot-summary-skipped
+  (shot-edited shot-hero-source
+               "    rows: int = 0\n" "    rows: int = 0\n    skipped: int = 0\n"
+               "            log.warning(\"%s: a row with no key\", path)\n"
+               "            log.warning(\"%s: a row with no key\", path)\n            summary.skipped += 1\n")
+  "The summary of the pull request: it counts the rows it skips.")
+
+(defvar shot-git-pull-requests nil
+  "The pull requests the scenes' gh lists, as gh prints them.")
+
+(defun shot-git-pull-request (number title branch author &optional draft)
+  "Return pull request NUMBER of BRANCH into main as gh prints one."
+  (list :number number :title title :state "OPEN"
+        :headRefName branch :baseRefName "main"
+        :headRefOid (shot-git "rev-parse" branch)
+        :baseRefOid (shot-git "rev-parse" "main")
+        :author (list :login author) :isDraft (if draft t :false)
+        :isCrossRepository :false
+        :url (format "https://github.com/example/records/pull/%d" number)))
+
+(defun shot-git-write-gh ()
+  "Write `shot-gh' and point the review at it."
+  (let ((json (json-serialize (vconcat shot-git-pull-requests))))
+    (with-temp-file shot-gh
+      (insert "#!/bin/sh\n# The pull requests of the docshots scenes.\n"
+              "case \"$1 $2\" in\n"
+              "  'pr list') cat <<'EOF'\n" json "\nEOF\n;;\n"
+              "  'pr view') cat <<'EOF'\n"
+              (json-serialize (car shot-git-pull-requests)) "\nEOF\n;;\n"
+              "  *) echo \"unexpected: $*\" >&2; exit 2 ;;\nesac\n")))
+  (set-file-modes shot-gh #o755)
+  (setq ecc-review-gh-executable shot-gh))
+
+(defun shot-git-project ()
+  "Make the demo project a repository with a history and pull requests.
+main has the project in four commits; three branches, each a pull
+request, go off it.  main is checked out, with a change to the report
+staged before the session starts.  What the session changes is
+`shot-reset-main''s to make."
+  (require 'ecc-review-menu)
+  (require 'ecc-review-pr)
+  (shot-git-project-end)
+  (setq shot-git-clock 0)
+  (dolist (file '("reader.py" "summary.py" "report.py"))
+    (delete-file (expand-file-name file shot-root)))
+  (let ((image (expand-file-name "coffee.png" shot-root)))
+    (when (file-exists-p image)
+      (delete-file image)))
+  (shot-git "init" "-q" "-b" "main")
+  ;; What other scenes leave in the directory -- the worktrees of the
+  ;; sidebar's, and the auto-save files of a buffer a live scene had
+  ;; open, which an ediff review listed as a file of its own
+  ;; (2026-10-11) -- is no file of the project, and would be counted.
+  (with-temp-file (expand-file-name ".git/info/exclude" shot-root)
+    (insert ".claude/\n#*#\n.#*\n"))
+  (shot-git-commit "reader: split a line into fields"
+                   "reader.py" (concat (car (split-string shot-before "\n\n\ndef read_records")) "\n"))
+  (shot-git-commit "reader: read the records of a file" "reader.py"
+                   (shot-edited shot-before
+                                "    Blank lines and lines starting with # are\n    skipped.\"\"\""
+                                "    Blank lines are skipped.\"\"\""
+                                "if line.strip() and line[0] != \"#\":" "if line.strip():"))
+  (shot-git-commit "reader: skip comment lines" "reader.py" shot-before)
+  (shot-git-commit "summary: count the rows of a file by key" "summary.py" shot-hero-source)
+  (shot-git-commit "report: column totals and means" "report.py" shot-report-source)
+  (shot-git "checkout" "-q" "-b" "trailing-delimiter")
+  (shot-git-commit "reader: drop the field after a trailing delimiter" "reader.py" shot-after)
+  (shot-git-commit "test: lines that end in a delimiter" "test_reader.py" (shot-written-file "write"))
+  (shot-git-commit "summary: count the rows it skips" "summary.py" shot-summary-skipped)
+  (shot-git "checkout" "-q" "-b" "report-median" "main")
+  (shot-git-commit "report: the median of a column" "report.py"
+                   (concat shot-report-source
+                           "\n\ndef column_median(rows, index):\n"
+                           "    values = sorted(float(row[index]) for row in rows)\n"
+                           "    middle = len(values) // 2\n"
+                           "    if len(values) % 2:\n"
+                           "        return values[middle]\n"
+                           "    return (values[middle - 1] + values[middle]) / 2\n"))
+  (shot-git "checkout" "-q" "-b" "readme" "main")
+  (shot-git-commit "docs: a README" "README.md"
+                   "# records\n\nRead delimited records, and summarise them.\n")
+  (shot-git "checkout" "-q" "main")
+  (setq shot-git-pull-requests
+        (list (shot-git-pull-request 12 "Ignore a trailing delimiter" "trailing-delimiter" "mika")
+              (shot-git-pull-request 11 "The median of a column" "report-median" "sam")
+              (shot-git-pull-request 9 "A README" "readme" "lee" t)))
+  (shot-git-write-gh)
+  (shot-git-write "report.py" (shot-edited shot-report-source
+                                           "/ len(rows)" "/ max(len(rows), 1)"))
+  (shot-git "add" "report.py")
+  (when-let* ((buffer (get-file-buffer shot-file)))
+    (with-current-buffer buffer (revert-buffer t t t))))
+
+(defun shot-git-project-end ()
+  "Make the demo project the directory of files the other scenes know."
+  (delete-directory (expand-file-name ".git" shot-root) t)
+  (dolist (file (directory-files shot-root t "\\`\\(#.*#\\|\\.#.*\\)\\'"))
+    (delete-file file))
+  (dolist (file '("test_reader.py" "README.md"))
+    (when (file-exists-p (expand-file-name file shot-root))
+      (delete-file (expand-file-name file shot-root))))
+  (shot-git-write "reader.py" shot-before)
+  (shot-git-write "summary.py" shot-hero-source)
+  (shot-git-write "report.py" shot-broken)
+  (setq ecc-review-gh-executable "gh")
+  (dolist (file (list shot-file shot-hero-file shot-broken-file))
+    (when-let* ((buffer (get-file-buffer file)))
+      (with-current-buffer buffer (revert-buffer t t t)))))
+
+(defun shot-scene-git-start ()
+  "Make the repository and a session that changed two files of it.
+The session's edit and the test file it wrote are on disk, as they
+would be: a review in a repository reads the files, not the recording."
+  (shot-git-project)
+  (shot-reset-main t)
+  (shot-play-write shot-main)
+  (shot-git-write "test_reader.py" (shot-written-file "write"))
+  (shot-show shot-main))
+
+(defun shot-scene-review-menu ()
+  "Open the review menu from the source of the project."
+  (shot-show shot-main)
+  (shot-source-window)
+  (shot-later (lambda () (call-interactively #'ecc-review-menu))))
+
+(defun shot-scene-review-menu-key (key)
+  "Open the review menu and press KEY in it, which asks a question.
+Scheduled whole, as the menu and the minibuffer read their keys from
+the command loop rather than from the server."
+  (shot-show shot-main)
+  (shot-source-window)
+  (shot-script
+   (list (cons 0.5 (lambda () (call-interactively #'ecc-review-menu)))
+         (cons 2.0 (lambda () (shot-keys key))))))
+
+(defun shot-scene-review-pr-sequence ()
+  "Choose pull request #12 in the menu's question, then its second commit.
+The questions are the ones of `p' already open: the pull requests,
+`Search pull requests…' first, then the commits, the whole first."
+  (shot-script
+   (list (cons 0.5 (lambda () (shot-keys "C-n")))
+         (cons 1.0 (lambda () (shot-keys "RET")))
+         (cons 3.0 (lambda () (shot-keys "C-n")))
+         (cons 3.5 (lambda () (shot-keys "C-n")))
+         (cons 4.5 (lambda () (shot-keys "RET"))))))
+
+(defun shot-review-buffer-window ()
+  "Return the window of a review buffer on the screen, selecting it."
+  (when-let* ((window (seq-find (lambda (window)
+                                  (with-current-buffer (window-buffer window)
+                                    (derived-mode-p 'ecc-review-mode)))
+                                (window-list nil 'no-minibuffer))))
+    (select-window window)
+    window))
+
+(defun shot-review-comment-on (regexp text)
+  "Put the comment TEXT on the first line of the review matching REGEXP."
+  (with-selected-window (shot-review-buffer-window)
+    (goto-char (point-min))
+    (when (re-search-forward regexp nil t)
+      (beginning-of-line)
+      (ecc-review-comment text))
+    (redisplay t)))
+
+(defun shot-scene-review-pr-comments ()
+  "Comment on the first commit of the pull request and on the second.
+The header line of the second then says what the first holds."
+  (with-selected-window (shot-review-buffer-window)
+    (ecc-review-pr-previous-commit))
+  (shot-review-comment-on "^\\+    if fields and" "Only when the last field is empty?")
+  (with-selected-window (shot-review-buffer-window)
+    (ecc-review-pr-next-commit))
+  (shot-review-comment-on "^\\+def test_parse_line_trailing" "A line with two trailing commas too")
+  ;; The header line is the picture, and beside the session it was
+  ;; cut off after the subject of the commit.
+  (with-selected-window (shot-review-buffer-window)
+    (let ((ignore-window-parameters t))
+      (delete-other-windows))
+    (goto-char (point-min))
+    (redisplay t)))
+
+;;;; The list of the files
+
+(defun shot-files-pane-window ()
+  "Return the window of the list of the files of a review, selecting it."
+  (when-let* ((window (seq-find (lambda (window)
+                                  (with-current-buffer (window-buffer window)
+                                    (derived-mode-p 'ecc-review-files-mode)))
+                                (window-list nil 'no-minibuffer))))
+    (select-window window)
+    window))
+
+(defun shot-scene-review-worktree ()
+  "Open every uncommitted change of the project as one diff, the list hidden.
+Three files rather than the session's two, so that the list has
+something to filter."
+  (setq ecc-review-files-shown nil)
+  (shot-show shot-main)
+  (shot-source-window)
+  (let ((ecc-review-style 'diff))
+    (ecc-review-range shot-main "HEAD" (file-name-as-directory shot-root)))
+  ;; The review has the frame, as with `ecc-window-hide-on-review': in a
+  ;; third of it, beside the source and the session, the list left the
+  ;; diff twenty columns.
+  (with-selected-window (shot-review-buffer-window)
+    (let ((ignore-window-parameters t))
+      (delete-other-windows))
+    (goto-char (point-min))
+    (ignore-errors (diff-hunk-next))
+    (redisplay t)))
+
+(defun shot-scene-review-press (keys)
+  "Press KEYS in the review buffer, as typed there."
+  (shot-review-buffer-window)
+  (shot-keys keys))
+
+(defun shot-scene-files-pane-press (line keys)
+  "Put the point on the line of the list naming LINE, and press KEYS there."
+  (when (shot-files-pane-window)
+    (goto-char (point-min))
+    (when (search-forward line nil t)
+      (beginning-of-line))
+    (redisplay t)
+    (shot-keys keys)))
+
+(defun shot-scene-review-filter-sequence (chunks)
+  "Press / in the review and type CHUNKS of a filter, then RET."
+  (let ((typing (shot-typing-steps 1.0 chunks)))
+    (shot-script
+     (append (list (cons 0.5 (lambda () (shot-scene-review-press "/"))))
+             typing
+             (list (cons (+ 0.8 (car (car (last typing))))
+                         (lambda () (shot-keys "RET"))))))))
+
+;;;; The review in ediff
+
+(defun shot-ediff-control ()
+  "Return the control buffer of the ediff review."
+  (seq-find (lambda (buffer)
+              (eq (buffer-local-value 'major-mode buffer) 'ediff-mode))
+            (buffer-list)))
+
+(defun shot-ediff-window (side)
+  "Return the window of SIDE, `old' or `new', of the ediff review, selecting it."
+  (when-let* ((control (shot-ediff-control))
+              (buffer (buffer-local-value (if (eq side 'old) 'ediff-buffer-A 'ediff-buffer-B)
+                                          control))
+              (window (get-buffer-window buffer)))
+    (select-window window)
+    window))
+
+(defun shot-frame-size (columns rows)
+  "Make the frame COLUMNS by ROWS and put it back in its corner.
+For a scene that needs another size than the 112 by 44 of the others,
+which puts it back with no arguments to `shot-frame-size-default'."
+  (set-frame-size (selected-frame) columns rows)
+  (shot-place-frame-bottom-right)
+  (redisplay t))
+
+(defun shot-frame-size-default ()
+  "Give the frame the size every other scene is taken at."
+  (shot-frame-size 112 44))
+
+(defun shot-scene-ediff-wide ()
+  "Open the ediff review on a frame wide enough for the pane on the right.
+The pane goes beside the stacked sides only when the frame can spare
+`ecc-review-talk-reply-width' and still leave the diff
+`ecc-review-talk-min-diff-width'; at 112 columns it went to the bottom,
+which is the fallback, and the picture made it look like the rule
+(2026-10-11).  Fewer rows than the others, so that the picture is not
+mostly the two sides' empty lower halves."
+  (require 'ecc-review-talk)
+  (shot-frame-size (+ ecc-review-talk-reply-width ecc-review-talk-min-diff-width 8) 34)
+  (shot-scene-ediff))
+
+(defun shot-scene-ediff ()
+  "Open every uncommitted change in ediff, stacked, with the reply pane.
+The report's change replaces a line, which the session's two do not:
+the old side has a line to comment on only there."
+  (setq ecc-review-files-shown nil
+        ecc-review-ediff-layout 'stacked)
+  (shot-show shot-main)
+  (shot-source-window)
+  (let ((ecc-review-style 'ediff))
+    (ecc-review-range shot-main "HEAD" (file-name-as-directory shot-root)))
+  (shot-ediff-window 'new)
+  (redisplay t))
+
+(defun shot-scene-ediff-press (side keys)
+  "Press KEYS in the window of SIDE of the ediff review.
+The keys go in as (t . EVENT), which records each in the command's
+keys as typing does: the two windows hand a key on to the control
+panel by the keys that called them (`ecc-review-direct-relay'), and
+C-c C-c left as plain events arrived there as C-c alone, which does
+nothing (2026-10-11)."
+  (shot-ediff-window side)
+  (setq unread-command-events
+        (append (mapcar (lambda (event) (cons t event))
+                        (listify-key-sequence (kbd keys)))
+                unread-command-events)))
+
+(defun shot-scene-ediff-end ()
+  "Quit the ediff review, which gives the windows back."
+  (when-let* ((control (shot-ediff-control)))
+    (with-current-buffer control
+      (ecc-review-ediff-quit control)))
+  (shot-show shot-main))
+
+(defun shot-scene-ediff-comment-sequence (side regexp chunks)
+  "Comment on the line of SIDE matching REGEXP, typing CHUNKS.
+The point is put on the line before it and moved on with C-n, so that
+the review follows the point as it does when the reader moves it."
+  (let ((typing (shot-typing-steps 2.0 chunks)))
+    (shot-script
+     (append (list (cons 0.3 (lambda ()
+                               (when (shot-ediff-window side)
+                                 (goto-char (point-min))
+                                 (when (re-search-forward regexp nil t)
+                                   (forward-line -1))
+                                 (shot-keys "C-n"))))
+                   (cons 1.2 (lambda () (shot-keys "c"))))
+             typing
+             (list (cons (+ 0.8 (car (car (last typing))))
+                         (lambda () (shot-keys "RET"))))))))
+
+(defun shot-close-reviews ()
+  "Close every review.
+A review holding comments asks before it goes; nobody is there to
+answer, and the comments are the scene's."
+  (let ((kill-buffer-query-functions nil))
+    (when-let* ((control (shot-ediff-control)))
+      (ignore-errors (ecc-review-ediff-quit control)))
+    (dolist (buffer (buffer-list))
+      (when (and (buffer-live-p buffer)
+                 (with-current-buffer buffer
+                   (derived-mode-p 'ecc-review-mode 'ecc-review-files-mode 'ecc-review-talk-mode)))
+        (kill-buffer buffer)))))
+
+(defun shot-scene-git-end ()
+  "Close every review, and make the demo project the directory it was."
+  (shot-close-reviews)
+  (shot-git-project-end)
+  (shot-reset-main)
+  (shot-show shot-main))
+
+;;;; Claude in the review, live
+
+;; Claude opening the review, commenting on it and answering from the
+;; reply pane is the model calling the review tools of this Emacs, so
+;; these scenes run the real CLI with ecc's MCP server registered.
+;; --strict-mcp-config keeps every server of the machine out, and the
+;; one ecc passes with --mcp-config is then the only one.  Sonnet rather
+;; than haiku: what is being shown is a review worth reading.
+
+(defconst shot-review-change-prompt
+  "parse_line keeps an empty last field when a line ends in the delimiter. Drop it, and add pytest tests for parse_line in test_reader.py. Use the Edit and Write tools, and do not run anything."
+  "The change Claude makes before the review scenes start.
+It names the tools: one take made the edit with a Python script run
+through Bash, which acceptEdits does not cover (2026-10-11).")
+
+(defun shot-live-settled-p ()
+  "Allow whatever the live session asks, and say whether it is idle.
+What the wrapper waits on while the change is made, off camera: a
+permission left unanswered there held the run for four minutes."
+  (when shot-live
+    (dolist (request (copy-sequence (ecc-session-pending shot-live)))
+      (ecc-perm-allow-request request)))
+  (shot-live-idle-p))
+
+(defconst shot-usecase-change-prompt
+  "Make two small edits to reader.py and nothing else. In parse_line, just before the return, add: if fields and fields[-1] == \"\": then fields.pop() on the next line. In the docstring of read_records, add a last line: A trailing delimiter adds no field. Use the Edit tool, and add no tests."
+  "The change the use case of the review starts from.
+One file, two hunks a few lines long, no line past sixty columns: the
+review beside the session has room for that, and a tour of two stops
+has a next stop for t to go to.")
+
+(defconst shot-usecase-brevity
+  "In the review, keep each comment to one short line, at most two comments a stop, and say what a stop is about in two sentences or fewer. In review_comment_apply, a comment on a line has the keys file, side, line and text, and no hunk key; a reply has reply_to and text only."
+  "What the use case's session is told on top of its system prompt.
+The tour asks for comments where they are needed, and a take left them
+paragraphs long, wrapped over half the review (2026-10-11).  Takes
+gave review_comment_apply a line and a hunk for one comment, which it
+refuses, and the failed call was in the picture; told so in general
+terms it still did, three takes in four, so the keys are named
+(2026-10-11).")
+
+(defun shot-start-live-review (mode &optional system)
+  "Start a real session in the demo repository, the MCP server on.
+MODE is the permission mode it starts in, and SYSTEM, when given, is
+appended to its system prompt.  Every other session goes, as in
+`shot-start-live'; the scene's end makes them again."
+  (require 'ecc-mcp)
+  (require 'ecc-review-agent)
+  (require 'ecc-review-talk)
+  (dolist (session (ecc-model-sessions))
+    (ecc-kill session))
+  (shot-git-project)
+  (setq shot-live (ecc-model-create-session
+                   :project-root shot-root
+                   :name shot-project
+                   :options `(:model "sonnet"
+                              :mcp t
+                              :remote-control nil
+                              :permission-mode ,mode
+                              :extra-args ("--max-budget-usd" "3.00"
+                                           ,@(and system
+                                                  (list "--append-system-prompt" system))
+                                           . ,shot-live-isolation))))
+  ;; What `ecc-start' does in a repository: the review of the session
+  ;; is of what it changes from here.
+  (ecc-review-ensure-baseline shot-live)
+  (ecc-session-ensure-buffer shot-live)
+  (ecc-proc-start shot-live)
+  (ecc--enable-session-modes)
+  (shot-show shot-live))
+
+(defun shot-live-change (&optional prompt)
+  "Ask the live session for the change the review scenes are about.
+PROMPT is that change, `shot-review-change-prompt' unless given."
+  (shot-prompt-type (or prompt shot-review-change-prompt))
+  (shot-prompt-send))
+
+(defun shot-live-set-mode (mode)
+  "Put the live session in the permission mode MODE."
+  (ecc-proc-set-permission-mode shot-live mode))
+
+(defun shot-live-review-window ()
+  "Return the window of the live session's diff review, selecting it."
+  (when-let* ((buffer (get-buffer (ecc-review-buffer-name shot-live)))
+              (window (get-buffer-window buffer)))
+    (select-window window)
+    window))
+
+(defun shot-live-review-shown-p ()
+  "Return non-nil once the live session's review is on the screen."
+  (and (get-buffer (ecc-review-buffer-name shot-live))
+       (get-buffer-window (ecc-review-buffer-name shot-live))
+       t))
+
+(defun shot-scene-live-ediff ()
+  "Open what the live session changed in ediff, stacked, with the reply pane."
+  (setq ecc-review-files-shown nil
+        ecc-review-ediff-layout 'stacked)
+  (shot-show shot-live)
+  (shot-source-window)
+  (let ((ecc-review-style 'ediff))
+    (ecc-review shot-live))
+  (shot-ediff-window 'new)
+  (redisplay t))
+
+(defun shot-scene-ediff-message-sequence (chunks)
+  "Press M in the new side of the ediff review and type CHUNKS, then RET."
+  (let ((typing (shot-typing-steps 1.0 chunks)))
+    (shot-script
+     (append (list (cons 0.5 (lambda () (shot-scene-ediff-press 'new "M"))))
+             typing
+             (list (cons (+ 0.8 (car (car (last typing))))
+                         (lambda () (shot-keys "RET"))))))))
+
+(defun shot-scene-ediff-answer-sequence ()
+  "Press y in the new side, and y again for allow."
+  (shot-script
+   (list (cons 0.3 (lambda () (shot-scene-ediff-press 'new "y")))
+         (cons 1.8 (lambda () (shot-keys "y"))))))
+
+(defvar shot-usecase-session-width 46
+  "Columns the session keeps in the use case of the review.
+The review Claude opens takes the source's window, and at half the
+frame its lines and Claude's comments ran past the edge and wrapped
+over many lines (2026-10-11); the transcript reads well narrower.  At
+forty the footer's model name went onto a line of its own.")
+
+(defun shot-scene-usecase-open-review ()
+  "Open the review of what the live session changed as a user does: C-c c D D.
+From the source, whose project the menu is about; the menu and its key
+are scheduled, as the menu reads its keys from the command loop."
+  (shot-source-window)
+  (shot-script
+   (list (cons 0.5 (lambda () (call-interactively #'ecc-review-menu)))
+         (cons 2.0 (lambda () (shot-keys "D")))
+         (cons 3.0 #'shot-scene-usecase-layout))))
+
+(defun shot-usecase-narrow-session (&rest _)
+  "Narrow the live session's window again once a review is on the screen.
+Showing the review lays the windows out half and half, whatever width
+the source had before it, so the scene narrows them after.  It runs
+inside the tool Claude called, which an error here would fail."
+  (ignore-errors (shot-scene-usecase-layout)))
+
+(defun shot-scene-usecase-layout ()
+  "Narrow the live session's window, leaving the rest to the review to come.
+Until `shot-scene-live-review-end', a review Claude shows narrows it
+again (`shot-usecase-narrow-session')."
+  (advice-add 'ecc-window-show-review-quietly :after #'shot-usecase-narrow-session)
+  (when-let* ((window (get-buffer-window (ecc-session-buffer shot-live))))
+    (let ((ignore-window-parameters t)
+          (window-combination-resize nil))
+      (window-resize window (- shot-usecase-session-width (window-total-width window))
+                     t t))
+    (with-selected-window window
+      (ecc-chat--set-margins window)
+      (goto-char (point-max))
+      (recenter -1)))
+  (redisplay t)
+  (window-total-width (get-buffer-window (ecc-session-buffer shot-live))))
+
+(defun shot-scene-usecase-review-ask (chunks)
+  "Type CHUNKS into the prompt region of the live session and send it."
+  (let ((time 0.0))
+    (shot-script
+     (append (mapcar (lambda (chunk)
+                       (setq time (+ time 0.6))
+                       (cons time (lambda () (shot-prompt-type chunk))))
+                     chunks)
+             (list (cons (+ time 0.8) #'shot-prompt-send))))))
+
+(defun shot-scene-usecase-reply-sequence (chunks)
+  "Comment with CHUNKS on the line of the review that tests the last field.
+That is the line of the change Claude made, whatever words it chose,
+and the one its comments are most likely on: c on a line that holds
+only Claude's comment answers it, else comments on the line.  Without
+such a line, } goes to Claude's first comment instead."
+  (shot-scene-live-comment-sequence "^\\+.*fields\\[-1\\]" chunks))
+
+(defun shot-scene-live-comment-sequence (regexp chunks)
+  "Comment with CHUNKS on the first line of the live review matching REGEXP.
+} goes to the first comment instead when no line matches."
+  (let ((typing (shot-typing-steps 1.6 chunks)))
+    (shot-script
+     (append (list (cons 0.3 (lambda ()
+                               (when (shot-live-review-window)
+                                 (goto-char (point-min))
+                                 ;; Straight onto the line: C-n from the line
+                                 ;; above went into the comment drawn under
+                                 ;; it, and c answered that one instead.
+                                 (if (re-search-forward regexp nil t)
+                                     (beginning-of-line)
+                                   (shot-keys "}")))))
+                   (cons 1.2 (lambda () (shot-keys "c"))))
+             typing
+             (list (cons (+ 0.8 (car (car (last typing))))
+                         (lambda () (shot-keys "RET"))))))))
+
+(defun shot-scene-usecase-review-press (keys)
+  "Press KEYS in the live session's review."
+  (shot-live-review-window)
+  (shot-keys keys))
+
+;;;;; The round trip of a comment
+
+(defconst shot-roundtrip-change-prompt
+  "In summary.py, add a method to the Summary class, after most_common: def share(self, key: str) -> float:, which returns self.keys[key] / self.rows. Change nothing else, and use the Edit tool."
+  "The change the video of reading and commenting starts from.
+Another file and another change than the use case's, three short lines,
+so that the two videos do not look alike.  A first take printed a share
+on the line that prints a key, which came to seventy columns and wrapped
+in the review (2026-10-11).")
+
+(defconst shot-roundtrip-brevity
+  "When I send you review comments, answer each one with a reply of one short line under it in the review, then make the change. Keep what you say in the transcript to two sentences."
+  "What the session of that video is told on top of its system prompt.")
+
+(defun shot-scene-live-review-open ()
+  "Open the review of what the live session changed, as M-x ecc-review does.
+From the file Claude changed, in the source's window; the windows are
+narrowed again once it is shown.  The wrapper lays the frame out again
+first: Claude's edit had shown that file elsewhere, and the review went
+into the session's window (2026-10-11)."
+  (shot-source-window shot-hero-file)
+  (call-interactively #'ecc-review)
+  (shot-scene-usecase-layout)
+  (when (shot-live-review-window)
+    (goto-char (point-min))
+    (ignore-errors (diff-hunk-next)))
+  (redisplay t))
+
+(defun shot-scene-live-review-prompt ()
+  "Comment on a line and on a hunk of the live review, and open the prompt.
+What C-u C-c C-c shows before the comments go: a line comment and a
+hunk comment, so that both of their headings are in it."
+  (when (shot-live-review-window)
+    (goto-char (point-min))
+    (when (re-search-forward "^\\+.*def share" nil t)
+      (beginning-of-line)
+      (ecc-review-comment "Call it share_of?"))
+    (goto-char (point-min))
+    (when (re-search-forward "^@@" nil t)
+      (beginning-of-line)
+      (ecc-review-comment "Add a test of share()"))
+    (let ((current-prefix-arg '(4)))
+      (call-interactively #'ecc-review-send)))
+  (when-let* ((window (get-buffer-window (ecc-review-message-buffer-name shot-live))))
+    (with-selected-window window
+      (goto-char (point-min))))
+  (redisplay t))
+
+(defun shot-scene-live-review-prompt-cancel ()
+  "Go back to the review without sending, as C-c C-k in the prompt does."
+  (when-let* ((window (get-buffer-window (ecc-review-message-buffer-name shot-live))))
+    (with-selected-window window
+      (call-interactively #'ecc-review-message-cancel))))
+
+;;;;; The use case in ediff
+
+(defun shot-scene-usecase-ediff-setup ()
+  "Make the use case's reviews open in ediff, on a frame with room for the pane.
+The pane goes on the right of the stacked sides from 155 columns; the
+frame is wider still, and the scene's end puts it and the style back."
+  (require 'ecc-review-talk)
+  (setq ecc-review-style 'ediff
+        ecc-review-ediff-layout 'stacked
+        ecc-review-files-shown nil)
+  (shot-frame-size 180 40)
+  (shot-show shot-live))
+
+(defun shot-scene-usecase-open-ediff ()
+  "Open the review of what the live session changed with C-c c D D.
+Under `ecc-review-style' `ediff' it opens in ediff, which takes the frame."
+  (shot-source-window)
+  (shot-script
+   (list (cons 0.5 (lambda () (call-interactively #'ecc-review-menu)))
+         (cons 2.0 (lambda () (shot-keys "D"))))))
+
+(defun shot-scene-ediff-reply-sequence (regexp chunks)
+  "Put point on the first line of the new side matching REGEXP and press c.
+On a line that holds only Claude's comment, what is typed, CHUNKS, is
+the reply to it."
+  (let ((typing (shot-typing-steps 1.6 chunks)))
+    (shot-script
+     (append (list (cons 0.3 (lambda ()
+                               (when (shot-ediff-window 'new)
+                                 (goto-char (point-min))
+                                 (when (re-search-forward regexp nil t)
+                                   (beginning-of-line)))))
+                   (cons 1.2 (lambda () (shot-scene-ediff-press 'new "c"))))
+             typing
+             (list (cons (+ 0.8 (car (car (last typing))))
+                         (lambda () (shot-keys "RET"))))))))
+
+(defun shot-live-tool-failed-p ()
+  "Return non-nil when a tool call of the live session failed.
+A take with one is taken again: a red cross in the picture is a failure
+the video is not about."
+  (when-let* ((buffer (get-buffer (ecc-log-buffer-name (ecc-session-name shot-live)))))
+    (with-current-buffer buffer
+      (save-excursion
+        (goto-char (point-min))
+        (and (search-forward "\"is_error\":true" nil t) t)))))
+
+(defun shot-scene-live-review-end ()
+  "Stop the live session and make the scenes' own sessions again."
+  (shot-dump-log shot-live "/tmp/ecc-docshot-live-review.log")
+  (advice-remove 'ecc-window-show-review-quietly #'shot-usecase-narrow-session)
+  (shot-close-reviews)
+  (setq ecc-review-style 'diff)
+  (shot-frame-size-default)
+  (dolist (session (ecc-model-sessions))
+    (ecc-kill session))
+  (setq shot-live nil)
+  (shot-git-project-end)
+  (shot-prepare)
+  (shot-show shot-main))
 
 ;;;; The Files section and the Timeline
 

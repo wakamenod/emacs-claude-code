@@ -1,15 +1,17 @@
 ---
 title: Reviewing changes
-description: Review what a session changed, or any git comparison, as one diff, comment on lines and hunks, and send the comments as one prompt.
+description: Choose what to compare, read it as one diff, comment on lines and hunks, and send the comments to the session as one prompt.
 ---
 
 import Video from '../../../components/Video.astro';
 
-A review shows changes as one read-only diff, however they were made: an edit, a shell command or a script. You comment on lines or hunks, and `C-c C-c` sends them to the session as one prompt. The same review opens [in ediff](/emacs-claude-code/features/review-ediff/), and [Claude can comment in it](/emacs-claude-code/features/review-claude/) too.
+A review shows changes as one read-only diff, however they were made: an edit, a shell command or a script. You choose what to compare, comment on lines or hunks, and `C-c C-c` sends the comments to the session as one prompt. The same review opens [in ediff](/emacs-claude-code/features/review-ediff/), and [Claude can open it, comment in it and answer you there](/emacs-claude-code/features/review-claude/).
 
 ## Choosing what to compare
 
 `C-c c D` (`ecc-review-menu`) asks what to compare. Each line shows how many files that review would show, and the menu marks your last choice with `(last)`, so `RET` opens it again.
+
+![The review menu over a session: what the session changed, the uncommitted, unstaged and staged changes, each with how many files it holds, then a branch, a pull request, a commit and a range](../../../assets/review-menu.png)
 
 | Key | Compares |
 |---|---|
@@ -29,31 +31,58 @@ The review is of the current buffer's project, and the comments go to its sessio
 
 Counting the files beside `D` can make the menu slow to open on a large repository; set `ecc-review-menu-count-session-changes` to `nil` to leave it out.
 
+### What the session changed
+
+`D` (`C-c c D D`), or `M-x ecc-review`, compares the working tree with what it held when the session started, recorded without touching the index or your files. Work in progress from before is left out, changes the session committed are still shown, and a resumed session keeps its starting point.
+
+Another session working in the same directory shows up here too; separate [worktrees](/emacs-claude-code/features/spaces/#worktrees) keep sessions apart. Outside a Git repository, a file is compared with what the CLI reported it holding before the session's first change.
+
+### Uncommitted changes and ranges
+
+`w` (`C-c c D w`), or `M-x ecc-review-range`, compares the whole repository with `HEAD`: staged and unstaged changes, and untracked files that `.gitignore` does not exclude. A repository with no commits is compared with the empty tree.
+
+`C-u M-x ecc-review-range` asks what to compare, then for the files (empty for all):
+
+| You type | Compares |
+|---|---|
+| A revision, such as `HEAD~1` | It with the working tree, untracked files included |
+| A range, such as `main...HEAD` or `HEAD^!` | The commits, without untracked files |
+| Nothing | The index with the working tree: the unstaged changes |
+| `--staged` or `--cached` | `HEAD` with the index: the staged changes |
+
 ### A branch, a commit, a pull request
 
 `b` asks for the base. The default is the branch you most likely started from, and each candidate shows how far it is from its upstream, as in `develop  (4 behind origin/develop)`. It then asks for the other side. The default, the current branch with its working tree, includes uncommitted and untracked files and is named `develop + working tree`. Another branch shows `BASE...BRANCH`, as a pull request does.
 
 `c` asks for a commit, then for the last commit to include. `RET` at the second question reviews the one commit; a second commit reviews both and every commit between them. The list holds the last 2000 commits. For another one, type its full hash, a tag or any revision git resolves, such as `HEAD~3000`. Fetch it first if your repository does not have it yet.
 
+![The commit question of the review menu: the commits of the branch, newest first, each with its short hash and subject](../../../assets/review-commits.png)
+
 `p` lists the open pull requests, with the open pull request of your branch as the default. A number opens any pull request, merged and closed ones included. The first entry, `Search pull requests…`, searches every pull request, closed and merged ones too, in GitHub's search syntax such as `is:merged author:someone` or `label:bug`. Words you type that match no entry are searched too. A completion UI that keeps the first candidate selected needs its own key to submit the words as typed (`M-RET` in vertico, `M-j` in icomplete and fido, `C-M-j` in ivy), or choose the search entry before typing. Results mark `[closed]` and `[merged]`. ecc fetches the commits that are missing, creates no branch, and leaves `HEAD` and your files alone. Your own branch's pull request opens the same review as `b`, against your working tree.
+
+![The pull-request question: Search pull requests… first, then each open pull request with its number, title, branches and author, a draft marked as one](../../../assets/review-prs.png)
 
 ### A pull request, one commit at a time
 
 After you choose a pull request, `p` asks which of its commits to review, oldest first. `RET` reviews the whole pull request, and choosing a commit reviews that commit alone. Merge commits and commits that change no file are not offered.
 
-In a review opened from `p`, `]` opens the next commit in the same window and `[` the previous one. From the whole pull request, `]` opens its first commit. The header line (in ediff, the right window's mode line) shows the commit, as in `#124 commit 2/5`, and how many comments not sent yet the other commits hold. Each commit keeps its comments while you move between them. `C-c C-c` sends the comments of the commit you are on. `C-c C-a` sends the comments of every commit not sent yet as one prompt, grouped by commit. Like `C-c C-c`, it leaves the reviews open, with those comments marked sent.
+In a review opened from `p`, `]` opens the next commit in the same window and `[` the previous one. From the whole pull request, `]` opens its first commit. The header line (in ediff, the right window's mode line) shows the commit, as in `#12 commit 2/3`, and how many comments not sent yet the other commits hold. Each commit keeps its comments while you move between them. `C-c C-c` sends the comments of the commit you are on. `C-c C-a` sends the comments of every commit not sent yet as one prompt, grouped by commit. Like `C-c C-c`, it leaves the reviews open, with those comments marked sent.
+
+![The second of three commits of pull request #12 under review: the header line says #12 commit 2/3 and that one comment not sent yet is on another commit, and a comment sits under a line of the new test file](../../../assets/review-pr-commit.png)
 
 ### When the changes are not on disk
 
 When the right side is a commit rather than your working tree (somebody else's pull request, another branch, an older commit), the header line says so (in ediff, the right window's mode line), as in `the right side is a1b2c3d, not checked out here`. The prompt your comments go in tells Claude the changes are not in the working tree and to ask before editing anything.
 
-## Reviewing session changes
+## Reading and commenting
 
-`D` in the menu (`C-c c D D`), or `M-x ecc-review`, compares the working tree with what it held when the session started, recorded without touching the index or your files. Work in progress from before is left out, changes the session committed are still shown, and a resumed session keeps its starting point.
+The review is a read-only `diff-mode` buffer: `n` and `p` move between hunks, `N` and `P` between files, and `RET` jumps to the source. `c` comments on the line at point.
 
-<Video name="review" label="Every change of the session as one diff: a comment attached to a line, and the prompt it becomes shown before it goes" />
+<Video name="review" label="What the session changed as one diff: a comment typed on a line and sent with C-c C-c, the review staying open with the comment dimmed, and Claude answering under it and changing the file while the review shows the new diff" />
 
-Another session working in the same directory shows up here too; separate [worktrees](/emacs-claude-code/features/spaces/#worktrees) keep sessions apart. A file larger than `ecc-review-max-bytes` (200,000) is named rather than printed. Outside a Git repository, a file is compared with what the CLI reported it holding before the session's first change.
+A comment on a removed line (`-`) is about the old side; on an added or context line, the new side; on the `@@` line, the whole hunk. It appears under its line as `▎ #3 text`, and the header line counts the comments. Claude's comments appear the same way, marked with its name; [Claude in the review](/emacs-claude-code/features/review-claude/#claudes-comments) covers them and how to answer one.
+
+Hunks are as small as the change, since a comment carries its whole hunk. `(setq ecc-review-context-lines 3)` widens them. A proposal keeps three lines either way (`ecc-review-proposal-context-lines`). A file larger than `ecc-review-max-bytes` (200,000) is named rather than printed.
 
 | Key | Action |
 |---|---|
@@ -62,37 +91,23 @@ Another session working in the same directory shows up here too; separate [workt
 | `l` | Jump to a comment |
 | `d` | Remove a comment on this line (`C-u d` offers every comment) |
 | `a` | Show or hide Claude's comments |
-| `s` | Show or hide the list of files |
+| `s` | Show or hide the [list of files](#listing-and-filtering-the-files) |
 | `/` | Keep only the files that match a filter |
 | `T` / `t` / `M` | [Talk to Claude](/emacs-claude-code/features/review-claude/#talking-to-claude-from-the-review): a tour, its next stop, a message |
 | `e` | Edit the proposed content (reviewing one proposal) |
 | `g` | Read the diff again |
 | `]` / `[` | Next / previous commit of a [pull request](#a-pull-request-one-commit-at-a-time) |
-| `C-c C-c` | Send the comments not sent yet as a prompt (`C-u C-c C-c` to edit it first) |
+| `C-c C-c` | [Send](#sending-comments) the comments not sent yet as a prompt (`C-u C-c C-c` to edit it first) |
 | `C-c C-a` | Send the comments of every commit of the pull request |
 | `C-c C-k` | Drop the review and its comments |
 | `q` | Bury the buffer |
 | `?` | List every key of the review |
 
-The buffer is in read-only `diff-mode`: `n` and `p` move between hunks, `N` and `P` between files, and `RET` jumps to the source.
-
-A comment on a removed line (`-`) is about the old side; on an added or context line, the new side; on the `@@` line, the whole hunk. It appears under its line as `▎ #3 text`, and the header line counts the comments.
-
-## Following the files
-
-An open review reads the diff again when a tool of its session finishes, when a turn ends, and when you save a file of its repository. Your comments and your place are kept, as with `g`. A review out of sight is read when you show it again. When every change has gone, for example because it was committed, the review stays open and says so.
-
-Comments follow their lines. A comment whose line is gone is marked `[outdated]`, shown above the first hunk of its file, and still sent.
-
-To read the diff only with `g`:
-
-```elisp
-(setq ecc-review-auto-refresh nil)
-```
-
 ## Listing and filtering the files
 
 `s` shows the files of the review in a list left of the diff:
+
+<Video name="review-files" label="The list of files opened beside a diff of three files, RET on one moving the diff to it, and a filter typed after / leaving two files in the list and in the review" />
 
 ```
  Files (3 of 5)  /review
@@ -120,40 +135,27 @@ Once shown, the list opens with every review until you hide it or Emacs exits. I
 
 `C-c C-c` sends your comments as one prompt, and the review stays open. `C-u C-c C-c` opens the prompt in a buffer first, where `C-c C-c` sends it and `C-c C-k` returns to the diff without sending; either way you end up back in the diff:
 
-````
-## hello.py  L1-L6
-```diff
- def greet(name):
-     """Say hi."""
--    return "hi " + name
-+    return "hello " + name
-```
-Comment: the docstring still says hi
-````
+![The prompt C-u C-c C-c opens, for two comments: one on the hunk of summary.py, headed with the lines of the hunk, and one on a line, headed with the line and its side, each with the hunk in a diff block and the comment under it](../../../assets/review-prompt.png)
 
-Each comment carries its whole hunk. A line comment names its line, as in `## hello.py  L3 (new)`, and an outdated one ends with `(outdated)`.
+Each comment carries its whole hunk. A line comment names its line, as in `## summary.py  L27 (new)`, a comment on a hunk names the lines of the hunk, as in `## summary.py  L27-L31`, and an outdated one ends with `(outdated)`.
 
-Sent comments stay in the review, dimmed in `ecc-review-sent-comment-face`, so Claude can [reply to them there](/emacs-claude-code/features/review-claude/). The header line counts them, as in `comments: 3 yours (2 sent)`. The next `C-c C-c` sends only the comments you made since; when there are none, it says there is nothing to send. Editing a sent comment makes it unsent, so the next send carries its new text. `C-c C-k` drops the review and `q` buries it.
+Sent comments stay in the review, dimmed in `ecc-review-sent-comment-face`, so Claude can [reply to them there](/emacs-claude-code/features/review-claude/). The header line counts them, as in `comments: 3 yours (2 sent)`.
 
-## Reviewing against a commit or a range
+![The review just after C-c C-c: the comment under the line of summary.py dimmed, and the header line counting one comment of yours, sent](../../../assets/review-sent.png)
 
-`w` in the menu (`C-c c D w`), or `M-x ecc-review-range`, compares the whole repository with `HEAD`: staged and unstaged changes, and untracked files that `.gitignore` does not exclude. A repository with no commits is compared with the empty tree. To give it a key of its own:
+The next `C-c C-c` sends only the comments you made since; when there are none, it says there is nothing to send. Editing a sent comment makes it unsent, so the next send carries its new text. `C-c C-k` drops the review and `q` buries it.
+
+## Following the files
+
+An open review reads the diff again when a tool of its session finishes, when a turn ends, and when you save a file of its repository. Your comments and your place are kept, as with `g`. A review out of sight is read when you show it again. When every change has gone, for example because it was committed, the review stays open and says so.
+
+Comments follow their lines. A comment whose line is gone is marked `[outdated]`, shown above the first hunk of its file, and still sent.
+
+To read the diff only with `g`:
 
 ```elisp
-(with-eval-after-load 'ecc-answer
-  (define-key ecc-global-map "G" #'ecc-review-range))
+(setq ecc-review-auto-refresh nil)
 ```
-
-`C-u M-x ecc-review-range` asks what to compare, then for the files (empty for all):
-
-| You type | Compares |
-|---|---|
-| A revision, such as `HEAD~1` | It with the working tree, untracked files included |
-| A range, such as `main...HEAD` or `HEAD^!` | The commits, without untracked files |
-| Nothing | The index with the working tree: the unstaged changes |
-| `--staged` or `--cached` | `HEAD` with the index: the staged changes |
-
-Hunks are as small as the change, since a comment carries its whole hunk. `(setq ecc-review-context-lines 3)` widens them. A proposal keeps three lines either way (`ecc-review-proposal-context-lines`).
 
 ## Where a review opens
 

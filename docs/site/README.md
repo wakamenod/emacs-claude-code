@@ -174,9 +174,12 @@ SCENES="menu resume" scripts/docshots.sh
 The scenes are `switch`, `menu`, `capabilities`, `send-region`, `fix-error`,
 `inline`, `rewrite`, `at-cursor`, `context`, `image`, `btw`, `suggestion`,
 `sessions`, `prompt`, `permission`, `question`, `review`, `proposal`, `plan`,
-`files`, `timeline`, `handover`, `resume`, `sidebar`, `spaces`, `usecase` and
-`overview`. A scene is not always one picture: `sessions` takes `tabs.png` and
-`dashboard.png`, and `prompt` takes `fold.mp4` and `slash.png`. `spaces` is a
+`files`, `review-menu`, `review-files`, `ediff`, `ediff-live`,
+`usecase-review`, `timeline`, `handover`, `resume`, `sidebar`, `spaces`,
+`usecase` and `overview`. A scene is not always one picture: `sessions` takes
+`tabs.png` and `dashboard.png`, `prompt` takes `fold.mp4` and `slash.png`,
+`review-menu` the four stills of the review menu and its questions, `ediff`
+the still of the layout and three short videos, and `ediff-live` two. `spaces` is a
 still of the layout the Spaces page opens with: it widens the frame, opens a
 tab for each of two projects and the sidebar, and puts both back afterwards.
 
@@ -249,6 +252,34 @@ What it knows, and what is worth not learning again:
   scene sets itself up, is left out. There is no way to write the same frame
   out twice, because doing so makes a video no smoother and only longer. A
   scene is written in the seconds it should last.
+- **The review scenes make the demo project a repository** for as long as
+  they run (`shot-git-project`): a history on `main`, three branches that a
+  gh of the scenes' own lists as pull requests, a change staged and the
+  session's two files changed, so that the menu has counts and the questions
+  have something to offer. It is written at fixed dates with no configuration
+  of the machine's, so the commit ids are the same in every run, and
+  `shot-git-project-end` puts the plain directory back.
+- **Claude in the review is live**: `ediff-live` and `usecase-review` start a
+  sonnet session with ecc's MCP server registered (the one server
+  `--strict-mcp-config` lets in), have it make a change off camera, and film
+  the model calling the review tools. What Claude writes differs from take to
+  take, so look at the video and fit the subtitles to it. The use case's
+  session is asked for a small change and told to keep its comments short
+  (`shot-usecase-change-prompt`, `shot-usecase-brevity`): with no such word,
+  a take left comments of a paragraph wrapped over half the review. A wait the
+  wrapper films at a quarter of its frames (`hold_until ... fast`) keeps a
+  turn of a minute to a few seconds of motion.
+- **A still can be one window rather than the frame**: `crop_still MODE
+  FILE` in the wrapper takes the window whose buffer is in major mode MODE,
+  from its header line to its last line of text
+  (`shot-report-mode-geometry`). A page shows a still across its 720-pixel
+  column, and a picture of the whole frame comes out with its text at about
+  two thirds of the size of the text around it; one window of it is shown
+  at about the size of the body text, at full capture resolution and never
+  scaled up. The prompt `C-u C-c C-c` shows is taken this way. During a
+  video, `crop_frame` does the same to the frame the recorder wrote last:
+  a second capture beside the recorder stops its stream (2026-10-11). The
+  review just after sending is taken so, before Claude has answered.
 - **What is on the screen is a project of real code**, `/tmp/records`: a
   module that reads delimited records, a report with a syntax error, a CLI
   over them, and a second project, `/tmp/api-server`. Their sources are
@@ -330,8 +361,9 @@ import Video from '../../../components/Video.astro';
 `Video.astro` puts the `base` in front of the URLs — nothing else does for a
 file in `public/` — and shows the poster until the reader presses play; a
 video does not start by itself, and loads only its metadata until then. It
-plays muted and looping, has `controls` so that the subtitles can be
-switched, and turns on the track of the page's language: English on an
+plays muted and once, stopping on its last frame -- it looped until
+2026-10-11, and a reader could not tell where a scene ended. It has
+`controls` so that the subtitles can be switched, and turns on the track of the page's language: English on an
 English page, Japanese under `/ja/`. `label` is the video's accessible name,
 written like alt text.
 
@@ -388,7 +420,7 @@ points wide, 1832 pixels on such a display, so the video is a little smaller
 than what was captured; on a display of one pixel to the point it is the
 capture's own 916, since nothing is made larger than it was taken. It is
 encoded at `-crf 20`, which keeps monospaced text clean; a screen is mostly
-flat colour, so the twenty videos come to about 7 MB. The poster is the
+flat colour, so the twenty-six videos come to about 11 MB (2026-10-11). The poster is the
 first frame of the video, at the same width.
 
 Until 2026-10-10 the videos in the tree were not this script's: on

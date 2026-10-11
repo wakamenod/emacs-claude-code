@@ -197,7 +197,10 @@ holds() {
 # in the video rather than half a minute of a spinner.  Ending on the
 # ceiling is said, since the scene after it would start with the turn
 # still running.  WHOLE as a third argument keeps every frame, for a
-# wait that is the motion -- an answer streaming in.
+# wait that is the motion -- an answer streaming in; FAST keeps one
+# frame in four and the last one and a half seconds whole, for a turn
+# whose motion is the point but which takes a minute -- Claude working
+# through a review.
 hold_until() {
     local condition=$1 max=$2 whole=${3:-} start keep=$((15 * fps / 10)) total
     local deadline=$(( $(now_ms) + max * 1000 ))
@@ -210,7 +213,13 @@ hold_until() {
         hold 0.5
     done
     total=$((n - start))
-    if [ -z "$whole" ] && [ "$total" -gt $((2 * keep)) ]; then
+    if [ "$whole" = fast ] && [ "$total" -gt $((2 * keep)) ]; then
+        awk -v from="$start" -v keep="$keep" -v to="$n" \
+            'NR <= from || NR > to - keep || (NR - from) % 4 == 0' \
+            "$frames/$scene.ticks" > "$frames/$scene.ticks.new"
+        mv "$frames/$scene.ticks.new" "$frames/$scene.ticks"
+        n=$(wc -l < "$frames/$scene.ticks" | tr -d ' ')
+    elif [ -z "$whole" ] && [ "$total" -gt $((2 * keep)) ]; then
         awk -v from="$start" -v keep="$keep" -v to="$n" \
             'NR <= from + keep || NR > to - keep' \
             "$frames/$scene.ticks" > "$frames/$scene.ticks.new"
@@ -411,6 +420,42 @@ regeom() {
 still() {
     regeom
     shoot "$1"
+}
+
+# Capture the window of the buffer in major mode MODE alone, to OUT,
+# from its header line to its last line of text:
+#
+#   crop_still ecc-review-message-mode "$outdir/review-prompt.png"
+#
+# A page shows a still across its 720-pixel column, so a picture of the
+# whole frame puts its text at about two thirds of the size of the text
+# around it; a picture of one window of it is shown larger, at full
+# capture resolution and never scaled up.  `still' takes the frame.
+crop_still() {
+    e "(shot-report-mode-geometry (quote $1))"
+    read -r CX CY CW CH OW < "$geom"
+    shoot "$2"
+}
+
+# The same, while a video is being filmed: a second capture beside the
+# recorder's stopped its stream (2026-10-11), so the picture is the
+# frame the recorder wrote last, which is at full capture resolution
+# too.  The frame's rectangle is asked for again afterwards, for the
+# video to be cropped to it.
+crop_frame() {
+    local last
+    e "(shot-report-mode-geometry (quote $1))"
+    read -r CX CY CW CH OW < "$geom"
+    last=$(ls "$frames/$scene.raw"/[0-9]*.png | sort | tail -1)
+    ffmpeg -hide_banner -loglevel error -y -i "$last" -vf "$(keep)" -frames:v 1 "$2"
+    regeom
+}
+
+# Crop the video of the current scene to the two sides of the ediff
+# review rather than the frame.
+sides() {
+    e '(shot-report-ediff-sides-geometry)'
+    read -r CX CY CW CH OW < "$geom"
 }
 
 shoot() {
@@ -647,14 +692,11 @@ if want btw; then
 fi
 
 if want capabilities; then
-    # What the session can do: the list the CLI reported in system/init.
-    scene capabilities
-    cue; e '(shot-scene-capabilities)'                        ; sleep 1; hold 1.33
-    cue; e '(shot-scene-capabilities-toggle "Slash commands")'; hold 1
-    e '(shot-scene-capabilities-toggle "Skills")'        ; hold 1
-    e '(shot-scene-capabilities-toggle "Agents")'        ; hold 1
-    e '(shot-scene-capabilities-toggle "Skills")'        ; hold 1.33
-    video
+    # What the session can do: the list the CLI reported in system/init,
+    # the longest group folded so that the others are in view.
+    e '(shot-scene-capabilities)'                         ; sleep 1
+    e '(shot-scene-capabilities-toggle "Slash commands")' ; sleep 1
+    still "$outdir/capabilities.png"
 fi
 
 if want sessions; then
@@ -713,15 +755,35 @@ if want question; then
 fi
 
 if want review; then
-    # Every change of the session as one diff, a comment on a line, and
-    # the prompt that would go out.
+    # A comment's round trip, live: what the session changed opened as
+    # one diff, a comment on a line, C-c C-c, and Claude answering under
+    # it and changing the file while the review follows.  Then two
+    # stills of one window each: the review after sending, its comment
+    # dimmed, and the prompt C-u C-c C-c shows, which is cancelled.
+    e '(shot-start-live-review "acceptEdits" shot-roundtrip-brevity)' ; sleep 5
+    wait_until '(shot-live-idle-p)' 60
+    e '(shot-live-change shot-roundtrip-change-prompt)' ; sleep 5
+    wait_until '(shot-live-settled-p)' 240
+    e '(shot-show shot-live)'                  ; sleep 1
+    e '(shot-scene-usecase-layout)'            ; sleep 1
+
     scene review
-    cue; e '(shot-scene-review)'        ; sleep 1; hold 1
-    cue; e '(shot-scene-review-comment (list "what about " "two trailing " "commas?"))'
-    hold 4.8
-    cue; e '(shot-scene-review-hunk)'   ; hold 1
-    cue; e '(shot-scene-review-send)'   ; sleep 1; hold 1.67
+    cue; e '(shot-scene-live-review-open)'     ; sleep 1; hold 1.5
+    # c at 1.2s, the words from 2.2s, RET 0.8s after them.
+    cue; e '(shot-scene-live-comment-sequence "^\\+.*self\\.rows" (list "rows is 0 for " "an empty file: " "return 0.0 then."))'
+    hold 4.6
+    cue; e '(shot-scene-usecase-review-press "C-c C-c")' ; hold 1.5
+    # The review as sent, before Claude has answered: the comment dimmed
+    # and the header line counting it, cut out of the frame just filmed.
+    crop_frame ecc-review-mode "$outdir/review-sent.png"
+    cue; hold_until '(shot-live-idle-p)' 240 fast; hold 1
+    cue; hold 2.5
     video
+
+    e '(shot-scene-live-review-prompt)'        ; sleep 2
+    crop_still ecc-review-message-mode "$outdir/review-prompt.png"
+    e '(shot-scene-live-review-prompt-cancel)' ; sleep 1
+    e '(shot-scene-live-review-end)'           ; sleep 2
 fi
 
 if want proposal; then
@@ -758,6 +820,155 @@ if want files; then
     cue; e '(shot-scene-files-key (quote ecc-chat-toggle))'      ; hold 1.33
     cue; e '(shot-scene-files-key (quote ecc-session-review-file))' ; sleep 1; hold 1.33
     video
+fi
+
+# The scenes of the review that need git: the menu's counts, its
+# questions, a pull request read a commit at a time, the list of the
+# files and ediff.  Each makes the demo project a repository with a
+# history and pull requests of its own (`shot-git-project') and puts it
+# back at its end.
+if want review-menu; then
+    # The menu with its counts, the commit and pull-request questions,
+    # and the second commit of a pull request with a comment on each of
+    # the first two.  The questions are scheduled inside Emacs; each
+    # still is taken while one is open.
+    e '(shot-scene-git-start)'                 ; sleep 2
+    e '(shot-scene-review-menu)'               ; sleep 3; still "$outdir/review-menu.png"
+    e '(shot-scene-quit)'                      ; sleep 1
+    e '(shot-scene-review-menu-key "c")'       ; sleep 4; still "$outdir/review-commits.png"
+    e '(shot-scene-quit)'                      ; sleep 1
+    e '(shot-scene-review-menu-key "p")'       ; sleep 4; still "$outdir/review-prs.png"
+    e '(shot-scene-review-pr-sequence)'        ; sleep 7
+    e '(shot-scene-review-pr-comments)'        ; sleep 2; still "$outdir/review-pr-commit.png"
+    e '(shot-scene-git-end)'                   ; sleep 1
+fi
+
+if want review-files; then
+    # The list of the files beside the diff: s shows it, RET goes to a
+    # file, / filters as it is typed.  The filter is scheduled inside
+    # Emacs: / at 0.5s, the words from 1.6s, RET at 3.0s.
+    e '(shot-scene-git-start)'                 ; sleep 2
+    scene review-files
+    cue; e '(shot-scene-review-worktree)'      ; sleep 1; hold 1
+    cue; e '(shot-scene-review-press "s")'     ; hold 1.33
+    cue; e '(shot-scene-files-pane-press "test_reader" "RET")' ; hold 1.33
+    cue; e '(shot-scene-review-filter-sequence (list "rea" "der"))'
+    hold 0.5; hold 2.5; cue; hold 1.5
+    video
+    e '(shot-scene-git-end)'                   ; sleep 1
+fi
+
+if want ediff; then
+    # The review in ediff, on a frame wide enough for the reply pane to
+    # go on the right of the stacked sides, which it does from 155
+    # columns: a still of the layout and a video of it turned side by
+    # side and back.  Then a video each of moving through the sides and
+    # of commenting on them, on the frame every scene has and cropped to
+    # the sides (`sides'), which they are about: the whole of the wide
+    # frame would show their text at half the size of the page's, and on
+    # it the frame narrowed by thirteen columns while a comment was
+    # typed, which stops a video (2026-10-11).
+    e '(shot-scene-git-start)'                 ; sleep 2
+    e '(shot-scene-ediff-wide)'                ; sleep 3; still "$outdir/review-ediff.png"
+
+    scene ediff-layout
+    cue; hold 2.5
+    cue; e '(shot-scene-ediff-press (quote new) "|")' ; hold 3
+    cue; e '(shot-scene-ediff-press (quote new) "|")' ; hold 2.5
+    video
+    e '(shot-scene-ediff-end)'                 ; sleep 1
+    e '(shot-frame-size-default)'              ; sleep 1
+    e '(shot-scene-ediff)'                     ; sleep 3
+
+    scene ediff-move; sides
+    cue; hold 1
+    cue; e '(shot-scene-ediff-press (quote new) "n")'   ; hold 1
+    e '(shot-scene-ediff-press (quote new) "n")'        ; hold 1
+    cue; e '(shot-scene-ediff-press (quote new) "p")'   ; hold 1
+    cue; e '(shot-scene-ediff-press (quote new) "C-n")' ; hold 0.5
+    e '(shot-scene-ediff-press (quote new) "C-n")'      ; hold 0.5
+    e '(shot-scene-ediff-press (quote new) "C-n")'      ; hold 1
+    video
+
+    # Comments: the line is reached at 0.3s, c at 1.2s, the words from
+    # 2.6s and RET 0.8s after the last; twice, the new side and the old.
+    scene ediff-comment; sides
+    cue; hold 0.5
+    e '(shot-scene-ediff-comment-sequence (quote new) "^    if fields and" (list "and with " "two of them?"))'
+    hold 1.2; cue; hold 3.4; hold 1
+    cue; e '(shot-scene-ediff-comment-sequence (quote old) "^    return column_total(rows, index) / len" (list "this raised " "on no rows"))'
+    hold 1.2; cue; hold 3.4; hold 1
+    video
+    e '(shot-scene-git-end)'                   ; sleep 1
+    e '(shot-frame-size-default)'              ; sleep 1
+fi
+
+# Claude in the review, live: the model calls the review tools of the
+# scene Emacs over its MCP server.  Each scene starts a sonnet session
+# in the demo repository and has it make a change before the filming
+# starts, and its end makes the replayed sessions again.
+if want ediff-live; then
+    e '(shot-start-live-review "acceptEdits" shot-usecase-brevity)' ; sleep 5
+    wait_until '(shot-live-idle-p)' 60
+    e '(shot-live-change)'                     ; sleep 5
+    wait_until '(shot-live-settled-p)' 240
+    e '(shot-live-set-mode "default")'         ; sleep 1
+    # The wide frame of the other ediff pictures, the pane on the right.
+    e '(shot-frame-size 163 34)'               ; sleep 1
+    e '(shot-scene-live-ediff)'                ; sleep 3
+
+    # T asks for a tour; the answer streams into the reply pane.
+    scene ediff-reply
+    cue; hold 1
+    cue; e '(shot-scene-ediff-press (quote new) "T")' ; hold 2
+    cue; hold_until '(shot-live-idle-p)' 240 fast; hold 2
+    video
+
+    # M asks for an edit; the pane shows the permission, and y answers
+    # it without leaving the review.  The message is typed from 1.6s and
+    # sent 0.8s after its last words.
+    scene ediff-permission
+    cue; e '(shot-scene-ediff-message-sequence (list "Say in the docstring " "that a trailing " "delimiter is dropped."))'
+    hold 4
+    cue; hold_until '(shot-live-waiting-p)' 120 fast; hold 1.5
+    cue; e '(shot-scene-ediff-answer-sequence)' ; hold 2.5
+    cue; hold_until '(shot-live-idle-p)' 120 fast; hold 2
+    video
+    e '(shot-scene-live-review-end)'           ; sleep 2
+fi
+
+if want usecase-review; then
+    # The use case of the review with Claude, in ediff on a frame wide
+    # enough for the reply pane beside the two sides: a small change
+    # made off camera, the review opened with C-c c D D, Claude's tour
+    # (T, then t), a reply on one of its comments, and the review read
+    # again when Claude acts on it.  A take in which a tool call failed
+    # is said so at the end, to be taken again.
+    e '(shot-start-live-review "acceptEdits" shot-usecase-brevity)' ; sleep 5
+    wait_until '(shot-live-idle-p)' 60
+    e '(shot-live-change shot-usecase-change-prompt)' ; sleep 5
+    wait_until '(shot-live-settled-p)' 240
+    e '(shot-scene-usecase-ediff-setup)'       ; sleep 2
+
+    scene usecase-review
+    cue; hold 2
+    # The menu opens at 0.5s and D is pressed at 2.0s.
+    cue; e '(shot-scene-usecase-open-ediff)'   ; hold 4
+    cue; e '(shot-scene-ediff-press (quote new) "T")' ; hold 1.5
+    hold_until '(shot-live-idle-p)' 240 fast; hold 1.5
+    cue; e '(shot-scene-ediff-press (quote new) "t")' ; hold 1.5
+    hold_until '(shot-live-idle-p)' 240 fast; hold 1.5
+    # c at 1.2s, the words from 2.2s, RET 0.8s after them.
+    cue; e '(shot-scene-ediff-reply-sequence "fields\\[-1\\]" (list "Why only one? " "Answer here, then drop " "every empty field at the end."))'
+    hold 4.6
+    cue; e '(shot-scene-ediff-press (quote new) "C-c C-c")' ; hold 1.5
+    cue; hold_until '(shot-live-idle-p)' 240 fast; hold 1
+    cue; hold 2.5
+    video
+    if holds '(shot-live-tool-failed-p)'; then
+        echo "   usecase-review: a tool call failed in this take; take it again" >&2
+    fi
+    e '(shot-scene-live-review-end)'           ; sleep 2
 fi
 
 if want timeline; then

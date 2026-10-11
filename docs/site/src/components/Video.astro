@@ -3,7 +3,8 @@
 // subtitles.  scripts/docshots.sh writes NAME.mp4, its first frame as
 // NAME.webp, and the cue times of NAME.en.vtt and NAME.ja.vtt; the
 // page's language picks the track that is on when the video starts.
-// It does not start by itself: the poster stands in until it is played.
+// It does not start by itself, and stops at its end: the poster stands
+// in until it is played.
 //
 //   <Video name="switch" label="What the video shows" />
 //
@@ -27,7 +28,6 @@ const ja = Astro.locals.starlightRoute.lang === 'ja';
 	aria-label={label}
 	title={label}
 	muted
-	loop
 	playsinline
 	controls
 	preload="metadata"
