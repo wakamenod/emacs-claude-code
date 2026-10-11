@@ -1106,6 +1106,34 @@ rows under the text would only make it taller."
                       height
                       (- (nth 2 outer) (nth 0 outer)))))))
 
+(defun shot-report-ediff-sides-geometry ()
+  "Write where the two sides of the ediff review are, for a picture of them.
+The rectangle around both windows, header lines and mode lines in it:
+on a frame wide enough for the reply pane beside them, a video of the
+frame shows its text at half the size of the page's, and the videos of
+moving through the sides and commenting on them are about the sides."
+  (unless (active-minibuffer-window)
+    (message nil))
+  (redisplay t)
+  (let* ((control (shot-ediff-control))
+         (windows (mapcar (lambda (variable)
+                            (get-buffer-window (buffer-local-value variable control)))
+                          '(ediff-buffer-A ediff-buffer-B)))
+         (edges (mapcar #'window-pixel-edges windows))
+         (outer (frame-edges nil 'outer-edges))
+         (inner (frame-edges nil 'inner-edges))
+         (left (apply #'min (mapcar #'car edges)))
+         (top (apply #'min (mapcar #'cadr edges)))
+         (right (apply #'max (mapcar #'caddr edges)))
+         (bottom (apply #'max (mapcar #'cadddr edges))))
+    (with-temp-file shot-geometry-file
+      (insert (format "%d %d %d %d %d\n"
+                      (+ (- (nth 0 inner) (nth 0 outer)) left)
+                      (+ (- (nth 1 inner) (nth 1 outer)) top)
+                      (- right left)
+                      (- bottom top)
+                      (- (nth 2 outer) (nth 0 outer)))))))
+
 (defun shot-report-sidebar-geometry ()
   "Write where the sidebar window is, for a picture of it alone."
   (shot-report-window-geometry (get-buffer-window ecc-sidebar-buffer-name)))
@@ -1718,9 +1746,11 @@ staged before the session starts.  What the session changes is
       (delete-file image)))
   (shot-git "init" "-q" "-b" "main")
   ;; What other scenes leave in the directory -- the worktrees of the
-  ;; sidebar's -- is no file of the project, and would be counted.
+  ;; sidebar's, and the auto-save files of a buffer a live scene had
+  ;; open, which an ediff review listed as a file of its own
+  ;; (2026-10-11) -- is no file of the project, and would be counted.
   (with-temp-file (expand-file-name ".git/info/exclude" shot-root)
-    (insert ".claude/\n"))
+    (insert ".claude/\n#*#\n.#*\n"))
   (shot-git-commit "reader: split a line into fields"
                    "reader.py" (concat (car (split-string shot-before "\n\n\ndef read_records")) "\n"))
   (shot-git-commit "reader: read the records of a file" "reader.py"
@@ -1762,6 +1792,8 @@ staged before the session starts.  What the session changes is
 (defun shot-git-project-end ()
   "Make the demo project the directory of files the other scenes know."
   (delete-directory (expand-file-name ".git" shot-root) t)
+  (dolist (file (directory-files shot-root t "\\`\\(#.*#\\|\\.#.*\\)\\'"))
+    (delete-file file))
   (dolist (file '("test_reader.py" "README.md"))
     (when (file-exists-p (expand-file-name file shot-root))
       (delete-file (expand-file-name file shot-root))))
@@ -1953,9 +1985,17 @@ the old side has a line to comment on only there."
   (redisplay t))
 
 (defun shot-scene-ediff-press (side keys)
-  "Press KEYS in the window of SIDE of the ediff review."
+  "Press KEYS in the window of SIDE of the ediff review.
+The keys go in as (t . EVENT), which records each in the command's
+keys as typing does: the two windows hand a key on to the control
+panel by the keys that called them (`ecc-review-direct-relay'), and
+C-c C-c left as plain events arrived there as C-c alone, which does
+nothing (2026-10-11)."
   (shot-ediff-window side)
-  (shot-keys keys))
+  (setq unread-command-events
+        (append (mapcar (lambda (event) (cons t event))
+                        (listify-key-sequence (kbd keys)))
+                unread-command-events)))
 
 (defun shot-scene-ediff-end ()
   "Quit the ediff review, which gives the windows back."
@@ -2033,10 +2073,14 @@ review beside the session has room for that, and a tour of two stops
 has a next stop for t to go to.")
 
 (defconst shot-usecase-brevity
-  "In the review, keep each comment to one short line, at most two comments a stop, and say what a stop is about in two sentences or fewer."
+  "In the review, keep each comment to one short line, at most two comments a stop, and say what a stop is about in two sentences or fewer. In review_comment_apply, a comment on a line has the keys file, side, line and text, and no hunk key; a reply has reply_to and text only."
   "What the use case's session is told on top of its system prompt.
 The tour asks for comments where they are needed, and a take left them
-paragraphs long, wrapped over half the review (2026-10-11).")
+paragraphs long, wrapped over half the review (2026-10-11).  Takes
+gave review_comment_apply a line and a hunk for one comment, which it
+refuses, and the failed call was in the picture; told so in general
+terms it still did, three takes in four, so the keys are named
+(2026-10-11).")
 
 (defun shot-start-live-review (mode &optional system)
   "Start a real session in the demo repository, the MCP server on.
@@ -2254,11 +2298,60 @@ hunk comment, so that both of their headings are in it."
     (with-selected-window window
       (call-interactively #'ecc-review-message-cancel))))
 
+;;;;; The use case in ediff
+
+(defun shot-scene-usecase-ediff-setup ()
+  "Make the use case's reviews open in ediff, on a frame with room for the pane.
+The pane goes on the right of the stacked sides from 155 columns; the
+frame is wider still, and the scene's end puts it and the style back."
+  (require 'ecc-review-talk)
+  (setq ecc-review-style 'ediff
+        ecc-review-ediff-layout 'stacked
+        ecc-review-files-shown nil)
+  (shot-frame-size 180 40)
+  (shot-show shot-live))
+
+(defun shot-scene-usecase-open-ediff ()
+  "Open the review of what the live session changed with C-c c D D.
+Under `ecc-review-style' `ediff' it opens in ediff, which takes the frame."
+  (shot-source-window)
+  (shot-script
+   (list (cons 0.5 (lambda () (call-interactively #'ecc-review-menu)))
+         (cons 2.0 (lambda () (shot-keys "D"))))))
+
+(defun shot-scene-ediff-reply-sequence (regexp chunks)
+  "Put point on the first line of the new side matching REGEXP and press c.
+On a line that holds only Claude's comment, what is typed, CHUNKS, is
+the reply to it."
+  (let ((typing (shot-typing-steps 1.6 chunks)))
+    (shot-script
+     (append (list (cons 0.3 (lambda ()
+                               (when (shot-ediff-window 'new)
+                                 (goto-char (point-min))
+                                 (when (re-search-forward regexp nil t)
+                                   (beginning-of-line)))))
+                   (cons 1.2 (lambda () (shot-scene-ediff-press 'new "c"))))
+             typing
+             (list (cons (+ 0.8 (car (car (last typing))))
+                         (lambda () (shot-keys "RET"))))))))
+
+(defun shot-live-tool-failed-p ()
+  "Return non-nil when a tool call of the live session failed.
+A take with one is taken again: a red cross in the picture is a failure
+the video is not about."
+  (when-let* ((buffer (get-buffer (ecc-log-buffer-name (ecc-session-name shot-live)))))
+    (with-current-buffer buffer
+      (save-excursion
+        (goto-char (point-min))
+        (and (search-forward "\"is_error\":true" nil t) t)))))
+
 (defun shot-scene-live-review-end ()
   "Stop the live session and make the scenes' own sessions again."
   (shot-dump-log shot-live "/tmp/ecc-docshot-live-review.log")
   (advice-remove 'ecc-window-show-review-quietly #'shot-usecase-narrow-session)
   (shot-close-reviews)
+  (setq ecc-review-style 'diff)
+  (shot-frame-size-default)
   (dolist (session (ecc-model-sessions))
     (ecc-kill session))
   (setq shot-live nil)

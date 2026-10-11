@@ -451,6 +451,13 @@ crop_frame() {
     regeom
 }
 
+# Crop the video of the current scene to the two sides of the ediff
+# review rather than the frame.
+sides() {
+    e '(shot-report-ediff-sides-geometry)'
+    read -r CX CY CW CH OW < "$geom"
+}
+
 shoot() {
     "$recorder" --title "$title" --shot "$frames/shot.png" 2>&1 | grep -v "^record-window: wrote" >&2 || true
     ffmpeg -hide_banner -loglevel error -y -i "$frames/shot.png" \
@@ -852,19 +859,28 @@ if want review-files; then
 fi
 
 if want ediff; then
-    # The review in ediff: a still of the layout, then a video each of
-    # moving through it, commenting on either side, and the layout
-    # turned side by side and back.
-    # The still is of a frame wide enough for the reply pane to go on
-    # the right, which it does from 155 columns; the videos are of the
-    # frame every scene has.
+    # The review in ediff, on a frame wide enough for the reply pane to
+    # go on the right of the stacked sides, which it does from 155
+    # columns: a still of the layout and a video of it turned side by
+    # side and back.  Then a video each of moving through the sides and
+    # of commenting on them, on the frame every scene has and cropped to
+    # the sides (`sides'), which they are about: the whole of the wide
+    # frame would show their text at half the size of the page's, and on
+    # it the frame narrowed by thirteen columns while a comment was
+    # typed, which stops a video (2026-10-11).
     e '(shot-scene-git-start)'                 ; sleep 2
     e '(shot-scene-ediff-wide)'                ; sleep 3; still "$outdir/review-ediff.png"
+
+    scene ediff-layout
+    cue; hold 2.5
+    cue; e '(shot-scene-ediff-press (quote new) "|")' ; hold 3
+    cue; e '(shot-scene-ediff-press (quote new) "|")' ; hold 2.5
+    video
     e '(shot-scene-ediff-end)'                 ; sleep 1
     e '(shot-frame-size-default)'              ; sleep 1
     e '(shot-scene-ediff)'                     ; sleep 3
 
-    scene ediff-move
+    scene ediff-move; sides
     cue; hold 1
     cue; e '(shot-scene-ediff-press (quote new) "n")'   ; hold 1
     e '(shot-scene-ediff-press (quote new) "n")'        ; hold 1
@@ -876,20 +892,15 @@ if want ediff; then
 
     # Comments: the line is reached at 0.3s, c at 1.2s, the words from
     # 2.6s and RET 0.8s after the last; twice, the new side and the old.
-    scene ediff-comment
+    scene ediff-comment; sides
     cue; hold 0.5
     e '(shot-scene-ediff-comment-sequence (quote new) "^    if fields and" (list "and with " "two of them?"))'
     hold 1.2; cue; hold 3.4; hold 1
     cue; e '(shot-scene-ediff-comment-sequence (quote old) "^    return column_total(rows, index) / len" (list "this raised " "on no rows"))'
     hold 1.2; cue; hold 3.4; hold 1
     video
-
-    scene ediff-layout
-    cue; hold 1
-    cue; e '(shot-scene-ediff-press (quote new) "|")' ; hold 2
-    cue; e '(shot-scene-ediff-press (quote new) "|")' ; hold 1.5
-    video
     e '(shot-scene-git-end)'                   ; sleep 1
+    e '(shot-frame-size-default)'              ; sleep 1
 fi
 
 # Claude in the review, live: the model calls the review tools of the
@@ -897,11 +908,13 @@ fi
 # in the demo repository and has it make a change before the filming
 # starts, and its end makes the replayed sessions again.
 if want ediff-live; then
-    e '(shot-start-live-review "acceptEdits")' ; sleep 5
+    e '(shot-start-live-review "acceptEdits" shot-usecase-brevity)' ; sleep 5
     wait_until '(shot-live-idle-p)' 60
     e '(shot-live-change)'                     ; sleep 5
     wait_until '(shot-live-settled-p)' 240
     e '(shot-live-set-mode "default")'         ; sleep 1
+    # The wide frame of the other ediff pictures, the pane on the right.
+    e '(shot-frame-size 163 34)'               ; sleep 1
     e '(shot-scene-live-ediff)'                ; sleep 3
 
     # T asks for a tour; the answer streams into the reply pane.
@@ -925,32 +938,36 @@ if want ediff-live; then
 fi
 
 if want usecase-review; then
-    # The use case of the review with Claude: a small change made off
-    # camera, the review opened with C-c c D D, Claude's tour (T, then
-    # t), a reply on one of its comments, and the review following the
-    # files when Claude acts on it.
+    # The use case of the review with Claude, in ediff on a frame wide
+    # enough for the reply pane beside the two sides: a small change
+    # made off camera, the review opened with C-c c D D, Claude's tour
+    # (T, then t), a reply on one of its comments, and the review read
+    # again when Claude acts on it.  A take in which a tool call failed
+    # is said so at the end, to be taken again.
     e '(shot-start-live-review "acceptEdits" shot-usecase-brevity)' ; sleep 5
     wait_until '(shot-live-idle-p)' 60
     e '(shot-live-change shot-usecase-change-prompt)' ; sleep 5
     wait_until '(shot-live-settled-p)' 240
-    e '(shot-scene-usecase-layout)'            ; sleep 1
+    e '(shot-scene-usecase-ediff-setup)'       ; sleep 2
 
     scene usecase-review
     cue; hold 2
-    # The menu opens at 0.5s, D is pressed at 2.0s, and the windows are
-    # narrowed again at 3.0s.
-    cue; e '(shot-scene-usecase-open-review)'  ; hold 3.6
-    cue; e '(shot-scene-usecase-review-press "T")' ; hold 1.5
-    hold_until '(shot-live-idle-p)' 240 fast; hold 1
-    cue; e '(shot-scene-usecase-review-press "t")' ; hold 1.5
-    hold_until '(shot-live-idle-p)' 240 fast; hold 1
+    # The menu opens at 0.5s and D is pressed at 2.0s.
+    cue; e '(shot-scene-usecase-open-ediff)'   ; hold 4
+    cue; e '(shot-scene-ediff-press (quote new) "T")' ; hold 1.5
+    hold_until '(shot-live-idle-p)' 240 fast; hold 1.5
+    cue; e '(shot-scene-ediff-press (quote new) "t")' ; hold 1.5
+    hold_until '(shot-live-idle-p)' 240 fast; hold 1.5
     # c at 1.2s, the words from 2.2s, RET 0.8s after them.
-    cue; e '(shot-scene-usecase-reply-sequence (list "Why only one? " "Answer here, then drop " "every empty field at the end."))'
+    cue; e '(shot-scene-ediff-reply-sequence "fields\\[-1\\]" (list "Why only one? " "Answer here, then drop " "every empty field at the end."))'
     hold 4.6
-    cue; e '(shot-scene-usecase-review-press "C-c C-c")' ; hold 1.5
+    cue; e '(shot-scene-ediff-press (quote new) "C-c C-c")' ; hold 1.5
     cue; hold_until '(shot-live-idle-p)' 240 fast; hold 1
     cue; hold 2.5
     video
+    if holds '(shot-live-tool-failed-p)'; then
+        echo "   usecase-review: a tool call failed in this take; take it again" >&2
+    fi
     e '(shot-scene-live-review-end)'           ; sleep 2
 fi
 
