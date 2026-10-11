@@ -1958,7 +1958,13 @@ change, so neither does their diff, and git is asked once, and a
 failure said once.")
 
 (defun ecc-review--forget-places ()
-  "Forget what this review keeps to carry its places: it reviews something else."
+  "Forget what this review keeps to carry its places: it reviews something else.
+A place still held -- the line \\`c' was pressed on, while the comment
+is typed -- is a line of what was reviewed before, and no line of what
+is now: it is marked `replaced', for what holds it to say so."
+  (dolist (place ecc-review--held)
+    (setf (ecc-review-note-outdated place) 'replaced
+          (ecc-review-note-shape place) nil))
   (setq ecc-review--reading nil
         ecc-review--held nil
         ecc-review--nearest nil
@@ -2710,6 +2716,9 @@ the text."
                (line (ecc-review--locate-note anchor lines)))
     (when (string-empty-p text)
       (user-error "Empty comment"))
+    (when (eq (ecc-review-note-outdated anchor) 'replaced)
+      (kill-new text)
+      (user-error "The review shows another proposal now; the comment is in the kill ring"))
     (let ((note (if (and (eq kind 'edit) target)
                     (ecc-review--edit-note target text)
                   (ecc-review-add-note 'user text (or line anchor)

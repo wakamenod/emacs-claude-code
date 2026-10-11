@@ -2173,6 +2173,28 @@ edited twice at line 10 has two hunks @@ -10,1 +10,1 @@."
               (should (equal (mapcar #'ecc-review-note-nth ecc-review--notes) '(0 1 1))))))
       (ecc-review-test--kill-review-buffers))))
 
+(ert-deftest ecc-review-test-c-across-another-proposal-adds-nothing-there ()
+  "A comment typed while the review turns to another proposal is not put on that one.
+The line c was pressed on is a line of the proposal that went; the same
+line of the next is another proposal's line.  The text is in the kill
+ring."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (let ((buffer (get-buffer-create (ecc-review-buffer-name session))))
+          (ecc-review--fill buffer session ecc-review-test--diff nil 'first)
+          (with-current-buffer buffer
+            (ecc-review-test--goto "+added")
+            (let ((kill-ring nil))
+              (cl-letf (((symbol-function 'read-string)
+                         (lambda (&rest _)
+                           (ecc-review--fill buffer session ecc-review-test--diff nil 'second)
+                           "about the first")))
+                (should-error (call-interactively #'ecc-review-comment) :type 'user-error))
+              (should (equal (car kill-ring) "about the first")))
+            (should-not ecc-review--notes)
+            (should-not ecc-review--held)))
+      (ecc-review-test--kill-review-buffers))))
+
 (ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
   "Remembering the place reads the hunk it is in, not the whole diff."
   (ecc-review-test--with-review session
