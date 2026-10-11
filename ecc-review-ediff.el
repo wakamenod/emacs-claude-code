@@ -1605,11 +1605,9 @@ differences are in (`ecc-review-ediff--differences-computed\=')."
   "Return the lines of every difference of this ediff review."
   (mapcan #'ecc-review-ediff--unit-lines (ecc-review-units)))
 
-(cl-defmethod ecc-review--path-lines (path &context (major-mode ediff-mode))
-  "Return the lines of the differences of the file PATH in this ediff review."
-  (mapcan #'ecc-review-ediff--unit-lines
-          (seq-filter (lambda (unit) (equal (plist-get unit :path) path))
-                      (ecc-review-units))))
+(cl-defmethod ecc-review--unit-lines (unit &context (major-mode ediff-mode))
+  "Return the lines of the difference UNIT of this ediff review."
+  (ecc-review-ediff--unit-lines unit))
 
 (cl-defmethod ecc-review--file-lines (hunk &context (major-mode ediff-mode))
   "Return the lines of the differences of the file of HUNK in this ediff review."

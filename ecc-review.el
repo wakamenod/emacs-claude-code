@@ -2020,26 +2020,60 @@ there would be a line of something else."
         ((ecc-review--reading-current-p) ecc-review--reading)
         (t (error "%s changed since it was read; g reads it again" (buffer-name)))))
 
-(cl-defgeneric ecc-review--path-lines (path)
+(cl-defgeneric ecc-review--unit-lines (unit)
+  "Return the lines of UNIT, a hunk of `ecc-review-units', header first."
+  (ecc-review--hunk-lines unit))
+
+(defun ecc-review--path-lines (path)
   "Return the lines of the file PATH in this review, as `ecc-review-lines'.
-Every hunk is looked at: this is for a file nothing tells where it is."
-  (mapcan #'ecc-review--hunk-lines
-          (seq-filter (lambda (hunk) (equal (plist-get hunk :path) path))
+Every hunk is looked at: this is for a file nothing tells where it is.
+While places are carried the review is grouped by file once instead
+\(`ecc-review--grouped')."
+  (mapcan #'ecc-review--unit-lines
+          (seq-filter (lambda (unit) (equal (plist-get unit :path) path))
                       (ecc-review-units))))
+
+(defvar ecc-review--grouping nil
+  "While places are carried, a cell holding the review grouped by file.
+Its car is `unmade' until a file is first wanted, then a hash of each
+path to its lines, or to its hunks when no list of the lines was read:
+the review is gone through once, however many files are wanted.")
+
+(defun ecc-review--grouped (reading path lines)
+  "Return the lines of PATH, from the grouping of this carrying.
+LINES, else those READING was given, are what is grouped; without them
+the hunks of the review are, and only PATH's are read into lines."
+  (when (eq (car ecc-review--grouping) 'unmade)
+    (let ((table (make-hash-table :test #'equal))
+          (all (or lines (ecc-review--reading-lines reading))))
+      (if all
+          (dolist (line all)
+            (push line (gethash (plist-get line :path) table)))
+        (dolist (unit (ecc-review-units))
+          (push unit (gethash (plist-get unit :path) table))))
+      (maphash (lambda (key own) (puthash key (cons (if all 'lines 'units) (nreverse own)) table))
+               table)
+      (setcar ecc-review--grouping table)))
+  (pcase (gethash path (car ecc-review--grouping))
+    (`(lines . ,own) own)
+    (`(units . ,units) (mapcan #'ecc-review--unit-lines units))))
 
 (defun ecc-review--file-of (reading path &optional lines hunk)
   "Return the lines of the file PATH in READING, reading them the first time.
-They are taken from LINES, all the lines of the review, when READING or
-the caller has them; else from the hunks of the file of HUNK; else from
-every hunk (`ecc-review--path-lines').  Once read they are in READING's
-index, by place."
+They are taken from the hunks of the file of HUNK when it is given; else,
+while places are carried, from the review grouped by file once
+\(`ecc-review--grouped'); else from LINES, all the lines of the review,
+when READING or the caller has them; else from every hunk
+\(`ecc-review--path-lines').  Once read they are in READING's index, by
+place."
   (let ((files (ecc-review--reading-files reading)))
     (pcase (gethash path files 'unread)
       ('unread
-       (let ((own (cond ((or lines (ecc-review--reading-lines reading))
+       (let ((own (cond (hunk (ecc-review--file-lines hunk))
+                        (ecc-review--grouping (ecc-review--grouped reading path lines))
+                        ((or lines (ecc-review--reading-lines reading))
                          (seq-filter (lambda (line) (equal (plist-get line :path) path))
                                      (or lines (ecc-review--reading-lines reading))))
-                        (hunk (ecc-review--file-lines hunk))
                         (t (ecc-review--path-lines path))))
              (index (ecc-review--reading-index reading))
              (seen (make-hash-table :test #'equal)))
@@ -2262,6 +2296,7 @@ place that is not outdated and has no shape was not put on a line here
 or anywhere -- its numbers are of no reading known -- and is outdated,
 which the log says."
   (let ((maps (make-hash-table :test #'eq))
+        (ecc-review--grouping (list 'unmade))
         (placed nil)
         (lost nil))
     (dolist (place places)
