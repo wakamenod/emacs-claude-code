@@ -50,6 +50,7 @@
 
 (declare-function project-files "project" (project &optional dirs))
 (declare-function project-current "project" (&optional maybe-prompt directory))
+(declare-function ecc-resume "ecc" (session &optional fork))
 
 ;;;; Options
 
@@ -292,11 +293,26 @@ Point is moved into the prompt region first when it is not there."
 (defun ecc-prompt-yank-image (mime data)
   "Save the pasted image DATA of type MIME and refer to it.
 The file is passed by path rather than inline: base64 in the prompt
-would be written into the recording of the conversation."
-  (let ((file (ecc-image-save (ecc-prompt-session) data mime)))
+would be written into the recording of the conversation.  A type the
+API does not take is converted to PNG first; where that cannot be
+done, the image is saved as it came and the message says why."
+  (let ((file (ecc-image-save-pasted (ecc-prompt-session) data mime)))
     (ecc-prompt-insert-reference file)
-    (message "Image saved to %s" (abbreviate-file-name file))
+    (if (ecc-image-sendable-p (concat "image/" (file-name-extension file)))
+        (message "Image saved to %s" (abbreviate-file-name file))
+      (let ((type (upcase (file-name-extension file))))
+        (message "Image saved as %s to %s: converting it to PNG needs \
+sips on macOS, and the API may not take %s"
+                 type (abbreviate-file-name file) type)))
     file))
+
+(defun ecc-prompt-yank-image-from-clipboard ()
+  "Save the image on the clipboard and insert an @ reference to it.
+What is saved is a PNG, or another type the API takes as it is."
+  (interactive)
+  (pcase-let ((`(,mime . ,data) (or (ecc-image-clipboard)
+                                    (user-error "No image on the clipboard"))))
+    (ecc-prompt-yank-image mime data)))
 
 (defun ecc-prompt-dnd-insert (url &optional _action)
   "Insert the dropped file URL as an @ reference."
@@ -888,33 +904,101 @@ are not offered, but one typed out by hand is still accepted."
   "The @ references that are not files.")
 
 (defun ecc-prompt-project-files (session)
-  "Return the files of the project of SESSION, relative to its root."
+  "Return the files of the project of SESSION, relative to its root.
+The project can spell that root another way: projectile names its files
+from the true name, and on macOS a session in /tmp/x/ had every file
+offered as ../../../private/tmp/x/readme.md (2026-10-11).  When the two
+are the same directory, the project's own spelling is what the names
+are taken against."
   (let* ((root (ecc-session-project-root session))
          (project (and root (project-current nil root))))
     (when project
-      (let ((root (expand-file-name root)))
-        (mapcar (lambda (file) (file-relative-name file root))
+      (let* ((root (expand-file-name root))
+             (own (expand-file-name (project-root project)))
+             (base (if (file-equal-p root own) own root)))
+        (mapcar (lambda (file) (file-relative-name file base))
                 (project-files project))))))
 
+(defconst ecc-prompt-at-path-regexp "\\`\\(?:/\\|~/\\|\\.\\.?/\\)"
+  "What an @ reference starts with when it is a path rather than a project file.
+An absolute path, one under the home directory, and one relative to the
+directory the CLI stands in.  The CLI reads all of them, `@~/' included
+\(confirmed with 2.1.290 on 2026-10-11).")
+
+(defun ecc-prompt--remote-path-p (path)
+  "Return non-nil when PATH looks like a remote file name.
+It is told by its shape alone -- an absolute path whose first part has a
+colon in it, as in `/ssh:host:' or `/sudo::' -- so that asking never
+loads TRAMP or opens a connection.  The CLI cannot read one anyway."
+  (string-match-p "\\`/[^/]*:" path))
+
+(defun ecc-prompt--path-table (root)
+  "Return a completion table of file names relative to ROOT.
+It completes the way `find-file' does, one directory at a time: the
+boundaries keep what is completed to the part after the last slash, so
+only the directory being typed is read.  The file name handlers are
+left out, so that no part of a path can wake TRAMP or another handler.
+
+Its category is `ecc-path' rather than `file'.  The partial-completion
+style, which a configuration often gives `file', appends what every
+candidate ends in: `@../' in a directory of directories became `@..//'
+\(2026-10-11).  `find-file' reads `//' as the root and gets away with
+it; a prompt is sent as it stands.  `./' and `../' are left out, as a
+completion of `file' leaves them out."
+  (lambda (string predicate action)
+    (let ((default-directory root)
+          (non-essential t)
+          (file-name-handler-alist nil))
+      (pcase action
+        ('metadata '(metadata (category . ecc-path)))
+        ('t (seq-remove (lambda (name) (member name '("./" "../")))
+                        (completion-file-name-table string predicate t)))
+        ('nil
+         (let ((found (try-completion
+                       (file-name-nondirectory string)
+                       (funcall (ecc-prompt--path-table root) string predicate t))))
+           (if (stringp found)
+               (concat (file-name-directory string) found)
+             found)))
+        (_ (completion-file-name-table string predicate action))))))
+
 (defun ecc-prompt-at-capf ()
-  "Complete an @ reference at point."
+  "Complete an @ reference at point.
+After `/', `~/', `./' or `../' the reference is a path, completed from
+anywhere a directory at a time, and a relative one from the directory
+the CLI of the session runs in, which is what it reads it against.
+Anything else is one of `ecc-prompt-at-specials' or a file of the
+project.  A remote path is not completed."
   (when-let* ((session ecc-render--session)
               (region (ecc-chat-prompt-start)))
     (save-excursion
       (let ((end (point)))
         (when (re-search-backward "@[^ \t\n]*\\=" (max region (line-beginning-position)) t)
-          (let ((start (point)))
-            (list start end
-                  (completion-table-dynamic
-                   (lambda (_string)
-                     (append (mapcar #'car ecc-prompt-at-specials)
-                             (mapcar (lambda (file) (concat "@" file))
-                                     (ecc-prompt-project-files session)))))
-                  :exclusive 'no
-                  :annotation-function
-                  (lambda (candidate)
-                    (when-let* ((doc (cdr (assoc candidate ecc-prompt-at-specials))))
-                      (concat "  " doc))))))))))
+          (let* ((start (point))
+                 (path (buffer-substring-no-properties (1+ start) end)))
+            (cond
+             ((not (string-match-p ecc-prompt-at-path-regexp path))
+              (list start end
+                    (completion-table-dynamic
+                     (lambda (_string)
+                       (append (mapcar #'car ecc-prompt-at-specials)
+                               (mapcar (lambda (file) (concat "@" file))
+                                       (ecc-prompt-project-files session)))))
+                    :exclusive 'no
+                    :annotation-function
+                    (lambda (candidate)
+                      (when-let* ((doc (cdr (assoc candidate ecc-prompt-at-specials))))
+                        (concat "  " doc)))))
+             ((ecc-prompt--remote-path-p path) nil)
+             (t
+              (list (1+ start) end
+                    (ecc-prompt--path-table
+                     (file-name-as-directory
+                      (expand-file-name (ecc-session-project-root session))))
+                    :exclusive 'no
+                    :company-kind
+                    (lambda (candidate)
+                      (if (string-suffix-p "/" candidate) 'folder 'file)))))))))))
 
 ;;;; Sending
 
@@ -1044,6 +1128,17 @@ screen."
                (abbreviate-file-name (or (ecc-session-directory session) "?")))
       nil)))
 
+(defun ecc-prompt--start-restored (session)
+  "Start the CLI of SESSION when `ecc-restore' brought it back stopped.
+A restored session starts nothing until it is used, and a prompt is
+using it.  This is the resume \\`R' runs, so a session another process
+is running is asked about here; saying no leaves the draft where it
+was."
+  (when (and (ecc-model-option session :restored nil)
+             (not (process-live-p (ecc-session-process session))))
+    (require 'ecc)
+    (save-current-buffer (ecc-resume session))))
+
 (cl-defun ecc-prompt-send ()
   "Send the prompt region, or queue it while a turn runs.
 A draft one of `ecc-prompt-intercept-functions\' takes is not sent at
@@ -1061,6 +1156,7 @@ history."
             ecc-prompt--history-draft nil)
       (ecc-chat-clear-draft)
       (cl-return-from ecc-prompt-send 'intercepted))
+    (ecc-prompt--start-restored session)
     (let* ((source (ecc-window-last-source-buffer))
            (text (ecc-prompt-prepare-text session raw source
                                           (ecc-prompt-attach-context-p)))

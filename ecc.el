@@ -4,7 +4,7 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Maintainer: Jun <wakamenod@gmail.com>
-;; Version: 0.3.4
+;; Version: 0.4.0
 ;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -66,6 +66,7 @@
 (require 'ecc-answer)
 (require 'ecc-registry)
 (require 'ecc-history)
+(require 'ecc-restore)
 (require 'ecc-search)
 (require 'ecc-capability)
 (require 'ecc-dashboard)
@@ -85,6 +86,14 @@
 (require 'ecc-auth)
 (require 'ecc-tui)
 (require 'ecc-transient)
+
+;; The review tools register themselves with the MCP server when they
+;; are loaded, and a tool registered after a session's CLI has listed the
+;; tools is one that session never sees.  So they are loaded here, with
+;; everything else, rather than with the first review opened.
+(require 'ecc-review-agent)
+(require 'ecc-review-menu)
+(require 'ecc-review-talk)
 
 ;; The version is written once, in the Version header above, because that
 ;; is the one package.el and `package-vc-install' read.  Repeating it in a

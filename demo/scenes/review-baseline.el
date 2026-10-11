@@ -7,7 +7,7 @@
 ;; It no longer reads the tool stream, so a file changed by a shell
 ;; command, a script or a person is in the review all the same, and work
 ;; the session committed along the way is still shown -- which is the
-;; one thing `ecc-review-worktree' (`G'), taken against `HEAD', loses.
+;; one thing `ecc-review-range' (`w' in the review menu), taken against `HEAD', loses.
 ;;
 ;; The scene changes the files behind the session's back, which is the
 ;; case the old review missed entirely, commits one of the changes, and
@@ -15,7 +15,7 @@
 ;; `l', `d', and `C-c C-c', which sends them instead of opening a buffer
 ;; to confirm them in.
 ;;
-;; Last, a repository with no commit at all -- where `G' used to stop at
+;; Last, a repository with no commit at all -- where `w' used to stop at
 ;; `Git cannot diff against "HEAD" (exit 128)'.
 ;;
 ;; Played by demo/scenes/review-baseline.sh through demo/record.sh.
@@ -113,7 +113,7 @@
 (defun demo-open-worktree-review ()
   "G -- what changed since the last commit."
   (with-current-buffer (find-file-noselect (expand-file-name "greet.py" demo-root))
-    (ecc-review-worktree demo-session ""))
+    (ecc-review-range demo-session ""))
   (demo-frame)
   nil)
 
@@ -199,7 +199,7 @@
   "G in a repository whose HEAD is unborn."
   (with-current-buffer (find-file-noselect (expand-file-name "main.py" demo-unborn-root))
     (condition-case error
-        (ecc-review-worktree demo-unborn-session "" demo-unborn-root)
+        (ecc-review-range demo-unborn-session "" demo-unborn-root)
       (error (demo-say (format "G failed: %S" error)))))
   (demo-frame)
   nil)

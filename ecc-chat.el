@@ -76,11 +76,11 @@
 (defvar ecc-prompt-immediate-commands)
 (declare-function ecc-prompt-run-immediately "ecc-prompt" (session command))
 (declare-function ecc-prompt-yank-image "ecc-prompt" (mime data))
+(declare-function ecc-prompt-yank-image-from-clipboard "ecc-prompt" ())
 (declare-function ecc-prompt-dnd-insert "ecc-prompt" (url &optional action))
 (declare-function ecc-switch-session "ecc-window" (session))
 (declare-function ecc-session-visit "ecc-session" ())
 (declare-function ecc-session-show-detail "ecc-session" ())
-(declare-function ecc-visit-follow-link-p "ecc-visit" (pos))
 (declare-function ecc-session-refresh "ecc-session" ())
 (declare-function ecc-session-show-log "ecc-session" ())
 (declare-function ecc-session-resume "ecc-session" ())
@@ -224,6 +224,7 @@ the dim face.")
     (define-key map (kbd "C-c C-q") #'ecc-prompt-show-queue)
     (define-key map (kbd "C-c C-x") #'ecc-prompt-toggle-context)
     (define-key map (kbd "C-c C-i") #'ecc-prompt-insert-image)
+    (define-key map (kbd "C-c C-y") #'ecc-prompt-yank-image-from-clipboard)
     (define-key map (kbd "C-c C-s") #'ecc-hint-accept-suggestion)
     (define-key map (kbd "C-c C-r") #'ecc-prompt-history-insert)
     (define-key map (kbd "M-p") #'ecc-prompt-history-previous)
@@ -270,13 +271,14 @@ no \\`C-c C-<letter>' free goes to `ecc-menu' rather than taking one.")
     ;; RET on a call that names a file opens the file; the node laid
     ;; open, which RET was on every heading before, is `o'.
     (define-key map (kbd "o") #'ecc-session-show-detail)
-    ;; A link is drawn with `mouse-face\=' and a line of a diff with
-    ;; nothing at all, so `follow-link\=' asks `ecc-visit-follow-link-p',
-    ;; which says yes to both and keeps mouse-1 from following anywhere
-    ;; else.  No link carries a keymap of its own: these two are the
-    ;; whole of the mouse side.
+    ;; A click follows what is drawn as a link, with a `mouse-face\=':
+    ;; a URL, a path in a reply, a picture.  A line of a diff and the
+    ;; heading of a call carry none and open on RET alone, so that a
+    ;; click that only meant to put the point there does not take the
+    ;; source window with it.  No link carries a keymap of its own:
+    ;; these two are the whole of the mouse side.
     (define-key map [mouse-2] #'ecc-chat-follow-link)
-    (define-key map [follow-link] #'ecc-visit-follow-link-p)
+    (define-key map [follow-link] 'mouse-face)
     (define-key map (kbd "SPC") #'scroll-up-command)
     (define-key map (kbd "DEL") #'scroll-down-command)
     (define-key map (kbd "i") #'ecc-chat-goto-prompt)
@@ -915,12 +917,15 @@ The Files and Tasks rows are drawn without a node and give nil."
   (get-text-property (line-beginning-position) 'ecc-heading))
 
 (defun ecc-chat-follow-link (event)
-  "Open what was clicked on in the transcript.
-The point goes where EVENT was, and `ecc-session-visit\=' decides what
-is there, so a click and a RET do the one thing."
+  "Open the link clicked on in the transcript.
+The point goes where EVENT was.  On a link, text drawn with a
+`mouse-face\=', `ecc-session-visit\=' opens it as RET would; anywhere
+else -- a line of a diff, the heading of a call -- nothing more is done,
+and RET is the way to open it."
   (interactive "e")
   (mouse-set-point event)
-  (ecc-session-visit))
+  (when (get-char-property (point) 'mouse-face)
+    (ecc-session-visit)))
 
 ;;;; Folding
 

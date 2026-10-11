@@ -169,7 +169,8 @@ answered in.
 A line of a diff, the heading of a call that names a file and a path
 the model wrote open that file, at the line when there is one
 \(`ecc-visit-target-at-point\='); the node laid open is
-\[ecc-session-show-detail].
+\[ecc-session-show-detail].  A video or a sound among them plays
+in the machine's own player instead (`ecc-visit-open\=').
 
 A picture drawn in the transcript opens as itself.  A URL comes
 first, and before the node the point is in: the point is
@@ -190,7 +191,7 @@ already opens things with."
      (url (browse-url url))
      ;; A still opens in `image-mode\=', which zooms and scrolls; a video
      ;; is something Emacs cannot play, so the machine plays it.
-     (picture (if (ecc-image-video-p picture)
+     (picture (if (ecc-image-plays-outside-p picture)
                   (ecc-image-open-externally picture)
                 (find-file-other-window picture)))
      (target (ecc-visit-open (car target) (cdr target) session))
@@ -262,7 +263,10 @@ The d key of the transcript does both."
                                      (ecc-model-node-get node 'input)
                                      (ecc-model-node-get node 'before))
            (insert "\n")
-           (insert (ecc-render--result-text (ecc-model-node-get node 'result))))
+           (insert (ecc-render--result-text (ecc-model-node-get node 'result)))
+           (when (ecc-model-node-get node 'bash-edit)
+             (insert "\n\n")
+             (ecc-render--insert-bash-edit node "" t)))
           ((or 'permission 'question 'plan)
            (let ((request (ecc-model-node-get node 'request)))
              (insert (format "%s  %s\n\n"

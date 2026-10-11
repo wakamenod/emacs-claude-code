@@ -85,6 +85,19 @@ Emacs handles itself, and can say so in a sentence the model can act
 on.  A refusal that only says no belongs to the user, who can say it
 themselves.")
 
+(defvar ecc-request-allow-functions nil
+  "Functions given a session and a request before anybody is asked.
+The first one to return non-nil allows the request: the CLI is sent an
+allow, the transcript keeps an \"auto-allowed\" note, and nothing is put
+in front of the user.  Only a permission is asked about -- a question or
+a plan wants an answer, not a yes.
+
+The counterpart of `ecc-request-refuse-functions\=', which is asked
+first: a request one module refuses is not allowed by another.  It is
+for a tool whose every call is harmless by construction -- one of this
+Emacs\=' own that writes no file -- and not for a judgement about a
+particular call, which is the user\='s.")
+
 (defvar ecc-prepare-prompt-functions nil
   "Functions given a session and a prompt, returning the prompt to send.
 Each is called in turn with what the one before it returned, and what
@@ -123,6 +136,11 @@ worth what it costs: a line on every prompt is a line on every prompt.")
 
 (defvar ecc-turn-finished-hook nil
   "Functions run with a session and the turn that just finished.")
+
+(defvar ecc-tool-finished-hook nil
+  "Functions run with a session and the tool node whose result just arrived.
+Any tool, whatever it did: a shell command changes files as much as an
+edit does, and `ecc-files-updated-hook\=' hears only of the file tools.")
 
 (defvar ecc-usage-hook nil
   "Functions run with a session when token usage or cost changed.")
@@ -232,9 +250,9 @@ resumed -- so this is not `ecc-session-exited-hook' by another name.")
                         ; one in `planFilePath'
   stream-blocks         ; hash: "PARENT:INDEX" -> node being streamed
   created               ; order this session was made in.  The registry
-                        ; is kept most recently used first, which is the
-                        ; wrong order for a row of tabs: they would
-                        ; shuffle every time one is used.  The tab line
+                        ; is kept most recently started first, which is
+                        ; the wrong order for a row of tabs: a new one
+                        ; would push the others along.  The tab line
                         ; sorts by this instead
   node-counter          ; counters for the ids of nodes and turns; the
   turn-counter)         ; ids have to be stable
@@ -298,13 +316,13 @@ the review of a file git does not track diffs against it."
   "Hash mapping a session id to its `ecc-session'.")
 
 (defvar ecc--session-order nil
-  "Session ids, most recently used first.")
+  "Session ids, most recently started first.")
 
 (defvar ecc--session-counter 0
   "How many sessions have been made, for the `created' of the next one.")
 
 (defun ecc-model-sessions ()
-  "Return the live sessions, most recently used first."
+  "Return the live sessions, most recently started first."
   (delq nil (mapcar (lambda (id) (gethash id ecc--sessions)) ecc--session-order)))
 
 (defun ecc-model-session (id)
@@ -312,7 +330,9 @@ the review of a file git does not track diffs against it."
   (gethash id ecc--sessions))
 
 (defun ecc-model-touch (session)
-  "Move SESSION to the front of the most-recently-used order."
+  "Move SESSION to the front of the registry.
+It is done when a session is made and when its id changes, so the
+registry is most recently started first."
   (let ((id (ecc-session-id session)))
     (setq ecc--session-order (cons id (delete id ecc--session-order)))))
 
@@ -454,6 +474,20 @@ response said."
           (cadr pairs))
     (setq pairs (cddr pairs)))
   (ecc-session-remote-control session))
+
+(defun ecc-model-activity (session)
+  "Return `attention', `running', `exited', `restored' or `idle' for SESSION.
+`attention' is a session with a request waiting for an answer, and
+`running' one that is starting, working on a turn or compacting.
+`restored' is a session `ecc-restore' brought back that has not run
+since: stopped, but nothing went wrong with it, so it is not drawn as
+the error an exit is."
+  (cond
+   ((ecc-session-pending session) 'attention)
+   ((memq (ecc-session-state session) '(starting running compacting)) 'running)
+   ((eq (ecc-session-state session) 'exited)
+    (if (ecc-model-option session :restored nil) 'restored 'exited))
+   (t 'idle)))
 
 (defun ecc-model-set-state (session state)
   "Set the state of SESSION to STATE and announce the change."
@@ -643,6 +677,27 @@ node is registered so that a later message can find it by ID."
   "Set KEY to VALUE in the data of NODE."
   (setf (alist-get key (ecc-node-data node)) value))
 
+(defvar ecc-model-finished-task-statuses '("completed" "failed" "killed" "stopped")
+  "The statuses with which the CLI reports a task as over.
+A task_started carries no status at all, and a task_notification ends
+it with one of these: \"completed\" in the recordings of 2.1.265.  Any
+other status, or none, is a task still running, so that a status the CLI
+adds later is taken for work going on rather than for work done.")
+
+(defun ecc-model-running-tasks (session)
+  "Return the tool nodes of SESSION whose task is still running.
+A subagent or a backgrounded shell command reports as a task, and goes
+on after the turn that started it has ended: a session whose turn is
+over is not idle while one of these is still at work."
+  (let ((nodes nil))
+    (maphash (lambda (_id node)
+               (when (and (ecc-model-node-get node 'task)
+                          (not (member (ecc-model-node-get node 'task-status)
+                                       ecc-model-finished-task-statuses)))
+                 (push node nodes)))
+             (ecc-session-nodes session))
+    nodes))
+
 (defun ecc-model-turn-of (node)
   "Return the turn NODE belongs to, or nil."
   (let ((parent (ecc-node-parent node)))
@@ -807,9 +862,10 @@ entry exists.  Returns the entry, or nil when PATH is not a string."
   "Record that Claude changed PATH of SESSION from OLD to NEW.
 PATCH is the structuredPatch the CLI reported, when it did.  The line
 counts of the Files section come from PATCH when there is one.
-ORIGINAL is the whole file before this change, or nil for a file that
-did not exist; the first change of a file keeps it as what the session
-started from."
+ORIGINAL is the whole file before this change, nil for a file that
+did not exist, or `unknown' when it is not known (a Bash command's);
+the first change that knows it keeps it as what the session started
+from."
   (when-let* ((entry (ecc-model-note-file session path nil)))
     (setf (ecc-file-entry-hunks entry)
           (nconc (ecc-file-entry-hunks entry) (list (cons old new))))

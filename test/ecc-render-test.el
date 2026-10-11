@@ -1332,6 +1332,102 @@ A MultiEdit was noted as nil against nil and the row drew
       (should (string-search "long.py  W×1  +298 −0\n" text))
       (should (string-search "298 +    return 59 \n" text)))))
 
+;;;; What a Bash command changed
+
+(defconst ecc-render-test--bash-root "/private/tmp/ecc-fixture/sandbox/"
+  "The directory the bash-edit-diff fixture was recorded in.")
+
+(defun ecc-render-test--bash-node (session)
+  "Return the first Bash node of SESSION that changed a.txt."
+  (seq-find (lambda (node)
+              (seq-find (lambda (file)
+                          (string-suffix-p "/a.txt" (plist-get file :path)))
+                        (plist-get (ecc-model-node-get node 'bash-edit) :files)))
+            (hash-table-values (ecc-session-nodes session))))
+
+(ert-deftest ecc-render-test-bash-edit-diff ()
+  "A Bash call the CLI reports changes for draws them under its output.
+One block per file, under a line that says what happened to it in the
+CLI's words, the diff numbered as an Edit's is; then the files past the
+five the CLI showed are counted.  The call comes up open on them."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-project-root session) ecc-render-test--bash-root)
+    (let ((text (ecc-render-test--replay session "bash-edit-diff" "bash"
+                                         '(allow allow))))
+      (should (string-search (concat "    → (Bash completed with no output)\n"
+                                     "    Updated a.txt (+1 -1)\n"
+                                     "    1  line one\n"
+                                     "    2 -line two \n"
+                                     "    2 +line TWO \n"
+                                     "    3  line three\n"
+                                     "    4  line four\n"
+                                     "    Deleted b.txt (+0 -1)\n"
+                                     "    1 -bee \n"
+                                     "    Created new.txt (+1 -0)\n"
+                                     "    1 +brand new \n")
+                             text))
+      (should (string-search (concat "    Updated m5.txt (+1 -1)\n"
+                                     "    1  n 5\n"
+                                     "    2 -old \n"
+                                     "    2 +new \n"
+                                     "    … 3 more files changed\n")
+                             text))
+      ;; The Files section has them, with their counts.
+      (should (string-search "a.txt  E×1  +1 −1" text))
+      (should (string-search "new.txt  W×1  +1 −0" text))
+      (should (string-search "m8.txt  E×1\n" text))
+      (with-current-buffer (ecc-session-buffer session)
+        (let ((id (ecc-node-id (ecc-render-test--bash-node session))))
+          (should-not (ecc-render-node-hidden-p id))
+          ;; The lines are coloured as a diff is.
+          (goto-char (point-min))
+          (search-forward "2 +line TWO")
+          (should (memq 'diff-added (ensure-list (get-text-property
+                                                  (1- (point)) 'face))))
+          (let ((ecc-render-inhibit-inline-diff t))
+            (should (ecc-render--default-hidden-p id))))))))
+
+(ert-deftest ecc-render-test-bash-edit-diff-notes ()
+  "What the CLI could not show of a Bash change is said in its words."
+  (let ((notes (lambda (&rest diff) (ecc-render--bash-edit-notes diff))))
+    (should (equal (funcall notes :files nil :more 0 :skipped t)
+                   '("(file diff skipped for this git command)")))
+    (should (equal (funcall notes :files nil :more 2 :unavailable t)
+                   '("(file diff unavailable for this command; 2 files changed)")))
+    (should (equal (funcall notes :files nil :more 1)
+                   '("1 file changed (binary, mode only or too large to show)")))
+    (should (equal (funcall notes :files '((:path "/a")) :more 1 :unavailable t)
+                   '("… 1 more file changed (part of the diff is unavailable)")))
+    (should (equal (length (funcall notes :files '((:path "/a")) :more 0 :shared t))
+                   1))
+    (should-not (funcall notes :files '((:path "/a")) :more 0))))
+
+(ert-deftest ecc-render-test-bash-edit-diff-is-clipped ()
+  "A long Bash change is cut as an Edit's diff is, file by file."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "bash")
+    (let ((ecc-render-diff-max-lines 3)
+          (lines (vconcat (mapcar (lambda (n) (format "+l%d" n)) (number-sequence 1 10)))))
+      (ecc-model-node-changed
+       session
+       (ecc-model-add-node
+        session :type 'tool :status 'done
+        :data `((name . "Bash")
+                (input . ((command . "gen")))
+                (result . "")
+                (bash-edit . (:files ((:path "/w/gen.txt" :change created
+                                       :patch [((oldStart . 0) (oldLines . 0)
+                                                (newStart . 1) (newLines . 10)
+                                                (lines . ,lines))]))
+                              :changed ("/w/gen.txt") :more 0)))))
+      (ecc-render-flush session)
+      (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+        (should (string-search "Created /w/gen.txt (+10 -0)" text))
+        (should (string-search " 3 +l3 \n" text))
+        (should-not (string-search "+l4" text))
+        (should (string-search "… 7 more lines (RET)" text))))))
+
 ;;;; Files and Tasks
 
 (ert-deftest ecc-render-test-tasks ()

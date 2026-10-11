@@ -267,35 +267,36 @@ step.")
   "Timer that blinks the tabs of the sessions waiting for an answer.")
 
 (defun ecc-tab-state (session)
-  "Return `attention', `running', `exited' or `idle' for SESSION."
-  (cond
-   ((ecc-session-pending session) 'attention)
-   ((memq (ecc-session-state session) '(starting running compacting)) 'running)
-   ((eq (ecc-session-state session) 'exited) 'exited)
-   (t 'idle)))
+  "Return `attention', `running', `exited', `restored' or `idle' for SESSION.
+What the tab of SESSION is drawn as: `ecc-model-activity'."
+  (ecc-model-activity session))
 
 (defun ecc-tab-state-roll-up (sessions)
   "Return the one state that stands for SESSIONS, or nil when there are none.
 The loudest wins: a session waiting for an answer speaks for the
-group, then one that is working, then one that has died.  Whatever
-draws a group of sessions under a single mark -- a tab of the tab bar,
-a Space in the sidebar -- folds them with this, so that they all agree
-about what the mark means."
+group, then one that is working, then one that has died, then one
+restored and not started yet.  Whatever draws a group of sessions
+under a single mark -- a tab of the tab bar, a Space in the sidebar --
+folds them with this, so that they all agree about what the mark
+means."
   (cond
    ((null sessions) nil)
    ((seq-find (lambda (s) (eq (ecc-tab-state s) 'attention)) sessions) 'attention)
    ((seq-find (lambda (s) (eq (ecc-tab-state s) 'running)) sessions) 'running)
    ((seq-find (lambda (s) (eq (ecc-tab-state s) 'exited)) sessions) 'exited)
+   ((seq-find (lambda (s) (eq (ecc-tab-state s) 'restored)) sessions) 'restored)
    (t 'idle)))
 
-(defun ecc-tab-mark-of-state (state)
+(defun ecc-tab-mark-of-state (state &optional fill)
   "Return the character that stands for STATE.
 A state with nothing to say gets no mark: a row of tabs is quieter
-when only the ones that want something are marked.  Somewhere with
-room to line the marks up -- the sidebar -- puts its own character in
-for the empty one."
+when only the ones that want something are marked.  Somewhere the mark
+opens a column of names -- the sidebar, the session picker -- passes
+FILL, and idle gets a `·\=' of its own, so that an idle name does not
+stand a column to the left of every other."
   (pcase state
-    ('attention "⚠") ('running "▶") ('exited "✗") (_ "")))
+    ('attention "⚠") ('running "▶") ('exited "✗") ('restored "○")
+    (_ (if fill "·" ""))))
 
 (defun ecc-tab-mark (session)
   "Return the character that stands for the state of SESSION."
@@ -326,6 +327,7 @@ tab in front of you."
                                  'ecc-tab-running-face
                                'ecc-tab-running-dim-face))
                    ('exited 'ecc-error-face)
+                   ;; Quiet like idle: waiting to be used, not broken.
                    (_ 'ecc-tab-idle-face)))))
     (cond
      ;; Idle is not a colour so much as the want of one: the dim face
@@ -344,10 +346,12 @@ row of tabs is the handful one is working among rather than every
 session this Emacs has open; `all' lists them all.
 
 A session outside the scope is still there and still reached:
-`ecc-switch-session', the dashboard and `ecc-next-attention' all cross
-projects.  What is given up is that its tab is not on the screen to
-blink when it wants an answer -- the count in the mode line and
-`ecc-notify-mode' are what say so then.")
+`ecc-switch-session' with a prefix argument, the dashboard and
+`ecc-next-attention' all cross projects.  Without one,
+`ecc-switch-session' offers the same sessions as the tabs.  What is
+given up is that its tab is not on the screen to blink when it wants an
+answer -- the count in the mode line and `ecc-notify-mode' are what say
+so then.")
 
 ;; Defined by the minor mode below; named here because the tab line is
 ;; asked about from above it.
@@ -359,9 +363,9 @@ The sessions of SESSION\='s own project, or every session there is when
 `ecc-tab-line-scope\=' says so or when SESSION is nil -- a tab line drawn
 in a buffer that is nobody\='s session.
 
-The registry is kept most recently used first, which is the wrong
-order for a row of tabs -- they would move about as one works -- so the
-sessions are put back into the order they were made in."
+The registry is kept most recently started first, which is the wrong
+order for a row of tabs -- a new one would push the others along -- so
+the sessions are put back into the order they were made in."
   (let ((sessions (if (and session (eq ecc-tab-line-scope 'project))
                       (ecc-window-project-sessions
                        (ecc-window-session-project session))

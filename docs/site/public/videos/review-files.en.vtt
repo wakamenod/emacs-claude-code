@@ -1,0 +1,16 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:02.600
+Every uncommitted change, as one diff
+
+00:00:02.600 --> 00:00:05.000
+Press s to list the files beside it
+
+00:00:05.000 --> 00:00:09.200
+RET on a file goes to it in the diff
+
+00:00:09.200 --> 00:00:13.000
+Press / and type: the list keeps the files that match
+
+00:00:13.000 --> 00:00:16.000
+RET leaves only those files in the review

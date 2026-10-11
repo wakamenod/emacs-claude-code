@@ -590,6 +590,15 @@ byte for byte, such as the tool input of an allow response."
                      :null-object :null
                      :false-object :false))
 
+(defun ecc-tool-input-path (input)
+  "Return the file the tool INPUT names, or nil.
+INPUT is the input alist of a tool call: an Edit, a Write or a Read
+names its file as file_path, a NotebookEdit as notebook_path."
+  (let ((path (and (consp input)
+                   (or (alist-get 'file_path input)
+                       (alist-get 'notebook_path input)))))
+    (and (stringp path) (not (string-empty-p path)) path)))
+
 (defun ecc--json-true-p (value)
   "Return non-nil when VALUE is a JSON true.
 JSON false reads as `:false\=', which is a symbol and therefore true to

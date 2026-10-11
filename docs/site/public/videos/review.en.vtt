@@ -1,0 +1,16 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:02.900
+What the session changed, as one diff
+
+00:00:02.900 --> 00:00:07.500
+Press c on a line and type a comment
+
+00:00:07.500 --> 00:00:12.300
+C-c C-c sends it; the review stays open and the comment dims
+
+00:00:12.300 --> 00:00:15.900
+Claude answers under the comment and changes the file
+
+00:00:15.900 --> 00:00:19.400
+The review follows the files and shows the new diff

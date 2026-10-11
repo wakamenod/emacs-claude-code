@@ -52,6 +52,14 @@
 (declare-function ecc-space-display-session "ecc-space" (session))
 (declare-function ecc-space-display-beside-session "ecc-space" (buffer session))
 (declare-function ecc-space-current-key "ecc-space" ())
+(declare-function ecc-space-tab "ecc-space" (space))
+(declare-function ecc-space-name "ecc-space" (space))
+(declare-function ecc-space-parent "ecc-space" (space))
+;; `ecc-notify' is above this file as well, and requires it.
+(declare-function ecc-tab-state "ecc-notify" (session))
+(declare-function ecc-tab-mark-of-state "ecc-notify" (state &optional fill))
+(declare-function ecc-tab-faces-of-state "ecc-notify" (state current))
+(defvar ecc-tab--blink-phase)
 
 (defvar ecc-window-use-side-window t
   "Non-nil shows a transcript in a side window rather than an ordinary one.
@@ -151,11 +159,11 @@ second only for a session that has no root of its own."
                               (ecc-session-cwd session))))
 
 (defun ecc-window-session-projects ()
-  "Return the projects that have a session, most recently used first."
+  "Return the projects that have a session, most recently started first."
   (seq-uniq (mapcar #'ecc-window-session-project (ecc-model-sessions))))
 
 (defun ecc-window-project-sessions (&optional root)
-  "Return the sessions whose project is ROOT, most recently used first.
+  "Return the sessions whose project is ROOT, most recently started first.
 ROOT defaults to the project of the current buffer.  It is matched as a
 project rather than as a path, so a session started in a subdirectory
 of ROOT is one of them."
@@ -587,6 +595,144 @@ happens to the session windows and where point lands."
          (select-window session-window))))
     window))
 
+(defun ecc-window-show-review-quietly (buffer session &optional replaceable)
+  "Show the review in BUFFER beside SESSION without moving anybody.
+Returns the window that shows it, or nil.  This is how a review Claude
+opened or moved reaches the screen: the user is somewhere else -- very
+likely typing in the prompt -- so nothing is selected, no session
+window is hidden, and `ecc-window-review-focus\=' and
+`ecc-window-hide-on-review\=' are not consulted, both being about a
+review the user asked for.
+
+A review already on a visible frame is left where it is.  Otherwise it
+is shown only when SESSION is on the screen of the selected frame --
+which is the tab showing, so no tab or Space is ever gone to -- and
+never in the window the user is in: the selected one, or the one the
+minibuffer was entered from.  REPLACEABLE, a predicate on a buffer,
+names what may be put out of its window -- another review of the same
+session, so that a second review takes the window of the first rather
+than dividing the session again.  Then the widest window holding
+nothing of this package, then a new one divided off the session\='s.
+Not `ecc-window-display-beside-session\=': under `spaces\=' that selects
+the Space of the session, and may pick the very window the user is
+typing in, which would then take their next keys.  Where there is no
+such window the review waits in its buffer, and nil says so.
+
+A rule of the user\='s own in `display-buffer-alist\=' that matches
+BUFFER is followed instead (`ecc-window--display-by-rule\=') -- as long
+as it too leaves the user\='s window, and tab, alone."
+  (or (get-buffer-window buffer 'visible)
+      (when-let* ((session-buffer (ecc-session-buffer session))
+                  ((buffer-live-p session-buffer))
+                  (session-window (get-buffer-window session-buffer)))
+        (if (ecc-window--user-rule-p buffer)
+            (ecc-window--display-by-rule buffer)
+          (pcase (ecc-window--quiet-review-window session-window replaceable)
+            (`(,window . ,type)
+             ;; `window' for a window made for it, so that `quit-window'
+             ;; deletes it; `reuse' for one it borrowed, so that the
+             ;; buffer that was there comes back.  A new window also
+             ;; forgets the buffer `split-window' gave it to begin with,
+             ;; as `display-buffer' has it forget: with that one in its
+             ;; history `quit-window' shows it again rather than deleting
+             ;; the window (Emacs 32.0.50, 2026-10-01).
+             (display-buffer-record-window type window buffer)
+             (set-window-buffer window buffer)
+             (when (eq type 'window)
+               (set-window-prev-buffers window nil))
+             window))))))
+
+(defun ecc-window--users-windows ()
+  "Return the windows the user is working in.
+The selected one, and while the minibuffer is active the one it was
+entered from -- the window a \\[find-file] or an \\[execute-extended-command] goes back to."
+  (delq nil (list (selected-window) (minibuffer-selected-window))))
+
+(defun ecc-window--quiet-review-window (session-window replaceable)
+  "Return (WINDOW . TYPE) for a review to go in quietly beside SESSION-WINDOW.
+TYPE is `reuse\=' for a window that shows something else now and `window\='
+for one divided off SESSION-WINDOW.  REPLACEABLE is the predicate of
+`ecc-window-show-review-quietly\='.  Nil when there is none."
+  (let* ((users (ecc-window--users-windows))
+         (free (seq-filter (lambda (window)
+                             (and (not (memq window users))
+                                  (not (window-parameter window 'window-side))
+                                  (not (window-dedicated-p window))))
+                           (window-list nil 'no-minibuffer)))
+         (widest (lambda (windows)
+                   (car (sort windows (lambda (a b) (> (window-total-width a)
+                                                       (window-total-width b))))))))
+    (if-let* ((window (or (and replaceable
+                               (funcall widest
+                                        (seq-filter (lambda (window)
+                                                      (funcall replaceable
+                                                               (window-buffer window)))
+                                                    free)))
+                          (funcall widest
+                                   (seq-remove (lambda (window)
+                                                 (ecc-window-own-buffer-p
+                                                  (window-buffer window)))
+                                               free)))))
+        (cons window 'reuse)
+      (when-let* ((window (ecc-window--split-quietly session-window)))
+        (cons window 'window)))))
+
+(defvar ecc-window-quiet-split-min-height 8
+  "Fewest lines each half has when a review divides a session window.")
+
+(defun ecc-window--split-quietly (session-window)
+  "Divide SESSION-WINDOW for a review and return the new window, or nil.
+To the right when it has room for two columns of 80, which is what a
+diff wants to be read in; below it when it has room for two halves of
+`ecc-window-quiet-split-min-height\=' lines; not at all otherwise, nor
+when it is a side window.  The selected window stays selected and keeps
+its buffer: the new window is the other half.  The room is measured
+first, so that a window too small to divide is an answer and not an
+error, and any other error of `split-window\=' is left to be seen."
+  (unless (window-parameter session-window 'window-side)
+    (let ((direction
+           (cond ((>= (window-total-width session-window) 160) 'right)
+                 ((>= (window-total-height session-window)
+                      (* 2 (max ecc-window-quiet-split-min-height window-min-height)))
+                  'below))))
+      (when direction
+        (split-window session-window nil direction)))))
+
+(defun ecc-window--user-rule-p (buffer)
+  "Return non-nil when `display-buffer-alist\=' has a rule for BUFFER."
+  (seq-some (lambda (entry)
+              (buffer-match-p (car entry) (buffer-name buffer) nil))
+            display-buffer-alist))
+
+(defun ecc-window--display-by-rule (buffer)
+  "Show BUFFER the way the user\='s `display-buffer-alist\=' says, or not at all.
+Returns the window, or nil.  The rule is followed through
+`display-buffer\=' with the selected window kept and no other frame
+switched to; afterwards the window the user is in has to hold what it
+held, and the tab has to be the one it was.  A rule that took either --
+it is theirs, and may say anything -- is undone, and the review waits in
+its buffer."
+  (let* ((users (mapcar (lambda (window) (cons window (window-buffer window)))
+                        (ecc-window--users-windows)))
+         (configuration (current-window-configuration))
+         (tab (and (fboundp 'tab-bar--current-tab-index) (tab-bar--current-tab-index)))
+         (window (save-selected-window
+                   (display-buffer buffer '(nil (inhibit-switch-frame . t)
+                                                (inhibit-same-window . t)))))
+         (now (and (fboundp 'tab-bar--current-tab-index) (tab-bar--current-tab-index))))
+    (if (and (window-live-p window)
+             (equal tab now)
+             (not (assq window users))
+             (seq-every-p (lambda (user)
+                            (and (window-live-p (car user))
+                                 (eq (window-buffer (car user)) (cdr user))))
+                          users))
+        window
+      (unless (equal tab now)
+        (tab-bar-select-tab (1+ tab)))
+      (set-window-configuration configuration)
+      nil)))
+
 (defun ecc-window-session-buffers (session)
   "Return the live buffers of SESSION that are shown in a window of their own."
   (seq-filter #'buffer-live-p
@@ -817,26 +963,153 @@ being whatever they were left as."
   (seq-filter (lambda (session) (ecc-window-session-visible-p session frame))
               (ecc-model-sessions)))
 
-(defun ecc-window-session-label (session)
-  "Return the line SESSION is offered under when there is a choice."
-  (format "%-24s  %-8s %s"
-          (ecc--truncate (ecc-session-name session) 24)
-          (or (ecc-session-state session) "")
-          (abbreviate-file-name (or (ecc-session-project-root session) ""))))
+(defun ecc-window--session-group (key)
+  "Return (TITLE . PARENT) for the group of the sessions of the project KEY.
+Under `spaces\=' the group is the Space.  A linked worktree is titled
+after the repository it belongs to and then its branch,
+`repo › branch\=', and PARENT is the key of that repository; any other
+Space goes by the name of its tab when it has one, so that the two
+agree, and otherwise by its name.  Under `classic\=' it is the project,
+with no PARENT: telling a worktree from its repository asks git, and
+nothing under `classic\=' reaches `ecc-worktree\='."
+  (cond
+   ((string-empty-p key) (list "-"))
+   (ecc-use-spaces
+    (require 'ecc-space)
+    (let* ((space (ecc-space-of-root key))
+           (parent (ecc-space-parent space)))
+      (if parent
+          ;; The branch and not the tab: a tab's `<2>' is there to tell
+          ;; tabs apart, and the repository in front already does.
+          (cons (concat (ecc-space-name (ecc-space-of-root parent))
+                        " › " (ecc-space-name space))
+                parent)
+        (list (or (ecc-space-tab space) (ecc-space-name space))))))
+   (t (require 'ecc-render)
+      (list (ecc-render--project-name-1 key)))))
+
+(defun ecc-window--sessions-by-use (sessions)
+  "Return SESSIONS, the one whose buffer was selected last first.
+`buffer-list' is kept in that order.  The registry is not: it moves a
+session to the front when it starts, not when it is used.  A session
+with no live buffer goes after the rest, and sessions that tie keep the
+order of SESSIONS."
+  (let ((rank (make-hash-table :test #'eq))
+        (n 0))
+    (dolist (buffer (buffer-list))
+      (puthash buffer (setq n (1+ n)) rank))
+    (mapcar #'cdr
+            ;; `sort' is stable.
+            (sort (mapcar (lambda (session)
+                            (cons (gethash (ecc-session-buffer session) rank
+                                           most-positive-fixnum)
+                                  session))
+                          sessions)
+                  (lambda (a b) (< (car a) (car b)))))))
+
+(defun ecc-window--session-groups (sessions)
+  "Return an alist of each project of SESSIONS to the title of its group.
+In the order the projects first come up among SESSIONS, except that a
+worktree follows its repository when that has sessions here too, the
+way the sidebar draws it.  Two projects that would still go by the
+same title are told apart the way their tabs are, `main<2>\='."
+  (let* ((groups (mapcar (lambda (key)
+                           (cons key (ecc-window--session-group key)))
+                         (seq-uniq (mapcar #'ecc-window-session-project
+                                           sessions))))
+         (keys (mapcar #'car groups))
+         (ordered nil)
+         (titled nil))
+    ;; The same walk as `ecc-space-list'.
+    (dolist (group groups)
+      (unless (member (cddr group) keys)
+        (push group ordered)
+        (dolist (child groups)
+          (when (equal (cddr child) (car group))
+            (push child ordered)))))
+    (dolist (group (nreverse ordered))
+      (let* ((base (cadr group))
+             (title base)
+             (n 1))
+        (while (rassoc title titled)
+          (setq n (1+ n)
+                title (format "%s<%d>" base n)))
+        (push (cons (car group) title) titled)))
+    (nreverse titled)))
+
+(defun ecc-window--session-candidates (sessions)
+  "Return an alist of a candidate to its group title and session, for SESSIONS.
+The candidate is the title and the name, `Space/name\=', so that typing
+the name of a Space narrows the list to its sessions -- and the name of
+a repository to its sessions and those of its worktrees.  A group\='s
+sessions come together, in the order of the groups, and keep the order
+of SESSIONS among themselves."
+  (mapcan (lambda (group)
+            (let ((title (cdr group)))
+              (mapcar (lambda (session)
+                        (cons (concat title "/" (ecc-session-name session))
+                              (cons title session)))
+                      (seq-filter (lambda (session)
+                                    (equal (ecc-window-session-project session)
+                                           (car group)))
+                                  sessions))))
+          (ecc-window--session-groups sessions)))
+
+(defun ecc-window--session-line (session name)
+  "Return SESSION as the picker shows it: the mark of its state, then NAME.
+NAME is the name as the candidate carries it, with whatever faces the
+completion UI put on it to show what matched: vertico highlights a
+candidate before it hands it to the `group-function\=' (confirmed
+2026-10-07), and a name taken from SESSION afresh would lose them.  The
+mark is the one its tab and its sidebar row carry, at the moment of
+asking: no blinking.  Only the mark takes a face of its own."
+  (require 'ecc-notify)
+  (let* ((ecc-tab--blink-phase nil)
+         (state (ecc-tab-state session)))
+    (concat (propertize (ecc-tab-mark-of-state state t)
+                        'face (ecc-tab-faces-of-state state nil))
+            " " name)))
+
+(defun ecc-window--session-table (candidates)
+  "Return a completion table of CANDIDATES, grouped by Space and kept in order.
+CANDIDATES is what `ecc-window--session-candidates\=' returns.  As a line
+is shown, the group title comes off its front and the mark of the
+session\='s state goes in its place.  The title is matched against what
+is typed, the mark is not."
+  (lambda (string predicate action)
+    (if (eq action 'metadata)
+        `(metadata
+          (group-function
+           . ,(lambda (candidate transform)
+                (let ((entry (cdr (assoc candidate candidates))))
+                  (cond ((null entry) (if transform candidate ""))
+                        (transform
+                         (ecc-window--session-line
+                          (cdr entry)
+                          (substring candidate (1+ (length (car entry))))))
+                        (t (car entry))))))
+          ;; Most recently used first, which sorting would throw away.
+          (display-sort-function . identity)
+          (cycle-sort-function . identity))
+      (complete-with-action action candidates string predicate))))
 
 (defun ecc-window-read-session (&optional prompt sessions)
   "Ask which of SESSIONS to use, with PROMPT.
-SESSIONS defaults to every live session, most recently used first."
-  (let ((sessions (or sessions (ecc-model-sessions))))
+SESSIONS defaults to every live session.  They are offered most
+recently used first, by `ecc-window--sessions-by-use', grouped by the
+Space they belong to -- the project under `classic\=' -- each under the
+mark of its state.  A group comes where its most recently used session
+does."
+  (let ((sessions (ecc-window--sessions-by-use
+                   (or sessions (ecc-model-sessions)))))
     (cond
      ((null sessions) (user-error "No session is running"))
      ((null (cdr sessions)) (car sessions))
-     (t (let* ((labels (mapcar (lambda (session)
-                                 (cons (ecc-window-session-label session) session))
-                               sessions))
+     (t (let* ((candidates (ecc-window--session-candidates sessions))
                (choice (completing-read (or prompt "Session: ")
-                                        (mapcar #'car labels) nil t)))
-          (cdr (assoc choice labels)))))))
+                                        (ecc-window--session-table candidates)
+                                        nil t)))
+          (cddr (assoc choice candidates)))))))
 
 (defun ecc-window-bound-session ()
   "Return the session this buffer was told to send to, or nil."
@@ -846,7 +1119,7 @@ SESSIONS defaults to every live session, most recently used first."
   "Return the session a command in this buffer should talk to.
 The order is: the session of this buffer, the session this buffer was
 bound to before, the only session of this project, the only session on
-screen, the most recently used one.  FORCE-ASK, a prefix argument in
+screen, the most recently started one.  FORCE-ASK, a prefix argument in
 the commands that take one, always asks; the answer is remembered in
 the buffer."
   (or (ecc-window-buffer-session)
@@ -866,29 +1139,94 @@ the buffer."
 ;;;; Switching a window to another session
 
 (defun ecc-window--switch-target ()
-  "Return the window `ecc-switch-session' should change.
-The current window when it is one of ours, and `main' otherwise: a
-command run from the source code means the session one is looking at."
+  "Return the window `ecc-switch-session' should change, or nil.
+The current window when it shows a session or carries a role, and
+`main' otherwise: a command run from the source code means the session
+one is looking at.  The windows of a Space carry no role, so there it
+is the current window or none, and none means the Space that is
+showing."
   (let ((window (selected-window)))
-    (if (window-parameter window 'ecc-window-role)
+    (if (or (window-parameter window 'ecc-window-role)
+            (ecc-window-buffer-session (window-buffer window)))
         window
       (ecc-window--role-window 'main))))
+
+;; Defined in `ecc-notify', which is above this file; read here so that
+;; the sessions `ecc-switch-session' offers are the tabs on the screen.
+(defvar ecc-tab-line-scope)
+
+(defun ecc-window--switch-row (window)
+  "Return the sessions of the tab row of WINDOW, most recently started first.
+The row of the session WINDOW shows: its project, or every session when
+`ecc-tab-line-scope' is `all', which is what `ecc-tab-line--sessions'
+draws.  A WINDOW that shows no session has no row, and the project
+meant is the Space that is showing, or under `classic' the one
+`ecc-start' would use."
+  (let ((session (and (window-live-p window)
+                      (ecc-window-buffer-session (window-buffer window)))))
+    ;; The same rule as `ecc-tab-line--sessions'; change them together.
+    (cond
+     ((eq (bound-and-true-p ecc-tab-line-scope) 'all) (ecc-model-sessions))
+     (session (ecc-window-project-sessions
+               (ecc-window-session-project session)))
+     (t (ecc-window-project-sessions
+         (or (ecc-window--space-root) (ecc-window-context-project-root)))))))
+
+(defun ecc-window--read-switch (every)
+  "Ask which session `ecc-switch-session' should show.
+The sessions of the tab row of the window being switched, or every
+session when EVERY; the one that window already shows is not among them."
+  (let* ((window (ecc-window--switch-target))
+         (current (and (window-live-p window)
+                       (ecc-window-buffer-session (window-buffer window))))
+         (sessions (remq current (if every
+                                     (ecc-model-sessions)
+                                   (ecc-window--switch-row window)))))
+    (cond
+     (sessions (ecc-window-read-session "Switch to: " sessions))
+     ((or every (eq (bound-and-true-p ecc-tab-line-scope) 'all))
+      (user-error "No other session is running"))
+     (t (user-error "%s" (substitute-command-keys
+                          "No other session in this project; \\[universal-argument] \\[ecc-switch-session] lists them all"))))))
 
 ;;;###autoload
 (defun ecc-switch-session (session)
   "Show SESSION in this window, the way clicking its tab would.
 Which session a window shows is the user's to choose: this is the same
-choice the tab line offers, for when the tabs are not to hand."
-  (interactive (list (ecc-window-read-session "Switch to: ")))
+choice the tab line offers, for when the tabs are not to hand.
+
+Interactively the choice is the tabs of this window -- the sessions of
+its project, or all of them under `ecc-tab-line-scope' `all' -- less the
+one it already shows.  With a prefix argument it is every session.
+
+Under `spaces' a session from outside the row is not put into this
+window, where it would sit among another project's tabs: it is shown in
+its own Space, by `ecc-window-select-session'.  One another window of
+this Space already shows is selected there rather than shown twice.
+Under `classic' there is no Space for it to go to, and the session is
+put into this window whatever its project."
+  (interactive (list (ecc-window--read-switch current-prefix-arg)))
   (require 'ecc-session)
-  (let ((window (ecc-window--switch-target)))
-    (if (not (window-live-p window))
-        (ecc-window-select-session session)
+  (let* ((window (ecc-window--switch-target))
+         (frame (and (window-live-p window) (window-frame window)))
+         (buffer (ecc-session-buffer session))
+         (shown (and ecc-use-spaces frame (buffer-live-p buffer)
+                     (get-buffer-window buffer frame))))
+    (cond
+     ((or (not frame)
+          (and ecc-use-spaces
+               (not (memq session (ecc-window--switch-row window)))))
+      (ecc-window-select-session session))
+     (shown
+      (select-window shown)
+      (ecc-chat-goto-prompt)
+      shown)
+     (t
       (set-window-buffer window (ecc-session-ensure-buffer session))
-      (ecc-window-repair-side-windows (window-frame window))
+      (ecc-window-repair-side-windows frame)
       (select-window window)
       (ecc-chat-goto-prompt)
-      window)))
+      window))))
 
 ;; The tab line changes what a window shows with `switch-to-buffer',
 ;; which costs a side window its dedication; so does anything else the

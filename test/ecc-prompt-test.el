@@ -937,6 +937,160 @@ OFFERED is bound to the list of labels the table held."
                                                    :annotation-function)
                                         "@region")))))))
 
+;; What the file part of the @ completion leaves the table to.
+(defun ecc-prompt-test--path-candidates (path)
+  "Return the start of the @ completion after PATH and its candidates."
+  (insert "見て @" path)
+  (let* ((capf (ecc-prompt-at-capf))
+         (table (nth 2 capf)))
+    (list (nth 0 capf)
+          (car (completion-boundaries path table nil ""))
+          (sort (all-completions path table) #'string<))))
+
+(defmacro ecc-prompt-test--with-tree (var &rest body)
+  "Run BODY with VAR bound to a fresh directory, deleted afterwards."
+  (declare (indent 1))
+  `(let ((,var (file-name-as-directory (make-temp-file "ecc-at-paths" t))))
+     (unwind-protect (progn ,@body)
+       (delete-directory ,var t))))
+
+(defun ecc-prompt-test--touch (&rest files)
+  "Make FILES, and the directories they are in."
+  (dolist (file files)
+    (make-directory (file-name-directory file) t)
+    (write-region "" nil file)))
+
+(ert-deftest ecc-prompt-test-at-completion-keeps-project-files ()
+  "A plain @ word is completed from the specials and the project files."
+  (ecc-test-with-fake-session session
+    (cl-letf (((symbol-function 'ecc-prompt-project-files)
+               (lambda (_) '("readme.md" "src/reader.py"))))
+      (ecc-prompt-test--in-buffer session
+        (insert "見て @rea")
+        (let ((capf (ecc-prompt-at-capf)))
+          (should (= (nth 0 capf) (- (point) 4)))
+          (should (equal (all-completions "@rea" (nth 2 capf)) '("@readme.md")))
+          (should (equal (all-completions "@" (nth 2 capf))
+                         '("@region" "@cursor" "@diagnostics"
+                           "@readme.md" "@src/reader.py"))))))))
+
+(ert-deftest ecc-prompt-test-project-files-through-another-spelling ()
+  "Project files are relative to the session when the project spells it otherwise."
+  (ecc-prompt-test--with-tree tree
+    (let ((true (file-name-as-directory (file-truename tree)))
+          (link (concat (directory-file-name tree) "-link/")))
+      (make-symbolic-link (directory-file-name true) (directory-file-name link))
+      (unwind-protect
+          (ecc-test-with-fake-session session
+            (setf (ecc-session-project-root session) link)
+            ;; A project that names its root and files by the true name,
+            ;; as projectile does.
+            (cl-letf (((symbol-function 'project-current)
+                       (lambda (&rest _) (cons 'transient true)))
+                      ((symbol-function 'project-root) #'cdr)
+                      ((symbol-function 'project-files)
+                       (lambda (project &rest _)
+                         (list (concat (cdr project) "readme.md")
+                               (concat (cdr project) "src/a.el")))))
+              (should (equal (ecc-prompt-project-files session)
+                             '("readme.md" "src/a.el")))))
+        (delete-file (directory-file-name link))))))
+
+(ert-deftest ecc-prompt-test-at-completion-absolute-directory ()
+  "An absolute path is completed from the directory it names, and only that."
+  (ecc-prompt-test--with-tree tree
+    (ecc-prompt-test--touch (concat tree "dir/alpha.txt")
+                            (concat tree "dir/beta.txt")
+                            (concat tree "dir/sub/deep.txt")
+                            (concat tree "elsewhere.txt"))
+    (ecc-test-with-fake-session session
+      (ecc-prompt-test--in-buffer session
+        (let ((path (concat tree "dir/")))
+          (pcase-let ((`(,start ,boundary ,candidates)
+                       (ecc-prompt-test--path-candidates path)))
+            ;; The @ stays where it is; the path is what is completed.
+            (should (= start (- (point) (length path))))
+            (should (= boundary (length path)))
+            ;; A directory ends in a slash, so the completion goes on.
+            (should (equal candidates '("alpha.txt" "beta.txt" "sub/")))))))))
+
+(ert-deftest ecc-prompt-test-at-completion-of-a-directory-of-directories ()
+  "TAB on a directory of directories leaves the path as it is.
+Partial completion, given to `file' in many configurations, made `../'
+into `..//' there; the paths are a category of their own."
+  (ecc-prompt-test--with-tree tree
+    (ecc-prompt-test--touch (concat tree "project/main.py")
+                            (concat tree "sibling/note.txt"))
+    (ecc-test-with-fake-session session
+      (setf (ecc-session-project-root session) (concat tree "project/"))
+      (ecc-prompt-test--in-buffer session
+        (insert "見て @../")
+        (let* ((table (nth 2 (ecc-prompt-at-capf)))
+               (completion-styles '(basic))
+               (completion-category-overrides
+                '((file (styles partial-completion)))))
+          (should (equal (completion-try-completion "../" table nil 3)
+                         '("../" . 3)))
+          (should (equal (sort (all-completions "../" table) #'string<)
+                         '("project/" "sibling/"))))))))
+
+(ert-deftest ecc-prompt-test-at-completion-home ()
+  "`@~/' is completed from the home directory and inserted as written."
+  (ecc-prompt-test--with-tree home
+    (ecc-prompt-test--touch (concat home "notes.org") (concat home "code/x.el"))
+    (let ((process-environment (cons (concat "HOME=" (directory-file-name home))
+                                     process-environment)))
+      (ecc-test-with-fake-session session
+        (ecc-prompt-test--in-buffer session
+          (pcase-let ((`(,_ ,boundary ,candidates)
+                       (ecc-prompt-test--path-candidates "~/no")))
+            (should (= boundary 2))
+            (should (equal candidates '("notes.org"))))
+          (let ((table (nth 2 (ecc-prompt-at-capf))))
+            (should (equal (try-completion "~/co" table) "~/code/"))))))))
+
+(ert-deftest ecc-prompt-test-at-completion-relative-to-the-session ()
+  "`../' and `./' are read from the directory the session's CLI runs in."
+  (ecc-prompt-test--with-tree tree
+    (ecc-prompt-test--touch (concat tree "project/main.py")
+                            (concat tree "sibling.txt"))
+    (ecc-test-with-fake-session session
+      (setf (ecc-session-project-root session) (concat tree "project/"))
+      (ecc-prompt-test--in-buffer session
+        (let ((default-directory temporary-file-directory))
+          (should (equal (nth 2 (ecc-prompt-test--path-candidates "../sib"))
+                         '("sibling.txt")))
+          (ecc-chat-clear-draft)
+          (ecc-chat-goto-prompt)
+          (should (equal (nth 2 (ecc-prompt-test--path-candidates "./ma"))
+                         '("main.py"))))))))
+
+(ert-deftest ecc-prompt-test-at-completion-leaves-remote-paths-alone ()
+  "A TRAMP path is not completed, and no file name handler is asked."
+  (ecc-test-with-fake-session session
+    (let* ((asked nil)
+           (file-name-handler-alist
+            ;; The shape of a remote name, and of a name at the root,
+            ;; which is where TRAMP completes the methods.
+            (cons (cons "\\`/[^/]*\\(?::\\|\\'\\)"
+                        (lambda (&rest args)
+                          (push args asked)
+                          (error "Connected")))
+                  file-name-handler-alist)))
+      (ecc-prompt-test--in-buffer session
+        (dolist (path '("/ssh:host:/etc/" "/sudo::/etc/" "/ssh:ho"))
+          (ecc-chat-clear-draft)
+          (ecc-chat-goto-prompt)
+          (insert "見て @" path)
+          (should-not (ecc-prompt-at-capf)))
+        ;; A method half typed is an ordinary name at the root, and the
+        ;; table does not hand it to a handler either.
+        (ecc-chat-clear-draft)
+        (ecc-chat-goto-prompt)
+        (insert "@/ss")
+        (all-completions "/ss" (nth 2 (ecc-prompt-at-capf)))
+        (should-not asked)))))
+
 ;;;; Images
 
 (ert-deftest ecc-prompt-test-pasted-image-becomes-a-path ()
@@ -957,6 +1111,61 @@ OFFERED is bound to the list of labels the table held."
               (should-not (string-search "PNG-data" (buffer-string)))))
         (when (file-directory-p ecc-image-dir)
           (delete-directory ecc-image-dir t))))))
+
+(defmacro ecc-prompt-test--with-clipboard (selection &rest body)
+  "Run BODY with the clipboard holding SELECTION, an alist of type to data."
+  (declare (indent 1))
+  `(cl-letf (((symbol-function 'gui-get-selection)
+              (lambda (_ type) (alist-get type ,selection))))
+     ,@body))
+
+(ert-deftest ecc-prompt-test-clipboard-tiff-becomes-png ()
+  "C-c C-y saves a TIFF on the clipboard as a PNG and refers to it."
+  (ecc-test-with-fake-session session
+    (let ((ecc-image-dir (make-temp-file "ecc-images" t)))
+      (unwind-protect
+          (ecc-prompt-test--in-buffer session
+            (should (eq (key-binding (kbd "C-c C-y"))
+                        #'ecc-prompt-yank-image-from-clipboard))
+            (ecc-prompt-test--with-clipboard
+                '((TARGETS . [TARGETS image/tiff]) (image/tiff . "MM\0*tiff"))
+              (cl-letf (((symbol-function 'ecc-image-converter)
+                         (lambda () "/fake/sips"))
+                        ((symbol-function 'call-process)
+                         (lambda (&rest args)
+                           (with-temp-file (car (last args)) (insert "PNG"))
+                           0)))
+                (insert "これは")
+                (let ((file (ecc-prompt-yank-image-from-clipboard)))
+                  (should (equal (file-name-extension file) "png"))
+                  (should (file-exists-p file))
+                  (should (equal (ecc-chat-draft)
+                                 (format "これは @%s " file)))))))
+        (delete-directory ecc-image-dir t)))))
+
+(ert-deftest ecc-prompt-test-clipboard-png-is-kept ()
+  "A PNG on the clipboard is saved as it is, without converting."
+  (ecc-test-with-fake-session session
+    (let ((ecc-image-dir (make-temp-file "ecc-images" t)))
+      (unwind-protect
+          (ecc-prompt-test--in-buffer session
+            (ecc-prompt-test--with-clipboard
+                '((TARGETS . [TARGETS image/png]) (image/png . "\x89PNG-data"))
+              (cl-letf (((symbol-function 'ecc-image-converter)
+                         (lambda () (error "The converter was asked for"))))
+                (let ((file (ecc-prompt-yank-image-from-clipboard)))
+                  (should (equal (file-name-extension file) "png"))
+                  (should (string-search (concat "@" file) (ecc-chat-draft)))))))
+        (delete-directory ecc-image-dir t)))))
+
+(ert-deftest ecc-prompt-test-clipboard-without-image ()
+  "With no image on the clipboard, C-c C-y says so and inserts nothing."
+  (ecc-test-with-fake-session session
+    (ecc-prompt-test--in-buffer session
+      (ecc-prompt-test--with-clipboard
+          '((TARGETS . [TARGETS text/plain]) (text/plain . "hello"))
+        (should-error (ecc-prompt-yank-image-from-clipboard) :type 'user-error)
+        (should (equal (ecc-chat-draft) ""))))))
 
 ;;;; The editor context
 

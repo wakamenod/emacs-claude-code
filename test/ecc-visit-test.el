@@ -2,9 +2,10 @@
 
 ;;; Commentary:
 
-;; What RET and a click on the transcript open: a line of a diff, the
-;; heading of a call that names a file, a line of the Files section or
-;; of a permission request, and a path the model wrote.
+;; What RET on the transcript opens: a line of a diff, the heading of a
+;; call that names a file, a line of the Files section or of a
+;; permission request, and a path the model wrote.  A click opens the
+;; path and none of the others.
 
 ;;; Code:
 
@@ -118,16 +119,67 @@ line of a later hunk is not taken for one of this one."
       (should (equal (ecc-visit-test--target-after "✓ Edit" "-x")
                      '("/src/f.el" . 39))))))
 
+;;;; What a Bash command changed
+
+(ert-deftest ecc-visit-test-bash-edit-diff ()
+  "A line of what a Bash call changed opens the file it is under.
+The call names no file; the line over each block does.  That line opens
+the file where its change starts, and a later change to the file moves
+the lines, as it does for an Edit."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "bash")
+    (dolist (line (ecc-test-fixture-lines "bash-edit-diff"))
+      (let ((message (ecc-protocol-parse-line line)))
+        (ecc-dispatch session message)
+        (when (eq (ecc-protocol-control-subtype message) 'can_use_tool)
+          (ecc-perm-respond (car (ecc-session-pending session)) 'allow))))
+    (ecc-render-flush session)
+    (let* ((dir "/private/tmp/ecc-fixture/sandbox/")
+           (a (concat dir "a.txt")))
+      (with-current-buffer (ecc-session-buffer session)
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "+line TWO")
+                       (cons a 2)))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" " line four")
+                       (cons a 4)))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "-bee")
+                       (cons (concat dir "b.txt") 1)))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "Updated ")
+                       (cons a 2)))
+        ;; A click opens nothing, so nothing lights up under the pointer.
+        (goto-char (point-min))
+        (search-forward "Updated ")
+        (should-not (text-property-not-all (point) (line-end-position)
+                                           'mouse-face nil))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "Created ")
+                       (cons (concat dir "new.txt") 1)))
+        ;; A block after the first is the file it is under.
+        (should (equal (ecc-visit-test--target-after "m3.txt (+1 -1)" "+new")
+                       (cons (concat dir "m3.txt") 2)))
+        ;; The command and its output are not the diff.
+        (should-not (ecc-visit-test--target-after "✓ Bash" "command: sed"))
+        (should-not (ecc-visit-test--target-after "✓ Bash" "→ (Bash"))
+        (should-not (ecc-visit-test--target-after "✓ Bash" "… 3 more files"))
+        ;; Two lines put in at the top later push the change down.
+        (ecc-model-note-hunk session a nil nil
+                             (ecc-visit-test--patch 1 1 1 3 "+x" "+y" " line one"))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "+line TWO")
+                       (cons a 4)))
+        (should (equal (ecc-visit-test--target-after "✓ Bash" "Updated ")
+                       (cons a 4)))))))
+
 ;;;; Headings
 
 (ert-deftest ecc-visit-test-headings ()
   "The heading of an Edit opens its first changed line; a Read opens at the top.
-A heading is a link, drawn with `mouse-face'; its body is not."
+Neither the heading nor its body carries a `mouse-face': a click opens
+nothing, so nothing lights up under the pointer."
   (ecc-visit-test--with-edit (session path)
     (goto-char (point-min))
     (search-forward "✓ Edit")
     (should (equal (ecc-visit-target-at-point) (cons path 3)))
-    (should (get-text-property (1- (line-end-position)) 'mouse-face))
+    (should-not (text-property-not-all (line-beginning-position)
+                                       (line-end-position) 'mouse-face nil))
     (forward-line 1)
     (should-not (get-text-property (point) 'mouse-face))
     (goto-char (point-min))
@@ -156,8 +208,7 @@ A heading is a link, drawn with `mouse-face'; its body is not."
       (should (equal (ecc-visit-target-at-point) '("/src/long.el" . 40)))
       (search-forward "✓ Bash")
       (should-not (ecc-visit-target-at-point))
-      (should-not (get-text-property (point) 'mouse-face))
-      (should-not (ecc-visit-follow-link-p (point))))))
+      (should-not (get-text-property (point) 'mouse-face)))))
 
 (ert-deftest ecc-visit-test-ret-on-headings ()
   "RET on a heading that names a file opens it; on any other it lays the node open.
@@ -329,23 +380,34 @@ at the end is found where it is."
 
 ;;;; Clicks
 
-(ert-deftest ecc-visit-test-follow-link-p ()
-  "A click follows a diff line and a heading with a file, and nothing else."
-  (ecc-visit-test--with-edit (session _path)
-    (goto-char (point-min))
-    (search-forward "✓ Edit")
-    (should (ecc-visit-follow-link-p (point)))
-    (search-forward "+    return \"hello")
-    (should (ecc-visit-follow-link-p (point)))
-    ;; No `mouse-face' on a diff line: the click is decided when it comes.
-    (should-not (get-text-property (point) 'mouse-face))
-    (search-forward "has been updated")
-    (should-not (ecc-visit-follow-link-p (point)))
-    (goto-char (point-min))
-    (search-forward "greet を直して")
-    (should-not (ecc-visit-follow-link-p (point)))
-    (search-forward "I need to read")
-    (should-not (ecc-visit-follow-link-p (point)))))
+(defun ecc-visit-test--click (pos)
+  "Click mouse-2 at POS in the current buffer, shown in the selected window."
+  (set-window-buffer (selected-window) (current-buffer))
+  (ecc-chat-follow-link (list 'mouse-2 (list (selected-window) pos '(0 . 0) 0))))
+
+(ert-deftest ecc-visit-test-a-click-opens-nothing ()
+  "A click on a diff line or a heading opens nothing; RET on the same place does.
+`follow-link' says no, so mouse-1 stays a click, and mouse-2 moves the
+point and stops there."
+  (ecc-visit-test--with-edit (session path)
+    (let (opened)
+      (cl-letf (((symbol-function 'ecc-visit-open)
+                 (lambda (file line &rest _) (push (cons file line) opened)))
+                ((symbol-function 'browse-url)
+                 (lambda (url &rest _) (push url opened))))
+        (goto-char (point-min))
+        (dolist (text '("✓ Edit" "+    return \"hello" "has been updated"))
+          (search-forward text)
+          (let ((pos (1- (point))))
+            (should-not (get-char-property pos 'mouse-face))
+            (goto-char (point-min))
+            (ecc-visit-test--click pos)
+            (should (= (point) pos))))
+        (should-not opened)
+        (goto-char (point-min))
+        (search-forward "+    return \"hello")
+        (ecc-session-visit)
+        (should (equal opened (list (cons path 3))))))))
 
 ;;;; Paths in the reply
 
@@ -366,7 +428,8 @@ at the end is found where it is."
         (search-forward "ecc-session")
         (should (equal (ecc-visit-target-at-point)
                        (cons (expand-file-name "ecc-session.el" root) 163)))
-        (should (ecc-visit-follow-link-p (point)))
+        ;; Drawn as a link, so a click opens it as well as RET.
+        (should (get-text-property (point) 'mouse-face))
         (search-forward "lisp/a")
         (should (equal (ecc-visit-target-at-point)
                        (list (expand-file-name "lisp/a/b.el" root))))
@@ -377,7 +440,13 @@ at the end is found where it is."
                      (lambda (file line &rest _) (setq opened (cons file line)))))
             (goto-char (point-min))
             (search-forward "ecc-session")
-            (ecc-session-visit))
+            (ecc-session-visit)
+            (should (equal opened (cons (expand-file-name "ecc-session.el" root)
+                                        163)))
+            (setq opened nil)
+            (let ((pos (point)))
+              (goto-char (point-min))
+              (ecc-visit-test--click pos)))
           (should (equal opened (cons (expand-file-name "ecc-session.el" root)
                                       163))))))))
 
@@ -398,6 +467,48 @@ at the end is found where it is."
       (when-let* ((buffer (find-buffer-visiting file)))
         (kill-buffer buffer))
       (delete-file file))))
+
+(defmacro ecc-visit-test--recording-opens (&rest body)
+  "Run BODY with both ways of opening a file recorded, not taken.
+`played' and `visited' are bound in BODY to the paths each was given."
+  (declare (indent 0))
+  `(let ((played nil) (visited nil))
+     (cl-letf (((symbol-function 'ecc-image-open-externally)
+                (lambda (path) (push path played)))
+               ((symbol-function 'find-file-noselect)
+                (lambda (path &rest _) (push path visited)
+                  (get-buffer-create " *ecc-visit-test*"))))
+       (save-window-excursion ,@body))))
+
+(ert-deftest ecc-visit-test-open-media-plays-outside ()
+  "A video or a sound goes to the machine's player, and no buffer is made."
+  (dolist (extension '(".mp4" ".mp3"))
+    (let ((file (make-temp-file "ecc-visit" nil extension "bytes")))
+      (unwind-protect
+          (ecc-visit-test--recording-opens
+            (should-not (ecc-visit-open file 12))
+            (should (equal played (list file)))
+            (should-not visited))
+        (delete-file file)))))
+
+(ert-deftest ecc-visit-test-open-missing-media-is-an-error ()
+  "A video that is not there is the error, and nothing is started."
+  (ecc-visit-test--recording-opens
+    (should-error (ecc-visit-open "/nonexistent/ecc-visit/clip.mp4" 1)
+                  :type 'user-error)
+    (should-not played)
+    (should-not visited)))
+
+(ert-deftest ecc-visit-test-open-other-files-in-a-buffer ()
+  "A picture and a source file still open in a buffer."
+  (dolist (extension '(".png" ".el"))
+    (let ((file (make-temp-file "ecc-visit" nil extension "x")))
+      (unwind-protect
+          (ecc-visit-test--recording-opens
+            (ecc-visit-open file nil)
+            (should (equal visited (list file)))
+            (should-not played))
+        (delete-file file)))))
 
 (provide 'ecc-visit-test)
 

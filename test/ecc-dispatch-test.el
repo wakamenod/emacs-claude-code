@@ -134,6 +134,38 @@
                              "Bash" '((command . "ls"))))
       (should (= 1 (length (ecc-session-pending session)))))))
 
+(ert-deftest ecc-dispatch-test-a-request-can-be-allowed ()
+  "An allowing function answers a permission before anybody is asked."
+  (ecc-test-with-fake-session session
+    (let ((ecc-request-allow-functions
+           (list (lambda (_session request)
+                   (equal (ecc-request-tool-name request) "mcp__x__harmless")))))
+      (ecc-dispatch session (ecc-dispatch-test--can-use-tool
+                             "mcp__x__harmless" '((a . 1))))
+      (let ((response (alist-get 'response
+                                 (alist-get 'response
+                                            (car (ecc-test-sent-messages))))))
+        (should (equal (alist-get 'behavior response) "allow"))
+        (should (equal (alist-get 'updatedInput response) '((a . 1)))))
+      (should-not (ecc-session-pending session))
+      ;; The transcript says so.
+      (should (seq-find (lambda (node)
+                          (eq (ecc-model-node-get node 'kind) 'auto-allow))
+                        (hash-table-values (ecc-session-nodes session))))
+      ;; Anything else is asked about as before.
+      (ecc-dispatch session (ecc-dispatch-test--can-use-tool
+                             "Bash" '((command . "ls"))))
+      (should (= 1 (length (ecc-session-pending session))))
+      ;; And a refusal comes first.
+      (let ((ecc-request-refuse-functions (list (lambda (&rest _) "no"))))
+        (ecc-dispatch session (ecc-dispatch-test--can-use-tool
+                               "mcp__x__harmless" '((a . 1))))
+        (should (equal (alist-get 'behavior
+                                  (alist-get 'response
+                                             (alist-get 'response
+                                                        (car (last (ecc-test-sent-messages))))))
+                       "deny"))))))
+
 (ert-deftest ecc-dispatch-test-file-changed-hook ()
   "A successful write tells the rest of Emacs to reload the file."
   (ecc-test-with-fake-session session
@@ -996,6 +1028,29 @@ been waiting."
         (should-not (alist-get 'source (aref result 1)))
         (ecc-dispatch-test--no-base64 node)))))
 
+(ert-deftest ecc-dispatch-test-tool-finished-hook ()
+  "Every tool result runs `ecc-tool-finished-hook', a shell command's too."
+  (ecc-test-with-fake-session session
+    (let* ((heard nil)
+           (ecc-tool-finished-hook
+            (list (lambda (session node)
+                    (push (cons (ecc-session-name session)
+                                (ecc-model-node-get node 'name))
+                          heard)))))
+      (ecc-model-begin-turn session "消して")
+      (ecc-dispatch session
+                    '((type . "assistant") (uuid . "u1")
+                      (message . ((content . [((type . "tool_use") (id . "t1")
+                                               (name . "Bash")
+                                               (input . ((command . "rm a.txt"))))])))))
+      (should-not heard)
+      (ecc-dispatch session
+                    '((type . "user")
+                      (message . ((content . [((type . "tool_result")
+                                               (tool_use_id . "t1")
+                                               (content . "done"))])))))
+      (should (equal heard '(("test" . "Bash")))))))
+
 ;;;; Files and tasks from tool_use_result
 
 (ert-deftest ecc-dispatch-test-edit-records-hunk-and-snapshot ()
@@ -1058,6 +1113,30 @@ string to look for, which is an error (2026-09-22)."
         ;; The snapshot follows the edits too, so the next call knows
         ;; what the file holds.
         (should (equal (ecc-file-entry-snapshot entry) "one\nTWO\nTHREE\n"))))))
+
+(ert-deftest ecc-dispatch-test-mcp-result-is-not-an-alist ()
+  "The tool_use_result of an MCP tool is the array of its content blocks.
+Read as an alist it was an error, and the result was left as an
+`unknown' node while its tool stayed running (CLI 2.1.281, 2026-10-01)."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "見て")
+    (let ((blocks [((type . "text") (text . "1 file, 4 hunks"))]))
+      (ecc-dispatch session
+                    '((type . "assistant") (uuid . "u1")
+                      (message . ((content . [((type . "tool_use") (id . "t1")
+                                               (name . "mcp__emacs__review_hunks")
+                                               (input . nil))])))))
+      (ecc-dispatch session
+                    `((type . "user")
+                      (message . ((content . [((type . "tool_result")
+                                               (tool_use_id . "t1")
+                                               (content . ,blocks))])))
+                      (tool_use_result . ,blocks)))
+      (let ((node (ecc-model-node session "t1")))
+        (should (eq (ecc-node-status node) 'done))
+        (should (equal (ecc-model-node-get node 'result) blocks)))
+      (should-not (seq-find (lambda (n) (eq (ecc-node-type n) 'unknown))
+                            (hash-table-values (ecc-session-nodes session)))))))
 
 (ert-deftest ecc-dispatch-test-tasks ()
   "TaskCreate, TaskUpdate and TaskList keep the task list."
@@ -1213,6 +1292,126 @@ leaves the session busy for good."
       ;; The notice went beside the conversation: no turn was opened for it.
       (should-not (ecc-session-current-turn session))
       (should-not (seq-some #'ecc-turn-prompt (ecc-session-turns session))))))
+
+;;;; What a Bash command changed
+
+(ert-deftest ecc-dispatch-test-bash-edit-diff ()
+  "A Bash call the CLI reports file changes for changes the files as an Edit does.
+Each file with hunks is noted in Files with its patch -- the very one
+the node keeps, which is what moves a line of its diff through later
+changes -- a new file as a Write, and the files past the five the CLI
+showed with no hunks."
+  (ecc-test-with-fake-session session
+    (let (changed)
+      (let ((ecc-sync-file-changed-hook
+             (list (lambda (_session path) (push path changed)))))
+        (ecc-test-dispatch session "bash-edit-diff" "bash"))
+      (let* ((files (ecc-model-files session))
+             (entry (lambda (name)
+                      (seq-find (lambda (e)
+                                  (equal (file-name-nondirectory
+                                          (ecc-file-entry-path e))
+                                         name))
+                                files)))
+             (a (funcall entry "a.txt"))
+             (new (funcall entry "new.txt"))
+             (m8 (funcall entry "m8.txt"))
+             (recorded (seq-some
+                        (lambda (node)
+                          (seq-find (lambda (file)
+                                      (equal (plist-get file :path)
+                                             (ecc-file-entry-path a)))
+                                    (plist-get (ecc-model-node-get node 'bash-edit)
+                                               :files)))
+                        (hash-table-values (ecc-session-nodes session)))))
+        (should (= 11 (length files)))
+        (should (= 1 (ecc-file-entry-edits a)))
+        (should (= 1 (length (ecc-file-entry-hunks a))))
+        ;; What the file was before the command nobody knows.
+        (should (eq (ecc-file-entry-original a) 'unknown))
+        (should (= 1 (ecc-file-entry-writes new)))
+        (should (null (ecc-file-entry-original new)))
+        (should (= 1 (ecc-file-entry-edits m8)))
+        (should-not (ecc-file-entry-hunks m8))
+        (should (eq (plist-get recorded :patch)
+                    (car (ecc-file-entry-patches a))))
+        ;; The recorded files are not on this machine, and a file that is
+        ;; not there is not reloaded (`ecc-dispatch-test-bash-reloads').
+        (should-not changed)))))
+
+(ert-deftest ecc-dispatch-test-bash-edit-diff-then-tool-finished ()
+  "A Bash result runs `ecc-tool-finished-hook' after its `bashEditDiff' is read.
+The hook is given the node with the files the command changed already
+on it, which is what lets a review hear a shell command by its files."
+  (ecc-test-with-fake-session session
+    (let (heard)
+      (let ((ecc-tool-finished-hook
+             (list (lambda (_session node)
+                     (push (cons (ecc-model-node-get node 'name)
+                                 (plist-get (ecc-model-node-get node 'bash-edit)
+                                            :changed))
+                           heard)))))
+        (ecc-test-dispatch session "bash-edit-diff" "bash"))
+      ;; Two commands: three files, then eight.
+      (should (equal '(3 8)
+                     (sort (mapcar (lambda (call) (length (cdr call)))
+                                   (seq-filter (lambda (call) (equal (car call) "Bash"))
+                                               heard))
+                           #'<))))))
+
+(ert-deftest ecc-dispatch-test-bash-without-edit-diff ()
+  "A Bash result with no `bashEditDiff' notes no file and reloads nothing."
+  (ecc-test-with-fake-session session
+    (let (changed)
+      (let ((ecc-sync-file-changed-hook
+             (list (lambda (_session path) (push path changed)))))
+        (ecc-test-dispatch session "background-bash" "bash"))
+      (should-not changed)
+      (should-not (ecc-model-files session)))))
+
+(ert-deftest ecc-dispatch-test-bash-reloads ()
+  "Every file a Bash call changed is reloaded but the ones it deleted.
+Those include a file deleted past the five the CLI shows: only the
+files with hunks carry its `deleted' mark, the rest are only named in
+`changedFiles', and reverting a buffer whose file is gone is an error."
+  (ecc-dispatch-test--in-dir dir
+    (ecc-test-with-fake-session session
+      (let* ((paths (mapcar (lambda (n) (expand-file-name (format "f%d.txt" n) dir))
+                            (number-sequence 1 6)))
+             (hunk [((oldStart . 1) (oldLines . 1) (newStart . 1) (newLines . 1)
+                     (lines . ["-a" "+b"]))])
+             (changed nil))
+        (dolist (path paths) (with-temp-file path (insert "b\n")))
+        ;; The command removed the first, which the CLI marks, and the
+        ;; sixth, which it only names.
+        (delete-file (car paths))
+        (delete-file (car (last paths)))
+        (let ((ecc-sync-file-changed-hook
+               (list (lambda (_session path) (push path changed)))))
+          (ecc-dispatch session
+                       '((type . "assistant")
+                         (message . ((content . [((type . "tool_use")
+                                                  (id . "toolu_rm")
+                                                  (name . "Bash")
+                                                  (input . ((command . "edit; rm f6.txt"))))])))))
+          (ecc-dispatch session
+                       `((type . "user")
+                         (tool_use_result
+                          . ((stdout . "") (stderr . "")
+                             (bashEditDiff
+                              . ((files . ,(vconcat
+                                            (mapcar (lambda (path)
+                                                      `((filePath . ,path) (hunks . ,hunk)
+                                                        ,@(and (equal path (car paths))
+                                                               '((deleted . t)))))
+                                                    (seq-take paths 5))))
+                                 (moreFiles . 1)
+                                 (changedFiles . ,(vconcat paths))))))
+                         (message . ((content . [((type . "tool_result")
+                                                  (tool_use_id . "toolu_rm")
+                                                  (is_error . :false)
+                                                  (content . ""))]))))))
+        (should (equal (sort changed #'string<) (seq-subseq paths 1 5)))))))
 
 ;;;; What a command wrote
 

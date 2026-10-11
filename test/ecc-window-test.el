@@ -542,7 +542,7 @@ what brings its windows back."
         (cl-letf (((symbol-function 'completing-read)
                    (lambda (&rest _)
                      (setq asked (1+ asked))
-                     (ecc-window-session-label two))))
+                     "project-two/two")))
           (let ((default-directory "/tmp/project-one/"))
             (should (eq (ecc-window-resolve-session t) two))
             (should (= asked 1))
@@ -553,6 +553,474 @@ what brings its windows back."
             (should (eq (ecc-window-resolve-session t) two))
             (should (= asked 2))))))))
 
+
+;;;; The session picker
+
+(defmacro ecc-window-test--picking (choice &rest body)
+  "Run BODY with `completing-read' answering CHOICE.
+The table it was given is left in `table', and the candidates it holds,
+in the order they come out, in `offered'."
+  (declare (indent 1))
+  `(let ((table nil)
+         (offered nil))
+     (cl-letf (((symbol-function 'completing-read)
+                (lambda (_prompt collection &rest _)
+                  (setq table collection
+                        offered (all-completions "" collection))
+                  ,choice)))
+       ,@body)))
+
+(defun ecc-window-test--group-function (table)
+  "Return the `group-function' of the completion TABLE."
+  (completion-metadata-get (completion-metadata "" table nil)
+                           'group-function))
+
+(ert-deftest ecc-window-test-picker-groups-by-project ()
+  "Under `classic' the sessions are grouped under their project's name.
+The order they come in is kept, most recently used first, and the
+groups come in the order their first session does."
+  (ecc-window-test--with-sessions one two
+    (let ((three (ecc-model-create-session
+                  :name "three" :project-root "/tmp/project-one/")))
+      (unwind-protect
+          (ecc-window-test--picking "project-one/one"
+            (should (eq (ecc-window-read-session nil (list three two one))
+                        one))
+            ;; A group's sessions come together, in the order they came.
+            (should (equal offered '("project-one/three"
+                                     "project-one/one"
+                                     "project-two/two")))
+            (let ((group (ecc-window-test--group-function table)))
+              (should (equal (mapcar (lambda (c) (funcall group c nil))
+                                     offered)
+                             '("project-one" "project-one" "project-two"))))
+            (let ((metadata (completion-metadata "" table nil)))
+              (should (eq (completion-metadata-get metadata
+                                                   'display-sort-function)
+                          #'identity))
+              (should (eq (completion-metadata-get metadata
+                                                   'cycle-sort-function)
+                          #'identity))))
+        (ecc-test-cleanup-session three)))))
+
+(ert-deftest ecc-window-test-picker-groups-by-space ()
+  "Under `spaces' the group is the Space, and two of one name are told apart.
+Two repositories that are both called `main' would carry the same
+title; the second one met gets `main<2>', the way its tab would."
+  (ecc-window-test--with-sessions one two
+    (require 'ecc-space)
+    (let ((ecc-use-spaces t))
+      (cl-letf (((symbol-function 'ecc-space-of-root)
+                 (lambda (root)
+                   (make-ecc-space :key root :root root :name "main")))
+                ((symbol-function 'ecc-space-tab) #'ignore))
+        (ecc-window-test--picking "main<2>/one"
+          (should (eq (ecc-window-read-session) one))
+          (should (equal offered '("main/two" "main<2>/one")))
+          (let ((group (ecc-window-test--group-function table)))
+            (should (equal (funcall group "main/two" nil) "main"))
+            (should (equal (funcall group "main<2>/one" nil) "main<2>"))))))))
+
+(ert-deftest ecc-window-test-picker-group-takes-the-tab-name ()
+  "A Space with a tab is grouped under the name of that tab."
+  (ecc-window-test--with-sessions one two
+    (require 'ecc-space)
+    (let ((ecc-use-spaces t))
+      (cl-letf (((symbol-function 'ecc-space-of-root)
+                 (lambda (root)
+                   (make-ecc-space :key root :root root :name "main")))
+                ((symbol-function 'ecc-space-tab)
+                 (lambda (space)
+                   (and (equal (ecc-space-key space)
+                               (ecc-window-session-project one))
+                        "main<3>"))))
+        (ecc-window-test--picking "main<3>/one"
+          (should (eq (ecc-window-read-session) one))
+          (should (equal offered '("main/two" "main<3>/one"))))))))
+
+(ert-deftest ecc-window-test-picker-names-a-worktree-after-its-repository ()
+  "A worktree's group is `repo › branch', and comes after its repository's.
+The sessions come in as the worktree, another project, then the
+repository; the worktree's group moves to follow the repository's, and
+takes the branch rather than the name of its tab.  Typing the name of
+the repository leaves the repository and its worktree."
+  (ecc-window-test--with-sessions one two
+    (require 'ecc-space)
+    (let* ((ecc-use-spaces t)
+           (three (ecc-model-create-session
+                   :name "three" :project-root "/tmp/project-three/"))
+           (main (ecc-window-session-project one))
+           (worktree (ecc-window-session-project two)))
+      (ecc-model-touch two)
+      (unwind-protect
+          (cl-letf (((symbol-function 'ecc-space-of-root)
+                     (lambda (root)
+                       (if (equal root worktree)
+                           (make-ecc-space :key root :root root
+                                           :name "feat/x" :parent main)
+                         (make-ecc-space
+                          :key root :root root
+                          :name (file-name-nondirectory
+                                 (directory-file-name root))))))
+                    ((symbol-function 'ecc-space-tab)
+                     (lambda (space)
+                       (and (equal (ecc-space-key space) worktree)
+                            "feat/x<2>"))))
+            (ecc-window-test--picking "project-one › feat/x/two"
+              (should (eq (ecc-window-read-session) two))
+              (should (equal offered '("project-three/three"
+                                       "project-one/one"
+                                       "project-one › feat/x/two")))
+              (should (equal (funcall (ecc-window-test--group-function table)
+                                      "project-one › feat/x/two" nil)
+                             "project-one › feat/x"))
+              (should (equal (all-completions "project-one" table)
+                             '("project-one/one" "project-one › feat/x/two")))))
+        (ecc-test-cleanup-session three)))))
+
+(ert-deftest ecc-window-test-picker-worktree-without-its-repository ()
+  "A worktree whose repository has no session stays where it came."
+  (ecc-window-test--with-sessions one two
+    (require 'ecc-space)
+    (let ((ecc-use-spaces t)
+          (worktree (ecc-window-session-project one)))
+      (cl-letf (((symbol-function 'ecc-space-of-root)
+                 (lambda (root)
+                   (if (equal root worktree)
+                       (make-ecc-space :key root :root root :name "feat/x"
+                                       :parent "/tmp/repository/")
+                     (make-ecc-space
+                      :key root :root root
+                      :name (file-name-nondirectory
+                             (directory-file-name root))))))
+                ((symbol-function 'ecc-space-tab) #'ignore))
+        (ecc-window-test--picking "project-two/two"
+          (ecc-window-read-session)
+          (should (equal offered '("project-two/two"
+                                   "repository › feat/x/one"))))))))
+
+(ert-deftest ecc-window-test-picker-shows-the-mark-not-the-group ()
+  "A line is shown as the mark of the session's state and its name.
+The group title is not repeated on the line, there is no path, and the
+face is on the mark alone."
+  (ecc-window-test--with-sessions one two
+    (setf (ecc-session-state one) 'idle)
+    (ecc-window-test--picking "project-one/one"
+      (ecc-window-read-session)
+      (let* ((group (ecc-window-test--group-function table))
+             (idle (funcall group "project-one/one" t))
+             (running (funcall group "project-two/two" t)))
+        (should (equal idle "· one"))
+        (should (equal running "▶ two"))
+        (should (memq 'ecc-tab-idle-face
+                      (ensure-list (get-text-property 0 'face idle))))
+        (should (get-text-property 0 'face running))
+        (should-not (get-text-property 2 'face running))
+        (should-not (string-search "/tmp" running))))))
+
+(ert-deftest ecc-window-test-picker-keeps-the-match-highlighting ()
+  "The faces the completion UI put on a name survive the transform.
+vertico highlights what matched before it asks the `group-function'
+for the line to show; the line keeps them, where the name now stands."
+  (ecc-window-test--with-sessions one two
+    (ecc-window-test--picking "project-two/two"
+      (ecc-window-read-session)
+      (let* ((group (ecc-window-test--group-function table))
+             (candidate (copy-sequence "project-two/two")))
+        (put-text-property 13 15 'face 'completions-common-part candidate)
+        (let ((line (funcall group candidate t)))
+          (should (equal line "▶ two"))
+          (should-not (get-text-property 2 'face line))
+          (should (eq (get-text-property 3 'face line)
+                      'completions-common-part))
+          (should (eq (get-text-property 4 'face line)
+                      'completions-common-part)))))))
+
+(ert-deftest ecc-window-test-picker-narrows-by-space ()
+  "Typing the name of a project leaves the sessions of that project."
+  (ecc-window-test--with-sessions one two
+    (let ((three (ecc-model-create-session
+                  :name "three" :project-root "/tmp/project-two/")))
+      (unwind-protect
+          (ecc-window-test--picking "project-two/two"
+            (ecc-window-read-session)
+            (should (equal (length offered) 3))
+            (should (equal (all-completions "project-two" table)
+                           '("project-two/three" "project-two/two"))))
+        (ecc-test-cleanup-session three)))))
+
+(ert-deftest ecc-window-test-picker-does-not-ask-about-one ()
+  "A lone session is the answer without a question."
+  (ecc-window-test--with-sessions one two
+    (ecc-window-test--picking (error "Asked")
+      (should (eq (ecc-window-read-session nil (list one)) one))
+      (should-not table))))
+
+(defun ecc-window-test--use (&rest sessions)
+  "Make SESSIONS used in that order, the first the most recently.
+Each gets a buffer, and the buffers go to the end of `buffer-list' one
+after the other, which leaves them in this order among themselves."
+  (dolist (session sessions)
+    (bury-buffer (ecc-session-ensure-buffer session))))
+
+(ert-deftest ecc-window-test-picker-puts-the-last-used-first ()
+  "The session whose buffer was selected last comes first, and its group.
+The registry has them in the order they started, three, two, one; one
+was used last, so project-one comes first, and within it one comes
+before three, which started later."
+  (ecc-window-test--with-sessions one two
+    (let ((three (ecc-model-create-session
+                  :name "three" :project-root "/tmp/project-one/")))
+      (unwind-protect
+          (progn
+            (should (equal (ecc-model-sessions) (list three two one)))
+            (ecc-window-test--use one two three)
+            (ecc-window-test--picking "project-one/one"
+              (should (eq (ecc-window-read-session) one))
+              (should (equal offered '("project-one/one"
+                                       "project-one/three"
+                                       "project-two/two")))))
+        (ecc-test-cleanup-session three)))))
+
+(ert-deftest ecc-window-test-picker-puts-a-session-without-a-buffer-last ()
+  "A session with no buffer goes after those with one, even started last.
+four started last and has no buffer, so its group, project-three, is
+the last; three has none either and goes after one in project-one.
+Between the two without a buffer the registry's order stands."
+  (ecc-window-test--with-sessions one two
+    (let* ((three (ecc-model-create-session
+                   :name "three" :project-root "/tmp/project-one/"))
+           (four (ecc-model-create-session
+                  :name "four" :project-root "/tmp/project-three/")))
+      (unwind-protect
+          (progn
+            (ecc-window-test--use two one)
+            (ecc-window-test--picking "project-two/two"
+              (ecc-window-read-session)
+              (should (equal offered '("project-two/two"
+                                       "project-one/one"
+                                       "project-one/three"
+                                       "project-three/four")))))
+        (ecc-test-cleanup-session three)
+        (ecc-test-cleanup-session four)))))
+
+(ert-deftest ecc-window-test-picker-orders-a-group-by-use ()
+  "Within a group the sessions follow `buffer-list', not the registry.
+Using them in another order changes the order they are offered in,
+and with it which group comes first."
+  (ecc-window-test--with-sessions one two
+    (let* ((three (ecc-model-create-session
+                   :name "three" :project-root "/tmp/project-two/"))
+           (four (ecc-model-create-session
+                  :name "four" :project-root "/tmp/project-two/")))
+      (unwind-protect
+          (ecc-window-test--picking "project-two/two"
+            (ecc-window-test--use two four one three)
+            (ecc-window-read-session)
+            (should (equal offered '("project-two/two"
+                                     "project-two/four"
+                                     "project-two/three"
+                                     "project-one/one")))
+            (ecc-window-test--use one three two four)
+            (ecc-window-read-session)
+            (should (equal offered '("project-one/one"
+                                     "project-two/three"
+                                     "project-two/two"
+                                     "project-two/four"))))
+        (ecc-test-cleanup-session three)
+        (ecc-test-cleanup-session four)))))
+
+;;;; Switching a window to another session
+
+(defmacro ecc-window-test--with-switch (bindings &rest body)
+  "Run BODY with the sessions of BINDINGS and the selected window showing one.
+BINDINGS is a list of (VAR NAME ROOT); the first is the session the
+selected window shows, the last the most recently used.  The window
+being switched is the selected one, since it shows a session, which is
+how it is found with and without a role.  `completing-read' answers
+with the first label it is offered and records them all in `offered',
+and
+`ecc-window-select-session' records the session it was asked to show in
+`selected' rather than laying out a frame."
+  (declare (indent 1))
+  `(let* ((ecc-test-sent nil)
+          (ecc-use-spaces nil)
+          (ecc--sessions (make-hash-table :test #'equal))
+          (ecc--session-order nil)
+          (offered nil)
+          (selected nil)
+          ,@(mapcar (lambda (binding)
+                      `(,(car binding)
+                        (ecc-model-create-session
+                         :name ,(nth 1 binding) :project-root ,(nth 2 binding))))
+                    bindings)
+          (window (selected-window))
+          (old-buffer (window-buffer window)))
+     (ignore offered selected)
+     (ecc-window-test--with-projects
+         (seq-uniq (list ,@(mapcar (lambda (binding) (nth 2 binding)) bindings)))
+       (unwind-protect
+           (cl-letf (((symbol-function 'completing-read)
+                      (lambda (_prompt table &rest _)
+                        (setq offered (all-completions "" table))
+                        (car offered)))
+                     ((symbol-function 'ecc-window-select-session)
+                      (lambda (session) (setq selected session) nil)))
+             (set-window-buffer window
+                                (ecc-session-ensure-buffer ,(caar bindings)))
+             ,@body)
+         (set-window-buffer window old-buffer)
+         ,@(mapcar (lambda (binding)
+                     `(ecc-test-cleanup-session ,(car binding)))
+                   bindings)))))
+
+(defun ecc-window-test--offered-names (labels)
+  "Return the session names in the completion LABELS, sorted.
+A label is `Space/name\='; the Spaces here have no slash in them."
+  (sort (mapcar (lambda (label)
+                  (substring label (1+ (string-search "/" label))))
+                labels)
+        #'string<))
+
+(ert-deftest ecc-window-test-switch-offers-this-row ()
+  "Without a prefix the choice is the other tabs of this window's project.
+Another project's session is not on these tabs and is not offered; the
+one the window already shows is left out, there being nothing to switch
+to there."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (three "three" "/tmp/project-one/")
+                                 (two "two" "/tmp/project-two/")
+                                 (four "four" "/tmp/project-one/"))
+    (call-interactively #'ecc-switch-session)
+    (should (equal (ecc-window-test--offered-names offered) '("four" "three")))
+    ;; Most recently used first, as `ecc-window-read-session' has it.
+    (should (equal (car offered) "project-one/four"))
+    ;; A session of the row goes into this window.
+    (should (eq (window-buffer window) (ecc-session-buffer four)))
+    (should-not selected)))
+
+(ert-deftest ecc-window-test-switch-with-prefix-offers-every-session ()
+  "With a prefix every session is offered, the one shown here excepted."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (three "three" "/tmp/project-one/")
+                                 (two "two" "/tmp/project-two/")
+                                 (four "four" "/tmp/project-two/"))
+    (let ((current-prefix-arg '(4)))
+      (call-interactively #'ecc-switch-session))
+    (should (equal (ecc-window-test--offered-names offered)
+                   '("four" "three" "two")))))
+
+(ert-deftest ecc-window-test-switch-scope-all-widens-the-row ()
+  "Under `ecc-tab-line-scope' `all' the tabs are every session, so is the choice."
+  (defvar ecc-tab-line-scope)
+  (let ((ecc-tab-line-scope 'all))
+    (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                   (three "three" "/tmp/project-one/")
+                                   (two "two" "/tmp/project-two/"))
+      (call-interactively #'ecc-switch-session)
+      (should (equal (ecc-window-test--offered-names offered) '("three" "two")))
+      ;; Another project's session is in this row now, so it goes into
+      ;; this window like any tab of it.
+      (should (eq (window-buffer window) (ecc-session-buffer two)))
+      (should-not selected))))
+
+(ert-deftest ecc-window-test-switch-alone-in-the-row-says-so ()
+  "A window whose project has no other session is refused, with the way out.
+`ecc-window-read-session' hands back a lone candidate without asking, and
+handed the empty list it would offer every session; neither is what the
+user asked for."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (two "two" "/tmp/project-two/")
+                                 (three "three" "/tmp/project-two/"))
+    (let ((err (should-error (call-interactively #'ecc-switch-session)
+                             :type 'user-error)))
+      (should (string-match-p "No other session in this project"
+                              (cadr err))))
+    (should-not offered)
+    (should (eq (window-buffer window) (ecc-session-buffer one)))
+    ;; And with a prefix the others are there.
+    (let ((current-prefix-arg '(4)))
+      (call-interactively #'ecc-switch-session))
+    (should (equal (ecc-window-test--offered-names offered) '("three" "two")))))
+
+(ert-deftest ecc-window-test-switch-elsewhere-under-classic-stays-here ()
+  "Under `classic' any session is put into this window, its project or not.
+There is no Space for another project's session to go to, and handing
+it to `ecc-window-select-session' would put it in a sub window instead."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (three "three" "/tmp/project-one/")
+                                 (two "two" "/tmp/project-two/"))
+    (ecc-switch-session two)
+    (should-not selected)
+    (should (eq (window-buffer window) (ecc-session-buffer two)))))
+
+(ert-deftest ecc-window-test-switch-under-spaces-finds-the-selected-window ()
+  "Under `spaces' the window switched is the selected one, though it has no role.
+A Space's windows are ordinary windows, and looking for a role found
+none: the session already shown was offered again, a lone one was taken
+without asking, and every choice went out to `ecc-window-select-session'."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (two "two" "/tmp/project-two/")
+                                 (three "three" "/tmp/project-one/")
+                                 (four "four" "/tmp/project-one/"))
+    (let ((ecc-use-spaces t))
+      (should-not (window-parameter window 'ecc-window-role))
+      (should (eq (ecc-window--switch-target) window))
+      (call-interactively #'ecc-switch-session)
+      (should (equal (ecc-window-test--offered-names offered) '("four" "three")))
+      ;; A session of the row lands in the selected window.
+      (should (eq (window-buffer window) (ecc-session-buffer four)))
+      (should-not selected))))
+
+(ert-deftest ecc-window-test-switch-under-spaces-alone-says-so ()
+  "Under `spaces' a session alone in its project is refused, not taken again."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (two "two" "/tmp/project-two/"))
+    (let ((ecc-use-spaces t))
+      (should-error (call-interactively #'ecc-switch-session)
+                    :type 'user-error)
+      (should-not offered)
+      (should-not selected))))
+
+(ert-deftest ecc-window-test-switch-under-spaces-goes-to-its-own-space ()
+  "Under `spaces' another project's session is shown in its own Space."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (three "three" "/tmp/project-one/")
+                                 (two "two" "/tmp/project-two/"))
+    (let ((ecc-use-spaces t))
+      (ecc-switch-session two)
+      (should (eq selected two))
+      (should (eq (window-buffer window) (ecc-session-buffer one))))))
+
+(ert-deftest ecc-window-test-switch-under-spaces-selects-a-shown-session ()
+  "Under `spaces' a session another window already shows is selected there.
+Putting it into this window as well would stand the same transcript in
+two windows, which `ecc-tab-line-neighbour' takes care never to do."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (three "three" "/tmp/project-one/")
+                                 (four "four" "/tmp/project-one/"))
+    (let* ((ecc-use-spaces t)
+           (other (split-window window)))
+      (unwind-protect
+          (progn
+            (set-window-buffer other (ecc-session-ensure-buffer three))
+            (select-window window)
+            (should (eq (ecc-switch-session three) other))
+            (should (eq (selected-window) other))
+            (should (eq (window-buffer window) (ecc-session-buffer one))))
+        (delete-window other)))))
+
+(ert-deftest ecc-window-test-switch-from-a-source-window ()
+  "A window with no session in it offers the sessions of the current project."
+  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
+                                 (three "three" "/tmp/project-one/")
+                                 (two "two" "/tmp/project-two/")
+                                 (four "four" "/tmp/project-two/"))
+    (with-temp-buffer
+      (setq default-directory "/tmp/project-two/")
+      (set-window-buffer window (current-buffer))
+      (call-interactively #'ecc-switch-session)
+      (should (equal (ecc-window-test--offered-names offered) '("four" "two"))))))
 
 ;;;; Opening a review
 
@@ -612,6 +1080,178 @@ An agent transcript of the same session does not count."
       (should (ecc-model-session id))
       (kill-buffer buffer)
       (should-not (ecc-model-session id)))))
+
+;;;; Showing a review Claude opened
+
+(defun ecc-window-test--quiet-cases (session review)
+  "Check `ecc-window-show-review-quietly' for SESSION and the buffer REVIEW.
+Run once with the Spaces on and once with them off, by the test below."
+  (let ((source (get-buffer-create "*ecc-window-test source*"))
+        (session-buffer (ecc-session-ensure-buffer session))
+        (tab (and (fboundp 'tab-bar--current-tab)
+                  (alist-get 'name (tab-bar--current-tab)))))
+    (unwind-protect
+        (cl-letf (((symbol-function 'ecc-space-select)
+                   (lambda (&rest _) (error "A Space was gone to")))
+                  ((symbol-function 'tab-bar-select-tab-by-name)
+                   (lambda (&rest _) (error "A tab was gone to"))))
+          (save-window-excursion
+            ;; The user types in the source, the session beside it: the
+            ;; source is the widest window of nothing of ours, and it is
+            ;; the one review must not take.
+            (delete-other-windows)
+            (switch-to-buffer source)
+            (set-window-buffer (split-window-right) session-buffer)
+            (let* ((selected (selected-window))
+                   (window (ecc-window-show-review-quietly review session)))
+              (should window)
+              (should (eq (window-buffer window) review))
+              (should (eq (selected-window) selected))
+              (should (eq (window-buffer selected) source))
+              ;; The session keeps its window: the review has a new one.
+              (should (get-buffer-window session-buffer))
+              ;; Shown already: left where it is.
+              (should (eq (ecc-window-show-review-quietly review session) window))))
+          (save-window-excursion
+            ;; The user types in the session, and there is nothing else.
+            (delete-other-windows)
+            (switch-to-buffer session-buffer)
+            (let* ((selected (selected-window))
+                   (window (ecc-window-show-review-quietly review session)))
+              (should window)
+              (should-not (eq window selected))
+              (should (eq (selected-window) selected))
+              (should (eq (window-buffer selected) session-buffer))))
+          (save-window-excursion
+            ;; The session is not on the screen: nothing is brought forward.
+            (delete-other-windows)
+            (switch-to-buffer source)
+            (let ((configuration (current-window-configuration)))
+              (should-not (ecc-window-show-review-quietly review session))
+              (should (compare-window-configurations
+                       configuration (current-window-configuration)))))
+          (when tab
+            (should (equal (alist-get 'name (tab-bar--current-tab)) tab))))
+      (kill-buffer source))))
+
+(ert-deftest ecc-window-test-a-quiet-review-takes-no-window-of-the-user ()
+  "The review Claude shows never takes the selected window or goes to a tab."
+  (ecc-test-with-fake-session session
+    (let ((review (get-buffer-create "*ecc-review: test*")))
+      (unwind-protect
+          (progn
+            (let ((ecc-use-spaces nil))
+              (ecc-window-test--quiet-cases session review))
+            ;; With the Spaces on, and another tab beside the one showing.
+            (let ((ecc-use-spaces t)
+                  (was tab-bar-mode))
+              (unwind-protect
+                  (progn
+                    (tab-bar-mode 1)
+                    (tab-bar-new-tab)
+                    (tab-bar-rename-tab "ecc-window-test other")
+                    (tab-bar-new-tab)
+                    (tab-bar-rename-tab "ecc-window-test here")
+                    (ecc-window-test--quiet-cases session review)
+                    (should (equal (alist-get 'name (tab-bar--current-tab))
+                                   "ecc-window-test here")))
+                (dolist (name '("ecc-window-test other" "ecc-window-test here"))
+                  (ignore-errors (tab-bar-close-tab-by-name name)))
+                (tab-bar-rename-tab "")
+                (tab-bar-mode (if was 1 -1)))))
+        (kill-buffer review)))))
+
+(defmacro ecc-window-test--quietly (session review source session-buffer &rest body)
+  "Run BODY with SESSION, a REVIEW buffer and the SOURCE and SESSION-BUFFER.
+The frame is one window, SOURCE selected, when BODY starts."
+  (declare (indent 4))
+  `(ecc-test-with-fake-session ,session
+     (let ((,review (get-buffer-create "*ecc-review: test*"))
+           (,source (get-buffer-create "*ecc-window-test source*"))
+           (,session-buffer (ecc-session-ensure-buffer ,session))
+           (display-buffer-alist nil))
+       (unwind-protect
+           (save-window-excursion
+             (delete-other-windows)
+             (switch-to-buffer ,source)
+             ,@body)
+         (kill-buffer ,review)
+         (kill-buffer ,source)))))
+
+(ert-deftest ecc-window-test-quitting-a-quiet-review ()
+  "q deletes the window a review was given and gives back one it borrowed."
+  (ecc-window-test--quietly session review source session-buffer
+    ;; Divided off the session: quitting deletes it.
+    (set-window-buffer (split-window-right) session-buffer)
+    (let ((window (ecc-window-show-review-quietly review session)))
+      (should-not (memq (window-buffer window) (list source session-buffer)))
+      (quit-window nil window)
+      (should-not (window-live-p window))
+      (should (= (length (window-list)) 2)))
+    ;; Borrowed from a window of something else: quitting brings that back.
+    (let ((other (get-buffer-create "window-test-other")))
+      (unwind-protect
+          (let ((spare (split-window-below)))
+            (set-window-buffer spare other)
+            (let ((window (ecc-window-show-review-quietly review session)))
+              (should (eq window spare))
+              (quit-window nil window)
+              (should (window-live-p window))
+              (should (eq (window-buffer window) other))))
+        (kill-buffer other)))))
+
+(ert-deftest ecc-window-test-a-quiet-review-leaves-the-minibuffer-origin ()
+  "While the minibuffer is active, the window it came from is not taken."
+  (ecc-window-test--quietly session review source session-buffer
+    (let* ((origin (selected-window))
+           (session-window (split-window-right)))
+      (set-window-buffer session-window session-buffer)
+      ;; As in M-x or C-x C-f: the minibuffer is selected, and the window
+      ;; the command goes back to is the source.
+      (select-window session-window)
+      (cl-letf (((symbol-function 'minibuffer-selected-window) (lambda () origin)))
+        (let ((window (ecc-window-show-review-quietly review session)))
+          (should window)
+          (should-not (eq window origin))
+          (should (eq (window-buffer origin) source)))))))
+
+(ert-deftest ecc-window-test-a-quiet-review-does-not-force-a-split ()
+  "A session window too small to divide leaves the review unshown, with no error."
+  (ecc-window-test--quietly session review source session-buffer
+    (let ((session-window (split-window-below
+                           (- (1+ (max ecc-window-quiet-split-min-height
+                                       window-min-height))))))
+      (set-window-buffer session-window session-buffer)
+      (should (< (window-total-height session-window)
+                 (* 2 ecc-window-quiet-split-min-height)))
+      (let ((count (length (window-list))))
+        (should-not (ecc-window-show-review-quietly review session))
+        (should (= (length (window-list)) count))))))
+
+(ert-deftest ecc-window-test-a-quiet-review-follows-the-users-rule ()
+  "A `display-buffer-alist' rule for the review is followed, unless it takes the user's window."
+  (ecc-window-test--quietly session review source session-buffer
+    (set-window-buffer (split-window-right) session-buffer)
+    (let* ((selected (selected-window))
+           (display-buffer-alist
+            '(("\\*ecc-review" (display-buffer-in-side-window) (side . bottom)))))
+      (let ((window (ecc-window-show-review-quietly review session)))
+        (should (eq (window-parameter window 'window-side) 'bottom))
+        (should (eq (selected-window) selected))
+        (should (eq (window-buffer selected) source))
+        (delete-window window)))
+    ;; A rule that puts it in the selected window is undone.
+    (let* ((selected (selected-window))
+           (configuration (current-window-configuration))
+           (display-buffer-alist
+            `(("\\*ecc-review"
+               ,(lambda (buffer _alist)
+                  (set-window-buffer (selected-window) buffer)
+                  (selected-window))))))
+      (should-not (ecc-window-show-review-quietly review session))
+      (should (eq (window-buffer selected) source))
+      (should (compare-window-configurations configuration
+                                             (current-window-configuration))))))
 
 (provide 'ecc-window-test)
 

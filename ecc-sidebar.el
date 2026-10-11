@@ -170,12 +170,8 @@ than trailing the spaces that would have led to it."
 (defun ecc-sidebar--mark (state)
   "Return the mark that stands for STATE in the sidebar.
 Idle takes a mark of its own -- the tab line leaves it blank -- because
-the mark opens the row here, and a blank one would put the name of an
-idle Space a column to the left of every other name."
-  (pcase state
-    ('nil " ")
-    ('idle "·")
-    (_ (ecc-tab-mark-of-state state))))
+the mark opens the row here.  A row with no state at all is left blank."
+  (if state (ecc-tab-mark-of-state state t) " "))
 
 ;;;; The Spaces
 
@@ -305,6 +301,7 @@ answer while its state still says that it runs."
     (cond
      ((> waiting 1) (format "waiting ×%d" waiting))
      ((= waiting 1) "waiting")
+     ((eq (ecc-tab-state session) 'restored) "restored")
      (t (format "%s" (or (ecc-session-state session) ""))))))
 
 (defun ecc-sidebar--sessions ()
@@ -312,9 +309,8 @@ answer while its state still says that it runs."
   (let ((sessions (ecc-model-sessions)))
     (pcase ecc-sidebar-sessions-sort
       ('priority
-       ;; Stable within a rank: `ecc-model-sessions' is most recently
-       ;; used first, which is the nearest thing the model keeps to the
-       ;; order the states last changed in.
+       ;; Stable within a rank, which keeps the order of
+       ;; `ecc-model-sessions': most recently started first.
        (let ((rank (lambda (session)
                      (pcase (ecc-tab-state session)
                        ('attention 0) ('running 1) ('idle 2) (_ 3)))))

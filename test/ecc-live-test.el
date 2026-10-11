@@ -52,12 +52,17 @@ WHAT names the thing waited for in the error message."
                                       (car (last (ecc-session-turns session)))))
                       "a result"))
 
+(defvar ecc-test-live-directory nil
+  "The directory a live session starts in, or nil for the temporary one.")
+
 (defmacro ecc-test-live-with-session (var &rest body)
-  "Run BODY with VAR bound to a started session, killed afterwards."
+  "Run BODY with VAR bound to a started session, killed afterwards.
+The session starts in `ecc-test-live-directory'."
   (declare (indent 1) (debug (symbolp body)))
   `(let* ((ecc--sessions (make-hash-table :test #'equal))
           (ecc--session-order nil)
-          (default-directory temporary-file-directory)
+          (default-directory (or ecc-test-live-directory
+                                 temporary-file-directory))
           ;; The icons and the spinner depend on what this machine has
           ;; and on the instant; the tests below compare the text of the
           ;; transcript, so they run without them.
@@ -68,7 +73,7 @@ WHAT names the thing waited for in the error message."
           (ecc-visual-enable-flash nil)
           (,var (ecc-model-create-session
                  :name "live"
-                 :project-root temporary-file-directory
+                 :project-root default-directory
                  :options ecc-test-live-options)))
      (unwind-protect
          (progn
@@ -152,15 +157,21 @@ and a draft typed meanwhile is untouched (phase 9b)."
           (progn
             ;; The prompt leaves the content open, so that the reason
             ;; given with the deny is a correction and not a contradiction
-            ;; the model would rather ask about than act on.
+            ;; the model would rather ask about than act on.  It names the
+            ;; tool: left to choose, haiku asked for a Bash call first in
+            ;; two runs of the suite out of three (CLI 2.1.281, 2026-09-27).
             (ecc-proc-send-prompt
              session
-             (format "Create the file %s containing a short greeting." file))
+             (format "Use the Write tool to create the file %s containing a short greeting. Do not run any commands." file))
             ;; First proposal: refuse it and say what to write instead.
             (let ((request (ecc-test-live-wait
                             session (lambda () (car (ecc-session-pending session)))
                             "the first permission request")))
-              (should (equal (ecc-request-tool-name request) "Write"))
+              ;; What it asked for instead is what says why.
+              (unless (equal (ecc-request-tool-name request) "Write")
+                (ert-fail (list "the first request is not a Write"
+                                (ecc-request-tool-name request)
+                                (ecc-request-input request))))
               (should (eq (ecc-request-kind request) 'permission))
               (ecc-perm-respond request 'deny
                                 :message "Make the content exactly: hello from emacs")
@@ -565,7 +576,12 @@ file is untracked, so its diff comes from the records and not from git."
                   (should (string-search "## farewell.txt  L1-L1\n```diff\n@@ -1 +1 @@\n-bye\n+ciao\n```\nComment: Use the word adios instead of ciao." text))
                   (should (string-search "## greeting.txt  L1-L1\n" text)))
                 (ecc-review-message-send)))
-            (should-not (buffer-live-p review))
+            ;; The review stays open, both comments in it marked sent.
+            (should (buffer-live-p review))
+            (with-current-buffer review
+              (should-not (ecc-review-comments))
+              (should (ecc-review-note-sent (ecc-review-find-note 1)))
+              (should (ecc-review-note-sent (ecc-review-find-note 2))))
             (ecc-test-live-wait-for-result session)
             (should (equal (ecc-test-live-file-string farewell) "adios"))
             (should (equal (ecc-test-live-file-string greeting) "hey"))
@@ -821,6 +837,158 @@ what it returned, and nothing else.")
       (remhash "ecc_live_probe" ecc-mcp-tools)
       (ecc-mcp-stop))))
 
+(ert-deftest ecc-test-live-review-agent ()
+  "Claude opens the review and puts a comment on a line of it, unasked-about.
+The tools are named in the prompt, so what is checked is that they work
+and are allowed, not what the model chooses to say."
+  :tags '(live)
+  (skip-unless (executable-find "git"))
+  (require 'ecc-mcp)
+  (require 'ecc-review-agent)
+  (let ((ecc-mcp-port 0)
+        (ecc-mcp-enabled t))
+    (unwind-protect
+        (ecc-test-live-with-session session
+          (let* ((directory (file-name-as-directory
+                             (file-truename (make-temp-file "ecc-live-agent" t))))
+                 (greeting (concat directory "greeting.txt")))
+            (unwind-protect
+                (progn
+                  (ecc-test-live-git directory "init" "-q")
+                  (ecc-test-live-git directory "config" "user.email" "t@example.com")
+                  (ecc-test-live-git directory "config" "user.name" "t")
+                  (with-temp-file greeting (insert "hello\nworld\n"))
+                  (ecc-test-live-git directory "add" ".")
+                  (ecc-test-live-git directory "commit" "-q" "-m" "init")
+                  (with-temp-file greeting (insert "hello\nthere\n"))
+                  (setf (ecc-session-project-root session) directory)
+                  (ecc-proc-send-prompt
+                   session
+                   "Call the mcp__emacs__review_open tool with no arguments.  Then \
+call mcp__emacs__review_comment with file greeting.txt, line 2 and a one \
+sentence text about that line.  Then reply with the word done.")
+                  (ecc-test-live-wait-for-result session)
+                  ;; Allowed by Emacs, not asked about.
+                  (should-not (ecc-session-pending session))
+                  (let ((review (get-buffer (ecc-review-buffer-name session))))
+                    (should review)
+                    (with-current-buffer review
+                      (let ((note (car ecc-review--notes)))
+                        (should note)
+                        (should (eq (ecc-review-note-author note) 'claude))
+                        (should (equal (ecc-review-note-where note)
+                                       "greeting.txt:2 (new)"))))))
+              (ecc-test-live--kill-review session)
+              (delete-directory directory t))))
+      (ecc-mcp-stop))))
+
+(defun ecc-test-live--tool-names (turn)
+  "Return the names of the tools TURN called, its subagents' left out."
+  (let ((names nil))
+    (dolist (child (ecc-turn-children turn))
+      (when (eq (ecc-node-type child) 'step)
+        (dolist (tool (ecc-node-children child))
+          (push (ecc-model-node-get tool 'name) names))))
+    (nreverse names)))
+
+(ert-deftest ecc-test-live-review-tour ()
+  "T in a review leads Claude to show a place in it with review_navigate.
+What is checked is the call, which the fixed text of T asks for, not
+anything Claude says about the change."
+  :tags '(live)
+  (skip-unless (executable-find "git"))
+  (require 'ecc-mcp)
+  (require 'ecc-review-agent)
+  (require 'ecc-review-talk)
+  (let ((ecc-mcp-port 0)
+        (ecc-mcp-enabled t))
+    (unwind-protect
+        (ecc-test-live-with-session session
+          (let* ((directory (file-name-as-directory
+                             (file-truename (make-temp-file "ecc-live-tour" t))))
+                 (greeting (concat directory "greeting.txt")))
+            (unwind-protect
+                (progn
+                  (ecc-test-live-git directory "init" "-q")
+                  (ecc-test-live-git directory "config" "user.email" "t@example.com")
+                  (ecc-test-live-git directory "config" "user.name" "t")
+                  (with-temp-file greeting (insert "hello\nworld\n"))
+                  (ecc-test-live-git directory "add" ".")
+                  (ecc-test-live-git directory "commit" "-q" "-m" "init")
+                  (with-temp-file greeting (insert "hello\nthere\n"))
+                  (setf (ecc-session-project-root session) directory)
+                  (save-window-excursion
+                    (let ((review (ecc-review-range-buffer session "HEAD" directory)))
+                      (switch-to-buffer review)
+                      (with-current-buffer review
+                        (ecc-review-talk-tour))
+                      (let ((turn (ecc-test-live-wait-for-result session)))
+                        (should-not (ecc-session-pending session))
+                        (should (member (format "mcp__%s__review_navigate" ecc-mcp-server-name)
+                                        (ecc-test-live--tool-names turn)))))))
+              (dolist (buffer (buffer-list))
+                (when (string-prefix-p "*ecc-review" (buffer-name buffer))
+                  (kill-buffer buffer)))
+              (delete-directory directory t))))
+      (ecc-mcp-stop))))
+
+(ert-deftest ecc-test-live-review-open-when-asked ()
+  "Claude leaves the review closed after an edit, and opens it when asked.
+The first prompt has Claude change a file and explain the change, which
+is not asking for the review; the second asks for it.  What the model
+chooses is a judgement and not a guarantee.  The test runs opus: with
+the text that told the model to open the review when asked to explain
+changes, opus opened it on the first prompt in 3 runs of 3 and haiku in
+none of 6, so haiku could not tell the two texts apart (CLI 2.1.290,
+2026-10-10)."
+  :tags '(live)
+  (skip-unless (executable-find "git"))
+  (require 'ecc-mcp)
+  (require 'ecc-review-agent)
+  (let* ((ecc-test-live-options (plist-put (copy-sequence ecc-test-live-options)
+                                           :model "opus"))
+         (ecc-mcp-port 0)
+         (ecc-mcp-enabled t)
+         (ecc-permission-mode "acceptEdits")
+         (ecc-test-live-directory (file-name-as-directory
+                                   (file-truename (make-temp-file "ecc-live-asked" t))))
+         (greeting (concat ecc-test-live-directory "greeting.txt"))
+         (review-open (format "mcp__%s__review_open" ecc-mcp-server-name)))
+    (unwind-protect
+        (progn
+          (ecc-test-live-git ecc-test-live-directory "init" "-q")
+          (ecc-test-live-git ecc-test-live-directory "config" "user.email" "t@example.com")
+          (ecc-test-live-git ecc-test-live-directory "config" "user.name" "t")
+          (with-temp-file greeting (insert "hello\nworld\n"))
+          (ecc-test-live-git ecc-test-live-directory "add" ".")
+          (ecc-test-live-git ecc-test-live-directory "commit" "-q" "-m" "init")
+          (ecc-test-live-with-session session
+            (unwind-protect
+                (progn
+                  (ecc-proc-send-prompt
+                   session
+                   "Use the Edit tool to change the word world to there in \
+greeting.txt.  Do not run any commands.  Then explain the change to \
+me.")
+                  (let ((turn (ecc-test-live-wait-for-result session)))
+                    (should (equal (ecc-test-live-file-string greeting)
+                                   "hello\nthere"))
+                    (should-not (member review-open (ecc-test-live--tool-names turn)))
+                    (should-not (get-buffer (ecc-review-buffer-name session))))
+                  (ecc-proc-send-prompt session "Open the changes in the review.")
+                  (let ((turn (ecc-test-live-wait-for-result session)))
+                    (should-not (ecc-session-pending session))
+                    (should (member review-open (ecc-test-live--tool-names turn)))
+                    (should (get-buffer (ecc-review-buffer-name session)))))
+              (ecc-test-live--kill-review session))))
+      (ecc-mcp-stop)
+      (delete-directory ecc-test-live-directory t))))
+
+(defun ecc-test-live--kill-review (session)
+  "Kill the review buffer of SESSION, if there is one."
+  (when-let* ((buffer (get-buffer (ecc-review-buffer-name session))))
+    (kill-buffer buffer)))
+
 (ert-deftest ecc-test-live-usage ()
   "The CLI answers `get_usage' with the numbers the usage buffer draws.
 No prompt is sent: the session is started, asked, and left alone, so
@@ -874,10 +1042,16 @@ and a follow-up carrying `history\' knows what was asked before."
               (let ((exchange (car (ecc-btw-exchanges session))))
                 (should-not (plist-get exchange :error))
                 (should (string-search "4271" (plist-get exchange :response))))
-              ;; The turn was never interrupted: it is still running
-              ;; with the answer already in hand, and it ends on its own.
-              (should (ecc-session-current-turn session))
-              (ecc-test-live-wait-for-result session)
+              ;; The turn was never interrupted: it ends on its own, as a
+              ;; success, having counted all the way.  Whether it is still
+              ;; running when the answer lands is a race -- haiku counted
+              ;; to 300 before a side answer came back once in five runs
+              ;; of the suite (CLI 2.1.281, 2026-09-27) -- so it is the end
+              ;; of the turn that is asked about, not the moment.
+              (let ((result (ecc-turn-result
+                             (ecc-test-live-wait-for-result session))))
+                (should (equal (alist-get 'subtype result) "success"))
+                (should (string-search "300" (or (alist-get 'result result) ""))))
               ;; Neither the question nor the answer became a turn or a
               ;; node of its own.
               (should (= (length (ecc-session-turns session)) (1+ turns)))
