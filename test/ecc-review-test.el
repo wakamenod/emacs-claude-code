@@ -2328,6 +2328,81 @@ the comment on it."
                 (should (= (ecc-review-note-line note) 14)))))
         (ecc-review-test--kill-review-buffers)))))
 
+(ert-deftest ecc-review-test-a-newline-put-at-the-end-is-one-old-side ()
+  "Two old blobs that differ only in the newline at the end are one old side.
+No line of the one is not in the other; that is no hunks, and no comment
+goes outdated for it."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((s (concat directory "s.py")))
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (ecc-review-test--write s (string-remove-suffix "\n" ecc-review-test--summary))
+            (ecc-review-test--git directory "add" "s.py")
+            (ecc-review-test--git directory "commit" "-q" "-m" "init")
+            (ecc-review-test--write s ecc-review-test--share)
+            (setf (ecc-session-project-root session) directory)
+            (with-current-buffer (ecc-review-range-buffer session "HEAD")
+              (ecc-review-test--goto "+        return part / total")
+              (ecc-review-comment "guard it")
+              ;; A commit of the newline at the end, and nothing else.
+              (ecc-review-test--write s ecc-review-test--summary)
+              (ecc-review-test--git directory "commit" "-q" "-a" "-m" "newline")
+              (ecc-review-test--write s ecc-review-test--share)
+              (ecc-review-refresh)
+              (let ((note (car ecc-review--notes)))
+                (should-not (ecc-review-note-outdated note))
+                (should (= (ecc-review-note-line note) 10)))
+              (ecc-review-refresh)
+              (should-not (ecc-review-note-outdated (car ecc-review--notes)))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-a-recorded-file-below-a-file-with-no-hunk ()
+  "A recorded file right below a git file that has no hunk keeps its recorded old side.
+A mode changed, an empty file added, a file renamed whole: git writes a
+header and no hunk for each, and the recorded file's --- line comes
+right after it."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (let ((path (expand-file-name "x.txt" temporary-file-directory)))
+          (ecc-review-test--entry session path :original "a\n" :snapshot "a\nb\n" :edits 1)
+          (dolist (above (list "diff --git a/m b/m\nold mode 100644\nnew mode 100755\n"
+                               (concat "diff --git a/e b/e\nnew file mode 100644\n"
+                                       "index 0000000000000000000000000000000000000000.."
+                                       "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391\n")
+                               (concat "diff --git a/o b/n\nsimilarity index 100%\n"
+                                       "rename from o\nrename to n\n")))
+            (with-current-buffer
+                (ecc-review-test--fill
+                 session (concat above (format "--- %s\n+++ %s\n@@ -1,0 +2 @@\n+b\n" path path)))
+              (let ((hunk (car (ecc-review-hunks))))
+                (should (equal (plist-get hunk :path) path))
+                (should (equal (ecc-review--base-of hunk)
+                               (list 'recorded (secure-hash 'sha1 "a\n"))))))))
+      (ecc-review-test--kill-review-buffers))))
+
+(ert-deftest ecc-review-test-one-repository-has-one-name ()
+  "A repository is named the same however it is reached: through ~, through a link."
+  (ecc-review-test--with-directory directory
+    (should (equal (ecc-review-repository-name (abbreviate-file-name directory))
+                   (ecc-review-repository-name (file-truename directory))))
+    (should (equal (ecc-review-repository-name (directory-file-name directory))
+                   (ecc-review-repository-name directory)))))
+
+(ert-deftest ecc-review-test-a-rename-in-another-repository-is-named-there ()
+  "A file renamed whole in a second repository is named from the first, like its diff line."
+  (require 'ecc-review-files)
+  (let ((header (concat "diff --git a/../two/old.txt b/../two/new.txt\n"
+                        "similarity index 100%\nrename from old.txt\nrename to new.txt\n")))
+    (should (equal (ecc-review-files--header-path header) "../two/new.txt"))
+    (should (equal (ecc-review-files--under header) "../two/")))
+  (should (equal (ecc-review-files--header-path
+                  "diff --git a/old.txt b/new.txt\nsimilarity index 100%\nrename from old.txt\nrename to new.txt\n")
+                 "new.txt")))
+
 (ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
   "Remembering the place reads the hunk it is in, not the whole diff."
   (ecc-review-test--with-review session

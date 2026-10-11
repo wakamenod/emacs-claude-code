@@ -1594,7 +1594,7 @@ differences are in (`ecc-review-ediff--differences-computed\=')."
   "Return the blob of the old side of the file of the difference HUNK.
 As (blob REPOSITORY ID), REPOSITORY this review's; `empty' for none."
   (pcase (alist-get (plist-get hunk :path) ecc-review-ediff--bases nil nil #'equal)
-    ((and id (pred stringp)) (list 'blob default-directory id))
+    ((and id (pred stringp)) (list 'blob (ecc-review-repository-name default-directory) id))
     (other other)))
 
 (defun ecc-review-ediff--lines-of (count start end)

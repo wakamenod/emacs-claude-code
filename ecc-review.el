@@ -2217,13 +2217,15 @@ each edit and says nothing of an old side, which is nil."
                     (looking-at "\\(?:index \\([0-9a-f]+\\)\\.\\.\\|\\(?:old\\|new\\|deleted file\\|new file\\) mode \\|similarity \\|dissimilarity \\|rename \\|copy \\)"))
           (when (match-string-no-properties 1)
             (setq id (match-string-no-properties 1))))
+        ;; A diff line above that names another file is that file's: a
+        ;; file git shows no hunk of -- a mode, an empty file, a rename
+        ;; -- ends right above, and this file has no header of its own.
         (cond ((and id path
                     (looking-at-p (concat "diff --git a/.* b/" (regexp-quote path) "$")))
                (if (string-match-p "\\`0+\\'" id)
                    'empty
                  (list 'blob (ecc-review--repository-of path) id)))
-              ((and path (not (looking-at-p "diff ")))
-               (ecc-review--recorded-base path)))))))
+              (path (ecc-review--recorded-base path)))))))
 
 (defun ecc-review--recorded-base (path)
   "Return the old side of PATH from what the session of this review recorded.
@@ -2244,8 +2246,17 @@ for a file the session created, nil when that is not known."
   "Return the repository the file PATH of this review is in.
 The directory above it that holds .git, found without running git;
 this review's own directory when there is none."
-  (or (locate-dominating-file (expand-file-name path default-directory) ".git")
-      default-directory))
+  (ecc-review-repository-name
+   (or (locate-dominating-file (expand-file-name path default-directory) ".git")
+       default-directory)))
+
+(defun ecc-review-repository-name (directory)
+  "Return the name a blob's repository DIRECTORY goes by in an old side.
+Its true name, as a directory: `locate-dominating-file' gives back the
+name it was asked about, abbreviated, and a directory reached through a
+link has two names, and the same blob of the same repository has to be
+the same old side whichever review read it."
+  (file-name-as-directory (file-truename directory)))
 
 (defun ecc-review--shape-of (lines)
   "Return the shape of LINES, the lines of one file, nil for none."
@@ -2280,12 +2291,19 @@ known to have anything in common; `unknown' when git cannot give them."
         ((or (eq from 'empty) (eq to 'empty)) 'none)
         ((and (eq (car-safe from) 'blob) (eq (car-safe to) 'blob)
               (equal (nth 1 from) (nth 1 to)))
-         (let ((pair (cons (nth 2 from) (nth 2 to))))
-           (unless (and ecc-review--base-diffs (gethash pair ecc-review--base-diffs))
+         (let ((pair (cons (nth 2 from) (nth 2 to)))
+               (kept (lambda (pair)
+                       (if ecc-review--base-diffs
+                           (gethash pair ecc-review--base-diffs 'unasked)
+                         'unasked))))
+           (when (eq (funcall kept pair) 'unasked)
              (ecc-review--diff-blobs (nth 1 from) (list pair)))
-           (or (and ecc-review--base-diffs (gethash pair ecc-review--base-diffs))
-               ;; Not given this time; asked again the next.
-               'unknown)))
+           ;; No hunks is two blobs that differ in nothing a line says --
+           ;; a newline put at the end -- and one old side.
+           (pcase (funcall kept pair)
+             ;; Not given this time; asked again the next.
+             ('unasked 'unknown)
+             (hunks hunks))))
         (t 'text)))
 
 (defun ecc-review--diff-blobs (repository pairs)
@@ -2299,7 +2317,10 @@ git failing to run at all keeps nothing, and the next reading asks
 again."
   (unless ecc-review--base-diffs
     (setq ecc-review--base-diffs (make-hash-table :test #'equal)))
-  (let* ((wanted (seq-remove (lambda (pair) (gethash pair ecc-review--base-diffs)) pairs))
+  (let* ((wanted (seq-remove (lambda (pair)
+                                (not (eq (gethash pair ecc-review--base-diffs 'unasked)
+                                         'unasked)))
+                              pairs))
          (texts (and wanted
                      (ecc-review--blobs repository
                                         (delete-dups (mapcan (lambda (pair)

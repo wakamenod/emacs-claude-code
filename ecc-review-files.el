@@ -310,6 +310,20 @@ diffs this package makes of what git does not track have no diff line
             (forward-line 1)))))
       (nreverse starts))))
 
+(defun ecc-review-files--under (header)
+  "Return what the names of the file of HEADER are put under, or \"\".
+git writes a rename's or a copy's names bare, while the names of its
+diff line carry the prefix the review asked for -- the directory of a
+second repository named from the first (`ecc-review-diff-text').  It is
+what comes between \"a/\" and the former name there."
+  (save-match-data
+    (or (and (string-match "^\\(?:rename\\|copy\\) from \\(.+\\)$" header)
+             (let ((from (match-string 1 header)))
+               (and (string-match (concat "^diff --git a/\\(.*\\)" (regexp-quote from) " b/")
+                                  header)
+                    (match-string 1 header))))
+        "")))
+
 (defun ecc-review-files--header-path (header)
   "Return the path the file header HEADER names, without a/ or b/, or nil."
   (save-match-data
@@ -321,7 +335,8 @@ diffs this package makes of what git does not track have no diff line
                  (string-match "^--- \\(?:a/\\)?\\([^\t\n]+\\)" header))
             (match-string 1 header)
           path)))
-     ((string-match "^rename to \\(.+\\)$" header) (match-string 1 header))
+     ((string-match "^\\(?:rename\\|copy\\) to \\(.+\\)$" header)
+      (concat (ecc-review-files--under header) (match-string 1 header)))
      ((string-match "^diff --git a/.* b/\\(.+\\)$" header) (match-string 1 header)))))
 
 (defun ecc-review-files--diff-entries ()
@@ -341,7 +356,7 @@ where its first hunk begins."
              (header (buffer-substring-no-properties
                       beg (if mine (plist-get (car mine) :position) end)))
              (old (and (string-match "^rename from \\(.+\\)$" header)
-                       (match-string 1 header)))
+                       (concat (ecc-review-files--under header) (match-string 1 header))))
              (added 0)
              (removed 0))
         (dolist (hunk mine)
