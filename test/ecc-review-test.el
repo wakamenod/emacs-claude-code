@@ -2015,6 +2015,26 @@ The context around it stays and is not what the comment was about."
        directory (concat ecc-review-test--summary "    return None\n"))
       (should (ecc-review-note-outdated (car ecc-review--notes))))))
 
+(ert-deftest ecc-review-test-an-empty-file-above-lends-no-old-side ()
+  "An empty file git added or deleted, right above a recorded file, lends it no blob.
+Such a file has a header and an index line and no --- line, so the
+recorded file's --- line comes right after its index line."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (dolist (empty (list (concat "diff --git a/e b/e\nnew file mode 100644\n"
+                                     "index 0000000000000000000000000000000000000000.."
+                                     "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391\n")
+                             (concat "diff --git a/d b/d\ndeleted file mode 100644\n"
+                                     "index e69de29bb2d1d6434b8b29ae775ad8c2e48c5391.."
+                                     "0000000000000000000000000000000000000000\n")))
+          (with-current-buffer
+              (ecc-review-test--fill
+               session (concat empty "--- notes.txt\n+++ notes.txt\n@@ -1 +1 @@\n-a\n+b\n"))
+            (let ((hunk (car (ecc-review-hunks))))
+              (should (equal (plist-get hunk :path) "notes.txt"))
+              (should-not (ecc-review--base-of hunk)))))
+      (ecc-review-test--kill-review-buffers))))
+
 (ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
   "Remembering the place reads the hunk it is in, not the whole diff."
   (ecc-review-test--with-review session

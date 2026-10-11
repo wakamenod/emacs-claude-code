@@ -2056,21 +2056,25 @@ PLACE is let go when BODY is done, however it ends."
   "Return the blob of the old side of the file HUNK is in, as a shape keeps it.
 HUNK is the first hunk of its file.  The blob is on the index line of the
 file's own header: from its --- line up through git's extended header
-lines to its diff line.  A file with no diff line -- one made from what
-the session recorded -- says nothing, which is nil, whatever the file
-above it said."
+lines to its diff line, which has to name the file.  A file with no diff
+line of its own -- one made from what the session recorded -- says
+nothing, which is nil, whatever the file above it said: an empty file
+git added or deleted has a header and no --- line, and its index line
+is not the next file's."
   (save-excursion
     (goto-char (plist-get hunk :position))
     (forward-line -1)
     (when (looking-at-p "\\+\\+\\+ ")
       (forward-line -1))
     (when (looking-at-p "--- ")
-      (let ((id nil))
+      (let ((path (plist-get hunk :path))
+            (id nil))
         (while (and (zerop (forward-line -1))
                     (looking-at "\\(?:index \\([0-9a-f]+\\)\\.\\.\\|\\(?:old\\|new\\|deleted file\\|new file\\) mode \\|similarity \\|dissimilarity \\|rename \\|copy \\)"))
           (when (match-string-no-properties 1)
             (setq id (match-string-no-properties 1))))
-        (when (and id (looking-at-p "diff "))
+        (when (and id path
+                   (looking-at-p (concat "diff --git a/.* b/" (regexp-quote path) "$")))
           (if (string-match-p "\\`0+\\'" id) 'empty id))))))
 
 (cl-defgeneric ecc-review--file-lines (hunk)
