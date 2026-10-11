@@ -119,7 +119,7 @@ Dashboard columns  2026-09-06 10:22  f6743727  1 hit
 
 タブをクリックすると、ウィンドウがそのセッションに切り替わります。セッションバッファでは、`C-c C-t` でウィンドウのタブから、`C-u C-c C-t` ですべてのセッションから選べます。Space がオンなら、別のプロジェクトのセッションはそのプロジェクトの Space に開きます。タブの `x` は確認してからセッションを止め、ウィンドウは隣のタブに移ります。`(setq ecc-tab-close-confirm nil)` で確認を省けます。
 
-<Video name="switch" label="セッションウィンドウが別のセッションに切り替わり、選択タブが greet から notes へ移動してトランスクリプトが置き換わる様子" />
+<Video name="switch" label="セッションウィンドウが別のセッションに切り替わり、選択タブが records から notes へ移動してトランスクリプトが置き換わる様子" />
 
 `(setq ecc-tab-line-scope 'all)` で、どのタブラインにもすべてのセッションを並べます。Emacs のタブバーにもセッションの状態を示すには、`ecc-tab-bar-state` を `t` にします。あわせて `tab-bar-tab-name-function` を `#'ecc-tab-bar-tab-name` にしてください。
 

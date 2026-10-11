@@ -23,7 +23,10 @@ first run; `swiftc` comes with the command line tools). Nothing that
 covers the window is in the picture, the window does not have to be in
 front, and you can carry on working on the same screen while it records.
 A window that is *minimised* is not drawn and cannot be recorded; one
-that is covered, on another Space or half off the edge can.
+that is covered, on another Space or half off the edge can. The window's
+child frames (a posframe, a completion list) are part of it and are in
+the picture. `scripts/docshots.sh` takes the site's pictures with the
+same recorder, through its `--frames` mode.
 
 Whatever runs it needs Screen Recording permission (System Settings →
 Privacy & Security → Screen Recording), or there is nothing to record.

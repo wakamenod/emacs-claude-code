@@ -51,7 +51,7 @@ When the right side is a commit rather than your working tree (somebody else's p
 
 `D` in the menu (`C-c c D D`), or `M-x ecc-review`, compares the working tree with what it held when the session started, recorded without touching the index or your files. Work in progress from before is left out, changes the session committed are still shown, and a resumed session keeps its starting point.
 
-<Video name="review" label="Every change of the session as one diff: a comment attached to a hunk, and the prompt it becomes shown before it goes" />
+<Video name="review" label="Every change of the session as one diff: a comment attached to a line, and the prompt it becomes shown before it goes" />
 
 Another session working in the same directory shows up here too; separate [worktrees](/emacs-claude-code/features/spaces/#worktrees) keep sessions apart. A file larger than `ecc-review-max-bytes` (200,000) is named rather than printed. Outside a Git repository, a file is compared with what the CLI reported it holding before the session's first change.
 

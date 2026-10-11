@@ -14,33 +14,73 @@
 # frame, until its subtitle can be read (`readable_frames').
 #
 # Opens a throwaway GUI Emacs, walks it through each scene and captures
-# the frame.  No CLI and no network are involved, so it costs nothing and
-# comes out the same every time.
+# the frame.  Most scenes replay recordings, so they cost nothing and
+# come out the same every time; the ones about an answer arriving run
+# the real CLI, with haiku and a budget.
 #
-# macOS only.  It needs `screencapture', `ffmpeg' and `cwebp' (brew
-# install webp: Homebrew's ffmpeg has no WebP encoder), and the terminal
-# running this needs Screen Recording permission (System Settings ->
-# Privacy & Security -> Screen Recording); without it screencapture says
-# "could not create image from display".
+# macOS only.  It needs `swiftc' (the Xcode command line tools), `ffmpeg'
+# and `cwebp' (brew install webp: Homebrew's ffmpeg has no WebP encoder),
+# and the terminal running this needs Screen Recording permission (System
+# Settings -> Privacy & Security -> Screen Recording); without it
+# record-window says it cannot see the windows.
+#
+# Only the Emacs this starts is in the pictures: its frame may be covered
+# by other windows, and the machine may be used while it runs.
 set -euo pipefail
 
-outdir=${1:-docs/site/src/assets}
+root=$(cd "$(dirname "$0")/.." && pwd)
+# Everything this makes is of the checkout the script is in, and goes
+# into that checkout, wherever it is started from.  The defaults were
+# relative to the current directory, so a run started anywhere else
+# wrote there (2026-10-10).  docshots.el makes sure the code in the
+# pictures is this checkout's too (`shot-foreign-ecc').
+outdir=${1:-$root/docs/site/src/assets}
 # The videos are not processed by Astro's image pipeline, so they and
-# their subtitles are served as they are, from public/.
-videodir=${1:-docs/site/public/videos}
+# their subtitles are served as they are, from public/.  Given a
+# directory, the videos go into videos/ under it, with a copy of their
+# subtitles: `stretch' reads their text and `retime' writes their times.
+videodir=$root/docs/site/public/videos
+if [ -n "${1:-}" ]; then
+    mkdir -p "$1/videos"
+    cp "$videodir"/*.vtt "$1/videos/"
+    videodir=$1/videos
+fi
 # The conversation the hand-off scene resumes in the terminal.  It is
 # recorded once, in the demo project, and kept: the CLI can only
 # --resume a conversation it has really had.
-handover_id=7c3d9e21-4b5a-4f18-9c62-1d0e8a7f5b34
-handover_prompt="Name three things worth testing in a greeting function. One short line each, no code."
+handover_id=47497a40-9f64-4203-b040-ebf68c77354e
+handover_prompt="Name three things worth testing in parse_line in reader.py. One short line each, no code."
 emacs_app=${EMACS_APP:-/opt/homebrew/Cellar/emacs-plus@32/32.0.50/Emacs.app}
 # emacs-plus keeps emacsclient beside the .app rather than inside it.
 emacsclient=${EMACSCLIENT:-$(command -v emacsclient || echo "${emacs_app%/*}/bin/emacsclient")}
-root=$(cd "$(dirname "$0")/.." && pwd)
 frames=$(mktemp -d -t ecc-docshot-frames)
 geom=$(mktemp -t ecc-docshot-geom); rm -f "$geom"
 err=$(mktemp -t ecc-docshot-err); rm -f "$err"
 n=0
+
+# The pictures are taken by demo/record-window.swift, the recorder of
+# demo/record.sh, built where that builds it.  It takes the frame's own
+# window, child frames included, and nothing that covers it: this used
+# to take a rectangle of the screen with `screencapture -R', which took
+# whatever was in that corner -- with the person at the machine using
+# it, their own Emacs, twice on 2026-10-10.  The frame is found by a
+# title of this run's own.
+recorder=$root/demo/.build/record-window
+if [ ! -x "$recorder" ] || [ "$root/demo/record-window.swift" -nt "$recorder" ]; then
+    echo "building $recorder" >&2
+    mkdir -p "$root/demo/.build"
+    swiftc -O -parse-as-library -o "$recorder" "$root/demo/record-window.swift" \
+        2>&1 | grep -v "^ld: warning" || true
+fi
+[ -x "$recorder" ] || { echo "could not build $recorder" >&2; exit 1; }
+title="ecc docshot $$ $RANDOM"
+# The display the frame stands on: the one with the most pixels to the
+# point, since the pictures are taken in its pixels.  A frame left on a
+# screen of one pixel to the point beside a Retina one came out at half
+# the width (2026-10-10).
+display=$("$recorder" --displays | sort -k5 -nr | head -1)
+read -r display_x display_y _ _ display_scale <<< "$display"
+echo "taking the pictures on the display at $display_x,$display_y ($display_scale pixels to the point)" >&2
 
 # Both the recording and the terminal of the hand-off scene run the real
 # CLI, and a Claude Code session this script was started from would pass
@@ -52,7 +92,11 @@ for variable in $(env | sed -n 's/^\(CLAUDE[A-Z_]*\)=.*/\1/p'); do
     unset "$variable"
 done
 
-cleanup() { pkill -f 'scripts/docshots.el' 2>/dev/null || true; rm -rf "$frames"; }
+cleanup() {
+    if [ -n "${capturing:-}" ]; then kill -INT "$capturing" 2>/dev/null || true; fi
+    pkill -f 'scripts/docshots.el' 2>/dev/null || true
+    rm -rf "$frames"
+}
 trap cleanup EXIT
 
 # A step that opens a minibuffer can leave `emacsclient' waiting for an
@@ -78,17 +122,24 @@ want() {
 }
 
 # Start a new video; the frames of each live in a directory of their own.
-# The frame is asked where it is first, as it is before a still: the
-# position read at startup can be stale by the time a scene runs -- the
-# corner the frame is placed in is settled by the window system, not by
-# Emacs -- and every frame of the video would then be cut off on one
-# side (confirmed 2026-09-11).
+# The frame is asked for its size first, as it is before a still: a scene
+# before this one may have resized it.
+# The frames are taken by `recorder', which films the whole time from here
+# to `video'; `hold' notes which of them belong in the video.
 scene() {
     scene=$1
     n=0
+    rm -rf "${frames:?}/${scene:?}" "${frames:?}/${scene:?}".*
     mkdir -p "$frames/$scene"
-    rm -f "${frames:?}/${scene:?}.cues"
     regeom
+    "$recorder" --title "$title" --fps "$fps" --frames "$frames/$scene.raw" &
+    capturing=$!
+    for _ in $(seq 1 100); do
+        [ -s "$frames/$scene.raw/started" ] && break
+        sleep 0.1
+    done
+    [ -s "$frames/$scene.raw/started" ] || { echo "$scene: no frame came" >&2; exit 1; }
+    started=$(cat "$frames/$scene.raw/started")
 }
 
 # Start the next subtitle here.  The frames captured so far are its
@@ -98,72 +149,153 @@ scene() {
 cue() { echo "$n" >> "$frames/$scene.cues"; }
 
 # How many frames a second the videos are captured and played at.
-# `screencapture' takes about 80ms a frame on this machine (20 frames in
-# 1.635s, measured 2026-09-13), so 10 is close to what a capture loop can
-# really sustain.  A frame that takes longer leaves the video shorter
-# than the scene was, which is why the subtitles are timed by frame
-# count rather than by the seconds the holds ask for.
 fps=10
-
-# "1.5" -> 1500.  Bash has no decimals, and the holds below are written
-# in seconds because that is what the scene is thinking in.
-ms_of() {
-    local whole=${1%%.*} frac=${1#*.}
-    [ "$frac" = "$1" ] && frac=0
-    frac=$(printf '%-3s' "${frac:0:3}" | tr ' ' 0)
-    echo $((10#$whole * 1000 + 10#$frac))
-}
 
 now_ms() { local t=${EPOCHREALTIME/[.,]/}; echo $((10#${t:0:${#t}-3})); }
 
-# Capture frames for $1 seconds at $fps.  Every frame is a real capture:
-# writing the same frame out twice to hold a state makes the video no
-# smoother, only longer.  A step that settles -- a window rearranging, a
-# posframe arriving -- is then actually seen settling.
+# Put $1 seconds of what is happening now into the video.  The frames
+# are the recorder's, taken the whole time; a hold takes the ones that fall
+# inside it.  What happens between two holds -- the `sleep' while a
+# scene sets itself up -- is filmed and left out, as it always was.
+# Every frame is a real capture: writing the same frame out twice to
+# hold a state makes the video no smoother, only longer.  A step that
+# settles -- a window rearranging, a posframe arriving -- is then
+# actually seen settling.
 hold() {
-    local end frame next left
-    frame=$((1000 / fps))
-    end=$(( $(now_ms) + $(ms_of "$1") ))
-    while :; do
-        next=$(( $(now_ms) + frame ))
+    local from to first last i step=$((1000 / fps))
+    from=$(now_ms)
+    sleep "$1"
+    to=$(now_ms)
+    # Frame I is the screen at `started' + (I - 1) * step.
+    first=$(( (from - started + step - 1) / step + 1 ))
+    last=$(( (to - started + step - 1) / step ))
+    (( last < first )) && last=$first
+    for (( i = first; i <= last; i++ )); do
+        echo "$i" >> "$frames/$scene.ticks"
         n=$((n + 1))
-        screencapture -x -R"$X,$Y,$W,$H" "$(printf '%s/%s/%04d.png' "$frames" "$scene" "$n")"
-        [ "$(now_ms)" -ge "$end" ] && break
-        left=$(( next - $(now_ms) ))
-        [ "$left" -gt 0 ] && sleep "0.$(printf '%03d' "$left")"
     done
+}
+
+# What to keep of a picture of the whole window, as an ffmpeg filter:
+# the rectangle `regeom' read, in points, turned into pixels by the
+# width of the picture against the width of the window.  The window's
+# corners are rounded and come out transparent, so the picture is put
+# on the theme's background first.
+keep() {
+    echo "format=rgba,split[a][b];[a]drawbox=c=0x1a1b26@1:t=fill:replace=1[bg];[bg][b]overlay=format=rgb,crop=w=iw*$CW/$OW:h=iw*$CH/$OW:x=iw*$CX/$OW:y=iw*$CY/$OW"
+}
+
+# Is CONDITION, a form, true in the scene Emacs?
+holds() {
+    timeout 25 "$emacsclient" -s ecc-docshot -e "$1" 2>/dev/null | grep -qx t
+}
+
+# Film until CONDITION holds, at most MAX seconds: what the CLI answers
+# takes as long as it takes -- five seconds in one run, forty in the
+# next (2026-10-10).  Of a wait longer than three seconds only its first
+# and its last one and a half are kept, so a slow answer is a short cut
+# in the video rather than half a minute of a spinner.  Ending on the
+# ceiling is said, since the scene after it would start with the turn
+# still running.  WHOLE as a third argument keeps every frame, for a
+# wait that is the motion -- an answer streaming in.
+hold_until() {
+    local condition=$1 max=$2 whole=${3:-} start keep=$((15 * fps / 10)) total
+    local deadline=$(( $(now_ms) + max * 1000 ))
+    start=$n
+    while ! holds "$condition"; do
+        if [ "$(now_ms)" -ge "$deadline" ]; then
+            echo "   $scene: $condition still false after ${max}s" >&2
+            break
+        fi
+        hold 0.5
+    done
+    total=$((n - start))
+    if [ -z "$whole" ] && [ "$total" -gt $((2 * keep)) ]; then
+        awk -v from="$start" -v keep="$keep" -v to="$n" \
+            'NR <= from + keep || NR > to - keep' \
+            "$frames/$scene.ticks" > "$frames/$scene.ticks.new"
+        mv "$frames/$scene.ticks.new" "$frames/$scene.ticks"
+        n=$((start + 2 * keep))
+    fi
+}
+
+# Wait, without filming, until CONDITION holds, at most MAX seconds.
+wait_until() {
+    local condition=$1 max=$2 waited=0
+    until holds "$condition"; do
+        if [ "$waited" -ge "$max" ]; then
+            echo "   $condition still false after ${max}s" >&2
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+}
+
+# Stop filming, and lay the frames the holds took out in order, as
+# $frames/$scene/0001.png on.  A frame the capture had not written by
+# the time it was stopped is the one before it again.
+cut() {
+    local i k=0 have=""
+    kill -INT "$capturing" 2>/dev/null || true
+    wait "$capturing" 2>/dev/null || true
+    # The recorder takes the window at the size it had when the scene
+    # began; a frame that changed size after that is scaled into it.
+    if [ -e "$frames/$scene.raw/resized" ]; then
+        echo "$scene: the frame changed size during the scene; nothing written" >&2
+        exit 1
+    fi
+    while read -r i; do
+        k=$((k + 1))
+        [ -f "$(printf '%s/%04d.png' "$frames/$scene.raw" "$i")" ] \
+            && have=$(printf '%s/%04d.png' "$frames/$scene.raw" "$i")
+        [ -n "$have" ] || { echo "$scene: frame $i was never taken" >&2; exit 1; }
+        ln "$have" "$(printf '%s/%s/%04d.png' "$frames" "$scene" "$k")"
+    done < "$frames/$scene.ticks"
 }
 
 # Encode the frames of the current scene into a video, and time its
 # subtitles.  yuv420p and +faststart are what every browser plays and
 # starts before the whole file is in; the scale keeps both sides even,
-# which yuv420p needs.  A screen is mostly flat colour, so -crf 30 stays
-# legible at a small size.
+# which yuv420p needs.
+#
+# The site shows a video across its 45rem (720 CSS pixel) content
+# column, so a display of two pixels to the point wants 1440: that is
+# the width, or the width of the capture if it is narrower -- nothing is
+# made larger than it was taken.  The frame is 916 points wide, which is
+# 1832 pixels on a Retina screen, so it comes out at 1440 there and at
+# 916 on a screen of one pixel to the point, whatever machine runs this.
+# The frame is put on the display with the most pixels to the point.
+# -crf 20 keeps monospaced text clean at that size; a screen is mostly
+# flat colour, so a video is still a few hundred kilobytes.  The videos
+# were 900 wide at -crf 30 until 2026-10-10, and their text was soft.
 #
 # A band of the theme's background (doom-tokyo-night's #1a1b26) is added
 # below the picture.  A browser draws its controls and the subtitles over
 # the bottom of a video, which is where the echo area and the mode line
 # are; the band gives them somewhere else to go.  It is about 46 CSS
-# pixels at the width the site shows a video, the 45rem (720px) content
-# column: room for a control bar of 40 to 46 with nothing hidden, or for a
-# line of subtitles while the controls are away.  With both on screen the
-# subtitle covers the echo area and part of the mode line.  It was 80,
-# which cleared both at once, and was taken down by two text rows of the
-# recording at the user's request (2026-10-03).  The controls are a fixed
-# CSS height, so the band is a share of the width, iw*58/900, rounded up
-# to an even number: 58 rows at 900 wide, 78 at 1200.
-video_width=1200
+# pixels at the width the site shows a video: room for a control bar of
+# 40 to 46 with nothing hidden, or for a line of subtitles while the
+# controls are away.  With both on screen the subtitle covers the echo
+# area and part of the mode line.  It was 80, which cleared both at
+# once, and was taken down by two text rows of the recording at the
+# user's request (2026-10-03).  The controls are a fixed CSS height, so
+# the band is a share of the width, iw*58/900, rounded up to an even
+# number: 94 rows at 1440 wide, 47 CSS pixels.
+video_width=1440
+video_crf=20
 
 video() {
+    cut
     stretch
     ffmpeg -hide_banner -loglevel error -y \
         -framerate "$fps" -pattern_type glob -i "$frames/$scene/*.png" \
-        -vf "scale=$video_width:-2:flags=lanczos,pad=iw:ih+2*ceil(iw*29/900):0:0:color=0x1a1b26,format=yuv420p" \
-        -c:v libx264 -preset slow -crf 30 -an -movflags +faststart \
+        -vf "$(keep),scale=w='trunc(min($video_width,iw)/2)*2':h=-2:flags=lanczos,pad=iw:ih+2*ceil(iw*29/900):0:0:color=0x1a1b26,format=yuv420p" \
+        -c:v libx264 -preset slow -crf "$video_crf" -an -movflags +faststart \
         "$videodir/$scene.mp4"
     poster
     retime
-    rm -rf "${frames:?}/${scene:?}" "${frames:?}/${scene:?}.cues"
+    rm -rf "${frames:?}/${scene:?}" "${frames:?}/${scene:?}".*
 }
 
 # How long a subtitle has to stay on screen to be read, in frames:
@@ -271,19 +403,27 @@ retime() {
 # and a frame that would grow past the bottom of the screen is moved.
 regeom() {
     e '(shot-report-geometry)'
-    read -r X Y W H _cols _lines < "$geom"
+    read -r CX CY CW CH OW < "$geom"
 }
 
-# Capture one frame to a file of its own.
+# Capture one frame to a file of its own, at the full resolution of the
+# screen: Astro scales a still for the page.
 still() {
     regeom
-    screencapture -x -R"$X,$Y,$W,$H" "$1"
+    shoot "$1"
+}
+
+shoot() {
+    "$recorder" --title "$title" --shot "$frames/shot.png" 2>&1 | grep -v "^record-window: wrote" >&2 || true
+    ffmpeg -hide_banner -loglevel error -y -i "$frames/shot.png" \
+        -vf "$(keep)" -frames:v 1 "$1"
+    rm -f "$frames/shot.png"
 }
 
 if [ -z "$(ls "$HOME"/.claude/projects/*/"$handover_id".jsonl 2>/dev/null)" ]; then
     echo "recording the conversation the hand-off scene resumes..." >&2
-    mkdir -p /tmp/greet
-    (cd /tmp/greet && claude -p --session-id "$handover_id" \
+    mkdir -p /tmp/records
+    (cd /tmp/records && claude -p --session-id "$handover_id" \
          --model haiku --max-budget-usd 0.10 "$handover_prompt" >/dev/null)
 fi
 
@@ -292,7 +432,7 @@ pkill -f 'scripts/docshots.el' 2>/dev/null || true
 rm -f "${TMPDIR:-/tmp}/emacs$(id -u)/ecc-docshot"
 
 open -n -a "$emacs_app" --args -Q --chdir "$root" \
-  --eval "(setq shot-geometry-file \"$geom\" shot-error-file \"$err\")" \
+  --eval "(setq shot-geometry-file \"$geom\" shot-error-file \"$err\" shot-frame-title \"$title\" shot-display-origin (quote ($display_x . $display_y)))" \
   -l "$root/scripts/docshots.el"
 
 for _ in $(seq 1 30); do
@@ -301,7 +441,7 @@ for _ in $(seq 1 30); do
     sleep 1
 done
 [ -f "$geom" ] || { echo "the frame never reported its geometry" >&2; exit 1; }
-read -r X Y W H _cols _lines < "$geom" || true
+read -r CX CY CW CH OW < "$geom" || true
 
 mkdir -p "$outdir" "$videodir"
 
@@ -317,6 +457,7 @@ if want switch; then
     e '(shot-scene-switch-sequence)'
     hold 0.5; cue; hold 3.7; cue; hold 1.8; cue; hold 3.1; cue; hold 1.9
     video
+    e '(shot-scene-switch-end)'
 fi
 
 if want menu; then
@@ -333,6 +474,8 @@ if want send-region || want fix-error || want inline || want rewrite \
 fi
 
 if want send-region; then
+    # Not before the turn of the scene before it has ended.
+    wait_until '(shot-live-idle-p)' 120
     # 3. Sending the region from a source buffer.  This one runs the real
     # CLI: the point of the picture is the answer coming back.
     scene send-region
@@ -340,17 +483,23 @@ if want send-region; then
     e '(shot-scene-send-region-mark)'   ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.67
     cue; e '(shot-scene-send-region-sequence)'
     # The typing and then the answer streaming in are the motion, so the
     # frames are taken while they happen rather than after.  The question
-    # is sent at 4.2s, and the answer starts a few seconds later.
-    hold 4.4; cue; hold 2.6; cue; hold 10
+    # is sent at 4.2s.
+    hold 4.4; cue; hold_until '(shot-live-answering-p)' 90
+    cue; hold_until '(shot-live-idle-p)' 90 whole; hold 2
     video
     e '(shot-dump-live-log)'
 fi
 
 if want fix-error; then
+    # Not before the turn of the scene before it has ended.
+    wait_until '(shot-live-idle-p)' 120
     # 4. Fixing the error a checker found.  The file really is broken and
     # the checker really is run; only the checker is the standard library
     # rather than something installed.
@@ -358,72 +507,89 @@ if want fix-error; then
     cue; e '(shot-scene-fix-error-open)'     ; sleep 3; hold 1
     e '(shot-scene-fix-error-point)'    ; hold 0.67
     cue; e '(shot-scene-fix-error)'          ; hold 0.67
-    hold 1.5; cue; hold 4; cue; hold 4.5
+    hold 1.5; cue; hold_until '(or (shot-live-answering-p) (shot-live-waiting-p))' 90
+    cue; hold_until '(shot-live-waiting-p)' 90; hold 1
     # Allowing it is part of the scene: the edit is made, the buffer picks
     # it up, and the checker has nothing left to complain about.  It also
     # leaves nothing waiting, which would blink through every picture taken
     # after this one.
     cue; e '(shot-scene-allow)'              ; sleep 1; hold 0.67
-    hold 8
+    hold_until '(shot-live-idle-p)' 90; hold 1
     cue; e '(shot-scene-recheck)'            ; sleep 2; hold 1.33
     video
 fi
 
 if want inline; then
+    # Not before the turn of the scene before it has ended.
+    wait_until '(shot-live-idle-p)' 120
     # 5. Asking about the region and being answered where the code is.
     scene inline
     cue; e '(shot-scene-send-region-point)'  ; hold 0.33
     e '(shot-scene-send-region-mark)'   ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.67
     cue; e '(shot-scene-inline-sequence)'
     # The question is sent at 3.0s.
-    hold 3.2; cue; hold 2.8; cue; hold 10
+    hold 3.2; cue; hold_until '(shot-inline-done-p)' 90; cue; hold 4
     video
 fi
 
 if want rewrite; then
+    # Not before the turn of the scene before it has ended.
+    wait_until '(shot-live-idle-p)' 120
     # 6. Rewriting the region, and accepting what comes back.
     scene rewrite
     cue; e '(shot-scene-send-region-point)'  ; hold 0.33
     e '(shot-scene-send-region-mark)'   ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
+    e '(shot-scene-send-region-extend)' ; hold 0.33
     e '(shot-scene-send-region-extend)' ; hold 0.67
     cue; e '(shot-scene-rewrite-sequence)'
     # The instruction is sent at 3.0s.
-    hold 3.2; cue; hold 2.8; cue; hold 8
+    hold 3.2; cue; hold_until '(shot-rewrite-ready-p)' 90; cue; hold 4
     cue; e '(shot-scene-accept)'             ; sleep 1; hold 1.33
     video
 fi
 
 if want at-cursor; then
+    # Not before the turn of the scene before it has ended.
+    wait_until '(shot-live-idle-p)' 120
     # An @ reference: the point stands in the source, the prompt says
     # @cursor, and what is sent carries the line it was on.
     scene at-cursor
-    cue; e '(shot-scene-cursor-point 7)'          ; hold 0.67
-    cue; e '(shot-prompt-type "What does ")'      ; hold 0.33
+    cue; e '(shot-scene-cursor-point 11)'          ; hold 0.67
+    cue; e '(shot-prompt-type "Can ")'            ; hold 0.33
     e '(shot-prompt-type "@cursor")'         ; hold 0.33
-    e '(shot-prompt-type " return?")'        ; hold 0.67
+    e '(shot-prompt-type " give an empty field?")' ; hold 0.67
     cue; e '(shot-prompt-send)'                   ; hold 0.67
-    hold 4.5; cue; hold 7.5
+    hold 2; cue; hold_until '(shot-live-idle-p)' 90; hold 2
     video
 fi
 
 if want context; then
+    # Not before the turn of the scene before it has ended.
+    wait_until '(shot-live-idle-p)' 120
     # The editor context, attached to every prompt while it is on.
     scene context
-    cue; e '(shot-scene-cursor-point 6)'                                  ; hold 0.67
+    cue; e '(shot-scene-cursor-point 20)'                                 ; hold 0.67
     cue; e '(shot-prompt-command (quote ecc-prompt-toggle-context))'      ; hold 1
     cue; e '(shot-prompt-type "Where am I?")'                             ; hold 0.67
     e '(shot-prompt-send)'                                           ; hold 0.67
-    hold 4; cue; hold 8
+    hold 2; cue; hold_until '(shot-live-idle-p)' 90; hold 2
     cue; e '(shot-prompt-command (quote ecc-prompt-toggle-context))'      ; hold 0.67
     video
 fi
 
 if want image; then
+    # Not before the turn of the scene before it has ended.
+    wait_until '(shot-live-idle-p)' 120
     # An image in a prompt.  It goes by path rather than inline, so the
     # picture is opened beside the session first: without it the scene
     # is one line of text appearing in the prompt region.  The session
@@ -432,7 +598,7 @@ if want image; then
     cue; e '(shot-scene-insert-image)'                           ; hold 1
     cue; e '(shot-prompt-type "What is in this image? One line.")'; hold 0.67
     e '(shot-prompt-send)'                                  ; hold 0.67
-    hold 1.5; cue; hold 10.5
+    hold 1.5; cue; hold_until '(shot-live-idle-p)' 90; hold 2
     video
 fi
 
@@ -443,7 +609,7 @@ if want suggestion; then
     e '(shot-start-live-default)' ; sleep 5
     # Two turns: no suggestion came after one of them, and the CLI
     # offered one after the second (confirmed 2026-09-11).
-    e '(shot-prompt-type "Read hello.py and say in one line what it does.")'
+    e '(shot-prompt-type "Read reader.py and say in one line what it does.")'
     e '(shot-prompt-send)'  ; sleep 30
     e '(shot-prompt-type "Good. What next?")'
     e '(shot-prompt-send)'
@@ -464,15 +630,16 @@ if want suggestion; then
 fi
 
 if want btw; then
+    # Not before the turn of the scene before it has ended.
+    wait_until '(shot-live-idle-p)' 120
     # A question asked beside a turn that is running, answered without
     # interrupting it.
     scene btw
     cue; e '(shot-scene-btw-turn)'   ; hold 0.67
     hold 3
-    cue; e '(shot-scene-btw-sequence (list "what does " "farewell " "return?"))'
+    cue; e '(shot-scene-btw-sequence (list "does " "read_records " "skip comments?"))'
     # The question is sent at 3.6s.
-    hold 3.8; cue; hold 2.6
-    hold 10
+    hold 3.8; cue; hold_until '(shot-btw-answered-p)' 90; hold 4
     video
     # The answer floats in a posframe, and a posframe outlives every
     # window command: without this it lies over every scene after it.
@@ -546,11 +713,11 @@ if want question; then
 fi
 
 if want review; then
-    # Every change of the session as one diff, a comment on a hunk, and
+    # Every change of the session as one diff, a comment on a line, and
     # the prompt that would go out.
     scene review
     cue; e '(shot-scene-review)'        ; sleep 1; hold 1
-    cue; e '(shot-scene-review-comment (list "the docstring " "still says hi"))'
+    cue; e '(shot-scene-review-comment (list "what about " "two trailing " "commas?"))'
     hold 4.8
     cue; e '(shot-scene-review-hunk)'   ; hold 1
     cue; e '(shot-scene-review-send)'   ; sleep 1; hold 1.67
@@ -562,8 +729,8 @@ if want proposal; then
     scene proposal
     cue; e '(shot-scene-proposal)'       ; sleep 1; hold 1
     cue; e '(shot-scene-proposal-edit)'  ; sleep 1; hold 1
-    cue; e '(shot-scene-proposal-type " and ")'     ; hold 0.33
-    e '(shot-scene-proposal-type "hello")'     ; hold 1
+    cue; e '(shot-scene-proposal-type "\n\n\ndef test_parse_line_empty():\n")' ; hold 0.33
+    e '(shot-scene-proposal-type "    assert parse_line(\"\") == []\n")' ; hold 1
     cue; e '(shot-scene-proposal-apply)' ; sleep 1; hold 1.33
     video
 fi
@@ -574,7 +741,7 @@ if want plan; then
     # the plan back with it rather than approving it.
     scene plan
     cue; e '(shot-scene-plan)'               ; sleep 1; hold 1.33
-    cue; e '(shot-scene-plan-comment 3 (list "add a " "docstring " "to each"))'
+    cue; e '(shot-scene-plan-comment 4 (list "make strict " "keyword-" "only"))'
     hold 4.8
     hold 0.67
     cue; e '(shot-scene-plan-mode-sequence)'
@@ -655,8 +822,8 @@ if want sidebar; then
     # rectangle captured is the sidebar window rather than the frame.
     e '(shot-scene-sidebar)' ; sleep 2
     e '(shot-report-sidebar-geometry)'
-    read -r X Y W H _cols _lines < "$geom"
-    screencapture -x -R"$X,$Y,$W,$H" "$outdir/sidebar.png"
+    read -r CX CY CW CH OW < "$geom"
+    shoot "$outdir/sidebar.png"
     e '(shot-scene-sidebar-end)' ; sleep 1
 fi
 
@@ -686,4 +853,12 @@ if want overview; then
     e '(shot-scene-overview-end)'
 fi
 
-echo "wrote the pictures of ${SCENES:-every scene} into $outdir"
+# A module is loaded when a scene first needs it, so the check that
+# every ecc file came from this checkout is made again at the end.
+foreign=$(timeout 25 "$emacsclient" -s ecc-docshot -e '(shot-foreign-ecc)' 2>/dev/null || echo unknown)
+if [ "$foreign" != nil ]; then
+    echo "not this checkout's ecc: $foreign" >&2
+    exit 1
+fi
+
+echo "wrote the pictures of ${SCENES:-every scene} from $root into $outdir and $videodir"

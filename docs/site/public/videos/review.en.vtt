@@ -3,11 +3,11 @@ WEBVTT
 00:00:00.000 --> 00:00:04.200
 Every change of the session, as one diff
 
-00:00:04.200 --> 00:00:08.800
-In the review, press c to comment on the hunk at point
+00:00:04.200 --> 00:00:09.000
+In the review, press c to comment on the line at point
 
-00:00:08.800 --> 00:00:11.000
+00:00:09.000 --> 00:00:11.200
 Press n to move to the next hunk
 
-00:00:11.000 --> 00:00:15.900
+00:00:11.200 --> 00:00:16.100
 C-u C-c C-c shows the prompt the comment becomes
