@@ -895,10 +895,16 @@ Verified against **Claude Code CLI 2.1.281**.
   and the lines carried through that. When the old side appears or goes,
   as when an untracked file is added to the index, the lines put in are
   still matched and a comment on the old side is outdated. When git cannot
-  say, or carrying a file fails, the comments of that file go outdated and
-  why is in the log. A comment on a whole hunk goes to the hunk most of
-  its lines are in now. The ediff review carries its comments the same
-  way. A comment whose line has gone is kept, marked outdated, above the
+  say, or carrying a file fails, none of the comments of that file moves:
+  they go outdated where they were and why is in the log. A comment on a
+  whole hunk follows the hunk most of its lines are in now while more than
+  half of them stayed; once half or more changed or went it is outdated.
+  The comments are carried once, when the diff is read; a review whose
+  buffer was edited since -- by a key that got past its keymap -- says so
+  and waits for `g` rather than putting a comment on a line of something
+  else. The ediff review carries its comments the same way, each time
+  ediff computes the differences. A comment whose line has gone is kept,
+  marked outdated, above the
   first hunk of its file, and is still sent with `(outdated)` and the hunk
   as it was. It comes back when the line it was last on, carried from that
   reading, is there again -- the change undone -- and not for a line that
@@ -962,6 +968,13 @@ Verified against **Claude Code CLI 2.1.281**.
   image or a video.
 
 ### Fixed
+
+- The diff review reads git's diff the same whatever the repository's
+  diff settings say: it asks for `--inter-hunk-context=0` and the `a/` and
+  `b/` prefixes, as well as `--no-color` and `--no-ext-diff`. With
+  `diff.mnemonicPrefix` the files were named `i/x.el` or `w/x.el`, which
+  no file is, and with `diff.interHunkContext` two changes a few lines
+  apart came as one hunk with the unchanged lines between them.
 
 - `TAB` after `@` offered the project's files as
   `../../../private/tmp/x/readme.md` when the project spelt its root
