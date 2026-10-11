@@ -28,3 +28,9 @@ Ask for a worktree — "cut a worktree and do it there" — and, with the [Emacs
 ## Put it away
 
 When the implementation is done, kill the worktree session's buffer. Its Space holds nothing else, so the Space closes and takes you back to the Space beside it, and ecc asks whether to remove the worktree's directory as well. The branch stays either way.
+
+## Clear away the finished worktrees
+
+Killing a buffer puts one worktree away. When several are finished, for example once their pull requests are merged, ask any session of the project to "remove the finished worktrees". With the MCP server on, Claude checks each worktree of the repository and removes the finished ones without asking about each: their idle sessions stop, their Spaces close, and their branches stay. Files git ignores in them, such as `node_modules`, go too.
+
+Claude then reports what it removed, and what it left and why. A worktree with uncommitted or untracked files, an unsaved buffer or an unsent draft, a branch not yet merged, or a session at work in it is left alone. [Removing finished worktrees](/emacs-claude-code/features/spaces/#removing-finished-worktrees) has the full rules and what a `claude` started outside ecc needs.
