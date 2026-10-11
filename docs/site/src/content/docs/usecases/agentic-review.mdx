@@ -9,21 +9,21 @@ import Video from '../../../components/Video.astro';
 
 However much of the code an agent writes, the one who checks it in the end is a person (for now).
 
-So let the agent help with the review too. This page goes through one change with [Claude in the review](/emacs-claude-code/features/review-claude/): Claude walks you through it and comments on its lines, you answer on the lines, Claude fixes what you asked for, and you read the new diff. It needs the [Emacs MCP server](/emacs-claude-code/start/installation/#enabling-the-mcp-server) on (`ecc-mcp-enabled`).
+So let the agent help with the review too. This page goes through one change with [Claude in the review](/emacs-claude-code/features/review-claude/): you open the review, Claude gives a tour of it and comments on its lines, you answer on the lines, Claude fixes what you asked for, and you read the new diff. It needs the [Emacs MCP server](/emacs-claude-code/start/installation/#enabling-the-mcp-server) on (`ecc-mcp-enabled`).
 
-<Video name="usecase-review" label="Claude walking through its change in a review beside the session, commenting on lines; a reply typed to its comment on the changed line and sent with C-c C-c; Claude answering under the reply and editing the file, and the review showing the new diff" />
+<Video name="usecase-review" label="A review of a two-line change opened with C-c c D D beside the session; T and t taking Claude's tour, its comments appearing under the lines; a reply to one of them sent with C-c C-c; Claude answering under the reply and changing the file, and the review showing the new diff" />
 
 ## Claude has made a change
 
-A turn has ended, and Claude has changed files: an edit to one, and a new test file. The transcript says what it did.
+A turn has ended, and Claude has changed a file. The transcript says what it did.
 
-## Ask for a walk through it
+## Open the review
 
-Ask in plain words: "walk me through this change in the review", or "review the diff and leave comments". Claude opens the review of what the session changed beside the session. It does not take the keyboard or the window you are in. Claude then puts a comment on each line that needs one, `▎ #2 Claude: text`, and scrolls the review to the place it is talking about. The summary is in the transcript.
+`C-c c D D` opens the [review of what the session changed](/emacs-claude-code/features/review/#what-the-session-changed) beside the session. The other way in is to ask in plain words, such as "walk me through this in the review": Claude opens the review when it is asked to, and not otherwise.
 
 ## Take the tour
 
-For a guided reading instead, press `T` in the review. Claude puts the changes in order, most important first, shows the first stop, explains it, and waits. `t` asks for the next stop. [Talking to Claude from the review](/emacs-claude-code/features/review-claude/#talking-to-claude-from-the-review) has the details.
+`T` in the review asks Claude for a tour of the changes, most important first, and sends it the hunks of the review. At each stop Claude scrolls the review to the change, explains it in a few sentences in the transcript, puts a comment on each line that needs your attention, `▎ #2 Claude: text`, and waits. `t` asks for the next stop and tells Claude where you are. [Talking to Claude from the review](/emacs-claude-code/features/review-claude/#talking-to-claude-from-the-review) has the details.
 
 ## Answer on the lines
 

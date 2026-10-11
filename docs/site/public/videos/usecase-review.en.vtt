@@ -3,20 +3,23 @@ WEBVTT
 00:00:00.000 --> 00:00:02.000
 Claude has made a change
 
-00:00:02.000 --> 00:00:05.500
-Ask Claude to walk you through it in the review
+00:00:02.000 --> 00:00:05.900
+C-c c D D opens the review of what the session changed
 
-00:00:05.500 --> 00:00:11.500
-Claude opens the review, comments on lines and scrolls to them
+00:00:05.900 --> 00:00:12.000
+T asks Claude for a tour: it comments on lines and scrolls to them
 
-00:00:11.500 --> 00:00:16.100
+00:00:12.000 --> 00:00:16.700
+t goes to the next stop
+
+00:00:16.700 --> 00:00:21.300
 c on Claude's comment replies to it
 
-00:00:16.100 --> 00:00:19.700
+00:00:21.300 --> 00:00:24.900
 C-c C-c sends the reply, and the review stays open
 
-00:00:19.700 --> 00:00:23.700
+00:00:24.900 --> 00:00:29.300
 Claude answers under your comment and changes the file
 
-00:00:23.700 --> 00:00:27.700
+00:00:29.300 --> 00:00:33.300
 The review follows the files: the new diff, with the answer
