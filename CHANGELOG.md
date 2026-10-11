@@ -11,6 +11,29 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.290**.
+
+### Changed
+
+- Every source file names the assistance it was written with, on an
+  `Assisted-by:` line under its `Author:` line. The history has carried that
+  fact in its commit trailers from the first commit; a reader of one file, or
+  of the package as an archive serves it, had no way to see it.
+
+### Fixed
+
+- Documentation defects a documentation checker finds, none of which changes
+  what the code does: two mentions of `C-g` written as plain text rather than
+  as a key, two key sequences whose quoting was left half-closed and which
+  therefore rendered a stray quote, five error messages that opened in lower
+  case, three functions whose docstring never named one of their arguments, a
+  variable whose first line was not a sentence, and a Lisp symbol that was not
+  quoted as one. What the checker still reports is a key sequence of more than
+  one chord, which it reports even where the quoting is right, and the
+  `&context` specializers of `cl-defmethod`, which it reads as arguments.
+
 ## [0.4.0] - 2026-10-12
 
 Verified against **Claude Code CLI 2.1.290**.
