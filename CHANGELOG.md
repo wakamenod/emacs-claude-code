@@ -83,8 +83,12 @@ Verified against **Claude Code CLI 2.1.281**.
   session changed, the working tree against a revision, a range of
   commits, or what is staged (`staged`), of every file or only some (`paths`) -- puts
   comments on lines or hunks, answers a comment with `reply_to`, scrolls
-  the review to a place, and reads or removes comments. It never writes or
-  changes a comment of the user's. A tool works on the review of the session
+  the review to a place, and reads or removes comments. A line given with
+  a hunk makes a line comment, a place given with `reply_to` is not used,
+  and `review_comment_apply` adds the comments it can and names the others
+  by their place in the list; a line that is not in the diff is refused
+  with the lines that are. It never writes or changes a comment of the
+  user's. A tool works on the review of the session
   that calls it. The review it opens or moves is shown beside the session
   without being selected and without hiding a session window: never in the
   window you are in (nor the one the minibuffer was entered from), never by
