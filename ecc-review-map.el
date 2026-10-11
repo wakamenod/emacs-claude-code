@@ -44,10 +44,13 @@
 ;;
 ;; When the old side itself changed -- a commit under a review of what is
 ;; not committed, a branch that moved -- the caller hands over the hunks
-;; of the old blob against the new one (`ecc-review-map-base-hunks'),
-;; and the numbers of the old side are carried through them first.
-;; Without them nothing matches, and the caller's comments go outdated
-;; rather than somewhere that only reads alike.
+;; of the old blob against the new one, which it has from comparing the
+;; two blobs' texts (`ecc-review-map-text-hunks'), and the numbers of the
+;; old side are carried through them first.  When the two old sides are
+;; not known, the lines are matched by text and order alone
+;; (`ecc-review-map--by-text'); when they cannot be compared, nothing
+;; matches, and the caller's comments go outdated rather than somewhere
+;; that only reads alike.
 ;;
 ;; Nothing here knows of comments, buffers or git: the review hands in
 ;; the lines it read, and gets back where each line went.
@@ -75,9 +78,10 @@ header.  HUNKS are ((HEADER . NTH) . MEMBERS), MEMBERS the (SIDE NUMBER
 . NTH) of the lines of the hunk.  ORDER is every (SIDE NUMBER . NTH) of
 the file in the order of the diff; TEXTS every line of its new side, put
 in or not, and GONE every line it takes out, as ((NUMBER . NTH) . TEXT)
-in that order.  PUT-IN is a hash of the numbers of ADDED, made when
-first asked for by `ecc-review-map-changed-p'."
-  base removed added hunks order texts gone put-in)
+in that order.  ADDED-AT is the (NUMBER . NTH) of each line of ADDED,
+and PUT-IN a hash of them, made when `ecc-review-map-changed-p' is first
+asked: only a comment on a whole hunk asks."
+  base removed added added-at hunks order texts gone put-in)
 
 (defun ecc-review-map-number (lines)
   "Give each of LINES, the lines of one file in the order of the diff, its NTH.
@@ -129,9 +133,7 @@ BASE is the blob of the old side, as `ecc-review-map-shape' keeps it."
      :base base
      :removed (sort (nreverse removed) #'car-less-than-car)
      :added (sort (nreverse added) #'car-less-than-car)
-     :put-in (let ((keys (make-hash-table :test #'equal)))
-               (dolist (key put-in) (puthash key t keys))
-               keys)
+     :added-at put-in
      :hunks (mapcar (lambda (hunk) (cons (car hunk) (nreverse (cdr hunk))))
                     (nreverse hunks))
      :order (nreverse order)
@@ -144,7 +146,13 @@ Not context: every line of the old side a diff shows is one it takes
 out; a line of the new side is changed when it is put in.  The NTH tells
 a line put in from context at its number in another patch of the file."
   (or (eq side 'old)
-      (gethash (cons number nth) (ecc-review-map-shape-put-in shape))))
+      (gethash (cons number nth)
+               (or (ecc-review-map-shape-put-in shape)
+                   (setf (ecc-review-map-shape-put-in shape)
+                         (let ((keys (make-hash-table :test #'equal)))
+                           (dolist (key (ecc-review-map-shape-added-at shape))
+                             (puthash key t keys))
+                           keys))))))
 
 (defun ecc-review-map-same-base-p (from to)
   "Return non-nil when the shapes FROM and TO were read against one old side.
@@ -154,26 +162,13 @@ that edit found it."
   (let ((base (ecc-review-map-shape-base from)))
     (and base (equal base (ecc-review-map-shape-base to)))))
 
-(defun ecc-review-map-base-hunks (diff)
-  "Return the hunks of the unified diff DIFF.
-Each is (OLD-START OLD-COUNT NEW-START NEW-COUNT)."
-  (let ((hunks nil)
-        (start 0))
-    (while (string-match ecc-diff-hunk-regexp diff start)
-      (push (list (string-to-number (match-string 1 diff))
-                  (if (match-string 2 diff) (string-to-number (match-string 2 diff)) 1)
-                  (string-to-number (match-string 3 diff))
-                  (if (match-string 4 diff) (string-to-number (match-string 4 diff)) 1))
-            hunks)
-      (setq start (match-end 0)))
-    (nreverse hunks)))
-
 (defun ecc-review-map-text-hunks (from to)
-  "Return the hunks of the text FROM against TO, as `ecc-review-map-base-hunks'.
-The texts are two blobs, compared line by line (`ecc-diff-script', split
-at the lines held once when too large), and the hunks numbered as git
-numbers those of a diff with no context: a hunk that takes nothing out
-by the line before it, one that puts nothing in likewise."
+  "Return the hunks of the text FROM against TO.
+Each is (OLD-START OLD-COUNT NEW-START NEW-COUNT).  The texts are two
+blobs, compared line by line (`ecc-diff-script', split at the lines held
+once when too large), and the hunks numbered as git numbers those of a
+diff with no context: a hunk that takes nothing out by the line before
+it, one that puts nothing in likewise."
   (let ((a (vconcat (ecc-review-map--split from)))
         (b (vconcat (ecc-review-map--split to)))
         (i 1) (j 1)
@@ -204,7 +199,7 @@ by the line before it, one that puts nothing in likewise."
 
 (defun ecc-review-map--carrier (hunks forward)
   "Return a function carrying a line number of one old side to the other.
-HUNKS are those of `ecc-review-map-base-hunks'; FORWARD carries a line
+HUNKS are those of `ecc-review-map-text-hunks'; FORWARD carries a line
 of their old side to their new, and otherwise the other way.  The
 function returns nil for a line inside a hunk, which changed and is
 nowhere.  git numbers a hunk that takes nothing out by the line before
@@ -392,7 +387,7 @@ and returns (NUMBER . NTH).
 
 When the two were read against different old sides, BASE-HUNKS say how
 the old side of FROM became that of TO: the hunks of the one blob
-against the other (`ecc-review-map-base-hunks'), nil for none; `none'
+against the other (`ecc-review-map-text-hunks'), nil for none; `none'
 when one of them is no file, so that no line of the one is in the other
 and only the lines put in are matched; `text' when one of them is not
 known, so that the lines of the new sides are matched by their text and

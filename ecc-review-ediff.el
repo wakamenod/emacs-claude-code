@@ -180,41 +180,6 @@ commit and no blob.  ROOT is the repository, PATHS restrict it."
     (result (ecc-log "review" "diff --raw failed in %s: %S" root result)
             nil)))
 
-(defun ecc-review-ediff--cat-file (root ids option each)
-  "Run `git cat-file OPTION' in ROOT on IDS and call EACH on what it says.
-OPTION is \"--batch-check\" or \"--batch\".  EACH is called with an
-id, its type and its size, and under --batch with its bytes as well, a
-unibyte string; nothing is called for an id git does not have.  A git
-that fails is logged."
-  (when (and ids (executable-find ecc-review-git-executable))
-    (with-temp-buffer
-      (set-buffer-multibyte nil)
-      (insert (mapconcat #'identity ids "\n") "\n")
-      (let* ((default-directory (file-name-as-directory root))
-             (coding-system-for-read 'binary)
-             (coding-system-for-write 'binary)
-             (code (condition-case error
-                       (call-process-region (point-min) (point-max)
-                                            ecc-review-git-executable
-                                            t '(t nil) nil "cat-file" option)
-                     (file-error (error-message-string error)))))
-        (if (not (eq code 0))
-            (ecc-log "review" "cat-file %s failed in %s: %S" option root code)
-          (goto-char (point-min))
-          ;; "ID TYPE SIZE", and under --batch SIZE bytes and a newline;
-          ;; "ID missing" for an id git does not have.
-          (while (re-search-forward "^\\([0-9a-f]+\\) \\([a-z]+\\)\\(?: \\([0-9]+\\)\\)?\n"
-                                    nil t)
-            (let ((id (match-string 1))
-                  (type (match-string 2))
-                  (size (and (match-string 3) (string-to-number (match-string 3)))))
-              (when size
-                (if (not (equal option "--batch"))
-                    (funcall each id type size)
-                  (let ((end (min (point-max) (+ (point) size))))
-                    (funcall each id type size (buffer-substring (point) end))
-                    (goto-char (min (point-max) (1+ end)))))))))))))
-
 (defun ecc-review-ediff--read-blobs (root blobs cache)
   "Read every blob of BLOBS in ROOT that CACHE lacks, through two git processes.
 `git cat-file --batch-check' gives the size of each, and `git cat-file
@@ -233,13 +198,13 @@ a git that fails here altogether, which is logged."
                            'call-process ecc-review-git-executable))
                      (car default-process-coding-system)
                      'undecided)))
-    (ecc-review-ediff--cat-file
+    (ecc-review--cat-file
      root (seq-remove (lambda (blob) (gethash (cons 'size blob) cache)) wanted)
      "--batch-check"
      (lambda (id type size)
        (when (equal type "blob")
          (puthash (cons 'size id) size cache))))
-    (ecc-review-ediff--cat-file
+    (ecc-review--cat-file
      root (seq-filter (lambda (blob)
                         (let ((size (gethash (cons 'size blob) cache)))
                           (and size (<= size ecc-review-max-bytes))))

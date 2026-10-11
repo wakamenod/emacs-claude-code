@@ -72,7 +72,7 @@
 
 (ert-deftest ecc-review-map-test-a-moved-old-side ()
   "When the old side moved, its lines are carried through the hunks between the two."
-  (should (equal (ecc-review-map-base-hunks "@@ -0,0 +1,2 @@\n+a\n+b\n@@ -5 +7 @@\n-x\n+y\n")
+  (should (equal (ecc-review-map-text-hunks "1\n2\n3\n4\nx\n6\n" "a\nb\n1\n2\n3\n4\ny\n6\n")
                  '((0 0 1 2) (5 1 7 1))))
   (let* ((hunks '((0 0 1 2) (5 1 7 1) (9 0 12 3)))
          (forward (ecc-review-map--carrier hunks t))

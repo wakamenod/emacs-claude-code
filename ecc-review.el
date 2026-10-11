@@ -1750,21 +1750,15 @@ between."
   "Return what identifies HUNK across a redraw: its file and its header."
   (cons (plist-get hunk :path) (plist-get hunk :header)))
 
-(defun ecc-review-hunks (&optional from path)
-  "Return the hunks of the current buffer as `ecc-review-hunk-at' plists.
-Every one, or those from FROM on; with PATH, the hunks of that file from
-there, up to the first of another."
+(defun ecc-review-hunks ()
+  "Return every hunk of the current buffer as `ecc-review-hunk-at' plists."
   (save-excursion
-    (goto-char (or from (point-min)))
+    (goto-char (point-min))
     (let ((hunks nil))
-      (catch 'done
-        (while (re-search-forward ecc-diff-hunk-regexp nil t)
-          (when-let* ((bounds (ecc-review--hunk-bounds)))
-            (let ((hunk (ecc-review-hunk-at (car bounds) (cdr bounds))))
-              (when (and path (not (equal (plist-get hunk :path) path)))
-                (throw 'done nil))
-              (push hunk hunks))
-            (goto-char (max (point) (1- (cdr bounds)))))))
+      (while (re-search-forward ecc-diff-hunk-regexp nil t)
+        (when-let* ((bounds (ecc-review--hunk-bounds)))
+          (push (ecc-review-hunk-at (car bounds) (cdr bounds)) hunks)
+          (goto-char (max (point) (1- (cdr bounds))))))
       (nreverse hunks))))
 
 ;;;; Lines
@@ -2315,46 +2309,68 @@ again."
       (dolist (pair wanted)
         (let ((from (gethash (car pair) texts))
               (to (gethash (cdr pair) texts)))
-          (puthash pair
-                   (if (and (stringp from) (stringp to))
-                       (ecc-review-map-text-hunks from to)
-                     (ecc-log "review" "no blob %s or %s in %s"
-                              (car pair) (cdr pair) repository)
-                     'unknown)
-                   ecc-review--base-diffs))))))
+          ;; A failure comparing two blobs is that pair's alone, and is
+          ;; not kept: the next reading compares them again.
+          (condition-case error
+              (puthash pair
+                       (if (and (stringp from) (stringp to))
+                           (ecc-review-map-text-hunks from to)
+                         (ecc-log "review" "no blob %s or %s in %s"
+                                  (car pair) (cdr pair) repository)
+                         'unknown)
+                       ecc-review--base-diffs)
+            (error (ecc-log "review" "comparing %s and %s failed: %S"
+                            (car pair) (cdr pair) error))))))))
 
 (defun ecc-review--blobs (repository ids)
   "Return a hash of each of IDS to the text of its blob in REPOSITORY.
-Read by one `git cat-file --batch'; a blob git does not have is
-`missing'.  Nil when git cannot be run, which is logged."
-  (with-temp-buffer
-    (set-buffer-multibyte nil)
-    (insert (mapconcat #'identity ids "\n") "\n")
-    (let* ((default-directory (file-name-as-directory repository))
-           (coding-system-for-read 'binary)
-           (coding-system-for-write 'binary)
-           (code (condition-case error
-                     (call-process-region (point-min) (point-max) ecc-review-git-executable
-                                          t '(t nil) nil "cat-file" "--batch")
-                   (file-error (ecc-log "review" "git cat-file failed: %s"
-                                        (error-message-string error))
-                               nil))))
-      (if (not (eq code 0))
-          (progn (when code
-                   (ecc-log "review" "git cat-file in %s: %S" repository code))
-                 nil)
-        (let ((texts (make-hash-table :test #'equal)))
+Read by one `git cat-file --batch' (`ecc-review--cat-file'); an id that
+is no blob git has is not in it.  Nil when git cannot be run."
+  (let ((texts (make-hash-table :test #'equal)))
+    (and (ecc-review--cat-file repository ids "--batch"
+                               (lambda (id type _size bytes)
+                                 (when (equal type "blob")
+                                   (puthash id bytes texts))))
+         texts)))
+
+(defun ecc-review--cat-file (root ids option each)
+  "Run `git cat-file OPTION' in ROOT on IDS and call EACH on what it says.
+OPTION is \"--batch-check\" or \"--batch\".  EACH is called with an
+id, its type and its size, and under --batch with its bytes as well, a
+unibyte string; nothing is called for an id git does not have.  Return
+non-nil when git was run and answered; a git that fails is logged, and
+the answer is nil.  The diff review reads the blobs of its old sides
+with this (`ecc-review--blobs'), the ediff review those of both sides."
+  (when (and ids (executable-find ecc-review-git-executable))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (insert (mapconcat #'identity ids "\n") "\n")
+      (let* ((default-directory (file-name-as-directory root))
+             (coding-system-for-read 'binary)
+             (coding-system-for-write 'binary)
+             (code (condition-case error
+                       (call-process-region (point-min) (point-max)
+                                            ecc-review-git-executable
+                                            t '(t nil) nil "cat-file" option)
+                     (file-error (error-message-string error)))))
+        (if (not (eq code 0))
+            (progn (ecc-log "review" "cat-file %s failed in %s: %S" option root code)
+                   nil)
           (goto-char (point-min))
-          (while (re-search-forward
-                  "^\\([0-9a-f]+\\) \\(?:[a-z]+ \\([0-9]+\\)\\|missing\\)\n" nil t)
+          ;; "ID TYPE SIZE", and under --batch SIZE bytes and a newline;
+          ;; "ID missing" for an id git does not have.
+          (while (re-search-forward "^\\([0-9a-f]+\\) \\([a-z]+\\)\\(?: \\([0-9]+\\)\\)?\n"
+                                    nil t)
             (let ((id (match-string 1))
-                  (size (and (match-string 2) (string-to-number (match-string 2)))))
-              (if (not size)
-                  (puthash id 'missing texts)
-                (let ((end (min (point-max) (+ (point) size))))
-                  (puthash id (buffer-substring-no-properties (point) end) texts)
-                  (goto-char (min (point-max) (1+ end)))))))
-          texts)))))
+                  (type (match-string 2))
+                  (size (and (match-string 3) (string-to-number (match-string 3)))))
+              (when size
+                (if (not (equal option "--batch"))
+                    (funcall each id type size)
+                  (let ((end (min (point-max) (+ (point) size))))
+                    (funcall each id type size (buffer-substring (point) end))
+                    (goto-char (min (point-max) (1+ end))))))))
+          t)))))
 
 (defun ecc-review--map-from (from to maps)
   "Return where each line of the shape FROM is in TO (`ecc-review-map-lines').
@@ -2424,7 +2440,12 @@ carrying, which says why."
                        (not (equal (nth 2 base) (nth 2 now))))
               (push (cons (nth 2 base) (nth 2 now)) (alist-get (nth 1 base) pairs nil nil #'equal)))))))
     (pcase-dolist (`(,repository . ,wanted) pairs)
-      (ecc-review--diff-blobs repository wanted))))
+      ;; Whatever this fails on, the carrying of each file fails on
+      ;; again, in its own handler, which says so.
+      (condition-case error
+          (ecc-review--diff-blobs repository wanted)
+        (error (ecc-log "review" "reading the old sides in %s failed: %S"
+                        repository error))))))
 
 (defun ecc-review--prune (reading places)
   "Keep in READING the lines and shapes of the files PLACES are on, and no other."
@@ -2596,7 +2617,7 @@ That is the line the reading found when PLACE lost its own."
       (gethash (ecc-review--place-key path (car nearest) (cadr nearest) (cddr nearest))
                (ecc-review--reading-index reading)))))
 
-(defun ecc-review--relocate (_lines)
+(defun ecc-review--relocate ()
   "Put every comment back on its line of this reading and return where each went.
 The answer is a hash of each comment to its line, nil for an outdated
 one.  A reply goes wherever the comment it answers went; the comments
@@ -2708,7 +2729,7 @@ is nothing to read them for."
   "Draw the comments of this buffer on LINES, the lines it holds now.
 Where each goes is the kind of review's own (`ecc-review--note-place\=');
 the overlays are made there, in whichever buffer that is, and kept here."
-  (let* ((places (ecc-review--relocate lines))
+  (let* ((places (ecc-review--relocate))
          (groups nil)
          (commented nil))
     (dolist (note ecc-review--notes)
