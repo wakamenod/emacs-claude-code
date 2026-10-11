@@ -276,20 +276,26 @@ the bytes of UTF-8."
         (flush))
       (and end (cons (apply #'concat (nreverse pieces)) end)))))
 
+(defun ecc-review--git-quote-char (char)
+  "Return how git writes CHAR in a C-quoted name, or nil when it is itself.
+git's rule (quote.c, with `core.quotePath' off): a control character,
+DEL, a double quote and a backslash are escaped; those with a letter of
+their own by it, the others as three octal digits."
+  (pcase char
+    (?\a "\\a") (?\b "\\b") (?\t "\\t") (?\n "\\n") (?\v "\\v") (?\f "\\f")
+    (?\r "\\r") (?\" "\\\"") (?\\ "\\\\")
+    ((pred (lambda (char) (or (< char 32) (= char 127)))) (format "\\%03o" char))))
+
 (defun ecc-review--git-quote (name)
   "Return NAME as git writes it in a diff header, C-quoted when it has to be.
 For the headers the review writes itself, which are read back like
-git's (`ecc-review-git-name'): a name with a control character, a double
-quote or a backslash in it goes between double quotes; any other is
-itself, as git writes it with `core.quotePath' off."
-  (if (not (string-match-p "[\"\\\\[:cntrl:]]" name))
+git's (`ecc-review-git-name'): a name with a character git escapes in
+it (`ecc-review--git-quote-char') goes between double quotes; any other
+is itself, as git writes it with `core.quotePath' off."
+  (if (not (seq-some #'ecc-review--git-quote-char name))
       name
     (concat "\""
-            (mapconcat (lambda (char)
-                         (pcase char
-                           (?\" "\\\"") (?\\ "\\\\") (?\t "\\t") (?\n "\\n")
-                           ((pred (lambda (char) (< char 32))) (format "\\%03o" char))
-                           (_ (string char))))
+            (mapconcat (lambda (char) (or (ecc-review--git-quote-char char) (string char)))
                        name "")
             "\"")))
 
@@ -1224,18 +1230,18 @@ NTH tells it from the hunks of its file before it with the same header
 
 (cl-defgeneric ecc-review--decorate (commented lines)
   "Mark the hunks of LINES that COMMENTED names as carrying comments.
-COMMENTED are `ecc-review--hunk-place's; LINES, all the lines of the
-review in order, are counted here for which of the hunks with its header
-each is.  Return the overlays made."
+COMMENTED are `ecc-review--hunk-place's, and LINES all the lines of the
+review.  Which of the hunks with its header each is, is the reading's
+\(`ecc-review--canonical'), asked only of a header COMMENTED names: its
+file has a comment on it, and is in the reading already.  Return the
+overlays made."
   (let ((overlays nil)
-        (seen (make-hash-table :test #'equal)))
+        (headers (mapcar (lambda (place) (cons (car place) (cadr place))) commented)))
     (dolist (line lines)
       (when (and (null (plist-get line :side))
-                 (let* ((key (cons (plist-get line :path)
-                                   (plist-get (plist-get line :hunk) :header)))
-                        (nth (gethash key seen 0)))
-                   (puthash key (1+ nth) seen)
-                   (member (list (car key) (cdr key) nth) commented)))
+                 (member (cons (plist-get line :path) (plist-get (plist-get line :hunk) :header))
+                         headers)
+                 (member (ecc-review--hunk-place (ecc-review--canonical line)) commented))
         (let ((overlay (make-overlay (plist-get line :position)
                                      (save-excursion
                                        (goto-char (plist-get line :position))
@@ -2556,7 +2562,8 @@ PAIRS are (FROM . TO) blob ids of REPOSITORY.  Every blob is read
 through one git process (`ecc-review--blobs') and the two of a pair
 compared here (`ecc-review-map-text-hunks'): a reading that moved the old
 side of forty files runs git once, not forty times.  A blob git does not
-have makes its pairs `unknown' for good, a blob does not come to be.
+have makes its pairs `unknown' for good, a blob does not come to be; so
+does one over `ecc-review-max-bytes', which is not read.
 git failing to run at all keeps nothing: the repository is not asked
 again in READING, which is left to be read again, and the next reading
 asks again."
@@ -2583,24 +2590,41 @@ asks again."
           ;; not kept: the next reading compares them again.
           (condition-case error
               (puthash pair
-                       (if (and (stringp from) (stringp to))
-                           (ecc-review-map-text-hunks from to)
-                         (ecc-log "review" "no blob %s or %s in %s"
-                                  (car pair) (cdr pair) repository)
-                         'unknown)
+                       (cond ((and (stringp from) (stringp to))
+                              (ecc-review-map-text-hunks from to))
+                             ((or (eq from 'too-large) (eq to 'too-large))
+                              (ecc-log "review" "not comparing %s and %s in %s: over %d bytes"
+                                       (car pair) (cdr pair) repository ecc-review-max-bytes)
+                              'unknown)
+                             (t
+                              (ecc-log "review" "no blob %s or %s in %s"
+                                       (car pair) (cdr pair) repository)
+                              'unknown))
                        ecc-review--base-diffs)
             (error (ecc-log "review" "comparing %s and %s failed: %S"
                             (car pair) (cdr pair) error))))))))
 
 (defun ecc-review--blobs (repository ids)
   "Return a hash of each of IDS to the text of its blob in REPOSITORY.
-Read by one `git cat-file --batch' (`ecc-review--cat-file'); an id that
-is no blob git has is not in it.  Nil when git cannot be run."
-  (let ((texts (make-hash-table :test #'equal)))
-    (and (ecc-review--cat-file repository ids "--batch"
-                               (lambda (id type _size bytes)
+The sizes are asked first, by `git cat-file --batch-check', and the
+blobs within `ecc-review-max-bytes' read by one `git cat-file --batch'
+\(`ecc-review--cat-file'), as the ediff review reads its sides: a larger
+one is `too-large', never read, for comparing two of them line by line
+in Lisp would hold Emacs up for seconds.  An id that is no blob git has
+is not in the hash.  Nil when git cannot be run."
+  (let ((texts (make-hash-table :test #'equal))
+        (small nil))
+    (and (ecc-review--cat-file repository ids "--batch-check"
+                               (lambda (id type size)
                                  (when (equal type "blob")
-                                   (puthash id bytes texts))))
+                                   (if (> size ecc-review-max-bytes)
+                                       (puthash id 'too-large texts)
+                                     (push id small)))))
+         (or (null small)
+             (ecc-review--cat-file repository (nreverse small) "--batch"
+                                   (lambda (id type _size bytes)
+                                     (when (equal type "blob")
+                                       (puthash id bytes texts)))))
          texts)))
 
 (defun ecc-review--cat-file (root ids option each)

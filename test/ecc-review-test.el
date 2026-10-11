@@ -2544,6 +2544,24 @@ is read from a header, and an octal escape is a byte of UTF-8."
   (should (equal (ecc-review--git-quote "a b.txt") "a b.txt"))
   (should (equal (ecc-review--git-quote "a\"b") "\"a\\\"b\"")))
 
+(ert-deftest ecc-review-test-names-are-quoted-as-git-quotes-them ()
+  "A name the review writes is quoted as git quotes it, DEL and letter escapes too."
+  (skip-unless (executable-find "git"))
+  (ecc-review-test--with-directory directory
+    (let ((names (list "plain.txt" "a b.txt" "a\"b.txt" "t\tab" "d\177el" "b\aell"
+                       "v\vf\fr\rx" "esc\ex" "日本.txt")))
+      (ecc-review-test--git directory "init" "-q")
+      (dolist (name names)
+        (ecc-review-test--write (concat directory name) "x\n"))
+      (apply #'ecc-review-test--git directory "add" "--" names)
+      (should (equal (sort (split-string (ecc-review-test--git directory "-c" "core.quotePath=false"
+                                                               "ls-files")
+                                         "\n" t)
+                           #'string<)
+                     (sort (mapcar #'ecc-review--git-quote names) #'string<)))
+      (dolist (name names)
+        (should (equal (ecc-review-git-name (ecc-review--git-quote name)) name))))))
+
 (ert-deftest ecc-review-test-a-file-whose-name-git-quotes ()
   "A file named with a double quote or a tab has its name, its blob and its comment.
 Its comment is carried across a commit through its blob."
@@ -2768,6 +2786,51 @@ two of them make a line of 92 characters for every file."
               (let ((note (ecc-review-find-note 1)))
                 (should-not (ecc-review-note-outdated note))
                 (should (= (ecc-review-note-line note) 12)))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-an-old-side-too-large-is-not-compared ()
+  "Two old blobs over `ecc-review-max-bytes' are not read, nor compared in Lisp.
+Their sizes are asked first; the comments of the file go outdated and
+the log says why, once."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((x (concat directory "x.txt"))
+                (logged nil)
+                (read nil)
+                (cat-file (symbol-function 'ecc-review--cat-file)))
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (ecc-review-test--write x (ecc-review-test--numbered 1 20))
+            (ecc-review-test--git directory "add" "x.txt")
+            (ecc-review-test--git directory "commit" "-q" "-m" "init")
+            (ecc-review-test--write x (concat (ecc-review-test--numbered 1 9) "X\n"
+                                              (ecc-review-test--numbered 10 20)))
+            (setf (ecc-session-project-root session) directory)
+            (with-current-buffer (ecc-review-range-buffer session "HEAD")
+              (ecc-review-test--goto "+X")
+              (ecc-review-comment "about X")
+              (ecc-review-test--write x (concat "p1\np2\n" (ecc-review-test--numbered 1 20)))
+              (ecc-review-test--git directory "commit" "-q" "-a" "-m" "p")
+              (ecc-review-test--write x (concat "p1\np2\n" (ecc-review-test--numbered 1 9) "X\n"
+                                                (ecc-review-test--numbered 10 20)))
+              (let ((ecc-review-max-bytes 20))
+                (cl-letf (((symbol-function 'ecc-log)
+                           (lambda (_category format &rest arguments)
+                             (push (apply #'format format arguments) logged)))
+                          ((symbol-function 'ecc-review--cat-file)
+                           (lambda (root ids option each)
+                             (when (equal option "--batch")
+                               (setq read (append ids read)))
+                             (funcall cat-file root ids option each))))
+                  (ecc-review-refresh)
+                  (setq ecc-review--fingerprint nil)
+                  (ecc-review-refresh)))
+              (should-not read)
+              (should (= (seq-count (lambda (line) (string-search "over 20 bytes" line)) logged) 1))
+              (should (ecc-review-note-outdated (ecc-review-find-note 1)))))
         (ecc-review-test--kill-review-buffers)))))
 
 (ert-deftest ecc-review-test-comments-handed-over-git-cannot-carry-are-read-again ()
