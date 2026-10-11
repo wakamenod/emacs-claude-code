@@ -1626,8 +1626,11 @@ differences are in (`ecc-review-ediff--differences-computed\=')."
   ediff-difference-vector-A)
 
 (cl-defmethod ecc-review--base-of (hunk &context (major-mode ediff-mode))
-  "Return the blob of the old side of the file of the difference HUNK."
-  (alist-get (plist-get hunk :path) ecc-review-ediff--bases nil nil #'equal))
+  "Return the blob of the old side of the file of the difference HUNK.
+As (blob REPOSITORY ID), REPOSITORY this review's; `empty' for none."
+  (pcase (alist-get (plist-get hunk :path) ecc-review-ediff--bases nil nil #'equal)
+    ((and id (pred stringp)) (list 'blob default-directory id))
+    (other other)))
 
 (defun ecc-review-ediff--lines-of (count start end)
   "Return \"L3-L5\" for COUNT lines from START to END, \"none\" for none."

@@ -168,6 +168,40 @@ Each is (OLD-START OLD-COUNT NEW-START NEW-COUNT)."
       (setq start (match-end 0)))
     (nreverse hunks)))
 
+(defun ecc-review-map-text-hunks (from to)
+  "Return the hunks of the text FROM against TO, as `ecc-review-map-base-hunks'.
+The texts are two blobs, compared line by line (`ecc-diff-script', split
+at the lines held once when too large), and the hunks numbered as git
+numbers those of a diff with no context: a hunk that takes nothing out
+by the line before it, one that puts nothing in likewise."
+  (let ((a (vconcat (ecc-review-map--split from)))
+        (b (vconcat (ecc-review-map--split to)))
+        (i 1) (j 1)
+        (hunks nil)
+        (open nil))                     ; (OLD-START NEW-START REMOVED . ADDED)
+    (dolist (tag (append (ecc-diff-script a b #'ecc-review-map--patience) '(context)))
+      (if (eq tag 'context)
+          (progn
+            (when open
+              (pcase-let ((`(,old ,new ,removed . ,added) open))
+                (push (list (if (> removed 0) old (1- old)) removed
+                            (if (> added 0) new (1- new)) added)
+                      hunks))
+              (setq open nil))
+            (setq i (1+ i) j (1+ j)))
+        (unless open
+          (setq open (cons i (cons j (cons 0 0)))))
+        (if (eq tag 'removed)
+            (setf (nth 2 open) (1+ (nth 2 open)) i (1+ i))
+          (setcdr (cddr open) (1+ (cdr (cddr open))))
+          (setq j (1+ j)))))
+    (nreverse hunks)))
+
+(defun ecc-review-map--split (text)
+  "Return the lines of TEXT, without the empty one after its last newline."
+  (let ((lines (split-string text "\n")))
+    (if (equal (car (last lines)) "") (butlast lines) lines)))
+
 (defun ecc-review-map--carrier (hunks forward)
   "Return a function carrying a line number of one old side to the other.
 HUNKS are those of `ecc-review-map-base-hunks'; FORWARD carries a line

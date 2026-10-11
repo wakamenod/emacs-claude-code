@@ -1716,17 +1716,17 @@ a pair is kept, a failure with it."
                    (buffer (get-buffer-create (ecc-review-buffer-name session)))
                    (asked 0)
                    (logged 0)
-                   (git (symbol-function 'ecc-review--git)))
+                   (blobs (symbol-function 'ecc-review--blobs)))
               (ecc-review--fill buffer session
                                 (concat (funcall diff blob) (funcall body ecc-review-test--share))
                                 directory)
               (with-current-buffer buffer
                 (ecc-review-test--goto "+        return part / total")
                 (ecc-review-comment "guard it"))
-              (cl-letf (((symbol-function 'ecc-review--git)
-                         (lambda (directory &rest arguments)
-                           (when (member "-U0" arguments) (cl-incf asked))
-                           (apply git directory arguments)))
+              (cl-letf (((symbol-function 'ecc-review--blobs)
+                         (lambda (&rest arguments)
+                           (cl-incf asked)
+                           (apply blobs arguments)))
                         ((symbol-function 'ecc-log)
                          (lambda (&rest _) (cl-incf logged))))
                 (dolist (text (list ecc-review-test--guarded
@@ -1766,11 +1766,12 @@ the line between them among the changed ones; `diff.noprefix' and
                                          (list (plist-get hunk :path) (plist-get hunk :header)))
                                        (ecc-review-hunks))
                                '(("x.txt" "@@ -2 +2 @@") ("x.txt" "@@ -4 +4 @@"))))
-                ;; The diff of two old sides is read the same way.
+                ;; The two old sides are compared line by line, the same.
                 (ecc-review-test--git directory "commit" "-q" "-a" "-m" "two")
                 (let ((second (string-trim
                                (ecc-review-test--git directory "rev-parse" "HEAD:x.txt"))))
-                  (should (equal (ecc-review--base-hunks first second)
+                  (should (equal (ecc-review--base-hunks (list 'blob directory first)
+                                                         (list 'blob directory second))
                                  '((2 1 2 1) (4 1 4 1))))))))
         (ecc-review-test--kill-review-buffers)))))
 
@@ -1971,7 +1972,7 @@ them, and they are not the same old side either."
             (should (equal (mapcar (lambda (hunk) (plist-get hunk :path)) hunks)
                            '("notes.txt" "s.py")))
             (should-not (ecc-review--base-of (car hunks)))
-            (should (equal (ecc-review--base-of (cadr hunks))
+            (should (equal (nth 2 (ecc-review--base-of (cadr hunks)))
                            "1111111111111111111111111111111111111111"))))
       (ecc-review-test--kill-review-buffers))))
 
@@ -2123,7 +2124,7 @@ space with a tab on its --- and +++ lines."
                                      #'string<)
                                (sort (copy-sequence names) #'string<)))
                 (dolist (hunk hunks)
-                  (should (stringp (ecc-review--base-of hunk)))))
+                  (should (eq (car-safe (ecc-review--base-of hunk)) 'blob))))
               (should (equal (sort (mapcar (lambda (entry) (plist-get entry :path))
                                            (ecc-review-files--diff-entries))
                                    #'string<)
@@ -2214,6 +2215,118 @@ second patch puts in."
              session (concat "--- u.txt\n+++ u.txt\n@@ -10,2 +10,2 @@\n x\n-a\n+A2\n" second))
             (should (ecc-review-note-outdated (car ecc-review--notes)))))
       (ecc-review-test--kill-review-buffers))))
+
+(ert-deftest ecc-review-test-a-recorded-original-is-one-old-side ()
+  "A file outside git whose original the session recorded has one old side.
+A brace put in, taken out, and put in after another line is not the
+brace commented on: by text alone the comment would go to it."
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((path (concat directory "x.txt")))
+            (ecc-review-test--entry session path :original "a\nb\nc\n"
+                                    :snapshot "a\n}\nb\nc\n" :edits 1)
+            (setf (ecc-session-project-root session) directory)
+            (with-current-buffer (ecc-review-buffer session)
+              (ecc-review-test--goto "+}")
+              (ecc-review-comment "why a brace?")
+              (should (= (ecc-review-note-line (car ecc-review--notes)) 2))
+              (setf (ecc-file-entry-snapshot (gethash path (ecc-session-files session)))
+                    "a\nb\nc\n}\n")
+              (ecc-review-refresh)
+              (should (string-search "\n+}\n" (buffer-string)))
+              (should (ecc-review-note-outdated (car ecc-review--notes)))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(defun ecc-review-test--two-repositories (session directory)
+  "Make DIRECTORY hold two repositories, each with x.txt, changed by SESSION.
+SESSION works in DIRECTORY, which is in no repository.  Return the
+paths of the two x.txt."
+  (let ((paths nil))
+    (dolist (name '("one" "two"))
+      (let ((root (file-name-as-directory (concat directory name))))
+        (make-directory root)
+        (ecc-review-test--git root "init" "-q")
+        (ecc-review-test--git root "config" "user.email" "t@example.com")
+        (ecc-review-test--git root "config" "user.name" "t")
+        (ecc-review-test--write (concat root "x.txt") (format "%s\na\nb\nc\n" name))
+        (ecc-review-test--git root "add" "x.txt")
+        (ecc-review-test--git root "commit" "-q" "-m" "init")
+        (ecc-review-test--write (concat root "x.txt") (format "%s\na\nB\nc\n" name))
+        (ecc-review-test--entry session (concat root "x.txt") :edits 1)
+        (push (concat root "x.txt") paths)))
+    (setf (ecc-session-project-root session) directory)
+    (nreverse paths)))
+
+(ert-deftest ecc-review-test-two-repositories-with-one-name ()
+  "Two repositories with the same file are two files, each carried in its own.
+The second repository's files are named from the first, and the old
+side of each is diffed where its blobs are: a commit in the second moves
+the comment on it."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((paths (ecc-review-test--two-repositories session directory)))
+            (with-current-buffer (ecc-review-buffer session)
+              (let ((names (mapcar (lambda (hunk) (plist-get hunk :path)) (ecc-review-hunks))))
+                (should (= (length (delete-dups (copy-sequence names))) 2))
+                (should (member "x.txt" names))
+                (let* ((other (seq-find (lambda (name) (string-prefix-p "../" name)) names))
+                       (root (file-name-directory (expand-file-name other default-directory))))
+                  (should (file-exists-p (expand-file-name other default-directory)))
+                  ;; A comment on the B of each.
+                  (goto-char (point-min))
+                  (while (re-search-forward "^\\+B$" nil t)
+                    (beginning-of-line)
+                    (ecc-review-comment "upper case")
+                    (forward-line 1))
+                  (should (= (length ecc-review--notes) 2))
+                  ;; Two lines committed at the top of the other one; its B
+                  ;; is still a change.
+                  (let ((name (file-name-nondirectory (directory-file-name root))))
+                    (ecc-review-test--write (concat root "x.txt")
+                                            (format "top\ntop\n%s\na\nb\nc\n" name))
+                    (ecc-review-test--git root "commit" "-q" "-a" "-m" "top")
+                    (ecc-review-test--write (concat root "x.txt")
+                                            (format "top\ntop\n%s\na\nB\nc\n" name)))
+                  (ecc-review-refresh)
+                  (should-not (seq-some #'ecc-review-note-outdated ecc-review--notes))
+                  (should (equal (sort (mapcar #'ecc-review-note-line ecc-review--notes) #'<)
+                                 '(3 5)))
+                  (ignore paths)))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-git-failing-to-run-is-asked-again ()
+  "Git failing to run is not taken for an answer: the next reading asks again."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((s (concat directory "s.py")))
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (ecc-review-test--write s ecc-review-test--summary)
+            (ecc-review-test--git directory "add" "s.py")
+            (ecc-review-test--git directory "commit" "-q" "-m" "init")
+            (ecc-review-test--write s (concat "import math\n\n" ecc-review-test--share))
+            (setf (ecc-session-project-root session) directory)
+            (with-current-buffer (ecc-review-range-buffer session "HEAD")
+              (ecc-review-test--goto "+        return part / total")
+              (ecc-review-comment "guard it")
+              (ecc-review-test--write s (concat "import math\n\n" ecc-review-test--summary))
+              (ecc-review-test--git directory "commit" "-q" "-a" "-m" "import")
+              (ecc-review-test--write s (concat "import math\n\n" ecc-review-test--share))
+              (cl-letf (((symbol-function 'ecc-review--blobs) #'ignore))
+                (ecc-review-refresh))
+              (should (ecc-review-note-outdated (car ecc-review--notes)))
+              (ecc-review-test--write s (concat "import math\n\n" ecc-review-test--guarded))
+              (ecc-review-refresh)
+              (let ((note (car ecc-review--notes)))
+                (should-not (ecc-review-note-outdated note))
+                (should (= (ecc-review-note-line note) 14)))))
+        (ecc-review-test--kill-review-buffers)))))
 
 (ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
   "Remembering the place reads the hunk it is in, not the whole diff."
