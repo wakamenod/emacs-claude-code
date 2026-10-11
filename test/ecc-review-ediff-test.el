@@ -1405,6 +1405,39 @@ window that has the keyboard."
                   (should (= ediff-number-of-differences 3))))
             (ecc-review-ediff-test--quit control)))))))
 
+(ert-deftest ecc-review-ediff-test-a-line-comment-follows-lines-put-in-above-it ()
+  "Lines put in right above a commented line of a difference move the comment.
+The line is unchanged, two lines further down in the same difference,
+and the ediff review read again puts the comment there."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil)
+              (three (string-replace "new\n" "new\nnewer\nnewest\n"
+                                     ecc-review-ediff-test--changed)))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (ecc-review-ediff-test--write (concat directory "a.txt") three)
+                (with-current-buffer control
+                  (ecc-review-reread t)
+                  (ecc-review-add-note 'claude "Why newest?"
+                                       (ecc-review-ediff-test--line 'new 9))
+                  (ecc-review--draw-notes)
+                  (should (equal (ecc-review-note-line-text (car ecc-review--notes))
+                                 "newest"))
+                  (ecc-review-ediff-test--write
+                   (concat directory "a.txt")
+                   (string-replace "newer\n" "newer\nput\nin\n" three))
+                  (ecc-review-reread t)
+                  (let ((note (car ecc-review--notes)))
+                    (should-not (ecc-review-note-outdated note))
+                    (should (= (ecc-review-note-line note) 11)))
+                  (should (string-search "#1 Claude: Why newest?"
+                                         (ecc-review-ediff-test--drawn ediff-buffer-B)))))
+            (ecc-review-ediff-test--quit control)))))))
+
 (ert-deftest ecc-review-ediff-test-a-failed-read-waits-for-bang ()
   "An ediff review that cannot be read says so once and waits for !."
   (skip-unless (executable-find "git"))

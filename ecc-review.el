@@ -1729,8 +1729,9 @@ Each line is a plist: :position, where it starts; :path; :side, `new'
 for an added or a context line, `old' for a removed one and nil for the
 @@ header; :line, its number on that side; :old-line, the number a
 context line has on the old side as well; :text, the line without its
-marker; :before and :after, the text of the lines next to it on its side
-of the hunk (nil at an edge); and :hunk, HUNK itself.
+marker; :before, the texts of the lines above it on its side of the
+hunk, nearest first, and :after, those of the lines below it, in order
+\(nil at an edge); and :hunk, HUNK itself.
 
 The numbers are counted down from the @@ header the way git counts
 them: a removed line takes the next number of the old side, an added
@@ -1785,19 +1786,21 @@ font-lock has been round."
       lines)))
 
 (defun ecc-review--link-neighbours (lines side member-p)
-  "Give the SIDE lines of LINES the texts of their neighbours on that side.
+  "Give the SIDE lines of LINES the texts of the lines around them on that side.
 MEMBER-P says which lines are read on that side; only the lines whose
-:side is SIDE are given neighbours, a context line taking those of the
-new side it is anchored on."
-  (let ((previous nil)
-        (members (seq-filter member-p lines)))
-    (while members
-      (let ((line (car members)))
-        (when (eq (plist-get line :side) side)
-          (plist-put line :before (and previous (plist-get previous :text)))
-          (plist-put line :after (and (cadr members) (plist-get (cadr members) :text))))
-        (setq previous line
-              members (cdr members))))))
+:side is SIDE are given them, a context line taking those of the new
+side it is anchored on: :before, the texts above the line nearest
+first, and :after, the texts below it in order.  The lists share their
+cells, so that a hunk of N lines makes N of them and not N squared."
+  (let* ((members (seq-filter member-p lines))
+         (texts (mapcar (lambda (line) (plist-get line :text)) members))
+         (before nil))
+    (dolist (line members)
+      (when (eq (plist-get line :side) side)
+        (plist-put line :before before)
+        (plist-put line :after (cdr texts)))
+      (push (car texts) before)
+      (setq texts (cdr texts)))))
 
 (defun ecc-review--lines ()
   "Return every line of every hunk of this buffer, as `ecc-review--hunk-lines'."
@@ -1819,7 +1822,8 @@ new side it is anchored on."
 The place is kept as text rather than as a position, so that the
 comment can be put back after the diff has been read again: PATH, SIDE
 and LINE name the line, LINE-TEXT is what it said and LINE-BEFORE and
-LINE-AFTER what the lines next to it said.  SIDE is nil for
+LINE-AFTER what the lines above and below it on its side of the hunk
+said, nearest first.  SIDE is nil for
 a comment on a whole hunk.  HUNK-KEY, HUNK-RANGE and HUNK-TEXT are the
 hunk it was in when last found -- its key, the lines of its new side
 and its text, which is what an outdated comment is still sent with.
@@ -1888,25 +1892,67 @@ were added or taken out there, and a comment follows it that far.  Past
 this it is not the same line any more but one that happens to read
 alike, and the comment is marked outdated instead.")
 
-(defun ecc-review--same-neighbour (one other)
-  "Return non-nil unless the neighbours ONE and OTHER are both known and differ."
-  (or (null one) (null other) (equal one other)))
+(defun ecc-review--neighbours-agree (note line known)
+  "Return non-nil unless the lines around LINE say it is not the line of NOTE.
+KNOWN says where the lines around NOTE were, from
+`ecc-review--known-neighbours'.  Above and below are each read from
+LINE outwards, as far as `ecc-review-note-max-shift', and the first
+line NOTE also had around it says what that side is: the same when NOTE
+had it on that side too, the other side when NOTE had it only on the
+other, and new when there is no such line.  LINE is the line of NOTE
+when no side is the other side and one is the same, or when none could
+be read.
+
+Lines NOTE never had are passed over: they were put in since, and lines
+put in right above a line leave the line itself where it was.  A line
+that was below NOTE and is above LINE now makes LINE another one, a
+look-alike further down, even when the lines below both are the same.
+A side where NOTE or LINE has nothing -- the edge of a hunk -- is not
+read: hunks merge and split as the lines between them change, and a
+line at the edge of one is still the same line."
+  (let ((sides nil))
+    (pcase-dolist (`(,side ,mine ,theirs)
+                   (list (list 'before (ecc-review-note-line-before note)
+                               (plist-get line :before))
+                         (list 'after (ecc-review-note-line-after note)
+                               (plist-get line :after))))
+      (when (and mine theirs)
+        (let ((seen (cl-loop for text in theirs
+                             repeat ecc-review-note-max-shift
+                             thereis (gethash text known))))
+          (push (cond ((null seen) 'new)
+                      ((memq seen (list side 'both)) 'same)
+                      (t 'other))
+                sides))))
+    (and (not (memq 'other sides))
+         (or (null sides) (memq 'same sides))
+         t)))
+
+(defun ecc-review--known-neighbours (note)
+  "Return a hash of the texts of the lines around NOTE to where they were.
+Each is `before', `after' or `both', as far as the comment can move."
+  (let ((known (make-hash-table :test #'equal)))
+    (pcase-dolist (`(,side . ,texts)
+                   (list (cons 'before (ecc-review-note-line-before note))
+                         (cons 'after (ecc-review-note-line-after note))))
+      (cl-loop for text in texts
+               repeat ecc-review-note-max-shift
+               do (let ((was (gethash text known)))
+                    (puthash text (if (memq was (list nil side)) side 'both) known))))
+    known))
 
 (defun ecc-review--locate-note (note lines)
   "Return the member of LINES NOTE belongs on now, or nil when none is.
 LINES are plists of `ecc-review--hunk-lines'.  A comment on a line goes
 to the line of the same path and side, nearest the number it had and no
-further away than `ecc-review-note-max-shift', that says the same with
-the same lines on either side -- the same line when nothing above it
-moved, the line it was pushed to when something did.  The text alone is
-not enough, even at the same number: a blank line, a lone brace or an
-`end' reads like a hundred others, and a change above one puts another
-of them where it was.
-
-The neighbours are known only inside a hunk, so a side where either the
-comment or the candidate has none -- the first or the last line of a
-hunk -- is not compared: hunks merge and split as the lines between them
-change, and a line at the edge of one is still the same line.
+further away than `ecc-review-note-max-shift', that says the same and
+is not shown by the lines around it to be another line
+\(`ecc-review--neighbours-agree') -- the same line when nothing above it
+moved, the line it was pushed to when something did, in its own hunk or
+in one above.  The text alone is not enough, even at the same number: a
+blank line, a lone brace or an `end' reads like a hundred others, and a
+change above one puts another of them where it was.  Nor is the line
+right above it: lines put in there change that and not the line itself.
 
 A comment on a whole hunk goes to the hunk with the same header, else to
 a hunk of its path whose old side overlaps the old lines it covered
@@ -1919,20 +1965,18 @@ Nil means none of that is there: the comment is outdated."
     (if side
         (let ((text (ecc-review-note-line-text note))
               (number (ecc-review-note-line note))
+              (known (ecc-review--known-neighbours note))
               (best nil))
           (dolist (line lines)
             (when (and (eq (plist-get line :side) side)
                        (equal (plist-get line :path) path)
                        (equal (plist-get line :text) text)
-                       (ecc-review--same-neighbour
-                        (plist-get line :before) (ecc-review-note-line-before note))
-                       (ecc-review--same-neighbour
-                        (plist-get line :after) (ecc-review-note-line-after note))
                        (<= (abs (- (plist-get line :line) number))
                            ecc-review-note-max-shift)
                        (or (null best)
                            (< (abs (- (plist-get line :line) number))
-                              (abs (- (plist-get best :line) number)))))
+                              (abs (- (plist-get best :line) number))))
+                       (ecc-review--neighbours-agree note line known))
               (setq best line)))
           best)
       (let ((headers (seq-filter (lambda (line)

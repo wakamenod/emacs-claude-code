@@ -1109,8 +1109,8 @@ Everything in the second hunk is two lines further down.")
                      (string-replace "@@ -10,2 +10,3 @@" "@@ -10,2 +14,3 @@"
                                      ecc-review-test--diff))))
       ;; The lines next to it on its side are kept with it.
-      (should (equal (ecc-review-note-line-before added) "ten"))
-      (should (equal (ecc-review-note-line-after added) "eleven"))
+      (should (equal (ecc-review-note-line-before added) '("ten")))
+      (should (equal (ecc-review-note-line-after added) '("eleven")))
       ;; 1. Nothing moved: the same line.
       (should (eq (ecc-review--locate-note added lines) (nth 7 lines)))
       ;; 2. Lines were added above: the line that says the same between
@@ -1258,6 +1258,228 @@ adds."
       (should (equal (plist-get (ecc-review--locate-note ten merged) :line) 11))
       ;; Split off, "+TWO" has nothing either side, and is still itself.
       (should (equal (plist-get (ecc-review--locate-note two split) :line) 3)))))
+
+;;;; A comment follows its line as the files change
+
+(defconst ecc-review-test--summary
+  (concat "class Summary:\n"
+          "    def __init__(self, rows):\n"
+          "        self.rows = rows\n"
+          "\n"
+          "    def total(self):\n"
+          "        return sum(self.rows)\n")
+  "s.py when the session starts.")
+
+(defconst ecc-review-test--share
+  (concat ecc-review-test--summary
+          "\n"
+          "    def share(self, part):\n"
+          "        total = self.total()\n"
+          "        return part / total\n")
+  "s.py once the session has added share(): one hunk, @@ -6,0 +7,4 @@.
+Its last line, \"return part / total\", is L10.")
+
+(defconst ecc-review-test--guarded
+  (string-replace "        total = self.total()\n"
+                  "        total = self.total()\n        if total == 0:\n            return 0.0\n"
+                  ecc-review-test--share)
+  "`ecc-review-test--share' with two lines put in above its return, L12 now.")
+
+(defun ecc-review-test--session-review (session directory first)
+  "Return the review of SESSION, which changed s.py in DIRECTORY to FIRST.
+DIRECTORY is made a repository holding `ecc-review-test--summary' as
+s.py when the session starts."
+  (ecc-review-test--git directory "init" "-q")
+  (ecc-review-test--git directory "config" "user.email" "t@example.com")
+  (ecc-review-test--git directory "config" "user.name" "t")
+  (ecc-review-test--write (concat directory "s.py") ecc-review-test--summary)
+  (ecc-review-test--git directory "add" "s.py")
+  (ecc-review-test--git directory "commit" "-q" "-m" "init")
+  (setf (ecc-session-project-root session) directory)
+  (should (ecc-review-ensure-baseline session))
+  (ecc-review-test--write (concat directory "s.py") first)
+  (ecc-review-buffer session))
+
+(defmacro ecc-review-test--following (spec &rest body)
+  "Run BODY in a review of a repository whose s.py a session changed.
+SPEC is (SESSION DIRECTORY FIRST): SESSION and DIRECTORY are bound,
+s.py holds FIRST, and BODY runs in the review buffer."
+  (declare (indent 1))
+  (let ((session (nth 0 spec)) (directory (nth 1 spec)) (first (nth 2 spec)))
+    `(progn
+       (skip-unless (executable-find "git"))
+       (ecc-test-with-fake-session ,session
+         (ecc-review-test--with-directory ,directory
+           (unwind-protect
+               (with-current-buffer (ecc-review-test--session-review
+                                     ,session ,directory ,first)
+                 ,@body)
+             (ecc-review-test--kill-review-buffers)))))))
+
+(defun ecc-review-test--change-and-refresh (directory text)
+  "Make s.py in DIRECTORY hold TEXT and read the review again, as g does."
+  (ecc-review-test--write (concat directory "s.py") text)
+  (ecc-review-refresh))
+
+(ert-deftest ecc-review-test-a-comment-follows-lines-put-in-above-it ()
+  "Two lines put in right above a commented line, in its hunk, move the comment.
+The line it was on is unchanged, two lines further down, and the review
+following the files puts the comment there."
+  (ecc-review-test--following (session directory ecc-review-test--share)
+    (ecc-review-test--with-watch
+      (let ((configuration (current-window-configuration)))
+        (unwind-protect
+            (progn
+              (set-window-buffer (selected-window) (current-buffer))
+              (ecc-review-test--goto "+        return part / total")
+              (ecc-review-comment "rows is 0 for an empty file: return 0.0 then")
+              (should (= (ecc-review-note-line (car ecc-review--notes)) 10))
+              (ecc-review-test--write (concat directory "s.py") ecc-review-test--guarded)
+              (ecc-review--on-session-change session nil)
+              (ecc-review--refresh-stale)
+              (should (string-search "+            return 0.0" (buffer-string)))
+              (let ((note (car ecc-review--notes)))
+                (should-not (ecc-review-note-outdated note))
+                (should (= (ecc-review-note-line note) 12))
+                (should (equal (ecc-review-note-line-text note) "        return part / total"))
+                ;; Drawn under that line, not as outdated.
+                (let ((overlay (car (ecc-review-comment-overlays))))
+                  (should (= (overlay-end overlay)
+                             (progn (ecc-review-test--goto "+        return part / total")
+                                    (line-beginning-position 2))))
+                  (should-not (string-search "outdated" (overlay-get overlay 'after-string))))))
+          (set-window-configuration configuration))))))
+
+(ert-deftest ecc-review-test-a-comment-follows-lines-put-in-an-earlier-hunk ()
+  "Lines put in at the top of the file, a hunk of their own, move the comment."
+  (ecc-review-test--following (session directory ecc-review-test--share)
+    (ecc-review-test--goto "+        total = self.total()")
+    (ecc-review-comment "a property?")
+    (ecc-review-test--change-and-refresh
+     directory (concat "import math\n\n" ecc-review-test--share))
+    (let ((note (car ecc-review--notes)))
+      (should-not (ecc-review-note-outdated note))
+      (should (= (ecc-review-note-line note) 11)))))
+
+(ert-deftest ecc-review-test-a-comment-follows-lines-taken-out-above-it ()
+  "Lines taken out above, in its hunk or in an earlier one, move the comment up."
+  (ecc-review-test--following (session directory ecc-review-test--share)
+    (ecc-review-test--goto "+        return part / total")
+    (ecc-review-comment "guard it")
+    ;; The line right above it, in the same hunk.
+    (ecc-review-test--change-and-refresh
+     directory (string-replace "        total = self.total()\n" "" ecc-review-test--share))
+    (let ((note (car ecc-review--notes)))
+      (should-not (ecc-review-note-outdated note))
+      (should (= (ecc-review-note-line note) 9)))
+    ;; And a line under the class, a hunk of its own above.
+    (ecc-review-test--change-and-refresh
+     directory (thread-last ecc-review-test--share
+                            (string-replace "        total = self.total()\n" "")
+                            (string-replace "        self.rows = rows\n" "")))
+    (let ((note (car ecc-review--notes)))
+      (should-not (ecc-review-note-outdated note))
+      (should (= (ecc-review-note-line note) 8)))))
+
+(ert-deftest ecc-review-test-a-comment-whose-line-changed-is-outdated ()
+  "A line whose own text changed, or that is gone, leaves its comment outdated."
+  (ecc-review-test--following (session directory ecc-review-test--share)
+    (ecc-review-test--goto "+        return part / total")
+    (ecc-review-comment "guard it")
+    (ecc-review-test--goto "+        total = self.total()")
+    (ecc-review-comment "a property?")
+    (ecc-review-test--change-and-refresh
+     directory (thread-last ecc-review-test--share
+                            (string-replace "return part / total"
+                                            "return part / total if total else 0.0")
+                            (string-replace "        total = self.total()\n" "")))
+    (let ((changed (ecc-review-find-note 1))
+          (removed (ecc-review-find-note 2)))
+      (should (ecc-review-note-outdated changed))
+      (should (= (ecc-review-note-line changed) 10))
+      (should (ecc-review-note-outdated removed))
+      (should (= (ecc-review-note-line removed) 9)))))
+
+(ert-deftest ecc-review-test-of-two-lines-alike-the-nearest-takes-the-comment ()
+  "The same lines in two places: each comment goes to the one nearest it."
+  (let ((first (concat "def a(part):\n    total = count()\n    return part / total\n"
+                       "\n"
+                       "def b(part):\n    total = count()\n    return part / total\n")))
+    (ecc-review-test--following (session directory first)
+      ;; Both are new lines: the whole file is.
+      (ecc-review-test--goto "+    return part / total")
+      (ecc-review-comment "in a")
+      (forward-line 1)
+      (re-search-forward "^\\+    return part / total$")
+      (beginning-of-line)
+      (ecc-review-comment "in b")
+      (should (equal (mapcar #'ecc-review-note-line ecc-review--notes) '(3 7)))
+      (ecc-review-test--change-and-refresh directory (concat "import os\n" first))
+      (should (equal (mapcar #'ecc-review-note-line ecc-review--notes) '(4 8)))
+      (should-not (seq-some #'ecc-review-note-outdated ecc-review--notes)))))
+
+(ert-deftest ecc-review-test-a-blank-line-does-not-move-to-the-one-below ()
+  "A comment on a blank line taken out does not go to a blank line further down.
+The lines below both are the same, but the lines that were below the
+comment are above that one."
+  (let ((first (concat ecc-review-test--summary "\nx = 1\n\ny = 2\nz = 3\n\nw = 4\n")))
+    (ecc-review-test--following (session directory first)
+      (ecc-review-test--goto "+x = 1")
+      (forward-line 1)
+      (ecc-review-comment "no blank line here")
+      (should (= (ecc-review-note-line (car ecc-review--notes)) 9))
+      (ecc-review-test--change-and-refresh
+       directory (string-replace "x = 1\n\n" "x = 1\n" first))
+      (should (ecc-review-note-outdated (car ecc-review--notes))))))
+
+(ert-deftest ecc-review-test-a-comment-on-the-old-side-follows-its-line ()
+  "A comment on a removed line stays on it as the hunk around it grows."
+  (ecc-review-test--following
+      (session directory (string-replace "sum(self.rows)" "math.fsum(self.rows)"
+                                         ecc-review-test--summary))
+    (ecc-review-test--goto "-        return sum(self.rows)")
+    (ecc-review-comment "why not sum?")
+    (should (equal (list (ecc-review-note-side (car ecc-review--notes))
+                         (ecc-review-note-line (car ecc-review--notes)))
+                   '(old 6)))
+    ;; The line above it goes as well, and lines are put in at the top.
+    (ecc-review-test--change-and-refresh
+     directory (thread-last ecc-review-test--summary
+                            (string-replace "    def total(self):\n"
+                                            "    def total(self, start=0):\n")
+                            (string-replace "sum(self.rows)" "math.fsum(self.rows)")
+                            (concat "import math\n\n")))
+    (should (string-search "\n-    def total(self):\n-        return sum(self.rows)\n"
+                           (buffer-string)))
+    (let ((note (car ecc-review--notes)))
+      (should-not (ecc-review-note-outdated note))
+      (should (eq (ecc-review-note-side note) 'old))
+      (should (= (ecc-review-note-line note) 6)))))
+
+(ert-deftest ecc-review-test-a-hunk-comment-follows-its-hunk ()
+  "A comment on the @@ line of a hunk stays on it as the hunk grows and moves."
+  (ecc-review-test--following (session directory ecc-review-test--share)
+    (ecc-review-test--goto "@@ -6,0 +7,4 @@ class Summary:")
+    (ecc-review-comment "a method of its own?")
+    (ecc-review-test--change-and-refresh
+     directory (concat "import math\n\n" ecc-review-test--guarded))
+    (let ((note (car ecc-review--notes)))
+      (should-not (ecc-review-note-outdated note))
+      (should (equal (ecc-review-note-hunk-key note) '("s.py" . "@@ -6,0 +9,6 @@ class Summary:"))))))
+
+(ert-deftest ecc-review-test-a-sent-comment-follows-its-line-still-sent ()
+  "A comment sent to Claude follows its line and is still drawn as sent."
+  (ecc-review-test--following (session directory ecc-review-test--share)
+    (ecc-review-test--goto "+        return part / total")
+    (ecc-review-comment "rows is 0 for an empty file: return 0.0 then")
+    (ecc-review-send)
+    (should (ecc-review-note-sent (car ecc-review--notes)))
+    (ecc-review-test--change-and-refresh directory ecc-review-test--guarded)
+    (let ((note (car ecc-review--notes)))
+      (should-not (ecc-review-note-outdated note))
+      (should (= (ecc-review-note-line note) 12))
+      (should (ecc-review-note-sent note))
+      (should (equal (ecc-review-test--comment-faces) '(ecc-review-sent-comment-face))))))
 
 (ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
   "Remembering the place reads the hunk it is in, not the whole diff."
