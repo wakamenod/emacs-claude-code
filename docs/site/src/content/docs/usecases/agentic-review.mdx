@@ -11,7 +11,7 @@ However much of the code an agent writes, the one who checks it in the end is a 
 
 So let the agent help with the review too. This page goes through one change with [Claude in the review](/emacs-claude-code/features/review-claude/): Claude walks you through it and comments on its lines, you answer on the lines, Claude fixes what you asked for, and you read the new diff. It needs the [Emacs MCP server](/emacs-claude-code/start/installation/#enabling-the-mcp-server) on (`ecc-mcp-enabled`).
 
-<Video name="usecase-review" label="Claude walking through its change in a review beside the session, commenting on lines; a reply typed to its first comment and sent with C-c C-c; Claude answering in the review and editing the file, and the review showing the new diff" />
+<Video name="usecase-review" label="Claude walking through its change in a review beside the session, commenting on lines; a reply typed to its comment on the changed line and sent with C-c C-c; Claude answering under the reply and editing the file, and the review showing the new diff" />
 
 ## Claude has made a change
 
@@ -47,4 +47,4 @@ When Claude edits a file, the open review reads the diff again: when a tool fini
 
 ## Finish
 
-When the diff says what you want, `q` buries the review and `C-c C-k` drops it with its comments. To start the next review clean, ask Claude to clear its comments. The review is also in [ediff](/emacs-claude-code/features/review-ediff/), where Claude's answer appears in a pane beside the diff.
+When the diff says what you want, put the review away in one of two ways: `q` buries it and keeps its comments, or `C-c C-k` drops it and its comments. To start the next review clean, ask Claude to clear its comments. The review is also in [ediff](/emacs-claude-code/features/review-ediff/), where Claude's answer appears in a pane beside the diff.

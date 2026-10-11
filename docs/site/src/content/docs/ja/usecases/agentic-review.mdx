@@ -11,7 +11,7 @@ import Video from '../../../../components/Video.astro';
 
 それなら、レビューも agent に手伝ってもらいましょう。このページでは、1 つの変更を[レビューの中の Claude](/emacs-claude-code/ja/features/review-claude/) と読みます。Claude が変更を案内して行にコメントを付け、こちらは行の上で答え、Claude が頼んだところを直し、新しい差分を読みます。[Emacs の MCP サーバー](/emacs-claude-code/ja/start/installation/#mcp-サーバーの有効化)を有効にしておく必要があります（`ecc-mcp-enabled`）。
 
-<Video name="usecase-review" label="Claude がセッションの横のレビューで自分の変更を案内し、行にコメントを付ける。最初のコメントへの返信を入力して C-c C-c で送ると、Claude がレビューの中で答えてファイルを直し、レビューに新しい差分が表示される様子" />
+<Video name="usecase-review" label="Claude がセッションの横のレビューで自分の変更を案内し、行にコメントを付ける。変更した行の Claude のコメントに返信を入力して C-c C-c で送ると、Claude がその下に答えてファイルを直し、レビューに新しい差分が表示される様子" />
 
 ## Claude が変更を加えた
 
@@ -47,4 +47,4 @@ Claude がファイルを編集すると、開いているレビューは diff �
 
 ## 終える
 
-差分が望みどおりになったら、`q` でレビューを隠し、`C-c C-k` でコメントごと破棄します。次のレビューを何もない状態から始めたいときは、Claude にコメントを消すよう頼みます。このレビューは [ediff](/emacs-claude-code/ja/features/review-ediff/) でも開けます。ediff では Claude の答えが差分の横の欄に出ます。
+差分が望みどおりになったら、レビューを片付けます。方法は 2 つあり、`q` はコメントを残したままレビューを隠し、`C-c C-k` はレビューをコメントごと破棄します。次のレビューを何もない状態から始めたいときは、Claude にコメントを消すよう頼みます。このレビューは [ediff](/emacs-claude-code/ja/features/review-ediff/) でも開けます。ediff では Claude の答えが差分の横の欄に出ます。
