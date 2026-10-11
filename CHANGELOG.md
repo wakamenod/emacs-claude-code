@@ -907,8 +907,12 @@ Verified against **Claude Code CLI 2.1.281**.
   The comments are carried once, when the diff is read; a review whose
   buffer was edited since -- by a key that got past its keymap -- says so
   and waits for `g` rather than putting a comment on a line of something
-  else. The ediff review carries its comments the same way, each time
-  ediff computes the differences. A comment whose line has gone is kept,
+  else; an ediff review whose reading failed halfway is read whole by the
+  next `g`. The ediff review carries its comments the same way, each time
+  ediff computes the differences. Each comment is carried from the reading
+  it was last on, whichever review that was: the comments of a pull
+  request's commit, handed back when the commit is opened again, come
+  back to their lines there too. A comment whose line has gone is kept,
   marked outdated, above the
   first hunk of its file, and is still sent with `(outdated)` and the hunk
   as it was. It comes back when the line it was last on, carried from that
