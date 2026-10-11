@@ -79,9 +79,11 @@ to see changes in it or in Emacs, or to have you comment on them there \
 you have just changed is not such a request: answer in your reply and \
 leave the review closed.  In the review, put each remark on the line it \
 is about with review_comment (or several at once with \
-review_comment_apply), and use review_navigate to bring the place you \
-are talking about into view.  Keep a comment to what that line needs; \
-the rest belongs in your answer.  To read what the user left, call \
+review_comment_apply): for a line give file and line (and side); give \
+hunk only for a remark on a whole hunk, without line.  Use \
+review_navigate to bring the place you are talking about into view.  \
+Keep a comment to what that line needs; the rest belongs in your \
+answer.  To read what the user left, call \
 review_list_comments with author \"user\"; once you have dealt with one, \
 remove it with review_remove_comment.  You cannot write or change the \
 user's comments; answer one with reply_to."
@@ -92,7 +94,9 @@ to explain changes, the model took its own summary after an edit for
 such a request, and the review it opened took the user's source window
 \(`ecc-window-show-review-quietly').  The rest is what `ecc-review-send'
 and M rely on: the user's comments are read with review_list_comments
-and answered with reply_to.
+and answered with reply_to.  It names the arguments of a line comment
+and of a hunk comment because the model sent both at once
+\(`ecc-review-agent--resolve').
 A sentence sent to the model, so a variable and not a setting.  It is
 read when a session starts, so a `setq\\=' takes effect on the next one.")
 
@@ -217,18 +221,21 @@ it is (`ecc-review-show-quietly\=')."
 
 (defun ecc-review-agent--integer (value name)
   "Return VALUE, the argument NAME, as an integer or nil.
-A number may come as a string, and an id as \"#3\"."
+A number may come as a string, an id as \"#3\" and a line as \"L12\",
+the way the answers of the tools write them."
   (cond
    ((null value) nil)
    ((integerp value) value)
    ((and (stringp value) (string-empty-p (string-trim value))) nil)
-   ((and (stringp value) (string-match "\\`[ \t]*#?\\([0-9]+\\)[ \t]*\\'" value))
+   ((and (stringp value)
+         (string-match "\\`[ \t]*[#Ll]?\\([0-9]+\\)[ \t]*\\'" value))
     (string-to-number (match-string 1 value)))
    (t (error "%s should be a number, not %S" name value))))
 
 (defun ecc-review-agent--side (value)
-  "Return the side VALUE names, `new' when it names none."
-  (pcase value
+  "Return the side VALUE names, `new' when it names none.
+Upper or lower case alike."
+  (pcase (if (stringp value) (downcase (string-trim value)) value)
     ((or 'nil "" "new") 'new)
     ("old" 'old)
     (_ (error "The side is \"new\" or \"old\", not %S" value))))
@@ -299,19 +306,41 @@ comes back as the new side line it is anchored as."
                           (eql (plist-get line :line) number)))))
             lines))
 
+(defun ecc-review-agent--headers (path lines)
+  "Return the @@ header lines of the hunks of PATH in LINES, in order."
+  (seq-filter (lambda (line)
+                (and (null (plist-get line :side))
+                     (equal (plist-get line :path) path)))
+              lines))
+
 (defun ecc-review-agent--hunk-line (path number lines)
   "Return the @@ header line of hunk NUMBER of PATH in LINES, counted from 1."
-  (let ((headers (seq-filter (lambda (line)
-                               (and (null (plist-get line :side))
-                                    (equal (plist-get line :path) path)))
-                             lines)))
+  (let ((headers (ecc-review-agent--headers path lines)))
     (or (and (> number 0) (nth (1- number) headers))
         (error "%s has %d hunks; there is no hunk %d" path (length headers) number))))
 
+(defun ecc-review-agent--hunk-number (line lines)
+  "Return the number of the hunk LINE, a member of LINES, is in, from 1."
+  (1+ (seq-position (ecc-review-agent--headers (plist-get line :path) lines)
+                    (plist-get line :hunk)
+                    (lambda (header hunk) (eq (plist-get header :hunk) hunk)))))
+
 (defun ecc-review-agent--resolve (spec lines)
-  "Return (LINE REPLY-TO TEXT) for the comment SPEC asks for, or signal why not.
-SPEC is an alist of file, line, side, hunk, text and reply_to, the
-arguments of `review_comment'.  LINES are the lines of the review."
+  "Return (LINE REPLY-TO TEXT REMARK) for the comment SPEC asks for.
+Signal why not when it cannot be added.  SPEC is an alist of file,
+line, side, hunk, text and reply_to, the arguments of `review_comment'.
+LINES are the lines of the review.  REMARK is nil, or what the answer
+adds about an argument left unused.
+
+An argument too many is not an error when what was meant is plain:
+reply_to makes a reply wherever the comment it answers is, whatever
+file, line or hunk came with it, and a line makes a line comment
+whatever hunk came with it.  Asked to comment on the lines of a
+review, Sonnet 5.5 sent line and hunk together in 5 calls of 6 (CLI
+2.1.290, 2026-10-11), even when told not to, and refusing them put a
+failed call and a retry in every such review.  What is not plain is
+still refused: a line that is not in the diff, a reply to a comment
+that is not there, a comment with no place."
   (let ((text (alist-get 'text spec))
         (reply-to (ecc-review-agent--integer (alist-get 'reply_to spec) "reply_to"))
         (number (ecc-review-agent--integer (alist-get 'line spec) "line"))
@@ -324,32 +353,32 @@ arguments of `review_comment'.  LINES are the lines of the review."
       (let ((parent (or (ecc-review-find-note reply-to)
                         (error "There is no comment #%d; review_list_comments lists them"
                                reply-to))))
-        ;; A reply goes where the comment it answers is, so a place given
-        ;; with it is either the same or a mistake that would be quietly
-        ;; ignored.
-        (when (or number hunk)
-          (error "A reply goes under the comment it answers; give reply_to without line or hunk"))
-        (when (and (stringp file) (not (string-empty-p (string-trim file)))
-                   (not (equal (ignore-errors (ecc-review-agent--path file t))
-                               (ecc-review-note-path parent))))
-          (error "Comment #%d is on %s, not %s; give reply_to without file"
-                 reply-to (ecc-review-note-path parent) file)))
-      (list nil reply-to (string-trim text)))
-     ((and number hunk)
-      (error "Give line or hunk, not both"))
+        (list nil reply-to (string-trim text)
+              (and (or number hunk
+                       (and (stringp file) (not (string-empty-p (string-trim file)))
+                            (not (equal (ignore-errors (ecc-review-agent--path file t))
+                                        (ecc-review-note-path parent)))))
+                   "the place given with reply_to was not used: a reply goes under the comment it answers"))))
      ((not (or number hunk))
       (error "Give the line the comment is on, the hunk number for a whole hunk, or reply_to"))
+     ((null number)
+      (list (ecc-review-agent--hunk-line (ecc-review-agent--path file) hunk lines)
+            nil (string-trim text) nil))
      (t
-      (let ((path (ecc-review-agent--path file)))
-        (list (if hunk
-                  (ecc-review-agent--hunk-line path hunk lines)
-                (let ((side (ecc-review-agent--side (alist-get 'side spec))))
-                  (or (ecc-review-agent--find-line path side number lines)
-                      (error "%s:%d (%s) is not in the diff.  The %s side of %s shows %s; comment on one of those lines, or on a whole hunk with hunk"
-                             path number side side path
-                             (ecc-review-agent--ranges path side lines)))))
-              nil
-              (string-trim text)))))))
+      (let* ((path (ecc-review-agent--path file))
+             (side (ecc-review-agent--side (alist-get 'side spec)))
+             (line (or (ecc-review-agent--find-line path side number lines)
+                       (error "%s:%d (%s) is not in the diff.  The %s side of %s shows %s; comment on one of those lines, or on a whole hunk with hunk"
+                              path number side side path
+                              (ecc-review-agent--ranges path side lines)))))
+        (list line nil (string-trim text)
+              (and hunk
+                   (not (eq (plist-get line :hunk)
+                            (plist-get (ignore-errors
+                                         (ecc-review-agent--hunk-line path hunk lines))
+                                       :hunk)))
+                   (format "hunk %d was not used: line %d is in hunk %d"
+                           hunk number (ecc-review-agent--hunk-number line lines)))))))))
 
 ;;;; The tools
 
@@ -529,41 +558,51 @@ INCLUDE-PATCH, a JSON boolean, adds the text of each."
 
 (defun ecc-review-agent--add (specs)
   "Add a comment of Claude\\='s for each of SPECS and say what was added.
-Every one is checked before any is added, so that a list with one bad
-comment in it adds nothing and can be sent again whole."
+One that cannot be added is named by its place in the list, and the
+others are added all the same:
+refusing the whole list sent it all again, the good ones with the bad,
+for one wrong line in it.  The call fails only when nothing was added,
+so that a failed call has added nothing."
   (ecc-review-agent--in-review
     (let ((lines (ecc-review-lines))
-          (resolved nil)
-          (errors nil)
+          (several (cdr-safe specs))
+          (results nil)
           (index 0))
       (unless specs
         (error "There is no comment to add"))
       (seq-doseq (spec specs)
         (cl-incf index)
-        (condition-case error
-            (push (if (and (consp spec) (seq-every-p #'consp spec))
+        (push (condition-case error
+                  (if (and (consp spec) (seq-every-p #'consp spec))
                       (ecc-review-agent--resolve spec lines)
                     (error "A comment is an object with the arguments of review_comment, not %S"
                            spec))
-                  resolved)
-          (error (push (if (cdr-safe specs) ; more than one
-                           (format "comment %d: %s" index (error-message-string error))
-                         (error-message-string error))
-                       errors))))
-      (when errors
-        (error "%s%s" (string-join (nreverse errors) "\n")
-               (if (> (length specs) 1) "\nNothing was added." "")))
-      (let ((notes (mapcar (pcase-lambda (`(,line ,reply-to ,text))
-                             (ecc-review-add-note 'claude text line reply-to))
-                           (nreverse resolved))))
-        (ecc-review--draw-notes)
-        (mapconcat (lambda (note)
-                     (format "Added #%d at %s%s" (ecc-review-note-id note)
-                             (ecc-review-note-where note)
+                (error (if several
+                           (format "comment %d was not added: %s"
+                                   index (error-message-string error))
+                         (error-message-string error))))
+              results))
+      (setq results (nreverse results))
+      (unless (seq-some #'consp results)
+        (error "%s%s" (string-join results "\n") (if several "\nNothing was added." "")))
+      (let ((answer
+             (mapcar
+              (lambda (result)
+                (pcase result
+                  ((pred stringp) result)
+                  (`(,line ,reply-to ,text ,remark)
+                   (let ((note (ecc-review-add-note 'claude text line reply-to)))
+                     (concat (format "Added #%d at %s" (ecc-review-note-id note)
+                                     (ecc-review-note-where note))
                              (if (ecc-review-hidden-p (ecc-review-note-path note))
                                  " (the user's filter hides this file; the comment shows when they clear it)"
-                               "")))
-                   notes "\n")))))
+                               "")
+                             (and remark (concat "; " remark)))))))
+              results)))
+        (ecc-review--draw-notes)
+        (concat (string-join answer "\n")
+                (and (seq-some #'stringp results)
+                     "\nThe others were added: fix the ones that were not and send only those again."))))))
 
 (defun ecc-review-agent-comment (file line side hunk text reply-to)
   "Put Claude\\='s comment TEXT on LINE of SIDE of FILE, or on HUNK.
@@ -573,7 +612,7 @@ With REPLY-TO the comment answers that one and goes where it is."
            (text . ,text) (reply_to . ,reply-to)))))
 
 (defun ecc-review-agent-comment-apply (comments)
-  "Put every one of COMMENTS on the review, or none of them.
+  "Put each of COMMENTS on the review, and say which could not be.
 COMMENTS is an array of objects with the arguments of review_comment."
   (unless (and (sequencep comments) (not (stringp comments)))
     (error "The comments are an array of objects, each with the arguments of review_comment"))
@@ -753,24 +792,25 @@ INCLUDE-USER-COMMENTS, a JSON boolean, removes the user\\='s as well."
    :function #'ecc-review-agent-hunks)
   (ecc-mcp-define-tool
    :name "review_comment"
-   :description "Put a comment on a line of the open review, where the user reads it under the line.  Give file and line (side \"new\" for an added or unchanged line, \"old\" for a removed one), or file and hunk for the whole hunk, or reply_to alone to answer a comment.  The line has to be in the diff; if it is not, the answer says which lines are.  Returns the id of the comment."
+   :description "Put a comment on a line of the open review, where the user reads it under the line.  For a line comment give file and line (and side: \"new\" for an added or unchanged line, \"old\" for a removed one).  For a whole hunk give file and hunk only, without line.  To answer a comment give reply_to, without a place.  The line has to be in the diff; if it is not, the answer says which lines are.  Returns the id of the comment."
    :args `(("file" "string" "The file, relative to the repository")
            ("line" "integer" "The line number on the given side")
            ("side" ,ecc-review-agent--side-schema "Which side line counts on; new by default")
-           ("hunk" "integer" "The number of the hunk in its file, from 1, for a comment on the whole hunk")
+           ("hunk" "integer" "Only for a comment on a whole hunk, without line: its number in its file, from 1")
            ("text" "string" "The comment" t)
-           ("reply_to" "integer" "The id of a comment this one answers"))
+           ("reply_to" "integer" "The id of a comment this one answers; the reply goes under it"))
    :function #'ecc-review-agent-comment)
   (ecc-mcp-define-tool
    :name "review_comment_apply"
-   :description "Put several comments on the open review at once, each with the arguments of review_comment.  All of them are checked first: if one is wrong, none is added and the answer says which, so fix it and send the list again."
+   :description "Put several comments on the open review at once, each with the arguments of review_comment: file and line (and side) for a line, file and hunk only for a whole hunk, reply_to for an answer.  The answer says, by its place in the list, which comments were added and which were not and why; send again only those that were not."
    :args `(("comments"
             ((type . "array")
              (items . ((type . "object")
                        (properties . ((file . ((type . "string")))
                                       (line . ((type . "integer")))
                                       (side . ,ecc-review-agent--side-schema)
-                                      (hunk . ((type . "integer")))
+                                      (hunk . ((type . "integer")
+                                               (description . "Only for a whole hunk, without line")))
                                       (text . ((type . "string")))
                                       (reply_to . ((type . "integer")))))
                        (required . ["text"]))))

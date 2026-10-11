@@ -181,31 +181,95 @@ The review buffer is current."
                   '((file . "foo.el") (line . 12) (side . "old") (text . "x")))))
       (should failed)
       (should (string-search "The old side of foo.el shows L1-L3, L10-L11" text)))
-    (dolist (bad '(((file . "foo.el") (line . 1) (hunk . 1) (text . "x"))
-                   ((file . "foo.el") (text . "x"))
+    (dolist (bad '(((file . "foo.el") (text . "x"))
                    ((file . "foo.el") (line . 1) (text . "  "))
                    ((file . "foo.el") (hunk . 3) (text . "x"))
                    ((reply_to . 42) (text . "x"))))
       (should (car (ecc-review-agent-test--call session "review_comment" bad))))
     (should (= (length ecc-review--notes) 5))))
 
-(ert-deftest ecc-review-agent-test-apply-is-all-or-nothing ()
-  "review_comment_apply adds every comment, or none when one is wrong."
+(ert-deftest ecc-review-agent-test-line-and-hunk ()
+  "A line given with a hunk makes a line comment; a line not in the diff still fails."
+  (ecc-review-agent-test--with-review session
+    ;; They agree: the line is in that hunk, and nothing more is said.
+    (should (equal (ecc-review-agent-test--ok
+                    session "review_comment"
+                    '((file . "foo.el") (line . 11) (hunk . 2) (text . "agree")))
+                   "Added #1 at foo.el:11 (new)"))
+    (should (equal (ecc-review-agent-test--ok
+                    session "review_comment"
+                    '((file . "foo.el") (line . 2) (side . "old") (hunk . 1) (text . "old")))
+                   "Added #2 at foo.el:2 (old)"))
+    ;; They disagree: the line wins, and the answer says where it is.
+    (should (equal (ecc-review-agent-test--ok
+                    session "review_comment"
+                    '((file . "foo.el") (line . 11) (hunk . 1) (text . "disagree")))
+                   "Added #3 at foo.el:11 (new); hunk 1 was not used: line 11 is in hunk 2"))
+    (should (equal (ecc-review-agent-test--ok
+                    session "review_comment"
+                    '((file . "foo.el") (line . 2) (hunk . 7) (text . "no such hunk")))
+                   "Added #4 at foo.el:2 (new); hunk 7 was not used: line 2 is in hunk 1"))
+    (should (seq-every-p #'ecc-review-note-side ecc-review--notes))
+    ;; A line not in the diff is the error it was, hunk or not.
+    (pcase-let ((`(,failed . ,text)
+                 (ecc-review-agent-test--call
+                  session "review_comment"
+                  '((file . "foo.el") (line . 99) (hunk . 1) (text . "x")))))
+      (should failed)
+      (should (string-search "foo.el:99 (new) is not in the diff" text))
+      (should (string-search "shows L1-L3, L10-L12" text)))
+    (should (= (length ecc-review--notes) 4))))
+
+(ert-deftest ecc-review-agent-test-loose-numbers-and-sides ()
+  "A line may come as \"L12\" and a side in upper case."
+  (ecc-review-agent-test--with-review session
+    (should (equal (ecc-review-agent-test--ok
+                    session "review_comment"
+                    '((file . "foo.el") (line . "L12") (side . "New") (text . "x")))
+                   "Added #1 at foo.el:12 (new)"))
+    (should (equal (ecc-review-agent-test--ok
+                    session "review_comment"
+                    '((file . "foo.el") (line . 2) (side . "OLD") (text . "x")))
+                   "Added #2 at foo.el:2 (old)"))
+    (should (car (ecc-review-agent-test--call
+                  session "review_comment"
+                  '((file . "foo.el") (line . 2) (side . "both") (text . "x")))))))
+
+(ert-deftest ecc-review-agent-test-apply-adds-what-it-can ()
+  "review_comment_apply adds the good comments and names the bad ones by place."
   (ecc-review-agent-test--with-review session
     (pcase-let ((`(,failed . ,text)
                  (ecc-review-agent-test--call
                   session "review_comment_apply"
                   `((comments . [((file . "foo.el") (line . 1) (text . "fine"))
-                                 ((file . "foo.el") (line . 50) (text . "not a line"))])))))
+                                 ((file . "foo.el") (line . 50) (text . "not a line"))
+                                 ((file . "foo.el") (line . 11) (hunk . 2) (text . "both"))])))))
+      (should-not failed)
+      (should (equal text
+                     (concat "Added #1 at foo.el:1 (new)\n"
+                             "comment 2 was not added: foo.el:50 (new) is not in the diff.  "
+                             "The new side of foo.el shows L1-L3, L10-L12; comment on one "
+                             "of those lines, or on a whole hunk with hunk\n"
+                             "Added #2 at foo.el:11 (new)\n"
+                             "The others were added: fix the ones that were not and send "
+                             "only those again."))))
+    (should (= (length ecc-review--notes) 2))
+    ;; Nothing added is a failure, and says so.
+    (pcase-let ((`(,failed . ,text)
+                 (ecc-review-agent-test--call
+                  session "review_comment_apply"
+                  `((comments . [((file . "foo.el") (line . 50) (text . "x"))
+                                 ((file . "nope.el") (line . 1) (text . "y"))])))))
       (should failed)
-      (should (string-search "comment 2: foo.el:50 (new) is not in the diff" text))
+      (should (string-search "comment 1 was not added: foo.el:50" text))
+      (should (string-search "comment 2 was not added: nope.el is not in the review" text))
       (should (string-search "Nothing was added." text)))
-    (should-not ecc-review--notes)
+    (should (= (length ecc-review--notes) 2))
     (should (equal (ecc-review-agent-test--ok
                     session "review_comment_apply"
                     `((comments . [((file . "foo.el") (line . 1) (text . "one"))
                                    ((file . "foo.el") (line . 12) (text . "two"))])))
-                   "Added #1 at foo.el:1 (new)\nAdded #2 at foo.el:12 (new)"))
+                   "Added #3 at foo.el:1 (new)\nAdded #4 at foo.el:12 (new)"))
     (should (car (ecc-review-agent-test--call session "review_comment_apply"
                                               '((comments . [])))))))
 
@@ -461,38 +525,46 @@ for a review whose right side is not checked out."
                            (ecc-review-agent-test--ok session "review_list_comments")))
     (should (string-search "\n  #2 [claude] foo.el:2 (new): Will do"
                            (ecc-review-agent-test--ok session "review_list_comments")))
-    ;; The file of the comment answered may be said; another may not,
-    ;; and neither may a line or a hunk.
-    (should (ecc-review-agent-test--ok
-             session "review_comment"
-             '((reply_to . 1) (file . "foo.el") (text . "Same file"))))
-    (dolist (bad '(((reply_to . 1) (line . 11) (text . "x"))
-                   ((reply_to . 1) (hunk . 1) (text . "x"))
-                   ((reply_to . 1) (file . "bar.el") (text . "x"))))
-      (should (car (ecc-review-agent-test--call session "review_comment" bad))))
-    ;; In a batch, checked with the rest: a bad reply adds nothing.
+    ;; The file of the comment answered may be said.  Any other place
+    ;; given with reply_to is not used, and the answer says so.
+    (should (equal (ecc-review-agent-test--ok
+                    session "review_comment"
+                    '((reply_to . 1) (file . "foo.el") (text . "Same file")))
+                   "Added #3 at foo.el:2 (new)"))
+    (dolist (place '(((line . 11)) ((hunk . 2)) ((file . "bar.el"))
+                     ((file . "foo.el") (line . 11) (hunk . 2))))
+      (should (string-suffix-p
+               "at foo.el:2 (new); the place given with reply_to was not used: a reply goes under the comment it answers"
+               (ecc-review-agent-test--ok
+                session "review_comment"
+                `((reply_to . 1) (text . "x") ,@place)))))
+    (should (= (length ecc-review--notes) 7))
+    (should (seq-every-p (lambda (note) (eql (ecc-review-note-reply-to note) 1))
+                         (cdr ecc-review--notes)))
+    ;; In a batch, a bad reply is named and the rest are added.
     (pcase-let ((`(,failed . ,text)
                  (ecc-review-agent-test--call
                   session "review_comment_apply"
                   '((comments . [((file . "foo.el") (line . 11) (text . "fine"))
                                  ((reply_to . 99) (text . "to nothing"))
                                  "not an object"])))))
-      (should failed)
-      (should (string-search "comment 2: There is no comment #99" text))
-      (should (string-search "comment 3: A comment is an object" text)))
-    (should (= (length ecc-review--notes) 3))
+      (should-not failed)
+      (should (string-search "Added #8 at foo.el:11 (new)" text))
+      (should (string-search "comment 2 was not added: There is no comment #99" text))
+      (should (string-search "comment 3 was not added: A comment is an object" text)))
+    (should (= (length ecc-review--notes) 8))
     (should (equal (ecc-review-agent-test--ok
                     session "review_comment_apply"
                     '((comments . [((file . "foo.el") (line . 11) (text . "fine"))
                                    ((reply_to . 1) (text . "And another"))])))
-                   "Added #4 at foo.el:11 (new)\nAdded #5 at foo.el:2 (new)"))
-    (should (equal (ecc-review-note-reply-to (ecc-review-find-note 5)) 1))
+                   "Added #9 at foo.el:11 (new)\nAdded #10 at foo.el:2 (new)"))
+    (should (equal (ecc-review-note-reply-to (ecc-review-find-note 10)) 1))
     ;; Only the user's go in the prompt, the reply to Claude with it.
     (ecc-review-agent-test--goto "+added")
     (ecc-review-comment "Answering Claude" (ecc-review--comment-plan (ecc-review--line-at-point)))
     (let ((message (ecc-review-buffer-message)))
       (should (string-search "Keep it lower case" message))
-      (should (string-search "In reply to Claude's #4: fine" message))
+      (should (string-search "In reply to Claude's #9: fine" message))
       (should-not (string-search "Will do\n" message)))))
 
 (ert-deftest ecc-review-agent-test-a-sent-comment-is-listed-as-sent ()
@@ -946,6 +1018,37 @@ C-c C-c and M rely on."
                      "review_list_comments with author \"user\""
                      "review_remove_comment" "reply_to"))
       (should (string-search words instructions)))))
+
+(ert-deftest ecc-review-agent-test-says-line-or-hunk ()
+  "The model is told to give line for a line comment and hunk only for a whole hunk.
+In the instructions, in the descriptions of both comment tools and of
+their hunk argument."
+  (require 'ecc)
+  (let* ((instructions (ecc-mcp-instructions))
+         (comment (ecc-mcp-tool-object (ecc-mcp-tool "review_comment")))
+         (apply (ecc-mcp-tool-object (ecc-mcp-tool "review_comment_apply")))
+         (item (alist-get 'properties
+                          (alist-get 'items
+                                     (alist-get 'comments
+                                                (alist-get 'properties
+                                                           (alist-get 'inputSchema apply)))))))
+    (should (string-search "for a line give file and line (and side); give hunk only for a remark on a whole hunk, without line"
+                           instructions))
+    (should (string-search "For a line comment give file and line (and side"
+                           (alist-get 'description comment)))
+    (should (string-search "For a whole hunk give file and hunk only, without line."
+                           (alist-get 'description comment)))
+    (should (string-search "Only for a comment on a whole hunk, without line"
+                           (alist-get 'description
+                                      (alist-get 'hunk
+                                                 (alist-get 'properties
+                                                            (alist-get 'inputSchema comment))))))
+    (should (string-search "file and line (and side) for a line, file and hunk only for a whole hunk"
+                           (alist-get 'description apply)))
+    (should (string-search "send again only those that were not"
+                           (alist-get 'description apply)))
+    (should (equal (alist-get 'description (alist-get 'hunk item))
+                   "Only for a whole hunk, without line"))))
 
 (ert-deftest ecc-review-agent-test-allowed-without-asking ()
   "A review tool is allowed at once; another tool of the server is still asked."
