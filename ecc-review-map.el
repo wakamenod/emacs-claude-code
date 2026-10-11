@@ -45,20 +45,22 @@ or nil when the diff does not say.  REMOVED and ADDED are the lines the
 diff takes out of the old side and puts into the new, as (NUMBER . TEXT)
 in order.  HUNKS are (HEADER . MEMBERS), MEMBERS the (SIDE . NUMBER) of
 the lines of the hunk.  ORDER is every (SIDE . NUMBER) of the file in
-the order of the diff."
-  base removed added hunks order)
+the order of the diff; TEXTS every line of its new side, put in or not,
+and GONE every line it takes out, as (NUMBER . TEXT) in that order."
+  base removed added hunks order texts gone)
 
 (defun ecc-review-map-shape (lines base)
   "Return the shape of LINES, the lines of one file of a reading.
 LINES are plists of `ecc-review--hunk-lines', header first in each hunk.
 BASE is the blob of the old side, as `ecc-review-map-shape' keeps it."
-  (let ((removed nil) (added nil) (hunks nil) (order nil))
+  (let ((removed nil) (added nil) (hunks nil) (order nil) (texts nil) (gone nil))
     (dolist (line lines)
       (let ((side (plist-get line :side))
             (number (plist-get line :line)))
         (if (null side)
             (push (list (plist-get (plist-get line :hunk) :header)) hunks)
           (push (cons side number) order)
+          (push (cons number (plist-get line :text)) (if (eq side 'new) texts gone))
           (when hunks
             (push (cons side number) (cdar hunks)))
           (cond ((eq side 'old)
@@ -72,11 +74,17 @@ BASE is the blob of the old side, as `ecc-review-map-shape' keeps it."
      :added (sort (nreverse added) #'car-less-than-car)
      :hunks (mapcar (lambda (hunk) (cons (car hunk) (nreverse (cdr hunk))))
                     (nreverse hunks))
-     :order (nreverse order))))
+     :order (nreverse order)
+     :texts (nreverse texts)
+     :gone (nreverse gone))))
 
 (defun ecc-review-map-same-base-p (from to)
-  "Return non-nil when the shapes FROM and TO were read against one old side."
-  (equal (ecc-review-map-shape-base from) (ecc-review-map-shape-base to)))
+  "Return non-nil when the shapes FROM and TO were read against one old side.
+Two that do not say which are not known to be: a diff made from what a
+session recorded joins a patch for each edit, each against the file as
+that edit found it."
+  (let ((base (ecc-review-map-shape-base from)))
+    (and base (equal base (ecc-review-map-shape-base to)))))
 
 (defun ecc-review-map-base-hunks (diff)
   "Return the hunks of the unified diff DIFF.
@@ -260,17 +268,21 @@ caller finds by looking.
 
 When the two were read against different old sides, BASE-HUNKS say how
 the old side of FROM became that of TO: the hunks of the one blob
-against the other (`ecc-review-map-base-hunks'), nil for none -- one
-blob under two names; `none' when one of them is no file, so that no
-line of the one is in the other and only the lines put in are matched;
-and `unknown' when nothing can be said, which matches nothing."
+against the other (`ecc-review-map-base-hunks'), nil for none; `none'
+when one of them is no file, so that no line of the one is in the other
+and only the lines put in are matched; `text' when one of them is not
+known, so that the lines of the new sides are matched by their text and
+order alone (`ecc-review-map--by-text'); and `unknown' when nothing can
+be said, which matches nothing."
   (let ((carry (cond ((ecc-review-map-same-base-p from to) 'same)
                      ((eq base-hunks 'unknown) nil)
-                     ((eq base-hunks 'none) 'none)
+                     ((memq base-hunks '(none text)) base-hunks)
                      ((null base-hunks) 'same)
                      (t base-hunks))))
-    (if (null carry)
-        #'ignore
+    (cond
+     ((null carry) #'ignore)
+     ((eq carry 'text) (ecc-review-map--by-text from to))
+     (t
       (let* ((forward (pcase carry
                         ('same #'identity)
                         ('none #'ignore)
@@ -291,7 +303,44 @@ and `unknown' when nothing can be said, which matches nothing."
                    (and (aref map i) (1+ (aref map i)))
                  (when-let* ((there (funcall forward (ecc-review-map--token a i)))
                              (j (ecc-review-map--index b there)))
-                   (1+ j)))))))))))
+                   (1+ j))))))))))))
+
+(defun ecc-review-map--by-text (from to)
+  "Return the map of `ecc-review-map-lines' for FROM and TO by text alone.
+The lines of each side, in the order of the diff -- the new side's
+against the new side's, the lines taken out against the lines taken
+out -- are matched by `ecc-diff-script', split at the lines held once
+when too large, and a line goes where its match is.  For two readings
+that do not say which blob their old side is: a patch of each edit
+joined one after another numbers each against the file as that edit
+found it, so neither the numbers nor the lines between the changes are
+known to be shared."
+  (let ((new (ecc-review-map--text-matches (ecc-review-map-shape-texts from)
+                                           (ecc-review-map-shape-texts to)))
+        (old (ecc-review-map--text-matches (ecc-review-map-shape-gone from)
+                                           (ecc-review-map-shape-gone to))))
+    (lambda (side number)
+      (gethash number (if (eq side 'new) new old)))))
+
+(defun ecc-review-map--text-matches (from to)
+  "Return a hash of each number of FROM to that of its match in TO.
+FROM and TO are lists of (NUMBER . TEXT) in the order of a diff; a
+number two patches share is taken by the first."
+  (let ((a (vconcat (mapcar #'cdr from)))
+        (b (vconcat (mapcar #'cdr to)))
+        (a-numbers (vconcat (mapcar #'car from)))
+        (b-numbers (vconcat (mapcar #'car to)))
+        (lines (make-hash-table))
+        (i 0) (j 0))
+    (dolist (tag (ecc-diff-script a b #'ecc-review-map--patience))
+      (pcase tag
+        ('context
+         (unless (gethash (aref a-numbers i) lines)
+           (puthash (aref a-numbers i) (aref b-numbers j) lines))
+         (setq i (1+ i) j (1+ j)))
+        ('removed (setq i (1+ i)))
+        (_ (setq j (1+ j)))))
+    lines))
 
 (defun ecc-review-map--matches (a b forward backward)
   "Return a vector of where each token of the side A is in the side B, or nil.

@@ -108,6 +108,28 @@
       (should (= (funcall map 'new 3) 3))
       (should-not (funcall map 'old 2)))))
 
+(ert-deftest ecc-review-map-test-patches-of-each-edit-are-matched-by-text ()
+  "Two readings that do not say their old side are matched by the text of their lines.
+A diff made from what a session recorded joins a patch for each edit,
+each numbered against the file as that edit found it: a patch put in
+before two others does not move them, and they are not the same old
+side either."
+  (let* ((from (ecc-review-map-test--shape
+                (ecc-review-map-test--diff "@@ -10,0 +10 @@\n+a\n" "@@ -20,0 +20 @@\n+b\n")))
+         (to (ecc-review-map-test--shape
+              (ecc-review-map-test--diff "@@ -2,0 +2,2 @@\n+x\n+y\n"
+                                         "@@ -10,0 +10 @@\n+a\n" "@@ -20,0 +20 @@\n+b\n")))
+         (map (ecc-review-map-lines from to 'text)))
+    (should-not (ecc-review-map-same-base-p from to))
+    (should (= (funcall map 'new 10) 10))
+    (should (= (funcall map 'new 20) 20))
+    ;; Nothing was taken out to be matched.
+    (should-not (funcall map 'old 10))
+    ;; A line rewritten is still nowhere.
+    (let ((to (ecc-review-map-test--shape
+               (ecc-review-map-test--diff "@@ -10,0 +10 @@\n+A\n" "@@ -20,0 +20 @@\n+b\n"))))
+      (should-not (funcall (ecc-review-map-lines from to 'text) 'new 10)))))
+
 (ert-deftest ecc-review-map-test-a-new-file-too-large-to-compare-whole ()
   "A file put in whole is matched by its lines that are there once, then between them."
   (let* ((lines (mapcar (lambda (n) (format "line %d" n)) (number-sequence 1 400)))

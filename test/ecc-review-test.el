@@ -1682,8 +1682,10 @@ the same number later, put in somewhere else, is not that line."
         (should-not (ecc-review-note-outdated note))
         (should (= (ecc-review-note-line note) 9))))))
 
-(ert-deftest ecc-review-test-the-old-side-under-two-abbreviations-is-one ()
-  "One blob named by ids of two lengths is one old side; one git does not have is none."
+(ert-deftest ecc-review-test-a-blob-git-does-not-have-outdates-once ()
+  "An old side git does not have leaves its comments outdated, and git is asked once.
+Two blobs do not change, nor does how one became the other: the diff of
+a pair is kept, a failure with it."
   (skip-unless (executable-find "git"))
   (ecc-test-with-fake-session session
     (ecc-review-test--with-directory directory
@@ -1696,10 +1698,11 @@ the same number later, put in somewhere else, is not that line."
             (ecc-review-test--git directory "add" "s.py")
             (ecc-review-test--git directory "commit" "-q" "-m" "init")
             (let* ((blob (string-trim (ecc-review-test--git directory "rev-parse" "HEAD:s.py")))
+                   (missing (make-string 40 ?d))
                    (diff (lambda (id)
-                           (format (concat "diff --git a/s.py b/s.py\nindex %s..1234567 100644\n"
+                           (format (concat "diff --git a/s.py b/s.py\nindex %s..%s 100644\n"
                                            "--- a/s.py\n+++ b/s.py\n")
-                                   id)))
+                                   id (make-string 40 ?1))))
                    (body (lambda (text)
                            (let ((added (split-string
                                          (string-remove-suffix
@@ -1708,46 +1711,30 @@ the same number later, put in somewhere else, is not that line."
                              (format "@@ -6,0 +7,%d @@\n%s" (length added)
                                      (mapconcat (lambda (line) (concat "+" line "\n"))
                                                 added "")))))
-                   (buffer (get-buffer-create (ecc-review-buffer-name session))))
+                   (buffer (get-buffer-create (ecc-review-buffer-name session)))
+                   (asked 0)
+                   (logged 0)
+                   (git (symbol-function 'ecc-review--git)))
               (ecc-review--fill buffer session
-                                (concat (funcall diff (substring blob 0 7))
-                                        (funcall body ecc-review-test--share))
+                                (concat (funcall diff blob) (funcall body ecc-review-test--share))
                                 directory)
               (with-current-buffer buffer
                 (ecc-review-test--goto "+        return part / total")
                 (ecc-review-comment "guard it"))
-              (ecc-review--fill buffer session
-                                (concat (funcall diff (substring blob 0 10))
-                                        (funcall body ecc-review-test--guarded))
-                                directory)
-              (with-current-buffer buffer
-                (let ((note (car ecc-review--notes)))
-                  (should-not (ecc-review-note-outdated note))
-                  (should (= (ecc-review-note-line note) 12))))
-              ;; A blob git does not have: nothing can be said, and the
-              ;; comment is outdated rather than put anywhere.
-              (ecc-review--fill buffer session
-                                (concat (funcall diff "deadbeef")
-                                        (funcall body ecc-review-test--guarded))
-                                directory)
+              (cl-letf (((symbol-function 'ecc-review--git)
+                         (lambda (directory &rest arguments)
+                           (when (member "-U0" arguments) (cl-incf asked))
+                           (apply git directory arguments)))
+                        ((symbol-function 'ecc-log)
+                         (lambda (&rest _) (cl-incf logged))))
+                (dolist (text (list ecc-review-test--guarded
+                                    (concat "import math\n\n" ecc-review-test--guarded)))
+                  (ecc-review--fill buffer session
+                                    (concat (funcall diff missing) (funcall body text))
+                                    directory)))
               (with-current-buffer buffer
                 (should (ecc-review-note-outdated (car ecc-review--notes))))
-              ;; Read again with it: git is not asked again, nor is it
-              ;; said again.
-              (let ((asked 0) (logged 0)
-                    (git (symbol-function 'ecc-review--git)))
-                (cl-letf (((symbol-function 'ecc-review--git)
-                           (lambda (directory &rest arguments)
-                             (when (member "rev-parse" arguments) (cl-incf asked))
-                             (apply git directory arguments)))
-                          ((symbol-function 'ecc-log)
-                           (lambda (&rest _) (cl-incf logged))))
-                  (ecc-review--fill buffer session
-                                    (concat (funcall diff "deadbeef")
-                                            (funcall body (concat "import math\n\n"
-                                                                  ecc-review-test--guarded)))
-                                    directory))
-                (should (equal (list asked logged) '(0 0))))))
+              (should (equal (list asked logged) '(1 1)))))
         (ecc-review-test--kill-review-buffers)))))
 
 (ert-deftest ecc-review-test-the-users-diff-settings-do-not-reach-the-review ()
@@ -1913,6 +1900,78 @@ comment is outdated."
          directory (concat "import math\n\n" ecc-review-test--summary
                            "\n    def portion(self):\n        pass\n"))
         (should (equal (list maps wheres) '(3 6)))))))
+
+(ert-deftest ecc-review-test-a-textconv-driver-does-not-reach-the-review ()
+  "The review shows the lines a file's blobs hold, not what a textconv makes of them.
+The diff of two old sides that carries the comments counts the lines of
+the blobs, and the review has to count the same ones."
+  (skip-unless (and (executable-find "git") (executable-find "tr")))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((x (concat directory "x.txt")))
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (ecc-review-test--git directory "config" "diff.upper.textconv" "tr a-z A-Z")
+            (ecc-review-test--write (concat directory ".gitattributes") "*.txt diff=upper\n")
+            (ecc-review-test--write x "one\ntwo\nthree\n")
+            (ecc-review-test--git directory "add" "x.txt" ".gitattributes")
+            (ecc-review-test--git directory "commit" "-q" "-m" "init")
+            (ecc-review-test--write x "one\n2\nthree\n")
+            (setf (ecc-session-project-root session) directory)
+            (with-current-buffer (ecc-review-range-buffer session "HEAD")
+              (should (string-search "\n-two\n+2\n" (buffer-string)))
+              (should-not (string-search "TWO" (buffer-string)))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-patches-of-each-edit-keep-their-comments ()
+  "A diff made from what the session recorded carries its comments by their text.
+Each patch is numbered against the file as its edit found it, and none
+names an old side: a patch put in before the others moves no line of
+them, and they are not the same old side either."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (let ((first (concat "--- s.py\n+++ s.py\n"
+                             "@@ -10,0 +10 @@\n+a\n"
+                             "@@ -20,0 +20 @@\n+b\n")))
+          (with-current-buffer (ecc-review-test--fill session first)
+            (ecc-review-test--goto "+a")
+            (ecc-review-comment "on a")
+            (ecc-review-test--goto "@@ -20,0 +20 @@")
+            (ecc-review-comment "on the hunk of b")
+            (ecc-review-test--fill
+             session (concat "--- s.py\n+++ s.py\n"
+                             "@@ -2,0 +2,2 @@\n+x\n+y\n"
+                             "@@ -10,0 +10 @@\n+a\n"
+                             "@@ -20,0 +20 @@\n+b\n"))
+            (should-not (seq-some #'ecc-review-note-outdated ecc-review--notes))
+            (should (= (ecc-review-note-line (ecc-review-find-note 1)) 10))
+            (should (equal (cdr (ecc-review-note-hunk-key (ecc-review-find-note 2)))
+                           "@@ -20,0 +20 @@"))))
+      (ecc-review-test--kill-review-buffers))))
+
+(ert-deftest ecc-review-test-a-file-with-no-header-of-its-own-has-no-old-side ()
+  "A file of the diff with no diff line of its own does not take the one above's blob."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (with-current-buffer
+            (ecc-review-test--fill
+             session
+             (concat "diff --git a/img.png b/img.png\n"
+                     "index 1234567890123456789012345678901234567890..abcdefabcdefabcdefabcdefabcdefabcdefabcd 100644\n"
+                     "Binary files a/img.png and b/img.png differ\n"
+                     "--- notes.txt\n+++ notes.txt\n@@ -1 +1 @@\n-a\n+b\n"
+                     "diff --git a/s.py b/s.py\n"
+                     "index 1111111111111111111111111111111111111111..2222222222222222222222222222222222222222 100644\n"
+                     "--- a/s.py\n+++ b/s.py\n@@ -1 +1 @@\n-c\n+d\n"))
+          (let ((hunks (ecc-review-hunks)))
+            (should (equal (mapcar (lambda (hunk) (plist-get hunk :path)) hunks)
+                           '("notes.txt" "s.py")))
+            (should-not (ecc-review--base-of (car hunks)))
+            (should (equal (ecc-review--base-of (cadr hunks))
+                           "1111111111111111111111111111111111111111"))))
+      (ecc-review-test--kill-review-buffers))))
 
 (ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
   "Remembering the place reads the hunk it is in, not the whole diff."
@@ -2157,7 +2216,7 @@ comment is outdated."
           (should-not (buffer-local-value 'ecc-review--notes buffer))
           ;; Nor is anything kept to carry them by.
           (dolist (variable '(ecc-review--kept ecc-review--held
-                              ecc-review--homes ecc-review--nearest ecc-review--object-ids))
+                              ecc-review--homes ecc-review--nearest ecc-review--base-diffs))
             (should-not (buffer-local-value variable buffer)))
           ;; Its reading is of this proposal, and keeps no file of the last.
           (should (zerop (hash-table-count

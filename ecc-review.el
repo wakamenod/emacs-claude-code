@@ -212,15 +212,18 @@ Returns nil when git cannot be run at all."
                       nil))))))
 
 (defconst ecc-review--diff-options
-  '("--no-color" "--no-ext-diff" "--inter-hunk-context=0"
-    "--src-prefix=a/" "--dst-prefix=b/")
+  '("--no-color" "--no-ext-diff" "--no-textconv" "--inter-hunk-context=0"
+    "--src-prefix=a/" "--dst-prefix=b/" "--full-index")
   "What every diff a review reads is made with, whatever the user's git says.
 The review parses what git prints, so the settings that change it are
-put back: `color.diff' and `diff.external' would write something else,
-`diff.interHunkContext' would fuse two hunks with the unchanged lines
-between them, which then read as changed, and `diff.noprefix' or
+put back: `color.diff' and `diff.external' would write something else; a
+textconv driver in .gitattributes would show a file as other lines than
+its blobs have, which the diff of two blobs that carries the comments
+counts; `diff.interHunkContext' would fuse two hunks with the unchanged
+lines between them, which then read as changed; and `diff.noprefix' or
 `diff.mnemonicPrefix' would name the files without the a/ and b/ the
-review takes off.")
+review takes off.  The index lines name the blobs whole, so that two
+readings of one blob say so with the same id.")
 
 (defun ecc-review--git-string (directory &rest args)
   "Return what git ARGS in DIRECTORY print, trimmed.
@@ -1926,9 +1929,11 @@ reading, is in a later one.")
 That line is (SIDE . NUMBER); the place being read goes there when its
 own line has gone.")
 
-(defvar-local ecc-review--object-ids nil
-  "A hash of each abbreviated blob id of this review to the whole one.
-Nil there is a blob git does not have, asked about once.")
+(defvar-local ecc-review--base-diffs nil
+  "A hash of each pair of old blobs, (FROM . TO), to how the one became the other.
+What `ecc-review--base-hunks' found, failures included: two blobs do not
+change, so neither does their diff, and git is asked once, and a
+failure said once.")
 
 (defun ecc-review--forget-places ()
   "Forget what this review keeps to carry its places: it reviews something else."
@@ -1937,7 +1942,7 @@ Nil there is a blob git does not have, asked about once.")
         ecc-review--held nil
         ecc-review--homes nil
         ecc-review--nearest nil
-        ecc-review--object-ids nil))
+        ecc-review--base-diffs nil))
 
 (cl-defgeneric ecc-review--text ()
   "Return what says which text this review shows; it changes with the text.
@@ -2039,13 +2044,24 @@ PLACE is let go when BODY is done, however it ends."
 
 (cl-defgeneric ecc-review--base-of (hunk)
   "Return the blob of the old side of the file HUNK is in, as a shape keeps it.
-The diff says it on its index line; a diff that has none, one made from
-what the session recorded, says nothing, which is nil."
+HUNK is the first hunk of its file.  The blob is on the index line of the
+file's own header: from its --- line up through git's extended header
+lines to its diff line.  A file with no diff line -- one made from what
+the session recorded -- says nothing, which is nil, whatever the file
+above it said."
   (save-excursion
     (goto-char (plist-get hunk :position))
-    (when (re-search-backward "^\\(?:@@ \\|diff \\|index \\([0-9a-f]+\\)\\.\\.\\)" nil t)
-      (when-let* ((id (match-string-no-properties 1)))
-        (if (string-match-p "\\`0+\\'" id) 'empty id)))))
+    (forward-line -1)
+    (when (looking-at-p "\\+\\+\\+ ")
+      (forward-line -1))
+    (when (looking-at-p "--- ")
+      (let ((id nil))
+        (while (and (zerop (forward-line -1))
+                    (looking-at "\\(?:index \\([0-9a-f]+\\)\\.\\.\\|\\(?:old\\|new\\|deleted file\\|new file\\) mode \\|similarity \\|dissimilarity \\|rename \\|copy \\)"))
+          (when (match-string-no-properties 1)
+            (setq id (match-string-no-properties 1))))
+        (when (and id (looking-at-p "diff "))
+          (if (string-match-p "\\`0+\\'" id) 'empty id))))))
 
 (cl-defgeneric ecc-review--file-lines (hunk)
   "Return the lines of the file HUNK is in, as `ecc-review-lines' has them.
@@ -2095,41 +2111,30 @@ next reading can say where its line went."
         (puthash path shape shapes))))
   place)
 
-(defun ecc-review--object-id (id)
-  "Return the whole id of the blob ID abbreviates, or nil when git has none.
-Each is asked once in a review: a blob git does not have is said so in
-the log the first time and not again."
-  (unless ecc-review--object-ids
-    (setq ecc-review--object-ids (make-hash-table :test #'equal)))
-  (pcase (gethash id ecc-review--object-ids 'unasked)
-    ('unasked
-     (puthash id
-              (pcase (ecc-review--git default-directory "rev-parse" "--verify" "--quiet"
-                                      (concat id "^{blob}"))
-                (`(0 . ,output) (string-trim output))
-                (result (ecc-log "review" "no blob %s in %s: %S" id default-directory result)
-                        nil))
-              ecc-review--object-ids))
-    (known known)))
-
 (defun ecc-review--base-hunks (from to)
   "Return how the old blob FROM became TO, for `ecc-review-map-lines'.
-The hunks of the diff of the two, nil when they are one blob under ids
-abbreviated to different lengths, `none' when one of them is no file,
-and `unknown' when git cannot say, which is logged."
-  (cond ((equal from to) nil)
+The hunks of the diff of the two; `none' when one of them is no file;
+`text' when the diff did not say which blob one of them is, so that
+the old sides are not known to have anything in common; and `unknown'
+when git cannot diff them, which is logged."
+  (cond ((not (and from to)) 'text)
+        ((equal from to) nil)
         ((or (eq from 'empty) (eq to 'empty)) 'none)
-        ((not (and (stringp from) (stringp to))) 'unknown)
-        (t (let ((from (ecc-review--object-id from))
-                 (to (ecc-review--object-id to)))
-             (cond ((not (and from to)) 'unknown)
-                   ((equal from to) nil)
-                   (t (pcase (apply #'ecc-review--git default-directory "diff"
+        (t
+         (unless ecc-review--base-diffs
+           (setq ecc-review--base-diffs (make-hash-table :test #'equal)))
+         (let ((pair (cons from to)))
+           (pcase (gethash pair ecc-review--base-diffs 'unasked)
+             ('unasked
+              (puthash pair
+                       (pcase (apply #'ecc-review--git default-directory "diff"
                                      (append ecc-review--diff-options (list "-U0" from to)))
-                        (`(0 . ,output) (ecc-review-map-base-hunks output))
-                        (result (ecc-log "review" "diff of %s and %s failed: %S"
-                                         from to result)
-                                'unknown))))))))
+                         (`(0 . ,output) (ecc-review-map-base-hunks output))
+                         (result (ecc-log "review" "diff of %s and %s failed: %S"
+                                          from to result)
+                                 'unknown))
+                       ecc-review--base-diffs))
+             (known known))))))
 
 (defun ecc-review--map-from (from to maps)
   "Return where each line of the shape FROM is in TO (`ecc-review-map-lines').
