@@ -1,6 +1,27 @@
 ;;; ecc-review-map.el --- Where a line of one reading of a diff is in the next  -*- lexical-binding: t; -*-
 
-;; This file is part of ecc.
+;; Copyright (C) 2026 Jun
+
+;; Author: Jun <wakamenod@gmail.com>
+;; Maintainer: Jun <wakamenod@gmail.com>
+;; Keywords: tools, processes
+;; URL: https://github.com/wakamenod/emacs-claude-code
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -46,8 +67,10 @@ diff takes out of the old side and puts into the new, as (NUMBER . TEXT)
 in order.  HUNKS are (HEADER . MEMBERS), MEMBERS the (SIDE . NUMBER) of
 the lines of the hunk.  ORDER is every (SIDE . NUMBER) of the file in
 the order of the diff; TEXTS every line of its new side, put in or not,
-and GONE every line it takes out, as (NUMBER . TEXT) in that order."
-  base removed added hunks order texts gone)
+and GONE every line it takes out, as (NUMBER . TEXT) in that order.
+PUT-IN is a hash of the numbers of ADDED, made when first asked for by
+`ecc-review-map-changed-p'."
+  base removed added hunks order texts gone put-in)
 
 (defun ecc-review-map-shape (lines base)
   "Return the shape of LINES, the lines of one file of a reading.
@@ -77,6 +100,19 @@ BASE is the blob of the old side, as `ecc-review-map-shape' keeps it."
      :order (nreverse order)
      :texts (nreverse texts)
      :gone (nreverse gone))))
+
+(defun ecc-review-map-changed-p (shape side number)
+  "Return non-nil when line NUMBER of SIDE is one SHAPE changes, not context.
+Every line of the old side a diff shows is one it takes out; a line of
+the new side is changed when it is put in."
+  (or (eq side 'old)
+      (gethash number
+               (or (ecc-review-map-shape-put-in shape)
+                   (setf (ecc-review-map-shape-put-in shape)
+                         (let ((numbers (make-hash-table)))
+                           (dolist (line (ecc-review-map-shape-added shape))
+                             (puthash (car line) t numbers))
+                           numbers))))))
 
 (defun ecc-review-map-same-base-p (from to)
   "Return non-nil when the shapes FROM and TO were read against one old side.

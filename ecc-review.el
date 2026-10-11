@@ -211,7 +211,7 @@ Returns nil when git cannot be run at all."
           (file-error (ecc-log "review" "git failed: %s" (error-message-string err))
                       nil))))))
 
-(defconst ecc-review--diff-options
+(defvar ecc-review--diff-options
   '("--no-color" "--no-ext-diff" "--no-textconv" "--inter-hunk-context=0"
     "--src-prefix=a/" "--dst-prefix=b/" "--full-index")
   "What every diff a review reads is made with, whatever the user's git says.
@@ -2251,12 +2251,8 @@ around them -- are carried one by one, by MAP among the lines of INDEX.
 When half of them or more changed again or went, it is another hunk
 now, and the answer is nil; otherwise it is the hunk most of the rest
 are in, the first of those on a tie."
-  (let* ((added (let ((numbers (make-hash-table)))
-                  (dolist (line (ecc-review-map-shape-added from))
-                    (puthash (car line) t numbers))
-                  numbers))
-         (members (seq-filter (lambda (member)
-                                (or (eq (car member) 'old) (gethash (cdr member) added)))
+  (let* ((members (seq-filter (lambda (member)
+                                (ecc-review-map-changed-p from (car member) (cdr member)))
                               (cdr (assoc header (ecc-review-map-shape-hunks from)))))
          (stayed 0)
          (votes nil))

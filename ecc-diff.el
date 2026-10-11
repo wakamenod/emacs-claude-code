@@ -100,7 +100,7 @@ transcript, line by line, under the picture it had just drawn
           (butlast lines)
         lines))))
 
-(defconst ecc-diff-hunk-regexp
+(defvar ecc-diff-hunk-regexp
   "^@@ -\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? \\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? @@"
   "Matches a unified hunk header.
 The groups are old start, old count, new start and new count.")
