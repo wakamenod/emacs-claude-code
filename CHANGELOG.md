@@ -710,7 +710,12 @@ Verified against **Claude Code CLI 2.1.281**.
   `/ssh:host:` is not completed, and the completion runs with the file name
   handlers off, so TRAMP is neither loaded nor connected. Anything else
   after `@` is completed as before, from `@region`, `@cursor`,
-  `@diagnostics` and the project's files. One completion in a directory of
+  `@diagnostics` and the project's files. The paths are a completion
+  category of their own, `ecc-path`, rather than `file`: partial-completion,
+  which many configurations give `file`, appends what every candidate ends
+  in, and made `@../` in a directory of directories `@..//`. `./` and
+  `../` are not offered, and `:company-kind` tells a folder from a file.
+  One completion in a directory of
   5000 entries takes about 2 ms. The CLI reads `@~/file`, an absolute path
   and a `../` path itself, with the Read tool disallowed too, and the
   stream says nothing of it (CLI 2.1.290, 2026-10-11).

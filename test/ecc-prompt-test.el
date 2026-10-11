@@ -990,9 +990,27 @@ OFFERED is bound to the list of labels the table held."
             (should (= start (- (point) (length path))))
             (should (= boundary (length path)))
             ;; A directory ends in a slash, so the completion goes on.
-            (should (equal (cl-set-difference candidates '("./" "../")
-                                              :test #'equal)
-                           '("alpha.txt" "beta.txt" "sub/")))))))))
+            (should (equal candidates '("alpha.txt" "beta.txt" "sub/")))))))))
+
+(ert-deftest ecc-prompt-test-at-completion-of-a-directory-of-directories ()
+  "TAB on a directory of directories leaves the path as it is.
+Partial completion, given to `file' in many configurations, made `../'
+into `..//' there; the paths are a category of their own."
+  (ecc-prompt-test--with-tree tree
+    (ecc-prompt-test--touch (concat tree "project/main.py")
+                            (concat tree "sibling/note.txt"))
+    (ecc-test-with-fake-session session
+      (setf (ecc-session-project-root session) (concat tree "project/"))
+      (ecc-prompt-test--in-buffer session
+        (insert "見て @../")
+        (let* ((table (nth 2 (ecc-prompt-at-capf)))
+               (completion-styles '(basic))
+               (completion-category-overrides
+                '((file (styles partial-completion)))))
+          (should (equal (completion-try-completion "../" table nil 3)
+                         '("../" . 3)))
+          (should (equal (sort (all-completions "../" table) #'string<)
+                         '("project/" "sibling/"))))))))
 
 (ert-deftest ecc-prompt-test-at-completion-home ()
   "`@~/' is completed from the home directory and inserted as written."

@@ -930,12 +930,30 @@ loads TRAMP or opens a connection.  The CLI cannot read one anyway."
 It completes the way `find-file' does, one directory at a time: the
 boundaries keep what is completed to the part after the last slash, so
 only the directory being typed is read.  The file name handlers are
-left out, so that no part of a path can wake TRAMP or another handler."
+left out, so that no part of a path can wake TRAMP or another handler.
+
+Its category is `ecc-path' rather than `file'.  The partial-completion
+style, which a configuration often gives `file', appends what every
+candidate ends in: `@../' in a directory of directories became `@..//'
+\(2026-10-11).  `find-file' reads `//' as the root and gets away with
+it; a prompt is sent as it stands.  `./' and `../' are left out, as a
+completion of `file' leaves them out."
   (lambda (string predicate action)
     (let ((default-directory root)
           (non-essential t)
           (file-name-handler-alist nil))
-      (completion-file-name-table string predicate action))))
+      (pcase action
+        ('metadata '(metadata (category . ecc-path)))
+        ('t (seq-remove (lambda (name) (member name '("./" "../")))
+                        (completion-file-name-table string predicate t)))
+        ('nil
+         (let ((found (try-completion
+                       (file-name-nondirectory string)
+                       (funcall (ecc-prompt--path-table root) string predicate t))))
+           (if (stringp found)
+               (concat (file-name-directory string) found)
+             found)))
+        (_ (completion-file-name-table string predicate action))))))
 
 (defun ecc-prompt-at-capf ()
   "Complete an @ reference at point.
@@ -970,7 +988,10 @@ project.  A remote path is not completed."
                     (ecc-prompt--path-table
                      (file-name-as-directory
                       (expand-file-name (ecc-session-project-root session))))
-                    :exclusive 'no)))))))))
+                    :exclusive 'no
+                    :company-kind
+                    (lambda (candidate)
+                      (if (string-suffix-p "/" candidate) 'folder 'file)))))))))))
 
 ;;;; Sending
 
