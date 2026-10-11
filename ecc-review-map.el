@@ -221,17 +221,20 @@ rather than the review stopping to compare them."
              counts)
     (if (null pairs)
         (append (make-list (length a) 'removed) (make-list (length b) 'added))
-      (let ((i 0) (j 0) (script nil))
+      (let ((i 0) (j 0) (pieces nil))
         (dolist (pair (ecc-review-map--increasing (sort pairs #'car-less-than-car)))
-          (setq script (append script
-                               (ecc-diff-script (seq-subseq a i (car pair))
-                                                (seq-subseq b j (cdr pair))
-                                                #'ecc-review-map--patience)
-                               (list 'context))
-                i (1+ (car pair))
+          (when (or (< i (car pair)) (< j (cdr pair)))
+            (push (ecc-diff-script (seq-subseq a i (car pair)) (seq-subseq b j (cdr pair))
+                                   #'ecc-review-map--patience)
+                  pieces))
+          (push (list 'context) pieces)
+          (setq i (1+ (car pair))
                 j (1+ (cdr pair))))
-        (append script (ecc-diff-script (seq-subseq a i) (seq-subseq b j)
-                                        #'ecc-review-map--patience))))))
+        (push (ecc-diff-script (seq-subseq a i) (seq-subseq b j) #'ecc-review-map--patience)
+              pieces)
+        ;; Joined once: appended one by one, the script would be copied
+        ;; for every line held once.
+        (apply #'nconc (nreverse pieces))))))
 
 (defun ecc-review-map--match (a b a0 b0 map)
   "Match the put-in lines A against B, at A0 and B0 of the whole, into MAP.
