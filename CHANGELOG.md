@@ -87,7 +87,11 @@ Verified against **Claude Code CLI 2.1.281**.
   a hunk makes a line comment, a place given with `reply_to` is not used,
   and `review_comment_apply` adds the comments it can and names the others
   by their place in the list; a line that is not in the diff is refused
-  with the lines that are. It never writes or changes a comment of the
+  with the lines that are. With no `side`, a `hunk` that has the line only
+  on its old side puts the comment on the removed line, and an argument
+  that is not used is not read, so a malformed one does not fail the
+  call. A line may be written `L12`; an id may not. Verified against
+  Claude Code CLI 2.1.290. It never writes or changes a comment of the
   user's. A tool works on the review of the session
   that calls it. The review it opens or moves is shown beside the session
   without being selected and without hiding a session window: never in the
