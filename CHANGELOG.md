@@ -11,7 +11,7 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
-## [Unreleased]
+## [0.4.1] - 2026-10-12
 
 Verified against **Claude Code CLI 2.1.290**.
 
@@ -24,15 +24,21 @@ Verified against **Claude Code CLI 2.1.290**.
 
 ### Fixed
 
-- Documentation defects a documentation checker finds, none of which changes
-  what the code does: two mentions of `C-g` written as plain text rather than
-  as a key, two key sequences whose quoting was left half-closed and which
-  therefore rendered a stray quote, five error messages that opened in lower
-  case, three functions whose docstring never named one of their arguments, a
+- Fourteen documentation defects a documentation checker finds: two mentions of
+  `C-g` written as plain text rather than as a key, two key sequences whose
+  quoting was left half-closed and which therefore rendered a stray quote,
+  three functions whose docstring never named one of their arguments, a
   variable whose first line was not a sentence, and a Lisp symbol that was not
-  quoted as one. What the checker still reports is a key sequence of more than
-  one chord, which it reports even where the quoting is right, and the
-  `&context` specializers of `cl-defmethod`, which it reads as arguments.
+  quoted as one. The other five are the wording of five `error` and `user-error`
+  messages, which opened in lower case: `gh named no commits for pull request
+  #N` now reads `No commits named by gh for pull request #N`. Those five are
+  strings the code signals, so this release is not only headers and docstrings.
+
+  The checker goes from 47 findings to 35 by this. What is left is entirely two
+  families it gets wrong: 30 `&context` specializers of `cl-defmethod`, which it
+  reads as arguments that ought to be documented -- documenting MAJOR-MODE there
+  would document an argument that does not exist -- and five key sequences of
+  more than one chord, which it reports even where the quoting is right.
 
 ## [0.4.0] - 2026-10-12
 
@@ -2641,7 +2647,8 @@ Emacs 29.1, 29.4 and 30.1.
   notifications, and a `transient` menu on `ecc-global-map`.
 - `ecc-version` reports the ecc, Emacs and CLI versions a bug report needs.
 
-[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.1
 [0.4.0]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.0
 [0.3.4]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.3.4
 [0.3.3]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.3.3
