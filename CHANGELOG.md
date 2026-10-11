@@ -956,6 +956,14 @@ Verified against **Claude Code CLI 2.1.281**.
 
 ### Fixed
 
+- `TAB` after `@` offered the project's files as
+  `../../../private/tmp/x/readme.md` when the project spelt its root
+  otherwise than the session did: projectile names its files from the true
+  name, and on macOS `/tmp` is `/private/tmp`. When the two are the same
+  directory the names are taken against the project's own spelling, and a
+  plain `@rea` offers `@readme.md` again. Found in a GUI check with
+  projectile and corfu (CLI 2.1.290, 2026-10-11).
+
 - Installing ecc with package-vc byte-compiled everything under `demo/`,
   `scripts/`, `test/` and `docs/` along with the package: 72 files, 49 of
   which failed, since a demo scene or a test is not meant to be compiled

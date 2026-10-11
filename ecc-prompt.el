@@ -904,12 +904,19 @@ are not offered, but one typed out by hand is still accepted."
   "The @ references that are not files.")
 
 (defun ecc-prompt-project-files (session)
-  "Return the files of the project of SESSION, relative to its root."
+  "Return the files of the project of SESSION, relative to its root.
+The project can spell that root another way: projectile names its files
+from the true name, and on macOS a session in /tmp/x/ had every file
+offered as ../../../private/tmp/x/readme.md (2026-10-11).  When the two
+are the same directory, the project's own spelling is what the names
+are taken against."
   (let* ((root (ecc-session-project-root session))
          (project (and root (project-current nil root))))
     (when project
-      (let ((root (expand-file-name root)))
-        (mapcar (lambda (file) (file-relative-name file root))
+      (let* ((root (expand-file-name root))
+             (own (expand-file-name (project-root project)))
+             (base (if (file-equal-p root own) own root)))
+        (mapcar (lambda (file) (file-relative-name file base))
                 (project-files project))))))
 
 (defconst ecc-prompt-at-path-regexp "\\`\\(?:/\\|~/\\|\\.\\.?/\\)"
