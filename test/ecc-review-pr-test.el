@@ -1138,6 +1138,47 @@ In STYLE, the diff by default.  Return the walk."
               (ecc-review-ediff-quit control))
             (ecc-review-pr-test--kill-reviews)))))))
 
+(ert-deftest ecc-review-pr-test-handed-back-comments-survive-a-reading ()
+  "Comments an ediff review of a commit gets back stay on their lines when it is read again.
+They are kept by the old side of their file as the review knows it
+when they are handed over, which is before it is told it is shown."
+  (skip-unless (executable-find "git"))
+  (ecc-review-pr-test--with-directory directory
+    (seq-let (base head _one two _three) (ecc-review-pr-test--commits-repository directory)
+      (ecc-test-with-fake-session session
+        (setf (ecc-session-project-root session) directory)
+        (let ((ediff-window-setup-function #'ediff-setup-windows-plain)
+              (ecc-review-ediff-layout 'side-by-side)
+              (ecc-review-talk-reply-height nil)
+              (ecc-review-style 'diff)
+              (walk nil))
+          (unwind-protect
+              (save-window-excursion
+                (delete-other-windows)
+                (setq walk (ecc-review-pr-test--open-whole session directory base head 'ediff))
+                (with-current-buffer (ecc-review-pr-test--control walk)
+                  (ecc-review-pr-next-commit))
+                (with-current-buffer (ecc-review-pr-test--control walk)
+                  (ecc-review-pr-next-commit))
+                ;; The commit that changes b.txt: its old side is a blob.
+                (with-current-buffer (ecc-review-pr-test--control walk)
+                  (should (equal ecc-review--range (concat two "^!")))
+                  (ecc-review-pr-test--comment "two, not one")
+                  (ecc-review-pr-next-commit))
+                (with-current-buffer (ecc-review-pr-test--control walk)
+                  (ecc-review-pr-previous-commit))
+                (with-current-buffer (ecc-review-pr-test--control walk)
+                  (should (equal ecc-review--range (concat two "^!")))
+                  (should (equal (mapcar #'ecc-review-note-text ecc-review--notes)
+                                 '("two, not one")))
+                  ;; Read again: the line is where it was.
+                  (setq ecc-review--fingerprint nil)
+                  (ecc-review-reread t)
+                  (should-not (seq-some #'ecc-review-note-outdated ecc-review--notes))))
+            (when-let* ((control (and walk (ecc-review-pr-test--control walk))))
+              (ecc-review-ediff-quit control))
+            (ecc-review-pr-test--kill-reviews)))))))
+
 (ert-deftest ecc-review-pr-test-commit-keys-outside-a-pr ()
   "] [ and C-c C-a say what they are for in a review of no pull request."
   (skip-unless (executable-find "git"))

@@ -91,6 +91,23 @@
       (should-not (funcall map 'new 1))
       (should (= (funcall map 'old 3) 5)))))
 
+(ert-deftest ecc-review-map-test-an-old-side-that-appears-or-is-the-same ()
+  "No hunks between two old sides is one side; `none' carries no line of it."
+  (let* ((from (ecc-review-map-test--shape
+                (ecc-review-map-test--diff "@@ -2,1 +2,2 @@\n-b\n+B\n+C\n") "aaaaaaa"))
+         (to (ecc-review-map-test--shape
+              (ecc-review-map-test--diff "@@ -0,0 +1,1 @@\n+top\n@@ -2,1 +3,2 @@\n-b\n+B\n+C\n")
+              "aaaaaaaa")))
+    (let ((map (ecc-review-map-lines from to nil)))
+      (should (= (funcall map 'new 2) 3))
+      (should (= (funcall map 'old 2) 2)))
+    (let* ((to (ecc-review-map-test--shape
+                (ecc-review-map-test--diff "@@ -0,0 +1,4 @@\n+a\n+B\n+C\n+c\n") 'empty))
+           (map (ecc-review-map-lines from to 'none)))
+      (should (= (funcall map 'new 2) 2))
+      (should (= (funcall map 'new 3) 3))
+      (should-not (funcall map 'old 2)))))
+
 (ert-deftest ecc-review-map-test-a-new-file-too-large-to-compare-whole ()
   "A file put in whole is matched by its lines that are there once, then between them."
   (let* ((lines (mapcar (lambda (n) (format "line %d" n)) (number-sequence 1 400)))

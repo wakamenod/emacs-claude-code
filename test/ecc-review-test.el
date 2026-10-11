@@ -1585,6 +1585,152 @@ stays on its line, carried through the old blob against the new."
                 (should (ecc-review-note-outdated import)))))
         (ecc-review-test--kill-review-buffers)))))
 
+(ert-deftest ecc-review-test-a-file-coming-under-git-keeps-the-review-reading ()
+  "A file whose old side appears or goes leaves the review readable.
+An untracked file has no old side; added to the index, it has one, and
+taken out again it has none.  Lines put in are still matched by their
+text; a line of the old side cannot be carried and is outdated."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let* ((x (ecc-review-test--repo directory))
+                 (new (concat directory "new.txt")))
+            (ecc-review-test--write new "a\nb\nc\n")
+            (setf (ecc-session-project-root session) directory)
+            (with-current-buffer (ecc-review-range-buffer session "")
+              (ecc-review-test--goto "+b")
+              (ecc-review-comment "on b")
+              ;; Into the index, and changed: its old side is a blob now.
+              (ecc-review-test--git directory "add" "new.txt")
+              (ecc-review-test--write new "top\na\nb\nc\n")
+              (ecc-review-refresh)
+              (should (string-search "+top" (buffer-string)))
+              ;; b is no change any more.
+              (should (ecc-review-note-outdated (car ecc-review--notes)))
+              (ecc-review-test--write new "top\nmore\na\nb\nc\n")
+              (ecc-review-refresh)
+              (should (string-search "+more" (buffer-string)))
+              ;; A tracked file changed, and then taken out of the index.
+              (ecc-review-test--write x "one\n2\nthree\n")
+              (ecc-review-refresh)
+              (ecc-review-test--goto "+2")
+              (ecc-review-comment "the new one")
+              (ecc-review-test--goto "-two")
+              (ecc-review-comment "the old one")
+              (ecc-review-test--git directory "rm" "-q" "--cached" "x.txt")
+              (ecc-review-refresh)
+              (let ((new-side (ecc-review-find-note 2))
+                    (old-side (ecc-review-find-note 3)))
+                (should-not (ecc-review-note-outdated new-side))
+                (should (= (ecc-review-note-line new-side) 2))
+                (should (ecc-review-note-outdated old-side)))
+              (ecc-review-test--write x "zero\none\n2\nthree\n")
+              (ecc-review-refresh)
+              (should (= (ecc-review-note-line (ecc-review-find-note 2)) 3))))
+        (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-a-failure-to-carry-is-logged-and-outdates ()
+  "When the comments of a file cannot be carried, they are outdated and the review reads on."
+  (ecc-review-test--following (session directory ecc-review-test--share)
+    (ecc-review-test--goto "+        return part / total")
+    (ecc-review-comment "guard it")
+    (let ((logged nil))
+      (cl-letf (((symbol-function 'ecc-review--line-map)
+                 (lambda (&rest _) (error "No map today")))
+                ((symbol-function 'ecc-log)
+                 (lambda (_category format &rest arguments)
+                   (push (apply #'format format arguments) logged))))
+        (ecc-review-test--change-and-refresh directory ecc-review-test--guarded))
+      (should (seq-find (lambda (line) (string-search "No map today" line)) logged))
+      (should (ecc-review-note-outdated (car ecc-review--notes))))
+    ;; The next reading carries it again, from where it was last.
+    (ecc-review-test--change-and-refresh
+     directory (concat "import math\n\n" ecc-review-test--guarded))
+    (let ((note (car ecc-review--notes)))
+      (should-not (ecc-review-note-outdated note))
+      (should (= (ecc-review-note-line note) 14)))))
+
+(ert-deftest ecc-review-test-an-outdated-comment-does-not-come-back-to-a-look-alike ()
+  "An outdated comment comes back to its own line, not to one that reads like it.
+A lone brace taken out leaves its comment outdated; another brace at
+the same number later, put in somewhere else, is not that line."
+  (let ((first (concat ecc-review-test--summary "f {\n  a\n}\n")))
+    (ecc-review-test--following (session directory first)
+      (ecc-review-test--goto "+}")
+      (ecc-review-comment "close it later")
+      (should (= (ecc-review-note-line (car ecc-review--notes)) 9))
+      (ecc-review-test--change-and-refresh
+       directory (concat ecc-review-test--summary "f {\n  a\n"))
+      (should (ecc-review-note-outdated (car ecc-review--notes)))
+      ;; A brace at L9 again, but above the class.
+      (ecc-review-test--change-and-refresh
+       directory (concat "a\nb\nc\nd\ne\nf\ng\nh\n}\n"
+                         ecc-review-test--summary "f {\n  a\n"))
+      (should (equal (seq-keep (lambda (line)
+                                 (and (equal (plist-get line :text) "}")
+                                      (plist-get line :line)))
+                               (ecc-review--lines))
+                     '(9)))
+      (should (ecc-review-note-outdated (car ecc-review--notes)))
+      ;; Its own brace back where it was: the comment is back.
+      (ecc-review-test--change-and-refresh directory first)
+      (let ((note (car ecc-review--notes)))
+        (should-not (ecc-review-note-outdated note))
+        (should (= (ecc-review-note-line note) 9))))))
+
+(ert-deftest ecc-review-test-the-old-side-under-two-abbreviations-is-one ()
+  "One blob named by ids of two lengths is one old side; one git does not have is none."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (progn
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (ecc-review-test--write (concat directory "s.py") ecc-review-test--summary)
+            (ecc-review-test--git directory "add" "s.py")
+            (ecc-review-test--git directory "commit" "-q" "-m" "init")
+            (let* ((blob (string-trim (ecc-review-test--git directory "rev-parse" "HEAD:s.py")))
+                   (diff (lambda (id)
+                           (format (concat "diff --git a/s.py b/s.py\nindex %s..1234567 100644\n"
+                                           "--- a/s.py\n+++ b/s.py\n")
+                                   id)))
+                   (body (lambda (text)
+                           (let ((added (split-string
+                                         (string-remove-suffix
+                                          "\n" (substring text (length ecc-review-test--summary)))
+                                         "\n")))
+                             (format "@@ -6,0 +7,%d @@\n%s" (length added)
+                                     (mapconcat (lambda (line) (concat "+" line "\n"))
+                                                added "")))))
+                   (buffer (get-buffer-create (ecc-review-buffer-name session))))
+              (ecc-review--fill buffer session
+                                (concat (funcall diff (substring blob 0 7))
+                                        (funcall body ecc-review-test--share))
+                                directory)
+              (with-current-buffer buffer
+                (ecc-review-test--goto "+        return part / total")
+                (ecc-review-comment "guard it"))
+              (ecc-review--fill buffer session
+                                (concat (funcall diff (substring blob 0 10))
+                                        (funcall body ecc-review-test--guarded))
+                                directory)
+              (with-current-buffer buffer
+                (let ((note (car ecc-review--notes)))
+                  (should-not (ecc-review-note-outdated note))
+                  (should (= (ecc-review-note-line note) 12))))
+              ;; A blob git does not have: nothing can be said, and the
+              ;; comment is outdated rather than put anywhere.
+              (ecc-review--fill buffer session
+                                (concat (funcall diff "deadbeef")
+                                        (funcall body ecc-review-test--guarded))
+                                directory)
+              (with-current-buffer buffer
+                (should (ecc-review-note-outdated (car ecc-review--notes))))))
+        (ecc-review-test--kill-review-buffers)))))
+
 (ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
   "Remembering the place reads the hunk it is in, not the whole diff."
   (ecc-review-test--with-review session
@@ -1689,6 +1835,9 @@ stays on its line, carried through the old blob against the new."
     (ecc-review-test--fill session ecc-review-test--diff)
     ;; That line is gone: the start of the nearest line that stayed.
     (should (looking-at-p "^\\+TWO$"))
+    ;; The places read are let go once they are back: nothing is carried
+    ;; for them to the next reading.
+    (should-not ecc-review--held)
     (ecc-review-test--goto " eleven")
     (ecc-review-test--fill session ecc-review-test--shifted-diff)
     (should (looking-at-p " eleven"))))
@@ -1722,6 +1871,8 @@ stays on its line, carried through the old blob against the new."
                                                         ecc-review-test--shifted-diff))
                  "about TWO")))
       (call-interactively #'ecc-review-comment))
+    ;; The line c was pressed on is let go with the comment made.
+    (should-not ecc-review--held)
     (let ((note (car (last ecc-review--notes))))
       (should (equal (ecc-review-note-text note) "about TWO"))
       (should (ecc-review-note-outdated note))
@@ -1820,7 +1971,11 @@ stays on its line, carried through the old blob against the new."
           (ecc-review--fill buffer session ecc-review-test--diff nil 'first)
           (should (= (length (buffer-local-value 'ecc-review--notes buffer)) 1))
           (ecc-review--fill buffer session ecc-review-test--diff nil 'second)
-          (should-not (buffer-local-value 'ecc-review--notes buffer)))
+          (should-not (buffer-local-value 'ecc-review--notes buffer))
+          ;; Nor is anything kept to carry them by.
+          (dolist (variable '(ecc-review--shapes ecc-review--kept ecc-review--held
+                              ecc-review--homes ecc-review--nearest ecc-review--object-ids))
+            (should-not (buffer-local-value variable buffer))))
       (ecc-review-test--kill-review-buffers))))
 
 ;;;; Reviewing a proposal

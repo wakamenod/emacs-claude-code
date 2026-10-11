@@ -295,17 +295,27 @@ does not have it: it changed, or it went.  A number returned may be of
 a line TO shows no more -- one that is no longer a change -- which the
 caller finds by looking.
 
-When the two were read against different old sides, BASE-HUNKS are the
-hunks of the old blob of FROM against that of TO
-\(`ecc-review-map-base-hunks'); `unknown', or nil there, matches
-nothing."
-  (let ((same (ecc-review-map-same-base-p from to)))
-    (if (and (not same) (or (null base-hunks) (eq base-hunks 'unknown)))
+When the two were read against different old sides, BASE-HUNKS say how
+the old side of FROM became that of TO: the hunks of the one blob
+against the other (`ecc-review-map-base-hunks'), nil for none -- one
+blob under two names; `none' when one of them is no file, so that no
+line of the one is in the other and only the lines put in are matched;
+and `unknown' when nothing can be said, which matches nothing."
+  (let ((carry (cond ((ecc-review-map-same-base-p from to) 'same)
+                     ((eq base-hunks 'unknown) nil)
+                     ((eq base-hunks 'none) 'none)
+                     ((null base-hunks) 'same)
+                     (t base-hunks))))
+    (if (null carry)
         #'ignore
-      (let* ((forward (if same #'identity
-                        (lambda (number) (ecc-review-map--carry-base number base-hunks t))))
-             (backward (if same #'identity
-                         (lambda (number) (ecc-review-map--carry-base number base-hunks nil))))
+      (let* ((forward (pcase carry
+                        ('same #'identity)
+                        ('none #'ignore)
+                        (_ (lambda (number) (ecc-review-map--carry-base number carry t)))))
+             (backward (pcase carry
+                         ('same #'identity)
+                         ('none #'ignore)
+                         (_ (lambda (number) (ecc-review-map--carry-base number carry nil)))))
              (a (ecc-review-map--side from))
              (b (ecc-review-map--side to))
              (map (ecc-review-map--matches a b forward backward)))
