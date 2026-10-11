@@ -94,6 +94,8 @@ Because the repository name is `emacs-claude-code` while the package name is `ec
 
 ## Configuration
 
+This is the configuration the author uses.
+
 ```elisp
 (use-package ecc
   :ensure t

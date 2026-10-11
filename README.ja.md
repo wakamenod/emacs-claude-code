@@ -95,6 +95,8 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 
 ## 設定例
 
+作者が使っている設定です。
+
 ```elisp
 (use-package ecc
   :ensure t
