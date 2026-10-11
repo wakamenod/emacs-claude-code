@@ -2097,6 +2097,39 @@ taken all the same, and the next one carries them from there."
       (should-not (ecc-review-note-outdated note))
       (should (= (ecc-review-note-line note) 14)))))
 
+(ert-deftest ecc-review-test-a-file-named-in-japanese-or-with-a-space ()
+  "A file whose name has a space or Japanese in it is named as it is, and has its blob.
+git C-quotes a name past ASCII unless told not to, and ends one with a
+space with a tab on its --- and +++ lines."
+  (skip-unless (executable-find "git"))
+  (require 'ecc-review-files)
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((names '("日本.txt" "a b.txt")))
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (dolist (name names)
+              (ecc-review-test--write (concat directory name) "one\n"))
+            (apply #'ecc-review-test--git directory "add" names)
+            (ecc-review-test--git directory "commit" "-q" "-m" "init")
+            (dolist (name names)
+              (ecc-review-test--write (concat directory name) "two\n"))
+            (setf (ecc-session-project-root session) directory)
+            (with-current-buffer (ecc-review-range-buffer session "HEAD")
+              (let ((hunks (ecc-review-hunks)))
+                (should (equal (sort (mapcar (lambda (hunk) (plist-get hunk :path)) hunks)
+                                     #'string<)
+                               (sort (copy-sequence names) #'string<)))
+                (dolist (hunk hunks)
+                  (should (stringp (ecc-review--base-of hunk)))))
+              (should (equal (sort (mapcar (lambda (entry) (plist-get entry :path))
+                                           (ecc-review-files--diff-entries))
+                                   #'string<)
+                             (sort (copy-sequence names) #'string<)))))
+        (ecc-review-test--kill-review-buffers)))))
+
 (ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
   "Remembering the place reads the hunk it is in, not the whole diff."
   (ecc-review-test--with-review session

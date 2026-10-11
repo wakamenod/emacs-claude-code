@@ -211,6 +211,12 @@ Returns nil when git cannot be run at all."
           (file-error (ecc-log "review" "git failed: %s" (error-message-string err))
                       nil))))))
 
+(defvar ecc-review--diff-command '("-c" "core.quotePath=false" "diff")
+  "How a review runs git's diff: with the names of files as they are.
+git C-quotes a path with a byte past ASCII by default -- the octal
+escapes of its UTF-8 between double quotes -- and the review would show
+that and look for a file of that name.")
+
 (defvar ecc-review--diff-options
   '("--no-color" "--no-ext-diff" "--no-textconv" "--inter-hunk-context=0"
     "--src-prefix=a/" "--dst-prefix=b/" "--full-index")
@@ -296,7 +302,7 @@ RANGE is what to diff against.  This is `ecc-review-git-diff\=' without
 the judgement: a caller that has to tell a diff that is empty from one
 git refused to make -- an unknown revision, say -- reads the code."
   (apply #'ecc-review--git root
-         (append (list "diff")
+         (append ecc-review--diff-command
                  ecc-review--diff-options
                  (list (format "-U%d" (max 0 ecc-review-context-lines)))
                  (ecc-review--range-arguments range)
@@ -360,8 +366,8 @@ printed.  PATHS, relative to ROOT, restrict it to those files."
          (t
           ;; --no-index exits 1 when the two sides differ, which is
           ;; every time here, so only a larger code is a failure.
-          (pcase (apply #'ecc-review--git root "diff"
-                        (append ecc-review--diff-options
+          (pcase (apply #'ecc-review--git root
+                        (append ecc-review--diff-command ecc-review--diff-options
                                 (list (format "-U%d" (max 0 ecc-review-context-lines))
                                       "--no-index" "--" "/dev/null" path)))
             ((and `(,code . ,diff)
@@ -706,7 +712,7 @@ that hid them would hide the whole of what happened to it."
       (let* ((diff (and shown
                         (pcase (apply #'ecc-review--git root
                                       (append
-                                       (list "diff")
+                                       ecc-review--diff-command
                                        ecc-review--diff-options
                                        (list "--no-renames"
                                              (format "-U%d"
@@ -2159,8 +2165,9 @@ when git cannot diff them, which is logged."
            (pcase (gethash pair ecc-review--base-diffs 'unasked)
              ('unasked
               (puthash pair
-                       (pcase (apply #'ecc-review--git default-directory "diff"
-                                     (append ecc-review--diff-options (list "-U0" from to)))
+                       (pcase (apply #'ecc-review--git default-directory
+                                     (append ecc-review--diff-command ecc-review--diff-options
+                                             (list "-U0" from to)))
                          (`(0 . ,output) (ecc-review-map-base-hunks output))
                          (result (ecc-log "review" "diff of %s and %s failed: %S"
                                           from to result)

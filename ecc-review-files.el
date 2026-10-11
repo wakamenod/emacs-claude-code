@@ -314,10 +314,11 @@ diffs this package makes of what git does not track have no diff line
   "Return the path the file header HEADER names, without a/ or b/, or nil."
   (save-match-data
     (cond
-     ((string-match "^\\+\\+\\+ \\(?:b/\\)?\\(.+\\)$" header)
+     ;; git ends the name with a tab when it has a space in it.
+     ((string-match "^\\+\\+\\+ \\(?:b/\\)?\\([^\t\n]+\\)" header)
       (let ((path (match-string 1 header)))
         (if (and (equal path "/dev/null")
-                 (string-match "^--- \\(?:a/\\)?\\(.+\\)$" header))
+                 (string-match "^--- \\(?:a/\\)?\\([^\t\n]+\\)" header))
             (match-string 1 header)
           path)))
      ((string-match "^rename to \\(.+\\)$" header) (match-string 1 header))
