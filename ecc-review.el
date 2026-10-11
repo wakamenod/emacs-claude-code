@@ -2938,11 +2938,12 @@ for the last of Claude\='s, else nil for a comment of its own."
         (cons 'reply claude)))))
 
 (defmacro ecc-review--keeping-text (text &rest body)
-  "Run BODY, which puts the comment TEXT somewhere; when it fails, keep TEXT.
+  "Run BODY, which puts the comment TEXT in the review; when it fails, keep TEXT.
 What was typed goes to the kill ring and the error says so, whatever
 stopped it -- the review read again meanwhile, another proposal, a quit
 -- rather than going with the comment.  An empty TEXT is nothing to
-keep."
+keep.  BODY ends once the comment is in: what comes after, drawing it
+included, is no failure to keep it (`ecc-review--comment-made')."
   (declare (indent 1) (debug t))
   (let ((typed (make-symbol "typed")))
     `(let ((,typed ,text))
@@ -3007,30 +3008,40 @@ the text."
    (let ((line (or (ecc-review--line-at-point)
                    (user-error "Not on a line of a hunk"))))
      (ecc-review--read-comment line)))
-  (ecc-review--keeping-text text
-    (pcase-let* ((`(,anchor ,kind ,id)
-                  (or plan (ecc-review--comment-plan
-                            (or (ecc-review--line-at-point)
-                                (user-error "Not on a line of a hunk")))))
-                 (text (string-trim text))
-                 (target (and id (ecc-review-find-note id)))
-                 (lines (ecc-review-lines))
-                 (line (ecc-review--locate-note anchor)))
-      (when (string-empty-p text)
-        (user-error "Empty comment"))
-      (when (eq (ecc-review-note-outdated anchor) 'replaced)
-        (user-error "The review shows another proposal now"))
-      (let ((note (if (and (eq kind 'edit) target)
-                    (ecc-review--edit-note target text)
-                  (ecc-review-add-note 'user text (or line anchor)
-                                       (and (eq kind 'reply) target id)))))
-      (ecc-review--draw-notes lines)
-      (if (ecc-review-note-outdated note)
-          (message "The line has gone from the diff; the comment is kept as outdated")
-        (message "Comment attached (%d in all)"
-                 (seq-count (lambda (note) (not (ecc-review--agent-p note)))
-                            ecc-review--notes)))
-      note))))
+  (ecc-review--comment-made
+   (ecc-review--keeping-text text
+     (pcase-let* ((`(,anchor ,kind ,id)
+                   (or plan (ecc-review--comment-plan
+                             (or (ecc-review--line-at-point)
+                                 (user-error "Not on a line of a hunk")))))
+                  (text (string-trim text))
+                  (target (and id (ecc-review-find-note id)))
+                  (line (ecc-review--locate-note anchor)))
+       (when (string-empty-p text)
+         (user-error "Empty comment"))
+       (when (eq (ecc-review-note-outdated anchor) 'replaced)
+         (user-error "The review shows another proposal now"))
+       (if (and (eq kind 'edit) target)
+           (ecc-review--edit-note target text)
+         (ecc-review-add-note 'user text (or line anchor)
+                              (and (eq kind 'reply) target id)))))
+   "The line has gone from the diff; the comment is kept as outdated"))
+
+(defun ecc-review--comment-made (note gone)
+  "Draw the comments, NOTE just made or edited among them; say so and return NOTE.
+GONE is what to say when the place NOTE is on has gone.  NOTE is in the
+review already, and a failure from here is said as what it is: what
+was typed is not put in the kill ring, to be yanked into a second copy."
+  (condition-case error
+      (ecc-review--draw-notes)
+    (error (error "Comment #%d is in the review, but drawing the comments failed: %s"
+                  (ecc-review-note-id note) (error-message-string error))))
+  (if (ecc-review-note-outdated note)
+      (message "%s" gone)
+    (message "Comment attached (%d in all)"
+             (seq-count (lambda (note) (not (ecc-review--agent-p note)))
+                        ecc-review--notes)))
+  note)
 
 (defun ecc-review--notes-here ()
   "Return the shown comments on the line at point, in the order they were made.

@@ -2644,6 +2644,23 @@ Here the review is being read again when the text is in."
       (should (equal (car kill-ring) "about added")))
     (should-not ecc-review--notes)))
 
+(ert-deftest ecc-review-test-c-that-fails-after-the-comment-is-in-keeps-nothing ()
+  "c that fails once its comment is in says so, and leaves the kill ring alone.
+What was typed is in the review: yanked again, it would be a second copy."
+  (ecc-review-test--with-review session
+    (ecc-review-test--goto "+added")
+    (let ((kill-ring nil))
+      (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "about added"))
+                ((symbol-function 'ecc-review--draw-notes)
+                 (lambda (&rest _) (error "No room to draw"))))
+        (let ((message (error-message-string
+                        (should-error (call-interactively #'ecc-review-comment)))))
+          (should (string-search "No room to draw" message))
+          (should (string-search "is in the review" message))
+          (should-not (string-search "kill ring" message))))
+      (should-not kill-ring)
+      (should (equal (mapcar #'ecc-review-note-text ecc-review--notes) '("about added"))))))
+
 (ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
   "Remembering the place reads the hunk it is in, not the whole diff."
   (ecc-review-test--with-review session

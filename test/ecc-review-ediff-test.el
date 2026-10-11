@@ -3103,6 +3103,32 @@ Its comments are carried from the reading they were last on."
                     (should (equal (car kill-ring) "about LINE2")))))
             (ecc-review-ediff-test--quit control)))))))
 
+(ert-deftest ecc-review-ediff-test-c-that-fails-after-the-comment-is-in-keeps-nothing ()
+  "c in an ediff review that fails once its comment is in leaves the kill ring alone."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (with-current-buffer control
+                  (ediff-jump-to-difference 1)
+                  (let ((kill-ring nil))
+                    (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "about LINE2"))
+                              ((symbol-function 'ecc-review--draw-notes)
+                               (lambda (&rest _) (error "No room to draw"))))
+                      (let ((message (error-message-string
+                                      (should-error
+                                       (call-interactively #'ecc-review-ediff-comment)))))
+                        (should (string-search "No room to draw" message))
+                        (should-not (string-search "kill ring" message))))
+                    (should-not kill-ring)
+                    (should (equal (mapcar #'ecc-review-note-text ecc-review--notes)
+                                   '("about LINE2"))))))
+            (ecc-review-ediff-test--quit control)))))))
+
 ;;;; The setting
 
 (ert-deftest ecc-review-ediff-test-style-chooses-the-review ()
