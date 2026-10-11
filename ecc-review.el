@@ -2580,8 +2580,9 @@ the buffer does not stand still while it is typed: Claude may put a
 comment on the same line, or the diff may be read again and the line
 move.  The comment goes where it was meant for -- a comment of its own
 does not turn into a reply to what arrived meanwhile -- on the line
-carried to where it went (`ecc-review--carry\='), and when that line has
-changed or gone it is kept as outdated rather than lost with the text."
+carried to where it went (`ecc-review--take-reading\='), and when that
+line has changed or gone it is kept as outdated rather than lost with
+the text."
   (interactive
    (let ((line (or (ecc-review--line-at-point)
                    (user-error "Not on a line of a hunk"))))

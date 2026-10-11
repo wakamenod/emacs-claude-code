@@ -1488,7 +1488,7 @@ what they hold now."
 ;; the one `ecc-review-hunk-at' makes of a hunk of the diff review, with
 ;; the @@ header and the text of a patch, and lines like those of
 ;; `ecc-review--hunk-lines'.  A comment on it is then kept, put back
-;; after a refresh (`ecc-review--locate-note') and sent exactly as one on
+;; after a refresh (`ecc-review--take-reading') and sent exactly as one on
 ;; a hunk is.  The lines of a difference are the ones it takes out of the
 ;; old side and puts into the new; a line both sides hold is no line of
 ;; any difference, as a line of context is none of a diff read with no
