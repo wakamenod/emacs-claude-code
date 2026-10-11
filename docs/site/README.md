@@ -330,8 +330,9 @@ import Video from '../../../components/Video.astro';
 `Video.astro` puts the `base` in front of the URLs — nothing else does for a
 file in `public/` — and shows the poster until the reader presses play; a
 video does not start by itself, and loads only its metadata until then. It
-plays muted and looping, has `controls` so that the subtitles can be
-switched, and turns on the track of the page's language: English on an
+plays muted and once, stopping on its last frame -- it looped until
+2026-10-11, and a reader could not tell where a scene ended. It has
+`controls` so that the subtitles can be switched, and turns on the track of the page's language: English on an
 English page, Japanese under `/ja/`. `label` is the video's accessible name,
 written like alt text.
 
