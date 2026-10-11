@@ -45,10 +45,11 @@
 ;;
 ;; A comment is on a line -- the old side of a removed one, the new side
 ;; of any other -- or on a whole hunk from its @@ header.  Comments are
-;; kept as `ecc-review-note's apart from the text, and every redraw puts
-;; each back on the line that still says what its line said, so reading
-;; the diff again after a change higher up in a file moves them rather
-;; than losing them; one whose line is gone is kept and marked outdated.
+;; kept as `ecc-review-note's apart from the text, and every reading of
+;; the diff carries each to where its line went
+;; (`ecc-review--take-reading'), so lines put in or taken out above one
+;; move it rather than losing it; one whose line changed or went is kept
+;; and marked outdated.
 ;; Claude writes comments into the same buffer over MCP
 ;; (`ecc-review-agent.el'), drawn in a face of their own; only the
 ;; user's are sent.
@@ -72,6 +73,7 @@
 (require 'ecc-model)
 (require 'ecc-proc)
 (require 'ecc-diff)
+(require 'ecc-review-map)
 (require 'ecc-render)
 (require 'ecc-perm)
 (require 'ecc-window)
@@ -209,6 +211,137 @@ Returns nil when git cannot be run at all."
           (file-error (ecc-log "review" "git failed: %s" (error-message-string err))
                       nil))))))
 
+(defvar ecc-review--diff-command '("-c" "core.quotePath=false" "diff")
+  "How a review runs git's diff: with the names of files as they are.
+git C-quotes a path with a byte past ASCII by default -- the octal
+escapes of its UTF-8 between double quotes -- and the review would show
+that and look for a file of that name.")
+
+(defvar ecc-review--diff-options
+  '("--no-color" "--no-ext-diff" "--no-textconv" "--inter-hunk-context=0"
+    "--src-prefix=a/" "--dst-prefix=b/" "--full-index")
+  "What every diff a review reads is made with, whatever the user's git says.
+The review parses what git prints, so the settings that change it are
+put back: `color.diff' and `diff.external' would write something else; a
+textconv driver in .gitattributes would show a file as other lines than
+its blobs have, which the diff of two blobs that carries the comments
+counts; `diff.interHunkContext' would fuse two hunks with the unchanged
+lines between them, which then read as changed; and `diff.noprefix' or
+`diff.mnemonicPrefix' would name the files without the a/ and b/ the
+review takes off.  The index lines name the blobs whole, so that two
+readings of one blob say so with the same id; the review shows them
+short (`ecc-review--shorten-ids').")
+
+(defvar ecc-review-shown-id-length 7
+  "How many characters of a blob id an index line of the review shows.
+git's own short form.  The whole id stays on the line, as the text
+property `ecc-review-blob' (`ecc-review--shorten-ids').")
+
+(defun ecc-review--git-unquote (text start)
+  "Return (NAME . END) for the name git C-quoted at START of TEXT, or nil.
+NAME is the name decoded and END where the quote closed.  git quotes a
+name with a tab, a newline, a double quote or a backslash in it, even
+with `core.quotePath' off: between double quotes, with \\t, \\n,
+\\\" and \\\\, and any other byte it escapes in octal, which are
+the bytes of UTF-8."
+  (when (and (< start (length text)) (eq (aref text start) ?\"))
+    (let ((i (1+ start))
+          (n (length text))
+          (pieces nil)
+          (bytes nil)
+          (end nil))
+      (cl-flet ((flush ()
+                  (when bytes
+                    (push (decode-coding-string (apply #'unibyte-string (nreverse bytes)) 'utf-8)
+                          pieces)
+                    (setq bytes nil))))
+        (while (and (< i n) (not end))
+          (let ((char (aref text i)))
+            (cond
+             ((eq char ?\") (setq end (1+ i)))
+             ((and (eq char ?\\) (< (1+ i) n))
+              (let ((next (aref text (1+ i))))
+                (if (and (<= ?0 next ?7) (<= (+ i 4) n)
+                         (string-match-p "\\`[0-7]\\{3\\}\\'" (substring text (1+ i) (+ i 4))))
+                    (progn (push (string-to-number (substring text (1+ i) (+ i 4)) 8) bytes)
+                           (setq i (+ i 4)))
+                  (flush)
+                  (push (string (pcase next (?a ?\a) (?b ?\b) (?t ?\t) (?n ?\n) (?v ?\v)
+                                       (?f ?\f) (?r ?\r) (_ next)))
+                        pieces)
+                  (setq i (+ i 2)))))
+             (t (flush)
+                (push (string char) pieces)
+                (setq i (1+ i))))))
+        (flush))
+      (and end (cons (apply #'concat (nreverse pieces)) end)))))
+
+(defun ecc-review--git-quote (name)
+  "Return NAME as git writes it in a diff header, C-quoted when it has to be.
+For the headers the review writes itself, which are read back like
+git's (`ecc-review-git-name'): a name with a control character, a double
+quote or a backslash in it goes between double quotes; any other is
+itself, as git writes it with `core.quotePath' off."
+  (if (not (string-match-p "[\"\\\\[:cntrl:]]" name))
+      name
+    (concat "\""
+            (mapconcat (lambda (char)
+                         (pcase char
+                           (?\" "\\\"") (?\\ "\\\\") (?\t "\\t") (?\n "\\n")
+                           ((pred (lambda (char) (< char 32))) (format "\\%03o" char))
+                           (_ (string char))))
+                       name "")
+            "\"")))
+
+(defun ecc-review-git-name (text)
+  "Return the file name TEXT, what follows ---, +++ or rename to in a diff, says.
+A name git C-quoted is decoded (`ecc-review--git-unquote'); a bare one
+runs to the tab git puts after a name with a space in it."
+  (or (car (ecc-review--git-unquote text 0))
+      (car (split-string text "\t"))))
+
+(defun ecc-review-git-diff-names (line &optional old new)
+  "Return (A . B), the names the diff --git LINE gives the two sides, or nil.
+Each with its prefix, as git wrote it, a C-quoted one decoded.  Two bare
+names are split where the line can only split: with OLD and NEW, the
+names a rename or a copy gives on its own header lines, into a/PREFIX
+OLD and b/PREFIX NEW for one PREFIX; without them, into two names alike
+but for a/ and b/.  Nil when the line splits neither way."
+  (when (string-prefix-p "diff --git " line)
+    (let* ((rest (substring line (length "diff --git ")))
+           (size (length rest)))
+      (cond
+       ((ecc-review--git-unquote rest 0)
+        (pcase-let ((`(,a . ,end) (ecc-review--git-unquote rest 0)))
+          (and (< end size) (eq (aref rest end) ?\s)
+               (cons a (ecc-review-git-name (substring rest (1+ end)))))))
+       ;; A bare name, then a quoted one: the quote that runs to the end.
+       ((string-suffix-p "\"" rest)
+        (catch 'split
+          (let ((at 0))
+            (while (setq at (string-search " \"" rest at))
+              (pcase (ecc-review--git-unquote rest (1+ at))
+                (`(,b . ,(pred (= size))) (throw 'split (cons (substring rest 0 at) b))))
+              (setq at (1+ at))))))
+       ((and old new)
+        (let ((twice (- size (length old) (length new) 5)))
+          (when (and (>= twice 0) (cl-evenp twice))
+            (let* ((a (substring rest 0 (+ 2 (/ twice 2) (length old))))
+                   (b (substring rest (min size (1+ (length a))))))
+              (and (string-prefix-p "a/" a) (string-suffix-p old a)
+                   (string-prefix-p " b/" (substring rest (length a)))
+                   (string-suffix-p new b)
+                   (equal (substring a 2 (- (length a) (length old)))
+                          (substring b 2 (- (length b) (length new))))
+                   (cons a b))))))
+       ((cl-oddp size)
+        (let ((a (substring rest 0 (/ size 2)))
+              (b (substring rest (1+ (/ size 2)))))
+          (and (eq (aref rest (/ size 2)) ?\s)
+               (string-prefix-p "a/" a) (string-prefix-p "b/" b)
+               (equal (substring a 2) (substring b 2))
+               (cons a b))))))))
+
 (defun ecc-review--git-string (directory &rest args)
   "Return what git ARGS in DIRECTORY print, trimmed.
 Nil when git fails or prints nothing."
@@ -253,14 +386,15 @@ PATHS are absolute; the result keeps their order."
                      (member (ecc-review--relative path root) tracked))
                    paths)))))
 
-(defun ecc-review-git-diff (root paths &optional range)
+(defun ecc-review-git-diff (root paths &optional range under)
   "Return the unified diff git reports for PATHS under ROOT, or nil.
 PATHS may be nil, which diffs everything under ROOT.  RANGE is what to
 diff against -- a revision like \"HEAD\" or a range like
 \"main...HEAD\", or `staged\=' for the index against HEAD -- and
 defaults to the index, the way `git diff' works.  The file names carry
-a/ and b/ prefixes and are relative to ROOT."
-  (pcase (ecc-review--git-diff root paths range)
+a/ and b/ prefixes and are relative to ROOT, or with UNDER, a directory
+name relative to another directory, relative to that one."
+  (pcase (ecc-review--git-diff root paths range under)
     (`(0 . ,output)
      (and (not (string-empty-p output)) output))
     (result
@@ -274,14 +408,18 @@ the working tree -- and a revision or a range is itself."
   (cond ((eq range 'staged) (list "--staged"))
         ((and range (not (string-empty-p range))) (list range))))
 
-(defun ecc-review--git-diff (root paths &optional range)
+(defun ecc-review--git-diff (root paths &optional range under)
   "Return the (EXIT-CODE . OUTPUT) of the git diff of PATHS under ROOT.
-RANGE is what to diff against.  This is `ecc-review-git-diff\=' without
+RANGE is what to diff against, and UNDER what the names are put under
+\(`ecc-review-git-diff').  This is `ecc-review-git-diff\=' without
 the judgement: a caller that has to tell a diff that is empty from one
 git refused to make -- an unknown revision, say -- reads the code."
   (apply #'ecc-review--git root
-         (append (list "diff" "--no-color" "--no-ext-diff"
-                       (format "-U%d" (max 0 ecc-review-context-lines)))
+         (append ecc-review--diff-command
+                 ecc-review--diff-options
+                 (list (format "-U%d" (max 0 ecc-review-context-lines)))
+                 (and under (list (concat "--src-prefix=a/" under)
+                                  (concat "--dst-prefix=b/" under)))
                  (ecc-review--range-arguments range)
                  (list "--")
                  (mapcar (lambda (path) (ecc-review--relative path root)) paths))))
@@ -307,8 +445,9 @@ itself.")
 (defun ecc-review--omitted-note (path reason &optional new-file)
   "Return the diff entry naming PATH without its content, because of REASON.
 NEW-FILE writes the header of a file that did not exist before."
-  (format "diff --git a/%s b/%s\n%s%s\n"
-          path path (if new-file "new file mode 100644\n" "") reason))
+  (format "diff --git %s %s\n%s%s\n"
+          (ecc-review--git-quote (concat "a/" path)) (ecc-review--git-quote (concat "b/" path))
+          (if new-file "new file mode 100644\n" "") reason))
 
 (defun ecc-review--untracked-paths (root &optional paths)
   "Return the files under ROOT git does not track, relative to ROOT.
@@ -343,9 +482,10 @@ printed.  PATHS, relative to ROOT, restrict it to those files."
          (t
           ;; --no-index exits 1 when the two sides differ, which is
           ;; every time here, so only a larger code is a failure.
-          (pcase (ecc-review--git root "diff" "--no-color" "--no-ext-diff"
-                                  (format "-U%d" (max 0 ecc-review-context-lines))
-                                  "--no-index" "--" "/dev/null" path)
+          (pcase (apply #'ecc-review--git root
+                        (append ecc-review--diff-command ecc-review--diff-options
+                                (list (format "-U%d" (max 0 ecc-review-context-lines))
+                                      "--no-index" "--" "/dev/null" path)))
             ((and `(,code . ,diff)
                   (guard (and (memq code '(0 1)) (not (string-empty-p diff)))))
              (push diff texts)))))))
@@ -688,8 +828,9 @@ that hid them would hide the whole of what happened to it."
       (let* ((diff (and shown
                         (pcase (apply #'ecc-review--git root
                                       (append
-                                       (list "diff" "--no-color" "--no-ext-diff"
-                                             "--no-renames"
+                                       ecc-review--diff-command
+                                       ecc-review--diff-options
+                                       (list "--no-renames"
                                              (format "-U%d"
                                                      (max 0 ecc-review-context-lines))
                                              base now "--")
@@ -732,8 +873,10 @@ under git while a session runs."
       (ecc-file-entry-snapshot entry)))
 
 (defun ecc-review--file-header (path &optional new-file)
-  "Return the ---/+++ lines naming PATH, from /dev/null when NEW-FILE."
-  (format "--- %s\n+++ %s\n" (if new-file "/dev/null" path) path))
+  "Return the ---/+++ lines naming PATH, from /dev/null when NEW-FILE.
+A name git would quote is quoted (`ecc-review--git-quote')."
+  (let ((name (ecc-review--git-quote path)))
+    (format "--- %s\n+++ %s\n" (if new-file "/dev/null" name) name)))
 
 (defun ecc-review-fallback-diff (entry)
   "Return the diff of the file of ENTRY over the session, or nil.
@@ -800,7 +943,15 @@ is one."
                                       (cdr group)))))
           (when tracked
             (unless git-root (setq git-root root))
-            (when-let* ((diff (ecc-review-git-diff root tracked)))
+            ;; The files of another repository are named from the first,
+            ;; the directory the review is read in: a file is one file
+            ;; of the review whatever repository it is in, and RET goes
+            ;; to it.
+            (when-let* ((diff (ecc-review-git-diff
+                               root tracked nil
+                               (and (not (equal root git-root))
+                                    (file-name-as-directory
+                                     (file-relative-name root git-root))))))
               (push diff texts)))
           (dolist (entry (cdr group))
             (unless (member (expand-file-name (ecc-file-entry-path entry)) tracked)
@@ -813,11 +964,6 @@ is one."
              (cons text git-root))))))
 
 ;;;; The buffer
-
-(defconst ecc-review--hunk-regexp
-  "^@@ -\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? \\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? @@"
-  "Matches a unified hunk header.
-The groups are old start, old count, new start and new count.")
 
 
 (defvar-local ecc-review--session nil
@@ -1011,7 +1157,7 @@ it begins, and nothing after the last hunk."
               :line (plist-get line :line) :side (plist-get line :side)))
     (save-excursion
       (beginning-of-line)
-      (when (re-search-forward ecc-review--hunk-regexp nil t)
+      (when (re-search-forward ecc-diff-hunk-regexp nil t)
         (list :path (ecc-review--hunk-path (match-beginning 0)))))))
 
 (cl-defgeneric ecc-review-region ()
@@ -1068,13 +1214,28 @@ sorted and walked by (`ecc-review-note-position')."
   (pcase-let ((`(,beg ,end ,property) (ecc-review--place note line lines)))
     (list (current-buffer) beg end property beg)))
 
+(defun ecc-review--hunk-place (line)
+  "Return which hunk LINE, a line of a reading, is in: (PATH HEADER NTH).
+NTH tells it from the hunks of its file before it with the same header
+\(`ecc-review-map-number'), as in a diff that joins a patch for each edit."
+  (list (plist-get line :path)
+        (plist-get (plist-get line :hunk) :header)
+        (or (plist-get line (if (plist-get line :side) :hunk-nth :nth)) 0)))
+
 (cl-defgeneric ecc-review--decorate (commented lines)
-  "Mark the hunks of LINES whose keys are in COMMENTED as carrying comments.
-Return the overlays made."
-  (let ((overlays nil))
+  "Mark the hunks of LINES that COMMENTED names as carrying comments.
+COMMENTED are `ecc-review--hunk-place's; LINES, all the lines of the
+review in order, are counted here for which of the hunks with its header
+each is.  Return the overlays made."
+  (let ((overlays nil)
+        (seen (make-hash-table :test #'equal)))
     (dolist (line lines)
       (when (and (null (plist-get line :side))
-                 (member (ecc-review--hunk-key (plist-get line :hunk)) commented))
+                 (let* ((key (cons (plist-get line :path)
+                                   (plist-get (plist-get line :hunk) :header)))
+                        (nth (gethash key seen 0)))
+                   (puthash key (1+ nth) seen)
+                   (member (list (car key) (cdr key) nth) commented)))
         (let ((overlay (make-overlay (plist-get line :position)
                                      (save-excursion
                                        (goto-char (plist-get line :position))
@@ -1517,75 +1678,130 @@ the reading."
           (setq ecc-review--label (plist-get content :label)
                 ecc-review--elsewhere (plist-get content :elsewhere)))))))
 
+(defvar ecc-review--held)               ; below, with the readings
+(defvar ecc-review--reading)
+
 (defun ecc-review--fill (buffer session text root &optional request paths range)
   "Put the diff TEXT into BUFFER for SESSION and draw its comments again.
 ROOT is the directory the file names of TEXT are relative to; REQUEST,
 PATHS and RANGE are remembered as what the buffer reviews.
 
-The comments are kept across a redraw, each put back where its line is
-now (`ecc-review--locate-note\='); one whose line is gone is marked
-outdated and kept, never dropped.  So is the place being read: point,
-and in every window showing the buffer its point and how far down the
-window that line was, are put back on the same line by the same rule --
+The comments are kept across a redraw, each carried to where its line
+is now (`ecc-review--take-reading\='); one whose line changed or went is
+marked outdated and kept, never dropped.  So is the place being read:
+point, and in every window showing the buffer its point and how far
+down the window that line was, are put back on the same line by the
+same rule, or on the nearest line that stayed when that one went --
 whether the diff was read again by \\`g', by opening the review again, or
 by Claude.  A buffer that reviewed another proposal before starts with
 no comments and at the top: that was about something that is not being
-asked any more."
+asked any more, and nothing kept to carry its places is kept either.
+A buffer edited since it was read has no place to keep, and opens at
+the top."
   (with-current-buffer buffer
     (let* ((same (and (derived-mode-p 'ecc-review-mode)
                       (eq ecc-review--request request)))
            (placed (and same (seq-remove #'ecc-review-note-outdated ecc-review--notes)))
-           (views (and same (ecc-review--save-views))))
-      (unless (derived-mode-p 'ecc-review-mode)
-        (ecc-review-mode))
-      (unless same
-        (setq ecc-review--notes nil
-              ecc-review--next-id 1))
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (insert text)
-        (unless (bolp) (insert "\n")))
-      (setq default-directory (or root (ecc-session-project-root session)
-                                  default-directory)
-            ecc-review--session session
-            ecc-render--session session
-            ecc-review--request request
-            ecc-review--paths paths
-            ecc-review--range range
-            ecc-review--stale nil
-            ecc-review--failed nil)
-      (set-buffer-modified-p nil)
-      (setq ecc-review--fingerprint
-            (cons (secure-hash 'sha1 text) (buffer-chars-modified-tick)))
-      (goto-char (point-min))
-      ;; The lines are read once, and only when something is to be put
-      ;; back on them.
-      (let ((lines (and (or ecc-review--notes views) (ecc-review--lines))))
-        (let ((ecc-review--refilling t))
-          (ecc-review--draw-notes lines))
-        (ecc-review--restore-views views lines))
-      (run-hooks 'ecc-review-refilled-hook)
-      ;; Counted one by one: a comment that found its line again does not
-      ;; make up for another that lost it.
-      (let ((lost (seq-count #'ecc-review-note-outdated placed)))
-        (when (> lost 0)
-          (message "%s no longer %s a line of the diff; kept as outdated"
-                   (ecc-review--count lost "comment") (if (= lost 1) "matches" "match"))))
-      buffer)))
+           (held ecc-review--held)
+           (fingerprint nil)
+           (views nil))
+      ;; The places read are held from here, and whatever this holds is
+      ;; let go however it ends -- even part of the way through saving.
+      (unwind-protect
+          (progn
+            (setq views (and same (ecc-review--reading-current-p) (ecc-review--save-views)))
+            (unless (derived-mode-p 'ecc-review-mode)
+              (ecc-review-mode))
+            (unless same
+              (setq ecc-review--notes nil
+                    ecc-review--next-id 1)
+              (ecc-review--forget-places))
+            (ecc-review--begin-reading)
+            (let ((inhibit-read-only t))
+              (erase-buffer)
+              (insert (ecc-review--shorten-ids text))
+              (unless (bolp) (insert "\n")))
+            (setq default-directory (or root (ecc-session-project-root session)
+                                        default-directory)
+                  ecc-review--session session
+                  ecc-render--session session
+                  ecc-review--request request
+                  ecc-review--paths paths
+                  ecc-review--range range
+                  ecc-review--stale nil
+                  ecc-review--failed nil)
+            (set-buffer-modified-p nil)
+            ;; Not what this buffer was filled with until its reading is
+            ;; whole: a refill that stops before leaves the next g to read
+            ;; again, rather than taking the text for read.
+            (setq ecc-review--fingerprint nil)
+            (setq fingerprint (cons (secure-hash 'sha1 text) (buffer-chars-modified-tick)))
+            (goto-char (point-min))
+            ;; The lines are read once, and only when something is to be
+            ;; put back on them.
+            (let ((lines (and (or ecc-review--notes ecc-review--held) (ecc-review--lines))))
+              (ecc-review--take-reading lines)
+              (let ((ecc-review--refilling t))
+                (ecc-review--draw-notes lines))
+              (ecc-review--restore-views views))
+            (run-hooks 'ecc-review-refilled-hook)
+            ;; Counted one by one: a comment that found its line again does
+            ;; not make up for another that lost it.
+            (let ((lost (seq-count #'ecc-review-note-outdated placed)))
+              (when (> lost 0)
+                (message "%s no longer %s a line of the diff; kept as outdated"
+                         (ecc-review--count lost "comment")
+                         (if (= lost 1) "matches" "match"))))
+            (unless (ecc-review--reading-incomplete ecc-review--reading)
+              (setq ecc-review--fingerprint fingerprint))
+            buffer)
+        (ecc-review--let-go (seq-remove (lambda (place) (memq place held))
+                                        ecc-review--held))))))
+
+(defun ecc-review--shorten-ids (text)
+  "Return the diff TEXT with the blob ids of its index lines short, kept whole.
+git is asked for whole ids (`ecc-review--diff-options'), which two
+readings of one blob have to share; an index line of two of them is 92
+characters, which wraps in half a frame and comes again for every file.
+Each id is cut to `ecc-review-shown-id-length' characters, git's own
+short form, and the whole id kept on what is left of it as the text
+property `ecc-review-blob', which is where the old side of a file is
+read from (`ecc-review--base-of').  Nothing else reads an index line: a
+hunk's text, which is what is sent to Claude, starts at its @@ line."
+  (let ((pieces nil)
+        (start 0)
+        (short (lambda (id)
+                 (if (> (length id) ecc-review-shown-id-length)
+                     (propertize (substring id 0 ecc-review-shown-id-length) 'ecc-review-blob id)
+                   id))))
+    (while (string-match "^index \\([0-9a-f]+\\)\\.\\.\\([0-9a-f]+\\)" text start)
+      (push (substring text start (match-beginning 1)) pieces)
+      (push (funcall short (match-string 1 text)) pieces)
+      (push ".." pieces)
+      (push (funcall short (match-string 2 text)) pieces)
+      (setq start (match-end 2)))
+    (if (null pieces)
+        text
+      (push (substring text start) pieces)
+      (apply #'concat (nreverse pieces)))))
 
 (defun ecc-review--view-at (position)
   "Return (ANCHOR . COLUMN) for POSITION, or nil.
 ANCHOR is a note-shaped record of the line POSITION is on -- the @@ line
-of the next hunk when it is on a file header -- and COLUMN how far into
-the line it is.  Only the hunk there is read, as \\`c' reads it."
+of the next hunk when it is on a file header -- held to be carried to
+the next reading, and COLUMN how far into the line it is.  The line is
+read from the hunk there, as \\`c' reads it, and the other hunks of its
+file only when nothing else kept on it has had them read in this
+reading (`ecc-review--keep').  The caller lets ANCHOR go."
   (save-excursion
     (goto-char position)
     (let ((line (or (ecc-review--line-at-point)
-                    (and (re-search-forward ecc-review--hunk-regexp nil t)
+                    (and (re-search-forward ecc-diff-hunk-regexp nil t)
                          (progn (beginning-of-line) (ecc-review--line-at-point))))))
       (when line
-        (cons (ecc-review--anchor (ecc-review-note-create) line)
-              (max 0 (- position (plist-get line :position))))))))
+        (let ((anchor (ecc-review--anchor (ecc-review-note-create) line)))
+          (ecc-review--hold anchor 'view)
+          (cons anchor (max 0 (- position (plist-get line :position)))))))))
 
 (defun ecc-review--save-views ()
   "Return where this buffer is being read, to be put back after a redraw.
@@ -1614,11 +1830,14 @@ kept."
                 views)))
       views)))
 
-(defun ecc-review--restore-views (views lines)
-  "Put the VIEWS of `ecc-review--save-views\=' back on LINES.
-A place whose line cannot be found again is left at the top."
+(defun ecc-review--restore-views (views)
+  "Put the VIEWS of `ecc-review--save-views\=' back on this reading.
+A place whose line went goes to the start of the nearest line that
+stayed, and one with no line of its file left to the top."
   (pcase-dolist (`(,window ,anchor ,column ,from-top) views)
-    (let* ((line (ecc-review--locate-note anchor lines))
+    (let* ((own (ecc-review--locate-note anchor))
+           (line (or own (ecc-review--nearest-line anchor)))
+           (column (if own column 0))
            (position (if line
                          (min (+ (plist-get line :position) column)
                               (save-excursion
@@ -1639,7 +1858,7 @@ A place whose line cannot be found again is left at the top."
 (defun ecc-review-hunk-range (header)
   "Return (START . END) of the new side of the hunk HEADER line.
 A hunk that only removes lines is one line wide at its position."
-  (when (string-match ecc-review--hunk-regexp header)
+  (when (string-match ecc-diff-hunk-regexp header)
     (let ((start (string-to-number (match-string 3 header)))
           (count (if (match-string 4 header)
                      (string-to-number (match-string 4 header))
@@ -1663,48 +1882,35 @@ header or before the first hunk."
         (error nil)))))
 
 (defun ecc-review--hunk-path (beg)
-  "Return the file name of the hunk starting at BEG, without a/ or b/."
+  "Return the file name of the hunk starting at BEG, without a/ or b/.
+As git wrote it, a C-quoted name decoded (`ecc-review-git-name')."
   (save-excursion
     (goto-char beg)
-    (let* ((names (ignore-errors (diff-hunk-file-names)))
+    (let* ((names (mapcar #'ecc-review-git-name (ignore-errors (diff-hunk-file-names))))
            (new (car names))
            (old (cadr names))
            (name (if (or (null new) (equal new "/dev/null")) old new)))
       (when name
         (replace-regexp-in-string "\\`[ab]/" "" name)))))
 
-(defun ecc-review-hunk-at (beg end)
+(defun ecc-review-hunk-at (beg end &optional path)
   "Return the hunk between BEG and END as a plist.
 The plist has :path, :start and :end of the new side, :header, :text
 being the whole hunk, :position and :bound, the positions it runs
-between."
+between.  PATH is the name of its file when the caller has read it
+already: read here, it is read from the file's header back up the
+hunks before."
   (save-excursion
     (goto-char beg)
     (let* ((header (buffer-substring-no-properties (point) (line-end-position)))
            (range (ecc-review-hunk-range header)))
-      (list :path (ecc-review--hunk-path beg)
+      (list :path (or path (ecc-review--hunk-path beg))
             :start (car range)
             :end (cdr range)
             :header header
             :text (string-trim-right (buffer-substring-no-properties beg end) "\n")
             :position beg
-            :bound end
-            :old-range (ecc-review--old-range header)))))
-
-(defun ecc-review--old-range (header)
-  "Return the lines the old side of the hunk HEADER covers, as (LOW . HIGH).
-A hunk that takes nothing out of the old side covers no line of it, and
-sits between two: git's \"-5,0\" puts it after line 5, which is
-\(5.5 . 5.5).  The old side is the baseline, which a change above does
-not move, so this is what a comment on the whole hunk is found by."
-  (when (string-match ecc-review--hunk-regexp header)
-    (let ((start (string-to-number (match-string 1 header)))
-          (count (if (match-string 2 header)
-                     (string-to-number (match-string 2 header))
-                   1)))
-      (if (zerop count)
-          (cons (+ start 0.5) (+ start 0.5))
-        (cons start (+ start count -1))))))
+            :bound end))))
 
 (defun ecc-review--hunk-key (hunk)
   "Return what identifies HUNK across a redraw: its file and its header."
@@ -1715,7 +1921,7 @@ not move, so this is what a comment on the whole hunk is found by."
   (save-excursion
     (goto-char (point-min))
     (let ((hunks nil))
-      (while (re-search-forward ecc-review--hunk-regexp nil t)
+      (while (re-search-forward ecc-diff-hunk-regexp nil t)
         (when-let* ((bounds (ecc-review--hunk-bounds)))
           (push (ecc-review-hunk-at (car bounds) (cdr bounds)) hunks)
           (goto-char (max (point) (1- (cdr bounds))))))
@@ -1729,8 +1935,7 @@ Each line is a plist: :position, where it starts; :path; :side, `new'
 for an added or a context line, `old' for a removed one and nil for the
 @@ header; :line, its number on that side; :old-line, the number a
 context line has on the old side as well; :text, the line without its
-marker; :before and :after, the text of the lines next to it on its side
-of the hunk (nil at an edge); and :hunk, HUNK itself.
+marker; and :hunk, HUNK itself.
 
 The numbers are counted down from the @@ header the way git counts
 them: a removed line takes the next number of the old side, an added
@@ -1743,7 +1948,7 @@ font-lock has been round."
     (let* ((header (plist-get hunk :header))
            (path (plist-get hunk :path))
            (bound (plist-get hunk :bound))
-           (old (if (string-match ecc-review--hunk-regexp header)
+           (old (if (string-match ecc-diff-hunk-regexp header)
                     (string-to-number (match-string 1 header))
                   1))
            (new (or (plist-get hunk :start) 1))
@@ -1756,48 +1961,23 @@ font-lock has been round."
                      (min (1+ (point)) (line-end-position)) (line-end-position))))
           (pcase (char-after)
             (?- (push (list :position position :path path :side 'old :line old
-                            :text text :before nil :after nil :hunk hunk)
+                            :text text :hunk hunk)
                       lines)
                 (cl-incf old))
             (?+ (push (list :position position :path path :side 'new :line new
-                            :text text :before nil :after nil :hunk hunk)
+                            :text text :hunk hunk)
                       lines)
                 (cl-incf new))
             ;; A context line; an empty one is a context line whose
             ;; leading space something on the way trimmed.
             ((or ?\s ?\n)
              (push (list :position position :path path :side 'new :line new
-                         :old-line old :text text :before nil :after nil
-                         :hunk hunk)
+                         :old-line old :text text :hunk hunk)
                    lines)
              (cl-incf new)
              (cl-incf old))))
         (forward-line 1))
-      (setq lines (nreverse lines))
-      ;; The neighbours of a line are the lines next to it in the file it
-      ;; belongs to: the new side reads added and context lines, the old
-      ;; side removed and context lines.
-      (ecc-review--link-neighbours
-       lines 'new (lambda (line) (eq (plist-get line :side) 'new)))
-      (ecc-review--link-neighbours
-       lines 'old (lambda (line) (or (eq (plist-get line :side) 'old)
-                                     (plist-get line :old-line))))
-      lines)))
-
-(defun ecc-review--link-neighbours (lines side member-p)
-  "Give the SIDE lines of LINES the texts of their neighbours on that side.
-MEMBER-P says which lines are read on that side; only the lines whose
-:side is SIDE are given neighbours, a context line taking those of the
-new side it is anchored on."
-  (let ((previous nil)
-        (members (seq-filter member-p lines)))
-    (while members
-      (let ((line (car members)))
-        (when (eq (plist-get line :side) side)
-          (plist-put line :before (and previous (plist-get previous :text)))
-          (plist-put line :after (and (cadr members) (plist-get (cadr members) :text))))
-        (setq previous line
-              members (cdr members))))))
+      (nreverse lines))))
 
 (defun ecc-review--lines ()
   "Return every line of every hunk of this buffer, as `ecc-review--hunk-lines'."
@@ -1816,24 +1996,30 @@ new side it is anchored on."
 (cl-defstruct (ecc-review-note (:constructor ecc-review-note-create)
                                (:copier nil))
   "One comment of a review, kept apart from how it is drawn.
-The place is kept as text rather than as a position, so that the
-comment can be put back after the diff has been read again: PATH, SIDE
-and LINE name the line, LINE-TEXT is what it said and LINE-BEFORE and
-LINE-AFTER what the lines next to it said.  SIDE is nil for
-a comment on a whole hunk.  HUNK-KEY, HUNK-RANGE and HUNK-TEXT are the
+The place is kept as a line of the diff rather than as a position, so
+that the comment can be carried to the next reading of the diff
+\(`ecc-review--take-reading\='): PATH, SIDE and LINE name the line, NTH
+which of the lines of that side and number it is (`ecc-review-map-shape',
+0 but in a diff that joins a patch for each edit), and LINE-TEXT is
+what it said; on a whole hunk, NTH is which of the hunks with its
+header it is.  SIDE is nil for a comment on a whole hunk.  HUNK-KEY, HUNK-RANGE and HUNK-TEXT are the
 hunk it was in when last found -- its key, the lines of its new side
 and its text, which is what an outdated comment is still sent with.
-SENT is non-nil once a prompt has carried the comment to Claude: it
-stays in the review, drawn dimmed, for Claude\='s replies to answer, and
-the next \\[ecc-review-send] leaves it out."
+SHAPE is the shape of the reading the comment is on, or, outdated, was
+last on (`ecc-review-map-shape'): the next reading, of this review or of
+the one it is handed to, carries it from there.  SENT is non-nil once a
+prompt has carried the comment to Claude: it stays in the review, drawn
+dimmed, for Claude\='s replies to answer, and the next
+\\[ecc-review-send] leaves it out."
   id              ; an integer, unique in the buffer and never reused
   author          ; `user' or `claude'
-  path side line line-text line-before line-after
+  path side line line-text
+  nth             ; how many lines of the file before it share its side and number
   hunk-key hunk-range hunk-text
-  hunk-old-range  ; the lines of the old side the hunk covered, (LOW . HIGH)
   text
   reply-to        ; the id of the comment this one answers, or nil
   outdated        ; non-nil when no line of the diff matches any more
+  shape           ; the shape of the reading it is on, or was last on
   sent)           ; non-nil once a prompt has carried it
 
 (defun ecc-review--agent-p (note)
@@ -1864,128 +2050,860 @@ the next \\[ecc-review-send] leaves it out."
     (and (ecc-review--shown-p parent) parent)))
 
 (defun ecc-review--anchor (note line)
-  "Put NOTE on LINE, a plist of `ecc-review--hunk-lines', and return it."
-  (let ((hunk (plist-get line :hunk)))
+  "Put NOTE on LINE, a plist of `ecc-review--hunk-lines' of this reading.
+Return NOTE.  From then on a comment on that line is carried to every
+reading of the review that follows (`ecc-review--take-reading'), and so
+is any other place while it is held (`ecc-review--holding').  LINE is
+taken as the reading has it, which says which of the lines with its
+number it is."
+  (let* ((line (ecc-review--canonical line))
+         (hunk (plist-get line :hunk)))
     (setf (ecc-review-note-path note) (plist-get line :path)
+          (ecc-review-note-nth note) (plist-get line :nth)
           (ecc-review-note-side note) (plist-get line :side)
           (ecc-review-note-line note) (plist-get line :line)
           (ecc-review-note-line-text note) (and (plist-get line :side)
                                                 (plist-get line :text))
-          (ecc-review-note-line-before note) (plist-get line :before)
-          (ecc-review-note-line-after note) (plist-get line :after)
           (ecc-review-note-hunk-key note) (ecc-review--hunk-key hunk)
           (ecc-review-note-hunk-range note) (cons (plist-get hunk :start)
                                                   (plist-get hunk :end))
           (ecc-review-note-hunk-text note) (plist-get hunk :text)
-          (ecc-review-note-hunk-old-range note) (plist-get hunk :old-range)
           (ecc-review-note-outdated note) nil)
-    note))
+    (ecc-review--keep note)))
 
-(defvar ecc-review-note-max-shift 100
-  "How many lines a comment may move to follow its line across a redraw.
-A change above a line pushes it down or pulls it up by the lines that
-were added or taken out there, and a comment follows it that far.  Past
-this it is not the same line any more but one that happens to read
-alike, and the comment is marked outdated instead.")
+;;;; Readings, and carrying a place from one to the next
 
-(defun ecc-review--same-neighbour (one other)
-  "Return non-nil unless the neighbours ONE and OTHER are both known and differ."
-  (or (null one) (null other) (equal one other)))
+;; A comment, the place being read and the line \\`c' was pressed on are
+;; each kept as a line of one reading of the diff -- a path, a side and a
+;; number -- and every reading is a new diff.  A reading is made in one
+;; place, `ecc-review--take-reading', which the diff review calls when it
+;; is filled and the ediff review when ediff has computed the
+;; differences, and that is where every place is carried to it, all at
+;; once, by where each line of the last reading of its file is in this
+;; one (`ecc-review-map-lines').  So a place moves with lines put in or
+;; taken out above it, wherever they were, and one whose line changed or
+;; went is outdated, never put on a line that only reads alike.
+;;
+;; Looking a place up never carries anything: it reads the reading, and
+;; only while the reading is of the text the review shows.  Between the
+;; text changing and its reading being taken -- or after a key that got
+;; past the keymap edited the buffer -- there is no reading to look in,
+;; and a lookup is an error rather than a line of something else.
+;;
+;; The comments are carried for as long as they are in the review; the
+;; place being read and the line \\`c' was pressed on only while they are
+;; held, across the one refill or the one comment they are for.  Each
+;; place keeps the shape of the reading it is on, and is carried from
+;; there -- a comment handed to another review too -- and a reading keeps
+;; the lines of the files something is on, and of no other.
 
-(defun ecc-review--locate-note (note lines)
-  "Return the member of LINES NOTE belongs on now, or nil when none is.
-LINES are plists of `ecc-review--hunk-lines'.  A comment on a line goes
-to the line of the same path and side, nearest the number it had and no
-further away than `ecc-review-note-max-shift', that says the same with
-the same lines on either side -- the same line when nothing above it
-moved, the line it was pushed to when something did.  The text alone is
-not enough, even at the same number: a blank line, a lone brace or an
-`end' reads like a hundred others, and a change above one puts another
-of them where it was.
+(cl-defstruct (ecc-review--reading (:constructor ecc-review--reading-create)
+                                   (:copier nil))
+  "One reading of what a review shows, made by `ecc-review--take-reading'.
+TEXT is the text it was made of, as `ecc-review--text' says it, and
+`pending' while the review is being read again.  SHAPES is a hash of
+each path something is on to its `ecc-review-map-shape' in this
+reading.  FILES and INDEX are the lines of those files and of no other,
+by path and by place, read when a place is first looked for in one.
+INCOMPLETE is non-nil when something could not be carried to it -- a
+failure, or git not answering -- for the review to be read again whole
+by the next \\`g' rather than taken for read (`ecc-review--fall-short');
+UNANSWERED the repositories git failed to read the old sides of in this
+reading, which it is not asked again.  UNITS is the hunks of the review
+by file (`ecc-review--units-by-path'), gone through once, when a file is
+first wanted -- or, while the reading is taken, made from the lines the
+caller read (`ecc-review--units-of')."
+  text shapes files index units positions incomplete unanswered)
 
-The neighbours are known only inside a hunk, so a side where either the
-comment or the candidate has none -- the first or the last line of a
-hunk -- is not compared: hunks merge and split as the lines between them
-change, and a line at the edge of one is still the same line.
+(defvar-local ecc-review--reading nil
+  "The reading of this review its places are on, nil before the first.")
 
-A comment on a whole hunk goes to the hunk with the same header, else to
-a hunk of its path whose old side overlaps the old lines it covered
-\(`ecc-review--old-range\=') -- the baseline does not move when lines are
-put in above, where the new side does -- and of several, the one that
-says the same (`ecc-review--same-body\=') first.
-Nil means none of that is there: the comment is outdated."
-  (let ((path (ecc-review-note-path note))
-        (side (ecc-review-note-side note)))
-    (if side
-        (let ((text (ecc-review-note-line-text note))
-              (number (ecc-review-note-line note))
-              (best nil))
-          (dolist (line lines)
-            (when (and (eq (plist-get line :side) side)
-                       (equal (plist-get line :path) path)
-                       (equal (plist-get line :text) text)
-                       (ecc-review--same-neighbour
-                        (plist-get line :before) (ecc-review-note-line-before note))
-                       (ecc-review--same-neighbour
-                        (plist-get line :after) (ecc-review-note-line-after note))
-                       (<= (abs (- (plist-get line :line) number))
-                           ecc-review-note-max-shift)
-                       (or (null best)
-                           (< (abs (- (plist-get line :line) number))
-                              (abs (- (plist-get best :line) number)))))
-              (setq best line)))
-          best)
-      (let ((headers (seq-filter (lambda (line)
-                                   (and (null (plist-get line :side))
-                                        (equal (plist-get line :path) path)))
-                                 lines))
-            (range (ecc-review-note-hunk-old-range note)))
-        (or (seq-find (lambda (line)
-                        (equal (ecc-review--hunk-key (plist-get line :hunk))
-                               (ecc-review-note-hunk-key note)))
-                      headers)
-            ;; By the old side: the baseline, which a change above does
-            ;; not move.  The new side does move, and a hunk put in above
-            ;; would take the comment by covering the lines it was on.
-            (let ((over (and range
-                             (seq-filter
-                              (lambda (line)
-                                (let ((old (plist-get (plist-get line :hunk) :old-range)))
-                                  (and old
-                                       (<= (car old) (cdr range))
-                                       (>= (cdr old) (car range)))))
-                              headers))))
-              (if (cdr over)
-                  (or (ecc-review--same-body over note) (car over))
-                (car over))))))))
+(defvar-local ecc-review--held nil
+  "The places other than comments carried to each reading, for now.
+The place being read across a refill, the line \\`c' was pressed on
+while the comment is typed, the difference being read across a reading
+of an ediff review; each is let go once it has been put back.")
 
-(defun ecc-review--hunk-body (text)
-  "Return the lines of the hunk TEXT under its @@ header, or nil."
-  (and text (cdr (split-string text "\n"))))
+(defvar-local ecc-review--views nil
+  "The places held that are the place being read, for `ecc-review--restore-views'.
+Only these go to the nearest line that stayed when their own went.")
 
-(defun ecc-review--same-body (headers note)
-  "Return the member of HEADERS whose hunk says what the hunk of NOTE said.
-The same lines taken out and put in, under another @@ header: the hunk
-was pushed down or pulled up by a change above it.  Of several, the one
-nearest the lines it covered, and none further than
-`ecc-review-note-max-shift\=' from them."
-  (let ((body (ecc-review--hunk-body (ecc-review-note-hunk-text note)))
-        (start (car (ecc-review-note-hunk-range note)))
-        (best nil))
-    (when (and body start)
-      (dolist (line headers)
-        (let* ((hunk (plist-get line :hunk))
-               (apart (abs (- (plist-get hunk :start) start))))
-          (when (and (equal (ecc-review--hunk-body (plist-get hunk :text)) body)
-                     (<= apart ecc-review-note-max-shift)
-                     (or (null best)
-                         (< apart (abs (- (plist-get (plist-get best :hunk) :start)
-                                             start)))))
-            (setq best line)))))
-    best))
+(defvar-local ecc-review--nearest nil
+  "A weak hash of each held place whose line went to the nearest line that stayed.
+That line is (SIDE . NUMBER); the place being read goes there when its
+own line has gone.")
 
-(defun ecc-review--relocate (lines)
-  "Put every comment back on LINES and return where each went.
+(defvar-local ecc-review--base-diffs nil
+  "A hash of each pair of old blobs, (FROM . TO), to how the one became the other.
+What `ecc-review--base-hunks' found, failures included: two blobs do not
+change, so neither does their diff, and git is asked once, and a
+failure said once.")
+
+(defun ecc-review--forget-places ()
+  "Forget what this review keeps to carry its places: it reviews something else.
+A place still held -- the line \\`c' was pressed on, while the comment
+is typed -- is a line of what was reviewed before, and no line of what
+is now: it is marked `replaced', for what holds it to say so."
+  (dolist (place ecc-review--held)
+    (setf (ecc-review-note-outdated place) 'replaced
+          (ecc-review-note-shape place) nil))
+  (setq ecc-review--reading nil
+        ecc-review--held nil
+        ecc-review--views nil
+        ecc-review--nearest nil
+        ecc-review--base-diffs nil))
+
+(cl-defgeneric ecc-review--text ()
+  "Return what says which text this review shows; it changes with the text.
+For a diff review, the characters of its buffer."
+  (buffer-chars-modified-tick))
+
+(defun ecc-review--reading-current-p ()
+  "Return non-nil when this review has a reading of the text it shows."
+  (and ecc-review--reading
+       (eq (ecc-review--reading-text ecc-review--reading) (ecc-review--text))))
+
+(defun ecc-review--fall-short (reading)
+  "Mark READING, of this review, as one something could not be carried to.
+The next \\`g' reads the review again whole: what it was filled with is
+not taken for read any more (`ecc-review--fingerprint'), whenever this
+is found out -- while the review is filled, or later, when comments are
+handed to it (`ecc-review--receive')."
+  (setf (ecc-review--reading-incomplete reading) t)
+  (setq ecc-review--fingerprint nil))
+
+(defun ecc-review--begin-reading ()
+  "Note that what this review shows is about to be read again.
+Until `ecc-review--take-reading' nothing can be looked up: what is there
+is neither the last reading nor the next."
+  (when ecc-review--reading
+    (setf (ecc-review--reading-text ecc-review--reading) 'pending)))
+
+(defun ecc-review--take-reading (&optional lines)
+  "Make what this review shows now its reading, and carry every place to it.
+This is where a reading is made, and the only one: the diff review
+calls it once filled (`ecc-review--fill'), the ediff review once ediff
+has computed the differences.  Every comment and every place held is
+carried at once, from the reading each was last on
+\(`ecc-review--carry'); the lines of a file are read only when something
+is on it.  LINES, all the lines of the review when the caller has read
+them, give the hunks of each file for the carrying, which then does not
+go through the review again; they are not kept."
+  (let ((reading (ecc-review--reading-create :text 'pending
+                                             :shapes (make-hash-table :test #'equal)
+                                             :files (make-hash-table :test #'equal)
+                                             :index (make-hash-table :test #'equal)
+                                             :positions (make-hash-table :test #'equal)
+                                             :units (and lines (ecc-review--units-of lines))))
+        (places (append ecc-review--notes ecc-review--held)))
+    (setq ecc-review--reading reading)
+    (if places
+        (ecc-review--carry-to places reading)
+      (setf (ecc-review--reading-text reading) (ecc-review--text)))
+    ;; The hunks of every file are not kept: a file wanted later is
+    ;; found by going through the review (`ecc-review--units-by-path').
+    (when lines
+      (setf (ecc-review--reading-units reading) nil))
+    reading))
+
+(defun ecc-review--carry-to (places reading)
+  "Carry PLACES to READING, of what this review shows, which is its reading then.
+Until every place is carried, READING is of no text (`pending'), and
+nothing can be looked up in it: a place not carried yet would be found
+by numbers of another reading, on a line that only reads alike, and
+put there for good.  So a carrying that stops part of the way -- quit
+while git is read, or an error no file's carrying caught -- leaves the
+review to be read again whole (`ecc-review--fall-short'), each place
+still on the reading it was last on."
+  (let ((text (ecc-review--text))
+        (done nil))
+    (setf (ecc-review--reading-text reading) 'pending)
+    (unwind-protect
+        (progn
+          (ecc-review--carry places reading)
+          (ecc-review--prune reading)
+          (setq done t))
+      (if done
+          (setf (ecc-review--reading-text reading) text)
+        (ecc-review--fall-short reading)))))
+
+(defun ecc-review--units-of (lines)
+  "Return `ecc-review--units-by-path' for the review LINES are all the lines of."
+  (let ((table (make-hash-table :test #'equal)))
+    (dolist (line lines)
+      (unless (plist-get line :side)
+        (push (plist-get line :hunk) (gethash (plist-get line :path) table))))
+    (maphash (lambda (key units) (puthash key (nreverse units) table)) table)
+    table))
+
+(defun ecc-review--this-reading ()
+  "Return the reading of this review, the one of the text it shows.
+A review not read yet has its first reading made now.  One whose text
+changed since its reading -- being read again, or edited by a key that
+got past its keymap -- has none, and that is an error: a line looked up
+there would be a line of something else."
+  (cond ((null ecc-review--reading) (ecc-review--take-reading))
+        ((ecc-review--reading-current-p) ecc-review--reading)
+        (t (error "%s changed since it was read; g reads it again" (buffer-name)))))
+
+(cl-defgeneric ecc-review--unit-lines (unit)
+  "Return the lines of UNIT, a hunk of `ecc-review-units', header first."
+  (ecc-review--hunk-lines unit))
+
+(cl-defgeneric ecc-review--units-by-path ()
+  "Return a hash of each file of this review to its hunks, in order.
+A hunk is there as where it begins, made into a hunk by
+`ecc-review--unit-at' when its file is wanted.  The review is gone
+through once, and a file's name read once, at its header -- reading it
+at every hunk would go back through all the hunks before it."
+  (let ((table (make-hash-table :test #'equal))
+        (path nil)
+        (after nil))
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward ecc-diff-hunk-regexp nil t)
+        (when-let* ((bounds (ecc-review--hunk-bounds)))
+          (let ((beg (car bounds)))
+            ;; A file header since the last hunk begins another file.
+            (when (or (null after)
+                      (save-excursion
+                        (goto-char beg)
+                        (re-search-backward "^\\(?:diff \\|\\+\\+\\+ \\)" after t)))
+              (setq path (ecc-review--hunk-path beg)))
+            (push beg (gethash path table))
+            (setq after (cdr bounds))
+            (goto-char (max (point) (1- (cdr bounds))))))))
+    (maphash (lambda (key starts) (puthash key (nreverse starts) table)) table)
+    table))
+
+(cl-defgeneric ecc-review--unit-at (item &optional path)
+  "Return the hunk ITEM of `ecc-review--units-by-path' stands for.
+ITEM is where the hunk begins, or the hunk itself (`ecc-review--units-of');
+PATH is the file `ecc-review--units-by-path' has it under, whose name is
+not read again."
+  (if (not (integerp item))
+      item
+    (save-excursion
+      (goto-char item)
+      (end-of-line)
+      (when-let* ((bounds (ecc-review--hunk-bounds)))
+        (ecc-review-hunk-at (car bounds) (cdr bounds) path)))))
+
+(defun ecc-review--file-of (reading path)
+  "Return the lines of the file PATH in READING, reading them the first time.
+This is what the lines of a file are, everywhere: the hunks the review
+has under PATH (`ecc-review--units-by-path'), numbered
+\(`ecc-review-map-number') and kept in READING's index, by place."
+  (let ((files (ecc-review--reading-files reading)))
+    (pcase (gethash path files 'unread)
+      ('unread
+       (let ((own (mapcan (lambda (item) (ecc-review--unit-lines (ecc-review--unit-at item path)))
+                          (gethash path (or (ecc-review--reading-units reading)
+                                            (setf (ecc-review--reading-units reading)
+                                                  (ecc-review--units-by-path))))))
+             (index (ecc-review--reading-index reading)))
+         (dolist (line (ecc-review-map-number own))
+           (puthash (ecc-review--line-key line) line index)
+           (puthash (ecc-review--position-key line) line
+                    (ecc-review--reading-positions reading)))
+         (puthash path own files)))
+      (own own))))
+
+(defun ecc-review--line-key (line)
+  "Return the key of LINE in the index of a reading.
+\(PATH SIDE NUMBER NTH) for a line, (hunk PATH HEADER NTH) for the header
+of a hunk (`ecc-review-map-shape' says what NTH is)."
+  (ecc-review--place-key (plist-get line :path) (plist-get line :side)
+                         (if (plist-get line :side)
+                             (plist-get line :line)
+                           (plist-get (plist-get line :hunk) :header))
+                         (plist-get line :nth)))
+
+(defun ecc-review--place-key (path side number nth)
+  "Return the key of a place in the index of a reading: see `ecc-review--line-key'.
+The place is of the file PATH, on SIDE, numbered NUMBER, the NTH of
+those; NUMBER is the header of the hunk for a place on a whole hunk,
+SIDE nil."
+  (if side
+      (list path side number (or nth 0))
+    (list 'hunk path number (or nth 0))))
+
+(defun ecc-review--canonical (line)
+  "Return LINE as this reading has it, which says its NTH.
+LINE is a line of the review now, read from the buffer by whatever read
+it; the reading's own line at the same place is the one that knows which
+of the lines with its number it is."
+  (if (plist-member line :nth)
+      line
+    (let ((reading (ecc-review--this-reading)))
+      (ecc-review--file-of reading (plist-get line :path))
+      (or (gethash (ecc-review--position-key line) (ecc-review--reading-positions reading))
+          line))))
+
+(defun ecc-review--position-key (line)
+  "Return where LINE is, as the reading finds a line by it.
+Its position and buffer, and its side: in an ediff review the line
+standing for a difference is where its first line of the right side is."
+  (list (plist-get line :position) (plist-get line :buffer) (plist-get line :side)))
+
+(defun ecc-review--forget-file (reading path)
+  "Drop the lines of the file PATH from READING: nothing is on it any more."
+  (let ((index (ecc-review--reading-index reading)))
+    (dolist (line (gethash path (ecc-review--reading-files reading)))
+      (remhash (ecc-review--line-key line) index)
+      (remhash (ecc-review--position-key line) (ecc-review--reading-positions reading)))
+    (remhash path (ecc-review--reading-files reading))
+    (remhash path (ecc-review--reading-shapes reading))))
+
+(defun ecc-review--line-of (place)
+  "Return the line of this reading PLACE names, by its path, side and number.
+The header of its hunk for a place on a whole hunk."
+  (let* ((reading (ecc-review--this-reading))
+         (path (ecc-review-note-path place))
+         (side (ecc-review-note-side place)))
+    (ecc-review--file-of reading path)
+    (gethash (ecc-review--place-key path side
+                                    (if side
+                                        (ecc-review-note-line place)
+                                      (cdr (ecc-review-note-hunk-key place)))
+                                    (ecc-review-note-nth place))
+             (ecc-review--reading-index reading))))
+
+(defun ecc-review--hold (place &optional view)
+  "Carry PLACE, put on a line by `ecc-review--anchor', until it is let go.
+VIEW non-nil says PLACE is the place being read."
+  (when place
+    (push place ecc-review--held)
+    (when view
+      (push place ecc-review--views))))
+
+(defun ecc-review--let-go (places)
+  "Stop carrying PLACES, held by `ecc-review--hold'."
+  (setq ecc-review--held (seq-remove (lambda (place) (memq place places))
+                                     ecc-review--held)
+        ecc-review--views (seq-remove (lambda (place) (memq place places))
+                                      ecc-review--views))
+  (when ecc-review--nearest
+    (dolist (place places)
+      (remhash place ecc-review--nearest))))
+
+(defmacro ecc-review--holding (place &rest body)
+  "Run BODY with PLACE carried to every reading of the review meanwhile.
+PLACE is let go when BODY is done, however it ends."
+  (declare (indent 1) (debug t))
+  (let ((held (make-symbol "held"))
+        (buffer (make-symbol "buffer")))
+    `(let ((,held ,place)
+           (,buffer (current-buffer)))
+       (ecc-review--hold ,held)
+       (unwind-protect (progn ,@body)
+         (when (buffer-live-p ,buffer)
+           (with-current-buffer ,buffer
+             (ecc-review--let-go (list ,held))))))))
+
+(cl-defgeneric ecc-review--base-of (hunk)
+  "Return the old side of the file HUNK is in, as a shape keeps it.
+HUNK is the first hunk of its file.  In a diff git made the old side is
+a blob, (blob REPOSITORY ID), named on the index line of the file's own
+header: from its --- line up through git's extended header lines to its
+diff line, which has to name the file -- an empty file git added or
+deleted has a header and no --- line, and its index line is not the
+next file's.  `empty' is no file.
+
+A file with no diff line of its own was diffed from what the session
+recorded (`ecc-review-fallback-diff').  When the session knows what the
+file held before its first change, that is the old side of every
+reading, (recorded HASH); when it does not, the diff joins a patch for
+each edit and says nothing of an old side, which is nil."
+  (save-excursion
+    (goto-char (plist-get hunk :position))
+    (forward-line -1)
+    (when (looking-at-p "\\+\\+\\+ ")
+      (forward-line -1))
+    (when (looking-at-p "--- ")
+      (let ((path (plist-get hunk :path))
+            (id nil)
+            (from nil)
+            (to nil))
+        (while (and (zerop (forward-line -1))
+                    (looking-at "\\(?:index \\([0-9a-f]+\\)\\.\\.\\|\\(?:old\\|new\\|deleted file\\|new file\\) mode \\|similarity \\|dissimilarity \\|\\(?:rename\\|copy\\) \\(?:\\(from\\)\\|to\\) \\(.*\\)\\)"))
+          (cond ((match-beginning 1)
+                 ;; Whole, as git gave it, under the short one shown.
+                 (setq id (or (get-text-property (match-beginning 1) 'ecc-review-blob)
+                              (match-string-no-properties 1))))
+                ((match-beginning 3)
+                 (if (match-beginning 2)
+                     (setq from (ecc-review-git-name (match-string-no-properties 3)))
+                   (setq to (ecc-review-git-name (match-string-no-properties 3)))))))
+        ;; A diff line above that names another file is that file's: a
+        ;; file git shows no hunk of -- a mode, an empty file, a rename
+        ;; -- ends right above, and this file has no header of its own.
+        (cond ((and id path
+                    (equal (cdr (ecc-review-git-diff-names
+                                 (buffer-substring-no-properties (point) (line-end-position))
+                                 from to))
+                           (concat "b/" path)))
+               (if (string-match-p "\\`0+\\'" id)
+                   'empty
+                 (list 'blob (ecc-review--repository-of path) id)))
+              (path (ecc-review--recorded-base path)))))))
+
+(defun ecc-review--recorded-base (path)
+  "Return the old side of PATH from what the session of this review recorded.
+\(recorded HASH) of what the file held before its first change, `empty'
+for a file the session created, nil when that is not known."
+  (when-let* ((session ecc-review--session)
+              (file (expand-file-name path default-directory))
+              (entry (seq-find (lambda (entry)
+                                 (equal (expand-file-name (ecc-file-entry-path entry)
+                                                          default-directory)
+                                        file))
+                               (ecc-model-files session))))
+    (pcase (ecc-file-entry-original entry)
+      ((and original (pred stringp)) (list 'recorded (secure-hash 'sha1 original)))
+      ('nil 'empty))))
+
+(defun ecc-review--repository-of (path)
+  "Return the repository the file PATH of this review is in.
+The directory above it that holds .git, found without running git;
+this review's own directory when there is none."
+  (ecc-review-repository-name
+   (or (locate-dominating-file (expand-file-name path default-directory) ".git")
+       default-directory)))
+
+(defun ecc-review-repository-name (directory)
+  "Return the name a blob's repository DIRECTORY goes by in an old side.
+Its true name, as a directory: `locate-dominating-file' gives back the
+name it was asked about, abbreviated, and a directory reached through a
+link has two names, and the same blob of the same repository has to be
+the same old side whichever review read it."
+  (file-name-as-directory (file-truename directory)))
+
+(defun ecc-review--shape-of (lines)
+  "Return the shape of LINES, the lines of one file, nil for none."
+  (when lines
+    (ecc-review-map-shape lines (ecc-review--base-of (plist-get (car lines) :hunk)))))
+
+(defun ecc-review--shape-now (reading path)
+  "Return the shape of the file PATH in READING, taking it the first time."
+  (let ((shapes (ecc-review--reading-shapes reading)))
+    (or (gethash path shapes)
+        (when-let* ((shape (ecc-review--shape-of (ecc-review--file-of reading path))))
+          (puthash path shape shapes)))))
+
+(defun ecc-review--keep (place)
+  "Keep PLACE, just put on a line of this reading, and return it.
+PLACE takes the shape of its file in this reading, which the next
+reading carries it from (`ecc-review--carry'); the lines of the file are
+read then, and kept with the reading."
+  (setf (ecc-review-note-shape place)
+        (ecc-review--shape-now (ecc-review--this-reading) (ecc-review-note-path place)))
+  place)
+
+(defun ecc-review--base-hunks (from to reading)
+  "Return how the old side FROM became TO, for `ecc-review-map-lines'.
+The hunks between the two blobs, from what this review kept of them
+\(`ecc-review--diff-blobs'); nil for one old side; `none' when one of
+them is no file; `text' when one of them is not known to be a blob, or
+the two are blobs of two repositories, so that the old sides are not
+known to have anything in common; `unknown' when git cannot give them.
+TO is the old side of a file in READING, which a pair git did not give
+leaves to be read again (`ecc-review--fall-short')."
+  (cond ((not (and from to)) 'text)
+        ((equal from to) nil)
+        ((or (eq from 'empty) (eq to 'empty)) 'none)
+        ((and (eq (car-safe from) 'blob) (eq (car-safe to) 'blob)
+              (equal (nth 1 from) (nth 1 to)))
+         (let ((pair (cons (nth 2 from) (nth 2 to)))
+               (kept (lambda (pair)
+                       (if ecc-review--base-diffs
+                           (gethash pair ecc-review--base-diffs 'unasked)
+                         'unasked))))
+           (when (eq (funcall kept pair) 'unasked)
+             (ecc-review--diff-blobs (nth 1 from) (list pair) reading))
+           ;; No hunks is two blobs that differ in nothing a line says --
+           ;; a newline put at the end -- and one old side.
+           (pcase (funcall kept pair)
+             ;; Not given this time; asked again the next.
+             ('unasked
+              (ecc-review--fall-short reading)
+              'unknown)
+             (hunks hunks))))
+        (t 'text)))
+
+(defun ecc-review--diff-blobs (repository pairs reading)
+  "Keep in `ecc-review--base-diffs' how each of PAIRS of blobs became the other.
+PAIRS are (FROM . TO) blob ids of REPOSITORY.  Every blob is read
+through one git process (`ecc-review--blobs') and the two of a pair
+compared here (`ecc-review-map-text-hunks'): a reading that moved the old
+side of forty files runs git once, not forty times.  A blob git does not
+have makes its pairs `unknown' for good, a blob does not come to be.
+git failing to run at all keeps nothing: the repository is not asked
+again in READING, which is left to be read again, and the next reading
+asks again."
+  (unless ecc-review--base-diffs
+    (setq ecc-review--base-diffs (make-hash-table :test #'equal)))
+  (let* ((wanted (and (not (member repository (ecc-review--reading-unanswered reading)))
+                      (seq-remove (lambda (pair)
+                                    (not (eq (gethash pair ecc-review--base-diffs 'unasked)
+                                             'unasked)))
+                                  pairs)))
+         (texts (and wanted
+                     (ecc-review--blobs repository
+                                        (delete-dups (mapcan (lambda (pair)
+                                                               (list (car pair) (cdr pair)))
+                                                             (copy-sequence wanted)))))))
+    (when (and wanted (null texts))
+      (push repository (ecc-review--reading-unanswered reading))
+      (ecc-review--fall-short reading))
+    (when texts
+      (dolist (pair wanted)
+        (let ((from (gethash (car pair) texts))
+              (to (gethash (cdr pair) texts)))
+          ;; A failure comparing two blobs is that pair's alone, and is
+          ;; not kept: the next reading compares them again.
+          (condition-case error
+              (puthash pair
+                       (if (and (stringp from) (stringp to))
+                           (ecc-review-map-text-hunks from to)
+                         (ecc-log "review" "no blob %s or %s in %s"
+                                  (car pair) (cdr pair) repository)
+                         'unknown)
+                       ecc-review--base-diffs)
+            (error (ecc-log "review" "comparing %s and %s failed: %S"
+                            (car pair) (cdr pair) error))))))))
+
+(defun ecc-review--blobs (repository ids)
+  "Return a hash of each of IDS to the text of its blob in REPOSITORY.
+Read by one `git cat-file --batch' (`ecc-review--cat-file'); an id that
+is no blob git has is not in it.  Nil when git cannot be run."
+  (let ((texts (make-hash-table :test #'equal)))
+    (and (ecc-review--cat-file repository ids "--batch"
+                               (lambda (id type _size bytes)
+                                 (when (equal type "blob")
+                                   (puthash id bytes texts))))
+         texts)))
+
+(defun ecc-review--cat-file (root ids option each)
+  "Run `git cat-file OPTION' in ROOT on IDS and call EACH on what it says.
+OPTION is \"--batch-check\" or \"--batch\".  EACH is called with an
+id, its type and its size, and under --batch with its bytes as well, a
+unibyte string; nothing is called for an id git does not have.  Return
+non-nil when git was run and answered; a git that fails is logged, and
+the answer is nil.  The diff review reads the blobs of its old sides
+with this (`ecc-review--blobs'), the ediff review those of both sides."
+  (cond
+   ((null ids) nil)
+   ((not (executable-find ecc-review-git-executable))
+    (ecc-log "review" "cat-file %s: no %s to run in %s" option ecc-review-git-executable root)
+    nil)
+   (t
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (insert (mapconcat #'identity ids "\n") "\n")
+      (let* ((default-directory (file-name-as-directory root))
+             (coding-system-for-read 'binary)
+             (coding-system-for-write 'binary)
+             (code (condition-case error
+                       (call-process-region (point-min) (point-max)
+                                            ecc-review-git-executable
+                                            t '(t nil) nil "cat-file" option)
+                     (file-error (error-message-string error)))))
+        (if (not (eq code 0))
+            (progn (ecc-log "review" "cat-file %s failed in %s: %S" option root code)
+                   nil)
+          (goto-char (point-min))
+          ;; "ID TYPE SIZE", and under --batch SIZE bytes and a newline;
+          ;; "ID missing" for an id git does not have.
+          (while (re-search-forward "^\\([0-9a-f]+\\) \\([a-z]+\\)\\(?: \\([0-9]+\\)\\)?\n"
+                                    nil t)
+            (let ((id (match-string 1))
+                  (type (match-string 2))
+                  (size (and (match-string 3) (string-to-number (match-string 3)))))
+              (when size
+                (if (not (equal option "--batch"))
+                    (funcall each id type size)
+                  (let ((end (min (point-max) (+ (point) size))))
+                    (funcall each id type size (buffer-substring (point) end))
+                    (goto-char (min (point-max) (1+ end))))))))
+          t))))))
+
+(defun ecc-review--map-from (from to maps reading)
+  "Return where each line of the shape FROM is in TO (`ecc-review-map-lines').
+TO is of READING, and MAPS keeps each map made in it by FROM, so that
+one is made once, whatever number of places is carried from it."
+  (pcase (gethash from maps)
+    ('nil (puthash from
+                   (condition-case error
+                       (ecc-review-map-lines
+                        from to (ecc-review--base-hunks (ecc-review-map-shape-base from)
+                                                        (ecc-review-map-shape-base to)
+                                                        reading))
+                     (error (cons 'failed error)))
+                   maps)
+          (ecc-review--map-from from to maps reading))
+    (`(failed . ,error) (signal (car error) (cdr error)))
+    (map map)))
+
+(defun ecc-review--carry (places reading)
+  "Carry PLACES to READING, each from the reading it was last on.
+A place keeps the shape of the reading it is on, or, outdated, was last
+on (`ecc-review-note-shape'): that is where it is carried from, whatever
+review that reading was of.  A place on a line goes to the number its
+line has now, and one on a whole hunk to the hunk its lines are in now
+\(`ecc-review--hunk-goes').  A place whose line changed or went is
+outdated, keeping that shape, and comes back when its line, carried from
+there, is in a later reading: the change was undone.  The places of one
+shape are carried as one (`ecc-review--carry-file'), and one outdated
+before this reading is looked for once all the others were carried.  A
+place that is not outdated and has no shape was not put on a line here
+or anywhere -- its numbers are of no reading known -- and is outdated,
+which the log says."
+  (let ((maps (make-hash-table :test #'eq))
+        (placed nil)
+        (lost nil))
+    (dolist (place places)
+      (let ((shape (ecc-review-note-shape place)))
+        (cond ((ecc-review-note-outdated place)
+               (when shape
+                 (push place (alist-get shape lost nil nil #'eq))))
+              (shape (push place (alist-get shape placed nil nil #'eq)))
+              (t (ecc-log "review" "comment %S on %s has no reading to be carried from"
+                          (ecc-review-note-id place) (ecc-review-note-path place))
+                 (setf (ecc-review-note-outdated place) t)))))
+    (setq placed (nreverse placed)
+          lost (nreverse lost))
+    (let ((shapes (ecc-review--shapes-for (append placed lost) reading)))
+      (ecc-review--diff-moved-blobs (append placed lost) shapes reading)
+      (pcase-dolist (`(,from . ,group) placed)
+        (ecc-review--carry-file (nreverse group) from reading maps shapes))
+      (pcase-dolist (`(,from . ,group) lost)
+        (ecc-review--carry-file (nreverse group) from reading maps shapes t)))))
+
+(defun ecc-review--shapes-for (groups reading)
+  "Return the shape in READING of each file GROUPS are on, taken once.
+GROUPS are (SHAPE . PLACES).  The answer is a hash of each path to
+\(shape . SHAPE), SHAPE nil for a file READING does not show, or to
+\(failed . ERROR) when its lines could not be read or its shape taken:
+the carrying of that file says so (`ecc-review--carry-file')."
+  (let ((shapes (make-hash-table :test #'equal)))
+    (pcase-dolist (`(,_from . ,group) groups)
+      (let ((path (ecc-review-note-path (car group))))
+        (unless (gethash path shapes)
+          (puthash path
+                   (condition-case error
+                       (cons 'shape (ecc-review--shape-now reading path))
+                     (error (cons 'failed error)))
+                   shapes))))
+    shapes))
+
+(defun ecc-review--diff-moved-blobs (groups shapes reading)
+  "Diff at once every old blob GROUPS are carried from that READING moved.
+GROUPS are (SHAPE . PLACES) and SHAPES the shape of each of their files
+in READING (`ecc-review--shapes-for'); a file whose old side is another
+blob now is diffed with the others of its repository
+\(`ecc-review--diff-blobs'), before any is carried."
+  (let ((pairs nil))
+    (pcase-dolist (`(,from . ,group) groups)
+      (pcase-let ((`(,kind . ,to) (gethash (ecc-review-note-path (car group)) shapes))
+                  (base (ecc-review-map-shape-base from)))
+        (when (and (eq kind 'shape) to)
+          (let ((now (ecc-review-map-shape-base to)))
+            (when (and (eq (car-safe base) 'blob) (eq (car-safe now) 'blob)
+                       (equal (nth 1 base) (nth 1 now))
+                       (not (equal (nth 2 base) (nth 2 now))))
+              (push (cons (nth 2 base) (nth 2 now)) (alist-get (nth 1 base) pairs nil nil #'equal)))))))
+    (pcase-dolist (`(,repository . ,wanted) pairs)
+      ;; A failure here is the repository's: it is not asked again for
+      ;; each file, and the files of it carry nothing through a moved
+      ;; old side this time.
+      (condition-case error
+          (ecc-review--diff-blobs repository wanted reading)
+        (error (ecc-log "review" "reading the old sides in %s failed: %S" repository error)
+               (push repository (ecc-review--reading-unanswered reading))
+               (ecc-review--fall-short reading))))))
+
+(defun ecc-review--prune (reading)
+  "Keep in READING the lines and shapes of the files places are on, and no other.
+The places are the comments of this review and the places held; one
+that is outdated is on no line of READING, but for the place being
+read, which is put back on the nearest line that stayed, in its file,
+once the reading is taken (`ecc-review--restore-views')."
+  (let ((wanted (make-hash-table :test #'equal))
+        (paths nil))
+    (dolist (place (append ecc-review--notes ecc-review--held))
+      (unless (and (ecc-review-note-outdated place)
+                   (not (memq place ecc-review--views)))
+        (puthash (ecc-review-note-path place) t wanted)))
+    (maphash (lambda (path _) (push path paths)) (ecc-review--reading-files reading))
+    (dolist (path paths)
+      (unless (gethash path wanted)
+        (ecc-review--forget-file reading path)))))
+
+(defun ecc-review--receive (notes)
+  "Carry NOTES, handed over from another review, to this one's reading.
+Each is carried from the reading it was last on, as at a reading of this
+review (`ecc-review--carry'): one that went outdated there comes back
+here when its line is here."
+  (ecc-review--carry-to notes (ecc-review--this-reading)))
+
+(defun ecc-review--carry-file (places from reading maps shapes &optional back)
+  "Carry PLACES, all on the reading of the shape FROM, to READING.
+MAPS keeps the maps made in READING, and SHAPES the shape there of the
+file of PLACES, or why it could not be taken (`ecc-review--shapes-for').
+Where each place goes is worked out for all of them -- the map made,
+each line looked for -- before any moves, so that a failure leaves every
+one where it was: outdated, keeping FROM, and why in the log.  Without
+BACK a place whose line is not there is outdated; with BACK, PLACES are
+outdated already and come back when their line is there."
+  (let* ((path (ecc-review-note-path (car places)))
+         (moves (condition-case error
+                    (let* ((to (pcase (gethash path shapes)
+                                 (`(shape . ,shape) shape)
+                                 (`(failed . ,error) (signal (car error) (cdr error)))))
+                           (map (and to (ecc-review--map-from from to maps reading)))
+                           (index (ecc-review--reading-index reading)))
+                      (mapcar (lambda (place)
+                                (list place (ecc-review--where place from map index back) to))
+                              places))
+                  (error
+                   (ecc-log "review" "carrying the comments on %s failed: %S" path error)
+                   (ecc-review--fall-short reading)
+                   (mapcar (lambda (place) (list place (cons 'lost nil) nil)) places)))))
+    (pcase-dolist (`(,place ,where ,to) moves)
+      (pcase where
+        (`(line . ,line)
+         (if (plist-get line :side)
+             (setf (ecc-review-note-line place) (plist-get line :line))
+           (setf (ecc-review-note-hunk-key place) (ecc-review--hunk-key (plist-get line :hunk))))
+         (setf (ecc-review-note-nth place) (plist-get line :nth)
+               (ecc-review-note-shape place) to
+               (ecc-review-note-outdated place) nil))
+        (`(lost . ,nearest)
+         (unless back
+           (ecc-review--lose place nearest)))))))
+
+(defun ecc-review--carried (map index path side number nth)
+  "Return the line of this reading, among INDEX, MAP carries a line to, or nil.
+The line is that of PATH and SIDE numbered NUMBER, the NTH of those, in
+the reading MAP carries from."
+  (when-let* ((to (funcall map side number nth)))
+    (gethash (ecc-review--place-key path side (car to) (cdr to)) index)))
+
+(defun ecc-review--where (place from map index &optional back)
+  "Return where PLACE, on a line of the reading of FROM, is in this one.
+\(line . LINE), LINE the line of this reading -- the header of the hunk
+for a place on a whole hunk -- by MAP among the lines of INDEX; else
+\(lost . NEAREST): NEAREST is the nearest line that stayed, worked out
+for the place being read and still placed -- not BACK -- and for no
+other: nothing else goes there."
+  (let ((path (ecc-review-note-path place))
+        (side (ecc-review-note-side place)))
+    (or (and map
+             (if side
+                 (let ((line (ecc-review--carried map index path side
+                                                  (ecc-review-note-line place)
+                                                  (ecc-review-note-nth place))))
+                   (and line (equal (plist-get line :text) (ecc-review-note-line-text place))
+                        (cons 'line line)))
+               (when-let* ((header (ecc-review--hunk-goes
+                                    path (cdr (ecc-review-note-hunk-key place))
+                                    (or (ecc-review-note-nth place) 0) from map index)))
+                 (cons 'line header))))
+        (cons 'lost (and map (not back) (memq place ecc-review--views)
+                         (ecc-review--nearest-to place from map index))))))
+
+(defun ecc-review--hunk-goes (path header nth from map index)
+  "Return the header of the hunk of this reading the hunk HEADER of FROM is now.
+That hunk, of the file PATH, is the NTH of FROM with that header.  Its
+changed lines -- the ones it takes out and puts in, not the context
+around them -- are carried one by one, by MAP among the lines of
+INDEX.  When half of them or more changed again or went, it is another
+hunk now, and the answer is nil; otherwise it is the hunk most of the
+rest are in, the first of those on a tie."
+  (let* ((members (seq-filter (lambda (member)
+                                (ecc-review-map-changed-p from (car member) (cadr member)
+                                                          (cddr member)))
+                              (cdr (assoc (cons header nth) (ecc-review-map-shape-hunks from)))))
+         (stayed 0)
+         (votes nil))
+    (dolist (member members)
+      (when-let* ((line (ecc-review--carried map index path (car member)
+                                             (cadr member) (cddr member))))
+        (setq stayed (1+ stayed))
+        (let* ((key (cons (plist-get (plist-get line :hunk) :header) (plist-get line :hunk-nth)))
+               (vote (assoc key votes)))
+          (if vote
+              (setcdr vote (1+ (cdr vote)))
+            (push (cons key 1) votes)))))
+    (when (> (* 2 stayed) (length members))
+      (let ((best (car (seq-reduce (lambda (best vote) (if (> (cdr vote) (cdr best)) vote best))
+                                   (cdr (reverse votes)) (car (last votes))))))
+        (gethash (ecc-review--place-key path nil (car best) (cdr best)) index)))))
+
+(defun ecc-review--nearest-to (place from map index)
+  "Return the line nearest the one PLACE was on in FROM that this reading has.
+\(SIDE NUMBER . NTH), by MAP among the lines of INDEX, or nil: that line
+itself first -- the first line of a hunk, for a place on a hunk, may
+have stayed -- then the one after it, since that is where its place
+went, then the one before, and so on outwards."
+  (let* ((order (vconcat (ecc-review-map-shape-order from)))
+         (path (ecc-review-note-path place))
+         (side (ecc-review-note-side place))
+         (nth (or (ecc-review-note-nth place) 0))
+         (here (if side
+                   (cons side (cons (ecc-review-note-line place) nth))
+                 (cadr (assoc (cons (cdr (ecc-review-note-hunk-key place)) nth)
+                              (ecc-review-map-shape-hunks from)))))
+         (at (seq-position order here)))
+    (when at
+      (catch 'found
+        (dotimes (away (length order))
+          (dolist (other (if (zerop away)
+                             (list at)
+                           (list (+ at away) (- at away))))
+            (when (< -1 other (length order))
+              (let* ((member (aref order other))
+                     (line (ecc-review--carried map index path (car member)
+                                                (cadr member) (cddr member))))
+                (when line
+                  (throw 'found (cons (plist-get line :side)
+                                      (cons (plist-get line :line) (plist-get line :nth)))))))))))))
+
+(defun ecc-review--lose (place nearest)
+  "Mark PLACE outdated: its line is not in this reading.
+PLACE keeps the shape it was on, to come back by, and NEAREST, the
+nearest line that stayed, is kept for the place being read to go to."
+  (setf (ecc-review-note-outdated place) t)
+  (when nearest
+    (unless ecc-review--nearest
+      (setq ecc-review--nearest (make-hash-table :test #'eq :weakness 'key)))
+    (puthash place nearest ecc-review--nearest)))
+
+(defun ecc-review--locate-note (note)
+  "Return the line of this reading NOTE is on, or nil when it is outdated.
+NOTE is on the line of its path and side with its number, saying what it
+said, or, on a whole hunk, on the hunk of its path with its header: the
+reading carried it there when it was taken."
+  (unless (ecc-review-note-outdated note)
+    (let ((line (ecc-review--line-of note)))
+      (and line
+           (or (null (ecc-review-note-side note))
+               (equal (plist-get line :text) (ecc-review-note-line-text note)))
+           line))))
+
+(defun ecc-review--nearest-line (place)
+  "Return the line of this reading nearest the line of PLACE that stayed, or nil.
+That is the line the reading found when PLACE lost its own."
+  (when-let* ((nearest (and ecc-review--nearest (gethash place ecc-review--nearest))))
+    (let ((reading (ecc-review--this-reading))
+          (path (ecc-review-note-path place)))
+      (ecc-review--file-of reading path)
+      (gethash (ecc-review--place-key path (car nearest) (cadr nearest) (cddr nearest))
+               (ecc-review--reading-index reading)))))
+
+(defun ecc-review--relocate ()
+  "Put every comment back on its line of this reading and return where each went.
 The answer is a hash of each comment to its line, nil for an outdated
 one.  A reply goes wherever the comment it answers went; the comments
 are in the order they were made, so that one is placed first."
@@ -1994,7 +2912,7 @@ are in the order they were made, so that one is placed first."
       (let* ((parent (ecc-review--parent note))
              (line (if parent
                        (gethash parent places)
-                     (ecc-review--locate-note note lines))))
+                     (ecc-review--locate-note note))))
         (if line
             (ecc-review--anchor note line)
           (setf (ecc-review-note-outdated note) t))
@@ -2096,7 +3014,7 @@ is nothing to read them for."
   "Draw the comments of this buffer on LINES, the lines it holds now.
 Where each goes is the kind of review's own (`ecc-review--note-place\=');
 the overlays are made there, in whichever buffer that is, and kept here."
-  (let* ((places (ecc-review--relocate lines))
+  (let* ((places (ecc-review--relocate))
          (groups nil)
          (commented nil))
     (dolist (note ecc-review--notes)
@@ -2104,8 +3022,9 @@ the overlays are made there, in whichever buffer that is, and kept here."
                    (ecc-review--note-place note (gethash note places) lines)))
         (puthash note key ecc-review--positions)
         (when (ecc-review--visible-p note)
-          (unless (ecc-review-note-outdated note)
-            (cl-pushnew (ecc-review-note-hunk-key note) commented :test #'equal))
+          (when-let* (((not (ecc-review-note-outdated note)))
+                      (line (gethash note places)))
+            (cl-pushnew (ecc-review--hunk-place line) commented :test #'equal))
           (unless (ecc-review--drawn-under note)
             (push note (alist-get (list buffer beg end property) groups
                                   nil nil #'equal))))))
@@ -2131,9 +3050,9 @@ the review."
   (and ecc-review--positions (gethash note ecc-review--positions)))
 
 (defun ecc-review--copy-anchor (note from)
-  "Put NOTE where the comment FROM is, outdated or not, and return NOTE."
-  (dolist (slot '(path side line line-text line-before line-after
-                       hunk-key hunk-range hunk-text hunk-old-range outdated))
+  "Put NOTE where the comment FROM is, outdated or not, and return NOTE.
+It is carried from the reading FROM is on, and comes back by it."
+  (dolist (slot '(path side line line-text nth hunk-key hunk-range hunk-text outdated shape))
     (setf (cl-struct-slot-value 'ecc-review-note slot note)
           (cl-struct-slot-value 'ecc-review-note slot from)))
   note)
@@ -2169,12 +3088,14 @@ user\='s whatever happens to what it answered."
 
 (defun ecc-review--notes-on (line)
   "Return the shown comments that sit on LINE, in the order they were made."
-  (let ((side (plist-get line :side)))
+  (let* ((line (ecc-review--canonical line))
+         (side (plist-get line :side)))
     (seq-filter (lambda (note)
                   (and (ecc-review--shown-p note)
                        (not (ecc-review-note-outdated note))
                        (equal (ecc-review-note-path note) (plist-get line :path))
                        (eq (ecc-review-note-side note) side)
+                       (eql (or (ecc-review-note-nth note) 0) (plist-get line :nth))
                        (if side
                            (eql (ecc-review-note-line note) (plist-get line :line))
                          (equal (ecc-review-note-hunk-key note)
@@ -2191,6 +3112,28 @@ for the last of Claude\='s, else nil for a comment of its own."
       (when-let* ((claude (car (last (seq-filter #'ecc-review--agent-p notes)))))
         (cons 'reply claude)))))
 
+(defmacro ecc-review--keeping-text (text &rest body)
+  "Run BODY, which puts the comment TEXT in the review; when it fails, keep TEXT.
+What was typed goes to the kill ring and the error says so, whatever
+stopped it -- the review read again meanwhile, another proposal, a quit
+-- rather than going with the comment.  An empty TEXT is nothing to
+keep.  BODY ends once the comment is in: what comes after, drawing it
+included, is no failure to keep it (`ecc-review--comment-made')."
+  (declare (indent 1) (debug t))
+  (let ((typed (make-symbol "typed")))
+    `(let ((,typed ,text))
+       (condition-case error
+           (progn ,@body)
+         ((error quit)
+          (if (string-empty-p (string-trim ,typed))
+              (signal (car error) (cdr error))
+            (kill-new ,typed)
+            (if (eq (car error) 'quit)
+                (progn (message "The comment is in the kill ring")
+                       (signal 'quit nil))
+              (user-error "%s; the comment is in the kill ring"
+                          (error-message-string error)))))))))
+
 (defun ecc-review--comment-plan (line)
   "Return what \\`c' on LINE is to do, settled before anything is typed.
 The answer is (ANCHOR KIND ID): ANCHOR a note-shaped record of LINE,
@@ -2205,15 +3148,17 @@ edited or answered."
   "Settle what \\`c' on LINE does and read the text; return (TEXT PLAN).
 The arguments of `ecc-review-comment\\=', read the way it reads them: the
 plan first, then the comment, offered for editing when it is one of
-yours already."
+yours already.  The line is held while the text is typed: the diff
+read again meanwhile carries it along."
   (let* ((plan (ecc-review--comment-plan line))
          (target (and (nth 2 plan) (ecc-review-find-note (nth 2 plan)))))
-    (list (pcase (nth 1 plan)
-            ('edit (read-string "Comment: " (ecc-review-note-text target)))
-            ('reply (read-string (format "Reply to Claude's #%d: " (nth 2 plan))))
-            (_ (read-string (if (plist-get line :side)
-                                "Comment on this line: "
-                              "Comment on this hunk: "))))
+    (list (ecc-review--holding (car plan)
+            (pcase (nth 1 plan)
+              ('edit (read-string "Comment: " (ecc-review-note-text target)))
+              ('reply (read-string (format "Reply to Claude's #%d: " (nth 2 plan))))
+              (_ (read-string (if (plist-get line :side)
+                                  "Comment on this line: "
+                                "Comment on this hunk: ")))))
           plan)))
 
 (defun ecc-review-comment (text &optional plan)
@@ -2231,33 +3176,47 @@ the buffer does not stand still while it is typed: Claude may put a
 comment on the same line, or the diff may be read again and the line
 move.  The comment goes where it was meant for -- a comment of its own
 does not turn into a reply to what arrived meanwhile -- on the line
-found again by what it said, and when that line has gone it is kept as
-outdated rather than lost with the text."
+carried to where it went (`ecc-review--take-reading\='), and when that
+line has changed or gone it is kept as outdated rather than lost with
+the text."
   (interactive
    (let ((line (or (ecc-review--line-at-point)
                    (user-error "Not on a line of a hunk"))))
      (ecc-review--read-comment line)))
-  (pcase-let* ((`(,anchor ,kind ,id)
-                (or plan (ecc-review--comment-plan
-                          (or (ecc-review--line-at-point)
-                              (user-error "Not on a line of a hunk")))))
-               (text (string-trim text))
-               (target (and id (ecc-review-find-note id)))
-               (lines (ecc-review-lines))
-               (line (ecc-review--locate-note anchor lines)))
-    (when (string-empty-p text)
-      (user-error "Empty comment"))
-    (let ((note (if (and (eq kind 'edit) target)
-                    (ecc-review--edit-note target text)
-                  (ecc-review-add-note 'user text (or line anchor)
-                                       (and (eq kind 'reply) target id)))))
-      (ecc-review--draw-notes lines)
-      (if (ecc-review-note-outdated note)
-          (message "The line has gone from the diff; the comment is kept as outdated")
-        (message "Comment attached (%d in all)"
-                 (seq-count (lambda (note) (not (ecc-review--agent-p note)))
-                            ecc-review--notes)))
-      note)))
+  (ecc-review--comment-made
+   (ecc-review--keeping-text text
+     (pcase-let* ((`(,anchor ,kind ,id)
+                   (or plan (ecc-review--comment-plan
+                             (or (ecc-review--line-at-point)
+                                 (user-error "Not on a line of a hunk")))))
+                  (text (string-trim text))
+                  (target (and id (ecc-review-find-note id)))
+                  (line (ecc-review--locate-note anchor)))
+       (when (string-empty-p text)
+         (user-error "Empty comment"))
+       (when (eq (ecc-review-note-outdated anchor) 'replaced)
+         (user-error "The review shows another proposal now"))
+       (if (and (eq kind 'edit) target)
+           (ecc-review--edit-note target text)
+         (ecc-review-add-note 'user text (or line anchor)
+                              (and (eq kind 'reply) target id)))))
+   "The line has gone from the diff; the comment is kept as outdated"))
+
+(defun ecc-review--comment-made (note gone)
+  "Draw the comments, NOTE just made or edited among them; say so and return NOTE.
+GONE is what to say when the place NOTE is on has gone.  NOTE is in the
+review already, and a failure from here is said as what it is: what
+was typed is not put in the kill ring, to be yanked into a second copy."
+  (condition-case error
+      (ecc-review--draw-notes)
+    (error (error "Comment #%d is in the review, but drawing the comments failed: %s"
+                  (ecc-review-note-id note) (error-message-string error))))
+  (if (ecc-review-note-outdated note)
+      (message "%s" gone)
+    (message "Comment attached (%d in all)"
+             (seq-count (lambda (note) (not (ecc-review--agent-p note)))
+                        ecc-review--notes)))
+  note)
 
 (defun ecc-review--notes-here ()
   "Return the shown comments on the line at point, in the order they were made.

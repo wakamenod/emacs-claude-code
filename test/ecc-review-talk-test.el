@@ -491,6 +491,23 @@ LINES are the lines with their markers."
                                (car group) (string-join (cdr group) "\n")))
                      groups "")))
 
+(ert-deftest ecc-review-talk-test-two-hunks-with-one-header-are-two-groups ()
+  "Lines selected across two hunks with one header are given as two hunks.
+A diff made from what the session recorded joins a patch for each edit,
+and two patches at one line have the same @@ header."
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((transient-mark-mode t))
+      (with-current-buffer (ecc-review--fill (get-buffer-create (ecc-review-buffer-name one))
+                                             one
+                                             (concat "--- u.txt\n+++ u.txt\n"
+                                                     "@@ -10,1 +10,1 @@\n-a old\n+a new\n"
+                                                     "@@ -10,1 +10,1 @@\n-b old\n+b new\n")
+                                             temporary-file-directory)
+        (ecc-review-talk-test--select "+a new" "-b old")
+        (should (equal (mapcar (lambda (group) (mapcar (lambda (line) (plist-get line :text)) group))
+                               (ecc-review-talk--region-groups (ecc-review-region)))
+                       '(("a new") ("b old"))))))))
+
 (ert-deftest ecc-review-talk-test-m-sends-the-lines-selected-in-the-diff-review ()
   "With a region, M sends its lines: added, removed, or both with the context."
   (ecc-review-talk-test--with-sessions one _two

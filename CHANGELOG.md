@@ -402,7 +402,10 @@ Verified against **Claude Code CLI 2.1.281**.
   review -- shows a
   list of its files immediately left of the diff, in a buffer of its own,
   `*ecc-review-files: REVIEW*`: one line a file with what happened to it
-  (`M`, `A`, `D`, or `R` with its former name), the lines added and
+  (`M`, `A`, `D`, or `R` with its former name -- a name with a space
+  without the tab git ends it with, one git quotes decoded, and a rename
+  in a second repository told by both of its names, so that a new name
+  holding the old one is not taken for its directory), the lines added and
   removed, your comments and Claude's as `yours·Claude's`, and `!` when
   one of them is outdated, under `Files (SHOWN of ALL)`. `▸` marks the
   file being read -- the one point is in, or the one of the current
@@ -485,7 +488,8 @@ Verified against **Claude Code CLI 2.1.281**.
   is then the selected lines in place of where point is: for each file,
   and in the diff review each hunk, the path, the lines on each side
   (`L10-L12 (new side)` for added and context lines, `(old side)` for
-  removed ones), the hunk by its `@@` line and number, and the lines
+  removed ones), the hunk by its `@@` line and number -- two hunks with
+  one `@@` line are two -- and the lines
   themselves with their `+`/`-`/space markers in a fenced `diff` block
   (`ecc-review--fence`, so backticks in the code cannot close it). In an
   ediff review the region is the one in the window the keyboard is in, and
@@ -888,28 +892,72 @@ Verified against **Claude Code CLI 2.1.281**.
   yours into a reply, and a line that goes away meanwhile leaves your text
   kept as outdated.
 
+- A diff review no longer applies a `.gitattributes` textconv driver and
+  shows what git stores: a file with a driver appears unconverted, and
+  one git takes for binary as `Binary files ... differ`.
+
 - `g` no longer drops a comment whose hunk header changed ("Dropped N
-  comments whose hunk is gone"). A comment stays on its line while that
-  line says what it said between the same neighbouring lines; otherwise it
-  goes to the nearest line that does, no further than
-  `ecc-review-note-max-shift` (100) lines, so a change higher up in the file
-  moves it instead of losing it, and a comment on a blank line or a lone
-  brace does not wander off to another. A neighbour that is not known -- at
-  the first or last line of a hunk -- is not compared, so hunks merging or
-  splitting leave a comment where it was. A comment on a whole hunk goes to
-  the hunk with the same `@@` line, else to a hunk over the same lines of
-  the old side -- the baseline, which lines put in above do not move, so a
-  hunk put in above does not take the comment -- one that says the same
-  first when there are several; a hunk that only adds is found by where
-  it adds. A comment whose line has gone is kept, marked
-  outdated, above the first hunk of its file, and is still sent with
-  `(outdated)` and the hunk as it was.
+  comments whose hunk is gone"). Every reading of the diff carries each
+  comment to where its line went. For each file with a comment the
+  review keeps what the last reading took out and put in, by line number,
+  and the blob of the old side, and matches the next reading against it:
+  the lines of the old side by their number, and the lines put in between
+  two of them by their text, and only with each other. So lines put in or
+  taken out above a comment, in its own hunk or anywhere higher up, move
+  it, and a comment whose line changed or went is outdated, however much
+  another line reads like it -- a blank line or a lone brace does not
+  wander off to another. When the old side itself moved, as when a commit
+  lands under a review of what is not committed, the two blobs are diffed
+  and the lines carried through that; two blobs that differ only in the
+  newline at the end are one old side. When the old side appears or goes,
+  as when an untracked file is added to the index, the lines put in are
+  still matched and a comment on the old side is outdated. A diff that
+  names no blob -- the one made from what a session recorded, a patch for
+  each edit, each numbered against the file as its edit found it -- is
+  matched by the text and order of its lines alone, and two of its lines
+  at one number, or two hunks with one header, are two places -- and a
+  comment marks the `@@` line of its own hunk alone; a file
+  outside git whose original the session recorded has that for its one
+  old side. The old blobs of a session over several repositories are
+  compared in the repository of each file, whose names, from the second
+  repository on, are given from the first (`../two/x.txt`). When git cannot
+  say, or carrying a file fails, none of the comments of that file moves:
+  they go outdated where they were and why is in the log; a repository git
+  failed in is not asked again for each file in the same reading, and the
+  next reading asks again. A comment on a
+  whole hunk follows the hunk most of its lines are in now while more than
+  half of the lines it changed stayed -- the lines of context around them
+  do not count -- and once half or more changed again or went it is
+  outdated.
+  The comments are carried once, when the diff is read; a reading that
+  stops part of the way, by a failure or a quit -- while git reads the old
+  sides, say -- is read again whole by the next `g`, and until then no
+  comment is looked up in it, so one Claude adds or one drawn meanwhile is
+  not put on a line by the number it had before; a comment being typed
+  while the review turns to another proposal is not put on that one, and
+  whenever `c` cannot put what was typed anywhere it leaves it in the kill
+  ring -- once the comment is in, a failure drawing it says so and leaves
+  the kill ring alone, so that a yank does not make a second copy; a review whose
+  buffer was edited since -- by a key that got past its keymap -- says so
+  and waits for `g` rather than putting a comment on a line of something
+  else; an ediff review whose reading failed halfway is read whole by the
+  next `g`. The ediff review carries its comments the same way, each time
+  ediff computes the differences. Each comment is carried from the reading
+  it was last on, whichever review that was: the comments of a pull
+  request's commit, handed back when the commit is opened again, come
+  back to their lines there too, and when git cannot carry them there the
+  next `g` reads that review again rather than taking it for read. A comment whose line has gone is kept,
+  marked outdated, above the
+  first hunk of its file, and is still sent with `(outdated)` and the hunk
+  as it was. It comes back when the line it was last on, carried from that
+  reading, is there again -- the change undone -- and not for a line that
+  only reads like it somewhere else.
 
 - Reading the review again -- `g`, `ecc-review` or `ecc-review-range` on
   a review that is open, or Claude's `review_open` -- keeps your place: point,
   and in each window showing the review its point and how far down the
-  window it was, go back to the same line by the same rule. It used to go
-  to the top. A window of the review in another tab's saved configuration is
+  window it was, go back to the same line by the same rule, or to the
+  nearest line that stayed when that line went. It used to go to the top. A window of the review in another tab's saved configuration is
   out of reach and shows the review from the top when that tab comes back.
 
 - The control panel of an ediff review, which said ` c -comment
@@ -963,6 +1011,20 @@ Verified against **Claude Code CLI 2.1.281**.
   image or a video.
 
 ### Fixed
+
+- The diff review reads git's diff the same whatever the repository's
+  settings say: it asks for `--inter-hunk-context=0`, `--no-textconv` and
+  the `a/` and `b/` prefixes, as well as `--no-color` and `--no-ext-diff`,
+  and runs it with `core.quotePath` off. With `diff.mnemonicPrefix` the
+  files were named `i/x.el` or `w/x.el`, which no file is; with
+  `diff.interHunkContext` two changes a few lines apart came as one hunk
+  with the unchanged lines between them (textconv is under Changed); and
+  a file named past ASCII, `日本.txt`, was shown and looked for
+  as `"b/\346\227\245\346\234\254.txt"`. A name with a tab, a newline, a
+  double quote or a backslash in it, which git quotes whatever it is set
+  to, is decoded where the review reads it, and the review quotes such a
+  name the same way in the headers it writes for a file outside git.
+  `a"b.txt` was shown and sent to Claude as `"b/a\"b.txt"`.
 
 - `TAB` after `@` offered the project's files as
   `../../../private/tmp/x/readme.md` when the project spelt its root

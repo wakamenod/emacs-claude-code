@@ -1358,6 +1358,9 @@ window that has the keyboard."
                       (should (equal (ecc-review-note-hunk-key note)
                                    '("a.txt" . "@@ -7,0 +9,1 @@"))))
                     (should (= (ecc-review-note-line (ecc-review-find-note 1)) 9))
+                    ;; Taken when ediff computed the differences of what
+                    ;; was written: the reading is of what the review shows.
+                    (should (ecc-review--reading-current-p))
                     (should (string-search "▎ #1 Claude: A new line"
                                            (ecc-review-ediff-test--drawn ediff-buffer-B)))
                     ;; And its window is on that line.
@@ -1403,6 +1406,39 @@ window that has the keyboard."
                                                 ecc-review-ediff-test--changed)
                   (ecc-review-reread t)
                   (should (= ediff-number-of-differences 3))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-a-line-comment-follows-lines-put-in-above-it ()
+  "Lines put in right above a commented line of a difference move the comment.
+The line is unchanged, two lines further down in the same difference,
+and the ediff review read again puts the comment there."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil)
+              (three (string-replace "new\n" "new\nnewer\nnewest\n"
+                                     ecc-review-ediff-test--changed)))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (ecc-review-ediff-test--write (concat directory "a.txt") three)
+                (with-current-buffer control
+                  (ecc-review-reread t)
+                  (ecc-review-add-note 'claude "Why newest?"
+                                       (ecc-review-ediff-test--line 'new 9))
+                  (ecc-review--draw-notes)
+                  (should (equal (ecc-review-note-line-text (car ecc-review--notes))
+                                 "newest"))
+                  (ecc-review-ediff-test--write
+                   (concat directory "a.txt")
+                   (string-replace "newer\n" "newer\nput\nin\n" three))
+                  (ecc-review-reread t)
+                  (let ((note (car ecc-review--notes)))
+                    (should-not (ecc-review-note-outdated note))
+                    (should (= (ecc-review-note-line note) 11)))
+                  (should (string-search "#1 Claude: Why newest?"
+                                         (ecc-review-ediff-test--drawn ediff-buffer-B)))))
             (ecc-review-ediff-test--quit control)))))))
 
 (ert-deftest ecc-review-ediff-test-a-failed-read-waits-for-bang ()
@@ -2929,6 +2965,168 @@ RET answers Claude.  With nothing to answer or edit, nothing is asked."
                       (should (= (length (car asked)) 2))
                       (should (member "new comment" (car asked)))
                       (should (eq (car choice) 'reply))))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-c-keeps-its-difference-across-a-reading ()
+  "c takes the difference before it asks anything: a reading during the question moves it.
+Claude's comment is on the first difference; while c asks whether to
+answer it, two lines are put in at the top and the review is read
+again.  The new comment goes on the difference it was pressed on, where
+it is now."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (with-current-buffer control
+                  (ecc-review-add-note 'claude "Why upper case?"
+                                       (ecc-review-ediff-test--line 'new 2))
+                  (ecc-review--draw-notes)
+                  (ediff-jump-to-difference 1)
+                  (cl-letf (((symbol-function 'completing-read)
+                             (lambda (_prompt labels &rest _)
+                               (ecc-review-ediff-test--write
+                                (concat directory "a.txt")
+                                (concat "zero\nzero2\n" ecc-review-ediff-test--changed))
+                               (ecc-review-reread t)
+                               (seq-find (lambda (label) (string-search "new comment" label))
+                                         labels)))
+                            ((symbol-function 'read-string) (lambda (&rest _) "Mine")))
+                    (call-interactively #'ecc-review-ediff-comment))
+                  (let ((claude (ecc-review-find-note 1))
+                        (mine (ecc-review-find-note 2)))
+                    (should (equal (ecc-review-note-text mine) "Mine"))
+                    (should-not (ecc-review-note-reply-to mine))
+                    (should-not (ecc-review-note-outdated claude))
+                    (should-not (ecc-review-note-outdated mine))
+                    (should (equal (ecc-review-note-hunk-key mine)
+                                   (ecc-review-note-hunk-key claude)))
+                    (should (equal (cdr (ecc-review-note-hunk-key mine)) "@@ -2,1 +4,1 @@")))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-a-reading-that-failed-is-read-again ()
+  "An ediff review whose reading failed halfway is read whole by the next g.
+Its comments are carried from the reading they were last on."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (with-current-buffer control
+                  (ecc-review-add-note 'claude "A new line"
+                                       (ecc-review-ediff-test--line 'new 7))
+                  (ecc-review--draw-notes)
+                  (ediff-jump-to-difference 2)
+                  (ecc-review-ediff-test--write
+                   (concat directory "a.txt")
+                   (concat "zero\nzero2\n" ecc-review-ediff-test--changed))
+                  (cl-letf (((symbol-function 'ecc-review-ediff--write)
+                             (lambda (&rest _) (error "The disk is full"))))
+                    (should-error (ecc-review-reread t)))
+                  ;; A difference is selected again, as n would; what
+                  ;; draws on it may say the review has to be read again.
+                  (ignore-errors (ediff-jump-to-difference 1))
+                  (should (ediff-valid-difference-p ediff-current-difference))
+                  ;; g reads it again, whole.
+                  (ecc-review-refresh)
+                  (should (ecc-review--reading-current-p))
+                  (let ((note (ecc-review-find-note 1)))
+                    (should-not (ecc-review-note-outdated note))
+                    (should (= (ecc-review-note-line note) 9)))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-a-reading-failing-at-any-step-recovers ()
+  "Whatever step of an ediff reading fails or is quit, nothing typed is lost and g recovers."
+  (skip-unless (executable-find "git"))
+  (dolist (step '(ecc-review-ediff--write ecc-review-ediff--compute-differences
+                  ecc-review--take-reading ecc-review--diff-moved-blobs ecc-review--cat-file
+                  ecc-review--carry-file ecc-review--draw-notes ecc-review-ediff--restore-views))
+    (dolist (kind '(error quit))
+      (ecc-review-ediff-test--with-ediff
+        (ecc-test-with-fake-session session
+          (ecc-review-ediff-test--with-directory directory
+            (let ((control nil))
+              (unwind-protect
+                  (progn
+                    (setq control (ecc-review-ediff-test--rich session directory))
+                    (with-current-buffer control
+                      (ecc-review-add-note 'claude "A new line"
+                                           (ecc-review-ediff-test--line 'new 7))
+                      (ecc-review--draw-notes)
+                      (ecc-review-ediff-test--write
+                       (concat directory "a.txt")
+                       (concat "zero\nzero2\n" ecc-review-ediff-test--changed))
+                      (ecc-review-test--failing-once step kind
+                        (condition-case nil (ecc-review-reread t) ((error quit) nil)))
+                      ;; Drawn before any g, as a comment of Claude's draws:
+                      ;; on its own line of the text shown, or not at all.
+                      (condition-case nil (ecc-review--draw-notes) (error nil))
+                      (let ((note (ecc-review-find-note 1)))
+                        (should (or (ecc-review-note-outdated note)
+                                    (not (ecc-review--reading-current-p))
+                                    (= (ecc-review-note-line note)
+                                       (if (string-search "zero2" (with-current-buffer ediff-buffer-B
+                                                                     (buffer-string)))
+                                           9 7)))))
+                      (ignore-errors (ediff-jump-to-difference 1))
+                      (ecc-review-test--typing-loses-nothing #'ecc-review-ediff-comment)
+                      (ecc-review-refresh)
+                      (should (ecc-review--reading-current-p))
+                      (let ((note (ecc-review-find-note 1)))
+                        (should-not (ecc-review-note-outdated note))
+                        (should (= (ecc-review-note-line note) 9)))))
+                (ecc-review-ediff-test--quit control)))))))))
+
+(ert-deftest ecc-review-ediff-test-c-keeps-what-was-typed-when-it-fails ()
+  "c in an ediff review that cannot put its comment anywhere keeps what was typed."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (with-current-buffer control
+                  (ediff-jump-to-difference 1)
+                  (let ((kill-ring nil))
+                    (cl-letf (((symbol-function 'read-string)
+                               (lambda (&rest _) (ecc-review--begin-reading) "about LINE2")))
+                      (should-error (call-interactively #'ecc-review-ediff-comment)
+                                    :type 'user-error))
+                    (should (equal (car kill-ring) "about LINE2")))))
+            (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-c-that-fails-after-the-comment-is-in-keeps-nothing ()
+  "c in an ediff review that fails once its comment is in leaves the kill ring alone."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (with-current-buffer control
+                  (ediff-jump-to-difference 1)
+                  (let ((kill-ring nil))
+                    (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "about LINE2"))
+                              ((symbol-function 'ecc-review--draw-notes)
+                               (lambda (&rest _) (error "No room to draw"))))
+                      (let ((message (error-message-string
+                                      (should-error
+                                       (call-interactively #'ecc-review-ediff-comment)))))
+                        (should (string-search "No room to draw" message))
+                        (should-not (string-search "kill ring" message))))
+                    (should-not kill-ring)
+                    (should (equal (mapcar #'ecc-review-note-text ecc-review--notes)
+                                   '("about LINE2"))))))
             (ecc-review-ediff-test--quit control)))))))
 
 ;;;; The setting

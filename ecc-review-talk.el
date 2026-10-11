@@ -240,8 +240,10 @@ file."
   (let ((by-hunk (null (plist-get region :side)))
         (groups nil))
     (dolist (line (plist-get region :lines))
+      ;; A hunk is told from another with its header by where it is: a
+      ;; diff that joins a patch for each edit has hunks alike.
       (let ((key (cons (plist-get line :path)
-                       (and by-hunk (ecc-review--hunk-key (plist-get line :hunk))))))
+                       (and by-hunk (plist-get (plist-get line :hunk) :position)))))
         (if (equal key (car (car groups)))
             (push line (cdr (car groups)))
           (push (list key line) groups))))

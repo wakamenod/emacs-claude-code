@@ -180,41 +180,6 @@ commit and no blob.  ROOT is the repository, PATHS restrict it."
     (result (ecc-log "review" "diff --raw failed in %s: %S" root result)
             nil)))
 
-(defun ecc-review-ediff--cat-file (root ids option each)
-  "Run `git cat-file OPTION' in ROOT on IDS and call EACH on what it says.
-OPTION is \"--batch-check\" or \"--batch\".  EACH is called with an
-id, its type and its size, and under --batch with its bytes as well, a
-unibyte string; nothing is called for an id git does not have.  A git
-that fails is logged."
-  (when (and ids (executable-find ecc-review-git-executable))
-    (with-temp-buffer
-      (set-buffer-multibyte nil)
-      (insert (mapconcat #'identity ids "\n") "\n")
-      (let* ((default-directory (file-name-as-directory root))
-             (coding-system-for-read 'binary)
-             (coding-system-for-write 'binary)
-             (code (condition-case error
-                       (call-process-region (point-min) (point-max)
-                                            ecc-review-git-executable
-                                            t '(t nil) nil "cat-file" option)
-                     (file-error (error-message-string error)))))
-        (if (not (eq code 0))
-            (ecc-log "review" "cat-file %s failed in %s: %S" option root code)
-          (goto-char (point-min))
-          ;; "ID TYPE SIZE", and under --batch SIZE bytes and a newline;
-          ;; "ID missing" for an id git does not have.
-          (while (re-search-forward "^\\([0-9a-f]+\\) \\([a-z]+\\)\\(?: \\([0-9]+\\)\\)?\n"
-                                    nil t)
-            (let ((id (match-string 1))
-                  (type (match-string 2))
-                  (size (and (match-string 3) (string-to-number (match-string 3)))))
-              (when size
-                (if (not (equal option "--batch"))
-                    (funcall each id type size)
-                  (let ((end (min (point-max) (+ (point) size))))
-                    (funcall each id type size (buffer-substring (point) end))
-                    (goto-char (min (point-max) (1+ end)))))))))))))
-
 (defun ecc-review-ediff--read-blobs (root blobs cache)
   "Read every blob of BLOBS in ROOT that CACHE lacks, through two git processes.
 `git cat-file --batch-check' gives the size of each, and `git cat-file
@@ -233,13 +198,13 @@ a git that fails here altogether, which is logged."
                            'call-process ecc-review-git-executable))
                      (car default-process-coding-system)
                      'undecided)))
-    (ecc-review-ediff--cat-file
+    (ecc-review--cat-file
      root (seq-remove (lambda (blob) (gethash (cons 'size blob) cache)) wanted)
      "--batch-check"
      (lambda (id type size)
        (when (equal type "blob")
          (puthash (cons 'size id) size cache))))
-    (ecc-review-ediff--cat-file
+    (ecc-review--cat-file
      root (seq-filter (lambda (blob)
                         (let ((size (gethash (cons 'size blob) cache)))
                           (and size (<= size ecc-review-max-bytes))))
@@ -368,6 +333,15 @@ blobs of the review on every reading.")
 
 (defvar-local ecc-review-ediff--buffers nil
   "The (BASE . NOW) buffers this control buffer compares.")
+
+(defvar-local ecc-review-ediff--bases nil
+  "The blob of the old side of each file of this review, as (PATH . BLOB).
+BLOB is `empty' for a file the old side does not have.  It is what a
+comment is carried by when the old side changed (`ecc-review--take-reading\=').")
+
+(defun ecc-review-ediff--bases-of (pairs)
+  "Return `ecc-review-ediff--bases\=' for PAIRS, of `ecc-review-ediff-pairs\='."
+  (mapcar (lambda (pair) (cons (nth 0 pair) (or (nth 4 pair) 'empty))) pairs))
 
 (defvar-local ecc-review-ediff--windows nil
   "The window configuration to put back when this review is quit.")
@@ -1479,7 +1453,7 @@ what they hold now."
 ;; the one `ecc-review-hunk-at' makes of a hunk of the diff review, with
 ;; the @@ header and the text of a patch, and lines like those of
 ;; `ecc-review--hunk-lines'.  A comment on it is then kept, put back
-;; after a refresh (`ecc-review--locate-note') and sent exactly as one on
+;; after a refresh (`ecc-review--take-reading') and sent exactly as one on
 ;; a hunk is.  The lines of a difference are the ones it takes out of the
 ;; old side and puts into the new; a line both sides hold is no line of
 ;; any difference, as a line of context is none of a diff read with no
@@ -1546,11 +1520,6 @@ files held and :b-beg and :b-end in the buffer of what they hold now.
             :old-start a-start
             :old-end (if (> a-count 0) (+ a-start a-count -1) a-start)
             :old-count a-count
-            ;; Where an empty old side sits: before the line it is
-            ;; numbered with here, where git numbers the line before.
-            :old-range (if (> a-count 0)
-                           (cons a-start (+ a-start a-count -1))
-                         (cons (- a-start 0.5) (- a-start 0.5)))
             :new-count b-count
             :a-beg a-beg :a-end a-end :b-beg b-beg :b-end b-end))))
 
@@ -1579,17 +1548,12 @@ out of the left, `old', and puts into the right, `new', each with
             (push (list :position (point) :buffer buffer :path path
                         :side side :line number
                         :text (buffer-substring-no-properties (point) (line-end-position))
-                        :before nil :after nil :hunk unit)
+                        :hunk unit)
                   lines)
             (cl-incf number)
             (unless (zerop (forward-line 1))
               (goto-char end))))))
-    (setq lines (nreverse lines))
-    (ecc-review--link-neighbours
-     lines 'new (lambda (line) (eq (plist-get line :side) 'new)))
-    (ecc-review--link-neighbours
-     lines 'old (lambda (line) (eq (plist-get line :side) 'old)))
-    lines))
+    (nreverse lines)))
 
 (cl-defmethod ecc-review-units (&context (major-mode ediff-mode))
   "Return the differences of this ediff review as hunks, in order.
@@ -1605,6 +1569,33 @@ differences are in (`ecc-review-ediff--differences-computed\=')."
 (cl-defmethod ecc-review-lines (&context (major-mode ediff-mode))
   "Return the lines of every difference of this ediff review."
   (mapcan #'ecc-review-ediff--unit-lines (ecc-review-units)))
+
+(cl-defmethod ecc-review--unit-lines (unit &context (major-mode ediff-mode))
+  "Return the lines of the difference UNIT of this ediff review."
+  (ecc-review-ediff--unit-lines unit))
+
+(cl-defmethod ecc-review--units-by-path (&context (major-mode ediff-mode))
+  "Return a hash of each file of this ediff review to its differences, in order."
+  (let ((table (make-hash-table :test #'equal)))
+    (dolist (unit (ecc-review-units))
+      (push unit (gethash (plist-get unit :path) table)))
+    (maphash (lambda (key units) (puthash key (nreverse units) table)) table)
+    table))
+
+(cl-defmethod ecc-review--unit-at (item &context (major-mode ediff-mode) &optional _path)
+  "Return ITEM, a difference of this ediff review already."
+  item)
+
+(cl-defmethod ecc-review--text (&context (major-mode ediff-mode))
+  "Return the differences ediff computed last, which every reading makes anew."
+  ediff-difference-vector-A)
+
+(cl-defmethod ecc-review--base-of (hunk &context (major-mode ediff-mode))
+  "Return the blob of the old side of the file of the difference HUNK.
+As (blob REPOSITORY ID), REPOSITORY this review's; `empty' for none."
+  (pcase (alist-get (plist-get hunk :path) ecc-review-ediff--bases nil nil #'equal)
+    ((and id (pred stringp)) (list 'blob (ecc-review-repository-name default-directory) id))
+    (other other)))
 
 (defun ecc-review-ediff--lines-of (count start end)
   "Return \"L3-L5\" for COUNT lines from START to END, \"none\" for none."
@@ -1812,7 +1803,7 @@ the other.  An outdated comment is shown under the separator of its
 file."
   (let* ((line (if (ecc-review-note-p place)
                    (and (not (ecc-review-note-outdated place))
-                        (ecc-review--locate-note place (ecc-review-lines)))
+                        (ecc-review--locate-note place))
                  place))
          (hunk (and line (plist-get line :hunk))))
     (if (null hunk)
@@ -1938,17 +1929,21 @@ else a new one."
                              (ecc--truncate (ecc-review-note-text note) 50)))
     (_ "new comment")))
 
-(defun ecc-review-ediff--comment-plan (unit &optional choice)
+(defun ecc-review-ediff--comment-plan (unit &optional choice anchor)
   "Return what \\`c' on the difference UNIT is to do, as (ANCHOR KIND ID).
 The answer of `ecc-review--comment-plan\\=', for a whole difference:
 CHOICE, one of `ecc-review-ediff--comment-choices\\=' -- the first by
 default -- with KIND `edit', `reply' or nil and ID the comment edited or
-answered."
+answered.  ANCHOR is the place UNIT was taken at
+\(`ecc-review-ediff--anchor-unit\\='), made here when not given."
   (let ((choice (or choice (car (ecc-review-ediff--comment-choices unit)))))
-    (list (ecc-review--anchor (ecc-review-note-create)
-                              (car (ecc-review-ediff--unit-lines unit)))
+    (list (or anchor (ecc-review-ediff--anchor-unit unit))
           (car choice)
           (and (cdr choice) (ecc-review-note-id (cdr choice))))))
+
+(defun ecc-review-ediff--anchor-unit (unit)
+  "Return a place on the whole of the difference UNIT, of this reading."
+  (ecc-review--anchor (ecc-review-note-create) (car (ecc-review-ediff--unit-lines unit))))
 
 (defun ecc-review-ediff--read-choice (unit)
   "Ask which of the things \\`c' could do on UNIT is meant.
@@ -1975,39 +1970,38 @@ new comment.  With more than one comment there to answer or edit,
 which is asked.  Returns the comment.
 
 PLAN is what `ecc-review-ediff--comment-plan\\=' decided when the command
-was started, before the text was read: the review may be read again
-while it is typed, and the comment goes to the difference it was meant
-for, found again by what it says."
+was started, before anything was asked: the review may be read again
+while what is to be done is chosen and while the text is typed, and the
+comment goes to the difference it was meant for, carried to where it
+went."
   (interactive
    (let* ((unit (ecc-review-ediff--current-unit))
-          (plan (ecc-review-ediff--comment-plan
-                 unit (ecc-review-ediff--read-choice unit)))
-          (target (and (nth 2 plan) (ecc-review-find-note (nth 2 plan)))))
-     (list (pcase (nth 1 plan)
-             ('edit (read-string "Comment on this difference: "
-                                 (ecc-review-note-text target)))
-             ('reply (read-string (format "Reply to Claude's #%d: " (nth 2 plan))))
-             (_ (read-string "Comment on this difference: ")))
-           plan)))
-  (pcase-let* ((`(,anchor ,kind ,id)
-                (or plan (ecc-review-ediff--comment-plan (ecc-review-ediff--current-unit))))
-               (text (string-trim text))
-               (target (and id (ecc-review-find-note id)))
-               (lines (ecc-review-lines))
-               (line (ecc-review--locate-note anchor lines)))
-    (when (string-empty-p text)
-      (user-error "Empty comment"))
-    (let ((note (if (and (eq kind 'edit) target)
-                    (ecc-review--edit-note target text)
-                  (ecc-review-add-note 'user text (or line anchor)
-                                       (and (eq kind 'reply) target id)))))
-      (ecc-review--draw-notes lines)
-      (if (ecc-review-note-outdated note)
-          (message "The difference has gone from the review; the comment is kept as outdated")
-        (message "Comment attached (%d in all)"
-                 (seq-count (lambda (note) (not (ecc-review--agent-p note)))
-                            ecc-review--notes)))
-      note)))
+          (anchor (ecc-review-ediff--anchor-unit unit)))
+     ;; Taken before the first question and held across both.
+     (ecc-review--holding anchor
+       (let* ((plan (ecc-review-ediff--comment-plan
+                     unit (ecc-review-ediff--read-choice unit) anchor))
+              (target (and (nth 2 plan) (ecc-review-find-note (nth 2 plan)))))
+         (list (pcase (nth 1 plan)
+                 ('edit (read-string "Comment on this difference: "
+                                     (ecc-review-note-text target)))
+                 ('reply (read-string (format "Reply to Claude's #%d: " (nth 2 plan))))
+                 (_ (read-string "Comment on this difference: ")))
+               plan)))))
+  (ecc-review--comment-made
+   (ecc-review--keeping-text text
+     (pcase-let* ((`(,anchor ,kind ,id)
+                   (or plan (ecc-review-ediff--comment-plan (ecc-review-ediff--current-unit))))
+                  (text (string-trim text))
+                  (target (and id (ecc-review-find-note id)))
+                  (line (ecc-review--locate-note anchor)))
+       (when (string-empty-p text)
+         (user-error "Empty comment"))
+       (if (and (eq kind 'edit) target)
+           (ecc-review--edit-note target text)
+         (ecc-review-add-note 'user text (or line anchor)
+                              (and (eq kind 'reply) target id)))))
+   "The difference has gone from the review; the comment is kept as outdated"))
 
 (defun ecc-review-ediff-remove-comment (&optional all)
   "Remove a comment of the difference ediff is on, whoever wrote it.
@@ -2849,14 +2843,16 @@ since -- with `##' or `#c', say."
           (ecc-review-ediff--sides)))
 
 (defun ecc-review-ediff-open (session base now sections &optional range root paths
-                                      hash cache)
+                                      hash cache bases)
   "Compare BASE and NOW as the review of SESSION and return the control buffer.
 SECTIONS says where each file begins, and RANGE what a working tree
 review is against.  ROOT is the repository and PATHS, relative to it,
 the files the review was restricted to: what the review is read again
 from as the files change.  HASH names the trees BASE and NOW were
 filled from, and CACHE is what was read and coloured for them
-\(`ecc-review-ediff--cache\=').  `ecc-window-hide-on-review\\=' is honoured before
+\(`ecc-review-ediff--cache\='); BASES are `ecc-review-ediff--bases\=', set
+before anything is told the review is open, since comments handed to
+it then are kept by them.  `ecc-window-hide-on-review\\=' is honoured before
 ediff lays out its windows; quitting puts back what was on the screen."
   (ecc-window-hide-for-review session)
   (let ((windows (current-window-configuration))
@@ -2897,6 +2893,7 @@ ediff lays out its windows; quitting puts back what was on the screen."
 			   ecc-review-ediff--sections sections
 			   ecc-review-ediff--units nil
 			   ecc-review-ediff--cache cache
+			   ecc-review-ediff--bases bases
 			   ecc-review-ediff--buffers (cons base now)
 			   ecc-review-ediff--windows windows
 			   ecc-review-ediff--frame frame
@@ -2906,6 +2903,10 @@ ediff lays out its windows; quitting puts back what was on the screen."
                (when root
 		 (setq default-directory (file-name-as-directory root)))
                (setq-local ecc-review--fingerprint (ecc-review-ediff--state hash))
+               ;; The first reading: ediff computed the differences before
+               ;; any hook of ours ran, and comments may be handed to the
+               ;; review as soon as it is said to be shown, below.
+               (ecc-review--take-reading)
                ;; ediff computes the differences again by itself -- `##', `#c'
                ;; and `!' of a plain ediff go through `ediff-update-diffs' -- and
                ;; then the hunks and the comments drawn on them are about
@@ -3076,6 +3077,9 @@ whether a difference exists, so it is counted here first."
         ecc-review-ediff--at nil
         ecc-review-ediff--refined nil
         ediff-number-of-differences (length ediff-difference-vector-A))
+  ;; Something that could not be carried leaves the next g to read the
+  ;; review again whole (`ecc-review--fall-short').
+  (ecc-review--take-reading)
   (unless ecc-review-ediff--replacing
     (ecc-review--draw-notes)
     ;; How many there are is in the panel.
@@ -3141,7 +3145,8 @@ opened."
                                           (plist-get content :label))))
       (let ((control (ecc-review-ediff-open session a b sections (plist-get content :range)
                                             (plist-get content :root) (plist-get content :paths)
-                                            (plist-get content :hash) cache)))
+                                            (plist-get content :hash) cache
+                                            (ecc-review-ediff--bases-of pairs))))
         (when (buffer-live-p control)
           (with-current-buffer control
             (setq ecc-review--label (plist-get content :label)
@@ -3310,63 +3315,85 @@ NOTHING is what to say when there is no pair, and HASH the fingerprint
 of PAIRS.  The comments are put back, each where its line is now, and
 so are the difference being read and the place of each side."
   (let* ((placed (seq-remove #'ecc-review-note-outdated ecc-review--notes))
+         ;; Taken only from a reading of what is shown: after a reading
+         ;; that never ended there is none, and this is what starts the
+         ;; next one afresh.
          (current (and (ediff-valid-difference-p ediff-current-difference)
+                       (ecc-review--reading-current-p)
                        (ecc-review--anchor
                         (ecc-review-note-create)
                         (car (ecc-review-ediff--unit-lines
                               (nth ediff-current-difference (ecc-review-units)))))))
          (views (ecc-review-ediff--save-views))
          (starts (ecc-review-ediff--starts ediff-current-difference)))
-    ;; Off the difference being read first, while its overlays are
-    ;; still where ediff put them.
-    (ecc-review-ediff-select-in-place -1)
-    (ecc-review-ediff--unmark-current)
-    (setq ecc-review-ediff--sections
-          (ecc-review-ediff--write ediff-buffer-A ediff-buffer-B pairs nothing
-                                   ecc-review-ediff--cache)
-          ecc-review-ediff--units nil)
-    ;; The layout the view was last moved in is gone with the text.
-    (setq ecc-review-ediff--at nil)
-    (let ((ecc-review-ediff--replacing t))
-      (ecc-review-ediff--quietly
-        (ecc-review-ediff--compute-differences)))
-    (let* ((lines (ecc-review-lines))
-           (found (and current (ecc-review--locate-note current lines)))
-           (n (and found (plist-get (plist-get found :hunk) :number))))
-      (let ((ecc-review--refilling t))
-        (ecc-review--draw-notes lines))
-      (ecc-review-ediff--restore-views
-       views
-       (and n starts
-            (cl-mapcar (lambda (before after)
-                         (and (cdr before) (cdr after) (equal (cadr before) (cadr after))
-                              (cons (car before)
-                                    (cons (cadr before) (- (cddr after) (cddr before))))))
-                       starts (ecc-review-ediff--starts n))))
-      ;; The difference that was read, else the one the right side is
-      ;; on now.
-      (unless (or n (null current) (zerop ediff-number-of-differences))
-        ;; `ediff-diff-at-point' counts from 1, as j does.
-        (setq n (min (1- ediff-number-of-differences)
-                     (max 0 (1- (ediff-diff-at-point
-                                 'B (ecc-review-ediff--right-point)))))))
-      (if n
-          (ecc-review-ediff-select-in-place n)
-        ;; Nothing selected says nothing to the panel, and the count
-        ;; has changed.
-        (ecc-review-ediff--status-changed)))
-    ;; The files that changed went in plain.
-    (ecc-review-ediff--after-write)
-    (ediff-refresh-mode-lines)
-    (setq ecc-review--fingerprint (ecc-review-ediff--state hash)
-          ecc-review--stale nil
-          ecc-review--failed nil)
-    (run-hooks 'ecc-review-refilled-hook)
-    (let ((lost (seq-count #'ecc-review-note-outdated placed)))
-      (when (> lost 0)
-        (message "%s no longer %s a difference of the review; kept as outdated"
-                 (ecc-review--count lost "comment") (if (= lost 1) "is on" "are on"))))
-    (current-buffer)))
+    ;; Held across the reading, to be found again on the other side of it.
+    (ecc-review--hold current)
+    (unwind-protect
+        (progn
+          ;; Off the difference being read first, while its overlays are
+          ;; still where ediff put them.
+          (ecc-review-ediff-select-in-place -1)
+          (ecc-review-ediff--unmark-current)
+          ;; Nothing is looked up until ediff has computed the differences
+          ;; of what is written now and the reading is taken.
+          (ecc-review--begin-reading)
+          (setq ecc-review-ediff--sections
+                (ecc-review-ediff--write ediff-buffer-A ediff-buffer-B pairs nothing
+                                         ecc-review-ediff--cache)
+                ecc-review-ediff--bases (ecc-review-ediff--bases-of pairs)
+                ecc-review-ediff--units nil)
+          ;; The layout the view was last moved in is gone with the text.
+          (setq ecc-review-ediff--at nil)
+          (let ((ecc-review-ediff--replacing t))
+            (ecc-review-ediff--quietly
+              (ecc-review-ediff--compute-differences)))
+          (let* ((lines (ecc-review-lines))
+                 (found (and current (ecc-review--locate-note current)))
+                 (n (and found (plist-get (plist-get found :hunk) :number))))
+            (let ((ecc-review--refilling t))
+              (ecc-review--draw-notes lines))
+            (ecc-review-ediff--restore-views
+             views
+             (and n starts
+                  (cl-mapcar (lambda (before after)
+                               (and (cdr before) (cdr after) (equal (cadr before) (cadr after))
+                                    (cons (car before)
+                                          (cons (cadr before) (- (cddr after) (cddr before))))))
+                             starts (ecc-review-ediff--starts n))))
+            ;; The difference that was read, else the one the right side is
+            ;; on now.
+            (unless (or n (null current) (zerop ediff-number-of-differences))
+              ;; `ediff-diff-at-point' counts from 1, as j does.
+              (setq n (min (1- ediff-number-of-differences)
+                           (max 0 (1- (ediff-diff-at-point
+                                       'B (ecc-review-ediff--right-point)))))))
+            (if n
+                (ecc-review-ediff-select-in-place n)
+              ;; Nothing selected says nothing to the panel, and the count
+              ;; has changed.
+              (ecc-review-ediff--status-changed)))
+          ;; The files that changed went in plain.
+          (ecc-review-ediff--after-write)
+          (ediff-refresh-mode-lines)
+          ;; What the review was filled with, once its reading is whole.
+          (setq ecc-review--fingerprint
+                (and (ecc-review--reading-current-p)
+                     (not (ecc-review--reading-incomplete ecc-review--reading))
+                     (ecc-review-ediff--state hash))
+                ecc-review--stale nil
+                ecc-review--failed nil)
+          (run-hooks 'ecc-review-refilled-hook)
+          (let ((lost (seq-count #'ecc-review-note-outdated placed)))
+            (when (> lost 0)
+              (message "%s no longer %s a difference of the review; kept as outdated"
+                       (ecc-review--count lost "comment") (if (= lost 1) "is on" "are on"))))
+          (current-buffer))
+      (ecc-review--let-go (list current))
+      ;; A reading that did not end -- the write failed, or was quit --
+      ;; leaves the review to be read again whole: the next \`g' does
+      ;; not take it for read already.
+      (unless (ecc-review--reading-current-p)
+        (setq ecc-review--fingerprint nil)))))
 
 (cl-defmethod ecc-review-reread (&context (major-mode ediff-mode) &optional watching)
   "Read this ediff review again (`ecc-review-ediff--reread\\=')."

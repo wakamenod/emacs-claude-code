@@ -100,6 +100,11 @@ transcript, line by line, under the picture it had just drawn
           (butlast lines)
         lines))))
 
+(defvar ecc-diff-hunk-regexp
+  "^@@ -\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? \\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? @@"
+  "Matches a unified hunk header.
+The groups are old start, old count, new start and new count.")
+
 (defun ecc-diff--lcs-table (a b)
   "Return the longest common subsequence table of vectors A and B."
   (let* ((n (length a))
@@ -120,53 +125,135 @@ transcript, line by line, under the picture it had just drawn
         (setq i (1- i))))
     table))
 
-(defun ecc-diff-lines (old new)
+(defun ecc-diff--lcs-script (a b)
+  "Return the script of `ecc-diff-script' for A and B, by their whole table."
+  (let ((table (ecc-diff--lcs-table a b))
+        (n (length a)) (m (length b))
+        (i 0) (j 0) (out nil))
+    (while (or (< i n) (< j m))
+      (cond
+       ((and (< i n) (< j m) (equal (aref a i) (aref b j)))
+        (push 'context out)
+        (setq i (1+ i) j (1+ j)))
+       ((and (< i n)
+             (or (>= j m)
+                 (>= (aref (aref table (1+ i)) j)
+                     (aref (aref table i) (1+ j)))))
+        (push 'removed out)
+        (setq i (1+ i)))
+       (t
+        (push 'added out)
+        (setq j (1+ j)))))
+    (nreverse out)))
+
+(defun ecc-diff-script (a b &optional large)
+  "Return how the vector A becomes the vector B, a tag for each line.
+The tags are `context' for an element of A that B keeps, `removed' for
+one only A has and `added' for one only B has, in the order of a
+unified diff; elements are compared with `equal'.  What both begin and
+end with is kept for sure, which keeps the table small for the usual
+edit of a few lines in a long file; what is left between is matched by
+its longest common subsequence while its two lengths multiply to no
+more than `ecc-diff-max-cells'.  Past that LARGE, a function, is given
+the two vectors left between and returns their script; without it, the
+whole of them is removed and added."
+  (let ((n (length a)) (m (length b))
+        (prefix 0) (suffix 0))
+    (while (and (< prefix n) (< prefix m) (equal (aref a prefix) (aref b prefix)))
+      (setq prefix (1+ prefix)))
+    (while (and (< suffix (- n prefix)) (< suffix (- m prefix))
+                (equal (aref a (- n suffix 1)) (aref b (- m suffix 1))))
+      (setq suffix (1+ suffix)))
+    (let ((va (seq-subseq a prefix (- n suffix)))
+          (vb (seq-subseq b prefix (- m suffix))))
+      (append (make-list prefix 'context)
+              (cond ((<= (* (length va) (length vb)) ecc-diff-max-cells)
+                     (ecc-diff--lcs-script va vb))
+                    (large (funcall large va vb))
+                    (t (append (make-list (length va) 'removed)
+                               (make-list (length vb) 'added))))
+              (make-list suffix 'context)))))
+
+(defun ecc-diff-lines (old new &optional large)
   "Return the line diff of OLD against NEW.
 The result is a list of (TAG . LINE) where TAG is `context', `removed'
-or `added', in the order of a unified diff."
-  (let* ((a (ecc-diff--split old))
-         (b (ecc-diff--split new))
-         (prefix 0)
-         (suffix 0))
-    ;; Common prefix and suffix are context for sure; trimming them keeps
-    ;; the table small for the usual edit of a few lines in a long file.
-    (while (and a b (equal (car a) (car b)))
-      (setq prefix (1+ prefix) a (cdr a) b (cdr b)))
-    (let ((ra (reverse a)) (rb (reverse b)))
-      (while (and ra rb (equal (car ra) (car rb)))
-        (setq suffix (1+ suffix) ra (cdr ra) rb (cdr rb)))
-      (setq a (nreverse ra) b (nreverse rb)))
-    (let* ((va (vconcat a))
-           (vb (vconcat b))
-           (n (length va))
-           (m (length vb))
-           (middle
-            (if (> (* n m) ecc-diff-max-cells)
-                (append (mapcar (lambda (l) (cons 'removed l)) a)
-                        (mapcar (lambda (l) (cons 'added l)) b))
-              (let ((table (ecc-diff--lcs-table va vb))
-                    (i 0) (j 0) out)
-                (while (or (< i n) (< j m))
-                  (cond
-                   ((and (< i n) (< j m) (equal (aref va i) (aref vb j)))
-                    (push (cons 'context (aref va i)) out)
-                    (setq i (1+ i) j (1+ j)))
-                   ((and (< i n)
-                         (or (>= j m)
-                             (>= (aref (aref table (1+ i)) j)
-                                 (aref (aref table i) (1+ j)))))
-                    (push (cons 'removed (aref va i)) out)
-                    (setq i (1+ i)))
-                   (t
-                    (push (cons 'added (aref vb j)) out)
-                    (setq j (1+ j)))))
-                (nreverse out))))
-           (all-old (ecc-diff--split old))
-           (all-new (ecc-diff--split new)))
-      (append (mapcar (lambda (l) (cons 'context l)) (seq-take all-old prefix))
-              middle
-              (mapcar (lambda (l) (cons 'context l))
-                      (seq-drop all-new (- (length all-new) suffix)))))))
+or `added', in the order of a unified diff (`ecc-diff-script', which
+LARGE is given to)."
+  (let ((a (vconcat (ecc-diff--split old)))
+        (b (vconcat (ecc-diff--split new)))
+        (i 0) (j 0))
+    (mapcar (lambda (tag)
+              (pcase tag
+                ('removed (prog1 (cons 'removed (aref a i)) (setq i (1+ i))))
+                ('added (prog1 (cons 'added (aref b j)) (setq j (1+ j))))
+                (_ (prog1 (cons 'context (aref a i)) (setq i (1+ i) j (1+ j))))))
+            (ecc-diff-script a b large))))
+
+(defun ecc-diff--increasing (pairs)
+  "Return the longest run of PAIRS, (I . J) by I, whose J go up too."
+  (let* ((pairs (vconcat pairs))
+         (n (length pairs))
+         (tails (make-vector n 0))      ; index of the pair ending each run
+         (back (make-vector n nil))
+         (runs 0))
+    (dotimes (k n)
+      (let ((low 0) (high runs)
+            (j (cdr (aref pairs k))))
+        (while (< low high)
+          (let ((mid (/ (+ low high) 2)))
+            (if (< (cdr (aref pairs (aref tails mid))) j)
+                (setq low (1+ mid))
+              (setq high mid))))
+        (when (> low 0)
+          (aset back k (aref tails (1- low))))
+        (aset tails low k)
+        (when (= low runs)
+          (setq runs (1+ runs)))))
+    (let ((out nil)
+          (k (and (> runs 0) (aref tails (1- runs)))))
+      (while k
+        (push (aref pairs k) out)
+        (setq k (aref back k)))
+      out)))
+
+(defun ecc-diff-patience (a b)
+  "Return the script of A becoming B when they are too large to compare whole.
+For the LARGE of `ecc-diff-script'.  The lines each holds exactly once,
+in the same order in both, are kept, and the stretches between them are
+compared again, by this too when still too large.  With no such line
+everything is removed and added, rather than anything stopping to
+compare them."
+  (let ((counts (make-hash-table :test #'equal))
+        (pairs nil))
+    (seq-do-indexed (lambda (text i)
+                      (let ((count (gethash text counts (list 0 nil 0 nil))))
+                        (puthash text (list (1+ (nth 0 count)) i 0 nil) counts)))
+                    a)
+    (seq-do-indexed (lambda (text j)
+                      (when-let* ((count (gethash text counts)))
+                        (puthash text (list (nth 0 count) (nth 1 count) (1+ (nth 2 count)) j)
+                                 counts)))
+                    b)
+    (maphash (lambda (_text count)
+               (when (and (= (nth 0 count) 1) (= (nth 2 count) 1))
+                 (push (cons (nth 1 count) (nth 3 count)) pairs)))
+             counts)
+    (if (null pairs)
+        (append (make-list (length a) 'removed) (make-list (length b) 'added))
+      (let ((i 0) (j 0) (pieces nil))
+        (dolist (pair (ecc-diff--increasing (sort pairs #'car-less-than-car)))
+          (when (or (< i (car pair)) (< j (cdr pair)))
+            (push (ecc-diff-script (seq-subseq a i (car pair)) (seq-subseq b j (cdr pair))
+                                   #'ecc-diff-patience)
+                  pieces))
+          (push (list 'context) pieces)
+          (setq i (1+ (car pair))
+                j (1+ (cdr pair))))
+        (push (ecc-diff-script (seq-subseq a i) (seq-subseq b j) #'ecc-diff-patience)
+              pieces)
+        ;; Joined once: appended one by one, the script would be copied
+        ;; for every line held once.
+        (apply #'nconc (nreverse pieces))))))
 
 (defun ecc-diff-counts (lines)
   "Return (ADDED . REMOVED) for the diff LINES."
@@ -222,6 +309,42 @@ hunks, each (OLD-START OLD-COUNT NEW-START NEW-COUNT . LINES)."
           (setq old-line (+ old-line old-count)
                 new-line (+ new-line new-count))))
       (nreverse hunks))))
+
+(defun ecc-diff-shifter (hunks &optional backward)
+  "Return a function carrying a line number through the change HUNKS make.
+HUNKS are (OLD-START OLD-COUNT NEW-START NEW-COUNT ...) in order, as
+`ecc-diff-hunks' numbers them: a hunk replaces OLD-COUNT lines from
+OLD-START with NEW-COUNT, and one that takes nothing out goes in front
+of line OLD-START.  The function takes a line NUMBER of the text before
+the change -- after it, with BACKWARD -- and returns the number it has
+on the other side, or nil for a line inside a hunk, which the change
+replaced.  Given a second argument, STAY, it returns a line inside a
+hunk moved by the hunks above it alone: the place the change was made.
+The line is found among the hunks by halving, over the shifts of all
+of them summed once here."
+  (let* ((n (length hunks))
+         (starts (make-vector n 0))
+         (ends (make-vector n 0))
+         (shifts (make-vector (1+ n) 0))
+         (k 0))
+    (dolist (hunk hunks)
+      (let ((start (nth (if backward 2 0) hunk))
+            (count (nth (if backward 3 1) hunk))
+            (other (nth (if backward 1 3) hunk)))
+        (aset starts k start)
+        (aset ends k (+ start count))
+        (aset shifts (1+ k) (+ (aref shifts k) (- other count)))
+        (setq k (1+ k))))
+    (lambda (number &optional stay)
+      ;; How many hunks end at NUMBER or before it: they are all above.
+      (let ((low 0) (high n))
+        (while (< low high)
+          (let ((mid (/ (+ low high) 2)))
+            (if (<= (aref ends mid) number)
+                (setq low (1+ mid))
+              (setq high mid))))
+        (and (or stay (not (and (< low n) (<= (aref starts low) number))))
+             (+ number (aref shifts low)))))))
 
 ;;;; Text with faces
 
