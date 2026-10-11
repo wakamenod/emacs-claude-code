@@ -394,7 +394,8 @@ Verified against **Claude Code CLI 2.1.281**.
   review -- shows a
   list of its files immediately left of the diff, in a buffer of its own,
   `*ecc-review-files: REVIEW*`: one line a file with what happened to it
-  (`M`, `A`, `D`, or `R` with its former name), the lines added and
+  (`M`, `A`, `D`, or `R` with its former name -- a name with a space
+  without the tab git ends it with), the lines added and
   removed, your comments and Claude's as `yours·Claude's`, and `!` when
   one of them is outdated, under `Files (SHOWN of ALL)`. `▸` marks the
   file being read -- the one point is in, or the one of the current
@@ -898,7 +899,11 @@ Verified against **Claude Code CLI 2.1.281**.
   names no blob -- the one made from what a session recorded, a patch for
   each edit, each numbered against the file as its edit found it -- is
   matched by the text and order of its lines alone, and two of its lines
-  at one number, or two hunks with one header, are two places. When git cannot
+  at one number, or two hunks with one header, are two places; a file
+  outside git whose original the session recorded has that for its one
+  old side. The old blobs of a session over several repositories are
+  compared in the repository of each file, whose names, from the second
+  repository on, are given from the first (`../two/x.txt`). When git cannot
   say, or carrying a file fails, none of the comments of that file moves:
   they go outdated where they were and why is in the log. A comment on a
   whole hunk follows the hunk most of its lines are in now while more than
@@ -990,8 +995,7 @@ Verified against **Claude Code CLI 2.1.281**.
   with the unchanged lines between them; a textconv driver in
   `.gitattributes` showed what the driver made of a file rather than its
   lines; and a file named past ASCII, `日本.txt`, was shown and looked for
-  as `"b/\346\227\245\346\234\254.txt"`. A file whose name has a space
-  is no longer listed with git's tab at the end of its name.
+  as `"b/\346\227\245\346\234\254.txt"`.
 
 - `TAB` after `@` offered the project's files as
   `../../../private/tmp/x/readme.md` when the project spelt its root
