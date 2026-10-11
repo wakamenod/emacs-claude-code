@@ -2111,6 +2111,36 @@ as in `shot-start-live'; the scene's end makes them again."
    (list (cons 0.3 (lambda () (shot-scene-ediff-press 'new "y")))
          (cons 1.8 (lambda () (shot-keys "y"))))))
 
+(defvar shot-usecase-session-width 40
+  "Columns the session keeps in the use case of the review.
+The review Claude opens takes the source's window, and at half the
+frame its lines and Claude's comments ran past the edge and wrapped
+over many lines (2026-10-11); the transcript reads well narrower.")
+
+(defun shot-usecase-narrow-session (&rest _)
+  "Narrow the live session's window again once a review is on the screen.
+Showing the review lays the windows out half and half, whatever width
+the source had before it, so the scene narrows them after.  It runs
+inside the tool Claude called, which an error here would fail."
+  (ignore-errors (shot-scene-usecase-layout)))
+
+(defun shot-scene-usecase-layout ()
+  "Narrow the live session's window, leaving the rest to the review to come.
+Until `shot-scene-live-review-end', a review Claude shows narrows it
+again (`shot-usecase-narrow-session')."
+  (advice-add 'ecc-window-show-review-quietly :after #'shot-usecase-narrow-session)
+  (when-let* ((window (get-buffer-window (ecc-session-buffer shot-live))))
+    (let ((ignore-window-parameters t)
+          (window-combination-resize nil))
+      (window-resize window (- shot-usecase-session-width (window-total-width window))
+                     t t))
+    (with-selected-window window
+      (ecc-chat--set-margins window)
+      (goto-char (point-max))
+      (recenter -1)))
+  (redisplay t)
+  (window-total-width (get-buffer-window (ecc-session-buffer shot-live))))
+
 (defun shot-scene-usecase-review-ask (chunks)
   "Type CHUNKS into the prompt region of the live session and send it."
   (let ((time 0.0))
@@ -2151,6 +2181,7 @@ such a line, } goes to Claude's first comment instead."
 (defun shot-scene-live-review-end ()
   "Stop the live session and make the scenes' own sessions again."
   (shot-dump-log shot-live "/tmp/ecc-docshot-live-review.log")
+  (advice-remove 'ecc-window-show-review-quietly #'shot-usecase-narrow-session)
   (shot-close-reviews)
   (dolist (session (ecc-model-sessions))
     (ecc-kill session))

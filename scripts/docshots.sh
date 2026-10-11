@@ -877,6 +877,7 @@ if want usecase-review; then
     wait_until '(shot-live-idle-p)' 60
     e '(shot-live-change)'                     ; sleep 5
     wait_until '(shot-live-settled-p)' 240
+    e '(shot-scene-usecase-layout)'            ; sleep 1
 
     scene usecase-review
     cue; hold 2
