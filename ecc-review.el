@@ -3017,17 +3017,40 @@ gone from the diff altogether."
 Every comment is put back first (`ecc-review--relocate'), so this is
 also what keeps them in place across a refresh.  LINES are the lines of
 the buffer when the caller has read them already; with no comment there
-is nothing to read them for."
-  (mapc #'delete-overlay ecc-review--comments)
-  (mapc #'delete-overlay ecc-review--decorations)
-  (setq ecc-review--comments nil
-        ecc-review--decorations nil
-        ecc-review--positions (make-hash-table :test #'eq))
-  (run-hooks 'ecc-review-before-draw-hook)
-  (when ecc-review--notes
-    (ecc-review--draw-notes-on (or lines (ecc-review-lines))))
-  (run-hooks 'ecc-review-after-draw-hook)
-  (force-mode-line-update))
+is nothing to read them for.  Return non-nil once drawn.
+
+A review whose text changed since its reading -- a reading that
+stopped, a key that got past the keymap -- has nowhere to put a
+comment: what is drawn is left as it is, the echo area says that \`g'
+reads the review again (`ecc-review--undrawn'), and the answer is nil.
+That is no error: the callers draw after what they came to do -- a
+prompt sent, a comment removed, a loop over the reviews of a pull
+request -- and that is done either way."
+  (if (and ecc-review--notes ecc-review--reading (not (ecc-review--reading-current-p)))
+      (progn (message "%s" (ecc-review--undrawn))
+             nil)
+    (mapc #'delete-overlay ecc-review--comments)
+    (mapc #'delete-overlay ecc-review--decorations)
+    (setq ecc-review--comments nil
+          ecc-review--decorations nil
+          ecc-review--positions (make-hash-table :test #'eq))
+    (run-hooks 'ecc-review-before-draw-hook)
+    (when ecc-review--notes
+      (ecc-review--draw-notes-on (or lines (ecc-review-lines))))
+    (run-hooks 'ecc-review-after-draw-hook)
+    (force-mode-line-update)
+    t))
+
+(defun ecc-review--undrawn ()
+  "Return what to say of comments not drawn: the review is to be read again."
+  (format "%s changed since it was read: g reads it again and draws its comments"
+          (buffer-name)))
+
+(defun ecc-review--and-drawn (drawn)
+  "Return \"\" when DRAWN, what `ecc-review--draw-notes' answered.
+Otherwise the notice that the comments wait for \\`g', to follow a
+message that would hide the one the drawing gave."
+  (if drawn "" (concat "; " (ecc-review--undrawn))))
 
 (defun ecc-review--draw-notes-on (lines)
   "Draw the comments of this buffer on LINES, the lines it holds now.
@@ -3209,15 +3232,16 @@ the text."
                              (or (ecc-review--line-at-point)
                                  (user-error "Not on a line of a hunk")))))
                   (text (string-trim text))
-                  (target (and id (ecc-review-find-note id)))
-                  (line (ecc-review--locate-note anchor)))
+                  (target (and id (ecc-review-find-note id))))
        (when (string-empty-p text)
          (user-error "Empty comment"))
        (when (eq (ecc-review-note-outdated anchor) 'replaced)
          (user-error "The review shows another proposal now"))
+       ;; Only a comment of its own needs its line: an edit changes the
+       ;; text of one that is somewhere already, whatever the reading.
        (if (and (eq kind 'edit) target)
            (ecc-review--edit-note target text)
-         (ecc-review-add-note 'user text (or line anchor)
+         (ecc-review-add-note 'user text (or (ecc-review--locate-note anchor) anchor)
                               (and (eq kind 'reply) target id)))))
    "The line has gone from the diff; the comment is kept as outdated"))
 
@@ -3292,9 +3316,9 @@ argument ALL every comment of the review is offered, wherever point is."
                 "Remove comment: "
                 (not here))))
     (ecc-review-remove-note note)
-    (ecc-review--draw-notes)
-    (message "Comment #%d removed (%d left)" (ecc-review-note-id note)
-             (length ecc-review--notes))))
+    (let ((drawn (ecc-review--draw-notes)))
+      (message "Comment #%d removed (%d left)%s" (ecc-review-note-id note)
+               (length ecc-review--notes) (ecc-review--and-drawn drawn)))))
 
 (defun ecc-review--key (key)
   "Return KEY, a KEY of `ecc-review--note-place\=', as a list of numbers.
@@ -3428,10 +3452,12 @@ Hidden, they are still counted in the header line.  They are never
 part of the prompt, shown or not."
   (interactive)
   (setq ecc-review--show-agent (not ecc-review--show-agent))
-  (ecc-review--draw-notes)
-  (message (if ecc-review--show-agent
-               "Showing Claude's comments"
-             "Hiding Claude's comments")))
+  (let ((drawn (ecc-review--draw-notes)))
+    (message "%s%s"
+             (if ecc-review--show-agent
+                 "Showing Claude's comments"
+               "Hiding Claude's comments")
+             (ecc-review--and-drawn drawn))))
 
 ;;;; The message
 

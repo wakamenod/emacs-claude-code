@@ -770,16 +770,17 @@ to what the echo area says."
   (with-current-buffer review
     (setq ecc-review--filter (and filter (not (string-empty-p (string-trim filter)))
                                   (string-trim filter)))
-    (let ((ecc-review-files--applying t))
-      (ecc-review--draw-notes))
-    (ecc-review-files-filter-applied)
-    (force-mode-line-update)
-    (let ((hidden (length ecc-review--hidden)))
-      (message "%s%s"
-               (if ecc-review--filter
-                   (format "%s hidden by filter" (ecc-review--count hidden "file"))
-                 "Every file is shown")
-               (or note "")))))
+    (let* ((drawn (let ((ecc-review-files--applying t))
+                    (ecc-review--draw-notes))))
+      (ecc-review-files-filter-applied)
+      (force-mode-line-update)
+      (let ((hidden (length ecc-review--hidden)))
+        (message "%s%s%s"
+                 (if ecc-review--filter
+                     (format "%s hidden by filter" (ecc-review--count hidden "file"))
+                   "Every file is shown")
+                 (or note "")
+                 (ecc-review--and-drawn drawn))))))
 
 ;;;###autoload
 (defun ecc-review-files-filter ()

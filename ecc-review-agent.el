@@ -139,6 +139,12 @@ work on that."
 A sentence the model can act on: an error that only says no is one it
 works around.")
 
+(defvar ecc-review-agent-undrawn-text
+  "The review changed since it was last read, so it is not drawn again \
+until it is read again (review_open, or g in Emacs); what you asked for is done."
+  "What a review tool adds when it did its work but could not draw the comments.
+The review's text changed since its reading (`ecc-review--draw-notes').")
+
 (defvar ecc-review-agent-in-place-text
   "The user has this review open side by side in ediff, which takes their \
 whole screen, so review_open read it again where it is rather than opening \
@@ -815,10 +821,11 @@ A reply is listed under what it answers."
                                            ecc-review--notes ", ")
                               "none")))))
       (ecc-review-remove-note note)
-      (ecc-review--draw-notes)
-      (format "Removed #%d, %s comment at %s." id
-              (if (ecc-review--agent-p note) "your" "the user's")
-              (ecc-review-note-where note)))))
+      (let ((drawn (ecc-review--draw-notes)))
+        (format "Removed #%d, %s comment at %s.%s" id
+                (if (ecc-review--agent-p note) "your" "the user's")
+                (ecc-review-note-where note)
+                (if drawn "" (concat "  " ecc-review-agent-undrawn-text)))))))
 
 (defun ecc-review-agent-clear-comments (file include-user-comments)
   "Remove Claude\\='s comments, of FILE alone when given.
@@ -834,8 +841,8 @@ INCLUDE-USER-COMMENTS, a JSON boolean, removes the user\\='s as well."
            (gone (seq-filter (lambda (note) (or all (ecc-review--agent-p note))) in-file))
            (kept (- (length in-file) (length gone))))
       (mapc #'ecc-review-remove-note gone)
-      (ecc-review--draw-notes)
-      (format "Removed %s.%s" (ecc-review--count (length gone) "comment")
+      (format "Removed %s.%s%s" (ecc-review--count (length gone) "comment")
+              (if (ecc-review--draw-notes) "" (concat "  " ecc-review-agent-undrawn-text))
               (if (> kept 0)
                   (format "  The user's %d were kept; include_user_comments removes them too."
                           kept)

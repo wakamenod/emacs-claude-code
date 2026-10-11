@@ -2831,6 +2831,65 @@ and a line of the log each; the next reading asks again."
         (should (equal (mapcar #'ecc-review-note-line ecc-review--notes) '(12 12 12)))
         (should-not (seq-some #'ecc-review-note-outdated ecc-review--notes))))))
 
+(defun ecc-review-test--drawn-texts ()
+  "Return the comments drawn in this review, as the text of their overlays."
+  (mapcar (lambda (overlay) (overlay-get overlay 'after-string))
+          (ecc-review-comment-overlays)))
+
+(ert-deftest ecc-review-test-a-stale-review-is-not-drawn-and-nothing-stops ()
+  "Drawing a review whose text changed since its reading leaves what is drawn.
+It says g reads the review again, once, and is no error: what the
+command came to do -- send, remove, filter, hide Claude's -- is done."
+  (require 'ecc-review-files)
+  (ecc-review-test--with-review session
+    (ecc-review-test--goto "+added")
+    (ecc-review-comment "here")
+    (ecc-review-test--goto "-two")
+    (ecc-review-comment "there")
+    (let ((drawn (ecc-review-test--drawn-texts))
+          (messages nil))
+      (should (= (length drawn) 2))
+      ;; Read again, and stopped before its reading was whole.
+      (ecc-review--begin-reading)
+      (cl-letf (((symbol-function 'message)
+                 (lambda (format &rest arguments)
+                   (push (apply #'format-message format arguments) messages))))
+        (should-not (ecc-review--draw-notes))
+        (should (equal (ecc-review-test--drawn-texts) drawn))
+        ;; C-c C-c: sent, and marked so, though not drawn again.
+        (ecc-review-send)
+        (should (= (length (ecc-test-sent-messages)) 1))
+        (should (seq-every-p #'ecc-review-note-sent ecc-review--notes))
+        (should (equal (ecc-review-test--drawn-texts) drawn))
+        (ecc-review-files-set-filter (current-buffer) "foo")
+        (should (equal (ecc-review-test--drawn-texts) drawn))
+        (ecc-review-toggle-agent)
+        (should (equal (ecc-review-test--drawn-texts) drawn))
+        (cl-letf (((symbol-function 'completing-read)
+                   (lambda (_prompt labels &rest _) (car labels))))
+          (ecc-review-remove-comment t))
+        (should (= (length ecc-review--notes) 1))
+        (should (equal (ecc-review-test--drawn-texts) drawn)))
+      (should (string-search "g reads it again" (car messages)))
+      (should (string-prefix-p "Comment #" (car messages)))
+      ;; g draws what is left.
+      (ecc-review-test--fill session ecc-review-test--diff)
+      (should (= (length (ecc-review-test--drawn-texts)) 1)))))
+
+(ert-deftest ecc-review-test-c-edits-a-comment-whatever-the-reading ()
+  "c that edits a comment of yours needs no line, and edits it on a stale reading too.
+Only a new comment is put on a line; what was typed is not sent to the
+kill ring for want of one."
+  (ecc-review-test--with-review session
+    (ecc-review-test--goto "+added")
+    (ecc-review-comment "first")
+    (let ((kill-ring nil))
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (&rest _) (ecc-review--begin-reading) "second")))
+        (call-interactively #'ecc-review-comment))
+      (should-not kill-ring)
+      (should (equal (mapcar #'ecc-review-note-text ecc-review--notes) '("second"))))))
+
 (ert-deftest ecc-review-test-c-keeps-what-was-typed-when-it-fails ()
   "c that cannot put its comment anywhere leaves what was typed in the kill ring.
 Here the review is being read again when the text is in."

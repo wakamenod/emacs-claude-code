@@ -1993,13 +1993,13 @@ went."
      (pcase-let* ((`(,anchor ,kind ,id)
                    (or plan (ecc-review-ediff--comment-plan (ecc-review-ediff--current-unit))))
                   (text (string-trim text))
-                  (target (and id (ecc-review-find-note id)))
-                  (line (ecc-review--locate-note anchor)))
+                  (target (and id (ecc-review-find-note id))))
        (when (string-empty-p text)
          (user-error "Empty comment"))
+       ;; Only a comment of its own needs its difference (`ecc-review-comment').
        (if (and (eq kind 'edit) target)
            (ecc-review--edit-note target text)
-         (ecc-review-add-note 'user text (or line anchor)
+         (ecc-review-add-note 'user text (or (ecc-review--locate-note anchor) anchor)
                               (and (eq kind 'reply) target id)))))
    "The difference has gone from the review; the comment is kept as outdated"))
 
@@ -2034,9 +2034,9 @@ offers them all")))
                 "Remove comment: "
                 (not here))))
     (ecc-review-remove-note note)
-    (ecc-review--draw-notes)
-    (message "Comment #%d removed (%d left)" (ecc-review-note-id note)
-             (length ecc-review--notes))))
+    (let ((drawn (ecc-review--draw-notes)))
+      (message "Comment #%d removed (%d left)%s" (ecc-review-note-id note)
+               (length ecc-review--notes) (ecc-review--and-drawn drawn)))))
 
 (defun ecc-review-ediff-list-comments ()
   "Pick one of the comments, either author's, and move to it."
