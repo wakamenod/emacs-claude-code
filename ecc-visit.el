@@ -190,12 +190,9 @@ PATH."
 Each hunk is (OLD-START OLD-COUNT NEW-START NEW-COUNT ...), the shape of
 `ecc-diff-hunks\\=', in the file before the change.  The hunks above LINE
 move it by what they added less what they removed; a line inside a hunk
-is left where it is, which is the place the change was made."
-  (let ((delta 0))
-    (pcase-dolist (`(,old-start ,old-count ,_ ,new-count) hunks)
-      (when (>= line (+ old-start old-count))
-        (cl-incf delta (- new-count old-count))))
-    (max 1 (+ line delta))))
+is left where it is, which is the place the change was made
+\(`ecc-diff-shifter')."
+  (max 1 (funcall (ecc-diff-shifter hunks) line t)))
 
 (defun ecc-visit--first-change (patch)
   "Return the first line PATCH changed, in the file as it left it, or nil.

@@ -72,11 +72,14 @@
 
 (ert-deftest ecc-review-map-test-a-moved-old-side ()
   "When the old side moved, its lines are carried through the hunks between the two."
+  ;; Numbered as `ecc-diff-hunks' numbers them: what takes nothing out
+  ;; is in front of the line it names.
   (should (equal (ecc-review-map-text-hunks "1\n2\n3\n4\nx\n6\n" "a\nb\n1\n2\n3\n4\ny\n6\n")
-                 '((0 0 1 2) (5 1 7 1))))
-  (let* ((hunks '((0 0 1 2) (5 1 7 1) (9 0 12 3)))
-         (forward (ecc-review-map--carrier hunks t))
-         (backward (ecc-review-map--carrier hunks nil)))
+                 '((1 0 1 2) (5 1 7 1))))
+  (should (equal (ecc-review-map-text-hunks "a\nb\nc\n" "a\nc\n") '((2 1 2 0))))
+  (let* ((hunks '((1 0 1 2) (5 1 7 1) (10 0 12 3)))
+         (forward (ecc-diff-shifter hunks))
+         (backward (ecc-diff-shifter hunks t)))
     (should (equal (mapcar forward '(1 4 5 6 9 10 12)) '(3 6 nil 8 11 15 17)))
     (should (equal (mapcar backward '(1 2 3 7 11 12 14 15)) '(nil nil 1 nil 9 nil nil 10))))
   (let* ((from (ecc-review-map-test--shape
@@ -88,7 +91,7 @@
               "bbbbbbb")))
     ;; Not knowing how the old sides differ, nothing is matched.
     (should-not (ecc-review-map-test--at (ecc-review-map-lines from to 'unknown) 'new 9))
-    (let ((map (ecc-review-map-lines from to '((0 0 1 2)))))
+    (let ((map (ecc-review-map-lines from to '((1 0 1 2)))))
       (should (= (ecc-review-map-test--at map 'new 9) 9))
       ;; The import is in the old side now: no change, and no line put in.
       (should-not (ecc-review-map-test--at map 'new 1))

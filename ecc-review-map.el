@@ -164,75 +164,13 @@ that edit found it."
 
 (defun ecc-review-map-text-hunks (from to)
   "Return the hunks of the text FROM against TO.
-Each is (OLD-START OLD-COUNT NEW-START NEW-COUNT).  The texts are two
-blobs, compared line by line (`ecc-diff-script', split at the lines held
-once when too large), and the hunks numbered as git numbers those of a
-diff with no context: a hunk that takes nothing out by the line before
-it, one that puts nothing in likewise."
-  (let ((a (vconcat (ecc-review-map--split from)))
-        (b (vconcat (ecc-review-map--split to)))
-        (i 1) (j 1)
-        (hunks nil)
-        (open nil))                     ; (OLD-START NEW-START REMOVED . ADDED)
-    (dolist (tag (append (ecc-diff-script a b #'ecc-review-map--patience) '(context)))
-      (if (eq tag 'context)
-          (progn
-            (when open
-              (pcase-let ((`(,old ,new ,removed . ,added) open))
-                (push (list (if (> removed 0) old (1- old)) removed
-                            (if (> added 0) new (1- new)) added)
-                      hunks))
-              (setq open nil))
-            (setq i (1+ i) j (1+ j)))
-        (unless open
-          (setq open (cons i (cons j (cons 0 0)))))
-        (if (eq tag 'removed)
-            (setf (nth 2 open) (1+ (nth 2 open)) i (1+ i))
-          (setcdr (cddr open) (1+ (cdr (cddr open))))
-          (setq j (1+ j)))))
-    (nreverse hunks)))
-
-(defun ecc-review-map--split (text)
-  "Return the lines of TEXT, without the empty one after its last newline."
-  (let ((lines (split-string text "\n")))
-    (if (equal (car (last lines)) "") (butlast lines) lines)))
-
-(defun ecc-review-map--carrier (hunks forward)
-  "Return a function carrying a line number of one old side to the other.
-HUNKS are those of `ecc-review-map-text-hunks'; FORWARD carries a line
-of their old side to their new, and otherwise the other way.  The
-function returns nil for a line inside a hunk, which changed and is
-nowhere.  git numbers a hunk that takes nothing out by the line before
-it, which a line after it is behind.  The hunks are in order, so a line
-is found among them by halving, with the shift of all those before it
-summed once here."
-  (let* ((n (length hunks))
-         (starts (make-vector n 0))
-         (counts (make-vector n 0))
-         (ends (make-vector n 0))
-         (shifts (make-vector (1+ n) 0))
-         (k 0))
-    (dolist (hunk hunks)
-      (let ((start (if forward (nth 0 hunk) (nth 2 hunk)))
-            (count (if forward (nth 1 hunk) (nth 3 hunk)))
-            (other (if forward (nth 3 hunk) (nth 1 hunk))))
-        (aset starts k start)
-        (aset counts k count)
-        (aset ends k (if (zerop count) start (+ start count -1)))
-        (aset shifts (1+ k) (+ (aref shifts k) (- other count)))
-        (setq k (1+ k))))
-    (lambda (number)
-      ;; The first hunk that ends at NUMBER or after.
-      (let ((low 0) (high n))
-        (while (< low high)
-          (let ((mid (/ (+ low high) 2)))
-            (if (< (aref ends mid) number)
-                (setq low (1+ mid))
-              (setq high mid))))
-        (unless (and (< low n)
-                     (> (aref counts low) 0)
-                     (<= (aref starts low) number))
-          (+ number (aref shifts low)))))))
+Each is (OLD-START OLD-COUNT NEW-START NEW-COUNT), numbered as
+`ecc-diff-hunks' numbers them.  The texts are two blobs, compared line
+by line by the diff the transcript uses (`ecc-diff-lines'), split at
+the lines held once when too large (`ecc-diff-patience'); the lines
+themselves are not kept."
+  (mapcar (lambda (hunk) (seq-take hunk 4))
+          (ecc-diff-hunks (ecc-diff-lines from to #'ecc-diff-patience) 0)))
 
 ;;;; The new side as a sequence
 
@@ -295,76 +233,11 @@ which nothing of the other side equals."
         (aset out i (if (stringp token) token (list side i)))))
     out))
 
-(defun ecc-review-map--increasing (pairs)
-  "Return the longest run of PAIRS, (I . J) by I, whose J go up too."
-  (let* ((pairs (vconcat pairs))
-         (n (length pairs))
-         (tails (make-vector n 0))      ; index of the pair ending each run
-         (back (make-vector n nil))
-         (runs 0))
-    (dotimes (k n)
-      (let ((low 0) (high runs)
-            (j (cdr (aref pairs k))))
-        (while (< low high)
-          (let ((mid (/ (+ low high) 2)))
-            (if (< (cdr (aref pairs (aref tails mid))) j)
-                (setq low (1+ mid))
-              (setq high mid))))
-        (when (> low 0)
-          (aset back k (aref tails (1- low))))
-        (aset tails low k)
-        (when (= low runs)
-          (setq runs (1+ runs)))))
-    (let ((out nil)
-          (k (and (> runs 0) (aref tails (1- runs)))))
-      (while k
-        (push (aref pairs k) out)
-        (setq k (aref back k)))
-      out)))
-
-(defun ecc-review-map--patience (a b)
-  "Return the script of A becoming B when they are too large to compare whole.
-The lines each holds exactly once, in the same order in both, are kept,
-and the stretches between them are compared again (`ecc-diff-script').
-With no such line nothing is kept: the comments there go outdated
-rather than the review stopping to compare them."
-  (let ((counts (make-hash-table :test #'equal))
-        (pairs nil))
-    (seq-do-indexed (lambda (text i)
-                      (let ((count (gethash text counts (list 0 nil 0 nil))))
-                        (puthash text (list (1+ (nth 0 count)) i 0 nil) counts)))
-                    a)
-    (seq-do-indexed (lambda (text j)
-                      (when-let* ((count (gethash text counts)))
-                        (puthash text (list (nth 0 count) (nth 1 count) (1+ (nth 2 count)) j)
-                                 counts)))
-                    b)
-    (maphash (lambda (_text count)
-               (when (and (= (nth 0 count) 1) (= (nth 2 count) 1))
-                 (push (cons (nth 1 count) (nth 3 count)) pairs)))
-             counts)
-    (if (null pairs)
-        (append (make-list (length a) 'removed) (make-list (length b) 'added))
-      (let ((i 0) (j 0) (pieces nil))
-        (dolist (pair (ecc-review-map--increasing (sort pairs #'car-less-than-car)))
-          (when (or (< i (car pair)) (< j (cdr pair)))
-            (push (ecc-diff-script (seq-subseq a i (car pair)) (seq-subseq b j (cdr pair))
-                                   #'ecc-review-map--patience)
-                  pieces))
-          (push (list 'context) pieces)
-          (setq i (1+ (car pair))
-                j (1+ (cdr pair))))
-        (push (ecc-diff-script (seq-subseq a i) (seq-subseq b j) #'ecc-review-map--patience)
-              pieces)
-        ;; Joined once: appended one by one, the script would be copied
-        ;; for every line held once.
-        (apply #'nconc (nreverse pieces))))))
-
 (defun ecc-review-map--match (a b a0 b0 map)
   "Match the put-in lines A against B, at A0 and B0 of the whole, into MAP.
 By `ecc-diff-script', split at the lines held once when too large."
   (let ((i 0) (j 0))
-    (dolist (tag (ecc-diff-script a b #'ecc-review-map--patience))
+    (dolist (tag (ecc-diff-script a b #'ecc-diff-patience))
       (pcase tag
         ('context (aset map (+ a0 i) (+ b0 j))
                   (setq i (1+ i) j (1+ j)))
@@ -405,11 +278,11 @@ be said, which matches nothing."
       (let* ((forward (pcase carry
                         ('same #'identity)
                         ('none #'ignore)
-                        (_ (ecc-review-map--carrier carry t))))
+                        (_ (ecc-diff-shifter carry))))
              (backward (pcase carry
                          ('same #'identity)
                          ('none #'ignore)
-                         (_ (ecc-review-map--carrier carry nil))))
+                         (_ (ecc-diff-shifter carry t))))
              (a (ecc-review-map--side from))
              (b (ecc-review-map--side to))
              (map (ecc-review-map--matches a b forward backward)))
@@ -453,7 +326,7 @@ FROM and TO are lists of ((NUMBER . NTH) . TEXT) in the order of a diff."
         (b-places (vconcat (mapcar #'car to)))
         (lines (make-hash-table :test #'equal))
         (i 0) (j 0))
-    (dolist (tag (ecc-diff-script a b #'ecc-review-map--patience))
+    (dolist (tag (ecc-diff-script a b #'ecc-diff-patience))
       (pcase tag
         ('context
          (puthash (aref a-places i) (aref b-places j) lines)

@@ -44,6 +44,35 @@ first is the line number, which is drawn as a line number."
          (lines (ecc-diff-lines old new)))
     (should (equal (ecc-diff-counts lines) '(20 . 20)))))
 
+(ert-deftest ecc-diff-test-lines-split-at-lines-held-once ()
+  "Past the cell limit, a LARGE of `ecc-diff-patience' keeps the lines held once.
+Without it everything is taken out and put in again."
+  (let* ((ecc-diff-max-cells 100)
+         (old (mapconcat (lambda (i) (format "line %d" i)) (number-sequence 1 40) "\n"))
+         ;; Changed at both ends, so that what is left between is large.
+         (new (concat "first\n" (string-remove-prefix "line 1\n" (string-remove-suffix "line 40" old))
+                      "last")))
+    (should (equal (ecc-diff-counts (ecc-diff-lines old new)) '(40 . 40)))
+    (should (equal (ecc-diff-counts (ecc-diff-lines old new #'ecc-diff-patience)) '(2 . 2)))
+    (should (equal (mapcar (lambda (hunk) (seq-take hunk 4))
+                           (ecc-diff-hunks (ecc-diff-lines old new #'ecc-diff-patience) 0))
+                   '((1 1 1 1) (40 1 40 1))))))
+
+(ert-deftest ecc-diff-test-a-line-carried-through-hunks ()
+  "A line moves by the hunks above it; one inside a hunk is nowhere, or stays."
+  (let* ((hunks (seq-map (lambda (hunk) (seq-take hunk 4))
+                         (ecc-diff-hunks (ecc-diff-lines "1\n2\n3\n4\nx\n6\n7\n8\n9\n"
+                                                         "a\nb\n1\n2\n3\n4\ny\n6\n7\n8\n9\nc\n")
+                                         0)))
+         (forward (ecc-diff-shifter hunks))
+         (backward (ecc-diff-shifter hunks t)))
+    (should (equal hunks '((1 0 1 2) (5 1 7 1) (10 0 12 1))))
+    (should (equal (mapcar forward '(1 4 5 6 9)) '(3 6 nil 8 11)))
+    (should (equal (funcall forward 5 t) 7))
+    (should (equal (mapcar backward '(1 2 3 7 11 12)) '(nil nil 1 nil 9 nil)))
+    ;; With no hunk, every line is where it was.
+    (should (= (funcall (ecc-diff-shifter nil) 7) 7))))
+
 (ert-deftest ecc-diff-test-hunks ()
   "Changes far apart become separate hunks with the right line numbers."
   (let* ((old (mapconcat #'number-to-string (number-sequence 1 30) "\n"))
