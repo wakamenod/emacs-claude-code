@@ -881,13 +881,17 @@ Verified against **Claude Code CLI 2.1.281**.
   kept as outdated.
 
 - `g` no longer drops a comment whose hunk header changed ("Dropped N
-  comments whose hunk is gone"). A comment stays on its line while that
-  line says what it said between the same neighbouring lines; otherwise it
-  goes to the nearest line that does, no further than
-  `ecc-review-note-max-shift` (100) lines, so a change higher up in the file
-  moves it instead of losing it, and a comment on a blank line or a lone
-  brace does not wander off to another. A neighbour that is not known -- at
-  the first or last line of a hunk -- is not compared, so hunks merging or
+  comments whose hunk is gone"). A comment goes to the nearest line of
+  the same side that says what its line said, no further than
+  `ecc-review-note-max-shift` (100) lines, so lines put in or taken out
+  above it -- in its own hunk or higher up in the file -- move it instead
+  of losing it. The lines around the new place in its hunk have to bear
+  it out, lines put in since being passed over: on each side, the nearest
+  line the comment also had around it must have been on that side of it,
+  and on one side at least there must be one. So a comment on a blank
+  line or a lone brace does not wander off to another, not even to the
+  next one down the same hunk. A side that has no lines -- at the
+  first or last line of a hunk -- is not compared, so hunks merging or
   splitting leave a comment where it was. A comment on a whole hunk goes to
   the hunk with the same `@@` line, else to a hunk over the same lines of
   the old side -- the baseline, which lines put in above do not move, so a
