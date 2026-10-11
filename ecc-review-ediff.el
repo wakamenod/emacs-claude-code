@@ -1613,10 +1613,7 @@ differences are in (`ecc-review-ediff--differences-computed\=')."
 
 (cl-defmethod ecc-review--file-lines (hunk &context (major-mode ediff-mode))
   "Return the lines of the differences of the file of HUNK in this ediff review."
-  (let ((path (plist-get hunk :path)))
-    (mapcan #'ecc-review-ediff--unit-lines
-            (seq-filter (lambda (unit) (equal (plist-get unit :path) path))
-                        (ecc-review-units)))))
+  (ecc-review--path-lines (plist-get hunk :path)))
 
 (cl-defmethod ecc-review--text (&context (major-mode ediff-mode))
   "Return the differences ediff computed last, which every reading makes anew."

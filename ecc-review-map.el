@@ -406,7 +406,10 @@ each other."
   (let* ((tokens-a (ecc-review-map--side-tokens a))
          (tokens-b (ecc-review-map--side-tokens b))
          (map (make-vector (length tokens-a) nil))
-         (pairs nil))
+         (pairs nil)
+         (beyond nil))
+    ;; The lines of the old side A holds, in order, then those B holds
+    ;; that come after all of A's: each pair once, both runs in order.
     (dotimes (i (length tokens-a))
       (let ((token (aref tokens-a i)))
         (when (integerp token)
@@ -417,9 +420,10 @@ each other."
       (let ((token (aref tokens-b j)))
         (when (integerp token)
           (when-let* ((here (funcall backward token))
-                      (i (ecc-review-map--index a here)))
-            (push (cons i j) pairs)))))
-    (setq pairs (seq-uniq (sort pairs #'car-less-than-car)))
+                      (i (ecc-review-map--index a here))
+                      ((>= i (length tokens-a))))
+            (push (cons i j) beyond)))))
+    (setq pairs (nconc (nreverse pairs) (nreverse beyond)))
     (let ((i0 0) (j0 0))
       ;; The last stretch runs to the end of both.
       (dolist (pair (append pairs (list (cons (length tokens-a) (length tokens-b)))))
