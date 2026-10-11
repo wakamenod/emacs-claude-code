@@ -204,11 +204,11 @@ The review buffer is current."
     (should (equal (ecc-review-agent-test--ok
                     session "review_comment"
                     '((file . "foo.el") (line . 11) (hunk . 1) (text . "disagree")))
-                   "Added #3 at foo.el:11 (new); hunk 1 was not used: line 11 is in hunk 2"))
+                   "Added #3 at foo.el:11 (new); hunk 1 was not used: line 11 (new) is in hunk 2"))
     (should (equal (ecc-review-agent-test--ok
                     session "review_comment"
                     '((file . "foo.el") (line . 2) (hunk . 7) (text . "no such hunk")))
-                   "Added #4 at foo.el:2 (new); hunk 7 was not used: line 2 is in hunk 1"))
+                   "Added #4 at foo.el:2 (new); hunk 7 was not used: line 2 (new) is in hunk 1"))
     (should (seq-every-p #'ecc-review-note-side ecc-review--notes))
     ;; A line not in the diff is the error it was, hunk or not.
     (pcase-let ((`(,failed . ,text)
@@ -219,6 +219,107 @@ The review buffer is current."
       (should (string-search "foo.el:99 (new) is not in the diff" text))
       (should (string-search "shows L1-L3, L10-L12" text)))
     (should (= (length ecc-review--notes) 4))))
+
+(defconst ecc-review-agent-test--removed-diff
+  "diff --git a/bar.el b/bar.el
+--- a/bar.el
++++ b/bar.el
+@@ -9,4 +9,1 @@
+ nine
+-ten
+-eleven
+-twelve
+@@ -13,2 +10,3 @@
+ thirteen
++inserted
+ fourteen
+"
+  "A diff whose hunk 1 removes old line 11 and whose hunk 2 adds new line 11.")
+
+(ert-deftest ecc-review-agent-test-the-hunk-chooses-the-side ()
+  "With no side, a hunk that has the line only on its old side puts it there."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (with-current-buffer (ecc-review-agent-test--fill
+                              session ecc-review-agent-test--removed-diff)
+          (should (equal (ecc-review-agent-test--ok
+                          session "review_comment"
+                          '((file . "bar.el") (line . 11) (hunk . 1) (text . "removed")))
+                         "Added #1 at bar.el:11 (old); line 11 was read on the old side, where hunk 1 has it"))
+          (should (equal (ecc-review-agent-test--ok
+                          session "review_comment"
+                          '((file . "bar.el") (line . 11) (hunk . 2) (text . "added")))
+                         "Added #2 at bar.el:11 (new)"))
+          (should (equal (ecc-review-agent-test--ok
+                          session "review_comment"
+                          '((file . "bar.el") (line . 11) (text . "no hunk")))
+                         "Added #3 at bar.el:11 (new)"))
+          ;; A side given is kept, and the hunk is then the one that disagrees.
+          (should (equal (ecc-review-agent-test--ok
+                          session "review_comment"
+                          '((file . "bar.el") (line . 11) (side . "new") (hunk . 1)
+                            (text . "new side")))
+                         "Added #4 at bar.el:11 (new); hunk 1 was not used: line 11 (new) is in hunk 2"))
+          (should (equal (mapcar #'ecc-review-note-side ecc-review--notes)
+                         '(old new new new))))
+      (ecc-review-agent-test--kill-review-buffers))))
+
+(ert-deftest ecc-review-agent-test-an-unused-argument-is-not-read ()
+  "An argument that is not used does not fail the call, however it reads."
+  (ecc-review-agent-test--with-review session
+    (should (equal (ecc-review-agent-test--ok
+                    session "review_comment"
+                    '((file . "foo.el") (line . 11) (hunk . "two") (text . "x")))
+                   "Added #1 at foo.el:11 (new); hunk \"two\" was not used: it is not a number"))
+    (should (equal (ecc-review-agent-test--ok
+                    session "review_comment"
+                    '((reply_to . 1) (line . "eleven") (hunk . "?") (text . "x")))
+                   "Added #2 at foo.el:11 (new); the place given with reply_to was not used: a reply goes under the comment it answers"))
+    ;; Used, it is still read strictly.
+    (should (car (ecc-review-agent-test--call
+                  session "review_comment"
+                  '((file . "foo.el") (line . "eleven") (text . "x")))))
+    (should (car (ecc-review-agent-test--call
+                  session "review_comment"
+                  '((file . "foo.el") (hunk . "two") (text . "x")))))))
+
+(ert-deftest ecc-review-agent-test-a-reply-at-its-parent-says-nothing ()
+  "A reply given the place of the comment it answers adds no remark."
+  (ecc-review-agent-test--with-review session
+    (ecc-review-agent-test--ok session "review_comment"
+                               '((file . "foo.el") (line . 11) (text . "parent")))
+    (dolist (place '(((file . "foo.el") (line . 11))
+                     ((hunk . 2))
+                     ((file . "foo.el") (line . "L11") (side . "new") (hunk . 2))))
+      (should (string-match-p
+               "\\`Added #[0-9]+ at foo.el:11 (new)\\'"
+               (ecc-review-agent-test--ok
+                session "review_comment" `((reply_to . 1) (text . "x") ,@place)))))
+    ;; Another line, side or hunk is still said.
+    (dolist (place '(((line . 12)) ((line . 11) (side . "old")) ((hunk . 1))))
+      (should (string-search
+               "the place given with reply_to was not used"
+               (ecc-review-agent-test--ok
+                session "review_comment" `((reply_to . 1) (text . "x") ,@place)))))))
+
+(ert-deftest ecc-review-agent-test-an-id-is-not-a-line ()
+  "\"L12\" is a line, never the id of a comment."
+  (ecc-review-agent-test--with-review session
+    (ecc-review-agent-test--ok session "review_comment"
+                               '((file . "foo.el") (line . 11) (text . "one")))
+    (pcase-let ((`(,failed . ,text)
+                 (ecc-review-agent-test--call session "review_remove_comment"
+                                              '((id . "L1")))))
+      (should failed)
+      (should (string-search "id should be a number, not \"L1\"" text)))
+    (should (car (ecc-review-agent-test--call
+                  session "review_comment" '((reply_to . "L1") (text . "x")))))
+    (should (car (ecc-review-agent-test--call
+                  session "review_navigate" '((comment_id . "L1")))))
+    (should (= (length ecc-review--notes) 1))
+    ;; "#1" is an id still.
+    (should (ecc-review-agent-test--ok session "review_remove_comment" '((id . "#1"))))
+    (should-not ecc-review--notes)))
 
 (ert-deftest ecc-review-agent-test-loose-numbers-and-sides ()
   "A line may come as \"L12\" and a side in upper case."
@@ -1044,6 +1145,8 @@ their hunk argument."
                                                  (alist-get 'properties
                                                             (alist-get 'inputSchema comment))))))
     (should (string-search "file and line (and side) for a line, file and hunk only for a whole hunk"
+                           (alist-get 'description apply)))
+    (should (string-search "a line for each comment, in the order of the list"
                            (alist-get 'description apply)))
     (should (string-search "send again only those that were not"
                            (alist-get 'description apply)))
