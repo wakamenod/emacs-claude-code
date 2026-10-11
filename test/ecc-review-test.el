@@ -1973,6 +1973,48 @@ them, and they are not the same old side either."
                            "1111111111111111111111111111111111111111"))))
       (ecc-review-test--kill-review-buffers))))
 
+(ert-deftest ecc-review-test-point-on-a-hunk-goes-to-its-line-that-stayed ()
+  "Point on the @@ line of a hunk that went goes to the first of its lines that stayed."
+  (let ((first (concat ecc-review-test--summary "    x = 1\n    y = 2\n    z = 3\n")))
+    (ecc-review-test--following (session directory first)
+      (ecc-review-test--goto "@@ -6,0 +7,3 @@ class Summary:")
+      (ecc-review-test--change-and-refresh
+       directory (concat ecc-review-test--summary "    x = 1\n    Y = 2\n    Z = 3\n"))
+      (should (looking-at-p "^\\+    x = 1$")))))
+
+(ert-deftest ecc-review-test-a-refill-that-fails-saving-the-place-lets-it-go ()
+  "The places read are let go even when saving the second of them fails."
+  (ecc-review-test--with-review session
+    (save-window-excursion
+      (delete-other-windows)
+      (switch-to-buffer (current-buffer))
+      (ecc-review-test--goto "+added")
+      (set-window-point (selected-window) (point))
+      (let ((calls 0)
+            (view-at (symbol-function 'ecc-review--view-at)))
+        (cl-letf (((symbol-function 'ecc-review--view-at)
+                   (lambda (position)
+                     (when (= (cl-incf calls) 2)
+                       (error "The window cannot be read"))
+                     (funcall view-at position))))
+          (should-error (ecc-review-test--fill session ecc-review-test--shifted-diff)))
+        (should (= calls 2))
+        (should-not ecc-review--held)))))
+
+(ert-deftest ecc-review-test-a-hunk-comment-counts-its-changed-lines ()
+  "With lines of context shown, a hunk whose changed line changed again is outdated.
+The context around it stays and is not what the comment was about."
+  (let ((ecc-review-context-lines 3)
+        (first (concat ecc-review-test--summary "    pass\n")))
+    (ecc-review-test--following (session directory first)
+      (goto-char (point-min))
+      (re-search-forward "^@@ -4,3 \\+4,4 @@")
+      (beginning-of-line)
+      (ecc-review-comment "why pass?")
+      (ecc-review-test--change-and-refresh
+       directory (concat ecc-review-test--summary "    return None\n"))
+      (should (ecc-review-note-outdated (car ecc-review--notes))))))
+
 (ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
   "Remembering the place reads the hunk it is in, not the whole diff."
   (ecc-review-test--with-review session

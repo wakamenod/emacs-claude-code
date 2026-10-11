@@ -1554,10 +1554,13 @@ the top."
     (let* ((same (and (derived-mode-p 'ecc-review-mode)
                       (eq ecc-review--request request)))
            (placed (and same (seq-remove #'ecc-review-note-outdated ecc-review--notes)))
-           (views (and same (ecc-review--reading-current-p) (ecc-review--save-views))))
-      ;; The places read are held from here, and let go however this ends.
+           (held ecc-review--held)
+           (views nil))
+      ;; The places read are held from here, and whatever this holds is
+      ;; let go however it ends -- even part of the way through saving.
       (unwind-protect
           (progn
+            (setq views (and same (ecc-review--reading-current-p) (ecc-review--save-views)))
             (unless (derived-mode-p 'ecc-review-mode)
               (ecc-review-mode))
             (unless same
@@ -1598,7 +1601,8 @@ the top."
                          (ecc-review--count lost "comment")
                          (if (= lost 1) "matches" "match"))))
             buffer)
-        (ecc-review--let-go (mapcar #'cadr views))))))
+        (ecc-review--let-go (seq-remove (lambda (place) (memq place held))
+                                        ecc-review--held))))))
 
 (defun ecc-review--view-at (position)
   "Return (ANCHOR . COLUMN) for POSITION, or nil.
@@ -2245,13 +2249,20 @@ for no other."
 
 (defun ecc-review--hunk-goes (path header from map index)
   "Return the key of the hunk of this reading the hunk HEADER of FROM is now.
-Its lines are carried one by one, by MAP among the lines of INDEX.  When
-half of them or more changed or went, it is another hunk now, and the
-answer is nil; otherwise it is the hunk most of the rest are in, the
-first of those on a tie."
-  (let ((members (cdr (assoc header (ecc-review-map-shape-hunks from))))
-        (stayed 0)
-        (votes nil))
+Its changed lines -- the ones it takes out and puts in, not the context
+around them -- are carried one by one, by MAP among the lines of INDEX.
+When half of them or more changed again or went, it is another hunk
+now, and the answer is nil; otherwise it is the hunk most of the rest
+are in, the first of those on a tie."
+  (let* ((added (let ((numbers (make-hash-table)))
+                  (dolist (line (ecc-review-map-shape-added from))
+                    (puthash (car line) t numbers))
+                  numbers))
+         (members (seq-filter (lambda (member)
+                                (or (eq (car member) 'old) (gethash (cdr member) added)))
+                              (cdr (assoc header (ecc-review-map-shape-hunks from)))))
+         (stayed 0)
+         (votes nil))
     (dolist (member members)
       (when-let* ((line (gethash (list path (car member) (funcall map (car member) (cdr member)))
                                  index)))
@@ -2267,9 +2278,10 @@ first of those on a tie."
 
 (defun ecc-review--nearest-to (place from map index)
   "Return the line nearest the one PLACE was on in FROM that this reading has.
-\(SIDE . NUMBER), by MAP among the lines of INDEX, or nil: the line after
-it first, since that is where its place went, then the one before, and
-so on outwards."
+\(SIDE . NUMBER), by MAP among the lines of INDEX, or nil: that line
+itself first -- the first line of a hunk, for a place on a hunk, may
+have stayed -- then the one after it, since that is where its place
+went, then the one before, and so on outwards."
   (let* ((order (vconcat (ecc-review-map-shape-order from)))
          (path (ecc-review-note-path place))
          (side (ecc-review-note-side place))
@@ -2281,7 +2293,9 @@ so on outwards."
     (when at
       (catch 'found
         (dotimes (distance (length order))
-          (dolist (other (list (+ at distance 1) (- at distance 1)))
+          (dolist (other (if (zerop distance)
+                             (list at)
+                           (list (+ at distance) (- at distance))))
             (when (< -1 other (length order))
               (let* ((member (aref order other))
                      (line (gethash (list path (car member)
