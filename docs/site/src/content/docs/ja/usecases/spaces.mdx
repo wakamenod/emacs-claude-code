@@ -28,3 +28,9 @@ import Video from '../../../../components/Video.astro';
 ## 片付ける
 
 実装が終わったら、worktree のセッションのバッファを kill します。その Space にはほかに何もないので Space が閉じ、隣の Space に戻ります。このとき ecc は、worktree のディレクトリも削除するかを尋ねます。どちらを選んでもブランチは残ります。
+
+## 終わった worktree をまとめて片付ける
+
+バッファを kill して片付くのは worktree 1 つです。プルリクエストがマージされたあとなど、終わった worktree が複数あるときは、そのプロジェクトのどのセッションでも「終わった worktree を削除して」と頼みます。MCP サーバーが有効なら、Claude はリポジトリの worktree をそれぞれ確かめ、終わったものを削除します。worktree ごとの確認はありません。待機中のセッションは止まり、Space は閉じ、ブランチは残ります。`node_modules` など、git が無視するファイルも一緒に消えます。
+
+そのあと Claude は、削除したものと、残したものとその理由を報告します。コミットしていない変更や追跡していないファイル、未保存のバッファや送っていない下書き、作業中のセッションがある worktree は残ります。ブランチがまだマージされていない worktree も残ります。条件の詳細は[終わった worktree を削除する](/emacs-claude-code/ja/features/spaces/#終わった-worktree-を削除する)にあります。ecc の外で起動した `claude` に必要な設定も同じ節にあります。
