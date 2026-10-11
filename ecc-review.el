@@ -2410,8 +2410,14 @@ diff line, which has to name the file -- an empty file git added or
 deleted has a header and no --- line, and its index line is not the
 next file's.  `empty' is no file.
 
-A file with no diff line of its own was diffed from what the session
-recorded (`ecc-review-fallback-diff').  When the session knows what the
+A proposal's diff names the old side it was made against on its own
+header, as the text property `ecc-review-old-side': (proposal HASH) of
+the file as the proposal found it, or nil when its hunks are numbered
+against nothing known (`ecc-review-request-diff').  What the session
+recorded of the file is not that file: it may have changed since.
+
+Another file with no diff line of its own was diffed from what the
+session recorded (`ecc-review-fallback-diff').  When the session knows what the
 file held before its first change, that is the old side of every
 reading, (recorded HASH); when it does not, the diff joins a patch for
 each edit and says nothing of an old side, which is nil."
@@ -2422,6 +2428,7 @@ each edit and says nothing of an old side, which is nil."
       (forward-line -1))
     (when (looking-at-p "--- ")
       (let ((path (plist-get hunk :path))
+            (named (get-text-property (point) 'ecc-review-old-side))
             (id nil)
             (from nil)
             (to nil))
@@ -2446,21 +2453,33 @@ each edit and says nothing of an old side, which is nil."
                (if (string-match-p "\\`0+\\'" id)
                    'empty
                  (list 'blob (ecc-review--repository-of path) id)))
+              (named (car named))
               (path (ecc-review--recorded-base path)))))))
+
+(defvar ecc-review--original-hashes (make-hash-table :test #'eq :weakness 'key)
+  "A weak hash of each original a session recorded to its sha1.
+An original is the text of a file before its first change, kept once
+by its entry; it is hashed once, not at every reading of every review.")
 
 (defun ecc-review--recorded-base (path)
   "Return the old side of PATH from what the session of this review recorded.
 \(recorded HASH) of what the file held before its first change, `empty'
-for a file the session created, nil when that is not known."
+for a file the session created, nil when that is not known.  The entry
+is the session's own for the path, as it was named or as this review
+names it; one that saw no operation -- a call denied or still waiting --
+records nothing (`ecc-model-files')."
   (when-let* ((session ecc-review--session)
-              (file (expand-file-name path default-directory))
-              (entry (seq-find (lambda (entry)
-                                 (equal (expand-file-name (ecc-file-entry-path entry)
-                                                          default-directory)
-                                        file))
-                               (ecc-model-files session))))
+              (files (ecc-session-files session))
+              (entry (or (gethash (expand-file-name path default-directory) files)
+                         (gethash path files)))
+              ((> (+ (ecc-file-entry-reads entry) (ecc-file-entry-edits entry)
+                     (ecc-file-entry-writes entry))
+                  0)))
     (pcase (ecc-file-entry-original entry)
-      ((and original (pred stringp)) (list 'recorded (secure-hash 'sha1 original)))
+      ((and original (pred stringp))
+       (list 'recorded (or (gethash original ecc-review--original-hashes)
+                           (puthash original (secure-hash 'sha1 original)
+                                    ecc-review--original-hashes))))
       ('nil 'empty))))
 
 (defun ecc-review--repository-of (path)
@@ -4230,22 +4249,29 @@ header is always present so that the text is a hunk for `diff-mode'."
          ;; A hunk for `diff-mode', as the docstring says: the @@ header
          ;; and the markers, not the transcript's line numbers.
          (ecc-diff-style 'unified)
+         ;; Whether the hunks are numbered against BEFORE: an Edit whose
+         ;; text is not found there is a hunk of its own two strings.
+         (in-before nil)
          (body (pcase name
                  ((or "Edit" "MultiEdit")
                   (let ((old (or (alist-get 'old_string input) ""))
                         (new (or (alist-get 'new_string input) "")))
                     (if (and before (string-search old before))
-                        (ecc-diff-for-edit old new before
-                                           ecc-review-proposal-context-lines)
+                        (progn (setq in-before t)
+                               (ecc-diff-for-edit old new before
+                                                  ecc-review-proposal-context-lines))
                       (ecc-diff-format-hunks
                        (ecc-diff-hunks (ecc-diff-lines old new)
                                        ecc-review-proposal-context-lines)))))
                  ("Write"
+                  (setq in-before (and before t))
                   (ecc-diff-for-write (or (alist-get 'content input) "") before
                                       ecc-review-proposal-context-lines))
                  (_ nil))))
     (when (and body (not (string-empty-p body)))
-      (concat (ecc-review--file-header (or path "?") (null before))
+      (concat (propertize (ecc-review--file-header (or path "?") (null before))
+                          'ecc-review-old-side
+                          (list (and in-before (list 'proposal (secure-hash 'sha1 before)))))
               (substring-no-properties body)))))
 
 (defun ecc-review-request (&optional request)

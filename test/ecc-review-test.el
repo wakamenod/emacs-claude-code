@@ -739,6 +739,44 @@ carry the time of the index it was made from."
                 (kill-buffer (nth 0 location)))))
         (ecc-review-test--kill-review-buffers)))))
 
+(ert-deftest ecc-review-test-a-recorded-original-is-hashed-once ()
+  "The old side of a file the session recorded is looked up, and hashed, once.
+Not by going through every file of the session at every reading, and
+not by hashing the whole original again each time."
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let* ((paths (ecc-review-test--two-files session directory))
+                 (original (ecc-file-entry-original
+                            (gethash (car paths) (ecc-session-files session))))
+                 (listed 0)
+                 (hashed 0)
+                 (list-files (symbol-function 'ecc-model-files))
+                 (hash (symbol-function 'secure-hash)))
+            (with-current-buffer (ecc-review-buffer session)
+              (diff-hunk-next)
+              (ecc-review-comment "on a")
+              (should (equal (ecc-review--base-of (car (ecc-review-hunks)))
+                             (list 'recorded (secure-hash 'sha1 original))))
+              (cl-letf (((symbol-function 'ecc-model-files)
+                         (lambda (&rest arguments)
+                           (setq listed (1+ listed))
+                           (apply list-files arguments)))
+                        ((symbol-function 'secure-hash)
+                         (lambda (algorithm object &rest arguments)
+                           (when (eq object original)
+                             (setq hashed (1+ hashed)))
+                           (apply hash algorithm object arguments))))
+                ;; Read again whole, twice, though nothing changed.
+                (dotimes (_ 2)
+                  (setq ecc-review--fingerprint nil)
+                  (ecc-review-refresh)))
+              (should (= hashed 0))
+              ;; The diff itself is made from the session's files.
+              (should (<= listed 2))
+              (should-not (ecc-review-note-outdated (car ecc-review--notes)))))
+        (ecc-review-test--kill-review-buffers)))))
+
 (ert-deftest ecc-review-test-send-editing-first ()
   "C-u C-c C-c shows the prompt to confirm; sending starts a turn."
   (ecc-test-with-fake-session session
@@ -3096,6 +3134,39 @@ What was typed is in the review: yanked again, it would be a second copy."
         (should (equal (ecc-review-request-diff request before)
                        (concat "--- /nowhere/r.txt\n+++ /nowhere/r.txt\n"
                                "@@ -2,1 +2,1 @@\n-two\n+2\n")))))))
+
+(ert-deftest ecc-review-test-a-proposal-is-carried-from-the-file-it-found ()
+  "A proposal's old side is the file as the proposal found it, not the session's record.
+The file changed on disk while the permission waited: the proposal,
+reviewed again, is a diff against other lines, and a comment on a lone
+brace follows its brace rather than staying on the number it had, where
+another brace is now."
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let* ((file (concat directory "f.txt"))
+                 (request (ecc-test-add-request session "Edit"
+                                                `((file_path . ,file)
+                                                  (old_string . "x")
+                                                  (new_string . "X")))))
+            ;; The session changed the file before: it has a record of it.
+            (ecc-review-test--entry session file :original "p\n}\nx\nq\n" :edits 1)
+            (ecc-review-test--write file "p\n}\nx\nq\n")
+            (cl-letf (((symbol-function #'ecc-diff-file-content)
+                       (lambda (path) (with-temp-buffer (insert-file-contents path) (buffer-string)))))
+             (with-current-buffer (ecc-review-request request)
+              (should (equal (ecc-review--base-of (car (ecc-review-hunks)))
+                             (list 'proposal (secure-hash 'sha1 "p\n}\nx\nq\n"))))
+              (ecc-review-test--goto " }")
+              (ecc-review-comment "a brace")
+              (should (= (ecc-review-note-line (car ecc-review--notes)) 2))
+              ;; Two lines above it on disk now, the first of them a brace.
+              (ecc-review-test--write file "q0\n}\np\n}\nx\nq\n")
+              (ecc-review-request request)
+              (let ((note (car ecc-review--notes)))
+                (should-not (ecc-review-note-outdated note))
+                (should (= (ecc-review-note-line note) 4))))))
+        (ecc-review-test--kill-review-buffers)))))
 
 (ert-deftest ecc-review-test-request-diff ()
   "A proposal is shown as a hunk of the file, or on its own without one."
