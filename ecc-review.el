@@ -231,6 +231,111 @@ lines between them, which then read as changed; and `diff.noprefix' or
 review takes off.  The index lines name the blobs whole, so that two
 readings of one blob say so with the same id.")
 
+(defun ecc-review--git-unquote (text start)
+  "Return (NAME . END) for the name git C-quoted at START of TEXT, or nil.
+NAME is the name decoded and END where the quote closed.  git quotes a
+name with a tab, a newline, a double quote or a backslash in it, even
+with `core.quotePath' off: between double quotes, with \\t, \\n,
+\\\" and \\\\, and any other byte it escapes in octal, which are
+the bytes of UTF-8."
+  (when (and (< start (length text)) (eq (aref text start) ?\"))
+    (let ((i (1+ start))
+          (n (length text))
+          (pieces nil)
+          (bytes nil)
+          (end nil))
+      (cl-flet ((flush ()
+                  (when bytes
+                    (push (decode-coding-string (apply #'unibyte-string (nreverse bytes)) 'utf-8)
+                          pieces)
+                    (setq bytes nil))))
+        (while (and (< i n) (not end))
+          (let ((char (aref text i)))
+            (cond
+             ((eq char ?\") (setq end (1+ i)))
+             ((and (eq char ?\\) (< (1+ i) n))
+              (let ((next (aref text (1+ i))))
+                (if (and (<= ?0 next ?7) (<= (+ i 4) n)
+                         (string-match-p "\\`[0-7]\\{3\\}\\'" (substring text (1+ i) (+ i 4))))
+                    (progn (push (string-to-number (substring text (1+ i) (+ i 4)) 8) bytes)
+                           (setq i (+ i 4)))
+                  (flush)
+                  (push (string (pcase next (?a ?\a) (?b ?\b) (?t ?\t) (?n ?\n) (?v ?\v)
+                                       (?f ?\f) (?r ?\r) (_ next)))
+                        pieces)
+                  (setq i (+ i 2)))))
+             (t (flush)
+                (push (string char) pieces)
+                (setq i (1+ i))))))
+        (flush))
+      (and end (cons (apply #'concat (nreverse pieces)) end)))))
+
+(defun ecc-review--git-quote (name)
+  "Return NAME as git writes it in a diff header, C-quoted when it has to be.
+For the headers the review writes itself, which are read back like
+git's (`ecc-review-git-name'): a name with a control character, a double
+quote or a backslash in it goes between double quotes; any other is
+itself, as git writes it with `core.quotePath' off."
+  (if (not (string-match-p "[\"\\\\[:cntrl:]]" name))
+      name
+    (concat "\""
+            (mapconcat (lambda (char)
+                         (pcase char
+                           (?\" "\\\"") (?\\ "\\\\") (?\t "\\t") (?\n "\\n")
+                           ((pred (lambda (char) (< char 32))) (format "\\%03o" char))
+                           (_ (string char))))
+                       name "")
+            "\"")))
+
+(defun ecc-review-git-name (text)
+  "Return the file name TEXT, what follows ---, +++ or rename to in a diff, says.
+A name git C-quoted is decoded (`ecc-review--git-unquote'); a bare one
+runs to the tab git puts after a name with a space in it."
+  (or (car (ecc-review--git-unquote text 0))
+      (car (split-string text "\t"))))
+
+(defun ecc-review-git-diff-names (line &optional old new)
+  "Return (A . B), the names the diff --git LINE gives the two sides, or nil.
+Each with its prefix, as git wrote it, a C-quoted one decoded.  Two bare
+names are split where the line can only split: with OLD and NEW, the
+names a rename or a copy gives on its own header lines, into a/PREFIX
+OLD and b/PREFIX NEW for one PREFIX; without them, into two names alike
+but for a/ and b/.  Nil when the line splits neither way."
+  (when (string-prefix-p "diff --git " line)
+    (let* ((rest (substring line (length "diff --git ")))
+           (size (length rest)))
+      (cond
+       ((ecc-review--git-unquote rest 0)
+        (pcase-let ((`(,a . ,end) (ecc-review--git-unquote rest 0)))
+          (and (< end size) (eq (aref rest end) ?\s)
+               (cons a (ecc-review-git-name (substring rest (1+ end)))))))
+       ;; A bare name, then a quoted one: the quote that runs to the end.
+       ((string-suffix-p "\"" rest)
+        (catch 'split
+          (let ((at 0))
+            (while (setq at (string-search " \"" rest at))
+              (pcase (ecc-review--git-unquote rest (1+ at))
+                (`(,b . ,(pred (= size))) (throw 'split (cons (substring rest 0 at) b))))
+              (setq at (1+ at))))))
+       ((and old new)
+        (let ((twice (- size (length old) (length new) 5)))
+          (when (and (>= twice 0) (cl-evenp twice))
+            (let* ((a (substring rest 0 (+ 2 (/ twice 2) (length old))))
+                   (b (substring rest (min size (1+ (length a))))))
+              (and (string-prefix-p "a/" a) (string-suffix-p old a)
+                   (string-prefix-p " b/" (substring rest (length a)))
+                   (string-suffix-p new b)
+                   (equal (substring a 2 (- (length a) (length old)))
+                          (substring b 2 (- (length b) (length new))))
+                   (cons a b))))))
+       ((cl-oddp size)
+        (let ((a (substring rest 0 (/ size 2)))
+              (b (substring rest (1+ (/ size 2)))))
+          (and (eq (aref rest (/ size 2)) ?\s)
+               (string-prefix-p "a/" a) (string-prefix-p "b/" b)
+               (equal (substring a 2) (substring b 2))
+               (cons a b))))))))
+
 (defun ecc-review--git-string (directory &rest args)
   "Return what git ARGS in DIRECTORY print, trimmed.
 Nil when git fails or prints nothing."
@@ -334,8 +439,9 @@ itself.")
 (defun ecc-review--omitted-note (path reason &optional new-file)
   "Return the diff entry naming PATH without its content, because of REASON.
 NEW-FILE writes the header of a file that did not exist before."
-  (format "diff --git a/%s b/%s\n%s%s\n"
-          path path (if new-file "new file mode 100644\n" "") reason))
+  (format "diff --git %s %s\n%s%s\n"
+          (ecc-review--git-quote (concat "a/" path)) (ecc-review--git-quote (concat "b/" path))
+          (if new-file "new file mode 100644\n" "") reason))
 
 (defun ecc-review--untracked-paths (root &optional paths)
   "Return the files under ROOT git does not track, relative to ROOT.
@@ -761,8 +867,10 @@ under git while a session runs."
       (ecc-file-entry-snapshot entry)))
 
 (defun ecc-review--file-header (path &optional new-file)
-  "Return the ---/+++ lines naming PATH, from /dev/null when NEW-FILE."
-  (format "--- %s\n+++ %s\n" (if new-file "/dev/null" path) path))
+  "Return the ---/+++ lines naming PATH, from /dev/null when NEW-FILE.
+A name git would quote is quoted (`ecc-review--git-quote')."
+  (let ((name (ecc-review--git-quote path)))
+    (format "--- %s\n+++ %s\n" (if new-file "/dev/null" name) name)))
 
 (defun ecc-review-fallback-diff (entry)
   "Return the diff of the file of ENTRY over the session, or nil.
@@ -1100,13 +1208,28 @@ sorted and walked by (`ecc-review-note-position')."
   (pcase-let ((`(,beg ,end ,property) (ecc-review--place note line lines)))
     (list (current-buffer) beg end property beg)))
 
+(defun ecc-review--hunk-place (line)
+  "Return which hunk LINE, a line of a reading, is in: (PATH HEADER NTH).
+NTH tells it from the hunks of its file before it with the same header
+\(`ecc-review-map-number'), as in a diff that joins a patch for each edit."
+  (list (plist-get line :path)
+        (plist-get (plist-get line :hunk) :header)
+        (or (plist-get line (if (plist-get line :side) :hunk-nth :nth)) 0)))
+
 (cl-defgeneric ecc-review--decorate (commented lines)
-  "Mark the hunks of LINES whose keys are in COMMENTED as carrying comments.
-Return the overlays made."
-  (let ((overlays nil))
+  "Mark the hunks of LINES that COMMENTED names as carrying comments.
+COMMENTED are `ecc-review--hunk-place's; LINES, all the lines of the
+review in order, are counted here for which of the hunks with its header
+each is.  Return the overlays made."
+  (let ((overlays nil)
+        (seen (make-hash-table :test #'equal)))
     (dolist (line lines)
       (when (and (null (plist-get line :side))
-                 (member (ecc-review--hunk-key (plist-get line :hunk)) commented))
+                 (let* ((key (cons (plist-get line :path)
+                                   (plist-get (plist-get line :hunk) :header)))
+                        (nth (gethash key seen 0)))
+                   (puthash key (1+ nth) seen)
+                   (member (list (car key) (cdr key) nth) commented)))
         (let ((overlay (make-overlay (plist-get line :position)
                                      (save-excursion
                                        (goto-char (plist-get line :position))
@@ -1726,26 +1849,29 @@ header or before the first hunk."
         (error nil)))))
 
 (defun ecc-review--hunk-path (beg)
-  "Return the file name of the hunk starting at BEG, without a/ or b/."
+  "Return the file name of the hunk starting at BEG, without a/ or b/.
+As git wrote it, a C-quoted name decoded (`ecc-review-git-name')."
   (save-excursion
     (goto-char beg)
-    (let* ((names (ignore-errors (diff-hunk-file-names)))
+    (let* ((names (mapcar #'ecc-review-git-name (ignore-errors (diff-hunk-file-names))))
            (new (car names))
            (old (cadr names))
            (name (if (or (null new) (equal new "/dev/null")) old new)))
       (when name
         (replace-regexp-in-string "\\`[ab]/" "" name)))))
 
-(defun ecc-review-hunk-at (beg end)
+(defun ecc-review-hunk-at (beg end &optional path)
   "Return the hunk between BEG and END as a plist.
 The plist has :path, :start and :end of the new side, :header, :text
 being the whole hunk, :position and :bound, the positions it runs
-between."
+between.  PATH is the name of its file when the caller has read it
+already: read here, it is read from the file's header back up the
+hunks before."
   (save-excursion
     (goto-char beg)
     (let* ((header (buffer-substring-no-properties (point) (line-end-position)))
            (range (ecc-review-hunk-range header)))
-      (list :path (ecc-review--hunk-path beg)
+      (list :path (or path (ecc-review--hunk-path beg))
             :start (car range)
             :end (cdr range)
             :header header
@@ -2117,16 +2243,18 @@ at every hunk would go back through all the hunks before it."
     (maphash (lambda (key starts) (puthash key (nreverse starts) table)) table)
     table))
 
-(cl-defgeneric ecc-review--unit-at (item)
+(cl-defgeneric ecc-review--unit-at (item &optional path)
   "Return the hunk ITEM of `ecc-review--units-by-path' stands for.
-ITEM is where the hunk begins, or the hunk itself (`ecc-review--units-of')."
+ITEM is where the hunk begins, or the hunk itself (`ecc-review--units-of');
+PATH is the file `ecc-review--units-by-path' has it under, whose name is
+not read again."
   (if (not (integerp item))
       item
     (save-excursion
       (goto-char item)
       (end-of-line)
       (when-let* ((bounds (ecc-review--hunk-bounds)))
-        (ecc-review-hunk-at (car bounds) (cdr bounds))))))
+        (ecc-review-hunk-at (car bounds) (cdr bounds) path)))))
 
 (defun ecc-review--file-of (reading path)
   "Return the lines of the file PATH in READING, reading them the first time.
@@ -2136,7 +2264,7 @@ has under PATH (`ecc-review--units-by-path'), numbered
   (let ((files (ecc-review--reading-files reading)))
     (pcase (gethash path files 'unread)
       ('unread
-       (let ((own (mapcan (lambda (item) (ecc-review--unit-lines (ecc-review--unit-at item)))
+       (let ((own (mapcan (lambda (item) (ecc-review--unit-lines (ecc-review--unit-at item path)))
                           (gethash path (or (ecc-review--reading-units reading)
                                             (setf (ecc-review--reading-units reading)
                                                   (ecc-review--units-by-path))))))
@@ -2259,16 +2387,25 @@ each edit and says nothing of an old side, which is nil."
       (forward-line -1))
     (when (looking-at-p "--- ")
       (let ((path (plist-get hunk :path))
-            (id nil))
+            (id nil)
+            (from nil)
+            (to nil))
         (while (and (zerop (forward-line -1))
-                    (looking-at "\\(?:index \\([0-9a-f]+\\)\\.\\.\\|\\(?:old\\|new\\|deleted file\\|new file\\) mode \\|similarity \\|dissimilarity \\|rename \\|copy \\)"))
-          (when (match-string-no-properties 1)
-            (setq id (match-string-no-properties 1))))
+                    (looking-at "\\(?:index \\([0-9a-f]+\\)\\.\\.\\|\\(?:old\\|new\\|deleted file\\|new file\\) mode \\|similarity \\|dissimilarity \\|\\(?:rename\\|copy\\) \\(?:\\(from\\)\\|to\\) \\(.*\\)\\)"))
+          (cond ((match-string-no-properties 1)
+                 (setq id (match-string-no-properties 1)))
+                ((match-beginning 3)
+                 (if (match-beginning 2)
+                     (setq from (ecc-review-git-name (match-string-no-properties 3)))
+                   (setq to (ecc-review-git-name (match-string-no-properties 3)))))))
         ;; A diff line above that names another file is that file's: a
         ;; file git shows no hunk of -- a mode, an empty file, a rename
         ;; -- ends right above, and this file has no header of its own.
         (cond ((and id path
-                    (looking-at-p (concat "diff --git a/.* b/" (regexp-quote path) "$")))
+                    (equal (cdr (ecc-review-git-diff-names
+                                 (buffer-substring-no-properties (point) (line-end-position))
+                                 from to))
+                           (concat "b/" path)))
                (if (string-match-p "\\`0+\\'" id)
                    'empty
                  (list 'blob (ecc-review--repository-of path) id)))
@@ -2848,8 +2985,9 @@ the overlays are made there, in whichever buffer that is, and kept here."
                    (ecc-review--note-place note (gethash note places) lines)))
         (puthash note key ecc-review--positions)
         (when (ecc-review--visible-p note)
-          (unless (ecc-review-note-outdated note)
-            (cl-pushnew (ecc-review-note-hunk-key note) commented :test #'equal))
+          (when-let* (((not (ecc-review-note-outdated note)))
+                      (line (gethash note places)))
+            (cl-pushnew (ecc-review--hunk-place line) commented :test #'equal))
           (unless (ecc-review--drawn-under note)
             (push note (alist-get (list buffer beg end property) groups
                                   nil nil #'equal))))))

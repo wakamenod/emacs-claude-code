@@ -2162,6 +2162,30 @@ space with a tab on its --- and +++ lines."
                              (sort (copy-sequence names) #'string<)))))
         (ecc-review-test--kill-review-buffers)))))
 
+(defconst ecc-review-test--two-patches
+  (concat "--- u.txt\n+++ u.txt\n"
+          "@@ -10,1 +10,1 @@\n-a old\n+a new\n"
+          "@@ -10,1 +10,1 @@\n-b old\n+b new\n")
+  "An untracked file edited twice at line 10: two patches with one header.")
+
+(ert-deftest ecc-review-test-of-two-hunks-with-one-header-the-commented-stands-out ()
+  "A comment marks the header of its own hunk, not of another with the same header."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (with-current-buffer (ecc-review-test--fill session ecc-review-test--two-patches)
+          (ecc-review-test--goto "+b new")
+          (ecc-review-comment "on b")
+          (should (= (length ecc-review--decorations) 1))
+          (goto-char (overlay-start (car ecc-review--decorations)))
+          (forward-line 1)
+          (should (looking-at-p "^-b old$"))
+          ;; A comment on the first hunk as a whole marks it too.
+          (ecc-review-test--goto "-a old")
+          (forward-line -1)
+          (ecc-review-comment "on a")
+          (should (= (length ecc-review--decorations) 2)))
+      (ecc-review-test--kill-review-buffers))))
+
 (ert-deftest ecc-review-test-two-patches-at-one-number-keep-their-comments ()
   "Two patches of one file at one number are two places, each comment on its own.
 A diff made from what the session recorded joins a patch for each edit,
@@ -2432,7 +2456,103 @@ right after it."
     (should (equal (ecc-review-files--under header) "../two/")))
   (should (equal (ecc-review-files--header-path
                   "diff --git a/old.txt b/new.txt\nsimilarity index 100%\nrename from old.txt\nrename to new.txt\n")
-                 "new.txt")))
+                 "new.txt"))
+  ;; A new name that holds the old one and \" b/\" can be matched at the
+  ;; wrong place by a search for the old one: the line is split by both.
+  (let ((header (concat "diff --git a/../two/s b/../two/s b/s\n"
+                        "similarity index 100%\nrename from s\nrename to s b/s\n")))
+    (should (equal (ecc-review-files--under header) "../two/"))
+    (should (equal (ecc-review-files--header-path header) "../two/s b/s")))
+  ;; Names git quotes, with a double quote and a tab in them.
+  (let ((header (concat "diff --git \"a/../two/o\\\"ld\" \"b/../two/n\\tew\"\n"
+                        "similarity index 100%\nrename from \"o\\\"ld\"\nrename to \"n\\tew\"\n")))
+    (should (equal (ecc-review-files--under header) "../two/"))
+    (should (equal (ecc-review-files--header-path header) "../two/n\tew"))))
+
+(ert-deftest ecc-review-test-a-file-is-named-once-a-reading ()
+  "A reading reads the lines of a file with the file's name read once, at its header.
+Not again at each of its hunks, which goes back up through the hunks
+before it."
+  (ecc-review-test--with-review session
+    (ecc-review-test--goto "+added")
+    (ecc-review-comment "here")
+    (let ((names 0)
+          (name (symbol-function 'ecc-review--hunk-path)))
+      (cl-letf (((symbol-function 'ecc-review--hunk-path)
+                 (lambda (&rest arguments)
+                   (setq names (1+ names))
+                   (apply name arguments))))
+        ;; A reading with no lines handed in goes through the review.
+        (ecc-review--take-reading))
+      ;; One file, two hunks.
+      (should (= names 1))
+      (should-not (ecc-review-note-outdated (car ecc-review--notes))))))
+
+(ert-deftest ecc-review-test-names-git-quotes-are-read-as-they-are ()
+  "git C-quotes a name with a tab, a newline, a double quote or a backslash in it.
+Even with `core.quotePath' off; the review decodes it wherever a name
+is read from a header, and an octal escape is a byte of UTF-8."
+  (should (equal (ecc-review-git-name "\"b/a\\\"b.txt\"") "b/a\"b.txt"))
+  (should (equal (ecc-review-git-name "\"b/t\\tab\\\\x\"") "b/t\tab\\x"))
+  (should (equal (ecc-review-git-name "\"\\346\\227\\245.txt\"") "日.txt"))
+  (should (equal (ecc-review-git-name "b/a b.txt\t") "b/a b.txt"))
+  (should (equal (ecc-review-git-diff-names "diff --git a/a b.txt b/a b.txt")
+                 '("a/a b.txt" . "b/a b.txt")))
+  (should (equal (ecc-review-git-diff-names "diff --git a/x \"b/x\\ty\"") '("a/x" . "b/x\ty")))
+  (should-not (ecc-review-git-diff-names "diff --git a/x y b/x z"))
+  ;; What the review writes itself is read back the same way.
+  (dolist (name '("plain.txt" "a b.txt" "a\"b.txt" "t\tab\\x" "日本.txt" "bell\a"))
+    (should (equal (ecc-review-git-name (ecc-review--git-quote name)) name)))
+  (should (equal (ecc-review--git-quote "a b.txt") "a b.txt"))
+  (should (equal (ecc-review--git-quote "a\"b") "\"a\\\"b\"")))
+
+(ert-deftest ecc-review-test-a-file-whose-name-git-quotes ()
+  "A file named with a double quote or a tab has its name, its blob and its comment.
+Its comment is carried across a commit through its blob."
+  (skip-unless (executable-find "git"))
+  (require 'ecc-review-files)
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((names '("a\"b.txt" "t\tab.txt")))
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (dolist (name names)
+              (ecc-review-test--write (concat directory name) (ecc-review-test--numbered 1 5)))
+            (apply #'ecc-review-test--git directory "add" names)
+            (ecc-review-test--git directory "commit" "-q" "-m" "init")
+            (dolist (name names)
+              (ecc-review-test--write (concat directory name)
+                                      (concat (ecc-review-test--numbered 1 3) "X\n"
+                                              (ecc-review-test--numbered 4 5))))
+            (setf (ecc-session-project-root session) directory)
+            (with-current-buffer (ecc-review-range-buffer session "HEAD")
+              (should (string-search "\"b/a\\\"b.txt\"" (buffer-string)))
+              (let ((hunks (ecc-review-hunks)))
+                (should (equal (sort (mapcar (lambda (hunk) (plist-get hunk :path)) hunks)
+                                     #'string<)
+                               (sort (copy-sequence names) #'string<)))
+                (dolist (hunk hunks)
+                  (should (eq (car-safe (ecc-review--base-of hunk)) 'blob))))
+              (should (equal (sort (mapcar (lambda (entry) (plist-get entry :path))
+                                           (ecc-review-files--diff-entries))
+                                   #'string<)
+                             (sort (copy-sequence names) #'string<)))
+              (ecc-review-test--goto "+X")
+              (ecc-review-comment "on X")
+              (let ((note (ecc-review-find-note 1)))
+                ;; The old side moves by two lines under it.
+                (ecc-review-test--write (concat directory (ecc-review-note-path note))
+                                        (concat "p1\np2\n" (ecc-review-test--numbered 1 5)))
+                (ecc-review-test--git directory "commit" "-q" "-a" "-m" "p")
+                (ecc-review-test--write (concat directory (ecc-review-note-path note))
+                                        (concat "p1\np2\n" (ecc-review-test--numbered 1 3) "X\n"
+                                                (ecc-review-test--numbered 4 5)))
+                (ecc-review-refresh)
+                (should-not (ecc-review-note-outdated note))
+                (should (= (ecc-review-note-line note) 6)))))
+        (ecc-review-test--kill-review-buffers)))))
 
 (defmacro ecc-review-test--failing-once (function kind &rest body)
   "Run BODY with FUNCTION signalling KIND, `error' or `quit', the first time it is called."

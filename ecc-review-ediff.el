@@ -1582,7 +1582,7 @@ differences are in (`ecc-review-ediff--differences-computed\=')."
     (maphash (lambda (key units) (puthash key (nreverse units) table)) table)
     table))
 
-(cl-defmethod ecc-review--unit-at (item &context (major-mode ediff-mode))
+(cl-defmethod ecc-review--unit-at (item &context (major-mode ediff-mode) &optional _path)
   "Return ITEM, a difference of this ediff review already."
   item)
 

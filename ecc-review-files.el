@@ -310,34 +310,46 @@ diffs this package makes of what git does not track have no diff line
             (forward-line 1)))))
       (nreverse starts))))
 
+(defun ecc-review-files--line-name (header line)
+  "Return the name the LINE of HEADER, a regexp of its start, gives, or nil.
+Decoded as git wrote it (`ecc-review-git-name')."
+  (and (string-match (concat "^" line "\\(.+\\)$") header)
+       (ecc-review-git-name (match-string 1 header))))
+
 (defun ecc-review-files--under (header)
   "Return what the names of the file of HEADER are put under, or \"\".
-git writes a rename's or a copy's names bare, while the names of its
-diff line carry the prefix the review asked for -- the directory of a
-second repository named from the first (`ecc-review-diff-text').  It is
-what comes between \"a/\" and the former name there."
+git writes a rename's or a copy's names relative to its repository,
+while the names of its diff line carry the prefix the review asked for
+-- the directory of a second repository named from the first
+\(`ecc-review-diff-text').  It is what comes between \"a/\" and the
+former name there, and between \"b/\" and the new one: the diff line
+is split by the two names (`ecc-review-git-diff-names'), not searched
+for one, which may be in the prefix too."
   (save-match-data
-    (or (and (string-match "^\\(?:rename\\|copy\\) from \\(.+\\)$" header)
-             (let ((from (match-string 1 header)))
-               (and (string-match (concat "^diff --git a/\\(.*\\)" (regexp-quote from) " b/")
-                                  header)
-                    (match-string 1 header))))
-        "")))
+    (let* ((from (ecc-review-files--line-name header "\\(?:rename\\|copy\\) from "))
+           (to (ecc-review-files--line-name header "\\(?:rename\\|copy\\) to "))
+           (line (and from to (string-match "^diff --git .*$" header)
+                      (match-string 0 header)))
+           (old (car (and line (ecc-review-git-diff-names line from to)))))
+      (if (and old (string-prefix-p "a/" old) (string-suffix-p from old))
+          (substring old 2 (- (length old) (length from)))
+        ""))))
 
 (defun ecc-review-files--header-path (header)
   "Return the path the file header HEADER names, without a/ or b/, or nil."
   (save-match-data
-    (cond
-     ;; git ends the name with a tab when it has a space in it.
-     ((string-match "^\\+\\+\\+ \\(?:b/\\)?\\([^\t\n]+\\)" header)
-      (let ((path (match-string 1 header)))
-        (if (and (equal path "/dev/null")
-                 (string-match "^--- \\(?:a/\\)?\\([^\t\n]+\\)" header))
-            (match-string 1 header)
-          path)))
-     ((string-match "^\\(?:rename\\|copy\\) to \\(.+\\)$" header)
-      (concat (ecc-review-files--under header) (match-string 1 header)))
-     ((string-match "^diff --git a/.* b/\\(.+\\)$" header) (match-string 1 header)))))
+    (let ((new (ecc-review-files--line-name header "\\+\\+\\+ ")))
+      (cond
+       ((and new (not (equal new "/dev/null")))
+        (string-remove-prefix "b/" new))
+       ((ecc-review-files--line-name header "--- ")
+        (string-remove-prefix "a/" (ecc-review-files--line-name header "--- ")))
+       ((ecc-review-files--line-name header "\\(?:rename\\|copy\\) to ")
+        (concat (ecc-review-files--under header)
+                (ecc-review-files--line-name header "\\(?:rename\\|copy\\) to ")))
+       ((string-match "^diff --git .*$" header)
+        (when-let* ((names (ecc-review-git-diff-names (match-string 0 header))))
+          (string-remove-prefix "b/" (cdr names))))))))
 
 (defun ecc-review-files--diff-entries ()
   "Return the files of this diff review, as `ecc-review-files-entries' does.
@@ -355,8 +367,8 @@ where its first hunk begins."
                                hunks))
              (header (buffer-substring-no-properties
                       beg (if mine (plist-get (car mine) :position) end)))
-             (old (and (string-match "^rename from \\(.+\\)$" header)
-                       (concat (ecc-review-files--under header) (match-string 1 header))))
+             (old (when-let* ((from (ecc-review-files--line-name header "rename from ")))
+                    (concat (ecc-review-files--under header) from)))
              (added 0)
              (removed 0))
         (dolist (hunk mine)
