@@ -9,9 +9,11 @@ import Video from '../../../components/Video.astro';
 
 However much of the code an agent writes, the one who checks it in the end is a person (for now).
 
-So let the agent help with the review too. This page goes through one change with [Claude in the review](/emacs-claude-code/features/review-claude/): you open the review, Claude gives a tour of it and comments on its lines, you answer on the lines, Claude fixes what you asked for, and you read the new diff. It needs the [Emacs MCP server](/emacs-claude-code/start/installation/#enabling-the-mcp-server) on (`ecc-mcp-enabled`).
+So let the agent help with the review too. This page goes through one change with [Claude in the review](/emacs-claude-code/features/review-claude/): you open the review, Claude gives a tour of it and comments on its lines, you answer on the lines, Claude fixes what you asked for, and you read the new difference. It needs the [Emacs MCP server](/emacs-claude-code/start/installation/#enabling-the-mcp-server) on (`ecc-mcp-enabled`).
 
-<Video name="usecase-review" label="A review of a two-line change opened with C-c c D D beside the session; T and t taking Claude's tour, its comments appearing under the lines; a reply to one of them sent with C-c C-c; Claude answering under the reply and changing the file, and the review showing the new diff" />
+The review here is [in ediff](/emacs-claude-code/features/review-ediff/), with `ecc-review-style` set to `'ediff`. The diff buffer review works with the same keys.
+
+<Video name="usecase-review" label="A two-line change opened in ediff with C-c c D D, the old side above the new and Claude's reply pane on the right; T and t taking Claude's tour, its comments appearing under the lines and its words in the pane; a reply to one of them sent with C-c C-c; Claude answering under the reply and changing the file, and the review showing the new difference" />
 
 ## Claude has made a change
 
@@ -19,32 +21,35 @@ A turn has ended, and Claude has changed a file. The transcript says what it did
 
 ## Open the review
 
-`C-c c D D` opens the [review of what the session changed](/emacs-claude-code/features/review/#what-the-session-changed) beside the session. The other way in is to ask in plain words, such as "walk me through this in the review": Claude opens the review when it is asked to, and not otherwise.
+`C-c c D D` opens the [review of what the session changed](/emacs-claude-code/features/review/#what-the-session-changed). In ediff it takes the frame: the old side above the new one, and Claude's [reply pane](/emacs-claude-code/features/review-ediff/#the-reply-pane) beside them, where its answers appear while the session is out of sight.
+
+The other way in is to ask in plain words, such as "walk me through this in the review". Claude opens the review only when asked, and as the diff buffer: it does not start ediff itself.
 
 ## Take the tour
 
-`T` in the review asks Claude for a tour of the changes, most important first, and sends it the hunks of the review. At each stop Claude scrolls the review to the change, explains it in a few sentences in the transcript, puts a comment on each line that needs your attention, `▎ #2 Claude: text`, and waits. `t` asks for the next stop and tells Claude where you are. [Talking to Claude from the review](/emacs-claude-code/features/review-claude/#talking-to-claude-from-the-review) has the details.
+`T` in the review asks Claude for a tour of the changes, most important first, and sends it the hunks of the review. At each stop Claude scrolls the review to the change, explains it in a few sentences in the reply pane, puts a comment under each line that needs your attention, `▎ #2 Claude: text`, and waits. `t` asks for the next stop and tells Claude where you are. [Talking to Claude from the review](/emacs-claude-code/features/review-claude/#talking-to-claude-from-the-review) has the details.
 
 ## Answer on the lines
 
-In the review:
+In either window of the review:
 
 | Key | Action |
 |---|---|
-| `c` | Comment on the line at point; on a line with only Claude's comment, reply to it |
+| `c` | Comment on the line at point, the old line in the old window and the new one in the new; on a line with only Claude's comment, reply to it |
 | `M` | Ask Claude about something; with the region active, about the selected lines |
 | `C-c C-c` | Send your comments as one prompt; the review stays open |
+| `y` | Answer what Claude is waiting for, shown in the reply pane: a permission, a question or a plan |
 
-`M` goes out at once. Comments wait until `C-c C-c`, so you can read the whole diff first and send everything together.
+`M` goes out at once. Comments wait until `C-c C-c`, so you can read the whole difference first and send everything together.
 
 ## Claude answers in the review
 
-Claude can reply under each of your comments, indented beneath it, and remove a comment of yours once it has dealt with it. It cannot write or change your comments. `a` hides Claude's comments when you want to read the code alone.
+Claude can reply under each of your comments, indented beneath it, and remove a comment of yours once it has dealt with it. It cannot write or change your comments. What it says besides appears in the reply pane. `a` hides Claude's comments when you want to read the code alone.
 
 ## Claude fixes, and the review follows
 
-When Claude edits a file, the open review reads the diff again: when a tool finishes, when the turn ends, and when you save a file of the repository. Your place and the comments are kept. A comment whose line is gone is marked `[outdated]` and shown above the first hunk of its file. Read the new diff, and comment again if needed. [Following the files](/emacs-claude-code/features/review/#following-the-files) has the details.
+When Claude edits a file, the open review reads the files again: when a tool finishes, when the turn ends, and when you save a file of the repository. The comments are kept, and so are the current difference and the place of each side. A comment whose line is gone is marked `[outdated]`. Read the new difference, and comment again if needed. [Following the files](/emacs-claude-code/features/review/#following-the-files) has the details.
 
 ## Finish
 
-When the diff says what you want, put the review away in one of two ways: `q` buries it and keeps its comments, or `C-c C-k` drops it and its comments. To start the next review clean, ask Claude to clear its comments. The review is also in [ediff](/emacs-claude-code/features/review-ediff/), where Claude's answer appears in a pane beside the diff.
+When the difference says what you want, `q` or `C-c C-k` closes the ediff review with its comments and gives back the windows you had before. In the diff buffer the two differ: `q` buries the review and keeps its comments, and `C-c C-k` drops it and its comments. To start the next review clean, ask Claude to clear its comments.
