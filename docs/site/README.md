@@ -406,7 +406,7 @@ points wide, 1832 pixels on such a display, so the video is a little smaller
 than what was captured; on a display of one pixel to the point it is the
 capture's own 916, since nothing is made larger than it was taken. It is
 encoded at `-crf 20`, which keeps monospaced text clean; a screen is mostly
-flat colour, so the twenty videos come to about 7 MB. The poster is the
+flat colour, so the twenty-six videos come to about 11 MB (2026-10-11). The poster is the
 first frame of the video, at the same width.
 
 Until 2026-10-10 the videos in the tree were not this script's: on
