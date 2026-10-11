@@ -636,6 +636,8 @@ another, are put back in it, unless it has comments of its own."
         (setq ecc-review--notes (plist-get kept :notes)
               ecc-review--next-id (plist-get kept :next-id)
               ecc-review--positions (plist-get kept :positions))
+        ;; From the reading they were last on, there, to this one.
+        (ecc-review--receive ecc-review--notes)
         (ecc-review--draw-notes)))
     (ecc-review-pr--count walk)))
 

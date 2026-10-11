@@ -3007,6 +3007,40 @@ it is now."
                     (should (equal (cdr (ecc-review-note-hunk-key mine)) "@@ -2,1 +4,1 @@")))))
             (ecc-review-ediff-test--quit control)))))))
 
+(ert-deftest ecc-review-ediff-test-a-reading-that-failed-is-read-again ()
+  "An ediff review whose reading failed halfway is read whole by the next g.
+Its comments are carried from the reading they were last on."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (with-current-buffer control
+                  (ecc-review-add-note 'claude "A new line"
+                                       (ecc-review-ediff-test--line 'new 7))
+                  (ecc-review--draw-notes)
+                  (ediff-jump-to-difference 2)
+                  (ecc-review-ediff-test--write
+                   (concat directory "a.txt")
+                   (concat "zero\nzero2\n" ecc-review-ediff-test--changed))
+                  (cl-letf (((symbol-function 'ecc-review-ediff--write)
+                             (lambda (&rest _) (error "The disk is full"))))
+                    (should-error (ecc-review-reread t)))
+                  ;; A difference is selected again, as n would; what
+                  ;; draws on it may say the review has to be read again.
+                  (ignore-errors (ediff-jump-to-difference 1))
+                  (should (ediff-valid-difference-p ediff-current-difference))
+                  ;; g reads it again, whole.
+                  (ecc-review-refresh)
+                  (should (ecc-review--reading-current-p))
+                  (let ((note (ecc-review-find-note 1)))
+                    (should-not (ecc-review-note-outdated note))
+                    (should (= (ecc-review-note-line note) 9)))))
+            (ecc-review-ediff-test--quit control)))))))
+
 ;;;; The setting
 
 (ert-deftest ecc-review-ediff-test-style-chooses-the-review ()

@@ -1605,6 +1605,12 @@ differences are in (`ecc-review-ediff--differences-computed\=')."
   "Return the lines of every difference of this ediff review."
   (mapcan #'ecc-review-ediff--unit-lines (ecc-review-units)))
 
+(cl-defmethod ecc-review--path-lines (path &context (major-mode ediff-mode))
+  "Return the lines of the differences of the file PATH in this ediff review."
+  (mapcan #'ecc-review-ediff--unit-lines
+          (seq-filter (lambda (unit) (equal (plist-get unit :path) path))
+                      (ecc-review-units))))
+
 (cl-defmethod ecc-review--file-lines (hunk &context (major-mode ediff-mode))
   "Return the lines of the differences of the file of HUNK in this ediff review."
   (let ((path (plist-get hunk :path)))
@@ -3341,7 +3347,11 @@ NOTHING is what to say when there is no pair, and HASH the fingerprint
 of PAIRS.  The comments are put back, each where its line is now, and
 so are the difference being read and the place of each side."
   (let* ((placed (seq-remove #'ecc-review-note-outdated ecc-review--notes))
+         ;; Taken only from a reading of what is shown: after a reading
+         ;; that never ended there is none, and this is what starts the
+         ;; next one afresh.
          (current (and (ediff-valid-difference-p ediff-current-difference)
+                       (ecc-review--reading-current-p)
                        (ecc-review--anchor
                         (ecc-review-note-create)
                         (car (ecc-review-ediff--unit-lines
@@ -3406,7 +3416,12 @@ so are the difference being read and the place of each side."
               (message "%s no longer %s a difference of the review; kept as outdated"
                        (ecc-review--count lost "comment") (if (= lost 1) "is on" "are on"))))
           (current-buffer))
-      (ecc-review--let-go (list current)))))
+      (ecc-review--let-go (list current))
+      ;; A reading that did not end -- the write failed, or was quit --
+      ;; leaves the review to be read again whole: the next \`g' does
+      ;; not take it for read already.
+      (unless (ecc-review--reading-current-p)
+        (setq ecc-review--fingerprint nil)))))
 
 (cl-defmethod ecc-review-reread (&context (major-mode ediff-mode) &optional watching)
   "Read this ediff review again (`ecc-review-ediff--reread\\=')."

@@ -1107,8 +1107,10 @@ Everything in the second hunk is two lines further down.")
            (added (ecc-review-add-note 'user "a" (nth 7 lines)))
            (hunk (ecc-review-add-note 'user "c" (nth 5 lines))))
       ;; 1. Nothing moved: the same line, the same hunk.
-      (should (eq (ecc-review--locate-note added lines) (nth 7 lines)))
-      (should (eq (ecc-review--locate-note hunk lines) (nth 5 lines)))
+      (should (= (plist-get (ecc-review--locate-note added lines) :position)
+                 (plist-get (nth 7 lines) :position)))
+      (should (= (plist-get (ecc-review--locate-note hunk lines) :position)
+                 (plist-get (nth 5 lines) :position)))
       ;; 2. Read again with two lines put in above: where they went.
       (ecc-review-test--fill session ecc-review-test--shifted-diff)
       (let ((lines (ecc-review--lines)))
@@ -2035,6 +2037,66 @@ recorded file's --- line comes right after its index line."
               (should-not (ecc-review--base-of hunk)))))
       (ecc-review-test--kill-review-buffers))))
 
+(ert-deftest ecc-review-test-a-comment-handed-over-comes-back-to-its-line ()
+  "A comment handed to another review is carried from the reading it was last on.
+One that went outdated in the review it came from comes back in the one
+it is handed to, once its line is there."
+  (ecc-review-test--following (session directory ecc-review-test--share)
+    (ecc-review-test--goto "+        return part / total")
+    (ecc-review-comment "guard it")
+    (ecc-review-test--change-and-refresh
+     directory (string-replace "return part / total" "return 0" ecc-review-test--share))
+    (let ((note (car ecc-review--notes)))
+      (should (ecc-review-note-outdated note))
+      ;; Its line back, two lines further down, in another review.
+      (ecc-review-test--write (concat directory "s.py") ecc-review-test--guarded)
+      (with-current-buffer (ecc-review-range-buffer session "HEAD")
+        (setq ecc-review--notes (list note))
+        (ecc-review--receive ecc-review--notes)
+        (ecc-review--draw-notes)
+        (should-not (ecc-review-note-outdated note))
+        (should (= (ecc-review-note-line note) 12))))))
+
+(ert-deftest ecc-review-test-a-comment-from-no-reading-is-not-trusted-by-number ()
+  "A comment that was put on no line has nothing to be carried from, and is outdated.
+Its numbers are of no reading known: the same number saying the same is
+not enough."
+  (ecc-review-test--with-review session
+    (let ((logged nil))
+      (setq ecc-review--notes
+            (list (ecc-review-note-create :id 1 :author 'user :text "from nowhere"
+                                          :path "foo.el" :side 'new :line 11
+                                          :line-text "added")))
+      (cl-letf (((symbol-function 'ecc-log)
+                 (lambda (_category format &rest arguments)
+                   (push (apply #'format format arguments) logged))))
+        (ecc-review-test--fill session ecc-review-test--diff))
+      (should (ecc-review-note-outdated (car ecc-review--notes)))
+      (should (seq-find (lambda (line) (string-search "no reading" line)) logged)))))
+
+(ert-deftest ecc-review-test-a-failure-reading-a-file-is-carried-like-any ()
+  "Reading a file's lines and taking its shape fail like carrying it.
+The comments of the file are outdated where they were, the reading is
+taken all the same, and the next one carries them from there."
+  (ecc-review-test--following (session directory ecc-review-test--share)
+    (ecc-review-test--goto "+        return part / total")
+    (ecc-review-comment "guard it")
+    (let ((logged nil))
+      (cl-letf (((symbol-function 'ecc-review--base-of)
+                 (lambda (&rest _) (error "No header today")))
+                ((symbol-function 'ecc-log)
+                 (lambda (_category format &rest arguments)
+                   (push (apply #'format format arguments) logged))))
+        (ecc-review-test--change-and-refresh directory ecc-review-test--guarded))
+      (should (seq-find (lambda (line) (string-search "No header today" line)) logged))
+      (should (ecc-review-note-outdated (car ecc-review--notes)))
+      (should (ecc-review--reading-current-p)))
+    (ecc-review-test--change-and-refresh
+     directory (concat "import math\n\n" ecc-review-test--guarded))
+    (let ((note (car ecc-review--notes)))
+      (should-not (ecc-review-note-outdated note))
+      (should (= (ecc-review-note-line note) 14)))))
+
 (ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
   "Remembering the place reads the hunk it is in, not the whole diff."
   (ecc-review-test--with-review session
@@ -2277,8 +2339,7 @@ recorded file's --- line comes right after its index line."
           (ecc-review--fill buffer session ecc-review-test--diff nil 'second)
           (should-not (buffer-local-value 'ecc-review--notes buffer))
           ;; Nor is anything kept to carry them by.
-          (dolist (variable '(ecc-review--kept ecc-review--held
-                              ecc-review--homes ecc-review--nearest ecc-review--base-diffs))
+          (dolist (variable '(ecc-review--held ecc-review--nearest ecc-review--base-diffs))
             (should-not (buffer-local-value variable buffer)))
           ;; Its reading is of this proposal, and keeps no file of the last.
           (should (zerop (hash-table-count
