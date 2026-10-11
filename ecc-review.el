@@ -1719,9 +1719,8 @@ the top."
             (ecc-review--begin-reading)
             (let ((inhibit-read-only t))
               (erase-buffer)
-              (insert text)
-              (unless (bolp) (insert "\n"))
-              (ecc-review--shorten-ids))
+              (insert (ecc-review--shorten-ids text))
+              (unless (bolp) (insert "\n")))
             (setq default-directory (or root (ecc-session-project-root session)
                                         default-directory)
                   ecc-review--session session
@@ -1759,8 +1758,8 @@ the top."
         (ecc-review--let-go (seq-remove (lambda (place) (memq place held))
                                         ecc-review--held))))))
 
-(defun ecc-review--shorten-ids ()
-  "Show the blob ids of the index lines of this buffer short, keeping them whole.
+(defun ecc-review--shorten-ids (text)
+  "Return the diff TEXT with the blob ids of its index lines short, kept whole.
 git is asked for whole ids (`ecc-review--diff-options'), which two
 readings of one blob have to share; an index line of two of them is 92
 characters, which wraps in half a frame and comes again for every file.
@@ -1769,16 +1768,22 @@ short form, and the whole id kept on what is left of it as the text
 property `ecc-review-blob', which is where the old side of a file is
 read from (`ecc-review--base-of').  Nothing else reads an index line: a
 hunk's text, which is what is sent to Claude, starts at its @@ line."
-  (save-excursion
-    (goto-char (point-min))
-    (while (re-search-forward "^index \\([0-9a-f]+\\)\\.\\.\\([0-9a-f]+\\)" nil t)
-      ;; The right one first: the left one's place does not move.
-      (dolist (group '(2 1))
-        (let ((id (match-string-no-properties group)))
-          (when (> (length id) ecc-review-shown-id-length)
-            (replace-match (propertize (substring id 0 ecc-review-shown-id-length)
-                                       'ecc-review-blob id)
-                           t t nil group)))))))
+  (let ((pieces nil)
+        (start 0)
+        (short (lambda (id)
+                 (if (> (length id) ecc-review-shown-id-length)
+                     (propertize (substring id 0 ecc-review-shown-id-length) 'ecc-review-blob id)
+                   id))))
+    (while (string-match "^index \\([0-9a-f]+\\)\\.\\.\\([0-9a-f]+\\)" text start)
+      (push (substring text start (match-beginning 1)) pieces)
+      (push (funcall short (match-string 1 text)) pieces)
+      (push ".." pieces)
+      (push (funcall short (match-string 2 text)) pieces)
+      (setq start (match-end 2)))
+    (if (null pieces)
+        text
+      (push (substring text start) pieces)
+      (apply #'concat (nreverse pieces)))))
 
 (defun ecc-review--view-at (position)
   "Return (ANCHOR . COLUMN) for POSITION, or nil.
@@ -2316,7 +2321,9 @@ of a hunk (`ecc-review-map-shape' says what NTH is)."
 
 (defun ecc-review--place-key (path side number nth)
   "Return the key of a place in the index of a reading: see `ecc-review--line-key'.
-NUMBER is the header of the hunk for a place on a whole hunk, SIDE nil."
+The place is of the file PATH, on SIDE, numbered NUMBER, the NTH of
+those; NUMBER is the header of the hunk for a place on a whole hunk,
+SIDE nil."
   (if side
       (list path side number (or nth 0))
     (list 'hunk path number (or nth 0))))
@@ -2808,12 +2815,12 @@ other: nothing else goes there."
 
 (defun ecc-review--hunk-goes (path header nth from map index)
   "Return the header of the hunk of this reading the hunk HEADER of FROM is now.
-That hunk is the NTH of FROM with that header.  Its changed lines -- the
-ones it takes out and puts in, not the context around them -- are
-carried one by one, by MAP among the lines of INDEX.  When half of them
-or more changed again or went, it is another hunk now, and the answer
-is nil; otherwise it is the hunk most of the rest are in, the first of
-those on a tie."
+That hunk, of the file PATH, is the NTH of FROM with that header.  Its
+changed lines -- the ones it takes out and puts in, not the context
+around them -- are carried one by one, by MAP among the lines of
+INDEX.  When half of them or more changed again or went, it is another
+hunk now, and the answer is nil; otherwise it is the hunk most of the
+rest are in, the first of those on a tie."
   (let* ((members (seq-filter (lambda (member)
                                 (ecc-review-map-changed-p from (car member) (cadr member)
                                                           (cddr member)))
@@ -2851,10 +2858,10 @@ went, then the one before, and so on outwards."
          (at (seq-position order here)))
     (when at
       (catch 'found
-        (dotimes (distance (length order))
-          (dolist (other (if (zerop distance)
+        (dotimes (away (length order))
+          (dolist (other (if (zerop away)
                              (list at)
-                           (list (+ at distance) (- at distance))))
+                           (list (+ at away) (- at away))))
             (when (< -1 other (length order))
               (let* ((member (aref order other))
                      (line (ecc-review--carried map index path (car member)
