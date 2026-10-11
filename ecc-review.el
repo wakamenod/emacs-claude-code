@@ -1826,8 +1826,11 @@ font-lock has been round."
   "One comment of a review, kept apart from how it is drawn.
 The place is kept as a line of the diff rather than as a position, so
 that the comment can be carried to the next reading of the diff
-\(`ecc-review--take-reading\='): PATH, SIDE and LINE name the line and LINE-TEXT
-is what it said.  SIDE is nil for a comment on a whole hunk.  HUNK-KEY, HUNK-RANGE and HUNK-TEXT are the
+\(`ecc-review--take-reading\='): PATH, SIDE and LINE name the line, NTH
+which of the lines of that side and number it is (`ecc-review-map-shape',
+0 but in a diff that joins a patch for each edit), and LINE-TEXT is
+what it said; on a whole hunk, NTH is which of the hunks with its
+header it is.  SIDE is nil for a comment on a whole hunk.  HUNK-KEY, HUNK-RANGE and HUNK-TEXT are the
 hunk it was in when last found -- its key, the lines of its new side
 and its text, which is what an outdated comment is still sent with.
 SHAPE is the shape of the reading the comment is on, or, outdated, was
@@ -1839,6 +1842,7 @@ dimmed, for Claude\='s replies to answer, and the next
   id              ; an integer, unique in the buffer and never reused
   author          ; `user' or `claude'
   path side line line-text
+  nth             ; how many lines of the file before it share its side and number
   hunk-key hunk-range hunk-text
   text
   reply-to        ; the id of the comment this one answers, or nil
@@ -1877,9 +1881,13 @@ dimmed, for Claude\='s replies to answer, and the next
   "Put NOTE on LINE, a plist of `ecc-review--hunk-lines' of this reading.
 Return NOTE.  From then on a comment on that line is carried to every
 reading of the review that follows (`ecc-review--take-reading'), and so
-is any other place while it is held (`ecc-review--holding')."
-  (let ((hunk (plist-get line :hunk)))
+is any other place while it is held (`ecc-review--holding').  LINE is
+taken as the reading has it, which says which of the lines with its
+number it is."
+  (let* ((line (ecc-review--canonical line))
+         (hunk (plist-get line :hunk)))
     (setf (ecc-review-note-path note) (plist-get line :path)
+          (ecc-review-note-nth note) (plist-get line :nth)
           (ecc-review-note-side note) (plist-get line :side)
           (ecc-review-note-line note) (plist-get line :line)
           (ecc-review-note-line-text note) (and (plist-get line :side)
@@ -2027,18 +2035,58 @@ index, by place."
                                      (or lines (ecc-review--reading-lines reading))))
                         (hunk (ecc-review--file-lines hunk))
                         (t (ecc-review--path-lines path))))
-             (index (ecc-review--reading-index reading)))
+             (index (ecc-review--reading-index reading))
+             (seen (make-hash-table :test #'equal)))
          (dolist (line own)
+           (plist-put line :nth
+                      (ecc-review-map-count
+                       seen (if (plist-get line :side)
+                                (cons (plist-get line :side) (plist-get line :line))
+                              (plist-get (plist-get line :hunk) :header))))
            (puthash (ecc-review--line-key line) line index))
+         ;; Each line knows which of the hunks with its header it is in.
+         (let ((header nil))
+           (dolist (line own)
+             (if (plist-get line :side)
+                 (plist-put line :hunk-nth (plist-get header :nth))
+               (setq header line))))
          (puthash path own files)))
       (own own))))
 
 (defun ecc-review--line-key (line)
   "Return the key of LINE in the index of a reading.
-\(PATH SIDE NUMBER) for a line, (hunk . KEY) for the header of a hunk."
-  (if (plist-get line :side)
-      (list (plist-get line :path) (plist-get line :side) (plist-get line :line))
-    (cons 'hunk (ecc-review--hunk-key (plist-get line :hunk)))))
+\(PATH SIDE NUMBER NTH) for a line, (hunk PATH HEADER NTH) for the header
+of a hunk (`ecc-review-map-shape' says what NTH is)."
+  (ecc-review--place-key (plist-get line :path) (plist-get line :side)
+                         (if (plist-get line :side)
+                             (plist-get line :line)
+                           (plist-get (plist-get line :hunk) :header))
+                         (plist-get line :nth)))
+
+(defun ecc-review--place-key (path side number nth)
+  "Return the key of a place in the index of a reading: see `ecc-review--line-key'.
+NUMBER is the header of the hunk for a place on a whole hunk, SIDE nil."
+  (if side
+      (list path side number (or nth 0))
+    (list 'hunk path number (or nth 0))))
+
+(defun ecc-review--canonical (line)
+  "Return LINE as this reading has it, which says its NTH.
+LINE is a line of the review now, read from the buffer by whatever read
+it; the reading's own line at the same place is the one that knows which
+of the lines with its number it is."
+  (if (plist-member line :nth)
+      line
+    (let ((own (ecc-review--file-of (ecc-review--this-reading) (plist-get line :path)
+                                    nil (plist-get line :hunk))))
+      ;; The side too: in an ediff review the line standing for a
+      ;; difference is where its first line of the right side is.
+      (or (seq-find (lambda (other)
+                      (and (eql (plist-get other :position) (plist-get line :position))
+                           (eq (plist-get other :buffer) (plist-get line :buffer))
+                           (eq (plist-get other :side) (plist-get line :side))))
+                    own)
+          line))))
 
 (defun ecc-review--forget-file (reading path)
   "Drop the lines of the file PATH from READING: nothing is on it any more."
@@ -2056,9 +2104,11 @@ The header of its hunk for a place on a whole hunk.  LINES are as for
          (path (ecc-review-note-path place))
          (side (ecc-review-note-side place)))
     (ecc-review--file-of reading path lines)
-    (gethash (if side
-                 (list path side (ecc-review-note-line place))
-               (cons 'hunk (ecc-review-note-hunk-key place)))
+    (gethash (ecc-review--place-key path side
+                                    (if side
+                                        (ecc-review-note-line place)
+                                      (cdr (ecc-review-note-hunk-key place)))
+                                    (ecc-review-note-nth place))
              (ecc-review--reading-index reading))))
 
 (defun ecc-review--hold (place)
@@ -2262,76 +2312,86 @@ outdated already and come back when their line is there."
                    (mapcar (lambda (place) (list place (cons 'lost nil) nil)) places)))))
     (pcase-dolist (`(,place ,where ,to) moves)
       (pcase where
-        (`(line . ,number)
-         (setf (ecc-review-note-line place) number
-               (ecc-review-note-shape place) to
-               (ecc-review-note-outdated place) nil))
-        (`(hunk . ,key)
-         (setf (ecc-review-note-hunk-key place) key
+        (`(line . ,line)
+         (if (plist-get line :side)
+             (setf (ecc-review-note-line place) (plist-get line :line))
+           (setf (ecc-review-note-hunk-key place) (ecc-review--hunk-key (plist-get line :hunk))))
+         (setf (ecc-review-note-nth place) (plist-get line :nth)
                (ecc-review-note-shape place) to
                (ecc-review-note-outdated place) nil))
         (`(lost . ,nearest)
          (unless back
            (ecc-review--lose place nearest)))))))
 
+(defun ecc-review--carried (map index path side number nth)
+  "Return the line of this reading, among INDEX, MAP carries a line to, or nil.
+The line is that of PATH and SIDE numbered NUMBER, the NTH of those, in
+the reading MAP carries from."
+  (when-let* ((to (funcall map side number nth)))
+    (gethash (ecc-review--place-key path side (car to) (cdr to)) index)))
+
 (defun ecc-review--where (place from map index &optional back)
   "Return where PLACE, on a line of the reading of FROM, is in this one.
-\(line . NUMBER) for a line, (hunk . KEY) for a hunk, by MAP among the
-lines of INDEX, else (lost . NEAREST): NEAREST is the nearest line that
-stayed, worked out for a place held and still placed -- not BACK -- and
-for no other."
+\(line . LINE), LINE the line of this reading -- the header of the hunk
+for a place on a whole hunk -- by MAP among the lines of INDEX; else
+\(lost . NEAREST): NEAREST is the nearest line that stayed, worked out
+for a place held and still placed -- not BACK -- and for no other."
   (let ((path (ecc-review-note-path place))
         (side (ecc-review-note-side place)))
     (or (and map
              (if side
-                 (let ((line (gethash (list path side
-                                            (funcall map side (ecc-review-note-line place)))
-                                      index)))
+                 (let ((line (ecc-review--carried map index path side
+                                                  (ecc-review-note-line place)
+                                                  (ecc-review-note-nth place))))
                    (and line (equal (plist-get line :text) (ecc-review-note-line-text place))
-                        (cons 'line (plist-get line :line))))
-               (when-let* ((key (ecc-review--hunk-goes
-                                 path (cdr (ecc-review-note-hunk-key place)) from map index)))
-                 (cons 'hunk key))))
+                        (cons 'line line)))
+               (when-let* ((header (ecc-review--hunk-goes
+                                    path (cdr (ecc-review-note-hunk-key place))
+                                    (or (ecc-review-note-nth place) 0) from map index)))
+                 (cons 'line header))))
         (cons 'lost (and map (not back) (memq place ecc-review--held)
                          (ecc-review--nearest-to place from map index))))))
 
-(defun ecc-review--hunk-goes (path header from map index)
-  "Return the key of the hunk of this reading the hunk HEADER of FROM is now.
-Its changed lines -- the ones it takes out and puts in, not the context
-around them -- are carried one by one, by MAP among the lines of INDEX.
-When half of them or more changed again or went, it is another hunk
-now, and the answer is nil; otherwise it is the hunk most of the rest
-are in, the first of those on a tie."
+(defun ecc-review--hunk-goes (path header nth from map index)
+  "Return the header of the hunk of this reading the hunk HEADER of FROM is now.
+That hunk is the NTH of FROM with that header.  Its changed lines -- the
+ones it takes out and puts in, not the context around them -- are
+carried one by one, by MAP among the lines of INDEX.  When half of them
+or more changed again or went, it is another hunk now, and the answer
+is nil; otherwise it is the hunk most of the rest are in, the first of
+those on a tie."
   (let* ((members (seq-filter (lambda (member)
-                                (ecc-review-map-changed-p from (car member) (cdr member)))
-                              (cdr (assoc header (ecc-review-map-shape-hunks from)))))
+                                (ecc-review-map-changed-p from (car member) (cadr member)))
+                              (cdr (assoc (cons header nth) (ecc-review-map-shape-hunks from)))))
          (stayed 0)
          (votes nil))
     (dolist (member members)
-      (when-let* ((line (gethash (list path (car member) (funcall map (car member) (cdr member)))
-                                 index)))
+      (when-let* ((line (ecc-review--carried map index path (car member)
+                                             (cadr member) (cddr member))))
         (setq stayed (1+ stayed))
-        (let* ((key (ecc-review--hunk-key (plist-get line :hunk)))
+        (let* ((key (cons (plist-get (plist-get line :hunk) :header) (plist-get line :hunk-nth)))
                (vote (assoc key votes)))
           (if vote
               (setcdr vote (1+ (cdr vote)))
-            (setq votes (append votes (list (cons key 1))))))))
+            (push (cons key 1) votes)))))
     (when (> (* 2 stayed) (length members))
-      (car (seq-reduce (lambda (best vote) (if (> (cdr vote) (cdr best)) vote best))
-                       (cdr votes) (car votes))))))
+      (let ((best (car (seq-reduce (lambda (best vote) (if (> (cdr vote) (cdr best)) vote best))
+                                   (cdr (reverse votes)) (car (last votes))))))
+        (gethash (ecc-review--place-key path nil (car best) (cdr best)) index)))))
 
 (defun ecc-review--nearest-to (place from map index)
   "Return the line nearest the one PLACE was on in FROM that this reading has.
-\(SIDE . NUMBER), by MAP among the lines of INDEX, or nil: that line
+\(SIDE NUMBER . NTH), by MAP among the lines of INDEX, or nil: that line
 itself first -- the first line of a hunk, for a place on a hunk, may
 have stayed -- then the one after it, since that is where its place
 went, then the one before, and so on outwards."
   (let* ((order (vconcat (ecc-review-map-shape-order from)))
          (path (ecc-review-note-path place))
          (side (ecc-review-note-side place))
+         (nth (or (ecc-review-note-nth place) 0))
          (here (if side
-                   (cons side (ecc-review-note-line place))
-                 (cadr (assoc (cdr (ecc-review-note-hunk-key place))
+                   (cons side (cons (ecc-review-note-line place) nth))
+                 (cadr (assoc (cons (cdr (ecc-review-note-hunk-key place)) nth)
                               (ecc-review-map-shape-hunks from)))))
          (at (seq-position order here)))
     (when at
@@ -2342,11 +2402,11 @@ went, then the one before, and so on outwards."
                            (list (+ at distance) (- at distance))))
             (when (< -1 other (length order))
               (let* ((member (aref order other))
-                     (line (gethash (list path (car member)
-                                          (funcall map (car member) (cdr member)))
-                                    index)))
+                     (line (ecc-review--carried map index path (car member)
+                                                (cadr member) (cddr member))))
                 (when line
-                  (throw 'found (cons (plist-get line :side) (plist-get line :line))))))))))))
+                  (throw 'found (cons (plist-get line :side)
+                                      (cons (plist-get line :line) (plist-get line :nth)))))))))))))
 
 (defun ecc-review--lose (place nearest)
   "Mark PLACE outdated: its line is not in this reading.
@@ -2379,7 +2439,7 @@ as for `ecc-review--locate-note'."
     (let ((reading (ecc-review--this-reading))
           (path (ecc-review-note-path place)))
       (ecc-review--file-of reading path lines)
-      (gethash (list path (car nearest) (cdr nearest))
+      (gethash (ecc-review--place-key path (car nearest) (cadr nearest) (cddr nearest))
                (ecc-review--reading-index reading)))))
 
 (defun ecc-review--relocate (lines)
@@ -2531,7 +2591,7 @@ the review."
 (defun ecc-review--copy-anchor (note from)
   "Put NOTE where the comment FROM is, outdated or not, and return NOTE.
 It is carried from the reading FROM is on, and comes back by it."
-  (dolist (slot '(path side line line-text hunk-key hunk-range hunk-text outdated shape))
+  (dolist (slot '(path side line line-text nth hunk-key hunk-range hunk-text outdated shape))
     (setf (cl-struct-slot-value 'ecc-review-note slot note)
           (cl-struct-slot-value 'ecc-review-note slot from)))
   note)
@@ -2567,12 +2627,14 @@ user\='s whatever happens to what it answered."
 
 (defun ecc-review--notes-on (line)
   "Return the shown comments that sit on LINE, in the order they were made."
-  (let ((side (plist-get line :side)))
+  (let* ((line (ecc-review--canonical line))
+         (side (plist-get line :side)))
     (seq-filter (lambda (note)
                   (and (ecc-review--shown-p note)
                        (not (ecc-review-note-outdated note))
                        (equal (ecc-review-note-path note) (plist-get line :path))
                        (eq (ecc-review-note-side note) side)
+                       (eql (or (ecc-review-note-nth note) 0) (plist-get line :nth))
                        (if side
                            (eql (ecc-review-note-line note) (plist-get line :line))
                          (equal (ecc-review-note-hunk-key note)

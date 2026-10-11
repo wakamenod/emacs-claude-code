@@ -2130,6 +2130,49 @@ space with a tab on its --- and +++ lines."
                              (sort (copy-sequence names) #'string<)))))
         (ecc-review-test--kill-review-buffers)))))
 
+(ert-deftest ecc-review-test-two-patches-at-one-number-keep-their-comments ()
+  "Two patches of one file at one number are two places, each comment on its own.
+A diff made from what the session recorded joins a patch for each edit,
+each numbered against the file as its edit found it: an untracked file
+edited twice at line 10 has two hunks @@ -10,1 +10,1 @@."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (let ((patches (concat "@@ -10,1 +10,1 @@\n-a old\n+a new\n"
+                               "@@ -10,1 +10,1 @@\n-b old\n+b new\n"))
+              (under (lambda (text)
+                       (save-excursion
+                         (ecc-review-test--goto text)
+                         (line-beginning-position 2)))))
+          (with-current-buffer
+              (ecc-review-test--fill session (concat "--- u.txt\n+++ u.txt\n" patches))
+            (ecc-review-test--goto "+a new")
+            (ecc-review-comment "on a")
+            (goto-char (point-min))
+            (re-search-forward "^@@ -10,1 \\+10,1 @@$" nil t 2)
+            (beginning-of-line)
+            (ecc-review-comment "on the second patch")
+            (ecc-review-test--goto "+b new")
+            (ecc-review-comment "on b")
+            (let ((check
+                   (lambda ()
+                     (should-not (seq-some #'ecc-review-note-outdated ecc-review--notes))
+                     (let ((ends (mapcar (lambda (note)
+                                           (overlay-end
+                                            (seq-find (lambda (overlay)
+                                                        (memq note (overlay-get overlay 'ecc-review-notes)))
+                                                      (ecc-review-comment-overlays))))
+                                         ecc-review--notes)))
+                       (should (= (nth 0 ends) (funcall under "+a new")))
+                       (should (= (nth 2 ends) (funcall under "+b new")))))))
+              (funcall check)
+              (should (equal (mapcar #'ecc-review-note-nth ecc-review--notes) '(0 1 1)))
+              ;; A patch put in before them: each stays on its own.
+              (ecc-review-test--fill
+               session (concat "--- u.txt\n+++ u.txt\n@@ -2,0 +2 @@\n+top\n" patches))
+              (funcall check)
+              (should (equal (mapcar #'ecc-review-note-nth ecc-review--notes) '(0 1 1))))))
+      (ecc-review-test--kill-review-buffers))))
+
 (ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
   "Remembering the place reads the hunk it is in, not the whole diff."
   (ecc-review-test--with-review session

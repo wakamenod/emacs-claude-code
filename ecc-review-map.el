@@ -64,28 +64,38 @@
 BASE is the blob of the old side, `empty' for a file that did not exist,
 or nil when the diff does not say.  REMOVED and ADDED are the lines the
 diff takes out of the old side and puts into the new, as (NUMBER . TEXT)
-in order.  HUNKS are (HEADER . MEMBERS), MEMBERS the (SIDE . NUMBER) of
-the lines of the hunk.  ORDER is every (SIDE . NUMBER) of the file in
-the order of the diff; TEXTS every line of its new side, put in or not,
-and GONE every line it takes out, as (NUMBER . TEXT) in that order.
-PUT-IN is a hash of the numbers of ADDED, made when first asked for by
-`ecc-review-map-changed-p'."
+in order.
+
+A line is named by its SIDE, its NUMBER and its NTH: how many lines of
+the file before it, in the order of the diff, have that side and number.
+That is 0 but in a diff that joins a patch for each edit, each numbered
+against the file as its edit found it, where two lines can share a
+number; a hunk is named by its header and how many before it have that
+header.  HUNKS are ((HEADER . NTH) . MEMBERS), MEMBERS the (SIDE NUMBER
+. NTH) of the lines of the hunk.  ORDER is every (SIDE NUMBER . NTH) of
+the file in the order of the diff; TEXTS every line of its new side, put
+in or not, and GONE every line it takes out, as ((NUMBER . NTH) . TEXT)
+in that order.  PUT-IN is a hash of the numbers of ADDED, made when
+first asked for by `ecc-review-map-changed-p'."
   base removed added hunks order texts gone put-in)
 
 (defun ecc-review-map-shape (lines base)
   "Return the shape of LINES, the lines of one file of a reading.
 LINES are plists of `ecc-review--hunk-lines', header first in each hunk.
 BASE is the blob of the old side, as `ecc-review-map-shape' keeps it."
-  (let ((removed nil) (added nil) (hunks nil) (order nil) (texts nil) (gone nil))
+  (let ((removed nil) (added nil) (hunks nil) (order nil) (texts nil) (gone nil)
+        (seen (make-hash-table :test #'equal)))
     (dolist (line lines)
-      (let ((side (plist-get line :side))
-            (number (plist-get line :line)))
+      (let* ((side (plist-get line :side))
+             (number (plist-get line :line))
+             (header (and (null side) (plist-get (plist-get line :hunk) :header)))
+             (nth (ecc-review-map-count seen (if side (cons side number) header))))
         (if (null side)
-            (push (list (plist-get (plist-get line :hunk) :header)) hunks)
-          (push (cons side number) order)
-          (push (cons number (plist-get line :text)) (if (eq side 'new) texts gone))
+            (push (list (cons header nth)) hunks)
+          (push (cons side (cons number nth)) order)
+          (push (cons (cons number nth) (plist-get line :text)) (if (eq side 'new) texts gone))
           (when hunks
-            (push (cons side number) (cdar hunks)))
+            (push (cons side (cons number nth)) (cdar hunks)))
           (cond ((eq side 'old)
                  (push (cons number (plist-get line :text)) removed))
                 ;; A context line is a line of the old side.
@@ -100,6 +110,14 @@ BASE is the blob of the old side, as `ecc-review-map-shape' keeps it."
      :order (nreverse order)
      :texts (nreverse texts)
      :gone (nreverse gone))))
+
+(defun ecc-review-map-count (seen key)
+  "Return how many times KEY was counted in the hash SEEN before, counting it.
+The NTH of a line or a hunk of a file, the lines being counted in the
+order of the diff (`ecc-review-map-shape')."
+  (let ((count (gethash key seen 0)))
+    (puthash key (1+ count) seen)
+    count))
 
 (defun ecc-review-map-changed-p (shape side number)
   "Return non-nil when line NUMBER of SIDE is one SHAPE changes, not context.
@@ -321,6 +339,9 @@ does not have it: it changed, or it went.  A number returned may be of
 a line TO shows no more -- one that is no longer a change -- which the
 caller finds by looking.
 
+The function takes the NTH of the line as well (`ecc-review-map-shape')
+and returns (NUMBER . NTH).
+
 When the two were read against different old sides, BASE-HUNKS say how
 the old side of FROM became that of TO: the hunks of the one blob
 against the other (`ecc-review-map-base-hunks'), nil for none; `none'
@@ -349,16 +370,19 @@ be said, which matches nothing."
              (a (ecc-review-map--side from))
              (b (ecc-review-map--side to))
              (map (ecc-review-map--matches a b forward backward)))
-        (lambda (side number)
-          (pcase side
-            ('old (funcall forward number))
-            ('new
-             (let ((i (1- number)))
-               (if (< i (length map))
-                   (and (aref map i) (1+ (aref map i)))
-                 (when-let* ((there (funcall forward (ecc-review-map--token a i)))
-                             (j (ecc-review-map--index b there)))
-                   (1+ j))))))))))))
+        (lambda (side number &optional _nth)
+          (when-let* ((there
+                       (pcase side
+                         ('old (funcall forward number))
+                         ('new
+                          (let ((i (1- number)))
+                            (if (< i (length map))
+                                (and (aref map i) (1+ (aref map i)))
+                              (when-let* ((there (funcall forward (ecc-review-map--token a i)))
+                                          (j (ecc-review-map--index b there)))
+                                (1+ j))))))))
+            ;; Numbers of a diff against one blob are each one line's.
+            (cons there 0))))))))
 
 (defun ecc-review-map--by-text (from to)
   "Return the map of `ecc-review-map-lines' for FROM and TO by text alone.
@@ -374,24 +398,22 @@ known to be shared."
                                            (ecc-review-map-shape-texts to)))
         (old (ecc-review-map--text-matches (ecc-review-map-shape-gone from)
                                            (ecc-review-map-shape-gone to))))
-    (lambda (side number)
-      (gethash number (if (eq side 'new) new old)))))
+    (lambda (side number &optional nth)
+      (gethash (cons number (or nth 0)) (if (eq side 'new) new old)))))
 
 (defun ecc-review-map--text-matches (from to)
-  "Return a hash of each number of FROM to that of its match in TO.
-FROM and TO are lists of (NUMBER . TEXT) in the order of a diff; a
-number two patches share is taken by the first."
+  "Return a hash of each (NUMBER . NTH) of FROM to that of its match in TO.
+FROM and TO are lists of ((NUMBER . NTH) . TEXT) in the order of a diff."
   (let ((a (vconcat (mapcar #'cdr from)))
         (b (vconcat (mapcar #'cdr to)))
-        (a-numbers (vconcat (mapcar #'car from)))
-        (b-numbers (vconcat (mapcar #'car to)))
-        (lines (make-hash-table))
+        (a-places (vconcat (mapcar #'car from)))
+        (b-places (vconcat (mapcar #'car to)))
+        (lines (make-hash-table :test #'equal))
         (i 0) (j 0))
     (dolist (tag (ecc-diff-script a b #'ecc-review-map--patience))
       (pcase tag
         ('context
-         (unless (gethash (aref a-numbers i) lines)
-           (puthash (aref a-numbers i) (aref b-numbers j) lines))
+         (puthash (aref a-places i) (aref b-places j) lines)
          (setq i (1+ i) j (1+ j)))
         ('removed (setq i (1+ i)))
         (_ (setq j (1+ j)))))

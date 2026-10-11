@@ -19,6 +19,10 @@
     (insert diff)
     (ecc-review-map-shape (ecc-review--lines) base)))
 
+(defun ecc-review-map-test--at (map side number &optional nth)
+  "Return the number MAP carries line NUMBER of SIDE, the NTH of those, to."
+  (car (funcall map side number nth)))
+
 (defun ecc-review-map-test--diff (&rest hunks)
   "Return a diff of a.txt made of HUNKS, each a string with its @@ line."
   (concat "--- a/a.txt\n+++ b/a.txt\n" (apply #'concat hunks)))
@@ -33,10 +37,10 @@
     (should (equal (ecc-review-map-shape-removed shape) '((2 . "b"))))
     (should (equal (ecc-review-map-shape-added shape) '((2 . "B") (3 . "C") (11 . "z"))))
     (should (equal (ecc-review-map-shape-hunks shape)
-                   '(("@@ -2,1 +2,2 @@" (old . 2) (new . 2) (new . 3))
-                     ("@@ -9,0 +11,1 @@" (new . 11)))))
+                   '((("@@ -2,1 +2,2 @@" . 0) (old 2 . 0) (new 2 . 0) (new 3 . 0))
+                     (("@@ -9,0 +11,1 @@" . 0) (new 11 . 0)))))
     (should (equal (ecc-review-map-shape-order shape)
-                   '((old . 2) (new . 2) (new . 3) (new . 11))))))
+                   '((old 2 . 0) (new 2 . 0) (new 3 . 0) (new 11 . 0))))))
 
 (ert-deftest ecc-review-map-test-lines-put-in-above ()
   "Lines put in above a line, in its hunk or another, move it down."
@@ -47,12 +51,12 @@
                                          "@@ -6,0 +8,5 @@\n+def share():\n+    t = total()\n"
                                          "+    if t == 0:\n+        return 0\n+    return p / t\n")))
          (map (ecc-review-map-lines from to)))
-    (should (equal (mapcar (lambda (line) (funcall map 'new line)) '(7 8 9)) '(8 9 12)))
+    (should (equal (mapcar (lambda (line) (ecc-review-map-test--at map 'new line)) '(7 8 9)) '(8 9 12)))
     ;; A line of the old side the diff does not show moves by one too.
-    (should (= (funcall map 'new 3) 4))
-    (should (= (funcall map 'new 40) 43))
+    (should (= (ecc-review-map-test--at map 'new 3) 4))
+    (should (= (ecc-review-map-test--at map 'new 40) 43))
     ;; The old side does not move.
-    (should (= (funcall map 'old 5) 5))))
+    (should (= (ecc-review-map-test--at map 'old 5) 5))))
 
 (ert-deftest ecc-review-map-test-a-changed-line-matches-nothing ()
   "A line that changed, or went, is nowhere, however alike the lines elsewhere."
@@ -63,8 +67,8 @@
               (ecc-review-map-test--diff "@@ -0,0 +1,4 @@\n+f() {\n+  if (x)\n+    return 0;\n+}\n"
                                          "@@ -10,0 +15,4 @@\n+g() {\n+  if (y)\n+    return nil;\n+}\n")))
          (map (ecc-review-map-lines from to)))
-    (should-not (funcall map 'new 3))
-    (should (equal (mapcar (lambda (line) (funcall map 'new line)) '(1 2 4 17)) '(1 2 4 17)))))
+    (should-not (ecc-review-map-test--at map 'new 3))
+    (should (equal (mapcar (lambda (line) (ecc-review-map-test--at map 'new line)) '(1 2 4 17)) '(1 2 4 17)))))
 
 (ert-deftest ecc-review-map-test-a-moved-old-side ()
   "When the old side moved, its lines are carried through the hunks between the two."
@@ -83,12 +87,12 @@
               (ecc-review-map-test--diff "@@ -8,0 +9,1 @@\n+share\n")
               "bbbbbbb")))
     ;; Not knowing how the old sides differ, nothing is matched.
-    (should-not (funcall (ecc-review-map-lines from to 'unknown) 'new 9))
+    (should-not (ecc-review-map-test--at (ecc-review-map-lines from to 'unknown) 'new 9))
     (let ((map (ecc-review-map-lines from to '((0 0 1 2)))))
-      (should (= (funcall map 'new 9) 9))
+      (should (= (ecc-review-map-test--at map 'new 9) 9))
       ;; The import is in the old side now: no change, and no line put in.
-      (should-not (funcall map 'new 1))
-      (should (= (funcall map 'old 3) 5)))))
+      (should-not (ecc-review-map-test--at map 'new 1))
+      (should (= (ecc-review-map-test--at map 'old 3) 5)))))
 
 (ert-deftest ecc-review-map-test-an-old-side-that-appears-or-is-the-same ()
   "No hunks between two old sides is one side; `none' carries no line of it."
@@ -98,14 +102,14 @@
               (ecc-review-map-test--diff "@@ -0,0 +1,1 @@\n+top\n@@ -2,1 +3,2 @@\n-b\n+B\n+C\n")
               "aaaaaaaa")))
     (let ((map (ecc-review-map-lines from to nil)))
-      (should (= (funcall map 'new 2) 3))
-      (should (= (funcall map 'old 2) 2)))
+      (should (= (ecc-review-map-test--at map 'new 2) 3))
+      (should (= (ecc-review-map-test--at map 'old 2) 2)))
     (let* ((to (ecc-review-map-test--shape
                 (ecc-review-map-test--diff "@@ -0,0 +1,4 @@\n+a\n+B\n+C\n+c\n") 'empty))
            (map (ecc-review-map-lines from to 'none)))
-      (should (= (funcall map 'new 2) 2))
-      (should (= (funcall map 'new 3) 3))
-      (should-not (funcall map 'old 2)))))
+      (should (= (ecc-review-map-test--at map 'new 2) 2))
+      (should (= (ecc-review-map-test--at map 'new 3) 3))
+      (should-not (ecc-review-map-test--at map 'old 2)))))
 
 (ert-deftest ecc-review-map-test-patches-of-each-edit-are-matched-by-text ()
   "Two readings that do not say their old side are matched by the text of their lines.
@@ -120,14 +124,33 @@ side either."
                                          "@@ -10,0 +10 @@\n+a\n" "@@ -20,0 +20 @@\n+b\n")))
          (map (ecc-review-map-lines from to 'text)))
     (should-not (ecc-review-map-same-base-p from to))
-    (should (= (funcall map 'new 10) 10))
-    (should (= (funcall map 'new 20) 20))
+    (should (= (ecc-review-map-test--at map 'new 10) 10))
+    (should (= (ecc-review-map-test--at map 'new 20) 20))
     ;; Nothing was taken out to be matched.
-    (should-not (funcall map 'old 10))
+    (should-not (ecc-review-map-test--at map 'old 10))
     ;; A line rewritten is still nowhere.
     (let ((to (ecc-review-map-test--shape
                (ecc-review-map-test--diff "@@ -10,0 +10 @@\n+A\n" "@@ -20,0 +20 @@\n+b\n"))))
-      (should-not (funcall (ecc-review-map-lines from to 'text) 'new 10)))))
+      (should-not (ecc-review-map-test--at (ecc-review-map-lines from to 'text) 'new 10)))))
+
+(ert-deftest ecc-review-map-test-patches-sharing-a-number ()
+  "Two patches of one file at one number are two lines, matched each to its own.
+A diff that joins a patch for each edit numbers each against the file as
+its edit found it: the NTH of a line tells them apart."
+  (let* ((diff (lambda (&rest hunks) (apply #'ecc-review-map-test--diff hunks)))
+         (from (ecc-review-map-test--shape
+                (funcall diff "@@ -10,1 +10,1 @@\n-a old\n+a new\n"
+                         "@@ -10,1 +10,1 @@\n-b old\n+b new\n")))
+         (to (ecc-review-map-test--shape
+              (funcall diff "@@ -2,0 +2 @@\n+top\n"
+                       "@@ -10,1 +10,1 @@\n-a old\n+a new\n"
+                       "@@ -10,1 +10,1 @@\n-b old\n+b new\n")))
+         (map (ecc-review-map-lines from to 'text)))
+    (should (equal (mapcar #'car (ecc-review-map-shape-hunks from))
+                   '(("@@ -10,1 +10,1 @@" . 0) ("@@ -10,1 +10,1 @@" . 1))))
+    (should (equal (funcall map 'new 10 0) '(10 . 0)))
+    (should (equal (funcall map 'new 10 1) '(10 . 1)))
+    (should (equal (funcall map 'old 10 1) '(10 . 1)))))
 
 (ert-deftest ecc-review-map-test-a-new-file-too-large-to-compare-whole ()
   "A file put in whole is matched by its lines that are there once, then between them."
@@ -142,10 +165,10 @@ side either."
                                     (seq-take lines 199) '("changed") (seq-drop lines 200)))))
          (ecc-diff-max-cells 1000)
          (map (ecc-review-map-lines from to)))
-    (should (= (funcall map 'new 1) 2))
-    (should (= (funcall map 'new 3) 4))
-    (should-not (funcall map 'new 202))
-    (should (= (funcall map 'new 402) 403))))
+    (should (= (ecc-review-map-test--at map 'new 1) 2))
+    (should (= (ecc-review-map-test--at map 'new 3) 4))
+    (should-not (ecc-review-map-test--at map 'new 202))
+    (should (= (ecc-review-map-test--at map 'new 402) 403))))
 
 (provide 'ecc-review-map-test)
 ;;; ecc-review-map-test.el ends here
