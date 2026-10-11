@@ -1606,7 +1606,7 @@ the top."
             ;; The lines are read once, and only when something is to be
             ;; put back on them.
             (let ((lines (and (or ecc-review--notes ecc-review--held) (ecc-review--lines))))
-              (ecc-review--take-reading)
+              (ecc-review--take-reading lines)
               (let ((ecc-review--refilling t))
                 (ecc-review--draw-notes lines))
               (ecc-review--restore-views views))
@@ -1946,7 +1946,8 @@ each path something is on to its `ecc-review-map-shape' in this
 reading.  FILES and INDEX are the lines of those files and of no other,
 by path and by place, read when a place is first looked for in one.
 UNITS is the hunks of the review by file (`ecc-review--units-by-path'),
-gone through once, when a file is first wanted."
+gone through once, when a file is first wanted -- or, while the reading
+is taken, made from the lines the caller read (`ecc-review--units-of')."
   text shapes files index units)
 
 (defvar-local ecc-review--reading nil
@@ -2004,24 +2005,40 @@ is neither the last reading nor the next."
   (when ecc-review--reading
     (setf (ecc-review--reading-text ecc-review--reading) 'pending)))
 
-(defun ecc-review--take-reading ()
+(defun ecc-review--take-reading (&optional lines)
   "Make what this review shows now its reading, and carry every place to it.
 This is where a reading is made, and the only one: the diff review
 calls it once filled (`ecc-review--fill'), the ediff review once ediff
 has computed the differences.  Every comment and every place held is
 carried at once, from the reading each was last on
 \(`ecc-review--carry'); the lines of a file are read only when something
-is on it."
+is on it.  LINES, all the lines of the review when the caller has read
+them, give the hunks of each file for the carrying, which then does not
+go through the review again; they are not kept."
   (let ((reading (ecc-review--reading-create :text (ecc-review--text)
                                              :shapes (make-hash-table :test #'equal)
                                              :files (make-hash-table :test #'equal)
-                                             :index (make-hash-table :test #'equal)))
+                                             :index (make-hash-table :test #'equal)
+                                             :units (and lines (ecc-review--units-of lines))))
         (places (append ecc-review--notes ecc-review--held)))
     (setq ecc-review--reading reading)
     (when places
       (ecc-review--carry places reading)
       (ecc-review--prune reading places))
+    ;; The hunks of every file are not kept: a file wanted later is
+    ;; found by going through the review (`ecc-review--units-by-path').
+    (when lines
+      (setf (ecc-review--reading-units reading) nil))
     reading))
+
+(defun ecc-review--units-of (lines)
+  "Return `ecc-review--units-by-path' for the review LINES are all the lines of."
+  (let ((table (make-hash-table :test #'equal)))
+    (dolist (line lines)
+      (unless (plist-get line :side)
+        (push (plist-get line :hunk) (gethash (plist-get line :path) table))))
+    (maphash (lambda (key units) (puthash key (nreverse units) table)) table)
+    table))
 
 (defun ecc-review--this-reading ()
   "Return the reading of this review, the one of the text it shows.
@@ -2064,12 +2081,15 @@ at every hunk would go back through all the hunks before it."
     table))
 
 (cl-defgeneric ecc-review--unit-at (item)
-  "Return the hunk ITEM of `ecc-review--units-by-path' stands for."
-  (save-excursion
-    (goto-char item)
-    (end-of-line)
-    (when-let* ((bounds (ecc-review--hunk-bounds)))
-      (ecc-review-hunk-at (car bounds) (cdr bounds)))))
+  "Return the hunk ITEM of `ecc-review--units-by-path' stands for.
+ITEM is where the hunk begins, or the hunk itself (`ecc-review--units-of')."
+  (if (not (integerp item))
+      item
+    (save-excursion
+      (goto-char item)
+      (end-of-line)
+      (when-let* ((bounds (ecc-review--hunk-bounds)))
+        (ecc-review-hunk-at (car bounds) (cdr bounds))))))
 
 (defun ecc-review--file-of (reading path)
   "Return the lines of the file PATH in READING, reading them the first time.
