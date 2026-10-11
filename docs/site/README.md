@@ -174,9 +174,12 @@ SCENES="menu resume" scripts/docshots.sh
 The scenes are `switch`, `menu`, `capabilities`, `send-region`, `fix-error`,
 `inline`, `rewrite`, `at-cursor`, `context`, `image`, `btw`, `suggestion`,
 `sessions`, `prompt`, `permission`, `question`, `review`, `proposal`, `plan`,
-`files`, `timeline`, `handover`, `resume`, `sidebar`, `spaces`, `usecase` and
-`overview`. A scene is not always one picture: `sessions` takes `tabs.png` and
-`dashboard.png`, and `prompt` takes `fold.mp4` and `slash.png`. `spaces` is a
+`files`, `review-menu`, `review-files`, `ediff`, `ediff-live`,
+`usecase-review`, `timeline`, `handover`, `resume`, `sidebar`, `spaces`,
+`usecase` and `overview`. A scene is not always one picture: `sessions` takes
+`tabs.png` and `dashboard.png`, `prompt` takes `fold.mp4` and `slash.png`,
+`review-menu` the four stills of the review menu and its questions, `ediff`
+the still of the layout and three short videos, and `ediff-live` two. `spaces` is a
 still of the layout the Spaces page opens with: it widens the frame, opens a
 tab for each of two projects and the sidebar, and puts both back afterwards.
 
@@ -249,6 +252,20 @@ What it knows, and what is worth not learning again:
   scene sets itself up, is left out. There is no way to write the same frame
   out twice, because doing so makes a video no smoother and only longer. A
   scene is written in the seconds it should last.
+- **The review scenes make the demo project a repository** for as long as
+  they run (`shot-git-project`): a history on `main`, three branches that a
+  gh of the scenes' own lists as pull requests, a change staged and the
+  session's two files changed, so that the menu has counts and the questions
+  have something to offer. It is written at fixed dates with no configuration
+  of the machine's, so the commit ids are the same in every run, and
+  `shot-git-project-end` puts the plain directory back.
+- **Claude in the review is live**: `ediff-live` and `usecase-review` start a
+  sonnet session with ecc's MCP server registered (the one server
+  `--strict-mcp-config` lets in), have it make a change off camera, and film
+  the model calling the review tools. What Claude writes differs from take to
+  take, so look at the video and fit the subtitles to it. A wait the
+  wrapper films at a quarter of its frames (`hold_until ... fast`) keeps a
+  turn of a minute to a few seconds of motion.
 - **What is on the screen is a project of real code**, `/tmp/records`: a
   module that reads delimited records, a report with a syntax error, a CLI
   over them, and a second project, `/tmp/api-server`. Their sources are
