@@ -1952,17 +1952,21 @@ else a new one."
                              (ecc--truncate (ecc-review-note-text note) 50)))
     (_ "new comment")))
 
-(defun ecc-review-ediff--comment-plan (unit &optional choice)
+(defun ecc-review-ediff--comment-plan (unit &optional choice anchor)
   "Return what \\`c' on the difference UNIT is to do, as (ANCHOR KIND ID).
 The answer of `ecc-review--comment-plan\\=', for a whole difference:
 CHOICE, one of `ecc-review-ediff--comment-choices\\=' -- the first by
 default -- with KIND `edit', `reply' or nil and ID the comment edited or
-answered."
+answered.  ANCHOR is the place UNIT was taken at
+\(`ecc-review-ediff--anchor-unit\\='), made here when not given."
   (let ((choice (or choice (car (ecc-review-ediff--comment-choices unit)))))
-    (list (ecc-review--anchor (ecc-review-note-create)
-                              (car (ecc-review-ediff--unit-lines unit)))
+    (list (or anchor (ecc-review-ediff--anchor-unit unit))
           (car choice)
           (and (cdr choice) (ecc-review-note-id (cdr choice))))))
+
+(defun ecc-review-ediff--anchor-unit (unit)
+  "Return a place on the whole of the difference UNIT, of this reading."
+  (ecc-review--anchor (ecc-review-note-create) (car (ecc-review-ediff--unit-lines unit))))
 
 (defun ecc-review-ediff--read-choice (unit)
   "Ask which of the things \\`c' could do on UNIT is meant.
@@ -1989,21 +1993,24 @@ new comment.  With more than one comment there to answer or edit,
 which is asked.  Returns the comment.
 
 PLAN is what `ecc-review-ediff--comment-plan\\=' decided when the command
-was started, before the text was read: the review may be read again
-while it is typed, and the comment goes to the difference it was meant
-for, found again by what it says."
+was started, before anything was asked: the review may be read again
+while what is to be done is chosen and while the text is typed, and the
+comment goes to the difference it was meant for, carried to where it
+went."
   (interactive
    (let* ((unit (ecc-review-ediff--current-unit))
-          (plan (ecc-review-ediff--comment-plan
-                 unit (ecc-review-ediff--read-choice unit)))
-          (target (and (nth 2 plan) (ecc-review-find-note (nth 2 plan)))))
-     (list (ecc-review--holding (car plan)
-             (pcase (nth 1 plan)
-               ('edit (read-string "Comment on this difference: "
-                                   (ecc-review-note-text target)))
-               ('reply (read-string (format "Reply to Claude's #%d: " (nth 2 plan))))
-               (_ (read-string "Comment on this difference: "))))
-           plan)))
+          (anchor (ecc-review-ediff--anchor-unit unit)))
+     ;; Taken before the first question and held across both.
+     (ecc-review--holding anchor
+       (let* ((plan (ecc-review-ediff--comment-plan
+                     unit (ecc-review-ediff--read-choice unit) anchor))
+              (target (and (nth 2 plan) (ecc-review-find-note (nth 2 plan)))))
+         (list (pcase (nth 1 plan)
+                 ('edit (read-string "Comment on this difference: "
+                                     (ecc-review-note-text target)))
+                 ('reply (read-string (format "Reply to Claude's #%d: " (nth 2 plan))))
+                 (_ (read-string "Comment on this difference: ")))
+               plan)))))
   (pcase-let* ((`(,anchor ,kind ,id)
                 (or plan (ecc-review-ediff--comment-plan (ecc-review-ediff--current-unit))))
                (text (string-trim text))

@@ -2967,6 +2967,46 @@ RET answers Claude.  With nothing to answer or edit, nothing is asked."
                       (should (eq (car choice) 'reply))))))
             (ecc-review-ediff-test--quit control)))))))
 
+(ert-deftest ecc-review-ediff-test-c-keeps-its-difference-across-a-reading ()
+  "c takes the difference before it asks anything: a reading during the question moves it.
+Claude's comment is on the first difference; while c asks whether to
+answer it, two lines are put in at the top and the review is read
+again.  The new comment goes on the difference it was pressed on, where
+it is now."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (with-current-buffer control
+                  (ecc-review-add-note 'claude "Why upper case?"
+                                       (ecc-review-ediff-test--line 'new 2))
+                  (ecc-review--draw-notes)
+                  (ediff-jump-to-difference 1)
+                  (cl-letf (((symbol-function 'completing-read)
+                             (lambda (_prompt labels &rest _)
+                               (ecc-review-ediff-test--write
+                                (concat directory "a.txt")
+                                (concat "zero\nzero2\n" ecc-review-ediff-test--changed))
+                               (ecc-review-reread t)
+                               (seq-find (lambda (label) (string-search "new comment" label))
+                                         labels)))
+                            ((symbol-function 'read-string) (lambda (&rest _) "Mine")))
+                    (call-interactively #'ecc-review-ediff-comment))
+                  (let ((claude (ecc-review-find-note 1))
+                        (mine (ecc-review-find-note 2)))
+                    (should (equal (ecc-review-note-text mine) "Mine"))
+                    (should-not (ecc-review-note-reply-to mine))
+                    (should-not (ecc-review-note-outdated claude))
+                    (should-not (ecc-review-note-outdated mine))
+                    (should (equal (ecc-review-note-hunk-key mine)
+                                   (ecc-review-note-hunk-key claude)))
+                    (should (equal (cdr (ecc-review-note-hunk-key mine)) "@@ -2,1 +4,1 @@")))))
+            (ecc-review-ediff-test--quit control)))))))
+
 ;;;; The setting
 
 (ert-deftest ecc-review-ediff-test-style-chooses-the-review ()
