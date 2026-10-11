@@ -884,6 +884,10 @@ Verified against **Claude Code CLI 2.1.281**.
   yours into a reply, and a line that goes away meanwhile leaves your text
   kept as outdated.
 
+- A diff review no longer applies a `.gitattributes` textconv driver and
+  shows what git stores: a file with a driver appears unconverted, and
+  one git takes for binary as `Binary files ... differ`.
+
 - `g` no longer drops a comment whose hunk header changed ("Dropped N
   comments whose hunk is gone"). Every reading of the diff carries each
   comment to where its line went. For each file with a comment the
@@ -1006,9 +1010,8 @@ Verified against **Claude Code CLI 2.1.281**.
   and runs it with `core.quotePath` off. With `diff.mnemonicPrefix` the
   files were named `i/x.el` or `w/x.el`, which no file is; with
   `diff.interHunkContext` two changes a few lines apart came as one hunk
-  with the unchanged lines between them; a textconv driver in
-  `.gitattributes` showed what the driver made of a file rather than its
-  lines; and a file named past ASCII, `日本.txt`, was shown and looked for
+  with the unchanged lines between them (textconv is under Changed); and
+  a file named past ASCII, `日本.txt`, was shown and looked for
   as `"b/\346\227\245\346\234\254.txt"`. A name with a tab, a newline, a
   double quote or a backslash in it, which git quotes whatever it is set
   to, is decoded where the review reads it, and the review quotes such a
