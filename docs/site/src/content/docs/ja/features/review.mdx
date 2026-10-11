@@ -78,7 +78,7 @@ import Video from '../../../../components/Video.astro';
 
 レビューは読み取り専用の `diff-mode` のバッファです。`n` と `p` でハンク、`N` と `P` でファイルを移動し、`RET` でソースへジャンプします。`c` でポイントのある行にコメントします。
 
-<Video name="review" label="セッション全体の変更を 1 つの diff で表示し、行にコメントを付け、送信前にそのプロンプトを確認する様子" />
+<Video name="review" label="セッションの変更を 1 つの差分で表示し、行にコメントを入力して C-c C-c で送ると、レビューは開いたままでコメントが薄くなり、Claude がその下に答えてファイルを直し、レビューに新しい差分が表示される様子" />
 
 削除行（`-`）へのコメントは変更前の側、追加行や文脈行へのコメントは変更後の側、`@@` 行へのコメントはハンク全体についてのものです。コメントは行の下に `▎ #3 text` と表示され、ヘッダー行にコメントの数が出ます。Claude のコメントも同じように、名前付きで表示されます。その扱いと返信のしかたは [レビューの中の Claude](/emacs-claude-code/ja/features/review-claude/#claude-のコメント)を参照してください。
 
@@ -135,20 +135,15 @@ import Video from '../../../../components/Video.astro';
 
 `C-c C-c` で自分のコメントを 1 つのプロンプトとして送ります。送信してもレビューは開いたままです。`C-u C-c C-c` では先にプロンプトをバッファに開きます。そこでは `C-c C-c` で送信し、`C-c C-k` で送信せずに戻ります。どちらの場合も diff に戻ります。
 
-````
-## hello.py  L1-L6
-```diff
- def greet(name):
-     """Say hi."""
--    return "hi " + name
-+    return "hello " + name
-```
-Comment: the docstring still says hi
-````
+![C-u C-c C-c で開いた 2 つのコメントのプロンプト。summary.py のハンクへのコメントにはハンクの行が、行へのコメントには行とその側が見出しに付き、どちらもハンクの diff ブロックの下にコメントが続く](../../../../assets/review-prompt.png)
 
-コメントにはハンク全体が付きます。行へのコメントは `## hello.py  L3 (new)` のように行を示し、古くなったコメントは末尾に `(outdated)` が付きます。
+コメントにはハンク全体が付きます。行へのコメントは `## summary.py  L27 (new)` のように行を示し、ハンクへのコメントは `## summary.py  L27-L31` のようにハンクの行を示します。古くなったコメントは末尾に `(outdated)` が付きます。
 
-送ったコメントはレビューに残り、`ecc-review-sent-comment-face` で薄く表示されます。Claude は[レビューの中でそのコメントに返信できます](/emacs-claude-code/ja/features/review-claude/)。ヘッダー行には `comments: 3 yours (2 sent)` のように送った数も出ます。次の `C-c C-c` では、そのあとに付けたコメントだけを送ります。未送信のコメントがなければ、送るものがないと表示します。送ったコメントを編集すると未送信に戻り、次の送信で新しい内容が送られます。`C-c C-k` でレビューを破棄し、`q` で隠します。
+送ったコメントはレビューに残り、`ecc-review-sent-comment-face` で薄く表示されます。Claude は[レビューの中でそのコメントに返信できます](/emacs-claude-code/ja/features/review-claude/)。ヘッダー行には `comments: 3 yours (2 sent)` のように送った数も出ます。
+
+![C-c C-c で送った直後のレビュー。summary.py の行の下のコメントが薄く表示され、ヘッダー行に送信済みの自分のコメントが 1 つと出ている](../../../../assets/review-sent.png)
+
+次の `C-c C-c` では、そのあとに付けたコメントだけを送ります。未送信のコメントがなければ、送るものがないと表示します。送ったコメントを編集すると未送信に戻り、次の送信で新しい内容が送られます。`C-c C-k` でレビューを破棄し、`q` で隠します。
 
 ## ファイルの変更に追従する
 

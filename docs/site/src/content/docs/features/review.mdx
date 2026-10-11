@@ -78,7 +78,7 @@ When the right side is a commit rather than your working tree (somebody else's p
 
 The review is a read-only `diff-mode` buffer: `n` and `p` move between hunks, `N` and `P` between files, and `RET` jumps to the source. `c` comments on the line at point.
 
-<Video name="review" label="Every change of the session as one diff: a comment attached to a line, and the prompt it becomes shown before it goes" />
+<Video name="review" label="What the session changed as one diff: a comment typed on a line and sent with C-c C-c, the review staying open with the comment dimmed, and Claude answering under it and changing the file while the review shows the new diff" />
 
 A comment on a removed line (`-`) is about the old side; on an added or context line, the new side; on the `@@` line, the whole hunk. It appears under its line as `▎ #3 text`, and the header line counts the comments. Claude's comments appear the same way, marked with its name; [Claude in the review](/emacs-claude-code/features/review-claude/#claudes-comments) covers them and how to answer one.
 
@@ -135,20 +135,15 @@ Once shown, the list opens with every review until you hide it or Emacs exits. I
 
 `C-c C-c` sends your comments as one prompt, and the review stays open. `C-u C-c C-c` opens the prompt in a buffer first, where `C-c C-c` sends it and `C-c C-k` returns to the diff without sending; either way you end up back in the diff:
 
-````
-## hello.py  L1-L6
-```diff
- def greet(name):
-     """Say hi."""
--    return "hi " + name
-+    return "hello " + name
-```
-Comment: the docstring still says hi
-````
+![The prompt C-u C-c C-c opens, for two comments: one on the hunk of summary.py, headed with the lines of the hunk, and one on a line, headed with the line and its side, each with the hunk in a diff block and the comment under it](../../../assets/review-prompt.png)
 
-Each comment carries its whole hunk. A line comment names its line, as in `## hello.py  L3 (new)`, and an outdated one ends with `(outdated)`.
+Each comment carries its whole hunk. A line comment names its line, as in `## summary.py  L27 (new)`, a comment on a hunk names the lines of the hunk, as in `## summary.py  L27-L31`, and an outdated one ends with `(outdated)`.
 
-Sent comments stay in the review, dimmed in `ecc-review-sent-comment-face`, so Claude can [reply to them there](/emacs-claude-code/features/review-claude/). The header line counts them, as in `comments: 3 yours (2 sent)`. The next `C-c C-c` sends only the comments you made since; when there are none, it says there is nothing to send. Editing a sent comment makes it unsent, so the next send carries its new text. `C-c C-k` drops the review and `q` buries it.
+Sent comments stay in the review, dimmed in `ecc-review-sent-comment-face`, so Claude can [reply to them there](/emacs-claude-code/features/review-claude/). The header line counts them, as in `comments: 3 yours (2 sent)`.
+
+![The review just after C-c C-c: the comment under the line of summary.py dimmed, and the header line counting one comment of yours, sent](../../../assets/review-sent.png)
+
+The next `C-c C-c` sends only the comments you made since; when there are none, it says there is nothing to send. Editing a sent comment makes it unsent, so the next send carries its new text. `C-c C-k` drops the review and `q` buries it.
 
 ## Following the files
 
