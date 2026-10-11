@@ -1771,7 +1771,8 @@ the line between them among the changed ones; `diff.noprefix' and
                 (let ((second (string-trim
                                (ecc-review-test--git directory "rev-parse" "HEAD:x.txt"))))
                   (should (equal (ecc-review--base-hunks (list 'blob directory first)
-                                                         (list 'blob directory second))
+                                                         (list 'blob directory second)
+                                                         ecc-review--reading)
                                  '((2 1 2 1) (4 1 4 1))))))))
         (ecc-review-test--kill-review-buffers)))))
 
@@ -2078,18 +2079,22 @@ not enough."
 (ert-deftest ecc-review-test-a-failure-reading-a-file-is-carried-like-any ()
   "Reading a file's lines and taking its shape fail like carrying it.
 The comments of the file are outdated where they were, the reading is
-taken all the same, and the next one carries them from there."
+taken all the same, and the next one carries them from there.  The
+shape is tried once, and the failure said once: nothing tries it first
+and lets the error go."
   (ecc-review-test--following (session directory ecc-review-test--share)
     (ecc-review-test--goto "+        return part / total")
     (ecc-review-comment "guard it")
-    (let ((logged nil))
+    (let ((logged nil)
+          (calls 0))
       (cl-letf (((symbol-function 'ecc-review--base-of)
-                 (lambda (&rest _) (error "No header today")))
+                 (lambda (&rest _) (setq calls (1+ calls)) (error "No header today")))
                 ((symbol-function 'ecc-log)
                  (lambda (_category format &rest arguments)
                    (push (apply #'format format arguments) logged))))
         (ecc-review-test--change-and-refresh directory ecc-review-test--guarded))
-      (should (seq-find (lambda (line) (string-search "No header today" line)) logged))
+      (should (= calls 1))
+      (should (= (seq-count (lambda (line) (string-search "No header today" line)) logged) 1))
       (should (ecc-review-note-outdated (car ecc-review--notes)))
       (should (ecc-review--reading-current-p)))
     (ecc-review-test--change-and-refresh
@@ -2097,6 +2102,32 @@ taken all the same, and the next one carries them from there."
     (let ((note (car ecc-review--notes)))
       (should-not (ecc-review-note-outdated note))
       (should (= (ecc-review-note-line note) 14)))))
+
+(ert-deftest ecc-review-test-point-goes-to-the-nearest-line-without-a-second-pass ()
+  "Point whose line went is put on the nearest line that stayed from the reading.
+The lines of its file are kept for it until then: going through the
+whole review again to put point back is a refill's cost twice over.
+The pass is counted by the file names it reads, one at each header."
+  (ecc-review-test--following (session directory ecc-review-test--share)
+    (ecc-review-test--goto "+        return part / total")
+    (let ((names 0)
+          (restoring nil)
+          (name (symbol-function 'ecc-review--hunk-path))
+          (restore (symbol-function 'ecc-review--restore-views)))
+      (cl-letf (((symbol-function 'ecc-review--hunk-path)
+                 (lambda (&rest arguments)
+                   (when restoring
+                     (setq names (1+ names)))
+                   (apply name arguments)))
+                ((symbol-function 'ecc-review--restore-views)
+                 (lambda (&rest arguments)
+                   (setq restoring t)
+                   (unwind-protect (apply restore arguments)
+                     (setq restoring nil)))))
+        (ecc-review-test--change-and-refresh
+         directory (string-replace "return part / total" "return 0" ecc-review-test--share)))
+      (should (= names 0))
+      (should (looking-at-p "^\\+        total = self.total()$")))))
 
 (ert-deftest ecc-review-test-a-file-named-in-japanese-or-with-a-space ()
   "A file whose name has a space or Japanese in it is named as it is, and has its blob.
@@ -2423,7 +2454,7 @@ right after it."
 (defconst ecc-review-test--refill-steps
   '(ecc-review--save-views ecc-review--lines ecc-review--take-reading
     ecc-review--diff-moved-blobs ecc-review--diff-blobs ecc-review--blobs
-    ecc-review-map-text-hunks ecc-review-map-lines ecc-review--carry-file
+    ecc-review--cat-file ecc-review-map-text-hunks ecc-review-map-lines ecc-review--carry-file
     ecc-review--draw-notes ecc-review--restore-views)
   "The steps of a refill of the diff review, each made to fail in turn.")
 
@@ -2473,6 +2504,16 @@ The comment comes back to its line, carried from where it was."
                   (ecc-review-test--write s (concat "import math\n\n" ecc-review-test--share))
                   (ecc-review-test--failing-once step kind
                     (condition-case nil (ecc-review-refresh) ((error quit) nil)))
+                  ;; Drawn before any g, as a comment of Claude's draws:
+                  ;; either the reading is whole, or nothing is looked up.
+                  (condition-case nil (ecc-review--draw-notes) (error nil))
+                  (let ((note (ecc-review-find-note 1)))
+                    (should (or (ecc-review-note-outdated note)
+                                (not (ecc-review--reading-current-p))
+                                ;; On its line of the text shown, read
+                                ;; again or not.
+                                (= (ecc-review-note-line note)
+                                   (if (string-search "@@ -8,0 +9,4 @@" (buffer-string)) 12 10)))))
                   (goto-char (point-min))
                   (when (re-search-forward "^\\+    def share" nil t)
                     (beginning-of-line))
@@ -2483,6 +2524,113 @@ The comment comes back to its line, carried from where it was."
                     (should-not (ecc-review-note-outdated note))
                     (should (= (ecc-review-note-line note) 12)))))
             (ecc-review-test--kill-review-buffers)))))))
+
+(defun ecc-review-test--numbered (from to)
+  "Return the lines aFROM to aTO, each with its newline."
+  (mapconcat (lambda (i) (format "a%d\n" i)) (number-sequence from to) ""))
+
+(ert-deftest ecc-review-test-a-reading-stopped-while-carrying-is-no-reading ()
+  "A refill quit while the old sides are read leaves nothing to look a comment up in.
+Its comments are still on the reading they are carried from.  Drawn
+before \\`g', one would be found by its old number on a line that only
+reads alike -- here an X put in at L10, the number the commented X had
+-- and kept there for good.  g carries it to its own line, L13."
+  (skip-unless (executable-find "git"))
+  (dolist (step '(ecc-review--diff-moved-blobs ecc-review--cat-file))
+    (ecc-test-with-fake-session session
+      (ecc-review-test--with-directory directory
+        (unwind-protect
+            (let ((x (concat directory "x.txt")))
+              (ecc-review-test--git directory "init" "-q")
+              (ecc-review-test--git directory "config" "user.email" "t@example.com")
+              (ecc-review-test--git directory "config" "user.name" "t")
+              (ecc-review-test--write x (ecc-review-test--numbered 1 20))
+              (ecc-review-test--git directory "add" "x.txt")
+              (ecc-review-test--git directory "commit" "-q" "-m" "init")
+              (ecc-review-test--write x (concat (ecc-review-test--numbered 1 9) "X\n"
+                                                (ecc-review-test--numbered 10 20)))
+              (setf (ecc-session-project-root session) directory)
+              (with-current-buffer (ecc-review-range-buffer session "HEAD")
+                (ecc-review-test--goto "+X")
+                (ecc-review-comment "about X")
+                (should (= (ecc-review-note-line (ecc-review-find-note 1)) 10))
+                ;; Two lines committed at the top: the X is L12 of the old
+                ;; side's numbering, and L13 with another X put in at L10.
+                (ecc-review-test--write x (concat "p1\np2\n" (ecc-review-test--numbered 1 20)))
+                (ecc-review-test--git directory "commit" "-q" "-a" "-m" "p")
+                (ecc-review-test--write x (concat "p1\np2\n" (ecc-review-test--numbered 1 7) "X\n"
+                                                  (ecc-review-test--numbered 8 9) "X\n"
+                                                  (ecc-review-test--numbered 10 20)))
+                (ecc-review-test--failing-once step 'quit
+                  (condition-case nil (ecc-review-refresh) (quit nil)))
+                ;; As a comment of Claude's draws, before any g.
+                (condition-case nil (ecc-review--draw-notes) (error nil))
+                (ecc-review-refresh)
+                (let ((note (ecc-review-find-note 1)))
+                  (should-not (ecc-review-note-outdated note))
+                  (should (= (ecc-review-note-line note) 13)))))
+          (ecc-review-test--kill-review-buffers))))))
+
+(ert-deftest ecc-review-test-comments-handed-over-git-cannot-carry-are-read-again ()
+  "Comments handed to a review that git does not answer for leave its next g to read it.
+The review was filled and taken for read before they came; the reading
+that could not carry them is no longer the end of it, and g carries
+them from where they were."
+  (ecc-review-test--following (session directory ecc-review-test--share)
+    (ecc-review-test--goto "+        return part / total")
+    (ecc-review-comment "guard it")
+    (let ((note (car ecc-review--notes))
+          (s (concat directory "s.py")))
+      ;; A commit moves the old side of the review it is handed to.
+      (ecc-review-test--write s (concat "import math\n\n" ecc-review-test--summary))
+      (ecc-review-test--git directory "commit" "-q" "-a" "-m" "import")
+      (ecc-review-test--write s (concat "import math\n\n" ecc-review-test--share))
+      (with-current-buffer (ecc-review-range-buffer session "HEAD")
+        (should ecc-review--fingerprint)
+        (setq ecc-review--notes (list note))
+        (cl-letf (((symbol-function 'ecc-review--blobs) #'ignore))
+          (ecc-review--receive ecc-review--notes))
+        (should (ecc-review-note-outdated note))
+        (should-not ecc-review--fingerprint)
+        (ecc-review-refresh)
+        (should-not (ecc-review-note-outdated note))
+        (should (= (ecc-review-note-line note) 12))))))
+
+(ert-deftest ecc-review-test-git-that-fails-is-asked-once-a-reading ()
+  "When git cannot read the old sides of a repository, it is asked once a reading.
+Not again for every file whose old side moved, which would be a process
+and a line of the log each; the next reading asks again."
+  (ecc-review-test--following (session directory ecc-review-test--share)
+    (let ((paths '("s.py" "t.py" "u.py"))
+          (calls 0))
+      (dolist (path paths)
+        (ecc-review-test--write (concat directory path) ecc-review-test--summary))
+      (ecc-review-test--git directory "add" ".")
+      (ecc-review-test--git directory "commit" "-q" "-m" "more")
+      (dolist (path paths)
+        (ecc-review-test--write (concat directory path) ecc-review-test--share))
+      (with-current-buffer (ecc-review-range-buffer session "HEAD")
+        (dolist (path paths)
+          (ecc-review-test--goto (format "+++ b/%s" path))
+          (re-search-forward "^\\+        return part / total$")
+          (beginning-of-line)
+          (ecc-review-comment (concat "on " path)))
+        (dolist (path paths)
+          (ecc-review-test--write (concat directory path)
+                                  (concat "import math\n\n" ecc-review-test--summary)))
+        (ecc-review-test--git directory "commit" "-q" "-a" "-m" "import")
+        (dolist (path paths)
+          (ecc-review-test--write (concat directory path)
+                                  (concat "import math\n\n" ecc-review-test--share)))
+        (cl-letf (((symbol-function 'ecc-review--blobs)
+                   (lambda (&rest _) (setq calls (1+ calls)) nil)))
+          (ecc-review-refresh))
+        (should (= calls 1))
+        (should (seq-every-p #'ecc-review-note-outdated ecc-review--notes))
+        (should (ecc-review--reading-incomplete ecc-review--reading))
+        (ecc-review-refresh)
+        (should (equal (mapcar #'ecc-review-note-line ecc-review--notes) '(12 12 12)))
+        (should-not (seq-some #'ecc-review-note-outdated ecc-review--notes))))))
 
 (ert-deftest ecc-review-test-c-keeps-what-was-typed-when-it-fails ()
   "c that cannot put its comment anywhere leaves what was typed in the kill ring.

@@ -3045,8 +3045,8 @@ Its comments are carried from the reading they were last on."
   "Whatever step of an ediff reading fails or is quit, nothing typed is lost and g recovers."
   (skip-unless (executable-find "git"))
   (dolist (step '(ecc-review-ediff--write ecc-review-ediff--compute-differences
-                  ecc-review--take-reading ecc-review--carry-file ecc-review--draw-notes
-                  ecc-review-ediff--restore-views))
+                  ecc-review--take-reading ecc-review--diff-moved-blobs ecc-review--cat-file
+                  ecc-review--carry-file ecc-review--draw-notes ecc-review-ediff--restore-views))
     (dolist (kind '(error quit))
       (ecc-review-ediff-test--with-ediff
         (ecc-test-with-fake-session session
@@ -3064,6 +3064,16 @@ Its comments are carried from the reading they were last on."
                        (concat "zero\nzero2\n" ecc-review-ediff-test--changed))
                       (ecc-review-test--failing-once step kind
                         (condition-case nil (ecc-review-reread t) ((error quit) nil)))
+                      ;; Drawn before any g, as a comment of Claude's draws:
+                      ;; on its own line of the text shown, or not at all.
+                      (condition-case nil (ecc-review--draw-notes) (error nil))
+                      (let ((note (ecc-review-find-note 1)))
+                        (should (or (ecc-review-note-outdated note)
+                                    (not (ecc-review--reading-current-p))
+                                    (= (ecc-review-note-line note)
+                                       (if (string-search "zero2" (with-current-buffer ediff-buffer-B
+                                                                     (buffer-string)))
+                                           9 7)))))
                       (ignore-errors (ediff-jump-to-difference 1))
                       (ecc-review-test--typing-loses-nothing #'ecc-review-ediff-comment)
                       (ecc-review-refresh)

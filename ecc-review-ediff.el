@@ -3083,10 +3083,9 @@ whether a difference exists, so it is counted here first."
         ecc-review-ediff--at nil
         ecc-review-ediff--refined nil
         ediff-number-of-differences (length ediff-difference-vector-A))
-  (when (ecc-review--reading-incomplete (ecc-review--take-reading))
-    ;; Something could not be carried: the next g reads the review
-    ;; again whole rather than taking it for read.
-    (setq ecc-review--fingerprint nil))
+  ;; Something that could not be carried leaves the next g to read the
+  ;; review again whole (`ecc-review--fall-short').
+  (ecc-review--take-reading)
   (unless ecc-review-ediff--replacing
     (ecc-review--draw-notes)
     ;; How many there are is in the panel.

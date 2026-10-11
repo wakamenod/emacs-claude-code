@@ -1948,11 +1948,13 @@ reading.  FILES and INDEX are the lines of those files and of no other,
 by path and by place, read when a place is first looked for in one.
 INCOMPLETE is non-nil when something could not be carried to it -- a
 failure, or git not answering -- for the review to be read again whole
-by the next \\`g' rather than taken for read.  UNITS is the hunks of the
-review by file (`ecc-review--units-by-path'),
-gone through once, when a file is first wanted -- or, while the reading
-is taken, made from the lines the caller read (`ecc-review--units-of')."
-  text shapes files index units positions incomplete)
+by the next \\`g' rather than taken for read (`ecc-review--fall-short');
+UNANSWERED the repositories git failed to read the old sides of in this
+reading, which it is not asked again.  UNITS is the hunks of the review
+by file (`ecc-review--units-by-path'), gone through once, when a file is
+first wanted -- or, while the reading is taken, made from the lines the
+caller read (`ecc-review--units-of')."
+  text shapes files index units positions incomplete unanswered)
 
 (defvar-local ecc-review--reading nil
   "The reading of this review its places are on, nil before the first.")
@@ -2002,6 +2004,15 @@ For a diff review, the characters of its buffer."
   (and ecc-review--reading
        (eq (ecc-review--reading-text ecc-review--reading) (ecc-review--text))))
 
+(defun ecc-review--fall-short (reading)
+  "Mark READING, of this review, as one something could not be carried to.
+The next \\`g' reads the review again whole: what it was filled with is
+not taken for read any more (`ecc-review--fingerprint'), whenever this
+is found out -- while the review is filled, or later, when comments are
+handed to it (`ecc-review--receive')."
+  (setf (ecc-review--reading-incomplete reading) t)
+  (setq ecc-review--fingerprint nil))
+
 (defun ecc-review--begin-reading ()
   "Note that what this review shows is about to be read again.
 Until `ecc-review--take-reading' nothing can be looked up: what is there
@@ -2019,7 +2030,7 @@ carried at once, from the reading each was last on
 is on it.  LINES, all the lines of the review when the caller has read
 them, give the hunks of each file for the carrying, which then does not
 go through the review again; they are not kept."
-  (let ((reading (ecc-review--reading-create :text (ecc-review--text)
+  (let ((reading (ecc-review--reading-create :text 'pending
                                              :shapes (make-hash-table :test #'equal)
                                              :files (make-hash-table :test #'equal)
                                              :index (make-hash-table :test #'equal)
@@ -2027,14 +2038,35 @@ go through the review again; they are not kept."
                                              :units (and lines (ecc-review--units-of lines))))
         (places (append ecc-review--notes ecc-review--held)))
     (setq ecc-review--reading reading)
-    (when places
-      (ecc-review--carry places reading)
-      (ecc-review--prune reading places))
+    (if places
+        (ecc-review--carry-to places reading)
+      (setf (ecc-review--reading-text reading) (ecc-review--text)))
     ;; The hunks of every file are not kept: a file wanted later is
     ;; found by going through the review (`ecc-review--units-by-path').
     (when lines
       (setf (ecc-review--reading-units reading) nil))
     reading))
+
+(defun ecc-review--carry-to (places reading)
+  "Carry PLACES to READING, of what this review shows, which is its reading then.
+Until every place is carried, READING is of no text (`pending'), and
+nothing can be looked up in it: a place not carried yet would be found
+by numbers of another reading, on a line that only reads alike, and
+put there for good.  So a carrying that stops part of the way -- quit
+while git is read, or an error no file's carrying caught -- leaves the
+review to be read again whole (`ecc-review--fall-short'), each place
+still on the reading it was last on."
+  (let ((text (ecc-review--text))
+        (done nil))
+    (setf (ecc-review--reading-text reading) 'pending)
+    (unwind-protect
+        (progn
+          (ecc-review--carry places reading)
+          (ecc-review--prune reading)
+          (setq done t))
+      (if done
+          (setf (ecc-review--reading-text reading) text)
+        (ecc-review--fall-short reading)))))
 
 (defun ecc-review--units-of (lines)
   "Return `ecc-review--units-by-path' for the review LINES are all the lines of."
@@ -2294,13 +2326,15 @@ read then, and kept with the reading."
         (ecc-review--shape-now (ecc-review--this-reading) (ecc-review-note-path place)))
   place)
 
-(defun ecc-review--base-hunks (from to)
+(defun ecc-review--base-hunks (from to reading)
   "Return how the old side FROM became TO, for `ecc-review-map-lines'.
 The hunks between the two blobs, from what this review kept of them
 \(`ecc-review--diff-blobs'); nil for one old side; `none' when one of
 them is no file; `text' when one of them is not known to be a blob, or
 the two are blobs of two repositories, so that the old sides are not
-known to have anything in common; `unknown' when git cannot give them."
+known to have anything in common; `unknown' when git cannot give them.
+TO is the old side of a file in READING, which a pair git did not give
+leaves to be read again (`ecc-review--fall-short')."
   (cond ((not (and from to)) 'text)
         ((equal from to) nil)
         ((or (eq from 'empty) (eq to 'empty)) 'none)
@@ -2312,38 +2346,42 @@ known to have anything in common; `unknown' when git cannot give them."
                            (gethash pair ecc-review--base-diffs 'unasked)
                          'unasked))))
            (when (eq (funcall kept pair) 'unasked)
-             (ecc-review--diff-blobs (nth 1 from) (list pair)))
+             (ecc-review--diff-blobs (nth 1 from) (list pair) reading))
            ;; No hunks is two blobs that differ in nothing a line says --
            ;; a newline put at the end -- and one old side.
            (pcase (funcall kept pair)
              ;; Not given this time; asked again the next.
              ('unasked
-              (when ecc-review--reading
-                (setf (ecc-review--reading-incomplete ecc-review--reading) t))
+              (ecc-review--fall-short reading)
               'unknown)
              (hunks hunks))))
         (t 'text)))
 
-(defun ecc-review--diff-blobs (repository pairs)
+(defun ecc-review--diff-blobs (repository pairs reading)
   "Keep in `ecc-review--base-diffs' how each of PAIRS of blobs became the other.
 PAIRS are (FROM . TO) blob ids of REPOSITORY.  Every blob is read
 through one git process (`ecc-review--blobs') and the two of a pair
 compared here (`ecc-review-map-text-hunks'): a reading that moved the old
 side of forty files runs git once, not forty times.  A blob git does not
-have makes its pairs `unknown' for good, a blob does not come to be;
-git failing to run at all keeps nothing, and the next reading asks
-again."
+have makes its pairs `unknown' for good, a blob does not come to be.
+git failing to run at all keeps nothing: the repository is not asked
+again in READING, which is left to be read again, and the next reading
+asks again."
   (unless ecc-review--base-diffs
     (setq ecc-review--base-diffs (make-hash-table :test #'equal)))
-  (let* ((wanted (seq-remove (lambda (pair)
-                                (not (eq (gethash pair ecc-review--base-diffs 'unasked)
-                                         'unasked)))
-                              pairs))
+  (let* ((wanted (and (not (member repository (ecc-review--reading-unanswered reading)))
+                      (seq-remove (lambda (pair)
+                                    (not (eq (gethash pair ecc-review--base-diffs 'unasked)
+                                             'unasked)))
+                                  pairs)))
          (texts (and wanted
                      (ecc-review--blobs repository
                                         (delete-dups (mapcan (lambda (pair)
                                                                (list (car pair) (cdr pair)))
                                                              (copy-sequence wanted)))))))
+    (when (and wanted (null texts))
+      (push repository (ecc-review--reading-unanswered reading))
+      (ecc-review--fall-short reading))
     (when texts
       (dolist (pair wanted)
         (let ((from (gethash (car pair) texts))
@@ -2380,7 +2418,12 @@ unibyte string; nothing is called for an id git does not have.  Return
 non-nil when git was run and answered; a git that fails is logged, and
 the answer is nil.  The diff review reads the blobs of its old sides
 with this (`ecc-review--blobs'), the ediff review those of both sides."
-  (when (and ids (executable-find ecc-review-git-executable))
+  (cond
+   ((null ids) nil)
+   ((not (executable-find ecc-review-git-executable))
+    (ecc-log "review" "cat-file %s: no %s to run in %s" option ecc-review-git-executable root)
+    nil)
+   (t
     (with-temp-buffer
       (set-buffer-multibyte nil)
       (insert (mapconcat #'identity ids "\n") "\n")
@@ -2409,21 +2452,22 @@ with this (`ecc-review--blobs'), the ediff review those of both sides."
                   (let ((end (min (point-max) (+ (point) size))))
                     (funcall each id type size (buffer-substring (point) end))
                     (goto-char (min (point-max) (1+ end))))))))
-          t)))))
+          t))))))
 
-(defun ecc-review--map-from (from to maps)
+(defun ecc-review--map-from (from to maps reading)
   "Return where each line of the shape FROM is in TO (`ecc-review-map-lines').
-MAPS keeps each map made in this reading by FROM, so that one is made
-once, whatever number of places is carried from it."
+TO is of READING, and MAPS keeps each map made in it by FROM, so that
+one is made once, whatever number of places is carried from it."
   (pcase (gethash from maps)
     ('nil (puthash from
                    (condition-case error
                        (ecc-review-map-lines
                         from to (ecc-review--base-hunks (ecc-review-map-shape-base from)
-                                                        (ecc-review-map-shape-base to)))
+                                                        (ecc-review-map-shape-base to)
+                                                        reading))
                      (error (cons 'failed error)))
                    maps)
-          (ecc-review--map-from from to maps))
+          (ecc-review--map-from from to maps reading))
     (`(failed . ,error) (signal (car error) (cdr error)))
     (map map)))
 
@@ -2455,43 +2499,67 @@ which the log says."
                  (setf (ecc-review-note-outdated place) t)))))
     (setq placed (nreverse placed)
           lost (nreverse lost))
-    (ecc-review--diff-moved-blobs (append placed lost) reading)
-    (pcase-dolist (`(,from . ,group) placed)
-      (ecc-review--carry-file (nreverse group) from reading maps))
-    (pcase-dolist (`(,from . ,group) lost)
-      (ecc-review--carry-file (nreverse group) from reading maps t))))
+    (let ((shapes (ecc-review--shapes-for (append placed lost) reading)))
+      (ecc-review--diff-moved-blobs (append placed lost) shapes reading)
+      (pcase-dolist (`(,from . ,group) placed)
+        (ecc-review--carry-file (nreverse group) from reading maps shapes))
+      (pcase-dolist (`(,from . ,group) lost)
+        (ecc-review--carry-file (nreverse group) from reading maps shapes t)))))
 
-(defun ecc-review--diff-moved-blobs (groups reading)
+(defun ecc-review--shapes-for (groups reading)
+  "Return the shape in READING of each file GROUPS are on, taken once.
+GROUPS are (SHAPE . PLACES).  The answer is a hash of each path to
+\(shape . SHAPE), SHAPE nil for a file READING does not show, or to
+\(failed . ERROR) when its lines could not be read or its shape taken:
+the carrying of that file says so (`ecc-review--carry-file')."
+  (let ((shapes (make-hash-table :test #'equal)))
+    (pcase-dolist (`(,_from . ,group) groups)
+      (let ((path (ecc-review-note-path (car group))))
+        (unless (gethash path shapes)
+          (puthash path
+                   (condition-case error
+                       (cons 'shape (ecc-review--shape-now reading path))
+                     (error (cons 'failed error)))
+                   shapes))))
+    shapes))
+
+(defun ecc-review--diff-moved-blobs (groups shapes reading)
   "Diff at once every old blob GROUPS are carried from that READING moved.
-GROUPS are (SHAPE . PLACES); a file whose old side is another blob now
-is diffed with the others of its repository (`ecc-review--diff-blobs'),
-before any is carried.  A file that cannot be read here is left to its
-carrying, which says why."
+GROUPS are (SHAPE . PLACES) and SHAPES the shape of each of their files
+in READING (`ecc-review--shapes-for'); a file whose old side is another
+blob now is diffed with the others of its repository
+\(`ecc-review--diff-blobs'), before any is carried."
   (let ((pairs nil))
     (pcase-dolist (`(,from . ,group) groups)
-      (let ((to (ignore-error error
-                  (ecc-review--shape-now reading (ecc-review-note-path (car group)))))
-            (base (ecc-review-map-shape-base from)))
-        (when to
+      (pcase-let ((`(,kind . ,to) (gethash (ecc-review-note-path (car group)) shapes))
+                  (base (ecc-review-map-shape-base from)))
+        (when (and (eq kind 'shape) to)
           (let ((now (ecc-review-map-shape-base to)))
             (when (and (eq (car-safe base) 'blob) (eq (car-safe now) 'blob)
                        (equal (nth 1 base) (nth 1 now))
                        (not (equal (nth 2 base) (nth 2 now))))
               (push (cons (nth 2 base) (nth 2 now)) (alist-get (nth 1 base) pairs nil nil #'equal)))))))
     (pcase-dolist (`(,repository . ,wanted) pairs)
-      ;; Whatever this fails on, the carrying of each file fails on
-      ;; again, in its own handler, which says so.
+      ;; A failure here is the repository's: it is not asked again for
+      ;; each file, and the files of it carry nothing through a moved
+      ;; old side this time.
       (condition-case error
-          (ecc-review--diff-blobs repository wanted)
-        (error (ecc-log "review" "reading the old sides in %s failed: %S"
-                        repository error))))))
+          (ecc-review--diff-blobs repository wanted reading)
+        (error (ecc-log "review" "reading the old sides in %s failed: %S" repository error)
+               (push repository (ecc-review--reading-unanswered reading))
+               (ecc-review--fall-short reading))))))
 
-(defun ecc-review--prune (reading places)
-  "Keep in READING the lines and shapes of the files PLACES are on, and no other."
+(defun ecc-review--prune (reading)
+  "Keep in READING the lines and shapes of the files places are on, and no other.
+The places are the comments of this review and the places held; one
+that is outdated is on no line of READING, but for the place being
+read, which is put back on the nearest line that stayed, in its file,
+once the reading is taken (`ecc-review--restore-views')."
   (let ((wanted (make-hash-table :test #'equal))
         (paths nil))
-    (dolist (place places)
-      (unless (ecc-review-note-outdated place)
+    (dolist (place (append ecc-review--notes ecc-review--held))
+      (unless (and (ecc-review-note-outdated place)
+                   (not (memq place ecc-review--views)))
         (puthash (ecc-review-note-path place) t wanted)))
     (maphash (lambda (path _) (push path paths)) (ecc-review--reading-files reading))
     (dolist (path paths)
@@ -2503,27 +2571,30 @@ carrying, which says why."
 Each is carried from the reading it was last on, as at a reading of this
 review (`ecc-review--carry'): one that went outdated there comes back
 here when its line is here."
-  (ecc-review--carry notes (ecc-review--this-reading)))
+  (ecc-review--carry-to notes (ecc-review--this-reading)))
 
-(defun ecc-review--carry-file (places from reading maps &optional back)
+(defun ecc-review--carry-file (places from reading maps shapes &optional back)
   "Carry PLACES, all on the reading of the shape FROM, to READING.
-MAPS keeps the maps made in READING.  Where each place goes is worked
-out for all of them -- the lines of their file read, its shape taken,
-the map made -- before any moves, so that a failure leaves every one
-where it was: outdated, keeping FROM, and why in the log.  Without BACK
-a place whose line is not there is outdated; with BACK, PLACES are
+MAPS keeps the maps made in READING, and SHAPES the shape there of the
+file of PLACES, or why it could not be taken (`ecc-review--shapes-for').
+Where each place goes is worked out for all of them -- the map made,
+each line looked for -- before any moves, so that a failure leaves every
+one where it was: outdated, keeping FROM, and why in the log.  Without
+BACK a place whose line is not there is outdated; with BACK, PLACES are
 outdated already and come back when their line is there."
   (let* ((path (ecc-review-note-path (car places)))
          (moves (condition-case error
-                    (let* ((to (ecc-review--shape-now reading path))
-                           (map (and to (ecc-review--map-from from to maps)))
+                    (let* ((to (pcase (gethash path shapes)
+                                 (`(shape . ,shape) shape)
+                                 (`(failed . ,error) (signal (car error) (cdr error)))))
+                           (map (and to (ecc-review--map-from from to maps reading)))
                            (index (ecc-review--reading-index reading)))
                       (mapcar (lambda (place)
                                 (list place (ecc-review--where place from map index back) to))
                               places))
                   (error
                    (ecc-log "review" "carrying the comments on %s failed: %S" path error)
-                   (setf (ecc-review--reading-incomplete reading) t)
+                   (ecc-review--fall-short reading)
                    (mapcar (lambda (place) (list place (cons 'lost nil) nil)) places)))))
     (pcase-dolist (`(,place ,where ,to) moves)
       (pcase where
