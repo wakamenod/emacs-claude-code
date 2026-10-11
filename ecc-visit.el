@@ -279,6 +279,7 @@ that only deleted."
 
 (defun ecc-visit--files-patch (session path)
   "Return the patch the line at point in the Files row of PATH was drawn from.
+PATH is a file of SESSION.
 The body of the row is the diff of every change of the file, one after
 another (`ecc-render--file-diff-parts\\='): counting the lines of each
 says which one the point is in."

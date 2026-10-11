@@ -551,11 +551,11 @@ against the project."
   (let ((paths (cond ((null paths) nil)
                      ((stringp paths) (list paths))
                      ((vectorp paths) (append paths nil))
-                     (t (error "paths is an array of file names, not %S" paths)))))
+                     (t (error "Paths is an array of file names, not %S" paths)))))
     (delq nil
           (mapcar (lambda (path)
                     (unless (stringp path)
-                      (error "paths is an array of file names, and %S is not one" path))
+                      (error "Paths is an array of file names, and %S is not one" path))
                     (let ((path (string-trim path)))
                       (and (not (string-empty-p path)) path)))
                   paths))))

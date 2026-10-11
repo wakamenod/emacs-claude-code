@@ -233,7 +233,7 @@ created or deleted."
              output)
             (result
              (ecc-log "review" "cat-file %s failed in %s: %S" blob root result)
-             (error "git cat-file %s failed (%s)" (substring blob 0 (min 8 (length blob)))
+             (error "Git cat-file %s failed (%s)" (substring blob 0 (min 8 (length blob)))
                     (if (consp result)
                         (format "exit %s" (car result))
                       "git cannot be run"))))))))
@@ -1772,8 +1772,9 @@ with \\`}' and sent in, not one shared by all those on the left."
 ;;;; Moving the view
 
 (defvar-local ecc-review-ediff--at nil
-  "(KEY . POINT): the comment or line the view was last moved to, and where
-the right side was then.  The right side alone cannot tell apart the
+  "Where the view was last moved to, as (KEY . POINT).
+KEY is the comment or line it was moved to and POINT where the right
+side was then.  The right side alone cannot tell apart the
 comments on the left of one difference, which all begin at one place
 there; while it has not moved since, KEY is where the review is read.")
 
@@ -2229,7 +2230,7 @@ window cannot be the only one."
 
 (defvar-local ecc-review-ediff--hidden-vector nil
   "(UNITS HIDDEN . VECTOR): which differences the filter hides, by number.
-VECTOR is a bool-vector made for the differences UNITS and the files
+VECTOR is a `bool-vector\=' made for the differences UNITS and the files
 HIDDEN, and made again when either is another list: a key that steps
 over hidden differences asks about each of them, and asking the list
 of differences every time cost the square of their number.")
@@ -3089,7 +3090,7 @@ whether a difference exists, so it is counted here first."
   (ecc-review-ediff--refine-later))
 
 (defun ecc-review-ediff--content (session range root paths &optional base)
-  "Return what an ediff review of SESSION against RANGE would compare.
+  "Return what an ediff review of SESSION against RANGE in ROOT would compare.
 The plist of `ecc-review--target\=' -- the repository, the paths, the
 name and what to say when nothing changed, the same as the diff review
 of the same thing -- with :left and :right, the two trees compared, and
