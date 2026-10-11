@@ -3041,6 +3041,58 @@ Its comments are carried from the reading they were last on."
                     (should (= (ecc-review-note-line note) 9)))))
             (ecc-review-ediff-test--quit control)))))))
 
+(ert-deftest ecc-review-ediff-test-a-reading-failing-at-any-step-recovers ()
+  "Whatever step of an ediff reading fails or is quit, nothing typed is lost and g recovers."
+  (skip-unless (executable-find "git"))
+  (dolist (step '(ecc-review-ediff--write ecc-review-ediff--compute-differences
+                  ecc-review--take-reading ecc-review--carry-file ecc-review--draw-notes
+                  ecc-review-ediff--restore-views))
+    (dolist (kind '(error quit))
+      (ecc-review-ediff-test--with-ediff
+        (ecc-test-with-fake-session session
+          (ecc-review-ediff-test--with-directory directory
+            (let ((control nil))
+              (unwind-protect
+                  (progn
+                    (setq control (ecc-review-ediff-test--rich session directory))
+                    (with-current-buffer control
+                      (ecc-review-add-note 'claude "A new line"
+                                           (ecc-review-ediff-test--line 'new 7))
+                      (ecc-review--draw-notes)
+                      (ecc-review-ediff-test--write
+                       (concat directory "a.txt")
+                       (concat "zero\nzero2\n" ecc-review-ediff-test--changed))
+                      (ecc-review-test--failing-once step kind
+                        (condition-case nil (ecc-review-reread t) ((error quit) nil)))
+                      (ignore-errors (ediff-jump-to-difference 1))
+                      (ecc-review-test--typing-loses-nothing #'ecc-review-ediff-comment)
+                      (ecc-review-refresh)
+                      (should (ecc-review--reading-current-p))
+                      (let ((note (ecc-review-find-note 1)))
+                        (should-not (ecc-review-note-outdated note))
+                        (should (= (ecc-review-note-line note) 9)))))
+                (ecc-review-ediff-test--quit control)))))))))
+
+(ert-deftest ecc-review-ediff-test-c-keeps-what-was-typed-when-it-fails ()
+  "c in an ediff review that cannot put its comment anywhere keeps what was typed."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (with-current-buffer control
+                  (ediff-jump-to-difference 1)
+                  (let ((kill-ring nil))
+                    (cl-letf (((symbol-function 'read-string)
+                               (lambda (&rest _) (ecc-review--begin-reading) "about LINE2")))
+                      (should-error (call-interactively #'ecc-review-ediff-comment)
+                                    :type 'user-error))
+                    (should (equal (car kill-ring) "about LINE2")))))
+            (ecc-review-ediff-test--quit control)))))))
+
 ;;;; The setting
 
 (ert-deftest ecc-review-ediff-test-style-chooses-the-review ()

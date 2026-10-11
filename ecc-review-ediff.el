@@ -1988,15 +1988,16 @@ went."
                  ('reply (read-string (format "Reply to Claude's #%d: " (nth 2 plan))))
                  (_ (read-string "Comment on this difference: ")))
                plan)))))
-  (pcase-let* ((`(,anchor ,kind ,id)
-                (or plan (ecc-review-ediff--comment-plan (ecc-review-ediff--current-unit))))
-               (text (string-trim text))
-               (target (and id (ecc-review-find-note id)))
-               (lines (ecc-review-lines))
-               (line (ecc-review--locate-note anchor)))
-    (when (string-empty-p text)
-      (user-error "Empty comment"))
-    (let ((note (if (and (eq kind 'edit) target)
+  (ecc-review--keeping-text text
+    (pcase-let* ((`(,anchor ,kind ,id)
+                  (or plan (ecc-review-ediff--comment-plan (ecc-review-ediff--current-unit))))
+                 (text (string-trim text))
+                 (target (and id (ecc-review-find-note id)))
+                 (lines (ecc-review-lines))
+                 (line (ecc-review--locate-note anchor)))
+      (when (string-empty-p text)
+        (user-error "Empty comment"))
+      (let ((note (if (and (eq kind 'edit) target)
                     (ecc-review--edit-note target text)
                   (ecc-review-add-note 'user text (or line anchor)
                                        (and (eq kind 'reply) target id)))))
@@ -2006,7 +2007,7 @@ went."
         (message "Comment attached (%d in all)"
                  (seq-count (lambda (note) (not (ecc-review--agent-p note)))
                             ecc-review--notes)))
-      note)))
+      note))))
 
 (defun ecc-review-ediff-remove-comment (&optional all)
   "Remove a comment of the difference ediff is on, whoever wrote it.
@@ -3082,7 +3083,10 @@ whether a difference exists, so it is counted here first."
         ecc-review-ediff--at nil
         ecc-review-ediff--refined nil
         ediff-number-of-differences (length ediff-difference-vector-A))
-  (ecc-review--take-reading)
+  (when (ecc-review--reading-incomplete (ecc-review--take-reading))
+    ;; Something could not be carried: the next g reads the review
+    ;; again whole rather than taking it for read.
+    (setq ecc-review--fingerprint nil))
   (unless ecc-review-ediff--replacing
     (ecc-review--draw-notes)
     ;; How many there are is in the panel.
@@ -3378,7 +3382,11 @@ so are the difference being read and the place of each side."
           ;; The files that changed went in plain.
           (ecc-review-ediff--after-write)
           (ediff-refresh-mode-lines)
-          (setq ecc-review--fingerprint (ecc-review-ediff--state hash)
+          ;; What the review was filled with, once its reading is whole.
+          (setq ecc-review--fingerprint
+                (and (ecc-review--reading-current-p)
+                     (not (ecc-review--reading-incomplete ecc-review--reading))
+                     (ecc-review-ediff--state hash))
                 ecc-review--stale nil
                 ecc-review--failed nil)
           (run-hooks 'ecc-review-refilled-hook)

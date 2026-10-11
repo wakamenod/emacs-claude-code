@@ -1550,6 +1550,7 @@ the reading."
                 ecc-review--elsewhere (plist-get content :elsewhere)))))))
 
 (defvar ecc-review--held)               ; below, with the readings
+(defvar ecc-review--reading)
 
 (defun ecc-review--fill (buffer session text root &optional request paths range)
   "Put the diff TEXT into BUFFER for SESSION and draw its comments again.
@@ -1573,6 +1574,7 @@ the top."
                       (eq ecc-review--request request)))
            (placed (and same (seq-remove #'ecc-review-note-outdated ecc-review--notes)))
            (held ecc-review--held)
+           (fingerprint nil)
            (views nil))
       ;; The places read are held from here, and whatever this holds is
       ;; let go however it ends -- even part of the way through saving.
@@ -1600,8 +1602,11 @@ the top."
                   ecc-review--stale nil
                   ecc-review--failed nil)
             (set-buffer-modified-p nil)
-            (setq ecc-review--fingerprint
-                  (cons (secure-hash 'sha1 text) (buffer-chars-modified-tick)))
+            ;; Not what this buffer was filled with until its reading is
+            ;; whole: a refill that stops before leaves the next g to read
+            ;; again, rather than taking the text for read.
+            (setq ecc-review--fingerprint nil)
+            (setq fingerprint (cons (secure-hash 'sha1 text) (buffer-chars-modified-tick)))
             (goto-char (point-min))
             ;; The lines are read once, and only when something is to be
             ;; put back on them.
@@ -1618,6 +1623,8 @@ the top."
                 (message "%s no longer %s a line of the diff; kept as outdated"
                          (ecc-review--count lost "comment")
                          (if (= lost 1) "matches" "match"))))
+            (unless (ecc-review--reading-incomplete ecc-review--reading)
+              (setq ecc-review--fingerprint fingerprint))
             buffer)
         (ecc-review--let-go (seq-remove (lambda (place) (memq place held))
                                         ecc-review--held))))))
@@ -1939,10 +1946,13 @@ TEXT is the text it was made of, as `ecc-review--text' says it, and
 each path something is on to its `ecc-review-map-shape' in this
 reading.  FILES and INDEX are the lines of those files and of no other,
 by path and by place, read when a place is first looked for in one.
-UNITS is the hunks of the review by file (`ecc-review--units-by-path'),
+INCOMPLETE is non-nil when something could not be carried to it -- a
+failure, or git not answering -- for the review to be read again whole
+by the next \\`g' rather than taken for read.  UNITS is the hunks of the
+review by file (`ecc-review--units-by-path'),
 gone through once, when a file is first wanted -- or, while the reading
 is taken, made from the lines the caller read (`ecc-review--units-of')."
-  text shapes files index units)
+  text shapes files index units positions incomplete)
 
 (defvar-local ecc-review--reading nil
   "The reading of this review its places are on, nil before the first.")
@@ -2013,6 +2023,7 @@ go through the review again; they are not kept."
                                              :shapes (make-hash-table :test #'equal)
                                              :files (make-hash-table :test #'equal)
                                              :index (make-hash-table :test #'equal)
+                                             :positions (make-hash-table :test #'equal)
                                              :units (and lines (ecc-review--units-of lines))))
         (places (append ecc-review--notes ecc-review--held)))
     (setq ecc-review--reading reading)
@@ -2099,7 +2110,9 @@ has under PATH (`ecc-review--units-by-path'), numbered
                                                   (ecc-review--units-by-path))))))
              (index (ecc-review--reading-index reading)))
          (dolist (line (ecc-review-map-number own))
-           (puthash (ecc-review--line-key line) line index))
+           (puthash (ecc-review--line-key line) line index)
+           (puthash (ecc-review--position-key line) line
+                    (ecc-review--reading-positions reading)))
          (puthash path own files)))
       (own own))))
 
@@ -2127,21 +2140,23 @@ it; the reading's own line at the same place is the one that knows which
 of the lines with its number it is."
   (if (plist-member line :nth)
       line
-    (let ((own (ecc-review--file-of (ecc-review--this-reading) (plist-get line :path))))
-      ;; The side too: in an ediff review the line standing for a
-      ;; difference is where its first line of the right side is.
-      (or (seq-find (lambda (other)
-                      (and (eql (plist-get other :position) (plist-get line :position))
-                           (eq (plist-get other :buffer) (plist-get line :buffer))
-                           (eq (plist-get other :side) (plist-get line :side))))
-                    own)
+    (let ((reading (ecc-review--this-reading)))
+      (ecc-review--file-of reading (plist-get line :path))
+      (or (gethash (ecc-review--position-key line) (ecc-review--reading-positions reading))
           line))))
+
+(defun ecc-review--position-key (line)
+  "Return where LINE is, as the reading finds a line by it.
+Its position and buffer, and its side: in an ediff review the line
+standing for a difference is where its first line of the right side is."
+  (list (plist-get line :position) (plist-get line :buffer) (plist-get line :side)))
 
 (defun ecc-review--forget-file (reading path)
   "Drop the lines of the file PATH from READING: nothing is on it any more."
   (let ((index (ecc-review--reading-index reading)))
     (dolist (line (gethash path (ecc-review--reading-files reading)))
-      (remhash (ecc-review--line-key line) index))
+      (remhash (ecc-review--line-key line) index)
+      (remhash (ecc-review--position-key line) (ecc-review--reading-positions reading)))
     (remhash path (ecc-review--reading-files reading))
     (remhash path (ecc-review--reading-shapes reading))))
 
@@ -2302,7 +2317,10 @@ known to have anything in common; `unknown' when git cannot give them."
            ;; a newline put at the end -- and one old side.
            (pcase (funcall kept pair)
              ;; Not given this time; asked again the next.
-             ('unasked 'unknown)
+             ('unasked
+              (when ecc-review--reading
+                (setf (ecc-review--reading-incomplete ecc-review--reading) t))
+              'unknown)
              (hunks hunks))))
         (t 'text)))
 
@@ -2505,6 +2523,7 @@ outdated already and come back when their line is there."
                               places))
                   (error
                    (ecc-log "review" "carrying the comments on %s failed: %S" path error)
+                   (setf (ecc-review--reading-incomplete reading) t)
                    (mapcar (lambda (place) (list place (cons 'lost nil) nil)) places)))))
     (pcase-dolist (`(,place ,where ,to) moves)
       (pcase where
@@ -2847,6 +2866,27 @@ for the last of Claude\='s, else nil for a comment of its own."
       (when-let* ((claude (car (last (seq-filter #'ecc-review--agent-p notes)))))
         (cons 'reply claude)))))
 
+(defmacro ecc-review--keeping-text (text &rest body)
+  "Run BODY, which puts the comment TEXT somewhere; when it fails, keep TEXT.
+What was typed goes to the kill ring and the error says so, whatever
+stopped it -- the review read again meanwhile, another proposal, a quit
+-- rather than going with the comment.  An empty TEXT is nothing to
+keep."
+  (declare (indent 1) (debug t))
+  (let ((typed (make-symbol "typed")))
+    `(let ((,typed ,text))
+       (condition-case error
+           (progn ,@body)
+         ((error quit)
+          (if (string-empty-p (string-trim ,typed))
+              (signal (car error) (cdr error))
+            (kill-new ,typed)
+            (if (eq (car error) 'quit)
+                (progn (message "The comment is in the kill ring")
+                       (signal 'quit nil))
+              (user-error "%s; the comment is in the kill ring"
+                          (error-message-string error)))))))))
+
 (defun ecc-review--comment-plan (line)
   "Return what \\`c' on LINE is to do, settled before anything is typed.
 The answer is (ANCHOR KIND ID): ANCHOR a note-shaped record of LINE,
@@ -2896,20 +2936,20 @@ the text."
    (let ((line (or (ecc-review--line-at-point)
                    (user-error "Not on a line of a hunk"))))
      (ecc-review--read-comment line)))
-  (pcase-let* ((`(,anchor ,kind ,id)
-                (or plan (ecc-review--comment-plan
-                          (or (ecc-review--line-at-point)
-                              (user-error "Not on a line of a hunk")))))
-               (text (string-trim text))
-               (target (and id (ecc-review-find-note id)))
-               (lines (ecc-review-lines))
-               (line (ecc-review--locate-note anchor)))
-    (when (string-empty-p text)
-      (user-error "Empty comment"))
-    (when (eq (ecc-review-note-outdated anchor) 'replaced)
-      (kill-new text)
-      (user-error "The review shows another proposal now; the comment is in the kill ring"))
-    (let ((note (if (and (eq kind 'edit) target)
+  (ecc-review--keeping-text text
+    (pcase-let* ((`(,anchor ,kind ,id)
+                  (or plan (ecc-review--comment-plan
+                            (or (ecc-review--line-at-point)
+                                (user-error "Not on a line of a hunk")))))
+                 (text (string-trim text))
+                 (target (and id (ecc-review-find-note id)))
+                 (lines (ecc-review-lines))
+                 (line (ecc-review--locate-note anchor)))
+      (when (string-empty-p text)
+        (user-error "Empty comment"))
+      (when (eq (ecc-review-note-outdated anchor) 'replaced)
+        (user-error "The review shows another proposal now"))
+      (let ((note (if (and (eq kind 'edit) target)
                     (ecc-review--edit-note target text)
                   (ecc-review-add-note 'user text (or line anchor)
                                        (and (eq kind 'reply) target id)))))
@@ -2919,7 +2959,7 @@ the text."
         (message "Comment attached (%d in all)"
                  (seq-count (lambda (note) (not (ecc-review--agent-p note)))
                             ecc-review--notes)))
-      note)))
+      note))))
 
 (defun ecc-review--notes-here ()
   "Return the shown comments on the line at point, in the order they were made.

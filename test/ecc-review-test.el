@@ -2403,6 +2403,99 @@ right after it."
                   "diff --git a/old.txt b/new.txt\nsimilarity index 100%\nrename from old.txt\nrename to new.txt\n")
                  "new.txt")))
 
+(defmacro ecc-review-test--failing-once (function kind &rest body)
+  "Run BODY with FUNCTION signalling KIND, `error' or `quit', the first time it is called."
+  (declare (indent 2))
+  (let ((failed (make-symbol "failed"))
+        (original (make-symbol "original")))
+    `(let ((,failed nil)
+           (,original (symbol-function ,function)))
+       (cl-letf (((symbol-function ,function)
+                  (lambda (&rest arguments)
+                    (if ,failed
+                        (apply ,original arguments)
+                      (setq ,failed t)
+                      (if (eq ,kind 'quit)
+                          (signal 'quit nil)
+                        (error "Injected into %s" ,function))))))
+         ,@body))))
+
+(defconst ecc-review-test--refill-steps
+  '(ecc-review--save-views ecc-review--lines ecc-review--take-reading
+    ecc-review--diff-moved-blobs ecc-review--diff-blobs ecc-review--blobs
+    ecc-review-map-text-hunks ecc-review-map-lines ecc-review--carry-file
+    ecc-review--draw-notes ecc-review--restore-views)
+  "The steps of a refill of the diff review, each made to fail in turn.")
+
+(defun ecc-review-test--typing-loses-nothing (comment)
+  "Type a comment with COMMENT, the command of c, and check that the text is kept.
+Either the comment is made, or the text is in the kill ring -- once it
+was typed: c may stop before it asks for any."
+  (let ((kill-ring nil)
+        (typed nil))
+    (cl-letf (((symbol-function 'read-string) (lambda (&rest _) (setq typed t) "typed"))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt labels &rest _)
+                 (or (seq-find (lambda (label) (string-search "new comment" label)) labels)
+                     (car labels)))))
+      (condition-case nil
+          (call-interactively comment)
+        ((error quit) nil)))
+    (should (or (not typed)
+                (member "typed" kill-ring)
+                (seq-find (lambda (note) (equal (ecc-review-note-text note) "typed"))
+                          ecc-review--notes)))))
+
+(ert-deftest ecc-review-test-a-refill-failing-at-any-step-recovers ()
+  "Whatever step of a refill fails or is quit, nothing typed is lost and g recovers.
+The comment comes back to its line, carried from where it was."
+  (skip-unless (executable-find "git"))
+  (dolist (step ecc-review-test--refill-steps)
+    (dolist (kind '(error quit))
+      (ecc-test-with-fake-session session
+        (ecc-review-test--with-directory directory
+          (unwind-protect
+              (let ((s (concat directory "s.py")))
+                (ecc-review-test--git directory "init" "-q")
+                (ecc-review-test--git directory "config" "user.email" "t@example.com")
+                (ecc-review-test--git directory "config" "user.name" "t")
+                (ecc-review-test--write s ecc-review-test--summary)
+                (ecc-review-test--git directory "add" "s.py")
+                (ecc-review-test--git directory "commit" "-q" "-m" "init")
+                (ecc-review-test--write s ecc-review-test--share)
+                (setf (ecc-session-project-root session) directory)
+                (with-current-buffer (ecc-review-range-buffer session "HEAD")
+                  (ecc-review-test--goto "+        return part / total")
+                  (ecc-review-comment "guard it")
+                  ;; A commit moves the old side: every step has work.
+                  (ecc-review-test--write s (concat "import math\n\n" ecc-review-test--summary))
+                  (ecc-review-test--git directory "commit" "-q" "-a" "-m" "import")
+                  (ecc-review-test--write s (concat "import math\n\n" ecc-review-test--share))
+                  (ecc-review-test--failing-once step kind
+                    (condition-case nil (ecc-review-refresh) ((error quit) nil)))
+                  (goto-char (point-min))
+                  (when (re-search-forward "^\\+    def share" nil t)
+                    (beginning-of-line))
+                  (ecc-review-test--typing-loses-nothing #'ecc-review-comment)
+                  (ecc-review-refresh)
+                  (should (ecc-review--reading-current-p))
+                  (let ((note (ecc-review-find-note 1)))
+                    (should-not (ecc-review-note-outdated note))
+                    (should (= (ecc-review-note-line note) 12)))))
+            (ecc-review-test--kill-review-buffers)))))))
+
+(ert-deftest ecc-review-test-c-keeps-what-was-typed-when-it-fails ()
+  "c that cannot put its comment anywhere leaves what was typed in the kill ring.
+Here the review is being read again when the text is in."
+  (ecc-review-test--with-review session
+    (ecc-review-test--goto "+added")
+    (let ((kill-ring nil))
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (&rest _) (ecc-review--begin-reading) "about added")))
+        (should-error (call-interactively #'ecc-review-comment) :type 'user-error))
+      (should (equal (car kill-ring) "about added")))
+    (should-not ecc-review--notes)))
+
 (ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
   "Remembering the place reads the hunk it is in, not the whole diff."
   (ecc-review-test--with-review session
