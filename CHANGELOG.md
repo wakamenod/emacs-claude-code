@@ -893,7 +893,8 @@ Verified against **Claude Code CLI 2.1.281**.
   another line reads like it -- a blank line or a lone brace does not
   wander off to another. When the old side itself moved, as when a commit
   lands under a review of what is not committed, the two blobs are diffed
-  and the lines carried through that. When the old side appears or goes,
+  and the lines carried through that; two blobs that differ only in the
+  newline at the end are one old side. When the old side appears or goes,
   as when an untracked file is added to the index, the lines put in are
   still matched and a comment on the old side is outdated. A diff that
   names no blob -- the one made from what a session recorded, a patch for
@@ -910,9 +911,11 @@ Verified against **Claude Code CLI 2.1.281**.
   half of the lines it changed stayed -- the lines of context around them
   do not count -- and once half or more changed again or went it is
   outdated.
-  The comments are carried once, when the diff is read; a comment being
-  typed while the review turns to another proposal is not put on that
-  one, and is left in the kill ring; a review whose
+  The comments are carried once, when the diff is read; a reading that
+  stops part of the way, by a failure or a quit, is read again whole by
+  the next `g`; a comment being typed while the review turns to another
+  proposal is not put on that one, and whenever `c` cannot put what was
+  typed anywhere it leaves it in the kill ring; a review whose
   buffer was edited since -- by a key that got past its keymap -- says so
   and waits for `g` rather than putting a comment on a line of something
   else; an ediff review whose reading failed halfway is read whole by the
