@@ -422,6 +422,35 @@ still() {
     shoot "$1"
 }
 
+# Capture the window of the buffer in major mode MODE alone, to OUT,
+# from its header line to its last line of text:
+#
+#   crop_still ecc-review-message-mode "$outdir/review-prompt.png"
+#
+# A page shows a still across its 720-pixel column, so a picture of the
+# whole frame puts its text at about two thirds of the size of the text
+# around it; a picture of one window of it is shown larger, at full
+# capture resolution and never scaled up.  `still' takes the frame.
+crop_still() {
+    e "(shot-report-mode-geometry (quote $1))"
+    read -r CX CY CW CH OW < "$geom"
+    shoot "$2"
+}
+
+# The same, while a video is being filmed: a second capture beside the
+# recorder's stopped its stream (2026-10-11), so the picture is the
+# frame the recorder wrote last, which is at full capture resolution
+# too.  The frame's rectangle is asked for again afterwards, for the
+# video to be cropped to it.
+crop_frame() {
+    local last
+    e "(shot-report-mode-geometry (quote $1))"
+    read -r CX CY CW CH OW < "$geom"
+    last=$(ls "$frames/$scene.raw"/[0-9]*.png | sort | tail -1)
+    ffmpeg -hide_banner -loglevel error -y -i "$last" -vf "$(keep)" -frames:v 1 "$2"
+    regeom
+}
+
 shoot() {
     "$recorder" --title "$title" --shot "$frames/shot.png" 2>&1 | grep -v "^record-window: wrote" >&2 || true
     ffmpeg -hide_banner -loglevel error -y -i "$frames/shot.png" \
@@ -719,15 +748,35 @@ if want question; then
 fi
 
 if want review; then
-    # Every change of the session as one diff, a comment on a line, and
-    # the prompt that would go out.
+    # A comment's round trip, live: what the session changed opened as
+    # one diff, a comment on a line, C-c C-c, and Claude answering under
+    # it and changing the file while the review follows.  Then two
+    # stills of one window each: the review after sending, its comment
+    # dimmed, and the prompt C-u C-c C-c shows, which is cancelled.
+    e '(shot-start-live-review "acceptEdits" shot-roundtrip-brevity)' ; sleep 5
+    wait_until '(shot-live-idle-p)' 60
+    e '(shot-live-change shot-roundtrip-change-prompt)' ; sleep 5
+    wait_until '(shot-live-settled-p)' 240
+    e '(shot-show shot-live)'                  ; sleep 1
+    e '(shot-scene-usecase-layout)'            ; sleep 1
+
     scene review
-    cue; e '(shot-scene-review)'        ; sleep 1; hold 1
-    cue; e '(shot-scene-review-comment (list "what about " "two trailing " "commas?"))'
-    hold 4.8
-    cue; e '(shot-scene-review-hunk)'   ; hold 1
-    cue; e '(shot-scene-review-send)'   ; sleep 1; hold 1.67
+    cue; e '(shot-scene-live-review-open)'     ; sleep 1; hold 1.5
+    # c at 1.2s, the words from 2.2s, RET 0.8s after them.
+    cue; e '(shot-scene-live-comment-sequence "^\\+.*self\\.rows" (list "rows is 0 for " "an empty file: " "return 0.0 then."))'
+    hold 4.6
+    cue; e '(shot-scene-usecase-review-press "C-c C-c")' ; hold 1.5
+    # The review as sent, before Claude has answered: the comment dimmed
+    # and the header line counting it, cut out of the frame just filmed.
+    crop_frame ecc-review-mode "$outdir/review-sent.png"
+    cue; hold_until '(shot-live-idle-p)' 240 fast; hold 1
+    cue; hold 2.5
     video
+
+    e '(shot-scene-live-review-prompt)'        ; sleep 2
+    crop_still ecc-review-message-mode "$outdir/review-prompt.png"
+    e '(shot-scene-live-review-prompt-cancel)' ; sleep 1
+    e '(shot-scene-live-review-end)'           ; sleep 2
 fi
 
 if want proposal; then
@@ -806,8 +855,14 @@ if want ediff; then
     # The review in ediff: a still of the layout, then a video each of
     # moving through it, commenting on either side, and the layout
     # turned side by side and back.
+    # The still is of a frame wide enough for the reply pane to go on
+    # the right, which it does from 155 columns; the videos are of the
+    # frame every scene has.
     e '(shot-scene-git-start)'                 ; sleep 2
-    e '(shot-scene-ediff)'                     ; sleep 3; still "$outdir/review-ediff.png"
+    e '(shot-scene-ediff-wide)'                ; sleep 3; still "$outdir/review-ediff.png"
+    e '(shot-scene-ediff-end)'                 ; sleep 1
+    e '(shot-frame-size-default)'              ; sleep 1
+    e '(shot-scene-ediff)'                     ; sleep 3
 
     scene ediff-move
     cue; hold 1

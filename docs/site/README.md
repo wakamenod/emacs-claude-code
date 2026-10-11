@@ -269,6 +269,17 @@ What it knows, and what is worth not learning again:
   a take left comments of a paragraph wrapped over half the review. A wait the
   wrapper films at a quarter of its frames (`hold_until ... fast`) keeps a
   turn of a minute to a few seconds of motion.
+- **A still can be one window rather than the frame**: `crop_still MODE
+  FILE` in the wrapper takes the window whose buffer is in major mode MODE,
+  from its header line to its last line of text
+  (`shot-report-mode-geometry`). A page shows a still across its 720-pixel
+  column, and a picture of the whole frame comes out with its text at about
+  two thirds of the size of the text around it; one window of it is shown
+  at about the size of the body text, at full capture resolution and never
+  scaled up. The prompt `C-u C-c C-c` shows is taken this way. During a
+  video, `crop_frame` does the same to the frame the recorder wrote last:
+  a second capture beside the recorder stops its stream (2026-10-11). The
+  review just after sending is taken so, before Claude has answered.
 - **What is on the screen is a project of real code**, `/tmp/records`: a
   module that reads delimited records, a report with a syntax error, a CLI
   over them, and a second project, `/tmp/api-server`. Their sources are

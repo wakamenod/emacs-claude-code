@@ -1079,24 +1079,45 @@ waiting for an answer -- everything the two lists can say."
   (message nil)
   (redisplay t))
 
-(defun shot-report-sidebar-geometry ()
-  "Write where the sidebar window is, for a picture of it alone.
-The same five numbers as `shot-report-geometry', for the sidebar window
-rather than the whole frame."
+(defun shot-report-window-geometry (window &optional fit)
+  "Write where WINDOW is, for a picture of it alone.
+The same five numbers as `shot-report-geometry', for WINDOW rather than
+the whole frame.  With FIT, the picture ends under the last line of
+text, its header line kept and its mode line and empty rows left out:
+a still of one buffer is shown larger than one of the frame, and the
+rows under the text would only make it taller."
   (unless (active-minibuffer-window)
     (message nil))
   (redisplay t)
-  (let* ((window (get-buffer-window ecc-sidebar-buffer-name))
-         (outer (frame-edges nil 'outer-edges))
+  (let* ((outer (frame-edges nil 'outer-edges))
          (inner (frame-edges nil 'inner-edges))
-         (edges (window-pixel-edges window)))
+         (edges (window-pixel-edges window))
+         (height (- (nth 3 edges) (nth 1 edges))))
+    (when fit
+      (setq height (min height
+                        (+ (window-header-line-height window)
+                           (cdr (window-text-pixel-size window (window-start window) nil nil nil nil))
+                           (default-line-height)))))
     (with-temp-file shot-geometry-file
       (insert (format "%d %d %d %d %d\n"
                       (+ (- (nth 0 inner) (nth 0 outer)) (nth 0 edges))
                       (+ (- (nth 1 inner) (nth 1 outer)) (nth 1 edges))
                       (- (nth 2 edges) (nth 0 edges))
-                      (- (nth 3 edges) (nth 1 edges))
+                      height
                       (- (nth 2 outer) (nth 0 outer)))))))
+
+(defun shot-report-sidebar-geometry ()
+  "Write where the sidebar window is, for a picture of it alone."
+  (shot-report-window-geometry (get-buffer-window ecc-sidebar-buffer-name)))
+
+(defun shot-report-mode-geometry (mode)
+  "Write where the window of a buffer in MODE is, fitted to its text.
+For a still of one buffer: `crop_still' in the wrapper."
+  (when-let* ((window (seq-find (lambda (window)
+                                  (with-current-buffer (window-buffer window)
+                                    (derived-mode-p mode)))
+                                (window-list nil 'no-minibuffer))))
+    (shot-report-window-geometry window t)))
 
 (defun shot-scene-sidebar-end ()
   "Take the extra sessions, the sidebar and the invented git away again."
@@ -1472,62 +1493,6 @@ that is not about one."
   "Replay the recording that writes a file into SESSION, permission and all."
   (shot-play-allowed session "write"))
 
-
-(defun shot-review-window ()
-  "Return the window of the review buffer of the main session, selecting it."
-  (when-let* ((buffer (get-buffer (ecc-review-buffer-name shot-main)))
-              (window (get-buffer-window buffer)))
-    (select-window window)
-    window))
-
-(defun shot-scene-review ()
-  "Open every change of the session as one diff.
-A second file is replayed in first, so that the diff has more than one
-hunk to walk."
-  (shot-reset-main)
-  (shot-show shot-main)
-  (shot-play-write shot-main)
-  (ecc-review shot-main)
-  (when-let* ((window (shot-review-window)))
-    (with-selected-window window
-      (goto-char (point-min))
-      (ignore-errors (diff-hunk-next))
-      (redisplay t))))
-
-(defun shot-scene-review-hunk ()
-  "Move to the next hunk, as n does."
-  (when-let* ((window (shot-review-window)))
-    (with-selected-window window
-      (ignore-errors (diff-hunk-next))
-      (redisplay t))))
-
-(defun shot-scene-review-comment (chunks)
-  "Comment on the added line of the hunk at point, typing CHUNKS.
-On the @@ line \`c' comments on the whole hunk; on any other line, on
-that line, which is what is shown."
-  (let ((typing (shot-typing-steps 1.0 chunks)))
-    (shot-script
-     (append (list (cons 0.5 (lambda ()
-                               (with-selected-window (shot-review-window)
-                                 (when (re-search-forward "^\\+" nil t)
-                                   (beginning-of-line))
-                                 (call-interactively #'ecc-review-comment)))))
-             typing
-             (list (cons (+ 0.8 (car (car (last typing))))
-                         (lambda () (shot-keys "RET"))))))))
-
-(defun shot-scene-review-send ()
-  "Ask to send the comments, which shows the prompt before it goes.
-The prefix argument is what opens that buffer; plain \`C-c C-c\=' sends."
-  (when-let* ((window (shot-review-window)))
-    (with-selected-window window
-      (let ((current-prefix-arg '(4)))
-        (call-interactively #'ecc-review-send))))
-  (when-let* ((buffer (get-buffer (ecc-review-message-buffer-name shot-main)))
-              (window (get-buffer-window buffer)))
-    (select-window window)
-    (goto-char (point-min)))
-  (redisplay t))
 
 (defun shot-scene-proposal ()
   "Stop a recording at the file it asks to write, and go to the request."
@@ -1950,6 +1915,30 @@ something to filter."
     (select-window window)
     window))
 
+(defun shot-frame-size (columns rows)
+  "Make the frame COLUMNS by ROWS and put it back in its corner.
+For a scene that needs another size than the 112 by 44 of the others,
+which puts it back with no arguments to `shot-frame-size-default'."
+  (set-frame-size (selected-frame) columns rows)
+  (shot-place-frame-bottom-right)
+  (redisplay t))
+
+(defun shot-frame-size-default ()
+  "Give the frame the size every other scene is taken at."
+  (shot-frame-size 112 44))
+
+(defun shot-scene-ediff-wide ()
+  "Open the ediff review on a frame wide enough for the pane on the right.
+The pane goes beside the stacked sides only when the frame can spare
+`ecc-review-talk-reply-width' and still leave the diff
+`ecc-review-talk-min-diff-width'; at 112 columns it went to the bottom,
+which is the fallback, and the picture made it look like the rule
+(2026-10-11).  Fewer rows than the others, so that the picture is not
+mostly the two sides' empty lower halves."
+  (require 'ecc-review-talk)
+  (shot-frame-size (+ ecc-review-talk-reply-width ecc-review-talk-min-diff-width 8) 34)
+  (shot-scene-ediff))
+
 (defun shot-scene-ediff ()
   "Open every uncommitted change in ediff, stacked, with the reply pane.
 The report's change replaces a line, which the session's two do not:
@@ -2185,6 +2174,11 @@ That is the line of the change Claude made, whatever words it chose,
 and the one its comments are most likely on: c on a line that holds
 only Claude's comment answers it, else comments on the line.  Without
 such a line, } goes to Claude's first comment instead."
+  (shot-scene-live-comment-sequence "^\\+.*fields\\[-1\\]" chunks))
+
+(defun shot-scene-live-comment-sequence (regexp chunks)
+  "Comment with CHUNKS on the first line of the live review matching REGEXP.
+} goes to the first comment instead when no line matches."
   (let ((typing (shot-typing-steps 1.6 chunks)))
     (shot-script
      (append (list (cons 0.3 (lambda ()
@@ -2193,7 +2187,7 @@ such a line, } goes to Claude's first comment instead."
                                  ;; Straight onto the line: C-n from the line
                                  ;; above went into the comment drawn under
                                  ;; it, and c answered that one instead.
-                                 (if (re-search-forward "^\\+.*fields\\[-1\\]" nil t)
+                                 (if (re-search-forward regexp nil t)
                                      (beginning-of-line)
                                    (shot-keys "}")))))
                    (cons 1.2 (lambda () (shot-keys "c"))))
@@ -2205,6 +2199,60 @@ such a line, } goes to Claude's first comment instead."
   "Press KEYS in the live session's review."
   (shot-live-review-window)
   (shot-keys keys))
+
+;;;;; The round trip of a comment
+
+(defconst shot-roundtrip-change-prompt
+  "In summary.py, add a method to the Summary class, after most_common: def share(self, key: str) -> float:, which returns self.keys[key] / self.rows. Change nothing else, and use the Edit tool."
+  "The change the video of reading and commenting starts from.
+Another file and another change than the use case's, three short lines,
+so that the two videos do not look alike.  A first take printed a share
+on the line that prints a key, which came to seventy columns and wrapped
+in the review (2026-10-11).")
+
+(defconst shot-roundtrip-brevity
+  "When I send you review comments, answer each one with a reply of one short line under it in the review, then make the change. Keep what you say in the transcript to two sentences."
+  "What the session of that video is told on top of its system prompt.")
+
+(defun shot-scene-live-review-open ()
+  "Open the review of what the live session changed, as M-x ecc-review does.
+From the file Claude changed, in the source's window; the windows are
+narrowed again once it is shown.  The wrapper lays the frame out again
+first: Claude's edit had shown that file elsewhere, and the review went
+into the session's window (2026-10-11)."
+  (shot-source-window shot-hero-file)
+  (call-interactively #'ecc-review)
+  (shot-scene-usecase-layout)
+  (when (shot-live-review-window)
+    (goto-char (point-min))
+    (ignore-errors (diff-hunk-next)))
+  (redisplay t))
+
+(defun shot-scene-live-review-prompt ()
+  "Comment on a line and on a hunk of the live review, and open the prompt.
+What C-u C-c C-c shows before the comments go: a line comment and a
+hunk comment, so that both of their headings are in it."
+  (when (shot-live-review-window)
+    (goto-char (point-min))
+    (when (re-search-forward "^\\+.*def share" nil t)
+      (beginning-of-line)
+      (ecc-review-comment "Call it share_of?"))
+    (goto-char (point-min))
+    (when (re-search-forward "^@@" nil t)
+      (beginning-of-line)
+      (ecc-review-comment "Add a test of share()"))
+    (let ((current-prefix-arg '(4)))
+      (call-interactively #'ecc-review-send)))
+  (when-let* ((window (get-buffer-window (ecc-review-message-buffer-name shot-live))))
+    (with-selected-window window
+      (goto-char (point-min))))
+  (redisplay t))
+
+(defun shot-scene-live-review-prompt-cancel ()
+  "Go back to the review without sending, as C-c C-k in the prompt does."
+  (when-let* ((window (get-buffer-window (ecc-review-message-buffer-name shot-live))))
+    (with-selected-window window
+      (call-interactively #'ecc-review-message-cancel))))
 
 (defun shot-scene-live-review-end ()
   "Stop the live session and make the scenes' own sessions again."
