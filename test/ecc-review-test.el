@@ -1101,35 +1101,24 @@ Everything in the second hunk is two lines further down.")
     (ecc-review--lines)))
 
 (ert-deftest ecc-review-test-locate-note ()
-  "A comment stays, follows its line and neighbours, or is outdated."
+  "A comment is on its own line of this reading, carried there when it moved."
   (ecc-review-test--with-review session
     (let* ((lines (ecc-review--lines))
            (added (ecc-review-add-note 'user "a" (nth 7 lines)))
-           (shifted (ecc-review-test--lines-of
-                     (string-replace "@@ -10,2 +10,3 @@" "@@ -10,2 +14,3 @@"
-                                     ecc-review-test--diff))))
-      ;; The lines next to it on its side are kept with it.
-      (should (equal (ecc-review-note-line-before added) '("ten")))
-      (should (equal (ecc-review-note-line-after added) '("eleven")))
-      ;; 1. Nothing moved: the same line.
+           (hunk (ecc-review-add-note 'user "c" (nth 5 lines))))
+      ;; 1. Nothing moved: the same line, the same hunk.
       (should (eq (ecc-review--locate-note added lines) (nth 7 lines)))
-      ;; 2. Lines were added above: the line that says the same between
-      ;; the same neighbours, nearest.
-      (should (equal (plist-get (ecc-review--locate-note added shifted) :line) 15))
-      ;; Not further than `ecc-review-note-max-shift'.
-      (let ((ecc-review-note-max-shift 3))
-        (should-not (ecc-review--locate-note added shifted)))
-      ;; 3. The same text between other lines is another line: outdated.
-      (setf (ecc-review-note-line-text added) "one")
-      (should-not (ecc-review--locate-note added lines))
-      ;; A hunk whose header changed still takes a comment on the old
-      ;; lines it covers; one over other old lines does not.
-      (let ((hunk (ecc-review-add-note 'user "c" (nth 5 lines))))
-        (should (equal (ecc-review-note-hunk-old-range hunk) '(10 . 11)))
-        (setf (ecc-review-note-hunk-key hunk) '("foo.el" . "@@ -10,2 +10,4 @@"))
-        (should (eq (ecc-review--locate-note hunk lines) (nth 5 lines)))
-        (setf (ecc-review-note-hunk-old-range hunk) '(40 . 42))
-        (should-not (ecc-review--locate-note hunk lines))))))
+      (should (eq (ecc-review--locate-note hunk lines) (nth 5 lines)))
+      ;; 2. Read again with two lines put in above: where they went.
+      (ecc-review-test--fill session ecc-review-test--shifted-diff)
+      (let ((lines (ecc-review--lines)))
+        (should (equal (plist-get (ecc-review--locate-note added lines) :line) 13))
+        (should (equal (plist-get (plist-get (ecc-review--locate-note hunk lines) :hunk)
+                                  :header)
+                       "@@ -10,2 +12,3 @@"))
+        ;; 3. A line of that number saying something else is not it.
+        (setf (ecc-review-note-line-text added) "one")
+        (should-not (ecc-review--locate-note added lines))))))
 
 (ert-deftest ecc-review-test-a-hunk-that-grows-keeps-its-comment ()
   "A comment on a hunk stays on the hunk still over its lines.
@@ -1237,27 +1226,29 @@ adds."
       (ecc-review-test--kill-review-buffers))))
 
 (ert-deftest ecc-review-test-the-edge-of-a-hunk-survives-a-merge ()
-  "A line at the edge of a hunk has a neighbour missing, which is not compared."
+  "Hunks merging into one or splitting apart leave a comment on its line."
   (ecc-review-test--with-review session
     (let* ((lines (ecc-review--lines))
            ;; " ten" opens the second hunk: nothing before it.
            (ten (ecc-review-add-note 'user "a" (nth 6 lines)))
            ;; "+TWO" sits between "one" and "three".
-           (two (ecc-review-add-note 'user "b" (nth 3 lines)))
-           ;; A line added at the top as well, so that neither is at the
-           ;; number it had and the neighbours are what decide.
-           (merged (ecc-review-test--lines-of
-                    (concat "--- a/foo.el\n+++ b/foo.el\n@@ -1,11 +1,13 @@\n+zero\n"
-                            " one\n-two\n+TWO\n three\n four\n five\n six\n"
-                            " seven\n eight\n nine\n ten\n+added\n eleven\n")))
-           (split (ecc-review-test--lines-of
-                   (concat "--- a/foo.el\n+++ b/foo.el\n@@ -0,0 +1 @@\n+zero\n"
-                           "@@ -2,1 +3,1 @@\n-two\n+TWO\n"))))
-      (should-not (ecc-review-note-line-before ten))
-      ;; Merged into one hunk, " ten" has "nine" before it now.
-      (should (equal (plist-get (ecc-review--locate-note ten merged) :line) 11))
-      ;; Split off, "+TWO" has nothing either side, and is still itself.
-      (should (equal (plist-get (ecc-review--locate-note two split) :line) 3)))))
+           (two (ecc-review-add-note 'user "b" (nth 3 lines))))
+      ;; A line added at the top as well, so that neither is at the
+      ;; number it had.  Merged into one hunk, " ten" has "nine" before it.
+      (ecc-review-test--fill
+       session (concat "--- a/foo.el\n+++ b/foo.el\n@@ -1,11 +1,13 @@\n+zero\n"
+                       " one\n-two\n+TWO\n three\n four\n five\n six\n"
+                       " seven\n eight\n nine\n ten\n+added\n eleven\n"))
+      (should (equal (mapcar #'ecc-review-note-line (list ten two)) '(11 3)))
+      (should-not (seq-some #'ecc-review-note-outdated (list ten two)))
+      ;; Split off with no context, "+TWO" has nothing either side, and
+      ;; is still itself; " ten" is no line of the diff any more.
+      (ecc-review-test--fill
+       session (concat "--- a/foo.el\n+++ b/foo.el\n@@ -0,0 +1 @@\n+zero\n"
+                       "@@ -2,1 +3,1 @@\n-two\n+TWO\n"))
+      (should (= (ecc-review-note-line two) 3))
+      (should-not (ecc-review-note-outdated two))
+      (should (ecc-review-note-outdated ten)))))
 
 ;;;; A comment follows its line as the files change
 
@@ -1481,6 +1472,119 @@ comment are above that one."
       (should (ecc-review-note-sent note))
       (should (equal (ecc-review-test--comment-faces) '(ecc-review-sent-comment-face))))))
 
+(ert-deftest ecc-review-test-a-changed-line-does-not-go-to-its-twin-in-another-hunk ()
+  "A line rewritten is outdated, even when the same line is in another hunk.
+The lines around both are alike too, so nothing but where the line was
+tells them apart."
+  (let ((first (concat "int f() {\n  if (x)\n    return nil;\n}\n"
+                       ecc-review-test--summary
+                       "int g() {\n  if (y)\n    return nil;\n}\n")))
+    (ecc-review-test--following (session directory first)
+      (ecc-review-test--goto "+    return nil;")
+      (ecc-review-comment "return 0 here")
+      (should (= (ecc-review-note-line (car ecc-review--notes)) 3))
+      (ecc-review-test--change-and-refresh
+       directory (concat "int f() {\n  if (x)\n    return 0;\n}\n"
+                         ecc-review-test--summary
+                         "int g() {\n  if (y)\n    return nil;\n}\n"))
+      (let ((note (car ecc-review--notes)))
+        (should (ecc-review-note-outdated note))
+        (should (= (ecc-review-note-line note) 3))))))
+
+(ert-deftest ecc-review-test-a-changed-line-does-not-go-to-its-twin-in-its-hunk ()
+  "A line rewritten is outdated, even when the same line is further down its hunk."
+  (let ((first (concat ecc-review-test--summary
+                       "    def a(self):\n        pass\n    def b(self):\n        pass\n")))
+    (ecc-review-test--following (session directory first)
+      (ecc-review-test--goto "+        pass")
+      (ecc-review-comment "say what a does")
+      (should (= (ecc-review-note-line (car ecc-review--notes)) 8))
+      (ecc-review-test--change-and-refresh
+       directory (concat ecc-review-test--summary
+                         "    def a(self):\n        return 1\n    def b(self):\n        pass\n"))
+      (let ((note (car ecc-review--notes)))
+        (should (ecc-review-note-outdated note))
+        (should (= (ecc-review-note-line note) 8))))))
+
+(ert-deftest ecc-review-test-a-comment-follows-a-block-ending-in-a-blank-line ()
+  "Lines put in above that end in a blank line move the comment all the same.
+A blank line was already below the commented one, in its hunk: the one
+put in above reads like it."
+  (let ((first (concat ecc-review-test--summary
+                       "    def share(self, part):\n"
+                       "        total = self.total()\n"
+                       "        return part / total\n"
+                       "\n"
+                       "    def other(self):\n"
+                       "        return 1\n")))
+    (ecc-review-test--following (session directory first)
+      (ecc-review-test--goto "+        return part / total")
+      (ecc-review-comment "guard it")
+      (should (= (ecc-review-note-line (car ecc-review--notes)) 9))
+      (ecc-review-test--change-and-refresh
+       directory (string-replace "        return part / total\n"
+                                 (concat "        if total == 0:\n            return 0\n\n"
+                                         "        return part / total\n")
+                                 first))
+      (let ((note (car ecc-review--notes)))
+        (should-not (ecc-review-note-outdated note))
+        (should (= (ecc-review-note-line note) 12))))))
+
+(ert-deftest ecc-review-test-g-keeps-point-near-a-line-that-went ()
+  "g with point on a line that went puts it on the nearest line that stayed."
+  (ecc-review-test--following (session directory ecc-review-test--share)
+    (ecc-review-test--goto "+        total = self.total()")
+    (forward-char 4)
+    (ecc-review-test--change-and-refresh
+     directory (string-replace "        total = self.total()\n" "" ecc-review-test--share))
+    (should (bolp))
+    (should (looking-at-p "^\\+        return part / total$"))
+    ;; And on its own line, at the same column, while that stays.
+    (forward-char 3)
+    (ecc-review-test--change-and-refresh
+     directory (concat "import math\n\n"
+                       (string-replace "        total = self.total()\n" ""
+                                       ecc-review-test--share)))
+    (should (= (current-column) 3))
+    (should (looking-back "^\\+  " (line-beginning-position)))
+    (should (looking-at-p "      return part / total$"))))
+
+(ert-deftest ecc-review-test-a-comment-follows-its-line-when-the-old-side-moves ()
+  "A commit under a review of what is not committed moves the old side.
+The lines it took in are no change any more, and a comment below them
+stays on its line, carried through the old blob against the new."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((s (concat directory "s.py")))
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (ecc-review-test--write s ecc-review-test--summary)
+            (ecc-review-test--git directory "add" "s.py")
+            (ecc-review-test--git directory "commit" "-q" "-m" "init")
+            (ecc-review-test--write s (concat "import math\n\n" ecc-review-test--share))
+            (setf (ecc-session-project-root session) directory)
+            (with-current-buffer (ecc-review-range-buffer session "HEAD")
+              (ecc-review-test--goto "+        return part / total")
+              (ecc-review-comment "guard it")
+              (ecc-review-test--goto "+import math")
+              (ecc-review-comment "not used")
+              (should (equal (mapcar #'ecc-review-note-line ecc-review--notes) '(12 1)))
+              ;; The import is committed; share() is still not.
+              (ecc-review-test--write s (concat "import math\n\n" ecc-review-test--summary))
+              (ecc-review-test--git directory "commit" "-q" "-a" "-m" "import")
+              (ecc-review-test--write s (concat "import math\n\n" ecc-review-test--share))
+              (ecc-review-refresh)
+              (should-not (string-search "+import math" (buffer-string)))
+              (let ((guard (ecc-review-find-note 1))
+                    (import (ecc-review-find-note 2)))
+                (should-not (ecc-review-note-outdated guard))
+                (should (= (ecc-review-note-line guard) 12))
+                (should (ecc-review-note-outdated import)))))
+        (ecc-review-test--kill-review-buffers)))))
+
 (ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
   "Remembering the place reads the hunk it is in, not the whole diff."
   (ecc-review-test--with-review session
@@ -1512,10 +1616,8 @@ comment are above that one."
     (ecc-review-comment "moves")
     (ecc-review-test--goto "+TWO")
     (ecc-review-comment "goes stale")
-    (ecc-review-test--fill session
-                           (thread-last ecc-review-test--diff
-                                        (string-replace "@@ -10,2 +10,3 @@" "@@ -10,2 +12,3 @@")
-                                        (string-replace "+TWO" "+Two")))
+    (ecc-review-test--fill session (string-replace "+TWO\n" "+Two\n"
+                                                   ecc-review-test--shifted-diff))
     (let ((moves (ecc-review-find-note 1))
           (stale (ecc-review-find-note 2)))
       (should (= (ecc-review-note-line moves) 13))
@@ -1527,7 +1629,7 @@ comment are above that one."
         (should (string-search "[outdated, was L2 (new)] goes stale"
                                (overlay-get overlay 'before-string)))
         (should (= (overlay-start overlay)
-                   (progn (ecc-review-test--goto "@@ -1,3 +1,3 @@") (point)))))
+                   (progn (ecc-review-test--goto "@@ -1,3 +1,5 @@") (point)))))
       (should (string-search "(1 outdated)" (ecc-review--header-line)))
       ;; It is still sent, with the hunk it was last seen in.
       (let ((message (ecc-review-buffer-message)))
@@ -1585,8 +1687,8 @@ comment are above that one."
     ;; A buffer shown nowhere keeps its point as well.
     (ecc-review-test--goto "+more")
     (ecc-review-test--fill session ecc-review-test--diff)
-    ;; That line is gone: the top, not somewhere arbitrary.
-    (should (= (point) (point-min)))
+    ;; That line is gone: the start of the nearest line that stayed.
+    (should (looking-at-p "^\\+TWO$"))
     (ecc-review-test--goto " eleven")
     (ecc-review-test--fill session ecc-review-test--shifted-diff)
     (should (looking-at-p " eleven"))))

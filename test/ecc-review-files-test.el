@@ -229,8 +229,7 @@ buffer."
               (let ((gone (ecc-review-add-note 'user "lost" (ecc-review-files-test--line
                                                              "gone.txt"))))
                 ;; On a hunk that is no longer in the diff.
-                (setf (ecc-review-note-hunk-key gone) '("gone.txt" . "@@ -9 +9 @@")
-                      (ecc-review-note-hunk-old-range gone) '(9 . 9)))
+                (setf (ecc-review-note-hunk-key gone) '("gone.txt" . "@@ -9 +9 @@")))
               (ecc-review-files-toggle)
               (ecc-review--draw-notes))
             (let ((text (ecc-review-files-test--pane-text review)))

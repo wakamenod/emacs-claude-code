@@ -369,6 +369,15 @@ blobs of the review on every reading.")
 (defvar-local ecc-review-ediff--buffers nil
   "The (BASE . NOW) buffers this control buffer compares.")
 
+(defvar-local ecc-review-ediff--bases nil
+  "The blob of the old side of each file of this review, as (PATH . BLOB).
+BLOB is `empty' for a file the old side does not have.  It is what a
+comment is carried by when the old side changed (`ecc-review--carry\=').")
+
+(defun ecc-review-ediff--bases-of (pairs)
+  "Return `ecc-review-ediff--bases\=' for PAIRS, of `ecc-review-ediff-pairs\='."
+  (mapcar (lambda (pair) (cons (nth 0 pair) (or (nth 4 pair) 'empty))) pairs))
+
 (defvar-local ecc-review-ediff--windows nil
   "The window configuration to put back when this review is quit.")
 
@@ -1546,11 +1555,6 @@ files held and :b-beg and :b-end in the buffer of what they hold now.
             :old-start a-start
             :old-end (if (> a-count 0) (+ a-start a-count -1) a-start)
             :old-count a-count
-            ;; Where an empty old side sits: before the line it is
-            ;; numbered with here, where git numbers the line before.
-            :old-range (if (> a-count 0)
-                           (cons a-start (+ a-start a-count -1))
-                         (cons (- a-start 0.5) (- a-start 0.5)))
             :new-count b-count
             :a-beg a-beg :a-end a-end :b-beg b-beg :b-end b-end))))
 
@@ -1579,17 +1583,12 @@ out of the left, `old', and puts into the right, `new', each with
             (push (list :position (point) :buffer buffer :path path
                         :side side :line number
                         :text (buffer-substring-no-properties (point) (line-end-position))
-                        :before nil :after nil :hunk unit)
+                        :hunk unit)
                   lines)
             (cl-incf number)
             (unless (zerop (forward-line 1))
               (goto-char end))))))
-    (setq lines (nreverse lines))
-    (ecc-review--link-neighbours
-     lines 'new (lambda (line) (eq (plist-get line :side) 'new)))
-    (ecc-review--link-neighbours
-     lines 'old (lambda (line) (eq (plist-get line :side) 'old)))
-    lines))
+    (nreverse lines)))
 
 (cl-defmethod ecc-review-units (&context (major-mode ediff-mode))
   "Return the differences of this ediff review as hunks, in order.
@@ -1605,6 +1604,16 @@ differences are in (`ecc-review-ediff--differences-computed\=')."
 (cl-defmethod ecc-review-lines (&context (major-mode ediff-mode))
   "Return the lines of every difference of this ediff review."
   (mapcan #'ecc-review-ediff--unit-lines (ecc-review-units)))
+
+(cl-defmethod ecc-review--path-lines (path &context (major-mode ediff-mode))
+  "Return the lines of the differences of the file PATH in this ediff review."
+  (mapcan #'ecc-review-ediff--unit-lines
+          (seq-filter (lambda (unit) (equal (plist-get unit :path) path))
+                      (ecc-review-units))))
+
+(cl-defmethod ecc-review--base-of (hunk &context (major-mode ediff-mode))
+  "Return the blob of the old side of the file of the difference HUNK."
+  (alist-get (plist-get hunk :path) ecc-review-ediff--bases nil nil #'equal))
 
 (defun ecc-review-ediff--lines-of (count start end)
   "Return \"L3-L5\" for COUNT lines from START to END, \"none\" for none."
@@ -3076,6 +3085,7 @@ whether a difference exists, so it is counted here first."
         ecc-review-ediff--at nil
         ecc-review-ediff--refined nil
         ediff-number-of-differences (length ediff-difference-vector-A))
+  (ecc-review--new-reading)
   (unless ecc-review-ediff--replacing
     (ecc-review--draw-notes)
     ;; How many there are is in the panel.
@@ -3145,7 +3155,8 @@ opened."
         (when (buffer-live-p control)
           (with-current-buffer control
             (setq ecc-review--label (plist-get content :label)
-                  ecc-review--elsewhere (plist-get content :elsewhere))
+                  ecc-review--elsewhere (plist-get content :elsewhere)
+                  ecc-review-ediff--bases (ecc-review-ediff--bases-of pairs))
             (ecc-review-direct-refresh-headers control)))
         control))))
 
@@ -3324,6 +3335,7 @@ so are the difference being read and the place of each side."
     (setq ecc-review-ediff--sections
           (ecc-review-ediff--write ediff-buffer-A ediff-buffer-B pairs nothing
                                    ecc-review-ediff--cache)
+          ecc-review-ediff--bases (ecc-review-ediff--bases-of pairs)
           ecc-review-ediff--units nil)
     ;; The layout the view was last moved in is gone with the text.
     (setq ecc-review-ediff--at nil)
