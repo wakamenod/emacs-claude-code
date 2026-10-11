@@ -894,11 +894,16 @@ Verified against **Claude Code CLI 2.1.281**.
   lands under a review of what is not committed, the two blobs are diffed
   and the lines carried through that. When the old side appears or goes,
   as when an untracked file is added to the index, the lines put in are
-  still matched and a comment on the old side is outdated. When git cannot
+  still matched and a comment on the old side is outdated. A diff that
+  names no blob -- the one made from what a session recorded, a patch for
+  each edit, each numbered against the file as its edit found it -- is
+  matched by the text and order of its lines alone. When git cannot
   say, or carrying a file fails, none of the comments of that file moves:
   they go outdated where they were and why is in the log. A comment on a
   whole hunk follows the hunk most of its lines are in now while more than
-  half of them stayed; once half or more changed or went it is outdated.
+  half of the lines it changed stayed -- the lines of context around them
+  do not count -- and once half or more changed again or went it is
+  outdated.
   The comments are carried once, when the diff is read; a review whose
   buffer was edited since -- by a key that got past its keymap -- says so
   and waits for `g` rather than putting a comment on a line of something
@@ -970,11 +975,13 @@ Verified against **Claude Code CLI 2.1.281**.
 ### Fixed
 
 - The diff review reads git's diff the same whatever the repository's
-  diff settings say: it asks for `--inter-hunk-context=0` and the `a/` and
-  `b/` prefixes, as well as `--no-color` and `--no-ext-diff`. With
-  `diff.mnemonicPrefix` the files were named `i/x.el` or `w/x.el`, which
-  no file is, and with `diff.interHunkContext` two changes a few lines
-  apart came as one hunk with the unchanged lines between them.
+  settings say: it asks for `--inter-hunk-context=0`, `--no-textconv` and
+  the `a/` and `b/` prefixes, as well as `--no-color` and `--no-ext-diff`.
+  With `diff.mnemonicPrefix` the files were named `i/x.el` or `w/x.el`,
+  which no file is; with `diff.interHunkContext` two changes a few lines
+  apart came as one hunk with the unchanged lines between them; and a
+  textconv driver in `.gitattributes` showed what the driver made of a
+  file rather than its lines.
 
 - `TAB` after `@` offered the project's files as
   `../../../private/tmp/x/readme.md` when the project spelt its root
