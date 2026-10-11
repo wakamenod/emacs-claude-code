@@ -439,7 +439,8 @@ A larger one is named and left out: nobody reviews a megabyte of
 generated output, and the review is a prompt before it is anything
 else.  This covers the untracked files of the working tree review and
 the files a session changed -- a lock file a package manager wrote
-again is the usual one.")
+again is the usual one -- and the two old sides of a file a review
+compares to carry its comments (`ecc-review--blobs').")
 
 (defalias 'ecc-review--binary-p #'ecc-diff-binary-p
   "Return non-nil when a path looks binary, or cannot be read.

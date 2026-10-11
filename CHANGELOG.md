@@ -916,15 +916,20 @@ Verified against **Claude Code CLI 2.1.281**.
   each edit, each numbered against the file as its edit found it -- is
   matched by the text and order of its lines alone, and two of its lines
   at one number, or two hunks with one header, are two places -- and a
-  comment marks the `@@` line of its own hunk alone; a file
+  comment marks the `@@` line of its own hunk alone, and `review_hunks`
+  counts it there; a file
   outside git whose original the session recorded has that for its one
-  old side. The old blobs of a session over several repositories are
+  old side, and a proposal has the file as the proposal found it, so a
+  proposal reviewed again after its file changed on disk carries its
+  comments from that. The old blobs of a session over several repositories are
   compared in the repository of each file, whose names, from the second
   repository on, are given from the first (`../two/x.txt`). When git cannot
   say, or carrying a file fails, none of the comments of that file moves:
   they go outdated where they were and why is in the log; a repository git
   failed in is not asked again for each file in the same reading, and the
-  next reading asks again. A comment on a
+  next reading asks again. Two old sides of which one is over
+  `ecc-review-max-bytes` are not read or compared: the comments of that
+  file go outdated, and the log says so once. A comment on a
   whole hunk follows the hunk most of its lines are in now while more than
   half of the lines it changed stayed -- the lines of context around them
   do not count -- and once half or more changed again or went it is
@@ -940,7 +945,9 @@ Verified against **Claude Code CLI 2.1.281**.
   the kill ring alone, so that a yank does not make a second copy; a review whose
   buffer was edited since -- by a key that got past its keymap -- says so
   and waits for `g` rather than putting a comment on a line of something
-  else; an ediff review whose reading failed halfway is read whole by the
+  else, though a comment of yours can still be edited there, and what is
+  drawn stays as it is until then, whatever asked to draw it -- sending,
+  removing a comment, the files filter -- which is done all the same; an ediff review whose reading failed halfway is read whole by the
   next `g`. The ediff review carries its comments the same way, each time
   ediff computes the differences. Each comment is carried from the reading
   it was last on, whichever review that was: the comments of a pull
