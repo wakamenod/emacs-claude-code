@@ -881,31 +881,30 @@ Verified against **Claude Code CLI 2.1.281**.
   kept as outdated.
 
 - `g` no longer drops a comment whose hunk header changed ("Dropped N
-  comments whose hunk is gone"). A comment goes to the nearest line of
-  the same side that says what its line said, no further than
-  `ecc-review-note-max-shift` (100) lines, so lines put in or taken out
-  above it -- in its own hunk or higher up in the file -- move it instead
-  of losing it. The lines around the new place in its hunk have to bear
-  it out, lines put in since being passed over: on each side, the nearest
-  line the comment also had around it must have been on that side of it,
-  and on one side at least there must be one. So a comment on a blank
-  line or a lone brace does not wander off to another, not even to the
-  next one down the same hunk. A side that has no lines -- at the
-  first or last line of a hunk -- is not compared, so hunks merging or
-  splitting leave a comment where it was. A comment on a whole hunk goes to
-  the hunk with the same `@@` line, else to a hunk over the same lines of
-  the old side -- the baseline, which lines put in above do not move, so a
-  hunk put in above does not take the comment -- one that says the same
-  first when there are several; a hunk that only adds is found by where
-  it adds. A comment whose line has gone is kept, marked
-  outdated, above the first hunk of its file, and is still sent with
-  `(outdated)` and the hunk as it was.
+  comments whose hunk is gone"). Every reading of the diff carries each
+  comment to where its line went. For each file with a comment the
+  review keeps what the last reading took out and put in, by line number,
+  and the blob of the old side, and matches the next reading against it:
+  the lines of the old side by their number, and the lines put in between
+  two of them by their text, and only with each other. So lines put in or
+  taken out above a comment, in its own hunk or anywhere higher up, move
+  it, and a comment whose line changed or went is outdated, however much
+  another line reads like it -- a blank line or a lone brace does not
+  wander off to another. When the old side itself moved, as when a commit
+  lands under a review of what is not committed, the two blobs are diffed
+  and the lines carried through that; when git cannot say, the comments
+  of that file go outdated. A comment on a whole hunk goes to the hunk
+  most of its lines are in now. The ediff review carries its comments the
+  same way. A comment whose line has gone is kept, marked outdated, above
+  the first hunk of its file, is still sent with `(outdated)` and the hunk
+  as it was, and comes back when the same line is back at the same
+  number.
 
 - Reading the review again -- `g`, `ecc-review` or `ecc-review-range` on
   a review that is open, or Claude's `review_open` -- keeps your place: point,
   and in each window showing the review its point and how far down the
-  window it was, go back to the same line by the same rule. It used to go
-  to the top. A window of the review in another tab's saved configuration is
+  window it was, go back to the same line by the same rule, or to the
+  nearest line that stayed when that line went. It used to go to the top. A window of the review in another tab's saved configuration is
   out of reach and shows the review from the top when that tab comes back.
 
 - The control panel of an ediff review, which said ` c -comment
