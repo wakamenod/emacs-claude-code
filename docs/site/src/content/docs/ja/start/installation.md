@@ -61,6 +61,8 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 
 `ecc-global-map` で、リクエストへの応答、応答待ちのセッションへの移動、ダッシュボードの表示をどのバッファからでもできます。このサイトではキーを `C-c c` で書いています。[キーバインド](/emacs-claude-code/ja/reference/key-bindings/)を参照してください。
 
+ほかの設定も含めた例は、README の[作者の設定](https://github.com/wakamenod/emacs-claude-code/blob/main/README.ja.md#設定例)を参照してください。
+
 ## MCP サーバーの有効化
 
 内蔵の MCP サーバーはループバックインターフェイスで動きます。Claude は Emacs から `xref` の参照、`imenu` のシンボル、診断を読み、[レビューで作業し](/emacs-claude-code/ja/features/review-claude/)、[作業を worktree のセッションに引き渡せます](/emacs-claude-code/ja/features/spaces/#作業を-worktree-のセッションに引き渡す)。デフォルトでは無効で、Elisp の評価はさらに別に有効にします。

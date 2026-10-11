@@ -61,6 +61,8 @@ Then configure it with `use-package` without `:vc`.
 
 `ecc-global-map` answers requests, jumps to waiting sessions and opens the dashboard from any buffer. The site writes its keys with `C-c c`; see [Key bindings](/emacs-claude-code/reference/key-bindings/).
 
+For a fuller example, see [the author's configuration](https://github.com/wakamenod/emacs-claude-code#configuration) in the README.
+
 ## Enabling the MCP server
 
 The built-in MCP server, on the loopback interface, lets Claude read `xref` references, `imenu` symbols and diagnostics from Emacs, [work in the review](/emacs-claude-code/features/review-claude/), and [hand work to a session in a worktree](/emacs-claude-code/features/spaces/#handing-work-to-a-session-in-a-worktree). It is off by default, and evaluating Elisp is a separate opt-in:

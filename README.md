@@ -94,22 +94,27 @@ Because the repository name is `emacs-claude-code` while the package name is `ec
 
 ## Configuration
 
+This is the configuration the author uses.
+
 ```elisp
 (use-package ecc
   :ensure t
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest)
   :bind-keymap ("C-c c" . ecc-global-map)
   :custom
+  ;; Start sessions in the CLI's auto mode, which answers most requests itself.
   (ecc-permission-mode "auto")
+  ;; Flash the transcript as well as writing to the echo area.
   (ecc-notify-level 'pulse)
+  ;; Float usage reports and /btw answers over the frame (needs posframe).
   (ecc-usage-display 'posframe)
   (ecc-btw-display 'posframe)
-  (ecc-prompt-suggestions-enabled t)
-  ;; Uncomment to review in ediff instead of one diff-mode buffer.
-  ;; (ecc-review-style 'ediff)
-  ;; The Emacs MCP server: xref, imenu and flymake for Claude, and the
-  ;; tool that hands work to a session in a worktree of its own.
-  (ecc-mcp-enabled t))
+  ;; Open a review in ediff instead of one diff-mode buffer.
+  (ecc-review-style 'ediff)
+  ;; Register the Emacs MCP server with every session.
+  (ecc-mcp-enabled t)
+  ;; Have the CLI suggest a next prompt after a turn.
+  (ecc-prompt-suggestions-enabled t))
 ```
 
 For all other settings, see the [configuration reference](https://wakamenod.github.io/emacs-claude-code/reference/configuration/).
