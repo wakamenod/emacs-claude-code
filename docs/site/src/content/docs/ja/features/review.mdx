@@ -39,12 +39,7 @@ import Video from '../../../../components/Video.astro';
 
 ### 未コミットの変更と範囲
 
-`w`（`C-c c D w`）か `M-x ecc-review-range` は、リポジトリ全体を `HEAD` と比べます。ステージ済みと未ステージの変更に加え、`.gitignore` で除外されていない未追跡のファイルも入ります。コミットのないリポジトリは空のツリーと比べます。専用のキーを割り当てるには:
-
-```elisp
-(with-eval-after-load 'ecc-answer
-  (define-key ecc-global-map "G" #'ecc-review-range))
-```
+`w`（`C-c c D w`）か `M-x ecc-review-range` は、リポジトリ全体を `HEAD` と比べます。ステージ済みと未ステージの変更に加え、`.gitignore` で除外されていない未追跡のファイルも入ります。コミットのないリポジトリは空のツリーと比べます。
 
 `C-u M-x ecc-review-range` は、比べる対象を尋ね、続けてファイルを尋ねます（空ならすべて）。
 

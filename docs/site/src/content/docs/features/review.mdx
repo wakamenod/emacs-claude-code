@@ -39,12 +39,7 @@ Another session working in the same directory shows up here too; separate [workt
 
 ### Uncommitted changes and ranges
 
-`w` (`C-c c D w`), or `M-x ecc-review-range`, compares the whole repository with `HEAD`: staged and unstaged changes, and untracked files that `.gitignore` does not exclude. A repository with no commits is compared with the empty tree. To give it a key of its own:
-
-```elisp
-(with-eval-after-load 'ecc-answer
-  (define-key ecc-global-map "G" #'ecc-review-range))
-```
+`w` (`C-c c D w`), or `M-x ecc-review-range`, compares the whole repository with `HEAD`: staged and unstaged changes, and untracked files that `.gitignore` does not exclude. A repository with no commits is compared with the empty tree.
 
 `C-u M-x ecc-review-range` asks what to compare, then for the files (empty for all):
 
