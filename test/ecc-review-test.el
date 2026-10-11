@@ -2691,6 +2691,47 @@ reads alike -- here an X put in at L10, the number the commented X had
                   (should (= (ecc-review-note-line note) 13)))))
           (ecc-review-test--kill-review-buffers))))))
 
+(ert-deftest ecc-review-test-index-lines-are-short-and-the-blob-is-whole ()
+  "An index line shows git's short ids, and the old side is still the whole blob.
+The review asks git for whole ids, which a comment is carried by; shown,
+two of them make a line of 92 characters for every file."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-test--with-directory directory
+      (unwind-protect
+          (let ((x (concat directory "x.txt")))
+            (ecc-review-test--git directory "init" "-q")
+            (ecc-review-test--git directory "config" "user.email" "t@example.com")
+            (ecc-review-test--git directory "config" "user.name" "t")
+            (ecc-review-test--write x (ecc-review-test--numbered 1 20))
+            (ecc-review-test--git directory "add" "x.txt")
+            (ecc-review-test--git directory "commit" "-q" "-m" "init")
+            (ecc-review-test--write x (concat (ecc-review-test--numbered 1 9) "X\n"
+                                              (ecc-review-test--numbered 10 20)))
+            (setf (ecc-session-project-root session) directory)
+            (with-current-buffer (ecc-review-range-buffer session "HEAD")
+              (let ((blob (string-trim (ecc-review-test--git directory "rev-parse" "HEAD:x.txt"))))
+                (goto-char (point-min))
+                (should (re-search-forward "^index \\([0-9a-f]+\\)\\.\\.\\([0-9a-f]+\\) 100644$" nil t))
+                (should (equal (match-string 1) (substring blob 0 7)))
+                (should (= (length (match-string 2)) 7))
+                (should (equal (ecc-review--base-of (car (ecc-review-hunks)))
+                               (list 'blob (ecc-review-repository-name directory) blob))))
+              (ecc-review-test--goto "+X")
+              (ecc-review-comment "about X")
+              ;; The old side moves under it.
+              (ecc-review-test--write x (concat "p1\np2\n" (ecc-review-test--numbered 1 20)))
+              (ecc-review-test--git directory "commit" "-q" "-a" "-m" "p")
+              (ecc-review-test--write x (concat "p1\np2\n" (ecc-review-test--numbered 1 9) "X\n"
+                                                (ecc-review-test--numbered 10 20)))
+              (ecc-review-refresh)
+              (goto-char (point-min))
+              (should (re-search-forward "^index [0-9a-f]\\{7\\}\\.\\.[0-9a-f]\\{7\\} 100644$" nil t))
+              (let ((note (ecc-review-find-note 1)))
+                (should-not (ecc-review-note-outdated note))
+                (should (= (ecc-review-note-line note) 12)))))
+        (ecc-review-test--kill-review-buffers)))))
+
 (ert-deftest ecc-review-test-comments-handed-over-git-cannot-carry-are-read-again ()
   "Comments handed to a review that git does not answer for leave its next g to read it.
 The review was filled and taken for read before they came; the reading

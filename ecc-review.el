@@ -229,7 +229,13 @@ counts; `diff.interHunkContext' would fuse two hunks with the unchanged
 lines between them, which then read as changed; and `diff.noprefix' or
 `diff.mnemonicPrefix' would name the files without the a/ and b/ the
 review takes off.  The index lines name the blobs whole, so that two
-readings of one blob say so with the same id.")
+readings of one blob say so with the same id; the review shows them
+short (`ecc-review--shorten-ids').")
+
+(defvar ecc-review-shown-id-length 7
+  "How many characters of a blob id an index line of the review shows.
+git's own short form.  The whole id stays on the line, as the text
+property `ecc-review-blob' (`ecc-review--shorten-ids').")
 
 (defun ecc-review--git-unquote (text start)
   "Return (NAME . END) for the name git C-quoted at START of TEXT, or nil.
@@ -1714,7 +1720,8 @@ the top."
             (let ((inhibit-read-only t))
               (erase-buffer)
               (insert text)
-              (unless (bolp) (insert "\n")))
+              (unless (bolp) (insert "\n"))
+              (ecc-review--shorten-ids))
             (setq default-directory (or root (ecc-session-project-root session)
                                         default-directory)
                   ecc-review--session session
@@ -1751,6 +1758,27 @@ the top."
             buffer)
         (ecc-review--let-go (seq-remove (lambda (place) (memq place held))
                                         ecc-review--held))))))
+
+(defun ecc-review--shorten-ids ()
+  "Show the blob ids of the index lines of this buffer short, keeping them whole.
+git is asked for whole ids (`ecc-review--diff-options'), which two
+readings of one blob have to share; an index line of two of them is 92
+characters, which wraps in half a frame and comes again for every file.
+Each id is cut to `ecc-review-shown-id-length' characters, git's own
+short form, and the whole id kept on what is left of it as the text
+property `ecc-review-blob', which is where the old side of a file is
+read from (`ecc-review--base-of').  Nothing else reads an index line: a
+hunk's text, which is what is sent to Claude, starts at its @@ line."
+  (save-excursion
+    (goto-char (point-min))
+    (while (re-search-forward "^index \\([0-9a-f]+\\)\\.\\.\\([0-9a-f]+\\)" nil t)
+      ;; The right one first: the left one's place does not move.
+      (dolist (group '(2 1))
+        (let ((id (match-string-no-properties group)))
+          (when (> (length id) ecc-review-shown-id-length)
+            (replace-match (propertize (substring id 0 ecc-review-shown-id-length)
+                                       'ecc-review-blob id)
+                           t t nil group)))))))
 
 (defun ecc-review--view-at (position)
   "Return (ANCHOR . COLUMN) for POSITION, or nil.
@@ -2392,8 +2420,10 @@ each edit and says nothing of an old side, which is nil."
             (to nil))
         (while (and (zerop (forward-line -1))
                     (looking-at "\\(?:index \\([0-9a-f]+\\)\\.\\.\\|\\(?:old\\|new\\|deleted file\\|new file\\) mode \\|similarity \\|dissimilarity \\|\\(?:rename\\|copy\\) \\(?:\\(from\\)\\|to\\) \\(.*\\)\\)"))
-          (cond ((match-string-no-properties 1)
-                 (setq id (match-string-no-properties 1)))
+          (cond ((match-beginning 1)
+                 ;; Whole, as git gave it, under the short one shown.
+                 (setq id (or (get-text-property (match-beginning 1) 'ecc-review-blob)
+                              (match-string-no-properties 1))))
                 ((match-beginning 3)
                  (if (match-beginning 2)
                      (setq from (ecc-review-git-name (match-string-no-properties 3)))
