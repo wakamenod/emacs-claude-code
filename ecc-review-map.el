@@ -35,13 +35,7 @@
 
 (require 'cl-lib)
 (require 'seq)
-
-(defvar ecc-review-map-max-cells 400000
-  "How large a stretch of put-in lines is matched line against line.
-Two stretches whose lengths multiply past this are first split at the
-lines each holds once (`ecc-review-map--patience'), and a piece that is
-still too large matches nothing: its comments go outdated rather than
-the review stopping to compare it.")
+(require 'ecc-diff)
 
 (cl-defstruct (ecc-review-map-shape (:constructor ecc-review-map--make-shape)
                                     (:copier nil))
@@ -89,9 +83,7 @@ BASE is the blob of the old side, as `ecc-review-map-shape' keeps it."
 Each is (OLD-START OLD-COUNT NEW-START NEW-COUNT)."
   (let ((hunks nil)
         (start 0))
-    (while (string-match
-            "^@@ -\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? \\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? @@"
-            diff start)
+    (while (string-match ecc-diff-hunk-regexp diff start)
       (push (list (string-to-number (match-string 1 diff))
                   (if (match-string 2 diff) (string-to-number (match-string 2 diff)) 1)
                   (string-to-number (match-string 3 diff))
@@ -168,42 +160,16 @@ POSITIONS, a hash of each number of the old side in TOKENS to its index."
 
 ;;;; Matching the lines put in
 
-(defun ecc-review-map--put-in (tokens from to)
-  "Return the tokens FROM to TO of TOKENS, a line of the old side as nothing.
-Only lines put in are matched by their text: a line of the old side
-left between two shared ones is one the other reading took out."
+(defun ecc-review-map--put-in (tokens from to side)
+  "Return the tokens FROM to TO of TOKENS, to be matched by their text.
+Only lines put in are: a line of the old side left between two shared
+ones is one the other reading took out, and stands here as (SIDE I),
+which nothing of the other side equals."
   (let ((out (make-vector (max 0 (- to from)) nil)))
     (dotimes (i (length out))
       (let ((token (aref tokens (+ from i))))
-        (aset out i (and (stringp token) token))))
+        (aset out i (if (stringp token) token (list side i)))))
     out))
-
-(defun ecc-review-map--lcs (a b a0 b0 map)
-  "Match the vectors A and B, starting at A0 and B0 of the whole, into MAP.
-The longest common subsequence of the two, nil matching nothing."
-  (let* ((n (length a)) (m (length b))
-         (table (make-vector (1+ n) nil)))
-    (dotimes (i (1+ n))
-      (aset table i (make-vector (1+ m) 0)))
-    (let ((i (1- n)))
-      (while (>= i 0)
-        (let ((j (1- m))
-              (row (aref table i))
-              (below (aref table (1+ i))))
-          (while (>= j 0)
-            (aset row j (if (and (aref a i) (equal (aref a i) (aref b j)))
-                            (1+ (aref below (1+ j)))
-                          (max (aref below j) (aref row (1+ j)))))
-            (setq j (1- j))))
-        (setq i (1- i))))
-    (let ((i 0) (j 0))
-      (while (and (< i n) (< j m))
-        (cond ((and (aref a i) (equal (aref a i) (aref b j)))
-               (aset map (+ a0 i) (+ b0 j))
-               (setq i (1+ i) j (1+ j)))
-              ((>= (aref (aref table (1+ i)) j) (aref (aref table i) (1+ j)))
-               (setq i (1+ i)))
-              (t (setq j (1+ j))))))))
 
 (defun ecc-review-map--increasing (pairs)
   "Return the longest run of PAIRS, (I . J) by I, whose J go up too."
@@ -232,57 +198,51 @@ The longest common subsequence of the two, nil matching nothing."
         (setq k (aref back k)))
       out)))
 
-(defun ecc-review-map--patience (a b a0 b0 map)
-  "Match A and B, as `ecc-review-map--lcs' does, when they are too large for it.
-The lines each holds exactly once, and in the same order, are matched
-first; the stretches between them are matched again."
-  (let ((counts (make-hash-table :test #'equal)))
+(defun ecc-review-map--patience (a b)
+  "Return the script of A becoming B when they are too large to compare whole.
+The lines each holds exactly once, in the same order in both, are kept,
+and the stretches between them are compared again (`ecc-diff-script').
+With no such line nothing is kept: the comments there go outdated
+rather than the review stopping to compare them."
+  (let ((counts (make-hash-table :test #'equal))
+        (pairs nil))
     (seq-do-indexed (lambda (text i)
-                      (when text
-                        (let ((count (gethash text counts (list 0 nil 0 nil))))
-                          (puthash text (list (1+ (nth 0 count)) i (nth 2 count) nil) counts))))
+                      (let ((count (gethash text counts (list 0 nil 0 nil))))
+                        (puthash text (list (1+ (nth 0 count)) i 0 nil) counts)))
                     a)
     (seq-do-indexed (lambda (text j)
                       (when-let* ((count (gethash text counts)))
                         (puthash text (list (nth 0 count) (nth 1 count) (1+ (nth 2 count)) j)
                                  counts)))
                     b)
-    (let ((pairs nil))
-      (maphash (lambda (_text count)
-                 (when (and (= (nth 0 count) 1) (= (nth 2 count) 1))
-                   (push (cons (nth 1 count) (nth 3 count)) pairs)))
-               counts)
-      (let ((i 0) (j 0))
+    (maphash (lambda (_text count)
+               (when (and (= (nth 0 count) 1) (= (nth 2 count) 1))
+                 (push (cons (nth 1 count) (nth 3 count)) pairs)))
+             counts)
+    (if (null pairs)
+        (append (make-list (length a) 'removed) (make-list (length b) 'added))
+      (let ((i 0) (j 0) (script nil))
         (dolist (pair (ecc-review-map--increasing (sort pairs #'car-less-than-car)))
-          (ecc-review-map--match (seq-subseq a i (car pair)) (seq-subseq b j (cdr pair))
-                                 (+ a0 i) (+ b0 j) map)
-          (aset map (+ a0 (car pair)) (+ b0 (cdr pair)))
-          (setq i (1+ (car pair)) j (1+ (cdr pair))))
-        (when pairs
-          (ecc-review-map--match (seq-subseq a i) (seq-subseq b j) (+ a0 i) (+ b0 j) map))))))
+          (setq script (append script
+                               (ecc-diff-script (seq-subseq a i (car pair))
+                                                (seq-subseq b j (cdr pair))
+                                                #'ecc-review-map--patience)
+                               (list 'context))
+                i (1+ (car pair))
+                j (1+ (cdr pair))))
+        (append script (ecc-diff-script (seq-subseq a i) (seq-subseq b j)
+                                        #'ecc-review-map--patience))))))
 
 (defun ecc-review-map--match (a b a0 b0 map)
   "Match the put-in lines A against B, at A0 and B0 of the whole, into MAP.
-The lines both begin or end with are matched first; what is left between
-is matched line against line, or split first when it is large."
-  (let ((n (length a)) (m (length b))
-        (start 0))
-    (while (and (< start n) (< start m) (aref a start)
-                (equal (aref a start) (aref b start)))
-      (aset map (+ a0 start) (+ b0 start))
-      (setq start (1+ start)))
-    (let ((end 0))
-      (while (and (< end (- n start)) (< end (- m start))
-                  (aref a (- n end 1))
-                  (equal (aref a (- n end 1)) (aref b (- m end 1))))
-        (aset map (+ a0 (- n end 1)) (+ b0 (- m end 1)))
-        (setq end (1+ end)))
-      (let ((a (seq-subseq a start (- n end)))
-            (b (seq-subseq b start (- m end))))
-        (cond ((or (zerop (length a)) (zerop (length b))))
-              ((<= (* (length a) (length b)) ecc-review-map-max-cells)
-               (ecc-review-map--lcs a b (+ a0 start) (+ b0 start) map))
-              (t (ecc-review-map--patience a b (+ a0 start) (+ b0 start) map)))))))
+By `ecc-diff-script', split at the lines held once when too large."
+  (let ((i 0) (j 0))
+    (dolist (tag (ecc-diff-script a b #'ecc-review-map--patience))
+      (pcase tag
+        ('context (aset map (+ a0 i) (+ b0 j))
+                  (setq i (1+ i) j (1+ j)))
+        ('removed (setq i (1+ i)))
+        (_ (setq j (1+ j)))))))
 
 ;;;; The map
 
@@ -359,8 +319,8 @@ each other."
         (let ((i1 (min (car pair) (length tokens-a)))
               (j1 (min (cdr pair) (length tokens-b))))
           (when (and (< i0 i1) (< j0 j1))
-            (ecc-review-map--match (ecc-review-map--put-in tokens-a i0 i1)
-                                   (ecc-review-map--put-in tokens-b j0 j1)
+            (ecc-review-map--match (ecc-review-map--put-in tokens-a i0 i1 'from)
+                                   (ecc-review-map--put-in tokens-b j0 j1 'to)
                                    i0 j0 map))
           (when (< (car pair) (length tokens-a))
             (aset map (car pair) (cdr pair)))

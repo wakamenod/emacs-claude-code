@@ -100,6 +100,11 @@ transcript, line by line, under the picture it had just drawn
           (butlast lines)
         lines))))
 
+(defconst ecc-diff-hunk-regexp
+  "^@@ -\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? \\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? @@"
+  "Matches a unified hunk header.
+The groups are old start, old count, new start and new count.")
+
 (defun ecc-diff--lcs-table (a b)
   "Return the longest common subsequence table of vectors A and B."
   (let* ((n (length a))
@@ -120,53 +125,68 @@ transcript, line by line, under the picture it had just drawn
         (setq i (1- i))))
     table))
 
+(defun ecc-diff--lcs-script (a b)
+  "Return the script of `ecc-diff-script' for A and B, by their whole table."
+  (let ((table (ecc-diff--lcs-table a b))
+        (n (length a)) (m (length b))
+        (i 0) (j 0) (out nil))
+    (while (or (< i n) (< j m))
+      (cond
+       ((and (< i n) (< j m) (equal (aref a i) (aref b j)))
+        (push 'context out)
+        (setq i (1+ i) j (1+ j)))
+       ((and (< i n)
+             (or (>= j m)
+                 (>= (aref (aref table (1+ i)) j)
+                     (aref (aref table i) (1+ j)))))
+        (push 'removed out)
+        (setq i (1+ i)))
+       (t
+        (push 'added out)
+        (setq j (1+ j)))))
+    (nreverse out)))
+
+(defun ecc-diff-script (a b &optional large)
+  "Return how the vector A becomes the vector B, a tag for each line.
+The tags are `context' for an element of A that B keeps, `removed' for
+one only A has and `added' for one only B has, in the order of a
+unified diff; elements are compared with `equal'.  What both begin and
+end with is kept for sure, which keeps the table small for the usual
+edit of a few lines in a long file; what is left between is matched by
+its longest common subsequence while its two lengths multiply to no
+more than `ecc-diff-max-cells'.  Past that LARGE, a function, is given
+the two vectors left between and returns their script; without it, the
+whole of them is removed and added."
+  (let ((n (length a)) (m (length b))
+        (prefix 0) (suffix 0))
+    (while (and (< prefix n) (< prefix m) (equal (aref a prefix) (aref b prefix)))
+      (setq prefix (1+ prefix)))
+    (while (and (< suffix (- n prefix)) (< suffix (- m prefix))
+                (equal (aref a (- n suffix 1)) (aref b (- m suffix 1))))
+      (setq suffix (1+ suffix)))
+    (let ((va (seq-subseq a prefix (- n suffix)))
+          (vb (seq-subseq b prefix (- m suffix))))
+      (append (make-list prefix 'context)
+              (cond ((<= (* (length va) (length vb)) ecc-diff-max-cells)
+                     (ecc-diff--lcs-script va vb))
+                    (large (funcall large va vb))
+                    (t (append (make-list (length va) 'removed)
+                               (make-list (length vb) 'added))))
+              (make-list suffix 'context)))))
+
 (defun ecc-diff-lines (old new)
   "Return the line diff of OLD against NEW.
 The result is a list of (TAG . LINE) where TAG is `context', `removed'
-or `added', in the order of a unified diff."
-  (let* ((a (ecc-diff--split old))
-         (b (ecc-diff--split new))
-         (prefix 0)
-         (suffix 0))
-    ;; Common prefix and suffix are context for sure; trimming them keeps
-    ;; the table small for the usual edit of a few lines in a long file.
-    (while (and a b (equal (car a) (car b)))
-      (setq prefix (1+ prefix) a (cdr a) b (cdr b)))
-    (let ((ra (reverse a)) (rb (reverse b)))
-      (while (and ra rb (equal (car ra) (car rb)))
-        (setq suffix (1+ suffix) ra (cdr ra) rb (cdr rb)))
-      (setq a (nreverse ra) b (nreverse rb)))
-    (let* ((va (vconcat a))
-           (vb (vconcat b))
-           (n (length va))
-           (m (length vb))
-           (middle
-            (if (> (* n m) ecc-diff-max-cells)
-                (append (mapcar (lambda (l) (cons 'removed l)) a)
-                        (mapcar (lambda (l) (cons 'added l)) b))
-              (let ((table (ecc-diff--lcs-table va vb))
-                    (i 0) (j 0) out)
-                (while (or (< i n) (< j m))
-                  (cond
-                   ((and (< i n) (< j m) (equal (aref va i) (aref vb j)))
-                    (push (cons 'context (aref va i)) out)
-                    (setq i (1+ i) j (1+ j)))
-                   ((and (< i n)
-                         (or (>= j m)
-                             (>= (aref (aref table (1+ i)) j)
-                                 (aref (aref table i) (1+ j)))))
-                    (push (cons 'removed (aref va i)) out)
-                    (setq i (1+ i)))
-                   (t
-                    (push (cons 'added (aref vb j)) out)
-                    (setq j (1+ j)))))
-                (nreverse out))))
-           (all-old (ecc-diff--split old))
-           (all-new (ecc-diff--split new)))
-      (append (mapcar (lambda (l) (cons 'context l)) (seq-take all-old prefix))
-              middle
-              (mapcar (lambda (l) (cons 'context l))
-                      (seq-drop all-new (- (length all-new) suffix)))))))
+or `added', in the order of a unified diff (`ecc-diff-script')."
+  (let ((a (vconcat (ecc-diff--split old)))
+        (b (vconcat (ecc-diff--split new)))
+        (i 0) (j 0))
+    (mapcar (lambda (tag)
+              (pcase tag
+                ('removed (prog1 (cons 'removed (aref a i)) (setq i (1+ i))))
+                ('added (prog1 (cons 'added (aref b j)) (setq j (1+ j))))
+                (_ (prog1 (cons 'context (aref a i)) (setq i (1+ i) j (1+ j))))))
+            (ecc-diff-script a b))))
 
 (defun ecc-diff-counts (lines)
   "Return (ADDED . REMOVED) for the diff LINES."

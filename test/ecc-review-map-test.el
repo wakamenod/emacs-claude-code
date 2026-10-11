@@ -119,7 +119,7 @@
          (to (ecc-review-map-test--shape
               (funcall diff (append '("new" "}" "}")
                                     (seq-take lines 199) '("changed") (seq-drop lines 200)))))
-         (ecc-review-map-max-cells 1000)
+         (ecc-diff-max-cells 1000)
          (map (ecc-review-map-lines from to)))
     (should (= (funcall map 'new 1) 2))
     (should (= (funcall map 'new 3) 4))

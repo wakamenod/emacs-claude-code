@@ -829,11 +829,6 @@ is one."
 
 ;;;; The buffer
 
-(defconst ecc-review--hunk-regexp
-  "^@@ -\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? \\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? @@"
-  "Matches a unified hunk header.
-The groups are old start, old count, new start and new count.")
-
 
 (defvar-local ecc-review--session nil
   "The session this review buffer belongs to.")
@@ -1026,7 +1021,7 @@ it begins, and nothing after the last hunk."
               :line (plist-get line :line) :side (plist-get line :side)))
     (save-excursion
       (beginning-of-line)
-      (when (re-search-forward ecc-review--hunk-regexp nil t)
+      (when (re-search-forward ecc-diff-hunk-regexp nil t)
         (list :path (ecc-review--hunk-path (match-beginning 0)))))))
 
 (cl-defgeneric ecc-review-region ()
@@ -1605,7 +1600,7 @@ reading (`ecc-review--keep').  The caller lets ANCHOR go."
   (save-excursion
     (goto-char position)
     (let ((line (or (ecc-review--line-at-point)
-                    (and (re-search-forward ecc-review--hunk-regexp nil t)
+                    (and (re-search-forward ecc-diff-hunk-regexp nil t)
                          (progn (beginning-of-line) (ecc-review--line-at-point))))))
       (when line
         (let ((anchor (ecc-review--anchor (ecc-review-note-create) line)))
@@ -1667,7 +1662,7 @@ stayed, and one with no line of its file left to the top."
 (defun ecc-review-hunk-range (header)
   "Return (START . END) of the new side of the hunk HEADER line.
 A hunk that only removes lines is one line wide at its position."
-  (when (string-match ecc-review--hunk-regexp header)
+  (when (string-match ecc-diff-hunk-regexp header)
     (let ((start (string-to-number (match-string 3 header)))
           (count (if (match-string 4 header)
                      (string-to-number (match-string 4 header))
@@ -1727,7 +1722,7 @@ between."
   (save-excursion
     (goto-char (point-min))
     (let ((hunks nil))
-      (while (re-search-forward ecc-review--hunk-regexp nil t)
+      (while (re-search-forward ecc-diff-hunk-regexp nil t)
         (when-let* ((bounds (ecc-review--hunk-bounds)))
           (push (ecc-review-hunk-at (car bounds) (cdr bounds)) hunks)
           (goto-char (max (point) (1- (cdr bounds))))))
@@ -1754,7 +1749,7 @@ font-lock has been round."
     (let* ((header (plist-get hunk :header))
            (path (plist-get hunk :path))
            (bound (plist-get hunk :bound))
-           (old (if (string-match ecc-review--hunk-regexp header)
+           (old (if (string-match ecc-diff-hunk-regexp header)
                     (string-to-number (match-string 1 header))
                   1))
            (new (or (plist-get hunk :start) 1))
@@ -1977,12 +1972,12 @@ Only the hunks of that file are read."
     (save-excursion
       (goto-char (plist-get hunk :position))
       (let ((first (point)))
-        (while (and (re-search-backward ecc-review--hunk-regexp nil t)
+        (while (and (re-search-backward ecc-diff-hunk-regexp nil t)
                     (equal (ecc-review--hunk-path (point)) path))
           (setq first (point)))
         (goto-char first))
       (catch 'done
-        (while (re-search-forward ecc-review--hunk-regexp nil t)
+        (while (re-search-forward ecc-diff-hunk-regexp nil t)
           (when-let* ((bounds (ecc-review--hunk-bounds)))
             (let ((next (ecc-review-hunk-at (car bounds) (cdr bounds))))
               (unless (equal (plist-get next :path) path)
