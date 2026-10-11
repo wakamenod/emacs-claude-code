@@ -937,6 +937,120 @@ OFFERED is bound to the list of labels the table held."
                                                    :annotation-function)
                                         "@region")))))))
 
+;; What the file part of the @ completion leaves the table to.
+(defun ecc-prompt-test--path-candidates (path)
+  "Return the start of the @ completion after PATH and its candidates."
+  (insert "見て @" path)
+  (let* ((capf (ecc-prompt-at-capf))
+         (table (nth 2 capf)))
+    (list (nth 0 capf)
+          (car (completion-boundaries path table nil ""))
+          (sort (all-completions path table) #'string<))))
+
+(defmacro ecc-prompt-test--with-tree (var &rest body)
+  "Run BODY with VAR bound to a fresh directory, deleted afterwards."
+  (declare (indent 1))
+  `(let ((,var (file-name-as-directory (make-temp-file "ecc-at-paths" t))))
+     (unwind-protect (progn ,@body)
+       (delete-directory ,var t))))
+
+(defun ecc-prompt-test--touch (&rest files)
+  "Make FILES, and the directories they are in."
+  (dolist (file files)
+    (make-directory (file-name-directory file) t)
+    (write-region "" nil file)))
+
+(ert-deftest ecc-prompt-test-at-completion-keeps-project-files ()
+  "A plain @ word is completed from the specials and the project files."
+  (ecc-test-with-fake-session session
+    (cl-letf (((symbol-function 'ecc-prompt-project-files)
+               (lambda (_) '("readme.md" "src/reader.py"))))
+      (ecc-prompt-test--in-buffer session
+        (insert "見て @rea")
+        (let ((capf (ecc-prompt-at-capf)))
+          (should (= (nth 0 capf) (- (point) 4)))
+          (should (equal (all-completions "@rea" (nth 2 capf)) '("@readme.md")))
+          (should (equal (all-completions "@" (nth 2 capf))
+                         '("@region" "@cursor" "@diagnostics"
+                           "@readme.md" "@src/reader.py"))))))))
+
+(ert-deftest ecc-prompt-test-at-completion-absolute-directory ()
+  "An absolute path is completed from the directory it names, and only that."
+  (ecc-prompt-test--with-tree tree
+    (ecc-prompt-test--touch (concat tree "dir/alpha.txt")
+                            (concat tree "dir/beta.txt")
+                            (concat tree "dir/sub/deep.txt")
+                            (concat tree "elsewhere.txt"))
+    (ecc-test-with-fake-session session
+      (ecc-prompt-test--in-buffer session
+        (let ((path (concat tree "dir/")))
+          (pcase-let ((`(,start ,boundary ,candidates)
+                       (ecc-prompt-test--path-candidates path)))
+            ;; The @ stays where it is; the path is what is completed.
+            (should (= start (- (point) (length path))))
+            (should (= boundary (length path)))
+            ;; A directory ends in a slash, so the completion goes on.
+            (should (equal (cl-set-difference candidates '("./" "../")
+                                              :test #'equal)
+                           '("alpha.txt" "beta.txt" "sub/")))))))))
+
+(ert-deftest ecc-prompt-test-at-completion-home ()
+  "`@~/' is completed from the home directory and inserted as written."
+  (ecc-prompt-test--with-tree home
+    (ecc-prompt-test--touch (concat home "notes.org") (concat home "code/x.el"))
+    (let ((process-environment (cons (concat "HOME=" (directory-file-name home))
+                                     process-environment)))
+      (ecc-test-with-fake-session session
+        (ecc-prompt-test--in-buffer session
+          (pcase-let ((`(,_ ,boundary ,candidates)
+                       (ecc-prompt-test--path-candidates "~/no")))
+            (should (= boundary 2))
+            (should (equal candidates '("notes.org"))))
+          (let ((table (nth 2 (ecc-prompt-at-capf))))
+            (should (equal (try-completion "~/co" table) "~/code/"))))))))
+
+(ert-deftest ecc-prompt-test-at-completion-relative-to-the-session ()
+  "`../' and `./' are read from the directory the session's CLI runs in."
+  (ecc-prompt-test--with-tree tree
+    (ecc-prompt-test--touch (concat tree "project/main.py")
+                            (concat tree "sibling.txt"))
+    (ecc-test-with-fake-session session
+      (setf (ecc-session-project-root session) (concat tree "project/"))
+      (ecc-prompt-test--in-buffer session
+        (let ((default-directory temporary-file-directory))
+          (should (equal (nth 2 (ecc-prompt-test--path-candidates "../sib"))
+                         '("sibling.txt")))
+          (ecc-chat-clear-draft)
+          (ecc-chat-goto-prompt)
+          (should (equal (nth 2 (ecc-prompt-test--path-candidates "./ma"))
+                         '("main.py"))))))))
+
+(ert-deftest ecc-prompt-test-at-completion-leaves-remote-paths-alone ()
+  "A TRAMP path is not completed, and no file name handler is asked."
+  (ecc-test-with-fake-session session
+    (let* ((asked nil)
+           (file-name-handler-alist
+            ;; The shape of a remote name, and of a name at the root,
+            ;; which is where TRAMP completes the methods.
+            (cons (cons "\\`/[^/]*\\(?::\\|\\'\\)"
+                        (lambda (&rest args)
+                          (push args asked)
+                          (error "Connected")))
+                  file-name-handler-alist)))
+      (ecc-prompt-test--in-buffer session
+        (dolist (path '("/ssh:host:/etc/" "/sudo::/etc/" "/ssh:ho"))
+          (ecc-chat-clear-draft)
+          (ecc-chat-goto-prompt)
+          (insert "見て @" path)
+          (should-not (ecc-prompt-at-capf)))
+        ;; A method half typed is an ordinary name at the root, and the
+        ;; table does not hand it to a handler either.
+        (ecc-chat-clear-draft)
+        (ecc-chat-goto-prompt)
+        (insert "@/ss")
+        (all-completions "/ss" (nth 2 (ecc-prompt-at-capf)))
+        (should-not asked)))))
+
 ;;;; Images
 
 (ert-deftest ecc-prompt-test-pasted-image-becomes-a-path ()
