@@ -2075,21 +2075,9 @@ place."
                          (seq-filter (lambda (line) (equal (plist-get line :path) path))
                                      (or lines (ecc-review--reading-lines reading))))
                         (t (ecc-review--path-lines path))))
-             (index (ecc-review--reading-index reading))
-             (seen (make-hash-table :test #'equal)))
-         (dolist (line own)
-           (plist-put line :nth
-                      (ecc-review-map-count
-                       seen (if (plist-get line :side)
-                                (cons (plist-get line :side) (plist-get line :line))
-                              (plist-get (plist-get line :hunk) :header))))
+             (index (ecc-review--reading-index reading)))
+         (dolist (line (ecc-review-map-number own))
            (puthash (ecc-review--line-key line) line index))
-         ;; Each line knows which of the hunks with its header it is in.
-         (let ((header nil))
-           (dolist (line own)
-             (if (plist-get line :side)
-                 (plist-put line :hunk-nth (plist-get header :nth))
-               (setq header line))))
          (puthash path own files)))
       (own own))))
 
@@ -2402,7 +2390,8 @@ or more changed again or went, it is another hunk now, and the answer
 is nil; otherwise it is the hunk most of the rest are in, the first of
 those on a tie."
   (let* ((members (seq-filter (lambda (member)
-                                (ecc-review-map-changed-p from (car member) (cadr member)))
+                                (ecc-review-map-changed-p from (car member) (cadr member)
+                                                          (cddr member)))
                               (cdr (assoc (cons header nth) (ecc-review-map-shape-hunks from)))))
          (stayed 0)
          (votes nil))

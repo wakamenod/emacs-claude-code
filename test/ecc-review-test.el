@@ -2195,6 +2195,26 @@ ring."
             (should-not ecc-review--held)))
       (ecc-review-test--kill-review-buffers))))
 
+(ert-deftest ecc-review-test-a-patch-counts-its-own-changed-lines ()
+  "A context line of one patch is not changed because another patch puts a line in at its number.
+The hunk comment counts the lines its hunk changes: in a diff of a patch
+for each edit, the context line x at 10 shares its number with the Y the
+second patch puts in."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (let ((second "@@ -10,1 +10,1 @@\n-y\n+Y\n"))
+          (with-current-buffer
+              (ecc-review-test--fill
+               session (concat "--- u.txt\n+++ u.txt\n@@ -10,2 +10,2 @@\n x\n-a\n+A\n" second))
+            (ecc-review-test--goto "@@ -10,2 +10,2 @@")
+            (ecc-review-comment "on the first patch")
+            ;; Its one line put in changes again: one of its two changed
+            ;; lines stayed, which is not more than half.
+            (ecc-review-test--fill
+             session (concat "--- u.txt\n+++ u.txt\n@@ -10,2 +10,2 @@\n x\n-a\n+A2\n" second))
+            (should (ecc-review-note-outdated (car ecc-review--notes)))))
+      (ecc-review-test--kill-review-buffers))))
+
 (ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
   "Remembering the place reads the hunk it is in, not the whole diff."
   (ecc-review-test--with-review session

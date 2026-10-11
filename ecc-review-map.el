@@ -79,19 +79,42 @@ in that order.  PUT-IN is a hash of the numbers of ADDED, made when
 first asked for by `ecc-review-map-changed-p'."
   base removed added hunks order texts gone put-in)
 
+(defun ecc-review-map-number (lines)
+  "Give each of LINES, the lines of one file in the order of the diff, its NTH.
+Each line gets :nth, how many lines before it have its side and number
+-- a hunk's header, how many before it have that header -- and each line
+of a hunk :hunk-nth, the NTH of its hunk's header (`ecc-review-map-shape'
+says why).  This is where an NTH is counted, and the only place: the
+review indexes its lines by it, and the shape reads it.  Return LINES."
+  (let ((seen (make-hash-table :test #'equal))
+        (header nil))
+    (dolist (line lines)
+      (let* ((side (plist-get line :side))
+             (key (if side
+                      (cons side (plist-get line :line))
+                    (plist-get (plist-get line :hunk) :header)))
+             (count (gethash key seen 0)))
+        (puthash key (1+ count) seen)
+        (plist-put line :nth count)
+        (if side
+            (plist-put line :hunk-nth (plist-get header :nth))
+          (setq header line)))))
+  lines)
+
 (defun ecc-review-map-shape (lines base)
   "Return the shape of LINES, the lines of one file of a reading.
-LINES are plists of `ecc-review--hunk-lines', header first in each hunk.
+LINES are plists of `ecc-review--hunk-lines', header first in each hunk,
+numbered by `ecc-review-map-number' -- here, when the first has no NTH.
 BASE is the blob of the old side, as `ecc-review-map-shape' keeps it."
-  (let ((removed nil) (added nil) (hunks nil) (order nil) (texts nil) (gone nil)
-        (seen (make-hash-table :test #'equal)))
+  (unless (plist-member (car lines) :nth)
+    (ecc-review-map-number lines))
+  (let ((removed nil) (added nil) (put-in nil) (hunks nil) (order nil) (texts nil) (gone nil))
     (dolist (line lines)
       (let* ((side (plist-get line :side))
              (number (plist-get line :line))
-             (header (and (null side) (plist-get (plist-get line :hunk) :header)))
-             (nth (ecc-review-map-count seen (if side (cons side number) header))))
+             (nth (plist-get line :nth)))
         (if (null side)
-            (push (list (cons header nth)) hunks)
+            (push (list (cons (plist-get (plist-get line :hunk) :header) nth)) hunks)
           (push (cons side (cons number nth)) order)
           (push (cons (cons number nth) (plist-get line :text)) (if (eq side 'new) texts gone))
           (when hunks
@@ -100,37 +123,28 @@ BASE is the blob of the old side, as `ecc-review-map-shape' keeps it."
                  (push (cons number (plist-get line :text)) removed))
                 ;; A context line is a line of the old side.
                 ((not (plist-get line :old-line))
-                 (push (cons number (plist-get line :text)) added))))))
+                 (push (cons number (plist-get line :text)) added)
+                 (push (cons number nth) put-in))))))
     (ecc-review-map--make-shape
      :base base
      :removed (sort (nreverse removed) #'car-less-than-car)
      :added (sort (nreverse added) #'car-less-than-car)
+     :put-in (let ((keys (make-hash-table :test #'equal)))
+               (dolist (key put-in) (puthash key t keys))
+               keys)
      :hunks (mapcar (lambda (hunk) (cons (car hunk) (nreverse (cdr hunk))))
                     (nreverse hunks))
      :order (nreverse order)
      :texts (nreverse texts)
      :gone (nreverse gone))))
 
-(defun ecc-review-map-count (seen key)
-  "Return how many times KEY was counted in the hash SEEN before, counting it.
-The NTH of a line or a hunk of a file, the lines being counted in the
-order of the diff (`ecc-review-map-shape')."
-  (let ((count (gethash key seen 0)))
-    (puthash key (1+ count) seen)
-    count))
-
-(defun ecc-review-map-changed-p (shape side number)
-  "Return non-nil when line NUMBER of SIDE is one SHAPE changes, not context.
-Every line of the old side a diff shows is one it takes out; a line of
-the new side is changed when it is put in."
+(defun ecc-review-map-changed-p (shape side number nth)
+  "Return non-nil when line NUMBER of SIDE, the NTH of those, is one SHAPE changes.
+Not context: every line of the old side a diff shows is one it takes
+out; a line of the new side is changed when it is put in.  The NTH tells
+a line put in from context at its number in another patch of the file."
   (or (eq side 'old)
-      (gethash number
-               (or (ecc-review-map-shape-put-in shape)
-                   (setf (ecc-review-map-shape-put-in shape)
-                         (let ((numbers (make-hash-table)))
-                           (dolist (line (ecc-review-map-shape-added shape))
-                             (puthash (car line) t numbers))
-                           numbers))))))
+      (gethash (cons number nth) (ecc-review-map-shape-put-in shape))))
 
 (defun ecc-review-map-same-base-p (from to)
   "Return non-nil when the shapes FROM and TO were read against one old side.
