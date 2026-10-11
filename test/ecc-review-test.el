@@ -1386,6 +1386,9 @@ following the files puts the comment there."
                             (string-replace "        total = self.total()\n" "")))
     (let ((changed (ecc-review-find-note 1))
           (removed (ecc-review-find-note 2)))
+      ;; The nearest line that stayed is looked for only for the place
+      ;; being read.
+      (should-not (and ecc-review--nearest (gethash changed ecc-review--nearest)))
       (should (ecc-review-note-outdated changed))
       (should (= (ecc-review-note-line changed) 10))
       (should (ecc-review-note-outdated removed))
@@ -1636,7 +1639,7 @@ text; a line of the old side cannot be carried and is outdated."
     (ecc-review-test--goto "+        return part / total")
     (ecc-review-comment "guard it")
     (let ((logged nil))
-      (cl-letf (((symbol-function 'ecc-review--line-map)
+      (cl-letf (((symbol-function 'ecc-review-map-lines)
                  (lambda (&rest _) (error "No map today")))
                 ((symbol-function 'ecc-log)
                  (lambda (_category format &rest arguments)
@@ -1728,7 +1731,23 @@ the same number later, put in somewhere else, is not that line."
                                         (funcall body ecc-review-test--guarded))
                                 directory)
               (with-current-buffer buffer
-                (should (ecc-review-note-outdated (car ecc-review--notes))))))
+                (should (ecc-review-note-outdated (car ecc-review--notes))))
+              ;; Read again with it: git is not asked again, nor is it
+              ;; said again.
+              (let ((asked 0) (logged 0)
+                    (git (symbol-function 'ecc-review--git)))
+                (cl-letf (((symbol-function 'ecc-review--git)
+                           (lambda (directory &rest arguments)
+                             (when (member "rev-parse" arguments) (cl-incf asked))
+                             (apply git directory arguments)))
+                          ((symbol-function 'ecc-log)
+                           (lambda (&rest _) (cl-incf logged))))
+                  (ecc-review--fill buffer session
+                                    (concat (funcall diff "deadbeef")
+                                            (funcall body (concat "import math\n\n"
+                                                                  ecc-review-test--guarded)))
+                                    directory))
+                (should (equal (list asked logged) '(0 0))))))
         (ecc-review-test--kill-review-buffers)))))
 
 (ert-deftest ecc-review-test-the-users-diff-settings-do-not-reach-the-review ()
@@ -1765,6 +1784,135 @@ the line between them among the changed ones; `diff.noprefix' and
                   (should (equal (ecc-review--base-hunks first second)
                                  '((2 1 2 1) (4 1 4 1))))))))
         (ecc-review-test--kill-review-buffers)))))
+
+(ert-deftest ecc-review-test-nothing-is-looked-up-between-a-text-and-its-reading ()
+  "A lookup while the review is read again, or after it was edited, is an error.
+Its places are on the lines of the last reading, which is not what the
+buffer shows: a line found there would be a line of something else."
+  (ecc-review-test--with-review session
+    (ecc-review-test--goto "+added")
+    (ecc-review-comment "here")
+    (let ((note (car ecc-review--notes)))
+      (should (= (plist-get (ecc-review--locate-note note) :line) 11))
+      (ecc-review--begin-reading)
+      (should-error (ecc-review--locate-note note))
+      (ecc-review-test--fill session ecc-review-test--shifted-diff)
+      (should (= (plist-get (ecc-review--locate-note note) :line) 13))
+      ;; Edited by a key that got past the keymap.
+      (let ((inhibit-read-only t))
+        (goto-char (point-min))
+        (insert "x\n"))
+      (should-error (ecc-review--locate-note note))
+      ;; Read again, it is on its line.
+      (ecc-review-test--fill session ecc-review-test--shifted-diff)
+      (should (= (plist-get (ecc-review--locate-note note) :line) 13)))))
+
+(ert-deftest ecc-review-test-a-reading-reads-its-lines-once ()
+  "The lines of a reading are read and indexed once, whatever looks them up."
+  (ecc-review-test--with-review session
+    (ecc-review-test--goto "+added")
+    (ecc-review-comment "here")
+    (ecc-review-test--fill session ecc-review-test--shifted-diff)
+    (let ((index (ecc-review--reading-index ecc-review--reading)))
+      (should index)
+      (ecc-review--draw-notes)
+      (ecc-review-test--goto "+TWO")
+      (ecc-review-comment "and here")
+      (ecc-review--locate-note (car ecc-review--notes))
+      (should (eq (ecc-review--reading-index ecc-review--reading) index))
+      ;; The next reading reads them anew.
+      (ecc-review-test--fill session ecc-review-test--diff)
+      (should-not (eq (ecc-review--reading-index ecc-review--reading) index)))))
+
+(ert-deftest ecc-review-test-a-file-is-carried-as-one ()
+  "When one comment of a file cannot be carried, none of them moves.
+Each is left on the line it had in the last reading, outdated, and comes
+back from there once a reading can carry it."
+  (ecc-review-test--following (session directory ecc-review-test--share)
+    (ecc-review-test--goto "+    def share(self, part):")
+    (ecc-review-comment "first")
+    (ecc-review-test--goto "+        return part / total")
+    (ecc-review-comment "second")
+    (should (equal (mapcar #'ecc-review-note-line ecc-review--notes) '(8 10)))
+    (let ((calls 0)
+          (where (symbol-function 'ecc-review--where)))
+      (cl-letf (((symbol-function 'ecc-review--where)
+                 (lambda (&rest arguments)
+                   (when (= (cl-incf calls) 2)
+                     (error "The second one fails"))
+                   (apply where arguments)))
+                ((symbol-function 'ecc-log) #'ignore))
+        (ecc-review-test--change-and-refresh
+         directory (concat "import math\n\n" ecc-review-test--share))))
+    ;; Neither moved: both are where the last reading had them.
+    (should (equal (mapcar #'ecc-review-note-line ecc-review--notes) '(8 10)))
+    (should (seq-every-p #'ecc-review-note-outdated ecc-review--notes))
+    (ecc-review-test--change-and-refresh
+     directory (concat "import math\n\n" ecc-review-test--guarded))
+    (should (equal (mapcar #'ecc-review-note-line ecc-review--notes) '(10 14)))
+    (should-not (seq-some #'ecc-review-note-outdated ecc-review--notes))))
+
+(ert-deftest ecc-review-test-a-hunk-comment-goes-when-half-its-lines-do ()
+  "A comment on a hunk follows it while more than half its lines stay.
+Once half of them or more changed or went, it is another hunk, and the
+comment is outdated."
+  (let ((first (concat ecc-review-test--summary
+                       "\n    def a(self):\n        return 1\n    def b(self):\n")))
+    (ecc-review-test--following (session directory first)
+      (ecc-review-test--goto "@@ -6,0 +7,4 @@ class Summary:")
+      (ecc-review-comment "two methods")
+      ;; One line of four changed.
+      (ecc-review-test--change-and-refresh
+       directory (concat "import math\n\n" (string-replace "return 1" "return 2" first)))
+      (let ((note (car ecc-review--notes)))
+        (should-not (ecc-review-note-outdated note))
+        (should (equal (cdr (ecc-review-note-hunk-key note)) "@@ -6,0 +9,4 @@ class Summary:")))
+      ;; Two of the four that are there now.
+      (ecc-review-test--change-and-refresh
+       directory (concat "import math\n\n"
+                         (thread-last first
+                                      (string-replace "return 1" "return 3")
+                                      (string-replace "def a" "def x"))))
+      (should (ecc-review-note-outdated (car ecc-review--notes))))))
+
+(ert-deftest ecc-review-test-a-failed-refill-lets-the-places-go ()
+  "The places read are let go even when reading the diff again fails."
+  (ecc-review-test--with-review session
+    (ecc-review-test--goto "+added")
+    (cl-letf (((symbol-function 'ecc-review--lines) (lambda () (error "No lines"))))
+      (should-error (ecc-review-test--fill session ecc-review-test--shifted-diff)))
+    (should-not ecc-review--held)))
+
+(ert-deftest ecc-review-test-outdated-comments-are-carried-back-once-a-reading ()
+  "Comments outdated together come back by one map, and not in the reading that lost them."
+  (ecc-review-test--following (session directory ecc-review-test--share)
+    (dolist (line '("+    def share(self, part):" "+        total = self.total()"
+                    "+        return part / total"))
+      (ecc-review-test--goto line)
+      (ecc-review-comment line))
+    (let ((maps 0) (wheres 0)
+          (map (symbol-function 'ecc-review-map-lines))
+          (where (symbol-function 'ecc-review--where)))
+      (cl-letf (((symbol-function 'ecc-review-map-lines)
+                 (lambda (&rest arguments) (cl-incf maps) (apply map arguments)))
+                ((symbol-function 'ecc-review--where)
+                 (lambda (&rest arguments)
+                   ;; The comments, not the place being read.
+                   (when (memq (car arguments) ecc-review--notes)
+                     (cl-incf wheres))
+                   (apply where arguments))))
+        ;; The three lines go: each is looked for once, by one map.
+        (ecc-review-test--change-and-refresh
+         directory (concat ecc-review-test--summary "\n    def portion(self):\n        pass\n"))
+        (should (seq-every-p #'ecc-review-note-outdated ecc-review--notes))
+        (should (equal (list maps wheres) '(1 3)))
+        ;; The next reading looks for them again, by one map from the
+        ;; reading they were last on; the place being read comes by
+        ;; another, from the reading before this one.
+        (ecc-review-test--change-and-refresh
+         directory (concat "import math\n\n" ecc-review-test--summary
+                           "\n    def portion(self):\n        pass\n"))
+        (should (equal (list maps wheres) '(3 6)))))))
 
 (ert-deftest ecc-review-test-the-place-is-read-from-its-hunk-alone ()
   "Remembering the place reads the hunk it is in, not the whole diff."
@@ -2008,9 +2156,13 @@ the line between them among the changed ones; `diff.noprefix' and
           (ecc-review--fill buffer session ecc-review-test--diff nil 'second)
           (should-not (buffer-local-value 'ecc-review--notes buffer))
           ;; Nor is anything kept to carry them by.
-          (dolist (variable '(ecc-review--shapes ecc-review--kept ecc-review--held
+          (dolist (variable '(ecc-review--kept ecc-review--held
                               ecc-review--homes ecc-review--nearest ecc-review--object-ids))
-            (should-not (buffer-local-value variable buffer))))
+            (should-not (buffer-local-value variable buffer)))
+          ;; Its reading is of this proposal, and keeps no file of the last.
+          (should (zerop (hash-table-count
+                          (ecc-review--reading-shapes
+                           (buffer-local-value 'ecc-review--reading buffer))))))
       (ecc-review-test--kill-review-buffers))))
 
 ;;;; Reviewing a proposal

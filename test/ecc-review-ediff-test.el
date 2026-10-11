@@ -1358,6 +1358,9 @@ window that has the keyboard."
                       (should (equal (ecc-review-note-hunk-key note)
                                    '("a.txt" . "@@ -7,0 +9,1 @@"))))
                     (should (= (ecc-review-note-line (ecc-review-find-note 1)) 9))
+                    ;; Taken when ediff computed the differences of what
+                    ;; was written: the reading is of what the review shows.
+                    (should (ecc-review--reading-current-p))
                     (should (string-search "▎ #1 Claude: A new line"
                                            (ecc-review-ediff-test--drawn ediff-buffer-B)))
                     ;; And its window is on that line.

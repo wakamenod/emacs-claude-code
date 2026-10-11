@@ -372,7 +372,7 @@ blobs of the review on every reading.")
 (defvar-local ecc-review-ediff--bases nil
   "The blob of the old side of each file of this review, as (PATH . BLOB).
 BLOB is `empty' for a file the old side does not have.  It is what a
-comment is carried by when the old side changed (`ecc-review--carry\=').")
+comment is carried by when the old side changed (`ecc-review--take-reading\=').")
 
 (defun ecc-review-ediff--bases-of (pairs)
   "Return `ecc-review-ediff--bases\=' for PAIRS, of `ecc-review-ediff-pairs\='."
@@ -1611,6 +1611,10 @@ differences are in (`ecc-review-ediff--differences-computed\=')."
     (mapcan #'ecc-review-ediff--unit-lines
             (seq-filter (lambda (unit) (equal (plist-get unit :path) path))
                         (ecc-review-units)))))
+
+(cl-defmethod ecc-review--text (&context (major-mode ediff-mode))
+  "Return the differences ediff computed last, which every reading makes anew."
+  ediff-difference-vector-A)
 
 (cl-defmethod ecc-review--base-of (hunk &context (major-mode ediff-mode))
   "Return the blob of the old side of the file of the difference HUNK."
@@ -2920,6 +2924,10 @@ ediff lays out its windows; quitting puts back what was on the screen."
                (when root
 		 (setq default-directory (file-name-as-directory root)))
                (setq-local ecc-review--fingerprint (ecc-review-ediff--state hash))
+               ;; The first reading: ediff computed the differences before
+               ;; any hook of ours ran, and comments may be handed to the
+               ;; review as soon as it is said to be shown, below.
+               (ecc-review--take-reading)
                ;; ediff computes the differences again by itself -- `##', `#c'
                ;; and `!' of a plain ediff go through `ediff-update-diffs' -- and
                ;; then the hunks and the comments drawn on them are about
@@ -3090,7 +3098,7 @@ whether a difference exists, so it is counted here first."
         ecc-review-ediff--at nil
         ecc-review-ediff--refined nil
         ediff-number-of-differences (length ediff-difference-vector-A))
-  (ecc-review--new-reading)
+  (ecc-review--take-reading)
   (unless ecc-review-ediff--replacing
     (ecc-review--draw-notes)
     ;; How many there are is in the panel.
@@ -3341,6 +3349,9 @@ so are the difference being read and the place of each side."
           ;; still where ediff put them.
           (ecc-review-ediff-select-in-place -1)
           (ecc-review-ediff--unmark-current)
+          ;; Nothing is looked up until ediff has computed the differences
+          ;; of what is written now and the reading is taken.
+          (ecc-review--begin-reading)
           (setq ecc-review-ediff--sections
                 (ecc-review-ediff--write ediff-buffer-A ediff-buffer-B pairs nothing
                                          ecc-review-ediff--cache)
