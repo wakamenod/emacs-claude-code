@@ -101,16 +101,19 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest)
   :bind-keymap ("C-c c" . ecc-global-map)
   :custom
+  ;; auto モードでセッションを始める。ほとんどのリクエストに CLI が自分で答える。
   (ecc-permission-mode "auto")
+  ;; エコーエリアへの表示に加えて、トランスクリプトを光らせる。
   (ecc-notify-level 'pulse)
+  ;; 使用量レポートと /btw の回答をフレームの上に浮かべる (posframe が必要)。
   (ecc-usage-display 'posframe)
   (ecc-btw-display 'posframe)
-  (ecc-prompt-suggestions-enabled t)
-  ;; ediff でレビューしたい場合はコメントを外す (既定は diff-mode バッファ)。
-  ;; (ecc-review-style 'ediff)
-  ;; Emacs の MCP サーバー。xref・imenu・flymake を Claude から参照でき、
-  ;; 作業を worktree のセッションに引き渡すツールも有効になる。
-  (ecc-mcp-enabled t))
+  ;; レビューを 1 つの diff-mode バッファではなく ediff で開く。
+  (ecc-review-style 'ediff)
+  ;; すべてのセッションに Emacs の MCP サーバーを登録する。
+  (ecc-mcp-enabled t)
+  ;; ターンのあとに CLI が次のプロンプトを提案する。
+  (ecc-prompt-suggestions-enabled t))
 ```
 
 その他の設定は[設定リファレンス](https://wakamenod.github.io/emacs-claude-code/ja/reference/configuration/) を参照してください。

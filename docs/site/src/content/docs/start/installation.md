@@ -50,23 +50,50 @@ Then configure it with `use-package` without `:vc`.
 
 ## Initial configuration
 
-`M-x ecc-start` is autoloaded, so ecc works without configuration. Bind the global keymap to a prefix:
+`M-x ecc-start` is autoloaded, so ecc works without configuration. This configuration binds the global keymap to a prefix and changes a few defaults:
 
 ```elisp
 (use-package ecc
   :ensure t
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest)
-  :bind-keymap ("C-c c" . ecc-global-map))
+  :bind-keymap ("C-c c" . ecc-global-map)
+  :custom
+  ;; Start sessions in the CLI's auto mode, which answers most requests itself.
+  (ecc-permission-mode "auto")
+  ;; Flash the transcript as well as writing to the echo area.
+  (ecc-notify-level 'pulse)
+  ;; Float usage reports and /btw answers over the frame (needs posframe).
+  (ecc-usage-display 'posframe)
+  (ecc-btw-display 'posframe)
+  ;; Open a review in ediff instead of one diff-mode buffer.
+  (ecc-review-style 'ediff)
+  ;; Register the Emacs MCP server with every session.
+  (ecc-mcp-enabled t)
+  ;; Have the CLI suggest a next prompt after a turn.
+  (ecc-prompt-suggestions-enabled t))
 ```
 
 `ecc-global-map` answers requests, jumps to waiting sessions and opens the dashboard from any buffer. The site writes its keys with `C-c c`; see [Key bindings](/emacs-claude-code/reference/key-bindings/).
 
-## Enabling the MCP server
+You can leave out any of these settings:
 
-The built-in MCP server, on the loopback interface, lets Claude read `xref` references, `imenu` symbols and diagnostics from Emacs, [work in the review](/emacs-claude-code/features/review-claude/), and [hand work to a session in a worktree](/emacs-claude-code/features/spaces/#handing-work-to-a-session-in-a-worktree). It is off by default, and evaluating Elisp is a separate opt-in:
+- Without `ecc-permission-mode`, a session starts in the CLI's default mode, which asks before Claude edits a file or runs a command. `S-TAB` changes the mode of a running session; see [Permission modes](/emacs-claude-code/features/permissions/#permission-modes).
+- The `posframe` displays need the [posframe](https://github.com/tumashu/posframe) package and a graphical frame. Without them, the buffer opens in a window.
+- The default `ecc-review-style` is `'diff`, one `diff-mode` buffer. `'ediff` shows the two sides of each file; see [Reviewing in ediff](/emacs-claude-code/features/review-ediff/).
+- The next section covers `ecc-mcp-enabled`.
+- The suggested prompt appears in the empty prompt region, and `C-c C-s` takes it; see [Suggestions](/emacs-claude-code/features/prompt/#suggestions).
+
+If you use [corfu](https://github.com/minad/corfu), turn it on in session buffers to complete slash commands and `@` references in its popup:
 
 ```elisp
-(setq ecc-mcp-enabled t)
+(add-hook 'ecc-chat-mode-hook #'corfu-mode)
+```
+
+## Enabling the MCP server
+
+The built-in MCP server, on the loopback interface, lets Claude read `xref` references, `imenu` symbols and diagnostics from Emacs, [work in the review](/emacs-claude-code/features/review-claude/), and [hand work to a session in a worktree](/emacs-claude-code/features/spaces/#handing-work-to-a-session-in-a-worktree). It is off by default, and `(ecc-mcp-enabled t)` in the configuration above turns it on. Evaluating Elisp is a separate opt-in:
+
+```elisp
 ;; Only if you want Claude to be able to evaluate Elisp:
 ;; (setq ecc-mcp-enable-execute-code t)
 ```
