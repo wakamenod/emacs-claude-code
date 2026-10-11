@@ -1732,15 +1732,21 @@ between."
   "Return what identifies HUNK across a redraw: its file and its header."
   (cons (plist-get hunk :path) (plist-get hunk :header)))
 
-(defun ecc-review-hunks ()
-  "Return every hunk of the current buffer as `ecc-review-hunk-at' plists."
+(defun ecc-review-hunks (&optional from path)
+  "Return the hunks of the current buffer as `ecc-review-hunk-at' plists.
+Every one, or those from FROM on; with PATH, the hunks of that file from
+there, up to the first of another."
   (save-excursion
-    (goto-char (point-min))
+    (goto-char (or from (point-min)))
     (let ((hunks nil))
-      (while (re-search-forward ecc-diff-hunk-regexp nil t)
-        (when-let* ((bounds (ecc-review--hunk-bounds)))
-          (push (ecc-review-hunk-at (car bounds) (cdr bounds)) hunks)
-          (goto-char (max (point) (1- (cdr bounds))))))
+      (catch 'done
+        (while (re-search-forward ecc-diff-hunk-regexp nil t)
+          (when-let* ((bounds (ecc-review--hunk-bounds)))
+            (let ((hunk (ecc-review-hunk-at (car bounds) (cdr bounds))))
+              (when (and path (not (equal (plist-get hunk :path) path)))
+                (throw 'done nil))
+              (push hunk hunks))
+            (goto-char (max (point) (1- (cdr bounds)))))))
       (nreverse hunks))))
 
 ;;;; Lines
@@ -2069,25 +2075,16 @@ above it said."
 
 (cl-defgeneric ecc-review--file-lines (hunk)
   "Return the lines of the file HUNK is in, as `ecc-review-lines' has them.
-Only the hunks of that file are read."
+Only the hunks of that file are read: back to its first, and then on
+with `ecc-review-hunks'."
   (let ((path (plist-get hunk :path))
-        (hunks nil))
+        (first (plist-get hunk :position)))
     (save-excursion
-      (goto-char (plist-get hunk :position))
-      (let ((first (point)))
-        (while (and (re-search-backward ecc-diff-hunk-regexp nil t)
-                    (equal (ecc-review--hunk-path (point)) path))
-          (setq first (point)))
-        (goto-char first))
-      (catch 'done
-        (while (re-search-forward ecc-diff-hunk-regexp nil t)
-          (when-let* ((bounds (ecc-review--hunk-bounds)))
-            (let ((next (ecc-review-hunk-at (car bounds) (cdr bounds))))
-              (unless (equal (plist-get next :path) path)
-                (throw 'done nil))
-              (push next hunks)
-              (goto-char (max (point) (1- (cdr bounds)))))))))
-    (mapcan #'ecc-review--hunk-lines (nreverse hunks))))
+      (goto-char first)
+      (while (and (re-search-backward ecc-diff-hunk-regexp nil t)
+                  (equal (ecc-review--hunk-path (point)) path))
+        (setq first (point))))
+    (mapcan #'ecc-review--hunk-lines (ecc-review-hunks first path))))
 
 (defun ecc-review--shape-of (lines)
   "Return the shape of LINES, the lines of one file, nil for none."
