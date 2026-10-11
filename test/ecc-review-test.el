@@ -1107,20 +1107,20 @@ Everything in the second hunk is two lines further down.")
            (added (ecc-review-add-note 'user "a" (nth 7 lines)))
            (hunk (ecc-review-add-note 'user "c" (nth 5 lines))))
       ;; 1. Nothing moved: the same line, the same hunk.
-      (should (= (plist-get (ecc-review--locate-note added lines) :position)
+      (should (= (plist-get (ecc-review--locate-note added) :position)
                  (plist-get (nth 7 lines) :position)))
-      (should (= (plist-get (ecc-review--locate-note hunk lines) :position)
+      (should (= (plist-get (ecc-review--locate-note hunk) :position)
                  (plist-get (nth 5 lines) :position)))
       ;; 2. Read again with two lines put in above: where they went.
       (ecc-review-test--fill session ecc-review-test--shifted-diff)
       (let ((lines (ecc-review--lines)))
-        (should (equal (plist-get (ecc-review--locate-note added lines) :line) 13))
-        (should (equal (plist-get (plist-get (ecc-review--locate-note hunk lines) :hunk)
+        (should (equal (plist-get (ecc-review--locate-note added) :line) 13))
+        (should (equal (plist-get (plist-get (ecc-review--locate-note hunk) :hunk)
                                   :header)
                        "@@ -10,2 +12,3 @@"))
         ;; 3. A line of that number saying something else is not it.
         (setf (ecc-review-note-line-text added) "one")
-        (should-not (ecc-review--locate-note added lines))))))
+        (should-not (ecc-review--locate-note added))))))
 
 (ert-deftest ecc-review-test-a-hunk-that-grows-keeps-its-comment ()
   "A comment on a hunk stays on the hunk still over its lines.

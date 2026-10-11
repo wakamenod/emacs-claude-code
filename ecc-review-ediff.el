@@ -1609,9 +1609,17 @@ differences are in (`ecc-review-ediff--differences-computed\=')."
   "Return the lines of the difference UNIT of this ediff review."
   (ecc-review-ediff--unit-lines unit))
 
-(cl-defmethod ecc-review--file-lines (hunk &context (major-mode ediff-mode))
-  "Return the lines of the differences of the file of HUNK in this ediff review."
-  (ecc-review--path-lines (plist-get hunk :path)))
+(cl-defmethod ecc-review--units-by-path (&context (major-mode ediff-mode))
+  "Return a hash of each file of this ediff review to its differences, in order."
+  (let ((table (make-hash-table :test #'equal)))
+    (dolist (unit (ecc-review-units))
+      (push unit (gethash (plist-get unit :path) table)))
+    (maphash (lambda (key units) (puthash key (nreverse units) table)) table)
+    table))
+
+(cl-defmethod ecc-review--unit-at (item &context (major-mode ediff-mode))
+  "Return ITEM, a difference of this ediff review already."
+  item)
 
 (cl-defmethod ecc-review--text (&context (major-mode ediff-mode))
   "Return the differences ediff computed last, which every reading makes anew."
@@ -1827,7 +1835,7 @@ the other.  An outdated comment is shown under the separator of its
 file."
   (let* ((line (if (ecc-review-note-p place)
                    (and (not (ecc-review-note-outdated place))
-                        (ecc-review--locate-note place (ecc-review-lines)))
+                        (ecc-review--locate-note place))
                  place))
          (hunk (and line (plist-get line :hunk))))
     (if (null hunk)
@@ -2017,7 +2025,7 @@ went."
                (text (string-trim text))
                (target (and id (ecc-review-find-note id)))
                (lines (ecc-review-lines))
-               (line (ecc-review--locate-note anchor lines)))
+               (line (ecc-review--locate-note anchor)))
     (when (string-empty-p text)
       (user-error "Empty comment"))
     (let ((note (if (and (eq kind 'edit) target)
@@ -3375,7 +3383,7 @@ so are the difference being read and the place of each side."
             (ecc-review-ediff--quietly
               (ecc-review-ediff--compute-differences)))
           (let* ((lines (ecc-review-lines))
-                 (found (and current (ecc-review--locate-note current lines)))
+                 (found (and current (ecc-review--locate-note current)))
                  (n (and found (plist-get (plist-get found :hunk) :number))))
             (let ((ecc-review--refilling t))
               (ecc-review--draw-notes lines))
