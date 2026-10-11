@@ -70,12 +70,11 @@
   "When the old side moved, its lines are carried through the hunks between the two."
   (should (equal (ecc-review-map-base-hunks "@@ -0,0 +1,2 @@\n+a\n+b\n@@ -5 +7 @@\n-x\n+y\n")
                  '((0 0 1 2) (5 1 7 1))))
-  (let ((hunks '((0 0 1 2) (5 1 7 1))))
-    (should (= (ecc-review-map--carry-base 1 hunks t) 3))
-    (should-not (ecc-review-map--carry-base 5 hunks t))
-    (should (= (ecc-review-map--carry-base 6 hunks t) 8))
-    (should (= (ecc-review-map--carry-base 3 hunks nil) 1))
-    (should-not (ecc-review-map--carry-base 2 hunks nil)))
+  (let* ((hunks '((0 0 1 2) (5 1 7 1) (9 0 12 3)))
+         (forward (ecc-review-map--carrier hunks t))
+         (backward (ecc-review-map--carrier hunks nil)))
+    (should (equal (mapcar forward '(1 4 5 6 9 10 12)) '(3 6 nil 8 11 15 17)))
+    (should (equal (mapcar backward '(1 2 3 7 11 12 14 15)) '(nil nil 1 nil 9 nil nil 10))))
   (let* ((from (ecc-review-map-test--shape
                 (ecc-review-map-test--diff "@@ -0,0 +1,2 @@\n+import\n+\n"
                                            "@@ -6,0 +9,1 @@\n+share\n")

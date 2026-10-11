@@ -100,23 +100,42 @@ Each is (OLD-START OLD-COUNT NEW-START NEW-COUNT)."
       (setq start (match-end 0)))
     (nreverse hunks)))
 
-(defun ecc-review-map--carry-base (number hunks forward)
-  "Return where line NUMBER of one old side is in the other, or nil.
+(defun ecc-review-map--carrier (hunks forward)
+  "Return a function carrying a line number of one old side to the other.
 HUNKS are those of `ecc-review-map-base-hunks'; FORWARD carries a line
-of their old side to their new, and otherwise the other way.  A line
-inside a hunk changed and is nowhere.  git numbers a hunk that takes
-nothing out by the line before it, which a line after it is behind."
-  (let ((shift 0))
-    (catch 'done
-      (dolist (hunk hunks)
-        (let* ((start (if forward (nth 0 hunk) (nth 2 hunk)))
-               (count (if forward (nth 1 hunk) (nth 3 hunk)))
-               (other (if forward (nth 3 hunk) (nth 1 hunk)))
-               (end (if (zerop count) start (+ start count -1))))
-          (cond ((and (> count 0) (<= start number end)) (throw 'done nil))
-                ((< end number) (setq shift (+ shift (- other count))))
-                (t (throw 'done (+ number shift))))))
-      (+ number shift))))
+of their old side to their new, and otherwise the other way.  The
+function returns nil for a line inside a hunk, which changed and is
+nowhere.  git numbers a hunk that takes nothing out by the line before
+it, which a line after it is behind.  The hunks are in order, so a line
+is found among them by halving, with the shift of all those before it
+summed once here."
+  (let* ((n (length hunks))
+         (starts (make-vector n 0))
+         (counts (make-vector n 0))
+         (ends (make-vector n 0))
+         (shifts (make-vector (1+ n) 0))
+         (k 0))
+    (dolist (hunk hunks)
+      (let ((start (if forward (nth 0 hunk) (nth 2 hunk)))
+            (count (if forward (nth 1 hunk) (nth 3 hunk)))
+            (other (if forward (nth 3 hunk) (nth 1 hunk))))
+        (aset starts k start)
+        (aset counts k count)
+        (aset ends k (if (zerop count) start (+ start count -1)))
+        (aset shifts (1+ k) (+ (aref shifts k) (- other count)))
+        (setq k (1+ k))))
+    (lambda (number)
+      ;; The first hunk that ends at NUMBER or after.
+      (let ((low 0) (high n))
+        (while (< low high)
+          (let ((mid (/ (+ low high) 2)))
+            (if (< (aref ends mid) number)
+                (setq low (1+ mid))
+              (setq high mid))))
+        (unless (and (< low n)
+                     (> (aref counts low) 0)
+                     (<= (aref starts low) number))
+          (+ number (aref shifts low)))))))
 
 ;;;; The new side as a sequence
 
@@ -286,11 +305,11 @@ be said, which matches nothing."
       (let* ((forward (pcase carry
                         ('same #'identity)
                         ('none #'ignore)
-                        (_ (lambda (number) (ecc-review-map--carry-base number carry t)))))
+                        (_ (ecc-review-map--carrier carry t))))
              (backward (pcase carry
                          ('same #'identity)
                          ('none #'ignore)
-                         (_ (lambda (number) (ecc-review-map--carry-base number carry nil)))))
+                         (_ (ecc-review-map--carrier carry nil))))
              (a (ecc-review-map--side from))
              (b (ecc-review-map--side to))
              (map (ecc-review-map--matches a b forward backward)))
