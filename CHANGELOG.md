@@ -700,6 +700,21 @@ Verified against **Claude Code CLI 2.1.281**.
   Written against Claude Code CLI 2.1.290 and tested in batch; not yet run
   in a live session.
 
+- `TAB` after `@` in the prompt completes files outside the project. When
+  what follows `@` starts with `/`, `~/`, `./` or `../`, it is completed as
+  a file name, one directory at a time as `find-file` does: only the
+  directory being typed is read, a directory candidate ends in `/`, and the
+  path stays as written (`~/` stays `~/`, a relative path stays relative).
+  A relative path is completed from the session's project root, the
+  directory the CLI runs in and reads it against. A remote path such as
+  `/ssh:host:` is not completed, and the completion runs with the file name
+  handlers off, so TRAMP is neither loaded nor connected. Anything else
+  after `@` is completed as before, from `@region`, `@cursor`,
+  `@diagnostics` and the project's files. One completion in a directory of
+  5000 entries takes about 2 ms. The CLI reads `@~/file`, an absolute path
+  and a `../` path itself, with the Read tool disallowed too, and the
+  stream says nothing of it (CLI 2.1.290, 2026-10-11).
+
 ### Changed
 
 - `C-c C-c` in a review of files, diff or ediff, sends the comments and keeps
