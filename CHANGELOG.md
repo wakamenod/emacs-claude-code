@@ -17,6 +17,18 @@ Verified against **Claude Code CLI 2.1.290**.
 
 ### Added
 
+- `ecc-restart` stops the CLI of an idle session and starts it again on the
+  same conversation, in the same buffer: the transcript, the draft in the
+  prompt, the review baseline and the permission mode stay. It is for a CLI
+  that has stopped answering, or one that should read changed Claude Code
+  settings, MCP servers or plugins. It asks first. A session with a turn
+  running, a request waiting or prompts queued is refused with a word to
+  interrupt it first, and an inline session is refused outright. A
+  conversation with a recording is resumed with `--resume`; one that was never
+  sent a prompt has none, and starts again under its own id with
+  `--session-id`. `R` in a session buffer now restarts an idle running session
+  and resumes a stopped one, and `ecc-menu` has it under `S`. `C-c c r`
+  (`ecc-resume`) still only goes to a running session.
 - The prompts waiting for the running turn to end are drawn at the end of the
   transcript, just above the separator: a `⏸ Queued (N)` line and one dim line
   per prompt, cut to the window. Nothing is drawn while the queue is empty, and
