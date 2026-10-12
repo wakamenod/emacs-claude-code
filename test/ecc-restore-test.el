@@ -103,6 +103,18 @@ interactive Emacs, and starting a CLI fails the test."
 
 ;;;; Saving
 
+(ert-deftest ecc-restore-test-a-rename-is-saved ()
+  "Renaming a session saves, so a crash after it does not undo the name."
+  (ecc-restore-test--with-world
+    (let ((a (ecc-restore-test--open "id-a" "a" ecc-restore-test--one)))
+      (ecc-restore-test--flush)
+      (should-not ecc-restore--timer)
+      (ecc-session-set-name a "renamed")
+      (ecc-restore-test--flush)
+      (should (equal (plist-get (car (plist-get (ecc-restore--read) :sessions))
+                                :name)
+                     "renamed")))))
+
 (ert-deftest ecc-restore-test-saves-when-a-session-starts-and-goes ()
   "A session starting and a session killed are both written down."
   (ecc-restore-test--with-world
