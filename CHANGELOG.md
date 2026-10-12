@@ -21,9 +21,13 @@ Verified against **Claude Code CLI 2.1.290**.
   same conversation, in the same buffer: the transcript, the draft in the
   prompt, the review baseline and the permission mode stay. It is for a CLI
   that has stopped answering, or one that should read changed Claude Code
-  settings, MCP servers or plugins. It asks first. A session with a turn
-  running, a request waiting or prompts queued is refused with a word to
-  interrupt it first, and an inline session is refused outright. A
+  settings, MCP servers or plugins. It asks first, and looks again once the
+  answer is in. A session with a turn running, a request waiting or prompts
+  queued is refused with a word to interrupt it first; one with a subagent or
+  a backgrounded shell command still running is refused until it is done; and
+  an inline session is refused outright. A fork that has not been given its
+  own id yet is forked again rather than resumed onto the conversation it
+  came from. A
   conversation with a recording is resumed with `--resume`; one that was never
   sent a prompt has none, and starts again under its own id with
   `--session-id`. `R` in a session buffer now restarts an idle running session

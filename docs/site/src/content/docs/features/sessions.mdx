@@ -49,7 +49,7 @@ Recordings live under `~/.claude/projects`, so conversations from the terminal c
 
 ## Restarting the CLI
 
-`R` in a session buffer, or `S` in the menu, stops the session's CLI and starts it again on the same conversation, in the same buffer. Use it when the CLI stops answering, or to pick up changed Claude Code settings, MCP servers or plugins. ecc asks first and keeps the permission mode. The session has to be idle: with a turn running, a request waiting or prompts queued, interrupt it first with `C-c C-z`. On a stopped session, `R` resumes it.
+`R` in a session buffer, or `S` in the menu, stops the session's CLI and starts it again on the same conversation, in the same buffer. Use it when the CLI stops answering, or to pick up changed Claude Code settings, MCP servers or plugins. ecc asks first and keeps the permission mode. The session has to be idle: with a turn running, a request waiting or prompts queued, interrupt it first with `C-c C-z`. With a background task still running, wait for it to finish. On a stopped session, `R` resumes it.
 
 ## Handing over to the terminal
 
