@@ -1108,7 +1108,7 @@ all the pictures off."
   (should (eq (lookup-key ecc-chat-transcript-map (kbd "v")) #'ecc-chat-goto-prompt))
   (should (eq (lookup-key ecc-chat-transcript-map (kbd "i")) #'ecc-chat-goto-prompt))
   (should (eq (lookup-key ecc-chat-transcript-map (kbd "F")) #'ecc-chat-goto-files))
-  (should (eq (lookup-key ecc-chat-transcript-map (kbd "I")) #'ecc-image-toggle-animation))
+  (should (eq (lookup-key ecc-chat-transcript-map (kbd "I")) #'ecc-chat-toggle-picture))
   (should-not (lookup-key ecc-chat-transcript-map (kbd "f"))))
 
 (provide 'ecc-chat-test)

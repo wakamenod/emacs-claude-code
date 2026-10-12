@@ -80,6 +80,35 @@ Verified against **Claude Code CLI 2.1.290**.
   at `/` or `~` is still only taken as written, and the paths of tool calls,
   the Files section and diffs, which are absolute already, open as before.
 
+- A fenced code block whose language is `mermaid` in a reply is shown as the
+  diagram it describes, drawn by mermaid-cli (`mmdc`, verified with 12.0.0).
+  Nothing waits for it: the block is drawn as code, the diagram is made in the
+  background once the closing fence has arrived, and it is put over the block's
+  text when it is ready -- a `display` property, so no text is inserted and the
+  transcript is not redrawn. The source stays in the buffer under the picture,
+  so search and copy find it, and `I` on a diagram shows the source in its
+  place and back (on anything else `I` still stops or starts a GIF). The
+  diagrams are PNG drawn at twice the size and shown at half, `-t dark` in a
+  dark frame, with a transparent background, fitted to the window like any
+  inline image. They are made one at a time, each killed after
+  `ecc-mermaid-timeout` (20 seconds), and kept under `ecc-mermaid-directory`
+  (`ecc-mermaid` in `temporary-file-directory`), keyed by a hash of the source
+  and the arguments, so a diagram is made once and a restored session shows it
+  at once. A source mmdc cannot draw is logged with mmdc's error, keeps its
+  block as code with the error as its `help-echo` and its first line in
+  `ecc-mermaid-error-face`, and is not tried again on its own: `I` on it
+  forgets the failure, takes the error off the block and draws it again, for
+  a cause put right since (a browser mmdc had not downloaded yet, a cold start
+  past the timeout, a full disk). A failure before mmdc starts -- the directory
+  or the source file cannot be written -- is a failure of that diagram like any
+  other, and the queue goes on. There is no `defcustom`:
+  diagrams are drawn where `mmdc` is on `exec-path`, `ecc-image-inline` is on
+  and the frame draws images; `(setq ecc-mermaid-command nil)` turns them off.
+
+  Underneath, `ecc-markdown-code-block-functions` is called on each closed
+  fenced block as it is fontified, and `ecc-image-width` is what
+  `ecc-render--image-width` was.
+
 ### Changed
 
 - The Space picker of `C-c c j` (`ecc-space-goto`) groups the Spaces under
@@ -104,6 +133,9 @@ Verified against **Claude Code CLI 2.1.290**.
   does, and the default `*Completions*` with `completions-group` on; the
   mark, the number, the tree line and the directory show in both, with
   `completions-group` on or off.
+
+- `ecc-perm-ensure-waiting` is now `ecc-perm--ensure-waiting`, the internal
+  function it always was; the old name is an obsolete alias.
 
 - **Breaking.** `C-c c V` (`V` in the menu) is `ecc-space-cycle-layout`, and
   cycles the layouts of a Space. Pressed right after itself it goes on to the
@@ -272,6 +304,25 @@ Verified against **Claude Code CLI 2.1.290**.
   rename now runs the new `ecc-session-renamed-hook`, on which the tab lines are
   drawn again and the open sessions are saved. Introduced in 0.1.0; the missing
   save in 0.4.0, with `ecc-restore`.
+
+- A session renamed with `C-c c R` (or `R` in the dashboard) keeps its name
+  when it is closed and opened again from the history, the dashboard or the
+  search. Two things lost it. The rename never reached the CLI, so the
+  recording had no name of the user's, only the title the CLI made up; and
+  the history read the title from `ai-title` lines alone, so even a name given
+  with `/rename` lost to the AI title, which the CLI goes on writing after the
+  `custom-title` line every turn (confirmed against CLI 2.1.290, 2026-10-12).
+  The history now takes a `custom-title` over any `ai-title`, whatever their
+  order. And a rename now sends `/rename NAME` to the CLI of the session, with
+  the name the session ended up with (`NAME<2>` included), without drawing
+  it: the CLI's answer opens no turn, adds no command node and nothing to the
+  cost, and never enters the queue. While a turn runs the rename waits for it
+  to end and goes ahead of the next queued prompt; a session with no CLI
+  running -- stopped, exited, handed to the terminal, or a recording being
+  read -- is told when it runs again, and `ecc-restore` keeps a rename still
+  to be sent across an Emacs restart. Until the CLI has answered, a title it
+  sends that is not the new name is not applied. A `/rename` typed in the
+  prompt region is drawn as before.
 
 ### Removed
 

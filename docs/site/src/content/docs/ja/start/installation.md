@@ -18,6 +18,7 @@ sidebar:
 | [posframe](https://github.com/tumashu/posframe) | `/btw` の回答や使用量レポートのフローティングポップアップ |
 | [nerd-icons](https://github.com/rainstormstudio/nerd-icons.el) | トランスクリプト内のツール呼び出しアイコン |
 | [markdown-mode](https://github.com/jrblevin/markdown-mode) | プランバッファおよびレビューバッファのメジャーモード |
+| [mermaid-cli](https://github.com/mermaid-js/mermaid-cli) | 返答中の ```` ```mermaid ```` ブロックを[図](/emacs-claude-code/ja/features/prompt/#図)として表示 |
 
 ## インストール手順
 

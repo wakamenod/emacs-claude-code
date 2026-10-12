@@ -247,6 +247,13 @@ A prompt was queued, sent, taken back, dropped or moved.")
                         ; turn runs, oldest first
   sent-echoes           ; contents sent from here whose --replay echo
                         ; has not come back yet, newest first
+  rename-pending        ; non-nil while the CLI has not been told the
+                        ; name the session was given here; it is told
+                        ; once it runs with no turn open
+                        ; (`ecc-proc-send-rename')
+  rename-sent           ; the name the `/rename' sent for it carried,
+                        ; until the CLI answers it.  Its answer is not
+                        ; drawn (`ecc-dispatch--hidden-rename-p')
   history-offset
   hint-state            ; alist of what the CLI told the session about
                         ; itself: the `suggestion' it last offered

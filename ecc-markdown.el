@@ -170,6 +170,17 @@ Nil leaves every block in `ecc-markdown-code-face'.")
 A long block in a heavy mode costs more than the colour is worth, and
 the transcript is redrawn often.  Nil colours every block.")
 
+(defvar ecc-markdown-code-block-functions nil
+  "Functions called on each fenced code block that has been closed.
+Each is called with the LANGUAGE the fence names, and START and END,
+the bounds of the body in the current buffer, which holds the text
+being fontified.  It may put text properties on the body and must not
+change its text.  A block the model has not closed yet is not passed:
+its body is not the whole of it.
+
+This is how a module above this one has a say in a block without this
+one knowing of it: `ecc-mermaid\=' marks a diagram here.")
+
 (defvar ecc-markdown-language-modes
   '(("elisp" . emacs-lisp-mode)
     ("emacs-lisp" . emacs-lisp-mode)
@@ -492,6 +503,8 @@ drawn with."
               (if body-start
                   (progn
                     (ecc-markdown--fontify-code body-start start language)
+                    (run-hook-with-args 'ecc-markdown-code-block-functions
+                                        language body-start start)
                     (setq body-start nil language nil))
                 (setq language (match-string 2)
                       body-start (min (point-max) (1+ end)))))

@@ -18,6 +18,7 @@ These packages are optional:
 | [posframe](https://github.com/tumashu/posframe) | Floating popups for `/btw` side-queries and usage reports |
 | [nerd-icons](https://github.com/rainstormstudio/nerd-icons.el) | Icons for tool calls in the transcript |
 | [markdown-mode](https://github.com/jrblevin/markdown-mode) | Major mode for plan and review buffers |
+| [mermaid-cli](https://github.com/mermaid-js/mermaid-cli) | ```` ```mermaid ```` blocks in replies drawn as [diagrams](/emacs-claude-code/features/prompt/#diagrams) |
 
 ## Installation
 

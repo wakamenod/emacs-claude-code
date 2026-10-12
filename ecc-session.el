@@ -130,6 +130,21 @@ the one the user asks for, and the one `/rename\=' does in the CLI."
     (run-hook-with-args 'ecc-session-renamed-hook session)
     name))
 
+(defun ecc-session-rename (session name)
+  "Rename SESSION to NAME here and in the CLI, and return the name used.
+The rename here is made at once (`ecc-session-set-name\=').  The CLI is
+told with a `/rename\=' that is not drawn (`ecc-proc-rename\='): at once
+when it runs with no turn open, otherwise once it does.  The name it is
+told is the one the session ended up with, NAME<2> included, so that
+the history and a later resume call the session what it is called here.
+
+A session read back from a recording is told when it is resumed, and
+not otherwise: nothing runs it in the meantime, and the recording is
+the CLI\='s to write."
+  (let ((name (ecc-session-set-name session name)))
+    (ecc-proc-rename session)
+    name))
+
 (defun ecc-session-ensure-buffer (session)
   "Return the buffer of SESSION, creating and drawing it if needed."
   (let ((buffer (ecc-session-buffer session)))

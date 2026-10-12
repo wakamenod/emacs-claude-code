@@ -69,6 +69,12 @@ Emacs handles these itself, and they never reach the model: `/btw`, `/hooks`, `/
 
 The transcript shows images under the prompt or the call they came with. `I` stops or starts a GIF, a video shows its first frame when `ffmpeg` is on `PATH`, and `RET` opens the file. `ecc-image-inline` (`I` in the menu) shows only the line naming each file.
 
+### Diagrams
+
+A ```` ```mermaid ```` block in a reply is shown as its diagram when [mermaid-cli](https://github.com/mermaid-js/mermaid-cli) (`mmdc`) is on `PATH`. The block appears as code first, and the diagram replaces it a moment later. `I` on a diagram shows its source, and `I` again shows the diagram. Search and copy work on the source either way. A block mmdc cannot draw stays code, and hovering over it shows the error. `I` on it tries again, after you have fixed the cause.
+
+Install mermaid-cli with `npm install -g --allow-scripts=puppeteer @mermaid-js/mermaid-cli`. Without `--allow-scripts`, npm may skip downloading the browser `mmdc` draws with. `(setq ecc-mermaid-command nil)` turns the diagrams off, and so does turning off `ecc-image-inline`.
+
 ## The transcript
 
 <Video name="fold" label="The transcript folding: everything collapsed, then opened a level at a time, then one node folded and unfolded with TAB" />
@@ -91,7 +97,7 @@ The transcript is ordinary read-only text, so `isearch`, `occur`, narrowing and 
 | `RET` | Open what is at point: a link, a [source line](#opening-the-source), a subagent's transcript, or the full tool result. A click opens a link, a path in Claude's reply or a picture |
 | `o` | Show the whole node: input, diff and result |
 | `w` | Copy the code block at point, or the whole response |
-| `I` | Stop or start the GIF at point |
+| `I` | Show the diagram at point as its source and back, or stop or start the GIF at point |
 | `a` / `d` | Allow / deny the request (`d` elsewhere shows the diff) |
 | `g` | Redraw the transcript |
 | `L` | Show the protocol log |

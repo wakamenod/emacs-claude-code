@@ -29,8 +29,11 @@
 ;; package inside their own Emacs -- its heap, its mode line, its theme
 ;; -- so the same run can be made there: `M-x load-file' this script in
 ;; a running Emacs that has ecc loaded, then `M-x bench-stream-run'.  It
-;; borrows the frame for the scenarios, puts the windows back, and
-;; writes the report to the same file instead of leaving.
+;; borrows the frame for the scenarios, writes the report to the same
+;; file instead of leaving, and leaves that Emacs as it found it: the
+;; windows go back, the bench sessions are removed, and the timing advice
+;; comes off (`bench-stream--uninstrument', which a run that was
+;; interrupted can be given by hand).
 
 ;;; Code:
 
@@ -239,16 +242,24 @@ where the garbage that a collection later stops for comes from."
     (redisplay)
     (bench-stream--add 'redisplay (* 1000 (- (float-time) t0)) before)))
 
-(defvar bench-stream--instrumented nil)
+(defvar bench-stream--instrumented nil "The advice that is on, as (FN . ADVICE).")
 
 (defun bench-stream--instrument ()
   "Put the timing advice on, once."
   (unless bench-stream--instrumented
-    (setq bench-stream--instrumented t)
     (pcase-dolist (`(,fn . ,name) bench-stream--timers)
-      (advice-add fn :around (bench-stream--timed name) `((name . ,name))))
-    (advice-add 'ecc-render--delta-timer-fired :after #'bench-stream--redisplay-after)
-    (advice-add 'ecc-render--timer-fired :after #'bench-stream--redisplay-after)))
+      (let ((advice (bench-stream--timed name)))
+        (advice-add fn :around advice)
+        (push (cons fn advice) bench-stream--instrumented)))
+    (dolist (fn '(ecc-render--delta-timer-fired ecc-render--timer-fired))
+      (advice-add fn :after #'bench-stream--redisplay-after)
+      (push (cons fn #'bench-stream--redisplay-after) bench-stream--instrumented))))
+
+(defun bench-stream--uninstrument ()
+  "Take the timing advice off again: a running Emacs is left as found."
+  (pcase-dolist (`(,fn . ,advice) bench-stream--instrumented)
+    (advice-remove fn advice))
+  (setq bench-stream--instrumented nil))
 
 ;;;; The heartbeat
 
@@ -341,6 +352,7 @@ where the garbage that a collection later stops for comes from."
       (append-to-file (point-min) (point-max) bench-stream-output))
     (message "%s" report))
   (ecc-test-cleanup-session bench-stream--session)
+  (ecc-model-remove-session bench-stream--session)
   (pop bench-stream--queue)
   (bench-stream--next))
 
@@ -368,14 +380,24 @@ where the garbage that a collection later stops for comes from."
 
 (defun bench-stream--start (scenario)
   "Start SCENARIO: a fresh session, shown or hidden, fed on a timer."
-  (setq ecc--sessions (make-hash-table :test #'equal)
-        ecc--session-order nil)
+  ;; A running Emacs keeps its sessions; the bench one is registered
+  ;; beside them and removed after.
+  (when bench-stream-exit
+    (setq ecc--sessions (make-hash-table :test #'equal)
+          ecc--session-order nil))
   (setq bench-stream--session
         (ecc-model-create-session :name (format "bench-%s" scenario)
                                   :project-root temporary-file-directory))
   (ecc-session-ensure-buffer bench-stream--session)
   (when (> bench-stream-history 0)
     (bench-stream--history bench-stream--session bench-stream-history))
+  ;; A session window of a running Emacs is a side window, which cannot
+  ;; be made the only one; the run is laid out from a main window, and
+  ;; the side windows stay where they are.
+  (select-window (or (seq-find (lambda (window)
+                                 (not (window-parameter window 'window-side)))
+                               (window-list nil 'no-minibuffer))
+                     (selected-window)))
   (delete-other-windows)
   (switch-to-buffer "*scratch*")
   (pcase scenario
@@ -405,7 +427,8 @@ where the garbage that a collection later stops for comes from."
   (cond (bench-stream--queue
          (bench-stream--start (car bench-stream--queue)))
         (bench-stream-exit (kill-emacs 0))
-        (t (set-window-configuration bench-stream--windows)
+        (t (bench-stream--uninstrument)
+           (set-window-configuration bench-stream--windows)
            (message "bench-stream: done; the report is in %s" bench-stream-output))))
 
 (defun bench-stream-run ()
@@ -413,8 +436,11 @@ where the garbage that a collection later stops for comes from."
   (interactive)
   (condition-case err
       (progn
-        (advice-add 'ecc-proc-send-json :override (lambda (&rest _) nil))
-        (advice-add 'ecc-diff-file-content :override (lambda (&rest _) nil))
+        ;; The bench session has no process, and its Write names a
+        ;; file that does not exist, so nothing is sent and no diff is
+        ;; read; the live sessions of a running Emacs are not touched.
+        (when bench-stream-exit
+          (advice-add 'ecc-proc-send-json :override (lambda (&rest _) nil)))
         (bench-stream--instrument)
         (with-temp-buffer
           (insert (format "%s\n%s\ngc-cons-threshold %d, %s\n\n"
@@ -434,7 +460,9 @@ where the garbage that a collection later stops for comes from."
      (with-temp-buffer
        (insert (format "error: %S\n" err))
        (append-to-file (point-min) (point-max) bench-stream-output))
-     (when bench-stream-exit (kill-emacs 1)))))
+     (if bench-stream-exit
+         (kill-emacs 1)
+       (bench-stream--uninstrument)))))
 
 (defun bench-stream-boot ()
   "Run the scenarios once this Emacs is up, and leave when they are done.

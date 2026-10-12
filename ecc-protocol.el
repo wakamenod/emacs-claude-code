@@ -552,8 +552,15 @@ list, the dashboard, the paging index or the search."
 Only the keys a line actually carries are set, so that INFO can be
 built from the first lines of a file and then from the last ones, the
 later value winning -- except `cwd', where the first value stays.  The
-keys are `session-id', `cwd', `title', `prompt', `cost', `model' and
-`time'.
+keys are `session-id', `cwd', `title', `custom-title', `prompt',
+`cost', `model' and `time'.
+
+`title' is the name the session goes by.  A name given with `/rename'
+is written as a `custom-title' line and wins over the `ai-title' the
+CLI makes up, whatever their order: the CLI goes on writing both after
+every turn, the AI one after the custom one (CLI 2.1.290, confirmed
+2026-10-12), so reading the last line of either kind put the made-up
+title back on a session the user had named.
 
 The `cwd' a recording belongs to is the one its session started in: the
 CLI files the recording under that directory, and `--resume' has to run
@@ -570,7 +577,14 @@ tool was left in instead (CLI 2.1.272, confirmed 2026-09-16), so a later
             (funcall set 'cwd (alist-get 'cwd object)))
           (funcall set 'time (ecc-protocol-history-timestamp object))
           (pcase type
-            ("ai-title" (funcall set 'title (alist-get 'aiTitle object)))
+            ("ai-title" (unless (alist-get 'custom-title info)
+                          (funcall set 'title (alist-get 'aiTitle object))))
+            ("custom-title"
+             (when-let* ((title (alist-get 'customTitle object))
+                         ((stringp title))
+                         ((not (string-blank-p title))))
+               (funcall set 'custom-title title)
+               (funcall set 'title title)))
             ("cost-state" (funcall set 'cost (alist-get 'totalCostUSD object)))
             ("user" (funcall set 'prompt (ecc-protocol-history-prompt object)))
             ;; The model of the last real answer is the one a resume

@@ -454,6 +454,53 @@ PR #94).  A session that is really open is skipped and counted."
       (ecc-restore-save)
       (should (member ecc-restore-test--a (ecc-restore-test--saved-ids))))))
 
+(ert-deftest ecc-restore-test-a-rename-the-cli-was-not-told-is-saved ()
+  "A name the CLI has not been told is saved as such, and one it has is not."
+  (ecc-restore-test--with-world
+    (let ((a (ecc-restore-test--open "id-a" "a" ecc-restore-test--one))
+          (entry (lambda () (car (plist-get (ecc-restore--read) :sessions)))))
+      (ecc-restore-test--flush)
+      (should-not (plist-member (funcall entry) :rename-pending))
+      ;; No CLI runs it, so the rename waits.
+      (ecc-session-rename a "renamed")
+      (ecc-restore-test--flush)
+      (should (equal (plist-get (funcall entry) :name) "renamed"))
+      (should (plist-get (funcall entry) :rename-pending))
+      ;; Sent and not answered yet is still not told.
+      (setf (ecc-session-rename-pending a) nil
+            (ecc-session-rename-sent a) "renamed")
+      (ecc-restore-save)
+      (should (plist-get (funcall entry) :rename-pending))
+      (setf (ecc-session-rename-sent a) nil)
+      (ecc-restore-save)
+      (should-not (plist-member (funcall entry) :rename-pending)))))
+
+(ert-deftest ecc-restore-test-a-pending-rename-comes-back ()
+  "A session saved with a rename still to send comes back with it waiting.
+The others come back with nothing to send."
+  (ecc-restore-test--with-world
+    (ecc-restore-test--write-state
+     nil
+     (list (list :id ecc-restore-test--b :name "bee" :root ecc-restore-test--two
+                 :cwd ecc-restore-test--two :rename-pending t)
+           (list :id ecc-restore-test--a :name "ay" :root ecc-restore-test--one
+                 :cwd ecc-restore-test--one)))
+    (ecc-restore)
+    (should (ecc-session-rename-pending (ecc-model-session ecc-restore-test--b)))
+    (should-not (ecc-session-rename-pending (ecc-model-session ecc-restore-test--a)))))
+
+(ert-deftest ecc-restore-test-adopting-a-recording-tells-the-cli-nothing ()
+  "A recording being read takes the saved name in Emacs alone.
+The saved name may be one the CLI never had, a directory's say, and
+telling it would make that the title of the conversation."
+  (ecc-restore-test--with-world
+    (ecc-restore-test--two-sessions)
+    (let ((read (ecc-history-open ecc-restore-test--a)))
+      (should-not (equal (ecc-session-name read) "ay"))
+      (ecc-restore)
+      (should (equal (ecc-session-name read) "ay"))
+      (should-not (ecc-session-rename-pending read)))))
+
 ;;;; What a stopped session says
 
 (ert-deftest ecc-restore-test-a-restored-session-names-no-exit-code ()
