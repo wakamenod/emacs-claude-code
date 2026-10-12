@@ -137,7 +137,8 @@ follows what the user says and nothing else."
     (ecc-prompt-test--in-buffer session
       (insert "second")
       (ecc-prompt-send))
-    (should (equal (ecc-session-input-queue session) '("second")))
+    (should (equal (ecc-model-queued-texts session) '("second")))
+    (should (equal (ecc-queued-draft (car (ecc-session-input-queue session))) "second"))
     ;; Nothing left the client: only the first prompt is in flight.
     (should-not (ecc-test-sent-messages))
     (ecc-dispatch session '((type . "result") (subtype . "success")))
