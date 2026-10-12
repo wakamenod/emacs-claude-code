@@ -2177,7 +2177,11 @@ own, not a disappearance."
   "Functions adding a line under the state line at the end of a transcript.
 Each is called with the session and returns a string without a final
 newline, or nil.  The modules above the renderer put what belongs at
-the end of the conversation here rather than in the turns.")
+the end of the conversation here rather than in the turns.
+
+A string whose first character carries a `keymap' property answers to
+that keymap rather than to the transcript's: that is how a line is made
+to do something on RET or a click.")
 
 (defvar ecc-render-header-functions nil
   "Functions adding to the header line of a session buffer.
@@ -2249,8 +2253,11 @@ no turn, so nothing freezes them."
   (when-let* ((lines (ecc-render--tail-lines session)))
     (let ((start (point)))
       (dolist (line lines)
-        (insert line "\n"))
-      (ecc-render--mark start (point) "tail" 0)
+        (let ((from (point)))
+          (insert line "\n")
+          (ecc-render--mark from (point) "tail" 0
+                            (and (> (length line) 0)
+                                 (get-text-property 0 'keymap line)))))
       (ecc-render--register "tail" start (point) 0)))
   (ecc-render--insert-separator))
 
@@ -3079,7 +3086,8 @@ region has left behind pulls the region back to that block."
                 ecc-usage-hook
                 ecc-compact-hook
                 ecc-files-updated-hook
-                ecc-tasks-updated-hook))
+                ecc-tasks-updated-hook
+                ecc-input-queue-changed-hook))
   (add-hook hook #'ecc-render--on-change))
 
 (defun ecc-render--on-turn-finished (session &optional turn)
