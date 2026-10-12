@@ -252,13 +252,19 @@ the end of the last: that is where it lands beside a picture."
 ;;;; Putting a picture in
 
 (defun ecc-mermaid--image (file from)
-  "Return the image of FILE, fitted to the window, for the block at FROM."
+  "Return the image of FILE, fitted to the window, for the block at FROM.
+It is held to `ecc-image-max-height' like any inline image.  Without
+that a flowchart was drawn 630 pixels tall in a window of about 780,
+and when the next reply arrived below it the window was left showing
+only the last three lines of the buffer until it was moved by hand
+\(seen in the demo recording of 2026-10-12)."
   (let ((indent (string-width (buffer-substring-no-properties
                                (save-excursion (goto-char from) (line-beginning-position))
                                from))))
     (create-image file 'png nil
                   :scale ecc-mermaid-scale
                   :max-width (ecc-image-width indent)
+                  :max-height ecc-image-max-height
                   :ascent 'center)))
 
 (defun ecc-mermaid--put-picture (file from to)

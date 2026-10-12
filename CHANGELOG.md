@@ -89,8 +89,8 @@ Verified against **Claude Code CLI 2.1.290**.
   so search and copy find it, and `I` on a diagram shows the source in its
   place and back (on anything else `I` still stops or starts a GIF). The
   diagrams are PNG drawn at twice the size and shown at half, `-t dark` in a
-  dark frame, with a transparent background, fitted to the window like any
-  inline image. They are made one at a time, each killed after
+  dark frame, with a transparent background, fitted to the width of the window
+  and held to `ecc-image-max-height` like any inline image. They are made one at a time, each killed after
   `ecc-mermaid-timeout` (20 seconds), and kept under `ecc-mermaid-directory`
   (`ecc-mermaid` in `temporary-file-directory`), keyed by a hash of the source
   and the arguments, so a diagram is made once and a restored session shows it
