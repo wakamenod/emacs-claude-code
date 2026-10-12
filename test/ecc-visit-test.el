@@ -550,6 +550,48 @@ The project's files are never listed when either has it."
       (should (equal (ecc-visit-find-written session "y/open.el")
                      (cons (expand-file-name "deep/y/open.el" root) 'buffer))))))
 
+(defmacro ecc-visit-test--visiting-elsewhere (var file &rest body)
+  "Run BODY with VAR bound to FILE in a fresh directory outside the tree, visited.
+FILE is relative to that directory; the buffer and the directory go
+afterwards."
+  (declare (indent 2))
+  `(let* ((other (file-name-as-directory (make-temp-file "ecc-visit-other" t)))
+          (,var (expand-file-name ,file other)))
+     (make-directory (file-name-directory ,var) t)
+     (write-region "x\n" nil ,var nil 'silent)
+     (let ((buffer (find-file-noselect ,var)))
+       (unwind-protect
+           (progn ,@body)
+         (kill-buffer buffer)
+         (delete-directory other t)))))
+
+(ert-deftest ecc-visit-test-the-project-before-a-buffer-elsewhere ()
+  "The project's file wins over the same name open in another checkout.
+A worktree session that names a test file must not open the copy of
+the main checkout the user has open."
+  (ecc-visit-test--with-tree (session root) '("test/foo-test.el")
+    (ecc-visit-test--visiting-elsewhere _elsewhere "test/foo-test.el"
+      (should (equal (ecc-visit-find-written session "foo-test.el")
+                     (cons (expand-file-name "test/foo-test.el" root) 'project))))))
+
+(ert-deftest ecc-visit-test-a-buffer-elsewhere-when-the-project-has-none ()
+  "A file Emacs visits outside the project is found when the project has no match.
+It is found before the machine is asked about, and the echo area says
+it is outside."
+  (ecc-visit-test--with-tree (session _root) '("a.el")
+    (ecc-visit-test--visiting-elsewhere elsewhere "notes/far.el"
+      ;; `y-or-n-p' and the machine search are errors in the tree.
+      (should (equal (ecc-visit-find-written session "far.el")
+                     (cons elsewhere 'outside)))
+      (let (said)
+        (cl-letf (((symbol-function 'ecc-visit-open) #'ignore)
+                  ((symbol-function 'message)
+                   (lambda (format &rest args) (setq said (apply #'format format args)))))
+          (remhash session ecc-visit--chosen)
+          (ecc-visit-open-written session '("far.el" . 1))
+          (should (string-suffix-p "(a file Emacs visits, outside the project)"
+                                   said)))))))
+
 (ert-deftest ecc-visit-test-a-file-of-the-project-does-not-ask ()
   "A file found in the project opens without a word about the machine."
   (ecc-visit-test--with-tree (session root) '("test/foo-test.el")
@@ -621,7 +663,7 @@ directory, then the shortest."
     (let ((ecc-visit-search-machine 'never))
       (let ((err (should-error (ecc-visit-find-written session "gone.el")
                                :type 'user-error)))
-        (should (string-match-p "\\`No such file: gone.el (looked in .*project's files)\\'"
+        (should (string-match-p "\\`No such file: gone.el (looked in .*project's files, the files open outside the project)\\'"
                                 (cadr err)))))
     (let ((err (should-error (ecc-visit-find-written session "/no/such/gone.el")
                              :type 'user-error)))

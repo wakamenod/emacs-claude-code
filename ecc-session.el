@@ -172,9 +172,9 @@ file, at the line when there is one (`ecc-visit-target-at-point\='); the
 node laid open is \[ecc-session-show-detail].  A path the model wrote
 opens the file it names wherever it is found -- a bare name or a path
 written against another directory is looked for among the files of the
-session, of Emacs and of the project, and on the machine after asking
-\(`ecc-visit-find-written\=').  A video or a sound among them plays in
-the machine's own player instead (`ecc-visit-open\=').
+session and of the project, then among the files Emacs visits outside
+it, and on the machine after asking (`ecc-visit-find-written\=').  A video or a sound among them
+plays in the machine's own player instead (`ecc-visit-open\=').
 
 A picture drawn in the transcript opens as itself.  A URL comes
 first, and before the node the point is in: the point is

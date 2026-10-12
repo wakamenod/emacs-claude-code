@@ -25,13 +25,15 @@ Verified against **Claude Code CLI 2.1.290**.
   session's directory and then the project root; failing that, it is matched
   as the end of a path, on a directory boundary (`foo.el` is `a/foo.el` and not
   `a/barfoo.el`), against the files the session read or changed and the files
-  Emacs visits, then against the project's files, the list `@` completion
-  offers. The first of these that has a match ends the search. One match opens
-  at once and the echo area says where it was found; several are offered with
-  `completing-read`, shown from the project root, with the session's own files
-  first, then the nearest to the session's directory, then the shortest. The
-  pick is remembered for the session until that file is gone. Found nowhere in
-  the project, the whole machine is searched -- Spotlight (`mdfind -name`) on
+  Emacs visits inside the project, then against the project's files, the list
+  `@` completion offers, then against the files Emacs visits outside the
+  project -- after the project's own, so that the copy of a file open in another
+  checkout or worktree does not win over the project's. The first of these that
+  has a match ends the search. One match opens at once and the echo area says
+  where it was found; several are offered with `completing-read`, shown from the
+  project root, with the session's own files first, then the nearest to the
+  session's directory, then the shortest. The pick is remembered for the
+  session until that file is gone. Found nowhere else, the whole machine is searched -- Spotlight (`mdfind -name`) on
   macOS, `locate` elsewhere -- after asking each time; the new
   `ecc-visit-search-machine` (`ask`, `always` or `never`) decides that. The
   line the path named is kept wherever the file was found. A path that starts

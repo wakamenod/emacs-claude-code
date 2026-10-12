@@ -36,10 +36,11 @@
 ;; file is: a bare name, or a path written against a directory other
 ;; than the session's.  `ecc-visit-find-written' looks for it outward
 ;; from the session -- as written, among the files the session handled
-;; and the ones Emacs visits, among the project's, and on the machine
-;; when `ecc-visit-search-machine' lets it -- and stops at the first
-;; place that has it.  Every other path is absolute already and is
-;; opened as it is.
+;; and the ones Emacs visits in the project, among the project's, among
+;; the ones Emacs visits elsewhere, and on the machine when
+;; `ecc-visit-search-machine' lets it -- and stops at the first place
+;; that has it.  Every other path is absolute already and is opened as
+;; it is.
 ;;
 ;; A diff line carries nothing that says where it is from.  The Files
 ;; section is drawn again at every redraw of the live region, and a
@@ -559,7 +560,11 @@ They are offered in the order given, shown against ROOT."
                                  (display-sort-function . identity)
                                  (cycle-sort-function . identity))
                     (complete-with-action action (mapcar #'car names)
-                                          string predicate)))))
+                                          string predicate))))
+         ;; A candidate of the `file' category is read against
+         ;; `default-directory' by whatever annotates or acts on it, and
+         ;; these are relative to ROOT, not to the session's directory.
+         (default-directory (or root default-directory)))
     (cdr (assoc (completing-read (format "Open %s: " token) table nil t)
                 names))))
 
@@ -569,6 +574,19 @@ They are offered in the order given, shown against ROOT."
     ('always t)
     ('never nil)
     (_ (y-or-n-p "Not in the project; search this machine? "))))
+
+(defun ecc-visit--visited-files (base)
+  "Return the files Emacs visits, as (INSIDE . OUTSIDE) of BASE.
+A remote one is left out, as `ecc-visit--matching' leaves it out."
+  (let (inside outside)
+    (dolist (buffer (buffer-list))
+      (when-let* ((file (buffer-file-name buffer))
+                  ((not (file-remote-p file))))
+        (setq file (expand-file-name file))
+        (if (string-prefix-p base file)
+            (push file inside)
+          (push file outside))))
+    (cons (nreverse inside) (nreverse outside))))
 
 (defun ecc-visit-find-written (session token &optional directory)
   "Return the file TOKEN, a path the model wrote in SESSION, names.
@@ -580,8 +598,12 @@ The places are tried in order, and the first that has it ends the
 search:
 - TOKEN as written, against DIRECTORY and then the project root;
 - what was picked for TOKEN before in this session, while it is there;
-- the files the session read or changed and those Emacs visits;
+- the files the session read or changed, and those Emacs visits in the
+  project (in DIRECTORY when there is no project);
 - the files of the project;
+- the files Emacs visits outside the project: a copy of the same file
+  in another checkout is the one most often open, and it must not
+  win over the project\\='s own;
 - the files of this machine, when `ecc-visit-search-machine\\=' allows.
 After the first, a file matches when TOKEN is the end of its path on a
 directory boundary: foo.el is a/foo.el and not a/barfoo.el, and
@@ -595,7 +617,7 @@ with `completing-read\\=', and the pick is remembered."
          (chosen (and session (gethash session ecc-visit--chosen)))
          (remembered (and chosen (gethash token chosen)))
          (looked (list "the session's directory"))
-         found where handled)
+         found where handled visited)
     (cond
      ((file-exists-p (expand-file-name token directory))
       (setq found (list (expand-file-name token directory))))
@@ -605,18 +627,20 @@ with `completing-read\\=', and the pick is remembered."
      ((null suffix))
      ((and remembered (file-exists-p remembered))
       (setq found (list remembered) where 'remembered))
-     ((progn (setq handled (ecc-visit--handled-files session))
-             (push "the files of this session and of Emacs" looked)
-             (setq found (ecc-visit--matching
-                          suffix
-                          (append handled
-                                  (delq nil (mapcar #'buffer-file-name
-                                                    (buffer-list)))))))
+     ((progn (setq handled (ecc-visit--handled-files session)
+                   visited (ecc-visit--visited-files (or root directory)))
+             (push "the files of this session and those open in the project"
+                   looked)
+             (setq found (ecc-visit--matching suffix
+                                              (append handled (car visited)))))
       (setq where 'session))
      ((and root (progn (push "the project's files" looked)
                        (setq found (ecc-visit--matching
                                     suffix (ecc-visit--project-files session root)))))
       (setq where 'project))
+     ((progn (push "the files open outside the project" looked)
+             (setq found (ecc-visit--matching suffix (cdr visited))))
+      (setq where 'outside))
      ((ecc-visit--search-machine-p)
       (push "this machine" looked)
       (setq found (seq-take (ecc-visit--matching
@@ -632,7 +656,7 @@ with `completing-read\\=', and the pick is remembered."
                                        (ecc-visit--sort found handled directory root)
                                        root)
                   (car found))))
-      (when (and session (memq where '(session project machine)))
+      (when (and session (memq where '(session project outside machine)))
         (unless chosen
           (setq chosen (puthash session (make-hash-table :test #'equal)
                                 ecc-visit--chosen)))
@@ -658,6 +682,7 @@ The echo area says where, unless it was where the path said."
                  ('session "a file of this session")
                  ('buffer "a file Emacs visits")
                  ('project "in the project")
+                 ('outside "a file Emacs visits, outside the project")
                  ('machine "on this machine"))))
     window))
 
