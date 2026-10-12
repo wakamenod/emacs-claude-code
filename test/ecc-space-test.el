@@ -1629,30 +1629,22 @@ it belongs to behind in another tab."
 (ert-deftest ecc-space-test-zoom-twice-keeps-the-sidebar ()
   "Zoom, put back and zoom again, and the sidebar is still there.
 The way back used to be a window state, which drops the sidebar's
-`no-delete-other-windows': the second zoom took it down with the rest."
-  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
-                                   ("two" . ,ecc-space-test--one))
-    (ecc-space-test--with-tab-bar
-      (ecc-space-test--with-code
-        (let ((ecc-window-width 60)
-              (ecc-space-session-min-width 10))
-          (unwind-protect
-              (progn
-                (ecc-space-select (ecc-space-of-root ecc-space-test--one))
-                (should (ecc-sidebar--window))
-                (should (cdr (ecc-space--session-windows)))
-                (select-window (car (ecc-space--session-windows)))
-                (let ((before (length (window-list nil 'no-minibuffer))))
-                  (dotimes (_ 2)
-                    (ecc-space-zoom)
-                    (should (ecc-sidebar--window))
-                    (should (window-parameter (ecc-sidebar--window)
-                                              'no-delete-other-windows))
-                    (should (= 2 (length (window-list nil 'no-minibuffer))))
-                    (ecc-space-zoom)
-                    (should (= before
-                               (length (window-list nil 'no-minibuffer)))))))
-            (set-frame-parameter nil 'ecc-space-zoom nil)))))))
+`no-delete-other-windows': the second zoom took it down with the rest.
+Two sessions side by side, so that a zoom has two windows to put away."
+  (ecc-space-test--with-layouts '("p1" "p2")
+    (ecc-space-test--press t)
+    (ecc-space-test--is 'pair '("p1" "p2"))
+    (should (ecc-sidebar--window))
+    (select-window (car (ecc-space--session-windows)))
+    (let ((before (length (window-list nil 'no-minibuffer))))
+      (dotimes (_ 2)
+        (ecc-space-zoom)
+        (should (ecc-sidebar--window))
+        (should (window-parameter (ecc-sidebar--window)
+                                  'no-delete-other-windows))
+        (should (= 2 (length (window-list nil 'no-minibuffer))))
+        (ecc-space-zoom)
+        (should (= before (length (window-list nil 'no-minibuffer))))))))
 
 (ert-deftest ecc-space-test-zoom-survives-a-tab-switch ()
   "A tab zoomed, left and come back to puts its own windows back.
@@ -1662,8 +1654,7 @@ Each Space has its own way back, and the other tab is not touched."
                                    ("three" . ,ecc-space-test--two))
     (ecc-space-test--with-tab-bar
       (ecc-space-test--with-code
-        (let ((ecc-window-width 60)
-              (ecc-space-session-min-width 10))
+        (let ((ecc-window-width 0.4))
           (unwind-protect
               (let ((one (ecc-space-of-root ecc-space-test--one))
                     (two (ecc-space-of-root ecc-space-test--two)))

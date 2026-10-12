@@ -874,12 +874,13 @@ laying the same Space out again keeps every session in its slot."
          (windows nil))
     (condition-case nil
         (progn
-          ;; Not `delete-other-windows', which keeps the sidebar only for
-          ;; its `no-delete-other-windows': `ecc-space-zoom' puts the
-          ;; windows back from a window state, which drops that
-          ;; parameter, so the first layout after a zoom took the sidebar
-          ;; down with the rest (2026-10-12).  A side window is kept for
-          ;; being one.
+          ;; Not `delete-other-windows', which keeps a side window only
+          ;; when it carries `no-delete-other-windows'.  That parameter
+          ;; does not survive a window state -- one put back by a
+          ;; desktop, a package or, until it saved a configuration,
+          ;; `ecc-space-zoom' (2026-10-12) -- and a side window of
+          ;; anybody else's never had it.  A layout is of the main area,
+          ;; so every side window is kept for being one.
           (dolist (window (window-list nil 'no-minibuffer))
             (unless (or (eq window main) (window-parameter window 'window-side))
               (delete-window window)))
