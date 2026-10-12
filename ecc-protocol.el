@@ -619,6 +619,18 @@ the branch a resume would continue."
             (alist-get 'leafUuid object)))
       (error nil))))
 
+(defun ecc-protocol-history-cost (line)
+  "Return the running total LINE of a history file records, or nil.
+The CLI writes a `cost-state' line when it exits, carrying its
+`total_cost_usd' as `totalCostUSD'; see `ecc-history-recorded-cost'."
+  (when (string-match-p "\"cost-state\"" line)
+    (condition-case nil
+        (let ((object (ecc--json-read line)))
+          (when (equal (alist-get 'type object) "cost-state")
+            (let ((cost (alist-get 'totalCostUSD object)))
+              (and (numberp cost) cost))))
+      (error nil))))
+
 (defun ecc-protocol-read-json-file (file)
   "Return the JSON object in FILE as an alist, or nil.
 Never signals: the file belongs to another program, which may be

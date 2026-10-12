@@ -740,6 +740,32 @@ the session is resumed."
       (should (equal "live-again"
                      (alist-get 'title (ecc-history-scan-file (ecc-history-file id))))))))
 
+(ert-deftest ecc-test-live-resumed-turn-costs-its-own ()
+  "A turn after a resume costs what it added, not the whole conversation.
+The resumed CLI's first result carries the total the recording ended
+with plus its own turn, and the session's total is the CLI's."
+  :tags '(live)
+  (ecc-test-live-with-recorded-session session
+    (ecc-proc-send-prompt session "Reply with exactly: ONE")
+    (ecc-test-live-wait-for-result session)
+    (let ((first (alist-get 'total_cost_usd
+                            (ecc-turn-result (car (last (ecc-session-turns session)))))))
+      (should (> first 0))
+      (should (= first (ecc-session-total-cost session)))
+      (ecc-proc-stop session)
+      (ecc-test-live-wait
+       session (lambda () (not (process-live-p (ecc-session-process session))))
+       "the CLI to stop")
+      (ecc-proc-start session t)
+      (should (= first (ecc-session-cost-base session)))
+      (ecc-proc-send-prompt session "Reply with exactly: TWO")
+      (ecc-test-live-wait-for-result session)
+      (let* ((turn (car (last (ecc-session-turns session))))
+             (second (alist-get 'total_cost_usd (ecc-turn-result turn))))
+        (should (> second first))
+        (should (= (ecc-turn-cost turn) (- second first)))
+        (should (< (abs (- (ecc-session-total-cost session) second)) 1e-9))))))
+
 (ert-deftest ecc-test-live-agents ()
   "The registry agrees with `claude agents --json'.
 `ecc-registry' reads the session files the CLI writes rather than
