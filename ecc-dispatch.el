@@ -736,13 +736,15 @@ at all."
 (defun ecc-dispatch--command-echoed-p (turn fields)
   "Return non-nil when TURN was opened by the command FIELDS describe.
 The CLI resolves an alias before it reports the command -- `/cost\=' is
-reported as `usage\=' (2026-09-22) -- so the two do not always read the
-same, and what is compared is the name as well as the whole line."
-  (let ((prompt (string-trim (or (and (ecc-turn-p turn) (ecc-turn-prompt turn)) "")))
-        (name (alist-get 'name fields))
-        (args (alist-get 'args fields)))
-    (and (equal prompt (string-trim (concat name " " (or args ""))))
-         t)))
+reported as `usage\=' (2026-09-22) -- so the name the prompt typed and
+the one reported do not always read the same.  The prompt is taken for
+the command when it is a slash command given the same arguments,
+whatever name it used."
+  (let* ((prompt (string-trim (or (and (ecc-turn-p turn) (ecc-turn-prompt turn)) "")))
+         (split (string-match "[ \t\n]" prompt))
+         (typed-args (and split (string-trim (substring prompt split)))))
+    (and (string-prefix-p "/" prompt)
+         (equal (or typed-args "") (string-trim (or (alist-get 'args fields) ""))))))
 
 (defun ecc-dispatch-command-output (session text)
   "Put what a local command printed, TEXT, on the command node of SESSION.

@@ -862,6 +862,27 @@ follows it, where the model's own answer would stand."
                                        (split-string text "\n")))))
       (should (string-search "\n  Session renamed to: aaa" text)))))
 
+(ert-deftest ecc-render-test-local-command-typed-as-an-alias ()
+  "A command typed under an alias is not drawn again under its real name.
+The CLI reports `/cost' as `usage' (2026-09-22); the turn is headed by
+what was typed, and that heading is the command."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "/cost")
+    (ecc-dispatch session
+                  '((type . "assistant")
+                    (local_command_run . ((command . "usage") (args . "")))
+                    (local_command_source
+                     . "<local-command-stdout>Total cost: $0.00</local-command-stdout>")
+                    (message . ((role . "assistant") (model . "<synthetic>")
+                                (content . [((type . "text")
+                                             (text . "Total cost: $0.00"))])))))
+    (ecc-render-flush session)
+    (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+      (should (string-search "/cost" text))
+      (should-not (string-search "/usage" text))
+      (should (string-search "\n  Total cost: $0.00" text)))))
+
 (ert-deftest ecc-render-test-unknown-is-visible ()
   "A message the client does not understand still reaches the buffer."
   (ecc-test-with-fake-session session
