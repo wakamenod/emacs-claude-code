@@ -237,7 +237,11 @@ A prompt was queued, sent, taken back, dropped or moved.")
   tasks                 ; hash: task id -> ecc-task
   usage
   context-tokens
-  total-cost
+  total-cost            ; what the results counted so far cost, the sum
+                        ; of `ecc-turn-cost'
+  cost-base             ; the CLI's running total the next result is
+                        ; counted from, or nil when it is not known
+                        ; (`ecc-model-result-cost')
   rate-limit
   last-result-time
   progress              ; alist of progress information for the state line
@@ -402,6 +406,7 @@ options that overrides the defcustoms for this session."
                    :tasks (make-hash-table :test #'equal)
                    :stream-blocks (make-hash-table :test #'equal)
                    :total-cost 0
+                   :cost-base 0
                    :context-tokens 0
                    :created (cl-incf ecc--session-counter)
                    :node-counter 0
@@ -469,6 +474,7 @@ and no buffer is touched; the caller redraws with
         (ecc-session-usage session) nil
         (ecc-session-context-tokens session) 0
         (ecc-session-total-cost session) 0
+        (ecc-session-cost-base session) 0
         (ecc-session-rate-limit session) nil
         (ecc-session-last-result-time session) nil
         (ecc-session-progress session) nil
@@ -618,19 +624,46 @@ What tells one is that Emacs did not open it and the bridge was up when
 it appeared; see `ecc-model-ensure-turn\='."
   (and turn (equal (ecc-turn-label turn) ecc-model-remote-turn-label)))
 
+(defun ecc-model-set-cost-base (session total)
+  "Count the next result of SESSION from the running total TOTAL.
+TOTAL is what the CLI starts from: 0 for a new conversation, what it
+restored for a resumed one, nil when that is not known."
+  (setf (ecc-session-cost-base session) total))
+
+(defun ecc-model-result-cost (session result)
+  "Return what the RESULT message of SESSION cost, or nil if not known.
+The `total_cost_usd' of a result is the running total of the CLI, not
+the cost of the turn it closes (CLI 2.1.290, confirmed 2026-10-13):
+each result carries the one before it plus what was spent since, a
+result that called no model repeats it, and a resumed CLI carries on
+from the total its recording ended with.  What one result cost is
+therefore the difference from the base the results before it left
+\(`ecc-model-set-cost-base').  A total below that base means the CLI
+started from a total nobody here knew, and then what the turn cost
+cannot be told."
+  (let ((total (alist-get 'total_cost_usd result))
+        (base (ecc-session-cost-base session)))
+    (and (numberp total) (numberp base) (>= total base)
+         (- total base))))
+
 (defun ecc-model-finish-turn (session result)
   "Close the current turn of SESSION with the RESULT message.
 A transient turn costs money like any other, so its cost is counted,
 but it is not an answer the user waited for: it neither ends a
-turn-wide approval nor counts as the moment the session last spoke."
+turn-wide approval nor counts as the moment the session last spoke.
+The cost is what RESULT adds to the running total of the CLI, see
+`ecc-model-result-cost', and the next result counts from RESULT."
   (let ((turn (ecc-session-current-turn session)))
     (when turn
-      (setf (ecc-turn-end-time turn) (current-time)
-            (ecc-turn-result turn) result
-            (ecc-turn-cost turn) (alist-get 'total_cost_usd result))
-      (setf (ecc-session-current-turn session) nil)
-      (cl-incf (ecc-session-total-cost session)
-               (or (alist-get 'total_cost_usd result) 0))
+      (let ((cost (ecc-model-result-cost session result))
+            (total (alist-get 'total_cost_usd result)))
+        (setf (ecc-turn-end-time turn) (current-time)
+              (ecc-turn-result turn) result
+              (ecc-turn-cost turn) cost)
+        (setf (ecc-session-current-turn session) nil)
+        (cl-incf (ecc-session-total-cost session) (or cost 0))
+        (when (numberp total)
+          (ecc-model-set-cost-base session total)))
       (unless (ecc-turn-transient turn)
         (setf (ecc-session-auto-approve-turn session) nil)
         (setf (ecc-session-last-result-time session) (current-time))

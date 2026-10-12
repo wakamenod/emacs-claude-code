@@ -462,16 +462,24 @@ stripped from every line."
          (format "%s- %s: %s — %s\n\n" pad (ecc-node-type node)
                  (if request (ecc-request-tool-name request) "?")
                  (ecc-node-status node))))
-      ('result (let ((result (ecc-model-node-get node 'result)))
-                 (format "_%s · $%.4f_\n\n"
-                         (or (alist-get 'stop_reason result) "?")
-                         (or (alist-get 'total_cost_usd result) 0))))
       ('system (if (eq (ecc-model-node-get node 'kind) 'prompt)
                    (format "%s> %s\n\n" pad
                            (string-replace "\n" (concat "\n" pad "> ")
                                            (or (ecc-model-node-get node 'text) "")))
                  ""))
       (_ ""))))
+
+(defun ecc-session--markdown-turn-end (turn)
+  "Return the line that closes TURN in Markdown: how it ended, what it cost.
+It is the turn's own cost (`ecc-model-result-cost'), not the
+`total_cost_usd' of its result, which is the running total of the CLI;
+a cost that is not known is left out.  Nothing for a turn without a
+result."
+  (when-let* ((result (ecc-turn-result turn)))
+    (concat "_" (or (alist-get 'stop_reason result) "?")
+            (when-let* ((cost (ecc-turn-cost turn)))
+              (format " · $%.4f" cost))
+            "_\n\n")))
 
 (defun ecc-session-export-markdown-string (session)
   "Return the transcript of SESSION as Markdown."
@@ -483,7 +491,8 @@ stripped from every line."
                                            (ecc-turn-label turn)
                                            "(resumed)"))
               (mapconcat (lambda (node) (ecc-session--markdown-node node 0))
-                         (ecc-turn-children turn) "")))
+                         (ecc-turn-children turn) "")
+              (ecc-session--markdown-turn-end turn)))
     (ecc-session-turns session) "")))
 
 (defun ecc-session-export-markdown (file)

@@ -972,6 +972,169 @@ asking about that one would mean asking every time, which is the case
         (should-not ecc-test-sent)
         (should-not (ecc-history-resume-intercept session "resume please"))))))
 
+;;;; What the conversation has cost
+
+;; test/fixtures/history/resumed-cost.jsonl is the recording of two turns
+;; left by scripts/record-history.sh, as it stood when the CLI was
+;; resumed (CLI 2.1.290, 2026-10-13).  Its attachment lines -- the
+;; system prompt, the account, the tool and skill lists -- were taken
+;; out, and each `parentUuid' left pointing at one moved to the nearest
+;; message kept.  test/fixtures/resumed-cost.jsonl is what the resumed
+;; CLI printed for two more turns: its first result is the recording's
+;; 0.0246018 plus its own turn.
+
+(defconst ecc-history-test-cost-id "e416abf2-7200-41d2-84e2-39e895ef5e23"
+  "The session id of the resumed-cost recording.")
+
+(defconst ecc-history-test-cost 0.0246018
+  "The `totalCostUSD' of the last `cost-state' of the resumed-cost recording.")
+
+(defmacro ecc-history-test--with-cost-recording (var &rest body)
+  "Run BODY with VAR bound to a copy of the resumed-cost recording.
+It is laid out under `ecc-history-directory' the way the CLI does."
+  (declare (indent 1))
+  `(let* ((root (make-temp-file "ecc-history-dir" t))
+          (project (expand-file-name "-tmp-project" root))
+          (,var (expand-file-name (concat ecc-history-test-cost-id ".jsonl")
+                                  project))
+          (ecc-history-directory root)
+          (ecc-history--files (make-hash-table :test #'equal)))
+     (unwind-protect
+         (progn
+           (make-directory project t)
+           (copy-file (ecc-test-history-fixture "resumed-cost") ,var)
+           ,@body)
+       (delete-directory root t))))
+
+(defun ecc-history-test--start (session &optional resume fork)
+  "Start the CLI of SESSION as `ecc-proc-start' does, and stop it again.
+What runs is `sleep', which reads nothing: only what the start leaves
+on SESSION is looked at."
+  (let ((spawn (symbol-function 'make-process)))
+    (cl-letf (((symbol-function 'make-process)
+               (lambda (&rest _)
+                 (funcall spawn :name "ecc-test-sleep"
+                          :command '("sleep" "30") :noquery t)))
+              ((symbol-function 'ecc-proc-control) #'ignore))
+      (delete-process (ecc-proc-start session resume fork)))))
+
+(ert-deftest ecc-history-test-recorded-cost ()
+  "The total a recording ends with is its last `cost-state'.
+It is found however little of the end is read at first, a line that
+merely contains the words is not one, and a recording with none has no
+total."
+  (let ((file (ecc-test-history-fixture "resumed-cost")))
+    (should (= ecc-history-test-cost (ecc-history-recorded-cost file)))
+    ;; The first range starts in the middle of the line it finds.
+    (let ((ecc-history-cost-tail-bytes 64))
+      (should (= ecc-history-test-cost (ecc-history-recorded-cost file))))
+    (let ((other (make-temp-file "ecc-history-cost" nil ".jsonl")))
+      (unwind-protect
+          (progn
+            (copy-file file other t)
+            (with-temp-buffer
+              (insert "{\"type\":\"attachment\",\"attachment\":"
+                      "{\"type\":\"cost-state\",\"totalCostUSD\":9}}\n")
+              (append-to-file (point-min) (point-max) other))
+            (should (= ecc-history-test-cost (ecc-history-recorded-cost other))))
+        (delete-file other))))
+  (should-not (ecc-history-recorded-cost ecc-history-test-file)))
+
+(ert-deftest ecc-history-test-session-costs-the-whole-recording ()
+  "A recording read back costs what its last `cost-state' says.
+The scan of its edges is not enough: a CLI writes the line only when it
+exits, so a long process leaves it far from the end."
+  (ecc-history-test--with-cost-recording _file
+    (let ((ecc--sessions (make-hash-table :test #'equal))
+          (ecc--session-order nil)
+          (ecc-history-scan-head-bytes 100)
+          (ecc-history-scan-tail-bytes 100))
+      (should-not (alist-get 'cost (ecc-history-scan-file
+                                    (ecc-history-file ecc-history-test-cost-id))))
+      (let ((session (ecc-history-session ecc-history-test-cost-id)))
+        (unwind-protect
+            (should (= ecc-history-test-cost (ecc-session-total-cost session)))
+          (ecc-test-cleanup-session session))))))
+
+(ert-deftest ecc-history-test-resumed-turns-cost-their-own ()
+  "A resumed CLI's results are counted from the total of its recording.
+The first one carries that total plus its own turn; counted from 0, the
+turn would cost the whole conversation.  A new session started beside
+it counts from 0, and neither touches the other."
+  (ecc-history-test--with-cost-recording _file
+    (let ((ecc--sessions (make-hash-table :test #'equal))
+          (ecc--session-order nil)
+          (ecc-test-sent nil))
+      (let ((session (ecc-history-session ecc-history-test-cost-id))
+            (other (ecc-model-create-session :name "other"
+                                             :project-root temporary-file-directory)))
+        (unwind-protect
+            (cl-letf (((symbol-function #'ecc-proc-send-json)
+                       (lambda (_session object) (push object ecc-test-sent) object)))
+              ;; The directory it was recorded in is gone.
+              (setf (ecc-session-project-root session) temporary-file-directory)
+              (ecc-model-set-cost-base other 0.7)
+              (ecc-history-test--start session t)
+              (ecc-history-test--start other)
+              (should (= ecc-history-test-cost (ecc-session-cost-base session)))
+              (should (= 0 (ecc-session-cost-base other)))
+              (ecc-test-dispatch session "resumed-cost" "Say yes in one word.")
+              (ecc-test-dispatch other "basic-turn" "hello")
+              (let ((totals (mapcar (lambda (message) (alist-get 'total_cost_usd message))
+                                    (seq-filter (lambda (message)
+                                                  (equal (alist-get 'type message) "result"))
+                                                (ecc-test-fixture-messages "resumed-cost")))))
+                (should (equal totals '(0.0295229 0.0350259)))
+                (should (equal (mapcar #'ecc-turn-cost (ecc-session-turns session))
+                               (list (- 0.0295229 ecc-history-test-cost)
+                                     (- 0.0350259 0.0295229))))
+                ;; What the CLI itself says the conversation cost.
+                (should (< (abs (- (ecc-session-total-cost session) 0.0350259)) 1e-12)))
+              (let ((total (alist-get 'total_cost_usd
+                                      (seq-find (lambda (message)
+                                                  (equal (alist-get 'type message) "result"))
+                                                (ecc-test-fixture-messages "basic-turn")))))
+                (should (equal (mapcar #'ecc-turn-cost (ecc-session-turns other))
+                               (list total)))
+                (should (= total (ecc-session-total-cost other)))))
+          (ecc-test-cleanup-session other)
+          (ecc-test-cleanup-session session))))))
+
+(ert-deftest ecc-history-test-fork-counts-from-its-parent ()
+  "A fork resumes the recording it branches off, and starts from its total."
+  (ecc-history-test--with-cost-recording _file
+    (let ((ecc--sessions (make-hash-table :test #'equal))
+          (ecc--session-order nil))
+      (let ((fork (ecc-model-create-session
+                   :name "fork" :project-root temporary-file-directory
+                   :options (list :resume-from ecc-history-test-cost-id))))
+        (unwind-protect
+            (progn
+              (ecc-history-test--start fork t t)
+              (should (= ecc-history-test-cost (ecc-session-cost-base fork))))
+          (ecc-test-cleanup-session fork))))))
+
+(ert-deftest ecc-history-test-resume-without-a-recording ()
+  "With no recording to read, the first result's cost is not known.
+It is not guessed, and the result after it is counted as usual."
+  (ecc-history-test--with-cost-recording _file
+    (let ((ecc--sessions (make-hash-table :test #'equal))
+          (ecc--session-order nil))
+      (let ((session (ecc-model-create-session
+                      :name "lost" :project-root temporary-file-directory)))
+        (unwind-protect
+            (progn
+              (ecc-history-test--start session t)
+              (should-not (ecc-session-cost-base session))
+              (ecc-model-begin-turn session "one")
+              (should-not (ecc-turn-cost (ecc-model-finish-turn
+                                          session '((total_cost_usd . 0.5)))))
+              (ecc-model-begin-turn session "two")
+              (should (= 0.25 (ecc-turn-cost (ecc-model-finish-turn
+                                              session '((total_cost_usd . 0.75))))))
+              (should (= 0.25 (ecc-session-total-cost session))))
+          (ecc-test-cleanup-session session))))))
+
 (provide 'ecc-history-test)
 
 ;;; ecc-history-test.el ends here
