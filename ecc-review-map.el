@@ -237,13 +237,11 @@ which nothing of the other side equals."
 (defun ecc-review-map--match (a b a0 b0 map)
   "Match the put-in lines A against B, at A0 and B0 of the whole, into MAP.
 By `ecc-diff-script', split at the lines held once when too large."
-  (let ((i 0) (j 0))
-    (dolist (tag (ecc-diff-script a b #'ecc-diff-patience))
-      (pcase tag
-        ('context (aset map (+ a0 i) (+ b0 j))
-                  (setq i (1+ i) j (1+ j)))
-        ('removed (setq i (1+ i)))
-        (_ (setq j (1+ j)))))))
+  (ecc-diff-script-walk (ecc-diff-script a b #'ecc-diff-patience)
+                        (lambda (tag i j)
+                          (when (eq tag 'context)
+                            (aset map (+ a0 i) (+ b0 j)))))
+  map)
 
 ;;;; The map
 
@@ -325,15 +323,11 @@ FROM and TO are lists of ((NUMBER . NTH) . TEXT) in the order of a diff."
         (b (vconcat (mapcar #'cdr to)))
         (a-places (vconcat (mapcar #'car from)))
         (b-places (vconcat (mapcar #'car to)))
-        (lines (make-hash-table :test #'equal))
-        (i 0) (j 0))
-    (dolist (tag (ecc-diff-script a b #'ecc-diff-patience))
-      (pcase tag
-        ('context
-         (puthash (aref a-places i) (aref b-places j) lines)
-         (setq i (1+ i) j (1+ j)))
-        ('removed (setq i (1+ i)))
-        (_ (setq j (1+ j)))))
+        (lines (make-hash-table :test #'equal)))
+    (ecc-diff-script-walk (ecc-diff-script a b #'ecc-diff-patience)
+                          (lambda (tag i j)
+                            (when (eq tag 'context)
+                              (puthash (aref a-places i) (aref b-places j) lines))))
     lines))
 
 (defun ecc-review-map--matches (a b forward backward)

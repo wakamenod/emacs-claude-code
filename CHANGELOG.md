@@ -25,6 +25,45 @@ Verified against **Claude Code CLI 2.1.290**.
   text, past the number, rather than one column past a bullet. The bullet stays
   on `-`, `*` and `+`. Introduced in 0.1.0, with the hiding of Markdown markup.
 
+- A comment in the review of a proposal could move onto another line that
+  only read like its own. When the file changed on disk while the
+  permission waited and the proposal was reviewed again, both readings
+  took what the session had recorded of the file for their old side, so
+  a comment on a `}` was carried by its number onto another `}`. A
+  proposal's comments are now carried from the file as the proposal found
+  it, and by their text when that is not known.
+
+- Redrawing a review whose text changed since it was read -- a reading
+  that stopped, a key that got past the keymap -- was an error, raised
+  after the command had done its work and with every comment taken off
+  the screen. `C-c C-c` had sent the prompt and marked the comments sent,
+  and showed none of them; `C-c C-a` in a pull request stopped at
+  the first such review, left the rest undrawn and did not count again;
+  the files filter, removing a comment and hiding Claude's failed the
+  same way. What is drawn now stays as it is, the echo area says that `g`
+  reads the review again, and the command finishes; Claude's
+  `review_remove_comment` and `review_clear_comments` say the same.
+
+- `c` on a comment of yours, in a review being read again, sent the edit
+  to the kill ring instead of making it. An edit needs no line, and is
+  made.
+
+- A comment on a very large file froze Emacs for seconds at the next `g`
+  after a commit moved the file's old side: both blobs were read whole
+  and compared line by line. Their sizes are asked first, as the ediff
+  review does, and two of which one is over `ecc-review-max-bytes` are not
+  read or compared; the comments of that file are outdated, and the log
+  says so once.
+
+- `review_hunks` gave two hunks with one `@@` header -- two patches at one
+  line of a file the session changed outside git -- the same comment count.
+  Each hunk counts its own.
+
+- A file outside git with DEL in its name was named in the review's own
+  header as it is, and one with BEL, VT, FF or CR with an octal escape;
+  git writes `\177`, `\a`, `\v`, `\f` and `\r`, and the review now
+  writes them so.
+
 ## [0.4.1] - 2026-10-12
 
 Verified against **Claude Code CLI 2.1.290**.
