@@ -23,7 +23,10 @@ first run; `swiftc` comes with the command line tools). Nothing that
 covers the window is in the picture, the window does not have to be in
 front, and you can carry on working on the same screen while it records.
 A window that is *minimised* is not drawn and cannot be recorded; one
-that is covered, on another Space or half off the edge can.
+that is covered, on another Space or half off the edge can. The window's
+child frames (a posframe, a completion list) are part of it and are in
+the picture. `scripts/docshots.sh` takes the site's pictures with the
+same recorder, through its `--frames` mode.
 
 Whatever runs it needs Screen Recording permission (System Settings →
 Privacy & Security → Screen Recording), or there is nothing to record.
@@ -32,9 +35,9 @@ Privacy & Security → Screen Recording), or there is nothing to record.
 no frames over, so a display asleep or a session locked records nothing
 — not a black video, nothing at all, and the demo Emacs stalls on its
 own redisplay too. `record.sh` holds the display awake with `caffeinate`
-for as long as it runs; a lock it cannot do anything about, and the
-recorder says so and writes no file rather than leaving an mp4 that will
-not open.
+for as long as it runs. It can do nothing about a lock: the recorder
+says so and writes no file rather than leaving an mp4 that will not
+open.
 
 Everything a run owns — the server socket, the ready file, the frame
 title the recorder looks for, the throwaway project — is named after the
@@ -70,13 +73,13 @@ A scene is two files:
   throwaway git repository at `demo-root` — `/tmp/ecc-demo-NAME/`, one
   per scene — and `demo-fresh-repository`, `demo-write` and `demo-git`
   to fill it), and one function per step.
+- `scenes/NAME.sh` — sourced by the recorder. It is the order of the
+  steps and how long each is held, written with `say "..."` for a caption
+  in the echo area and `e "(a-form)"` for a step.
 - End the scene with `e "(demo-save-log \"/tmp/ecc-demo-NAME-log.txt\")"`
   when it reports anything worth reading afterwards. The recorder kills
   the Emacs when the scene ends and everything it said goes with it;
   what the log keeps is checkable without watching the video.
-- `scenes/NAME.sh` — sourced by the recorder. It is the order of the
-  steps and how long each is held, written with `say "..."` for a caption
-  in the echo area and `e "(a-form)"` for a step.
 
 `demo.el` is what both sit on. What it gives a scene:
 

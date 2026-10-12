@@ -1,0 +1,28 @@
+---
+title: Other features
+description: Inspect session capabilities and Claude Code plan usage.
+---
+
+## Capabilities
+
+`C` in the menu or the dashboard lists what the CLI reported for the session: skills, subagents, slash commands, MCP servers and plugins, grouped by where they come from (the project, your configuration, a plugin, or built in).
+
+![The capabilities buffer beside a session: the skills and agents grouped by where they come from, the slash commands folded, and the plugins below them](../../../assets/capabilities.png)
+
+`TAB` folds a group, `RET` shows the item at point, and `g` refreshes. Before the session's first turn the list is empty.
+
+## Usage
+
+`C-c c U` (`ecc-usage`) shows your Claude Code plan usage and rate limits.
+
+![The usage report floating over the frame: the rate limit windows, what this session cost, and what has been spending the limits](../../../assets/usage.png)
+
+The figures come from the CLI and match Settings → Usage on claude.ai. With no session running, ecc starts a CLI to ask and stops it; no prompt is sent, so it costs no tokens.
+
+| Key | Action |
+|---|---|
+| `g` | Refresh |
+| `b` | Show or hide what has been spending the limits |
+| `q` | Close the report |
+
+The breakdown counts only sessions recorded on this machine. `ecc-usage-display` puts the report in a window or a posframe popup.

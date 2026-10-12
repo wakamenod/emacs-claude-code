@@ -55,6 +55,20 @@ here; `ecc-table-test' covers that."
     (should-not (ecc-markdown-test--face-at text "Some "))
     (should-not (ecc-markdown-test--face-at text "After."))))
 
+(ert-deftest ecc-markdown-test-a-number-is-drawn-as-itself ()
+  "A bullet is drawn over \"-\", \"*\" and \"+\"; a number keeps its own text."
+  (let ((text (ecc-markdown-fontify "- one\n* two\n+ three\n1. four\n  10) five\n")))
+    (dolist (item '("- one" "* two" "+ three"))
+      (should (equal (get-text-property (string-search item text) 'display text)
+                     "•")))
+    (dolist (item '(("1. four" . 2) ("10) five" . 3)))
+      (let ((pos (string-search (car item) text)))
+        (should-not (text-property-not-all pos (+ pos (cdr item)) 'display nil text))
+        (should (eq (ecc-markdown-test--face-at text (car item))
+                    'ecc-markdown-bullet-face))
+        ;; The face stops at the marker here too.
+        (should-not (ecc-markdown-test--face-at text (car item) (cdr item)))))))
+
 (ert-deftest ecc-markdown-test-bold-inside-fence-is-code ()
   "Inside a fence nothing but the code face applies."
   (let ((text (ecc-markdown-fontify "```\n**not bold**\n```\n")))
@@ -233,6 +247,55 @@ A Markdown link is then drawn as it was written, brackets and all."
          (text (ecc-markdown-fontify source)))
     (should-not (ecc-markdown-test--url-at text "https://example.com/a"))
     (should (equal (ecc-markdown-test--visible text) source))))
+
+(defun ecc-markdown-test--file-at (text needle &optional offset)
+  "Return the `ecc-file' property at NEEDLE in TEXT, OFFSET characters in."
+  (let ((pos (string-search needle text)))
+    (should pos)
+    (get-text-property (+ pos (or offset 0)) 'ecc-file text)))
+
+(ert-deftest ecc-markdown-test-a-path-becomes-a-link ()
+  "A path in a reply is a link to its file, and to its line when it names one.
+Inline code is no exception, since that is where the model writes a
+path; the full stop after one is not part of it."
+  (let ((text (ecc-markdown-fontify
+               "See `ecc-session.el:163`, a/b.el and foo.el#L3.\n")))
+    (should (equal (ecc-markdown-test--file-at text "ecc-session")
+                   '("ecc-session.el" . 163)))
+    (should (equal (ecc-markdown-test--file-at text ":163" 1)
+                   '("ecc-session.el" . 163)))
+    (should (equal (ecc-markdown-test--file-at text "a/b.el") '("a/b.el")))
+    (should (equal (ecc-markdown-test--file-at text "foo.el") '("foo.el" . 3)))
+    (should-not (ecc-markdown-test--file-at text ".\n"))
+    (should (get-text-property (string-search "a/b.el" text) 'mouse-face text))
+    (should-not (ecc-markdown-test--file-at text "See"))))
+
+(ert-deftest ecc-markdown-test-what-is-not-a-path ()
+  "A URL, a fenced block and the words of prose that have a dot or a slash."
+  (let ((text (ecc-markdown-fontify
+               (concat "Open https://example.com/a/b.el and [it](https://x.org/c.el).\n"
+                       "Read and/or write, e.g. v1.2 of 29.1, me@example.com.\n"
+                       "```\nsrc/not/linked.el\n```\n"))))
+    (should (equal (ecc-markdown-test--url-at text "https://example.com")
+                   "https://example.com/a/b.el"))
+    (should-not (ecc-markdown-test--file-at text "b.el"))
+    (should-not (ecc-markdown-test--file-at text "it"))
+    (dolist (word '("and/or" "e.g" "v1.2" "29.1" "me@example" "src/not"))
+      (should-not (ecc-markdown-test--file-at text word)))))
+
+(ert-deftest ecc-markdown-test-paths-that-name-no-extension ()
+  "A path with no extension is one when it plainly names a place."
+  (let ((text (ecc-markdown-fontify
+               "In ~/src, /usr/bin, ./scripts and docs/site/pages but not src/lib.\n")))
+    (dolist (path '("~/src" "/usr/bin" "./scripts" "docs/site/pages"))
+      (should (equal (ecc-markdown-test--file-at text path) (list path))))
+    (should-not (ecc-markdown-test--file-at text "src/lib"))))
+
+(ert-deftest ecc-markdown-test-path-links-can-be-turned-off ()
+  "With `ecc-markdown-linkify-paths' nil a path is text."
+  (let* ((ecc-markdown-linkify-paths nil)
+         (text (ecc-markdown-fontify "See `ecc-session.el:163`.\n")))
+    (should-not (ecc-markdown-test--file-at text "ecc-session"))))
 
 (provide 'ecc-markdown-test)
 

@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Assisted-by: Claude Code:claude-opus-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -170,12 +171,8 @@ than trailing the spaces that would have led to it."
 (defun ecc-sidebar--mark (state)
   "Return the mark that stands for STATE in the sidebar.
 Idle takes a mark of its own -- the tab line leaves it blank -- because
-the mark opens the row here, and a blank one would put the name of an
-idle Space a column to the left of every other name."
-  (pcase state
-    ('nil " ")
-    ('idle "·")
-    (_ (ecc-tab-mark-of-state state))))
+the mark opens the row here.  A row with no state at all is left blank."
+  (if state (ecc-tab-mark-of-state state t) " "))
 
 ;;;; The Spaces
 
@@ -305,6 +302,7 @@ answer while its state still says that it runs."
     (cond
      ((> waiting 1) (format "waiting ×%d" waiting))
      ((= waiting 1) "waiting")
+     ((eq (ecc-tab-state session) 'restored) "restored")
      (t (format "%s" (or (ecc-session-state session) ""))))))
 
 (defun ecc-sidebar--sessions ()
@@ -312,9 +310,8 @@ answer while its state still says that it runs."
   (let ((sessions (ecc-model-sessions)))
     (pcase ecc-sidebar-sessions-sort
       ('priority
-       ;; Stable within a rank: `ecc-model-sessions' is most recently
-       ;; used first, which is the nearest thing the model keeps to the
-       ;; order the states last changed in.
+       ;; Stable within a rank, which keeps the order of
+       ;; `ecc-model-sessions': most recently started first.
        (let ((rank (lambda (session)
                      (pcase (ecc-tab-state session)
                        ('attention 0) ('running 1) ('idle 2) (_ 3)))))
@@ -430,17 +427,21 @@ git line was impossible (reported and reproduced 2026-09-15)."
            (ecc-sidebar--visible-p))
       (unless ecc-sidebar--spinner-timer
         (setq ecc-sidebar--spinner-timer
-              (run-at-time ecc-sidebar-spinner-interval
-                           ecc-sidebar-spinner-interval
-                           #'ecc-sidebar--spinner-tick)))
+              (ecc-visual-repeat ecc-sidebar-spinner-interval
+                                 'ecc-visual-enable-spinner
+                                 #'ecc-sidebar--spinner-tick)))
     (ecc-sidebar--spinner-stop)))
 
 (defun ecc-sidebar--spinner-tick ()
   "Turn the spinner one frame, or stop when there is nothing to turn.
-A sidebar nobody is looking at is not worth a timer."
+A sidebar nobody is looking at is not worth a timer.  The frame is
+drawn over the spinners that are there and nothing else is touched:
+the rows change on the hooks, and drawing them all again five times a
+second -- with git asked under every Space -- is what took a tick to
+0.39 s and Emacs down with it (`ecc-visual-repeat', 2026-09-21)."
   (if (and (ecc-sidebar--visible-p) (ecc-sidebar--running-p))
       (progn (ecc-visual-spinner-advance)
-             (ecc-sidebar-redraw))
+             (ecc-visual-spinner-refresh (get-buffer ecc-sidebar-buffer-name)))
     (ecc-sidebar--spinner-stop)))
 
 ;;;; Hearing about a change
@@ -669,6 +670,11 @@ from here but not answered."
   "Major mode of the sidebar listing the Spaces and the sessions."
   (setq truncate-lines t
         cursor-in-non-selected-windows nil)
+  ;; `special-mode' leaves undo on, and a buffer erased and drawn again
+  ;; on every change has nothing to undo: the history held 32,000
+  ;; redraws in one Emacs, and every marker of the buffer with them
+  ;; (measured 2026-09-21).
+  (buffer-disable-undo)
   (hl-line-mode 1)
   (ecc-sidebar--listen t)
   (add-hook 'kill-buffer-hook #'ecc-sidebar--teardown nil t))

@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Assisted-by: Claude Code:claude-opus-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -110,6 +111,23 @@ The whole result is always available with RET."
   "Lines of a diff shown inside a tool or permission section.
 The whole diff is always available with RET."
   :type 'integer
+  :group 'ecc)
+
+(defcustom ecc-render-inhibit-inline-diff nil
+  "Non-nil folds the diff of a call that changes a file.
+The diff is drawn either way and TAB opens it; this says whether an
+Edit, a MultiEdit, a Write, a NotebookEdit and a Bash command the CLI
+reports a file change for come up showing it.
+
+Nil, the default, is what the CLI does: it shows what it wrote the
+moment it writes it, and a change nobody is shown is a change nobody
+reviews.  A diff can run long though -- `ecc-render-diff-max-lines' is
+the only thing holding it -- so a reader who would rather have the
+headings back sets this and opens the ones worth reading.
+
+Either way it is only the default.  What the reader folded or unfolded
+with TAB, the digits or `+\=' / `-\=' is remembered per node and wins."
+  :type 'boolean
   :group 'ecc)
 
 (defvar ecc-render-show-result-line t
@@ -254,9 +272,9 @@ an arrow or the key of an input says its piece once."
 (defun ecc-render--marker-width (line)
   "Return the columns the list marker of LINE takes, or nil when it has none.
 What is measured is what is drawn rather than what is written:
-`ecc-markdown-fontify\=' puts a `display\=' bullet over the marker of a
-list item, and a numbered marker is wider in the text than the bullet
-drawn in its place."
+`ecc-markdown-fontify\=' puts a one-column `display\=' bullet over a
+\"-\", \"*\" or \"+\" and leaves a number as it is, so the width is the
+bullet's for the first and the number's own for the second."
   (when (string-match ecc-markdown-bullet-regexp line)
     (let* ((from (match-beginning 1))
            (to (match-end 1))
@@ -312,26 +330,38 @@ was.
 
 A line too long for the window wraps under PREFIX rather than back to
 the left edge (`ecc-render--wrap-prefix\='), and a line that opens a
-list item wraps under the item rather than under its bullet."
+list item wraps under the item rather than under its bullet.
+
+The lines are put together first and inserted as one string.  Every
+insertion walks the whole chain of markers of the buffer, and a
+transcript's chain is long -- two markers a node of its own, and what
+other packages leave behind on every command -- so a block of two
+hundred lines inserted a line at a time was four hundred walks, and at
+40 ms a walk in a long-lived Emacs a single redraw took seconds, as
+measured on 2026-09-21."
   (let* ((body (string-trim-right (or text "") "[\n]+"))
          (wrap (ecc-render--wrap-prefix prefix))
          ;; A body runs to a handful of indentations at most, so the
          ;; strings are made once each and handed out again.
          (wraps (list (cons (length wrap) wrap))))
-    (dolist (line (split-string body "\n"))
-      (let* ((hidden (ecc-render--hidden-line-p line))
-             (string (concat prefix line))
-             (marker (ecc-render--marker-width line))
-             (width (+ (length wrap) (or marker 0)))
-             (hang (or (alist-get width wraps)
-                       (setf (alist-get width wraps)
-                             (make-string width ?\s)))))
-        (add-face-text-property 0 (length string) face t string)
-        (put-text-property 0 (length string) 'wrap-prefix hang string)
-        (when hidden
-          (put-text-property 0 (length string) 'invisible 'ecc-markup string))
-        (insert string)
-        (insert (if hidden (propertize "\n" 'invisible 'ecc-markup) "\n"))))))
+    (insert
+     (mapconcat
+      (lambda (line)
+        (let* ((hidden (ecc-render--hidden-line-p line))
+               (string (concat prefix line))
+               (marker (ecc-render--marker-width line))
+               (width (+ (length wrap) (or marker 0)))
+               (hang (or (alist-get width wraps)
+                         (setf (alist-get width wraps)
+                               (make-string width ?\s)))))
+          (add-face-text-property 0 (length string) face t string)
+          (put-text-property 0 (length string) 'wrap-prefix hang string)
+          (when hidden
+            (put-text-property 0 (length string) 'invisible 'ecc-markup string))
+          (concat string
+                  (if hidden (propertize "\n" 'invisible 'ecc-markup) "\n"))))
+      (split-string body "\n")
+      ""))))
 
 (defun ecc-render--cluster-p (previous next)
   "Return non-nil when NEXT belongs with PREVIOUS rather than apart from it."
@@ -540,6 +570,29 @@ touch the disk."
         ((>= n 1000) (format "%.1fk" (/ n 1000.0)))
         (t (format "%d" n))))
 
+(defun ecc-render--file-label (path)
+  "Return PATH as the transcript names it.
+Relative to the root of the session being drawn while it is under it,
+absolute when it is not: that is what the CLI\='s own TUI prints -- it
+says `sub/deep.py\=' for a file of the project and the whole path for
+one outside it (measured against CLI 2.1.278, 2026-09-22).  A file
+outside keeps its path rather than a string of ../.., which says less.
+
+Outside a transcript buffer there is no session to be relative to, and
+the path is abbreviated as it always was."
+  (let* ((path (or path ""))
+         (root (and ecc-render--session
+                    (ecc-session-project-root ecc-render--session)))
+         (full (expand-file-name path))
+         ;; With the slash, so that a root of /tmp/app does not take in
+         ;; /tmp/application.
+         (dir (and root (file-name-as-directory (expand-file-name root)))))
+    (if (and dir (not (string-empty-p path))
+             (string-prefix-p dir full)
+             (not (equal dir (file-name-as-directory full))))
+        (file-relative-name full dir)
+      (abbreviate-file-name path))))
+
 (defconst ecc-render-summary-width 60
   "Most characters a heading gives the summary of a call.
 A heading is worth reading only while it stays on one line, so every
@@ -551,7 +604,11 @@ summary is cut to the same width whatever the tool.")
    (or (pcase name
          ((or "Read" "Write" "Edit" "MultiEdit" "NotebookEdit")
           (when-let* ((path (alist-get 'file_path input)))
-            (abbreviate-file-name path)))
+            ;; From the left: a heading full of the directories every
+            ;; call shares says nothing, and the name of the file is
+            ;; what the reader is looking for.
+            (ecc--truncate-left (ecc-render--file-label path)
+                                ecc-render-summary-width)))
          ("Bash" (ecc--truncate (alist-get 'command input)
                                 ecc-render-summary-width))
          ((or "Glob" "Grep") (alist-get 'pattern input))
@@ -827,6 +884,17 @@ appended at its end, which is where a streamed delta lands."
              (not (and ecc-image-inline
                        (eq (ecc-node-type node) 'tool)
                        (ecc-render--tool-images node)))
+             ;; A call that changes a file opens on its diff, for the
+             ;; same reason: the CLI puts the change in front of the
+             ;; reader as it makes it, and a diff behind a fold is a
+             ;; change that goes unread.  `ecc-diff-tool-p' is asked
+             ;; rather than `ecc-diff-for-tool' because this runs for
+             ;; every node of the transcript at every redraw.
+             (not (and (not ecc-render-inhibit-inline-diff)
+                       (eq (ecc-node-type node) 'tool)
+                       (or (ecc-diff-tool-p (ecc-model-node-get node 'name)
+                                            (ecc-model-node-get node 'input))
+                           (ecc-render--bash-edit-files node))))
              t)))))
 
 (defun ecc-render--wanted-hidden-p (id)
@@ -892,19 +960,30 @@ without the cache, the transcript of an agent, fontifies each time."
       (setq patches (cdr patches)))
     (cons added removed)))
 
-(defun ecc-render--file-diff-1 (entry)
-  "Return the merged diff text of every change of the file ENTRY."
+(defun ecc-render--file-diff-parts (entry)
+  "Return the diff text of each change of the file ENTRY, oldest first.
+One string per hunk of the entry, empty for a change there is nothing
+to draw of; joined, they are the body of its row, which is how
+`ecc-visit\=' tells which change a line of that body belongs to."
   (let ((patches (ecc-file-entry-patches entry))
         (parts nil))
     (dolist (hunk (ecc-file-entry-hunks entry))
       (push (cond ((and (car patches) (> (length (car patches)) 0))
                    (ecc-diff-from-patch (car patches)))
+                  ;; Neither side known and no patch: a change the CLI
+                  ;; reported nothing about.  Nothing is what there is
+                  ;; to draw, rather than a hunk of no lines.
+                  ((and (null (car hunk)) (null (cdr hunk))) "")
                   ((null (car hunk)) (ecc-diff-for-write (cdr hunk) nil))
                   (t (or (ecc-diff-render (car hunk) (cdr hunk))
                          (propertize "(no change)\n" 'face 'diff-context))))
             parts)
       (setq patches (cdr patches)))
-    (string-join (nreverse parts) "")))
+    (nreverse parts)))
+
+(defun ecc-render--file-diff-1 (entry)
+  "Return the merged diff text of every change of the file ENTRY."
+  (string-join (ecc-render--file-diff-parts entry) ""))
 
 (defun ecc-render--file-body-1 (diff)
   "Return the lines of DIFF as they are drawn under a file row."
@@ -961,7 +1040,7 @@ three edited files (measured 2026-09-13)."
                                    (format "W×%d" (ecc-file-entry-writes entry)))))
               " ")))
     (concat "  " (ecc-render--fold-cell)
-            (propertize (abbreviate-file-name (ecc-file-entry-path entry))
+            (propertize (ecc-render--file-label (ecc-file-entry-path entry))
                         'face 'ecc-tool-face)
             (propertize (concat "  " ops) 'face 'ecc-dim-face)
             (if (ecc-file-entry-hunks entry)
@@ -1006,7 +1085,7 @@ three edited files (measured 2026-09-13)."
   (let ((id (concat "plan:" path))
         (start (point)))
     (insert "  " (ecc-render--fold-cell)
-            (propertize (abbreviate-file-name path) 'face 'ecc-tool-face)
+            (propertize (ecc-render--file-label path) 'face 'ecc-tool-face)
             "\n")
     (ecc-render--mark start (point) id 1)
     (ecc-render--mark-heading start id)
@@ -1334,6 +1413,26 @@ is appended."
     (dolist (child (ecc-node-children node))
       (ecc-render--insert-node session child (1+ depth)))))
 
+(defun ecc-render--tool-diff (node)
+  "Return the diff text the tool NODE has to show, or nil.
+The structuredPatch the CLI reported once the call had run is what
+really happened and wins over the guess made from the file before it;
+a call still running has only the guess."
+  (let ((input (ecc-model-node-get node 'input)))
+    (and input
+         (not (ecc-node-streaming node))
+         (ecc-diff-for-tool (ecc-model-node-get node 'name) input
+                            (ecc-model-node-get node 'before)
+                            (ecc-model-node-get node 'patch)))))
+
+(defun ecc-render--diff-summary-line (diff body)
+  "Return the line that says what DIFF does, indented by BODY, or nil.
+It stands over the diff rather than on the heading, where the CLI\='s own
+TUI puts it: \"Added 1 line, removed 1 line\", with a side that changed
+nothing left out rather than counted as zero (`ecc-diff-summary\=')."
+  (when-let* ((summary (and diff (ecc-diff-summary (ecc-diff-text-counts diff)))))
+    (propertize (concat body summary "\n") 'face 'ecc-dim-face)))
+
 (defun ecc-render--tool-heading (node depth)
   "Return the heading line of the tool NODE at DEPTH, without newline."
   (let* ((name (or (ecc-model-node-get node 'name) "?"))
@@ -1360,23 +1459,25 @@ is appended."
               (propertize (concat " · " summary) 'face 'ecc-dim-face))
             (ecc-render--elapsed-mark node))))
 
-(defun ecc-render--insert-tool-body (node body)
+(defun ecc-render--insert-tool-body (node body &optional diff)
   "Insert the input and the result of the tool NODE, indented by BODY.
-An Edit or a Write shows its input as a diff."
-  (let* ((name (ecc-model-node-get node 'name))
-         (input (ecc-model-node-get node 'input))
+A call that changes a file shows its input as a diff; DIFF is that
+diff when the caller has built it already, to build it only once."
+  (let* ((input (ecc-model-node-get node 'input))
          (error-p (eq (ecc-node-status node) 'error))
-         (diff (and input (ecc-diff-for-tool name input
-                                             (ecc-model-node-get node 'before)))))
+         (diff (or diff (ecc-render--tool-diff node))))
     (cond
      ((ecc-node-streaming node)
       (ecc-render--insert-lines (ecc-render--clip (ecc-model-streaming-text node)
                                                   ecc-render-result-max-lines)
                                 body 'ecc-dim-face))
+     ;; No path line over the diff: the heading of the call is the
+     ;; file, as `Update(probe.py)' is in the CLI's own TUI, and the
+     ;; name twice on two lines is the name twice.  What goes there is
+     ;; the count, on the line under the heading, as the CLI has it.
      (diff
-      (when-let* ((path (alist-get 'file_path input)))
-        (insert (propertize (concat body (abbreviate-file-name path)) 'face 'ecc-dim-face)
-                "\n"))
+      (when-let* ((line (ecc-render--diff-summary-line diff body)))
+        (insert line))
       (ecc-render--insert-lines (ecc-render--clip diff ecc-render-diff-max-lines)
                                 body 'ecc-dim-face))
      (t (ecc-render--insert-input input body)))
@@ -1395,10 +1496,96 @@ An Edit or a Write shows its input as a diff."
               (ecc-render--clip text ecc-render-result-max-lines)
               (concat body "→ ")
               (if error-p 'ecc-error-face 'ecc-dim-face))))))
+    ;; Under the output, as the CLI draws it.
+    (ecc-render--insert-bash-edit node body)
     ;; The pictures come after the clip, never through it: a result of
     ;; thirteen lines must not be what decides whether a screenshot is
     ;; seen.
     (ecc-render--insert-tool-images node body)))
+
+;;;; What a Bash command changed
+
+(defun ecc-render--bash-edit-files (node)
+  "Return the files the CLI says the Bash NODE changed and showed hunks of.
+Each is a plist of `ecc-protocol-bash-edit-diff'."
+  (plist-get (ecc-model-node-get node 'bash-edit) :files))
+
+(defun ecc-render--bash-edit-heading (file)
+  "Return the line that names FILE, a file a Bash command changed.
+The words are the CLI\='s: \"Updated a.txt (+1 -1)\", \"Created\" for a
+new file and \"Deleted\" for one removed."
+  (let* ((path (plist-get file :path))
+         (counts (ecc-diff-patch-counts (plist-get file :patch))))
+    (concat (propertize (pcase (plist-get file :change)
+                          ('created "Created ")
+                          ('deleted "Deleted ")
+                          (_ "Updated "))
+                        'face 'ecc-dim-face)
+            (propertize (ecc-render--file-label path)
+                        'face 'ecc-tool-face)
+            (propertize (format " (+%d -%d)" (car counts) (cdr counts))
+                        'face 'ecc-dim-face))))
+
+(defun ecc-render--bash-edit-notes (diff)
+  "Return the lines that say what of the Bash change DIFF is not drawn.
+The words and the order are the CLI\='s own (2.1.286): a command it
+could not diff at all gets one line and nothing else; otherwise the
+files past the ones shown are counted, and a command that ran beside
+another in the same repository says its diff may hold the other\='s."
+  (let* ((files (plist-get diff :files))
+         (more (plist-get diff :more))
+         (unavailable (plist-get diff :unavailable))
+         (shared-note (concat "(another command ran in this repository at the"
+                              " same time; a change made by either may show"
+                              " under either result)"))
+         (count (lambda (n) (format "%d %s" n (if (= n 1) "file" "files")))))
+    (if (or (plist-get diff :skipped)
+            (and (or unavailable (plist-get diff :shared)) (null files)))
+        (list (cond ((plist-get diff :skipped)
+                     "(file diff skipped for this git command)")
+                    ((and unavailable (> more 0))
+                     (format "(file diff unavailable for this command; %s changed)"
+                             (funcall count more)))
+                    (unavailable "(file diff unavailable for this command)")
+                    (t shared-note)))
+      (delq nil
+            (list (when (> more 0)
+                    (concat (if files
+                                (format "… %d more %s changed"
+                                        more (if (= more 1) "file" "files"))
+                              (format "%s changed (binary, mode only or too large to show)"
+                                      (funcall count more)))
+                            (if unavailable " (part of the diff is unavailable)" "")))
+                  (and (plist-get diff :shared) shared-note))))))
+
+(defun ecc-render--insert-bash-edit (node body &optional whole)
+  "Insert under BODY what the CLI says the Bash NODE changed.
+One block per file, its line and then its diff, each clipped to
+`ecc-render-diff-max-lines\=' as an Edit\='s is unless WHOLE, and under
+them what the CLI said of the rest (`ecc-render--bash-edit-notes\=').
+Nothing for a call the CLI reported no change for."
+  (when-let* ((diff (ecc-model-node-get node 'bash-edit)))
+    (dolist (file (plist-get diff :files))
+      ;; The line carries the file and its patch, which is how
+      ;; `ecc-visit' knows which file the diff lines under it are of: a
+      ;; Bash call names no file of its own.
+      (let ((start (point)))
+        (insert (ecc-render--hang (concat body (ecc-render--bash-edit-heading file))
+                                  body)
+                "\n")
+        (put-text-property start (point) 'ecc-changed-file
+                           (cons (plist-get file :path) (plist-get file :patch))))
+      (let ((patch (plist-get file :patch)))
+        (when (> (length patch) 0)
+          (ecc-render--insert-lines
+           (if whole
+               (ecc-diff-from-patch patch)
+             (ecc-render--clip (ecc-diff-from-patch patch) ecc-render-diff-max-lines))
+           body 'ecc-dim-face))))
+    (dolist (note (ecc-render--bash-edit-notes diff))
+      (insert (ecc-render--hang (propertize (concat body note) 'face 'ecc-dim-face)
+                                body)
+              "\n"))))
 
 (defvar ecc-image-max-per-node 6
   "Most images drawn under one tool call.
@@ -1419,18 +1606,22 @@ for; the rest are counted in a line and reachable with RET.")
 
 (defun ecc-render--insert-tool (session node depth)
   "Insert the tool NODE of SESSION at DEPTH."
-  (ecc-render--insert-owned
-   node depth
-   (lambda ()
-     (ecc-render--small
-       (insert (ecc-render--hang (ecc-render--tool-heading node depth)
-                                 (concat (ecc-render--pad depth) "  "))
-               "\n"))))
-  (ecc-render--insert-owned
-   node (1+ depth)
-   (lambda ()
-     (ecc-render--small
-       (ecc-render--insert-tool-body node (concat (ecc-render--pad depth) "  ")))))
+  ;; The body draws the diff and, over it, the line that counts it:
+  ;; built here, once, and handed down.
+  (let ((diff (ecc-render--tool-diff node)))
+    (ecc-render--insert-owned
+     node depth
+     (lambda ()
+       (ecc-render--small
+         (insert (ecc-render--hang (ecc-render--tool-heading node depth)
+                                   (concat (ecc-render--pad depth) "  "))
+                 "\n"))))
+    (ecc-render--insert-owned
+     node (1+ depth)
+     (lambda ()
+       (ecc-render--small
+         (ecc-render--insert-tool-body node (concat (ecc-render--pad depth) "  ")
+                                       diff)))))
   (dolist (child (ecc-node-children node))
     (ecc-render--insert-node session child (1+ depth))))
 
@@ -1596,12 +1787,18 @@ of the file around it."
                             ecc-render-diff-max-lines)
           body 'ecc-assistant-face))
         (diff
-         (when-let* ((path (alist-get 'file_path (ecc-request-input request))))
+         ;; The heading of a request that is still pending names the
+         ;; file; one that has been answered says only how it went, so
+         ;; there the diff keeps a line to say what it was about.
+         (when-let* ((path (and (not (eq (ecc-node-status node) 'pending))
+                                (alist-get 'file_path (ecc-request-input request)))))
            (insert (ecc-render--hang
-                    (propertize (concat body (abbreviate-file-name path))
+                    (propertize (concat body (ecc-render--file-label path))
                                 'face 'ecc-dim-face)
                     body)
                    "\n"))
+         (when-let* ((line (ecc-render--diff-summary-line diff body)))
+           (insert line))
          (ecc-render--insert-lines (ecc-render--clip diff ecc-render-diff-max-lines)
                                    body 'ecc-dim-face))
         (t (ecc-render--insert-input (ecc-request-input request) body)))))))
@@ -2008,10 +2205,16 @@ this way.")
     ;; alone stays, because the way back out of it is named nowhere
     ;; else.
     (when (eq (ecc-session-state session) 'exited)
-      (propertize (format "Exited with code %s; R resumes it"
-                          (or (alist-get 'exit-status (ecc-session-progress session))
-                              "?"))
-                  'face 'ecc-error-face))))
+      (if-let* ((status (alist-get 'exit-status (ecc-session-progress session))))
+          (propertize (format "Exited with code %s; R resumes it" status)
+                      'face 'ecc-error-face)
+        ;; No status is no process: a session read back from its
+        ;; recording, which has not run in this Emacs.  Nothing went
+        ;; wrong with it, and a `code ?' said something had.
+        (propertize (if (ecc-model-option session :restored nil)
+                        "Restored; a prompt or R starts it"
+                      "Not running; R resumes it")
+                    'face 'ecc-dim-face)))))
 
 (defun ecc-render--tail-lines (session)
   "Return the lines drawn at the end of the transcript of SESSION."
@@ -2070,9 +2273,15 @@ no turn, so nothing freezes them."
       ('handoff (propertize "⇄ handed over to the terminal" 'face 'ecc-pending-face))
       ('idle (propertize "○ idle" 'face 'ecc-dim-face))
       ('starting (propertize "○ starting…" 'face 'ecc-dim-face))
-      ('exited (propertize (format "✗ exited (code %s)"
-                                   (or (alist-get 'exit-status progress) "?"))
-                           'face 'ecc-error-face))
+      ('exited (if-let* ((status (alist-get 'exit-status progress)))
+                   (propertize (format "✗ exited (code %s)" status)
+                               'face 'ecc-error-face)
+                 ;; Read back from a recording and never run here; see
+                 ;; `ecc-render--tail-string'.
+                 (propertize (if (ecc-model-option session :restored nil)
+                                 "○ restored"
+                               "○ not running")
+                             'face 'ecc-dim-face)))
       ('compacting (propertize "⟲ compacting…" 'face 'ecc-running-face))
       ((or 'waiting-permission 'waiting-question 'waiting-plan)
        (propertize
@@ -2213,7 +2422,12 @@ so it is spelled out with its kind."
            (ecc-session-state session))
     ((or 'idle 'starting) nil)
     ('handoff (propertize "⇄ terminal" 'face 'ecc-pending-face))
-    ('exited (propertize "✗ exited" 'face 'ecc-error-face))
+    ('exited (cond ((alist-get 'exit-status (ecc-session-progress session))
+                    (propertize "✗ exited" 'face 'ecc-error-face))
+                   ;; No process has run here; see `ecc-render--tail-string'.
+                   ((ecc-model-option session :restored nil)
+                    (propertize "○ restored" 'face 'ecc-dim-face))
+                   (t (propertize "○ not running" 'face 'ecc-dim-face))))
     ('compacting (propertize "⟲ compacting" 'face 'ecc-running-face))
     ((or 'waiting-permission 'waiting-question 'waiting-plan)
      (let ((n (length (ecc-session-pending session))))
@@ -2873,7 +3087,8 @@ region has left behind pulls the region back to that block."
                 ecc-usage-hook
                 ecc-compact-hook
                 ecc-files-updated-hook
-                ecc-tasks-updated-hook))
+                ecc-tasks-updated-hook
+                ecc-input-queue-changed-hook))
   (add-hook hook #'ecc-render--on-change))
 
 (defun ecc-render--on-turn-finished (session &optional turn)

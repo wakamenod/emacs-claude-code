@@ -1,0 +1,19 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:03.500
+Flymake marks an error on line 2
+
+00:00:03.500 --> 00:00:08.300
+In the menu (C-c c ?), e sends the diagnostic with the code around it
+
+00:00:08.300 --> 00:00:11.300
+Claude answers and proposes an edit
+
+00:00:11.300 --> 00:00:15.300
+The edit waits for permission
+
+00:00:15.300 --> 00:00:18.700
+Allowing it makes the edit, and the buffer shows it
+
+00:00:18.700 --> 00:00:21.500
+The checker runs again and finds nothing

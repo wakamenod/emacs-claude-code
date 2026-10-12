@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Assisted-by: Claude Code:claude-opus-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -590,6 +591,15 @@ byte for byte, such as the tool input of an allow response."
                      :null-object :null
                      :false-object :false))
 
+(defun ecc-tool-input-path (input)
+  "Return the file the tool INPUT names, or nil.
+INPUT is the input alist of a tool call: an Edit, a Write or a Read
+names its file as file_path, a NotebookEdit as notebook_path."
+  (let ((path (and (consp input)
+                   (or (alist-get 'file_path input)
+                       (alist-get 'notebook_path input)))))
+    (and (stringp path) (not (string-empty-p path)) path)))
+
 (defun ecc--json-true-p (value)
   "Return non-nil when VALUE is a JSON true.
 JSON false reads as `:false\=', which is a symbol and therefore true to
@@ -646,13 +656,31 @@ what was sent as one piece, the way it was before."
 
 ;;;; Small helpers
 
+(defun ecc--flatten (string)
+  "Return STRING with every run of blanks and newlines made one space.
+Not `replace-regexp-in-string': it saves the match data first, and
+saving it after a search in a buffer makes a marker per group in that
+buffer -- seven a redraw of the sidebar, five times a second, in an
+Emacs that never collected them (measured 2026-09-21).  `split-string'
+searches the string alone and saves nothing."
+  (string-join (split-string (or string "") "[ \t\n\r]+") " "))
+
 (defun ecc--truncate (string width)
   "Return STRING shortened to at most WIDTH characters.
 Newlines are replaced by spaces and an ellipsis marks a cut."
-  (let ((flat (replace-regexp-in-string "[ \t\n\r]+" " " (or string ""))))
+  (let ((flat (ecc--flatten string)))
     (if (<= (length flat) width)
         flat
       (concat (substring flat 0 (max 0 (1- width))) "…"))))
+
+(defun ecc--truncate-left (string width)
+  "Return STRING shortened to at most WIDTH characters, keeping its end.
+For a path: what tells one call from another is the file at the end of
+it, not the directories every call shares."
+  (let ((flat (replace-regexp-in-string "[ \t\n\r]+" " " (or string ""))))
+    (if (<= (length flat) width)
+        flat
+      (concat "…" (substring flat (- (length flat) (max 0 (1- width))))))))
 
 (defun ecc--fit (string width)
   "Return STRING shortened to at most WIDTH columns on the display.
@@ -660,7 +688,7 @@ Like `ecc--truncate', but counts what a column costs to draw rather
 than how many characters it holds: a Japanese title is twice as wide as
 it is long, and counting characters is what tears a list of them out of
 line."
-  (let ((flat (replace-regexp-in-string "[ \t\n\r]+" " " (or string ""))))
+  (let ((flat (ecc--flatten string)))
     (if (<= (string-width flat) width)
         flat
       ;; The padding fills the half column left behind when the cut

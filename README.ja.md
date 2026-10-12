@@ -4,7 +4,7 @@
 
 # Emacs Client for Claude Code
 
-Claude Code CLI 向けの Emacs クライアントです。通常の Emacs バッファ内で直接対話を行うことができます。
+Claude Code CLI 向けの Emacs クライアントです。対話は通常の Emacs バッファの中で進みます。
 
 ![Emacs 29.1+](https://img.shields.io/badge/Emacs-29.1%2B-7F5AB6)
 ![Claude Code CLI](https://img.shields.io/badge/Claude%20Code-CLI-D97757)
@@ -17,28 +17,29 @@ Claude Code CLI 向けの Emacs クライアントです。通常の Emacs バ�
 
 ## 概要
 
-ecc は `claude` をヘッドレスモードで実行し、パイプ経由で stream-json プロトコルを用いて通信を行うことで、
-標準的な Emacs バッファに対話を描画します。
+ecc は `claude` をヘッドレスモードで実行し、パイプ越しに stream-json プロトコルで通信して、対話を標準の Emacs バッファに描画します。
 
-対話履歴は通常のバッファテキストであるため、検索、`occur`、ナローイング、コピー、Markdown へのエクスポートといった標準的な Emacs の操作をそのまま利用できます。
-faceはテキスト挿入時に適用されるため、`M-x customize` によるカスタマイズが可能です。
+対話履歴は通常のバッファテキストなので、検索、`occur`、ナローイング、コピー、Markdown へのエクスポートといった Emacs の操作がそのまま使えます。
+face は挿入時に付き、`M-x customize` でカスタマイズできます。
 
 ### スコープとトレードオフ
 
-- **ターミナルエミュレーションなし:** CLI のターミナル UI は再現しません。実際のターミナル操作が必要な場合は、`ecc-tui-open` で実行中のセッションをターミナルへ引き渡し、完了後に戻すことができます。
-- **Claude Code 専用:** Claude Code の独自プロトコルと直接通信するため、汎用の LLM フロントエンドではありません。
-- **軽量な描画処理:** Markdown、表、diff は完全な外部実装ではなく、ecc 独自の内蔵パーサーによって描画されます。
-- **プロトコルの直接反映:** 権限の確認要求、利用状況データ（`get_usage`）、過去の会話ログは、推測を交えず CLI から直接取得されます。
+- **ターミナルエミュレーションなし:** CLI のターミナル UI は再現しません。`ecc-tui-open` で実行中のセッションをターミナルへ引き渡し、終わったら戻せます。
+- **Claude Code 専用:** Claude Code のプロトコルと直接通信します。汎用の LLM フロントエンドではありません。
+- **軽量な描画処理:** Markdown、表、diff は外部パッケージではなく、ecc 内蔵の小さなパーサーで描画します。
+- **プロトコルの直接反映:** 権限の確認要求、利用状況（`get_usage`）、会話ログは、推測ではなく CLI が報告するものをそのまま使います。
 
 ### 主な機能
 
-- **[Diff レビュー](https://wakamenod.github.io/emacs-claude-code/ja/features/review/):** セッション中に行われたすべての変更を 1 つの `diff-mode` バッファで確認できます。編集・シェルコマンド・スクリプトのいずれによる変更も同じように表示されます。ハンクにインラインコメントを付け、まとめて 1 つのプロンプトとして送信できます。`ecc-review-style` を設定すると、同じレビューを ediff で開き、全ファイルを 1 つのセッションで左右に並べて表示できます。
-- **[インタラクティブな編集](https://wakamenod.github.io/emacs-claude-code/ja/features/review/#適用前の提案をレビューする):** 提案されたファイル編集を適用前に確認・修正できます。
-- **[プランモード](https://wakamenod.github.io/emacs-claude-code/ja/features/review/#プランモード):** 提案された実行計画を、編集可能なバッファ内で確認・調整しながら進められます。
+- **[レビューの中の Claude](https://wakamenod.github.io/emacs-claude-code/ja/features/review-claude/):** MCP サーバーを有効にすると、Claude は `review_*` ツールで diff レビューを読み、行ごとにコメントを付けます。頼まれるとセッションのレビューを開き、行やハンクにコメントを付け、ユーザーのコメントに返信し、話題にしている箇所までレビューをスクロールします。Claude のコメントには専用の face が付き、`a` で隠せます。レビューで `T` を押すと Claude が変更を 1 か所ずつ案内し、`M` でレビューを離れずに Claude へメッセージを送れます。リージョンがアクティブなら、選んだ行についてのメッセージになります。ediff では、diff の横の欄に Claude の返答が表示され、許可の要求にもその場で答えられます。
+- **[Diff レビュー](https://wakamenod.github.io/emacs-claude-code/ja/features/review/):** セッション中の変更を、編集・シェルコマンド・スクリプトのどれによるものでも、すべて 1 つの `diff-mode` バッファで確認できます。`C-c c D` で開くメニューでは、比べる対象を選べます。対象は、未コミット・ステージ済み・未ステージの変更、今のブランチと別のブランチ、GitHub のプルリクエスト（`gh` CLI があるとき）、コミット、範囲です。行やハンク全体にコメントを付け、まとめて 1 つのプロンプトとして送信できます。送信してもレビューは開いたままなので、Claude はレビューの中で各コメントに返信でき、次の送信では新しいコメントだけを送ります。`s` で diff の横にファイルの一覧を出し、`/` でフィルタに合わないファイルを隠せます。開いているレビューは、ファイルの変更に合わせて更新されます。`ecc-review-style` を設定すると、同じレビューを ediff で開き、全ファイルを 1 つのセッションで表示できます。行の中で変わった語も示されます。変更前を上、変更後を下に並べ、`|` で左右に並べ替えられます。ediff でも、Claude のコメントとファイルの変更への追従は同じように働きます。キーは ediff の左右どちらのウィンドウでも使えます。`c` でポイントの行にコメントを付けられ、ポイントを動かすと反対側も同じ場所に合わせて動きます。`RET` でその行のファイルを別のフレームに開きます。
+- **[インタラクティブな編集](https://wakamenod.github.io/emacs-claude-code/ja/features/permissions/#許可する前に提案を編集する):** 提案されたファイル編集を適用前に確認・修正できます。
+- **[ソースへジャンプ](https://wakamenod.github.io/emacs-claude-code/ja/features/prompt/#ソースを開く):** diff の行、ファイルを扱うツール呼び出しの見出し、Claude の返答中のパス（`foo.el:12`）で `RET` を押すと、そのファイルを該当行で開きます。返答中のパスはクリックでも開きます。ディレクトリのないファイル名はプロジェクトの中から探し、見つからなければ確認したうえでマシン全体を探します（`ecc-visit-search-machine`）。あとから同じファイルが変更されても、行番号はそれに合わせて補正します。
+- **[プランモード](https://wakamenod.github.io/emacs-claude-code/ja/features/permissions/#プランモード):** 提案された計画を、編集可能なバッファで確認・調整できます。
 - **[グローバル操作](https://wakamenod.github.io/emacs-claude-code/ja/reference/key-bindings/):** どのバッファからでも保留中のツール実行リクエストを許可・拒否できます。
-- **[セッション管理](https://wakamenod.github.io/emacs-claude-code/ja/features/sessions/):** ダッシュボードから複数の同時並行セッションを整理・管理できます。
-- **[Space と worktree](https://wakamenod.github.io/emacs-claude-code/ja/features/spaces/):** プロジェクトごとに Emacs のタブ（Space）が割り当てられ、その中のウィンドウ配置は並べたまま保たれます（`ecc-use-spaces`、既定で有効）。サイドバーには全プロジェクトとセッションが動作状況とともに並び、`ecc-start-worktree` はリポジトリの隣にブランチをチェックアウトして独立した Space として開きます。
-- **安全なデフォルト設定:** 自動承認は存在せず、勝手に許可されることはありません。答えられなくなったリクエストは拒否として記録されます。内蔵のループバック MCP サーバーはデフォルトで無効化されており、Elisp の評価ツールも明示的な有効化が必要です。
+- **[セッション管理](https://wakamenod.github.io/emacs-claude-code/ja/features/sessions/):** 同時に動いている複数のセッションをダッシュボードから管理できます。
+- **[Space と worktree](https://wakamenod.github.io/emacs-claude-code/ja/features/spaces/):** プロジェクトごとに Emacs のタブ（Space）が割り当てられ、その中のウィンドウ配置は並べたまま保たれます（`ecc-use-spaces`、既定で有効）。サイドバーには全プロジェクトとセッションが動作状況とともに並び、`ecc-start-worktree` はリポジトリの隣にブランチをチェックアウトして独立した Space として開きます。MCP サーバーを有効にすると、Claude は `list_worktrees` で worktree を一覧し、作業の終わったものを `remove_worktree` で削除します。
+- **安全なデフォルト設定:** `default` の[権限モード](https://wakamenod.github.io/emacs-claude-code/ja/features/permissions/#権限モード)では、Claude はファイルを編集したりコマンドを実行したりする前に許可を求めます。答えられなくなったリクエストは拒否として記録されます。ほかのモードでは、その一部を確認なしで通します。内蔵のループバック MCP サーバーは既定で無効です。有効にすると、そのレビューのツールはファイルを書かないので確認なしで許可されます。`remove_worktree` も確認なしで許可されます（`ecc-worktree-auto-allow-removal`）。削除するのは、ブランチがマージ済みで作業中のセッションがない worktree だけです。コミットしていない変更や追跡していないファイル、未保存のバッファ、送っていない下書きがあれば削除しません。ブランチは削除しません。ただし git が無視するファイルはその worktree ごと消えます。ecc の外で起動した `claude` からこのサーバーを使う場合は、権限の許可リストに `mcp__emacs__remove_worktree` を加えてください。Elisp の評価には明示的な有効化が必要です。
 
 ## 動作要件
 
@@ -47,7 +48,7 @@ faceはテキスト挿入時に適用されるため、`M-x customize` による
 
 ### 任意の依存関係
 
-以下のパッケージがインストールされている場合、機能が強化されます（未導入でも代替処理が行われ、エラーにはなりません）：
+以下のパッケージは、インストールされていれば使います。なくても動作します。
 
 - [ghostel](https://github.com/dakra/ghostel) — `ecc-tui-open` で引き渡したセッションのターミナルエミュレーター
 - [posframe](https://github.com/tumashu/posframe) — `/btw` や利用状況のポップアップ表示
@@ -66,9 +67,10 @@ ecc は MELPA に登録されていません。本リポジトリから直接イ
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest))
 ```
 
-*※ 特定のコミットに固定したい場合は `:rev "<commit-sha>"` を指定してください。*
+*※ 特定のコミットに固定するには `:rev "<commit-sha>"` を指定します。*
 
 ### Emacs 29（`package-vc-install`）
+
 ```
 M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 ```
@@ -78,7 +80,7 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 <details>
 <summary>straight.el、Elpaca</summary>
 
-リポジトリ名が `emacs-claude-code` でパッケージ名が `ecc` であるため、レシピ内でパッケージ名を明示的に指定する必要があります。
+リポジトリ名（`emacs-claude-code`）とパッケージ名（`ecc`）が異なります。リポジトリの URL からパッケージ名を推測するパッケージマネージャーでは、パッケージ名を明示的に指定してください。
 
 ```elisp
 ;; straight.el
@@ -93,25 +95,30 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 
 ## 設定例
 
+作者が使っている設定です。
+
 ```elisp
 (use-package ecc
   :ensure t
   :vc (:url "https://github.com/wakamenod/emacs-claude-code" :rev :newest)
   :bind-keymap ("C-c c" . ecc-global-map)
   :custom
+  ;; auto モードでセッションを始める。ほとんどのリクエストに CLI が自分で答える。
   (ecc-permission-mode "auto")
+  ;; エコーエリアへの表示に加えて、トランスクリプトを光らせる。
   (ecc-notify-level 'pulse)
+  ;; 使用量レポートと /btw の回答をフレームの上に浮かべる (posframe が必要)。
   (ecc-usage-display 'posframe)
   (ecc-btw-display 'posframe)
-  (ecc-prompt-suggestions-enabled t)
-  ;; ediff でレビューしたい場合はコメントを外す (既定は diff-mode バッファ)。
-  ;; (ecc-review-style 'ediff)
-  ;; Emacs の MCP サーバー。xref・imenu・flymake を Claude から参照でき、
-  ;; 作業を worktree のセッションに引き渡すツールも有効になる。
-  (ecc-mcp-enabled t))
+  ;; レビューを 1 つの diff-mode バッファではなく ediff で開く。
+  (ecc-review-style 'ediff)
+  ;; すべてのセッションに Emacs の MCP サーバーを登録する。
+  (ecc-mcp-enabled t)
+  ;; ターンのあとに CLI が次のプロンプトを提案する。
+  (ecc-prompt-suggestions-enabled t))
 ```
 
-その他の設定項目については、[設定リファレンス](https://wakamenod.github.io/emacs-claude-code/ja/reference/configuration/) を参照してください。
+その他の設定は[設定リファレンス](https://wakamenod.github.io/emacs-claude-code/ja/reference/configuration/) を参照してください。
 
 ## クイックスタート
 
@@ -130,7 +137,7 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
 
 ## 謝辞
 
-ecc は、以下のプロジェクトの設計やアプローチから着想を得ています：
+ecc は以下のプロジェクトから着想を得ています。
 
 * **[claude-code-ide.el](https://github.com/manzaltu/claude-code-ide.el)** — IDE 側における CLI 統合パターンの設計。
 * **[claude-code.el](https://github.com/stevemolitor/claude-code.el)** — Emacs におけるターミナルバッファの操作性向上。
@@ -143,13 +150,13 @@ Claude Code 向け Emacs パッケージの比較：
 
 | プロジェクト | 通信プロトコル / 経路 | UI 形式 | 外部依存パッケージ | 必要 Emacs バージョン | 入手先 |
 | --- | --- | --- | --- | --- | --- |
-| [claude-code-ide.el](https://github.com/manzaltu/claude-code-ide.el) | CLI TUI + WebSocket MCP サーバー | ターミナルエミュレータ | `websocket`, `transient`, `web-server` | 28.1 | GitHub |
-| [claude-code.el](https://github.com/stevemolitor/claude-code.el) | CLI TUI | ターミナルエミュレータ | `transient`, `inheritenv` | 30 | GitHub |
+| [claude-code-ide.el](https://github.com/manzaltu/claude-code-ide.el) | CLI TUI + WebSocket MCP サーバー | ターミナルエミュレーター | `websocket`, `transient`, `web-server` | 28.1 | GitHub |
+| [claude-code.el](https://github.com/stevemolitor/claude-code.el) | CLI TUI | ターミナルエミュレーター | `transient`, `inheritenv` | 30 | GitHub |
 | [eca-emacs](https://github.com/editor-code-assistant/eca-emacs) | 独立した `eca` バイナリとの JSON-RPC | Markdown バッファ + オーバーレイ | `dash`, `s`, `f`, `markdown-mode`, `compat` | 28.1 | MELPA |
 | [emacs-gravity](https://github.com/gdanov/emacs-gravity) | プラグインフック + Node シム + ソケット | Magit-section ツリー | `magit-section`, `transient`, Node.js | 27.1 | GitHub |
 | **ecc** | ヘッドレス `claude` とのパイプ経由 stream-json | 標準バッファ（履歴 + プロンプト） | なし | 29.1 | GitHub |
 
-外部依存パッケージの列は、各プロジェクトの `Package-Requires` が Emacs 本体以外に挙げているものです（2026-09-18 に各プロジェクトを確認）。`transient` は Emacs 28.1 以降に同梱されているため、同梱版で足りるパッケージは依存として宣言しません。ここで `transient` を挙げている 3 つは、対象 Emacs の同梱版より新しいものを要求しています。ecc は `posframe` と `nerd-icons` がインストールされていれば使いますが、どちらが無くても動作するため、依存には含みません。
+外部依存パッケージの列は、各プロジェクトの `Package-Requires` が Emacs 本体以外に挙げているものです（2026-09-18 に各プロジェクトを確認）。`transient` は Emacs 28.1 以降に同梱されているため、同梱版で足りるパッケージは依存として宣言しません。ここで `transient` を挙げている 3 つは、対象 Emacs の同梱版より新しいものを要求しています。ecc は `posframe` と `nerd-icons` がインストールされていれば使いますが、どちらがなくても動作するため、依存には含みません。
 
 ### 設計上の特徴
 
@@ -157,7 +164,7 @@ Claude Code 向け Emacs パッケージの比較：
 * **claude-code.el:** ネイティブ CLI TUI を Emacs のターミナルバッファ内で直接動作させる軽量ラッパー。
 * **eca-emacs:** 外部サーバーバイナリに依存し、特定のベンダーに固定されない設計。
 * **emacs-gravity:** プラグインフックを用いて Emacs、tmux、システムトレイを横断し、外部セッションまで捉える高度な統合。
-* **ecc:** ターミナルエミュレータを使用せず、CLI ストリームを直接標準の編集可能な Emacs テキストバッファに変換。
+* **ecc:** ターミナルエミュレーターを使用せず、CLI ストリームを直接標準の編集可能な Emacs テキストバッファに変換。
 
 ## ライセンス
 

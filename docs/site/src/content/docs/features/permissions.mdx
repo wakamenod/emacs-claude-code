@@ -1,0 +1,72 @@
+---
+title: Permissions and plans
+description: Answer permission requests and questions, edit a proposal before allowing it, and review a plan.
+---
+
+import Video from '../../../components/Video.astro';
+
+In the `default` [permission mode](#permission-modes), Claude asks before it edits a file or runs a command. Other modes let some of these through without asking. The request appears in the transcript with its diff or command, and the session is marked as waiting in its tab, the mode line (`⚠ecc:N`) and the [sidebar](/emacs-claude-code/features/spaces/#the-sidebar). A request that can no longer be answered is recorded as denied.
+
+## Answering a request
+
+<Video name="permission" label="A permission to write a file, allowed with a, and the turn finishing" />
+
+With point on the request in the transcript:
+
+| Key | Action |
+|---|---|
+| `a` / `d` | Allow once / deny |
+| `A` | Always allow this tool for the session |
+| `u` | Allow every request until the turn finishes |
+| `r` | Allow a matching rule (saved to the project's settings) |
+| `RET` | Inspect the proposal |
+| `c` | [Comment on the proposal](#editing-a-proposal-before-allowing-it) and deny it with the comments |
+| `e` | [Edit the proposal](#editing-a-proposal-before-allowing-it) before allowing it |
+
+From elsewhere:
+
+| Where | Keys |
+|---|---|
+| The prompt region | `C-c C-a` / `C-c C-d`: the request at point, else the oldest in this session, else the oldest of any session |
+| Any buffer | `C-c c a` / `C-c c d`: the oldest request; `C-c c n` jumps to it |
+| The dashboard and the sidebar | `a` / `d` on the session's line |
+| The menu | `A` allows every waiting request of the session; `-r` also remembers the tools |
+
+Answering from any buffer, the dashboard or the sidebar asks what it is about to answer first; set `ecc-answer-confirm` to `nil` to skip that. It leaves the tools in `ecc-answer-exclude-tools` (`Bash` by default) alone, since a shell command is read in the transcript.
+
+## Questions
+
+When Claude asks a question, `RET` on it opens a buffer to answer in: `1`–`9` choose an option, `SPC` toggles one of several, `o` types an answer of your own, and `C-c C-c` sends. From any buffer, `C-c c 1` to `C-c c 4` pick an option.
+
+<Video name="question" label="A question with two questions: one option chosen, two toggled on the second, and the answers sent" />
+
+## Editing a proposal before allowing it
+
+<Video name="proposal" label="The text of a proposed Write, changed in a buffer and then allowed with the change" />
+
+`c` on a request opens the change in a [review](/emacs-claude-code/features/review/). The comments you send are the reason for the denial, so Claude can propose again.
+
+`e` opens the proposed content in the file's major mode. `C-c C-c` allows the change with your text instead of Claude's and tells Claude what you altered; `C-c C-k` leaves the request waiting.
+
+## Plan mode
+
+When Claude leaves plan mode, the plan opens in an editable buffer beside the session.
+
+<Video name="plan" label="A plan opened in its own buffer, a comment put on one of its lines, the permission mode chosen, and the plan sent back with the comment" />
+
+Give feedback as a line comment, as an `@claude: …` line in the plan, or by editing the plan. With feedback, `C-c C-c` sends it and asks for a revision. Without, it approves the plan and switches to the permission mode chosen with `C-c C-p`, or else `ecc-plan-default-mode` (`"acceptEdits"`).
+
+| Key | Action |
+|---|---|
+| `C-c C-c` | Approve, or send the feedback |
+| `C-c C-k` | Reject with a reason, feedback included |
+| `C-c C-a` / `C-c C-r` | Add or remove a comment on this line |
+| `C-c C-d` | Diff your edits against the plan as proposed |
+| `C-c C-p` | Choose the permission mode to approve with |
+| `C-c C-n` | Next line changed since the previous plan |
+
+A revised plan marks the changed lines in the margin and shows `+N −N` in the header line. `P` in the transcript jumps to the plan.
+
+## Permission modes
+
+The footer under the prompt region shows the session's permission mode. `S-TAB` in the session buffer cycles through `default`, `acceptEdits`, `plan` and `auto`. `bypassPermissions` is left out of the cycle; choose it with `M-x ecc-set-permission-mode` (`p` in the menu). `ecc-permission-mode` sets the mode a new session starts in.

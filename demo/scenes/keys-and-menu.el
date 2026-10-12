@@ -69,8 +69,8 @@
   (demo-keys "C-c c B" "C-c c r" "C-c c c"))
 
 (defun demo-report-review-keys ()
-  "The two reviews, which are one review with one argument between them."
-  (demo-keys "C-c c D" "C-c c G"))
+  "The review key, whose menu holds both reviews."
+  (demo-keys "C-c c D"))
 
 (defun demo-report-gone-keys ()
   "The keys whose commands went away with them."

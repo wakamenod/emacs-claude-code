@@ -7,7 +7,7 @@
 # Two real sessions are started.  The comments at the end are really
 # sent, which is the change being shown: C-c C-c sends now.
 
-say "0.3.0 -- the review is git against git: D since the session started, G since the last commit"; sleep 6
+say "0.3.0 -- the review is git against git: D since the session started, w since the last commit"; sleep 6
 e "(demo-frame)"; sleep 1
 e "(demo-open-source)"; sleep 5
 
@@ -25,11 +25,11 @@ e "(demo-frame)"; sleep 2
 e "(demo-report-review)"; sleep 9
 say "greet.py was rewritten by a script, NOTES.md was never a tool call, README.md was committed -- all three are here"; sleep 9
 
-say "4. G -- ecc-review-worktree.  The same moment, against HEAD"; sleep 5
+say "4. w -- ecc-review-range.  The same moment, against HEAD"; sleep 5
 e "(demo-open-worktree-review)"; sleep 5
 e "(demo-frame)"; sleep 2
 e "(demo-report-worktree-review)"; sleep 10
-say "That is the one difference between them: D keeps what the session committed, G does not"; sleep 8
+say "That is the one difference between them: D keeps what the session committed, w does not"; sleep 8
 
 say "5. The comments.  c on a hunk, twice"; sleep 5
 e "(demo-open-review)"; sleep 3
@@ -61,7 +61,7 @@ e "(demo-show-session)"; sleep 8
 e "(demo-frame)"; sleep 2
 say "The comments are the prompt: each one carries its hunk and the sentence written about it"; sleep 8
 
-say "10. And a repository with no commit at all, where G used to stop at exit 128"; sleep 7
+say "10. And a repository with no commit at all, where w used to stop at exit 128"; sleep 7
 e "(demo-build-unborn)"; sleep 6
 e "(demo-start-unborn-session)"; sleep 8
 e "(demo-open-unborn-review)"; sleep 5

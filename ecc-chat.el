@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Assisted-by: Claude Code:claude-opus-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -63,7 +64,6 @@
 ;; The commands bound below live in the modules above this one.
 (declare-function ecc-prompt-send "ecc-prompt" ())
 (declare-function ecc-prompt-clear "ecc-prompt" ())
-(declare-function ecc-prompt-show-queue "ecc-prompt" ())
 (declare-function ecc-prompt-toggle-context "ecc-prompt" ())
 (declare-function ecc-prompt-insert-image "ecc-prompt" (file))
 (declare-function ecc-prompt-history-previous "ecc-prompt" ())
@@ -76,9 +76,11 @@
 (defvar ecc-prompt-immediate-commands)
 (declare-function ecc-prompt-run-immediately "ecc-prompt" (session command))
 (declare-function ecc-prompt-yank-image "ecc-prompt" (mime data))
+(declare-function ecc-prompt-yank-image-from-clipboard "ecc-prompt" ())
 (declare-function ecc-prompt-dnd-insert "ecc-prompt" (url &optional action))
 (declare-function ecc-switch-session "ecc-window" (session))
 (declare-function ecc-session-visit "ecc-session" ())
+(declare-function ecc-session-show-detail "ecc-session" ())
 (declare-function ecc-session-refresh "ecc-session" ())
 (declare-function ecc-session-show-log "ecc-session" ())
 (declare-function ecc-session-resume "ecc-session" ())
@@ -98,6 +100,7 @@
 (declare-function ecc-review-comment-request "ecc-review" (text))
 (declare-function ecc-review-edit-proposal "ecc-review" (&optional request))
 (declare-function ecc-btw-show "ecc-btw" (&optional session))
+(declare-function ecc-queue-show "ecc-queue" (&optional session entry))
 (declare-function ecc-next-attention "ecc-answer" ())
 (declare-function ecc-dashboard "ecc-dashboard" ())
 (declare-function ecc-menu "ecc-transient" ())
@@ -219,9 +222,10 @@ the dim face.")
     ;; (confirmed 2026-09-17).  Unbound, the sequence falls through to
     ;; `keyboard-quit', which is what the finger meant.
     (define-key map (kbd "C-c C-z") #'ecc-session-interrupt)
-    (define-key map (kbd "C-c C-q") #'ecc-prompt-show-queue)
+    (define-key map (kbd "C-c C-q") #'ecc-queue-show)
     (define-key map (kbd "C-c C-x") #'ecc-prompt-toggle-context)
     (define-key map (kbd "C-c C-i") #'ecc-prompt-insert-image)
+    (define-key map (kbd "C-c C-y") #'ecc-prompt-yank-image-from-clipboard)
     (define-key map (kbd "C-c C-s") #'ecc-hint-accept-suggestion)
     (define-key map (kbd "C-c C-r") #'ecc-prompt-history-insert)
     (define-key map (kbd "M-p") #'ecc-prompt-history-previous)
@@ -265,10 +269,15 @@ no \\`C-c C-<letter>' free goes to `ecc-menu' rather than taking one.")
     (define-key map (kbd "3") #'ecc-chat-show-level-3)
     (define-key map (kbd "4") #'ecc-chat-show-level-4)
     (define-key map (kbd "RET") #'ecc-session-visit)
-    ;; A link is drawn with `mouse-face\=' and nothing else, so
-    ;; `follow-link\=' reading that property is what keeps mouse-1 from
-    ;; following anywhere a link was not drawn.  No link carries a keymap
-    ;; of its own: these two are the whole of the mouse side.
+    ;; RET on a call that names a file opens the file; the node laid
+    ;; open, which RET was on every heading before, is `o'.
+    (define-key map (kbd "o") #'ecc-session-show-detail)
+    ;; A click follows what is drawn as a link, with a `mouse-face\=':
+    ;; a URL, a path in a reply, a picture.  A line of a diff and the
+    ;; heading of a call carry none and open on RET alone, so that a
+    ;; click that only meant to put the point there does not take the
+    ;; source window with it.  No link carries a keymap of its own:
+    ;; these two are the whole of the mouse side.
     (define-key map [mouse-2] #'ecc-chat-follow-link)
     (define-key map [follow-link] 'mouse-face)
     (define-key map (kbd "SPC") #'scroll-up-command)
@@ -624,19 +633,54 @@ off it as its `after-string', so it is shown and nothing more."
     (overlay-put ecc-chat--placeholder-overlay 'after-string ghost)
     (overlay-put ecc-chat--placeholder-overlay 'ecc-placeholder text)))
 
+(defun ecc-chat--composing-p ()
+  "Return non-nil while an input method's working text sits in the prompt."
+  (let ((ov (bound-and-true-p ns-working-overlay)))
+    (and (overlayp ov)
+         (eq (overlay-buffer ov) (current-buffer))
+         (ecc-chat-in-prompt-p (overlay-start ov)))))
+
 (defun ecc-chat-update-placeholder (&optional buffer)
   "Show the placeholder in BUFFER while its prompt region is empty.
+An input method composing there counts as something written.
 BUFFER defaults to the current one.  Returns the text shown, or nil."
   (with-current-buffer (or buffer (current-buffer))
     (let ((start (ecc-chat-prompt-start))
           (text (ecc-chat-placeholder-string)))
       (cond
-       ((and start text (string-empty-p (ecc-chat-draft)))
+       ((and start text (string-empty-p (ecc-chat-draft))
+             (not (ecc-chat--composing-p)))
         ;; Put in every time: a redraw leaves the overlay behind where
         ;; the prompt region used to start.
         (ecc-chat--insert-placeholder text)
         text)
        (t (ecc-chat--remove-placeholder) nil)))))
+
+(defun ecc-chat--after-working-text (&rest _)
+  "Show or hide the placeholder as an input method's working text changes."
+  (when (derived-mode-p 'ecc-chat-mode)
+    (ecc-chat-update-placeholder)))
+
+;; The NS port's input method draws what it is composing as the
+;; `after-string' of an empty overlay at point, `ns-working-overlay',
+;; rather than as buffer text (Emacs 32.0.50, NS port, confirmed
+;; 2026-09-26).  Sharing the prompt start with the placeholder, it is
+;; drawn behind the whole ghost text while the cursor and the candidate
+;; window stay in front of it.  Nothing else can notice it: the working
+;; text changes no buffer text, so `after-change-functions' do not run,
+;; and it arrives as a special event, which runs no command hooks.  So
+;; the functions that put it in and take it out are advised; commit
+;; inserts real text and is handled by `ecc-chat--after-change'.  The
+;; emacs-plus build puts it in through `ns-insert-marked-text' as well,
+;; a `before-string' of the same kind that never goes near
+;; `ns-insert-working-text' (both bound in `special-event-map', same
+;; date).
+(with-eval-after-load 'ns-win
+  (dolist (function '(ns-insert-working-text
+                      ns-insert-marked-text
+                      ns-delete-working-text))
+    (when (fboundp function)
+      (advice-add function :after #'ecc-chat--after-working-text))))
 
 ;;;; The footer: which permission mode the session runs
 
@@ -874,12 +918,15 @@ The Files and Tasks rows are drawn without a node and give nil."
   (get-text-property (line-beginning-position) 'ecc-heading))
 
 (defun ecc-chat-follow-link (event)
-  "Open what was clicked on in the transcript.
-The point goes where EVENT was, and `ecc-session-visit\=' decides what
-is there, so a click and a RET do the one thing."
+  "Open the link clicked on in the transcript.
+The point goes where EVENT was.  On a link, text drawn with a
+`mouse-face\=', `ecc-session-visit\=' opens it as RET would; anywhere
+else -- a line of a diff, the heading of a call -- nothing more is done,
+and RET is the way to open it."
   (interactive "e")
   (mouse-set-point event)
-  (ecc-session-visit))
+  (when (get-char-property (point) 'mouse-face)
+    (ecc-session-visit)))
 
 ;;;; Folding
 

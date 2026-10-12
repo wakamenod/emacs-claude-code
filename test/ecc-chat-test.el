@@ -106,22 +106,22 @@ nothing to do with whether two maps are ever live at once."
     (with-current-buffer (ecc-chat-test--replay session "tool-use-write"
                                                "hello.txt を作って")
       (let ((tool ecc-chat-test--write-tool))
-        ;; A tool starts folded: its heading is there, its diff is not.
-        (should (ecc-render-node-hidden-p tool))
+        ;; A Write starts open: its diff is what it came to say.
+        (should-not (ecc-render-node-hidden-p tool))
         (goto-char (car (ecc-render-node-bounds tool)))
+        (should (string-prefix-p "  ✓ Write" (ecc-chat-test--line)))
+        (forward-line 2)
+        (should-not (invisible-p (point)))
+        (should (string-search "1 +hi" (ecc-chat-test--line)))
+        ;; From a line of the body, TAB goes back up to the heading and folds.
+        (ecc-chat-toggle)
+        (should (ecc-render-node-hidden-p tool))
         (should (string-prefix-p "  ✓ Write" (ecc-chat-test--line)))
         (forward-line 1)
         (should (invisible-p (point)))
         (goto-char (car (ecc-render-node-bounds tool)))
         (ecc-chat-toggle)
         (should-not (ecc-render-node-hidden-p tool))
-        (forward-line 2)
-        (should-not (invisible-p (point)))
-        (should (string-search "@@ -0,0 +1,1 @@" (ecc-chat-test--line)))
-        ;; From a line of the body, TAB goes back up and folds.
-        (ecc-chat-toggle)
-        (should (ecc-render-node-hidden-p tool))
-        (should (string-prefix-p "  ✓ Write" (ecc-chat-test--line)))
         ;; The line that parts the top region from the turns is under
         ;; no heading, so there is nothing to fold there.
         (goto-char ecc-render--top-end)
@@ -171,20 +171,20 @@ nothing to do with whether two maps are ever live at once."
       (let* ((tool ecc-chat-test--write-tool)
              (pos (ecc-render--indicator-position tool)))
         (should pos)
-        ;; A tool starts folded, so the mark points at what is hidden.
-        (should (ecc-render-node-hidden-p tool))
+        ;; A Write starts open, so the mark points at what is in sight.
+        (should-not (ecc-render-node-hidden-p tool))
         (should (equal (get-text-property pos 'display)
-                       ecc-render-fold-closed-mark))
+                       ecc-render-fold-open-mark))
         ;; The character underneath is untouched, so a copy of the line
         ;; still says how the call went.
         (should (equal (char-to-string (char-after pos)) "✓"))
         (goto-char pos)
         (ecc-chat-toggle)
         (should (equal (get-text-property pos 'display)
-                       ecc-render-fold-open-mark))
+                       ecc-render-fold-closed-mark))
         (ecc-chat-toggle)
         (should (equal (get-text-property pos 'display)
-                       ecc-render-fold-closed-mark))))))
+                       ecc-render-fold-open-mark))))))
 
 (ert-deftest ecc-chat-test-isearch-opens-a-fold ()
   "A fold carries the property that lets isearch open it."
@@ -192,7 +192,8 @@ nothing to do with whether two maps are ever live at once."
     (with-current-buffer (ecc-chat-test--replay session "tool-use-write"
                                                "hello.txt を作って")
       (let* ((tool ecc-chat-test--write-tool)
-             (overlay (ecc-render--fold-overlay tool)))
+             (overlay (progn (ecc-render-hide-node tool)
+                             (ecc-render--fold-overlay tool))))
         (should overlay)
         (should (eq (overlay-get overlay 'invisible) 'ecc-fold))
         (funcall (overlay-get overlay 'isearch-open-invisible) overlay)
@@ -516,6 +517,43 @@ the cursor cannot walk into it; anything written takes it away."
       (should (equal (ecc-chat-draft) "send me"))
       (ecc-prompt-send)
       (should (equal (ecc-turn-prompt (ecc-session-current-turn session)) "send me")))))
+
+;; Bound by ns-win.el on the NS port only; batch has no NS.
+(defvar ns-working-overlay)
+
+(ert-deftest ecc-chat-test-placeholder-hides-while-composing ()
+  "The working text of an input method in the prompt hides the placeholder.
+On the NS port it is an empty overlay whose `after-string' would be drawn
+behind the whole ghost text; deleting it brings the placeholder back."
+  (ecc-test-with-fake-session session
+    (with-current-buffer (ecc-session-ensure-buffer session)
+      (let* ((start (ecc-chat-prompt-start))
+             (ns-working-overlay (make-overlay start start)))
+        (overlay-put ns-working-overlay 'after-string "にほんご")
+        (should-not (ecc-chat-update-placeholder))
+        (should-not (ecc-chat-placeholder-shown))
+        (delete-overlay ns-working-overlay)
+        (should (equal (ecc-chat-update-placeholder) ecc-chat-placeholder))
+        ;; The advice on `ns-insert-working-text' and
+        ;; `ns-delete-working-text' does the same.
+        (setq ns-working-overlay (make-overlay start start))
+        (ecc-chat--after-working-text)
+        (should-not (ecc-chat-placeholder-shown))
+        (delete-overlay ns-working-overlay)
+        (ecc-chat--after-working-text)
+        (should (equal (ecc-chat-placeholder-shown) ecc-chat-placeholder))
+        ;; Working text outside the prompt region leaves it alone.
+        (setq ns-working-overlay (make-overlay (point-min) (point-min)))
+        (should (< (point-min) start))
+        (should (equal (ecc-chat-update-placeholder) ecc-chat-placeholder))
+        (delete-overlay ns-working-overlay)
+        ;; So does working text in another buffer.
+        (with-temp-buffer
+          (insert "other")
+          (setq ns-working-overlay (make-overlay 1 1))
+          (with-current-buffer (ecc-session-buffer session)
+            (should (equal (ecc-chat-update-placeholder)
+                           ecc-chat-placeholder))))))))
 
 (ert-deftest ecc-chat-test-placeholder-stays-out-of-undo ()
   "Undo in the draft never sees the placeholder: it is not buffer text."
@@ -933,6 +971,23 @@ first one threw out of `window-size-change-functions\='."
             (ecc-chat--set-margins window)
             (should-not (cdr (window-margins window)))))))))
 
+(ert-deftest ecc-chat-test-a-click-opens-the-picture ()
+  "A click on a picture opens it, as RET does: it is drawn as a link."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (with-current-buffer (ecc-session-buffer session)
+      (let ((path (ecc-test-image-file))
+            inside)
+        (cl-letf (((symbol-function 'find-file-other-window)
+                   (lambda (file) (setq inside file))))
+          (let ((inhibit-read-only t))
+            (goto-char (point-min))
+            (insert (ecc-image-string path 400 400) "\n"))
+          (set-window-buffer (selected-window) (current-buffer))
+          (ecc-chat-follow-link
+           (list 'mouse-2 (list (selected-window) (point-min) '(0 . 0) 0))))
+        (should (equal inside path))))))
+
 (ert-deftest ecc-chat-test-ret-opens-the-picture-at-point ()
   "RET on a picture opens it: a still in a buffer, a video outside Emacs.
 This is the whole of it -- `v\=' stops and starts what moves and opens
@@ -957,11 +1012,10 @@ nothing, so the two keys no longer say the same thing."
           (should (equal inside "/tmp/shot.png")))))))
 
 (ert-deftest ecc-chat-test-ret-follows-a-link ()
-  "RET on a URL in the transcript opens it, and mouse-1 follows it too.
+  "RET on a URL in the transcript opens it, and a click follows it too.
 The link carries no keymap of its own: RET is the `ecc-session-visit\='
 the whole transcript answers with, and mouse-1 reaches the link through
-the `follow-link\=' entry, which reads the `mouse-face\=' only a link
-carries."
+the `follow-link\=' entry, which reads the `mouse-face\=' a link carries."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (ecc-model-begin-turn session "hello")
@@ -984,7 +1038,19 @@ carries."
       (should-not (ecc-markdown-url-at-point))
       (should (eq (lookup-key ecc-chat-transcript-map [mouse-2])
                   #'ecc-chat-follow-link))
-      (should (eq (lookup-key ecc-chat-transcript-map [follow-link]) 'mouse-face)))))
+      (should (eq (lookup-key ecc-chat-transcript-map [follow-link])
+                  'mouse-face))
+      (let ((link (save-excursion (search-forward "https://example.com/a")
+                                  (match-beginning 0)))
+            opened)
+        (should (get-char-property link 'mouse-face))
+        (should-not (get-char-property (point-min) 'mouse-face))
+        (set-window-buffer (selected-window) (current-buffer))
+        (cl-letf (((symbol-function 'browse-url)
+                   (lambda (url &rest _) (setq opened url))))
+          (ecc-chat-follow-link
+           (list 'mouse-2 (list (selected-window) link '(0 . 0) 0))))
+        (should (equal opened "https://example.com/a"))))))
 
 (ert-deftest ecc-chat-test-interrupt-is-not-on-c-c-c-g ()
   "The interrupt is C-c C-z, and C-c C-g is left to `keyboard-quit'.

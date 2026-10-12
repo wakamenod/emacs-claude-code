@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Assisted-by: Claude Code:claude-opus-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -573,11 +574,13 @@ arrive in between, since output is only read when Emacs waits for it."
   (ecc-proc--note-sent session content)
   (ecc-proc-send-json session (ecc-protocol-user-message content)))
 
-(defun ecc-proc-send-prompt (session text)
+(defun ecc-proc-send-prompt (session text &optional draft)
   "Send TEXT to SESSION, or queue it while a turn is running.
+DRAFT is what the user typed, when TEXT was prepared from it; a queued
+prompt keeps it so that it can be taken back as it was written.
 Returns `sent' or the position in the queue."
   (if (ecc-session-current-turn session)
-      (ecc-model-queue-input session text)
+      (ecc-model-queue-input session text draft)
     (ecc-proc-send-user session text)
     'sent))
 

@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Assisted-by: Claude Code:claude-opus-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -91,6 +92,12 @@ type rather than per build.")
 `gif\=' is in both tables and `ecc-image-kind\=' calls it animated: Emacs
 draws it, and it moves.")
 
+(defvar ecc-image-audio-extensions
+  '("mp3" "wav" "m4a" "aac" "flac" "ogg" "oga" "opus" "aiff" "aif")
+  "Extensions taken for a sound.
+Nothing here draws one, so they are kept out of `ecc-image-kind\=':
+a path is only ever opened with these, never drawn.")
+
 ;;;; What a path is
 
 (defun ecc-image--extension-of (path)
@@ -120,6 +127,14 @@ not whether it is one."
 (defun ecc-image-video-p (path)
   "Return non-nil when PATH is a video Emacs cannot draw by itself."
   (eq (ecc-image-kind path) 'video))
+
+(defun ecc-image-plays-outside-p (path)
+  "Return non-nil when PATH is a video or a sound Emacs cannot play.
+Such a file is handed to the machine (`ecc-image-open-externally\=')
+rather than visited: a buffer of it would show its bytes."
+  (or (ecc-image-video-p path)
+      (and (member (ecc-image--extension-of path) ecc-image-audio-extensions)
+           t)))
 
 (defun ecc-image-available-p (path)
   "Return non-nil when PATH can be drawn in this frame.
@@ -254,6 +269,84 @@ was written, which is what a paste wants.  Returns the file."
       (set-buffer-multibyte nil)
       (insert data))
     file))
+
+;;;; What is pasted
+
+(defvar ecc-image-sendable-types '("png" "jpeg" "jpg" "gif" "webp")
+  "The image types the API takes as they are, as the subtype of a MIME type.
+A pasted image of any other type is converted to PNG before it is
+referred to.")
+
+(defvar ecc-image-sips-program "/usr/bin/sips"
+  "The program that converts a pasted image to PNG.
+It ships with macOS; elsewhere there is none, and an image of a type
+the API does not take is saved as it came.")
+
+(defun ecc-image--subtype (mime)
+  "Return the subtype of the image MIME type MIME, downcased, or nil."
+  (let ((name (format "%s" mime)))
+    (when (string-match "\\`image/\\([a-zA-Z0-9.+-]+\\)" name)
+      (downcase (match-string 1 name)))))
+
+(defun ecc-image-sendable-p (mime)
+  "Return non-nil when the API takes an image of type MIME as it is."
+  (member (ecc-image--subtype mime) ecc-image-sendable-types))
+
+(defun ecc-image-converter ()
+  "Return the program that converts an image to PNG, or nil."
+  (and (eq system-type 'darwin)
+       (file-executable-p ecc-image-sips-program)
+       ecc-image-sips-program))
+
+(defun ecc-image-convert-to-png (session in out)
+  "Convert the image file IN of SESSION to the PNG file OUT.
+A failure is written to the log of SESSION and signalled as a
+`user-error\=' carrying what the converter said."
+  (with-temp-buffer
+    (let* ((status (call-process (ecc-image-converter) nil t nil
+                                 "-s" "format" "png" in "--out" out))
+           (said (string-trim (buffer-string))))
+      ;; sips exits 0 when IN is not an image it can read: it warns
+      ;; "not a valid file - skipping" and writes nothing.  The file is
+      ;; what tells (confirmed 2026-10-08, macOS 26.6).
+      (unless (and (eql status 0) (file-exists-p out))
+        (ecc-log (ecc-session-name session)
+                 "converting %s to PNG failed (exit %s): %s" in status said)
+        (user-error "Could not convert the image to PNG: %s"
+                    (if (string-empty-p said) (format "exit %s" status) said)))
+      out)))
+
+(defun ecc-image-save-pasted (session data mime)
+  "Write the pasted image DATA of type MIME for SESSION and return the file.
+What is written is an image the API takes: a type it does not take is
+converted to PNG where there is a converter.  Where there is none, it
+is written as it came, and the extension of the file says so."
+  (if (or (ecc-image-sendable-p mime) (not (ecc-image-converter)))
+      (ecc-image-save session data mime)
+    (let* ((raw (ecc-image-save session data mime))
+           (png (concat (file-name-sans-extension raw) ".png")))
+      (unwind-protect (ecc-image-convert-to-png session raw png)
+        (delete-file raw)))))
+
+(defun ecc-image-clipboard ()
+  "Return the image on the clipboard as (MIME . DATA), or nil.
+A type the API takes is preferred over one that has to be converted."
+  ;; The NS port offers only image/tiff for a screenshot, although the
+  ;; pasteboard holds PNG («class PNGf») as well: TARGETS is
+  ;; [TARGETS image/tiff], and the TIFF is 9.4 MB where the PNG is
+  ;; 255 KB (confirmed 2026-10-08, emacs-plus 32, NS build).  Reading
+  ;; the PNG with osascript would serve this command alone, while
+  ;; `yank-media' hands its handler the TIFF all the same; converting
+  ;; with sips covers both, and takes 0.04 s for a 10 MB TIFF.
+  (let* ((targets (gui-get-selection 'CLIPBOARD 'TARGETS))
+         (images (cl-remove-if-not #'ecc-image--subtype
+                                   (if (vectorp targets)
+                                       (append targets nil)
+                                     targets)))
+         (mime (or (cl-find-if #'ecc-image-sendable-p images) (car images)))
+         (data (and mime (gui-get-selection 'CLIPBOARD mime))))
+    (when (and (stringp data) (> (length data) 0))
+      (cons mime data))))
 
 ;;;; What arrives from the CLI
 

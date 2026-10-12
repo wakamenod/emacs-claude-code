@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Assisted-by: Claude Code:claude-opus-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -30,13 +31,16 @@
 ;; process is run, so the result is the same in batch tests and on a
 ;; machine without the tool.
 ;;
-;; Three sources are handled:
+;; The sources are:
 ;;
 ;; - an Edit before it is applied: old_string against new_string, with
 ;;   a few lines of the file around the match when the file is known;
+;; - a MultiEdit before it is applied: its edits laid on the file one
+;;   after another, and the file before against the file after;
 ;; - a Write before it is applied: the current file against the content;
+;; - a NotebookEdit before it is applied: the new source of the cell;
 ;; - a structuredPatch the CLI reports after a change, which already has
-;;   the hunks and their line numbers.
+;;   the hunks and their line numbers and is what really happened.
 
 ;;; Code:
 
@@ -97,6 +101,11 @@ transcript, line by line, under the picture it had just drawn
           (butlast lines)
         lines))))
 
+(defvar ecc-diff-hunk-regexp
+  "^@@ -\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? \\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? @@"
+  "Matches a unified hunk header.
+The groups are old start, old count, new start and new count.")
+
 (defun ecc-diff--lcs-table (a b)
   "Return the longest common subsequence table of vectors A and B."
   (let* ((n (length a))
@@ -117,53 +126,146 @@ transcript, line by line, under the picture it had just drawn
         (setq i (1- i))))
     table))
 
-(defun ecc-diff-lines (old new)
+(defun ecc-diff--lcs-script (a b)
+  "Return the script of `ecc-diff-script' for A and B, by their whole table."
+  (let ((table (ecc-diff--lcs-table a b))
+        (n (length a)) (m (length b))
+        (i 0) (j 0) (out nil))
+    (while (or (< i n) (< j m))
+      (cond
+       ((and (< i n) (< j m) (equal (aref a i) (aref b j)))
+        (push 'context out)
+        (setq i (1+ i) j (1+ j)))
+       ((and (< i n)
+             (or (>= j m)
+                 (>= (aref (aref table (1+ i)) j)
+                     (aref (aref table i) (1+ j)))))
+        (push 'removed out)
+        (setq i (1+ i)))
+       (t
+        (push 'added out)
+        (setq j (1+ j)))))
+    (nreverse out)))
+
+(defun ecc-diff-script (a b &optional large)
+  "Return how the vector A becomes the vector B, a tag for each line.
+The tags are `context' for an element of A that B keeps, `removed' for
+one only A has and `added' for one only B has, in the order of a
+unified diff; elements are compared with `equal'.  What both begin and
+end with is kept for sure, which keeps the table small for the usual
+edit of a few lines in a long file; what is left between is matched by
+its longest common subsequence while its two lengths multiply to no
+more than `ecc-diff-max-cells'.  Past that LARGE, a function, is given
+the two vectors left between and returns their script; without it, the
+whole of them is removed and added."
+  (let ((n (length a)) (m (length b))
+        (prefix 0) (suffix 0))
+    (while (and (< prefix n) (< prefix m) (equal (aref a prefix) (aref b prefix)))
+      (setq prefix (1+ prefix)))
+    (while (and (< suffix (- n prefix)) (< suffix (- m prefix))
+                (equal (aref a (- n suffix 1)) (aref b (- m suffix 1))))
+      (setq suffix (1+ suffix)))
+    (let ((va (seq-subseq a prefix (- n suffix)))
+          (vb (seq-subseq b prefix (- m suffix))))
+      (append (make-list prefix 'context)
+              (cond ((<= (* (length va) (length vb)) ecc-diff-max-cells)
+                     (ecc-diff--lcs-script va vb))
+                    (large (funcall large va vb))
+                    (t (append (make-list (length va) 'removed)
+                               (make-list (length vb) 'added))))
+              (make-list suffix 'context)))))
+
+(defun ecc-diff-script-walk (script function)
+  "Call FUNCTION on each tag of SCRIPT, of `ecc-diff-script', with where it is.
+FUNCTION gets the TAG and I and J, the index of its element in the
+vector A and in the vector B the script made A into B with: a removed
+element is the Ith of A, an added one the Jth of B, an element both
+keep both.  Return the list of what FUNCTION returned, in order."
+  (let ((i 0) (j 0))
+    (mapcar (lambda (tag)
+              (prog1 (funcall function tag i j)
+                (pcase tag
+                  ('removed (setq i (1+ i)))
+                  ('added (setq j (1+ j)))
+                  (_ (setq i (1+ i) j (1+ j))))))
+            script)))
+
+(defun ecc-diff-lines (old new &optional large)
   "Return the line diff of OLD against NEW.
 The result is a list of (TAG . LINE) where TAG is `context', `removed'
-or `added', in the order of a unified diff."
-  (let* ((a (ecc-diff--split old))
-         (b (ecc-diff--split new))
-         (prefix 0)
-         (suffix 0))
-    ;; Common prefix and suffix are context for sure; trimming them keeps
-    ;; the table small for the usual edit of a few lines in a long file.
-    (while (and a b (equal (car a) (car b)))
-      (setq prefix (1+ prefix) a (cdr a) b (cdr b)))
-    (let ((ra (reverse a)) (rb (reverse b)))
-      (while (and ra rb (equal (car ra) (car rb)))
-        (setq suffix (1+ suffix) ra (cdr ra) rb (cdr rb)))
-      (setq a (nreverse ra) b (nreverse rb)))
-    (let* ((va (vconcat a))
-           (vb (vconcat b))
-           (n (length va))
-           (m (length vb))
-           (middle
-            (if (> (* n m) ecc-diff-max-cells)
-                (append (mapcar (lambda (l) (cons 'removed l)) a)
-                        (mapcar (lambda (l) (cons 'added l)) b))
-              (let ((table (ecc-diff--lcs-table va vb))
-                    (i 0) (j 0) out)
-                (while (or (< i n) (< j m))
-                  (cond
-                   ((and (< i n) (< j m) (equal (aref va i) (aref vb j)))
-                    (push (cons 'context (aref va i)) out)
-                    (setq i (1+ i) j (1+ j)))
-                   ((and (< i n)
-                         (or (>= j m)
-                             (>= (aref (aref table (1+ i)) j)
-                                 (aref (aref table i) (1+ j)))))
-                    (push (cons 'removed (aref va i)) out)
-                    (setq i (1+ i)))
-                   (t
-                    (push (cons 'added (aref vb j)) out)
-                    (setq j (1+ j)))))
-                (nreverse out))))
-           (all-old (ecc-diff--split old))
-           (all-new (ecc-diff--split new)))
-      (append (mapcar (lambda (l) (cons 'context l)) (seq-take all-old prefix))
-              middle
-              (mapcar (lambda (l) (cons 'context l))
-                      (seq-drop all-new (- (length all-new) suffix)))))))
+or `added', in the order of a unified diff (`ecc-diff-script', which
+LARGE is given to)."
+  (let ((a (vconcat (ecc-diff--split old)))
+        (b (vconcat (ecc-diff--split new))))
+    (ecc-diff-script-walk (ecc-diff-script a b large)
+                          (lambda (tag i j)
+                            (cons tag (if (eq tag 'added) (aref b j) (aref a i)))))))
+
+(defun ecc-diff--increasing (pairs)
+  "Return the longest run of PAIRS, (I . J) by I, whose J go up too."
+  (let* ((pairs (vconcat pairs))
+         (n (length pairs))
+         (tails (make-vector n 0))      ; index of the pair ending each run
+         (back (make-vector n nil))
+         (runs 0))
+    (dotimes (k n)
+      (let ((low 0) (high runs)
+            (j (cdr (aref pairs k))))
+        (while (< low high)
+          (let ((mid (/ (+ low high) 2)))
+            (if (< (cdr (aref pairs (aref tails mid))) j)
+                (setq low (1+ mid))
+              (setq high mid))))
+        (when (> low 0)
+          (aset back k (aref tails (1- low))))
+        (aset tails low k)
+        (when (= low runs)
+          (setq runs (1+ runs)))))
+    (let ((out nil)
+          (k (and (> runs 0) (aref tails (1- runs)))))
+      (while k
+        (push (aref pairs k) out)
+        (setq k (aref back k)))
+      out)))
+
+(defun ecc-diff-patience (a b)
+  "Return the script of A becoming B when they are too large to compare whole.
+For the LARGE of `ecc-diff-script'.  The lines each holds exactly once,
+in the same order in both, are kept, and the stretches between them are
+compared again, by this too when still too large.  With no such line
+everything is removed and added, rather than anything stopping to
+compare them."
+  (let ((counts (make-hash-table :test #'equal))
+        (pairs nil))
+    (seq-do-indexed (lambda (text i)
+                      (let ((count (gethash text counts (list 0 nil 0 nil))))
+                        (puthash text (list (1+ (nth 0 count)) i 0 nil) counts)))
+                    a)
+    (seq-do-indexed (lambda (text j)
+                      (when-let* ((count (gethash text counts)))
+                        (puthash text (list (nth 0 count) (nth 1 count) (1+ (nth 2 count)) j)
+                                 counts)))
+                    b)
+    (maphash (lambda (_text count)
+               (when (and (= (nth 0 count) 1) (= (nth 2 count) 1))
+                 (push (cons (nth 1 count) (nth 3 count)) pairs)))
+             counts)
+    (if (null pairs)
+        (append (make-list (length a) 'removed) (make-list (length b) 'added))
+      (let ((i 0) (j 0) (pieces nil))
+        (dolist (pair (ecc-diff--increasing (sort pairs #'car-less-than-car)))
+          (when (or (< i (car pair)) (< j (cdr pair)))
+            (push (ecc-diff-script (seq-subseq a i (car pair)) (seq-subseq b j (cdr pair))
+                                   #'ecc-diff-patience)
+                  pieces))
+          (push (list 'context) pieces)
+          (setq i (1+ (car pair))
+                j (1+ (cdr pair))))
+        (push (ecc-diff-script (seq-subseq a i) (seq-subseq b j) #'ecc-diff-patience)
+              pieces)
+        ;; Joined once: appended one by one, the script would be copied
+        ;; for every line held once.
+        (apply #'nconc (nreverse pieces))))))
 
 (defun ecc-diff-counts (lines)
   "Return (ADDED . REMOVED) for the diff LINES."
@@ -220,7 +322,62 @@ hunks, each (OLD-START OLD-COUNT NEW-START NEW-COUNT . LINES)."
                 new-line (+ new-line new-count))))
       (nreverse hunks))))
 
+(defun ecc-diff-shifter (hunks &optional backward)
+  "Return a function carrying a line number through the change HUNKS make.
+HUNKS are (OLD-START OLD-COUNT NEW-START NEW-COUNT ...) in order, as
+`ecc-diff-hunks' numbers them: a hunk replaces OLD-COUNT lines from
+OLD-START with NEW-COUNT, and one that takes nothing out goes in front
+of line OLD-START.  The function takes a line NUMBER of the text before
+the change -- after it, with BACKWARD -- and returns the number it has
+on the other side, or nil for a line inside a hunk, which the change
+replaced.  Given a second argument, STAY, it returns a line inside a
+hunk moved by the hunks above it alone: the place the change was made.
+The line is found among the hunks by halving, over the shifts of all
+of them summed once here."
+  (let* ((n (length hunks))
+         (starts (make-vector n 0))
+         (ends (make-vector n 0))
+         (shifts (make-vector (1+ n) 0))
+         (k 0))
+    (dolist (hunk hunks)
+      (let ((start (nth (if backward 2 0) hunk))
+            (count (nth (if backward 3 1) hunk))
+            (other (nth (if backward 1 3) hunk)))
+        (aset starts k start)
+        (aset ends k (+ start count))
+        (aset shifts (1+ k) (+ (aref shifts k) (- other count)))
+        (setq k (1+ k))))
+    (lambda (number &optional stay)
+      ;; How many hunks end at NUMBER or before it: they are all above.
+      (let ((low 0) (high n))
+        (while (< low high)
+          (let ((mid (/ (+ low high) 2)))
+            (if (<= (aref ends mid) number)
+                (setq low (1+ mid))
+              (setq high mid))))
+        (and (or stay (not (and (< low n) (<= (aref starts low) number))))
+             (+ number (aref shifts low)))))))
+
 ;;;; Text with faces
+
+(defvar ecc-diff-style 'numbered
+  "How a diff is laid out.
+
+`numbered' is the transcript\\='s.  Every line carries the number it has
+in the file, a changed line carries its colour to the right edge, and
+there is no @@ header: this is what the CLI\\='s own TUI draws, measured
+against it on 2026-09-22.  A context line and an added line are
+numbered in the new file, a removed line in the old one.
+
+`unified' is the patch: an @@ header and a one character marker at the
+front of every line.  That is what `diff-mode\\=' reads and what
+`ecc-review.el\\=' builds its buffers out of, so the review binds this
+around its calls rather than the transcript binding the other.")
+
+(defconst ecc-diff-hunk-gap "⋮"
+  "What stands between two hunks where `numbered' has no @@ header.
+The numbers jump on their own, but a diff that only jumps reads as one
+run of lines with a mistake in it.")
 
 (defun ecc-diff--face (tag)
   "Return the `diff-mode' face for the line TAG."
@@ -237,10 +394,64 @@ hunks, each (OLD-START OLD-COUNT NEW-START NEW-COUNT . LINES)."
     ('removed "-")
     (_ " ")))
 
-(defun ecc-diff-format-lines (lines &optional header)
-  "Return LINES as unified diff text with faces, one line per element.
-HEADER, when given, is a hunk header string put in front.  Every line
-ends in a newline."
+(defconst ecc-diff--band
+  (propertize " " 'display '(space :align-to right))
+  "The spacer that carries a changed line\='s colour to the right edge.
+A face on a newline colours one column and stops; a space told to
+stretch to the edge colours the rest of the row, which is how the CLI
+draws a changed line.  It is one space, so a line copied out of the
+buffer is the line.  One string for every line there will ever be: it
+is concatenated, never changed, and a diff of a thousand lines made a
+thousand of these.")
+
+(defun ecc-diff--number-width (numbers)
+  "Return the width of the widest of NUMBERS, at least one."
+  (max 1 (apply #'max 1 (mapcar (lambda (n) (length (number-to-string (or n 1))))
+                                numbers))))
+
+(defun ecc-diff--format-numbered (lines old-line new-line width)
+  "Return LINES numbered from OLD-LINE and NEW-LINE, in a cell of WIDTH.
+A nil OLD-LINE leaves every line unnumbered, which is what a diff of
+two strings with no file behind them has to show.
+
+Each line is built as one string and given its faces in place: a
+`propertize\=' for the number and another for the body allocated two
+more strings per line, and a Files summary of sixty files draws
+thousands of them at every redraw."
+  (let ((old (or old-line 1))
+        (new (or new-line 1))
+        (out nil))
+    (dolist (line lines (apply #'concat (nreverse out)))
+      (let* ((tag (car line))
+             (text (cdr line))
+             (face (ecc-diff--face tag))
+             ;; Emacs has no %*d: the width goes into the string itself.
+             (cell (if (null old-line)
+                       ""
+                     (concat (string-pad (number-to-string
+                                          (if (eq tag 'removed) old new))
+                                         width nil t)
+                             " ")))
+             (string (if (eq tag 'context)
+                         (concat cell " " text "\n")
+                       (concat cell (ecc-diff--marker tag) text
+                               ecc-diff--band "\n"))))
+        (put-text-property 0 (length string) 'face face string)
+        (when (and (eq tag 'context) (> (length cell) 0))
+          ;; `shadow' rather than `line-number': a theme gives the line
+          ;; number column of a buffer a background of its own, and a
+          ;; band of it down the middle of a diff is a column the diff
+          ;; does not have.  The CLI draws the number in grey and
+          ;; nothing else (2026-09-22).
+          (put-text-property 0 (length cell) 'face 'shadow string))
+        (push string out)
+        (pcase tag
+          ('context (setq old (1+ old) new (1+ new)))
+          ('removed (setq old (1+ old)))
+          ('added (setq new (1+ new))))))))
+
+(defun ecc-diff--format-unified (lines header)
+  "Return LINES as patch text, under the hunk HEADER when there is one."
   (concat
    (when header
      (propertize (concat header "\n") 'face 'diff-hunk-header))
@@ -249,19 +460,45 @@ ends in a newline."
                             'face (ecc-diff--face (car line))))
               lines "")))
 
+(defun ecc-diff-format-lines (lines &optional header old-line new-line width)
+  "Return LINES as diff text with faces, one line per element.
+HEADER is the hunk header of the `unified' style; OLD-LINE, NEW-LINE
+and WIDTH are what the `numbered' style counts and pads with.  Every
+line ends in a newline."
+  (if (eq ecc-diff-style 'unified)
+      (ecc-diff--format-unified lines header)
+    (ecc-diff--format-numbered lines old-line new-line
+                               (or width
+                                   (ecc-diff--number-width
+                                    (list (+ (or old-line 1) (length lines))
+                                          (+ (or new-line 1) (length lines))))))))
+
 (defun ecc-diff-hunk-header (hunk)
   "Return the @@ header line of HUNK."
   (pcase-let ((`(,old-start ,old-count ,new-start ,new-count . ,_) hunk))
     (format "@@ -%d,%d +%d,%d @@" old-start old-count new-start new-count)))
 
 (defun ecc-diff-format-hunks (hunks)
-  "Return HUNKS, as made by `ecc-diff-hunks', as unified diff text."
-  (mapconcat (lambda (hunk)
-               (ecc-diff-format-lines (nthcdr 4 hunk) (ecc-diff-hunk-header hunk)))
-             hunks ""))
+  "Return HUNKS, as made by `ecc-diff-hunks', as diff text with faces."
+  (if (eq ecc-diff-style 'unified)
+      (mapconcat (lambda (hunk)
+                   (ecc-diff--format-unified (nthcdr 4 hunk)
+                                             (ecc-diff-hunk-header hunk)))
+                 hunks "")
+    (let ((width (ecc-diff--number-width
+                  (apply #'append
+                         (mapcar (lambda (hunk)
+                                   (pcase-let ((`(,os ,oc ,ns ,nc . ,_) hunk))
+                                     (list (+ os oc) (+ ns nc))))
+                                 hunks)))))
+      (mapconcat (lambda (hunk)
+                   (pcase-let ((`(,old-start ,_ ,new-start ,_ . ,lines) hunk))
+                     (ecc-diff--format-numbered lines old-start new-start width)))
+                 hunks
+                 (propertize (concat ecc-diff-hunk-gap "\n") 'face 'shadow)))))
 
 (defun ecc-diff-render (old new &optional context)
-  "Return the unified diff of OLD against NEW as text with faces.
+  "Return the diff of OLD against NEW as text with faces.
 CONTEXT is the number of context lines, defaulting to
 `ecc-diff-context-lines'.  Returns nil when the texts are equal."
   (let ((lines (ecc-diff-lines old new)))
@@ -313,7 +550,9 @@ A nil OLD-CONTENT is a new file, and every line is shown as added.
 CONTEXT overrides `ecc-diff-context-lines'."
   (if (null old-content)
       (let ((lines (mapcar (lambda (l) (cons 'added l)) (ecc-diff--split content))))
-        (ecc-diff-format-lines lines (format "@@ -0,0 +1,%d @@" (length lines))))
+        (ecc-diff-format-lines lines (format "@@ -0,0 +1,%d @@" (length lines))
+                               0 1 (ecc-diff--number-width
+                                    (list (length lines)))))
     (or (ecc-diff-render old-content content context)
         (propertize "(no change)\n" 'face 'diff-context))))
 
@@ -321,21 +560,46 @@ CONTEXT overrides `ecc-diff-context-lines'."
   "Return the diff text of the structuredPatch PATCH the CLI reported.
 PATCH is a vector of hunk objects with oldStart, oldLines, newStart,
 newLines and lines, the lines already carrying their +, - or space."
-  (mapconcat
-   (lambda (hunk)
-     (concat
-      (propertize (format "@@ -%s,%s +%s,%s @@\n"
-                          (alist-get 'oldStart hunk) (alist-get 'oldLines hunk)
-                          (alist-get 'newStart hunk) (alist-get 'newLines hunk))
-                  'face 'diff-hunk-header)
-      (mapconcat (lambda (line)
-                   (propertize (concat line "\n")
-                               'face (pcase (and (> (length line) 0) (aref line 0))
-                                       (?+ 'diff-added)
-                                       (?- 'diff-removed)
-                                       (_ 'diff-context))))
-                 (append (alist-get 'lines hunk) nil) "")))
-   (append patch nil) ""))
+  (let* ((hunks (append patch nil))
+         (tagged
+          (mapcar
+           (lambda (hunk)
+             (cons hunk
+                   (mapcar (lambda (line)
+                             (pcase (and (> (length line) 0) (aref line 0))
+                               (?+ (cons 'added (substring line 1)))
+                               (?- (cons 'removed (substring line 1)))
+                               (_ (cons 'context (if (> (length line) 0)
+                                                     (substring line 1)
+                                                   "")))))
+                           (append (alist-get 'lines hunk) nil))))
+           hunks)))
+    (if (eq ecc-diff-style 'unified)
+        (mapconcat
+         (lambda (pair)
+           (let ((hunk (car pair)))
+             (ecc-diff--format-unified
+              (cdr pair)
+              (format "@@ -%s,%s +%s,%s @@"
+                      (alist-get 'oldStart hunk) (alist-get 'oldLines hunk)
+                      (alist-get 'newStart hunk) (alist-get 'newLines hunk)))))
+         tagged "")
+      (let ((width (ecc-diff--number-width
+                    (apply #'append
+                           (mapcar (lambda (hunk)
+                                     (list (+ (or (alist-get 'oldStart hunk) 1)
+                                              (or (alist-get 'oldLines hunk) 0))
+                                           (+ (or (alist-get 'newStart hunk) 1)
+                                              (or (alist-get 'newLines hunk) 0))))
+                                   hunks)))))
+        (mapconcat
+         (lambda (pair)
+           (ecc-diff--format-numbered (cdr pair)
+                                      (or (alist-get 'oldStart (car pair)) 1)
+                                      (or (alist-get 'newStart (car pair)) 1)
+                                      width))
+         tagged
+         (propertize (concat ecc-diff-hunk-gap "\n") 'face 'shadow))))))
 
 (defun ecc-diff-patch-counts (patch)
   "Return (ADDED . REMOVED) for the structuredPatch PATCH."
@@ -348,18 +612,147 @@ newLines and lines, the lines already carrying their +, - or space."
             (?- (setq removed (1+ removed)))))))
     (cons added removed)))
 
-(defun ecc-diff-for-tool (name input &optional before)
+(defun ecc-diff--apply-edit (text old new all)
+  "Return TEXT with OLD replaced by NEW, every occurrence when ALL.
+Nothing is replaced when OLD is empty or is not there: the CLI would
+have refused the edit, and a guess about what it meant would show a
+change that never happened."
+  (cond
+   ((or (null text) (null old) (string-empty-p old)) text)
+   ((ecc--json-true-p all) (string-replace old new text))
+   ((string-search old text)
+    (let ((pos (string-search old text)))
+      (concat (substring text 0 pos) new (substring text (+ pos (length old))))))
+   (t text)))
+
+(defun ecc-diff-apply-edits (text edits)
+  "Return TEXT with the EDITS of a MultiEdit applied in order, or nil.
+Nil for a nil TEXT: a file nobody knows is a file no edit can be laid
+on.  Each edit is `old_string\=', `new_string\=' and maybe `replace_all\='."
+  (when text
+    (let ((after text))
+      (dolist (edit (append (or edits []) nil) after)
+        (setq after (ecc-diff--apply-edit
+                     after
+                     (alist-get 'old_string edit)
+                     (or (alist-get 'new_string edit) "")
+                     (alist-get 'replace_all edit)))))))
+
+(defun ecc-diff-for-multi-edit (edits &optional file-content context)
+  "Return the diff text of applying EDITS, or nil when there is none.
+EDITS is the `edits\=' vector of a MultiEdit: each element has
+old_string, new_string and may have replace_all.  With FILE-CONTENT the
+edits are applied to it one after another and the result is one diff of
+the whole file, which is what the CLI is about to do; without it each
+edit is shown as its own old against new, in order.  CONTEXT overrides
+`ecc-diff-context-lines\='."
+  (let ((edits (append (or edits []) nil)))
+    (when edits
+      (if file-content
+          (ecc-diff-render file-content
+                           (ecc-diff-apply-edits file-content edits)
+                           context)
+        (let ((text (mapconcat
+                     (lambda (edit)
+                       (ecc-diff-format-lines
+                        (ecc-diff-lines (or (alist-get 'old_string edit) "")
+                                        (or (alist-get 'new_string edit) ""))))
+                     edits "")))
+          (unless (string-empty-p text) text))))))
+
+(defun ecc-diff-for-notebook-edit (input)
+  "Return the diff text of the NotebookEdit INPUT, or nil.
+The new source of the cell is shown as added lines.  The notebook
+itself is not opened to find the old source: the file is JSON, and JSON
+is read in `ecc-protocol.el\=' and nowhere else."
+  (let ((source (alist-get 'new_source input))
+        (mode (alist-get 'edit_mode input)))
+    (cond
+     ((equal mode "delete") nil)
+     ((or (null source) (string-empty-p source)) nil)
+     (t (let* ((lines (mapcar (lambda (l) (cons 'added l))
+                              (ecc-diff--split source)))
+               (cell (if-let* ((id (alist-get 'cell_id input)))
+                         (format "cell %s" id)
+                       "new cell")))
+          (concat
+           ;; The cell takes the place of the file: nothing else says
+           ;; which of a notebook's cells these lines are.
+           (if (eq ecc-diff-style 'unified)
+               ""
+             (propertize (concat cell "\n") 'face 'shadow))
+           (ecc-diff-format-lines
+            lines
+            (format "@@ %s +1,%d @@" cell (length lines))
+            0 1 (ecc-diff--number-width (list (length lines))))))))))
+
+(defun ecc-diff-tool-p (name input)
+  "Return non-nil when a call to NAME with INPUT would draw a diff.
+This answers without building the diff, so that it can be asked of
+every node of a transcript at every redraw."
+  (pcase name
+    ("Edit" (or (not (string-empty-p (or (alist-get 'old_string input) "")))
+                (not (string-empty-p (or (alist-get 'new_string input) "")))))
+    ("MultiEdit" (> (length (or (alist-get 'edits input) [])) 0))
+    ("Write" (and (alist-get 'content input) t))
+    ("NotebookEdit" (not (string-empty-p (or (alist-get 'new_source input) ""))))
+    (_ nil)))
+
+(defun ecc-diff-text-counts (text)
+  "Return (ADDED . REMOVED) for the diff TEXT.
+The lines are told apart by the face they carry rather than by their
+first character: in the `numbered\=' style a line starts with its number
+in the file, and a line of the file may start with a + of its own."
+  (let ((added 0) (removed 0) (start 0) (size (length (or text ""))))
+    (while (< start size)
+      (let ((end (or (string-search "\n" text start) size))
+            (faces (ensure-list (get-text-property start 'face text))))
+        (cond ((memq 'diff-added faces) (setq added (1+ added)))
+              ((memq 'diff-removed faces) (setq removed (1+ removed))))
+        (setq start (1+ end))))
+    (cons added removed)))
+
+(defun ecc-diff-summary (counts)
+  "Return what COUNTS, an (ADDED . REMOVED) pair, did, or nil for nothing.
+The words are the CLI\='s own: \"Added 1 line, removed 1 line\", and a
+side that changed nothing is left out rather than counted as zero
+\(measured against the TUI on 2026-09-22)."
+  (let* ((added (car counts))
+         (removed (cdr counts))
+         (lines (lambda (n) (if (= n 1) "line" "lines"))))
+    (cond
+     ((and (zerop added) (zerop removed)) nil)
+     ((zerop removed) (format "Added %d %s" added (funcall lines added)))
+     ((zerop added) (format "Removed %d %s" removed (funcall lines removed)))
+     (t (format "Added %d %s, removed %d %s"
+                added (funcall lines added)
+                removed (funcall lines removed))))))
+
+(defun ecc-diff-for-tool (name input &optional before patch)
   "Return the diff text for the call to tool NAME with INPUT, or nil.
 BEFORE is what the file looked like before the call, when known.
-Only Edit and Write have a diff; other tools return nil."
-  (pcase name
-    ((or "Edit" "MultiEdit")
-     (ecc-diff-for-edit (or (alist-get 'old_string input) "")
-                        (or (alist-get 'new_string input) "")
-                        before))
-    ("Write"
-     (ecc-diff-for-write (or (alist-get 'content input) "") before))
-    (_ nil)))
+PATCH, when given, is the structuredPatch the CLI reported once the
+call had run; it says what the change really was and wins over the
+guess made from BEFORE.  Only the file tools have a diff; the others
+return nil."
+  (let ((text
+         (if (and patch (> (length patch) 0) (ecc-diff-tool-p name input))
+             (ecc-diff-from-patch patch)
+           (pcase name
+             ("Edit"
+              (ecc-diff-for-edit (or (alist-get 'old_string input) "")
+                                 (or (alist-get 'new_string input) "")
+                                 before))
+             ("MultiEdit"
+              (ecc-diff-for-multi-edit (alist-get 'edits input) before))
+             ("Write"
+              (ecc-diff-for-write (or (alist-get 'content input) "") before))
+             ("NotebookEdit"
+              (ecc-diff-for-notebook-edit input))
+             (_ nil)))))
+    ;; An empty string is not "no diff" to a caller that only asks
+    ;; whether there is one: it draws a file path with nothing under it.
+    (unless (or (null text) (string-empty-p text)) text)))
 
 (provide 'ecc-diff)
 

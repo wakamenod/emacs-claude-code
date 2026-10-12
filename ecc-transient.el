@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Assisted-by: Claude Code:claude-opus-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -61,7 +62,7 @@
 (declare-function ecc-answer-deny "ecc-answer" (reason))
 (declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
 (declare-function ecc-review "ecc-review" (&optional session paths))
-(declare-function ecc-review-worktree "ecc-review" (&optional session range root))
+(declare-function ecc-review-menu "ecc-review-menu" ())
 (declare-function ecc-session-timeline "ecc-session" ())
 (declare-function ecc-chat-goto-files "ecc-chat" ())
 (declare-function ecc-chat-goto-plans "ecc-chat" ())
@@ -389,8 +390,7 @@ before it draws anything."
     ("H" "Insert a past prompt" ecc-insert-past-prompt)
     ("w" "Rewrite the region" ecc-rewrite)]
    ["Review"
-    ("D" "Diff since session start" ecc-review)
-    ("G" "Diff since last commit" ecc-review-worktree)
+    ("D" "Review…" ecc-review-menu)
     ("F" "Files" ecc-goto-files)
     ("P" "Plan" ecc-goto-plan)
     ("T" "Timeline" ecc-timeline)]]

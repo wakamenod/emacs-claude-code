@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Assisted-by: Claude Code:claude-opus-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -43,11 +44,13 @@
 (require 'ecc-markdown)
 (require 'ecc-diff)
 (require 'ecc-window)
+(require 'ecc-visit)
 
 (declare-function ecc-resume "ecc" (session &optional fork))
 (declare-function ecc-perm-deny "ecc-perm" (&optional reason))
 (declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
 (declare-function ecc-question-open "ecc-perm" (request))
+(declare-function ecc-queue-show "ecc-queue" (&optional session entry))
 (declare-function ecc-plan-open "ecc-plan" (request))
 (declare-function ecc-plan-file-path "ecc-plan" (request))
 (declare-function ecc-review "ecc-review" (&optional session paths))
@@ -180,28 +183,52 @@ the one the user asks for, and the one `/rename\=' does in the CLI."
 A question or a plan that is still waiting opens the buffer it is
 answered in.
 
+A line of a diff and the heading of a call that names a file open that
+file, at the line when there is one (`ecc-visit-target-at-point\='); the
+node laid open is \[ecc-session-show-detail].  A path the model wrote
+opens the file it names wherever it is found -- a bare name or a path
+written against another directory is looked for among the files of the
+session and of the project, then among the files Emacs visits outside
+it, and on the machine after asking (`ecc-visit-find-written\=').  The
+file picked among several opens at once the next time; with a prefix
+argument the search is made again.  A video or a sound among them
+plays in the machine's own player instead (`ecc-visit-open\=').
+
 A picture drawn in the transcript opens as itself.  A URL comes
 first, and before the node the point is in: the point is
 only on one where a link was drawn, which is narrow enough to say what
 RET does there without a rule of its own.  It is the same key that
 follows a link everywhere else in Emacs, and the same one the transcript
-already opens things with."
+already opens things with.
+
+The prompts waiting in the queue, drawn above the separator, open the
+list of the queue (`ecc-queue-show\='), on the prompt at point.  They
+come before anything else, a URL included: the text of a prompt is
+what the user wrote, and a path or a URL in it is not a link."
   (interactive)
   (let* ((session (ecc-session-at-point))
+         (queued (get-text-property (point) 'ecc-queue))
          (node (ecc-chat-node-at-point))
          (url (ecc-markdown-url-at-point))
          (path (or (ecc-chat-file-at-point) (ecc-chat-plan-file-at-point)))
          (picture (ecc-image-at-point))
+         (written (and (not url) (not picture) (ecc-markdown-file-at-point)))
+         (target (and (not url) (not picture) (not written)
+                      (ecc-visit-target-at-point)))
          (request (and node (ecc-model-node-get node 'request)))
          (pending (and request (memq request (ecc-session-pending session)))))
     (cond
+     (queued (require 'ecc-queue)
+             (ecc-queue-show session (get-text-property (point) 'ecc-queued)))
      (url (browse-url url))
      ;; A still opens in `image-mode\=', which zooms and scrolls; a video
      ;; is something Emacs cannot play, so the machine plays it.
-     (picture (if (ecc-image-video-p picture)
+     (picture (if (ecc-image-plays-outside-p picture)
                   (ecc-image-open-externally picture)
                 (find-file-other-window picture)))
-     (path (find-file-other-window path))
+     (written (ecc-visit-open-written session written current-prefix-arg))
+     (target (ecc-visit-open (car target) (cdr target) session))
+     (path (ecc-visit-open path nil session))
      ((null node) (user-error "Nothing to show here"))
      ((eq (ecc-node-type node) 'agent) (ecc-session-show-agent session node))
      ((and pending (eq (ecc-node-type node) 'question))
@@ -216,9 +243,20 @@ already opens things with."
       (require 'ecc-plan)
       (let ((path (and request (ecc-plan-file-path request))))
         (if (and path (file-exists-p path))
-            (find-file-other-window path)
+            (ecc-visit-open path nil session)
           (ecc-session--show-node session node))))
      (t (ecc-session--show-node session node)))))
+
+(defun ecc-session-show-detail ()
+  "Show every detail of the node at point in a buffer of its own.
+The input of a call in full, its diff and its whole result, which the
+transcript cuts."
+  (interactive)
+  (let ((session (ecc-session-at-point))
+        (node (ecc-chat-node-at-point)))
+    (unless node
+      (user-error "Nothing to show here"))
+    (ecc-session--show-node session node)))
 
 (defun ecc-session-review ()
   "Open every change of this session as one diff to review."
@@ -258,7 +296,10 @@ The d key of the transcript does both."
                                      (ecc-model-node-get node 'input)
                                      (ecc-model-node-get node 'before))
            (insert "\n")
-           (insert (ecc-render--result-text (ecc-model-node-get node 'result))))
+           (insert (ecc-render--result-text (ecc-model-node-get node 'result)))
+           (when (ecc-model-node-get node 'bash-edit)
+             (insert "\n\n")
+             (ecc-render--insert-bash-edit node "" t)))
           ((or 'permission 'question 'plan)
            (let ((request (ecc-model-node-get node 'request)))
              (insert (format "%s  %s\n\n"

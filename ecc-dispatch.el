@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Assisted-by: Claude Code:claude-opus-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -933,38 +934,99 @@ twelve-line clip could not even cut -- base64 is one line."
         (when (and path (not error-p)
                    (memq (cdr (assoc name ecc-dispatch-file-tools)) '(edit write)))
           (run-hook-with-args 'ecc-sync-file-changed-hook session path)))
+      (unless error-p
+        (dolist (path (ecc-dispatch--bash-changed-paths node))
+          (run-hook-with-args 'ecc-sync-file-changed-hook session path)))
+      (run-hook-with-args 'ecc-tool-finished-hook session node)
       node)))
+
+(defun ecc-dispatch--bash-edit-diff (session node result)
+  "Note on SESSION and the Bash NODE the files RESULT says it changed.
+The CLI reports them in `bashEditDiff' only under the conditions
+`ecc-protocol-bash-edit-diff' lists.  Each file with hunks goes into
+the Files section as an Edit's patch does, a new one as a Write; the
+ones the CLI only names are counted there with nothing to draw.  What
+the file was before the command is not known, so the start the review
+diffs from is left as it was."
+  (when-let* ((diff (ecc-protocol-bash-edit-diff result)))
+    (ecc-model-node-put node 'bash-edit diff)
+    (let ((noted nil))
+      (dolist (file (plist-get diff :files))
+        (let ((path (plist-get file :path))
+              (created (eq (plist-get file :change) 'created)))
+          (push path noted)
+          (ecc-model-note-file session path (if created 'write 'edit))
+          (ecc-model-note-hunk session path nil nil (plist-get file :patch)
+                               (if created nil 'unknown))))
+      (dolist (path (plist-get diff :changed))
+        (unless (member path noted)
+          (ecc-model-note-file session path 'edit))))))
+
+(defun ecc-dispatch--bash-changed-paths (node)
+  "Return the files the Bash NODE changed that are still there.
+A deleted file has no buffer worth reverting: reverting one whose file
+is gone is an error, and with `ecc-sync-modified-action\=' `ask\=' it
+offers to replace unsaved work with nothing.  The disk is asked rather
+than the `deleted\=' mark of the CLI, which only the five files it shows
+hunks of carry; a file past them, or one whose diff was too long to
+show, is only named in `changedFiles\='."
+  (when-let* ((diff (ecc-model-node-get node 'bash-edit)))
+    (seq-filter #'file-exists-p (plist-get diff :changed))))
 
 (defun ecc-dispatch--structured-result (session node result)
   "Apply the structured tool_use_result RESULT of the tool NODE to SESSION.
 The CLI reports what a file tool did in a machine readable form next to
 the text Claude sees: the content a Read returned, the original file and
-the patch of an Edit or a Write, the id and status of a task."
+the patch of an Edit or a Write, the id and status of a task.
+
+Only an object is read.  An MCP tool's tool_use_result is the array of
+content blocks it returned, the same as the text Claude sees, and holds
+nothing to apply (CLI 2.1.281, 2026-10-01)."
   (let ((name (ecc-model-node-get node 'name))
-        (input (ecc-model-node-get node 'input)))
+        (input (ecc-model-node-get node 'input))
+        (result (and (consp result) result)))
+    ;; The patch says what the change really was, down to the lines the
+    ;; call did not name and the numbers they have in the file; the node
+    ;; keeps it so that the transcript stops drawing the guess made from
+    ;; the file before the call.
+    (when-let* ((patch (alist-get 'structuredPatch result)))
+      (ecc-model-node-put node 'patch patch))
     (pcase name
       ("Read"
        (ecc-model-note-snapshot session (alist-get 'file_path input)
                                 (alist-get 'content (alist-get 'file result))))
       ((or "Edit" "MultiEdit")
-       (let ((path (alist-get 'file_path input))
-             (original (alist-get 'originalFile result))
-             (patch (alist-get 'structuredPatch result)))
-         (ecc-model-note-hunk session path
-                              (or (alist-get 'oldString result)
-                                  (alist-get 'old_string input))
-                              (or (alist-get 'newString result)
-                                  (alist-get 'new_string input))
-                              patch
-                              (if (stringp original)
-                                  original
-                                (ecc-model-node-get node 'before)))
+       ;; A MultiEdit carries no old_string or new_string of its own:
+       ;; they are in its `edits', one pair per edit.  Reading it as an
+       ;; Edit gave the Files summary a hunk of nil against nil, and
+       ;; `string-replace' an empty string to look for, which is an
+       ;; error (2026-09-22).  The pair of a MultiEdit is the whole file
+       ;; before it against the whole file with every edit laid on.
+       (let* ((path (alist-get 'file_path input))
+              (original (alist-get 'originalFile result))
+              (patch (alist-get 'structuredPatch result))
+              (edits (alist-get 'edits input))
+              (before (if (stringp original)
+                          original
+                        (ecc-model-node-get node 'before)))
+              (multi (equal name "MultiEdit"))
+              (old (if multi
+                       before
+                     (or (alist-get 'oldString result)
+                         (alist-get 'old_string input))))
+              (new (if multi
+                       (ecc-diff-apply-edits before edits)
+                     (or (alist-get 'newString result)
+                         (alist-get 'new_string input)))))
+         (ecc-model-note-hunk session path old new patch before)
          (when (stringp original)
            (ecc-model-note-snapshot
             session path
-            (string-replace (or (alist-get 'old_string input) "")
-                            (or (alist-get 'new_string input) "")
-                            original)))))
+            (if multi
+                (ecc-diff-apply-edits original edits)
+              (string-replace (or (alist-get 'old_string input) "")
+                              (or (alist-get 'new_string input) "")
+                              original))))))
       ("Write"
        (let ((original (or (alist-get 'originalFile result)
                            (ecc-model-node-get node 'before))))
@@ -974,6 +1036,8 @@ the patch of an Edit or a Write, the id and status of a task."
                                   (alist-get 'content input))
                               (alist-get 'structuredPatch result)
                               original)))
+      ("Bash"
+       (ecc-dispatch--bash-edit-diff session node result))
       ("TaskCreate"
        (let ((task (alist-get 'task result)))
          (ecc-model-note-task session (alist-get 'id task)
@@ -1051,13 +1115,16 @@ the patch of an Edit or a Write, the id and status of a task."
 
 (defun ecc-dispatch-auto-approve-p (session request)
   "Return non-nil when SESSION may allow REQUEST without asking.
-A turn wide approval covers `ecc-turn-approve-tools', and a tool the
-user allowed for the whole session is never asked about again ."
+A turn wide approval covers `ecc-turn-approve-tools', a tool the user
+allowed for the whole session is never asked about again, and a module
+may allow a tool of its own through `ecc-request-allow-functions'."
   (let ((name (ecc-request-tool-name request)))
     (and (eq (ecc-request-kind request) 'permission)
          (or (and (ecc-session-auto-approve-turn session)
                   (member name ecc-turn-approve-tools))
-             (member name (ecc-session-auto-approve-kinds session)))
+             (member name (ecc-session-auto-approve-kinds session))
+             (run-hook-with-args-until-success 'ecc-request-allow-functions
+                                               session request))
          t)))
 
 (defun ecc-dispatch--auto-allow (session request)
