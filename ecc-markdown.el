@@ -104,8 +104,9 @@ empty on a closing fence and on an opening one that names nothing.")
 (defconst ecc-markdown-heading-regexp "^#\\{1,6\\}[ \t]+.*$"
   "Regexp matching a heading line.")
 
-(defconst ecc-markdown-bullet-regexp "^[ \t]*\\([-*+]\\|[0-9]+[.)]\\)[ \t]+"
-  "Regexp matching the marker of a list item; group 1 is the marker.")
+(defconst ecc-markdown-bullet-regexp "^[ \t]*\\([-*+]\\|\\([0-9]+[.)]\\)\\)[ \t]+"
+  "Regexp matching the marker of a list item; group 1 is the marker.
+Group 2 is the marker too when it is a number, and unmatched otherwise.")
 
 (defconst ecc-markdown-inline-code-regexp "`\\([^`\n]+\\)`"
   "Regexp matching an inline code span.")
@@ -507,7 +508,10 @@ drawn with."
               (when (looking-at ecc-markdown-bullet-regexp)
                 (let ((bullet-start (match-beginning 1))
                       (bullet-end (match-end 1)))
-                  (put-text-property bullet-start bullet-end 'display "•")
+                  ;; A bullet stands in for "-", "*" and "+"; a number
+                  ;; says something, and it stays.
+                  (unless (match-beginning 2)
+                    (put-text-property bullet-start bullet-end 'display "•"))
                   (ecc-markdown--add-face bullet-start bullet-end
                                           'ecc-markdown-bullet-face)))
               (ecc-markdown--fontify-inline start end))))
