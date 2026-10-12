@@ -17,6 +17,22 @@ Verified against **Claude Code CLI 2.1.290**.
 
 ### Added
 
+- `ecc-restart` stops the CLI of an idle session and starts it again on the
+  same conversation, in the same buffer: the transcript, the draft in the
+  prompt, the review baseline and the permission mode stay. It is for a CLI
+  that has stopped answering, or one that should read changed Claude Code
+  settings, MCP servers or plugins. It asks first, and looks again once the
+  answer is in. A session with a turn running, a request waiting or prompts
+  queued is refused with a word to interrupt it first; one with a subagent or
+  a backgrounded shell command still running is refused until it is done; and
+  an inline session is refused outright. A fork that has not been given its
+  own id yet is forked again rather than resumed onto the conversation it
+  came from. A
+  conversation with a recording is resumed with `--resume`; one that was never
+  sent a prompt has none, and starts again under its own id with
+  `--session-id`. `R` in a session buffer now restarts an idle running session
+  and resumes a stopped one, and `ecc-menu` has it under `S`. `C-c c r`
+  (`ecc-resume`) still only goes to a running session.
 - The prompts waiting for the running turn to end are drawn at the end of the
   transcript, just above the separator: a `⏸ Queued (N)` line and one dim line
   per prompt, cut to the window. Nothing is drawn while the queue is empty, and
@@ -64,6 +80,31 @@ Verified against **Claude Code CLI 2.1.290**.
   at `/` or `~` is still only taken as written, and the paths of tool calls,
   the Files section and diffs, which are absolute already, open as before.
 
+### Changed
+
+- The Space picker of `C-c c j` (`ecc-space-goto`) groups the Spaces under
+  `Open`, the Spaces of the sidebar in its order, and `Past`, the projects
+  only recordings are left of, newest first; `ecc-space-close`, when it asks,
+  shows the same `Open` list alone. Each line is drawn the way the sidebar draws the row: the Space's
+  state mark (`⚠`, `▶`, `✗`, `○`, and `·` for idle; blank for a Space with
+  nothing running), its sidebar number `[n]`, and `├─` / `└─` in front of a
+  worktree under its repository. A past one gets blanks for the mark and the
+  number and no tree line, even when it is a worktree of an open repository,
+  and a dimmed `past` before its directory, which is what tells it apart where
+  the group headings do not show. The directory follows,
+  dimmed, in a column of its own; the state word is gone. What is typed is
+  matched against the name alone, not the mark, the number or the directory.
+  A worktree's name is what its repository goes by and its branch
+  (`emacs-claude-code › feat/x`, or `app<2> › feat/x` under a repository
+  whose tab is `app<2>`), the same title the session picker now gives its
+  group, so typing a repository's name narrows the list to it and its
+  worktrees; any other Space goes by its tab's name, or its own when it has
+  no tab. Two Spaces that would share a name become `name` and `name<2>`.
+  The groups show in a completion UI that reads `group-function` -- vertico
+  does, and the default `*Completions*` with `completions-group` on; the
+  mark, the number, the tree line and the directory show in both, with
+  `completions-group` on or off.
+
 ### Fixed
 
 - Reply text in the transcript could be painted red, or mauve, across a whole
@@ -74,6 +115,17 @@ Verified against **Claude Code CLI 2.1.290**.
   themselves, through a buffer-local `show-paren-predicate`, and stay so when
   the global mode is turned on later; the global settings are left alone, and
   `show-paren-local-mode` still brings it back in one buffer.
+
+- `C-c c j` (`ecc-space-goto`) answered with `RET` and nothing typed, under
+  the default completion, went on with no Space and failed with
+  `wrong-type-argument`; so did `ecc-space-close` when it asked. It says "No
+  Space chosen" now. Introduced in 0.3.0, with `ecc-space-goto`.
+
+- `ecc-space-close`, asked from outside any Space, offered the projects only
+  recordings are left of along with the open Spaces. Picking one stopped
+  nothing and closed no tab, said "Closed" all the same, and for a worktree
+  went on to offer removing its directory. It offers the open Spaces alone
+  now. Introduced in 0.3.0, with `ecc-space-past-projects`.
 
 - A numbered list item in the transcript showed a bullet in place of its
   number: `1.` and `10)` were drawn as `•`, like a `-` item, so a reply's

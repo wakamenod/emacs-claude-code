@@ -162,6 +162,24 @@ last selected in, after everything that has a session."
                          (or (alist-get b ecc-space--used 0 nil #'equal) 0))))))
     (append keys idle)))
 
+(defun ecc-space-title (space)
+  "Return what SPACE goes by in a picker.
+A linked worktree is titled after the repository it belongs to and then
+its branch, `repo › branch\=', with the repository's own title in front,
+so that typing what the repository goes by -- `app<2>\=' as well as
+`app\=' -- finds its worktrees too.  The branch and not the worktree's
+tab: a tab's `<2>\=' is there to tell tabs apart, and the repository in
+front already does.  Any other Space goes by the name of its tab when
+it has one, so that the picker and the tab bar agree, and otherwise by
+its name; a past one has no tab, and none is looked for.  The Space
+picker offers a Space under this, and the session picker titles the
+group of a Space's sessions with it."
+  (if-let* ((parent (ecc-space-parent space)))
+      (concat (ecc-space-title (ecc-space-of-root parent))
+              " › " (ecc-space-name space))
+    (or (and (not (ecc-space-past space)) (ecc-space-tab space))
+        (ecc-space-name space))))
+
 (defun ecc-space-list ()
   "Return every Space there is, a parent before the children under it.
 A child whose parent has no Space stands on its own, in the place its
@@ -204,6 +222,28 @@ sidebar has in hand when it draws the tree lines.  SPACES defaults to
     (seq-filter (lambda (other)
                   (equal (ecc-space-parent other) key))
                 (or spaces (ecc-space-list)))))
+
+(defun ecc-space-tree-line (space spaces)
+  "Return the tree line drawn in front of SPACE, one of the drawn SPACES.
+Empty for a repository; for a worktree, the line that ties it to the
+row above, closed off on the last one.  SPACES is what is on the
+screen rather than every Space there is: a fold of the sidebar can
+leave one worktree of three drawn, and it is the last of what is drawn
+that closes the line.  The sidebar and `ecc-space-read\=' draw with it."
+  (if (not (ecc-space-child-p space spaces))
+      ""
+    (let ((last (car (last (ecc-space-children
+                            (ecc-space-parent space) spaces)))))
+      (if (ecc-space-equal space last) "  └─ " "  ├─ "))))
+
+(defun ecc-space-number-label (number spaces)
+  "Return NUMBER as `[n]\=', padded to the room the widest of SPACES takes.
+The widest wins, so that the names after it line up once the tenth
+Space opens.  A NUMBER of nil -- a Space that is not on the screen --
+is a blank of the same width.  The sidebar and `ecc-space-read\=' draw
+with it."
+  (string-pad (if number (format "[%d]" number) "")
+              (length (format "[%d]" (max 1 (length spaces))))))
 
 (defun ecc-space-number (space &optional spaces)
   "Return the place SPACE holds among SPACES, counting from one.
@@ -327,12 +367,7 @@ A tab the user closed is forgotten here rather than offered again."
 (defun ecc-space--unique-tab-name (base)
   "Return BASE, or BASE with a suffix when a tab already goes by it.
 Two worktrees of two repositories are called `main' as often as not."
-  (let ((name base)
-        (n 1))
-    (while (ecc-space--tab-index name)
-      (setq n (1+ n)
-            name (format "%s<%d>" base n)))
-    name))
+  (ecc--unique-name base #'ecc-space--tab-index))
 
 (defun ecc-space--forget-tab (tab &rest _)
   "Forget the Space of TAB, which is about to be closed.
@@ -960,40 +995,143 @@ readable with `ecc-history-open\=', but there is nowhere to start."
               (push space spaces))))))
     (nreverse spaces)))
 
-(defun ecc-space-label (space &optional spaces)
-  "Return the line SPACE is offered under, among SPACES."
-  (format "%2s %-24s %-9s %s"
-          (or (ecc-space-number space spaces) "")
-          (ecc--truncate (ecc-space-name space) 24)
-          (or (ecc-space-state space) (and (ecc-space-past space) "past") "")
-          (abbreviate-file-name (ecc-space-root space))))
+(defun ecc-space--candidates (spaces past)
+  "Return an alist of a candidate to its Space, for SPACES and then PAST.
+The candidate is the title of the Space, `ecc-space-title\=', and nothing
+else: the mark, the number, the tree line and the directory are put
+around it as it is shown, so that what is typed is matched against the
+name alone.  Two Spaces that would go by the same title are told apart
+the way their tabs are, `main<2>\='."
+  (let ((candidates nil))
+    (dolist (space (append spaces past))
+      (push (cons (ecc--unique-name (ecc-space-title space)
+                                    (lambda (title) (assoc title candidates)))
+                  space)
+            candidates))
+    (nreverse candidates)))
 
-(defun ecc-space--table (labels)
-  "Return a completion table of LABELS that keeps the order they are in.
-The live Spaces come in the order the sidebar numbers them and the past
-ones newest first; sorting the candidates would throw both away."
-  (lambda (string predicate action)
-    (if (eq action 'metadata)
-        `(metadata (display-sort-function . identity)
-                   (cycle-sort-function . identity))
-      (complete-with-action action labels string predicate))))
+(defun ecc-space--affixes (candidates spaces)
+  "Return an alist of each of CANDIDATES to the prefix and suffix it is shown with.
+CANDIDATES is what `ecc-space--candidates\=' returns and SPACES the
+Spaces on the screen.  The prefix is what the sidebar puts in front of
+a row -- the mark of the Space\='s state, its number and the tree line
+of a worktree -- in the order mark, number, line, so that the marks and
+the numbers stand in columns of their own.  A Space with nothing
+running gets a blank for the mark.  A past one gets a blank for both
+and no tree line, and none of the three is worked out for it: it is not
+on the screen, so it has no state and no number, and a worktree of a
+repository that is would otherwise be drawn as one of its children,
+under `Past\=', with nothing above it.  The suffix is the directory,
+dimmed, in a column after the longest line, with a dimmed `past\=' in
+front of it on a past line: the default *Completions* shows no group
+headings unless `completions-group\=' is on, and without one that word
+is all that tells a past project from an open Space with nothing in it."
+  (let* ((blank (concat (ecc-tab-column-mark nil) " "
+                        (ecc-space-number-label nil spaces) " "))
+         (prefixes
+          (mapcar (lambda (entry)
+                    (let ((space (cdr entry)))
+                      (if (ecc-space-past space)
+                          blank
+                        (concat (ecc-tab-column-mark (ecc-space-state space))
+                                " "
+                                (ecc-space-number-label
+                                 (ecc-space-number space spaces) spaces)
+                                " "
+                                (ecc-space-tree-line space spaces)))))
+                  candidates))
+         (column (+ 2 (apply #'max
+                             (cl-mapcar (lambda (entry prefix)
+                                          (+ (string-width prefix)
+                                             (string-width (car entry))))
+                                        candidates prefixes)))))
+    (cl-mapcar
+     (lambda (entry prefix)
+       (list (car entry) prefix
+             (concat (make-string (- column (string-width prefix)
+                                     (string-width (car entry)))
+                                  ?\s)
+                     (propertize (concat (if (ecc-space-past (cdr entry))
+                                             "past "
+                                           "     ")
+                                         (abbreviate-file-name
+                                          (ecc-space-root (cdr entry))))
+                                 'face 'completions-annotations))))
+     candidates prefixes)))
 
-(defun ecc-space-read (&optional prompt)
+(defun ecc-space--table (candidates spaces)
+  "Return a completion table of CANDIDATES, grouped and kept in order.
+CANDIDATES is what `ecc-space--candidates\=' returns and SPACES the
+Spaces on the screen.  The groups are `Open\=', the Spaces on the
+screen in the order the sidebar numbers them, and `Past\=', the projects
+only recordings are left of, newest first; sorting the candidates
+would throw both orders away.
+
+What goes around a name is an `affixation-function\='s and not the
+`group-function\='s transform, the way the session picker does it.  The
+default *Completions* calls a `group-function\=' only with
+`completions-group\=' on, which it is not by default, and an
+`affixation-function\=' always; vertico calls both, the affixation on
+the candidate it has already highlighted what matched in, and the
+prefix and suffix are outside the candidate either way, so the match
+highlighting is the UI\='s own (both read 2026-10-12, in Emacs
+32.0.50\='s minibuffer.el and vertico 20260913).  marginalia stands in
+its own affixation only for a category it has an annotator for, and
+this table has no category."
+  ;; Both functions are called for every line on every redisplay, so a
+  ;; line is found in a table rather than by walking the lists.  `equal'
+  ;; ignores text properties, and so does its hash: a candidate the UI
+  ;; has put its match faces on is found all the same.
+  (let ((lines (make-hash-table :test #'equal)))
+    (cl-mapc (lambda (entry affix)
+               (puthash (car entry) (cons (cdr entry) (cdr affix)) lines))
+             candidates (ecc-space--affixes candidates spaces))
+    (lambda (string predicate action)
+      (if (eq action 'metadata)
+          `(metadata
+            (group-function
+             . ,(lambda (candidate transform)
+                  (let ((space (car (gethash candidate lines))))
+                    (cond (transform candidate)
+                          ((and space (ecc-space-past space)) "Past")
+                          (t "Open")))))
+            (affixation-function
+             . ,(lambda (strings)
+                  ;; The string handed in, not the one kept here: it
+                  ;; carries the faces of what matched.
+                  (mapcar (lambda (string)
+                            (cons string
+                                  (or (cdr (gethash string lines))
+                                      (list "" ""))))
+                          strings)))
+            (display-sort-function . identity)
+            (cycle-sort-function . identity))
+        (complete-with-action action candidates string predicate)))))
+
+(defun ecc-space-read (&optional prompt open-only)
   "Ask which Space to use, with PROMPT.
-The Spaces on the screen come first, in the order they are numbered,
-and the projects only recordings are left of follow."
+The Spaces on the screen come first, under `Open\=', in the order they
+are numbered, and the projects only recordings are left of follow under
+`Past\=' unless OPEN-ONLY says to leave them out -- for a command that
+has nothing to do to a Space that is not open.  Each is offered by its
+name, `ecc-space-title\=', and shown the way the sidebar draws it, with
+the mark of its state, its number, the tree line of a worktree, and its
+directory after it."
   (let* ((spaces (ecc-space-list))
-         (past (and ecc-use-spaces (ecc-space-past-projects)))
-         (all (append spaces past)))
-    (unless all
-      (user-error "No project has a session, a tab or a recording"))
-    (let* ((labels (mapcar (lambda (space)
-                             (cons (ecc-space-label space spaces) space))
-                           all))
+         (past (and ecc-use-spaces (not open-only)
+                    (ecc-space-past-projects))))
+    (unless (or spaces past)
+      (user-error (if open-only
+                      "No Space is open"
+                    "No project has a session, a tab or a recording")))
+    (let* ((candidates (ecc-space--candidates spaces past))
            (choice (completing-read (or prompt "Space: ")
-                                    (ecc-space--table (mapcar #'car labels))
+                                    (ecc-space--table candidates spaces)
                                     nil t)))
-      (cdr (assoc choice labels)))))
+      ;; REQUIRE-MATCH lets an empty answer through: RET with nothing
+      ;; typed returns "" under the default completion.
+      (or (cdr (assoc choice candidates))
+          (user-error "No Space chosen")))))
 
 ;;;###autoload
 (defun ecc-space-goto (space)
@@ -1025,7 +1163,7 @@ their Spaces are gone and nothing is left running in them, so this is
 the moment somebody is thinking about the directories.  Answering no
 leaves them where they are, and `ecc-remove-worktree' still undoes one
 by itself."
-  (interactive (list (or (ecc-space-current) (ecc-space-read "Close Space: "))))
+  (interactive (list (or (ecc-space-current) (ecc-space-read "Close Space: " t))))
   ;; Everything is read before the first kill: closing a session closes
   ;; the Space it was the last of, and the children would be gone from
   ;; `ecc-space-list' halfway through the loop.

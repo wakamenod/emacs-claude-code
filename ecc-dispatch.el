@@ -284,7 +284,9 @@ Init arrives once per turn, not once per session, so this only
 updates what it is told and never rebuilds the session."
   (setf (ecc-session-init session) message)
   (when-let* ((id (alist-get 'session_id message)))
-    (ecc-model-set-session-id session id))
+    (ecc-model-set-session-id session id)
+    ;; A fork has its own id from here on (`ecc-history-fork-unsettled-p').
+    (setf (alist-get 'fork-unsettled (ecc-session-progress session)) nil))
   (when-let* ((cwd (alist-get 'cwd message)))
     (setf (ecc-session-cwd session) cwd))
   (when-let* ((mode (alist-get 'permissionMode message)))

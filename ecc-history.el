@@ -686,7 +686,16 @@ the CLI would run twice on the same recording."
   (require 'ecc-review)
   (ecc-review-ensure-baseline session)
   (ecc-proc-start session t fork)
+  ;; Noted after the start, which would otherwise be the one to forget it.
+  (setf (alist-get 'fork-unsettled (ecc-session-progress session)) (and fork t))
   session)
+
+(defun ecc-history-fork-unsettled-p (session)
+  "Return non-nil when SESSION was forked and has no id of its own yet.
+A fork goes by the id it branched from until system/init hands it its
+own with the first turn (`ecc-dispatch--init\=' clears this), so the
+conversation under that id is not yet the fork\='s to resume."
+  (alist-get 'fork-unsettled (ecc-session-progress session)))
 
 
 ;;;; Carrying a session on with another conversation

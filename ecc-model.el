@@ -714,6 +714,21 @@ over is not idle while one of these is still at work."
              (ecc-session-nodes session))
     nodes))
 
+(defun ecc-model-busy (session)
+  "Return what SESSION is in the middle of, or nil when it may be stopped.
+A session whose turn is over is still busy while a subagent or a
+backgrounded shell command it started runs on; a stopped one is not,
+whatever its last tasks said.  The answer is a phrase that reads after
+the session's name: `list_worktrees\=' says it, and so do the commands
+that refuse to stop a busy session."
+  (pcase (ecc-model-activity session)
+    ('attention "waiting on a request")
+    ('running "running")
+    ((or 'exited 'restored) nil)
+    (_ (when-let* ((tasks (ecc-model-running-tasks session)))
+         (format "idle with %d background task%s still running"
+                 (length tasks) (if (cdr tasks) "s" ""))))))
+
 (defun ecc-model-turn-of (node)
   "Return the turn NODE belongs to, or nil."
   (let ((parent (ecc-node-parent node)))
