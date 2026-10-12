@@ -95,6 +95,12 @@ Verified against **Claude Code CLI 2.1.290**.
   hand-off then waited that turn out and stopped the CLI in the middle of it,
   so the prompt was never answered. The queue is now held while the CLI is
   being stopped, and is sent once the session is back. Introduced in 0.1.0.
+- A session taken back from the terminal while a CLI of its own was already
+  running again could be left with a turn open on an idle CLI: the lines the
+  terminal had appended were read in with their turn kept open, and nothing
+  closed it. Every prompt then waited in the queue behind it. The turn is now
+  closed when the follow ends, unless the running CLI is itself in a turn.
+  Introduced in 0.1.0.
 - A numbered list item in the transcript showed a bullet in place of its
   number: `1.` and `10)` were drawn as `•`, like a `-` item, so a reply's
   numbered steps lost their numbers. The text underneath was right, and copying
