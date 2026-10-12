@@ -66,6 +66,15 @@ Verified against **Claude Code CLI 2.1.290**.
 
 ### Fixed
 
+- Reply text in the transcript could be painted red, or mauve, across a whole
+  stretch: with `show-paren-mode` on and `show-paren-style` set to `mixed` or
+  `expression`, point near a paren that does not pair -- a `1)` list item, a
+  full-width `（` closed by a half-width `)` -- highlighted everything to its
+  supposed partner. Session buffers now turn paren matching off for
+  themselves, through a buffer-local `show-paren-predicate`, and stay so when
+  the global mode is turned on later; the global settings are left alone, and
+  `show-paren-local-mode` still brings it back in one buffer.
+
 - A numbered list item in the transcript showed a bullet in place of its
   number: `1.` and `10)` were drawn as `•`, like a `-` item, so a reply's
   numbered steps lost their numbers. The text underneath was right, and copying
