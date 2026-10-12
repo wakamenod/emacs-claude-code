@@ -19,7 +19,7 @@ A session is a running `claude` process, its buffer and its name. The first sess
 
 ## Where a session starts
 
-`C-c c c` starts in the project of the current buffer's file or directory. From a buffer without one (a transcript, the dashboard, `*scratch*`) it uses the last buffer that had one. `C-u C-c c c` asks for the directory.
+`C-c c c` starts in the project of the file the current buffer visits, or of the directory a Dired buffer lists. From a transcript or the dashboard, it uses the project of the file you were in before. `C-u C-c c c` asks for the directory.
 
 :::caution[The directory is fixed when the CLI starts]
 A session cannot move to another directory. If it started in the wrong project, kill it and start again there. The echo area names the directory, and the header line names the project.
