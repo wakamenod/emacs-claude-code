@@ -82,6 +82,13 @@ Verified against **Claude Code CLI 2.1.290**.
 
 ### Fixed
 
+- A turn waiting on a permission, a question or a plan, or one compacting its
+  context, was not interrupted before its CLI was stopped for a hand-off to the
+  terminal or a `/resume`: only a session whose state said `running` was taken
+  to be in a turn, and these say `waiting-permission`, `compacting` and the
+  like. The CLI was stopped mid-turn instead. Whether a turn is open now
+  decides it, so such a turn is interrupted first, like a running one.
+  Introduced in 0.3.0.
 - A numbered list item in the transcript showed a bullet in place of its
   number: `1.` and `10)` were drawn as `•`, like a `-` item, so a reply's
   numbered steps lost their numbers. The text underneath was right, and copying

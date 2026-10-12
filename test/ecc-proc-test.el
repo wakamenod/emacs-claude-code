@@ -657,20 +657,61 @@ answered by nobody: what is being tested is the waiting."
 Stopping mid-tool leaves the CLI to write the result of a call that
 will never finish."
   (ecc-proc-test--with-pretend-process session
-    (ecc-model-set-state session 'running)
+    (ecc-model-begin-turn session "work")
     (cl-letf (((symbol-function 'ecc-proc-interrupt)
                (lambda (session)
                  (setq interrupted t)
                  ;; The CLI answers an interrupt with a result.
+                 (ecc-model-finish-turn session nil)
                  (ecc-model-set-state session 'idle))))
       (ecc-proc-release session 5))
     (should interrupted)
     (should stopped)))
 
+(ert-deftest ecc-proc-test-release-interrupts-a-turn-waiting-on-a-request ()
+  "A turn blocked on a permission is a turn too, and is interrupted first.
+The state says `waiting-permission' then rather than `running', and
+taking that for an idle CLI stopped it in the middle of the turn."
+  (ecc-proc-test--with-pretend-process session
+    (ecc-model-begin-turn session "work")
+    (ecc-test-add-request session)
+    (should (eq (ecc-session-state session) 'waiting-permission))
+    (cl-letf (((symbol-function 'ecc-proc-interrupt)
+               (lambda (session)
+                 (setq interrupted t)
+                 (ecc-model-abandon-requests session "interrupted")
+                 (ecc-model-finish-turn session nil)
+                 (ecc-model-set-state session 'idle))))
+      (ecc-proc-release session 5))
+    (should interrupted)
+    (should stopped)))
+
+(ert-deftest ecc-proc-test-release-interrupts-a-compaction ()
+  "A turn compacting its context is interrupted first as well.
+The state says `compacting' then, set in the middle of the turn."
+  (ecc-proc-test--with-pretend-process session
+    (ecc-model-begin-turn session "work")
+    (ecc-model-set-state session 'compacting)
+    (cl-letf (((symbol-function 'ecc-proc-interrupt)
+               (lambda (session)
+                 (setq interrupted t)
+                 (ecc-model-finish-turn session nil)
+                 (ecc-model-set-state session 'idle))))
+      (ecc-proc-release session 5))
+    (should interrupted)
+    (should stopped)))
+
+(ert-deftest ecc-proc-test-release-leaves-an-idle-cli-uninterrupted ()
+  "With no turn open, the CLI is stopped without an interrupt."
+  (ecc-proc-test--with-pretend-process session
+    (ecc-proc-release session 5)
+    (should-not interrupted)
+    (should stopped)))
+
 (ert-deftest ecc-proc-test-release-waits-out-a-turn-that-will-not-end ()
   "The wait has an end, and the process is stopped anyway."
   (ecc-proc-test--with-pretend-process session
-    (ecc-model-set-state session 'running)
+    (ecc-model-begin-turn session "work")
     (let ((start (float-time)))
       (ecc-proc-release session 0.3)
       (should (>= (- (float-time) start) 0.3)))

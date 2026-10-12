@@ -364,10 +364,14 @@ What comes next is the caller\='s: a terminal takes the conversation over
   (let ((process (ecc-session-process session))
         (timeout (or timeout ecc-proc-interrupt-timeout)))
     (when (process-live-p process)
-      (when (eq (ecc-session-state session) 'running)
+      ;; The open turn, not the state: a turn blocked on a permission, a
+      ;; question or a plan is `waiting-permission' and the like, and one
+      ;; compacting its context `compacting', and each of them was taken
+      ;; for an idle CLI and stopped mid-turn without an interrupt.
+      (when (ecc-session-current-turn session)
         (ecc-proc-interrupt session)
         (let ((deadline (+ (float-time) timeout)))
-          (while (and (eq (ecc-session-state session) 'running)
+          (while (and (ecc-session-current-turn session)
                       (process-live-p process)
                       (< (float-time) deadline))
             (accept-process-output process 0.2))))

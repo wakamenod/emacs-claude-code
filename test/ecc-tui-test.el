@@ -56,7 +56,9 @@ The process the session would run is pretended to be alive until
                    (lambda (session)
                      (setq interrupted t)
                      ;; The CLI answers an interrupt with a result, which
-                     ;; is what takes the session out of `running'.
+                     ;; closes the turn and takes the session out of
+                     ;; `running'.
+                     (ecc-model-finish-turn session nil)
                      (ecc-model-set-state session 'idle)))
                   ((symbol-function 'ecc-proc-stop)
                    (lambda (_session) (setq stopped t alive nil)))
@@ -111,7 +113,7 @@ terminal on the way out."
 (ert-deftest ecc-tui-test-stops-the-process-first ()
   "The session is interrupted and stopped before the terminal opens."
   (ecc-tui-test--with-session session
-    (ecc-model-set-state session 'running)
+    (ecc-model-begin-turn session "work")
     (ecc-tui-open session)
     (should interrupted)
     (should stopped)
@@ -127,7 +129,7 @@ terminal on the way out."
   (ecc-tui-test--with-session session
     (cl-letf (((symbol-function 'ecc-proc-interrupt)
                (lambda (_session) (setq interrupted t))))
-      (ecc-model-set-state session 'running)
+      (ecc-model-begin-turn session "work")
       (let ((start (float-time)))
         (ecc-tui-open session)
         (should (>= (- (float-time) start) ecc-tui-interrupt-timeout)))
