@@ -708,6 +708,45 @@ The state says `compacting' then, set in the middle of the turn."
     (should-not interrupted)
     (should stopped)))
 
+(defun ecc-proc-test--result (session)
+  "Feed SESSION the result the CLI answers an interrupt with."
+  (ecc-dispatch session '((type . "result") (subtype . "error_during_execution")
+                          (is_error . t) (total_cost_usd . 0))))
+
+(ert-deftest ecc-proc-test-release-keeps-the-queue ()
+  "The result that ends the interrupted turn does not send the next prompt.
+It used to: the queued prompt went out, opened a turn of its own, and
+the release waited that one out and stopped the CLI in the middle of
+it, so the prompt was never answered.  It stays in the queue for
+whatever has the conversation next.  A second session answering in the
+meantime drains its own queue as usual."
+  (ecc-proc-test--with-pretend-process session
+    (let ((other (ecc-model-create-session
+                  :name "other" :project-root temporary-file-directory)))
+      (unwind-protect
+          (progn
+            (ecc-model-begin-turn session "work")
+            (ecc-model-queue-input session "after the hand-off")
+            (ecc-model-begin-turn other "elsewhere")
+            (ecc-model-queue-input other "next elsewhere")
+            (cl-letf (((symbol-function 'ecc-proc-interrupt)
+                       (lambda (session)
+                         (setq interrupted t)
+                         ;; Both answer while the release waits.
+                         (ecc-proc-test--result other)
+                         (ecc-proc-test--result session))))
+              (setq ecc-test-sent nil)
+              (ecc-proc-release session 5))
+            (should stopped)
+            (should-not (ecc-session-current-turn session))
+            (should (= 1 (length (ecc-session-input-queue session))))
+            ;; The other session sent its next prompt and is in its turn.
+            (should-not (ecc-session-input-queue other))
+            (should (equal "next elsewhere"
+                           (ecc-turn-prompt (ecc-session-current-turn other))))
+            (should (= 1 (length (ecc-test-sent-messages)))))
+        (ecc-test-cleanup-session other)))))
+
 (ert-deftest ecc-proc-test-release-waits-out-a-turn-that-will-not-end ()
   "The wait has an end, and the process is stopped anyway."
   (ecc-proc-test--with-pretend-process session

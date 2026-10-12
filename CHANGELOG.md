@@ -89,6 +89,12 @@ Verified against **Claude Code CLI 2.1.290**.
   like. The CLI was stopped mid-turn instead. Whether a turn is open now
   decides it, so such a turn is interrupted first, like a running one.
   Introduced in 0.3.0.
+- A prompt queued behind a turn was lost when the session was handed over to
+  the terminal or carried on with `/resume` mid-turn. The result that ended the
+  interrupted turn sent the prompt, which opened a turn of its own; the
+  hand-off then waited that turn out and stopped the CLI in the middle of it,
+  so the prompt was never answered. The queue is now held while the CLI is
+  being stopped, and is sent once the session is back. Introduced in 0.1.0.
 - A numbered list item in the transcript showed a bullet in place of its
   number: `1.` and `10)` were drawn as `•`, like a `-` item, so a reply's
   numbered steps lost their numbers. The text underneath was right, and copying
