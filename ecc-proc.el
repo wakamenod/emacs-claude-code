@@ -313,6 +313,13 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
     ;; also carries what the Claude Code settings say about Remote
     ;; Control, which is where the bridge is turned on.
     (ecc-proc-control session "initialize" #'ecc-proc--on-initialize 'hooks nil)
+    ;; A rename made while no CLI ran, or one the last process never
+    ;; answered, goes to this one.  It goes before anything the CLI says
+    ;; is read, so a title the CLI may bring back from the recording
+    ;; arrives while the rename is out and cannot undo it
+    ;; (`ecc-dispatch--title-changed').
+    (ecc-proc--rename-unanswered session)
+    (ecc-proc-send-rename session)
     process))
 
 (defun ecc-proc-stop (session)
@@ -434,6 +441,7 @@ started again; left alone" status)
     (setf (ecc-session-process session) nil)
     (setf (alist-get 'exit-status (ecc-session-progress session)) status)
     (ecc-proc--close-pending session)
+    (ecc-proc--rename-unanswered session)
     ;; A turn the CLI was in the middle of will never get its result. Left
     ;; open, it would hold every later prompt in the queue, and a resumed
     ;; session would never speak again.
@@ -617,6 +625,66 @@ Nothing is sent while `ecc-proc-release\=' is stopping its CLI."
                         (ecc-model-pop-input session))))
     (ecc-proc-send-user session text)
     text))
+
+;;;; The name
+
+;; A rename made in Emacs (`ecc-session-rename') reaches the CLI as the
+;; `/rename' a user would type, because that is what the CLI records:
+;; the `custom-title' line a later `--resume', the history and the
+;; terminal client read the name from.  It is sent as a plain user
+;; message, but it is not the user talking: it opens no turn, never
+;; goes through the queue, and what the CLI answers is not drawn.
+;;
+;; What `/rename NAME' brings back (CLI 2.1.290, confirmed 2026-10-12):
+;; system/session_title_changed with NAME, system/init, a synthetic
+;; assistant message carrying `local_command_run' {command "rename"},
+;; and a result with "local_command": "rename" and no model call, whose
+;; `total_cost_usd' repeats the one of the turn before it rather than
+;; saying nothing was spent.  With --replay-user-messages the line is not
+;; echoed: a prompt is, a slash command is not.  Sent while a turn
+;; runs, the CLI holds it until that turn's result and runs it then.
+;; It is sent here only once no turn is open all the same, so that the
+;; exchange never lands between a prompt of the queue and its turn.
+
+(defun ecc-proc-rename-line (name)
+  "Return the line that renames a session to NAME in the CLI."
+  (concat "/rename " name))
+
+(defun ecc-proc-rename (session)
+  "Have the CLI of SESSION take the name SESSION has now.
+It is sent at once when the CLI runs with no turn open; otherwise the
+rename waits on SESSION until it does: the end of the turn, or the next
+start of the CLI -- a resume, a restart, a hand-off taken back.  Returns
+the name sent, or nil when it waits."
+  (setf (ecc-session-rename-pending session) t)
+  (ecc-proc-send-rename session))
+
+(defun ecc-proc-send-rename (session)
+  "Send the rename SESSION has waiting, if its CLI can take it now.
+The name sent is the one SESSION has when it goes, so a rename made
+twice while the CLI could not be told sends the second name only, and
+a name made unique as NAME<2> is sent as that.  Nothing is sent while
+another one is unanswered, while a turn is open, or while
+`ecc-proc-release\=' is stopping the CLI.  Returns the name sent, or nil."
+  (when (and (ecc-session-rename-pending session)
+             (null (ecc-session-rename-sent session))
+             (null (ecc-session-current-turn session))
+             (not (memq session ecc-proc--releasing))
+             (process-live-p (ecc-session-process session)))
+    (let ((name (ecc-session-name session)))
+      (setf (ecc-session-rename-pending session) nil
+            (ecc-session-rename-sent session) name)
+      (ecc-log name "telling the CLI the name")
+      (ecc-proc-send-json session (ecc-protocol-user-message
+                                   (ecc-proc-rename-line name)))
+      name)))
+
+(defun ecc-proc--rename-unanswered (session)
+  "Put a rename the CLI of SESSION never answered back to wait.
+The process it went to is gone, so the next one is told instead."
+  (when (ecc-session-rename-sent session)
+    (setf (ecc-session-rename-sent session) nil
+          (ecc-session-rename-pending session) t)))
 
 (defun ecc-proc-interrupt (session)
   "Interrupt the running turn of SESSION.

@@ -165,6 +165,20 @@ that tests cannot see each other."
            ,@body)
        (ecc-test-cleanup-session ,var))))
 
+(defmacro ecc-test-with-running-cli (session &rest body)
+  "Run BODY with SESSION given a live process that reads nothing.
+What SESSION sends still goes to `ecc-test-sent' when it is a fake
+session; the process is there for whatever asks whether the CLI runs."
+  (declare (indent 1) (debug (form body)))
+  (let ((process (make-symbol "process")))
+    `(let ((,process (make-process :name "ecc-test-cli" :command '("sleep" "60")
+                                   :connection-type 'pipe :noquery t)))
+       (unwind-protect
+           (progn (setf (ecc-session-process ,session) ,process)
+                  (ecc-model-set-state ,session 'idle)
+                  ,@body)
+         (delete-process ,process)))))
+
 (defun ecc-test-dispatch (session name &optional prompt)
   "Feed every line of fixture NAME to SESSION through `ecc-dispatch'.
 PROMPT, when given, opens the turn the recording answers, the way

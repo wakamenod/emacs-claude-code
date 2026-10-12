@@ -42,7 +42,7 @@
 (require 'ecc-model)
 
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
-(declare-function ecc-session-set-name "ecc-session" (session name))
+(declare-function ecc-session-rename "ecc-session" (session name))
 (declare-function ecc-chat-goto-prompt "ecc-chat" ())
 (declare-function ecc-render--project-name-1 "ecc-render" (directory))
 ;; `ecc-space' is above this file and is loaded where `ecc-use-spaces'
@@ -210,12 +210,14 @@ after it are told apart by a name the user gives."
 
 ;;;###autoload
 (defun ecc-rename-session (session name)
-  "Rename SESSION to NAME and rename its buffers with it."
+  "Rename SESSION to NAME and rename its buffers with it.
+The CLI is told the name too, so that the history and a later resume
+call the session NAME (`ecc-session-rename\=')."
   (interactive
    (let ((session (ecc-window-resolve-session current-prefix-arg)))
      (list session (read-string "New name: " (ecc-session-name session)))))
   (require 'ecc-session)
-  (ecc-session-set-name session name))
+  (ecc-session-rename session name))
 
 ;;;; The buffer the user came from
 

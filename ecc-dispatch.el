@@ -237,11 +237,33 @@ in `title\=', so a rename it refused renames nothing here.  It can come
 before system/init, as the first line of the stream, and needs nothing
 init brings (confirmed against CLI 2.1.290, 2026-10-12).  The command
 node is made from the synthetic assistant message that follows it; see
-`ecc-dispatch--local-command\='."
+`ecc-dispatch--local-command\='.
+
+While a rename made here is on its way (`ecc-proc-send-rename\=') the
+name it carries is the one that stands.  Its own title comes back as
+the name the session has, and applying it changes nothing; any other
+title is not applied but logged.  That covers a title the CLI might
+bring back from the recording when it resumes, and a rename here made
+again before the CLI answered the first one."
   (let ((title (alist-get 'title message)))
     (when (and (stringp title) (not (string-empty-p (string-trim title))))
-      (require 'ecc-session)
-      (ecc-session-set-name session title))))
+      (if (and (ecc-dispatch--hidden-rename-p session)
+               (not (equal title (ecc-session-name session))))
+          (ecc-log (ecc-session-name session)
+                   "title %S not applied: the CLI is being told %S"
+                   title (ecc-session-rename-sent session))
+        (require 'ecc-session)
+        (ecc-session-set-name session title)))))
+
+(defun ecc-dispatch--hidden-rename-p (session)
+  "Return non-nil while SESSION has a rename out that is not to be drawn.
+It was sent by `ecc-proc-send-rename\=', and the CLI answers it as it
+answers a `/rename\=' the user typed.  Nobody typed this one, so its
+answer goes to the log alone: no turn, no command node, no heading,
+nothing on the cost line.  A `/rename\=' the user types is drawn as
+before -- the CLI runs one line at a time, and the hidden one is sent
+only while no turn is open, so its answer is the first that comes."
+  (ecc-session-rename-sent session))
 
 (defun ecc-dispatch--task-summary (session message)
   "Apply the system/task_summary MESSAGE to SESSION.
@@ -397,7 +419,11 @@ than added again.  A message that is the answer of a slash command the
 CLI ran itself is not the model talking and is not drawn as a block of
 text; see `ecc-dispatch--local-command\='."
   (if-let* ((fields (ecc-protocol-local-command message)))
-      (ecc-dispatch--local-command session fields)
+      (if (and (equal (alist-get 'name fields) "/rename")
+               (ecc-dispatch--hidden-rename-p session))
+          (ecc-log (ecc-session-name session) "the CLI renamed: %s"
+                   (or (alist-get 'output fields) ""))
+        (ecc-dispatch--local-command session fields))
     (ecc-dispatch--assistant-blocks session message)))
 
 (defun ecc-dispatch--assistant-blocks (session message)
@@ -600,7 +626,8 @@ started with."
    ((ecc-protocol-replay-p message)
     (let ((content (alist-get 'content (alist-get 'message message))))
       (setf (alist-get 'replayed (ecc-session-progress session)) content)
-      (unless (ecc-proc-take-sent-echo session content)
+      (unless (or (ecc-proc-take-sent-echo session content)
+                  (ecc-dispatch--hidden-rename-echo-p session content))
         (ecc-dispatch--remote-prompt session message content))))
    ;; A notice the CLI injected about background tasks left over from a
    ;; previous process is not a prompt, and must not open a turn either:
@@ -641,6 +668,17 @@ started with."
           (_ (ecc-model-add-node session :type 'unknown :status 'done
                                  :parent parent
                                  :data (list (cons 'block block))))))))))
+
+(defun ecc-dispatch--hidden-rename-echo-p (session content)
+  "Return non-nil when CONTENT is the echo of the hidden rename of SESSION.
+CLI 2.1.290 echoes no slash command under --replay-user-messages
+\(2026-10-12), so this is for one that does: taken for a prompt from
+elsewhere, the echo would open a turn whose result is never drawn, and
+the session would stay busy for good."
+  (when-let* ((sent (ecc-dispatch--hidden-rename-p session)))
+    (when (equal content (ecc-proc-rename-line sent))
+      (ecc-log (ecc-session-name session) "echo of the rename skipped")
+      t)))
 
 (defun ecc-dispatch--task-notice (session message)
   "Keep MESSAGE as a folded note of SESSION when it is a task notice, else nil.
@@ -1222,6 +1260,30 @@ so does the state line."
 ;;;; result
 
 (defun ecc-dispatch--result (session message)
+  "Close the current turn of SESSION with the result MESSAGE.
+The result of a hidden rename closes nothing: see
+`ecc-dispatch--rename-answered\='."
+  (if (and (equal (alist-get 'local_command message) "rename")
+           (ecc-dispatch--hidden-rename-p session))
+      (ecc-dispatch--rename-answered session message)
+    (ecc-dispatch--turn-result session message)))
+
+(defun ecc-dispatch--rename-answered (session message)
+  "Note that the CLI of SESSION has answered its hidden rename with MESSAGE.
+The result is the last of the exchange.  A turn open now is one the
+user started after the rename went out, and the CLI ran the rename
+first: the turn is left to its own result, the state and the cost are
+left alone, and the queue is not drained, since no turn ended.  A
+rename made here while this one was out goes next."
+  (ecc-log (ecc-session-name session) "the CLI answered the rename to %S%s"
+           (ecc-session-rename-sent session)
+           (if (ecc--json-true-p (alist-get 'is_error message))
+               (format " with an error: %s" (alist-get 'result message))
+             ""))
+  (setf (ecc-session-rename-sent session) nil)
+  (ecc-proc-send-rename session))
+
+(defun ecc-dispatch--turn-result (session message)
   "Close the current turn of SESSION with the result MESSAGE."
   (let ((turn (ecc-model-ensure-turn session)))
     (ecc-model-add-node session :type 'result :parent turn :status 'done
@@ -1241,6 +1303,8 @@ so does the state line."
           ;; that ended some other way must not leave it standing.
           (alist-get 'task-summary (ecc-session-progress session)) nil)
     (run-hook-with-args 'ecc-progress-hook session)
+    ;; A rename made while the turn ran goes ahead of the next prompt.
+    (ecc-proc-send-rename session)
     (ecc-proc-drain-queue session)
     turn))
 
