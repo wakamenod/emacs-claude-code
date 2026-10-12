@@ -367,12 +367,7 @@ A tab the user closed is forgotten here rather than offered again."
 (defun ecc-space--unique-tab-name (base)
   "Return BASE, or BASE with a suffix when a tab already goes by it.
 Two worktrees of two repositories are called `main' as often as not."
-  (let ((name base)
-        (n 1))
-    (while (ecc-space--tab-index name)
-      (setq n (1+ n)
-            name (format "%s<%d>" base n)))
-    name))
+  (ecc--unique-name base #'ecc-space--tab-index))
 
 (defun ecc-space--forget-tab (tab &rest _)
   "Forget the Space of TAB, which is about to be closed.
@@ -1009,13 +1004,10 @@ name alone.  Two Spaces that would go by the same title are told apart
 the way their tabs are, `main<2>\='."
   (let ((candidates nil))
     (dolist (space (append spaces past))
-      (let* ((base (ecc-space-title space))
-             (title base)
-             (n 1))
-        (while (assoc title candidates)
-          (setq n (1+ n)
-                title (format "%s<%d>" base n)))
-        (push (cons title space) candidates)))
+      (push (cons (ecc--unique-name (ecc-space-title space)
+                                    (lambda (title) (assoc title candidates)))
+                  space)
+            candidates))
     (nreverse candidates)))
 
 (defun ecc-space--affixes (candidates spaces)
