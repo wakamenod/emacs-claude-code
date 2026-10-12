@@ -173,7 +173,9 @@ node laid open is \[ecc-session-show-detail].  A path the model wrote
 opens the file it names wherever it is found -- a bare name or a path
 written against another directory is looked for among the files of the
 session and of the project, then among the files Emacs visits outside
-it, and on the machine after asking (`ecc-visit-find-written\=').  A video or a sound among them
+it, and on the machine after asking (`ecc-visit-find-written\=').  The
+file picked among several opens at once the next time; with a prefix
+argument the search is made again.  A video or a sound among them
 plays in the machine's own player instead (`ecc-visit-open\=').
 
 A picture drawn in the transcript opens as itself.  A URL comes
@@ -200,7 +202,7 @@ already opens things with."
      (picture (if (ecc-image-plays-outside-p picture)
                   (ecc-image-open-externally picture)
                 (find-file-other-window picture)))
-     (written (ecc-visit-open-written session written))
+     (written (ecc-visit-open-written session written current-prefix-arg))
      (target (ecc-visit-open (car target) (cdr target) session))
      (path (ecc-visit-open path nil session))
      ((null node) (user-error "Nothing to show here"))

@@ -33,7 +33,8 @@ Verified against **Claude Code CLI 2.1.290**.
   where it was found; several are offered with `completing-read`, shown from the
   project root, with the session's own files first, then the nearest to the
   session's directory, then the shortest. The pick is remembered for the
-  session until that file is gone. Found nowhere else, the whole machine is searched -- Spotlight (`mdfind -name`) on
+  session until that file is gone, and `C-u RET` on the path passes over it and
+  searches again. Found nowhere else, the whole machine is searched -- Spotlight (`mdfind -name`) on
   macOS, `locate` elsewhere -- after asking each time; the new
   `ecc-visit-search-machine` (`ask`, `always` or `never`) decides that. The
   line the path named is kept wherever the file was found. A path that starts

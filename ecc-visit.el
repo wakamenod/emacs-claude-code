@@ -588,11 +588,13 @@ A remote one is left out, as `ecc-visit--matching' leaves it out."
           (push file outside))))
     (cons (nreverse inside) (nreverse outside))))
 
-(defun ecc-visit-find-written (session token &optional directory)
+(defun ecc-visit-find-written (session token &optional directory again)
   "Return the file TOKEN, a path the model wrote in SESSION, names.
 The answer is (PATH . WHERE), WHERE saying how it was found; an error
 says where it was looked for when it was not.  DIRECTORY is the one
-the session works in, `default-directory\\=' by default.
+the session works in, `default-directory\\=' by default.  AGAIN
+non-nil passes over what was picked for TOKEN before and searches
+afresh, and the new pick replaces it.
 
 The places are tried in order, and the first that has it ends the
 search:
@@ -615,7 +617,7 @@ with `completing-read\\=', and the pick is remembered."
          (root (ecc-visit--project-root session))
          (suffix (ecc-visit--written-suffix token))
          (chosen (and session (gethash session ecc-visit--chosen)))
-         (remembered (and chosen (gethash token chosen)))
+         (remembered (and chosen (not again) (gethash token chosen)))
          (looked (list "the session's directory"))
          found where handled visited)
     (cond
@@ -665,13 +667,15 @@ with `completing-read\\=', and the pick is remembered."
                      'buffer
                    where)))))
 
-(defun ecc-visit-open-written (session written)
+(defun ecc-visit-open-written (session written &optional again)
   "Open the file of WRITTEN, a path the model wrote, beside SESSION.
 WRITTEN is (TOKEN . LINE) as the link carries it
 \(`ecc-markdown-file-at-point\\='); the file is found by
 `ecc-visit-find-written\\=', and opened at LINE wherever it was found.
-The echo area says where, unless it was where the path said."
-  (pcase-let* ((`(,path . ,where) (ecc-visit-find-written session (car written)))
+AGAIN non-nil searches again instead of opening what was picked for it
+before.  The echo area says where, unless it was where the path said."
+  (pcase-let* ((`(,path . ,where) (ecc-visit-find-written session (car written)
+                                                          nil again))
                (window (ecc-visit-open path (cdr written) session)))
     (when where
       (message "Opened %s (%s)"

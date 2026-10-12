@@ -729,6 +729,39 @@ What the search returns is filtered by the rule, and one match opens."
                      (expand-file-name "c/foo.el" root)))
       (should (equal (car offered) '("a/foo.el" "c/foo.el"))))))
 
+(ert-deftest ecc-visit-test-a-prefix-argument-picks-again ()
+  "\\[universal-argument] RET on a path passes over the pick and remembers the new one."
+  (ecc-visit-test--with-tree (session root) '("a/foo.el" "b/foo.el")
+    (ecc-visit-test--choosing offered "a/foo.el"
+      (ecc-visit-find-written session "foo.el"))
+    (ecc-visit-test--choosing offered "b/foo.el"
+      (should (equal (ecc-visit-find-written session "foo.el" nil t)
+                     (cons (expand-file-name "b/foo.el" root) 'project)))
+      (should (= (length offered) 1)))
+    (should (equal (ecc-visit-find-written session "foo.el")
+                   (cons (expand-file-name "b/foo.el" root) 'remembered)))
+    ;; From the transcript, the prefix argument of RET is what asks.
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "where")
+    (ecc-model-node-changed
+     session
+     (ecc-model-add-node session :type 'text :status 'done
+                         :data '((text . "See `foo.el`.\n"))))
+    (ecc-render-flush session)
+    (with-current-buffer (ecc-session-buffer session)
+      (let (opened)
+        (cl-letf (((symbol-function 'ecc-visit-open)
+                   (lambda (path &rest _) (setq opened path))))
+          (goto-char (point-min))
+          (search-forward "foo.e")
+          (ecc-session-visit)
+          (should (equal opened (expand-file-name "b/foo.el" root)))
+          (ecc-visit-test--choosing offered "a/foo.el"
+            (let ((current-prefix-arg '(4)))
+              (ecc-session-visit))
+            (should offered))
+          (should (equal opened (expand-file-name "a/foo.el" root))))))))
+
 (ert-deftest ecc-visit-test-two-sessions-keep-their-own-picks ()
   "Two sessions in two projects each find in their own and remember their own pick."
   (ecc-visit-test--with-tree (one root-one) '("a/foo.el" "b/foo.el")
