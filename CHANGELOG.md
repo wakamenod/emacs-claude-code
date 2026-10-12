@@ -80,6 +80,31 @@ Verified against **Claude Code CLI 2.1.290**.
   at `/` or `~` is still only taken as written, and the paths of tool calls,
   the Files section and diffs, which are absolute already, open as before.
 
+### Changed
+
+- The Space picker of `C-c c j` (`ecc-space-goto`) groups the Spaces under
+  `Open`, the Spaces of the sidebar in its order, and `Past`, the projects
+  only recordings are left of, newest first; `ecc-space-close`, when it asks,
+  shows the same `Open` list alone. Each line is drawn the way the sidebar draws the row: the Space's
+  state mark (`⚠`, `▶`, `✗`, `○`, and `·` for idle; blank for a Space with
+  nothing running), its sidebar number `[n]`, and `├─` / `└─` in front of a
+  worktree under its repository. A past one gets blanks for the mark and the
+  number and no tree line, even when it is a worktree of an open repository,
+  and a dimmed `past` before its directory, which is what tells it apart where
+  the group headings do not show. The directory follows,
+  dimmed, in a column of its own; the state word is gone. What is typed is
+  matched against the name alone, not the mark, the number or the directory.
+  A worktree's name is what its repository goes by and its branch
+  (`emacs-claude-code › feat/x`, or `app<2> › feat/x` under a repository
+  whose tab is `app<2>`), the same title the session picker now gives its
+  group, so typing a repository's name narrows the list to it and its
+  worktrees; any other Space goes by its tab's name, or its own when it has
+  no tab. Two Spaces that would share a name become `name` and `name<2>`.
+  The groups show in a completion UI that reads `group-function` -- vertico
+  does, and the default `*Completions*` with `completions-group` on; the
+  mark, the number, the tree line and the directory show in both, with
+  `completions-group` on or off.
+
 ### Fixed
 
 - A turn waiting on a permission, a question or a plan, or one compacting its
@@ -101,6 +126,18 @@ Verified against **Claude Code CLI 2.1.290**.
   closed it. Every prompt then waited in the queue behind it. The turn is now
   closed when the follow ends, unless the running CLI is itself in a turn.
   Introduced in 0.1.0.
+
+- `C-c c j` (`ecc-space-goto`) answered with `RET` and nothing typed, under
+  the default completion, went on with no Space and failed with
+  `wrong-type-argument`; so did `ecc-space-close` when it asked. It says "No
+  Space chosen" now. Introduced in 0.3.0, with `ecc-space-goto`.
+
+- `ecc-space-close`, asked from outside any Space, offered the projects only
+  recordings are left of along with the open Spaces. Picking one stopped
+  nothing and closed no tab, said "Closed" all the same, and for a worktree
+  went on to offer removing its directory. It offers the open Spaces alone
+  now. Introduced in 0.3.0, with `ecc-space-past-projects`.
+
 - A numbered list item in the transcript showed a bullet in place of its
   number: `1.` and `10)` were drawn as `•`, like a `-` item, so a reply's
   numbered steps lost their numbers. The text underneath was right, and copying
@@ -147,6 +184,35 @@ Verified against **Claude Code CLI 2.1.290**.
   header as it is, and one with BEL, VT, FF or CR with an octal escape;
   git writes `\177`, `\a`, `\v`, `\f` and `\r`, and the review now
   writes them so.
+
+- A slash command the CLI runs itself -- `/rename`, `/model`, `/cost` and the
+  rest -- is drawn as the command it is in a live session, and no longer as a
+  reply the model wrote. The live stream does not spread such a command over
+  the messages a recording holds: it sends one synthetic assistant message
+  carrying `local_command_run` and `local_command_source`, which nothing here
+  read, so the pretty command node existed only when a recording was replayed.
+  A command typed in the prompt region is not drawn a second time under the
+  turn it heads, also when the CLI reports it under another name: `/cost`
+  comes back as `usage` (confirmed against CLI 2.1.290, 2026-10-12).
+
+- `/rename` renames the session in Emacs, with its buffer, its mode line and
+  every menu that lists it. The CLI sends `system/session_title_changed` with
+  the name it settled on, ahead of `system/init` when the command is the first
+  thing the process runs; nothing here read it, so the two names drifted apart
+  and the event was drawn as a stray notice. It is now applied to the session
+  and drawn as nothing, and the name is never guessed from what the command
+  printed or the argument it was given (confirmed against CLI 2.1.290,
+  2026-10-12).
+
+- Renaming a session to the name it already has leaves it alone. The prompt
+  of `C-c c R` offers the current name, and confirming it unchanged renamed
+  the session to `NAME<2>`: `ecc-model-unique-name` counted the session
+  itself as a collision. It now takes the session to leave out.
+
+- `R` in the dashboard is the rename `C-c c R` is. It skipped the trim, so a
+  name of nothing but blanks went through; it wrote the buffer name itself
+  instead of asking `ecc-session-buffer-name` for it; and it offered no
+  default. All three are gone: both keys now call `ecc-rename-session`.
 
 ## [0.4.1] - 2026-10-12
 
