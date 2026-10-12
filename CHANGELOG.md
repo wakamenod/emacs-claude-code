@@ -15,6 +15,27 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 Verified against **Claude Code CLI 2.1.290**.
 
+### Changed
+
+- The Space picker of `C-c c j` (`ecc-space-goto`), and of `ecc-space-close`
+  when it asks, groups the Spaces under `Open`, the Spaces of the sidebar in
+  its order, and `Past`, the projects only recordings are left of, newest
+  first. Each line is drawn the way the sidebar draws the row: the Space's
+  state mark (`⚠`, `▶`, `✗`, `○`, and `·` for idle; blank for a Space with
+  nothing running and for a past one), its sidebar number `[n]`, and `├─` /
+  `└─` in front of a worktree under its repository. The directory follows,
+  dimmed, in a column of its own; the state word is gone. What is typed is
+  matched against the name alone, not the mark, the number or the directory.
+  A worktree's name is its repository and its branch
+  (`emacs-claude-code › feat/x`), the same title the session picker gives
+  its group, so typing a repository's name narrows the list to it and its
+  worktrees; any other Space goes by its tab's name, or its own when it has
+  no tab. Two Spaces that would share a name become `name` and `name<2>`.
+  The groups show in a completion UI that reads `group-function` -- vertico
+  does, and the default `*Completions*` with `completions-group` on; the
+  mark, the number, the tree line and the directory show in both, with
+  `completions-group` on or off.
+
 ### Fixed
 
 - A numbered list item in the transcript showed a bullet in place of its
