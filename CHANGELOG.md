@@ -42,6 +42,11 @@ Verified against **Claude Code CLI 2.1.290**.
 
 ### Fixed
 
+- `C-c c j` (`ecc-space-goto`) answered with `RET` and nothing typed, under
+  the default completion, went on with no Space and failed with
+  `wrong-type-argument`; so did `ecc-space-close` when it asked. It says "No
+  Space chosen" now. Introduced in 0.3.0, with `ecc-space-goto`.
+
 - `ecc-space-close`, asked from outside any Space, offered the projects only
   recordings are left of along with the open Spaces. Picking one stopped
   nothing and closed no tab, said "Closed" all the same, and for a worktree

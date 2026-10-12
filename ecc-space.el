@@ -1128,7 +1128,10 @@ directory after it."
            (choice (completing-read (or prompt "Space: ")
                                     (ecc-space--table candidates spaces)
                                     nil t)))
-      (cdr (assoc choice candidates)))))
+      ;; REQUIRE-MATCH lets an empty answer through: RET with nothing
+      ;; typed returns "" under the default completion.
+      (or (cdr (assoc choice candidates))
+          (user-error "No Space chosen")))))
 
 ;;;###autoload
 (defun ecc-space-goto (space)

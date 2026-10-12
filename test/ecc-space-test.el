@@ -1271,7 +1271,27 @@ its own."
           (should (equal line "project-one › feat-y"))
           (should (eq (get-text-property 0 'face line)
                       'completions-common-part))
-          (should-not (get-text-property 12 'face line)))))))
+          (should-not (get-text-property 12 'face line)))
+        ;; The faces do not keep the line from being found: its prefix
+        ;; and group are the ones the bare name has.
+        (should (equal (cadr (car (ecc-space-test--affixes
+                                   table (list candidate))))
+                       (cadr (car (ecc-space-test--affixes
+                                   table (list "project-one › feat-y"))))))
+        (should (string-search "├─" (cadr (car (ecc-space-test--affixes
+                                                 table (list candidate))))))
+        (should (equal (funcall (ecc-space-test--group-function table)
+                                candidate nil)
+                       "Open"))))))
+
+(ert-deftest ecc-space-test-picker-nothing-chosen ()
+  "An empty answer is an error the user reads, not a nil Space.
+REQUIRE-MATCH lets RET with nothing typed through as \"\" under the
+default completion, and `ecc-space-goto' went on with no Space at all."
+  (ecc-space-test--with-picker
+    (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) "")))
+      (should-error (ecc-space-read) :type 'user-error)
+      (should-error (call-interactively #'ecc-space-goto) :type 'user-error))))
 
 (ert-deftest ecc-space-test-picker-a-past-worktree-hangs-from-nothing ()
   "A past worktree of an open repository gets blanks and no tree line.
