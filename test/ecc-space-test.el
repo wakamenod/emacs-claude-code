@@ -1455,6 +1455,112 @@ it belongs to behind in another tab."
         (set-frame-parameter nil 'ecc-space-zoom nil)
         (delete-other-windows)))))
 
+(ert-deftest ecc-space-test-zoom-twice-keeps-the-sidebar ()
+  "Zoom, put back and zoom again, and the sidebar is still there.
+The way back used to be a window state, which drops the sidebar's
+`no-delete-other-windows': the second zoom took it down with the rest."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (ecc-space-test--with-code
+        (let ((ecc-window-width 60)
+              (ecc-space-session-min-width 10))
+          (unwind-protect
+              (progn
+                (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+                (should (ecc-sidebar--window))
+                (should (cdr (ecc-space--session-windows)))
+                (select-window (car (ecc-space--session-windows)))
+                (let ((before (length (window-list nil 'no-minibuffer))))
+                  (dotimes (_ 2)
+                    (ecc-space-zoom)
+                    (should (ecc-sidebar--window))
+                    (should (window-parameter (ecc-sidebar--window)
+                                              'no-delete-other-windows))
+                    (should (= 2 (length (window-list nil 'no-minibuffer))))
+                    (ecc-space-zoom)
+                    (should (= before
+                               (length (window-list nil 'no-minibuffer)))))))
+            (set-frame-parameter nil 'ecc-space-zoom nil)))))))
+
+(ert-deftest ecc-space-test-zoom-survives-a-tab-switch ()
+  "A tab zoomed, left and come back to puts its own windows back.
+Each Space has its own way back, and the other tab is not touched."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one)
+                                   ("three" . ,ecc-space-test--two))
+    (ecc-space-test--with-tab-bar
+      (ecc-space-test--with-code
+        (let ((ecc-window-width 60)
+              (ecc-space-session-min-width 10))
+          (unwind-protect
+              (let ((one (ecc-space-of-root ecc-space-test--one))
+                    (two (ecc-space-of-root ecc-space-test--two)))
+                (ecc-space-select two)
+                (let ((there (length (window-list nil 'no-minibuffer))))
+                  (ecc-space-select one)
+                  (select-window (car (ecc-space--session-windows)))
+                  (let ((before (length (window-list nil 'no-minibuffer))))
+                    (ecc-space-zoom)
+                    (ecc-space-select two)
+                    (should (= there (length (window-list nil 'no-minibuffer))))
+                    ;; Coming back brings the source back beside the
+                    ;; zoomed session (`ecc-space--ensure-source'); the
+                    ;; way back is still the arrangement before the zoom.
+                    (ecc-space-select one)
+                    (ecc-space-zoom)
+                    (should (= before (length (window-list nil 'no-minibuffer))))
+                    (should (ecc-sidebar--window))
+                    (should (window-parameter (ecc-sidebar--window)
+                                              'no-delete-other-windows))
+                    ;; And the other tab was never zoomed: the key there
+                    ;; zooms rather than putting anything back.
+                    (ecc-space-select two)
+                    (should (= there (length (window-list nil 'no-minibuffer)))))))
+            (set-frame-parameter nil 'ecc-space-zoom nil)))))))
+
+(ert-deftest ecc-space-test-zoom-keeps-point ()
+  "Point moved while zoomed is where it was moved to after the way back."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (let ((buffer (get-buffer-create "*ecc-space-test-zoom*")))
+        (unwind-protect
+            (progn
+              (delete-other-windows)
+              (switch-to-buffer buffer)
+              (dotimes (i 100) (insert (format "line %d\n" i)))
+              (goto-char (point-min))
+              (split-window-right)
+              (ecc-space-zoom)
+              (goto-char 200)
+              (ecc-space-zoom)
+              (should (= 2 (length (window-list nil 'no-minibuffer))))
+              (should (eq (window-buffer) buffer))
+              (should (= 200 (window-point))))
+          (set-frame-parameter nil 'ecc-space-zoom nil)
+          (kill-buffer buffer)
+          (delete-other-windows))))))
+
+(ert-deftest ecc-space-test-zoom-ignores-what-is-not-a-way-back ()
+  "A saved value that is no configuration of this frame is no zoom.
+A desktop restores the parameter as a string, and a cloned frame
+inherits the other frame\='s configuration."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (split-window-right)
+            (set-frame-parameter nil 'ecc-space-zoom
+                                 `((,(ecc-window--layout-key)
+                                    . "Unprintable entity")))
+            (ecc-space-zoom)
+            (should (= 1 (length (window-list nil 'no-minibuffer))))
+            (ecc-space-zoom)
+            (should (= 2 (length (window-list nil 'no-minibuffer)))))
+        (set-frame-parameter nil 'ecc-space-zoom nil)
+        (delete-other-windows)))))
+
 (ert-deftest ecc-space-test-zoom-says-when-there-is-nothing-to-zoom ()
   "One window on its own is not zoomed, and is not left thinking it was.
 Saving the state here would leave the key `zoomed' without the screen
