@@ -15,6 +15,11 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 Verified against **Claude Code CLI 2.1.290**.
 
+### Changed
+
+- `ecc-perm-ensure-waiting` is now `ecc-perm--ensure-waiting`, the internal
+  function it always was; the old name is an obsolete alias.
+
 ### Fixed
 
 - A numbered list item in the transcript showed a bullet in place of its
