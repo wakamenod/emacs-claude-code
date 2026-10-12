@@ -137,6 +137,45 @@ Verified against **Claude Code CLI 2.1.290**.
 - `ecc-perm-ensure-waiting` is now `ecc-perm--ensure-waiting`, the internal
   function it always was; the old name is an obsolete alias.
 
+- **Breaking.** `C-c c V` (`V` in the menu) is `ecc-space-cycle-layout`, and
+  cycles the layouts of a Space. Pressed right after itself it goes on to the
+  next of six: source + session (the source and one session to its right, the
+  column `ecc-window-width` of the frame wide, as before), two sessions side by
+  side without the source, source + two sessions in thirds, two sessions over
+  the source (three fifths and two), source + two sessions stacked in the
+  column of the first, and a 2x2 grid of four sessions -- with three, the
+  source takes the fourth cell. A layout the Space has too few sessions for, or
+  that the frame has no room for, is passed over; when none is left the echo
+  area says so and the windows stay as they were. Pressed after anything else,
+  `C-c c V` builds the layout the tab last chose, which it keeps per tab like
+  the zoom; `C-u C-c c V` goes back to the first. Under `repeat-mode`,
+  `C-c c V V V` cycles, through `ecc-space-layout-repeat-map`. The echo area
+  names each layout. `ecc-space-reset-windows` remains as an obsolete alias.
+
+  A layout is built from nothing every time: every window of the tab but the
+  side windows is deleted and the rest divided with `split-window`, so the same
+  frame and the same sessions give the same windows whatever the tab looked
+  like before. The first place goes to the session in the selected window, the
+  rest to the sessions by use, most recently selected first, so cycling keeps
+  every session in its place; the sessions without a place keep running with no
+  window. The sidebar is left alone: it keeps its width, and one that was
+  hidden stays hidden, where `C-c c V` used to bring it back. Point stays in
+  the buffer it was in, or goes to the first session when that buffer is no
+  longer on the screen. A tab laid out without the source -- two sessions, or
+  the grid -- is not given one back by going to the Space.
+
+  Until now the sessions stood in a row, put there one split at a time: the
+  first beside the source, each next one halving the rightmost when it had
+  twice `ecc-space-session-min-width` columns, after taking them from the other
+  transcripts. Where it ended depended on the windows it started from, and in
+  a frame under 300 columns the second session never fitted.
+
+- A session shown in a Space that already has a session window -- started, or
+  picked in the sidebar -- no longer divides anything: it takes the window of
+  the session used longest ago, by when its buffer was last selected rather
+  than when it was started. With no session window it still opens to the right
+  of the source, `ecc-window-width` of the frame wide.
+
 ### Fixed
 
 - `ecc-space-zoom` (`C-c c z`) deleted the sidebar the second time a tab was
@@ -292,6 +331,14 @@ Verified against **Claude Code CLI 2.1.290**.
   to be sent across an Emacs restart. Until the CLI has answered, a title it
   sends that is not the new name is not applied. A `/rename` typed in the
   prompt region is drawn as before.
+
+### Removed
+
+- **Breaking.** `ecc-space-session-min-width`. How many sessions a Space shows
+  is the layout's to say now, and the variable is obsolete; setting it does
+  nothing. A question, a plan or a log that has to divide a transcript still
+  goes to its right only when each half gets 80 columns, the default this
+  setting had, and below it otherwise.
 
 ## [0.4.1] - 2026-10-12
 

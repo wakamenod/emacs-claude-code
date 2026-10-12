@@ -9,9 +9,9 @@ A **Space** is a project with an Emacs tab of its own. A git worktree is a Space
 
 ![The sidebar listing every Space and session, a tab for each project across the top, and one Space holding its source with two transcripts beside it](../../../assets/spaces.png)
 
-The sidebar is on the left, a tab for each project is at the top, and the transcripts sit to the right of the source, each new one splitting the rightmost window. They are ordinary windows: split, move and close them as you like. Leaving a Space and coming back restores its windows.
+The sidebar is on the left, a tab for each project is at the top, and a transcript sits to the right of the source. They are ordinary windows: split, move and close them as you like. Leaving a Space and coming back restores its windows.
 
-No transcript is made narrower than `ecc-space-session-min-width` (80). When the row is full, the session worked in longest ago gives up its window and keeps running; the sidebar or `C-c c V` brings it back.
+A session you start or pick in the sidebar takes the window of the session used longest ago. That session keeps running without a window, and the sidebar or `C-c c V` brings it back.
 
 Going to a Space with nothing running starts a session there, and killing its last session closes the Space. Type `/resume` in the new session to carry on an earlier conversation. With `ecc-space-always-session` off, a Space opens on the source alone and stays until you kill the project's last buffer.
 
@@ -19,9 +19,24 @@ Going to a Space with nothing running starts a session there, and killing its la
 |---|---|---|
 | `C-c c j` | `ecc-space-goto` | Go to a Space by name, including a project that only has recordings |
 | `C-c c z` | `ecc-space-zoom` | Fill the tab with this window; again to restore |
-| `C-c c V` | `ecc-space-reset-windows` | Lay the Space out as a new tab: the source on the left, transcripts beside it |
+| `C-c c V` | `ecc-space-cycle-layout` | Lay the Space out again in its [layout](#layouts). Pressed again, move to the next layout |
 | `C-c c ?` then `X` | `ecc-space-close` | Close this Space and stop everything in it, its worktrees included, then offer to remove those worktrees |
 | — | `ecc-space-jump` | Go to the Nth Space, as numbered in the sidebar |
+
+### Layouts
+
+`C-c c V` rebuilds the tab in the layout it last had, and pressed again right away it moves to the next one. With `repeat-mode` on, `C-c c V V V` does the same. `C-u C-c c V` goes back to the first. Each tab keeps its own layout.
+
+| Layout | Windows |
+|---|---|
+| source + session | The source, and one session to its right. A new tab opens in this one |
+| two sessions | Two sessions side by side, without the source |
+| source + two sessions | The source and two sessions, a third of the width each |
+| two sessions over the source | Two sessions side by side above, the source below |
+| source + two stacked | The source, and two sessions one above the other to its right |
+| 2x2 grid | Four sessions. With three, the source takes the fourth place |
+
+The first place goes to the session in the selected window, the others to the sessions used most recently. ecc skips a layout when the Space has too few sessions for it or the frame is too small. The sidebar keeps its width, and sessions without a place keep running.
 
 `tab-bar-show` decides whether the tab bar is drawn; ecc does not turn `tab-bar-mode` on itself. With `(setq tab-bar-show nil)` the Spaces work the same, and the sidebar lists them.
 
