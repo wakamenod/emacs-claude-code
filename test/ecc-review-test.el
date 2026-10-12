@@ -935,7 +935,7 @@ carry the time of the index it was made from."
             (should-not ecc-test-sent)
             (should (= (length (ecc-session-input-queue session)) 1))
             (should (string-search "Comment: later"
-                                   (car (ecc-session-input-queue session)))))
+                                   (car (ecc-model-queued-texts session)))))
         (ecc-review-test--kill-review-buffers)))))
 
 (ert-deftest ecc-review-test-refresh-keeps-comments ()
@@ -3203,7 +3203,7 @@ What was typed is in the review: yanked again, it would be a second copy."
             (should (equal (alist-get 'content updated) "hello\nworld\n"))
             (should (equal (alist-get 'file_path updated) "/nowhere/w.txt")))
           (should-not (ecc-session-pending session))
-          (let ((note (car (ecc-session-input-queue session))))
+          (let ((note (car (ecc-model-queued-texts session))))
             (should (string-prefix-p "The user changed the earlier Write (/nowhere/w.txt)" note))
             (should (string-search "```diff\n@@ -1,1 +1,2 @@\n hello\n+world\n```" note))))
       (ecc-review-test--kill-review-buffers))))

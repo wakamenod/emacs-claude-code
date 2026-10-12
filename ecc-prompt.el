@@ -1161,7 +1161,7 @@ history."
     (let* ((source (ecc-window-last-source-buffer))
            (text (ecc-prompt-prepare-text session raw source
                                           (ecc-prompt-attach-context-p)))
-           (outcome (ecc-proc-send-prompt session text)))
+           (outcome (ecc-proc-send-prompt session text raw)))
       (ecc-prompt-history-add raw)
       (setq ecc-prompt--history-index nil
             ecc-prompt--history-draft nil)
