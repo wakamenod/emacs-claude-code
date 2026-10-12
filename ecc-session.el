@@ -127,6 +127,7 @@ the one the user asks for, and the one `/rename\=' does in the CLI."
       (with-current-buffer (ecc-session-buffer session)
         (rename-buffer (ecc-session-buffer-name name) t)))
     (force-mode-line-update t)
+    (run-hook-with-args 'ecc-session-renamed-hook session)
     name))
 
 (defun ecc-session-ensure-buffer (session)

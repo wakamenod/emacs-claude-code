@@ -291,6 +291,7 @@ back walks the state through the turns it replays."
 (add-hook 'ecc-session-state-changed-hook #'ecc-restore--drop-mark)
 (add-hook 'ecc-session-state-changed-hook #'ecc-restore--schedule)
 (add-hook 'ecc-session-removed-hook #'ecc-restore--schedule)
+(add-hook 'ecc-session-renamed-hook #'ecc-restore--schedule)
 (add-hook 'ecc-session-init-hook #'ecc-restore--schedule)
 (add-hook 'tab-bar-tab-post-open-functions #'ecc-restore--schedule)
 (add-hook 'tab-bar-tab-pre-close-functions #'ecc-restore--schedule)
