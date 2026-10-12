@@ -698,6 +698,48 @@ The working directory and the recording are both removed afterwards."
             (ecc-proc-stop archived)
             (ecc-test-cleanup-session archived)))))))
 
+(ert-deftest ecc-test-live-rename-reaches-the-recording ()
+  "A rename in Emacs is the title of the recording, unseen in the transcript.
+Once while the CLI runs, and once while it is stopped, which goes when
+the session is resumed."
+  :tags '(live)
+  (ecc-test-live-with-recorded-session session
+    (ecc-proc-send-prompt session "Reply with exactly: OK")
+    (ecc-test-live-wait-for-result session)
+    (let ((id (ecc-session-id session))
+          (cost (ecc-session-total-cost session))
+          (nodes (hash-table-count (ecc-session-nodes session)))
+          (answered (lambda (session)
+                      (ecc-test-live-wait
+                       session (lambda () (null (ecc-session-rename-sent session)))
+                       "the CLI to answer the rename")))
+          (stop (lambda (session)
+                  (ecc-proc-stop session)
+                  (ecc-test-live-wait
+                   session (lambda () (not (process-live-p (ecc-session-process session))))
+                   "the CLI to stop"))))
+      (ecc-session-rename session "live-renamed")
+      (funcall answered session)
+      (should (equal (ecc-session-name session) "live-renamed"))
+      (should (= 1 (length (ecc-session-turns session))))
+      (should (= nodes (hash-table-count (ecc-session-nodes session))))
+      (should (= cost (ecc-session-total-cost session)))
+      (should (eq (ecc-session-state session) 'idle))
+      (funcall stop session)
+      (should (equal "live-renamed"
+                     (alist-get 'title (ecc-history-scan-file (ecc-history-file id)))))
+      ;; Stopped: renamed here, and told when it runs again.
+      (ecc-session-rename session "live-again")
+      (should (ecc-session-rename-pending session))
+      (ecc-proc-start session t)
+      (should (equal (ecc-session-rename-sent session) "live-again"))
+      (funcall answered session)
+      (should (equal (ecc-session-name session) "live-again"))
+      (should (= 1 (length (ecc-session-turns session))))
+      (funcall stop session)
+      (should (equal "live-again"
+                     (alist-get 'title (ecc-history-scan-file (ecc-history-file id))))))))
+
 (ert-deftest ecc-test-live-agents ()
   "The registry agrees with `claude agents --json'.
 `ecc-registry' reads the session files the CLI writes rather than

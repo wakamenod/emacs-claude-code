@@ -548,6 +548,53 @@ inside it."
                    (alist-get 'prompt info)))
     (should (alist-get 'time info))))
 
+(ert-deftest ecc-history-test-custom-title-wins ()
+  "A name given with /rename is the title, whatever AI title comes after it.
+The fixture has the CLI's own order: the custom title, then the AI
+title written again after it (CLI 2.1.290, 2026-10-12)."
+  (let ((info (ecc-history-scan-file (ecc-test-history-fixture "renamed"))))
+    (should (equal "greeting" (alist-get 'title info)))
+    (should (equal "greeting" (alist-get 'custom-title info))))
+  ;; A recording nobody renamed keeps its AI title.
+  (should (equal "Hello" (alist-get 'title (ecc-history-scan-file
+                                            ecc-history-test-file)))))
+
+(ert-deftest ecc-history-test-title-order ()
+  "A custom title beats an AI title either way round; the last of a kind wins."
+  (let ((fold (lambda (&rest lines)
+                (let ((info nil))
+                  (dolist (line lines info)
+                    (setq info (ecc-protocol-history-info line info))))))
+        (ai (lambda (title) (format "{\"type\":\"ai-title\",\"aiTitle\":%S}" title)))
+        (custom (lambda (title)
+                  (format "{\"type\":\"custom-title\",\"customTitle\":%S}" title))))
+    (should (equal "named" (alist-get 'title (funcall fold (funcall ai "made up")
+                                                      (funcall custom "named")))))
+    (should (equal "named" (alist-get 'title (funcall fold (funcall custom "named")
+                                                      (funcall ai "made up")))))
+    (should (equal "second" (alist-get 'title (funcall fold (funcall custom "first")
+                                                       (funcall ai "made up")
+                                                       (funcall custom "second")))))
+    (should (equal "later" (alist-get 'title (funcall fold (funcall ai "earlier")
+                                                      (funcall ai "later")))))
+    ;; A blank custom title names nothing.
+    (should (equal "made up" (alist-get 'title (funcall fold (funcall ai "made up")
+                                                         (funcall custom "  ")))))))
+
+(ert-deftest ecc-history-test-renamed-session-keeps-its-name ()
+  "A session opened from a renamed recording is called what it was renamed to.
+So is the line the recording is offered on."
+  (let ((ecc--sessions (make-hash-table :test #'equal))
+        (ecc--session-order nil)
+        (ecc-history--files (make-hash-table :test #'equal))
+        (file (ecc-test-history-fixture "renamed")))
+    (let ((session (ecc-history-session "renamed-id" file)))
+      (unwind-protect
+          (should (equal "greeting" (ecc-session-name session)))
+        (ecc-test-cleanup-session session)))
+    (should (string-prefix-p "greeting" (ecc-history-recording-label
+                                         (ecc-history-scan-file file))))))
+
 (ert-deftest ecc-history-test-open-makes-an-archived-session ()
   "Opening a recording makes a session that shows it and can be resumed."
   (ecc-history-test--with-directory _file
