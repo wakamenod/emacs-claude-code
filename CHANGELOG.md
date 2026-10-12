@@ -139,6 +139,24 @@ Verified against **Claude Code CLI 2.1.290**.
 
 ### Fixed
 
+- What a session cost was counted many times over, and every turn's cost line
+  showed the running total of the conversation rather than that turn's cost.
+  The `total_cost_usd` of a CLI result is the running total of the process,
+  and ecc took it as the cost of the turn and added it to the session's total
+  each time, so the total grew like a sum of running totals: three turns of
+  $0.01 each came to $0.06, not $0.03. A `/rename` or `/cost` typed by the
+  user, which calls no model, was drawn as costing as much as everything
+  before it. A turn now costs what its result adds to the total of the result
+  before it, and the session's total -- the dashboard's Cost column and its
+  sum, and `%c` in `ecc-mode-line-format` -- is what the CLI says the
+  conversation cost. A resumed or forked CLI carries on from the total its recording ended
+  with, so its first result is counted from the recording's last
+  `cost-state` line; when there is no recording to read, that first turn's
+  cost is left unknown rather than guessed. The Markdown export closes a turn
+  with its own cost too. A recording read back is given its whole total, read
+  from the last `cost-state` line wherever it lies, and not only from the
+  last 64 KiB, where a long-lived CLI does not write it. Introduced in 0.1.0;
+  every release up to 0.4.1 showed the wrong cost.
 - A turn waiting on a permission, a question or a plan, or one compacting its
   context, was not interrupted before its CLI was stopped for a hand-off to the
   terminal or a `/resume`: only a session whose state said `running` was taken
