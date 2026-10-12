@@ -71,6 +71,7 @@
 (require 'ecc-model)
 (require 'ecc-image)
 (require 'ecc-markdown)
+(require 'ecc-mermaid)
 (require 'ecc-diff)
 (require 'ecc-visual)
 
@@ -1356,9 +1357,17 @@ is appended."
      (lambda ()
        (if (ecc-node-streaming node)
            (ecc-render--insert-stream-text node (ecc-model-streaming-text node) pad face)
-         (ecc-render--insert-lines (ecc-render--fontify (ecc-node-id node)
-                                                        (ecc-model-node-get node 'text))
-                                   pad face))))))
+         (let ((text (ecc-render--fontify (ecc-node-id node)
+                                          (ecc-model-node-get node 'text)))
+               (start (point)))
+           (ecc-render--insert-lines text pad face)
+           ;; The diagrams are put on the text once it is in: the lines
+           ;; of a block are split and indented apart, and one picture
+           ;; has to lie over all of them.
+           (when (ecc-mermaid-wanted-p text)
+             (ecc-mermaid-show start (point)
+                               (and ecc-render--session
+                                    (ecc-session-name ecc-render--session))))))))))
 
 (defun ecc-render--insert-thinking (node depth)
   "Insert the thinking NODE at DEPTH."
