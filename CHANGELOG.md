@@ -24,7 +24,9 @@ Verified against **Claude Code CLI 2.1.290**.
   state mark (`⚠`, `▶`, `✗`, `○`, and `·` for idle; blank for a Space with
   nothing running), its sidebar number `[n]`, and `├─` / `└─` in front of a
   worktree under its repository. A past one gets blanks for the mark and the
-  number and no tree line, even when it is a worktree of an open repository. The directory follows,
+  number and no tree line, even when it is a worktree of an open repository,
+  and a dimmed `past` before its directory, which is what tells it apart where
+  the group headings do not show. The directory follows,
   dimmed, in a column of its own; the state word is gone. What is typed is
   matched against the name alone, not the mark, the number or the directory.
   A worktree's name is what its repository goes by and its branch

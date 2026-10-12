@@ -1022,7 +1022,10 @@ and no tree line, and none of the three is worked out for it: it is not
 on the screen, so it has no state and no number, and a worktree of a
 repository that is would otherwise be drawn as one of its children,
 under `Past\=', with nothing above it.  The suffix is the directory,
-dimmed, in a column after the longest line."
+dimmed, in a column after the longest line, with a dimmed `past\=' in
+front of it on a past line: the default *Completions* shows no group
+headings unless `completions-group\=' is on, and without one that word
+is all that tells a past project from an open Space with nothing in it."
   (let* ((blank (concat (ecc-tab-column-mark nil) " "
                         (ecc-space-number-label nil spaces) " "))
          (prefixes
@@ -1048,8 +1051,11 @@ dimmed, in a column after the longest line."
              (concat (make-string (- column (string-width prefix)
                                      (string-width (car entry)))
                                   ?\s)
-                     (propertize (abbreviate-file-name
-                                  (ecc-space-root (cdr entry)))
+                     (propertize (concat (if (ecc-space-past (cdr entry))
+                                             "past "
+                                           "     ")
+                                         (abbreviate-file-name
+                                          (ecc-space-root (cdr entry))))
                                  'face 'completions-annotations))))
      candidates prefixes)))
 

@@ -1219,25 +1219,41 @@ and the past one a blank for the number."
       (should-not (get-text-property 0 'face (nth 5 prefixes))))))
 
 (ert-deftest ecc-space-test-picker-puts-the-path-in-a-column ()
-  "The directory follows every line, dimmed, starting in one column."
+  "The directory follows every line, dimmed, starting in one column.
+A past line has a dimmed `past' in front of it: without a UI that shows
+the group headings, that word is what tells it from an open Space."
   (ecc-space-test--with-picker
     (let* ((lines (ecc-space-test--affixes table offered))
-           (columns (mapcar (pcase-lambda (`(,candidate ,prefix ,suffix))
-                              (+ (string-width prefix)
-                                 (string-width candidate)
-                                 (string-match "[^ ]" suffix)))
-                            lines)))
-      (should (= 1 (length (seq-uniq columns))))
-      (pcase-dolist (`(,_ ,_ ,suffix) lines)
-        (let ((path (string-trim-left suffix)))
-          (should (eq (get-text-property 0 'face path)
-                      'completions-annotations))))
-      (should (equal (mapcar (lambda (line) (string-trim-left (nth 2 line)))
-                             lines)
-                     (list ecc-space-test--two ecc-space-test--one
-                           ecc-space-test--work-y ecc-space-test--work
-                           ecc-space-test--three
-                           (abbreviate-file-name past)))))))
+           (roots (list ecc-space-test--two ecc-space-test--one
+                        ecc-space-test--work-y ecc-space-test--work
+                        ecc-space-test--three
+                        (abbreviate-file-name past))))
+      (cl-mapc (pcase-lambda (`(,_ ,_ ,suffix) root)
+                 (should (string-suffix-p root suffix))
+                 (should (eq (get-text-property (1- (length suffix)) 'face
+                                                suffix)
+                             'completions-annotations)))
+               lines roots)
+      ;; Every directory starts in the same column.
+      (should (= 1 (length (seq-uniq
+                            (cl-mapcar (pcase-lambda (`(,candidate ,prefix
+                                                                   ,suffix)
+                                                      root)
+                                         (+ (string-width prefix)
+                                            (string-width candidate)
+                                            (- (length suffix) (length root))))
+                                       lines roots)))))
+      ;; And what stands before it is `past' on the past line alone.
+      (should (equal (cl-mapcar (pcase-lambda (`(,_ ,_ ,suffix) root)
+                                  (string-trim (substring suffix 0
+                                                          (- (length suffix)
+                                                             (length root)))))
+                                lines roots)
+                     '("" "" "" "" "" "past")))
+      (let ((suffix (nth 2 (car (last lines)))))
+        (should (eq (get-text-property (string-search "past" suffix) 'face
+                                       suffix)
+                    'completions-annotations))))))
 
 (ert-deftest ecc-space-test-picker-keeps-the-match-highlighting ()
   "The faces the completion UI put on a candidate come out as they went in.
