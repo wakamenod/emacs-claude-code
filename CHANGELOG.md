@@ -127,6 +127,15 @@ Verified against **Claude Code CLI 2.1.290**.
   closed when the follow ends, unless the running CLI is itself in a turn.
   Introduced in 0.1.0.
 
+- Reply text in the transcript could be painted red, or mauve, across a whole
+  stretch: with `show-paren-mode` on and `show-paren-style` set to `mixed` or
+  `expression`, point near a paren that does not pair -- a `1)` list item, a
+  full-width `（` closed by a half-width `)` -- highlighted everything to its
+  supposed partner. Session buffers now turn paren matching off for
+  themselves, through a buffer-local `show-paren-predicate`, and stay so when
+  the global mode is turned on later; the global settings are left alone, and
+  `show-paren-local-mode` still brings it back in one buffer.
+
 - `C-c c j` (`ecc-space-goto`) answered with `RET` and nothing typed, under
   the default completion, went on with no Space and failed with
   `wrong-type-argument`; so did `ecc-space-close` when it asked. It says "No
