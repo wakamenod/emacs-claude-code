@@ -102,8 +102,16 @@
       (should (seq-find (lambda (line) (string-match-p "\\`  1\\. x+…\\'" line))
                         lines)))))
 
+(defun ecc-queue-test--entry-in-list (session)
+  "Return the draft of the entry the list of SESSION has point on, or nil."
+  (with-current-buffer (ecc-queue-buffer session)
+    (when-let* ((entry (get-text-property (point) 'ecc-queued)))
+      (ecc-queued-draft entry))))
+
 (ert-deftest ecc-queue-test-tail-opens-the-list ()
-  "RET or a click on a queued line opens the list, on that prompt."
+  "RET or a click on a queued line opens the list, on that prompt.
+Both go through `ecc-session-visit', as everything opened from the
+transcript does: the lines carry no keymap of their own."
   (ecc-test-with-fake-session session
     (ecc-queue-test--with-buffers
       (ecc-session-ensure-buffer session)
@@ -114,21 +122,37 @@
       (with-current-buffer (ecc-session-buffer session)
         (goto-char (point-min))
         (search-forward "2. tw")
-        ;; The keys of the line: RET runs the queue command, and a click
-        ;; is a link the way the transcript's links are.
-        (should (eq (key-binding (kbd "RET")) #'ecc-queue-show-at-point))
-        (should (eq (lookup-key (get-text-property (point) 'keymap) [mouse-2])
-                    #'ecc-queue-show-at-click))
+        (should (get-text-property (point) 'ecc-queue))
+        (should (eq (key-binding (kbd "RET")) #'ecc-session-visit))
+        (should (eq (key-binding [mouse-2]) #'ecc-chat-follow-link))
         (should (mouse-on-link-p (point)))
-        ;; The rest of the transcript's keys are still there.
-        (should (eq (key-binding (kbd "n")) #'ecc-chat-next-heading))
         (call-interactively (key-binding (kbd "RET"))))
-      (let ((buffer (ecc-queue-buffer session)))
-        (should (get-buffer-window buffer))
-        (with-current-buffer buffer
-          (should (eq ecc-queue--session session))
-          (should (equal (ecc-queued-draft (get-text-property (point) 'ecc-queued))
-                         "two")))))))
+      (should (get-buffer-window (ecc-queue-buffer session)))
+      (with-current-buffer (ecc-queue-buffer session)
+        (should (eq ecc-queue--session session)))
+      (should (equal (ecc-queue-test--entry-in-list session) "two"))
+      ;; A click on the first: `ecc-chat-follow-link' puts point where
+      ;; the click was, and the `mouse-face' takes it on to the visit.
+      (with-current-buffer (ecc-session-buffer session)
+        (let ((target (save-excursion (goto-char (point-min))
+                                      (search-forward "1. on")
+                                      (point))))
+          (goto-char (point-max))
+          (cl-letf (((symbol-function #'mouse-set-point)
+                     (lambda (_event &rest _) (goto-char target))))
+            (ecc-chat-follow-link '(mouse-2 nil)))))
+      (should (equal (ecc-queue-test--entry-in-list session) "one"))
+      ;; The heading names no prompt and opens the list all the same.
+      (delete-other-windows)
+      (kill-buffer (ecc-queue-buffer session))
+      (with-current-buffer (ecc-session-buffer session)
+        (goto-char (point-min))
+        (search-forward "⏸ Queu")
+        (should (eq (get-text-property (point) 'ecc-queue) t))
+        (should-not (get-text-property (point) 'ecc-queued))
+        (ecc-session-visit))
+      (should (get-buffer-window (ecc-queue-buffer session)))
+      (should (equal (ecc-queue-test--entry-in-list session) "one")))))
 
 ;;;; The list
 

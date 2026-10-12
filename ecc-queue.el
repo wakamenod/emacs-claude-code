@@ -34,7 +34,10 @@
 ;;
 ;; - at the end of the transcript, just above the separator, one dim
 ;;   line per prompt, through `ecc-render-tail-functions'.  RET or a
-;;   click on one of them opens the list below;
+;;   click on one of them opens the list below.  They carry no keymap
+;;   of their own: the transcript has one way to open what is at point,
+;;   `ecc-session-visit', and the lines say what they are to it with the
+;;   `ecc-queue' property (and `ecc-queued', the prompt of the line);
 ;; - in a buffer of its own per session, `ecc-queue-show', where a
 ;;   prompt is taken back into the prompt region, dropped, or moved.
 ;;
@@ -69,16 +72,6 @@ again."
 
 ;;;; At the end of the transcript
 
-(defvar ecc-queue-tail-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map ecc-chat-transcript-map)
-    (define-key map (kbd "RET") #'ecc-queue-show-at-point)
-    (define-key map [mouse-2] #'ecc-queue-show-at-click)
-    map)
-  "Keymap of the queued prompts drawn at the end of a transcript.
-A click reaches \\=`mouse-2' through the `follow-link' of the transcript,
-which follows anything drawn with a `mouse-face'.")
-
 (defun ecc-queue--tail-width (session)
   "Return the columns a line at the end of the transcript of SESSION may take."
   (if-let* ((window (get-buffer-window (ecc-session-buffer session) t)))
@@ -86,12 +79,18 @@ which follows anything drawn with a `mouse-face'.")
     79))
 
 (defun ecc-queue--tail-line (prefix text entry width)
-  "Return PREFIX and TEXT cut to WIDTH as a line that opens the queue on ENTRY."
+  "Return PREFIX and TEXT cut to WIDTH as a line that opens the queue on ENTRY.
+Every line of the queue at the end of a transcript, its heading
+included, carries `ecc-queue' set to t, which is what
+`ecc-session-visit' opens the list on; a line of a prompt carries the
+prompt as `ecc-queued' as well, and the heading carries none.  The
+`mouse-face' is what makes a click reach `ecc-session-visit' through
+`ecc-chat-follow-link'."
   (propertize (concat prefix (ecc--fit text (max 1 (- width (string-width prefix)))))
               'face 'ecc-dim-face
               'mouse-face 'highlight
-              'help-echo "RET, mouse-1: list the queue to take a prompt back or drop it"
-              'keymap ecc-queue-tail-map
+              'help-echo "RET or mouse-1: list the queue, to take a prompt back or drop it"
+              'ecc-queue t
               'ecc-queued entry))
 
 (defun ecc-queue-tail (session)
@@ -112,18 +111,6 @@ which follows anything drawn with a `mouse-face'.")
 ;; Last of the tail, so that the queue is what sits on the separator,
 ;; right above the prompt the next one will be written in.
 (add-hook 'ecc-render-tail-functions #'ecc-queue-tail 90)
-
-(defun ecc-queue-show-at-point ()
-  "List the queue of this session, on the prompt at point."
-  (interactive)
-  (ecc-queue-show (ecc-window-buffer-session)
-                  (get-text-property (point) 'ecc-queued)))
-
-(defun ecc-queue-show-at-click (event)
-  "List the queue of this session, on the prompt clicked on in EVENT."
-  (interactive "e")
-  (mouse-set-point event)
-  (ecc-queue-show-at-point))
 
 ;;;; The list
 
