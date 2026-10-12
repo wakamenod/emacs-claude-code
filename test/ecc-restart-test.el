@@ -292,16 +292,61 @@ asked to be started with are left as they were."
 
 ;;;; Which session
 
-(ert-deftest ecc-restart-test-the-target-is-the-menu-s ()
-  "Outside a session buffer the session is the one the menu acts on.
+(ert-deftest ecc-restart-test-a-running-session-the-menu-names-is-taken ()
+  "Outside a session buffer the session the menu acts on is taken while it runs.
 A recording is never offered: picked by mistake, it would be resumed."
-  (ecc-test-with-fake-session session
-    (with-temp-buffer
-      (cl-letf (((symbol-function 'ecc-read-session)
-                 (lambda (&rest _) (error "It offered the recordings")))
-                ((symbol-function 'ecc-window-resolve-session)
-                 (lambda (&rest _) session)))
-        (should (eq session (ecc--restart-target)))))))
+  (ecc-restart-test--with-cli
+    (ecc-test-with-fake-session session
+      (unwind-protect
+          (progn
+            (ecc-restart-test--start session)
+            (with-temp-buffer
+              (cl-letf (((symbol-function 'ecc-read-session)
+                         (lambda (&rest _) (error "It offered the recordings")))
+                        ((symbol-function 'completing-read)
+                         (lambda (&rest _) (error "It asked")))
+                        ((symbol-function 'ecc-window-resolve-session)
+                         (lambda (&rest _) session)))
+                (should (eq session (ecc--restart-target))))))
+        (ecc-restart-test--stop-all session)))))
+
+(ert-deftest ecc-restart-test-a-stopped-session-the-menu-names-is-passed-over ()
+  "Outside a session buffer a stopped session is not taken for the target.
+The menu's choice ends on the session used last, which may have
+stopped, and restarting it would resume it without a word.  The running
+sessions are asked among instead, with a question of the restart's own."
+  (ecc-restart-test--with-cli
+    (ecc-test-with-fake-session stopped
+      (let ((one (ecc-model-create-session
+                  :name "one" :project-root temporary-file-directory))
+            (two (ecc-model-create-session
+                  :name "two" :project-root temporary-file-directory))
+            asked)
+        (unwind-protect
+            (progn
+              (ecc-restart-test--start one)
+              (with-temp-buffer
+                (cl-letf (((symbol-function 'ecc-window-resolve-session)
+                           (lambda (&rest _) stopped)))
+                  ;; One running: it is the only answer, and nothing is asked.
+                  (cl-letf (((symbol-function 'completing-read)
+                             (lambda (&rest _) (error "It asked with one candidate"))))
+                    (should (eq one (ecc--restart-target))))
+                  ;; Two running: asked among them, as a restart.
+                  (ecc-restart-test--start two)
+                  (cl-letf (((symbol-function 'completing-read)
+                             (lambda (prompt table &rest _)
+                               (setq asked (cons prompt (all-completions "" table)))
+                               (car (all-completions "" table)))))
+                    (should (memq (ecc--restart-target) (list one two))))
+                  (should (equal "Restart: " (car asked)))
+                  (should (= 2 (length (cdr asked))))
+                  ;; None running: said so.
+                  (ecc-restart-test--stop-all one two)
+                  (should-error (ecc--restart-target) :type 'user-error))))
+          (ecc-restart-test--stop-all one two)
+          (ecc-test-cleanup-session one)
+          (ecc-test-cleanup-session two))))))
 
 (ert-deftest ecc-restart-test-asking-offers-the-running-sessions ()
   "With a prefix argument only the sessions whose CLI runs are offered.
@@ -322,6 +367,101 @@ candidate, so it is taken without a question."
               (should-error (ecc--restart-target t) :type 'user-error))
           (ecc-restart-test--stop-all running)
           (ecc-test-cleanup-session running))))))
+
+;;;; Second review
+
+(ert-deftest ecc-restart-test-a-background-task-is-refused ()
+  "A session whose turn is over but whose background task runs is not idle.
+Stopping the CLI would kill the subagent or the shell command and leave
+its node unfinished for good.  Nothing interrupts a task, so the message
+says to wait for it."
+  (ecc-restart-test--with-cli
+    (ecc-test-with-fake-session session
+      (unwind-protect
+          (let ((agent nil))
+            (ecc-restart-test--start session t)
+            ;; Under the turn that started it, which has ended.
+            (setq agent (ecc-model-add-node session :id "toolu_a" :type 'agent
+                                            :parent (car (ecc-session-turns session))
+                                            :status 'done
+                                            :data '((task . ((task_id . "a"))))))
+            (should (eq (ecc-session-state session) 'idle))
+            (ecc-restart-test--refused session)
+            (should (string-match-p
+                     "idle with 1 background task still running; restart it once it is done"
+                     (cadr (should-error (ecc-restart session) :type 'user-error))))
+            ;; Once it has finished, the session may be restarted.
+            (ecc-model-node-put agent 'task-status "completed")
+            (should (ecc-restart session)))
+        (ecc-restart-test--stop-all session)))))
+
+(ert-deftest ecc-restart-test-what-starts-during-the-question-is-refused ()
+  "The question lets output in, so the session is looked at again after it.
+A prompt from Remote Control, or a turn the CLI begins on its own, may
+start while the question is open."
+  (ecc-restart-test--with-cli
+    (ecc-test-with-fake-session session
+      (unwind-protect
+          (let ((old (ecc-restart-test--start session t)))
+            (cl-letf (((symbol-function 'y-or-n-p)
+                       (lambda (_prompt)
+                         (ecc-model-begin-turn session "(remote)")
+                         t)))
+              (should-error (ecc-restart session t) :type 'user-error))
+            (should (eq old (ecc-session-process session)))
+            (should (process-live-p old)))
+        (ecc-restart-test--stop-all session)))))
+
+(ert-deftest ecc-restart-test-a-fork-not-yet-settled-forks-again ()
+  "A fork restarted before its first turn forks again, rather than going back.
+Until system/init hands it its own id, the session still goes by the id
+it branched from; resuming that without --fork-session took it back onto
+the conversation it was forked from.  Once the id is its own, a restart
+resumes it."
+  (ecc-restart-test--with-cli
+    (ecc-test-with-fake-session session
+      (unwind-protect
+          (let ((parent-id (ecc-session-id session)))
+            (ecc-restart-test--start session t)
+            (ecc-restart-test--stop-all session)
+            ;; C-u C-c c r: a fork of the stopped session, on the same object.
+            (ecc-resume session t)
+            (should (member "--fork-session"
+                            (process-command (ecc-session-process session))))
+            (ecc-restart session)
+            (let ((command (process-command (ecc-session-process session))))
+              (should (equal parent-id (cadr (member "--resume" command))))
+              (should (member "--fork-session" command)))
+            ;; The first turn hands the fork its id, and its recording.
+            (ecc-dispatch session '((type . "system") (subtype . "init")
+                                    (session_id . "11111111-2222-3333-4444-555555555555")))
+            (ecc-restart-test--record session)
+            (ecc-restart session)
+            (let ((command (process-command (ecc-session-process session))))
+              (should (equal "11111111-2222-3333-4444-555555555555"
+                             (cadr (member "--resume" command))))
+              (should-not (member "--fork-session" command))))
+        (ecc-restart-test--stop-all session)))))
+
+(ert-deftest ecc-restart-test-a-cli-that-ignores-the-stop-is-killed ()
+  "A CLI that will not stop when asked is killed before the new one starts.
+`ecc-proc-stop' deletes the process once the grace is over, which is
+why the restart checks nothing after it: two CLIs never overlap."
+  (ecc-restart-test--with-cli
+    (ecc-test-with-fake-session session
+      (let ((stubborn (make-temp-file "ecc-restart-stubborn" nil ".sh"
+                                      "#!/bin/sh\ntrap '' TERM\nwhile :; do sleep 1; done\n")))
+        (set-file-modes stubborn #o755)
+        (unwind-protect
+            (let ((old (let ((ecc-executable stubborn))
+                         (ecc-restart-test--start session t)))
+                  (ecc-stop-grace 0.3))
+              (ecc-restart session)
+              (should-not (process-live-p old))
+              (should (process-live-p (ecc-session-process session)))
+              (should-not (eq old (ecc-session-process session))))
+          (ecc-restart-test--stop-all session)
+          (delete-file stubborn))))))
 
 (provide 'ecc-restart-test)
 

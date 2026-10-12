@@ -259,23 +259,31 @@ under r, where the fork is a switch seen before it is pressed."
 (defun ecc--check-restartable (session)
   "Signal a `user-error\=' when SESSION may not be restarted now.
 Only an idle session is restarted: a turn, a request waiting for an
-answer or a prompt in the queue would be cut off, and the restart does
-not take on deciding what becomes of them.  An inline session is
-refused outright: it is a question asked on the side, and the one that
-forks its parent would be started again on the parent\='s conversation."
-  (let ((name (ecc-session-name session)))
+answer, a prompt in the queue or a background task -- a subagent or a
+backgrounded shell command still at work after its turn -- would be cut
+off, and the restart does not take on deciding what becomes of them.
+What counts as busy is `ecc-model-busy\=', with the open turn and the
+queue besides.  An inline session is refused outright: it is a question
+asked on the side, and the one that forks its parent would be started
+again on the parent\='s conversation."
+  (let ((name (ecc-session-name session))
+        (tasks (ecc-model-running-tasks session)))
     (when (ecc-inline-session-p session)
       (user-error "%s is an inline session; it is not restarted" name))
-    (when (or (ecc-session-current-turn session)
-              (ecc-session-pending session)
-              (ecc-session-input-queue session))
-      (user-error "%s is %s; interrupt it first (%s)"
-                  name
-                  (cond ((ecc-session-current-turn session) "in the middle of a turn")
-                        ((ecc-session-pending session) "waiting for an answer")
-                        (t "holding queued prompts"))
-                  (substitute-command-keys
-                   "\\<ecc-chat-mode-map>\\[ecc-session-interrupt]")))))
+    (when-let* ((busy (or (and (ecc-session-current-turn session)
+                               "in the middle of a turn")
+                          (ecc-model-busy session)
+                          (and (ecc-session-input-queue session)
+                               "holding queued prompts"))))
+      (if (and tasks (not (ecc-session-current-turn session))
+               (eq (ecc-model-activity session) 'idle))
+          ;; Nothing interrupts a background task; it is waited for.
+          (user-error "%s is %s; restart it once %s done"
+                      name busy (if (cdr tasks) "they are" "it is"))
+        (user-error "%s is %s; interrupt it first (%s)"
+                    name busy
+                    (substitute-command-keys
+                     "\\<ecc-chat-mode-map>\\[ecc-session-interrupt]"))))))
 
 (defun ecc-restart-session (session)
   "Stop the idle CLI of SESSION and start it again on the same conversation.
@@ -290,13 +298,20 @@ under its own id when it has none yet.  Checked against 2.1.290
 \(2026-10-12): a CLI writes no recording until it is sent a prompt,
 however long it runs; --resume on an id with no recording ends at once
 with \"No conversation found with session ID\"; and --session-id on an
-id that has one refuses with \"Session ID ... is already in use\"."
+id that has one refuses with \"Session ID ... is already in use\".
+
+A fork that has not been given its own id yet forks again: until
+system/init arrives with its first turn, the session still goes by the
+id it branched from (`ecc-history-resume\=' notes the fork), and resuming
+that id without --fork-session would take it back onto the conversation
+it was forked from."
   (let ((mode (ecc-session-permission-mode session))
         (options (ecc-session-options session)))
+    ;; The old CLI has to be gone before the new one starts: two CLIs on
+    ;; one session id branch the conversation.  Nothing is checked after
+    ;; the stop, since `ecc-proc-stop' deletes the process itself once
+    ;; the grace is over.
     (ecc-proc-stop session)
-    ;; Two CLIs on one session id branch the conversation.
-    (when (process-live-p (ecc-session-process session))
-      (user-error "%s could not be stopped" (ecc-session-name session)))
     ;; The mode goes in as a launch option for this start alone: the
     ;; options are what the session was asked to be started with, and
     ;; they stay that.
@@ -304,26 +319,40 @@ id that has one refuses with \"Session ID ... is already in use\"."
       (setf (ecc-session-options session)
             (plist-put (copy-sequence options) :permission-mode mode)))
     (unwind-protect
-        (if (ecc-history-file (ecc-session-id session))
-            (ecc-history-resume session)
-          (ecc-proc-start session))
+        (cond ((ecc-history-fork-unsettled-p session)
+               (ecc-history-resume session t))
+              ((ecc-history-file (ecc-session-id session))
+               (ecc-history-resume session))
+              (t (ecc-proc-start session)))
       (setf (ecc-session-options session) options))
     (ecc-session-process session)))
 
+(defun ecc--running-sessions ()
+  "Return the sessions of this Emacs whose CLI is running."
+  (seq-filter (lambda (session)
+                (process-live-p (ecc-session-process session)))
+              (ecc-model-sessions)))
+
 (defun ecc--restart-target (&optional ask)
   "Return the session `ecc-restart\=' acts on when it is run as a command.
-It is the one the menu acts on (`ecc-window-resolve-session\='): the
-session of the current buffer, else the one this buffer talks to.  ASK,
-the prefix argument, asks instead, and offers only the sessions whose
-CLI is running: a recording picked by mistake would be resumed."
-  (if ask
-      (ecc-window-read-session
-       "Restart: "
-       (or (seq-filter (lambda (session)
-                         (process-live-p (ecc-session-process session)))
-                       (ecc-model-sessions))
-           (user-error "No session is running")))
-    (ecc-window-resolve-session)))
+In a session buffer it is that session, running or not: R there brings
+back whatever it has.  Elsewhere it is the one the menu acts on
+\(`ecc-window-resolve-session\='), but only while it is running: that
+choice ends on the session used last, which may be one that stopped,
+and restarting it would resume it without a word.  When it is not
+running, or ASK -- the prefix argument -- says so, the running sessions
+are offered, and recordings never are."
+  (let ((session (and (not ask)
+                      (or (ecc-window-buffer-session)
+                          (let ((resolved (ecc-window-resolve-session)))
+                            (and resolved
+                                 (process-live-p (ecc-session-process resolved))
+                                 resolved))))))
+    (or session
+        (ecc-window-read-session
+         "Restart: "
+         (or (ecc--running-sessions)
+             (user-error "No session is running"))))))
 
 ;;;###autoload
 (defun ecc-restart (session &optional confirm)
@@ -345,10 +374,14 @@ argument asks which, among the sessions that are running.
   (if (not (process-live-p (ecc-session-process session)))
       (ecc-resume session)
     (ecc--check-restartable session)
-    (when (and confirm
-               (not (y-or-n-p (format "Restart the CLI of %s? "
-                                      (ecc-session-name session)))))
-      (user-error "Left alone"))
+    (when confirm
+      (unless (y-or-n-p (format "Restart the CLI of %s? "
+                                (ecc-session-name session)))
+        (user-error "Left alone"))
+      ;; The question let output in: a prompt from Remote Control, or a
+      ;; turn the CLI began on its own, may have started while it was
+      ;; open.
+      (ecc--check-restartable session))
     (ecc-restart-session session)
     (ecc--enable-session-modes)
     ;; As `ecc-resume' leaves it: the window selected and point in the
