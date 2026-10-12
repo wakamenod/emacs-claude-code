@@ -15,6 +15,71 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 Verified against **Claude Code CLI 2.1.290**.
 
+### Added
+
+- `ecc-restart` stops the CLI of an idle session and starts it again on the
+  same conversation, in the same buffer: the transcript, the draft in the
+  prompt, the review baseline and the permission mode stay. It is for a CLI
+  that has stopped answering, or one that should read changed Claude Code
+  settings, MCP servers or plugins. It asks first, and looks again once the
+  answer is in. A session with a turn running, a request waiting or prompts
+  queued is refused with a word to interrupt it first; one with a subagent or
+  a backgrounded shell command still running is refused until it is done; and
+  an inline session is refused outright. A fork that has not been given its
+  own id yet is forked again rather than resumed onto the conversation it
+  came from. A
+  conversation with a recording is resumed with `--resume`; one that was never
+  sent a prompt has none, and starts again under its own id with
+  `--session-id`. `R` in a session buffer now restarts an idle running session
+  and resumes a stopped one, and `ecc-menu` has it under `S`. `C-c c r`
+  (`ecc-resume`) still only goes to a running session.
+- The prompts waiting for the running turn to end are drawn at the end of the
+  transcript, just above the separator: a `⏸ Queued (N)` line and one dim line
+  per prompt, cut to the window. Nothing is drawn while the queue is empty, and
+  the lines change as soon as a prompt is queued, sent, taken back or dropped.
+  `RET` or a click on them opens the list below, on the prompt clicked.
+- `C-c C-q` opens a list of the session's queue, `ecc-queue-show`, in place of
+  the one-line summary it wrote in the echo area. `RET` takes a prompt back into
+  the prompt region as it was typed, before any draft already there and a blank
+  line; it is prepared again (slash command, `@` references, editor context)
+  when it is sent again. A pasted image is an `@` reference to its file and
+  comes back with it. `d` or `k` drops a prompt without asking, and `M-<up>` /
+  `M-<down>` move it. The list follows the queue as it drains, and a prompt
+  that left the queue while it was open is reported as gone rather than another
+  being acted on in its place. A prompt Emacs queued itself (from `ecc-send`,
+  the review or a plugin reload) is listed by its text, can be dropped, and can
+  be taken back when it is plain text. With an empty queue `C-c C-q` says so
+  and opens nothing. `ecc-prompt-show-queue` remains as an obsolete alias.
+
+  Underneath, `ecc-session-input-queue` holds `ecc-queued` entries carrying the
+  prepared text beside the draft, `ecc-proc-send-prompt` takes the draft as an
+  optional argument, and every change to a queue runs
+  `ecc-input-queue-changed-hook`.
+
+- `RET` or a click on a path Claude wrote in a reply opens the file even when
+  the path does not say where it is: a bare name such as `foo-test.el` for a
+  file in `test/`, or a path written against another directory than the
+  session's. Until now such a path was taken against the session's directory
+  alone and ended in "No such file". The path is tried as written against the
+  session's directory and then the project root; failing that, it is matched
+  as the end of a path, on a directory boundary (`foo.el` is `a/foo.el` and not
+  `a/barfoo.el`), against the files the session read or changed and the files
+  Emacs visits inside the project, then against the project's files, the list
+  `@` completion offers, then against the files Emacs visits outside the
+  project -- after the project's own, so that the copy of a file open in another
+  checkout or worktree does not win over the project's. The first of these that
+  has a match ends the search. One match opens at once and the echo area says
+  where it was found; several are offered with `completing-read`, shown from the
+  project root, with the session's own files first, then the nearest to the
+  session's directory, then the shortest. The pick is remembered for the
+  session until that file is gone, and `C-u RET` on the path passes over it and
+  searches again. Found nowhere else, the whole machine is searched -- Spotlight (`mdfind -name`) on
+  macOS, `locate` elsewhere -- after asking each time; the new
+  `ecc-visit-search-machine` (`ask`, `always` or `never`) decides that. The
+  line the path named is kept wherever the file was found. A path that starts
+  at `/` or `~` is still only taken as written, and the paths of tool calls,
+  the Files section and diffs, which are absolute already, open as before.
+
 ### Changed
 
 - The Space picker of `C-c c j` (`ecc-space-goto`) groups the Spaces under

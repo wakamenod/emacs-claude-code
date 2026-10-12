@@ -1161,7 +1161,7 @@ history."
     (let* ((source (ecc-window-last-source-buffer))
            (text (ecc-prompt-prepare-text session raw source
                                           (ecc-prompt-attach-context-p)))
-           (outcome (ecc-proc-send-prompt session text)))
+           (outcome (ecc-proc-send-prompt session text raw)))
       (ecc-prompt-history-add raw)
       (setq ecc-prompt--history-index nil
             ecc-prompt--history-draft nil)
@@ -1187,15 +1187,6 @@ history."
   "Empty the prompt region."
   (interactive)
   (ecc-chat-clear-draft))
-
-(defun ecc-prompt-show-queue ()
-  "Show the prompts waiting to be sent."
-  (interactive)
-  (let ((queue (ecc-session-input-queue (ecc-prompt-session))))
-    (if (null queue)
-        (message "The queue is empty")
-      (message "Queue: %s"
-               (mapconcat (lambda (text) (ecc--truncate text 30)) queue " | ")))))
 
 (provide 'ecc-prompt)
 

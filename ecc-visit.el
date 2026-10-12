@@ -32,6 +32,16 @@
 ;; Files section or of a permission request, and a path the model wrote
 ;; in its reply.
 ;;
+;; A path the model wrote is the one of them that may not say where the
+;; file is: a bare name, or a path written against a directory other
+;; than the session's.  `ecc-visit-find-written' looks for it outward
+;; from the session -- as written, among the files the session handled
+;; and the ones Emacs visits in the project, among the project's, among
+;; the ones Emacs visits elsewhere, and on the machine when
+;; `ecc-visit-search-machine' lets it -- and stops at the first place
+;; that has it.  Every other path is absolute already and is opened as
+;; it is.
+;;
 ;; A diff line carries nothing that says where it is from.  The Files
 ;; section is drawn again at every redraw of the live region, and a
 ;; property per line of every diff in it would be paid for every time,
@@ -70,6 +80,8 @@
 (require 'ecc-markdown)
 (require 'ecc-window)
 (require 'ecc-image)
+
+(declare-function ecc-prompt-project-files "ecc-prompt" (session))
 
 ;;;; Reading a diff line back
 
@@ -324,7 +336,9 @@ is none."
 LINE is nil when there is no line to go to.  Asked in order: a path
 the model wrote, a line of a diff, and the heading of a call that
 names a file.  PATH is absolute but for the model\\='s own, which is
-taken against `default-directory\\=', the directory of the session."
+taken against `default-directory\\=', the directory of the session, as
+written: RET looks further for one that is not there
+\(`ecc-visit-open-written\\=')."
   (let* ((session ecc-render--session)
          (written (ecc-markdown-file-at-point))
          (row (ecc-chat-file-at-point))
@@ -403,6 +417,278 @@ without it the buffer keeps the point it had."
     (forward-line (1- line))
     (recenter)
     (pulse-momentary-highlight-one-line (point))))
+
+;;;; Finding a path the model wrote
+
+(defcustom ecc-visit-search-machine 'ask
+  "Whether a file the model named is looked for on the whole machine.
+It is asked only of a name found nowhere nearer: not as written, not
+among the files the session handled or Emacs visits, and not among the
+project\\='s files.  `ask' asks every time, `always' searches without
+asking and `never' does not search.
+
+The search goes through Spotlight on macOS and the locate database
+elsewhere, which take a while and see every file of the user, not
+only the project\\='s: whether that is worth it is a judgement about
+cost and privacy, which is why it is a setting."
+  :type '(choice (const :tag "Ask each time" ask)
+                 (const :tag "Search without asking" always)
+                 (const :tag "Never search" never))
+  :group 'ecc)
+
+(defvar ecc-visit-machine-search-function #'ecc-visit-machine-search
+  "Function that returns the files of this machine called NAME.
+It is called with a bare file name and returns absolute paths.  What
+it returns is filtered again by the name as the model wrote it, so it
+may return more than the files called NAME exactly.")
+
+(defvar ecc-visit-machine-search-limit 300
+  "How many of the machine\\='s files named like a path are offered at most.")
+
+(defvar ecc-visit--chosen (make-hash-table :test #'eq :weakness 'key)
+  "Session -> hash of what a path the model wrote was found to be.
+The inner table maps the path as written to the file it was found as,
+so that the same path opens at once the second time.  It lives here
+and not in the session: it is a convenience of RET and nothing else.")
+
+(defun ecc-visit-machine-search (name)
+  "Return the files of this machine whose name contains NAME.
+Spotlight is asked on macOS, the locate database elsewhere.  It is run
+with `call-process\\=', so \\[keyboard-quit] stops it."
+  (let ((command (if (eq system-type 'darwin)
+                     (list "mdfind" "-name" name)
+                   (list "locate" "--" name))))
+    (unless (executable-find (car command))
+      (user-error "Cannot search this machine: no %s" (car command)))
+    (with-temp-buffer
+      ;; mdfind writes two lines of locale logging to stderr on every
+      ;; call and exits 0 whether it found anything or not, so only
+      ;; stdout is read and the status is not.  It matches any part of
+      ;; the name, in any case, and it does not see into a directory
+      ;; whose name starts with a dot, such as .claude/worktrees/
+      ;; (confirmed with macOS 26 on 2026-10-12).
+      (apply #'call-process (car command) nil (list t nil) nil (cdr command))
+      (split-string (buffer-string) "\n" t))))
+
+(defun ecc-visit--written-suffix (token)
+  "Return TOKEN as a suffix to look for, or nil when it is a full path.
+A path that starts at the root or the home directory names one file
+and no other.  The ./ and ../ at the start of a relative one are what
+it was written against, and are dropped."
+  (unless (or (file-name-absolute-p token) (string-prefix-p "~" token))
+    (let ((suffix token))
+      (while (string-match "\\`\\.\\.?/+" suffix)
+        (setq suffix (substring suffix (match-end 0))))
+      (and (not (string-empty-p suffix)) suffix))))
+
+(defun ecc-visit--suffix-p (suffix path)
+  "Return non-nil when PATH ends in SUFFIX on a directory boundary.
+foo.el is the end of a/foo.el and not of a/barfoo.el."
+  (string-suffix-p (concat "/" suffix) path))
+
+(defun ecc-visit--matching (suffix paths)
+  "Return the PATHS that end in SUFFIX and are there, each once.
+A remote one is left out: asking whether it is there would open the
+connection, and a buffer of one is all that could have named it."
+  (seq-uniq (seq-filter (lambda (path)
+                          (and (ecc-visit--suffix-p suffix path)
+                               (not (file-remote-p path))
+                               (file-exists-p path)))
+                        paths)))
+
+(defun ecc-visit--handled-files (session)
+  "Return the files SESSION read, edited or wrote, as absolute paths."
+  (and session
+       (mapcar (lambda (entry) (expand-file-name (ecc-file-entry-path entry)))
+               (ecc-model-files session))))
+
+(defun ecc-visit--project-root (session)
+  "Return the project root of SESSION as a directory name, or nil."
+  (when-let* ((root (and session (ecc-session-project-root session))))
+    (file-name-as-directory (expand-file-name root))))
+
+(defun ecc-visit--project-files (session root)
+  "Return the files of the project of SESSION, absolute under ROOT.
+They are the list @ completion offers (`ecc-prompt-project-files\\=').
+That file requires `ecc-session\\=', which requires this one, so it is
+loaded when it is asked and not at the top: by the time RET is pressed
+on a transcript, the prompt is there already."
+  (require 'ecc-prompt)
+  (mapcar (lambda (file) (expand-file-name file root))
+          (ecc-prompt-project-files session)))
+
+(defun ecc-visit--steps (from to)
+  "Return how many directories there are to walk from FROM to TO."
+  (let ((a (split-string (expand-file-name from) "/" t))
+        (b (split-string (expand-file-name to) "/" t)))
+    (while (and a b (equal (car a) (car b)))
+      (setq a (cdr a) b (cdr b)))
+    (+ (length a) (length b))))
+
+(defun ecc-visit--display-name (path root)
+  "Return PATH as it is shown: relative to ROOT inside it, abbreviated outside."
+  (if (and root (string-prefix-p root path))
+      (file-relative-name path root)
+    (abbreviate-file-name path)))
+
+(defun ecc-visit--sort (paths handled directory root)
+  "Return PATHS in the order they are offered.
+The files of the session (HANDLED) first, then those nearest to
+DIRECTORY, then the shortest as shown against ROOT."
+  (let ((key (lambda (path)
+               (list (if (member path handled) 0 1)
+                     (ecc-visit--steps directory (file-name-directory path))
+                     (length (ecc-visit--display-name path root))))))
+    (sort (copy-sequence paths)
+          (lambda (a b)
+            (let ((ka (funcall key a)) (kb (funcall key b)) result)
+              (while (and ka (not result))
+                (cond ((< (car ka) (car kb)) (setq result 'less))
+                      ((> (car ka) (car kb)) (setq result 'more)))
+                (setq ka (cdr ka) kb (cdr kb)))
+              (eq result 'less))))))
+
+(defun ecc-visit--choose (token paths root)
+  "Return the one of PATHS the user picks as the file TOKEN names.
+They are offered in the order given, shown against ROOT."
+  (let* ((names (mapcar (lambda (path)
+                          (cons (ecc-visit--display-name path root) path))
+                        paths))
+         (table (lambda (string predicate action)
+                  (if (eq action 'metadata)
+                      '(metadata (category . file)
+                                 (display-sort-function . identity)
+                                 (cycle-sort-function . identity))
+                    (complete-with-action action (mapcar #'car names)
+                                          string predicate))))
+         ;; A candidate of the `file' category is read against
+         ;; `default-directory' by whatever annotates or acts on it, and
+         ;; these are relative to ROOT, not to the session's directory.
+         (default-directory (or root default-directory)))
+    (cdr (assoc (completing-read (format "Open %s: " token) table nil t)
+                names))))
+
+(defun ecc-visit--search-machine-p ()
+  "Return non-nil when the machine is to be searched, asking if need be."
+  (pcase ecc-visit-search-machine
+    ('always t)
+    ('never nil)
+    (_ (y-or-n-p "Not in the project; search this machine? "))))
+
+(defun ecc-visit--visited-files (base)
+  "Return the files Emacs visits, as (INSIDE . OUTSIDE) of BASE.
+A remote one is left out, as `ecc-visit--matching' leaves it out."
+  (let (inside outside)
+    (dolist (buffer (buffer-list))
+      (when-let* ((file (buffer-file-name buffer))
+                  ((not (file-remote-p file))))
+        (setq file (expand-file-name file))
+        (if (string-prefix-p base file)
+            (push file inside)
+          (push file outside))))
+    (cons (nreverse inside) (nreverse outside))))
+
+(defun ecc-visit-find-written (session token &optional directory again)
+  "Return the file TOKEN, a path the model wrote in SESSION, names.
+The answer is (PATH . WHERE), WHERE saying how it was found; an error
+says where it was looked for when it was not.  DIRECTORY is the one
+the session works in, `default-directory\\=' by default.  AGAIN
+non-nil passes over what was picked for TOKEN before and searches
+afresh, and the new pick replaces it.
+
+The places are tried in order, and the first that has it ends the
+search:
+- TOKEN as written, against DIRECTORY and then the project root;
+- what was picked for TOKEN before in this session, while it is there;
+- the files the session read or changed, and those Emacs visits in the
+  project (in DIRECTORY when there is no project);
+- the files of the project;
+- the files Emacs visits outside the project: a copy of the same file
+  in another checkout is the one most often open, and it must not
+  win over the project\\='s own;
+- the files of this machine, when `ecc-visit-search-machine\\=' allows.
+After the first, a file matches when TOKEN is the end of its path on a
+directory boundary: foo.el is a/foo.el and not a/barfoo.el, and
+test/foo.el is a/test/foo.el.  A path that starts at the root or the
+home directory is only taken as written.  Several matches are offered
+with `completing-read\\=', and the pick is remembered."
+  (let* ((directory (file-name-as-directory
+                     (expand-file-name (or directory default-directory))))
+         (root (ecc-visit--project-root session))
+         (suffix (ecc-visit--written-suffix token))
+         (chosen (and session (gethash session ecc-visit--chosen)))
+         (remembered (and chosen (not again) (gethash token chosen)))
+         (looked (list "the session's directory"))
+         found where handled visited)
+    (cond
+     ((file-exists-p (expand-file-name token directory))
+      (setq found (list (expand-file-name token directory))))
+     ((and root (progn (push "the project root" looked)
+                       (file-exists-p (expand-file-name token root))))
+      (setq found (list (expand-file-name token root)) where 'root))
+     ((null suffix))
+     ((and remembered (file-exists-p remembered))
+      (setq found (list remembered) where 'remembered))
+     ((progn (setq handled (ecc-visit--handled-files session)
+                   visited (ecc-visit--visited-files (or root directory)))
+             (push "the files of this session and those open in the project"
+                   looked)
+             (setq found (ecc-visit--matching suffix
+                                              (append handled (car visited)))))
+      (setq where 'session))
+     ((and root (progn (push "the project's files" looked)
+                       (setq found (ecc-visit--matching
+                                    suffix (ecc-visit--project-files session root)))))
+      (setq where 'project))
+     ((progn (push "the files open outside the project" looked)
+             (setq found (ecc-visit--matching suffix (cdr visited))))
+      (setq where 'outside))
+     ((ecc-visit--search-machine-p)
+      (push "this machine" looked)
+      (setq found (seq-take (ecc-visit--matching
+                             suffix (funcall ecc-visit-machine-search-function
+                                             (file-name-nondirectory suffix)))
+                            ecc-visit-machine-search-limit)
+            where 'machine)))
+    (unless found
+      (user-error "No such file: %s (looked in %s)" token
+                  (string-join (reverse looked) ", ")))
+    (let ((path (if (cdr found)
+                    (ecc-visit--choose token
+                                       (ecc-visit--sort found handled directory root)
+                                       root)
+                  (car found))))
+      (when (and session (memq where '(session project outside machine)))
+        (unless chosen
+          (setq chosen (puthash session (make-hash-table :test #'equal)
+                                ecc-visit--chosen)))
+        (puthash token path chosen))
+      (cons path (if (and (eq where 'session) (not (member path handled)))
+                     'buffer
+                   where)))))
+
+(defun ecc-visit-open-written (session written &optional again)
+  "Open the file of WRITTEN, a path the model wrote, beside SESSION.
+WRITTEN is (TOKEN . LINE) as the link carries it
+\(`ecc-markdown-file-at-point\\='); the file is found by
+`ecc-visit-find-written\\=', and opened at LINE wherever it was found.
+AGAIN non-nil searches again instead of opening what was picked for it
+before.  The echo area says where, unless it was where the path said."
+  (pcase-let* ((`(,path . ,where) (ecc-visit-find-written session (car written)
+                                                          nil again))
+               (window (ecc-visit-open path (cdr written) session)))
+    (when where
+      (message "Opened %s (%s)"
+               (ecc-visit--display-name path (ecc-visit--project-root session))
+               (pcase where
+                 ('root "against the project root")
+                 ('remembered "as picked before")
+                 ('session "a file of this session")
+                 ('buffer "a file Emacs visits")
+                 ('project "in the project")
+                 ('outside "a file Emacs visits, outside the project")
+                 ('machine "on this machine"))))
+    window))
 
 (provide 'ecc-visit)
 

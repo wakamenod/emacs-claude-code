@@ -174,6 +174,10 @@ resumed -- so this is not `ecc-session-exited-hook' by another name.")
 (defvar ecc-tasks-updated-hook nil
   "Functions run with a session when its task list changed.")
 
+(defvar ecc-input-queue-changed-hook nil
+  "Functions run with a session when its queue of prompts changed.
+A prompt was queued, sent, taken back, dropped or moved.")
+
 ;;;; Structures
 
 (cl-defstruct (ecc-session (:constructor ecc-session--make) (:copier nil))
@@ -233,7 +237,8 @@ resumed -- so this is not `ecc-session-exited-hook' by another name.")
   progress              ; alist of progress information for the state line
   auto-approve-turn     ; allow every request of the current turn
   auto-approve-kinds    ; tool kinds allowed for the rest of the session
-  input-queue           ; prompts held back while a turn runs, oldest first
+  input-queue           ; list of ecc-queued: prompts held back while a
+                        ; turn runs, oldest first
   sent-echoes           ; contents sent from here whose --replay echo
                         ; has not come back yet, newest first
   history-offset
@@ -257,6 +262,16 @@ resumed -- so this is not `ecc-session-exited-hook' by another name.")
                         ; sorts by this instead
   node-counter          ; counters for the ids of nodes and turns; the
   turn-counter)         ; ids have to be stable
+
+(cl-defstruct (ecc-queued (:constructor ecc-queued--make) (:copier nil))
+  "A prompt waiting in the queue of a session until the turn ends.
+An entry is known by its identity, not by its place: the place changes
+under anybody holding it as the queue drains."
+  text                  ; what goes to the CLI, prepared already: a
+                        ; string, or whatever `ecc-prepare-prompt-functions'
+                        ; made of one
+  draft)                ; what the user typed, a string, or nil when the
+                        ; prompt came from Emacs rather than the prompt region
 
 (cl-defstruct ecc-turn
   "One prompt and everything that followed it up to the result.
@@ -699,6 +714,21 @@ over is not idle while one of these is still at work."
              (ecc-session-nodes session))
     nodes))
 
+(defun ecc-model-busy (session)
+  "Return what SESSION is in the middle of, or nil when it may be stopped.
+A session whose turn is over is still busy while a subagent or a
+backgrounded shell command it started runs on; a stopped one is not,
+whatever its last tasks said.  The answer is a phrase that reads after
+the session's name: `list_worktrees\=' says it, and so do the commands
+that refuse to stop a busy session."
+  (pcase (ecc-model-activity session)
+    ('attention "waiting on a request")
+    ('running "running")
+    ((or 'exited 'restored) nil)
+    (_ (when-let* ((tasks (ecc-model-running-tasks session)))
+         (format "idle with %d background task%s still running"
+                 (length tasks) (if (cdr tasks) "s" ""))))))
+
 (defun ecc-model-turn-of (node)
   "Return the turn NODE belongs to, or nil."
   (let ((parent (ecc-node-parent node)))
@@ -1031,18 +1061,54 @@ under every count of what is waiting."
 
 ;;;; The input queue
 
-(defun ecc-model-queue-input (session text)
-  "Append TEXT to the queue of prompts of SESSION and return its position."
-  (setf (ecc-session-input-queue session)
-        (nconc (ecc-session-input-queue session) (list text)))
-  (length (ecc-session-input-queue session)))
+(defun ecc-model-queue-input (session text &optional draft first)
+  "Queue TEXT for SESSION and return its position, counting from 1.
+DRAFT is what the user typed, when TEXT was prepared from it; it is what
+is given back when the prompt is taken out of the queue to be written
+again.  FIRST puts the prompt at the head of the queue rather than at
+its tail."
+  (let ((entry (ecc-queued--make :text text :draft draft)))
+    (setf (ecc-session-input-queue session)
+          (if first
+              (cons entry (ecc-session-input-queue session))
+            (append (ecc-session-input-queue session) (list entry))))
+    (run-hook-with-args 'ecc-input-queue-changed-hook session)
+    (if first 1 (length (ecc-session-input-queue session)))))
 
 (defun ecc-model-pop-input (session)
-  "Remove and return the next queued prompt of SESSION, or nil."
+  "Remove the next queued prompt of SESSION and return its text, or nil."
+  (when-let* ((entry (car (ecc-session-input-queue session))))
+    (setf (ecc-session-input-queue session) (cdr (ecc-session-input-queue session)))
+    (run-hook-with-args 'ecc-input-queue-changed-hook session)
+    (ecc-queued-text entry)))
+
+(defun ecc-model-queued-texts (session)
+  "Return the texts queued for SESSION, oldest first."
+  (mapcar #'ecc-queued-text (ecc-session-input-queue session)))
+
+(defun ecc-model-take-input (session entry)
+  "Take ENTRY out of the queue of SESSION and return it.
+Nil when ENTRY is no longer there: it has been sent, or taken already."
+  (when (memq entry (ecc-session-input-queue session))
+    (setf (ecc-session-input-queue session)
+          (delq entry (ecc-session-input-queue session)))
+    (run-hook-with-args 'ecc-input-queue-changed-hook session)
+    entry))
+
+(defun ecc-model-move-input (session entry offset)
+  "Move ENTRY OFFSET places towards the tail of the queue of SESSION.
+A negative OFFSET moves it towards the head; the move stops at either
+end.  Returns the new position of ENTRY, counting from 1, or nil when
+it is no longer in the queue."
   (let ((queue (ecc-session-input-queue session)))
-    (when queue
-      (setf (ecc-session-input-queue session) (cdr queue))
-      (car queue))))
+    (when-let* ((from (seq-position queue entry #'eq)))
+      (let* ((to (max 0 (min (1- (length queue)) (+ from offset))))
+             (rest (remq entry queue)))
+        (unless (= from to)
+          (setf (ecc-session-input-queue session)
+                (append (seq-take rest to) (list entry) (seq-drop rest to)))
+          (run-hook-with-args 'ecc-input-queue-changed-hook session))
+        (1+ to)))))
 
 (provide 'ecc-model)
 

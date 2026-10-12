@@ -55,7 +55,7 @@
 
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-kill "ecc" (session))
-(declare-function ecc-proc-send-prompt "ecc-proc" (session text))
+(declare-function ecc-proc-send-prompt "ecc-proc" (session text &optional draft))
 (declare-function ecc-mcp-define-tool "ecc-mcp" (&rest arguments))
 (declare-function ecc-mcp-session "ecc-mcp" ())
 (declare-function ecc-mcp-published-tools "ecc-mcp" ())
@@ -1110,16 +1110,8 @@ Nil under `classic', where `ecc-space' is not loaded at all."
 
 (defun ecc-worktree--busy (session)
   "Return what SESSION is in the middle of, or nil when it may be stopped.
-A session whose turn is over is still busy while a subagent or a
-backgrounded shell command it started runs on; a stopped one is not,
-whatever its last tasks said."
-  (pcase (ecc-model-activity session)
-    ('attention "waiting on a request")
-    ('running "running")
-    ((or 'exited 'restored) nil)
-    (_ (when-let* ((tasks (ecc-model-running-tasks session)))
-         (format "idle with %d background task%s still running"
-                 (length tasks) (if (cdr tasks) "s" ""))))))
+This is `ecc-model-busy\=', the one definition of a busy session."
+  (ecc-model-busy session))
 
 (defun ecc-worktree--state-text (session)
   "Return what SESSION is doing, in the words `list_worktrees' uses."

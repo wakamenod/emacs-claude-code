@@ -46,10 +46,11 @@
 (require 'ecc-window)
 (require 'ecc-visit)
 
-(declare-function ecc-resume "ecc" (session &optional fork))
+(declare-function ecc-restart "ecc" (session &optional confirm))
 (declare-function ecc-perm-deny "ecc-perm" (&optional reason))
 (declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
 (declare-function ecc-question-open "ecc-perm" (request))
+(declare-function ecc-queue-show "ecc-queue" (&optional session entry))
 (declare-function ecc-plan-open "ecc-plan" (request))
 (declare-function ecc-plan-file-path "ecc-plan" (request))
 (declare-function ecc-review "ecc-review" (&optional session paths))
@@ -150,10 +151,13 @@ buffer."
     (message "Interrupt requested")))
 
 (defun ecc-session-resume ()
-  "Start this session again with --resume."
+  "Bring the CLI of this session back.
+A session that has stopped is resumed; an idle one that is still
+running is restarted once the user agrees (`ecc-restart\=').  One key
+for both, since what is wanted either way is a CLI that answers again."
   (interactive)
   (require 'ecc)
-  (ecc-resume (ecc-session-at-point)))
+  (ecc-restart (ecc-session-at-point) t))
 
 (defun ecc-session-show-log ()
   "Show the raw protocol log of this session."
@@ -167,34 +171,50 @@ buffer."
 A question or a plan that is still waiting opens the buffer it is
 answered in.
 
-A line of a diff, the heading of a call that names a file and a path
-the model wrote open that file, at the line when there is one
-\(`ecc-visit-target-at-point\='); the node laid open is
-\[ecc-session-show-detail].  A video or a sound among them plays
-in the machine's own player instead (`ecc-visit-open\=').
+A line of a diff and the heading of a call that names a file open that
+file, at the line when there is one (`ecc-visit-target-at-point\='); the
+node laid open is \[ecc-session-show-detail].  A path the model wrote
+opens the file it names wherever it is found -- a bare name or a path
+written against another directory is looked for among the files of the
+session and of the project, then among the files Emacs visits outside
+it, and on the machine after asking (`ecc-visit-find-written\=').  The
+file picked among several opens at once the next time; with a prefix
+argument the search is made again.  A video or a sound among them
+plays in the machine's own player instead (`ecc-visit-open\=').
 
 A picture drawn in the transcript opens as itself.  A URL comes
 first, and before the node the point is in: the point is
 only on one where a link was drawn, which is narrow enough to say what
 RET does there without a rule of its own.  It is the same key that
 follows a link everywhere else in Emacs, and the same one the transcript
-already opens things with."
+already opens things with.
+
+The prompts waiting in the queue, drawn above the separator, open the
+list of the queue (`ecc-queue-show\='), on the prompt at point.  They
+come before anything else, a URL included: the text of a prompt is
+what the user wrote, and a path or a URL in it is not a link."
   (interactive)
   (let* ((session (ecc-session-at-point))
+         (queued (get-text-property (point) 'ecc-queue))
          (node (ecc-chat-node-at-point))
          (url (ecc-markdown-url-at-point))
          (path (or (ecc-chat-file-at-point) (ecc-chat-plan-file-at-point)))
          (picture (ecc-image-at-point))
-         (target (and (not url) (not picture) (ecc-visit-target-at-point)))
+         (written (and (not url) (not picture) (ecc-markdown-file-at-point)))
+         (target (and (not url) (not picture) (not written)
+                      (ecc-visit-target-at-point)))
          (request (and node (ecc-model-node-get node 'request)))
          (pending (and request (memq request (ecc-session-pending session)))))
     (cond
+     (queued (require 'ecc-queue)
+             (ecc-queue-show session (get-text-property (point) 'ecc-queued)))
      (url (browse-url url))
      ;; A still opens in `image-mode\=', which zooms and scrolls; a video
      ;; is something Emacs cannot play, so the machine plays it.
      (picture (if (ecc-image-plays-outside-p picture)
                   (ecc-image-open-externally picture)
                 (find-file-other-window picture)))
+     (written (ecc-visit-open-written session written current-prefix-arg))
      (target (ecc-visit-open (car target) (cdr target) session))
      (path (ecc-visit-open path nil session))
      ((null node) (user-error "Nothing to show here"))

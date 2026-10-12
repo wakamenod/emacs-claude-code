@@ -41,6 +41,7 @@ M-x customize-group RET ecc
 | `ecc-render-debounce` | `0.1` | トランスクリプトの変化している部分を再描画するまでの待ち時間（秒） |
 | `ecc-show-hook-events` | `nil` | 非 nil なら、フックが動くたびに終了コードと出力とともに表示する。フックはどちらの場合も動く。セッションを始めるときに読む |
 | `ecc-image-inline` | `t` | `nil` なら、画像や動画はファイル名の行だけを表示 |
+| `ecc-visit-search-machine` | `'ask` | 返答中のパスがプロジェクトにないとき、`RET` でマシン全体を探すか。`'ask` なら毎回確認し、`'always` なら探し、`'never` なら探さない |
 
 ## ヘッダー行とモードライン
 
