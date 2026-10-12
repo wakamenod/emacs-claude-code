@@ -570,9 +570,9 @@ comment of the review is offered."
       (if-let* ((here (and line (ecc-review--notes-on line))))
           (let ((note (ecc-review--pick-note here "Remove comment: ")))
             (ecc-review-remove-note note)
-            (ecc-review--draw-notes)
-            (message "Comment #%d removed (%d left)" (ecc-review-note-id note)
-                     (length ecc-review--notes)))
+            (let ((drawn (ecc-review--draw-notes)))
+              (message "Comment #%d removed (%d left)%s" (ecc-review-note-id note)
+                       (length ecc-review--notes) (ecc-review--and-drawn drawn))))
         (ecc-review-ediff-remove-comment all)))))
 
 ;;;; Opening the file

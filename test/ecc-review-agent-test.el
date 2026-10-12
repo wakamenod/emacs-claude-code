@@ -110,6 +110,28 @@ The review buffer is current."
   ;; And a call that names no session is refused.
   (should (car (ecc-review-agent-test--call nil "review_hunks"))))
 
+(ert-deftest ecc-review-agent-test-hunks-with-one-header-count-their-own ()
+  "review_hunks counts the comments of each of two hunks with one header apart.
+A diff made from what the session recorded joins a patch for each edit,
+and two patches at one line have the same @@ header."
+  (ecc-test-with-fake-session session
+    (unwind-protect
+        (with-current-buffer
+            (ecc-review-agent-test--fill session
+                                         (concat "--- u.txt\n+++ u.txt\n"
+                                                 "@@ -10,1 +10,1 @@\n-a old\n+a new\n"
+                                                 "@@ -10,1 +10,1 @@\n-b old\n+b new\n"))
+          (ecc-review-agent-test--goto "+b new")
+          (ecc-review-comment "on b")
+          (let ((lines (split-string (ecc-review-agent-test--ok session "review_hunks") "\n")))
+            (should-not (string-search "comment"
+                                       (seq-find (lambda (line) (string-prefix-p "  hunk 1 " line))
+                                                 lines)))
+            (should (string-suffix-p "  1 comment"
+                                     (seq-find (lambda (line) (string-prefix-p "  hunk 2 " line))
+                                               lines)))))
+      (ecc-review-agent-test--kill-review-buffers))))
+
 (ert-deftest ecc-review-agent-test-hunks ()
   "review_hunks numbers the hunks of each file and can add their text."
   (ecc-review-agent-test--with-review session

@@ -277,20 +277,26 @@ the bytes of UTF-8."
         (flush))
       (and end (cons (apply #'concat (nreverse pieces)) end)))))
 
+(defun ecc-review--git-quote-char (char)
+  "Return how git writes CHAR in a C-quoted name, or nil when it is itself.
+git's rule (quote.c, with `core.quotePath' off): a control character,
+DEL, a double quote and a backslash are escaped; those with a letter of
+their own by it, the others as three octal digits."
+  (pcase char
+    (?\a "\\a") (?\b "\\b") (?\t "\\t") (?\n "\\n") (?\v "\\v") (?\f "\\f")
+    (?\r "\\r") (?\" "\\\"") (?\\ "\\\\")
+    ((pred (lambda (char) (or (< char 32) (= char 127)))) (format "\\%03o" char))))
+
 (defun ecc-review--git-quote (name)
   "Return NAME as git writes it in a diff header, C-quoted when it has to be.
 For the headers the review writes itself, which are read back like
-git's (`ecc-review-git-name'): a name with a control character, a double
-quote or a backslash in it goes between double quotes; any other is
-itself, as git writes it with `core.quotePath' off."
-  (if (not (string-match-p "[\"\\\\[:cntrl:]]" name))
+git's (`ecc-review-git-name'): a name with a character git escapes in
+it (`ecc-review--git-quote-char') goes between double quotes; any other
+is itself, as git writes it with `core.quotePath' off."
+  (if (not (seq-some #'ecc-review--git-quote-char name))
       name
     (concat "\""
-            (mapconcat (lambda (char)
-                         (pcase char
-                           (?\" "\\\"") (?\\ "\\\\") (?\t "\\t") (?\n "\\n")
-                           ((pred (lambda (char) (< char 32))) (format "\\%03o" char))
-                           (_ (string char))))
+            (mapconcat (lambda (char) (or (ecc-review--git-quote-char char) (string char)))
                        name "")
             "\"")))
 
@@ -434,7 +440,8 @@ A larger one is named and left out: nobody reviews a megabyte of
 generated output, and the review is a prompt before it is anything
 else.  This covers the untracked files of the working tree review and
 the files a session changed -- a lock file a package manager wrote
-again is the usual one.")
+again is the usual one -- and the two old sides of a file a review
+compares to carry its comments (`ecc-review--blobs').")
 
 (defalias 'ecc-review--binary-p #'ecc-diff-binary-p
   "Return non-nil when a path looks binary, or cannot be read.
@@ -1225,18 +1232,18 @@ NTH tells it from the hunks of its file before it with the same header
 
 (cl-defgeneric ecc-review--decorate (commented lines)
   "Mark the hunks of LINES that COMMENTED names as carrying comments.
-COMMENTED are `ecc-review--hunk-place's; LINES, all the lines of the
-review in order, are counted here for which of the hunks with its header
-each is.  Return the overlays made."
+COMMENTED are `ecc-review--hunk-place's, and LINES all the lines of the
+review.  Which of the hunks with its header each is, is the reading's
+\(`ecc-review--canonical'), asked only of a header COMMENTED names: its
+file has a comment on it, and is in the reading already.  Return the
+overlays made."
   (let ((overlays nil)
-        (seen (make-hash-table :test #'equal)))
+        (headers (mapcar (lambda (place) (cons (car place) (cadr place))) commented)))
     (dolist (line lines)
       (when (and (null (plist-get line :side))
-                 (let* ((key (cons (plist-get line :path)
-                                   (plist-get (plist-get line :hunk) :header)))
-                        (nth (gethash key seen 0)))
-                   (puthash key (1+ nth) seen)
-                   (member (list (car key) (cdr key) nth) commented)))
+                 (member (cons (plist-get line :path) (plist-get (plist-get line :hunk) :header))
+                         headers)
+                 (member (ecc-review--hunk-place (ecc-review--canonical line)) commented))
         (let ((overlay (make-overlay (plist-get line :position)
                                      (save-excursion
                                        (goto-char (plist-get line :position))
@@ -2411,8 +2418,14 @@ diff line, which has to name the file -- an empty file git added or
 deleted has a header and no --- line, and its index line is not the
 next file's.  `empty' is no file.
 
-A file with no diff line of its own was diffed from what the session
-recorded (`ecc-review-fallback-diff').  When the session knows what the
+A proposal's diff names the old side it was made against on its own
+header, as the text property `ecc-review-old-side': (proposal HASH) of
+the file as the proposal found it, or nil when its hunks are numbered
+against nothing known (`ecc-review-request-diff').  What the session
+recorded of the file is not that file: it may have changed since.
+
+Another file with no diff line of its own was diffed from what the
+session recorded (`ecc-review-fallback-diff').  When the session knows what the
 file held before its first change, that is the old side of every
 reading, (recorded HASH); when it does not, the diff joins a patch for
 each edit and says nothing of an old side, which is nil."
@@ -2423,6 +2436,7 @@ each edit and says nothing of an old side, which is nil."
       (forward-line -1))
     (when (looking-at-p "--- ")
       (let ((path (plist-get hunk :path))
+            (named (get-text-property (point) 'ecc-review-old-side))
             (id nil)
             (from nil)
             (to nil))
@@ -2447,21 +2461,33 @@ each edit and says nothing of an old side, which is nil."
                (if (string-match-p "\\`0+\\'" id)
                    'empty
                  (list 'blob (ecc-review--repository-of path) id)))
+              (named (car named))
               (path (ecc-review--recorded-base path)))))))
+
+(defvar ecc-review--original-hashes (make-hash-table :test #'eq :weakness 'key)
+  "A weak hash of each original a session recorded to its sha1.
+An original is the text of a file before its first change, kept once
+by its entry; it is hashed once, not at every reading of every review.")
 
 (defun ecc-review--recorded-base (path)
   "Return the old side of PATH from what the session of this review recorded.
 \(recorded HASH) of what the file held before its first change, `empty'
-for a file the session created, nil when that is not known."
+for a file the session created, nil when that is not known.  The entry
+is the session's own for the path, as it was named or as this review
+names it; one that saw no operation -- a call denied or still waiting --
+records nothing (`ecc-model-files')."
   (when-let* ((session ecc-review--session)
-              (file (expand-file-name path default-directory))
-              (entry (seq-find (lambda (entry)
-                                 (equal (expand-file-name (ecc-file-entry-path entry)
-                                                          default-directory)
-                                        file))
-                               (ecc-model-files session))))
+              (files (ecc-session-files session))
+              (entry (or (gethash (expand-file-name path default-directory) files)
+                         (gethash path files)))
+              ((> (+ (ecc-file-entry-reads entry) (ecc-file-entry-edits entry)
+                     (ecc-file-entry-writes entry))
+                  0)))
     (pcase (ecc-file-entry-original entry)
-      ((and original (pred stringp)) (list 'recorded (secure-hash 'sha1 original)))
+      ((and original (pred stringp))
+       (list 'recorded (or (gethash original ecc-review--original-hashes)
+                           (puthash original (secure-hash 'sha1 original)
+                                    ecc-review--original-hashes))))
       ('nil 'empty))))
 
 (defun ecc-review--repository-of (path)
@@ -2538,7 +2564,8 @@ PAIRS are (FROM . TO) blob ids of REPOSITORY.  Every blob is read
 through one git process (`ecc-review--blobs') and the two of a pair
 compared here (`ecc-review-map-text-hunks'): a reading that moved the old
 side of forty files runs git once, not forty times.  A blob git does not
-have makes its pairs `unknown' for good, a blob does not come to be.
+have makes its pairs `unknown' for good, a blob does not come to be; so
+does one over `ecc-review-max-bytes', which is not read.
 git failing to run at all keeps nothing: the repository is not asked
 again in READING, which is left to be read again, and the next reading
 asks again."
@@ -2565,24 +2592,41 @@ asks again."
           ;; not kept: the next reading compares them again.
           (condition-case error
               (puthash pair
-                       (if (and (stringp from) (stringp to))
-                           (ecc-review-map-text-hunks from to)
-                         (ecc-log "review" "no blob %s or %s in %s"
-                                  (car pair) (cdr pair) repository)
-                         'unknown)
+                       (cond ((and (stringp from) (stringp to))
+                              (ecc-review-map-text-hunks from to))
+                             ((or (eq from 'too-large) (eq to 'too-large))
+                              (ecc-log "review" "not comparing %s and %s in %s: over %d bytes"
+                                       (car pair) (cdr pair) repository ecc-review-max-bytes)
+                              'unknown)
+                             (t
+                              (ecc-log "review" "no blob %s or %s in %s"
+                                       (car pair) (cdr pair) repository)
+                              'unknown))
                        ecc-review--base-diffs)
             (error (ecc-log "review" "comparing %s and %s failed: %S"
                             (car pair) (cdr pair) error))))))))
 
 (defun ecc-review--blobs (repository ids)
   "Return a hash of each of IDS to the text of its blob in REPOSITORY.
-Read by one `git cat-file --batch' (`ecc-review--cat-file'); an id that
-is no blob git has is not in it.  Nil when git cannot be run."
-  (let ((texts (make-hash-table :test #'equal)))
-    (and (ecc-review--cat-file repository ids "--batch"
-                               (lambda (id type _size bytes)
+The sizes are asked first, by `git cat-file --batch-check', and the
+blobs within `ecc-review-max-bytes' read by one `git cat-file --batch'
+\(`ecc-review--cat-file'), as the ediff review reads its sides: a larger
+one is `too-large', never read, for comparing two of them line by line
+in Lisp would hold Emacs up for seconds.  An id that is no blob git has
+is not in the hash.  Nil when git cannot be run."
+  (let ((texts (make-hash-table :test #'equal))
+        (small nil))
+    (and (ecc-review--cat-file repository ids "--batch-check"
+                               (lambda (id type size)
                                  (when (equal type "blob")
-                                   (puthash id bytes texts))))
+                                   (if (> size ecc-review-max-bytes)
+                                       (puthash id 'too-large texts)
+                                     (push id small)))))
+         (or (null small)
+             (ecc-review--cat-file repository (nreverse small) "--batch"
+                                   (lambda (id type _size bytes)
+                                     (when (equal type "blob")
+                                       (puthash id bytes texts)))))
          texts)))
 
 (defun ecc-review--cat-file (root ids option each)
@@ -2999,17 +3043,40 @@ gone from the diff altogether."
 Every comment is put back first (`ecc-review--relocate'), so this is
 also what keeps them in place across a refresh.  LINES are the lines of
 the buffer when the caller has read them already; with no comment there
-is nothing to read them for."
-  (mapc #'delete-overlay ecc-review--comments)
-  (mapc #'delete-overlay ecc-review--decorations)
-  (setq ecc-review--comments nil
-        ecc-review--decorations nil
-        ecc-review--positions (make-hash-table :test #'eq))
-  (run-hooks 'ecc-review-before-draw-hook)
-  (when ecc-review--notes
-    (ecc-review--draw-notes-on (or lines (ecc-review-lines))))
-  (run-hooks 'ecc-review-after-draw-hook)
-  (force-mode-line-update))
+is nothing to read them for.  Return non-nil once drawn.
+
+A review whose text changed since its reading -- a reading that
+stopped, a key that got past the keymap -- has nowhere to put a
+comment: what is drawn is left as it is, the echo area says that \`g'
+reads the review again (`ecc-review--undrawn'), and the answer is nil.
+That is no error: the callers draw after what they came to do -- a
+prompt sent, a comment removed, a loop over the reviews of a pull
+request -- and that is done either way."
+  (if (and ecc-review--notes ecc-review--reading (not (ecc-review--reading-current-p)))
+      (progn (message "%s" (ecc-review--undrawn))
+             nil)
+    (mapc #'delete-overlay ecc-review--comments)
+    (mapc #'delete-overlay ecc-review--decorations)
+    (setq ecc-review--comments nil
+          ecc-review--decorations nil
+          ecc-review--positions (make-hash-table :test #'eq))
+    (run-hooks 'ecc-review-before-draw-hook)
+    (when ecc-review--notes
+      (ecc-review--draw-notes-on (or lines (ecc-review-lines))))
+    (run-hooks 'ecc-review-after-draw-hook)
+    (force-mode-line-update)
+    t))
+
+(defun ecc-review--undrawn ()
+  "Return what to say of comments not drawn: the review is to be read again."
+  (format "%s changed since it was read: g reads it again and draws its comments"
+          (buffer-name)))
+
+(defun ecc-review--and-drawn (drawn)
+  "Return \"\" when DRAWN, what `ecc-review--draw-notes' answered.
+Otherwise the notice that the comments wait for \\`g', to follow a
+message that would hide the one the drawing gave."
+  (if drawn "" (concat "; " (ecc-review--undrawn))))
 
 (defun ecc-review--draw-notes-on (lines)
   "Draw the comments of this buffer on LINES, the lines it holds now.
@@ -3191,15 +3258,16 @@ the text."
                              (or (ecc-review--line-at-point)
                                  (user-error "Not on a line of a hunk")))))
                   (text (string-trim text))
-                  (target (and id (ecc-review-find-note id)))
-                  (line (ecc-review--locate-note anchor)))
+                  (target (and id (ecc-review-find-note id))))
        (when (string-empty-p text)
          (user-error "Empty comment"))
        (when (eq (ecc-review-note-outdated anchor) 'replaced)
          (user-error "The review shows another proposal now"))
+       ;; Only a comment of its own needs its line: an edit changes the
+       ;; text of one that is somewhere already, whatever the reading.
        (if (and (eq kind 'edit) target)
            (ecc-review--edit-note target text)
-         (ecc-review-add-note 'user text (or line anchor)
+         (ecc-review-add-note 'user text (or (ecc-review--locate-note anchor) anchor)
                               (and (eq kind 'reply) target id)))))
    "The line has gone from the diff; the comment is kept as outdated"))
 
@@ -3274,9 +3342,9 @@ argument ALL every comment of the review is offered, wherever point is."
                 "Remove comment: "
                 (not here))))
     (ecc-review-remove-note note)
-    (ecc-review--draw-notes)
-    (message "Comment #%d removed (%d left)" (ecc-review-note-id note)
-             (length ecc-review--notes))))
+    (let ((drawn (ecc-review--draw-notes)))
+      (message "Comment #%d removed (%d left)%s" (ecc-review-note-id note)
+               (length ecc-review--notes) (ecc-review--and-drawn drawn)))))
 
 (defun ecc-review--key (key)
   "Return KEY, a KEY of `ecc-review--note-place\=', as a list of numbers.
@@ -3410,10 +3478,12 @@ Hidden, they are still counted in the header line.  They are never
 part of the prompt, shown or not."
   (interactive)
   (setq ecc-review--show-agent (not ecc-review--show-agent))
-  (ecc-review--draw-notes)
-  (message (if ecc-review--show-agent
-               "Showing Claude's comments"
-             "Hiding Claude's comments")))
+  (let ((drawn (ecc-review--draw-notes)))
+    (message "%s%s"
+             (if ecc-review--show-agent
+                 "Showing Claude's comments"
+               "Hiding Claude's comments")
+             (ecc-review--and-drawn drawn))))
 
 ;;;; The message
 
@@ -4232,22 +4302,29 @@ header is always present so that the text is a hunk for `diff-mode'."
          ;; A hunk for `diff-mode', as the docstring says: the @@ header
          ;; and the markers, not the transcript's line numbers.
          (ecc-diff-style 'unified)
+         ;; Whether the hunks are numbered against BEFORE: an Edit whose
+         ;; text is not found there is a hunk of its own two strings.
+         (in-before nil)
          (body (pcase name
                  ((or "Edit" "MultiEdit")
                   (let ((old (or (alist-get 'old_string input) ""))
                         (new (or (alist-get 'new_string input) "")))
                     (if (and before (string-search old before))
-                        (ecc-diff-for-edit old new before
-                                           ecc-review-proposal-context-lines)
+                        (progn (setq in-before t)
+                               (ecc-diff-for-edit old new before
+                                                  ecc-review-proposal-context-lines))
                       (ecc-diff-format-hunks
                        (ecc-diff-hunks (ecc-diff-lines old new)
                                        ecc-review-proposal-context-lines)))))
                  ("Write"
+                  (setq in-before (and before t))
                   (ecc-diff-for-write (or (alist-get 'content input) "") before
                                       ecc-review-proposal-context-lines))
                  (_ nil))))
     (when (and body (not (string-empty-p body)))
-      (concat (ecc-review--file-header (or path "?") (null before))
+      (concat (propertize (ecc-review--file-header (or path "?") (null before))
+                          'ecc-review-old-side
+                          (list (and in-before (list 'proposal (secure-hash 'sha1 before)))))
               (substring-no-properties body)))))
 
 (defun ecc-review-request (&optional request)
@@ -4425,8 +4502,9 @@ prompt queue so that the next message tells Claude what was applied."
         (setf (alist-get key input) edited)
         (ecc-perm-respond request 'allow :updated-input input
                           :message "edited by the user and applied")
-        (push (ecc-review-proposal-note request ecc-review-proposal--original edited)
-              (ecc-session-input-queue session))
+        (ecc-model-queue-input
+         session (ecc-review-proposal-note request ecc-review-proposal--original edited)
+         nil t)
         (message "Allowed with your changes: %s (the next message carries what you changed)"
                  (ecc-request-tool-name request))))
     (set-buffer-modified-p nil)

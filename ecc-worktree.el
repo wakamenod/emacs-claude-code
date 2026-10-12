@@ -55,7 +55,7 @@
 
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-kill "ecc" (session))
-(declare-function ecc-proc-send-prompt "ecc-proc" (session text))
+(declare-function ecc-proc-send-prompt "ecc-proc" (session text &optional draft))
 (declare-function ecc-mcp-define-tool "ecc-mcp" (&rest arguments))
 (declare-function ecc-mcp-session "ecc-mcp" ())
 (declare-function ecc-mcp-published-tools "ecc-mcp" ())

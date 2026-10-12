@@ -249,7 +249,7 @@ Return the text node."
           (ecc-review-talk-tour))
         (should (string-search "queued at position 1" said)))
       (should-not (ecc-review-talk-test--prompts one))
-      (should (equal (mapcar #'ecc-review-talk-test--opening (ecc-session-input-queue one))
+      (should (equal (mapcar #'ecc-review-talk-test--opening (ecc-model-queued-texts one))
                      (list ecc-review-talk-tour-prompt))))))
 
 (ert-deftest ecc-review-talk-test-no-tour-without-the-tools ()

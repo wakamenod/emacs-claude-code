@@ -3083,6 +3083,32 @@ Its comments are carried from the reading they were last on."
                         (should (= (ecc-review-note-line note) 9)))))
                 (ecc-review-ediff-test--quit control)))))))))
 
+(ert-deftest ecc-review-ediff-test-c-edits-a-comment-whatever-the-reading ()
+  "c in an ediff review that edits a comment of yours edits it on a stale reading too."
+  (skip-unless (executable-find "git"))
+  (ecc-review-ediff-test--with-ediff
+    (ecc-test-with-fake-session session
+      (ecc-review-ediff-test--with-directory directory
+        (let ((control nil))
+          (unwind-protect
+              (progn
+                (setq control (ecc-review-ediff-test--rich session directory))
+                (with-current-buffer control
+                  (ediff-jump-to-difference 1)
+                  (ecc-review-ediff-comment "first")
+                  (let ((kill-ring nil))
+                    (cl-letf (((symbol-function 'completing-read)
+                               (lambda (_prompt labels &rest _)
+                                 (or (seq-find (lambda (label) (string-search "#1" label)) labels)
+                                     (car labels))))
+                              ((symbol-function 'read-string)
+                               (lambda (&rest _) (ecc-review--begin-reading) "second")))
+                      (call-interactively #'ecc-review-ediff-comment))
+                    (should-not kill-ring)
+                    (should (equal (mapcar #'ecc-review-note-text ecc-review--notes)
+                                   '("second"))))))
+            (ecc-review-ediff-test--quit control)))))))
+
 (ert-deftest ecc-review-ediff-test-c-keeps-what-was-typed-when-it-fails ()
   "c in an ediff review that cannot put its comment anywhere keeps what was typed."
   (skip-unless (executable-find "git"))

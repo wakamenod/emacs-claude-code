@@ -50,6 +50,7 @@
 (declare-function ecc-perm-deny "ecc-perm" (&optional reason))
 (declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
 (declare-function ecc-question-open "ecc-perm" (request))
+(declare-function ecc-queue-show "ecc-queue" (&optional session entry))
 (declare-function ecc-plan-open "ecc-plan" (request))
 (declare-function ecc-plan-file-path "ecc-plan" (request))
 (declare-function ecc-review "ecc-review" (&optional session paths))
@@ -183,9 +184,15 @@ first, and before the node the point is in: the point is
 only on one where a link was drawn, which is narrow enough to say what
 RET does there without a rule of its own.  It is the same key that
 follows a link everywhere else in Emacs, and the same one the transcript
-already opens things with."
+already opens things with.
+
+The prompts waiting in the queue, drawn above the separator, open the
+list of the queue (`ecc-queue-show\='), on the prompt at point.  They
+come before anything else, a URL included: the text of a prompt is
+what the user wrote, and a path or a URL in it is not a link."
   (interactive)
   (let* ((session (ecc-session-at-point))
+         (queued (get-text-property (point) 'ecc-queue))
          (node (ecc-chat-node-at-point))
          (url (ecc-markdown-url-at-point))
          (path (or (ecc-chat-file-at-point) (ecc-chat-plan-file-at-point)))
@@ -196,6 +203,8 @@ already opens things with."
          (request (and node (ecc-model-node-get node 'request)))
          (pending (and request (memq request (ecc-session-pending session)))))
     (cond
+     (queued (require 'ecc-queue)
+             (ecc-queue-show session (get-text-property (point) 'ecc-queued)))
      (url (browse-url url))
      ;; A still opens in `image-mode\=', which zooms and scrolls; a video
      ;; is something Emacs cannot play, so the machine plays it.

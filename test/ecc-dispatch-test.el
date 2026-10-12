@@ -564,7 +564,7 @@ prompt must not be lost, and it must not wait for ever."
     (should (eq (ecc-session-state session) 'running))
     (should (equal 1 (ecc-proc-send-prompt session "ecc から送る")))
     ;; It is in the queue, not on the wire.
-    (should (equal '("ecc から送る") (ecc-session-input-queue session)))
+    (should (equal '("ecc から送る") (ecc-model-queued-texts session)))
     (should-not (seq-find (lambda (message) (equal (alist-get 'type message) "user"))
                           (ecc-test-sent-messages)))
     ;; The result of the remote turn closes it and lets the queue go.

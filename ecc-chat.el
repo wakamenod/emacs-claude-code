@@ -64,7 +64,6 @@
 ;; The commands bound below live in the modules above this one.
 (declare-function ecc-prompt-send "ecc-prompt" ())
 (declare-function ecc-prompt-clear "ecc-prompt" ())
-(declare-function ecc-prompt-show-queue "ecc-prompt" ())
 (declare-function ecc-prompt-toggle-context "ecc-prompt" ())
 (declare-function ecc-prompt-insert-image "ecc-prompt" (file))
 (declare-function ecc-prompt-history-previous "ecc-prompt" ())
@@ -101,6 +100,7 @@
 (declare-function ecc-review-comment-request "ecc-review" (text))
 (declare-function ecc-review-edit-proposal "ecc-review" (&optional request))
 (declare-function ecc-btw-show "ecc-btw" (&optional session))
+(declare-function ecc-queue-show "ecc-queue" (&optional session entry))
 (declare-function ecc-next-attention "ecc-answer" ())
 (declare-function ecc-dashboard "ecc-dashboard" ())
 (declare-function ecc-menu "ecc-transient" ())
@@ -222,7 +222,7 @@ the dim face.")
     ;; (confirmed 2026-09-17).  Unbound, the sequence falls through to
     ;; `keyboard-quit', which is what the finger meant.
     (define-key map (kbd "C-c C-z") #'ecc-session-interrupt)
-    (define-key map (kbd "C-c C-q") #'ecc-prompt-show-queue)
+    (define-key map (kbd "C-c C-q") #'ecc-queue-show)
     (define-key map (kbd "C-c C-x") #'ecc-prompt-toggle-context)
     (define-key map (kbd "C-c C-i") #'ecc-prompt-insert-image)
     (define-key map (kbd "C-c C-y") #'ecc-prompt-yank-image-from-clipboard)

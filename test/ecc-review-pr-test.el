@@ -955,6 +955,41 @@ In STYLE, the diff by default.  Return the walk."
                   (should (eq (ecc-review-pr-walk-unsent walk) nil))))
             (ecc-review-pr-test--kill-reviews)))))))
 
+(ert-deftest ecc-review-pr-test-a-stale-review-leaves-the-others-drawn ()
+  "C-c C-a with one review not drawable draws the others and counts again.
+The review whose text changed since its reading is skipped with a word
+in the echo area; the loop over the reviews goes on."
+  (skip-unless (executable-find "git"))
+  (ecc-review-pr-test--with-directory directory
+    (seq-let (base head) (ecc-review-pr-test--commits-repository directory)
+      (ecc-test-with-fake-session session
+        (setf (ecc-session-project-root session) directory)
+        (let ((ecc-review-style 'diff)
+              (whole nil) (first nil))
+          (unwind-protect
+              (ecc-review-pr-test--in-window
+                (ecc-review-pr-test--open-whole session directory base head)
+                (setq whole (ecc-review-pr-test--shown))
+                (with-current-buffer whole
+                  (ecc-review-pr-test--comment "全体について")
+                  (ecc-review-pr-next-commit))
+                (setq first (ecc-review-pr-test--shown))
+                (with-current-buffer whole
+                  (ecc-review--begin-reading))
+                (with-current-buffer first
+                  (ecc-review-pr-test--comment "on the first")
+                  (ecc-review-pr-send-all)
+                  (should (seq-every-p #'ecc-review-note-sent ecc-review--notes))
+                  ;; Drawn again, as sent, and counted.
+                  (should (eq (get-text-property 0 'face (overlay-get (car (ecc-review-comment-overlays))
+                                                                      'after-string))
+                              'ecc-review-sent-comment-face))
+                  (should-not (string-search "unsent" (ecc-review--header-line))))
+                (with-current-buffer whole
+                  (should (seq-every-p #'ecc-review-note-sent ecc-review--notes))
+                  (should (ecc-review-comment-overlays))))
+            (ecc-review-pr-test--kill-reviews)))))))
+
 (ert-deftest ecc-review-pr-test-unsent-count-is-kept ()
   "The header line reads a kept count, which a comment or a kill elsewhere updates."
   (skip-unless (executable-find "git"))

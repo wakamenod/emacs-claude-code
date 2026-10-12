@@ -3079,7 +3079,8 @@ region has left behind pulls the region back to that block."
                 ecc-usage-hook
                 ecc-compact-hook
                 ecc-files-updated-hook
-                ecc-tasks-updated-hook))
+                ecc-tasks-updated-hook
+                ecc-input-queue-changed-hook))
   (add-hook hook #'ecc-render--on-change))
 
 (defun ecc-render--on-turn-finished (session &optional turn)
