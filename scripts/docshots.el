@@ -936,14 +936,10 @@ one Space laid out underneath them."
   (require 'ecc-sidebar)
   (shot-foreign-session)
   ;; Wide enough for the sidebar, the source and two transcripts side by
-  ;; side.  A transcript may not go under `ecc-space-session-min-width\=',
-  ;; 80 columns, and no screen this is run on fits that twice beside the
-  ;; rest -- so the picture is taken with the width the frame can really
-  ;; give two of them.
+  ;; side.
   (let* ((area (shot-workarea))
          (columns (min 170 (/ (- (nth 2 area) 48) (frame-char-width)))))
-    (set-frame-size (selected-frame) columns 32)
-    (setq ecc-space-session-min-width 44))
+    (set-frame-size (selected-frame) columns 32))
   (shot-place-frame-bottom-right)
   ;; A tab for each project, ending on the demo one: the picture is of
   ;; its Space, with the other Space waiting in the tab bar and in the
@@ -951,26 +947,13 @@ one Space laid out underneath them."
   (ecc-space-select (ecc-space-of-root shot-other-root))
   (ecc-space-select (ecc-space-of-root shot-root))
   (ecc-sidebar-show)
-  ;; Deal the tab the way a new one is dealt: the source on the left,
-  ;; the transcripts beside it.
-  (ecc-space-reset-windows)
+  ;; The source on the left and both transcripts beside it: the layout
+  ;; in thirds.
+  (ecc-space--build (ecc-space-current) 'thirds)
   ;; The demo file is eight lines long, so the source is given a narrow
-  ;; column -- and that is also what leaves the row wide enough for the
-  ;; second transcript to divide the first rather than go windowless.
+  ;; column and the transcripts the rest.
   (when-let* ((window (get-buffer-window (get-file-buffer shot-file))))
     (ignore-errors (window-resize window (- 34 (window-width window)) t)))
-  ;; The second transcript is put beside the first with the Space's own
-  ;; helper rather than with `ecc-space-display-session\=', which goes
-  ;; through `ecc-space-select\=' -- and selecting the tab restores the
-  ;; window configuration stored in it, undoing the narrow source a line
-  ;; above and leaving the row too tight to divide (measured 2026-09-18).
-  (when-let* ((windows (ecc-space--session-windows))
-              (right (car (last windows)))
-              (other (if (eq (window-buffer right) (ecc-session-buffer shot-main))
-                         shot-other
-                       shot-main)))
-    (ecc-space--display-beside (ecc-session-buffer other) right
-                               (/ (window-total-width right) 2)))
   (dolist (session (list shot-main shot-other))
     (when-let* ((window (get-buffer-window (ecc-session-buffer session))))
       (with-selected-window window
@@ -984,7 +967,6 @@ one Space laid out underneath them."
   "Take the tabs, the sidebar and the second project away again.
 Every scene after this one photographs one frame of windows, and a tab
 bar or a sidebar left behind would be in all of them."
-  (setq ecc-space-session-min-width 80)
   (ecc-sidebar-hide)
   (tab-bar-mode -1)
   (set-frame-size (selected-frame) 112 44)
@@ -1210,8 +1192,7 @@ what the scene is about."
               '((name . shot-usecase)))
   (let* ((area (shot-workarea))
          (columns (min 150 (/ (- (nth 2 area) 48) (frame-char-width)))))
-    (set-frame-size (selected-frame) columns 34)
-    (setq ecc-space-session-min-width 44))
+    (set-frame-size (selected-frame) columns 34))
   (shot-place-frame-bottom-right)
   ;; A Space is offered under a line that begins with its number and its
   ;; name in a fixed column, so the default prefix completion finds
@@ -1222,7 +1203,7 @@ what the scene is about."
         completion-styles '(substring basic))
   (ecc-space-select (ecc-space-of-root shot-root))
   (ecc-sidebar-show)
-  (ecc-space-reset-windows)
+  (ecc-space-cycle-layout t)
   (message nil)
   (redisplay t))
 
@@ -1260,7 +1241,7 @@ under the repository it came from."
       (push session shot-worktree-sessions)
       (ecc-space-select (ecc-space-of-root root))
       (ecc-sidebar-show)
-      (ecc-space-reset-windows)
+      (ecc-space-cycle-layout t)
       (when-let* ((window (get-buffer-window (ecc-session-buffer session))))
         (with-selected-window window
           (ecc-chat--set-margins window)
@@ -1284,7 +1265,6 @@ under the repository it came from."
       (let ((kill-buffer-query-functions nil))
         (kill-buffer (ecc-session-buffer shot-usecase-session))))
     (setq shot-usecase-session nil))
-  (setq ecc-space-session-min-width 80)
   (set-frame-size (selected-frame) 112 44)
   (shot-place-frame-bottom-right)
   (shot-scene-sidebar-end))

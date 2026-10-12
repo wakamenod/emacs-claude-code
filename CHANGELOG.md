@@ -89,8 +89,8 @@ Verified against **Claude Code CLI 2.1.290**.
   so search and copy find it, and `I` on a diagram shows the source in its
   place and back (on anything else `I` still stops or starts a GIF). The
   diagrams are PNG drawn at twice the size and shown at half, `-t dark` in a
-  dark frame, with a transparent background, fitted to the window like any
-  inline image. They are made one at a time, each killed after
+  dark frame, with a transparent background, fitted to the width of the window
+  and held to `ecc-image-max-height` like any inline image. They are made one at a time, each killed after
   `ecc-mermaid-timeout` (20 seconds), and kept under `ecc-mermaid-directory`
   (`ecc-mermaid` in `temporary-file-directory`), keyed by a hash of the source
   and the arguments, so a diagram is made once and a restored session shows it
@@ -137,6 +137,45 @@ Verified against **Claude Code CLI 2.1.290**.
 - `ecc-perm-ensure-waiting` is now `ecc-perm--ensure-waiting`, the internal
   function it always was; the old name is an obsolete alias.
 
+- **Breaking.** `C-c c V` (`V` in the menu) is `ecc-space-cycle-layout`, and
+  cycles the layouts of a Space. Pressed right after itself it goes on to the
+  next of six: source + session (the source and one session to its right, the
+  column `ecc-window-width` of the frame wide, as before), two sessions side by
+  side without the source, source + two sessions in thirds, two sessions over
+  the source (three fifths and two), source + two sessions stacked in the
+  column of the first, and a 2x2 grid of four sessions -- with three, the
+  source takes the fourth cell. A layout the Space has too few sessions for, or
+  that the frame has no room for, is passed over; when none is left the echo
+  area says so and the windows stay as they were. Pressed after anything else,
+  `C-c c V` builds the layout the tab last chose, which it keeps per tab like
+  the zoom; `C-u C-c c V` goes back to the first. Under `repeat-mode`,
+  `C-c c V V V` cycles, through `ecc-space-layout-repeat-map`. The echo area
+  names each layout. `ecc-space-reset-windows` remains as an obsolete alias.
+
+  A layout is built from nothing every time: every window of the tab but the
+  side windows is deleted and the rest divided with `split-window`, so the same
+  frame and the same sessions give the same windows whatever the tab looked
+  like before. The first place goes to the session in the selected window, the
+  rest to the sessions by use, most recently selected first, so cycling keeps
+  every session in its place; the sessions without a place keep running with no
+  window. The sidebar is left alone: it keeps its width, and one that was
+  hidden stays hidden, where `C-c c V` used to bring it back. Point stays in
+  the buffer it was in, or goes to the first session when that buffer is no
+  longer on the screen. A tab laid out without the source -- two sessions, or
+  the grid -- is not given one back by going to the Space.
+
+  Until now the sessions stood in a row, put there one split at a time: the
+  first beside the source, each next one halving the rightmost when it had
+  twice `ecc-space-session-min-width` columns, after taking them from the other
+  transcripts. Where it ended depended on the windows it started from, and in
+  a frame under 300 columns the second session never fitted.
+
+- A session shown in a Space that already has a session window -- started, or
+  picked in the sidebar -- no longer divides anything: it takes the window of
+  the session used longest ago, by when its buffer was last selected rather
+  than when it was started. With no session window it still opens to the right
+  of the source, `ecc-window-width` of the frame wide.
+
 ### Fixed
 
 - What a session cost was counted many times over, and every turn's cost line
@@ -149,14 +188,22 @@ Verified against **Claude Code CLI 2.1.290**.
   before it. A turn now costs what its result adds to the total of the result
   before it, and the session's total -- the dashboard's Cost column and its
   sum, and `%c` in `ecc-mode-line-format` -- is what the CLI says the
-  conversation cost. A resumed or forked CLI carries on from the total its recording ended
-  with, so its first result is counted from the recording's last
-  `cost-state` line; when there is no recording to read, that first turn's
-  cost is left unknown rather than guessed. The Markdown export closes a turn
-  with its own cost too. A recording read back is given its whole total, read
-  from the last `cost-state` line wherever it lies, and not only from the
-  last 64 KiB, where a long-lived CLI does not write it. Introduced in 0.1.0;
+  conversation cost. A resumed or forked CLI carries on from the total its
+  recording ended with, so its first result is counted from the recording's
+  last `cost-state` line; when there is no recording to read, that first
+  turn's cost is left unknown rather than guessed. The Markdown export closes
+  a turn with its own cost too. A recording read back is given its whole
+  total, read from the last `cost-state` line wherever it lies, and not only
+  from the last 64 KiB, where a long-lived CLI does not write it. Introduced in 0.1.0;
   every release up to 0.4.1 showed the wrong cost.
+- `ecc-space-zoom` (`C-c c z`) deleted the sidebar the second time a tab was
+  zoomed. The way back was saved as a window state, which keeps only the
+  window parameters in `window-persistent-parameters`. The sidebar came back
+  without `no-delete-other-windows`, and the next zoom deleted it along with
+  the other windows. The way back is now a window configuration, which
+  restores the windows with their parameters, keeps point where it was moved
+  while zoomed, and still works after you leave the tab and come back.
+  Introduced in 0.3.0.
 - A turn waiting on a permission, a question or a plan, or one compacting its
   context, was not interrupted before its CLI was stopped for a hand-off to the
   terminal or a `/resume`: only a session whose state said `running` was taken
@@ -302,6 +349,14 @@ Verified against **Claude Code CLI 2.1.290**.
   to be sent across an Emacs restart. Until the CLI has answered, a title it
   sends that is not the new name is not applied. A `/rename` typed in the
   prompt region is drawn as before.
+
+### Removed
+
+- **Breaking.** `ecc-space-session-min-width`. How many sessions a Space shows
+  is the layout's to say now, and the variable is obsolete; setting it does
+  nothing. A question, a plan or a log that has to divide a transcript still
+  goes to its right only when each half gets 80 columns, the default this
+  setting had, and below it otherwise.
 
 ## [0.4.1] - 2026-10-12
 
