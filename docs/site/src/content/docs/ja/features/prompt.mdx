@@ -21,7 +21,7 @@ import Video from '../../../../components/Video.astro';
 | `C-c C-r` | 過去のプロンプトを選んでポイントに挿入 |
 | `C-c C-s` | CLI が提案したプロンプトを採用 |
 | `C-c C-z` | 実行中のターンを中断 |
-| `C-c C-q` | キューに入ったプロンプトを表示 |
+| `C-c C-q` | キューに入ったプロンプトを一覧表示 |
 | `C-c C-a` / `C-c C-d` | リクエストを[許可 / 拒否](/emacs-claude-code/ja/features/permissions/) |
 | `C-c C-x` | [エディタのコンテキスト](/emacs-claude-code/ja/features/send/#エディタのコンテキスト)のオン・オフ |
 | `C-c C-i` | 画像を挿入 |
@@ -33,7 +33,7 @@ import Video from '../../../../components/Video.astro';
 | `S-TAB` | [権限モード](/emacs-claude-code/ja/features/permissions/#権限モード)を切り替え |
 | `C-c ?` | [メニュー](/emacs-claude-code/ja/reference/menu/)を開く |
 
-プロンプトの履歴はすべてのセッションで共有されます。`M-p` はプロンプト全体を置き換え、`C-c C-r` は選んだプロンプトをポイントに挿入します。Claude が動いている間に送ったプロンプトは、Remote Control で始まったターンと同じくキューで待ちます。フッターには権限モードとモデルが表示されます。
+プロンプトの履歴はすべてのセッションで共有されます。`M-p` はプロンプト全体を置き換え、`C-c C-r` は選んだプロンプトをポイントに挿入します。Claude が動いている間に送ったプロンプトは、Remote Control で始まったターンと同じくキューで待ちます。待っているプロンプトは区切り線の上に表示されます。`C-c C-q` か、その行での `RET` やクリックで一覧が開きます。一覧では、`RET` でプロンプトをプロンプト領域に戻して書き直せます。`d` で削除し、`M-<up>` / `M-<down>` で順番を入れ替えます。フッターには権限モードとモデルが表示されます。
 
 ### 提案
 
