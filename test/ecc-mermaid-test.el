@@ -343,6 +343,41 @@ asked for anything."
         (with-current-buffer buffer
           (should (get-text-property (ecc-mermaid-test--block-start) 'help-echo)))))))
 
+(ert-deftest ecc-mermaid-test-a-failure-before-mmdc-starts ()
+  "A source that cannot be written fails its block, and the queue goes on."
+  (ecc-mermaid-test--with 'ok
+    (ecc-test-with-fake-session session
+      (let ((buffer (ecc-session-ensure-buffer session))
+            (writes 0))
+        (cl-letf* ((write (symbol-function 'write-region))
+                   ((symbol-function 'write-region)
+                    (lambda (&rest args)
+                      (if (= (cl-incf writes) 1)
+                          (signal 'file-error '("Opening output file" "Disk full"))
+                        (apply write args)))))
+          (ecc-model-begin-turn session "draw")
+          (ecc-mermaid-test--add-reply session (ecc-mermaid-test--reply))
+          (ecc-mermaid-test--add-reply
+           session (ecc-mermaid-test--reply "graph LR\n  X --> Y"))
+          (should (ecc-mermaid-test--wait
+                   (lambda () (and (ecc-mermaid-test--idle)
+                                   (= (length (ecc-mermaid-test--runs dir)) 1))))))
+        (with-current-buffer buffer
+          (let ((start (ecc-mermaid-test--block-start)))
+            (should (string-prefix-p "mermaid: could not start"
+                                     (get-text-property start 'help-echo)))
+            (should (string-search "Disk full" (get-text-property start 'help-echo)))
+            (should-not (ecc-mermaid-test--picture)))
+          ;; The second diagram was drawn all the same.
+          (goto-char (point-min))
+          (search-forward "graph LR")
+          (should (eq (car-safe (get-text-property (match-beginning 0) 'display))
+                      'image)))
+        (should (string-search "Disk full"
+                               (ecc-test-log-string
+                                (get-buffer (ecc-log-buffer-name "test")))))
+        (should (null (directory-files ecc-mermaid-directory nil "\\.mmd\\'")))))))
+
 (ert-deftest ecc-mermaid-test-off-draws-nothing ()
   "No command, a command not found, or images off: the block stays code."
   (dolist (setup (list (lambda () (setq ecc-mermaid-command nil))

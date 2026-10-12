@@ -364,8 +364,11 @@ node_modules (2026-10-12)."
 
 (defun ecc-mermaid--start (hash source arguments log-name)
   "Start drawing SOURCE with ARGUMENTS into the picture of HASH.
-LOG-NAME is the session a failure is logged under."
-  (make-directory ecc-mermaid-directory t)
+LOG-NAME is the session a failure is logged under.  Whatever stops the
+job before mmdc runs -- a directory that cannot be made, a source that
+cannot be written, a program that cannot be started -- is a failure of
+HASH like any other: this is called from a timer, and an error let out
+of it would leave HASH running for good and the queue waiting."
   (let* ((input (expand-file-name (concat hash ".mmd") ecc-mermaid-directory))
          ;; A PNG and not an SVG: Mermaid's SVG puts every label in a
          ;; <foreignObject> of HTML, and librsvg, which draws an SVG in
@@ -375,35 +378,47 @@ LOG-NAME is the session a failure is logged under."
          ;; too; it is renamed once whole, so that a picture half
          ;; written is never taken for one.
          (output (expand-file-name (concat hash "-part.png") ecc-mermaid-directory))
-         (buffer (generate-new-buffer " *ecc-mermaid*" t)))
-    (let ((coding-system-for-write 'utf-8-unix))
-      (write-region source nil input nil 'silent))
+         (buffer nil))
     (puthash hash 'running ecc-mermaid--state)
     (condition-case err
-        (let ((process
-               (make-process
-                :name "ecc-mermaid"
-                :buffer buffer
-                :noquery t
-                :connection-type 'pipe
-                :command (append (list (ecc-mermaid-program) "-q" "-i" input "-o" output)
-                                 arguments))))
-          (process-put process 'ecc-mermaid-timer
-                       (run-at-time ecc-mermaid-timeout nil
-                                    #'ecc-mermaid--timed-out process))
-          (set-process-sentinel
-           process
-           (lambda (process _event)
-             (unless (process-live-p process)
-               (ecc-mermaid--finished process hash input output log-name))))
-          (setq ecc-mermaid--process process))
+        (progn
+          (make-directory ecc-mermaid-directory t)
+          (let ((coding-system-for-write 'utf-8-unix))
+            (write-region source nil input nil 'silent))
+          (setq buffer (generate-new-buffer " *ecc-mermaid*" t))
+          (let ((process
+                 (make-process
+                  :name "ecc-mermaid"
+                  :buffer buffer
+                  :noquery t
+                  :connection-type 'pipe
+                  :command (append (list (ecc-mermaid-program) "-q" "-i" input "-o" output)
+                                   arguments))))
+            (process-put process 'ecc-mermaid-timer
+                         (run-at-time ecc-mermaid-timeout nil
+                                      #'ecc-mermaid--timed-out process))
+            (set-process-sentinel
+             process
+             (lambda (process _event)
+               (unless (process-live-p process)
+                 (ecc-mermaid--finished process hash input output log-name))))
+            (setq ecc-mermaid--process process)))
       (error
-       (kill-buffer buffer)
-       (delete-file input)
+       (when (buffer-live-p buffer) (kill-buffer buffer))
+       (ecc-mermaid--delete input log-name)
        (ecc-mermaid--fail hash (format "could not start %s: %s"
                                        ecc-mermaid-command
                                        (error-message-string err))
                           log-name)))))
+
+(defun ecc-mermaid--delete (file log-name)
+  "Delete FILE when it is there; say in the log of LOG-NAME when it cannot be."
+  (when (file-exists-p file)
+    (condition-case err
+        (delete-file file)
+      (file-error
+       (ecc-log log-name "mermaid: could not delete %s: %s"
+                file (error-message-string err))))))
 
 (defun ecc-mermaid--timed-out (process)
   "Kill PROCESS, which has taken longer than `ecc-mermaid-timeout'."
