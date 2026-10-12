@@ -595,22 +595,22 @@ screen says where the session can be reached (confirmed 2026-09-08)."
 
 (ert-deftest ecc-render-test-a-list-item-wraps-under-itself ()
   "A line that opens a list item wraps under the item, not its bullet.
-What is measured is the bullet as it is drawn: `ecc-markdown-fontify'
-puts a one-column bullet over the marker, so a numbered marker is
-narrower on the screen than it is in the text."
+What is measured is the marker as it is drawn: `ecc-markdown-fontify'
+puts a one-column bullet over \"-\", and a number is drawn as itself."
   (with-temp-buffer
     (ecc-render--insert-lines
-     (ecc-markdown-fontify "- ひとつめ\n1. ふたつめ\nふつうの段落\n")
+     (ecc-markdown-fontify
+      "- ひとつめ\n1. ふたつめ\n  10) みっつめ\nふつうの段落\n")
      "  " 'ecc-assistant-face)
     (goto-char (point-min))
     (let ((wraps nil))
       (while (not (eobp))
         (push (get-text-property (line-beginning-position) 'wrap-prefix) wraps)
         (forward-line 1))
-      ;; "  " + "- " for the first, "  " + the bullet drawn over "1." and
-      ;; the blank after it for the second, and the bare indentation for
-      ;; the paragraph, which opens no item.
-      (should (equal '("    " "    " "  ") (nreverse wraps))))))
+      ;; "  " + the bullet and its blank for the first, "  " + "1. " for
+      ;; the second, "  " + its own indentation + "10) " for the third,
+      ;; and the bare indentation for the paragraph, which opens no item.
+      (should (equal '("    " "     " "        " "  ") (nreverse wraps))))))
 
 (ert-deftest ecc-render-test-tool-use ()
   "A lone tool draws as a tool line and the permission that allowed it."

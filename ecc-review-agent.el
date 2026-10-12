@@ -140,6 +140,12 @@ work on that."
 A sentence the model can act on: an error that only says no is one it
 works around.")
 
+(defvar ecc-review-agent-undrawn-text
+  "The review changed since it was last read, so it is not drawn again \
+until it is read again (review_open, or g in Emacs); what you asked for is done."
+  "What a review tool adds when it did its work but could not draw the comments.
+The review's text changed since its reading (`ecc-review--draw-notes').")
+
 (defvar ecc-review-agent-in-place-text
   "The user has this review open side by side in ediff, which takes their \
 whole screen, so review_open read it again where it is rather than opening \
@@ -504,12 +510,36 @@ sent to the model, so a variable and not a setting.")
               (ecc-review--count (length ecc-review--hidden) "file"))
     ""))
 
+(defun ecc-review-agent--comments-by-hunk ()
+  "Return a function giving the number of comments on a hunk of this review.
+The comments are counted once, by the hunk each is on in the reading
+\(`ecc-review--hunk-place'), which tells two hunks with one header
+apart; an outdated one is on none.  A hunk is looked up in the reading
+only when a comment is on its file under its header.  A review whose
+text changed since its reading has nothing to count by, and every hunk
+has none."
+  (let ((counts (make-hash-table :test #'equal))
+        (headers (make-hash-table :test #'equal)))
+    (when (and ecc-review--reading (ecc-review--reading-current-p))
+      (dolist (note ecc-review--notes)
+        (when-let* ((line (ecc-review--locate-note note)))
+          (let ((place (ecc-review--hunk-place line)))
+            (puthash place (1+ (gethash place counts 0)) counts)
+            (puthash (cons (car place) (cadr place)) t headers)))))
+    (lambda (hunk)
+      (if (gethash (cons (plist-get hunk :path) (plist-get hunk :header)) headers)
+          (gethash (ecc-review--hunk-place
+                    (ecc-review--canonical (car (ecc-review--unit-lines hunk))))
+                   counts 0)
+        0))))
+
 (defun ecc-review-agent--summary (&optional file include-patch what)
   "Return the files and hunks of this review, of FILE alone when given.
 INCLUDE-PATCH adds the text of each hunk.  WHAT is
 `ecc-review-agent--what', when the caller has it already."
   (let* ((paths (if file (list (ecc-review-agent--path file)) (ecc-review-agent--paths)))
-         (hunks (ecc-review-units)))
+         (hunks (ecc-review-units))
+         (comments-on (ecc-review-agent--comments-by-hunk)))
     (concat
      (format "Review of %s: %s, %s; comments: %s.\n"
              (or what (ecc-review-agent--what))
@@ -527,12 +557,7 @@ INCLUDE-PATCH adds the text of each hunk.  WHAT is
            (mapconcat
             (lambda (hunk)
               (cl-incf number)
-              (let ((comments (seq-count
-                               (lambda (note)
-                                 (and (not (ecc-review-note-outdated note))
-                                      (equal (ecc-review-note-hunk-key note)
-                                             (ecc-review--hunk-key hunk))))
-                               ecc-review--notes)))
+              (let ((comments (funcall comments-on hunk)))
                 (concat
                  (format "  hunk %d  %s%s\n"
                          number (ecc-review-unit-description hunk)
@@ -816,10 +841,11 @@ A reply is listed under what it answers."
                                            ecc-review--notes ", ")
                               "none")))))
       (ecc-review-remove-note note)
-      (ecc-review--draw-notes)
-      (format "Removed #%d, %s comment at %s." id
-              (if (ecc-review--agent-p note) "your" "the user's")
-              (ecc-review-note-where note)))))
+      (let ((drawn (ecc-review--draw-notes)))
+        (format "Removed #%d, %s comment at %s.%s" id
+                (if (ecc-review--agent-p note) "your" "the user's")
+                (ecc-review-note-where note)
+                (if drawn "" (concat "  " ecc-review-agent-undrawn-text)))))))
 
 (defun ecc-review-agent-clear-comments (file include-user-comments)
   "Remove Claude\\='s comments, of FILE alone when given.
@@ -835,8 +861,8 @@ INCLUDE-USER-COMMENTS, a JSON boolean, removes the user\\='s as well."
            (gone (seq-filter (lambda (note) (or all (ecc-review--agent-p note))) in-file))
            (kept (- (length in-file) (length gone))))
       (mapc #'ecc-review-remove-note gone)
-      (ecc-review--draw-notes)
-      (format "Removed %s.%s" (ecc-review--count (length gone) "comment")
+      (format "Removed %s.%s%s" (ecc-review--count (length gone) "comment")
+              (if (ecc-review--draw-notes) "" (concat "  " ecc-review-agent-undrawn-text))
               (if (> kept 0)
                   (format "  The user's %d were kept; include_user_comments removes them too."
                           kept)
