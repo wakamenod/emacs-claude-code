@@ -53,6 +53,7 @@ ecc uses these packages when they are installed and works without them:
 - [posframe](https://github.com/tumashu/posframe) — Floating popups for `/btw` side-queries and usage reports.
 - [nerd-icons](https://github.com/rainstormstudio/nerd-icons.el) — Icons for tool calls in the transcript.
 - [markdown-mode](https://github.com/jrblevin/markdown-mode) — Major mode for plan and review buffers.
+- [mermaid-cli](https://github.com/mermaid-js/mermaid-cli) — Draws ```` ```mermaid ```` blocks in replies as diagrams. Install it with `npm install -g --allow-scripts=puppeteer @mermaid-js/mermaid-cli`. Without `--allow-scripts`, npm 11 may skip the step that downloads the browser `mmdc` draws with. `(setq ecc-mermaid-command nil)` turns the diagrams off.
 
 ## Installation
 

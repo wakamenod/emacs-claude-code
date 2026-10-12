@@ -54,6 +54,7 @@ face は挿入時に付き、`M-x customize` でカスタマイズできます�
 - [posframe](https://github.com/tumashu/posframe) — `/btw` や利用状況のポップアップ表示
 - [nerd-icons](https://github.com/rainstormstudio/nerd-icons.el) — ツールアイコンの表示
 - [markdown-mode](https://github.com/jrblevin/markdown-mode) — プランバッファおよびレビューバッファのメジャーモード
+- [mermaid-cli](https://github.com/mermaid-js/mermaid-cli) — 返答中の ```` ```mermaid ```` ブロックを図として表示。`npm install -g --allow-scripts=puppeteer @mermaid-js/mermaid-cli` でインストールします。`--allow-scripts` を付けないと、npm 11 は `mmdc` の描画に使うブラウザをダウンロードしないことがあります。`(setq ecc-mermaid-command nil)` で図の表示をオフにします。
 
 ## インストール
 
