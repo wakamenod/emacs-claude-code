@@ -125,7 +125,12 @@ transcript does: the lines carry no keymap of their own."
         (should (get-text-property (point) 'ecc-queue))
         (should (eq (key-binding (kbd "RET")) #'ecc-session-visit))
         (should (eq (key-binding [mouse-2]) #'ecc-chat-follow-link))
-        (should (mouse-on-link-p (point)))
+        ;; What `mouse-on-link-p' asks, asked directly: up to Emacs 30
+        ;; it hands a buffer position to `posn-area', which signals
+        ;; (wrong-type-argument listp POS) (29.1 to 30.1 in CI,
+        ;; 2026-10-12; 32 checks for a cons first).
+        (should (eq (key-binding [follow-link]) 'mouse-face))
+        (should (get-char-property (point) 'mouse-face))
         (call-interactively (key-binding (kbd "RET"))))
       (should (get-buffer-window (ecc-queue-buffer session)))
       (with-current-buffer (ecc-queue-buffer session)
