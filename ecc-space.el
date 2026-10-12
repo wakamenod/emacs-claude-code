@@ -1078,13 +1078,20 @@ highlighting is the UI\='s own (both read 2026-10-12, in Emacs
 32.0.50\='s minibuffer.el and vertico 20260913).  marginalia stands in
 its own affixation only for a category it has an annotator for, and
 this table has no category."
-  (let ((affixes (ecc-space--affixes candidates spaces)))
+  ;; Both functions are called for every line on every redisplay, so a
+  ;; line is found in a table rather than by walking the lists.  `equal'
+  ;; ignores text properties, and so does its hash: a candidate the UI
+  ;; has put its match faces on is found all the same.
+  (let ((lines (make-hash-table :test #'equal)))
+    (cl-mapc (lambda (entry affix)
+               (puthash (car entry) (cons (cdr entry) (cdr affix)) lines))
+             candidates (ecc-space--affixes candidates spaces))
     (lambda (string predicate action)
       (if (eq action 'metadata)
           `(metadata
             (group-function
              . ,(lambda (candidate transform)
-                  (let ((space (cdr (assoc candidate candidates))))
+                  (let ((space (car (gethash candidate lines))))
                     (cond (transform candidate)
                           ((and space (ecc-space-past space)) "Past")
                           (t "Open")))))
@@ -1094,7 +1101,7 @@ this table has no category."
                   ;; carries the faces of what matched.
                   (mapcar (lambda (string)
                             (cons string
-                                  (or (cdr (assoc string affixes))
+                                  (or (cdr (gethash string lines))
                                       (list "" ""))))
                           strings)))
             (display-sort-function . identity)
