@@ -168,11 +168,16 @@ buffer."
 A question or a plan that is still waiting opens the buffer it is
 answered in.
 
-A line of a diff, the heading of a call that names a file and a path
-the model wrote open that file, at the line when there is one
-\(`ecc-visit-target-at-point\='); the node laid open is
-\[ecc-session-show-detail].  A video or a sound among them plays
-in the machine's own player instead (`ecc-visit-open\=').
+A line of a diff and the heading of a call that names a file open that
+file, at the line when there is one (`ecc-visit-target-at-point\='); the
+node laid open is \[ecc-session-show-detail].  A path the model wrote
+opens the file it names wherever it is found -- a bare name or a path
+written against another directory is looked for among the files of the
+session and of the project, then among the files Emacs visits outside
+it, and on the machine after asking (`ecc-visit-find-written\=').  The
+file picked among several opens at once the next time; with a prefix
+argument the search is made again.  A video or a sound among them
+plays in the machine's own player instead (`ecc-visit-open\=').
 
 A picture drawn in the transcript opens as itself.  A URL comes
 first, and before the node the point is in: the point is
@@ -192,7 +197,9 @@ what the user wrote, and a path or a URL in it is not a link."
          (url (ecc-markdown-url-at-point))
          (path (or (ecc-chat-file-at-point) (ecc-chat-plan-file-at-point)))
          (picture (ecc-image-at-point))
-         (target (and (not url) (not picture) (ecc-visit-target-at-point)))
+         (written (and (not url) (not picture) (ecc-markdown-file-at-point)))
+         (target (and (not url) (not picture) (not written)
+                      (ecc-visit-target-at-point)))
          (request (and node (ecc-model-node-get node 'request)))
          (pending (and request (memq request (ecc-session-pending session)))))
     (cond
@@ -204,6 +211,7 @@ what the user wrote, and a path or a URL in it is not a link."
      (picture (if (ecc-image-plays-outside-p picture)
                   (ecc-image-open-externally picture)
                 (find-file-other-window picture)))
+     (written (ecc-visit-open-written session written current-prefix-arg))
      (target (ecc-visit-open (car target) (cdr target) session))
      (path (ecc-visit-open path nil session))
      ((null node) (user-error "Nothing to show here"))
