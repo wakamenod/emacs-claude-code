@@ -340,13 +340,15 @@ tab in front of you."
      (current (list state 'ecc-tab-current-face))
      (t (list state)))))
 
-(defun ecc-tab-picker-mark (state)
-  "Return the mark of STATE with its face, to open a line of a picker.
-What the session picker and the Space picker put in front of a name.
-Idle gets `·\=' so that the names line up, and a STATE of nil -- a Space
-with nothing running, or one only recordings are left of -- a blank of
-the same width.  The mark is the one of the moment of asking: a picker
-does not blink.  Only the mark takes a face."
+(defun ecc-tab-column-mark (state)
+  "Return the mark of STATE with its face, where a mark opens a line.
+What the sidebar, the session picker and the Space picker put in front
+of a name.  Idle gets `·\=' -- the tab line leaves it blank -- so that
+an idle name does not stand a column to the left of every other, and a
+STATE of nil -- a Space with nothing running, or one only recordings
+are left of -- a blank of the same width.  The face is the mark\='s of
+the moment of asking, not blinking; the sidebar lays the face of its
+whole row over it."
   (let ((ecc-tab--blink-phase nil))
     (if state
         (propertize (ecc-tab-mark-of-state state t)

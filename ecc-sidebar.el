@@ -168,12 +168,6 @@ than trailing the spaces that would have led to it."
               (make-string (max 1 (- room (string-width left))) ?\s)
               right))))
 
-(defun ecc-sidebar--mark (state)
-  "Return the mark that stands for STATE in the sidebar.
-Idle takes a mark of its own -- the tab line leaves it blank -- because
-the mark opens the row here.  A row with no state at all is left blank."
-  (if state (ecc-tab-mark-of-state state t) " "))
-
 ;;;; The Spaces
 
 (defvar ecc-sidebar--toggle-map
@@ -181,11 +175,6 @@ the mark opens the row here.  A row with no state at all is left blank."
     (define-key map (kbd "<mouse-1>") #'ecc-sidebar-mouse-toggle-children)
     map)
   "Keymap of the fold arrow at the right end of a repository's row.")
-
-(defun ecc-sidebar--number-width (spaces)
-  "Return the room the bracketed number takes for any of SPACES.
-The widest wins, so that the names line up once the tenth Space opens."
-  (length (format "[%d]" (max 1 (length spaces)))))
 
 (defun ecc-sidebar--space-state (space spaces)
   "Return the state SPACE is drawn with, among every Space in SPACES.
@@ -216,10 +205,9 @@ is what the sidebar draws, which is what the tree lines follow."
          (state (ecc-sidebar--space-state space spaces))
          (number (ecc-space-number space spaces))
          (left (concat (ecc-space-tree-line space visible)
-                       (ecc-sidebar--mark state)
+                       (ecc-tab-column-mark state)
                        " "
-                       (string-pad (if number (format "[%d]" number) "")
-                                   (ecc-sidebar--number-width spaces))
+                       (ecc-space-number-label number spaces)
                        " "
                        (ecc-space-name space)))
          (toggle (ecc-sidebar--toggle-mark space spaces))
@@ -317,7 +305,7 @@ answer while its state still says that it runs."
                      (ecc-visual-spinner-string 'ecc-running-face)))
          (mark (if (and frame (not (string-empty-p frame)))
                    frame
-                 (ecc-sidebar--mark state)))
+                 (ecc-tab-column-mark state)))
          (left (concat mark " " (ecc--truncate (ecc-session-name session) 18))))
     (ecc-sidebar--insert
      (propertize (ecc-sidebar--fill left (ecc-sidebar--state-word session))

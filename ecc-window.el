@@ -57,7 +57,7 @@
 (declare-function ecc-space-parent "ecc-space" (space))
 ;; `ecc-notify' is above this file as well, and requires it.
 (declare-function ecc-tab-state "ecc-notify" (session))
-(declare-function ecc-tab-picker-mark "ecc-notify" (state))
+(declare-function ecc-tab-column-mark "ecc-notify" (state))
 
 (defvar ecc-window-use-side-window t
   "Non-nil shows a transcript in a side window rather than an ordinary one.
@@ -1053,7 +1053,7 @@ candidate before it hands it to the `group-function\=' (confirmed
 mark is the one its tab and its sidebar row carry, at the moment of
 asking: no blinking.  Only the mark takes a face of its own."
   (require 'ecc-notify)
-  (concat (ecc-tab-picker-mark (ecc-tab-state session)) " " name))
+  (concat (ecc-tab-column-mark (ecc-tab-state session)) " " name))
 
 (defun ecc-window--session-table (candidates)
   "Return a completion table of CANDIDATES, grouped by Space and kept in order.

@@ -1257,6 +1257,124 @@ its own."
                       'completions-common-part))
           (should-not (get-text-property 12 'face line)))))))
 
+(ert-deftest ecc-space-test-picker-a-past-worktree-hangs-from-nothing ()
+  "A past worktree of an open repository gets blanks and no tree line.
+Drawn the way an open one is, it hung `├─' under `Past' with nothing
+above it -- which is what closing the last session of a worktree leaves.
+Nothing on the screen is worked out for it: no state, no number, no
+tree line, no tab."
+  (let* ((parent (make-temp-file "ecc-space-picker" t))
+         (gone (file-name-as-directory (expand-file-name "feat-z" parent)))
+         (asked nil))
+    (make-directory gone)
+    (unwind-protect
+        (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                         ("feat-x" . ,ecc-space-test--work))
+          (cl-letf* ((main (symbol-function 'ecc-worktree-main))
+                     (branch (symbol-function 'ecc-worktree-branch))
+                     ((symbol-function 'ecc-worktree-main)
+                      (lambda (root)
+                        (if (equal root gone) ecc-space-test--one
+                          (funcall main root))))
+                     ((symbol-function 'ecc-worktree-branch)
+                      (lambda (root)
+                        (if (equal root gone) "feat-z" (funcall branch root))))
+                     ((symbol-function 'ecc-history-project-roots)
+                      (lambda () (list (directory-file-name gone)))))
+            (let* ((ecc-use-spaces t)
+                   (spaces (ecc-space-list))
+                   (past (ecc-space-past-projects))
+                   (candidates (ecc-space--candidates spaces past))
+                   (table nil))
+              (should (equal (mapcar #'car candidates)
+                             '("project-one" "project-one › feat-x"
+                               "project-one › feat-z")))
+              (dolist (name '(ecc-space-state ecc-space-number
+                              ecc-space-tree-line ecc-space-tab))
+                (advice-add name :before
+                            (lambda (space &rest _)
+                              (when (and (ecc-space-p space)
+                                         (ecc-space-past space))
+                                (push name asked)))
+                            '((name . ecc-space-test--watch))))
+              (unwind-protect
+                  (setq table (ecc-space--table candidates spaces))
+                (dolist (name '(ecc-space-state ecc-space-number
+                                ecc-space-tree-line ecc-space-tab))
+                  (advice-remove name 'ecc-space-test--watch)))
+              (should-not asked)
+              (let ((lines (ecc-space-test--affixes
+                            table (mapcar #'car candidates))))
+                (should (equal (mapcar #'cadr lines)
+                               '("▶ [1] " "▶ [2]   └─ " "      "))))
+              (should (equal (funcall (ecc-space-test--group-function table)
+                                      "project-one › feat-z" nil)
+                             "Past")))))
+      (delete-directory parent t))))
+
+(ert-deftest ecc-space-test-close-does-not-offer-the-past ()
+  "`ecc-space-close' asks among the open Spaces alone.
+A past project has no session to stop and no tab to close: picking it
+said \"Closed\" over nothing, and offered to remove a past worktree."
+  (let ((past (file-name-as-directory (make-temp-file "ecc-space-past" t))))
+    (unwind-protect
+        (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                         ("two" . ,ecc-space-test--two))
+          (cl-letf (((symbol-function 'ecc-history-project-roots)
+                     (lambda () (list (directory-file-name past))))
+                    ((symbol-function 'ecc-space-current) #'ignore))
+            (let ((ecc-use-spaces t)
+                  (offered nil))
+              (cl-letf (((symbol-function 'completing-read)
+                         (lambda (_prompt collection &rest _)
+                           (throw 'ecc-space-test--asked
+                                  (all-completions "" collection)))))
+                (setq offered (catch 'ecc-space-test--asked
+                                (call-interactively #'ecc-space-close)))
+                (should (equal offered '("project-two" "project-one")))
+                ;; `ecc-space-goto' still offers it.
+                (should (= 3 (length (catch 'ecc-space-test--asked
+                                       (ecc-space-read))))))
+              ;; And with nothing open there is nothing to ask about.
+              (cl-letf (((symbol-function 'ecc-space-list) #'ignore))
+                (should-error (ecc-space-read nil t) :type 'user-error)))))
+      (delete-directory past t))))
+
+(ert-deftest ecc-space-test-a-worktree-is-titled-after-its-repository-title ()
+  "A worktree takes what its repository goes by, tab name and all.
+Two repositories both called `app' have tabs `app' and `app<2>'; typing
+`app<2>' has to find the second one's worktrees as well as itself."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("feat-x" . ,ecc-space-test--work))
+    (cl-letf (((symbol-function 'ecc-space-tab)
+               (lambda (space)
+                 (cond ((equal (ecc-space-key space) ecc-space-test--one)
+                        "app<2>")
+                       ((equal (ecc-space-key space) ecc-space-test--work)
+                        "feat-x<2>")))))
+      (should (equal (ecc-space-title (ecc-space-of-root ecc-space-test--work))
+                     "app<2> › feat-x"))
+      (let* ((spaces (ecc-space-list))
+             (table (ecc-space--table (ecc-space--candidates spaces nil)
+                                      spaces)))
+        (should (equal (all-completions "app<2>" table)
+                       '("app<2>" "app<2> › feat-x")))))))
+
+(ert-deftest ecc-space-test-the-number-and-the-mark-of-a-column ()
+  "The sidebar and the pickers pad the number and blank the mark alike."
+  (should (equal (ecc-space-number-label 3 '(a b c)) "[3]"))
+  (should (equal (ecc-space-number-label 3 (make-list 10 'a)) "[3] "))
+  (should (equal (ecc-space-number-label nil (make-list 10 'a)) "    "))
+  (should (equal (ecc-tab-column-mark nil) " "))
+  (should-not (get-text-property 0 'face (ecc-tab-column-mark nil)))
+  (should (equal (ecc-tab-column-mark 'idle) "·"))
+  (should (equal (ecc-tab-column-mark 'running) "▶"))
+  ;; Not blinking, whatever the tabs are doing.
+  (let ((ecc-tab--blink-phase t))
+    (should (memq 'ecc-tab-attention-face
+                  (ensure-list (get-text-property
+                                0 'face (ecc-tab-column-mark 'attention)))))))
+
 (ert-deftest ecc-space-test-going-to-a-request-goes-to-its-space ()
   "`ecc-next-attention' takes the Space of the session with it.
 A question and a plan open a buffer of their own, and that buffer used
