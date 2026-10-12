@@ -1283,36 +1283,58 @@ the user messages a recording holds."
 
 (ert-deftest ecc-dispatch-test-live-rename-renames-the-session ()
   "/rename in the CLI renames the session and its buffer here.
-The CLI reports no other sign of the new name, so a session that did
-not follow it kept showing the old one (2026-09-22)."
+The fixture holds the system/session_title_changed the CLI sends for
+it, ahead of system/init (CLI 2.1.290, 2026-10-12)."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (ecc-test-dispatch session "local-command" "/rename aaa")
     (should (equal (ecc-session-name session) "aaa"))
     (should (equal (buffer-name (ecc-session-buffer session)) "*ecc: aaa*"))))
 
-(ert-deftest ecc-dispatch-test-rename-takes-the-name-the-cli-printed ()
-  "What `/rename' printed is the name, and the argument is the fallback."
+(ert-deftest ecc-dispatch-test-title-changed-before-init ()
+  "The title event renames a session that has seen no system/init yet.
+It is the first line of the stream, so it can need nothing init brings,
+and it is drawn as nothing: no notice is made for it."
   (ecc-test-with-fake-session session
-    (ecc-model-begin-turn session "/rename one")
-    (ecc-dispatch session
-                  '((type . "assistant")
-                    (local_command_run . ((command . "rename") (args . "one")))
-                    (local_command_source
-                     . "<local-command-stdout>Session renamed to: two</local-command-stdout>")
-                    (message . ((role . "assistant") (model . "<synthetic>")
-                                (content . [((type . "text")
-                                             (text . "Session renamed to: two"))])))))
-    (should (equal (ecc-session-name session) "two"))
-    ;; Without the sentence it printed, the argument stands.
-    (ecc-dispatch session
-                  '((type . "assistant")
-                    (local_command_run . ((command . "rename") (args . "three")))
-                    (local_command_source
-                     . "<local-command-stdout>Renamed.</local-command-stdout>")
-                    (message . ((role . "assistant") (model . "<synthetic>")
-                                (content . [((type . "text") (text . "Renamed."))])))))
-    (should (equal (ecc-session-name session) "three"))))
+    (ecc-session-ensure-buffer session)
+    (should-not (ecc-session-init session))
+    (let ((line (car (ecc-test-fixture-lines "local-command"))))
+      (should (string-search "session_title_changed" line))
+      (ecc-dispatch session (ecc-protocol-parse-line line)))
+    (should (equal (ecc-session-name session) "aaa"))
+    (should (equal (buffer-name (ecc-session-buffer session)) "*ecc: aaa*"))
+    (should-not (seq-find (lambda (node) (memq (ecc-node-type node) '(system unknown)))
+                          (hash-table-values (ecc-session-nodes session))))
+    (should-not (ecc-session-current-turn session))))
+
+(ert-deftest ecc-dispatch-test-title-changed-keeps-other-names ()
+  "A title another session has is made unique, and a blank one is ignored."
+  (ecc-test-with-fake-session session
+    (let ((other (ecc-model-create-session :name "taken" :project-root "/tmp/")))
+      (ecc-dispatch session '((type . "system") (subtype . "session_title_changed")
+                              (title . "taken")))
+      (should (equal (ecc-session-name session) "taken<2>"))
+      (should (equal (ecc-session-name other) "taken"))
+      (ecc-dispatch session '((type . "system") (subtype . "session_title_changed")
+                              (title . "  ")))
+      (should (equal (ecc-session-name session) "taken<2>")))))
+
+(ert-deftest ecc-dispatch-test-rename-output-renames-nothing ()
+  "What `/rename' printed is not read for a name.
+The name comes from system/session_title_changed alone; the sentence
+and the argument are what was typed and shown, not what the CLI did."
+  (ecc-test-with-fake-session session
+    (let ((before (ecc-session-name session)))
+      (ecc-model-begin-turn session "/rename one")
+      (ecc-dispatch session
+                    '((type . "assistant")
+                      (local_command_run . ((command . "rename") (args . "one")))
+                      (local_command_source
+                       . "<local-command-stdout>Session renamed to: two</local-command-stdout>")
+                      (message . ((role . "assistant") (model . "<synthetic>")
+                                  (content . [((type . "text")
+                                               (text . "Session renamed to: two"))])))))
+      (should (equal (ecc-session-name session) before)))))
 
 (ert-deftest ecc-dispatch-test-synthetic-reply-without-the-fields ()
   "An older CLI sends the answer of a command as plain synthetic text.

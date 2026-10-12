@@ -159,7 +159,7 @@ heading then says what the call cost, not how long it had been waiting."
     "hook_progress" "permission_denied" "compact_boundary" "task_started"
     "task_progress" "task_updated" "task_notification" "task_summary"
     "background_tasks_changed" "commands_changed" "session_state_changed"
-    "local_command" "bridge_state" "post_turn_summary")
+    "local_command" "bridge_state" "post_turn_summary" "session_title_changed")
   "The system subtypes `ecc-dispatch--system' handles.
 Kept next to the function it lists, and checked against it by a test.
 `ecc-history' asks this before handing a recorded line over: a
@@ -191,6 +191,7 @@ note rather than among the messages this version does not understand.")
     ('hook_progress nil)
     ('local_command
      (ecc-dispatch-command-output session (alist-get 'content message)))
+    ('session_title_changed (ecc-dispatch--title-changed session message))
     ('bridge_state (ecc-dispatch--bridge-state session message))
     ('post_turn_summary (ecc-dispatch--post-turn-summary session message))
     ('task_summary (ecc-dispatch--task-summary session message))
@@ -226,6 +227,21 @@ under the note and in the log, so nothing is dropped."
   (ecc-model-add-aside session :type 'system :status 'done
                        :data (list (cons 'kind 'notice)
                                    (cons 'message message))))
+
+(defun ecc-dispatch--title-changed (session message)
+  "Apply the system/session_title_changed MESSAGE to SESSION.
+`/rename\=' renames the conversation in the CLI, which knows nothing of
+the name this side shows: without this the two drift apart.  The CLI
+sends this event once the rename is done, with the name it settled on
+in `title\=', so a rename it refused renames nothing here.  It can come
+before system/init, as the first line of the stream, and needs nothing
+init brings (confirmed against CLI 2.1.290, 2026-10-12).  The command
+node is made from the synthetic assistant message that follows it; see
+`ecc-dispatch--local-command\='."
+  (let ((title (alist-get 'title message)))
+    (when (and (stringp title) (not (string-empty-p (string-trim title))))
+      (require 'ecc-session)
+      (ecc-session-set-name session title))))
 
 (defun ecc-dispatch--task-summary (session message)
   "Apply the system/task_summary MESSAGE to SESSION.
@@ -692,20 +708,13 @@ turn, and what it printed arrives after it and is put on this node
           (ecc-node-id node))
     node))
 
-(defconst ecc-dispatch-renamed-regexp
-  "\\`Session renamed to: \\(.+\\)\\'"
-  "What `/rename\=' prints, and the name it settled on.
-Nothing else in the stream carries the new name: the session_id does
-not change, and no system message follows (confirmed against CLI
-2.1.278, 2026-09-22).")
-
 (defun ecc-dispatch--local-command (session fields)
   "Add the local command FIELDS the live stream reported to SESSION.
 `ecc-protocol-local-command\=' read them out of one synthetic assistant
 message; a recording spreads the same command over the two user
 messages `ecc-dispatch--command\=' reads.  It is the same node either
-way, and what the command did to the session is applied here rather
-than left for the user to notice.
+way.  What `/rename\=' does to the session comes in an event of its
+own, `ecc-dispatch--title-changed\='.
 
 A live turn was opened by the prompt that was sent, so the command is
 already the heading of the turn and the node does not say it a second
@@ -722,7 +731,6 @@ at all."
                                                       turn fields))))))
     (setf (alist-get 'command-node (ecc-session-progress session))
           (ecc-node-id node))
-    (ecc-dispatch--command-effect session fields)
     node))
 
 (defun ecc-dispatch--command-echoed-p (turn fields)
@@ -735,24 +743,6 @@ same, and what is compared is the name as well as the whole line."
         (args (alist-get 'args fields)))
     (and (equal prompt (string-trim (concat name " " (or args ""))))
          t)))
-
-(defun ecc-dispatch--command-effect (session fields)
-  "Apply to SESSION what the local command FIELDS say the CLI did.
-`/rename\=' renames the conversation in the CLI, which knows nothing of
-the name this side shows: without this the two drift apart and the
-transcript is the only place the new name appears.  What the command
-printed is preferred over the argument it was given, because that is
-the name the CLI settled on."
-  (when (equal (alist-get 'name fields) "/rename")
-    (let* ((output (or (alist-get 'output fields) ""))
-           (name (string-trim
-                  (or (and (string-match ecc-dispatch-renamed-regexp output)
-                           (match-string 1 output))
-                      (alist-get 'args fields)
-                      ""))))
-      (unless (string-empty-p name)
-        (require 'ecc-session)
-        (ecc-session-set-name session name)))))
 
 (defun ecc-dispatch-command-output (session text)
   "Put what a local command printed, TEXT, on the command node of SESSION.

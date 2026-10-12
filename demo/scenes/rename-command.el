@@ -6,8 +6,9 @@
 ;;
 ;; `/rename' is the CLI's own command, and the live stream reports it
 ;; as one synthetic assistant message carrying `local_command_run' and
-;; `local_command_source'.  Nothing here read those, so the command was
-;; drawn as a reply the model had written and the new name never
+;; `local_command_source', after a system/session_title_changed that
+;; carries the new name.  Nothing here read any of them, so the command
+;; was drawn as a reply the model had written and the new name never
 ;; reached the session: the mode line, the buffer and every menu went
 ;; on saying the old one.  On camera it is the header, the buffer name
 ;; and the line the transcript gains.
