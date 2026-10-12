@@ -382,16 +382,54 @@ nothing under it."
       (should (equal (ecc-space-test--roots)
                      (list ecc-space-test--two ecc-space-test--one))))))
 
-(ert-deftest ecc-space-test-windows-go-beside-and-beside-again ()
-  "The first session is put beside the source, the next beside the first.
-Ordinary windows, both: no role and no dedication, so that the user can
-move them afterwards."
+(defun ecc-space-test--layout ()
+  "Return the buffer name and width of every window of this tab, left to right."
+  (mapcar (lambda (window)
+            (cons (buffer-name (window-buffer window))
+                  (window-total-width window)))
+          (sort (window-list nil 'no-minibuffer)
+                (lambda (a b)
+                  (< (nth 0 (window-edges a)) (nth 0 (window-edges b)))))))
+
+(defun ecc-space-test--use (&rest sessions)
+  "Work in SESSIONS in turn, so that the last is the one used most recently.
+What `ecc-window--sessions-by-use' reads is `buffer-list', which is
+what selecting a buffer moves; the windows are put back afterwards."
+  (dolist (session sessions)
+    (save-window-excursion
+      (switch-to-buffer (ecc-session-ensure-buffer session)))))
+
+(defun ecc-space-test--on-screen ()
+  "Return the names of the sessions in the windows of this tab, left to right."
+  (mapcar (lambda (window)
+            (ecc-session-name (ecc-window-buffer-session (window-buffer window))))
+          (ecc-space--session-windows)))
+
+(defun ecc-space-test--show-abreast (&rest sessions)
+  "Show SESSIONS side by side to the right of the source, and return the last window.
+`ecc-space-display-session' divides nothing once a session is on the
+screen, so the second and after are put beside the one before with the
+helper a Space divides a window with."
+  (let ((window (ecc-space-display-session (car sessions))))
+    (dolist (session (cdr sessions))
+      (setq window (ecc-space--display-beside
+                    (ecc-session-ensure-buffer session) window
+                    (/ (window-total-width window) 2))))
+    window))
+
+(defun ecc-space-test--column ()
+  "Return the columns the session column of a Space should have here."
+  (round (* ecc-window-width (window-total-width (frame-root-window)))))
+
+(ert-deftest ecc-space-test-the-first-session-goes-beside-the-source ()
+  "With no session on the screen, a session is put to the right of the source.
+`ecc-window-width' of the frame wide, in an ordinary window: no role and
+no dedication, so that the user can move it afterwards.  A session
+already on the screen is not opened twice."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
                                    ("one-b" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
-      (let ((ecc-use-spaces t)
-            (ecc-window-width 60)
-            (ecc-space-session-min-width 10))
+      (let ((ecc-window-width 0.4))
         (ecc-space-select (ecc-space-of-root ecc-space-test--one))
         ;; The sidebar comes up with a new Space; this case is about the
         ;; session windows alone, so it is taken down again.
@@ -404,183 +442,66 @@ move them afterwards."
           (should-not (window-dedicated-p first))
           ;; Beside: to the right of the source, not above or below it.
           (should (> (nth 0 (window-edges first)) (nth 0 (window-edges source))))
-          (let ((second (ecc-space-display-session (nth 1 sessions))))
-            (should (window-live-p second))
-            (should-not (eq second first))
-            ;; Beside the session window, and in the same row as it.
-            (should (= (nth 1 (window-edges second)) (nth 1 (window-edges first))))
-            (should (> (nth 0 (window-edges second)) (nth 0 (window-edges first))))
-            ;; And a session already on the screen is not opened twice.
-            (should (eq (ecc-space-display-session (car sessions)) first))
-            (should (= 3 (length (window-list nil 'no-minibuffer))))))))))
+          (should (= (nth 1 (window-edges first)) (nth 1 (window-edges source))))
+          (should (<= (abs (- (window-total-width first) (ecc-space-test--column)))
+                      1))
+          (should (eq (ecc-space-display-session (car sessions)) first))
+          (should (= 2 (length (window-list nil 'no-minibuffer)))))))))
 
-(ert-deftest ecc-space-test-a-new-session-goes-to-the-right ()
-  "A session opens at the right end, and leaves the one being read alone.
-Nothing is ever stacked: the sessions of a Space stand side by side, and
-the new one divides the rightmost of them rather than the window last
-worked in, which would cut the transcript being read in half."
-  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
-                                   ("two" . ,ecc-space-test--one)
-                                   ("three" . ,ecc-space-test--one))
-    (ecc-space-test--with-tab-bar
-      ;; Wide enough for three transcripts abreast in a batch frame.
-      (let ((ecc-window-width 60)
-            (ecc-space-session-min-width 10))
-        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
-        (ecc-sidebar-hide)
-        (delete-other-windows)
-        (cl-labels ((row ()
-                      (mapcar (lambda (window)
-                                (ecc-session-name
-                                 (ecc-window-buffer-session
-                                  (window-buffer window))))
-                              (ecc-space--session-windows))))
-          ;; The sessions were made oldest last, so take them in order.
-          (let* ((ordered (reverse sessions))
-                 (first (nth 0 ordered))
-                 (second (nth 1 ordered))
-                 (third (nth 2 ordered)))
-            (ecc-space-display-session first)
-            (ecc-space-display-session second)
-            (should (equal (row) (list (ecc-session-name first)
-                                       (ecc-session-name second))))
-            ;; Go back to the first, the way anybody reading would, and
-            ;; remember how wide it is.
-            (let* ((window (get-buffer-window (ecc-session-buffer first)))
-                   (width (window-body-width window)))
-              (select-window window)
-              (ecc-space-display-session third)
-              ;; The third is at the right end, not between the other two.
-              (should (equal (row) (list (ecc-session-name first)
-                                         (ecc-session-name second)
-                                         (ecc-session-name third))))
-              ;; Nothing was stacked: one row, three windows abreast.
-              (should (apply #'= (mapcar (lambda (w) (nth 1 (window-edges w)))
-                                         (ecc-space--session-windows))))
-              ;; And the one being read kept its room.
-              (should (= width (window-body-width window))))))))))
-
-(ert-deftest ecc-space-test-a-full-row-takes-over-the-oldest-window ()
-  "With no room for another column, the session used longest ago gives up its.
-A narrower window is not made: the row keeps the width it needs to be
-read, and the session that lost its window goes on running without one."
-  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
-                                   ("two" . ,ecc-space-test--one)
-                                   ("three" . ,ecc-space-test--one))
-    (ecc-space-test--with-tab-bar
-      (let ((ecc-window-width 60)
-            (ecc-space-session-min-width 10))
-        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
-        (ecc-sidebar-hide)
-        (delete-other-windows)
-        (let* ((ordered (reverse sessions))
-               (first (nth 0 ordered))
-               (second (nth 1 ordered))
-               (third (nth 2 ordered)))
-          (ecc-space-display-session first)
-          (ecc-space-display-session second)
-          ;; The first was worked in most recently of the two on screen,
-          ;; so it is the second that hands its window over.
-          (ecc-model-touch first)
-          (let ((windows (length (window-list nil 'no-minibuffer)))
-                (taken (get-buffer-window (ecc-session-buffer second)))
-                ;; Wider than the frame: nothing can be divided again.
-                (ecc-space-session-min-width (frame-width)))
-            (let ((window (ecc-space-display-session third)))
-              (should (eq window taken))
-              (should (= windows (length (window-list nil 'no-minibuffer))))
-              (should (eq (window-buffer window) (ecc-session-buffer third)))
-              (should-not (get-buffer-window (ecc-session-buffer second)))
-              (should (get-buffer-window (ecc-session-buffer first))))))))))
-
-(defun ecc-space-test--layout ()
-  "Return the buffer name and width of every window of this tab, left to right."
-  (mapcar (lambda (window)
-            (cons (buffer-name (window-buffer window))
-                  (window-total-width window)))
-          (sort (window-list nil 'no-minibuffer)
-                (lambda (a b)
-                  (< (nth 0 (window-edges a)) (nth 0 (window-edges b)))))))
-
-(ert-deftest ecc-space-test-a-row-is-never-crushed-to-fit ()
-  "A tab dealt more sessions than fit shows the ones that fit and no more.
-The `enghi\\=' tab of 2026-09-22: seven sessions in a Space, and a new
-tab came up with five of them two columns wide.  The rightmost window
-was being widened to make room for the next split with `window-resize\\='
-told to ignore every minimum, which took the transcripts beside it
-down to `window-safe-min-width\\=' one after another.  The row has room
-for two columns here -- 52 columns beside the sidebar, 40 of them the
-first session\\='s -- and two is what it gets."
-  (ecc-space-test--with-sessions `(("enghi" . ,ecc-space-test--one)
-                                   ("fable" . ,ecc-space-test--one)
-                                   ("impl" . ,ecc-space-test--one)
-                                   ("two" . ,ecc-space-test--one)
-                                   ("three" . ,ecc-space-test--one)
-                                   ("four" . ,ecc-space-test--one)
-                                   ("five" . ,ecc-space-test--one))
-    (ecc-space-test--with-tab-bar
-      (ecc-space-test--with-code
-        (let ((ecc-window-width 40)
-              (ecc-space-session-min-width 15))
-          (ecc-space-select (ecc-space-of-root ecc-space-test--one))
-          (let ((row (ecc-space--session-windows)))
-            (should (= 2 (length row)))
-            (dolist (window row)
-              (should (>= (window-total-width window)
-                          (ecc-space--column-width))))
-            ;; The two most recently used, and the other five running
-            ;; with no window rather than in a sliver each.
-            (should (equal (mapcar (lambda (window)
-                                     (ecc-session-name
-                                      (ecc-window-buffer-session
-                                       (window-buffer window))))
-                                   row)
-                           '("five" "four")))
-            (should (= 5 (seq-count (lambda (session)
-                                      (not (get-buffer-window
-                                            (ecc-session-buffer session))))
-                                    sessions)))))))))
-
-(ert-deftest ecc-space-test-the-row-gives-what-it-can-spare ()
-  "A new column is paid for by the transcripts that have room, in proportion.
-Three sessions in a 70-column row with columns of 15: the rightmost
-has 17 and needs 30 before it can be divided.  The 13 it is short come
-from the other two -- 12 from the one with 20 to spare and 1 from the
-one with 3 -- and none from the source, which keeps its 10.  Nothing
-ends under 15."
+(ert-deftest ecc-space-test-a-new-session-takes-the-window-used-longest-ago ()
+  "A session shown while others are on the screen divides nothing.
+It goes into the window of the session used longest ago -- by use, not
+by start: `a' was started first, but it is the one being read, so it is
+`b' that gives its window up and goes on running with none."
   (ecc-space-test--with-sessions `(("a" . ,ecc-space-test--one)
                                    ("b" . ,ecc-space-test--one)
-                                   ("c" . ,ecc-space-test--one)
-                                   ("d" . ,ecc-space-test--one))
+                                   ("c" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (let ((ecc-window-width 0.4))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (ecc-sidebar-hide)
+        (delete-other-windows)
+        (let ((a (nth 0 sessions)) (b (nth 1 sessions)) (c (nth 2 sessions)))
+          (ecc-space-test--show-abreast a b)
+          (should (equal (ecc-space-test--on-screen) '("a" "b")))
+          (ecc-space-test--use b a)
+          (let ((before (ecc-space-test--layout))
+                (taken (get-buffer-window (ecc-session-buffer b)))
+                (window (ecc-space-display-session c)))
+            (should (eq window taken))
+            (should (equal (ecc-space-test--on-screen) '("a" "c")))
+            ;; Not a column more, and none of them any narrower.
+            (should (equal (mapcar #'cdr before)
+                           (mapcar #'cdr (ecc-space-test--layout))))))))))
+
+(ert-deftest ecc-space-test-a-new-tab-lays-out-the-source-and-a-session ()
+  "A new tab comes up with the code on the left and a session beside it.
+The session used most recently, in a column `ecc-window-width' of the
+whole frame wide -- the sidebar counted, as a Space has always measured
+it.  The sidebar keeps its width, and the other sessions go on running
+with no window rather than being squeezed in."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one)
+                                   ("three" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
       (ecc-space-test--with-code
-        (let ((ecc-window-width 70)
-              (ecc-space-session-min-width 15))
+        (let ((ecc-window-width 0.4))
+          ;; By use, "one" comes first, though it was started last but two.
+          (ecc-space-test--use (nth 2 sessions) (nth 1 sessions) (nth 0 sessions))
           (ecc-space-select (ecc-space-of-root ecc-space-test--one))
-          (ecc-sidebar-hide)
-          (delete-other-windows)
-          ;; The sessions were made in this order, oldest first, and
-          ;; are shown in it: each new one divides the rightmost.  The
-          ;; row is `ecc-window-width' wide whatever the frame is, so
-          ;; only the session windows are compared: the source is
-          ;; whatever the frame leaves, and one test before this one
-          ;; leaves the batch frame wider than it found it.
-          (cl-flet ((row ()
-                      (seq-filter (lambda (entry)
-                                    (string-prefix-p "*ecc: " (car entry)))
-                                  (ecc-space-test--layout))))
-            (dolist (session (butlast sessions))
-              (ecc-space-display-session session))
-            (should (equal (row) '(("*ecc: a*" . 35) ("*ecc: b*" . 18)
-                                   ("*ecc: c*" . 17))))
-            (let* ((source (ecc-space--source-window))
-                   (width (window-total-width source)))
-              (ecc-space-display-session (car (last sessions)))
-              (should (equal (row) '(("*ecc: a*" . 23) ("*ecc: b*" . 17)
-                                     ("*ecc: c*" . 15) ("*ecc: d*" . 15))))
-              (should (eq source (ecc-space--source-window)))
-              (should (= width (window-total-width source))))))))))
-
+          (should (equal (ecc-space-test--on-screen) '("one")))
+          (should (= ecc-sidebar-width (window-total-width (ecc-sidebar--window))))
+          (let ((source (ecc-space--source-window))
+                (session (car (ecc-space--session-windows))))
+            (should (equal (buffer-name (window-buffer source)) "code.el"))
+            (should (< (nth 0 (window-edges source)) (nth 0 (window-edges session))))
+            (should (= (nth 1 (window-edges source)) (nth 1 (window-edges session))))
+            (should (<= (abs (- (window-total-width session) (ecc-space-test--column)))
+                        1))
+            ;; Point is in the code, where a tab opened on a project puts it.
+            (should (eq (selected-window) source)))
+          ;; Three windows: the sidebar, the source, one session.
+          (should (= 3 (length (window-list nil 'no-minibuffer)))))))))
 
 (defmacro ecc-space-test--with-popup (var &rest body)
   "Run BODY with VAR bound to a buffer standing in for a question or a plan."
@@ -601,14 +522,12 @@ does to the one that was not asked about is the bug."
                                    ("two" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
       (let ((ecc-use-spaces t)
-            (ecc-window-width 60)
-            (ecc-space-session-min-width 10))
+            (ecc-window-width 60))
         (ecc-space-select (ecc-space-of-root ecc-space-test--one))
         (ecc-sidebar-hide)
         (delete-other-windows)
         (let ((one (car sessions)) (two (nth 1 sessions)))
-          (ecc-space-display-session one)
-          (ecc-space-display-session two)
+          (ecc-space-test--show-abreast one two)
           (ecc-space-test--with-popup popup
             (let* ((before (ecc-space-test--layout))
                    (window (ecc-window-display-beside-session popup one)))
@@ -631,8 +550,7 @@ nothing about what is being asked."
                                    ("two" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
       (let ((ecc-use-spaces t)
-            (ecc-window-width 60)
-            (ecc-space-session-min-width 10))
+            (ecc-window-width 60))
         (ecc-space-select (ecc-space-of-root ecc-space-test--one))
         (ecc-sidebar-hide)
         (delete-other-windows)
@@ -652,8 +570,7 @@ about, and both transcripts stay on the screen."
                                    ("two" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
       (let ((ecc-use-spaces t)
-            (ecc-window-width 60)
-            (ecc-space-session-min-width 10))
+            (ecc-window-width 60))
         (ecc-space-select (ecc-space-of-root ecc-space-test--one))
         (ecc-sidebar-hide)
         (delete-other-windows)
@@ -671,31 +588,6 @@ about, and both transcripts stay on the screen."
               (should (get-buffer-window (ecc-session-buffer one)))
               (should (get-buffer-window (ecc-session-buffer two))))))))))
 
-(ert-deftest ecc-space-test-a-new-tab-stands-the-sessions-side-by-side ()
-  "The tab of a Space comes up with its sessions already on the screen.
-Most recently used first, to the right of the source.  A tab that opened
-with the transcripts hidden was one the user had to unpack by hand."
-  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
-                                   ("two" . ,ecc-space-test--one))
-    (ecc-space-test--with-tab-bar
-      (let ((ecc-window-width 60)
-            (ecc-space-session-min-width 10))
-        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
-        (let ((row (mapcar (lambda (window)
-                             (ecc-session-name
-                              (ecc-window-buffer-session (window-buffer window))))
-                           (ecc-space--session-windows))))
-          ;; `ecc-model-sessions' is most recently used first, and the
-          ;; sessions were made oldest first.
-          (should (equal row '("two" "one")))
-          ;; One row: nothing was stacked.
-          (should (apply #'= (mapcar (lambda (w) (nth 1 (window-edges w)))
-                                     (ecc-space--session-windows))))
-          ;; And the source is still there, to the left of them.
-          (should (< (nth 0 (window-edges (ecc-window--source-window)))
-                     (nth 0 (window-edges
-                             (car (ecc-space--session-windows)))))))))))
-
 (ert-deftest ecc-space-test-a-tab-with-no-window-for-the-code-gets-one ()
   "Going to a Space whose tab has only transcripts in it puts the code back.
 The windows of a tab are the user\='s and are left where they were put.
@@ -708,7 +600,6 @@ nothing brought that window back on its own (reported 2026-09-16)."
       (let* ((one (ecc-space-of-root ecc-space-test--one))
              (two (ecc-space-of-root ecc-space-test--two))
              (ecc-window-width 20)
-             (ecc-space-session-min-width 10)
              ;; A file of the project to read: these roots are names
              ;; rather than directories, so there is none to list either.
              (code (get-buffer-create "code.el")))
@@ -750,8 +641,7 @@ key of its own for that reason; going to the Space is not."
     (ecc-space-test--with-tab-bar
       (let ((one (ecc-space-of-root ecc-space-test--one))
             (two (ecc-space-of-root ecc-space-test--two))
-            (ecc-window-width 20)
-            (ecc-space-session-min-width 10))
+            (ecc-window-width 20))
         (ecc-space-select one)
         (let* ((stranger (get-buffer-create "stranger.txt"))
                (window (ecc-space--source-window))
@@ -776,7 +666,6 @@ project being asked about."
     (ecc-space-test--with-tab-bar
       (let* ((one (ecc-space-of-root ecc-space-test--one))
              (ecc-window-width 20)
-             (ecc-space-session-min-width 10)
              (code (get-buffer-create "code.el"))
              (stranger (get-buffer-create "stranger.el")))
         (with-current-buffer code
@@ -807,34 +696,13 @@ what the divided window has to give, and the sidebar keeps its own."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
       (ecc-space-test--with-code
-        (let ((ecc-window-width 60)
-              (ecc-space-session-min-width 10))
+        (let ((ecc-window-width 60))
           (ecc-space-select (ecc-space-of-root ecc-space-test--one))
           (should (= ecc-sidebar-width
                      (window-total-width (ecc-sidebar--window))))
           (should (= 1 (length (ecc-space--session-windows))))
           (should (>= (window-total-width (ecc-space--source-window))
                       window-min-width)))))))
-
-(ert-deftest ecc-space-test-a-new-tab-stops-when-the-row-is-full ()
-  "The lay-out stops at the edge of the row rather than taking a window over.
-A session that does not fit goes on running without one; the sidebar
-and `ecc-space-reset-windows' bring it back."
-  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
-                                   ("two" . ,ecc-space-test--one)
-                                   ("three" . ,ecc-space-test--one))
-    (ecc-space-test--with-tab-bar
-      ;; Wider than the frame: one session fits and nothing else can.
-      (let ((ecc-window-width 60)
-            (ecc-space-session-min-width (frame-width)))
-        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
-        (should (= 1 (length (ecc-space--session-windows))))
-        ;; The one on the screen is the most recently used, and the
-        ;; other two kept their own buffers rather than being swapped in.
-        (should (equal "three"
-                       (ecc-session-name
-                        (ecc-window-buffer-session
-                         (window-buffer (car (ecc-space--session-windows))))))))))) 
 
 ;;;; Putting a Space back the way a new tab gets it
 
@@ -863,72 +731,62 @@ no window to read the code in and nobody's arrangement in it."
                        (ecc-session-ensure-buffer session))
     (delete-other-windows (get-buffer-window (ecc-session-buffer session)))))
 
-(ert-deftest ecc-space-test-reset-stands-the-sessions-side-by-side-again ()
-  "Resetting deals the tab again, by the rules it was dealt with."
-  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
-                                   ("two" . ,ecc-space-test--one))
-    (ecc-space-test--with-tab-bar
-      (ecc-space-test--with-code
-        (let ((ecc-window-width 60)
-              (ecc-space-session-min-width 10))
-          (ecc-space-select (ecc-space-of-root ecc-space-test--one))
-          (ecc-space-test--wreck-the-tab)
-          (should-not (ecc-space--source-window))
-          (ecc-space-reset-windows)
-          (let ((row (mapcar (lambda (window)
-                               (ecc-session-name
-                                (ecc-window-buffer-session
-                                 (window-buffer window))))
-                             (ecc-space--session-windows))))
-            ;; The same row a new tab comes up with: most recently used
-            ;; first, nothing stacked, the source to the left of them.
-            (should (equal row '("two" "one")))
-            (should (apply #'= (mapcar (lambda (w) (nth 1 (window-edges w)))
-                                       (ecc-space--session-windows))))
-            (should (< (nth 0 (window-edges (ecc-space--source-window)))
-                       (nth 0 (window-edges
-                               (car (ecc-space--session-windows))))))
-            ;; And point is where a new tab leaves it, in the code.
-            (should (eq (selected-window) (ecc-space--source-window)))))))))
-
-(ert-deftest ecc-space-test-reset-stops-when-the-row-is-full ()
-  "Resetting stops at the edge of the row rather than taking a window over."
+(ert-deftest ecc-space-test-reset-lays-the-space-out-again ()
+  "Resetting builds the tab again from nothing, the way a new tab is built.
+The session in the selected window is the one shown, though another was
+used more recently: it is the one being worked in, and point stays in
+it.  The rest go on running with no window."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
                                    ("two" . ,ecc-space-test--one)
                                    ("three" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
       (ecc-space-test--with-code
-        (let ((ecc-window-width 60)
-              (ecc-space-session-min-width (frame-width)))
+        (let ((ecc-window-width 0.4))
           (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+          (ecc-space-test--use (nth 0 sessions))
+          ;; The transcript of "three" fills the tab, and is selected.
           (ecc-space-test--wreck-the-tab)
+          (should-not (ecc-space--source-window))
           (ecc-space-reset-windows)
-          (should (= 1 (length (ecc-space--session-windows))))
-          (should (equal "three"
-                         (ecc-session-name
-                          (ecc-window-buffer-session
-                           (window-buffer
-                            (car (ecc-space--session-windows)))))))
-          ;; The two that did not fit are running with no window.
-          (dolist (name '("one" "two"))
-            (let ((session (seq-find (lambda (one)
-                                       (equal (ecc-session-name one) name))
-                                     (ecc-model-sessions))))
-              (should session)
-              (should-not (get-buffer-window
-                           (ecc-session-ensure-buffer session))))))))))
+          (should (equal (ecc-space-test--on-screen) '("three")))
+          (let ((source (ecc-space--source-window))
+                (session (car (ecc-space--session-windows))))
+            (should (equal (buffer-name (window-buffer source)) "code.el"))
+            (should (< (nth 0 (window-edges source)) (nth 0 (window-edges session))))
+            (should (<= (abs (- (window-total-width session) (ecc-space-test--column)))
+                        1))
+            (should (eq (selected-window) session)))
+          (dolist (session (butlast sessions))
+            (should-not (seq-some #'get-buffer-window
+                                  (delq nil (list (ecc-session-buffer session)))))))))))
 
-(ert-deftest ecc-space-test-reset-leaves-the-sidebar-alone ()
-  "The sidebar keeps its place and its width, and a hidden one comes back.
-It is a side window that asked not to be deleted, which is what
-`delete-other-windows\\=' honours -- and a new tab has a sidebar, which
-is the arrangement this command promises."
+(ert-deftest ecc-space-test-reset-puts-the-windows-back-when-the-frame-is-too-small ()
+  "A layout Emacs refuses to split leaves the windows as they were.
+The source and the session column cannot both be `window-min-width'
+wide here, so nothing is built -- and the tab is not left in the one
+window the build started from."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
                                    ("two" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
       (ecc-space-test--with-code
-        (let ((ecc-window-width 60)
-              (ecc-space-session-min-width 10))
+        (let ((ecc-window-width 0.4))
+          (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+          (let ((before (ecc-space-test--layout))
+                ;; More than half the main area: no division of it fits.
+                (window-min-width (1+ (/ (window-total-width (window-main-window))
+                                         2))))
+            (should-error (ecc-space-reset-windows) :type 'user-error)
+            (should (equal before (ecc-space-test--layout)))))))))
+
+(ert-deftest ecc-space-test-reset-leaves-the-sidebar-alone ()
+  "The sidebar keeps its place and its width, and a hidden one stays hidden.
+It is a side window that asked not to be deleted, which is what
+`delete-other-windows\=' honours."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (ecc-space-test--with-code
+        (let ((ecc-window-width 0.4))
           (ecc-space-select (ecc-space-of-root ecc-space-test--one))
           (ecc-sidebar-show)
           (let* ((side (ecc-sidebar--window))
@@ -940,12 +798,11 @@ is the arrangement this command promises."
             (should (eq (window-parameter (ecc-sidebar--window) 'window-side)
                         'left))
             (should (= width (window-total-width (ecc-sidebar--window))))
-            (should (= 2 (length (ecc-space--session-windows)))))
-          ;; Hidden, it comes back: a new tab has one.
+            (should (= 1 (length (ecc-space--session-windows)))))
           (ecc-sidebar-hide)
-          (should-not (ecc-sidebar--window))
           (ecc-space-reset-windows)
-          (should (ecc-sidebar--window)))))))
+          (should-not (ecc-sidebar--window))
+          (should (= 1 (length (ecc-space--session-windows)))))))))
 
 (ert-deftest ecc-space-test-reset-forgets-the-zoom ()
   "The way back a zoom left behind goes with the arrangement it led to."
@@ -953,8 +810,7 @@ is the arrangement this command promises."
                                    ("two" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
       (ecc-space-test--with-code
-        (let ((ecc-window-width 60)
-              (ecc-space-session-min-width 10))
+        (let ((ecc-window-width 60))
           (unwind-protect
               (progn
                 (ecc-space-select (ecc-space-of-root ecc-space-test--one))
@@ -968,10 +824,9 @@ is the arrangement this command promises."
                                        (frame-parameter nil 'ecc-space-zoom)
                                        nil nil #'equal))
                 ;; So the next zoom zooms, rather than putting back the
-                ;; arrangement that was thrown away.  The sidebar is not
-                ;; counted: the reset brought it back and zooming cannot
-                ;; take it down.
-                (should (cdr (ecc-space--session-windows)))
+                ;; arrangement that was thrown away.
+                (should (ecc-space--session-windows))
+                (should (ecc-space--source-window))
                 (ecc-space-zoom)
                 (should-not (seq-remove
                              (lambda (window)
@@ -1519,13 +1374,13 @@ where they are."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
                                    ("one-b" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
-      (let ((ecc-window-width 60)
-            (ecc-space-session-min-width 10))
+      (let ((ecc-window-width 60))
         (ecc-space-select (ecc-space-of-root ecc-space-test--one))
         (ecc-sidebar-hide)
         (delete-other-windows)
-        (let ((first (ecc-space-display-session (car sessions)))
-              (second (ecc-space-display-session (nth 1 sessions))))
+        (let* ((second (ecc-space-test--show-abreast (car sessions)
+                                                     (nth 1 sessions)))
+               (first (get-buffer-window (ecc-session-buffer (car sessions)))))
           (should (window-live-p first))
           (should (window-live-p second))
           (let ((windows (length (window-list nil 'no-minibuffer))))
@@ -1547,7 +1402,6 @@ beside it; the window keeps its place in the row."
                                    ("two" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
       (let ((ecc-window-width 60)
-            (ecc-space-session-min-width 10)
             (ecc-tab-line-mode t))
         (ecc-space-select (ecc-space-of-root ecc-space-test--one))
         (ecc-sidebar-hide)
@@ -1574,7 +1428,6 @@ underneath the transcript."
                                    ("two" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
       (let ((ecc-window-width 60)
-            (ecc-space-session-min-width 10)
             (ecc-tab-line-mode t))
         (ecc-space-select (ecc-space-of-root ecc-space-test--one))
         (ecc-sidebar-hide)
@@ -1607,7 +1460,6 @@ to."
                                    ("three" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
       (let ((ecc-window-width 60)
-            (ecc-space-session-min-width 10)
             (ecc-tab-line-mode t))
         (ecc-space-select (ecc-space-of-root ecc-space-test--one))
         (ecc-sidebar-hide)
@@ -1641,15 +1493,14 @@ show, the window that lost its tab goes."
                                    ("two" . ,ecc-space-test--one))
     (ecc-space-test--with-tab-bar
       (let ((ecc-window-width 60)
-            (ecc-space-session-min-width 10)
             (ecc-tab-line-mode t))
         (ecc-space-select (ecc-space-of-root ecc-space-test--one))
         (ecc-sidebar-hide)
         (delete-other-windows)
         (let* ((first (car sessions))
                (second (nth 1 sessions))
-               (one (ecc-space-display-session first))
-               (two (ecc-space-display-session second))
+               (two (ecc-space-test--show-abreast first second))
+               (one (get-buffer-window (ecc-session-buffer first)))
                (windows (length (window-list nil 'no-minibuffer))))
           (ecc-model-remove-session first)
           (should-not (window-live-p one))

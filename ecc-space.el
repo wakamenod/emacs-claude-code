@@ -75,19 +75,13 @@
 
 ;;;; Settings
 
-(defcustom ecc-space-session-min-width 80
-  "Columns a session window needs before the row is divided again.
-The sessions of a Space stand side by side and are never stacked, so
-this is what says how many fit: a row with no room for another column
-this wide gives the new session a window that is already there rather
-than making every transcript narrower.  `window-min-width' is a floor
-under it; a smaller number buys nothing, Emacs refusing the split.
-
-It is a setting because it is a screen: the number of transcripts that
-can be read at once on a 13-inch laptop and on a 34-inch display is not
-the same number."
-  :type 'integer
-  :group 'ecc)
+;; It said how many transcripts a row of them had room for.  The windows
+;; of a Space are laid out to fixed proportions now, and how many
+;; sessions are on the screen is the layout's to say.
+(make-obsolete-variable 'ecc-space-session-min-width
+                        "the layouts of `ecc-space-reset-windows' say how \
+many sessions are on the screen."
+                        "0.4.2")
 
 (defcustom ecc-space-always-session t
   "Non-nil means a Space always holds a session.
@@ -346,23 +340,10 @@ go on running with no window, which is what the sidebar and
 (add-hook 'tab-bar-tab-pre-close-functions #'ecc-space--forget-tab)
 
 (defvar ecc-space--laying-out nil
-  "Non-nil while a Space is being dealt its windows for the first time.")
-
-(defun ecc-space--lay-out-sessions (space)
-  "Stand the sessions of SPACE side by side in the tab just made.
-Most recently started first, to the right of the source, until the row has
-no room for another column of `ecc-space-session-min-width\='.  The ones
-that do not fit go on running with no window, which the sidebar and
-`ecc-space-reset-windows\=' bring back.
-
-A tab is a window arrangement and this is the only moment there is none
-to keep: from here on the windows are the user\='s, and coming back to
-the Space brings them back as they were left."
-  (let ((ecc-space--laying-out t))
-    (catch 'full
-      (dolist (session (ecc-space-sessions space))
-        (unless (ecc-space-display-session session t)
-          (throw 'full nil))))))
+  "Non-nil while the windows of a Space are being laid out.
+The transcripts are put on the screen one after another, and nothing
+that happens to a session in between -- one that fails to come up, a
+Space found with nothing running -- starts or closes anything.")
 
 (defun ecc-space--source-buffer (space)
   "Return the buffer the source window of SPACE should hold, or nil."
@@ -380,17 +361,23 @@ the Space brings them back as they were left."
 One window with the code in it, which is what the user is looking at
 when they ask for a project, and the sessions of the Space beside it:
 going to a Space is asking to work there, and a tab that comes up with
-the transcripts hidden is one the user has to unpack by hand."
+the transcripts hidden is one the user has to unpack by hand.
+
+A tab is a window arrangement and this is the only moment there is none
+to keep: from here on the windows are the user\='s, and coming back to
+the Space brings them back as they were left."
+  ;; A tab carries its own windows, so the sidebar has to be put in
+  ;; every one of them.  Loaded here rather than required: the sidebar
+  ;; is built on the Spaces, so the dependency runs the other way.
+  (require 'ecc-sidebar)
+  ;; The code is put in front first: the layout leaves point in the
+  ;; buffer it found it in, and a frame with no room for a session
+  ;; still has room for this.
   (let ((buffer (ecc-space--source-buffer space)))
     (when (buffer-live-p buffer)
-      (set-window-buffer (selected-window) buffer))
-    ;; A tab carries its own windows, so the sidebar has to be put in
-    ;; every one of them.  Loaded here rather than required: the
-    ;; sidebar is built on the Spaces, so the dependency runs the other
-    ;; way.
-    (require 'ecc-sidebar)
-    (ecc-sidebar-show)
-    (ecc-space--lay-out-sessions space)))
+      (set-window-buffer (selected-window) buffer)))
+  (ecc-sidebar-show)
+  (ecc-space--build space 'beside))
 
 (defun ecc-space--source-window ()
   "Return a window of this tab the code can be read in, or nil.
@@ -586,188 +573,233 @@ in, the same one `ecc-start' would use."
                     (window-list nil 'no-minibuffer))
         (lambda (a b) (< (nth 0 (window-edges a)) (nth 0 (window-edges b))))))
 
-(defun ecc-space--column-width ()
-  "Return the columns a session window of a Space may not go under.
-`ecc-space-session-min-width\=', with `window-min-width\=' as its floor:
-Emacs refuses a split that would leave a window narrower than that."
-  (max ecc-space-session-min-width window-min-width))
+(defun ecc-space--width-beside (width window)
+  "Return the columns to take out of WINDOW for something WIDTH wide.
+WIDTH is columns, or a fraction of the frame the way `display-buffer\='
+reads one -- of the whole frame, the sidebar counted, which is how a
+Space has always measured the column of its sessions.  Capped at what
+leaves WINDOW `window-min-width\=', so the columns come out of WINDOW
+and out of nothing else."
+  (min (if (floatp width)
+           (round (* width (window-total-width (frame-root-window window))))
+         width)
+       (- (window-total-width window) window-min-width)))
 
-(defun ecc-space--spare (window)
-  "Return the columns WINDOW has above `ecc-space--column-width\='."
-  (max 0 (- (window-total-width window) (ecc-space--column-width))))
+(defun ecc-space--split-off (window size side)
+  "Split a window SIZE columns or lines wide off WINDOW, on SIDE, and return it.
+A split that would leave either half under the least WINDOW can be --
+`window-min-width\=' or `window-min-height\=', or more with a header line
+or a margin -- signals an error, which is left to the caller.
 
-(defun ecc-space--shares (windows delta)
-  "Return the columns each of WINDOWS gives up, DELTA between them.
-In proportion to what each has to spare above the column width, so
-that a transcript the user made wide gives the most and one already at
-the width gives nothing.  DELTA is no more than they have to spare in
-all; what the rounding leaves over goes to the first that still has
-room."
-  (let* ((spares (mapcar #'ecc-space--spare windows))
-         (total (apply #'+ spares))
-         (shares (mapcar (lambda (spare) (/ (* delta spare) total)) spares))
-         (left (- delta (apply #'+ shares))))
-    (cl-loop for share in shares
-             for spare in spares
-             collect (let ((extra (min left (- spare share))))
-                       (setq left (- left extra))
-                       (+ share extra)))))
+`window-combination-resize\=' is bound to nil so that the room comes out
+of WINDOW alone: a user who set it would otherwise have every sibling
+give a share, and the proportions a layout asks for would come out as
+something else."
+  (let* ((horizontal (memq side '(left right)))
+         (least (window-min-size window horizontal))
+         (total (window-total-size window horizontal)))
+    ;; Checked here because `split-window' does not: given SIZE, it
+    ;; holds neither half to `window-min-width' and made a window of 78
+    ;; columns and one of 2 out of 80 with that set to 27.  Only a split
+    ;; with no SIZE is refused for it (Emacs 32.0.50, 2026-10-12).
+    (when (or (< size least) (< (- total size) least))
+      (error "No room in %s for a window %d wide" window size))
+    (let ((window-combination-resize nil))
+      (split-window window (- size) side))))
 
-(defun ecc-space--take-from (windows shares)
-  "Shrink each of WINDOWS by its entry in SHARES, the room going to the right.
-WINDOWS stand left to right, and what they give up ends at the right
-end of the row: the right edge of each is moved to where it belongs
-once the windows on its left have given theirs, so the row to the
-right of it grows by that much, and the last window of the row takes
-all of it.  Nothing to the left of WINDOWS -- the source, the sidebar
--- moves.
-
-The edges are moved rather than the windows resized.  `window-resize\='
-takes its columns from the siblings Emacs finds in the window tree,
-which, since each session split the last, is the one session next
-door and then the row\='s parent -- the source; and asked to ignore the
-minimum so that it could reach past the neighbour, it took every
-transcript down to two columns (the `enghi\=' tab of 2026-09-22).  An
-edge is moved by the amount asked for and by nothing else, and
-`window-min-width\=' is bound to the column width for as long as it
-takes, so Emacs itself refuses to move one past it."
-  (let ((window-min-width (ecc-space--column-width))
-        (edges (mapcar (lambda (window) (nth 2 (window-edges window))) windows))
-        (cut 0))
-    (cl-loop for window in windows
-             for share in shares
-             for edge in edges
-             do (setq cut (+ cut share))
-             (let ((delta (- (- edge cut) (nth 2 (window-edges window)))))
-               (unless (zerop delta)
-                 (adjust-window-trailing-edge window delta t))))))
-
-(defun ecc-space--window-to-split (windows)
-  "Return the one of WINDOWS a new session should be opened beside, or nil.
-The rightmost, so that a session appears where the last one did and the
-row reads in the order the sessions were started; nil says the row is
-full and `ecc-space-display-session\=' puts the new session into a window
-that is already there instead of making a narrower one.
-
-A rightmost window with less than two columns\=' worth of room is
-widened first, out of what the other session windows have above the
-column width and out of nothing else -- not the source, which is the
-window the code is read in.  Each gives in proportion to what it has
-to spare, and when all of it together is not enough the row is full."
-  ;; Measured with `window-total-width\=', not `window-body-width\=': the
-  ;; body leaves out the fringes, the margins and the scroll bar -- five
-  ;; columns on the frame this was measured on (2026-09-15) -- while
-  ;; `window-splittable-p\=' and the `window-width\=' handed to
-  ;; `display-buffer\=' are both in the total.  Mixing the two refused
-  ;; splits that fit and made the new window narrower than it was asked
-  ;; to be.
-  (let* ((room (* 2 (ecc-space--column-width)))
-         (right (car (last windows)))
-         (short (- room (window-total-width right)))
-         ;; One window per column: two transcripts the user stacked share
-         ;; one right edge, and moving it twice would take twice from
-         ;; them.  Only what stands wholly to the left of the rightmost
-         ;; has an edge that can be moved towards it.
-         (others (seq-uniq
-                  (seq-filter (lambda (window)
-                                (<= (nth 2 (window-edges window))
-                                    (nth 0 (window-edges right))))
-                              (butlast windows))
-                  (lambda (a b)
-                    (= (nth 0 (window-edges a)) (nth 0 (window-edges b)))))))
-    (when (and (> short 0)
-               (<= short (apply #'+ (mapcar #'ecc-space--spare others))))
-      (ecc-space--take-from others (ecc-space--shares others short)))
-    (and (>= (window-total-width right) room) right)))
+(defun ecc-space--show-in-new (buffer window)
+  "Show BUFFER in WINDOW, which was made for it, and return WINDOW.
+Recorded the way `display-buffer\=' records a window it made, so that
+quitting BUFFER there deletes the window rather than showing whatever
+was in it before."
+  (display-buffer-record-window 'window window buffer)
+  (set-window-buffer window buffer)
+  window)
 
 (defun ecc-space--display-beside (buffer window width &optional direction)
   "Show BUFFER in a new window WIDTH columns wide, beside WINDOW.
 DIRECTION is which side of WINDOW it goes on, `right\=' by default.
-WIDTH is columns, or a fraction of the frame the way `display-buffer\='
-reads one, and is capped at what WINDOW has to give: `display-buffer\='
-makes the new window that wide with `window-resize\=' told to ignore
-what is `safe\=' to ignore, which is every minimum and every
-`preserve-size\=' -- so a width the divided window could not give came
-out of the sidebar, ten columns of it, in an 80-column frame (measured
-2026-09-22).  Capped, the resize stays between the two halves."
-  ;; `split-width-threshold' is 160 by default and is how `display-buffer'
-  ;; guesses whether a window is wide enough to be worth dividing.  The
-  ;; guess is not wanted here: the layout has already decided, and the
-  ;; width a session may not go under is `ecc-space-session-min-width'.
-  ;; Left at the default, `window-splittable-p' refuses every window
-  ;; narrower than 160 columns, `display-buffer-in-direction' returns
-  ;; nil and `display-buffer' falls through to its other methods, which
-  ;; put the new session under the row -- the one thing a Space does not
-  ;; do (measured 2026-09-15, in an 80-column frame).
-  (let ((split-width-threshold (* 2 (max ecc-space-session-min-width
-                                         window-min-width)))
-        (width (min (if (floatp width)
-                        (round (* width (window-total-width
-                                         (frame-root-window window))))
-                      width)
-                    (- (window-total-width window) window-min-width))))
-    (display-buffer-in-direction
-     buffer `((direction . ,(or direction 'right))
-              (window . ,window)
-              (window-width . ,width)))))
+WIDTH is read by `ecc-space--width-beside\='.  Return the new window, or
+nil when WINDOW is too narrow to be divided at all.
 
-(defun ecc-space--window-to-reuse (windows)
-  "Return the one of WINDOWS holding the session started longest ago.
-What a Space gives up when the row is full: rather than divide a
-transcript into a column too narrow to read, the oldest session hands
-its window over."
-  (cl-labels ((age (window)
-                ;; `ecc-model-sessions' is most recently started first,
-                ;; so the shorter the tail from a session, the longer
-                ;; ago it started.  A window whose session is gone
-                ;; from the order has no tail at all and goes first.
-                (length (memq (ecc-window-buffer-session (window-buffer window))
-                              (ecc-model-sessions)))))
-    (car (sort (copy-sequence windows)
-               (lambda (a b) (< (age a) (age b)))))))
+The window is made with `split-window\=', not `display-buffer\='.  Asked
+for a split it cannot make, `display-buffer\=' goes on to its other ways
+of showing a buffer, and they put a session under the others (measured
+2026-09-15, in an 80-column frame).  Asked for a width, it resizes with
+every minimum and every `preserve-size\=' ignored, which took ten
+columns out of the sidebar (measured 2026-09-22)."
+  (when-let* ((new (condition-case nil
+                       (ecc-space--split-off
+                        window (ecc-space--width-beside width window)
+                        (or direction 'right))
+                     ;; Emacs refusing the split is the answer nil
+                     ;; stands for here, not a failure.
+                     (error nil))))
+    (ecc-space--show-in-new buffer new)))
+
+(defun ecc-space--window-used-longest-ago (windows)
+  "Return the one of WINDOWS whose session was selected longest ago.
+By use, as `ecc-window--sessions-by-use\=' reads it off `buffer-list\=':
+the transcript nobody has looked at for longest is the one missed
+least.  Not by start: the session started first is as often as not the
+one being worked in."
+  (cl-flet ((session-of (window)
+              (ecc-window-buffer-session (window-buffer window))))
+    (let ((oldest (car (last (ecc-window--sessions-by-use
+                              (delete-dups (mapcar #'session-of windows)))))))
+      (seq-find (lambda (window) (eq (session-of window) oldest)) windows))))
 
 (defun ecc-space-display-session (session &optional no-reuse)
   "Show SESSION in the Space of its project and return its window.
-The sessions of a Space stand side by side: the first goes beside the
-source, to the right, and every one after it divides the rightmost of
-them.  They are ordinary windows, with no role and no dedication: from
-here on they are the user\\='s to arrange.
+A session already on the screen of this tab is left where it is.
+Otherwise nothing is divided: the window of the session used longest
+ago shows SESSION instead, and the one it held goes on running with no
+window, which the sidebar and `ecc-space-reset-windows\=' bring back.
+How many sessions are on the screen, and where, is the layout\='s to
+say, and showing one more is not asking for another layout.
 
-Nothing is ever stacked.  A row with no room left for a column of
-`ecc-space-session-min-width' does not grow a narrower one -- the
-window of the session used longest ago shows the new session instead,
-and the one it held goes on running with no window, which the sidebar
-and `ecc-space-reset-windows' bring back.
+Only a tab with no session window at all gets one: beside the source,
+to the right, `ecc-window-width\=' wide.  It is an ordinary window, with
+no role and no dedication: from here on it is the user\='s to arrange.
 
 NO-REUSE says the caller would rather show nothing than take a window
 away from another session: nil comes back instead, and the session goes
-on running without a window.  That is how `ecc-space--lay-out\=' fills a
-row and knows where to stop.
-
-A session already on the screen of this tab is left where it is rather
-than opened a second time."
+on running without a window."
   (require 'ecc-session)
   (let ((buffer (ecc-session-ensure-buffer session)))
     (ecc-space-select (ecc-space-of-root (ecc-window-session-project session)))
     (or (get-buffer-window buffer)
         (if-let* ((windows (ecc-space--session-windows)))
-            (or (when-let* ((beside (ecc-space--window-to-split windows)))
-                  ;; Half of what it divides.  Left to itself
-                  ;; `display-buffer-in-direction' gives the new window
-                  ;; a few columns whatever room there is, so the second
-                  ;; session of a Space came up as a sliver beside a
-                  ;; wide transcript (measured 2026-09-15).
-                  (ecc-space--display-beside
-                   buffer beside (/ (window-total-width beside) 2)))
-                (unless no-reuse
-                  (let ((window (ecc-space--window-to-reuse windows)))
-                    (set-window-buffer window buffer)
-                    window)))
+            (unless no-reuse
+              (let ((window (ecc-space--window-used-longest-ago windows)))
+                (set-window-buffer window buffer)
+                window))
           ;; Told which window to split, so that the sidebar on the left
           ;; is not what gets divided (verified 2026-09-14).
           (ecc-space--display-beside
            buffer (or (ecc-window--source-window) (selected-window))
            ecc-window-width)))))
+
+;;;; Laying a Space out
+
+;; A layout is built from nothing, every time.  Every window of the tab
+;; but the side windows goes, and the one left is divided to fixed
+;; proportions with `split-window': the same frame and the same sessions
+;; give the same windows, whatever the tab looked like before.  What it
+;; replaced put the sessions in a row one split at a time, beside
+;; whatever was there and widening the rightmost first, and every
+;; arrangement it started from was one more way for that to go wrong:
+;; transcripts crushed to two columns, ten columns out of the sidebar, a
+;; sliver beside a wide transcript, a session put under the others.
+
+(defvar ecc-space--layouts
+  '((beside "source + session" 0))
+  "The layouts a Space is laid out in, in the order they are gone through.
+Each is (NAME DESCRIPTION SESSIONS): what `ecc-space--split\=' knows it
+by, what the echo area calls it, and the fewest sessions it needs.")
+
+(defun ecc-space--split (layout main sessions)
+  "Divide MAIN, the one window of the main area, for LAYOUT.
+SESSIONS is how many sessions there are to show.  Return the windows in
+the order they are filled: the window of the source first -- nil when
+LAYOUT has none -- then one for each slot.  A split Emacs refuses
+signals an error."
+  (pcase layout
+    ('beside
+     ;; The session column is as wide as it has always been, which is
+     ;; `ecc-window-width' of the frame.
+     (if (zerop sessions)
+         (list main)
+       (list main (ecc-space--split-off
+                   main (ecc-space--width-beside ecc-window-width main)
+                   'right))))
+    (_ (error "No layout called %s" layout))))
+
+(defun ecc-space--slot-sessions (space)
+  "Return the sessions of SPACE in the order the slots of a layout take them.
+The session of the selected window first, which is the one being worked
+in, and the rest by use, most recently selected first.  With no session
+selected, by use alone."
+  (let ((sessions (ecc-window--sessions-by-use (ecc-space-sessions space)))
+        (current (ecc-window-buffer-session (window-buffer (selected-window)))))
+    (if (memq current sessions)
+        (cons current (delq current sessions))
+      sessions)))
+
+(defun ecc-space--main-window ()
+  "Return the window of this tab a layout is built from, or nil.
+The selected window when it is not a side window, so that what is
+being read is what stays; else the first that is not."
+  (seq-find (lambda (window) (not (window-parameter window 'window-side)))
+            (cons (selected-window) (window-list nil 'no-minibuffer))))
+
+(defun ecc-space--layout-source (space window)
+  "Return the buffer the source of SPACE is shown in, laid out from WINDOW.
+The source of the project when there is one; else what WINDOW is showing,
+when that is not a buffer of this package -- a transcript there would
+be on the screen twice."
+  (let ((source (ecc-space--source-buffer space)))
+    (cond ((buffer-live-p source) source)
+          ((not (ecc-window-own-buffer-p (window-buffer window)))
+           (window-buffer window))
+          (t (get-scratch-buffer-create)))))
+
+(defun ecc-space--build (space layout)
+  "Lay SPACE out in the windows of this tab as LAYOUT, from nothing.
+Every window of the tab goes but the side windows -- the sidebar asks
+not to be deleted, and keeps its place and its width -- and the one left
+is divided as `ecc-space--split\=' says: the source of the project, and
+the sessions of SPACE by `ecc-space--slot-sessions\='.  A slot with no
+session left for it shows the source; a session with no slot goes on
+running with no window.
+
+Return non-nil when LAYOUT was built.  When Emacs refuses one of its
+splits -- a frame too small for it -- the windows are put back as they
+were and nil comes back.
+
+Point stays in the buffer it was in when that is still on the screen,
+and goes to the first session when it is not.  It is moved without
+touching `buffer-list\=', which is the order the slots are filled in:
+laying the same Space out again keeps every session in its slot."
+  (require 'ecc-session)
+  (let* ((main (or (ecc-space--main-window)
+                   (user-error "No window here to lay the Space out in")))
+         (selected (window-buffer (selected-window)))
+         (sessions (ecc-space--slot-sessions space))
+         (source (ecc-space--layout-source space main))
+         (state (window-state-get (frame-root-window) t))
+         (windows nil))
+    ;; The sidebar survives this: it carries `no-delete-other-windows',
+    ;; which is what `ecc-space-zoom' leans on as well.
+    (delete-other-windows main)
+    (condition-case nil
+        (setq windows (ecc-space--split layout main (length sessions)))
+      ;; Only the splits are inside: a refused one is the frame being too
+      ;; small for LAYOUT, and the answer to that is the windows as they
+      ;; were.
+      (error (window-state-put state (frame-root-window) 'safe)))
+    (when windows
+      (let ((ecc-space--laying-out t)
+            (slots (cdr windows)))
+        (cl-loop for window in windows
+                 for index from 0
+                 for session = (and (> index 0) (pop sessions))
+                 when window
+                 do (let ((buffer (if session
+                                      (ecc-session-ensure-buffer session)
+                                    source)))
+                      (set-window-dedicated-p window nil)
+                      (if (eq window main)
+                          ;; What it was quitting back to is gone with
+                          ;; the arrangement it belonged to.
+                          (progn (set-window-parameter window 'quit-restore nil)
+                                 (set-window-buffer window buffer))
+                        (ecc-space--show-in-new buffer window))))
+        (select-window (or (get-buffer-window selected)
+                           (car slots)
+                           (car windows))
+                       'norecord))
+      t)))
 
 (defun ecc-space--popup-window ()
   "Return the widest window of this tab a buffer of ours may be put in, or nil.
@@ -794,6 +826,13 @@ window jump (Emacs 32.0.50, 2026-09-16)."
   (set-window-buffer window buffer)
   window)
 
+(defvar ecc-space--divide-right-width 80
+  "Columns a session window needs to be divided to the right.
+What `ecc-space-display-beside-session' asks of a transcript it has to
+divide for a question or a plan: this wide, the two halves stand side
+by side; narrower, the buffer goes below the transcript instead, and
+neither is left too narrow to read.")
+
 (defun ecc-space-display-beside-session (buffer session)
   "Show BUFFER next to SESSION in its Space and return the window.
 A question, a plan, a log or an agent transcript comes out of one
@@ -810,9 +849,9 @@ the two are always seen together.  Then the widest window that holds no
 session takes the buffer -- the source, which is the one window in a
 Space wide enough to read a plan in, and which comes back as it was
 when the buffer is quit.  Only where there is no such window is a
-session window divided: to the right when it has the room for two
-columns, below it when it has not, and never so that a transcript is
-lost."
+session window divided: to the right when it is
+`ecc-space--divide-right-width' wide, below it when it is not, and never
+so that a transcript is lost."
   (require 'ecc-session)
   (let ((session-window (ecc-space-display-session session)))
     (or (get-buffer-window buffer)
@@ -820,7 +859,7 @@ lost."
           (ecc-space--display-in buffer source))
         (when (window-live-p session-window)
           (if (>= (window-total-width session-window)
-                  (* 2 (max ecc-space-session-min-width window-min-width)))
+                  ecc-space--divide-right-width)
               (ecc-space--display-beside
                buffer session-window
                (/ (window-total-width session-window) 2))
@@ -875,21 +914,21 @@ sidebar -- stays where it is (verified 2026-09-14)."
 
 ;;;###autoload
 (defun ecc-space-reset-windows ()
-  "Put this Space back to the arrangement a new tab gets.
-The source of the project on the left and the sessions of the Space
-beside it, most recently started first, until the row has no room for
-another column of `ecc-space-session-min-width\=' -- the same rules the
-tab was dealt with, run by the same code, so the two cannot drift
-apart.  The sessions that do not fit go on running with no window.
+  "Lay this Space out again, from nothing.
+The source of the project on the left and a session beside it, the
+column `ecc-window-width\=' of the frame -- the arrangement a new tab
+gets, built by the same code, so the two cannot drift apart.  The
+session is the one in the selected window, or else the one used most
+recently; the others go on running with no window.
 
 The windows of a Space are the user\='s and nothing rearranges them on
 its own.  This is the command that says start again, for a tab that has
 been split, zoomed, filled with a review or given over to transcripts
 with no window left to read the code in.
 
-The sidebar stays where it is, at the width it had: it is a side window
-that asked not to be deleted.  A sidebar that was hidden comes back,
-because a new tab has one -- `ecc-sidebar-toggle\=' puts it away again.
+The sidebar stays as it is: it is a side window that asked not to be
+deleted, and keeps its place and its width; one that was hidden stays
+hidden.
 
 The zoom of this Space is forgotten: the arrangement it was the way
 back to has just gone, and `ecc-space-zoom\=' afterwards zooms from
@@ -903,22 +942,11 @@ again."
     (user-error "Resetting the windows needs `ecc-use-spaces'; \
 without it the roles are dealt out by `ecc-focus-project'"))
   (let ((space (or (ecc-space-current)
-                   (user-error "This tab is not a Space; `C-c c j' goes to one")))
-        ;; The window the code is read in, or -- on a tab that is all
-        ;; transcripts -- whichever window is not the sidebar.  Either
-        ;; way `ecc-space--lay-out' is about to put the source in it.
-        (keep (or (ecc-space--source-window)
-                  (seq-find (lambda (window)
-                              (not (window-parameter window 'window-side)))
-                            (window-list nil 'no-minibuffer)))))
-    (unless (window-live-p keep)
-      (user-error "No window here to lay the Space out in"))
+                   (user-error "This tab is not a Space; `C-c c j' goes to one"))))
     (ecc-space--forget-zoom)
-    (select-window keep)
-    ;; The sidebar survives this: it carries `no-delete-other-windows',
-    ;; which is what `ecc-space-zoom' leans on as well.
-    (delete-other-windows keep)
-    (ecc-space--lay-out space)
+    (unless (ecc-space--build space 'beside)
+      (user-error "No room in this frame to lay %s out"
+                  (ecc-space-name space)))
     (message "%s: %d session%s on the screen"
              (ecc-space-name space)
              (length (ecc-space--session-windows))

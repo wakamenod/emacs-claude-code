@@ -936,14 +936,10 @@ one Space laid out underneath them."
   (require 'ecc-sidebar)
   (shot-foreign-session)
   ;; Wide enough for the sidebar, the source and two transcripts side by
-  ;; side.  A transcript may not go under `ecc-space-session-min-width\=',
-  ;; 80 columns, and no screen this is run on fits that twice beside the
-  ;; rest -- so the picture is taken with the width the frame can really
-  ;; give two of them.
+  ;; side.
   (let* ((area (shot-workarea))
          (columns (min 170 (/ (- (nth 2 area) 48) (frame-char-width)))))
-    (set-frame-size (selected-frame) columns 32)
-    (setq ecc-space-session-min-width 44))
+    (set-frame-size (selected-frame) columns 32))
   (shot-place-frame-bottom-right)
   ;; A tab for each project, ending on the demo one: the picture is of
   ;; its Space, with the other Space waiting in the tab bar and in the
@@ -984,7 +980,6 @@ one Space laid out underneath them."
   "Take the tabs, the sidebar and the second project away again.
 Every scene after this one photographs one frame of windows, and a tab
 bar or a sidebar left behind would be in all of them."
-  (setq ecc-space-session-min-width 80)
   (ecc-sidebar-hide)
   (tab-bar-mode -1)
   (set-frame-size (selected-frame) 112 44)
@@ -1210,8 +1205,7 @@ what the scene is about."
               '((name . shot-usecase)))
   (let* ((area (shot-workarea))
          (columns (min 150 (/ (- (nth 2 area) 48) (frame-char-width)))))
-    (set-frame-size (selected-frame) columns 34)
-    (setq ecc-space-session-min-width 44))
+    (set-frame-size (selected-frame) columns 34))
   (shot-place-frame-bottom-right)
   ;; A Space is offered under a line that begins with its number and its
   ;; name in a fixed column, so the default prefix completion finds
@@ -1284,7 +1278,6 @@ under the repository it came from."
       (let ((kill-buffer-query-functions nil))
         (kill-buffer (ecc-session-buffer shot-usecase-session))))
     (setq shot-usecase-session nil))
-  (setq ecc-space-session-min-width 80)
   (set-frame-size (selected-frame) 112 44)
   (shot-place-frame-bottom-right)
   (shot-scene-sidebar-end))
