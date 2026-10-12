@@ -1188,15 +1188,6 @@ history."
   (interactive)
   (ecc-chat-clear-draft))
 
-(defun ecc-prompt-show-queue ()
-  "Show the prompts waiting to be sent."
-  (interactive)
-  (let ((queue (ecc-session-input-queue (ecc-prompt-session))))
-    (if (null queue)
-        (message "The queue is empty")
-      (message "Queue: %s"
-               (mapconcat (lambda (text) (ecc--truncate text 30)) queue " | ")))))
-
 (provide 'ecc-prompt)
 
 ;;; ecc-prompt.el ends here

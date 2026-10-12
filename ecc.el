@@ -58,6 +58,7 @@
 (require 'ecc-chat)
 (require 'ecc-session)
 (require 'ecc-prompt)
+(require 'ecc-queue)
 (require 'ecc-perm)
 (require 'ecc-hooks)
 (require 'ecc-plan)
