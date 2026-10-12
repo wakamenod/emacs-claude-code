@@ -115,7 +115,7 @@ On a request waiting for an answer, more keys apply: see [Permissions and plans]
 | A diff line in the Files section or a permission request | That line |
 | A path in Claude's reply (`foo.el:12`, `a/b.el`, `x.el#L3`) | The file at that line |
 
-The line number follows later changes the session made to the same file, so the file opens where the line is now. A video or sound file opens in the system's player. Paths inside fenced code blocks are not links; `(setq ecc-markdown-linkify-paths nil)` turns path links off. On a heading without a file, `RET` shows the full tool result.
+The line number follows later changes the session made to the same file, so the file opens where the line is now. A video or sound file opens in the system's player. A path that is not there as written, such as a name without its directory, opens the file of that name in the project; when there are several, you choose one, and the session remembers the choice. A file that is not in the project is searched for on the whole machine after asking; `ecc-visit-search-machine` set to `'always` or `'never` answers for you. Paths inside fenced code blocks are not links; `(setq ecc-markdown-linkify-paths nil)` turns path links off. On a heading without a file, `RET` shows the full tool result.
 
 :::note[Diffs under a Bash command]
 The CLI reports the files a Bash command changed, in every permission mode, only when `"bashEditDiffEnabled": true` is in `~/.claude/settings.json` (not a project's settings), and only for files inside a git repository.

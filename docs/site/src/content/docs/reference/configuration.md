@@ -41,6 +41,7 @@ There is no setting for the model or for a budget: both belong to your Claude Co
 | `ecc-render-debounce` | `0.1` | Seconds to wait before redrawing the part of the transcript that is changing |
 | `ecc-show-hook-events` | `nil` | Non-nil shows each hook that fires, with its exit code and output. The hooks run either way. Read when a session starts |
 | `ecc-image-inline` | `t` | `nil` shows only the line naming each image or video |
+| `ecc-visit-search-machine` | `'ask` | Whether `RET` on a path in a reply that is not in the project searches the whole machine: `'ask` asks each time, `'always` searches, `'never` does not |
 
 ## Header line and mode line
 

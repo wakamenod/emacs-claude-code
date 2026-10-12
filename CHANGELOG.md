@@ -15,6 +15,29 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 Verified against **Claude Code CLI 2.1.290**.
 
+### Added
+
+- `RET` or a click on a path Claude wrote in a reply opens the file even when
+  the path does not say where it is: a bare name such as `foo-test.el` for a
+  file in `test/`, or a path written against another directory than the
+  session's. Until now such a path was taken against the session's directory
+  alone and ended in "No such file". The path is tried as written against the
+  session's directory and then the project root; failing that, it is matched
+  as the end of a path, on a directory boundary (`foo.el` is `a/foo.el` and not
+  `a/barfoo.el`), against the files the session read or changed and the files
+  Emacs visits, then against the project's files, the list `@` completion
+  offers. The first of these that has a match ends the search. One match opens
+  at once and the echo area says where it was found; several are offered with
+  `completing-read`, shown from the project root, with the session's own files
+  first, then the nearest to the session's directory, then the shortest. The
+  pick is remembered for the session until that file is gone. Found nowhere in
+  the project, the whole machine is searched -- Spotlight (`mdfind -name`) on
+  macOS, `locate` elsewhere -- after asking each time; the new
+  `ecc-visit-search-machine` (`ask`, `always` or `never`) decides that. The
+  line the path named is kept wherever the file was found. A path that starts
+  at `/` or `~` is still only taken as written, and the paths of tool calls,
+  the Files section and diffs, which are absolute already, open as before.
+
 ### Fixed
 
 - A numbered list item in the transcript showed a bullet in place of its
