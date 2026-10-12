@@ -340,6 +340,21 @@ tab in front of you."
      (current (list state 'ecc-tab-current-face))
      (t (list state)))))
 
+(defun ecc-tab-column-mark (state)
+  "Return the mark of STATE with its face, where a mark opens a line.
+What the sidebar, the session picker and the Space picker put in front
+of a name.  Idle gets `·\=' -- the tab line leaves it blank -- so that
+an idle name does not stand a column to the left of every other, and a
+STATE of nil -- a Space with nothing running, or one only recordings
+are left of -- a blank of the same width.  The face is the mark\='s of
+the moment of asking, not blinking; the sidebar lays the face of its
+whole row over it."
+  (let ((ecc-tab--blink-phase nil))
+    (if state
+        (propertize (ecc-tab-mark-of-state state t)
+                    'face (ecc-tab-faces-of-state state nil))
+      " ")))
+
 (defvar ecc-tab-line-scope 'project
   "Which sessions the tab line of a session window lists.
 `project' lists the sessions of that window's own project, so that a
@@ -512,8 +527,9 @@ was clicked in, which is the whole point of them."
             (kill-local-variable 'tab-line-tab-face-functions)
             (kill-local-variable 'tab-line-close-tab-function)))))))
   ;; A tab line is cached per window on a key that does not know a
-  ;; session's state, so a state that changed needs the cache cleared
-  ;; rather than a redisplay alone.
+  ;; session's state, nor the name of any buffer but the window's own,
+  ;; so a state that changed or a session renamed needs the cache
+  ;; cleared rather than a redisplay alone.
   (ecc-tab--force-update)
   (ecc-tab-blink-update))
 
@@ -591,11 +607,13 @@ what a tab says already goes through."
         (add-hook 'ecc-session-state-changed-hook #'ecc-tab-line--install)
         (add-hook 'ecc-request-added-hook #'ecc-tab-line--install)
         (add-hook 'ecc-request-resolved-hook #'ecc-tab-line--install)
-        (add-hook 'ecc-session-init-hook #'ecc-tab-line--install))
+        (add-hook 'ecc-session-init-hook #'ecc-tab-line--install)
+        (add-hook 'ecc-session-renamed-hook #'ecc-tab-line--install))
     (remove-hook 'ecc-session-state-changed-hook #'ecc-tab-line--install)
     (remove-hook 'ecc-request-added-hook #'ecc-tab-line--install)
     (remove-hook 'ecc-request-resolved-hook #'ecc-tab-line--install)
-    (remove-hook 'ecc-session-init-hook #'ecc-tab-line--install))
+    (remove-hook 'ecc-session-init-hook #'ecc-tab-line--install)
+    (remove-hook 'ecc-session-renamed-hook #'ecc-tab-line--install))
   (ecc-tab-line--install))
 
 (defun ecc-tab-bar-tab-name ()

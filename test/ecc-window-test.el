@@ -157,6 +157,19 @@ because only one of them moves: what it does to the other is the bug."
     (should (equal (ecc-session-name one) "refactor"))
     (should (equal (buffer-name (ecc-session-buffer one)) "*ecc: refactor*"))))
 
+(ert-deftest ecc-window-test-rename-to-the-same-name ()
+  "A session does not collide with itself.
+The prompt offers the name the session has, so confirming it unchanged
+used to rename the session to NAME<2>."
+  (ecc-window-test--with-sessions one two
+    (ecc-session-ensure-buffer one)
+    (ecc-rename-session one (ecc-session-name one))
+    (should (equal (ecc-session-name one) "one"))
+    (should (equal (buffer-name (ecc-session-buffer one)) "*ecc: one*"))
+    ;; Another session's name is still taken.
+    (ecc-rename-session one (ecc-session-name two))
+    (should (equal (ecc-session-name one) "two<2>"))))
+
 ;;;; Roles and hiding
 
 (defmacro ecc-window-test--with-frame (roomy &rest body)
@@ -677,6 +690,31 @@ the repository leaves the repository and its worktree."
               (should (equal (all-completions "project-one" table)
                              '("project-one/one" "project-one › feat/x/two")))))
         (ecc-test-cleanup-session three)))))
+
+(ert-deftest ecc-window-test-picker-worktree-follows-its-repository-tab ()
+  "A worktree's group starts with what its repository's group is called.
+A repository whose tab is `app<2>\=' has its sessions under `app<2>\=',
+and its worktree's under `app<2> › feat/x\=', so that typing `app<2>\='
+leaves both."
+  (ecc-window-test--with-sessions one two
+    (require 'ecc-space)
+    (let* ((ecc-use-spaces t)
+           (main (ecc-window-session-project one))
+           (worktree (ecc-window-session-project two)))
+      (cl-letf (((symbol-function 'ecc-space-of-root)
+                 (lambda (root)
+                   (if (equal root worktree)
+                       (make-ecc-space :key root :root root
+                                       :name "feat/x" :parent main)
+                     (make-ecc-space :key root :root root :name "app"))))
+                ((symbol-function 'ecc-space-tab)
+                 (lambda (space)
+                   (and (equal (ecc-space-key space) main) "app<2>"))))
+        (ecc-window-test--picking "app<2>/one"
+          (ecc-window-read-session)
+          (should (equal (sort (copy-sequence offered) #'string<)
+                         '("app<2> › feat/x/two" "app<2>/one")))
+          (should (equal (length (all-completions "app<2>" table)) 2)))))))
 
 (ert-deftest ecc-window-test-picker-worktree-without-its-repository ()
   "A worktree whose repository has no session stays where it came."

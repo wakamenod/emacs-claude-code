@@ -346,6 +346,53 @@ among."
         (ecc-test-cleanup-session second)
         (ecc-model-remove-session second)))))
 
+(defun ecc-notify-test--tab-line (window)
+  "Return the tab line WINDOW draws, as one string, cache and all."
+  (with-selected-window window
+    (apply #'concat (tab-line-format))))
+
+(defun ecc-notify-test--rename-seen-from-another-window (rename)
+  "Check that a rename by RENAME reaches the tab line of another window.
+RENAME is called with the session to rename, in the window showing it.
+A tab line is cached per window on the tab buffers and the name of the
+window's own buffer: the window showing the other session kept drawing
+the old name until something else cleared its cache."
+  (ecc-test-with-fake-session first
+    (let ((second (ecc-model-create-session
+                   :name "other" :project-root (ecc-session-project-root first))))
+      (unwind-protect
+          (save-window-excursion
+            (ecc-session-ensure-buffer first)
+            (ecc-session-ensure-buffer second)
+            (ecc-tab-line-mode 1)
+            (delete-other-windows)
+            (let ((a (selected-window))
+                  (b (split-window)))
+              (set-window-buffer a (ecc-session-buffer first))
+              (set-window-buffer b (ecc-session-buffer second))
+              (should (string-match-p " test " (ecc-notify-test--tab-line b)))
+              (with-selected-window a
+                (funcall rename first))
+              (let ((line (ecc-notify-test--tab-line b)))
+                (should (string-match-p " renamed " line))
+                (should-not (string-match-p " test " line)))))
+        (ecc-tab-line-mode -1)
+        (ecc-test-cleanup-session second)
+        (ecc-model-remove-session second)))))
+
+(ert-deftest ecc-notify-test-a-rename-reaches-the-tab-line-of-another-window ()
+  "A session renamed from Emacs is renamed in every window's tab line."
+  (ecc-notify-test--rename-seen-from-another-window
+   (lambda (session) (ecc-rename-session session "renamed"))))
+
+(ert-deftest ecc-notify-test-a-cli-rename-reaches-the-tab-line-of-another-window ()
+  "A session renamed by `/rename\=' is renamed in every window's tab line."
+  (ecc-notify-test--rename-seen-from-another-window
+   (lambda (session)
+     (ecc-dispatch session '((type . "system")
+                             (subtype . "session_title_changed")
+                             (title . "renamed"))))))
+
 (ert-deftest ecc-notify-test-tab-line-mode-installs-and-removes ()
   "The mode turns `tab-line-mode' on in the session buffers, and off again."
   (ecc-test-with-fake-session session

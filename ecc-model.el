@@ -158,6 +158,12 @@ edit does, and `ecc-files-updated-hook\=' hears only of the file tools.")
 (defvar ecc-session-state-changed-hook nil
   "Functions run with a session and its previous state.")
 
+(defvar ecc-session-renamed-hook nil
+  "Functions run with a session that has just been given a new name.
+A name is drawn in more places than the session buffer's own: the tab
+line of every window that lists the session, and the file the open
+sessions are saved in.")
+
 (defvar ecc-session-removed-hook nil
   "Functions run with a session that has just been forgotten.
 The session is already out of the registry when this runs, which is
@@ -352,11 +358,15 @@ registry is most recently started first."
   (let ((id (ecc-session-id session)))
     (setq ecc--session-order (cons id (delete id ecc--session-order)))))
 
-(defun ecc-model-unique-name (base)
-  "Return BASE, or BASE with a suffix if a session already uses it."
+(defun ecc-model-unique-name (base &optional except)
+  "Return BASE, or BASE with a suffix if a session already uses it.
+EXCEPT is a session the name is not taken from: the one being renamed
+keeps the name it already has rather than colliding with itself, which
+turned a rename that changed nothing into BASE<2>."
   (let ((name base)
         (n 1))
-    (while (seq-find (lambda (s) (equal (ecc-session-name s) name))
+    (while (seq-find (lambda (s) (and (not (eq s except))
+                                      (equal (ecc-session-name s) name)))
                      (ecc-model-sessions))
       (setq n (1+ n)
             name (format "%s<%d>" base n)))
@@ -713,6 +723,21 @@ over is not idle while one of these is still at work."
                  (push node nodes)))
              (ecc-session-nodes session))
     nodes))
+
+(defun ecc-model-busy (session)
+  "Return what SESSION is in the middle of, or nil when it may be stopped.
+A session whose turn is over is still busy while a subagent or a
+backgrounded shell command it started runs on; a stopped one is not,
+whatever its last tasks said.  The answer is a phrase that reads after
+the session's name: `list_worktrees\=' says it, and so do the commands
+that refuse to stop a busy session."
+  (pcase (ecc-model-activity session)
+    ('attention "waiting on a request")
+    ('running "running")
+    ((or 'exited 'restored) nil)
+    (_ (when-let* ((tasks (ecc-model-running-tasks session)))
+         (format "idle with %d background task%s still running"
+                 (length tasks) (if (cdr tasks) "s" ""))))))
 
 (defun ecc-model-turn-of (node)
   "Return the turn NODE belongs to, or nil."

@@ -17,6 +17,22 @@ Verified against **Claude Code CLI 2.1.290**.
 
 ### Added
 
+- `ecc-restart` stops the CLI of an idle session and starts it again on the
+  same conversation, in the same buffer: the transcript, the draft in the
+  prompt, the review baseline and the permission mode stay. It is for a CLI
+  that has stopped answering, or one that should read changed Claude Code
+  settings, MCP servers or plugins. It asks first, and looks again once the
+  answer is in. A session with a turn running, a request waiting or prompts
+  queued is refused with a word to interrupt it first; one with a subagent or
+  a backgrounded shell command still running is refused until it is done; and
+  an inline session is refused outright. A fork that has not been given its
+  own id yet is forked again rather than resumed onto the conversation it
+  came from. A
+  conversation with a recording is resumed with `--resume`; one that was never
+  sent a prompt has none, and starts again under its own id with
+  `--session-id`. `R` in a session buffer now restarts an idle running session
+  and resumes a stopped one, and `ecc-menu` has it under `S`. `C-c c r`
+  (`ecc-resume`) still only goes to a running session.
 - The prompts waiting for the running turn to end are drawn at the end of the
   transcript, just above the separator: a `⏸ Queued (N)` line and one dim line
   per prompt, cut to the window. Nothing is drawn while the queue is empty, and
@@ -93,7 +109,72 @@ Verified against **Claude Code CLI 2.1.290**.
   fenced block as it is fontified, and `ecc-image-width` is what
   `ecc-render--image-width` was.
 
+### Changed
+
+- The Space picker of `C-c c j` (`ecc-space-goto`) groups the Spaces under
+  `Open`, the Spaces of the sidebar in its order, and `Past`, the projects
+  only recordings are left of, newest first; `ecc-space-close`, when it asks,
+  shows the same `Open` list alone. Each line is drawn the way the sidebar draws the row: the Space's
+  state mark (`⚠`, `▶`, `✗`, `○`, and `·` for idle; blank for a Space with
+  nothing running), its sidebar number `[n]`, and `├─` / `└─` in front of a
+  worktree under its repository. A past one gets blanks for the mark and the
+  number and no tree line, even when it is a worktree of an open repository,
+  and a dimmed `past` before its directory, which is what tells it apart where
+  the group headings do not show. The directory follows,
+  dimmed, in a column of its own; the state word is gone. What is typed is
+  matched against the name alone, not the mark, the number or the directory.
+  A worktree's name is what its repository goes by and its branch
+  (`emacs-claude-code › feat/x`, or `app<2> › feat/x` under a repository
+  whose tab is `app<2>`), the same title the session picker now gives its
+  group, so typing a repository's name narrows the list to it and its
+  worktrees; any other Space goes by its tab's name, or its own when it has
+  no tab. Two Spaces that would share a name become `name` and `name<2>`.
+  The groups show in a completion UI that reads `group-function` -- vertico
+  does, and the default `*Completions*` with `completions-group` on; the
+  mark, the number, the tree line and the directory show in both, with
+  `completions-group` on or off.
+
 ### Fixed
+
+- A turn waiting on a permission, a question or a plan, or one compacting its
+  context, was not interrupted before its CLI was stopped for a hand-off to the
+  terminal or a `/resume`: only a session whose state said `running` was taken
+  to be in a turn, and these say `waiting-permission`, `compacting` and the
+  like. The CLI was stopped mid-turn instead. Whether a turn is open now
+  decides it, so such a turn is interrupted first, like a running one.
+  Introduced in 0.3.0.
+- A prompt queued behind a turn was lost when the session was handed over to
+  the terminal or carried on with `/resume` mid-turn. The result that ended the
+  interrupted turn sent the prompt, which opened a turn of its own; the
+  hand-off then waited that turn out and stopped the CLI in the middle of it,
+  so the prompt was never answered. The queue is now held while the CLI is
+  being stopped, and is sent once the session is back. Introduced in 0.1.0.
+- A session taken back from the terminal while a CLI of its own was already
+  running again could be left with a turn open on an idle CLI: the lines the
+  terminal had appended were read in with their turn kept open, and nothing
+  closed it. Every prompt then waited in the queue behind it. The turn is now
+  closed when the follow ends, unless the running CLI is itself in a turn.
+  Introduced in 0.1.0.
+
+- Reply text in the transcript could be painted red, or mauve, across a whole
+  stretch: with `show-paren-mode` on and `show-paren-style` set to `mixed` or
+  `expression`, point near a paren that does not pair -- a `1)` list item, a
+  full-width `（` closed by a half-width `)` -- highlighted everything to its
+  supposed partner. Session buffers now turn paren matching off for
+  themselves, through a buffer-local `show-paren-predicate`, and stay so when
+  the global mode is turned on later; the global settings are left alone, and
+  `show-paren-local-mode` still brings it back in one buffer.
+
+- `C-c c j` (`ecc-space-goto`) answered with `RET` and nothing typed, under
+  the default completion, went on with no Space and failed with
+  `wrong-type-argument`; so did `ecc-space-close` when it asked. It says "No
+  Space chosen" now. Introduced in 0.3.0, with `ecc-space-goto`.
+
+- `ecc-space-close`, asked from outside any Space, offered the projects only
+  recordings are left of along with the open Spaces. Picking one stopped
+  nothing and closed no tab, said "Closed" all the same, and for a worktree
+  went on to offer removing its directory. It offers the open Spaces alone
+  now. Introduced in 0.3.0, with `ecc-space-past-projects`.
 
 - A numbered list item in the transcript showed a bullet in place of its
   number: `1.` and `10)` were drawn as `•`, like a `-` item, so a reply's
@@ -141,6 +222,46 @@ Verified against **Claude Code CLI 2.1.290**.
   header as it is, and one with BEL, VT, FF or CR with an octal escape;
   git writes `\177`, `\a`, `\v`, `\f` and `\r`, and the review now
   writes them so.
+
+- A slash command the CLI runs itself -- `/rename`, `/model`, `/cost` and the
+  rest -- is drawn as the command it is in a live session, and no longer as a
+  reply the model wrote. The live stream does not spread such a command over
+  the messages a recording holds: it sends one synthetic assistant message
+  carrying `local_command_run` and `local_command_source`, which nothing here
+  read, so the pretty command node existed only when a recording was replayed.
+  A command typed in the prompt region is not drawn a second time under the
+  turn it heads, also when the CLI reports it under another name: `/cost`
+  comes back as `usage` (confirmed against CLI 2.1.290, 2026-10-12).
+
+- `/rename` renames the session in Emacs, with its buffer, its mode line, the
+  tab line of every window and every menu that lists it, and the name is saved
+  for `ecc-restore`. The CLI sends `system/session_title_changed` with
+  the name it settled on, ahead of `system/init` when the command is the first
+  thing the process runs; nothing here read it, so the two names drifted apart
+  and the event was drawn as a stray notice. It is now applied to the session
+  and drawn as nothing, and the name is never guessed from what the command
+  printed or the argument it was given (confirmed against CLI 2.1.290,
+  2026-10-12).
+
+- Renaming a session to the name it already has leaves it alone. The prompt
+  of `C-c c R` offers the current name, and confirming it unchanged renamed
+  the session to `NAME<2>`: `ecc-model-unique-name` counted the session
+  itself as a collision. It now takes the session to leave out.
+
+- `R` in the dashboard is the rename `C-c c R` is. It skipped the trim, so a
+  name of nothing but blanks went through; it wrote the buffer name itself
+  instead of asking `ecc-session-buffer-name` for it; and it offered no
+  default. All three are gone: both keys now call `ecc-rename-session`.
+
+- A rename (`C-c c R`, or `R` in the dashboard) could leave the old name
+  behind. The tab line of another window that listed the session kept the old
+  name until the next change of state drew it again: a window caches its tab
+  line on the tabs and the name of its own buffer, not on the names of the
+  others. And a rename saved nothing for `ecc-restore`, so an Emacs that went
+  down before the next save brought the session back under its old name. Every
+  rename now runs the new `ecc-session-renamed-hook`, on which the tab lines are
+  drawn again and the open sessions are saved. Introduced in 0.1.0; the missing
+  save in 0.4.0, with `ecc-restore`.
 
 ## [0.4.1] - 2026-10-12
 

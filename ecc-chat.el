@@ -90,6 +90,7 @@
 (declare-function ecc-session-review-file "ecc-session" ())
 (declare-function ecc-session-review-or-deny "ecc-session" ())
 (declare-function ecc-session-timeline "ecc-session" ())
+(defvar show-paren-predicate)
 (declare-function ecc-session-copy-at-point "ecc-session" ())
 (declare-function ecc-session-export-markdown "ecc-session" (file))
 (declare-function ecc-perm-allow "ecc-perm" ())
@@ -376,6 +377,18 @@ row.  TAB folds, on this row as on every other.")
   ;; but a user who has turned it off globally means that for files, not
   ;; for a transcript that has no lines of its own (confirmed 2026-09-11).
   (visual-line-mode 1)
+  ;; No paren matching: the buffer is prose, and prose is full of parens
+  ;; that do not pair -- `1)' list items, `(笑', a full-width `（' closed
+  ;; by a half-width `)'.  With `show-paren-style' `mixed' or
+  ;; `expression', point near one of them painted the whole stretch to
+  ;; its supposed partner in `show-paren-mismatch' (confirmed
+  ;; 2026-10-12).  A nil `show-paren-predicate', buffer-local, rather
+  ;; than `(show-paren-local-mode -1)': that leaves no local value when
+  ;; the global mode is off as the buffer is made, so turning it on later
+  ;; would bring it back, whereas the predicate is asked every time.  A
+  ;; user who wants it here still has `show-paren-local-mode', which
+  ;; `show-paren--enabled-p' heeds before the predicate.
+  (setq-local show-paren-predicate nil)
   ;; A folded body shows as an ellipsis after its heading.
   (add-to-invisibility-spec '(ecc-fold . t))
   ;; Markdown markup symbols are hidden by the ecc-markup spec.

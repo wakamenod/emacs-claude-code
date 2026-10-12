@@ -227,6 +227,30 @@ and a draft typed meanwhile is untouched (phase 9b)."
       (should (process-live-p (ecc-session-process session))))))
 
 
+(ert-deftest ecc-test-live-release-a-blocked-turn ()
+  "A turn blocked on a permission is interrupted, ends, and the CLI stops at once.
+The CLI answers the interrupt of a turn waiting on `can_use_tool' with
+a result (2.1.290, 2026-10-12), so the release does not sit out its
+timeout.  The prompt queued behind the turn is still in the queue."
+  :tags '(live)
+  (ecc-test-live-with-session session
+    (let ((file (expand-file-name "ecc-live-release.txt" temporary-file-directory)))
+      (ecc-proc-send-prompt
+       session
+       (format "Use the Write tool to create the file %s containing hello. Do not run any commands." file))
+      (ecc-test-live-wait session (lambda () (car (ecc-session-pending session)))
+                          "the permission request")
+      (ecc-proc-send-prompt session "queued behind the request")
+      (let ((turn (ecc-session-current-turn session))
+            (start (float-time)))
+        (ecc-proc-release session)
+        (should (< (- (float-time) start) 5))
+        (should (ecc-turn-result turn)))
+      (should-not (process-live-p (ecc-session-process session)))
+      (should-not (ecc-session-pending session))
+      (should (= 1 (length (ecc-session-input-queue session))))
+      (should-not (file-exists-p file)))))
+
 (ert-deftest ecc-test-live-streaming ()
   "A long Write streams its input and the reply grows delta by delta.
 The phase 2 acceptance check: each delta costs well under 5ms to draw."

@@ -46,7 +46,7 @@
 (require 'ecc-window)
 (require 'ecc-visit)
 
-(declare-function ecc-resume "ecc" (session &optional fork))
+(declare-function ecc-restart "ecc" (session &optional confirm))
 (declare-function ecc-perm-deny "ecc-perm" (&optional reason))
 (declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
 (declare-function ecc-question-open "ecc-perm" (request))
@@ -114,6 +114,22 @@ buffer."
   "Return the name of the buffer of the session called NAME."
   (format "*ecc: %s*" name))
 
+(defun ecc-session-set-name (session name)
+  "Rename SESSION to NAME, with its buffer, and return the name used.
+The name is made unique among the sessions first, SESSION itself not
+counting (`ecc-model-unique-name\=').  Every rename goes through here:
+the one the user asks for, and the one `/rename\=' does in the CLI."
+  (let ((name (ecc-model-unique-name (string-trim name) session)))
+    (when (string-empty-p name)
+      (user-error "The name is empty"))
+    (setf (ecc-session-name session) name)
+    (when (buffer-live-p (ecc-session-buffer session))
+      (with-current-buffer (ecc-session-buffer session)
+        (rename-buffer (ecc-session-buffer-name name) t)))
+    (force-mode-line-update t)
+    (run-hook-with-args 'ecc-session-renamed-hook session)
+    name))
+
 (defun ecc-session-ensure-buffer (session)
   "Return the buffer of SESSION, creating and drawing it if needed."
   (let ((buffer (ecc-session-buffer session)))
@@ -151,10 +167,13 @@ buffer."
     (message "Interrupt requested")))
 
 (defun ecc-session-resume ()
-  "Start this session again with --resume."
+  "Bring the CLI of this session back.
+A session that has stopped is resumed; an idle one that is still
+running is restarted once the user agrees (`ecc-restart\=').  One key
+for both, since what is wanted either way is a CLI that answers again."
   (interactive)
   (require 'ecc)
-  (ecc-resume (ecc-session-at-point)))
+  (ecc-restart (ecc-session-at-point) t))
 
 (defun ecc-session-show-log ()
   "Show the raw protocol log of this session."
