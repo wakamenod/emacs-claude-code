@@ -14,6 +14,7 @@
 (require 'ecc)
 (require 'ecc-session)
 (require 'ecc-perm)
+(require 'ecc-prompt)
 (require 'ecc-visit)
 
 (defun ecc-visit-test--replay-edit (session)
@@ -423,32 +424,319 @@ point and stops there."
       :data '((text . "It is in `ecc-session.el:163`, see also lisp/a/b.el.\n\n```\nnot/this/one.el\n```\n"))))
     (ecc-render-flush session)
     (with-current-buffer (ecc-session-buffer session)
-      (let ((root default-directory))
-        (goto-char (point-min))
-        (search-forward "ecc-session")
-        (should (equal (ecc-visit-target-at-point)
-                       (cons (expand-file-name "ecc-session.el" root) 163)))
-        ;; Drawn as a link, so a click opens it as well as RET.
-        (should (get-text-property (point) 'mouse-face))
-        (search-forward "lisp/a")
-        (should (equal (ecc-visit-target-at-point)
-                       (list (expand-file-name "lisp/a/b.el" root))))
-        (search-forward "not/this")
-        (should-not (ecc-visit-target-at-point))
-        (let (opened)
-          (cl-letf (((symbol-function 'ecc-visit-open)
-                     (lambda (file line &rest _) (setq opened (cons file line)))))
-            (goto-char (point-min))
-            (search-forward "ecc-session")
-            (ecc-session-visit)
-            (should (equal opened (cons (expand-file-name "ecc-session.el" root)
-                                        163)))
-            (setq opened nil)
-            (let ((pos (point)))
+      ;; The buffer stands in a directory of its own, which holds the
+      ;; file named first.
+      (let ((root (file-name-as-directory (make-temp-file "ecc-visit-prose" t))))
+        (setq default-directory root)
+        (write-region "" nil (expand-file-name "ecc-session.el" root) nil 'silent)
+        (unwind-protect
+            (progn
               (goto-char (point-min))
-              (ecc-visit-test--click pos)))
-          (should (equal opened (cons (expand-file-name "ecc-session.el" root)
-                                      163))))))))
+              (search-forward "ecc-session")
+              (should (equal (ecc-visit-target-at-point)
+                             (cons (expand-file-name "ecc-session.el" root) 163)))
+              ;; Drawn as a link, so a click opens it as well as RET.
+              (should (get-text-property (point) 'mouse-face))
+              (search-forward "lisp/a")
+              (should (equal (ecc-visit-target-at-point)
+                             (list (expand-file-name "lisp/a/b.el" root))))
+              (search-forward "not/this")
+              (should-not (ecc-visit-target-at-point))
+              (let (opened)
+                (cl-letf (((symbol-function 'ecc-visit-open)
+                           (lambda (file line &rest _) (setq opened (cons file line)))))
+                  (goto-char (point-min))
+                  (search-forward "ecc-session")
+                  (ecc-session-visit)
+                  (should (equal opened (cons (expand-file-name "ecc-session.el" root)
+                                              163)))
+                  (setq opened nil)
+                  (let ((pos (point)))
+                    (goto-char (point-min))
+                    (ecc-visit-test--click pos)))
+                (should (equal opened (cons (expand-file-name "ecc-session.el" root)
+                                            163)))))
+          (delete-directory root t))))))
+
+;;;; Finding a path the model wrote
+
+(defmacro ecc-visit-test--with-tree (vars files &rest body)
+  "Run BODY with a project of FILES in a fresh directory.
+VARS is (SESSION ROOT): SESSION a session whose project root is ROOT.
+FILES are relative to ROOT.  Nothing is asked and nothing outside ROOT
+is searched unless BODY says so: the project's files are ROOT's own,
+`y-or-n-p', `completing-read' and the machine search are errors.  The
+buffers visiting the files are killed afterwards."
+  (declare (indent 2))
+  `(ecc-test-with-fake-session ,(car vars)
+     (let* ((,(cadr vars) (file-name-as-directory
+                           (make-temp-file "ecc-visit-tree" t)))
+            (default-directory ,(cadr vars))
+            (ecc-visit-search-machine 'ask)
+            (ecc-visit-machine-search-function
+             (lambda (name) (error "Searched the machine for %s" name))))
+       (setf (ecc-session-project-root ,(car vars)) ,(cadr vars))
+       (dolist (file ,files)
+         (let ((path (expand-file-name file ,(cadr vars))))
+           (make-directory (file-name-directory path) t)
+           (write-region (format "%s\n2\n3\n4\n5\n" file) nil path nil 'silent)))
+       (unwind-protect
+           (cl-letf (((symbol-function 'ecc-prompt-project-files)
+                      (let ((root ,(cadr vars)))
+                        (lambda (_session)
+                          (mapcar (lambda (file) (file-relative-name file root))
+                                  (directory-files-recursively root "")))))
+                     ((symbol-function 'y-or-n-p)
+                      (lambda (prompt) (error "Asked: %s" prompt)))
+                     ((symbol-function 'completing-read)
+                      (lambda (prompt &rest _) (error "Asked: %s" prompt))))
+             ,@body)
+         (dolist (buffer (buffer-list))
+           (when (and (buffer-file-name buffer)
+                      (string-prefix-p ,(cadr vars) (buffer-file-name buffer)))
+             (kill-buffer buffer)))
+         (delete-directory ,(cadr vars) t)))))
+
+(defmacro ecc-visit-test--choosing (var answer &rest body)
+  "Run BODY with `completing-read' answering ANSWER, pushing what it offered.
+VAR is bound to the list of candidate lists, the latest first."
+  (declare (indent 2))
+  `(let ((,var nil))
+     (cl-letf (((symbol-function 'completing-read)
+                (lambda (_prompt collection &rest _)
+                  (push (all-completions "" collection) ,var)
+                  ,answer)))
+       ,@body)))
+
+(ert-deftest ecc-visit-test-suffix-rule ()
+  "A name matches a path it ends on at a directory boundary, and no other."
+  (should (ecc-visit--suffix-p "foo.el" "/a/foo.el"))
+  (should-not (ecc-visit--suffix-p "foo.el" "/a/barfoo.el"))
+  (should (ecc-visit--suffix-p "test/foo.el" "/a/test/foo.el"))
+  (should-not (ecc-visit--suffix-p "test/foo.el" "/a/mytest/foo.el"))
+  (should (equal (ecc-visit--written-suffix "./../test/foo.el") "test/foo.el"))
+  (should-not (ecc-visit--written-suffix "/abs/foo.el"))
+  (should-not (ecc-visit--written-suffix "~/foo.el"))
+  (ecc-visit-test--with-tree (session root) '("lib/foo.el" "lib/barfoo.el"
+                                              "test/foo-test.el" "other/test/x.el"
+                                              "mytest/x.el")
+    (should (equal (ecc-visit-find-written session "foo.el")
+                   (cons (expand-file-name "lib/foo.el" root) 'project)))
+    (should (equal (ecc-visit-find-written session "test/x.el")
+                   (cons (expand-file-name "other/test/x.el" root) 'project)))))
+
+(ert-deftest ecc-visit-test-written-as-it-stands ()
+  "A path that is there as written opens without a search.
+Against the session's directory first, then against the project root."
+  (ecc-visit-test--with-tree (session root) '("src/a.el" "test/b.el")
+    (cl-letf (((symbol-function 'ecc-prompt-project-files)
+               (lambda (_) (error "Walked the project"))))
+      (let ((src (expand-file-name "src/" root)))
+        (should (equal (ecc-visit-find-written session "a.el" src)
+                       (list (expand-file-name "a.el" src))))
+        (should (equal (ecc-visit-find-written session "test/b.el" src)
+                       (cons (expand-file-name "test/b.el" root) 'root)))))))
+
+(ert-deftest ecc-visit-test-a-file-of-the-session-stops-the-search ()
+  "A file the session handled, or one Emacs visits, is found without the project.
+The project's files are never listed when either has it."
+  (ecc-visit-test--with-tree (session root) '("deep/x/handled.el" "deep/y/open.el")
+    (cl-letf (((symbol-function 'ecc-prompt-project-files)
+               (lambda (_) (error "Walked the project"))))
+      (ecc-model-note-file session (expand-file-name "deep/x/handled.el" root) 'read)
+      (should (equal (ecc-visit-find-written session "handled.el")
+                     (cons (expand-file-name "deep/x/handled.el" root) 'session)))
+      (find-file-noselect (expand-file-name "deep/y/open.el" root))
+      (should (equal (ecc-visit-find-written session "y/open.el")
+                     (cons (expand-file-name "deep/y/open.el" root) 'buffer))))))
+
+(ert-deftest ecc-visit-test-a-file-of-the-project-does-not-ask ()
+  "A file found in the project opens without a word about the machine."
+  (ecc-visit-test--with-tree (session root) '("test/foo-test.el")
+    ;; `y-or-n-p' and the machine search are errors in the tree.
+    (should (equal (ecc-visit-find-written session "foo-test.el")
+                   (cons (expand-file-name "test/foo-test.el" root) 'project)))))
+
+(ert-deftest ecc-visit-test-the-project-as-project-el-sees-it ()
+  "The project's files are the ones `project.el' lists, as @ completion has them."
+  (let ((listed (symbol-function 'ecc-prompt-project-files)))
+    (ecc-visit-test--with-tree (session root) '("test/foo-test.el")
+      (let ((project-find-functions (list (lambda (_dir) (cons 'transient root)))))
+        (cl-letf (((symbol-function 'ecc-prompt-project-files) listed))
+          (should (equal (ecc-visit-find-written session "foo-test.el")
+                         (cons (expand-file-name "test/foo-test.el" root)
+                               'project))))))))
+
+(ert-deftest ecc-visit-test-several-are-offered-in-order ()
+  "Several matches go through `completing-read', shown against the root.
+The files of the session first, then the nearest to the session's
+directory, then the shortest."
+  (ecc-visit-test--with-tree (session root) '("x/deep/foo.el" "src/a/b/foo.el"
+                                              "lib/foo.el" "src/sub/foo.el")
+    (let ((src (expand-file-name "src/" root)))
+      (ecc-visit-test--choosing offered "src/sub/foo.el"
+        (should (equal (ecc-visit-find-written session "foo.el" src)
+                       (cons (expand-file-name "src/sub/foo.el" root) 'project)))
+        (should (equal (car offered)
+                       '("src/sub/foo.el" "lib/foo.el" "src/a/b/foo.el"
+                         "x/deep/foo.el")))))
+    ;; Among the files of the session and of Emacs, the session's come
+    ;; first however far they are.
+    (remhash session ecc-visit--chosen)
+    (ecc-model-note-file session (expand-file-name "x/deep/foo.el" root) 'edit)
+    (find-file-noselect (expand-file-name "src/sub/foo.el" root))
+    (ecc-visit-test--choosing offered "x/deep/foo.el"
+      (ecc-visit-find-written session "foo.el" (expand-file-name "src/" root))
+      (should (equal (car offered) '("x/deep/foo.el" "src/sub/foo.el"))))))
+
+(ert-deftest ecc-visit-test-outside-the-project-is-abbreviated ()
+  "A file outside the project is shown from the home directory."
+  (should (equal (ecc-visit--display-name (expand-file-name "x/foo.el" "~/") "/p/")
+                 "~/x/foo.el"))
+  (should (equal (ecc-visit--display-name "/p/a/foo.el" "/p/") "a/foo.el")))
+
+(ert-deftest ecc-visit-test-opened-at-the-line-and-said-where ()
+  "The line of the link is kept wherever the file was found, and the echo area says where."
+  (ecc-visit-test--with-tree (session root) '("test/foo-test.el")
+    (let (opened said)
+      (cl-letf (((symbol-function 'ecc-visit-open)
+                 (lambda (path line &rest _) (setq opened (cons path line))))
+                ((symbol-function 'message)
+                 (lambda (format &rest args) (setq said (apply #'format format args)))))
+        (ecc-visit-open-written session '("foo-test.el" . 4))
+        (should (equal opened (cons (expand-file-name "test/foo-test.el" root) 4)))
+        (should (equal said "Opened test/foo-test.el (in the project)"))
+        (setq said nil)
+        (ecc-visit-open-written session '("test/foo-test.el" . 2))
+        (should (equal opened (cons (expand-file-name "test/foo-test.el" root) 2)))
+        (should-not said)))
+    ;; And for real, at the line.
+    (save-window-excursion
+      (let ((window (ecc-visit-open-written session '("foo-test.el" . 3))))
+        (should (= (line-number-at-pos (window-point window)) 3))))))
+
+(ert-deftest ecc-visit-test-nothing-found-says-where-it-looked ()
+  "No match is an error that names the places looked in."
+  (ecc-visit-test--with-tree (session _root) '("a.el")
+    (let ((ecc-visit-search-machine 'never))
+      (let ((err (should-error (ecc-visit-find-written session "gone.el")
+                               :type 'user-error)))
+        (should (string-match-p "\\`No such file: gone.el (looked in .*project's files)\\'"
+                                (cadr err)))))
+    (let ((err (should-error (ecc-visit-find-written session "/no/such/gone.el")
+                             :type 'user-error)))
+      (should (string-match-p "No such file: /no/such/gone.el" (cadr err))))))
+
+(ert-deftest ecc-visit-test-the-machine-is-searched-after-asking ()
+  "Found nowhere nearer, the machine is searched -- after asking, by default.
+What the search returns is filtered by the rule, and one match opens."
+  (ecc-visit-test--with-tree (session root) '("a.el")
+    (let* ((outside (file-name-as-directory (make-temp-file "ecc-visit-far" t)))
+           (far (expand-file-name "lib/far.el" outside))
+           asked searched)
+      (unwind-protect
+          (let ((ecc-visit-machine-search-function
+                 (lambda (name)
+                   (push name searched)
+                   (list far (concat far "c")
+                         (expand-file-name "lib/nearfar.el" outside)
+                         (expand-file-name "gone/lib/far.el" outside)))))
+            (make-directory (file-name-directory far) t)
+            (dolist (file (list far (concat far "c")
+                                (expand-file-name "lib/nearfar.el" outside)))
+              (write-region "x\n" nil file nil 'silent))
+            (cl-letf (((symbol-function 'y-or-n-p)
+                       (lambda (prompt) (push prompt asked) nil)))
+              (should-error (ecc-visit-find-written session "lib/far.el")
+                            :type 'user-error)
+              (should (equal asked '("Not in the project; search this machine? ")))
+              (should-not searched))
+            (cl-letf (((symbol-function 'y-or-n-p)
+                       (lambda (prompt) (push prompt asked) t)))
+              (should (equal (ecc-visit-find-written session "lib/far.el")
+                             (cons far 'machine)))
+              (should (equal searched '("far.el")))
+              (should (= (length asked) 2)))
+            ;; `always' does not ask, `never' neither asks nor searches.
+            (setq searched nil)
+            (let ((ecc-visit-search-machine 'always))
+              (should (equal (car (ecc-visit-find-written session "far.el")) far))
+              (should (equal searched '("far.el"))))
+            (setq searched nil)
+            (remhash session ecc-visit--chosen)
+            (let ((ecc-visit-search-machine 'never))
+              (should-error (ecc-visit-find-written session "far.el")
+                            :type 'user-error)
+              (should-not searched))
+            (should (= (length asked) 2)))
+        (delete-directory outside t)))))
+
+(ert-deftest ecc-visit-test-the-pick-is-remembered ()
+  "What was picked for a path opens at once the next time, while it is there."
+  (ecc-visit-test--with-tree (session root) '("a/foo.el" "b/foo.el" "c/foo.el")
+    (ecc-visit-test--choosing offered "b/foo.el"
+      (should (equal (car (ecc-visit-find-written session "foo.el"))
+                     (expand-file-name "b/foo.el" root)))
+      (should (= (length offered) 1)))
+    ;; `completing-read' is an error again in the tree.
+    (should (equal (ecc-visit-find-written session "foo.el")
+                   (cons (expand-file-name "b/foo.el" root) 'remembered)))
+    (delete-file (expand-file-name "b/foo.el" root))
+    (ecc-visit-test--choosing offered "c/foo.el"
+      (should (equal (car (ecc-visit-find-written session "foo.el"))
+                     (expand-file-name "c/foo.el" root)))
+      (should (equal (car offered) '("a/foo.el" "c/foo.el"))))))
+
+(ert-deftest ecc-visit-test-two-sessions-keep-their-own-picks ()
+  "Two sessions in two projects each find in their own and remember their own pick."
+  (ecc-visit-test--with-tree (one root-one) '("a/foo.el" "b/foo.el")
+    (let* ((root-two (file-name-as-directory (make-temp-file "ecc-visit-two" t)))
+           (two (ecc-model-create-session :name "two" :project-root root-two)))
+      (unwind-protect
+          (progn
+            (dolist (file '("a/foo.el" "b/foo.el" "only-two.el"))
+              (let ((path (expand-file-name file root-two)))
+                (make-directory (file-name-directory path) t)
+                (write-region "x\n" nil path nil 'silent)))
+            (cl-letf (((symbol-function 'ecc-prompt-project-files)
+                       (lambda (session)
+                         (let ((root (ecc-session-project-root session)))
+                           (mapcar (lambda (file) (file-relative-name file root))
+                                   (directory-files-recursively root ""))))))
+              (ecc-visit-test--choosing offered "a/foo.el"
+                (ecc-visit-find-written one "foo.el" root-one))
+              (ecc-visit-test--choosing offered "b/foo.el"
+                (ecc-visit-find-written two "foo.el" root-two))
+              (should (equal (ecc-visit-find-written one "foo.el" root-one)
+                             (cons (expand-file-name "a/foo.el" root-one) 'remembered)))
+              (should (equal (ecc-visit-find-written two "foo.el" root-two)
+                             (cons (expand-file-name "b/foo.el" root-two) 'remembered)))
+              ;; A file of the other project is not this one's.
+              (let ((ecc-visit-search-machine 'never))
+                (should-error (ecc-visit-find-written one "only-two.el" root-one)
+                              :type 'user-error))))
+        (ecc-test-cleanup-session two)
+        (delete-directory root-two t)))))
+
+(ert-deftest ecc-visit-test-ret-on-a-bare-name-in-the-reply ()
+  "RET on a name the model wrote without its directory opens it from the project."
+  (ecc-visit-test--with-tree (session root) '("test/foo-test.el")
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "where")
+    (ecc-model-node-changed
+     session
+     (ecc-model-add-node session :type 'text :status 'done
+                         :data '((text . "The test is `foo-test.el:3`.\n"))))
+    (ecc-render-flush session)
+    (with-current-buffer (ecc-session-buffer session)
+      (let (opened)
+        (cl-letf (((symbol-function 'ecc-visit-open)
+                   (lambda (path line &rest _) (setq opened (cons path line)))))
+          (goto-char (point-min))
+          (search-forward "foo-test")
+          (ecc-session-visit)
+          (should (equal opened (cons (expand-file-name "test/foo-test.el" root)
+                                      3))))))))
 
 ;;;; Opening
 
