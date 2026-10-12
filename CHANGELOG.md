@@ -178,6 +178,14 @@ Verified against **Claude Code CLI 2.1.290**.
 
 ### Fixed
 
+- `ecc-space-zoom` (`C-c c z`) deleted the sidebar the second time a tab was
+  zoomed. The way back was saved as a window state, which keeps only the
+  window parameters in `window-persistent-parameters`. The sidebar came back
+  without `no-delete-other-windows`, and the next zoom deleted it along with
+  the other windows. The way back is now a window configuration, which
+  restores the windows with their parameters, keeps point where it was moved
+  while zoomed, and still works after you leave the tab and come back.
+  Introduced in 0.3.0.
 - A turn waiting on a permission, a question or a plan, or one compacting its
   context, was not interrupted before its CLI was stopped for a hand-off to the
   terminal or a `/resume`: only a session whose state said `running` was taken
