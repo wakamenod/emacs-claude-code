@@ -14,6 +14,7 @@
 (require 'ecc-dispatch)
 (require 'ecc-perm)
 (require 'ecc-render)
+(require 'ecc-session)
 
 ;;;; basic-turn
 
@@ -564,7 +565,7 @@ prompt must not be lost, and it must not wait for ever."
     (should (eq (ecc-session-state session) 'running))
     (should (equal 1 (ecc-proc-send-prompt session "ecc から送る")))
     ;; It is in the queue, not on the wire.
-    (should (equal '("ecc から送る") (ecc-session-input-queue session)))
+    (should (equal '("ecc から送る") (ecc-model-queued-texts session)))
     (should-not (seq-find (lambda (message) (equal (alist-get 'type message) "user"))
                           (ecc-test-sent-messages)))
     ;; The result of the remote turn closes it and lets the queue go.
@@ -1253,6 +1254,98 @@ once every result is in."
         ;; Both ways of recording what a command printed land on it.
         (should (equal (ecc-model-node-get node 'output)
                        "Session color set to: red\nand again"))))))
+
+(ert-deftest ecc-dispatch-test-live-local-command ()
+  "A slash command the live CLI ran is a command node, not the model talking.
+The stream says it in one synthetic assistant message rather than in
+the user messages a recording holds."
+  (ecc-test-with-fake-session session
+    (ecc-test-dispatch session "local-command" "/rename aaa")
+    (let ((nodes (seq-filter (lambda (node) (eq (ecc-node-type node) 'command))
+                             (hash-table-values (ecc-session-nodes session)))))
+      (should (= 2 (length nodes)))
+      ;; No text node was made for either of them.
+      (should-not (seq-find (lambda (node) (eq (ecc-node-type node) 'text))
+                            (hash-table-values (ecc-session-nodes session))))
+      (let ((rename (seq-find (lambda (node)
+                                (equal (ecc-model-node-get node 'name) "/rename"))
+                              nodes)))
+        (should rename)
+        (should (equal (ecc-model-node-get rename 'args) "aaa"))
+        (should (equal (ecc-model-node-get rename 'output)
+                       "Session renamed to: aaa")))
+      (let ((model (seq-find (lambda (node)
+                               (equal (ecc-model-node-get node 'name) "/model"))
+                             nodes)))
+        (should model)
+        (should (equal (ecc-model-node-get model 'args) "haiku"))
+        (should (string-search "Haiku" (ecc-model-node-get model 'output)))))))
+
+(ert-deftest ecc-dispatch-test-live-rename-renames-the-session ()
+  "/rename in the CLI renames the session and its buffer here.
+The fixture holds the system/session_title_changed the CLI sends for
+it, ahead of system/init (CLI 2.1.290, 2026-10-12)."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-test-dispatch session "local-command" "/rename aaa")
+    (should (equal (ecc-session-name session) "aaa"))
+    (should (equal (buffer-name (ecc-session-buffer session)) "*ecc: aaa*"))))
+
+(ert-deftest ecc-dispatch-test-title-changed-before-init ()
+  "The title event renames a session that has seen no system/init yet.
+It is the first line of the stream, so it can need nothing init brings,
+and it is drawn as nothing: no notice is made for it."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (should-not (ecc-session-init session))
+    (let ((line (car (ecc-test-fixture-lines "local-command"))))
+      (should (string-search "session_title_changed" line))
+      (ecc-dispatch session (ecc-protocol-parse-line line)))
+    (should (equal (ecc-session-name session) "aaa"))
+    (should (equal (buffer-name (ecc-session-buffer session)) "*ecc: aaa*"))
+    (should-not (seq-find (lambda (node) (memq (ecc-node-type node) '(system unknown)))
+                          (hash-table-values (ecc-session-nodes session))))
+    (should-not (ecc-session-current-turn session))))
+
+(ert-deftest ecc-dispatch-test-title-changed-keeps-other-names ()
+  "A title another session has is made unique, and a blank one is ignored."
+  (ecc-test-with-fake-session session
+    (let ((other (ecc-model-create-session :name "taken" :project-root "/tmp/")))
+      (ecc-dispatch session '((type . "system") (subtype . "session_title_changed")
+                              (title . "taken")))
+      (should (equal (ecc-session-name session) "taken<2>"))
+      (should (equal (ecc-session-name other) "taken"))
+      (ecc-dispatch session '((type . "system") (subtype . "session_title_changed")
+                              (title . "  ")))
+      (should (equal (ecc-session-name session) "taken<2>")))))
+
+(ert-deftest ecc-dispatch-test-rename-output-renames-nothing ()
+  "What `/rename' printed is not read for a name.
+The name comes from system/session_title_changed alone; the sentence
+and the argument are what was typed and shown, not what the CLI did."
+  (ecc-test-with-fake-session session
+    (let ((before (ecc-session-name session)))
+      (ecc-model-begin-turn session "/rename one")
+      (ecc-dispatch session
+                    '((type . "assistant")
+                      (local_command_run . ((command . "rename") (args . "one")))
+                      (local_command_source
+                       . "<local-command-stdout>Session renamed to: two</local-command-stdout>")
+                      (message . ((role . "assistant") (model . "<synthetic>")
+                                  (content . [((type . "text")
+                                               (text . "Session renamed to: two"))])))))
+      (should (equal (ecc-session-name session) before)))))
+
+(ert-deftest ecc-dispatch-test-synthetic-reply-without-the-fields ()
+  "An older CLI sends the answer of a command as plain synthetic text.
+It carries neither `local_command_run' nor `local_command_source', so
+there is nothing here to tell it from the model talking."
+  (ecc-test-with-fake-session session
+    (ecc-test-dispatch session "slash-commands" "/model opus")
+    (should-not (seq-find (lambda (node) (eq (ecc-node-type node) 'command))
+                          (hash-table-values (ecc-session-nodes session))))
+    (should (seq-find (lambda (node) (eq (ecc-node-type node) 'text))
+                      (hash-table-values (ecc-session-nodes session))))))
 
 (ert-deftest ecc-dispatch-test-command-output-without-a-command ()
   "Output whose command is not in this page is kept rather than dropped."

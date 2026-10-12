@@ -52,6 +52,11 @@
 (require 'ecc-proc)
 (require 'ecc-diff)
 
+;; The buffer of a session is none of this module's business; `/rename'
+;; is the one thing here that has to reach it, and `ecc-session' is
+;; loaded for it at run time.
+(declare-function ecc-session-set-name "ecc-session" (session name))
+
 (defvar ecc-turn-approve-tools '("Edit" "Write" "NotebookEdit")
   "Tools that a turn-wide approval covers.")
 
@@ -154,7 +159,7 @@ heading then says what the call cost, not how long it had been waiting."
     "hook_progress" "permission_denied" "compact_boundary" "task_started"
     "task_progress" "task_updated" "task_notification" "task_summary"
     "background_tasks_changed" "commands_changed" "session_state_changed"
-    "local_command" "bridge_state" "post_turn_summary")
+    "local_command" "bridge_state" "post_turn_summary" "session_title_changed")
   "The system subtypes `ecc-dispatch--system' handles.
 Kept next to the function it lists, and checked against it by a test.
 `ecc-history' asks this before handing a recorded line over: a
@@ -186,6 +191,7 @@ note rather than among the messages this version does not understand.")
     ('hook_progress nil)
     ('local_command
      (ecc-dispatch-command-output session (alist-get 'content message)))
+    ('session_title_changed (ecc-dispatch--title-changed session message))
     ('bridge_state (ecc-dispatch--bridge-state session message))
     ('post_turn_summary (ecc-dispatch--post-turn-summary session message))
     ('task_summary (ecc-dispatch--task-summary session message))
@@ -221,6 +227,21 @@ under the note and in the log, so nothing is dropped."
   (ecc-model-add-aside session :type 'system :status 'done
                        :data (list (cons 'kind 'notice)
                                    (cons 'message message))))
+
+(defun ecc-dispatch--title-changed (session message)
+  "Apply the system/session_title_changed MESSAGE to SESSION.
+`/rename\=' renames the conversation in the CLI, which knows nothing of
+the name this side shows: without this the two drift apart.  The CLI
+sends this event once the rename is done, with the name it settled on
+in `title\=', so a rename it refused renames nothing here.  It can come
+before system/init, as the first line of the stream, and needs nothing
+init brings (confirmed against CLI 2.1.290, 2026-10-12).  The command
+node is made from the synthetic assistant message that follows it; see
+`ecc-dispatch--local-command\='."
+  (let ((title (alist-get 'title message)))
+    (when (and (stringp title) (not (string-empty-p (string-trim title))))
+      (require 'ecc-session)
+      (ecc-session-set-name session title))))
 
 (defun ecc-dispatch--task-summary (session message)
   "Apply the system/task_summary MESSAGE to SESSION.
@@ -284,7 +305,9 @@ Init arrives once per turn, not once per session, so this only
 updates what it is told and never rebuilds the session."
   (setf (ecc-session-init session) message)
   (when-let* ((id (alist-get 'session_id message)))
-    (ecc-model-set-session-id session id))
+    (ecc-model-set-session-id session id)
+    ;; A fork has its own id from here on (`ecc-history-fork-unsettled-p').
+    (setf (alist-get 'fork-unsettled (ecc-session-progress session)) nil))
   (when-let* ((cwd (alist-get 'cwd message)))
     (setf (ecc-session-cwd session) cwd))
   (when-let* ((mode (alist-get 'permissionMode message)))
@@ -370,7 +393,15 @@ only a backgrounded shell command stays the tool it is."
 (defun ecc-dispatch--assistant (session message)
   "Apply the assistant MESSAGE to SESSION, one content block at a time.
 A block that was streamed already has a node; it is completed rather
-than added again."
+than added again.  A message that is the answer of a slash command the
+CLI ran itself is not the model talking and is not drawn as a block of
+text; see `ecc-dispatch--local-command\='."
+  (if-let* ((fields (ecc-protocol-local-command message)))
+      (ecc-dispatch--local-command session fields)
+    (ecc-dispatch--assistant-blocks session message)))
+
+(defun ecc-dispatch--assistant-blocks (session message)
+  "Add the content blocks of the assistant MESSAGE to SESSION."
   (let* ((turn (ecc-model-ensure-turn session))
          (synthetic (ecc-protocol-synthetic-p message))
          (uuid (or (alist-get 'uuid message) (ecc-model-next-node-id session)))
@@ -678,6 +709,44 @@ turn, and what it printed arrives after it and is put on this node
     (setf (alist-get 'command-node (ecc-session-progress session))
           (ecc-node-id node))
     node))
+
+(defun ecc-dispatch--local-command (session fields)
+  "Add the local command FIELDS the live stream reported to SESSION.
+`ecc-protocol-local-command\=' read them out of one synthetic assistant
+message; a recording spreads the same command over the two user
+messages `ecc-dispatch--command\=' reads.  It is the same node either
+way.  What `/rename\=' does to the session comes in an event of its
+own, `ecc-dispatch--title-changed\='.
+
+A live turn was opened by the prompt that was sent, so the command is
+already the heading of the turn and the node does not say it a second
+time; a recording has no such heading, which is why the node says it
+at all."
+  (let* ((turn (ecc-model-ensure-turn session))
+         (node (ecc-model-add-node session :type 'command :status 'done
+                                   :parent turn
+                                   :data (list (cons 'name (alist-get 'name fields))
+                                               (cons 'args (alist-get 'args fields))
+                                               (cons 'output (alist-get 'output fields))
+                                               (cons 'echoed
+                                                     (ecc-dispatch--command-echoed-p
+                                                      turn fields))))))
+    (setf (alist-get 'command-node (ecc-session-progress session))
+          (ecc-node-id node))
+    node))
+
+(defun ecc-dispatch--command-echoed-p (turn fields)
+  "Return non-nil when TURN was opened by the command FIELDS describe.
+The CLI resolves an alias before it reports the command -- `/cost\=' is
+reported as `usage\=' (2026-09-22) -- so the name the prompt typed and
+the one reported do not always read the same.  The prompt is taken for
+the command when it is a slash command given the same arguments,
+whatever name it used."
+  (let* ((prompt (string-trim (or (and (ecc-turn-p turn) (ecc-turn-prompt turn)) "")))
+         (split (string-match "[ \t\n]" prompt))
+         (typed-args (and split (string-trim (substring prompt split)))))
+    (and (string-prefix-p "/" prompt)
+         (equal (or typed-args "") (string-trim (or (alist-get 'args fields) ""))))))
 
 (defun ecc-dispatch-command-output (session text)
   "Put what a local command printed, TEXT, on the command node of SESSION.

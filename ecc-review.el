@@ -4502,8 +4502,9 @@ prompt queue so that the next message tells Claude what was applied."
         (setf (alist-get key input) edited)
         (ecc-perm-respond request 'allow :updated-input input
                           :message "edited by the user and applied")
-        (push (ecc-review-proposal-note request ecc-review-proposal--original edited)
-              (ecc-session-input-queue session))
+        (ecc-model-queue-input
+         session (ecc-review-proposal-note request ecc-review-proposal--original edited)
+         nil t)
         (message "Allowed with your changes: %s (the next message carries what you changed)"
                  (ecc-request-tool-name request))))
     (set-buffer-modified-p nil)

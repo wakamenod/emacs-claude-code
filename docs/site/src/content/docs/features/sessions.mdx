@@ -14,6 +14,7 @@ A session is a running `claude` process, its buffer and its name. The first sess
 | `C-c c R` | `ecc-rename-session` | Rename the session |
 | `C-c c v` | `ecc-show-session` | Show the session's window and move point to the prompt |
 | `C-c c i` | `ecc-interrupt` | Interrupt the turn, keeping the work done so far |
+| `C-c c ?` then `S` | `ecc-restart` | [Restart the CLI](#restarting-the-cli), keeping the transcript (`R` in the session buffer) |
 | `C-c c ?` then `k` | `ecc-kill` | Stop the process and kill the session's buffers |
 | `C-c c t` | `ecc-tui-open` | [Hand over to the terminal](#handing-over-to-the-terminal) |
 
@@ -45,6 +46,10 @@ Two processes writing to one session ID branch its recording, and the CLI does n
 :::
 
 Recordings live under `~/.claude/projects`, so conversations from the terminal client are listed too. `C-c c h` opens a recording to read without starting a process; `r` in it resumes it. When a CLI process dies, ecc offers to resume it.
+
+## Restarting the CLI
+
+`R` in a session buffer, or `S` in the menu, stops the session's CLI and starts it again on the same conversation, in the same buffer. Use it when the CLI stops answering, or to pick up changed Claude Code settings, MCP servers or plugins. ecc asks first and keeps the permission mode. The session has to be idle: with a turn running, a request waiting or prompts queued, interrupt it first with `C-c C-z`. With a background task still running, wait for it to finish. On a stopped session, `R` resumes it.
 
 ## Handing over to the terminal
 

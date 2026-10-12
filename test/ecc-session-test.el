@@ -29,6 +29,15 @@
          (progn (make-directory ,inner t) ,@body)
        (delete-directory ,root t))))
 
+(ert-deftest ecc-session-test-set-name-runs-the-hook ()
+  "A rename is announced, with the session, once the name is in place."
+  (ecc-test-with-fake-session session
+    (let* ((heard nil)
+           (ecc-session-renamed-hook
+            (list (lambda (s) (push (ecc-session-name s) heard)))))
+      (ecc-session-set-name session "renamed")
+      (should (equal heard '("renamed"))))))
+
 (ert-deftest ecc-session-test-the-cli-cwd-does-not-move-the-buffer ()
   "A cwd the CLI reports leaves the transcript where the session is.
 CLI 2.1.272 reports the directory the last Bash tool call left it in as

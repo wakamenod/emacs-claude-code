@@ -212,6 +212,10 @@ line of the buffer and the list starts below them."
      (should (equal "renamed" (ecc-session-name b)))
      (should (get-buffer "*ecc: renamed*"))
      (should-error (ecc-dashboard-rename "") :type 'user-error)
+     (should-error (ecc-dashboard-rename "   ") :type 'user-error)
+     ;; The name the session already has is not a collision.
+     (ecc-dashboard-rename "renamed")
+     (should (equal "renamed" (ecc-session-name b)))
      (ignore a))))
 
 (ert-deftest ecc-dashboard-test-stop ()

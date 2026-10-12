@@ -25,6 +25,13 @@
       (ecc-model-remove-session other)
       (should (equal (ecc-model-sessions) (list session))))))
 
+(ert-deftest ecc-model-test-unique-name-excepts-one-session ()
+  "A session is not what its own name collides with."
+  (ecc-test-with-fake-session session
+    (should (equal (ecc-model-unique-name "test") "test<2>"))
+    (should (equal (ecc-model-unique-name "test" session) "test"))
+    (should (equal (ecc-model-unique-name "other" session) "other"))))
+
 (ert-deftest ecc-model-test-session-id-moves ()
   "A forked session keeps its place in the registry under the new id."
   (ecc-test-with-fake-session session
@@ -150,6 +157,45 @@
     (should (equal (ecc-model-pop-input session) "one"))
     (should (equal (ecc-model-pop-input session) "two"))
     (should-not (ecc-model-pop-input session))))
+
+(ert-deftest ecc-model-test-input-queue-keeps-the-draft ()
+  "An entry carries what was typed beside what will be sent; FIRST jumps the queue."
+  (ecc-test-with-fake-session session
+    (ecc-model-queue-input session "typed\n\n```context```" "typed")
+    (should (= (ecc-model-queue-input session "a note from Emacs" nil t) 1))
+    (should (equal (ecc-model-queued-texts session)
+                   '("a note from Emacs" "typed\n\n```context```")))
+    (should (equal (mapcar #'ecc-queued-draft (ecc-session-input-queue session))
+                   '(nil "typed")))))
+
+(ert-deftest ecc-model-test-input-queue-take-and-move ()
+  "Entries are taken and moved by identity, and each change is announced."
+  (ecc-test-with-fake-session session
+    (let ((changes 0))
+      (cl-letf ((ecc-input-queue-changed-hook
+                 (list (lambda (changed)
+                         (should (eq changed session))
+                         (cl-incf changes)))))
+        (dolist (text '("one" "two" "three"))
+          (ecc-model-queue-input session text text))
+        (should (= changes 3))
+        (pcase-let ((`(,one ,two ,three) (ecc-session-input-queue session)))
+          (should (= (ecc-model-move-input session three -1) 2))
+          (should (equal (ecc-model-queued-texts session) '("one" "three" "two")))
+          ;; At the head already: no move, no news.
+          (should (= (ecc-model-move-input session one -1) 1))
+          (should (= changes 4))
+          (should (= (ecc-model-move-input session one 5) 3))
+          (should (equal (ecc-model-queued-texts session) '("three" "two" "one")))
+          (should (eq (ecc-model-take-input session two) two))
+          (should (equal (ecc-model-queued-texts session) '("three" "one")))
+          (should (= changes 6))
+          ;; Gone is gone: nothing else is acted on in its place.
+          (should-not (ecc-model-take-input session two))
+          (should-not (ecc-model-move-input session two 1))
+          (should (equal (ecc-model-pop-input session) "three"))
+          (should (= changes 7))
+          (should (equal (ecc-model-queued-texts session) '("one"))))))))
 
 (ert-deftest ecc-model-test-hooks-fire ()
   "Every change the renderer needs is announced."
