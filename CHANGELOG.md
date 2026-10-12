@@ -11,6 +11,20 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.290**.
+
+### Fixed
+
+- A numbered list item in the transcript showed a bullet in place of its
+  number: `1.` and `10)` were drawn as `•`, like a `-` item, so a reply's
+  numbered steps lost their numbers. The text underneath was right, and copying
+  it gave the numbers back; only the display was wrong. A number is now drawn as
+  itself, and a line that wraps out of a numbered item stands under the item's
+  text, past the number, rather than one column past a bullet. The bullet stays
+  on `-`, `*` and `+`. Introduced in 0.1.0, with the hiding of Markdown markup.
+
 ## [0.4.1] - 2026-10-12
 
 Verified against **Claude Code CLI 2.1.290**.
