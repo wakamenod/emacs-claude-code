@@ -11,6 +11,11 @@
 # development rules (CLAUDE.md) require, --model haiku and --max-budget-usd
 # are always passed, and any plugin named with --disable-plugin is turned
 # off.
+#
+# With --resume-prompt the session is then resumed by a second CLI, which
+# is sent those prompts, and every stream-json line it prints goes to
+# --stream-out: a stream fixture of a resumed process, next to the
+# recording it was resumed from (OUT, copied before the resume).
 set -euo pipefail
 exec python3 - "$@" <<'EOF'
 import argparse, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time, uuid
@@ -24,7 +29,12 @@ ap.add_argument("--disable-plugin", action="append",
 ap.add_argument("--model", default="haiku")
 ap.add_argument("--budget", default="0.5")
 ap.add_argument("--keep-cwd", action="store_true", help="keep the working directory")
+ap.add_argument("--resume-prompt", action="append", default=[],
+                help="prompt to send to a second CLI resuming the session")
+ap.add_argument("--stream-out", help="where the resumed CLI's stream goes")
 args = ap.parse_args()
+if args.resume_prompt and not args.stream_out:
+    ap.error("--resume-prompt needs --stream-out")
 
 session_id = str(uuid.uuid4())
 cwd = tempfile.mkdtemp(prefix="ecc-history-")
@@ -34,53 +44,62 @@ projects = pathlib.Path.home() / ".claude" / "projects"
 cwd = os.path.realpath(cwd)
 encoded = re.sub(r"[^A-Za-z0-9-]", "-", cwd.rstrip("/"))
 
-cmd = ["claude", "-p",
-       "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-       "--permission-prompt-tool", "stdio",
-       "--session-id", session_id,
-       "--model", args.model, "--max-budget-usd", args.budget]
-if args.disable_plugin:
-    cmd += ["--settings",
-            json.dumps({"enabledPlugins": {p: False for p in args.disable_plugin}})]
-print("$ cd", cwd, "&&", " ".join(cmd), file=sys.stderr)
+def command(*session):
+    cmd = ["claude", "-p",
+           "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+           "--permission-prompt-tool", "stdio", *session,
+           "--model", args.model, "--max-budget-usd", args.budget]
+    if args.disable_plugin:
+        cmd += ["--settings",
+                json.dumps({"enabledPlugins": {p: False for p in args.disable_plugin}})]
+    print("$ cd", cwd, "&&", " ".join(cmd), file=sys.stderr)
+    return cmd
 
-p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                     text=True, bufsize=1, cwd=cwd)
+def run(cmd, prompts, stream=None):
+    """Send PROMPTS to the CLI CMD one turn at a time, then close its stdin.
+    Every line it prints goes to STREAM as well, when there is one."""
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                         text=True, bufsize=1, cwd=cwd)
 
-def send(obj):
-    p.stdin.write(json.dumps(obj) + "\n")
-    p.stdin.flush()
+    def send(obj):
+        p.stdin.write(json.dumps(obj) + "\n")
+        p.stdin.flush()
 
-prompts = list(args.prompt)
-send({"type": "user", "message": {"role": "user", "content": prompts.pop(0)}})
+    prompts = list(prompts)
+    send({"type": "user", "message": {"role": "user", "content": prompts.pop(0)}})
 
-deadline = time.time() + args.timeout
-while time.time() < deadline:
-    line = p.stdout.readline()
-    if not line:
-        break
-    try:
-        o = json.loads(line)
-    except Exception:
-        continue
-    if o.get("type") == "control_request" and o["request"].get("subtype") == "can_use_tool":
-        req, rid = o["request"], o["request_id"]
-        print(f"  -> {req.get('tool_name')}: allow", file=sys.stderr)
-        send({"type": "control_response",
-              "response": {"subtype": "success", "request_id": rid,
-                           "response": {"behavior": "allow",
-                                        "updatedInput": req.get("input", {})}}})
-    if o.get("type") == "result":
-        print(f"  turn done ({o.get('subtype')})", file=sys.stderr)
-        if not prompts:
+    deadline = time.time() + args.timeout
+    while time.time() < deadline:
+        line = p.stdout.readline()
+        if not line:
             break
-        send({"type": "user", "message": {"role": "user", "content": prompts.pop(0)}})
+        if stream:
+            stream.write(line)
+        try:
+            o = json.loads(line)
+        except Exception:
+            continue
+        if o.get("type") == "control_request" and o["request"].get("subtype") == "can_use_tool":
+            req, rid = o["request"], o["request_id"]
+            print(f"  -> {req.get('tool_name')}: allow", file=sys.stderr)
+            send({"type": "control_response",
+                  "response": {"subtype": "success", "request_id": rid,
+                               "response": {"behavior": "allow",
+                                            "updatedInput": req.get("input", {})}}})
+        if o.get("type") == "result":
+            print(f"  turn done ({o.get('subtype')})", file=sys.stderr)
+            if not prompts:
+                break
+            send({"type": "user", "message": {"role": "user", "content": prompts.pop(0)}})
 
-p.stdin.close()
-try:
-    p.wait(timeout=10)
-except subprocess.TimeoutExpired:
-    p.kill()
+    # Closing stdin is what makes the CLI write its `cost-state' line.
+    p.stdin.close()
+    try:
+        p.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        p.kill()
+
+run(command("--session-id", session_id), args.prompt)
 
 src = projects / encoded / f"{session_id}.jsonl"
 if not src.exists():
@@ -92,6 +111,12 @@ os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
 shutil.copyfile(src, args.out)
 lines = sum(1 for _ in open(args.out))
 print(f"wrote {args.out} ({lines} lines) from {src}", file=sys.stderr)
+if args.resume_prompt:
+    os.makedirs(os.path.dirname(args.stream_out) or ".", exist_ok=True)
+    with open(args.stream_out, "w") as stream:
+        run(command("--resume", session_id), args.resume_prompt, stream)
+    lines = sum(1 for _ in open(args.stream_out))
+    print(f"wrote {args.stream_out} ({lines} lines)", file=sys.stderr)
 if not args.keep_cwd:
     shutil.rmtree(cwd, ignore_errors=True)
 EOF
