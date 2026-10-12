@@ -287,7 +287,7 @@ transcript does: the lines carry no keymap of their own."
                                 (car (ecc-session-input-queue session)))))
           (goto-char (point-min))
           (should (equal (cadr (should-error (funcall command) :type 'user-error))
-                         "That prompt has been sent already"))
+                         "That prompt is no longer in the queue"))
           (should (equal (ecc-model-queued-texts session) '("two")))
           ;; And the list is drawn again as it stands.
           (should (equal (ecc-queue-test--list session) '(" 1. two"))))))))

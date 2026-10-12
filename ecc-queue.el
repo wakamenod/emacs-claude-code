@@ -271,13 +271,14 @@ is on the screen already."
 (defun ecc-queue--entry-at-point ()
   "Return the queued prompt on the line of point.
 Signal when there is none, and when it has left the queue since the
-list was drawn: the list is drawn again then, and nothing is done to
-another prompt in its place."
+list was drawn -- sent, or taken back or dropped elsewhere: the list
+is drawn again then, and nothing is done to another prompt in its
+place."
   (let ((entry (or (get-text-property (line-beginning-position) 'ecc-queued)
                    (user-error "Not on a queued prompt"))))
     (unless (memq entry (ecc-session-input-queue ecc-queue--session))
       (ecc-queue--redraw (current-buffer))
-      (user-error "That prompt has been sent already"))
+      (user-error "That prompt is no longer in the queue"))
     entry))
 
 (defun ecc-queue-drop ()
