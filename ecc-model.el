@@ -158,6 +158,12 @@ edit does, and `ecc-files-updated-hook\=' hears only of the file tools.")
 (defvar ecc-session-state-changed-hook nil
   "Functions run with a session and its previous state.")
 
+(defvar ecc-session-renamed-hook nil
+  "Functions run with a session that has just been given a new name.
+A name is drawn in more places than the session buffer's own: the tab
+line of every window that lists the session, and the file the open
+sessions are saved in.")
+
 (defvar ecc-session-removed-hook nil
   "Functions run with a session that has just been forgotten.
 The session is already out of the registry when this runs, which is
