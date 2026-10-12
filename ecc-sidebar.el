@@ -182,19 +182,6 @@ the mark opens the row here.  A row with no state at all is left blank."
     map)
   "Keymap of the fold arrow at the right end of a repository's row.")
 
-(defun ecc-sidebar--connector (space spaces)
-  "Return the tree line drawn in front of SPACE, one of the drawn SPACES.
-Empty for a repository; for a worktree, the line that ties it to the
-row above, closed off on the last one.  SPACES is what is on the
-screen rather than every Space there is: a fold can leave one worktree
-of three drawn, and it is the last of what is drawn that closes the
-line."
-  (if (not (ecc-space-child-p space spaces))
-      ""
-    (let ((last (car (last (ecc-space-children
-                            (ecc-space-parent space) spaces)))))
-      (if (ecc-space-equal space last) "  └─ " "  ├─ "))))
-
 (defun ecc-sidebar--number-width (spaces)
   "Return the room the bracketed number takes for any of SPACES.
 The widest wins, so that the names line up once the tenth Space opens."
@@ -228,7 +215,7 @@ is what the sidebar draws, which is what the tree lines follow."
          (child (ecc-space-child-p space visible))
          (state (ecc-sidebar--space-state space spaces))
          (number (ecc-space-number space spaces))
-         (left (concat (ecc-sidebar--connector space visible)
+         (left (concat (ecc-space-tree-line space visible)
                        (ecc-sidebar--mark state)
                        " "
                        (string-pad (if number (format "[%d]" number) "")

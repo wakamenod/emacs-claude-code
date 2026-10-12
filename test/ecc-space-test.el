@@ -1068,8 +1068,194 @@ and the 1-9 keys take under the user's feet."
                            (car (last offered)))))
                 (should (equal past (ecc-space-root (ecc-space-read)))))
               (should (= 2 (length offered)))
-              (should (string-match-p "past" (car (last offered))))))
+              (should (equal "Past"
+                             (funcall (ecc-space-test--group-function
+                                       (ecc-space--table
+                                        (ecc-space--candidates
+                                         (ecc-space-list)
+                                         (ecc-space-past-projects))
+                                        (ecc-space-list)))
+                                      (car (last offered)) nil)))))
         (delete-directory past t)))))
+
+;;;; The picker
+
+(defconst ecc-space-test--work-y "/tmp/project-one/.claude/worktrees/feat-y/")
+(defconst ecc-space-test--three "/tmp/project-three/")
+
+(defun ecc-space-test--group-function (table)
+  "Return the `group-function' of the completion TABLE."
+  (completion-metadata-get (completion-metadata "" table nil) 'group-function))
+
+(defun ecc-space-test--affixes (table candidates)
+  "Return what the `affixation-function' of TABLE makes of CANDIDATES."
+  (funcall (completion-metadata-get (completion-metadata "" table nil)
+                                    'affixation-function)
+           candidates))
+
+(defmacro ecc-space-test--with-picker (&rest body)
+  "Run BODY with five Spaces to pick from, four open and one past.
+The open ones, in the order the sidebar numbers them: project-two with
+an idle session, project-one with a running one, its worktrees feat-y,
+waiting for an answer, and feat-x, idle, and project-three, with a tab
+and nothing running.  The past one is a directory also called
+project-two.  BODY sees the table in `table', the candidates in the
+order they come out in `offered', and the past directory in `past'."
+  (declare (indent 0))
+  `(let* ((parent (make-temp-file "ecc-space-picker" t))
+          (past (file-name-as-directory (expand-file-name "project-two"
+                                                          parent))))
+     (make-directory past)
+     (unwind-protect
+         (ecc-space-test--with-sessions
+             `(("one" . ,ecc-space-test--one)
+               ("feat-x" . ,ecc-space-test--work)
+               ("feat-y" . ,ecc-space-test--work-y)
+               ("two" . ,ecc-space-test--two))
+           (cl-letf* ((main (symbol-function 'ecc-worktree-main))
+                      (branch (symbol-function 'ecc-worktree-branch))
+                      ((symbol-function 'ecc-worktree-main)
+                       (lambda (root)
+                         (if (equal root ecc-space-test--work-y)
+                             ecc-space-test--one
+                           (funcall main root))))
+                      ((symbol-function 'ecc-worktree-branch)
+                       (lambda (root)
+                         (if (equal root ecc-space-test--work-y)
+                             "feat-y"
+                           (funcall branch root))))
+                      ((symbol-function 'ecc-space--tab-keys)
+                       (lambda () (list ecc-space-test--three)))
+                      ((symbol-function 'ecc-history-project-roots)
+                       (lambda () (list (directory-file-name past)))))
+             (let ((ecc-use-spaces t)
+                   (table nil)
+                   (offered nil))
+               (pcase-dolist (`(,name . ,state) '(("one" . running)
+                                                  ("feat-x" . idle)
+                                                  ("feat-y" . idle)
+                                                  ("two" . idle)))
+                 (ecc-model-set-state (seq-find (lambda (session)
+                                                  (equal (ecc-session-name
+                                                          session)
+                                                         name))
+                                                sessions)
+                                      state))
+               (ecc-test-add-request (nth 2 sessions) "Write")
+               (cl-letf (((symbol-function 'completing-read)
+                          (lambda (_prompt collection &rest _)
+                            (setq table collection
+                                  offered (all-completions "" collection))
+                            (car offered))))
+                 (ecc-space-read))
+               ,@body)))
+       (delete-directory parent t))))
+
+(ert-deftest ecc-space-test-picker-offers-the-name-alone ()
+  "A candidate is the Space's name and nothing else, in the sidebar's order.
+The open Spaces come as the sidebar numbers them, a worktree as
+`repo › branch\=' under its repository, and the past one last; the past
+one shares a name with an open one and becomes `project-two<2>'."
+  (ecc-space-test--with-picker
+    (should (equal offered '("project-two" "project-one"
+                             "project-one › feat-y" "project-one › feat-x"
+                             "project-three" "project-two<2>")))
+    (should (equal (mapcar #'ecc-space-name (ecc-space-list))
+                   '("project-two" "project-one" "feat-y" "feat-x"
+                     "project-three")))
+    (let ((metadata (completion-metadata "" table nil)))
+      (should (eq (completion-metadata-get metadata 'display-sort-function)
+                  #'identity))
+      (should (eq (completion-metadata-get metadata 'cycle-sort-function)
+                  #'identity)))))
+
+(ert-deftest ecc-space-test-picker-groups-open-and-past ()
+  "The Spaces on the screen are `Open', the projects of recordings `Past'."
+  (ecc-space-test--with-picker
+    (let ((group (ecc-space-test--group-function table)))
+      (should (equal (mapcar (lambda (candidate) (funcall group candidate nil))
+                             offered)
+                     '("Open" "Open" "Open" "Open" "Open" "Past"))))))
+
+(ert-deftest ecc-space-test-picker-matches-the-name-not-the-path ()
+  "Typing a repository's name leaves it and its worktrees; a path, nothing."
+  (ecc-space-test--with-picker
+    (should (equal (all-completions "project-one" table)
+                   '("project-one" "project-one › feat-y"
+                     "project-one › feat-x")))
+    ;; Matched anywhere in the line, as `substring' and the styles
+    ;; like it do, a path still finds nothing: it is not in the line.
+    (let ((completion-styles '(substring)))
+      (should-not (completion-all-completions "tmp" table nil 3))
+      (should-not (completion-all-completions "worktrees" table nil 9))
+      (should (equal (let ((all (completion-all-completions
+                                 "feat" table nil 4)))
+                       (setcdr (last all) nil)
+                       (mapcar #'substring-no-properties all))
+                     '("project-one › feat-y" "project-one › feat-x"))))
+    ;; And the answer is the Space the line stood for.
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _) "project-two<2>")))
+      (should (equal past (ecc-space-root (ecc-space-read)))))))
+
+(ert-deftest ecc-space-test-picker-draws-the-mark-the-number-and-the-tree ()
+  "The prefix is the sidebar's mark, number and tree line, in that order.
+A Space with nothing running and a past one get a blank for the mark,
+and the past one a blank for the number."
+  (ecc-space-test--with-picker
+    (let* ((lines (ecc-space-test--affixes table offered))
+           (prefixes (mapcar #'cadr lines)))
+      (should (equal prefixes '("· [1] " "▶ [2] " "⚠ [3]   ├─ "
+                                "· [4]   └─ " "  [5] " "      ")))
+      (should (memq 'ecc-tab-idle-face
+                    (ensure-list (get-text-property 0 'face (nth 0 prefixes)))))
+      (should (memq 'ecc-tab-running-dim-face
+                    (ensure-list (get-text-property 0 'face (nth 1 prefixes)))))
+      (should (memq 'ecc-tab-attention-face
+                    (ensure-list (get-text-property 0 'face (nth 2 prefixes)))))
+      ;; Only the mark takes a face.
+      (should-not (get-text-property 2 'face (nth 1 prefixes)))
+      (should-not (get-text-property 0 'face (nth 4 prefixes)))
+      (should-not (get-text-property 0 'face (nth 5 prefixes))))))
+
+(ert-deftest ecc-space-test-picker-puts-the-path-in-a-column ()
+  "The directory follows every line, dimmed, starting in one column."
+  (ecc-space-test--with-picker
+    (let* ((lines (ecc-space-test--affixes table offered))
+           (columns (mapcar (pcase-lambda (`(,candidate ,prefix ,suffix))
+                              (+ (string-width prefix)
+                                 (string-width candidate)
+                                 (string-match "[^ ]" suffix)))
+                            lines)))
+      (should (= 1 (length (seq-uniq columns))))
+      (pcase-dolist (`(,_ ,_ ,suffix) lines)
+        (let ((path (string-trim-left suffix)))
+          (should (eq (get-text-property 0 'face path)
+                      'completions-annotations))))
+      (should (equal (mapcar (lambda (line) (string-trim-left (nth 2 line)))
+                             lines)
+                     (list ecc-space-test--two ecc-space-test--one
+                           ecc-space-test--work-y ecc-space-test--work
+                           ecc-space-test--three
+                           (abbreviate-file-name past)))))))
+
+(ert-deftest ecc-space-test-picker-keeps-the-match-highlighting ()
+  "The faces the completion UI put on a candidate come out as they went in.
+vertico highlights what matched before it asks for the prefix and the
+suffix and for the group's transform; neither may hand back a name of
+its own."
+  (ecc-space-test--with-picker
+    (let ((candidate (copy-sequence "project-one › feat-y")))
+      (put-text-property 0 11 'face 'completions-common-part candidate)
+      (let ((shown (funcall (ecc-space-test--group-function table)
+                            candidate t))
+            (affixed (car (car (ecc-space-test--affixes
+                                table (list candidate))))))
+        (dolist (line (list shown affixed))
+          (should (equal line "project-one › feat-y"))
+          (should (eq (get-text-property 0 'face line)
+                      'completions-common-part))
+          (should-not (get-text-property 12 'face line)))))))
 
 (ert-deftest ecc-space-test-going-to-a-request-goes-to-its-space ()
   "`ecc-next-attention' takes the Space of the session with it.

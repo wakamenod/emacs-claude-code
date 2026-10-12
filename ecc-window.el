@@ -53,14 +53,11 @@
 (declare-function ecc-space-display-session "ecc-space" (session))
 (declare-function ecc-space-display-beside-session "ecc-space" (buffer session))
 (declare-function ecc-space-current-key "ecc-space" ())
-(declare-function ecc-space-tab "ecc-space" (space))
-(declare-function ecc-space-name "ecc-space" (space))
+(declare-function ecc-space-title "ecc-space" (space))
 (declare-function ecc-space-parent "ecc-space" (space))
 ;; `ecc-notify' is above this file as well, and requires it.
 (declare-function ecc-tab-state "ecc-notify" (session))
-(declare-function ecc-tab-mark-of-state "ecc-notify" (state &optional fill))
-(declare-function ecc-tab-faces-of-state "ecc-notify" (state current))
-(defvar ecc-tab--blink-phase)
+(declare-function ecc-tab-picker-mark "ecc-notify" (state))
 
 (defvar ecc-window-use-side-window t
   "Non-nil shows a transcript in a side window rather than an ordinary one.
@@ -966,26 +963,17 @@ being whatever they were left as."
 
 (defun ecc-window--session-group (key)
   "Return (TITLE . PARENT) for the group of the sessions of the project KEY.
-Under `spaces\=' the group is the Space.  A linked worktree is titled
-after the repository it belongs to and then its branch,
-`repo › branch\=', and PARENT is the key of that repository; any other
-Space goes by the name of its tab when it has one, so that the two
-agree, and otherwise by its name.  Under `classic\=' it is the project,
+Under `spaces\=' the group is the Space, titled by `ecc-space-title\=' as
+the Space picker titles it, and PARENT is the key of the repository a
+linked worktree belongs to.  Under `classic\=' it is the project,
 with no PARENT: telling a worktree from its repository asks git, and
 nothing under `classic\=' reaches `ecc-worktree\='."
   (cond
    ((string-empty-p key) (list "-"))
    (ecc-use-spaces
     (require 'ecc-space)
-    (let* ((space (ecc-space-of-root key))
-           (parent (ecc-space-parent space)))
-      (if parent
-          ;; The branch and not the tab: a tab's `<2>' is there to tell
-          ;; tabs apart, and the repository in front already does.
-          (cons (concat (ecc-space-name (ecc-space-of-root parent))
-                        " › " (ecc-space-name space))
-                parent)
-        (list (or (ecc-space-tab space) (ecc-space-name space))))))
+    (let ((space (ecc-space-of-root key)))
+      (cons (ecc-space-title space) (ecc-space-parent space))))
    (t (require 'ecc-render)
       (list (ecc-render--project-name-1 key)))))
 
@@ -1065,11 +1053,7 @@ candidate before it hands it to the `group-function\=' (confirmed
 mark is the one its tab and its sidebar row carry, at the moment of
 asking: no blinking.  Only the mark takes a face of its own."
   (require 'ecc-notify)
-  (let* ((ecc-tab--blink-phase nil)
-         (state (ecc-tab-state session)))
-    (concat (propertize (ecc-tab-mark-of-state state t)
-                        'face (ecc-tab-faces-of-state state nil))
-            " " name)))
+  (concat (ecc-tab-picker-mark (ecc-tab-state session)) " " name))
 
 (defun ecc-window--session-table (candidates)
   "Return a completion table of CANDIDATES, grouped by Space and kept in order.
