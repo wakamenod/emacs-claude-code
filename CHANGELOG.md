@@ -80,7 +80,43 @@ Verified against **Claude Code CLI 2.1.290**.
   at `/` or `~` is still only taken as written, and the paths of tool calls,
   the Files section and diffs, which are absolute already, open as before.
 
+### Changed
+
+- The Space picker of `C-c c j` (`ecc-space-goto`) groups the Spaces under
+  `Open`, the Spaces of the sidebar in its order, and `Past`, the projects
+  only recordings are left of, newest first; `ecc-space-close`, when it asks,
+  shows the same `Open` list alone. Each line is drawn the way the sidebar draws the row: the Space's
+  state mark (`⚠`, `▶`, `✗`, `○`, and `·` for idle; blank for a Space with
+  nothing running), its sidebar number `[n]`, and `├─` / `└─` in front of a
+  worktree under its repository. A past one gets blanks for the mark and the
+  number and no tree line, even when it is a worktree of an open repository,
+  and a dimmed `past` before its directory, which is what tells it apart where
+  the group headings do not show. The directory follows,
+  dimmed, in a column of its own; the state word is gone. What is typed is
+  matched against the name alone, not the mark, the number or the directory.
+  A worktree's name is what its repository goes by and its branch
+  (`emacs-claude-code › feat/x`, or `app<2> › feat/x` under a repository
+  whose tab is `app<2>`), the same title the session picker now gives its
+  group, so typing a repository's name narrows the list to it and its
+  worktrees; any other Space goes by its tab's name, or its own when it has
+  no tab. Two Spaces that would share a name become `name` and `name<2>`.
+  The groups show in a completion UI that reads `group-function` -- vertico
+  does, and the default `*Completions*` with `completions-group` on; the
+  mark, the number, the tree line and the directory show in both, with
+  `completions-group` on or off.
+
 ### Fixed
+
+- `C-c c j` (`ecc-space-goto`) answered with `RET` and nothing typed, under
+  the default completion, went on with no Space and failed with
+  `wrong-type-argument`; so did `ecc-space-close` when it asked. It says "No
+  Space chosen" now. Introduced in 0.3.0, with `ecc-space-goto`.
+
+- `ecc-space-close`, asked from outside any Space, offered the projects only
+  recordings are left of along with the open Spaces. Picking one stopped
+  nothing and closed no tab, said "Closed" all the same, and for a worktree
+  went on to offer removing its directory. It offers the open Spaces alone
+  now. Introduced in 0.3.0, with `ecc-space-past-projects`.
 
 - A numbered list item in the transcript showed a bullet in place of its
   number: `1.` and `10)` were drawn as `•`, like a `-` item, so a reply's
