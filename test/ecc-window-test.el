@@ -157,6 +157,19 @@ because only one of them moves: what it does to the other is the bug."
     (should (equal (ecc-session-name one) "refactor"))
     (should (equal (buffer-name (ecc-session-buffer one)) "*ecc: refactor*"))))
 
+(ert-deftest ecc-window-test-rename-to-the-same-name ()
+  "A session does not collide with itself.
+The prompt offers the name the session has, so confirming it unchanged
+used to rename the session to NAME<2>."
+  (ecc-window-test--with-sessions one two
+    (ecc-session-ensure-buffer one)
+    (ecc-rename-session one (ecc-session-name one))
+    (should (equal (ecc-session-name one) "one"))
+    (should (equal (buffer-name (ecc-session-buffer one)) "*ecc: one*"))
+    ;; Another session's name is still taken.
+    (ecc-rename-session one (ecc-session-name two))
+    (should (equal (ecc-session-name one) "two<2>"))))
+
 ;;;; Roles and hiding
 
 (defmacro ecc-window-test--with-frame (roomy &rest body)

@@ -165,6 +165,35 @@ Verified against **Claude Code CLI 2.1.290**.
   git writes `\177`, `\a`, `\v`, `\f` and `\r`, and the review now
   writes them so.
 
+- A slash command the CLI runs itself -- `/rename`, `/model`, `/cost` and the
+  rest -- is drawn as the command it is in a live session, and no longer as a
+  reply the model wrote. The live stream does not spread such a command over
+  the messages a recording holds: it sends one synthetic assistant message
+  carrying `local_command_run` and `local_command_source`, which nothing here
+  read, so the pretty command node existed only when a recording was replayed.
+  A command typed in the prompt region is not drawn a second time under the
+  turn it heads, also when the CLI reports it under another name: `/cost`
+  comes back as `usage` (confirmed against CLI 2.1.290, 2026-10-12).
+
+- `/rename` renames the session in Emacs, with its buffer, its mode line and
+  every menu that lists it. The CLI sends `system/session_title_changed` with
+  the name it settled on, ahead of `system/init` when the command is the first
+  thing the process runs; nothing here read it, so the two names drifted apart
+  and the event was drawn as a stray notice. It is now applied to the session
+  and drawn as nothing, and the name is never guessed from what the command
+  printed or the argument it was given (confirmed against CLI 2.1.290,
+  2026-10-12).
+
+- Renaming a session to the name it already has leaves it alone. The prompt
+  of `C-c c R` offers the current name, and confirming it unchanged renamed
+  the session to `NAME<2>`: `ecc-model-unique-name` counted the session
+  itself as a collision. It now takes the session to leave out.
+
+- `R` in the dashboard is the rename `C-c c R` is. It skipped the trim, so a
+  name of nothing but blanks went through; it wrote the buffer name itself
+  instead of asking `ecc-session-buffer-name` for it; and it offered no
+  default. All three are gone: both keys now call `ecc-rename-session`.
+
 ## [0.4.1] - 2026-10-12
 
 Verified against **Claude Code CLI 2.1.290**.

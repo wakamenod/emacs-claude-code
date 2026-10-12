@@ -25,6 +25,13 @@
       (ecc-model-remove-session other)
       (should (equal (ecc-model-sessions) (list session))))))
 
+(ert-deftest ecc-model-test-unique-name-excepts-one-session ()
+  "A session is not what its own name collides with."
+  (ecc-test-with-fake-session session
+    (should (equal (ecc-model-unique-name "test") "test<2>"))
+    (should (equal (ecc-model-unique-name "test" session) "test"))
+    (should (equal (ecc-model-unique-name "other" session) "other"))))
+
 (ert-deftest ecc-model-test-session-id-moves ()
   "A forked session keeps its place in the registry under the new id."
   (ecc-test-with-fake-session session
