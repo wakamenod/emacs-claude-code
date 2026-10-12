@@ -175,8 +175,9 @@ Verified against **Claude Code CLI 2.1.290**.
   turn it heads, also when the CLI reports it under another name: `/cost`
   comes back as `usage` (confirmed against CLI 2.1.290, 2026-10-12).
 
-- `/rename` renames the session in Emacs, with its buffer, its mode line and
-  every menu that lists it. The CLI sends `system/session_title_changed` with
+- `/rename` renames the session in Emacs, with its buffer, its mode line, the
+  tab line of every window and every menu that lists it, and the name is saved
+  for `ecc-restore`. The CLI sends `system/session_title_changed` with
   the name it settled on, ahead of `system/init` when the command is the first
   thing the process runs; nothing here read it, so the two names drifted apart
   and the event was drawn as a stray notice. It is now applied to the session
@@ -193,6 +194,16 @@ Verified against **Claude Code CLI 2.1.290**.
   name of nothing but blanks went through; it wrote the buffer name itself
   instead of asking `ecc-session-buffer-name` for it; and it offered no
   default. All three are gone: both keys now call `ecc-rename-session`.
+
+- A rename (`C-c c R`, or `R` in the dashboard) could leave the old name
+  behind. The tab line of another window that listed the session kept the old
+  name until the next change of state drew it again: a window caches its tab
+  line on the tabs and the name of its own buffer, not on the names of the
+  others. And a rename saved nothing for `ecc-restore`, so an Emacs that went
+  down before the next save brought the session back under its old name. Every
+  rename now runs the new `ecc-session-renamed-hook`, on which the tab lines are
+  drawn again and the open sessions are saved. Introduced in 0.1.0; the missing
+  save in 0.4.0, with `ecc-restore`.
 
 ## [0.4.1] - 2026-10-12
 
