@@ -367,9 +367,13 @@ node_modules (2026-10-12)."
 LOG-NAME is the session a failure is logged under."
   (make-directory ecc-mermaid-directory t)
   (let* ((input (expand-file-name (concat hash ".mmd") ecc-mermaid-directory))
-         ;; mmdc picks the format by the extension, so the file it
-         ;; writes ends in .png too; it is renamed once whole, so that a
-         ;; picture half written is never taken for one.
+         ;; A PNG and not an SVG: Mermaid's SVG puts every label in a
+         ;; <foreignObject> of HTML, and librsvg, which draws an SVG in
+         ;; Emacs, draws the boxes and arrows without a word in them
+         ;; (mmdc 12.0.0 and rsvg-convert, 2026-10-12).  mmdc picks the
+         ;; format by the extension, so the file it writes ends in .png
+         ;; too; it is renamed once whole, so that a picture half
+         ;; written is never taken for one.
          (output (expand-file-name (concat hash "-part.png") ecc-mermaid-directory))
          (buffer (generate-new-buffer " *ecc-mermaid*" t)))
     (let ((coding-system-for-write 'utf-8-unix))
