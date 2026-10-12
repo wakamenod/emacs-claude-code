@@ -631,23 +631,32 @@ and out of nothing else."
   "Split a window SIZE columns or lines wide off WINDOW, on SIDE, and return it.
 A split that would leave either half under the least WINDOW can be --
 `window-min-width\=' or `window-min-height\=', or more with a header line
-or a margin -- signals an error, which is left to the caller.
+or a margin -- signals an error, which is left to the caller.  The right
+margin of a transcript is not counted, and is taken away first.
 
 `window-combination-resize\=' is bound to nil so that the room comes out
 of WINDOW alone: a user who set it would otherwise have every sibling
 give a share, and the proportions a layout asks for would come out as
 something else."
-  (let* ((horizontal (memq side '(left right)))
-         (least (window-min-size window horizontal))
-         (total (window-total-size window horizontal)))
-    ;; Checked here because `split-window' does not: given SIZE, it
-    ;; holds neither half to `window-min-width' and made a window of 78
-    ;; columns and one of 2 out of 80 with that set to 27.  Only a split
-    ;; with no SIZE is refused for it (Emacs 32.0.50, 2026-10-12).
-    (when (or (< size least) (< (- total size) least))
-      (error "No room in %s for a window %d wide" window size))
-    (let ((window-combination-resize nil))
-      (split-window window (- size) side))))
+  (let ((horizontal (memq side '(left right))))
+    ;; A transcript keeps what it has over `ecc-chat-text-width' in its
+    ;; right margin, and `window-min-size' counts a margin: a transcript
+    ;; filling a 215-column main area refused every split, and the key
+    ;; said there was no room (recorded 2026-10-12).  The margin goes;
+    ;; `ecc-chat--set-margins' sets it again once the window has its
+    ;; new size.
+    (when (and horizontal (ecc-window-buffer-session (window-buffer window)))
+      (set-window-margins window (car (window-margins window)) nil))
+    (let ((least (window-min-size window horizontal))
+          (total (window-total-size window horizontal)))
+      ;; Checked here because `split-window' does not: given SIZE, it
+      ;; holds neither half to `window-min-width' and made a window of 78
+      ;; columns and one of 2 out of 80 with that set to 27.  Only a
+      ;; split with no SIZE is refused for it (Emacs 32.0.50, 2026-10-12).
+      (when (or (< size least) (< (- total size) least))
+        (error "No room in %s for a window %d wide" window size))
+      (let ((window-combination-resize nil))
+        (split-window window (- size) side)))))
 
 (defun ecc-space--show-in-new (buffer window)
   "Show BUFFER in WINDOW, which was made for it, and return WINDOW.
@@ -656,6 +665,14 @@ quitting BUFFER there deletes the window rather than showing whatever
 was in it before."
   (display-buffer-record-window 'window window buffer)
   (set-window-buffer window buffer)
+  ;; A window `split-window' made shows the buffer of the window it was
+  ;; split from, and `set-window-buffer' puts that buffer in its
+  ;; history; `quit-window' then goes back to it rather than delete the
+  ;; window, quit-restore or not, and a plan quit beside a transcript
+  ;; left a second copy of the transcript in its place (Emacs 32.0.50,
+  ;; 2026-10-12).  `display-buffer' clears the history of a window it
+  ;; makes, after showing the buffer in it, and so does this.
+  (set-window-prev-buffers window nil)
   window)
 
 (defun ecc-space--display-beside (buffer window width &optional direction)
@@ -834,9 +851,9 @@ the sessions of SPACE by `ecc-space--slot-sessions\='.  A slot with no
 session left for it shows the source; a session with no slot goes on
 running with no window.
 
-Return non-nil when LAYOUT was built.  When Emacs refuses one of its
-splits -- a frame too small for it -- the windows are put back as they
-were and nil comes back.
+Return non-nil when LAYOUT was built.  When Emacs refuses to delete a
+window or to make one of the splits -- a frame too small for it -- the
+windows are put back as they were and nil comes back.
 
 Point stays in the buffer it was in when that is still on the screen,
 and goes to the first session when it is not.  It is moved without
@@ -855,19 +872,22 @@ laying the same Space out again keeps every session in its slot."
          ;; configuration puts back the windows themselves.
          (state (current-window-configuration))
          (windows nil))
-    ;; Not `delete-other-windows', which keeps the sidebar only for its
-    ;; `no-delete-other-windows': `ecc-space-zoom' puts the windows back
-    ;; from a window state, which drops that parameter, so the first
-    ;; layout after a zoom took the sidebar down with the rest
-    ;; (2026-10-12).  A side window is kept for being one.
-    (dolist (window (window-list nil 'no-minibuffer))
-      (unless (or (eq window main) (window-parameter window 'window-side))
-        (delete-window window)))
     (condition-case nil
-        (setq windows (ecc-space--split layout main (length sessions)))
-      ;; Only the splits are inside: a refused one is the frame being too
-      ;; small for LAYOUT, and the answer to that is the windows as they
-      ;; were.
+        (progn
+          ;; Not `delete-other-windows', which keeps the sidebar only for
+          ;; its `no-delete-other-windows': `ecc-space-zoom' puts the
+          ;; windows back from a window state, which drops that
+          ;; parameter, so the first layout after a zoom took the sidebar
+          ;; down with the rest (2026-10-12).  A side window is kept for
+          ;; being one.
+          (dolist (window (window-list nil 'no-minibuffer))
+            (unless (or (eq window main) (window-parameter window 'window-side))
+              (delete-window window)))
+          (setq windows (ecc-space--split layout main (length sessions))))
+      ;; Only taking the tab down and dividing it are inside: a window
+      ;; that will not be deleted, or a split the frame is too small for,
+      ;; and the answer is the windows as they were rather than a tab
+      ;; left half taken apart.
       (error (set-window-configuration state)))
     (when windows
       (let ((ecc-space--laying-out t)
@@ -918,11 +938,11 @@ window jump (Emacs 32.0.50, 2026-09-16)."
   window)
 
 (defvar ecc-space--divide-right-width 80
-  "Columns a session window needs to be divided to the right.
+  "Columns each half of a session window divided to the right must have.
 What `ecc-space-display-beside-session' asks of a transcript it has to
-divide for a question or a plan: this wide, the two halves stand side
-by side; narrower, the buffer goes below the transcript instead, and
-neither is left too narrow to read.")
+divide for a question or a plan: twice this wide, the two halves stand
+side by side, each a transcript or a plan one can read; narrower, the
+buffer goes below the transcript instead.")
 
 (defun ecc-space-display-beside-session (buffer session)
   "Show BUFFER next to SESSION in its Space and return the window.
@@ -940,9 +960,9 @@ the two are always seen together.  Then the widest window that holds no
 session takes the buffer -- the source, which is the one window in a
 Space wide enough to read a plan in, and which comes back as it was
 when the buffer is quit.  Only where there is no such window is a
-session window divided: to the right when it is
-`ecc-space--divide-right-width' wide, below it when it is not, and never
-so that a transcript is lost."
+session window divided: to the right when each half would be
+`ecc-space--divide-right-width' wide, below it when not, and never so
+that a transcript is lost."
   (require 'ecc-session)
   (let ((session-window (ecc-space-display-session session)))
     (or (get-buffer-window buffer)
@@ -950,7 +970,7 @@ so that a transcript is lost."
           (ecc-space--display-in buffer source))
         (when (window-live-p session-window)
           (if (>= (window-total-width session-window)
-                  ecc-space--divide-right-width)
+                  (* 2 ecc-space--divide-right-width))
               (ecc-space--display-beside
                buffer session-window
                (/ (window-total-width session-window) 2))

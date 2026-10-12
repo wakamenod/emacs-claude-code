@@ -588,6 +588,44 @@ about, and both transcripts stay on the screen."
               (should (get-buffer-window (ecc-session-buffer one)))
               (should (get-buffer-window (ecc-session-buffer two))))))))))
 
+(ert-deftest ecc-space-test-a-question-divides-to-the-right-only-into-wide-halves ()
+  "A transcript is divided to the right only when each half is wide enough.
+`ecc-space--divide-right-width\=' is what each half must have; a
+transcript narrower than twice that is divided below instead, so that
+neither it nor the plan beside it is squeezed (the whole window being
+wide enough was the rule for a while, and it put a plan in a 67-column
+half beside a 135-column transcript)."
+  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
+                                   ("two" . ,ecc-space-test--one))
+    (ecc-space-test--with-tab-bar
+      (let ((ecc-window-width 0.4))
+        (should (= 80 ecc-space--divide-right-width))
+        (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+        (ecc-sidebar-hide)
+        (delete-other-windows)
+        (let ((one (car sessions)) (two (nth 1 sessions)))
+          (ecc-space-display-session one)
+          ;; Every window a transcript, so the question has to divide one.
+          (set-window-buffer (selected-window) (ecc-session-buffer two))
+          (let* ((session-window (get-buffer-window (ecc-session-buffer one)))
+                 (width (window-total-width session-window)))
+            (dolist (case `((,(/ width 2) . right) (,(1+ (/ width 2)) . below)))
+              (ecc-space-test--with-popup popup
+                (let* ((ecc-space--divide-right-width (car case))
+                       (window (ecc-window-display-beside-session popup one))
+                       (edges (window-edges window))
+                       (beside (window-edges session-window)))
+                  (should (eq (window-buffer window) popup))
+                  (if (eq (cdr case) 'right)
+                      (should (= (nth 1 edges) (nth 1 beside)))
+                    (should (= (nth 0 edges) (nth 0 beside))))
+                  ;; Quitting the plan takes its window away, and leaves
+                  ;; no copy of the transcript where it was.
+                  (quit-window nil window)
+                  (should-not (window-live-p window))
+                  (should (= 1 (length (get-buffer-window-list
+                                        (ecc-session-buffer one))))))))))))))
+
 (ert-deftest ecc-space-test-a-tab-with-no-window-for-the-code-gets-one ()
   "Going to a Space whose tab has only transcripts in it puts the code back.
 The windows of a tab are the user\='s and are left where they were put.
@@ -1017,6 +1055,42 @@ left the sidebar to `delete-other-windows\=' took it down."
       (should (ecc-sidebar--window))
       (should (= width (window-total-width (ecc-sidebar--window))))
       (ecc-space-test--is 'pair '("p1" "p2")))))
+
+(ert-deftest ecc-space-test-a-wide-transcript-is-divided-all-the-same ()
+  "A transcript filling the tab is divided, its margin notwithstanding.
+A transcript keeps what it has over `ecc-chat-text-width\=' in its right
+margin, and `window-min-size\=' counts the margin: after `C-x 1\=' on a
+transcript in a 215-column main area, every layout was refused and the
+key said there was no room (recorded 2026-10-12)."
+  (ecc-space-test--with-layouts '("p1" "p2")
+    (ecc-space-test--press t)
+    (ecc-space-test--wreck-the-tab)
+    (set-window-margins (selected-window) nil
+                        (- (window-total-width (selected-window)) 12))
+    (ecc-space-test--press)
+    (ecc-space-test--is 'pair '("p2" "p1"))))
+
+(ert-deftest ecc-space-test-a-window-that-will-not-go-leaves-the-tab-whole ()
+  "A window the layout cannot delete puts every window back.
+Taking the tab down is part of building the layout: a window that
+refuses to be deleted -- an atomic one, a `delete-window\=' parameter
+that says no -- leaves the tab as it was, not half taken apart."
+  (ecc-space-test--with-layouts '("p1" "p2")
+    (ecc-space-test--press t)
+    (ecc-space-test--press t)
+    (ecc-space-test--is 'thirds '("p1" "p2"))
+    (let ((before (ecc-space-test--layout))
+          (stubborn (get-buffer-window (ecc-session-buffer (nth 1 sessions)))))
+      (set-window-parameter stubborn 'delete-window
+                            (lambda (window)
+                              (error "%s will not be deleted" window)))
+      (unwind-protect
+          (progn
+            (ecc-space-test--press t)
+            (should (equal before (ecc-space-test--layout)))
+            (should (window-live-p stubborn))
+            (should (eq (ecc-space--layout) 'thirds)))
+        (set-window-parameter stubborn 'delete-window nil)))))
 
 (ert-deftest ecc-space-test-a-fresh-press-puts-back-the-tab-s-layout ()
   "Pressed after anything else, the key builds the layout this tab last chose.

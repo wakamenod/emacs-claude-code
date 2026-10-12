@@ -144,11 +144,6 @@ Verified against **Claude Code CLI 2.1.290**.
   than when it was started. With no session window it still opens to the right
   of the source, `ecc-window-width` of the frame wide.
 
-- A question, a plan or a log opened beside a transcript that has no window
-  but transcripts to go in divides the transcript to the right when it is 80
-  columns wide or more, and below it otherwise. It was 160 columns, twice
-  `ecc-space-session-min-width`.
-
 ### Fixed
 
 - A turn waiting on a permission, a question or a plan, or one compacting its
@@ -282,7 +277,9 @@ Verified against **Claude Code CLI 2.1.290**.
 
 - **Breaking.** `ecc-space-session-min-width`. How many sessions a Space shows
   is the layout's to say now, and the variable is obsolete; setting it does
-  nothing.
+  nothing. A question, a plan or a log that has to divide a transcript still
+  goes to its right only when each half gets 80 columns, the default this
+  setting had, and below it otherwise.
 
 ## [0.4.1] - 2026-10-12
 
