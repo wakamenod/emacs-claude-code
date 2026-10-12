@@ -78,7 +78,6 @@
 
 ;; The keymaps belong to `ecc-chat', which sits above this module; they
 ;; are looked up by name when the text is drawn.
-(defvar ecc-chat-text-width)
 (defvar ecc-chat-transcript-map)
 (defvar ecc-chat-button-map)
 (defvar ecc-request-section-map)
@@ -421,26 +420,13 @@ spans the window rather than the text."
                  (concat prefix (make-string (string-width key) ?\s) "  "))
                 "\n")))))
 
-(defun ecc-render--image-width (indent)
-  "Return the pixels an inline image may take, INDENT columns in.
-The ceiling is `ecc-chat-text-width\=' rather than the window: the prose
-is already held to that width by the margins, and a picture wider than
-the text it belongs to reads as a different document."
-  (let* ((window (or (get-buffer-window (current-buffer) t) (selected-window)))
-         (char (frame-char-width (window-frame window)))
-         (columns (- (min (window-body-width window)
-                          (or (bound-and-true-p ecc-chat-text-width)
-                              most-positive-fixnum))
-                     indent 1)))
-    (max (* 8 char) (* columns char))))
-
 (defun ecc-render--insert-image (path prefix &optional bytes name)
   "Insert the image PATH, of BYTES bytes, on a line of its own after PREFIX.
 NAME is what the line says instead of the name of the file.
 Not through `ecc-render--insert-lines\=': that splits on newlines and
 hangs a wrap prefix on every one of them, and an image is one glyph
 that must not be broken."
-  (let* ((width (ecc-render--image-width (string-width prefix)))
+  (let* ((width (ecc-image-width (string-width prefix)))
          (preview (and (ecc-image-video-p path) (ecc-render--video-preview path)))
          (string (ecc-image-string path width ecc-image-max-height
                                    bytes preview name))
