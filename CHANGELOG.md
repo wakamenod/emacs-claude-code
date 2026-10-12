@@ -80,6 +80,35 @@ Verified against **Claude Code CLI 2.1.290**.
   at `/` or `~` is still only taken as written, and the paths of tool calls,
   the Files section and diffs, which are absolute already, open as before.
 
+- A fenced code block whose language is `mermaid` in a reply is shown as the
+  diagram it describes, drawn by mermaid-cli (`mmdc`, verified with 12.0.0).
+  Nothing waits for it: the block is drawn as code, the diagram is made in the
+  background once the closing fence has arrived, and it is put over the block's
+  text when it is ready -- a `display` property, so no text is inserted and the
+  transcript is not redrawn. The source stays in the buffer under the picture,
+  so search and copy find it, and `I` on a diagram shows the source in its
+  place and back (on anything else `I` still stops or starts a GIF). The
+  diagrams are PNG drawn at twice the size and shown at half, `-t dark` in a
+  dark frame, with a transparent background, fitted to the window like any
+  inline image. They are made one at a time, each killed after
+  `ecc-mermaid-timeout` (20 seconds), and kept under `ecc-mermaid-directory`
+  (`ecc-mermaid` in `temporary-file-directory`), keyed by a hash of the source
+  and the arguments, so a diagram is made once and a restored session shows it
+  at once. A source mmdc cannot draw is logged with mmdc's error, keeps its
+  block as code with the error as its `help-echo` and its first line in
+  `ecc-mermaid-error-face`, and is not tried again on its own: `I` on it
+  forgets the failure, takes the error off the block and draws it again, for
+  a cause put right since (a browser mmdc had not downloaded yet, a cold start
+  past the timeout, a full disk). A failure before mmdc starts -- the directory
+  or the source file cannot be written -- is a failure of that diagram like any
+  other, and the queue goes on. There is no `defcustom`:
+  diagrams are drawn where `mmdc` is on `exec-path`, `ecc-image-inline` is on
+  and the frame draws images; `(setq ecc-mermaid-command nil)` turns them off.
+
+  Underneath, `ecc-markdown-code-block-functions` is called on each closed
+  fenced block as it is fontified, and `ecc-image-width` is what
+  `ecc-render--image-width` was.
+
 ### Changed
 
 - The Space picker of `C-c c j` (`ecc-space-goto`) groups the Spaces under

@@ -58,6 +58,7 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-image)
+(require 'ecc-mermaid)
 (require 'ecc-proc)
 (require 'ecc-render)
 
@@ -307,7 +308,7 @@ no \\`C-c C-<letter>' free goes to `ecc-menu' rather than taking one.")
     ;; `F', `P', `T' and `L' are the capitals of `ecc-menu', and `I' is
     ;; the picture at point as the menu's `I' is the pictures.
     (define-key map (kbd "v") #'ecc-chat-goto-prompt)
-    (define-key map (kbd "I") #'ecc-image-toggle-animation)
+    (define-key map (kbd "I") #'ecc-chat-toggle-picture)
     (define-key map (kbd "F") #'ecc-chat-goto-files)
     (define-key map (kbd "P") #'ecc-chat-goto-plans)
     (define-key map (kbd "?") #'ecc-menu)
@@ -504,6 +505,16 @@ sits on the first character of the ghost text."
   (unless (ecc-chat-prompt-start)
     (user-error "This buffer has no prompt region"))
   (goto-char (ecc-chat-prompt-end)))
+
+(defun ecc-chat-toggle-picture ()
+  "Toggle the picture at point.
+A diagram is shown as its source, or its source as the diagram
+\(`ecc-mermaid-toggle'); a GIF is stopped or set moving
+\(`ecc-image-toggle-animation')."
+  (interactive)
+  (if (ecc-mermaid-block-at)
+      (ecc-mermaid-toggle)
+    (ecc-image-toggle-animation)))
 
 (defun ecc-chat-return ()
   "Insert a newline, or send the prompt when `ecc-chat-return-sends' is on."
