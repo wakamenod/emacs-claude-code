@@ -17,6 +17,7 @@ The menu acts on the session of the current buffer. Elsewhere it takes the proje
 |---|---|---|
 | `c` | Start a session (`C-u c` asks for the directory and the name) | [Sessions](/emacs-claude-code/features/sessions/#where-a-session-starts) |
 | `r` | Resume a conversation (`-f` forks it) | [Resuming](/emacs-claude-code/features/sessions/#resuming-conversations) |
+| `S` | Restart the CLI, keeping the transcript | [Restarting](/emacs-claude-code/features/sessions/#restarting-the-cli) |
 | `k` | Stop the process and kill the buffers; the recording stays | [Sessions](/emacs-claude-code/features/sessions/) |
 | `R` | Rename the session | [Sessions](/emacs-claude-code/features/sessions/) |
 | `v` | Show the session and go to the prompt | [Sessions](/emacs-claude-code/features/sessions/) |

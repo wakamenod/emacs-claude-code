@@ -46,7 +46,7 @@
 (require 'ecc-window)
 (require 'ecc-visit)
 
-(declare-function ecc-resume "ecc" (session &optional fork))
+(declare-function ecc-restart "ecc" (session &optional confirm))
 (declare-function ecc-perm-deny "ecc-perm" (&optional reason))
 (declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
 (declare-function ecc-question-open "ecc-perm" (request))
@@ -151,10 +151,13 @@ buffer."
     (message "Interrupt requested")))
 
 (defun ecc-session-resume ()
-  "Start this session again with --resume."
+  "Bring the CLI of this session back.
+A session that has stopped is resumed; an idle one that is still
+running is restarted once the user agrees (`ecc-restart\=').  One key
+for both, since what is wanted either way is a CLI that answers again."
   (interactive)
   (require 'ecc)
-  (ecc-resume (ecc-session-at-point)))
+  (ecc-restart (ecc-session-at-point) t))
 
 (defun ecc-session-show-log ()
   "Show the raw protocol log of this session."
