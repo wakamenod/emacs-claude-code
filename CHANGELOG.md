@@ -134,6 +134,9 @@ Verified against **Claude Code CLI 2.1.290**.
   mark, the number, the tree line and the directory show in both, with
   `completions-group` on or off.
 
+- `ecc-perm-ensure-waiting` is now `ecc-perm--ensure-waiting`, the internal
+  function it always was; the old name is an obsolete alias.
+
 ### Fixed
 
 - A turn waiting on a permission, a question or a plan, or one compacting its

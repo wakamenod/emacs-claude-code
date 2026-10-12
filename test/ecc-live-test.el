@@ -753,9 +753,14 @@ thing standing between a resume and two CLIs on one recording."
             (let ((text (ecc-test-live-turn-text
                          (ecc-test-live-wait-for-result session))))
               ;; The quote block reached the model: it can only answer
-              ;; from the code, which is nowhere but in the prompt.
+              ;; from the code, which is nowhere but in the prompt.  One
+              ;; word is sometimes one character: CLI 2.1.290 answered
+              ;; `減' (2026-10-12).  Naming the operation meant instead
+              ;; shows the code was seen as much as naming the wrong one.
               (should (string-match-p
-                       "subtract\\|minus\\|sign\\|operator\\|引き算\\|減算\\|マイナス\\|符号\\|演算子\\|-"
+                       (concat "subtract\\|minus\\|sign\\|operator\\|add\\|plus"
+                               "\\|引き算\\|減\\|マイナス\\|符号\\|演算子"
+                               "\\|足し算\\|加算\\|[-+]")
                        text))))
         (setq buffer-file-name nil)))
     (let ((prompt (ecc-turn-prompt (car (ecc-session-turns session)))))
