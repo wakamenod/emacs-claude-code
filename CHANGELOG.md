@@ -107,6 +107,26 @@ Verified against **Claude Code CLI 2.1.290**.
 
 ### Fixed
 
+- A turn waiting on a permission, a question or a plan, or one compacting its
+  context, was not interrupted before its CLI was stopped for a hand-off to the
+  terminal or a `/resume`: only a session whose state said `running` was taken
+  to be in a turn, and these say `waiting-permission`, `compacting` and the
+  like. The CLI was stopped mid-turn instead. Whether a turn is open now
+  decides it, so such a turn is interrupted first, like a running one.
+  Introduced in 0.3.0.
+- A prompt queued behind a turn was lost when the session was handed over to
+  the terminal or carried on with `/resume` mid-turn. The result that ended the
+  interrupted turn sent the prompt, which opened a turn of its own; the
+  hand-off then waited that turn out and stopped the CLI in the middle of it,
+  so the prompt was never answered. The queue is now held while the CLI is
+  being stopped, and is sent once the session is back. Introduced in 0.1.0.
+- A session taken back from the terminal while a CLI of its own was already
+  running again could be left with a turn open on an idle CLI: the lines the
+  terminal had appended were read in with their turn kept open, and nothing
+  closed it. Every prompt then waited in the queue behind it. The turn is now
+  closed when the follow ends, unless the running CLI is itself in a turn.
+  Introduced in 0.1.0.
+
 - Reply text in the transcript could be painted red, or mauve, across a whole
   stretch: with `show-paren-mode` on and `show-paren-style` set to `mixed` or
   `expression`, point near a paren that does not pair -- a `1)` list item, a

@@ -367,10 +367,14 @@ not."
     ;; appended lines is the middle of a turn rather than the end of
     ;; one.  The hand-off ending is the end of it: a turn left open
     ;; here holds every prompt sent afterwards in the queue, and the
-    ;; session takes nothing said to it ever again.  A live process is
-    ;; the exception -- the turn is then its own, and nobody else may
-    ;; close it.
-    (unless (process-live-p (ecc-session-process session))
+    ;; session takes nothing said to it ever again.  A live process in
+    ;; the middle of a turn is the exception -- the turn is then its
+    ;; own, and nobody else may close it.  An idle one is not in a turn:
+    ;; a turn of its own would have it `running' or waiting, and
+    ;; `ecc-history--replay' puts the state back after a batch, so what
+    ;; is open then is the terminal's.
+    (unless (and (process-live-p (ecc-session-process session))
+                 (not (eq (ecc-session-state session) 'idle)))
       (ecc-history--close-turn session (plist-get state :time))))
   (remhash (ecc-session-id session) ecc-tui--handoffs))
 
