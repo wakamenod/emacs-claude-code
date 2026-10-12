@@ -80,7 +80,12 @@ Verified against **Claude Code CLI 2.1.290**.
   and the arguments, so a diagram is made once and a restored session shows it
   at once. A source mmdc cannot draw is logged with mmdc's error, keeps its
   block as code with the error as its `help-echo` and its first line in
-  `ecc-mermaid-error-face`, and is not tried again. There is no `defcustom`:
+  `ecc-mermaid-error-face`, and is not tried again on its own: `I` on it
+  forgets the failure, takes the error off the block and draws it again, for
+  a cause put right since (a browser mmdc had not downloaded yet, a cold start
+  past the timeout, a full disk). A failure before mmdc starts -- the directory
+  or the source file cannot be written -- is a failure of that diagram like any
+  other, and the queue goes on. There is no `defcustom`:
   diagrams are drawn where `mmdc` is on `exec-path`, `ecc-image-inline` is on
   and the frame draws images; `(setq ecc-mermaid-command nil)` turns them off.
 

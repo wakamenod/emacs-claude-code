@@ -71,7 +71,7 @@ The transcript shows images under the prompt or the call they came with. `I` sto
 
 ### Diagrams
 
-A ```` ```mermaid ```` block in a reply is shown as its diagram when [mermaid-cli](https://github.com/mermaid-js/mermaid-cli) (`mmdc`) is on `PATH`. The block appears as code first, and the diagram replaces it a moment later. `I` on a diagram shows its source, and `I` again shows the diagram. Search and copy work on the source either way. A block mmdc cannot draw stays code, and hovering over it shows the error.
+A ```` ```mermaid ```` block in a reply is shown as its diagram when [mermaid-cli](https://github.com/mermaid-js/mermaid-cli) (`mmdc`) is on `PATH`. The block appears as code first, and the diagram replaces it a moment later. `I` on a diagram shows its source, and `I` again shows the diagram. Search and copy work on the source either way. A block mmdc cannot draw stays code, and hovering over it shows the error. `I` on it tries again, after you have fixed the cause.
 
 Install mermaid-cli with `npm install -g --allow-scripts=puppeteer @mermaid-js/mermaid-cli`. Without `--allow-scripts`, npm may skip downloading the browser `mmdc` draws with. `(setq ecc-mermaid-command nil)` turns the diagrams off, and so does turning off `ecc-image-inline`.
 

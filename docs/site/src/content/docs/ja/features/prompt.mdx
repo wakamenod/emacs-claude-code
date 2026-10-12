@@ -71,7 +71,7 @@ import Video from '../../../../components/Video.astro';
 
 ### 図
 
-[mermaid-cli](https://github.com/mermaid-js/mermaid-cli)（`mmdc`）が `PATH` にあれば、返答中の ```` ```mermaid ```` ブロックは図として表示されます。ブロックはまずコードとして表示され、少しあとに図に置き換わります。図の上で `I` を押すとソースが表示され、もう一度押すと図に戻ります。どちらの表示でも、検索とコピーはソースに対して働きます。mmdc が描けなかったブロックはコードのままで、マウスを重ねるとエラーが表示されます。
+[mermaid-cli](https://github.com/mermaid-js/mermaid-cli)（`mmdc`）が `PATH` にあれば、返答中の ```` ```mermaid ```` ブロックは図として表示されます。ブロックはまずコードとして表示され、少しあとに図に置き換わります。図の上で `I` を押すとソースが表示され、もう一度押すと図に戻ります。どちらの表示でも、検索とコピーはソースに対して働きます。mmdc が描けなかったブロックはコードのままで、マウスを重ねるとエラーが表示されます。原因を直したあとに、そのブロックの上で `I` を押すと描き直します。
 
 mermaid-cli は `npm install -g --allow-scripts=puppeteer @mermaid-js/mermaid-cli` でインストールします。`--allow-scripts` を付けないと、npm は `mmdc` の描画に使うブラウザをダウンロードしないことがあります。`(setq ecc-mermaid-command nil)` で図の表示をオフにします。`ecc-image-inline` をオフにしても表示されません。
 

@@ -27,11 +27,13 @@
 (defun ecc-mermaid-test--script (dir kind)
   "Write a stand-in for mmdc of KIND into DIR and return its path.
 `ok' copies the image fixture to the file after -o, `fail' says what
-mmdc says of a parse error, and `hang' never finishes.  Each run is a
+mmdc says of a parse error, `fail-once' fails the first time and copies
+the fixture after that, and `hang' never finishes.  Each run is a
 line of DIR/runs, and a run that starts while another is going says so."
   (let ((file (expand-file-name (format "mmdc-%s" kind) dir))
         (runs (expand-file-name "runs" dir))
-        (busy (expand-file-name "busy" dir)))
+        (busy (expand-file-name "busy" dir))
+        (failed (expand-file-name "failed-once" dir)))
     (with-temp-file file
       (insert "#!/bin/sh\n"
               (format "[ -e '%s' ] && echo overlap >> '%s'\n" busy runs)
@@ -50,6 +52,15 @@ line of DIR/runs, and a run that starts while another is going says so."
                                        "echo 'Expecting NODE_STRING' >&2\n"
                                        "echo 'Parser.parseError (https://x.invalid/a.mjs:1:2)' >&2\n"
                                        "echo '    at async renderMermaid (file:///a/index.js:689:22)' >&2")))
+                ('fail-once
+                 (format (concat "rm -f '%s'\n"
+                                 "if [ ! -e '%s' ]; then\n"
+                                 "  touch '%s'\n"
+                                 "  echo 'Error: Failed to launch the browser process' >&2\n"
+                                 "  exit 1\n"
+                                 "fi\n"
+                                 "cp '%s' \"$out\"\n")
+                         busy failed failed (ecc-test-image-file)))
                 ('hang "exec sleep 30\n"))))
     (set-file-modes file #o755)
     file))
@@ -418,6 +429,50 @@ and shows the picture again when pressed again."
             (ecc-chat-toggle-picture)
             (should (ecc-mermaid-test--picture))
             (should (equal text (ecc-test-buffer-string)))))))))
+
+(ert-deftest ecc-mermaid-test-toggle-on-a-failure-draws-it-again ()
+  "`I' on a diagram that failed forgets the failure and runs mmdc again."
+  (ecc-mermaid-test--with 'fail-once
+    (ecc-test-with-fake-session session
+      (let ((buffer (ecc-session-ensure-buffer session)))
+        (ecc-model-begin-turn session "draw")
+        (ecc-mermaid-test--add-reply session (ecc-mermaid-test--reply))
+        (should (ecc-mermaid-test--wait
+                 (lambda () (and (ecc-mermaid-test--idle)
+                                 (= (length (ecc-mermaid-test--runs dir)) 1)))))
+        (with-current-buffer buffer
+          (let ((start (ecc-mermaid-test--block-start)))
+            (should (get-text-property start 'help-echo))
+            (goto-char start)
+            (let ((said nil))
+              (cl-letf (((symbol-function 'message)
+                         (lambda (format &rest args)
+                           (setq said (apply #'format-message format args)))))
+                (ecc-chat-toggle-picture))
+              (should (equal said "Drawing the diagram again")))
+            ;; While it waits, the block says nothing of the failure,
+            ;; and its code keeps its own face.
+            (should-not (get-text-property start 'help-echo))
+            (should-not (memq 'ecc-mermaid-error-face
+                              (ensure-list (get-text-property start 'face))))
+            (should (memq 'ecc-markdown-code-face
+                          (ensure-list (get-text-property start 'face))))))
+        (should (ecc-mermaid-test--wait (lambda () (ecc-mermaid-test--picture buffer))))
+        (should (= (length (ecc-mermaid-test--runs dir)) 2))))))
+
+(ert-deftest ecc-mermaid-test-toggle-draws-nothing-when-off ()
+  "`I' on a diagram while the diagrams are off asks mmdc for nothing."
+  (ecc-mermaid-test--with 'ok
+    (ecc-test-with-fake-session session
+      (let ((buffer (ecc-session-ensure-buffer session)))
+        (ecc-model-begin-turn session "draw")
+        (setq ecc-image-inline nil)
+        (ecc-mermaid-test--add-reply session (ecc-mermaid-test--reply))
+        (with-current-buffer buffer
+          (goto-char (ecc-mermaid-test--block-start))
+          (ecc-mermaid-toggle))
+        (should (ecc-mermaid-test--idle))
+        (should (zerop (hash-table-count ecc-mermaid--state)))))))
 
 (ert-deftest ecc-mermaid-test-two-sessions-both-get-it ()
   "One diagram in two sessions is one job, and both buffers get the picture."

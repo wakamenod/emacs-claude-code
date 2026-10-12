@@ -123,6 +123,10 @@ tried once and not on every redraw.")
 (defvar-local ecc-mermaid--sources nil
   "Hashes of the diagrams this buffer shows as source, by `ecc-mermaid-toggle'.")
 
+(defvar-local ecc-mermaid--log-name nil
+  "The session whose log a failure of a diagram in this buffer goes to.
+Kept from the last draw, for a job `ecc-mermaid-toggle' asks for.")
+
 ;;;; Marking a block
 
 (defun ecc-mermaid-program ()
@@ -270,9 +274,29 @@ No text goes in: the reason is the `help-echo' of the block, and its
 first line is drawn in `ecc-mermaid-error-face'."
   (with-silent-modifications
     (put-text-property from to 'help-echo (concat "mermaid: " why))
-    (add-face-text-property from (save-excursion (goto-char from)
-                                                 (min to (line-end-position)))
+    (add-face-text-property from (ecc-mermaid--first-line-end from to)
                             'ecc-mermaid-error-face)))
+
+(defun ecc-mermaid--first-line-end (from to)
+  "Return where the first line of the block from FROM to TO ends."
+  (save-excursion (goto-char from) (min to (line-end-position))))
+
+(defun ecc-mermaid--clear-failure (from to)
+  "Take what `ecc-mermaid--put-failure' put on the block from FROM to TO off it.
+The faces of the code are left as they are."
+  (with-silent-modifications
+    (remove-text-properties from to '(help-echo nil))
+    (let ((pos from)
+          (end (ecc-mermaid--first-line-end from to)))
+      (while (< pos end)
+        (let ((next (next-single-property-change pos 'face nil end))
+              (face (get-text-property pos 'face)))
+          (cond ((eq face 'ecc-mermaid-error-face)
+                 (remove-text-properties pos next '(face nil)))
+                ((and (consp face) (memq 'ecc-mermaid-error-face face))
+                 (put-text-property pos next 'face
+                                    (remq 'ecc-mermaid-error-face face))))
+          (setq pos next))))))
 
 (defun ecc-mermaid--show-block (value from to log-name)
   "Put the picture of VALUE over FROM to TO, or ask for it.
@@ -287,7 +311,8 @@ LOG-NAME is the session the failure of a job is logged under."
             (state
              (cl-pushnew (current-buffer) (gethash hash ecc-mermaid--waiting))
              (unless state
-               (ecc-mermaid--enqueue hash source arguments log-name)))))))))
+               (ecc-mermaid--enqueue hash source arguments
+                                     (or log-name ecc-mermaid--log-name "mermaid"))))))))))
 
 (defun ecc-mermaid-wanted-p (text)
   "Return non-nil when TEXT, as fontified, holds a diagram to draw here."
@@ -300,6 +325,7 @@ Called by the renderer on text it has just inserted.  A picture on disk
 is put on at once; one that is not is queued, and put on when it is
 made.  LOG-NAME is the session a failure is logged under."
   (when (ecc-mermaid--enabled-p)
+    (when log-name (setq ecc-mermaid--log-name log-name))
     (pcase-dolist (`(,value ,from ,to) (ecc-mermaid--blocks start end))
       (ecc-mermaid--show-block value from to (or log-name "mermaid")))))
 
@@ -317,6 +343,9 @@ block yanked into the draft is the user's to write."
             (pcase-dolist (`(,value ,from ,to) (ecc-mermaid--blocks (point-min) (point-max)))
               (when (and (equal (car value) hash)
                          (get-text-property from 'read-only))
+                ;; A failure drawn there before is gone: the diagram
+                ;; was drawn again, by `ecc-mermaid-toggle' somewhere.
+                (ecc-mermaid--clear-failure from to)
                 (ecc-mermaid--show-block value from to nil)))))))))
 
 ;;;; The jobs
@@ -459,25 +488,37 @@ started whatever became of this one."
 (defun ecc-mermaid-toggle ()
   "Show the diagram at point as its source, or the source as the diagram.
 What is chosen holds for that diagram in this buffer until it is
-toggled again, a redraw included."
+toggled again, a redraw included.
+
+On a diagram mmdc could not draw, this forgets the failure and asks for
+it again: a failure is otherwise remembered until Emacs ends, and its
+cause may have been put right since -- a browser mmdc had not
+downloaded yet, a cold start past `ecc-mermaid-timeout', a full disk.
+The block loses the error while the job runs, and gets the picture, or
+the error again, when it ends."
   (interactive)
   (pcase-let ((`(,value ,from ,to) (or (ecc-mermaid-block-at)
                                        (user-error "No diagram here"))))
     (let ((hash (car value)))
-      (if (get-text-property from 'display)
-          (progn
-            (push hash ecc-mermaid--sources)
-            (with-silent-modifications
-              (remove-text-properties from to '(display nil help-echo nil)))
-            (goto-char from)
-            (message "Source"))
+      (cond
+       ((get-text-property from 'display)
+        (push hash ecc-mermaid--sources)
+        (with-silent-modifications
+          (remove-text-properties from to '(display nil help-echo nil)))
+        (goto-char from)
+        (message "Source"))
+       ((not (ecc-mermaid--enabled-p))
+        (message "Diagrams are not drawn here"))
+       (t
         (setq ecc-mermaid--sources (delete hash ecc-mermaid--sources))
-        (ecc-mermaid--show-block value from to nil)
-        (message (cond ((get-text-property from 'display) "Diagram")
-                       ((not (ecc-mermaid--enabled-p)) "Diagrams are not drawn here")
-                       ((eq (car-safe (gethash hash ecc-mermaid--state)) 'failed)
-                        (concat "mermaid: " (cdr (gethash hash ecc-mermaid--state))))
-                       (t "The diagram is not drawn yet")))))))
+        (let ((failed (eq (car-safe (gethash hash ecc-mermaid--state)) 'failed)))
+          (when failed
+            (remhash hash ecc-mermaid--state)
+            (ecc-mermaid--clear-failure from to))
+          (ecc-mermaid--show-block value from to nil)
+          (message (cond ((get-text-property from 'display) "Diagram")
+                         (failed "Drawing the diagram again")
+                         (t "The diagram is not drawn yet")))))))))
 
 (provide 'ecc-mermaid)
 
