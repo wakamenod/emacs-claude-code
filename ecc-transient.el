@@ -415,7 +415,7 @@ before it draws anything."
    ["Spaces"
     ("j" "Go to a Space" ecc-space-goto)
     ("b" "Sidebar" ecc-sidebar-focus)
-    ("V" "Put this Space back in order" ecc-space-cycle-layout)
+    ("V" "Lay this Space out again" ecc-space-cycle-layout)
     ("z" "Zoom this window" ecc-space-zoom)
     ("X" "Close this Space" ecc-space-close)
     ("W" "Worktree" ecc-worktree-menu)]
