@@ -1796,6 +1796,90 @@ in life.  ERROR-P makes the result an error."
         (should (equal (ecc-render--tool-images node)
                        (list (list path 12 nil))))))))
 
+;;;; What a turn cost
+
+(defun ecc-dispatch-test--result-totals (name)
+  "Return the `total_cost_usd' of every result of fixture NAME, in order."
+  (delq nil (mapcar (lambda (message)
+                      (and (equal (alist-get 'type message) "result")
+                           (alist-get 'total_cost_usd message)))
+                    (ecc-test-fixture-messages name))))
+
+(defun ecc-dispatch-test--steps (totals)
+  "Return what each of TOTALS adds to the one before it, from 0."
+  (let ((base 0))
+    (mapcar (lambda (total) (prog1 (- total base) (setq base total)))
+            totals)))
+
+(defun ecc-dispatch-test--costs (session)
+  "Return the costs of the turns of SESSION, oldest first."
+  (mapcar #'ecc-turn-cost (ecc-session-turns session)))
+
+(ert-deftest ecc-dispatch-test-turn-cost-from-two-turns ()
+  "Two turns of one CLI cost what each added to its running total.
+The recording's second result carries the first one's total plus its
+own, so the session costs the last total, not the sum of the two."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-sent-echoes session)
+          (list "Reply with exactly: ONE" "Reply with exactly: TWO"))
+    (ecc-test-dispatch session "replay-user-messages" "Reply with exactly: ONE")
+    (let ((totals (ecc-dispatch-test--result-totals "replay-user-messages")))
+      (should (equal totals '(0.0082027 0.0104376)))
+      (should (equal (ecc-dispatch-test--costs session)
+                     (ecc-dispatch-test--steps totals)))
+      (should (< (abs (- (ecc-session-total-cost session) 0.0104376)) 1e-12)))))
+
+(ert-deftest ecc-dispatch-test-turn-cost-across-a-compact ()
+  "The three results around a /compact cost the steps between them."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "/compact")
+    (dolist (line (ecc-test-fixture-lines "compact"))
+      (ecc-dispatch session (ecc-protocol-parse-line line)))
+    (let ((totals (ecc-dispatch-test--result-totals "compact")))
+      (should (= 3 (length totals)))
+      (should (equal (ecc-dispatch-test--costs session)
+                     (ecc-dispatch-test--steps totals)))
+      (should (< (abs (- (ecc-session-total-cost session) (car (last totals))))
+                 1e-12)))))
+
+(ert-deftest ecc-dispatch-test-typed-rename-costs-nothing ()
+  "A /rename the user types calls no model, and its turn costs nothing.
+Its result repeats the total of the turn before it (CLI 2.1.290), which
+used to be drawn as the rename's cost and counted a second time."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-sent-echoes session) (list "Reply with exactly: ONE"))
+    (ecc-test-dispatch session "rename-while-busy" "Reply with exactly: ONE")
+    (should (equal (ecc-dispatch-test--result-totals "rename-while-busy")
+                   '(0.0291818 0.0291818)))
+    (should (equal (ecc-dispatch-test--costs session) '(0.0291818 0.0)))
+    (should (= (ecc-session-total-cost session) 0.0291818))))
+
+(ert-deftest ecc-dispatch-test-turn-cost-in-two-sessions ()
+  "Two sessions read side by side count their costs apart.
+Each has the running total of its own CLI to count from."
+  (ecc-test-with-fake-session one
+    (let ((two (ecc-model-create-session :name "two"
+                                         :project-root temporary-file-directory)))
+      (unwind-protect
+          (let ((a (ecc-test-fixture-lines "replay-user-messages"))
+                (b (ecc-test-fixture-lines "compact")))
+            (setf (ecc-session-sent-echoes one)
+                  (list "Reply with exactly: ONE" "Reply with exactly: TWO"))
+            (ecc-model-begin-turn one "Reply with exactly: ONE")
+            (ecc-model-begin-turn two "/compact")
+            (while (or a b)
+              (when a (ecc-dispatch one (ecc-protocol-parse-line (pop a))))
+              (when b (ecc-dispatch two (ecc-protocol-parse-line (pop b)))))
+            (should (equal (ecc-dispatch-test--costs one)
+                           (ecc-dispatch-test--steps
+                            (ecc-dispatch-test--result-totals "replay-user-messages"))))
+            (should (equal (ecc-dispatch-test--costs two)
+                           (ecc-dispatch-test--steps
+                            (ecc-dispatch-test--result-totals "compact"))))
+            (should (< (abs (- (ecc-session-total-cost one) 0.0104376)) 1e-12))
+            (should (< (abs (- (ecc-session-total-cost two) 0.02506535)) 1e-12)))
+        (ecc-test-cleanup-session two)))))
+
 (provide 'ecc-dispatch-test)
 
 ;;; ecc-dispatch-test.el ends here

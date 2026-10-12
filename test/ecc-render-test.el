@@ -1612,8 +1612,10 @@ the cache the same way a node of the transcript does."
                   (message . ((role . "assistant")
                               (content . [((type . "text")
                                            (text . "Here:\n\n```elisp\n(+ 1 2)\n```\n\nDone."))])))))
-  (ecc-dispatch session '((type . "result") (subtype . "success") (stop_reason . "end_turn")
-                          (total_cost_usd . 0.01) (duration_ms . 100) (num_turns . 1)))
+  ;; The total is the running one of the CLI: this turn adds 0.01.
+  (ecc-dispatch session `((type . "result") (subtype . "success") (stop_reason . "end_turn")
+                          (total_cost_usd . ,(+ (ecc-session-cost-base session) 0.01))
+                          (duration_ms . 100) (num_turns . 1)))
   (ecc-render-flush session))
 
 (ert-deftest ecc-render-test-band-reaches-the-edge-of-the-window ()
@@ -1726,6 +1728,18 @@ have to be there for whatever searches the text while showing nothing."
         (should (equal (car kill-ring) "Here:\n\n```elisp\n(+ 1 2)\n```\n\nDone."))
         (goto-char (point-min))
         (should-error (ecc-session-copy-at-point) :type 'user-error)))))
+
+(ert-deftest ecc-render-test-turn-end-line-says-what-the-turn-cost ()
+  "The line that closes a turn shows that turn's cost, not the running total.
+The recording's second result says $0.0104376, the total of both."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-sent-echoes session)
+          (list "Reply with exactly: ONE" "Reply with exactly: TWO"))
+    (ecc-render-test--replay session "replay-user-messages" "Reply with exactly: ONE")
+    (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+      (should (string-search "$0.0082" text))
+      (should (string-search "$0.0022" text))
+      (should-not (string-search "$0.0104" text)))))
 
 (ert-deftest ecc-render-test-export-markdown ()
   "The transcript is saved as Markdown, one section per turn."
