@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Assisted-by: Claude Code:claude-opus-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -108,7 +109,7 @@
 
 (defvar ecc-review-pr--timeout nil
   "Seconds a run of gh or git may take before it is stopped, or nil.
-Nil, no limit, is right where a person pressed a key and can press C-g.
+Nil, no limit, is right where a person pressed a key and can press \\`C-g\='.
 A tool the model calls has nobody at the keyboard, so it binds this:
 a gh that cannot reach GitHub would otherwise hold Emacs until the
 network gave up.")
@@ -242,7 +243,7 @@ branch that was squashed into its base has commits that are no
 ancestors of it, and the pull request is then the only record that it
 went in.  The JSON is read here, this file being one of the few that
 read any.  gh is given `ecc-review-pr-merged-timeout' seconds: the
-caller is a tool, with nobody at the keyboard to press C-g."
+caller is a tool, with nobody at the keyboard to press \\`C-g\='."
   (let ((ecc-review-pr--timeout ecc-review-pr-merged-timeout))
     (ecc-review-pr-parse (ecc-review-pr--gh root "pr" "list" "--head" branch
                                             "--state" "merged"
@@ -453,7 +454,7 @@ commits are fetched first if need be (`ecc-review-pr-fetch')."
         (base-oid (plist-get pr :base-oid))
         (head-oid (plist-get pr :head-oid)))
     (unless (and (stringp base-oid) (stringp head-oid))
-      (user-error "gh named no commits for pull request #%s" number))
+      (user-error "No commits named by gh for pull request #%s" number))
     (if (ecc-review-pr-own-p pr branch)
         (progn
           (ecc-review-pr-fetch root pr (list base-oid))
@@ -488,7 +489,7 @@ other is its base to its head.  What is missing is fetched first
          (own (ecc-review-pr-own-p pr branch))
          (head (if own "HEAD" (plist-get pr :head-oid))))
     (unless (and (stringp base) (stringp head))
-      (user-error "gh named no commits for pull request #%s" (plist-get pr :number)))
+      (user-error "No commits named by gh for pull request #%s" (plist-get pr :number)))
     (ecc-review-pr-fetch root pr (if own (list base) (list base head)))
     (mapcar (lambda (line)
               (pcase-let ((`(,id ,short ,subject) (split-string line "\x1f")))
@@ -841,7 +842,7 @@ when it never has been (`ecc-review-pr--count')."
   "Return what this review says of the pull request it is a part of.
 Which commit it is, out of how many -- with its SUBJECT when asked
 for -- or that it is the whole, and how many comments of yours not sent
-yet the other reviews of the pull request hold, which \\`C-c C-a' sends
+yet the other reviews of the pull request hold, which \\`C-c C-a\=' sends
 with these.
 Read off what is kept (`ecc-review-pr--count'): this is drawn with
 every redisplay of the header line."

@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Assisted-by: Claude Code:claude-opus-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -271,9 +272,9 @@ an arrow or the key of an input says its piece once."
 (defun ecc-render--marker-width (line)
   "Return the columns the list marker of LINE takes, or nil when it has none.
 What is measured is what is drawn rather than what is written:
-`ecc-markdown-fontify\=' puts a `display\=' bullet over the marker of a
-list item, and a numbered marker is wider in the text than the bullet
-drawn in its place."
+`ecc-markdown-fontify\=' puts a one-column `display\=' bullet over a
+\"-\", \"*\" or \"+\" and leaves a number as it is, so the width is the
+bullet's for the first and the number's own for the second."
   (when (string-match ecc-markdown-bullet-regexp line)
     (let* ((from (match-beginning 1))
            (to (match-end 1))

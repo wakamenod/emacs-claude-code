@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Jun
 
 ;; Author: Jun <wakamenod@gmail.com>
+;; Assisted-by: Claude Code:claude-opus-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -575,11 +576,11 @@ against the project."
   (let ((paths (cond ((null paths) nil)
                      ((stringp paths) (list paths))
                      ((vectorp paths) (append paths nil))
-                     (t (error "paths is an array of file names, not %S" paths)))))
+                     (t (error "Paths is an array of file names, not %S" paths)))))
     (delq nil
           (mapcar (lambda (path)
                     (unless (stringp path)
-                      (error "paths is an array of file names, and %S is not one" path))
+                      (error "Paths is an array of file names, and %S is not one" path))
                     (let ((path (string-trim path)))
                       (and (not (string-empty-p path)) path)))
                   paths))))

@@ -55,6 +55,20 @@ here; `ecc-table-test' covers that."
     (should-not (ecc-markdown-test--face-at text "Some "))
     (should-not (ecc-markdown-test--face-at text "After."))))
 
+(ert-deftest ecc-markdown-test-a-number-is-drawn-as-itself ()
+  "A bullet is drawn over \"-\", \"*\" and \"+\"; a number keeps its own text."
+  (let ((text (ecc-markdown-fontify "- one\n* two\n+ three\n1. four\n  10) five\n")))
+    (dolist (item '("- one" "* two" "+ three"))
+      (should (equal (get-text-property (string-search item text) 'display text)
+                     "•")))
+    (dolist (item '(("1. four" . 2) ("10) five" . 3)))
+      (let ((pos (string-search (car item) text)))
+        (should-not (text-property-not-all pos (+ pos (cdr item)) 'display nil text))
+        (should (eq (ecc-markdown-test--face-at text (car item))
+                    'ecc-markdown-bullet-face))
+        ;; The face stops at the marker here too.
+        (should-not (ecc-markdown-test--face-at text (car item) (cdr item)))))))
+
 (ert-deftest ecc-markdown-test-bold-inside-fence-is-code ()
   "Inside a fence nothing but the code face applies."
   (let ((text (ecc-markdown-fontify "```\n**not bold**\n```\n")))

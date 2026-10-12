@@ -17,6 +17,14 @@ Verified against **Claude Code CLI 2.1.290**.
 
 ### Fixed
 
+- A numbered list item in the transcript showed a bullet in place of its
+  number: `1.` and `10)` were drawn as `•`, like a `-` item, so a reply's
+  numbered steps lost their numbers. The text underneath was right, and copying
+  it gave the numbers back; only the display was wrong. A number is now drawn as
+  itself, and a line that wraps out of a numbered item stands under the item's
+  text, past the number, rather than one column past a bullet. The bullet stays
+  on `-`, `*` and `+`. Introduced in 0.1.0, with the hiding of Markdown markup.
+
 - A comment in the review of a proposal could move onto another line that
   only read like its own. When the file changed on disk while the
   permission waited and the proposal was reviewed again, both readings
@@ -55,6 +63,35 @@ Verified against **Claude Code CLI 2.1.290**.
   header as it is, and one with BEL, VT, FF or CR with an octal escape;
   git writes `\177`, `\a`, `\v`, `\f` and `\r`, and the review now
   writes them so.
+
+## [0.4.1] - 2026-10-12
+
+Verified against **Claude Code CLI 2.1.290**.
+
+### Changed
+
+- Every source file names the assistance it was written with, on an
+  `Assisted-by:` line under its `Author:` line. The history has carried that
+  fact in its commit trailers from the first commit; a reader of one file, or
+  of the package as an archive serves it, had no way to see it.
+
+### Fixed
+
+- Fourteen documentation defects a documentation checker finds: two mentions of
+  `C-g` written as plain text rather than as a key, two key sequences whose
+  quoting was left half-closed and which therefore rendered a stray quote,
+  three functions whose docstring never named one of their arguments, a
+  variable whose first line was not a sentence, and a Lisp symbol that was not
+  quoted as one. The other five are the wording of five `error` and `user-error`
+  messages, which opened in lower case: `gh named no commits for pull request
+  #N` now reads `No commits named by gh for pull request #N`. Those five are
+  strings the code signals, so this release is not only headers and docstrings.
+
+  The checker goes from 47 findings to 35 by this. What is left is entirely two
+  families it gets wrong: 30 `&context` specializers of `cl-defmethod`, which it
+  reads as arguments that ought to be documented -- documenting MAJOR-MODE there
+  would document an argument that does not exist -- and five key sequences of
+  more than one chord, which it reports even where the quoting is right.
 
 ## [0.4.0] - 2026-10-12
 
@@ -2663,7 +2700,8 @@ Emacs 29.1, 29.4 and 30.1.
   notifications, and a `transient` menu on `ecc-global-map`.
 - `ecc-version` reports the ecc, Emacs and CLI versions a bug report needs.
 
-[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.1
 [0.4.0]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.0
 [0.3.4]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.3.4
 [0.3.3]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.3.3
