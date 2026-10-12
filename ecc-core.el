@@ -673,6 +673,19 @@ Newlines are replaced by spaces and an ellipsis marks a cut."
         flat
       (concat (substring flat 0 (max 0 (1- width))) "…"))))
 
+(defun ecc--unique-name (base taken-p)
+  "Return BASE, or BASE with `<n>\=' after it when TAKEN-P says it is taken.
+TAKEN-P is called with a name and returns non-nil when something already
+goes by it; the first of BASE, BASE<2>, BASE<3>... it lets through is
+returned.  The `<n>\=' is the one Emacs gives a buffer and tab-bar a tab,
+and what the Space tabs and both pickers tell two of one name apart by."
+  (let ((name base)
+        (n 1))
+    (while (funcall taken-p name)
+      (setq n (1+ n)
+            name (format "%s<%d>" base n)))
+    name))
+
 (defun ecc--truncate-left (string width)
   "Return STRING shortened to at most WIDTH characters, keeping its end.
 For a path: what tells one call from another is the file at the end of

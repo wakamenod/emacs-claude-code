@@ -348,15 +348,28 @@ for from one the CLI decided on."
   (and (alist-get 'stop-requested (ecc-session-progress session)) t))
 
 (defvar ecc-proc-interrupt-timeout 10
-  "Seconds a running turn is given to end before the CLI is stopped.")
+  "Seconds an open turn, whatever its state, is given to end.
+The CLI is stopped once they are over, ended or not.")
+
+(defvar ecc-proc--releasing nil
+  "The sessions `ecc-proc-release\=' is waiting on to end their turn.
+Their queue is not drained meanwhile (`ecc-proc-drain-queue\='): the
+result that ends the interrupted turn would otherwise send the next
+queued prompt, open a turn for it, and have the release wait that one
+out and stop the CLI in the middle of it, losing the prompt.  The queue
+is left for whatever has the conversation next.  A list rather than a
+flag, because other sessions answer while this one waits, and theirs
+must drain as usual.")
 
 (defun ecc-proc-release (session &optional timeout)
   "Stop the CLI of SESSION, so that something else may have the conversation.
-A running turn is interrupted first and given TIMEOUT seconds -- default
-`ecc-proc-interrupt-timeout\=' -- to come to an end, because a turn stopped
-mid-tool leaves the CLI to write the result of a call that will never
-finish.  Signals when the process cannot be stopped: two processes on
-one session id branch the conversation without saying so.
+An open turn, whatever its state, is interrupted first and given
+TIMEOUT seconds -- default `ecc-proc-interrupt-timeout\=' -- to come to
+an end, because a turn stopped mid-tool leaves the CLI to write the
+result of a call that will never finish.  The prompts queued behind it
+stay in the queue (`ecc-proc--releasing\=').  Signals when the process
+cannot be stopped: two processes on one session id branch the
+conversation without saying so.
 
 What comes next is the caller\='s: a terminal takes the conversation over
 \(`ecc-tui-open\='), or this Emacs carries on with another one
@@ -364,13 +377,25 @@ What comes next is the caller\='s: a terminal takes the conversation over
   (let ((process (ecc-session-process session))
         (timeout (or timeout ecc-proc-interrupt-timeout)))
     (when (process-live-p process)
-      (when (eq (ecc-session-state session) 'running)
-        (ecc-proc-interrupt session)
-        (let ((deadline (+ (float-time) timeout)))
-          (while (and (eq (ecc-session-state session) 'running)
-                      (process-live-p process)
-                      (< (float-time) deadline))
-            (accept-process-output process 0.2))))
+      ;; Whether a turn is open decides it, not the state: a turn blocked
+      ;; on a permission, a question or a plan, or compacting its
+      ;; context, is a turn the CLI is in the middle of all the same.
+      ;;
+      ;; The wait is for the result, and a blocked turn gets one too:
+      ;; interrupted while it waited on a `can_use_tool' -- a Bash
+      ;; permission, and an AskUserQuestion -- the CLI sent a
+      ;; control_cancel_request for it, the interrupt's control_response
+      ;; and an `error_during_execution' result, all within 10 ms
+      ;; (2.1.290, 2026-10-12).  The timeout is for a CLI that answers
+      ;; nothing.
+      (when (ecc-session-current-turn session)
+        (let ((ecc-proc--releasing (cons session ecc-proc--releasing)))
+          (ecc-proc-interrupt session)
+          (let ((deadline (+ (float-time) timeout)))
+            (while (and (ecc-session-current-turn session)
+                        (process-live-p process)
+                        (< (float-time) deadline))
+              (accept-process-output process 0.2)))))
       (ecc-proc-stop session))
     (when (process-live-p (ecc-session-process session))
       (user-error "%s could not be stopped; two processes would branch the conversation"
@@ -585,8 +610,10 @@ Returns `sent' or the position in the queue."
     'sent))
 
 (defun ecc-proc-drain-queue (session)
-  "Send the next queued prompt of SESSION, if there is one."
+  "Send the next queued prompt of SESSION, if there is one.
+Nothing is sent while `ecc-proc-release\=' is stopping its CLI."
   (when-let* ((text (and (null (ecc-session-current-turn session))
+                        (not (memq session ecc-proc--releasing))
                         (ecc-model-pop-input session))))
     (ecc-proc-send-user session text)
     text))

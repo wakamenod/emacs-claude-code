@@ -374,6 +374,7 @@ before it draws anything."
    ["Session"
     ("c" "Start" ecc-start)
     ("r" "Resume" ecc-resume-menu)
+    ("S" "Restart the CLI" ecc-restart)
     ("k" "Kill" ecc-kill)
     ("R" "Rename" ecc-rename-session)
     ("v" "Go to the prompt" ecc-show-session)
