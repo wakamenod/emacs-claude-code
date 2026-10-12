@@ -886,24 +886,42 @@ sidebar -- stays where it is (verified 2026-09-14)."
   (interactive)
   (let* ((key (ecc-window--layout-key))
          (saved (frame-parameter nil 'ecc-space-zoom))
-         (state (alist-get key saved nil nil #'equal)))
+         (configuration (alist-get key saved nil nil #'equal)))
+    ;; Only a configuration of this frame is a way back.  A frame made
+    ;; by `clone-frame' inherits the parameter, and putting back a
+    ;; configuration of another frame rearranges that frame; a desktop
+    ;; restores it as the string "Unprintable entity".  `tab-bar' makes
+    ;; the same check before putting a tab back from one.  Anything else
+    ;; is no zoom, and the next zoom saves over it.
+    (unless (and (window-configuration-p configuration)
+                 (eq (window-configuration-frame configuration)
+                     (selected-frame)))
+      (setq configuration nil))
     (cond
-     (state
+     (configuration
       (ecc-space--forget-zoom)
-      (window-state-put state (frame-root-window) 'safe)
+      (set-window-configuration configuration)
       (message "Windows as they were"))
      ;; A side window cannot be made the only window, and the sidebar is
      ;; one.  Saying so beats the error `delete-other-windows' raises.
      ((window-parameter (selected-window) 'window-side)
       (user-error "This window cannot fill the tab on its own"))
-     ;; Nothing to put away.  Saving a state here would be worse than
+     ;; Nothing to put away.  Saving the windows here would be worse than
      ;; doing nothing: the key would then be "zoomed" without the screen
      ;; having changed, and the way back would do nothing either.
      ((null (ecc-space--zoomable-windows))
       (message "Nothing to zoom: there is no other window to put away"))
      (t
+      ;; A window configuration, not a window state.  A state keeps only
+      ;; the parameters in `window-persistent-parameters', so the sidebar
+      ;; came back from one without `no-delete-other-windows' and the
+      ;; next zoom deleted it with the rest (2026-10-12, Emacs 32.0.50).
+      ;; A configuration puts back the windows themselves, parameters and
+      ;; all, and the point moved in the zoomed window stays where it was
+      ;; moved to.  It outlives leaving the tab and coming back: the tab
+      ;; bar puts a tab back from a configuration of the same windows.
       (setf (alist-get key saved nil nil #'equal)
-            (window-state-get (frame-root-window) t))
+            (current-window-configuration))
       (set-frame-parameter nil 'ecc-space-zoom saved)
       (delete-other-windows)
       (message "Zoomed; the same key puts the windows back")))))
