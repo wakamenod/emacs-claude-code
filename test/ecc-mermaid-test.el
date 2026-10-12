@@ -248,6 +248,19 @@ asked for anything."
         (should (ecc-mermaid-test--picture buffer))
         (should (= (length (ecc-mermaid-test--runs dir)) 1))))))
 
+(ert-deftest ecc-mermaid-test-a-diagram-is-held-to-the-image-height ()
+  "A diagram is no taller than any inline image may be."
+  (ecc-mermaid-test--with 'ok
+    (let ((ecc-image-max-height 123))
+      (ecc-test-with-fake-session session
+        (let ((buffer (ecc-session-ensure-buffer session)))
+          (ecc-model-begin-turn session "draw")
+          (ecc-mermaid-test--add-reply session (ecc-mermaid-test--reply))
+          (should (ecc-mermaid-test--wait (lambda () (ecc-mermaid-test--picture buffer))))
+          (let ((spec (cdr (ecc-mermaid-test--picture buffer))))
+            (should (equal (plist-get spec :max-height) 123))
+            (should (plist-get spec :max-width))))))))
+
 (ert-deftest ecc-mermaid-test-a-frozen-turn-gets-its-picture ()
   "A turn that finished while the job ran gets the picture as well."
   (ecc-mermaid-test--with 'ok
