@@ -65,9 +65,34 @@ line of DIR/runs, and a run that starts while another is going says so."
     (set-file-modes file #o755)
     file))
 
+(defun ecc-mermaid-test--create-image (file type _data-p &rest props)
+  "Return the image spec `create-image' would make of FILE, TYPE and PROPS.
+Without asking whether this Emacs draws TYPE: the Emacs of the CI is
+built without PNG, and the real one signals there."
+  (append (list 'image :type type :file file) props))
+
+(defun ecc-mermaid-test--stop-jobs ()
+  "Stop every job a test started, so that nothing of it runs in the next.
+A sentinel that fires once the test has ended runs without its stubs,
+and on an Emacs without PNG that is an error which ends the batch run."
+  (when (timerp ecc-mermaid--kick) (cancel-timer ecc-mermaid--kick))
+  (setq ecc-mermaid--kick nil
+        ecc-mermaid--queue nil)
+  (dolist (process (process-list))
+    (when (string-prefix-p "ecc-mermaid" (process-name process))
+      (set-process-sentinel process #'ignore)
+      (when (timerp (process-get process 'ecc-mermaid-timer))
+        (cancel-timer (process-get process 'ecc-mermaid-timer)))
+      (delete-process process)
+      (when (buffer-live-p (process-buffer process))
+        (kill-buffer (process-buffer process)))))
+  (setq ecc-mermaid--process nil))
+
 (defmacro ecc-mermaid-test--with (kind &rest body)
   "Run BODY with a stand-in mmdc of KIND and a cache of its own.
-`dir' is bound to the directory the stand-in keeps its runs in."
+`dir' is bound to the directory the stand-in keeps its runs in.  The
+frame is said to draw PNG and `create-image' only makes the spec, so
+that no test needs image support (the CI's Emacs has none)."
   (declare (indent 1) (debug t))
   `(let* ((dir (make-temp-file "ecc-mermaid-test" t))
           (ecc-mermaid-directory (expand-file-name "cache" dir))
@@ -82,11 +107,10 @@ line of DIR/runs, and a run that starts while another is going says so."
      (ignore dir)
      (unwind-protect
          (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
-                   ((symbol-function 'image-type-available-p) (lambda (&rest _) t)))
+                   ((symbol-function 'image-type-available-p) (lambda (&rest _) t))
+                   ((symbol-function 'create-image) #'ecc-mermaid-test--create-image))
            ,@body)
-       (when (process-live-p ecc-mermaid--process)
-         (delete-process ecc-mermaid--process))
-       (when (timerp ecc-mermaid--kick) (cancel-timer ecc-mermaid--kick))
+       (ecc-mermaid-test--stop-jobs)
        (delete-directory dir t))))
 
 (defun ecc-mermaid-test--wait (predicate)
