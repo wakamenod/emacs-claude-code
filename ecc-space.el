@@ -79,7 +79,7 @@
 ;; of a Space are laid out to fixed proportions now, and how many
 ;; sessions are on the screen is the layout's to say.
 (make-obsolete-variable 'ecc-space-session-min-width
-                        "the layouts of `ecc-space-reset-windows' say how \
+                        "the layouts of `ecc-space-cycle-layout' say how \
 many sessions are on the screen."
                         "0.4.2")
 
@@ -332,7 +332,7 @@ Two worktrees of two repositories are called `main' as often as not."
   "Forget the Space of TAB, which is about to be closed.
 On `tab-bar-tab-pre-close-functions'.  Nothing is stopped: the sessions
 go on running with no window, which is what the sidebar and
-`ecc-space-reset-windows' bring back."
+`ecc-space-cycle-layout' bring back."
   (when-let* ((name (alist-get 'name tab))
               (key (car (rassoc name (ecc-space--tabs)))))
     (ecc-space--drop-tab key)))
@@ -377,7 +377,9 @@ the Space brings them back as they were left."
     (when (buffer-live-p buffer)
       (set-window-buffer (selected-window) buffer)))
   (ecc-sidebar-show)
-  (ecc-space--build space 'beside))
+  ;; A tab of the same name may have been laid out before and closed.
+  (ecc-space--remember-layout nil)
+  (ecc-space--build space (ecc-space--layout)))
 
 (defun ecc-space--source-window ()
   "Return a window of this tab the code can be read in, or nil.
@@ -399,8 +401,13 @@ but transcripts in it is the one case that is nobody\='s arrangement --
 Space used to bring back a tab with no code in it and no way to say so.
 
 The source opens to the left of the leftmost window, which is where a
-Space puts it, and takes half of what it divides."
-  (unless (ecc-space--source-window)
+Space puts it, and takes half of what it divides.
+
+A tab laid out with no source on purpose -- the sessions side by side,
+or four of them in a grid -- is somebody\='s arrangement, and is left
+as it is: going to a Space is not asking for another layout."
+  (unless (or (ecc-space--source-window)
+              (memq (ecc-space--layout) '(pair grid)))
     (when-let* ((buffer (ecc-space--source-buffer space))
                 ((buffer-live-p buffer))
                 (windows (seq-remove (lambda (window)
@@ -654,7 +661,7 @@ one being worked in."
 A session already on the screen of this tab is left where it is.
 Otherwise nothing is divided: the window of the session used longest
 ago shows SESSION instead, and the one it held goes on running with no
-window, which the sidebar and `ecc-space-reset-windows\=' bring back.
+window, which the sidebar and `ecc-space-cycle-layout\=' bring back.
 How many sessions are on the screen, and where, is the layout\='s to
 say, and showing one more is not asking for another layout.
 
@@ -693,10 +700,16 @@ on running without a window."
 ;; sliver beside a wide transcript, a session put under the others.
 
 (defvar ecc-space--layouts
-  '((beside "source + session" 0))
+  '((beside  "source + session"             0)
+    (pair    "two sessions"                 2)
+    (thirds  "source + two sessions"        2)
+    (over    "two sessions over the source" 2)
+    (stacked "source + two stacked"         2)
+    (grid    "2x2 grid"                     3))
   "The layouts a Space is laid out in, in the order they are gone through.
 Each is (NAME DESCRIPTION SESSIONS): what `ecc-space--split\=' knows it
-by, what the echo area calls it, and the fewest sessions it needs.")
+by, what the echo area calls it, and the fewest sessions it needs.  The
+first is the one a new tab gets.")
 
 (defun ecc-space--split (layout main sessions)
   "Divide MAIN, the one window of the main area, for LAYOUT.
@@ -705,14 +718,47 @@ the order they are filled: the window of the source first -- nil when
 LAYOUT has none -- then one for each slot.  A split Emacs refuses
 signals an error."
   (pcase layout
+    ;; Source | P1.  The session column is as wide as it has always
+    ;; been, `ecc-window-width' of the frame.
     ('beside
-     ;; The session column is as wide as it has always been, which is
-     ;; `ecc-window-width' of the frame.
      (if (zerop sessions)
          (list main)
        (list main (ecc-space--split-off
                    main (ecc-space--width-beside ecc-window-width main)
                    'right))))
+    ;; P1 | P2, the source hidden.
+    ('pair
+     (list nil main (ecc-space--split-off
+                     main (/ (window-total-width main) 2) 'right)))
+    ;; Source | P1 | P2, in thirds.
+    ('thirds
+     (let* ((total (window-total-width main))
+            (rest (ecc-space--split-off main (- total (/ total 3)) 'right)))
+       (list main rest (ecc-space--split-off
+                        rest (/ (window-total-width rest) 2) 'right))))
+    ;; P1 | P2 across the top three fifths, the source under them.
+    ('over
+     (let ((below (ecc-space--split-off
+                   main (round (* 0.4 (window-total-height main))) 'below)))
+       (list below main (ecc-space--split-off
+                         main (/ (window-total-width main) 2) 'right))))
+    ;; Source | the column of `beside', P1 over P2 in it.
+    ('stacked
+     (let ((column (ecc-space--split-off
+                    main (ecc-space--width-beside ecc-window-width main)
+                    'right)))
+       (list main column (ecc-space--split-off
+                          column (/ (window-total-height column) 2) 'below))))
+    ;; P1 P2 over P3 P4.  With three sessions the fourth cell is the
+    ;; source's, the slot having no session for it.
+    ('grid
+     (let* ((below (ecc-space--split-off
+                    main (/ (window-total-height main) 2) 'below))
+            (right (ecc-space--split-off
+                    main (/ (window-total-width main) 2) 'right))
+            (corner (ecc-space--split-off
+                     below (/ (window-total-width below) 2) 'right)))
+       (list nil main right below corner)))
     (_ (error "No layout called %s" layout))))
 
 (defun ecc-space--slot-sessions (space)
@@ -767,17 +813,27 @@ laying the same Space out again keeps every session in its slot."
          (selected (window-buffer (selected-window)))
          (sessions (ecc-space--slot-sessions space))
          (source (ecc-space--layout-source space main))
-         (state (window-state-get (frame-root-window) t))
+         ;; A configuration rather than `window-state-get': a state keeps
+         ;; only the parameters in `window-persistent-parameters', so the
+         ;; sidebar came back from one without `no-delete-other-windows'
+         ;; and the next layout tried deleted it (2026-10-12).  A
+         ;; configuration puts back the windows themselves.
+         (state (current-window-configuration))
          (windows nil))
-    ;; The sidebar survives this: it carries `no-delete-other-windows',
-    ;; which is what `ecc-space-zoom' leans on as well.
-    (delete-other-windows main)
+    ;; Not `delete-other-windows', which keeps the sidebar only for its
+    ;; `no-delete-other-windows': `ecc-space-zoom' puts the windows back
+    ;; from a window state, which drops that parameter, so the first
+    ;; layout after a zoom took the sidebar down with the rest
+    ;; (2026-10-12).  A side window is kept for being one.
+    (dolist (window (window-list nil 'no-minibuffer))
+      (unless (or (eq window main) (window-parameter window 'window-side))
+        (delete-window window)))
     (condition-case nil
         (setq windows (ecc-space--split layout main (length sessions)))
       ;; Only the splits are inside: a refused one is the frame being too
       ;; small for LAYOUT, and the answer to that is the windows as they
       ;; were.
-      (error (window-state-put state (frame-root-window) 'safe)))
+      (error (set-window-configuration state)))
     (when windows
       (let ((ecc-space--laying-out t)
             (slots (cdr windows)))
@@ -875,7 +931,7 @@ so that a transcript is lost."
 (defun ecc-space--forget-zoom ()
   "Forget the arrangement `ecc-space-zoom\=' saved for this tab.
 Zooming and putting back are two halves of one key, so the way back is
-thrown away as it is taken -- and `ecc-space-reset-windows\=' throws it
+thrown away as it is taken -- and `ecc-space-cycle-layout\=' throws it
 away too, the arrangement it was the way back to having just gone."
   (let ((saved (frame-parameter nil 'ecc-space-zoom)))
     (setf (alist-get (ecc-window--layout-key) saved nil 'remove #'equal) nil)
@@ -912,45 +968,114 @@ sidebar -- stays where it is (verified 2026-09-14)."
       (delete-other-windows)
       (message "Zoomed; the same key puts the windows back")))))
 
-;;;###autoload
-(defun ecc-space-reset-windows ()
-  "Lay this Space out again, from nothing.
-The source of the project on the left and a session beside it, the
-column `ecc-window-width\=' of the frame -- the arrangement a new tab
-gets, built by the same code, so the two cannot drift apart.  The
-session is the one in the selected window, or else the one used most
-recently; the others go on running with no window.
+;; The layout a tab was last given is kept on the frame, per tab, the
+;; way the zoom of `ecc-space-zoom' is: a Space laid out in thirds in one
+;; tab is not in thirds in another.
 
-The windows of a Space are the user\='s and nothing rearranges them on
-its own.  This is the command that says start again, for a tab that has
-been split, zoomed, filled with a review or given over to transcripts
-with no window left to read the code in.
+(defun ecc-space--layout ()
+  "Return the layout this tab was last given, the first of them by default."
+  (or (alist-get (ecc-window--layout-key) (frame-parameter nil 'ecc-space-layout)
+                 nil nil #'equal)
+      (caar ecc-space--layouts)))
+
+(defun ecc-space--remember-layout (layout)
+  "Remember LAYOUT as the one this tab was given; nil forgets it."
+  (let ((saved (frame-parameter nil 'ecc-space-layout)))
+    (setf (alist-get (ecc-window--layout-key) saved nil 'remove #'equal) layout)
+    (set-frame-parameter nil 'ecc-space-layout saved)))
+
+(defun ecc-space--layouts-from (layout)
+  "Return the names of the layouts, LAYOUT first and the rest after it in turn."
+  (let* ((names (mapcar #'car ecc-space--layouts))
+         (tail (memq layout names)))
+    (append tail (butlast names (length tail)))))
+
+(defun ecc-space--cycling-p ()
+  "Return non-nil when the command before this one was a layout of a Space.
+The obsolete name counts: \\[execute-extended-command] can still reach
+it, and pressing the key after it is going on from there."
+  (memq last-command '(ecc-space-cycle-layout ecc-space-reset-windows)))
+
+(defvar-keymap ecc-space-layout-repeat-map
+  :doc "The key that goes on to the next layout of a Space under `repeat-mode'."
+  :repeat t
+  "V" #'ecc-space-cycle-layout)
+
+;;;###autoload
+(defun ecc-space-cycle-layout (&optional first)
+  "Lay this Space out again, from nothing, or in the next layout.
+Pressed right after itself, it goes on to the next layout of the
+Space; pressed after anything else, it builds the layout this tab was
+last given again, which puts back a tab that has been split, zoomed,
+filled with a review or given over to transcripts.  With a prefix
+argument FIRST it goes back to the first layout, the one a new tab
+gets.  Under `repeat-mode' the last key alone goes on cycling.
+
+The layouts, in turn, with the source of the project S and the sessions
+P1, P2...:
+
+  source + session       S | P1, the column `ecc-window-width' wide
+  two sessions           P1 | P2, the source hidden
+  source + two sessions  S | P1 | P2, in thirds
+  sessions over source   P1 | P2 above, S across the bottom two fifths
+  source + two stacked   S | P1 over P2, the column as wide as the first
+  2x2 grid               P1 P2 over P3 P4; with three sessions, S in P4\='s cell
+
+P1 is the session in the selected window, or else the one used most
+recently, and the rest follow by use; going from one layout to the next
+keeps every session in its slot.  The sessions with no slot go on
+running with no window.  A layout that needs more sessions than the
+Space has is passed over, and so is one the frame is too small for:
+Emacs refusing a split puts the windows back as they were and the next
+layout is tried.
 
 The sidebar stays as it is: it is a side window that asked not to be
 deleted, and keeps its place and its width; one that was hidden stays
-hidden.
-
-The zoom of this Space is forgotten: the arrangement it was the way
-back to has just gone, and `ecc-space-zoom\=' afterwards zooms from
-here.
+hidden.  The zoom of this Space is forgotten: the arrangement it was
+the way back to has just gone, and `ecc-space-zoom\=' afterwards zooms
+from here.
 
 A `spaces\=' command.  Under `classic\=' a transcript lives in a side
 window with a role, and `ecc-focus-project\=' is what deals those out
 again."
-  (interactive)
+  (interactive "P")
   (unless ecc-use-spaces
-    (user-error "Resetting the windows needs `ecc-use-spaces'; \
+    (user-error "Laying the windows out needs `ecc-use-spaces'; \
 without it the roles are dealt out by `ecc-focus-project'"))
-  (let ((space (or (ecc-space-current)
-                   (user-error "This tab is not a Space; `C-c c j' goes to one"))))
-    (ecc-space--forget-zoom)
-    (unless (ecc-space--build space 'beside)
+  (let* ((space (or (ecc-space-current)
+                    (user-error "This tab is not a Space; `C-c c j' goes to one")))
+         (count (length (ecc-space-sessions space)))
+         (current (ecc-space--layout))
+         (next (and (not first) (ecc-space--cycling-p)))
+         (candidates
+          (seq-filter
+           (lambda (name)
+             (and (<= (nth 2 (assq name ecc-space--layouts)) count)
+                  ;; Going on, the layout on the screen is where the
+                  ;; cycle starts, not somewhere to go.
+                  (not (and next (eq name current)))))
+           (ecc-space--layouts-from
+            (cond (first (caar ecc-space--layouts))
+                  (next (cadr (ecc-space--layouts-from current)))
+                  (t current)))))
+         (built (seq-find (lambda (layout) (ecc-space--build space layout))
+                          candidates)))
+    (cond
+     (built
+      (ecc-space--forget-zoom)
+      (ecc-space--remember-layout built)
+      (message "Layout: %s" (nth 1 (assq built ecc-space--layouts))))
+     (next
+      (message "No other layout for %s: %s" (ecc-space-name space)
+               (if candidates
+                   "this frame is too small"
+                 (format "%d session%s" count (if (= 1 count) "" "s")))))
+     (t
       (user-error "No room in this frame to lay %s out"
-                  (ecc-space-name space)))
-    (message "%s: %d session%s on the screen"
-             (ecc-space-name space)
-             (length (ecc-space--session-windows))
-             (if (= 1 (length (ecc-space--session-windows))) "" "s"))))
+                  (ecc-space-name space))))))
+
+(define-obsolete-function-alias 'ecc-space-reset-windows
+  #'ecc-space-cycle-layout "0.4.2")
 
 (defun ecc-space--zoomable-windows ()
   "Return the windows `delete-other-windows' would take down from here.

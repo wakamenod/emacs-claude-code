@@ -947,26 +947,13 @@ one Space laid out underneath them."
   (ecc-space-select (ecc-space-of-root shot-other-root))
   (ecc-space-select (ecc-space-of-root shot-root))
   (ecc-sidebar-show)
-  ;; Deal the tab the way a new one is dealt: the source on the left,
-  ;; the transcripts beside it.
-  (ecc-space-reset-windows)
+  ;; The source on the left and both transcripts beside it: the layout
+  ;; in thirds.
+  (ecc-space--build (ecc-space-current) 'thirds)
   ;; The demo file is eight lines long, so the source is given a narrow
-  ;; column -- and that is also what leaves the row wide enough for the
-  ;; second transcript to divide the first rather than go windowless.
+  ;; column and the transcripts the rest.
   (when-let* ((window (get-buffer-window (get-file-buffer shot-file))))
     (ignore-errors (window-resize window (- 34 (window-width window)) t)))
-  ;; The second transcript is put beside the first with the Space's own
-  ;; helper rather than with `ecc-space-display-session\=', which goes
-  ;; through `ecc-space-select\=' -- and selecting the tab restores the
-  ;; window configuration stored in it, undoing the narrow source a line
-  ;; above and leaving the row too tight to divide (measured 2026-09-18).
-  (when-let* ((windows (ecc-space--session-windows))
-              (right (car (last windows)))
-              (other (if (eq (window-buffer right) (ecc-session-buffer shot-main))
-                         shot-other
-                       shot-main)))
-    (ecc-space--display-beside (ecc-session-buffer other) right
-                               (/ (window-total-width right) 2)))
   (dolist (session (list shot-main shot-other))
     (when-let* ((window (get-buffer-window (ecc-session-buffer session))))
       (with-selected-window window
@@ -1216,7 +1203,7 @@ what the scene is about."
         completion-styles '(substring basic))
   (ecc-space-select (ecc-space-of-root shot-root))
   (ecc-sidebar-show)
-  (ecc-space-reset-windows)
+  (ecc-space-cycle-layout t)
   (message nil)
   (redisplay t))
 
@@ -1254,7 +1241,7 @@ under the repository it came from."
       (push session shot-worktree-sessions)
       (ecc-space-select (ecc-space-of-root root))
       (ecc-sidebar-show)
-      (ecc-space-reset-windows)
+      (ecc-space-cycle-layout t)
       (when-let* ((window (get-buffer-window (ecc-session-buffer session))))
         (with-selected-window window
           (ecc-chat--set-margins window)

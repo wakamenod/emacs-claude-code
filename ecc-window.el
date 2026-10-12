@@ -555,7 +555,7 @@ every session, and nil leaves the windows as they are, which is the
 default.
 
 What was hidden is not written down.  Under `spaces\=' the way back is
-`ecc-space-reset-windows\=', which deals the tab again; under `classic\='
+`ecc-space-cycle-layout\=', which deals the tab again; under `classic\='
 it is `ecc-focus-project\=', or `ecc-show-session\=' one session at a
 time.")
 
@@ -781,7 +781,7 @@ whatever buffer happens to be in it."
 Nothing is written down about where they were.  There was a record of
 it once, for a command that put every hidden session back in the window
 it came from; what brings one back now deals the whole arrangement again
--- `ecc-space-reset-windows\=' under `spaces\=', `ecc-focus-project\='
+-- `ecc-space-cycle-layout\=' under `spaces\=', `ecc-focus-project\='
 under `classic\=' -- or shows one session at a time, from the sidebar,
 the dashboard or `ecc-show-session\='."
   (when-let* ((visible (seq-filter #'ecc-window-session-visible-p sessions)))
@@ -865,7 +865,7 @@ where the source is, and it is somewhere to start reading.
 The half of focusing a project that puts the code in front of you, for
 `ecc-focus-project\=' and for the `classic\=' side of `ecc-space-select\='.
 It was a command of its own on `C-c c V' until the Spaces took that key
-for `ecc-space-reset-windows\=', which puts back the whole arrangement
+for `ecc-space-cycle-layout\=', which puts back the whole arrangement
 rather than this one window.
 
 Selecting the window is not a flourish.  Every command that takes no

@@ -140,7 +140,7 @@ The request of A is a Bash call and older; the one of B is a Write."
   (should (eq (lookup-key ecc-global-map (kbd "j")) #'ecc-space-goto))
   (should (eq (lookup-key ecc-global-map (kbd "b")) #'ecc-sidebar-focus))
   (should (eq (lookup-key ecc-global-map (kbd "z")) #'ecc-space-zoom))
-  (should (eq (lookup-key ecc-global-map (kbd "V")) #'ecc-space-reset-windows))
+  (should (eq (lookup-key ecc-global-map (kbd "V")) #'ecc-space-cycle-layout))
   (should (eq (lookup-key ecc-global-map (kbd "B")) #'ecc-dashboard))
   ;; Making and removing a worktree is `ecc-worktree-menu', not a key
   ;; here: three commands that belong together, done in a week what the

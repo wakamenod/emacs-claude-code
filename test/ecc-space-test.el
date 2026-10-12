@@ -634,7 +634,7 @@ nothing brought that window back on its own (reported 2026-09-16)."
 
 (ert-deftest ecc-space-test-a-tab-that-has-a-source-window-is-left-alone ()
   "A window pointed at another project is the user\='s doing and stays.
-`ecc-space-reset-windows\=' is the way back, and it is a command with a
+`ecc-space-cycle-layout\=' is the way back, and it is a command with a
 key of its own for that reason; going to the Space is not."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
                                    ("two" . ,ecc-space-test--two))
@@ -672,7 +672,7 @@ project being asked about."
           (setq buffer-file-name (expand-file-name "code.el" ecc-space-test--one)))
         (with-current-buffer stranger
           (setq buffer-file-name (expand-file-name "other.el" ecc-space-test--two)))
-        ;; Not a command any more: `C-c c V' is `ecc-space-reset-windows',
+        ;; Not a command any more: `C-c c V' is `ecc-space-cycle-layout',
         ;; which puts the whole arrangement back rather than this window.
         (should-not (commandp 'ecc-window--focus-source))
         (ecc-space-select one)
@@ -731,7 +731,7 @@ no window to read the code in and nobody's arrangement in it."
                        (ecc-session-ensure-buffer session))
     (delete-other-windows (get-buffer-window (ecc-session-buffer session)))))
 
-(ert-deftest ecc-space-test-reset-lays-the-space-out-again ()
+(ert-deftest ecc-space-test-cycle-lays-the-space-out-again ()
   "Resetting builds the tab again from nothing, the way a new tab is built.
 The session in the selected window is the one shown, though another was
 used more recently: it is the one being worked in, and point stays in
@@ -747,7 +747,7 @@ it.  The rest go on running with no window."
           ;; The transcript of "three" fills the tab, and is selected.
           (ecc-space-test--wreck-the-tab)
           (should-not (ecc-space--source-window))
-          (ecc-space-reset-windows)
+          (ecc-space-cycle-layout)
           (should (equal (ecc-space-test--on-screen) '("three")))
           (let ((source (ecc-space--source-window))
                 (session (car (ecc-space--session-windows))))
@@ -760,25 +760,7 @@ it.  The rest go on running with no window."
             (should-not (seq-some #'get-buffer-window
                                   (delq nil (list (ecc-session-buffer session)))))))))))
 
-(ert-deftest ecc-space-test-reset-puts-the-windows-back-when-the-frame-is-too-small ()
-  "A layout Emacs refuses to split leaves the windows as they were.
-The source and the session column cannot both be `window-min-width'
-wide here, so nothing is built -- and the tab is not left in the one
-window the build started from."
-  (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
-                                   ("two" . ,ecc-space-test--one))
-    (ecc-space-test--with-tab-bar
-      (ecc-space-test--with-code
-        (let ((ecc-window-width 0.4))
-          (ecc-space-select (ecc-space-of-root ecc-space-test--one))
-          (let ((before (ecc-space-test--layout))
-                ;; More than half the main area: no division of it fits.
-                (window-min-width (1+ (/ (window-total-width (window-main-window))
-                                         2))))
-            (should-error (ecc-space-reset-windows) :type 'user-error)
-            (should (equal before (ecc-space-test--layout)))))))))
-
-(ert-deftest ecc-space-test-reset-leaves-the-sidebar-alone ()
+(ert-deftest ecc-space-test-cycle-leaves-the-sidebar-alone ()
   "The sidebar keeps its place and its width, and a hidden one stays hidden.
 It is a side window that asked not to be deleted, which is what
 `delete-other-windows\=' honours."
@@ -793,18 +775,18 @@ It is a side window that asked not to be deleted, which is what
                  (width (window-total-width side)))
             (should side)
             (ecc-space-test--wreck-the-tab)
-            (ecc-space-reset-windows)
+            (ecc-space-cycle-layout)
             (should (window-live-p (ecc-sidebar--window)))
             (should (eq (window-parameter (ecc-sidebar--window) 'window-side)
                         'left))
             (should (= width (window-total-width (ecc-sidebar--window))))
             (should (= 1 (length (ecc-space--session-windows)))))
           (ecc-sidebar-hide)
-          (ecc-space-reset-windows)
+          (ecc-space-cycle-layout)
           (should-not (ecc-sidebar--window))
           (should (= 1 (length (ecc-space--session-windows)))))))))
 
-(ert-deftest ecc-space-test-reset-forgets-the-zoom ()
+(ert-deftest ecc-space-test-cycle-forgets-the-zoom ()
   "The way back a zoom left behind goes with the arrangement it led to."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one)
                                    ("two" . ,ecc-space-test--one))
@@ -819,7 +801,7 @@ It is a side window that asked not to be deleted, which is what
                 (should (alist-get (ecc-window--layout-key)
                                    (frame-parameter nil 'ecc-space-zoom)
                                    nil nil #'equal))
-                (ecc-space-reset-windows)
+                (ecc-space-cycle-layout)
                 (should-not (alist-get (ecc-window--layout-key)
                                        (frame-parameter nil 'ecc-space-zoom)
                                        nil nil #'equal))
@@ -834,15 +816,275 @@ It is a side window that asked not to be deleted, which is what
                              (cdr (window-list nil 'no-minibuffer)))))
             (set-frame-parameter nil 'ecc-space-zoom nil)))))))
 
-(ert-deftest ecc-space-test-reset-is-a-spaces-command ()
+(ert-deftest ecc-space-test-cycle-is-a-spaces-command ()
   "Under `classic' there is no Space to deal, and it says so."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one))
     (let ((ecc-use-spaces nil))
-      (should-error (ecc-space-reset-windows) :type 'user-error))
+      (should-error (ecc-space-cycle-layout) :type 'user-error))
     (ecc-space-test--with-tab-bar
       ;; `spaces', but this tab is nobody's Space.
       (set-frame-parameter nil 'ecc-space-tabs nil)
-      (should-error (ecc-space-reset-windows) :type 'user-error))))
+      (should-error (ecc-space-cycle-layout) :type 'user-error))))
+
+;;;; The layouts of a Space
+
+(defun ecc-space-test--press (&optional again first)
+  "Press `C-c c V': right after itself when AGAIN, with `C-u' when FIRST."
+  (let ((last-command (if again 'ecc-space-cycle-layout 'ignore))
+        (this-command 'ecc-space-cycle-layout))
+    (ecc-space-cycle-layout first)))
+
+(defun ecc-space-test--cells ()
+  "Return (NAME X Y WIDTH HEIGHT) for every window of the main area.
+NAME is the name of the session in it, or \"S\" for anything else -- the
+source.  X and Y are counted from the top left of the main area."
+  (let* ((main (window-main-window))
+         (x0 (nth 0 (window-edges main)))
+         (y0 (nth 1 (window-edges main))))
+    (mapcar (lambda (window)
+              (let ((edges (window-edges window))
+                    (session (ecc-window-buffer-session (window-buffer window))))
+                (list (if session (ecc-session-name session) "S")
+                      (- (nth 0 edges) x0) (- (nth 1 edges) y0)
+                      (window-total-width window) (window-total-height window))))
+            (seq-remove (lambda (window) (window-parameter window 'window-side))
+                        (window-list nil 'no-minibuffer)))))
+
+(defun ecc-space-test--expected (layout names)
+  "Return the cells LAYOUT should have in this frame, the slots taken by NAMES.
+In the form of `ecc-space-test--cells'.  A slot NAMES has no session
+for is the source\\='s."
+  (let* ((main (window-main-window))
+         (w (window-total-width main))
+         (h (window-total-height main))
+         (col (ecc-space-test--column))
+         (top (- h (round (* 0.4 h))))
+         (p (lambda (n) (or (nth n names) "S"))))
+    (pcase layout
+      ('beside `(("S" 0 0 ,(- w col) ,h)
+                 (,(funcall p 0) ,(- w col) 0 ,col ,h)))
+      ('pair `((,(funcall p 0) 0 0 ,(/ w 2) ,h)
+               (,(funcall p 1) ,(/ w 2) 0 ,(/ w 2) ,h)))
+      ('thirds `(("S" 0 0 ,(/ w 3) ,h)
+                 (,(funcall p 0) ,(/ w 3) 0 ,(/ w 3) ,h)
+                 (,(funcall p 1) ,(* 2 (/ w 3)) 0 ,(/ w 3) ,h)))
+      ('over `((,(funcall p 0) 0 0 ,(/ w 2) ,top)
+               (,(funcall p 1) ,(/ w 2) 0 ,(/ w 2) ,top)
+               ("S" 0 ,top ,w ,(- h top))))
+      ('stacked `(("S" 0 0 ,(- w col) ,h)
+                  (,(funcall p 0) ,(- w col) 0 ,col ,(/ h 2))
+                  (,(funcall p 1) ,(- w col) ,(/ h 2) ,col ,(/ h 2))))
+      ('grid `((,(funcall p 0) 0 0 ,(/ w 2) ,(/ h 2))
+               (,(funcall p 1) ,(/ w 2) 0 ,(/ w 2) ,(/ h 2))
+               (,(funcall p 2) 0 ,(/ h 2) ,(/ w 2) ,(/ h 2))
+               (,(funcall p 3) ,(/ w 2) ,(/ h 2) ,(/ w 2) ,(/ h 2)))))))
+
+(defun ecc-space-test--fits (cells want)
+  "Return non-nil when one of CELLS is WANT, to a column or a line."
+  (seq-find (lambda (cell)
+              (and (equal (car cell) (car want))
+                   (cl-every (lambda (a b) (<= (abs (- a b)) 1))
+                             (cdr cell) (cdr want))))
+            cells))
+
+(defun ecc-space-test--is (layout names)
+  "Check that the tab is laid out as LAYOUT, its slots taken by NAMES."
+  (let ((cells (ecc-space-test--cells))
+        (expected (ecc-space-test--expected layout names)))
+    (should (= (length expected) (length cells)))
+    (dolist (want expected)
+      (should (ecc-space-test--fits cells want)))
+    (should (eq (ecc-space--layout) layout))))
+
+(defmacro ecc-space-test--with-layouts (names &rest body)
+  "Run BODY in the Space of `ecc-space-test--one' with a session of each of NAMES.
+The sessions are started in the order of NAMES and used in the other
+order, the first most recently: by use is not by start.  The Space has
+its code and its sidebar.  The layouts the frame remembers are forgotten
+afterwards."
+  (declare (indent 1))
+  `(ecc-space-test--with-sessions (mapcar (lambda (name)
+                                            (cons name ecc-space-test--one))
+                                          ,names)
+     (ecc-space-test--with-tab-bar
+       (ecc-space-test--with-code
+         (let ((ecc-window-width 0.4))
+           (unwind-protect
+               (progn
+                 (apply #'ecc-space-test--use (reverse sessions))
+                 (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+                 ,@body)
+             (set-frame-parameter nil 'ecc-space-layout nil)
+             (set-frame-parameter nil 'ecc-space-zoom nil)))))))
+
+(ert-deftest ecc-space-test-every-layout-in-turn ()
+  "Pressed again and again, the key goes through every layout and back.
+Each is built to its proportions, the sidebar keeping its width, and
+every session stays in its slot the whole way round: the session being
+worked in first -- `p2\\=', though `p1\\=' was used more recently -- and
+the rest by use.  Four sessions, so that nothing is passed over and the
+grid is all sessions."
+  (ecc-space-test--with-layouts '("p1" "p2" "p3" "p4")
+    (let ((side (window-total-width (ecc-sidebar--window)))
+          (names '("p2" "p1" "p3" "p4")))
+      ;; Read in the window of the code, which the next layout takes
+      ;; back; selecting it records nothing in `buffer-list'.
+      (set-window-buffer (selected-window) (ecc-session-buffer (nth 1 sessions)))
+      (ecc-space-test--press)
+      (ecc-space-test--is 'beside names)
+      (should (eq (window-buffer) (ecc-session-buffer (nth 1 sessions))))
+      (dolist (layout '(pair thirds over stacked grid beside))
+        (ecc-space-test--press t)
+        (ecc-space-test--is layout names)
+        (should (= side (window-total-width (ecc-sidebar--window))))))))
+
+(ert-deftest ecc-space-test-a-layout-needs-its-sessions ()
+  "A layout with more slots than the Space has sessions is passed over.
+Three sessions: the grid is built, with the source in the fourth cell."
+  (ecc-space-test--with-layouts '("p1" "p2" "p3")
+    (dolist (layout '(pair thirds over stacked grid beside))
+      (ecc-space-test--press t)
+      (ecc-space-test--is layout '("p1" "p2" "p3")))))
+
+(ert-deftest ecc-space-test-two-sessions-pass-over-the-grid ()
+  "Two sessions are not enough for the grid, and it is passed over."
+  (ecc-space-test--with-layouts '("p1" "p2")
+    (dolist (layout '(pair thirds over stacked beside))
+      (ecc-space-test--press t)
+      (ecc-space-test--is layout '("p1" "p2")))))
+
+(ert-deftest ecc-space-test-one-session-has-one-layout ()
+  "With one session there is no other layout to go to, and it says so."
+  (ecc-space-test--with-layouts '("p1")
+    ;; The second session of the multi-session rule is in another
+    ;; Space: it is not counted, and not laid out here.
+    (let ((other (ecc-model-create-session :name "other"
+                                           :project-root ecc-space-test--two)))
+      (unwind-protect
+          (let ((before (ecc-space-test--layout)))
+            (should (string-match-p "No other layout"
+                                    (ecc-space-test--press t)))
+            (should (equal before (ecc-space-test--layout)))
+            (ecc-space-test--is 'beside '("p1"))
+            (should-not (member "other" (ecc-space-test--on-screen))))
+        (ecc-test-cleanup-session other)))))
+
+(ert-deftest ecc-space-test-a-layout-the-frame-refuses-is-passed-over ()
+  "A layout Emacs will not divide the frame for is skipped, not half built.
+Thirds of this main area are narrower than `window-min-width' here, and
+halves are not: from the two sessions side by side the next press goes
+past the thirds to the sessions over the source."
+  (ecc-space-test--with-layouts '("p1" "p2")
+    (ecc-space-test--press t)
+    (ecc-space-test--is 'pair '("p1" "p2"))
+    (let ((window-min-width (1+ (/ (window-total-width (window-main-window)) 3))))
+      (ecc-space-test--press t)
+      (ecc-space-test--is 'over '("p1" "p2")))))
+
+(ert-deftest ecc-space-test-no-layout-fits-and-the-windows-stay ()
+  "When the frame has room for no other layout, the windows are left as they were.
+Every layout is refused halfway through its splits, the way Emacs
+refuses one split too many for a small frame: what each attempt took
+down and divided is put back -- the sidebar with it, which a window
+state, unlike a configuration, would have brought back deletable."
+  (ecc-space-test--with-layouts '("p1" "p2")
+    (let ((before (ecc-space-test--layout))
+          (side (ecc-sidebar--window)))
+      (cl-letf (((symbol-function 'ecc-space--split)
+                 (lambda (_layout main _sessions)
+                   (ecc-space--split-off main (/ (window-total-width main) 2)
+                                         'right)
+                   (error "Window %s too small for splitting" main))))
+        (should (string-match-p "too small" (ecc-space-test--press t)))
+        (should (equal before (ecc-space-test--layout)))
+        (should (eq side (ecc-sidebar--window)))
+        (should (window-parameter side 'no-delete-other-windows))
+        (should (eq (ecc-space--layout) 'beside))
+        ;; Pressed afresh, it cannot even put the tab back, and says so.
+        (should-error (ecc-space-test--press) :type 'user-error)
+        (should (equal before (ecc-space-test--layout)))))))
+
+(ert-deftest ecc-space-test-a-layout-after-a-zoom-keeps-the-sidebar ()
+  "Zoomed and put back, the tab is laid out with its sidebar still there.
+The zoom puts the windows back from a window state, and the sidebar
+comes back from one without `no-delete-other-windows\=': a layout that
+left the sidebar to `delete-other-windows\=' took it down."
+  (ecc-space-test--with-layouts '("p1" "p2")
+    (let ((width (window-total-width (ecc-sidebar--window))))
+      (ecc-space-zoom)
+      (ecc-space-zoom)
+      (ecc-space-test--press t)
+      (should (ecc-sidebar--window))
+      (should (= width (window-total-width (ecc-sidebar--window))))
+      (ecc-space-test--is 'pair '("p1" "p2")))))
+
+(ert-deftest ecc-space-test-a-fresh-press-puts-back-the-tab-s-layout ()
+  "Pressed after anything else, the key builds the layout this tab last chose.
+And `C-u' goes back to the first, which a plain press no longer does."
+  (ecc-space-test--with-layouts '("p1" "p2")
+    (ecc-space-test--press t)
+    (ecc-space-test--press t)
+    (ecc-space-test--is 'thirds '("p1" "p2"))
+    ;; The tab is given over to "p2", the session started last, and it
+    ;; is the one being read when the key is pressed: it comes first.
+    (ecc-space-test--wreck-the-tab)
+    (ecc-space-test--press)
+    (ecc-space-test--is 'thirds '("p2" "p1"))
+    (ecc-space-test--press nil t)
+    (ecc-space-test--is 'beside '("p2"))
+    ;; And `C-u' after itself is still the first: it says where to go.
+    (ecc-space-test--press t t)
+    (ecc-space-test--is 'beside '("p2"))))
+
+(ert-deftest ecc-space-test-two-tabs-keep-their-own-layouts ()
+  "A layout is the tab\\='s: one Space in thirds leaves the other as it was."
+  (ecc-space-test--with-sessions `(("one-a" . ,ecc-space-test--one)
+                                   ("one-b" . ,ecc-space-test--one)
+                                   ("two-a" . ,ecc-space-test--two)
+                                   ("two-b" . ,ecc-space-test--two))
+    (ecc-space-test--with-tab-bar
+      (let ((ecc-window-width 0.4))
+        (unwind-protect
+            (progn
+              (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+              (ecc-space-test--press t)
+              (ecc-space-test--press t)
+              (should (eq (ecc-space--layout) 'thirds))
+              (ecc-space-select (ecc-space-of-root ecc-space-test--two))
+              (should (eq (ecc-space--layout) 'beside))
+              (ecc-space-test--press)
+              (should (equal (ecc-space-test--on-screen) '("two-b")))
+              (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+              (should (eq (ecc-space--layout) 'thirds))
+              (ecc-space-test--press)
+              (should (equal (ecc-space-test--on-screen) '("one-b" "one-a"))))
+          (set-frame-parameter nil 'ecc-space-layout nil))))))
+
+(ert-deftest ecc-space-test-a-new-session-replaces-a-slot-of-the-layout ()
+  "A session shown in a laid-out Space takes the slot used longest ago.
+The layout is not built again for it, and nothing is divided."
+  (ecc-space-test--with-layouts '("p1" "p2" "p3")
+    (ecc-space-test--press t)
+    (ecc-space-test--is 'pair '("p1" "p2"))
+    (ecc-space-test--use (nth 1 sessions) (nth 0 sessions) (nth 2 sessions))
+    ;; "p3" was worked in -- from another window of another tab, say --
+    ;; and of the two on the screen, "p2" has gone longest without.
+    ;; Going to the Space with no source window on the screen does not
+    ;; put one back either: the tab was laid out without it.
+    (ecc-space-display-session (nth 2 sessions))
+    (ecc-space-test--is 'pair '("p1" "p3"))))
+
+(ert-deftest ecc-space-test-the-layout-key-repeats ()
+  "Under `repeat-mode' the last key alone goes on to the next layout."
+  (should (eq (lookup-key ecc-space-layout-repeat-map (kbd "V"))
+              #'ecc-space-cycle-layout))
+  (should (eq (get 'ecc-space-cycle-layout 'repeat-map)
+              'ecc-space-layout-repeat-map))
+  ;; The old name still runs it, and counts as the press before.
+  (should (eq (indirect-function 'ecc-space-reset-windows)
+              (indirect-function 'ecc-space-cycle-layout)))
+  (let ((last-command 'ecc-space-reset-windows))
+    (should (ecc-space--cycling-p))))
 
 (ert-deftest ecc-space-test-an-empty-space-gets-a-session ()
   "Going to a Space with nothing running starts one there.
