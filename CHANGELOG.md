@@ -234,6 +234,25 @@ Verified against **Claude Code CLI 2.1.290**.
   drawn again and the open sessions are saved. Introduced in 0.1.0; the missing
   save in 0.4.0, with `ecc-restore`.
 
+- A session renamed with `C-c c R` (or `R` in the dashboard) keeps its name
+  when it is closed and opened again from the history, the dashboard or the
+  search. Two things lost it. The rename never reached the CLI, so the
+  recording had no name of the user's, only the title the CLI made up; and
+  the history read the title from `ai-title` lines alone, so even a name given
+  with `/rename` lost to the AI title, which the CLI goes on writing after the
+  `custom-title` line every turn (confirmed against CLI 2.1.290, 2026-10-12).
+  The history now takes a `custom-title` over any `ai-title`, whatever their
+  order. And a rename now sends `/rename NAME` to the CLI of the session, with
+  the name the session ended up with (`NAME<2>` included), without drawing
+  it: the CLI's answer opens no turn, adds no command node and nothing to the
+  cost, and never enters the queue. While a turn runs the rename waits for it
+  to end and goes ahead of the next queued prompt; a session with no CLI
+  running -- stopped, exited, handed to the terminal, or a recording being
+  read -- is told when it runs again, and `ecc-restore` keeps a rename still
+  to be sent across an Emacs restart. Until the CLI has answered, a title it
+  sends that is not the new name is not applied. A `/rename` typed in the
+  prompt region is drawn as before.
+
 ## [0.4.1] - 2026-10-12
 
 Verified against **Claude Code CLI 2.1.290**.
