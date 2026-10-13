@@ -232,8 +232,7 @@ what the user wrote, and a path or a URL in it is not a link."
          (request (and node (ecc-model-node-get node 'request)))
          (pending (and request (memq request (ecc-session-pending session)))))
     (cond
-     (queued (require 'ecc-queue)
-             (ecc-queue-show session (get-text-property (point) 'ecc-queued)))
+     (queued (ecc-queue-show session (get-text-property (point) 'ecc-queued)))
      (url (browse-url url))
      ;; A still opens in `image-mode\=', which zooms and scrolls; a video
      ;; is something Emacs cannot play, so the machine plays it.
@@ -246,15 +245,12 @@ what the user wrote, and a path or a URL in it is not a link."
      ((null node) (user-error "Nothing to show here"))
      ((eq (ecc-node-type node) 'agent) (ecc-session-show-agent session node))
      ((and pending (eq (ecc-node-type node) 'question))
-      (require 'ecc-perm)
       (ecc-window-display-beside-session (ecc-question-open request) session))
      ((and pending (eq (ecc-node-type node) 'plan))
-      (require 'ecc-plan)
       (ecc-window-display-beside-session (ecc-plan-open request) session))
      ((eq (ecc-node-type node) 'plan)
       ;; A plan that was answered already: show the file the CLI wrote it
       ;; to, when it named one and it is still there.
-      (require 'ecc-plan)
       (let ((path (and request (ecc-plan-file-path request))))
         (if (and path (file-exists-p path))
             (ecc-visit-open path nil session)
@@ -275,13 +271,11 @@ transcript cuts."
 (defun ecc-session-review ()
   "Open every change of this session as one diff to review."
   (interactive)
-  (require 'ecc-review)
   (ecc-review (ecc-session-at-point)))
 
 (defun ecc-session-review-file ()
   "Open the diff of the file at point in the Files section."
   (interactive)
-  (require 'ecc-review)
   (ecc-review (ecc-session-at-point)
               (list (or (ecc-chat-file-at-point)
                         (user-error "Not on a file")))))
@@ -290,7 +284,6 @@ transcript cuts."
   "Deny the request at point, or open the review when not on one.
 The d key of the transcript does both."
   (interactive)
-  (require 'ecc-perm)
   (if (ecc-perm-request-at-point)
       (call-interactively #'ecc-perm-deny)
     (ecc-session-review)))

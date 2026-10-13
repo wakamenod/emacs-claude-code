@@ -28,7 +28,7 @@ Verified against **Claude Code CLI 2.1.290**.
   and xref accessors -- say so with the FILEONLY argument. The tree-sitter
   primitives are declared in `treesit.c`, as Emacs's own files declare them;
   an Emacs installed without its C sources still reports those six, having
-  no file to look in. There are also fewer of them: 129 where there were
+  no file to look in. There are also fewer of them: 124 where there were
   250. A file now requires the module it used to declare wherever that makes
   no loop, loads no Space module from below and loads early nothing that was
   loaded late on purpose, and a function the file never calls, or that Emacs
@@ -41,14 +41,23 @@ Verified against **Claude Code CLI 2.1.290**.
   or the transcript maps still wins over theirs.
   `ecc-chat-return`, `ecc-chat-slash` and the option `ecc-chat-return-sends`
   now live in `ecc-prompt.el`, and `ecc-chat-follow-link` in
-  `ecc-session.el`, under the same names. The commands that start and stop
-  a session -- `ecc-start`, `ecc-resume`, `ecc-restart`, `ecc-kill` and
-  `ecc-read-session`, with the offer to resume a CLI that exited on its own
-  -- moved from `ecc.el` to `ecc-lifecycle.el` under the same names, so the
-  modules that start or stop a session require it instead of declaring
-  functions of `ecc.el`. Their autoloads now load that file, and it loads
-  the rest of the package before a CLI starts, as the autoloads of `ecc.el`
-  did. Nothing a user sees changes.
+  `ecc-session.el`, under the same names. No module waits any longer for
+  another of ecc's own to be loaded before it registers with it:
+  `ecc-prompt-intercept-functions` and `ecc-prompt-immediate-commands` keep
+  their names and are now defined in `ecc-model.el`, so the modules that
+  answer `/btw`, `/hooks`, `/login` and the like put themselves on them as
+  they load -- a configuration that loads one of those modules without
+  `ecc-prompt.el` now finds both variables there -- and `ecc-worktree.el`
+  requires `ecc-mcp.el` and registers its MCP tools as it loads. Sixteen
+  `require`s inside functions, of a module the file had already loaded, are
+  gone. The commands that start and stop a session -- `ecc-start`,
+  `ecc-resume`, `ecc-restart`, `ecc-kill` and `ecc-read-session`, with the
+  offer to resume a CLI that exited on its own -- moved from `ecc.el` to
+  `ecc-lifecycle.el` under the same names, so the modules that start or
+  stop a session require it instead of declaring functions of `ecc.el`.
+  Their autoloads now load that file, and it loads the rest of the package
+  before a CLI starts, as the autoloads of `ecc.el` did. Nothing a user
+  sees changes.
 - `ecc-review-direct.el` is folded into `ecc-review-ediff.el`, so
   `(require 'ecc-review-direct)` no longer works; require
   `ecc-review-ediff` instead. Every symbol keeps its name.

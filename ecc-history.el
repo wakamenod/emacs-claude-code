@@ -55,7 +55,6 @@
 (declare-function ecc-render-refresh "ecc-render" (session))
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-review-ensure-baseline "ecc-review" (session))
-(defvar ecc-prompt-immediate-commands)
 (declare-function ecc-prompt-command-name "ecc-prompt" (text))
 (declare-function ecc-prompt-command-argument "ecc-prompt" (text))
 
@@ -886,9 +885,8 @@ sent as a prompt.  This is on `ecc-prompt-intercept-functions\='."
       (ecc-history-take-over session info))
     t))
 
-(with-eval-after-load 'ecc-prompt
-  (add-hook 'ecc-prompt-intercept-functions #'ecc-history-resume-intercept)
-  (add-to-list 'ecc-prompt-immediate-commands ecc-history-resume-command))
+(add-hook 'ecc-prompt-intercept-functions #'ecc-history-resume-intercept)
+(add-to-list 'ecc-prompt-immediate-commands ecc-history-resume-command)
 
 (provide 'ecc-history)
 
