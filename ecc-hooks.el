@@ -51,7 +51,6 @@
 (require 'ecc-model)
 
 (declare-function ecc-prompt-command-name "ecc-prompt" (text))
-(defvar ecc-prompt-immediate-commands)
 
 ;;;; What the CLI knows
 
@@ -644,11 +643,10 @@ sent as a prompt.  This is on `ecc-prompt-intercept-functions'."
     (ecc-hooks-show (and session (ecc-session-project-root session)))
     t))
 
-(with-eval-after-load 'ecc-prompt
-  (add-hook 'ecc-prompt-intercept-functions #'ecc-hooks-intercept)
-  ;; It takes no argument, so choosing it in the prompt region is
-  ;; already the whole of it.
-  (add-to-list 'ecc-prompt-immediate-commands ecc-hooks-command))
+(add-hook 'ecc-prompt-intercept-functions #'ecc-hooks-intercept)
+;; It takes no argument, so choosing it in the prompt region is already
+;; the whole of it.
+(add-to-list 'ecc-prompt-immediate-commands ecc-hooks-command)
 
 (provide 'ecc-hooks)
 

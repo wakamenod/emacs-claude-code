@@ -108,7 +108,7 @@ nothing to add returns the prompt it was given.
 This is where a module puts a word of its own beside what the user
 wrote -- a line saying that Emacs can do the thing being asked for.
 Taking a draft away from the CLI altogether is
-`ecc-prompt-intercept-functions\=', which is the other one, and belongs to
+`ecc-prompt-intercept-functions\=', which is the other one, and is run by
 the prompt region alone: intercepting is a command, and a command is
 typed somewhere.
 
@@ -125,6 +125,46 @@ worth what it costs: a line on every prompt is a line on every prompt.")
   "Return TEXT as `ecc-prepare-prompt-functions\=' would have SESSION send it."
   (dolist (function ecc-prepare-prompt-functions text)
     (setq text (or (funcall function session text) text))))
+
+(defvar ecc-prompt-intercept-functions nil
+  "Functions given a session and a draft before the draft is sent.
+The first one to return non-nil takes the draft: nothing is sent to the
+CLI, and `ecc-prompt-send\=' returns `intercepted\='.  The draft is
+emptied and remembered either way, so that a typo can be brought back
+with \\[ecc-prompt-history-previous].
+
+`/resume\=' is ours outright: the CLI names no resume in
+`slash_commands\=' and none in `terminal_slash_commands\=' (checked
+against 2.1.270).  The terminal client draws that picker for itself,
+and what it does there is take the conversation over in place, which is
+what Emacs does to the window it is typed in.
+
+Only a draft the CLI is not meant to see belongs here.  The side
+question is the one there is: `/btw\=' is not a slash
+command, and sending it would put it in the conversation it is supposed
+to be asked beside.
+
+The prompt region runs it, and it is defined here rather than in
+`ecc-prompt\=' so that the modules answering a command -- `ecc-auth\=',
+`ecc-btw\=', `ecc-history\=', `ecc-hooks\=', `ecc-plugin\=' and
+`ecc-skill\=' -- can put themselves on it as they load.  They sit below
+the prompt region in the load order and could not require it back
+without dragging the whole user interface into a file that wanted one
+hook.  A function on it is given the session and a string, and nothing
+of the buffer.")
+
+(defvar ecc-prompt-immediate-commands nil
+  "Slash commands that run the moment they are chosen from the `/\=' question.
+A command Emacs answers itself and that needs no argument -- `/hooks\=',
+`/skills\=', `/plugins\=' -- has nothing to say to the CLI, so writing its
+name into the prompt only to send it is a step with no purpose: it is
+run there and then, and the slash that opened the question is taken
+back.  Each module puts its own command here, next to the interceptor
+that answers it (`ecc-prompt-intercept-functions\='), and this lives
+beside that hook for the same reason.
+
+A command whose argument is the point of it stays out: `/btw <question>\='
+and `/login <account>\=' are typed, not chosen.")
 
 (defvar ecc-request-added-hook nil
   "Functions run with a session and a request that needs an answer.")
