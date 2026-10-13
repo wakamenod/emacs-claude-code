@@ -31,7 +31,7 @@ and the registry are empty directories of their own."
           (ecc-registry-directory (make-temp-file "ecc-restart-registry" t))
           (ecc-executable bin)
           (ecc-command-wrapper-function nil)
-          (ecc-mcp-config-function nil)
+          (ecc-mcp-enabled nil)
           (ecc-stop-grace 2.0))
      (set-file-modes bin #o755)
      (unwind-protect

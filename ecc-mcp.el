@@ -528,8 +528,6 @@ Starts the server when it is not running yet."
        `((mcpServers . ((,(intern ecc-mcp-server-name)
                          . ((type . "http") (url . ,(ecc-mcp-url session)))))))))))
 
-(setq ecc-mcp-config-function #'ecc-mcp-config)
-
 ;;;; The built-in tools
 
 ;; `xref' is loaded by the tools that ask it, and flymake is the user's

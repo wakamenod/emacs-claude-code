@@ -40,6 +40,7 @@
 (require 'ecc-core)
 (require 'ecc-protocol)
 (require 'ecc-model)
+(require 'ecc-mcp)
 
 (defvar ecc-control-timeout 30
   "Seconds to wait for the answer to a control request before warning.")
@@ -203,8 +204,7 @@ a resumed one the model its recording ends on (see `ecc-proc--model')."
              (cons "--allowedTools" tools))
            (when-let* ((tools (funcall opt :disallowed-tools nil)))
              (cons "--disallowedTools" tools))
-           (when-let* ((config (and ecc-mcp-config-function
-                                    (funcall ecc-mcp-config-function session))))
+           (when-let* ((config (ecc-mcp-config session)))
              (list "--mcp-config" config))
            (when-let* ((settings (ecc-protocol-settings-json
                                  (funcall opt :disabled-plugins
