@@ -1072,6 +1072,19 @@ not by hashing the whole original again each time."
            ,@body)
        (ecc-review-test--kill-review-buffers))))
 
+(ert-deftest ecc-review-test-the-watch-goes-on-with-a-review ()
+  "Saving a file and changing a window reach the reviews once there is one.
+Not before: loading the package puts nothing on the global hooks."
+  (let ((hooks '(after-save-hook window-buffer-change-functions)))
+    (ecc-test-with-global-hooks hooks
+      (should-not (memq #'ecc-review--on-save (default-value 'after-save-hook)))
+      (should-not (memq #'ecc-review--on-window-buffer-change
+                        (default-value 'window-buffer-change-functions)))
+      (ecc-review-test--with-review session
+        (should (memq #'ecc-review--on-save (default-value 'after-save-hook)))
+        (should (memq #'ecc-review--on-window-buffer-change
+                      (default-value 'window-buffer-change-functions)))))))
+
 (ert-deftest ecc-review-test-lines-are-numbered-on-their-side ()
   "A removed line counts on the old side, an added or a context line on the new."
   (ecc-review-test--with-review session
