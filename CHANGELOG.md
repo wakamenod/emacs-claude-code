@@ -11,7 +11,7 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
-## [Unreleased]
+## [0.4.4] - 2026-10-14
 
 Verified against **Claude Code CLI 2.1.290**.
 
