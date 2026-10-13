@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -349,6 +352,15 @@ with no text to write again; d drops it")))
   "Move the prompt at point one place further from being sent."
   (interactive)
   (ecc-queue--move 1))
+
+(defvar ecc-queue-chat-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-q") #'ecc-queue-show)
+    map)
+  "The keys of the queue in a chat buffer, wherever point is.
+A parent of `ecc-chat-mode-map', so that a key bound there wins.")
+
+(ecc-chat-add-keymap-parent ecc-chat-mode-map ecc-queue-chat-map)
 
 (provide 'ecc-queue)
 

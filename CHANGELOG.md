@@ -28,17 +28,22 @@ Verified against **Claude Code CLI 2.1.290**.
   and xref accessors -- say so with the FILEONLY argument. The tree-sitter
   primitives are declared in `treesit.c`, as Emacs's own files declare them;
   an Emacs installed without its C sources still reports those six, having
-  no file to look in. There are also fewer of them: 103 where there were
+  no file to look in. There are also fewer of them: 97 where there were
   250. A file now requires the module it used to declare wherever that makes
   no loop, loads no Space module from below and loads early nothing that was
   loaded late on purpose, and a function the file never calls, or that Emacs
   autoloads, is not declared at all; the two windows of an ediff review no
   longer declare the eight functions of `ecc-review-ediff.el` they call,
-  being part of it now. `ecc-chat.el` no longer names the commands of
-  `ecc-prompt.el` and `ecc-session.el`: it defines the keymaps, each of the
-  two keeps its own commands in a keymap made a parent of them, and
-  `ecc-chat-mode` loads both. A key a user binds in `ecc-chat-mode-map`
-  or the transcript maps still wins over theirs.
+  being part of it now. `ecc-chat.el` no longer names the commands of the
+  modules above it -- `ecc-prompt.el`, `ecc-session.el`, `ecc-queue.el`,
+  `ecc-hint.el`, `ecc-tui.el` and `ecc-transient.el`: it defines the
+  keymaps, each of them keeps its own commands in a keymap made a parent of
+  them, and `ecc-chat-mode` loads them all. A key a user binds in
+  `ecc-chat-mode-map` or the transcript maps still wins over theirs. The
+  mode line is put together the same way: a chat buffer's
+  `mode-line-process` is a list of constructs now rather than one, and
+  `ecc-hint.el` adds what `ecc-mode-line-format` asks for to it from
+  `ecc-chat-mode-hook`, ahead of the user's own functions there.
   `ecc-chat-return`, `ecc-chat-slash` and the option `ecc-chat-return-sends`
   now live in `ecc-prompt.el`, and `ecc-chat-follow-link` in
   `ecc-session.el`, under the same names. No module waits any longer for
@@ -83,6 +88,10 @@ Verified against **Claude Code CLI 2.1.290**.
 - `ecc-review-direct.el` is folded into `ecc-review-ediff.el`, so
   `(require 'ecc-review-direct)` no longer works; require
   `ecc-review-ediff` instead. Every symbol keeps its name.
+- Every source file names all four models that wrote it, one `Assisted-by:`
+  line each, in place of Claude Opus 5 alone: by the history's commit
+  trailers on 2026-10-14, Claude Opus 5 (428 commits), Opus 5.5 (424),
+  Fable 5.1 (28) and Haiku 4.5 (1).
 
 ## [0.4.3] - 2026-10-13
 
