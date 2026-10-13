@@ -55,7 +55,7 @@
 (declare-function ecc-interrupt "ecc-transient" ())
 (declare-function ecc-menu "ecc-transient" () t)
 (declare-function ecc-rename-session "ecc-session" (session name))
-(declare-function ecc-resume "ecc" (session &optional fork))
+(declare-function ecc-resume "ecc-lifecycle" (session &optional fork))
 (declare-function ecc-review "ecc-review" (&optional session paths))
 (declare-function ecc-review-menu "ecc-review-menu" () t)
 (declare-function ecc-search "ecc-search" (query &optional everywhere))
@@ -64,7 +64,7 @@
 (declare-function ecc-space-zoom "ecc-space" ())
 (declare-function ecc-space-cycle-layout "ecc-space" (&optional first))
 (declare-function ecc-show-session "ecc-transient" ())
-(declare-function ecc-start "ecc" (&optional directory name))
+(declare-function ecc-start "ecc-lifecycle" (&optional directory name))
 (declare-function ecc-tui-open "ecc-tui" (&optional session))
 (declare-function ecc-usage "ecc-usage" ())
 

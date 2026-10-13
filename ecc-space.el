@@ -64,10 +64,9 @@
 (require 'ecc-worktree)
 (require 'ecc-notify)
 (require 'ecc-history)
+(require 'ecc-lifecycle)
 
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
-(declare-function ecc-kill "ecc" (session))
-(declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-sidebar-show "ecc-sidebar" ())
 (declare-function ecc-sidebar-redraw "ecc-sidebar" (&rest _))
 
@@ -508,7 +507,6 @@ rather than started in a directory that does not exist."
              (null (ecc-space-sessions space))
              (file-directory-p (ecc-space-root space)))
     (let ((ecc-space--starting (cons (ecc-space-key space) ecc-space--starting)))
-      (require 'ecc)
       (condition-case error
           (ecc-start (ecc-space-root space))
         (error (message "%s: nothing started: %s" (ecc-space-name space)
@@ -1370,7 +1368,6 @@ by itself."
                                    (if (= 1 (length sessions)) "" "s")
                                    (ecc-space--group-name space children)))
         (user-error "Left alone"))
-      (require 'ecc)
       (let ((ecc-space--closing t))
         (mapc #'ecc-kill sessions)))
     (let ((ecc-space--closing t))

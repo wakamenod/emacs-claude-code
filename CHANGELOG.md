@@ -28,7 +28,7 @@ Verified against **Claude Code CLI 2.1.290**.
   and xref accessors -- say so with the FILEONLY argument. The tree-sitter
   primitives are declared in `treesit.c`, as Emacs's own files declare them;
   an Emacs installed without its C sources still reports those six, having
-  no file to look in. There are also fewer of them: 128 where there were
+  no file to look in. There are also fewer of them: 115 where there were
   250. A file now requires the module it used to declare wherever that makes
   no loop, loads no Space module from below and loads early nothing that was
   loaded late on purpose, and a function the file never calls, or that Emacs
@@ -50,7 +50,14 @@ Verified against **Claude Code CLI 2.1.290**.
   `ecc-prompt.el` now finds both variables there -- and `ecc-worktree.el`
   requires `ecc-mcp.el` and registers its MCP tools as it loads. Sixteen
   `require`s inside functions, of a module the file had already loaded, are
-  gone. Nothing a user sees changes.
+  gone. The commands that start and stop a session -- `ecc-start`,
+  `ecc-resume`, `ecc-restart`, `ecc-kill` and `ecc-read-session`, with the
+  offer to resume a CLI that exited on its own -- moved from `ecc.el` to
+  `ecc-lifecycle.el` under the same names, so the modules that start or
+  stop a session require it instead of declaring functions of `ecc.el`.
+  Their autoloads now load that file, and it loads the rest of the package
+  before a CLI starts, as the autoloads of `ecc.el` did. Nothing a user
+  sees changes.
   The lowest modules no longer call up into the ones built on them. An
   inline session carries `:inline` among its launch options, as the usage
   probe carries `:usage-probe`, and `ecc-model-own-session-p` reads it there

@@ -54,9 +54,8 @@
 (require 'ecc-window)
 (require 'ecc-proc)
 (require 'ecc-mcp)
+(require 'ecc-lifecycle)
 
-(declare-function ecc-start "ecc" (&optional directory name))
-(declare-function ecc-kill "ecc" (session))
 (declare-function ecc-space-forget "ecc-space" (root))
 (declare-function ecc-space-at-p "ecc-space" (root))
 (declare-function ecc-review-pr-available-p "ecc-review-pr" ())
@@ -418,7 +417,6 @@ Binding `ecc-space--closing' both closes the Spaces quietly and keeps
 `ecc-worktree--session-removed' from offering what the caller is about
 to do anyway.  ROOT must still be there, for `ecc-worktree--forget-space'."
   (when sessions
-    (require 'ecc)
     (let ((ecc-space--closing t))
       (mapc #'ecc-kill sessions)))
   (ecc-worktree--forget-space root))
@@ -1500,7 +1498,6 @@ The current one answers for itself when the command was run in one."
 The branch may be one that exists or one to make.  Where the worktree
 goes is `ecc-worktree-directory'."
   (interactive (list (ecc-worktree-read-branch (ecc-worktree-context-root))))
-  (require 'ecc)
   (let* ((root (ecc-worktree-context-root))
          ;; git allows one branch in one worktree at a time, so asking
          ;; for a branch that is checked out already can only mean the
@@ -1545,7 +1542,6 @@ Interactively, the worktrees of the project are offered."
               (cdr (assoc (completing-read "Worktree: " (mapcar #'car labels)
                                            nil t)
                           labels)))))))
-  (require 'ecc)
   (ecc-start path))
 
 ;;;###autoload

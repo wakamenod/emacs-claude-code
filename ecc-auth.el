@@ -60,10 +60,10 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
+(require 'ecc-lifecycle)
 
 (declare-function ecc-prompt-command-name "ecc-prompt" (text))
 (declare-function ecc-prompt-command-argument "ecc-prompt" (text))
-(declare-function ecc-resume "ecc" (session &optional fork))
 (declare-function ghostel-exec "ext:ghostel" (buffer program &optional args identity))
 
 ;;;; Options
@@ -283,7 +283,6 @@ credentials they started with (`ecc-auth-restart-sessions\\=')."
   "Stop the CLI of SESSION and start it again on the current credentials.
 `ecc-resume\\=' reads the recording back, so the transcript survives."
   (ecc-proc-stop session)
-  (require 'ecc)
   (ecc-resume session))
 
 (defun ecc-auth--after-login ()

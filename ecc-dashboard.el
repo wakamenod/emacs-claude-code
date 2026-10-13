@@ -66,9 +66,7 @@
 (require 'ecc-window)
 (require 'ecc-session)
 (require 'ecc-skill)
-
-(declare-function ecc-start "ecc" (&optional directory name))
-(declare-function ecc-kill "ecc" (session))
+(require 'ecc-lifecycle)
 
 (defconst ecc-dashboard-buffer-name "*ecc-dashboard*"
   "Name of the dashboard buffer.")
@@ -716,7 +714,6 @@ which arrives with the first turn.\n"
 (defun ecc-dashboard-new (directory)
   "Start a session in DIRECTORY."
   (interactive (list (read-directory-name "Directory: " (ecc-window-project-root))))
-  (require 'ecc)
   (ecc-start directory)
   (ecc-dashboard-redraw))
 
@@ -728,7 +725,6 @@ transcript with it, and the row point is on is whichever the last
 redraw left it on."
   (interactive)
   (let ((session (ecc-dashboard-session-at-point)))
-    (require 'ecc)
     (when (yes-or-no-p (format "Stop %s? " (ecc-session-name session)))
       (ecc-kill session)
       (ecc-dashboard-redraw))))

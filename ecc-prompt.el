@@ -63,8 +63,7 @@
 (require 'ecc-window)
 (require 'ecc-context)
 (require 'ecc-skill)
-
-(declare-function ecc-resume "ecc" (session &optional fork))
+(require 'ecc-lifecycle)
 
 ;;;; Options
 
@@ -1122,7 +1121,6 @@ is running is asked about here; saying no leaves the draft where it
 was."
   (when (and (ecc-model-option session :restored nil)
              (not (process-live-p (ecc-session-process session))))
-    (require 'ecc)
     (save-current-buffer (ecc-resume session))))
 
 (cl-defun ecc-prompt-send ()

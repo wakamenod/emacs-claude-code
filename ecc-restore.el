@@ -66,10 +66,10 @@
 (require 'ecc-model)
 (require 'ecc-history)
 (require 'ecc-window)
+(require 'ecc-lifecycle)
 
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-render-refresh "ecc-render" (session))
-(declare-function ecc--enable-session-modes "ecc" ())
 (declare-function ecc-space-tab-roots "ecc-space" (&optional frame))
 (declare-function ecc-space-of-root "ecc-space" (root))
 (declare-function ecc-space-select "ecc-space" (space))
