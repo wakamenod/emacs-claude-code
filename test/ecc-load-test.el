@@ -15,6 +15,9 @@
 ;; buffer comes up with them, a user's own binding wins over them
 ;; whatever loads first, and loading a module again changes nothing.
 ;;
+;; Two are about advice: loading ecc advises no function of Emacs, and
+;; the NS input-method functions are advised by the first chat buffer.
+;;
 ;; The last are about the modules that register with one above them:
 ;; the interceptors of the prompt region and the MCP tools of
 ;; `ecc-worktree' are in place once their own module is loaded, with
@@ -158,6 +161,78 @@ it there and does not nest it again."
                 (equal before (mapcar (lambda (map)
                                         (copy-tree (symbol-value map)))
                                       maps)))))))
+
+;; The NS port's input-method functions, which `ecc-chat' advises so the
+;; placeholder makes way for working text.  Batch has no NS port, so the
+;; tests below define stand-ins under the same names and provide
+;; `ns-win', as the NS port has done by the time ecc loads.
+(defconst ecc-load-test--ns-stand-ins
+  '(progn
+     (dolist (function '(ns-insert-working-text
+                         ns-insert-marked-text
+                         ns-delete-working-text))
+       (defalias function #'ignore))
+     (provide 'ns-win))
+  "The form that makes this Emacs look like the NS port to `ecc-chat'.")
+
+(defun ecc-load-test--advice-form ()
+  "Return the form that lists every ecc function advising one not ecc's.
+Each element is (ADVISED . ADVICE)."
+  '(let ((found nil))
+     (mapatoms
+      (lambda (symbol)
+        (when (and (fboundp symbol)
+                   (not (string-prefix-p "ecc-" (symbol-name symbol))))
+          (advice-mapc
+           (lambda (advice _props)
+             (when (and (symbolp advice)
+                        (string-prefix-p "ecc-" (symbol-name advice)))
+               (push (cons symbol advice) found)))
+           symbol))))
+     found))
+
+(ert-deftest ecc-load-test-loading-advises-nothing-of-emacs ()
+  "Loading every file of ecc puts no ecc advice on a function of Emacs.
+On the NS port `ecc-chat' advised three input-method functions as soon
+as it was loaded; the stand-ins and `ns-win' are in place first, so this
+would see it."
+  (let ((dir (file-name-directory (locate-library "ecc.el" t))))
+    (should (equal (ecc-load-test--run
+                    `(progn
+                       ,ecc-load-test--ns-stand-ins
+                       (dolist (file (directory-files ,dir nil "\\`ecc.*\\.el\\'"))
+                         (unless (equal file "ecc-autoloads.el")
+                           (require (intern (file-name-base file)))))
+                       ,(ecc-load-test--advice-form)))
+                   nil))))
+
+(ert-deftest ecc-load-test-chat-buffer-advises-working-text ()
+  "The first chat buffer advises the NS input-method functions, once.
+A second buffer leaves them as the first did, and outside a chat buffer
+the advice does nothing.  In an Emacs of its own, with the stand-ins of
+the NS port; nothing of ecc is advised before the buffer is made."
+  (should (equal
+           (ecc-load-test--run
+            `(progn
+               ,ecc-load-test--ns-stand-ins
+               (require 'ecc)
+               (let ((before ,(ecc-load-test--advice-form)))
+                 (dolist (name '("one" "two"))
+                   (ecc-session-ensure-buffer
+                    (ecc-model-create-session
+                     :name name :project-root temporary-file-directory)))
+                 (with-temp-buffer
+                   (ns-insert-working-text)
+                   (ns-delete-working-text))
+                 (list before
+                       (sort (mapcar #'car ,(ecc-load-test--advice-form))
+                             #'string<)
+                       (delete-dups
+                        (mapcar #'cdr ,(ecc-load-test--advice-form)))))))
+           '(nil
+             (ns-delete-working-text ns-insert-marked-text
+                                     ns-insert-working-text)
+             (ecc-chat--after-working-text)))))
 
 (defconst ecc-load-test--interceptors
   '((ecc-auth ecc-auth-intercept nil)
