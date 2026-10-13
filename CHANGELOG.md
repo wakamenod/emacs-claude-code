@@ -11,6 +11,32 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.290**.
+
+### Fixed
+
+- Three docstrings that wrote out a key of ecc's own now show the key the
+  command is bound to, so they follow a rebinding: `C-c C-k` in the buffer
+  a review's message is read over in (`ecc-review-send-text`), `C-c C-a` in
+  the review of a pull request (`ecc-review-pr-walk-status`), and the key
+  of `ecc-resume`, which said `C-c c r` whatever `ecc-global-map` was bound
+  to and now says the key it has, or `M-x ecc-resume` where it has none.
+  The two keys still written out -- `C-c C-c` in the docstring of
+  `ecc-review-mode-map` and `C-c C-m` in that of `ecc-plan-mode-map` -- are
+  what those docstrings are about rather than bindings, and a comment beside
+  each says so. checkdoc reports both all the same, as it reports the
+  second chord of any key sequence however it is quoted. The rest of what
+  melpazoid found: `ecc-global-map` is made a prefix command with
+  `defalias` rather than `fset`, which binds the same way --
+  `(global-set-key (kbd "C-c c") 'ecc-global-map)` and `:bind-keymap` both
+  work as before -- and records `ecc-answer.el` as where it is defined, so
+  `C-h f` finds it; the Commentary of `ecc-prompt.el` and
+  `ecc-review-menu.el` is wrapped at 80 columns; and two docstrings in
+  `ecc-skill.el` say whether `ecc-skill-settings-file` is the variable or
+  the function.
+
 ## [0.4.4] - 2026-10-14
 
 Verified against **Claude Code CLI 2.1.290**.
@@ -3166,7 +3192,8 @@ Emacs 29.1, 29.4 and 30.1.
   notifications, and a `transient` menu on `ecc-global-map`.
 - `ecc-version` reports the ecc, Emacs and CLI versions a bug report needs.
 
-[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.4.4...HEAD
+[0.4.4]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.4
 [0.4.3]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.3
 [0.4.2]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.2
 [0.4.1]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.1
