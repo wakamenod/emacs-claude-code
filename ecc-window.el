@@ -44,7 +44,6 @@
 
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-chat-goto-prompt "ecc-chat" ())
-(declare-function ecc-render--project-name-1 "ecc-render" (directory))
 ;; `ecc-space' is above this file and is loaded where `ecc-use-spaces'
 ;; says so, the way `ecc-display-session' loads `ecc-session'.  Nothing
 ;; here requires it: the dependency runs the other way.
@@ -121,6 +120,25 @@ DIRECTORY defaults to `default-directory'."
     (or (when-let* ((project (project-current nil)))
           (file-name-as-directory (expand-file-name (project-root project))))
         (file-name-as-directory (expand-file-name default-directory)))))
+
+(defun ecc-window-project-name (directory)
+  "Return the name `project.el\=' gives DIRECTORY, or the name of DIRECTORY.
+A remote directory is never asked about: `project-current\=' would go
+over the wire for it, and the header line of a transcript
+\(`ecc-render--project-name\=') is drawn on every command."
+  (or (and (not (file-remote-p directory))
+           ;; The one `ignore-errors' in ecc.  `project-current' calls
+           ;; each function on `project-find-functions', and other
+           ;; packages add their own there: what those signal is theirs
+           ;; to decide, so there is no error class to name here.  An
+           ;; error let out would break the header line, which is drawn
+           ;; on every command, so any failure falls back to the name of
+           ;; the directory below.
+           (ignore-errors
+             (when-let* ((project (let ((default-directory directory))
+                                    (project-current nil))))
+               (project-name project))))
+      (file-name-nondirectory (directory-file-name directory))))
 
 (defvar ecc-window--project-root-cache (make-hash-table :test #'equal)
   "Hash of a directory to the project root above it.
@@ -870,7 +888,7 @@ about which project one is in."
 (defun ecc-window-project-label (root sessions)
   "Return the line the project ROOT with SESSIONS is offered under."
   (format "%-24s  %-11s %s"
-          (ecc--truncate (ecc-render--project-name-1 root) 24)
+          (ecc--truncate (ecc-window-project-name root) 24)
           (format "%d session%s" (length sessions)
                   (if (= 1 (length sessions)) "" "s"))
           (abbreviate-file-name root)))
@@ -960,8 +978,7 @@ nothing under `classic\=' reaches `ecc-worktree\='."
     (require 'ecc-space)
     (let ((space (ecc-space-of-root key)))
       (cons (ecc-space-title space) (ecc-space-parent space))))
-   (t (require 'ecc-render)
-      (list (ecc-render--project-name-1 key)))))
+   (t (list (ecc-window-project-name key)))))
 
 (defun ecc-window--sessions-by-use (sessions)
   "Return SESSIONS, the one whose buffer was selected last first.

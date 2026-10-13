@@ -65,7 +65,6 @@
 (require 'ecc-notify)
 (require 'ecc-history)
 
-(declare-function ecc-render--project-name-1 "ecc-render" (directory))
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-kill "ecc" (session))
 (declare-function ecc-start "ecc" (&optional directory name))
@@ -126,10 +125,9 @@ A worktree goes by its branch, which is what tells two worktrees of one
 repository apart -- the directory name is a slug of that branch and
 says nothing more.  The `worktree/' that herdr puts in front of the
 branches it generates is dropped, as it drops it."
-  (require 'ecc-render)
   (if (and parent branch)
       (string-remove-prefix "worktree/" branch)
-    (ecc-render--project-name-1 root)))
+    (ecc-window-project-name root)))
 
 (defun ecc-space-of-root (root)
   "Return the Space of the project ROOT belongs to."
