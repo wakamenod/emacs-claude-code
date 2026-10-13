@@ -40,12 +40,14 @@
 ;; else; the prompt region has no such property, so the keymap of the
 ;; major mode applies, and that one only binds RET, TAB and C-c keys.
 ;;
-;; The keymaps are defined here, and each module binds its own commands
-;; into them: `ecc-prompt' the sending, the history, the slash and what
-;; RET does in the region, `ecc-session' what opens, refreshes or
-;; resumes from the transcript.  Both build on this file, so the
-;; dependency runs one way, and `ecc-chat-mode' loads them before the
-;; buffer is used.
+;; The keymaps are defined here, and each module above this one keeps
+;; its commands in a keymap of its own and makes it a parent of them
+;; (`ecc-chat-add-keymap-parent'): `ecc-prompt' the sending, the
+;; history, the slash and what RET does in the region, `ecc-session'
+;; what opens, refreshes or resumes from the transcript.  Both build on
+;; this file, so the dependency runs one way, and `ecc-chat-mode' loads
+;; them before the buffer is used.  A key bound in the maps here, by a
+;; user after this file is loaded, wins over theirs whatever loads next.
 ;;
 ;; A request waiting for an answer is answered from the prompt region
 ;; too, without walking to it: C-c C-a allows one and C-c C-d denies
@@ -153,8 +155,41 @@ the dim face.")
 
 ;;;; Keymaps
 
+(defun ecc-chat--keymap-inherits-p (map parent)
+  "Return non-nil when PARENT is MAP, one of its parents, or in one of them.
+A composed keymap is searched through the keymaps it is made of."
+  (let ((found nil))
+    (while (and map (not found))
+      (if (eq map parent)
+          (setq found t)
+        ;; The keymaps a composed keymap is made of come before its
+        ;; parent, which is the tail that starts with `keymap' again.
+        (let ((tail (cdr map)))
+          (while (and (consp tail) (not (eq (car tail) 'keymap)) (not found))
+            (when (eq (car tail) parent)
+              (setq found t))
+            (setq tail (cdr tail))))
+        (setq map (keymap-parent map))))
+    found))
+
+(defun ecc-chat-add-keymap-parent (map parent)
+  "Give MAP the keys of PARENT, below its own and above its other parents.
+This is how a module above this one gives the keymaps here its
+commands: it keeps them in PARENT and hangs that under MAP, rather than
+binding them in MAP, where they would overwrite whatever a user bound
+there once this file was loaded.  MAP keeps the parents it has, and
+PARENT is added once however often the module is loaded."
+  (let ((old (keymap-parent map)))
+    (unless (ecc-chat--keymap-inherits-p old parent)
+      (set-keymap-parent map (make-composed-keymap (list parent) old)))))
+
 (defvar ecc-chat-mode-map
   (let ((map (make-sparse-keymap)))
+    ;; Said here rather than left to `define-derived-mode', which puts
+    ;; `text-mode-map' under a map that has no parent when the mode is
+    ;; first turned on: by then `ecc-prompt' has given it one, and
+    ;; `text-mode-map' would be left out.
+    (set-keymap-parent map text-mode-map)
     (define-key map (kbd "S-<return>") #'ecc-chat-newline)
     (define-key map (kbd "C-j") #'ecc-chat-newline)
     (define-key map (kbd "TAB") #'ecc-chat-tab)
@@ -287,8 +322,8 @@ row.  TAB folds, on this row as on every other.")
 
 \\{ecc-chat-mode-map}"
   :interactive nil
-  ;; The prompt and the session bind their commands into the keymaps
-  ;; above and set up the prompt region from `ecc-chat-mode-hook', so
+  ;; The prompt and the session give the keymaps above their keys and
+  ;; set up the prompt region from `ecc-chat-mode-hook', so
   ;; they are loaded before the buffer is used, whichever command made
   ;; it.  At run time: both require this file.
   (require 'ecc-prompt)

@@ -33,9 +33,9 @@
 ;; session, the `@' references Emacs expands before sending, pasted
 ;; images and the editor context.
 ;;
-;; Its commands are bound here, into the keymaps `ecc-chat' defines, and
-;; the region is set up from `ecc-chat-mode-hook': completion, pasted
-;; images and dropped files.  `ecc-chat-return' and `ecc-chat-slash'
+;; Its keys are in `ecc-prompt-chat-map', a parent of the mode map
+;; `ecc-chat' defines, and the region is set up from
+;; `ecc-chat-mode-hook': completion, pasted images and dropped files.  `ecc-chat-return' and `ecc-chat-slash'
 ;; keep the names they had when they lived in `ecc-chat': they are what
 ;; RET and `/' do in the chat buffer, and a user may have bound them.
 
@@ -1271,18 +1271,25 @@ own functions there, so that what they add to these is kept."
 
 (add-hook 'ecc-chat-mode-hook #'ecc-prompt--setup-buffer -50)
 
-(define-key ecc-chat-mode-map (kbd "RET") #'ecc-chat-return)
-(define-key ecc-chat-mode-map (kbd "/") #'ecc-chat-slash)
-(define-key ecc-chat-mode-map (kbd "C-c C-c") #'ecc-prompt-send)
-(define-key ecc-chat-mode-map (kbd "C-c C-k") #'ecc-prompt-clear)
-(define-key ecc-chat-mode-map (kbd "C-c C-x") #'ecc-prompt-toggle-context)
-(define-key ecc-chat-mode-map (kbd "C-c C-i") #'ecc-prompt-insert-image)
-(define-key ecc-chat-mode-map (kbd "C-c C-y") #'ecc-prompt-yank-image-from-clipboard)
-(define-key ecc-chat-mode-map (kbd "C-c C-r") #'ecc-prompt-history-insert)
-(define-key ecc-chat-mode-map (kbd "M-p") #'ecc-prompt-history-previous)
-(define-key ecc-chat-mode-map (kbd "M-n") #'ecc-prompt-history-next)
-(define-key ecc-chat-mode-map (kbd "C-<up>") #'ecc-prompt-history-previous)
-(define-key ecc-chat-mode-map (kbd "C-<down>") #'ecc-prompt-history-next)
+(defvar ecc-prompt-chat-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'ecc-chat-return)
+    (define-key map (kbd "/") #'ecc-chat-slash)
+    (define-key map (kbd "C-c C-c") #'ecc-prompt-send)
+    (define-key map (kbd "C-c C-k") #'ecc-prompt-clear)
+    (define-key map (kbd "C-c C-x") #'ecc-prompt-toggle-context)
+    (define-key map (kbd "C-c C-i") #'ecc-prompt-insert-image)
+    (define-key map (kbd "C-c C-y") #'ecc-prompt-yank-image-from-clipboard)
+    (define-key map (kbd "C-c C-r") #'ecc-prompt-history-insert)
+    (define-key map (kbd "M-p") #'ecc-prompt-history-previous)
+    (define-key map (kbd "M-n") #'ecc-prompt-history-next)
+    (define-key map (kbd "C-<up>") #'ecc-prompt-history-previous)
+    (define-key map (kbd "C-<down>") #'ecc-prompt-history-next)
+    map)
+  "The keys of the prompt in a chat buffer.
+A parent of `ecc-chat-mode-map', so that a key bound there wins.")
+
+(ecc-chat-add-keymap-parent ecc-chat-mode-map ecc-prompt-chat-map)
 
 (provide 'ecc-prompt)
 
