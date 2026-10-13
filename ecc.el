@@ -174,13 +174,7 @@ the next session, since this runs on every one of them."
   (ecc-pending-indicator-mode 1)
   (ecc-notify-mode 1)
   (ecc-tab-line-mode 1)
-  (ecc-track-source-buffer-mode 1)
-  ;; `ecc-space' is loaded rather than the tab bar turned on: the hooks
-  ;; that close a Space once the last of it goes are installed at the
-  ;; top of that file, and `ecc-space--select-tab' says why the mode is
-  ;; left to `tab-bar-show'.  `classic' loads none of it.
-  (when ecc-use-spaces
-    (require 'ecc-space)))
+  (ecc-track-source-buffer-mode 1))
 
 ;;;###autoload
 (defun ecc-start (&optional directory name)

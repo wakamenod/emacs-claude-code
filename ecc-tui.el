@@ -485,7 +485,6 @@ conversation."
         (when ecc-tui-follow (ecc-tui-read-new-lines session))
         (ecc-tui-follow-stop session))
       (setf (ecc-session-kind session) 'own)
-      (require 'ecc-session)
       (ecc-session-ensure-buffer session)
       (ecc-proc-start session t)
       ;; A prompt queued behind the turn the hand-off interrupted is
