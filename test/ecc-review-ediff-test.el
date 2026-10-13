@@ -788,10 +788,14 @@ the current buffer around it, as Emacs 31 does."
             (ecc-review-ediff--recenter-one-window (lambda (_type) (set-buffer side)) 'B)
             (should (eq (current-buffer) control))))
       (kill-buffer side)))
-  (should (eq (< emacs-major-version 31)
-              (and (advice-member-p #'ecc-review-ediff--recenter-one-window
-                                    'ediff-recenter-one-window)
-                   t))))
+  ;; It goes around ediff's own when a review opens, before Emacs 31.
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-review-ediff-test--with-one-file session _control "one\n" "two\n"
+      (should (eq (< emacs-major-version 31)
+                  (and (advice-member-p #'ecc-review-ediff--recenter-one-window
+                                        'ediff-recenter-one-window)
+                       t))))))
 
 ;;;; Binary and oversized files
 

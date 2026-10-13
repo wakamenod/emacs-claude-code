@@ -15,8 +15,9 @@
 ;; buffer comes up with them, a user's own binding wins over them
 ;; whatever loads first, and loading a module again changes nothing.
 ;;
-;; Two are about advice: loading ecc advises no function of Emacs, and
-;; the NS input-method functions are advised by the first chat buffer.
+;; Three are about advice: loading ecc advises no function of Emacs; the
+;; NS input-method functions are advised by the first chat buffer; and
+;; loading the ediff review leaves ediff alone.
 ;;
 ;; The last are about the modules that register with one above them:
 ;; the interceptors of the prompt region and the MCP tools of
@@ -225,17 +226,32 @@ would see it."
                        ,(ecc-load-test--advice-form)))
                    nil))))
 
+(defconst ecc-load-test--ns-functions
+  '(ns-insert-working-text ns-insert-marked-text ns-delete-working-text)
+  "The NS input-method functions `ecc-chat' advises.")
+
+(defun ecc-load-test--ns-advice-form ()
+  "Return the form that says how often each NS function carries ecc's advice."
+  `(mapcar (lambda (function)
+             (let ((count 0))
+               (advice-mapc (lambda (advice _props)
+                              (when (eq advice 'ecc-chat--after-working-text)
+                                (setq count (1+ count))))
+                            function)
+               (cons function count)))
+           ',ecc-load-test--ns-functions))
+
 (ert-deftest ecc-load-test-chat-buffer-advises-working-text ()
   "The first chat buffer advises the NS input-method functions, once.
 A second buffer leaves them as the first did, and outside a chat buffer
 the advice does nothing.  In an Emacs of its own, with the stand-ins of
-the NS port; nothing of ecc is advised before the buffer is made."
+the NS port; none of them is advised before the buffer is made."
   (should (equal
            (ecc-load-test--run
             `(progn
                ,ecc-load-test--ns-stand-ins
                (require 'ecc)
-               (let ((before ,(ecc-load-test--advice-form)))
+               (let ((before ,(ecc-load-test--ns-advice-form)))
                  (dolist (name '("one" "two"))
                    (ecc-session-ensure-buffer
                     (ecc-model-create-session
@@ -243,15 +259,22 @@ the NS port; nothing of ecc is advised before the buffer is made."
                  (with-temp-buffer
                    (ns-insert-working-text)
                    (ns-delete-working-text))
-                 (list before
-                       (sort (mapcar #'car ,(ecc-load-test--advice-form))
-                             #'string<)
-                       (delete-dups
-                        (mapcar #'cdr ,(ecc-load-test--advice-form)))))))
-           '(nil
-             (ns-delete-working-text ns-insert-marked-text
-                                     ns-insert-working-text)
-             (ecc-chat--after-working-text)))))
+                 (list before ,(ecc-load-test--ns-advice-form)))))
+           (list (mapcar (lambda (function) (cons function 0))
+                         ecc-load-test--ns-functions)
+                 (mapcar (lambda (function) (cons function 1))
+                         ecc-load-test--ns-functions)))))
+
+(ert-deftest ecc-load-test-review-ediff-alone-advises-nothing ()
+  "Loading `ecc-review-ediff' leaves `ediff-recenter-one-window' as it is.
+Before Emacs 31 the review puts its advice there, and used to as the
+file was loaded; now an ediff review opening does it."
+  (should-not (ecc-load-test--run
+               '(progn
+                  (require 'ecc-review-ediff)
+                  (require 'ediff)
+                  (advice-member-p #'ecc-review-ediff--recenter-one-window
+                                   'ediff-recenter-one-window)))))
 
 (defconst ecc-load-test--interceptors
   '((ecc-auth ecc-auth-intercept nil)

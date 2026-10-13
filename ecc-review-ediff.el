@@ -3745,8 +3745,17 @@ which is all this does."
   (save-current-buffer
     (funcall recenter buf-type)))
 
-(when (< emacs-major-version 31)
-  (advice-add 'ediff-recenter-one-window :around #'ecc-review-ediff--recenter-one-window))
+(defun ecc-review-ediff--keep-buffer-on-recenter ()
+  "Before Emacs 31, put `ecc-review-ediff--recenter-one-window' around ediff's.
+Called as an ediff review opens, not when the file is loaded: until then
+there is no window of a review for the keyboard to be in, and an Emacs
+that never opens one keeps its ediff as it came.  Once is enough, and
+nothing takes it off: it does what Emacs 31 does for every ediff."
+  (when (and (< emacs-major-version 31)
+             (not (advice-member-p #'ecc-review-ediff--recenter-one-window
+                                   'ediff-recenter-one-window)))
+    (advice-add 'ediff-recenter-one-window :around
+                #'ecc-review-ediff--recenter-one-window)))
 
 ;;;; Opening and closing
 
@@ -3881,6 +3890,7 @@ before anything is told the review is open, since comments handed to
 it then are kept by them.  `ecc-window-hide-on-review\\=' is honoured before
 ediff lays out its windows; quitting puts back what was on the screen."
   (ecc-window-hide-for-review session)
+  (ecc-review-ediff--keep-buffer-on-recenter)
   (let ((windows (current-window-configuration))
         (frame (selected-frame))
         (control nil))
