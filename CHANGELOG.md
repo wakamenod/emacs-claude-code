@@ -318,7 +318,9 @@ Verified against **Claude Code CLI 2.1.290**.
   and the event was drawn as a stray notice. It is now applied to the session
   and drawn as nothing, and the name is never guessed from what the command
   printed or the argument it was given (confirmed against CLI 2.1.290,
-  2026-10-12).
+  2026-10-12). A name another session already has becomes `NAME<2>` here,
+  and the CLI is told that name the way a rename made in Emacs tells it, so
+  the history and a resume call the session what it is called here.
 
 - Renaming a session to the name it already has leaves it alone. The prompt
   of `C-c c R` offers the current name, and confirming it unchanged renamed

@@ -244,7 +244,13 @@ name it carries is the one that stands.  Its own title comes back as
 the name the session has, and applying it changes nothing; any other
 title is not applied but logged.  That covers a title the CLI might
 bring back from the recording when it resumes, and a rename here made
-again before the CLI answered the first one."
+again before the CLI answered the first one.
+
+A title another session already has is made unique here, as NAME<2>,
+and the CLI is told that name the way a rename made here tells it
+(`ecc-proc-rename\='); otherwise its recording keeps NAME, and the
+history and a later resume call the session NAME again.  The title
+that answers it is the name the session has, so it changes nothing."
   (let ((title (alist-get 'title message)))
     (when (and (stringp title) (not (string-empty-p (string-trim title))))
       (if (and (ecc-dispatch--hidden-rename-p session)
@@ -253,7 +259,8 @@ again before the CLI answered the first one."
                    "title %S not applied: the CLI is being told %S"
                    title (ecc-session-rename-sent session))
         (require 'ecc-session)
-        (ecc-session-set-name session title)))))
+        (unless (equal (ecc-session-set-name session title) title)
+          (ecc-proc-rename session))))))
 
 (defun ecc-dispatch--hidden-rename-p (session)
   "Return non-nil while SESSION has a rename out that is not to be drawn.
