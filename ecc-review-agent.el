@@ -265,11 +265,13 @@ Upper or lower case alike."
   "Return the files of this review that have hunks, in the order of the diff."
   (delete-dups (mapcar (lambda (hunk) (plist-get hunk :path)) (ecc-review-units))))
 
-(defun ecc-review-agent--path (file &optional commented)
+(defun ecc-review-agent--path (file &optional commented noerror)
   "Return the path of this review that FILE names, or signal which there are.
 FILE may be relative to the repository, absolute, or carry git\\='s a/
 or b/ in front.  With COMMENTED the files that only carry outdated
-comments count too: those can still be listed and cleared."
+comments count too: those can still be listed and cleared.  With
+NOERROR a FILE that names none of them is a nil: the error is for the
+model, which is told which files it could have named."
   (let ((paths (delete-dups (append (ecc-review-agent--paths)
                                     (and commented
                                          (mapcar #'ecc-review-note-path
@@ -284,9 +286,10 @@ comments count too: those can still be listed and cleared."
                              (equal (expand-file-name path)
                                     (expand-file-name wanted))))
                        paths))
-        (error "%s is not in the review; its files are: %s"
-               (or file "(no file)")
-               (if paths (string-join paths ", ") "none")))))
+        (unless noerror
+          (error "%s is not in the review; its files are: %s"
+                 (or file "(no file)")
+                 (if paths (string-join paths ", ") "none"))))))
 
 (defun ecc-review-agent--headers (path lines)
   "Return the @@ header lines of the hunks of PATH in LINES, in order."
@@ -354,7 +357,7 @@ review."
         (number (ecc-review-agent--number line t))
         (hunk-number (ecc-review-agent--number hunk)))
     (and (or (not (ecc-review-agent--given-p file))
-             (equal (ignore-errors (ecc-review-agent--path file t)) path))
+             (equal (ecc-review-agent--path file t t) path))
          (or (not (ecc-review-agent--given-p line))
              (and number
                   (ecc-review-note-side note)
