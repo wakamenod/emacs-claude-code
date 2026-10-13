@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -58,8 +61,6 @@
 (require 'ecc-history)
 (require 'ecc-inline)
 (require 'ecc-window)
-
-(defvar ecc-render--session)
 
 ;; Each of these is in a module that calls this one, and each is loaded
 ;; by `ecc--require-package' before it is called.
@@ -458,9 +459,9 @@ one.  Otherwise the sessions of this Emacs and the recordings of the
 current project are offered, and the recordings of every project when
 this one has none.  A recording that is picked is read back into an
 archived session."
-  (or (and ecc-render--session
-           (not (process-live-p (ecc-session-process ecc-render--session)))
-           ecc-render--session)
+  (or (when-let* ((session (ecc-window-buffer-session)))
+        (and (not (process-live-p (ecc-session-process session)))
+             session))
       (let* ((root (ecc-project-root))
              (candidates (or (ecc--session-candidates root)
                              (ecc--session-candidates)))
@@ -512,7 +513,7 @@ off `ecc-session-removed-hook' in `ecc-worktree.el' and is made from a
 timer, so nothing here waits for an answer.  A command stopping several
 sessions in a row binds `ecc-space--closing' and asks for the group
 itself."
-  (interactive (list (or ecc-render--session
+  (interactive (list (or (ecc-window-buffer-session)
                          (car (ecc-model-sessions))
                          (user-error "No session to kill"))))
   (ecc-proc-stop session)

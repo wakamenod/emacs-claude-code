@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -487,10 +490,8 @@ answer to initialize."
 
 (defun ecc-capabilities--skill-override (capability)
   "Return what CAPABILITY is set to, when it is a skill that is not on.
-`ecc-skill\=' owns the skill settings and is not required here, so this
-answers nil until that module is loaded."
+`ecc-skill\=' owns the skill settings."
   (when (and (eq (ecc-capability-kind capability) 'skill)
-             (fboundp 'ecc-skill-override-for)
              ecc-capabilities--session)
     (ecc-skill-override-for ecc-capabilities--session
                             (ecc-capability-name capability))))

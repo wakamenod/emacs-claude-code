@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -492,16 +495,6 @@ out `ecc-prompt-hidden-commands'."
       (seq-remove (lambda (command) (member (car command) hidden))
                   (ecc-prompt-commands session)))))
 
-(defun ecc-prompt-command-name (text)
-  "Return the slash command TEXT starts with, or nil."
-  (when (string-match "\\`[ \t]*\\(/[^ \t\n]+\\)" text)
-    (match-string 1 text)))
-
-(defun ecc-prompt-command-argument (text)
-  "Return what follows the slash command in TEXT, trimmed."
-  (when (string-match "\\`[ \t]*/[^ \t\n]+\\(\\(?:.\\|\n\\)*\\)\\'" text)
-    (string-trim (match-string 1 text))))
-
 (defun ecc-prompt-models (session)
   "Return the models of SESSION as an alist of value and description.
 The `models\=' array of the initialize response is the source: `value\='
@@ -818,10 +811,8 @@ asked for as well.  Nil leaves both to the completion in use.")
 
 (defun ecc-prompt--skill-p (session name)
   "Return non-nil when the slash command NAME of SESSION is a skill.
-NAME carries its slash.  `ecc-skill\=' is what knows; a session it has
-not been loaded for has no skills as far as this is concerned."
-  (and (fboundp 'ecc-skill-names)
-       (member (string-remove-prefix "/" name) (ecc-skill-names session))
+NAME carries its slash.  `ecc-skill\=' is what knows."
+  (and (member (string-remove-prefix "/" name) (ecc-skill-names session))
        t))
 
 (defun ecc-prompt--grouper (session)

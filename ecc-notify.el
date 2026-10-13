@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -45,8 +48,6 @@
 (require 'ecc-lifecycle)
 
 (declare-function notifications-notify "notifications" (&rest params))
-
-(defvar ecc-render--session)
 
 (defcustom ecc-notify-level 'message
   "How much noise an event of a session makes.
@@ -350,7 +351,7 @@ asked has its own answer for a window with nothing to show."
 (defun ecc-tab-line-tab-name (buffer &optional _tabs)
   "Return what the tab of BUFFER says (`tab-line-tab-name-function')."
   (let ((session (and (buffer-live-p buffer)
-                      (buffer-local-value 'ecc-render--session buffer))))
+                      (ecc-window-buffer-session buffer))))
     (if (not session)
         (buffer-name buffer)
       (let ((mark (ecc-tab-mark session)))
@@ -365,7 +366,7 @@ window shows.  FACE is what the tab line settled on, which is kept
 underneath so that the theme still decides the shape of a tab."
   (let* ((buffer (if buffer-p tab (cdr (assq 'buffer tab))))
          (session (and (buffer-live-p buffer)
-                       (buffer-local-value 'ecc-render--session buffer))))
+                       (ecc-window-buffer-session buffer))))
     (if session
         `(:inherit (,@(ecc-tab-faces session selected-p) ,face))
       face)))
@@ -384,7 +385,7 @@ left the tab exactly where it was (confirmed 2026-09-10).  Closing the
 tab of a session is stopping it, which `ecc-tab-close-confirm' asks
 about first.  A buffer with no session behind it is only killed."
   (let ((session (and (buffer-live-p buffer)
-                      (buffer-local-value 'ecc-render--session buffer))))
+                      (ecc-window-buffer-session buffer))))
     (cond
      ((not (buffer-live-p buffer)) nil)
      ((null session) (kill-buffer buffer))

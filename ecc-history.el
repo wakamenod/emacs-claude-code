@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -55,8 +58,6 @@
 (declare-function ecc-render-refresh "ecc-render" (session))
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-review-ensure-baseline "ecc-review" (session))
-(declare-function ecc-prompt-command-name "ecc-prompt" (text))
-(declare-function ecc-prompt-command-argument "ecc-prompt" (text))
 
 (defvar ecc-history-page-turns 50
   "Number of turns read when a recorded conversation is opened.")

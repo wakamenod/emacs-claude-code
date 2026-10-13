@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -297,6 +300,30 @@ in the way."
 
 (add-hook 'ecc-progress-hook #'ecc-hint--on-suggestion)
 (add-hook 'ecc-render-header-functions #'ecc-hint-context-indicator)
+
+;;;; The chat buffer
+
+(defun ecc-hint--setup-mode-line ()
+  "Put what the session says about itself in the mode line of the buffer.
+It goes after the state `ecc-chat-mode' puts in `mode-line-process', and
+is escaped there, as that is: `ecc-hint-mode-line-string' returns text
+for a person.  Run from `ecc-chat-mode-hook', ahead of the user's own
+functions there, so that what they make of the mode line is kept."
+  (setq-local mode-line-process
+              (append mode-line-process
+                      '((:eval (ecc--mode-line-escape
+                                (ecc-hint-mode-line-string)))))))
+
+(add-hook 'ecc-chat-mode-hook #'ecc-hint--setup-mode-line -50)
+
+(defvar ecc-hint-chat-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-s") #'ecc-hint-accept-suggestion)
+    map)
+  "The keys of the hint in a chat buffer, wherever point is.
+A parent of `ecc-chat-mode-map', so that a key bound there wins.")
+
+(ecc-chat-add-keymap-parent ecc-chat-mode-map ecc-hint-chat-map)
 
 (provide 'ecc-hint)
 

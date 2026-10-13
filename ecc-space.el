@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -1483,6 +1486,8 @@ the key is forgotten everywhere it was written down."
     (setq ecc-space--implicit
           (delete (ecc-space-key space) ecc-space--implicit)))
   (ecc-space--child-gone space)
+  ;; `ecc-sidebar' requires this file, and the sidebar is a panel a
+  ;; Space can be used without: there is nothing to redraw until it loads.
   (when (fboundp 'ecc-sidebar-redraw)
     (ecc-sidebar-redraw))
   (message "Closed %s" (ecc-space-name space)))

@@ -22,8 +22,9 @@ session, and `ecc-transient.el` the menu. The boundaries that are rules:
 - `ecc-render.el` alone draws the transcript; `ecc-chat.el` holds the major mode, the
   movement and the keymaps. It defines them, and each module above it keeps its own
   commands in a keymap of its own made a parent of them (`ecc-chat-add-keymap-parent`),
-  so that a user's binding wins: `ecc-chat.el` names no command of `ecc-prompt.el` or
-  `ecc-session.el`.
+  so that a user's binding wins: `ecc-chat.el` names no command of a module above it.
+  What such a module adds to a chat buffer -- the prompt's completion, the hint's part of
+  the mode line -- it adds from `ecc-chat-mode-hook`.
   The prompt region lives after `ecc-render--prompt-start` in the same buffer, and no
   redraw deletes past it.
 - `ecc-window.el` does not require `ecc-space.el`: the Spaces are built on top of the

@@ -89,12 +89,13 @@ printed and read back, so it must have a printed representation."
       (read (current-buffer)))))
 
 (ert-deftest ecc-load-test-chat-buffer-has-module-keys ()
-  "A chat buffer has the prompt's and the session's keys, whatever made it.
-The keymaps are defined in `ecc-chat', and `ecc-prompt' and
-`ecc-session' give them their keys; `ecc-chat-mode' loads both.  Most of
-the ways to a buffer -- a recording read back, the terminal, an answer
-from anywhere, a Space -- load `ecc-session' and never `ecc-prompt', so
-without that a buffer would come up with no \\`C-c C-c'.  FEATURE is
+  "A chat buffer has the keys of the modules above `ecc-chat', whatever made it.
+The keymaps are defined in `ecc-chat', and `ecc-prompt', `ecc-session',
+`ecc-queue', `ecc-hint', `ecc-tui' and `ecc-transient' give them their
+keys; `ecc-chat-mode' loads them all.  Most of the ways to a buffer -- a
+recording read back, the terminal, an answer from anywhere, a Space --
+load `ecc-session' and never `ecc-prompt' or `ecc-transient', so without
+that a buffer would come up with no \\`C-c C-c' and no \\`?'.  FEATURE is
 required as that entry point would be, and the buffer is made the way
 every path makes one: `ecc-session' required at run time and
 `ecc-session-ensure-buffer' called."
@@ -112,14 +113,24 @@ every path makes one: `ecc-session' required at run time and
                                    :project-root temporary-file-directory))
                                (list (key-binding (kbd "C-c C-c"))
                                      (lookup-key ecc-chat-transcript-map (kbd "RET"))
-                                     (car completion-at-point-functions))))))
+                                     (car completion-at-point-functions)
+                                     (key-binding (kbd "C-c C-q"))
+                                     (key-binding (kbd "C-c C-s"))
+                                     (key-binding (kbd "C-c ?"))
+                                     (lookup-key ecc-chat-transcript-map (kbd "t"))
+                                     (lookup-key ecc-chat-transcript-map (kbd "?"))
+                                     (and (memq #'ecc-hint--setup-mode-line
+                                                ecc-chat-mode-hook)
+                                          t))))))
                    (list feature #'ecc-prompt-send #'ecc-session-visit
-                         #'ecc-prompt-capf)))))
+                         #'ecc-prompt-capf #'ecc-queue-show
+                         #'ecc-hint-accept-suggestion #'ecc-menu
+                         #'ecc-tui-open #'ecc-menu t)))))
 
 (ert-deftest ecc-load-test-user-bindings-survive-the-modules ()
   "A key a user binds once `ecc-chat' is loaded keeps its binding.
 `ecc-chat' defines the keymaps, so `with-eval-after-load' of it is where
-a user changes them; `ecc-prompt' and `ecc-session' load after it, and
+a user changes them; the modules above it load after it, and
 their keys are in parents of those maps rather than in the maps, so they
 do not overwrite what the user put there.  The keys the user left alone
 still resolve to the modules' commands."
@@ -128,22 +139,29 @@ still resolve to the modules' commands."
                      (with-eval-after-load 'ecc-chat
                        (define-key ecc-chat-mode-map (kbd "RET") #'ignore)
                        (define-key ecc-chat-mode-map (kbd "C-c C-c") #'ignore)
-                       (define-key ecc-chat-transcript-map (kbd "g") #'ignore))
+                       (define-key ecc-chat-mode-map (kbd "C-c ?") #'ignore)
+                       (define-key ecc-chat-transcript-map (kbd "g") #'ignore)
+                       (define-key ecc-chat-transcript-map (kbd "?") #'ignore))
                      (require 'ecc)
                      (mapcar (lambda (entry)
                                (lookup-key (symbol-value (car entry))
                                            (kbd (cdr entry))))
                              '((ecc-chat-mode-map . "RET")
                                (ecc-chat-mode-map . "C-c C-c")
+                               (ecc-chat-mode-map . "C-c ?")
                                (ecc-chat-transcript-map . "g")
+                               (ecc-chat-transcript-map . "?")
                                (ecc-chat-mode-map . "C-c C-x")
                                (ecc-chat-mode-map . "C-c C-z")
-                               (ecc-chat-transcript-map . "RET")))))
-                 (list #'ignore #'ignore #'ignore #'ecc-prompt-toggle-context
-                       #'ecc-session-interrupt #'ecc-session-visit))))
+                               (ecc-chat-transcript-map . "RET")
+                               (ecc-chat-mode-map . "C-c C-q")
+                               (ecc-chat-transcript-map . "t")))))
+                 (list #'ignore #'ignore #'ignore #'ignore #'ignore
+                       #'ecc-prompt-toggle-context #'ecc-session-interrupt
+                       #'ecc-session-visit #'ecc-queue-show #'ecc-tui-open))))
 
 (ert-deftest ecc-load-test-reloading-a-module-keeps-the-keymaps ()
-  "Loading `ecc-prompt' or `ecc-session' again leaves the keymaps as they were.
+  "Loading a module that binds chat keys again leaves the keymaps as they were.
 A module hangs its keymap under the chat maps once: a second load finds
 it there and does not nest it again."
   (should (ecc-load-test--run
@@ -154,8 +172,9 @@ it there and does not nest it again."
               (let ((before (mapcar (lambda (map)
                                       (copy-tree (symbol-value map)))
                                     maps)))
-                (load "ecc-prompt" nil t)
-                (load "ecc-session" nil t)
+                (dolist (file '("ecc-prompt" "ecc-session" "ecc-queue"
+                                "ecc-hint" "ecc-tui" "ecc-transient"))
+                  (load file nil t))
                 (equal before (mapcar (lambda (map)
                                         (copy-tree (symbol-value map)))
                                       maps)))))))

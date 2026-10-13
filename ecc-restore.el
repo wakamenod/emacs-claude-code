@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -73,6 +76,7 @@
 (declare-function ecc-space-tab-roots "ecc-space" (&optional frame))
 (declare-function ecc-space-of-root "ecc-space" (root))
 (declare-function ecc-space-select "ecc-space" (space))
+;; Not required: with `ecc-use-spaces\=' off nothing reaches `ecc-space\='.
 (defvar ecc-space-always-session)
 
 (defvar ecc-restore-file (expand-file-name "ecc-state.eld" user-emacs-directory)

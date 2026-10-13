@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -163,6 +166,20 @@ beside that hook for the same reason.
 
 A command whose argument is the point of it stays out: `/btw <question>\='
 and `/login <account>\=' are typed, not chosen.")
+
+(defun ecc-prompt-command-name (text)
+  "Return the slash command TEXT starts with, or nil.
+It lives here rather than in `ecc-prompt\=' for the reason
+`ecc-prompt-intercept-functions\=' does: the modules answering a command
+read the draft with it, and they sit below the prompt region."
+  (when (string-match "\\`[ \t]*\\(/[^ \t\n]+\\)" text)
+    (match-string 1 text)))
+
+(defun ecc-prompt-command-argument (text)
+  "Return what follows the slash command in TEXT, trimmed.
+It lives here for the same reason as `ecc-prompt-command-name\='."
+  (when (string-match "\\`[ \t]*/[^ \t\n]+\\(\\(?:.\\|\n\\)*\\)\\'" text)
+    (string-trim (match-string 1 text))))
 
 (defvar ecc-request-added-hook nil
   "Functions run with a session and a request that needs an answer.")

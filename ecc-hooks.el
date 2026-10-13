@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -49,8 +52,6 @@
 (require 'ecc-core)
 (require 'ecc-protocol)
 (require 'ecc-model)
-
-(declare-function ecc-prompt-command-name "ecc-prompt" (text))
 
 ;;;; What the CLI knows
 

@@ -244,9 +244,9 @@ documented form in an Emacs that has loaded only the autoloads."
     ;; `format-mode-line' draws nothing in batch, so the construct is
     ;; evaluated by hand.
     (with-current-buffer (ecc-session-buffer a)
-      (should (eq (car mode-line-process) :eval))
+      (should (eq (car (car mode-line-process)) :eval))
       (should (string-search "⚠ question ×2"
-                             (eval (cadr mode-line-process) t)))
+                             (eval (cadr (car mode-line-process)) t)))
       (should (string-search "⚠ question ×2" (ecc-render-mode-line-process))))
     ;; Answered, the session is back to the turn that was running.
     (ecc-perm-respond (car (ecc-session-pending b)) 'deny)
