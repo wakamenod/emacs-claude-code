@@ -1894,7 +1894,7 @@ header or before the first hunk."
 As git wrote it, a C-quoted name decoded (`ecc-review-git-name')."
   (save-excursion
     (goto-char beg)
-    (let* ((names (mapcar #'ecc-review-git-name (ignore-errors (diff-hunk-file-names))))
+    (let* ((names (mapcar #'ecc-review-git-name (diff-hunk-file-names)))
            (new (car names))
            (old (cadr names))
            (name (if (or (null new) (equal new "/dev/null")) old new)))
