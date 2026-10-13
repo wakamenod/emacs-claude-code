@@ -89,7 +89,6 @@
 (autoload 'ecc-review-pr-previous-commit "ecc-review-pr" nil t)
 (autoload 'ecc-review-pr-send-all "ecc-review-pr" nil t)
 (declare-function ecc-review-pr-walk-status "ecc-review-pr" (&optional subject))
-(declare-function ediff-recenter "ediff-util" (&optional no-rehighlight))
 (declare-function ecc-review-ediff-buffer "ecc-review-ediff" (session &optional paths))
 (declare-function ecc-review-ediff-range-buffer "ecc-review-ediff"
                   (session &optional range root paths))

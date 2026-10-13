@@ -64,8 +64,8 @@
 (require 'ecc-registry)
 (require 'ecc-history)
 (require 'ecc-window)
+(require 'ecc-session)
 
-(declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ghostel-exec "ext:ghostel" (buffer program &optional args identity))
 
 ;;;; Options

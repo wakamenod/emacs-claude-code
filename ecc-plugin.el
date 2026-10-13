@@ -76,8 +76,8 @@
 (require 'ecc-model)
 (require 'ecc-proc)
 (require 'ecc-skill)
+(require 'ecc-window)
 
-(declare-function ecc-window-project-root "ecc-window" (&optional directory))
 (declare-function ecc-prompt-command-name "ecc-prompt" (text))
 (defvar ecc-prompt-immediate-commands)
 (declare-function ecc-prompt-command-argument "ecc-prompt" (text))

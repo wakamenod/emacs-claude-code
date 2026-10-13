@@ -38,6 +38,7 @@
 (require 'cl-lib)
 (require 'seq)
 (require 'dnd)
+(require 'project)
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-image)
@@ -48,9 +49,8 @@
 (require 'ecc-hint)
 (require 'ecc-window)
 (require 'ecc-context)
+(require 'ecc-skill)
 
-(declare-function project-files "project" (project &optional dirs))
-(declare-function project-current "project" (&optional maybe-prompt directory))
 (declare-function ecc-resume "ecc" (session &optional fork))
 
 ;;;; Options
@@ -781,8 +781,6 @@ append, are left in `ecc-prompt-last-attachments' and
                          (nreverse blocks) "\n\n")))))
 
 ;;;; Completion
-
-(declare-function ecc-skill-names "ecc-skill" (session))
 
 (defvar ecc-prompt-group-commands t
   "Non-nil marks the skills apart from the commands when one is offered.

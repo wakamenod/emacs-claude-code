@@ -45,16 +45,12 @@
 (require 'ecc-diff)
 (require 'ecc-window)
 (require 'ecc-visit)
+(require 'ecc-perm)
+(require 'ecc-plan)
+(require 'ecc-queue)
+(require 'ecc-review)
 
 (declare-function ecc-restart "ecc" (session &optional confirm))
-(declare-function ecc-perm-deny "ecc-perm" (&optional reason))
-(declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
-(declare-function ecc-question-open "ecc-perm" (request))
-(declare-function ecc-queue-show "ecc-queue" (&optional session entry))
-(declare-function ecc-plan-open "ecc-plan" (request))
-(declare-function ecc-plan-file-path "ecc-plan" (request))
-(declare-function ecc-review "ecc-review" (&optional session paths))
-(declare-function ecc-perm-request-at-point "ecc-perm" ())
 
 (defun ecc-session--forget-on-kill ()
   "Stop and forget the session when its buffer is killed.

@@ -23,12 +23,16 @@ Verified against **Claude Code CLI 2.1.290**.
   files, so it no longer looks for them. Four declarations of ecc's own
   functions had an argument list the definition no longer has, and two of
   Emacs's (`flymake-diagnostic-text`, `treesit-buffer-root-node`) that of an
-  older Emacs. Declarations of functions it cannot see the definition of -- `cl-defstruct`
-  accessors, `transient-define-prefix` commands, the flymake and xref
-  accessors -- say so with the FILEONLY argument. The tree-sitter primitives
-  are declared in `treesit.c`, as Emacs's own files declare them; an Emacs
-  installed without its C sources still reports those six, having no file to
-  look in. Nothing a user sees changes.
+  older Emacs. Declarations of functions it cannot see the definition of --
+  `cl-defstruct` accessors, `transient-define-prefix` commands, the flymake
+  and xref accessors -- say so with the FILEONLY argument. The tree-sitter
+  primitives are declared in `treesit.c`, as Emacs's own files declare them;
+  an Emacs installed without its C sources still reports those six, having
+  no file to look in. There are also fewer of them: 176 where there were
+  250. A file now requires the module it used to declare wherever that makes
+  no loop, loads no Space module from below and loads early nothing that was
+  loaded late on purpose, and a function the file never calls, or that Emacs
+  autoloads, is not declared at all. Nothing a user sees changes.
 
 ## [0.4.3] - 2026-10-13
 

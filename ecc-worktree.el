@@ -52,10 +52,10 @@
 (require 'subr-x)
 (require 'ecc-core)
 (require 'ecc-window)
+(require 'ecc-proc)
 
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-kill "ecc" (session))
-(declare-function ecc-proc-send-prompt "ecc-proc" (session text &optional draft))
 ;; A `cl-defun' with &key: `check-declare' reads its arglist as five
 ;; positional arguments, the byte compiler as &rest, so neither is named.
 (declare-function ecc-mcp-define-tool "ecc-mcp" t)

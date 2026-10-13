@@ -54,6 +54,7 @@
 (require 'seq)
 (require 'subr-x)
 (require 'imenu)
+(require 'project)
 (require 'vc-hooks)
 (require 'ecc-core)
 (require 'ecc-model)
@@ -531,20 +532,17 @@ Starts the server when it is not running yet."
 
 ;;;; The built-in tools
 
-(declare-function xref-find-backend "xref" ())
+;; `xref' is loaded by the tools that ask it, and flymake is the user's
+;; own: neither is loaded with the server.
 (declare-function xref-backend-references "xref" (backend identifier))
 (declare-function xref-backend-apropos "xref" (backend pattern))
 (declare-function xref-item-summary "xref" (item) t)
 (declare-function xref-item-location "xref" (item) t)
 (declare-function xref-location-group "xref" (location))
 (declare-function xref-location-line "xref" (location))
-(declare-function flymake-diagnostics "flymake" (&optional beg end))
 (declare-function flymake-diagnostic-text "flymake" (diagnostic &optional parts))
 (declare-function flymake-diagnostic-type "flymake" (diagnostic) t)
 (declare-function flymake-diagnostic-beg "flymake" (diagnostic) t)
-(declare-function project-current "project" (&optional maybe-prompt directory))
-(declare-function project-root "project" (project))
-(declare-function project-files "project" (project &optional dirs))
 (declare-function treesit-parser-list "treesit.c" (&optional buffer language tag))
 (declare-function treesit-parser-language "treesit.c" (parser))
 (declare-function treesit-buffer-root-node "treesit" (&optional language tag))
@@ -666,7 +664,6 @@ Lisp file is not answered by the backend of some other language."
 (defun ecc-mcp-project-info ()
   "Return what Emacs knows about the project of the session."
   (ecc-mcp-with-project
-    (require 'project)
     (let* ((project (project-current nil default-directory))
            (root (if project (project-root project) default-directory))
            (files (and project

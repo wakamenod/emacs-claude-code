@@ -45,12 +45,11 @@
 
 (require 'cl-lib)
 (require 'seq)
+(require 'project)
 (require 'ecc-core)
 (require 'ecc-protocol)
 (require 'ecc-model)
 
-(declare-function project-current "project" (&optional maybe-prompt directory))
-(declare-function project-root "project" (project))
 (declare-function ecc-prompt-command-name "ecc-prompt" (text))
 (defvar ecc-prompt-immediate-commands)
 
@@ -396,7 +395,6 @@ from wherever point stands on it."
 
 (defun ecc-hooks--project-directory ()
   "Return the root of the project of the current buffer, or nil."
-  (require 'project)
   (when-let* ((project (project-current nil default-directory)))
     (file-name-as-directory (expand-file-name (project-root project)))))
 

@@ -44,7 +44,6 @@
 (require 'ecc-window)
 
 (declare-function notifications-notify "notifications" (&rest params))
-(declare-function ecc-window-session-visible-p "ecc-window" (session &optional frame))
 
 (defvar ecc-render--session)
 

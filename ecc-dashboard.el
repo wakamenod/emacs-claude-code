@@ -64,10 +64,10 @@
 (require 'ecc-history)
 (require 'ecc-usage)
 (require 'ecc-window)
+(require 'ecc-skill)
 
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-kill "ecc" (session))
-(declare-function ecc-session-ensure-buffer "ecc-session" (session))
 
 (defconst ecc-dashboard-buffer-name "*ecc-dashboard*"
   "Name of the dashboard buffer.")
@@ -372,9 +372,6 @@ REMEMBER is passed to `tabulated-list-print'."
   "Fill `tabulated-list-entries' for the dashboard."
   (setq tabulated-list-entries (mapcar #'ecc-dashboard--row
                                        (ecc-dashboard-entries))))
-
-(declare-function ecc-skill-show "ecc-skill" (&optional session))
-(declare-function ecc-skill-override-for "ecc-skill" (session name))
 
 ;;;; Capabilities
 
