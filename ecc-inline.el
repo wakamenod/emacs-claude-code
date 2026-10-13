@@ -53,8 +53,6 @@
 (require 'ecc-diff)
 (require 'ecc-context)
 
-(declare-function ecc-session-ensure-buffer "ecc-session" (session))
-
 ;;;; Settings
 
 (defvar ecc-inline-max-lines 12

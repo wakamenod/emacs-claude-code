@@ -531,14 +531,12 @@ Starts the server when it is not running yet."
 
 ;;;; The built-in tools
 
-(declare-function xref-find-backend "xref" ())
 (declare-function xref-backend-references "xref" (backend identifier))
 (declare-function xref-backend-apropos "xref" (backend pattern))
 (declare-function xref-item-summary "xref" (item) t)
 (declare-function xref-item-location "xref" (item) t)
 (declare-function xref-location-group "xref" (location))
 (declare-function xref-location-line "xref" (location))
-(declare-function flymake-diagnostics "flymake" (&optional beg end))
 (declare-function flymake-diagnostic-text "flymake" (diagnostic &optional parts))
 (declare-function flymake-diagnostic-type "flymake" (diagnostic) t)
 (declare-function flymake-diagnostic-beg "flymake" (diagnostic) t)

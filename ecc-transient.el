@@ -66,7 +66,6 @@
 (declare-function ecc-session-timeline "ecc-session" ())
 (declare-function ecc-chat-goto-files "ecc-chat" ())
 (declare-function ecc-chat-goto-plans "ecc-chat" ())
-(declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-history-open "ecc-history" (session-id))
 (declare-function ecc-search "ecc-search" (query &optional everywhere))
 (declare-function ecc-tui-open "ecc-tui" (&optional session))

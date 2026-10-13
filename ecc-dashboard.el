@@ -67,7 +67,6 @@
 
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-kill "ecc" (session))
-(declare-function ecc-session-ensure-buffer "ecc-session" (session))
 
 (defconst ecc-dashboard-buffer-name "*ecc-dashboard*"
   "Name of the dashboard buffer.")

@@ -48,7 +48,6 @@
 
 (declare-function ecc-restart "ecc" (session &optional confirm))
 (declare-function ecc-perm-deny "ecc-perm" (&optional reason))
-(declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
 (declare-function ecc-question-open "ecc-perm" (request))
 (declare-function ecc-queue-show "ecc-queue" (&optional session entry))
 (declare-function ecc-plan-open "ecc-plan" (request))

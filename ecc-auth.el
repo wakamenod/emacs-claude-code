@@ -65,7 +65,6 @@
 (declare-function ecc-prompt-command-argument "ecc-prompt" (text))
 (declare-function ecc-resume "ecc" (session &optional fork))
 (declare-function ghostel-exec "ext:ghostel" (buffer program &optional args identity))
-(declare-function make-term "term" (name program &optional startfile &rest switches))
 
 ;;;; Options
 

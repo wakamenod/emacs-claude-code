@@ -66,8 +66,6 @@
 
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-kill "ecc" (session))
-(declare-function ecc-start-worktree "ecc-worktree" (branch))
-(declare-function ecc-remove-worktree "ecc-worktree" (path))
 
 (defconst ecc-sidebar-buffer-name "*ecc-sidebar*"
   "Name of the sidebar buffer.")
