@@ -56,8 +56,6 @@
 (require 'ecc-markdown)
 (require 'ecc-window)
 
-(declare-function ecc-prompt-command-name "ecc-prompt" (text))
-(declare-function ecc-prompt-command-argument "ecc-prompt" (text))
 (declare-function posframe-workable-p "ext:posframe" ())
 (declare-function posframe-show "ext:posframe" (buffer &rest args))
 (declare-function posframe-hide "ext:posframe" (buffer))

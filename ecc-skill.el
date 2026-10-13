@@ -78,9 +78,7 @@
 ;; own (confirmed 2026-09-17).
 (defvar ecc-render--session)
 
-(declare-function ecc-prompt-command-name "ecc-prompt" (text))
 (declare-function ecc-dashboard-session-at-point "ecc-dashboard" ())
-(declare-function ecc-prompt-command-argument "ecc-prompt" (text))
 
 ;;;; Options
 

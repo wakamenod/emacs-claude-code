@@ -62,8 +62,6 @@
 (require 'ecc-proc)
 (require 'ecc-lifecycle)
 
-(declare-function ecc-prompt-command-name "ecc-prompt" (text))
-(declare-function ecc-prompt-command-argument "ecc-prompt" (text))
 (declare-function ghostel-exec "ext:ghostel" (buffer program &optional args identity))
 
 ;;;; Options
