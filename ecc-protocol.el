@@ -544,8 +544,13 @@ list, the dashboard, the paging index or the search."
 
 (defun ecc-protocol-history-timestamp (message)
   "Return the `timestamp' of MESSAGE as an Emacs time, or nil."
-  (when-let* ((stamp (alist-get 'timestamp message)))
-    (ignore-errors (encode-time (iso8601-parse stamp)))))
+  (when-let* ((stamp (alist-get 'timestamp message))
+              ((stringp stamp))
+              ((iso8601-valid-p stamp))
+              (time (iso8601-parse stamp))
+              ;; A date alone is valid too, with no hour to encode.
+              ((seq-every-p #'integerp (seq-take time 6))))
+    (encode-time time)))
 
 (defun ecc-protocol-history-info (line info)
   "Fold LINE of a history file into the summary alist INFO.
@@ -709,7 +714,7 @@ this answers a footer drawn on every command, and the CLI has the same
 file to complain about."
   (let ((managed nil) (model nil))
     (pcase-dolist (`(,scope . ,file) (ecc-protocol-settings-files root))
-      (when-let* ((object (ignore-errors (ecc-protocol-read-settings-file file)))
+      (when-let* ((object (ecc-protocol-read-settings-file file t))
                   (value (alist-get 'model object))
                   ((stringp value))
                   ((not (string-empty-p value))))
@@ -718,25 +723,34 @@ file to complain about."
           (setq model value))))
     (or managed model)))
 
-(defun ecc-protocol-read-settings-file (file)
+(defun ecc-protocol-read-settings-file (file &optional noerror)
   "Return the JSON object in FILE as an alist, or nil when FILE is absent.
-An empty file counts as an empty object.  A file that does not parse,
-or whose top level is not an object, signals an error: it is never
-written over."
+An empty file counts as an empty object.  A file that cannot be read,
+does not parse, or whose top level is not an object signals an error,
+so that a caller about to write FILE back never writes over it.
+
+With NOERROR non-nil such a file is a nil instead.  That is for a
+caller that only reads FILE and has others to go on, never for one
+that writes it."
   (when (file-exists-p file)
-    (let ((text (with-temp-buffer
-                  (insert-file-contents file)
-                  (string-trim (buffer-string)))))
-      (if (string-empty-p text)
-          nil
+    (let ((text (condition-case err
+                    (with-temp-buffer
+                      (insert-file-contents file)
+                      (string-trim (buffer-string)))
+                  (file-error (unless noerror
+                                (signal (car err) (cdr err)))))))
+      (unless (or (null text) (string-empty-p text))
         (let ((object (condition-case err
                           (ecc--json-read-verbatim text)
-                        (error (error "%s does not parse as JSON: %s"
-                                      (abbreviate-file-name file)
-                                      (error-message-string err))))))
-          (unless (listp object)
-            (error "%s does not hold a JSON object" (abbreviate-file-name file)))
-          object)))))
+                        (json-error
+                         (unless noerror
+                           (error "%s does not parse as JSON: %s"
+                                  (abbreviate-file-name file)
+                                  (error-message-string err)))))))
+          (cond ((listp object) object)
+                (noerror nil)
+                (t (error "%s does not hold a JSON object"
+                          (abbreviate-file-name file)))))))))
 
 (defun ecc-protocol-write-settings-file (file object)
   "Write OBJECT to FILE as indented JSON, creating the directory."
