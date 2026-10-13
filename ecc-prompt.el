@@ -32,6 +32,12 @@
 ;; holds a prompt back while a turn runs, the history shared by every
 ;; session, the `@' references Emacs expands before sending, pasted
 ;; images and the editor context.
+;;
+;; Its commands are bound here, into the keymaps `ecc-chat' defines, and
+;; the region is set up from `ecc-chat-mode-hook': completion, pasted
+;; images and dropped files.  `ecc-chat-return' and `ecc-chat-slash'
+;; keep the names they had when they lived in `ecc-chat': they are what
+;; RET and `/' do in the chat buffer, and a user may have bound them.
 
 ;;; Code:
 
@@ -54,6 +60,19 @@
 (declare-function ecc-resume "ecc" (session &optional fork))
 
 ;;;; Options
+
+(defcustom ecc-chat-return-sends nil
+  "Non-nil makes RET send the prompt, the way the terminal client does.
+Off, RET inserts a newline and \\<ecc-chat-mode-map>\\[ecc-prompt-send]
+sends; on, \\[ecc-chat-newline] inserts the newline.
+
+RET is a newline because that is what RET is in Emacs; a reader who
+wants the terminal habit sets this, or rebinds the two keys in
+`ecc-chat-mode-map' outright.  Which of the two it is is a taste, which
+is what makes this a setting rather than a variable (decided
+2026-09-11)."
+  :type 'boolean
+  :group 'ecc)
 
 (defvar ecc-prompt-history-size 200
   "Number of prompts kept in `ecc-prompt-history'.")
@@ -1185,6 +1204,85 @@ history."
   "Empty the prompt region."
   (interactive)
   (ecc-chat-clear-draft))
+
+;;;; The keys of the chat buffer
+
+(defun ecc-chat-return ()
+  "Insert a newline, or send the prompt when `ecc-chat-return-sends' is on."
+  (interactive)
+  (if (and ecc-chat-return-sends (ecc-chat-in-prompt-p))
+      (ecc-prompt-send)
+    (ecc-chat-newline)))
+
+(defun ecc-prompt--slash-opens-commands-p ()
+  "Return non-nil when the slash just typed should ask for a command.
+Only a slash that opens the prompt does: the CLI reads a command from
+the start of what it is sent and nowhere else, so a slash further in
+would be offered commands that are not going to run
+\(`ecc-prompt-command-name\=').  A slash written into prose is left
+alone, and so is one a keyboard macro types, where there is nobody to
+answer the minibuffer.  What starts a word is still completed on TAB
+wherever it stands (`ecc-prompt-command-bounds\=')."
+  (and ecc-prompt-slash-reads-command
+       ecc-render--session
+       (not executing-kbd-macro)
+       (not (minibufferp))
+       (ecc-chat-in-prompt-p)
+       (when-let* ((start (ecc-chat-prompt-start))
+                   ((> (point) start)))
+         ;; Only blanks may stand before it, and no newline: that is
+         ;; what `ecc-prompt-command-name' reads as a command.
+         (string-match-p "\\`[ \t]*\\'"
+                         (buffer-substring-no-properties start (1- (point)))))))
+
+(defun ecc-chat-slash (n)
+  "Insert a slash, and offer the slash commands when it starts one.
+N is the prefix argument, as for `self-insert-command\='.  The slash is
+inserted first, so that leaving the question with `C-g\=' keeps it.
+
+A command Emacs answers itself and that takes no argument runs as soon
+as it is chosen (`ecc-prompt-immediate-commands\='), and the slash goes
+with it: there is nothing to send, so there is nothing to write."
+  (interactive "p")
+  (self-insert-command n ?/)
+  (when (and (= n 1) (ecc-prompt--slash-opens-commands-p))
+    (when-let* ((session ecc-render--session)
+                (command (ecc-prompt-read-command session)))
+      (if (member command ecc-prompt-immediate-commands)
+          ;; Take the slash back before running it: what it opens is a
+          ;; buffer of its own, and point is no longer here afterwards.
+          (progn (delete-char -1)
+                 (ecc-prompt-run-immediately session command))
+        (insert (string-remove-prefix "/" command))))))
+
+(defun ecc-prompt--setup-buffer ()
+  "Set up the prompt region of an `ecc-chat-mode' buffer.
+Completion of slash commands and `@' references, an image on the
+clipboard yanked as a file reference, and a file dropped on the buffer
+inserted as one.  Run from `ecc-chat-mode-hook', ahead of the user's
+own functions there, so that what they add to these is kept."
+  (setq-local completion-at-point-functions
+              (list #'ecc-prompt-capf #'ecc-prompt-at-capf))
+  ;; An image on the clipboard is worth a file reference.
+  (when (fboundp 'yank-media-handler)
+    (yank-media-handler "image/.*" #'ecc-prompt-yank-image))
+  (setq-local dnd-protocol-alist
+              (cons '("^file:" . ecc-prompt-dnd-insert) dnd-protocol-alist)))
+
+(add-hook 'ecc-chat-mode-hook #'ecc-prompt--setup-buffer -50)
+
+(define-key ecc-chat-mode-map (kbd "RET") #'ecc-chat-return)
+(define-key ecc-chat-mode-map (kbd "/") #'ecc-chat-slash)
+(define-key ecc-chat-mode-map (kbd "C-c C-c") #'ecc-prompt-send)
+(define-key ecc-chat-mode-map (kbd "C-c C-k") #'ecc-prompt-clear)
+(define-key ecc-chat-mode-map (kbd "C-c C-x") #'ecc-prompt-toggle-context)
+(define-key ecc-chat-mode-map (kbd "C-c C-i") #'ecc-prompt-insert-image)
+(define-key ecc-chat-mode-map (kbd "C-c C-y") #'ecc-prompt-yank-image-from-clipboard)
+(define-key ecc-chat-mode-map (kbd "C-c C-r") #'ecc-prompt-history-insert)
+(define-key ecc-chat-mode-map (kbd "M-p") #'ecc-prompt-history-previous)
+(define-key ecc-chat-mode-map (kbd "M-n") #'ecc-prompt-history-next)
+(define-key ecc-chat-mode-map (kbd "C-<up>") #'ecc-prompt-history-previous)
+(define-key ecc-chat-mode-map (kbd "C-<down>") #'ecc-prompt-history-next)
 
 (provide 'ecc-prompt)
 

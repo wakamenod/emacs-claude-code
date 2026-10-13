@@ -28,8 +28,9 @@
 
 ;; The buffer a conversation is read and written in, and the commands
 ;; that act on it: visiting what is at point, reviewing, and taking
-;; things out of the transcript.  The major mode, the keys and the
-;; movement live in `ecc-chat'.
+;; things out of the transcript.  The major mode, the keymaps and the
+;; movement live in `ecc-chat'; the commands here are bound into its
+;; keymaps at the end of this file.
 
 ;;; Code:
 
@@ -500,6 +501,47 @@ result."
     (with-temp-file file
       (insert (ecc-session-export-markdown-string session)))
     (message "Saved to %s" (abbreviate-file-name file))))
+
+;;;; Keys
+
+(defun ecc-chat-follow-link (event)
+  "Open the link clicked on in the transcript.
+The point goes where EVENT was.  On a link, text drawn with a
+`mouse-face\=', `ecc-session-visit\=' opens it as RET would; anywhere
+else -- a line of a diff, the heading of a call -- nothing more is done,
+and RET is the way to open it."
+  (interactive "e")
+  (mouse-set-point event)
+  (when (get-char-property (point) 'mouse-face)
+    (ecc-session-visit)))
+
+
+(define-key ecc-chat-mode-map (kbd "C-c C-z") #'ecc-session-interrupt)
+(define-key ecc-chat-mode-map (kbd "C-c C-e") #'ecc-session-export-markdown)
+
+;; RET on a call that names a file opens the file; the node laid open,
+;; which RET was on every heading before, is `o'.
+(define-key ecc-chat-transcript-map (kbd "RET") #'ecc-session-visit)
+(define-key ecc-chat-transcript-map (kbd "o") #'ecc-session-show-detail)
+;; A click follows what is drawn as a link, with a `mouse-face': a URL,
+;; a path in a reply, a picture.  A line of a diff and the heading of a
+;; call carry none and open on RET alone, so that a click that only
+;; meant to put the point there does not take the source window with
+;; it.  No link carries a keymap of its own: these two are the whole of
+;; the mouse side.
+(define-key ecc-chat-transcript-map [mouse-2] #'ecc-chat-follow-link)
+(define-key ecc-chat-transcript-map [follow-link] 'mouse-face)
+(define-key ecc-chat-transcript-map (kbd "g") #'ecc-session-refresh)
+(define-key ecc-chat-transcript-map (kbd "L") #'ecc-session-show-log)
+(define-key ecc-chat-transcript-map (kbd "R") #'ecc-session-resume)
+(define-key ecc-chat-transcript-map (kbd "d") #'ecc-session-review-or-deny)
+(define-key ecc-chat-transcript-map (kbd "T") #'ecc-session-timeline)
+(define-key ecc-chat-transcript-map (kbd "w") #'ecc-session-copy-at-point)
+
+(define-key ecc-request-section-map (kbd "RET") #'ecc-session-visit)
+
+(define-key ecc-file-section-map (kbd "RET") #'ecc-session-visit)
+(define-key ecc-file-section-map (kbd "d") #'ecc-session-review-file)
 
 (provide 'ecc-session)
 
