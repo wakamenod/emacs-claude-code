@@ -64,6 +64,7 @@
 (require 'ecc-history)
 (require 'ecc-usage)
 (require 'ecc-window)
+(require 'ecc-session)
 (require 'ecc-skill)
 (require 'ecc-lifecycle)
 

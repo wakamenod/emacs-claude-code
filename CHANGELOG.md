@@ -28,7 +28,7 @@ Verified against **Claude Code CLI 2.1.290**.
   and xref accessors -- say so with the FILEONLY argument. The tree-sitter
   primitives are declared in `treesit.c`, as Emacs's own files declare them;
   an Emacs installed without its C sources still reports those six, having
-  no file to look in. There are also fewer of them: 124 where there were
+  no file to look in. There are also fewer of them: 115 where there were
   250. A file now requires the module it used to declare wherever that makes
   no loop, loads no Space module from below and loads early nothing that was
   loaded late on purpose, and a function the file never calls, or that Emacs
@@ -58,6 +58,20 @@ Verified against **Claude Code CLI 2.1.290**.
   Their autoloads now load that file, and it loads the rest of the package
   before a CLI starts, as the autoloads of `ecc.el` did. Nothing a user
   sees changes.
+  The lowest modules no longer call up into the ones built on them. An
+  inline session carries `:inline` among its launch options, as the usage
+  probe carries `:usage-probe`, and `ecc-model-own-session-p` reads it there
+  instead of asking `ecc-inline.el`. `ecc-history-directory`,
+  `ecc-history-file` and `ecc-history-recorded-cost` live in `ecc-proc.el`,
+  which counts a resumed CLI's cost from the recording. A rename is the
+  model's: `ecc-model-set-name` renames the session and runs
+  `ecc-session-renamed-hook`, on which `ecc-session.el` renames the buffer,
+  and `ecc-session-set-name` is an obsolete alias of it. `ecc-rename-session`
+  moves from `ecc-window.el` to `ecc-session.el`; the marks and faces of a
+  session's state (`ecc-tab-mark-of-state`, `ecc-tab-faces-of-state`,
+  `ecc-tab-column-mark` and the `ecc-tab-*-face` faces) from `ecc-notify.el`
+  to `ecc-visual.el`; and `ecc-render--project-name-1` becomes
+  `ecc-window-project-name`.
 - `ecc-review-direct.el` is folded into `ecc-review-ediff.el`, so
   `(require 'ecc-review-direct)` no longer works; require
   `ecc-review-ediff` instead. Every symbol keeps its name.

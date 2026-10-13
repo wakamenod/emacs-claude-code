@@ -1975,10 +1975,9 @@ no project of its own and lands in whatever directory was current."
         (ecc-test-cleanup-session session)
         (should (tab-bar--tab-index-by-name "project-one")))
       (let ((inline (ecc-model-create-session
-                     :name "inline" :project-root ecc-space-test--one)))
-        (cl-letf (((symbol-function 'ecc-inline-session-p)
-                   (lambda (session) (eq session inline))))
-          (ecc-model-remove-session inline))
+                     :name "inline" :project-root ecc-space-test--one
+                     :options '(:inline t))))
+        (ecc-model-remove-session inline)
         (ecc-test-cleanup-session inline)
         (should (tab-bar--tab-index-by-name "project-one"))))))
 

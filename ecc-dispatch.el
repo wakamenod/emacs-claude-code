@@ -52,11 +52,6 @@
 (require 'ecc-proc)
 (require 'ecc-diff)
 
-;; The buffer of a session is none of this module's business; `/rename'
-;; is the one thing here that has to reach it, and `ecc-session' is
-;; loaded for it at run time.
-(declare-function ecc-session-set-name "ecc-session" (session name))
-
 (defvar ecc-turn-approve-tools '("Edit" "Write" "NotebookEdit")
   "Tools that a turn-wide approval covers.")
 
@@ -258,8 +253,7 @@ that answers it is the name the session has, so it changes nothing."
           (ecc-log (ecc-session-name session)
                    "title %S not applied: the CLI is being told %S"
                    title (ecc-session-rename-sent session))
-        (require 'ecc-session)
-        (unless (equal (ecc-session-set-name session title) title)
+        (unless (equal (ecc-model-set-name session title) title)
           (ecc-proc-rename session))))))
 
 (defun ecc-dispatch--hidden-rename-p (session)

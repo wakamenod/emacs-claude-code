@@ -54,7 +54,6 @@
 (require 'ecc-window)
 (require 'ecc-proc)
 (require 'ecc-mcp)
-(require 'ecc-history)
 (require 'ecc-lifecycle)
 
 (declare-function ecc-space-forget "ecc-space" (root))

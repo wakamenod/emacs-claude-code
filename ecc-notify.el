@@ -209,40 +209,14 @@ not worth a notification."
 ;; The tabs are `tab-line-mode' itself rather than a tab line drawn
 ;; here: that is where the look of a tab, the scrolling and the
 ;; click come from.  Only what a tab says, and its colour, are ours.
+;; The mark and the colour of each state are in `ecc-visual'
+;; (`ecc-tab-faces-of-state'), where the sidebar and the pickers find
+;; them too.
 
 (defvar ecc-tab-bar-state nil
   "Non-nil marks the state of the sessions in the tab bar too.
 `ecc-tab-bar-tab-name' has to be `tab-bar-tab-name-function' for this
 to have anywhere to show.")
-
-(defface ecc-tab-running-face
-  '((t :inherit (ecc-running-face ecc-heading-face)))
-  "Face of the tab of the working session the window is showing.
-The yellow green of `ecc-running-face', which the transcript and the
-mode line use for the same state, over the weight of a heading."
-  :group 'ecc)
-
-(defface ecc-tab-running-dim-face
-  '((((class color) (min-colors 88) (background dark)) :foreground "#7a9c33")
-    (((class color) (min-colors 88) (background light)) :foreground "#7d9e60")
-    (((class color)) :foreground "green")
-    (t :inherit default))
-  "Face of the tab of a working session the window is not showing.
-The full yellow green of `ecc-tab-running-face', bold, reads as the tab
-one is looking at, whichever tab that is; a working session elsewhere
-says the same thing more quietly, in a shade of the same green and at
-the weight of the rest of the row."
-  :group 'ecc)
-
-(defface ecc-tab-attention-face
-  '((t :inherit ecc-pending-face))
-  "Face of the tab of a session that is waiting for an answer."
-  :group 'ecc)
-
-(defface ecc-tab-idle-face
-  '((t :inherit ecc-dim-face))
-  "Face of the tab of a session with nothing to do."
-  :group 'ecc)
 
 (defvar ecc-tab-blink t
   "Non-nil blinks the tab of a session that is waiting for an answer.
@@ -250,19 +224,6 @@ A tab that wants something is worth more than a colour when the eye is
 on the source code.  The rhythm is `ecc-visual-blink-interval', so that
 a blinking tab and the blinking line of the request it stands for keep
 step.")
-
-(defface ecc-tab-attention-blink-face
-  '((t :inherit ecc-tab-attention-face :inverse-video t))
-  "Face of a tab waiting for an answer, on every other beat of the blink."
-  :group 'ecc)
-
-(defface ecc-tab-current-face
-  '((t :inherit (bold ecc-heading-face) :underline t))
-  "Face of the tab of the session the window is showing."
-  :group 'ecc)
-
-(defvar ecc-tab--blink-phase nil
-  "Non-nil on the beat a tab waiting for an answer is drawn lit.")
 
 (defvar ecc-tab--blink-timer nil
   "Timer that blinks the tabs of the sessions waiting for an answer.")
@@ -288,17 +249,6 @@ means."
    ((seq-find (lambda (s) (eq (ecc-tab-state s) 'restored)) sessions) 'restored)
    (t 'idle)))
 
-(defun ecc-tab-mark-of-state (state &optional fill)
-  "Return the character that stands for STATE.
-A state with nothing to say gets no mark: a row of tabs is quieter
-when only the ones that want something are marked.  Somewhere the mark
-opens a column of names -- the sidebar, the session picker -- passes
-FILL, and idle gets a `·\=' of its own, so that an idle name does not
-stand a column to the left of every other."
-  (pcase state
-    ('attention "⚠") ('running "▶") ('exited "✗") ('restored "○")
-    (_ (if fill "·" ""))))
-
 (defun ecc-tab-mark (session)
   "Return the character that stands for the state of SESSION."
   (ecc-tab-mark-of-state (ecc-tab-state session)))
@@ -307,53 +257,6 @@ stand a column to the left of every other."
   "Return the faces to lay over the tab of SESSION, the telling one first.
 CURRENT says the window is showing this session."
   (ecc-tab-faces-of-state (ecc-tab-state session) current))
-
-(defun ecc-tab-faces-of-state (state current)
-  "Return the faces for STATE, the telling one first.
-CURRENT says the window is showing this session.  The state comes
-first so that its colour wins, and `ecc-tab-current-face' follows to
-add what it alone says -- the weight and the underline that mark the
-tab one is looking at.  Putting `current' first instead, as this did
-before, cost the tab of the session in front of you the very colour
-that says what it is doing.  An idle tab is the one exception, and is
-left to `ecc-tab-current-face' alone.  A running tab that is not the
-current one takes the quieter `ecc-tab-running-dim-face': the full
-green, bold, was bright enough elsewhere in the row to be read as the
-tab in front of you."
-  (let ((state (if (and ecc-tab--blink-phase (eq state 'attention))
-                   'ecc-tab-attention-blink-face
-                 (pcase state
-                   ('attention 'ecc-tab-attention-face)
-                   ('running (if current
-                                 'ecc-tab-running-face
-                               'ecc-tab-running-dim-face))
-                   ('exited 'ecc-error-face)
-                   ;; Quiet like idle: waiting to be used, not broken.
-                   (_ 'ecc-tab-idle-face)))))
-    (cond
-     ;; Idle is not a colour so much as the want of one: the dim face
-     ;; is there to sink the sessions with nothing to say into the
-     ;; background, and the one being read does not belong there.  Dim
-     ;; and current together read as neither.
-     ((and current (eq state 'ecc-tab-idle-face))
-      (list 'ecc-tab-current-face))
-     (current (list state 'ecc-tab-current-face))
-     (t (list state)))))
-
-(defun ecc-tab-column-mark (state)
-  "Return the mark of STATE with its face, where a mark opens a line.
-What the sidebar, the session picker and the Space picker put in front
-of a name.  Idle gets `·\=' -- the tab line leaves it blank -- so that
-an idle name does not stand a column to the left of every other, and a
-STATE of nil -- a Space with nothing running, or one only recordings
-are left of -- a blank of the same width.  The face is the mark\='s of
-the moment of asking, not blinking; the sidebar lays the face of its
-whole row over it."
-  (let ((ecc-tab--blink-phase nil))
-    (if state
-        (propertize (ecc-tab-mark-of-state state t)
-                    'face (ecc-tab-faces-of-state state nil))
-      " ")))
 
 (defvar ecc-tab-line-scope 'project
   "Which sessions the tab line of a session window lists.

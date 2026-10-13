@@ -253,9 +253,9 @@ conversation."
       (unwind-protect
           (progn
             (ecc-restart-test--start session)
-            (puthash session (current-buffer) ecc-inline--targets)
+            (setf (ecc-session-options session)
+                  (plist-put (ecc-session-options session) :inline t))
             (ecc-restart-test--refused session))
-        (remhash session ecc-inline--targets)
         (ecc-restart-test--stop-all session)))))
 
 (ert-deftest ecc-restart-test-declining-leaves-it-alone ()

@@ -110,25 +110,24 @@ buffer."
   "Return the name of the buffer of the session called NAME."
   (format "*ecc: %s*" name))
 
-(defun ecc-session-set-name (session name)
-  "Rename SESSION to NAME, with its buffer, and return the name used.
-The name is made unique among the sessions first, SESSION itself not
-counting (`ecc-model-unique-name\=').  Every rename goes through here:
-the one the user asks for, and the one `/rename\=' does in the CLI."
-  (let ((name (ecc-model-unique-name (string-trim name) session)))
-    (when (string-empty-p name)
-      (user-error "The name is empty"))
-    (setf (ecc-session-name session) name)
-    (when (buffer-live-p (ecc-session-buffer session))
-      (with-current-buffer (ecc-session-buffer session)
-        (rename-buffer (ecc-session-buffer-name name) t)))
-    (force-mode-line-update t)
-    (run-hook-with-args 'ecc-session-renamed-hook session)
-    name))
+(defun ecc-session--rename-buffer (session)
+  "Give the buffer of SESSION the name SESSION has now.
+On `ecc-session-renamed-hook\=', ahead of the rest of it: what runs after
+reads the buffer by its new name.  A session has no buffer until this
+file makes one, so nothing is lost while it is not loaded."
+  (when (buffer-live-p (ecc-session-buffer session))
+    (with-current-buffer (ecc-session-buffer session)
+      (rename-buffer (ecc-session-buffer-name (ecc-session-name session)) t)))
+  (force-mode-line-update t))
+
+(add-hook 'ecc-session-renamed-hook #'ecc-session--rename-buffer -90)
+
+(define-obsolete-function-alias 'ecc-session-set-name #'ecc-model-set-name
+  "0.4.4")
 
 (defun ecc-session-rename (session name)
   "Rename SESSION to NAME here and in the CLI, and return the name used.
-The rename here is made at once (`ecc-session-set-name\=').  The CLI is
+The rename here is made at once (`ecc-model-set-name\=').  The CLI is
 told with a `/rename\=' that is not drawn (`ecc-proc-rename\='): at once
 when it runs with no turn open, otherwise once it does.  The name it is
 told is the one the session ended up with, NAME<2> included, so that
@@ -137,9 +136,19 @@ the history and a later resume call the session what it is called here.
 A session read back from a recording is told when it is resumed, and
 not otherwise: nothing runs it in the meantime, and the recording is
 the CLI\='s to write."
-  (let ((name (ecc-session-set-name session name)))
+  (let ((name (ecc-model-set-name session name)))
     (ecc-proc-rename session)
     name))
+
+;;;###autoload
+(defun ecc-rename-session (session name)
+  "Rename SESSION to NAME and rename its buffers with it.
+The CLI is told the name too, so that the history and a later resume
+call the session NAME (`ecc-session-rename\=')."
+  (interactive
+   (let ((session (ecc-window-resolve-session current-prefix-arg)))
+     (list session (read-string "New name: " (ecc-session-name session)))))
+  (ecc-session-rename session name))
 
 (defun ecc-session-ensure-buffer (session)
   "Return the buffer of SESSION, creating and drawing it if needed."

@@ -40,11 +40,16 @@
 (require 'project)
 (require 'ecc-core)
 (require 'ecc-model)
+(require 'ecc-visual)
 
+;; Showing a session goes through here from every level -- a question
+;; answered, the dashboard, a recording opened, a restore -- and the
+;; buffer it shows, with the prompt in it, is made at the top by
+;; `ecc-session' and `ecc-chat'.  Moving the showing up would have each
+;; of those load the whole transcript to show one, so these two are
+;; loaded where they are called (`ecc-display-session').
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
-(declare-function ecc-session-rename "ecc-session" (session name))
 (declare-function ecc-chat-goto-prompt "ecc-chat" ())
-(declare-function ecc-render--project-name-1 "ecc-render" (directory))
 ;; `ecc-space' is above this file and is loaded where `ecc-use-spaces'
 ;; says so, the way `ecc-display-session' loads `ecc-session'.  Nothing
 ;; here requires it: the dependency runs the other way.
@@ -55,9 +60,6 @@
 (declare-function ecc-space-current-key "ecc-space" ())
 (declare-function ecc-space-title "ecc-space" (space))
 (declare-function ecc-space-parent "ecc-space" (space) t)
-;; `ecc-notify' is above this file as well, and requires it.
-(declare-function ecc-tab-state "ecc-notify" (session))
-(declare-function ecc-tab-column-mark "ecc-notify" (state))
 
 (defvar ecc-window-use-side-window t
   "Non-nil shows a transcript in a side window rather than an ordinary one.
@@ -124,6 +126,25 @@ DIRECTORY defaults to `default-directory'."
     (or (when-let* ((project (project-current nil)))
           (file-name-as-directory (expand-file-name (project-root project))))
         (file-name-as-directory (expand-file-name default-directory)))))
+
+(defun ecc-window-project-name (directory)
+  "Return the name `project.el\=' gives DIRECTORY, or the name of DIRECTORY.
+A remote directory is never asked about: `project-current\=' would go
+over the wire for it, and the header line of a transcript
+\(`ecc-render--project-name\=') is drawn on every command."
+  (or (and (not (file-remote-p directory))
+           ;; The one `ignore-errors' in ecc.  `project-current' calls
+           ;; each function on `project-find-functions', and other
+           ;; packages add their own there: what those signal is theirs
+           ;; to decide, so there is no error class to name here.  An
+           ;; error let out would break the header line, which is drawn
+           ;; on every command, so any failure falls back to the name of
+           ;; the directory below.
+           (ignore-errors
+             (when-let* ((project (let ((default-directory directory))
+                                    (project-current nil))))
+               (project-name project))))
+      (file-name-nondirectory (directory-file-name directory))))
 
 (defvar ecc-window--project-root-cache (make-hash-table :test #'equal)
   "Hash of a directory to the project root above it.
@@ -207,17 +228,6 @@ after it are told apart by a name the user gives."
                          (file-name-nondirectory (directory-file-name root))))))
       (unless (string-empty-p (string-trim name))
         (string-trim name)))))
-
-;;;###autoload
-(defun ecc-rename-session (session name)
-  "Rename SESSION to NAME and rename its buffers with it.
-The CLI is told the name too, so that the history and a later resume
-call the session NAME (`ecc-session-rename\=')."
-  (interactive
-   (let ((session (ecc-window-resolve-session current-prefix-arg)))
-     (list session (read-string "New name: " (ecc-session-name session)))))
-  (require 'ecc-session)
-  (ecc-session-rename session name))
 
 ;;;; The buffer the user came from
 
@@ -884,7 +894,7 @@ about which project one is in."
 (defun ecc-window-project-label (root sessions)
   "Return the line the project ROOT with SESSIONS is offered under."
   (format "%-24s  %-11s %s"
-          (ecc--truncate (ecc-render--project-name-1 root) 24)
+          (ecc--truncate (ecc-window-project-name root) 24)
           (format "%d session%s" (length sessions)
                   (if (= 1 (length sessions)) "" "s"))
           (abbreviate-file-name root)))
@@ -974,8 +984,7 @@ nothing under `classic\=' reaches `ecc-worktree\='."
     (require 'ecc-space)
     (let ((space (ecc-space-of-root key)))
       (cons (ecc-space-title space) (ecc-space-parent space))))
-   (t (require 'ecc-render)
-      (list (ecc-render--project-name-1 key)))))
+   (t (list (ecc-window-project-name key)))))
 
 (defun ecc-window--sessions-by-use (sessions)
   "Return SESSIONS, the one whose buffer was selected last first.
@@ -1049,8 +1058,7 @@ candidate before it hands it to the `group-function\=' (confirmed
 2026-10-07), and a name taken from SESSION afresh would lose them.  The
 mark is the one its tab and its sidebar row carry, at the moment of
 asking: no blinking.  Only the mark takes a face of its own."
-  (require 'ecc-notify)
-  (concat (ecc-tab-column-mark (ecc-tab-state session)) " " name))
+  (concat (ecc-tab-column-mark (ecc-model-activity session)) " " name))
 
 (defun ecc-window--session-table (candidates)
   "Return a completion table of CANDIDATES, grouped by Space and kept in order.
