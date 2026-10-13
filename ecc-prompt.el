@@ -38,6 +38,7 @@
 (require 'cl-lib)
 (require 'seq)
 (require 'dnd)
+(require 'project)
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-image)
@@ -49,8 +50,6 @@
 (require 'ecc-window)
 (require 'ecc-context)
 
-(declare-function project-files "project" (project &optional dirs))
-(declare-function project-current "project" (&optional maybe-prompt directory))
 (declare-function ecc-resume "ecc" (session &optional fork))
 
 ;;;; Options
