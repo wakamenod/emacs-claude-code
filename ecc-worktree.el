@@ -53,19 +53,13 @@
 (require 'ecc-core)
 (require 'ecc-window)
 (require 'ecc-proc)
+(require 'ecc-mcp)
 
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-kill "ecc" (session))
-;; A `cl-defun' with &key: `check-declare' reads its arglist as five
-;; positional arguments, the byte compiler as &rest, so neither is named.
-(declare-function ecc-mcp-define-tool "ecc-mcp" t)
-(declare-function ecc-mcp-session "ecc-mcp" ())
-(declare-function ecc-mcp-published-tools "ecc-mcp" ())
-(declare-function ecc-mcp-tool-name "ecc-mcp" (tool) t)
 (declare-function ecc-history-file "ecc-history" (session-id))
 (declare-function ecc-space-forget "ecc-space" (root))
 (declare-function ecc-space-at-p "ecc-space" (root))
-(declare-function ecc-mcp-define-instructions "ecc-mcp" (name text tools))
 (declare-function ecc-review-pr-available-p "ecc-review-pr" ())
 (declare-function ecc-review-pr-merged "ecc-review-pr" (root branch))
 ;; Bound around the kill loop below: a Space closing itself halfway
@@ -736,7 +730,7 @@ its own -- can name another one."
   "Return the session handing work over, or nil.
 The MCP server knows which session is calling it; a command run by hand
 has the buffer it was run in."
-  (or (and (fboundp 'ecc-mcp-session) (ecc-mcp-session))
+  (or (ecc-mcp-session)
       (bound-and-true-p ecc-render--session)))
 
 ;;;; Handing a piece of work over from inside a session
@@ -756,7 +750,7 @@ The project the session was started in, and not the cwd the CLI
 reports: that one follows the `cd' of the last Bash call the model made
 \(2.1.272, confirmed 2026-09-16), so a model that had just looked at
 something under /tmp would have Emacs act on no repository at all."
-  (let ((session (and (fboundp 'ecc-mcp-session) (ecc-mcp-session))))
+  (let ((session (ecc-mcp-session)))
     (or (and session (ecc-session-project-root session))
         default-directory)))
 
@@ -782,7 +776,7 @@ the answer names the session that has the work now."
            ("base" "string" "The revision the branch is made from; HEAD by default"))
    :function #'ecc-worktree-mcp-delegate))
 
-(with-eval-after-load 'ecc-mcp (ecc-worktree-register-mcp-tool))
+(ecc-worktree-register-mcp-tool)
 
 (defun ecc-worktree-tool-published-p (session)
   "Return non-nil when SESSION was given `start_worktree_session\='.
@@ -790,8 +784,7 @@ Both halves have to hold: the Emacs MCP server is registered with this
 session at all (`ecc-mcp-enabled\=', or its :mcp option), and the tool is
 among the ones published (`ecc-mcp-excluded-tools\=' can take it out).
 Nothing here may point the model at a tool it has not got."
-  (and (fboundp 'ecc-mcp-published-tools)
-       (ecc-model-option session :mcp (bound-and-true-p ecc-mcp-enabled))
+  (and (ecc-model-option session :mcp ecc-mcp-enabled)
        (seq-find (lambda (tool)
                    (equal (ecc-mcp-tool-name tool) "start_worktree_session"))
                  (ecc-mcp-published-tools))
@@ -923,7 +916,6 @@ sessions run in, which is why the line is worth its tokens."
 ;; nothing else refuses: it is a network call, made while the model
 ;; waits on the tool.
 
-(defvar ecc-mcp-server-name)
 (declare-function ecc-chat-draft "ecc-chat" ())
 
 (defcustom ecc-worktree-auto-allow-removal t
@@ -1147,7 +1139,7 @@ removal would leave it in a directory that is gone."
 (defun ecc-worktree--who (session)
   "Return SESSION as a refusal names it."
   (format "session %s%s" (ecc-session-name session)
-          (if (and (fboundp 'ecc-mcp-session) (eq session (ecc-mcp-session)))
+          (if (eq session (ecc-mcp-session))
               " (the one calling this tool)"
             "")))
 
@@ -1452,7 +1444,7 @@ A sentence sent to the model, so a variable and not a setting.")
                                'ecc-worktree-removal-instructions
                                '("list_worktrees" "remove_worktree")))
 
-(with-eval-after-load 'ecc-mcp (ecc-worktree-register-removal-tools))
+(ecc-worktree-register-removal-tools)
 
 (defun ecc-worktree-allow-request (_session request)
   "Return non-nil when REQUEST calls a worktree tool that may go unasked.
@@ -1460,14 +1452,13 @@ On `ecc-request-allow-functions\='.  `list_worktrees\=' only reads and is
 always allowed; `remove_worktree\=' is allowed while
 `ecc-worktree-auto-allow-removal\=' says so.  The CLI names a tool
 mcp__SERVER__TOOL, and the prefix is made from `ecc-mcp-server-name\='."
-  (when (boundp 'ecc-mcp-server-name)
-    (let ((name (ecc-request-tool-name request))
-          (prefix (format "mcp__%s__" ecc-mcp-server-name)))
-      (and (stringp name)
-           (string-prefix-p prefix name)
-           (pcase (substring name (length prefix))
-             ("list_worktrees" t)
-             ("remove_worktree" (and ecc-worktree-auto-allow-removal t)))))))
+  (let ((name (ecc-request-tool-name request))
+        (prefix (format "mcp__%s__" ecc-mcp-server-name)))
+    (and (stringp name)
+         (string-prefix-p prefix name)
+         (pcase (substring name (length prefix))
+           ("list_worktrees" t)
+           ("remove_worktree" (and ecc-worktree-auto-allow-removal t))))))
 
 (add-hook 'ecc-request-allow-functions #'ecc-worktree-allow-request)
 
