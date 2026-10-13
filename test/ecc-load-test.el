@@ -14,6 +14,11 @@
 ;; above it give their keys to: whatever entry point is loaded, a chat
 ;; buffer comes up with them, a user's own binding wins over them
 ;; whatever loads first, and loading a module again changes nothing.
+;;
+;; The last are about the modules that register with one above them:
+;; the interceptors of the prompt region and the MCP tools of
+;; `ecc-worktree' are in place once their own module is loaded, with
+;; nothing waiting for another to load.
 
 ;;; Code:
 
@@ -153,6 +158,72 @@ it there and does not nest it again."
                 (equal before (mapcar (lambda (map)
                                         (copy-tree (symbol-value map)))
                                       maps)))))))
+
+(defconst ecc-load-test--interceptors
+  '((ecc-auth ecc-auth-intercept nil)
+    (ecc-btw ecc-btw-intercept nil)
+    (ecc-history ecc-history-resume-intercept ecc-history-resume-command)
+    (ecc-hooks ecc-hooks-intercept ecc-hooks-command)
+    (ecc-plugin ecc-plugin-intercept (car ecc-plugin-commands))
+    (ecc-skill ecc-skill-intercept (car ecc-skill-commands)))
+  "Each module that answers a command in the prompt region.
+Its feature, its interceptor, and the form giving the command it puts
+on `ecc-prompt-immediate-commands\=', or nil when it puts none there.")
+
+(defun ecc-load-test--interceptors-form (&optional features)
+  "Return the form that says, per module, whether it is registered.
+Each element is (FEATURE ON-THE-HOOK IMMEDIATE), the last t for a
+module that puts no command among the immediate ones.  FEATURES, when
+given, are the modules asked about; the others may not be loaded."
+  `(mapcar (lambda (entry)
+             (list (nth 0 entry)
+                   (and (memq (nth 1 entry) ecc-prompt-intercept-functions) t)
+                   (or (null (nth 2 entry))
+                       (and (member (eval (nth 2 entry) t)
+                                    ecc-prompt-immediate-commands)
+                            t))))
+           ',(if features
+                 (mapcar (lambda (feature)
+                           (assq feature ecc-load-test--interceptors))
+                         features)
+               ecc-load-test--interceptors)))
+
+(ert-deftest ecc-load-test-interceptors-register-with-the-package ()
+  "Loading the package puts every interceptor on the prompt's hook.
+The tests of each module bind the hook themselves, so they would pass
+with nothing ever registered."
+  (should (equal (ecc-load-test--run
+                  `(progn (require 'ecc)
+                          ,(ecc-load-test--interceptors-form)))
+                 (mapcar (lambda (entry) (list (car entry) t t))
+                         ecc-load-test--interceptors))))
+
+(ert-deftest ecc-load-test-interceptors-register-on-their-own ()
+  "Each interceptor is on the hook once its own module alone is loaded.
+The hook and the immediate commands are defined in `ecc-model', which
+every one of them requires, and not in `ecc-prompt' above them; so no
+module waits for the prompt region to load before it registers."
+  (dolist (entry ecc-load-test--interceptors)
+    (let ((feature (car entry)))
+      (should (equal (ecc-load-test--run
+                      `(progn
+                         (require ',feature)
+                         ,(ecc-load-test--interceptors-form (list feature))))
+                     (list (list feature t t)))))))
+
+(ert-deftest ecc-load-test-worktree-tools-register-on-their-own ()
+  "Loading `ecc-worktree' alone registers its MCP tools.
+It requires `ecc-mcp' and registers them at its top level, rather than
+waiting for that module to be loaded by somebody else."
+  (should (equal (ecc-load-test--run
+                  '(progn
+                     (require 'ecc-worktree)
+                     (list (and (ecc-mcp-tool "start_worktree_session") t)
+                           (and (ecc-mcp-tool "list_worktrees") t)
+                           (and (ecc-mcp-tool "remove_worktree") t)
+                           (and (assoc "worktree-removal" ecc-mcp--instructions)
+                                t))))
+                 '(t t t t))))
 
 (provide 'ecc-load-test)
 
