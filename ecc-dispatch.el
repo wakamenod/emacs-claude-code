@@ -79,8 +79,6 @@ Errors are caught: an unreadable message must never stop the stream."
               (error-message-string err) message)
      (ecc-dispatch--unknown session message (error-message-string err)))))
 
-(setq ecc-proc-message-function #'ecc-dispatch)
-
 (defun ecc-dispatch--message (session message)
   "Apply MESSAGE to SESSION without catching errors."
   (pcase (ecc-protocol-type message)

@@ -120,7 +120,7 @@ withholds from the SDK entrypoint this package starts it under."
   "A chunk that stops in the middle of a line loses nothing."
   (ecc-test-with-fake-session session
     (let* ((seen nil)
-           (ecc-proc-message-function (lambda (_session message) (push message seen)))
+           (handler (lambda (_session message) (push message seen)))
            (lines (ecc-test-fixture-lines "tool-use-write"))
            (text (concat (string-join lines "\n") "\n")))
       ;; Feed the whole recording in small, deliberately uneven pieces.
@@ -129,7 +129,7 @@ withholds from the SDK entrypoint this package starts it under."
         (while (< position (length text))
           (let* ((size (nth (mod position (length sizes)) sizes))
                  (end (min (length text) (+ position size))))
-            (ecc-proc-feed session (substring text position end))
+            (ecc-proc-feed session (substring text position end) handler)
             (setq position end))))
       (setq seen (nreverse seen))
       (should (= (length seen) (length lines)))
@@ -143,10 +143,10 @@ withholds from the SDK entrypoint this package starts it under."
   "A line without its newline yet is held back, not handed on."
   (ecc-test-with-fake-session session
     (let* ((seen nil)
-           (ecc-proc-message-function (lambda (_session message) (push message seen))))
-      (ecc-proc-feed session "{\"type\":\"system\",")
+           (handler (lambda (_session message) (push message seen))))
+      (ecc-proc-feed session "{\"type\":\"system\"," handler)
       (should-not seen)
-      (ecc-proc-feed session "\"subtype\":\"init\"}\n")
+      (ecc-proc-feed session "\"subtype\":\"init\"}\n" handler)
       (should (= (length seen) 1))
       (should (equal (alist-get 'subtype (car seen)) "init")))))
 
@@ -154,20 +154,21 @@ withholds from the SDK entrypoint this package starts it under."
   "A multi-megabyte line arrives in one piece."
   (ecc-test-with-fake-session session
     (let* ((seen nil)
-           (ecc-proc-message-function (lambda (_session message) (push message seen)))
+           (handler (lambda (_session message) (push message seen)))
            (content (make-string (* 5 1024 1024) ?x))
            (line (concat "{\"type\":\"assistant\",\"text\":\"" content "\"}\n")))
       (dotimes (i 64)
         (let ((size (/ (length line) 64)))
           (ecc-proc-feed session (substring line (* i size)
-                                            (if (= i 63) nil (* (1+ i) size))))))
+                                            (if (= i 63) nil (* (1+ i) size)))
+                         handler)))
       (should (= (length seen) 1))
       (should (= (length (alist-get 'text (car seen))) (length content))))))
 
 (ert-deftest ecc-proc-test-lines-are-logged ()
   "Every raw line reaches the log buffer."
   (ecc-test-with-fake-session session
-    (ecc-proc-feed session "{\"type\":\"system\",\"subtype\":\"init\"}\n")
+    (ecc-proc-feed session "{\"type\":\"system\",\"subtype\":\"init\"}\n" #'ignore)
     (with-current-buffer (ecc--log-buffer (ecc-session-name session))
       (should (string-search "<< {\"type\":\"system\"" (buffer-string))))))
 
@@ -629,13 +630,49 @@ queue, and the session would take nothing said to it."
                                     :command '("sleep" "30")))))
                ((symbol-function 'ecc-proc-control) (lambda (&rest _) nil)))
       (ecc-model-begin-turn session "left open")
-      (let ((process (ecc-proc-start session t)))
+      (let ((process (ecc-proc-start session #'ecc-dispatch t)))
         (unwind-protect
             (progn
               (should-not (ecc-session-current-turn session))
               (should (eq (ecc-session-state session) 'idle)))
           (set-process-sentinel process #'ignore)
           (delete-process process))))))
+
+(ert-deftest ecc-proc-test-start-needs-a-handler ()
+  "A CLI with nowhere to put its messages is refused, and never started.
+Nothing else would read what it says, so it would talk to nobody."
+  (ecc-test-with-fake-session session
+    (cl-letf (((symbol-function 'make-process)
+               (lambda (&rest _) (error "A process was started"))))
+      (should-error (ecc-proc-start session nil) :type 'wrong-type-argument)
+      (should-not (ecc-session-process session)))))
+
+(ert-deftest ecc-proc-test-messages-reach-the-handler-it-was-given ()
+  "Every line the CLI writes reaches the handler `ecc-proc-start' was given."
+  (ecc-test-with-fake-session session
+    (let ((seen nil))
+      (cl-letf* ((real-make-process (symbol-function 'make-process))
+                 ((symbol-function 'make-process)
+                  (lambda (&rest arguments)
+                    (apply real-make-process
+                           (plist-put (copy-sequence arguments)
+                                      :command
+                                      (list "sh" "-c" "\
+printf '{\"type\":\"system\",\"subtype\":\"init\"}\\n'; exec sleep 30")))))
+                 ((symbol-function 'ecc-proc-control) (lambda (&rest _) nil)))
+        (let ((process (ecc-proc-start
+                        session
+                        (lambda (from message) (push (cons from message) seen)))))
+          (unwind-protect
+              (progn
+                (with-timeout (10 (ert-fail "No message reached the handler"))
+                  (while (not seen)
+                    (accept-process-output process 0.1)))
+                (should (= 1 (length seen)))
+                (should (eq (car (car seen)) session))
+                (should (equal (alist-get 'subtype (cdr (car seen))) "init")))
+            (set-process-sentinel process #'ignore)
+            (delete-process process)))))))
 
 (defmacro ecc-proc-test--with-pretend-process (var &rest body)
   "Run BODY with VAR a session whose process is pretended to be alive.
@@ -782,7 +819,7 @@ sessions, because the one that did start must be untouched."
           (progn
             (should (eq (ecc-session-state gone) 'starting))
             (let ((buffer (ecc-session-ensure-buffer gone)))
-              (should-error (ecc-proc-start gone) :type 'user-error)
+              (should-error (ecc-proc-start gone #'ecc-dispatch) :type 'user-error)
               (should-not (ecc-model-session (ecc-session-id gone)))
               ;; And nothing of it is left on the screen either.
               (should-not (buffer-live-p buffer)))

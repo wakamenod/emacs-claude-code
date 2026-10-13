@@ -55,6 +55,7 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
+(require 'ecc-dispatch)
 
 (declare-function ecc-dashboard-session-at-point "ecc-dashboard" ())
 
@@ -152,7 +153,7 @@ running."
                   :options (list :remote-control nil
                                  :usage-probe t
                                  :extra-args ecc-usage-probe-args))))
-    (ecc-proc-start session)
+    (ecc-proc-start session #'ecc-dispatch)
     (ecc-usage-fetch
      session
      (lambda (probe response)

@@ -60,6 +60,7 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
+(require 'ecc-dispatch)
 (require 'ecc-render)
 (require 'ecc-registry)
 (require 'ecc-history)
@@ -486,7 +487,7 @@ conversation."
         (ecc-tui-follow-stop session))
       (setf (ecc-session-kind session) 'own)
       (ecc-session-ensure-buffer session)
-      (ecc-proc-start session t)
+      (ecc-proc-start session #'ecc-dispatch t)
       ;; A prompt queued behind the turn the hand-off interrupted is
       ;; still waiting, and what usually sends it -- a turn coming to an
       ;; end -- has already happened, in the terminal.

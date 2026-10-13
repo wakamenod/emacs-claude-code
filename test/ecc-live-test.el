@@ -81,7 +81,7 @@ The session starts in `ecc-test-live-directory'."
            ;; Nothing is waited for here: system/init only arrives once
            ;; a prompt has been sent, so a test that waited for it
            ;; before sending would hang.
-           (ecc-proc-start ,var)
+           (ecc-proc-start ,var #'ecc-dispatch)
            ,@body)
        (ecc-proc-stop ,var)
        (ecc-test-cleanup-session ,var))))
@@ -269,7 +269,7 @@ The phase 2 acceptance check: each delta costs well under 5ms to draw."
       (ecc-test-live-wait session (lambda () (not (process-live-p (ecc-session-process session))))
                           "the process to stop")
       (setf (ecc-session-auto-approve-kinds session) '("Write"))
-      (ecc-proc-start session)
+      (ecc-proc-start session #'ecc-dispatch)
       (unwind-protect
           (let ((ecc-stream-delta-hook
                  (cons (lambda (session node text)
@@ -328,7 +328,7 @@ WHAT names the thing waited for in the error message."
   (ecc-test-live-wait session
                       (lambda () (not (process-live-p (ecc-session-process session))))
                       "the process to stop")
-  (ecc-proc-start session))
+  (ecc-proc-start session #'ecc-dispatch))
 
 (defun ecc-test-live-wait-for-plan (session &optional previous)
   "Wait until SESSION has a plan request other than PREVIOUS and return it."
@@ -458,7 +458,7 @@ as git status is not used: the CLI runs those without asking."
       (unwind-protect
           (progn
             (ecc-session-ensure-buffer other)
-            (ecc-proc-start other)
+            (ecc-proc-start other #'ecc-dispatch)
             (ecc-proc-send-prompt
              session (format "Create the file %s containing the word one, using the Write tool."
                              (expand-file-name "one.txt" directory)))
@@ -640,7 +640,7 @@ The working directory and the recording are both removed afterwards."
      (unwind-protect
          (progn
            (ecc-session-ensure-buffer ,var)
-           (ecc-proc-start ,var)
+           (ecc-proc-start ,var #'ecc-dispatch)
            ,@body)
        (ecc-proc-stop ,var)
        (ecc-test-cleanup-session ,var)
@@ -731,7 +731,7 @@ the session is resumed."
       ;; Stopped: renamed here, and told when it runs again.
       (ecc-session-rename session "live-again")
       (should (ecc-session-rename-pending session))
-      (ecc-proc-start session t)
+      (ecc-proc-start session #'ecc-dispatch t)
       (should (equal (ecc-session-rename-sent session) "live-again"))
       (funcall answered session)
       (should (equal (ecc-session-name session) "live-again"))
@@ -756,7 +756,7 @@ with plus its own turn, and the session's total is the CLI's."
       (ecc-test-live-wait
        session (lambda () (not (process-live-p (ecc-session-process session))))
        "the CLI to stop")
-      (ecc-proc-start session t)
+      (ecc-proc-start session #'ecc-dispatch t)
       (should (= first (ecc-session-cost-base session)))
       (ecc-proc-send-prompt session "Reply with exactly: TWO")
       (ecc-test-live-wait-for-result session)
@@ -1195,7 +1195,7 @@ the settings hold, turning it off writes the project settings file, and
           (unwind-protect
               (progn
                 (ecc-session-ensure-buffer session)
-                (ecc-proc-start session)
+                (ecc-proc-start session #'ecc-dispatch)
                 (ecc-proc-send-prompt session "Reply with exactly: PONG")
                 (ecc-test-live-wait-for-result session)
                 ;; The CLI named it, and Emacs found the file that defines it.

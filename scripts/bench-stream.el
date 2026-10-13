@@ -304,7 +304,8 @@ where the garbage that a collection later stops for comes from."
   (if bench-stream--lines
       (progn
         (cl-incf bench-stream--fed)
-        (ecc-proc-feed bench-stream--session (pop bench-stream--lines)))
+        (ecc-proc-feed bench-stream--session (pop bench-stream--lines)
+                       #'ecc-dispatch))
     (cancel-timer bench-stream--feed-timer)
     ;; Let the trailing timers fire before the numbers are read.
     (run-at-time 1 nil #'bench-stream--finish)))

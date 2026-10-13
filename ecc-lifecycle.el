@@ -51,6 +51,7 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
+(require 'ecc-dispatch)
 (require 'ecc-visual)
 (require 'ecc-registry)
 (require 'ecc-image)
@@ -122,7 +123,7 @@ finding it later among all the others."
     ;; What the tree held before the CLI could touch it: `ecc-review'
     ;; diffs against this, so it is taken before the process starts.
     (ecc-review-ensure-baseline session)
-    (ecc-proc-start session)
+    (ecc-proc-start session #'ecc-dispatch)
     (ecc--enable-session-modes)
     (ecc-window-select-session session)
     (message "Started %s in %s" (ecc-session-name session)
@@ -254,7 +255,7 @@ it was forked from."
                (ecc-history-resume session t))
               ((ecc-history-file (ecc-session-id session))
                (ecc-history-resume session))
-              (t (ecc-proc-start session)))
+              (t (ecc-proc-start session #'ecc-dispatch)))
       (setf (ecc-session-options session) options))
     (ecc-session-process session)))
 

@@ -684,7 +684,7 @@ So is the line the recording is offered on."
                    (funcall spawn :name "ecc-test-sleep"
                             :command '("sleep" "30") :noquery t)))
                 ((symbol-function 'ecc-proc-control) #'ignore))
-        (let ((process (ecc-proc-start session)))
+        (let ((process (ecc-proc-start session #'ecc-dispatch)))
           (unwind-protect
               (should-not (ecc-proc-stopped-on-request-p session))
             (delete-process process)))))))
@@ -1016,7 +1016,7 @@ on SESSION is looked at."
                  (funcall spawn :name "ecc-test-sleep"
                           :command '("sleep" "30") :noquery t)))
               ((symbol-function 'ecc-proc-control) #'ignore))
-      (delete-process (ecc-proc-start session resume fork)))))
+      (delete-process (ecc-proc-start session #'ecc-dispatch resume fork)))))
 
 (ert-deftest ecc-history-test-recorded-cost ()
   "The total a recording ends with is its last `cost-state'.

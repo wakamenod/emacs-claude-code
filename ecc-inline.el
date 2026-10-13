@@ -49,6 +49,7 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
+(require 'ecc-dispatch)
 (require 'ecc-markdown)
 (require 'ecc-diff)
 (require 'ecc-context)
@@ -249,7 +250,7 @@ was; the CLI hands the fork its real id in system/init."
                                  (list :resume-from (ecc-session-id parent))
                                (list :extra-args ecc-inline-light-args))
                              (list :remote-control nil :inline t)))))
-    (ecc-proc-start session forkp forkp)
+    (ecc-proc-start session #'ecc-dispatch forkp forkp)
     session))
 
 ;;;; Asking

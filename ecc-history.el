@@ -675,7 +675,7 @@ the CLI would run twice on the same recording."
   ;; back from a recording takes its first here.
   (require 'ecc-review)
   (ecc-review-ensure-baseline session)
-  (ecc-proc-start session t fork)
+  (ecc-proc-start session #'ecc-dispatch t fork)
   ;; Noted after the start, which would otherwise be the one to forget it.
   (setf (alist-get 'fork-unsettled (ecc-session-progress session)) (and fork t))
   session)

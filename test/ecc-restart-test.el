@@ -61,7 +61,7 @@ turn in the transcript and a recording on disk."
     (ecc-model-finish-turn session nil)
     (ecc-restart-test--record session))
   (ecc-session-ensure-buffer session)
-  (ecc-proc-start session))
+  (ecc-proc-start session #'ecc-dispatch))
 
 (defun ecc-restart-test--stop-all (&rest sessions)
   "Stop the stand-in CLI of every one of SESSIONS.
