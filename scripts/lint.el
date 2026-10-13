@@ -11,13 +11,13 @@
 ;; kind of thing.  An error is a defect in the package -- a header nothing
 ;; reads, a global mode a user's init cannot turn on, a function that was
 ;; removed from Emacs before the version we claim -- and no release should
-;; carry one.  A warning is a judgement, and the two this package has
-;; are deliberate: a `with-eval-after-load' of `savehist' and one of
-;; `ns-win', libraries of Emacs that a user may never load, and the
-;; comment above each says why.  Between two files of this package there
-;; is none: a module registers with one above it by putting itself on a
-;; variable defined below both.  Failing on the two would mean either
-;; undoing them or turning the check off, and a check that is off is how
+;; carry one.  A warning is a judgement, and the one this package has is
+;; deliberate: a `with-eval-after-load' of `savehist', a library of Emacs
+;; that a user may never load, and the comment above it says why.
+;; Between two files of this package there is none: a module registers
+;; with one above it by putting itself on a variable defined below both.
+;; Failing on it would mean either undoing it or turning the check off,
+;; and a check that is off is how
 ;; forty-two stale `Package-Requires' headers and five global modes with
 ;; no autoload cookie went unnoticed until 2026-09-18.
 ;;
