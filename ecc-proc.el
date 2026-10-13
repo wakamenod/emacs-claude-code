@@ -41,11 +41,6 @@
 (require 'ecc-protocol)
 (require 'ecc-model)
 
-;; `ecc-history' is built on this file, so it is loaded when a resume
-;; first needs it (`ecc-proc--resumed-cost').
-(declare-function ecc-history-file "ecc-history" (session-id))
-(declare-function ecc-history-recorded-cost "ecc-history" (file))
-
 (defvar ecc-control-timeout 30
   "Seconds to wait for the answer to a control request before warning.")
 
@@ -222,6 +217,84 @@ a resumed one the model its recording ends on (see `ecc-proc--model')."
                  (ecc-session-project-root session))
       command)))
 
+;;;; The recording
+
+;; Where the CLI keeps the conversation it is running, and the running
+;; total it left there.  `ecc-history' reads the recordings back; what
+;; is here is what starting a CLI needs of them (`ecc-proc--resumed-cost').
+
+(defvar ecc-history-directory (expand-file-name "projects/" (ecc-config-directory))
+  "Directory the CLI keeps its recorded conversations in.
+CLAUDE_CONFIG_DIR moves it, which is why it is not written out here;
+see `ecc-config-directory'.
+It holds one subdirectory per working directory, each with one jsonl
+file per session.")
+
+(defvar ecc-history--files (make-hash-table :test #'equal)
+  "Hash mapping a session id to the history file it was read from.")
+
+(defun ecc-history-file (session-id)
+  "Return the recorded conversation of SESSION-ID, or nil.
+The directory a session was recorded in follows its working directory,
+which Emacs may not know, so the file is looked for by name."
+  (or (gethash session-id ecc-history--files)
+      (car (file-expand-wildcards
+            (expand-file-name (format "*/%s.jsonl" session-id)
+                              (expand-file-name ecc-history-directory))))))
+
+;; The CLI keeps its running total of what a conversation cost in the
+;; recording, as a `cost-state' line, and a resume carries on from it
+;; (CLI 2.1.290, confirmed 2026-10-13):
+;;
+;; - The line is written once, when the process exits on stdin closing
+;;   or on SIGTERM -- not after every turn, so a long-lived process
+;;   leaves it megabytes before the end.  A process killed with SIGKILL
+;;   writes none, and what it spent is lost to the next one.
+;; - `--resume' starts from the `totalCostUSD' of the last such line:
+;;   the first result of the new process is that plus its own turn.
+;; - `--resume --fork-session' starts from the last line of the
+;;   recording it branches off, so a fork's total includes its parent's.
+;; - With no such line the total starts from 0.
+;;
+;; That is what `ecc-proc-start' counts a resumed CLI's first result
+;; from (`ecc-model-result-cost').
+
+(defvar ecc-history-cost-tail-bytes 262144
+  "Bytes read from the end of a recording to find its last `cost-state'.
+Twice as many are read each time the range holds none, up to the whole
+file.")
+
+(defun ecc-history-recorded-cost (file)
+  "Return the running total the recording FILE ends with, or nil.
+It is the `totalCostUSD' of the last `cost-state' line, the total a
+CLI resuming FILE starts from; nil when FILE has no such line."
+  (let ((size (or (file-attribute-size (file-attributes file)) 0))
+        (bytes ecc-history-cost-tail-bytes)
+        (cost 'more))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (while (eq cost 'more)
+        (let ((from (max 0 (- size bytes))))
+          (erase-buffer)
+          (insert-file-contents-literally file nil from size)
+          (goto-char (point-max))
+          (setq cost nil)
+          (while (and (null cost)
+                      (search-backward "\"type\":\"cost-state\"" nil t))
+            (let ((start (line-beginning-position)))
+              (if (and (> from 0) (= start (point-min)))
+                  ;; The range starts in the middle of this line.
+                  (setq cost 'more)
+                (setq cost (ecc-protocol-history-cost
+                            (decode-coding-string
+                             (buffer-substring start (line-end-position))
+                             'utf-8-unix)))
+                (goto-char start))))
+          (when (and (null cost) (> from 0))
+            (setq cost 'more))
+          (setq bytes (* 2 bytes)))))
+    cost))
+
 ;;;; Starting and stopping
 
 (defun ecc-proc-session (process)
@@ -260,7 +333,6 @@ its first result is counted from that (`ecc-model-result-cost').  The
 recording is read here and not later: the CLI writes a total of its
 own only when it exits, and a result arriving first must find this one
 in place.  Nil when there is no recording to read."
-  (require 'ecc-history)
   (when-let* ((file (ecc-history-file (or (ecc-model-option session :resume-from nil)
                                           (ecc-session-id session)))))
     (or (ecc-history-recorded-cost file) 0)))
