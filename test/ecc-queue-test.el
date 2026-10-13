@@ -357,6 +357,24 @@ transcript does: the lines carry no keymap of their own."
                                      (ecc-queue-test--transcript two))))
           (ecc-test-cleanup-session two))))))
 
+(ert-deftest ecc-queue-test-list-goes-with-its-session ()
+  "Removing a session kills its list and leaves another session's alone.
+A list left behind would keep the removed session alive, with commands
+that act on a queue nothing sends."
+  (ecc-test-with-fake-session one
+    (ecc-queue-test--with-buffers
+      (let ((two (ecc-model-create-session :name "other"
+                                           :project-root temporary-file-directory)))
+        (unwind-protect
+            (let ((list-one (ecc-queue-buffer one))
+                  (list-two (ecc-queue-buffer two)))
+              (ecc-model-remove-session two)
+              (should-not (buffer-live-p list-two))
+              (should-not (ecc-queue--buffers two))
+              (should (buffer-live-p list-one))
+              (should (eq (ecc-queue-buffer one) list-one)))
+          (ecc-test-cleanup-session two))))))
+
 (provide 'ecc-queue-test)
 
 ;;; ecc-queue-test.el ends here

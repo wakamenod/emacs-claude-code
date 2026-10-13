@@ -237,6 +237,14 @@ With ENTRY, the point goes to that entry instead."
 
 (add-hook 'ecc-input-queue-changed-hook #'ecc-queue--on-change)
 
+(defun ecc-queue--session-removed (session)
+  "Kill every list of the queue of SESSION, which is gone.
+A list left behind would keep the session alive, and its commands
+would act on a queue nothing sends any more."
+  (mapc #'kill-buffer (ecc-queue--buffers session)))
+
+(add-hook 'ecc-session-removed-hook #'ecc-queue--session-removed)
+
 ;;;###autoload
 (defun ecc-queue-show (&optional session entry)
   "List the prompts SESSION has waiting for the turn to end.

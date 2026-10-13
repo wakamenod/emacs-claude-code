@@ -44,8 +44,8 @@ Verified against **Claude Code CLI 2.1.290**.
   line; it is prepared again (slash command, `@` references, editor context)
   when it is sent again. A pasted image is an `@` reference to its file and
   comes back with it. `d` or `k` drops a prompt without asking, and `M-<up>` /
-  `M-<down>` move it. The list follows the queue as it drains, and a prompt
-  that left the queue while it was open is reported as gone rather than another
+  `M-<down>` move it. The list follows the queue as it drains and goes when
+  the session does, and a prompt that left the queue while it was open is reported as gone rather than another
   being acted on in its place. A prompt Emacs queued itself (from `ecc-send`,
   the review or a plugin reload) is listed by its text, can be dropped, and can
   be taken back when it is plain text. With an empty queue `C-c C-q` says so
@@ -318,7 +318,9 @@ Verified against **Claude Code CLI 2.1.290**.
   and the event was drawn as a stray notice. It is now applied to the session
   and drawn as nothing, and the name is never guessed from what the command
   printed or the argument it was given (confirmed against CLI 2.1.290,
-  2026-10-12).
+  2026-10-12). A name another session already has becomes `NAME<2>` here,
+  and the CLI is told that name the way a rename made in Emacs tells it, so
+  the history and a resume call the session what it is called here.
 
 - Renaming a session to the name it already has leaves it alone. The prompt
   of `C-c c R` offers the current name, and confirming it unchanged renamed

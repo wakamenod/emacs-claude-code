@@ -1470,6 +1470,61 @@ The other session's /rename, typed by the user, is drawn and names it."
               (should-not (ecc-session-current-turn two))))
         (ecc-test-cleanup-session two)))))
 
+;;;; A title made unique is told back
+
+(defun ecc-dispatch-test--sent-lines ()
+  "Return the text of every user message sent, oldest first."
+  (delq nil (mapcar (lambda (message)
+                      (and (equal (alist-get 'type message) "user")
+                           (alist-get 'content (alist-get 'message message))))
+                    (ecc-test-sent-messages))))
+
+(ert-deftest ecc-dispatch-test-typed-rename-taken-is-told-back ()
+  "A typed /rename to a name another session has is told back as NAME<2>.
+The CLI recorded NAME, so it is told the name the session ended up
+with once the turn ends; its answer carries that name and sends
+nothing more."
+  (ecc-test-with-fake-session session
+    (let ((other (ecc-model-create-session :name "taken"
+                                           :project-root temporary-file-directory)))
+      (unwind-protect
+          (ecc-test-with-running-cli session
+            (ecc-proc-send-prompt session "/rename taken")
+            (dolist (message (cdr (ecc-dispatch-test--rename-exchange "taken")))
+              (ecc-dispatch session message))
+            (should (equal (ecc-session-name session) "taken<2>"))
+            (should (equal (ecc-session-name other) "taken"))
+            (should (equal (ecc-dispatch-test--sent-lines)
+                           '("/rename taken" "/rename taken<2>")))
+            (should (equal (ecc-session-rename-sent session) "taken<2>"))
+            ;; The CLI answers it; the title is the name the session has.
+            (dolist (message (ecc-dispatch-test--rename-exchange "taken<2>"))
+              (ecc-dispatch session message))
+            (should (equal (ecc-session-name session) "taken<2>"))
+            (should (equal (ecc-session-name other) "taken"))
+            (should (equal (ecc-dispatch-test--sent-lines)
+                           '("/rename taken" "/rename taken<2>")))
+            (should-not (ecc-session-rename-sent session))
+            (should-not (ecc-session-rename-pending session)))
+        (ecc-test-cleanup-session other)))))
+
+(ert-deftest ecc-dispatch-test-typed-rename-free-sends-nothing ()
+  "A typed /rename to a name nobody has is applied and told nothing more."
+  (ecc-test-with-fake-session session
+    (let ((other (ecc-model-create-session :name "taken"
+                                           :project-root temporary-file-directory)))
+      (unwind-protect
+          (ecc-test-with-running-cli session
+            (ecc-proc-send-prompt session "/rename free")
+            (dolist (message (cdr (ecc-dispatch-test--rename-exchange "free")))
+              (ecc-dispatch session message))
+            (should (equal (ecc-session-name session) "free"))
+            (should (equal (ecc-session-name other) "taken"))
+            (should (equal (ecc-dispatch-test--sent-lines) '("/rename free")))
+            (should-not (ecc-session-rename-sent session))
+            (should-not (ecc-session-rename-pending session)))
+        (ecc-test-cleanup-session other)))))
+
 (ert-deftest ecc-dispatch-test-synthetic-reply-without-the-fields ()
   "An older CLI sends the answer of a command as plain synthetic text.
 It carries neither `local_command_run' nor `local_command_source', so
