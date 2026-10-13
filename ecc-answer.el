@@ -60,7 +60,7 @@
 (declare-function ecc-sidebar-focus "ecc-sidebar" ())
 (declare-function ecc-space-goto "ecc-space" (space))
 (declare-function ecc-space-zoom "ecc-space" ())
-(declare-function ecc-space-reset-windows "ecc-space" ())
+(declare-function ecc-space-cycle-layout "ecc-space" (&optional first))
 (declare-function ecc-show-session "ecc-transient" ())
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-tui-open "ecc-tui" (&optional session))
@@ -269,7 +269,7 @@ question buffer opens with the first one answered."
     (define-key map (kbd "j") #'ecc-space-goto)
     (define-key map (kbd "b") #'ecc-sidebar-focus)
     (define-key map (kbd "z") #'ecc-space-zoom)
-    (define-key map (kbd "V") #'ecc-space-reset-windows)
+    (define-key map (kbd "V") #'ecc-space-cycle-layout)
     ;; Answering what is waiting.
     (define-key map (kbd "a") #'ecc-answer-allow)
     (define-key map (kbd "d") #'ecc-answer-deny)

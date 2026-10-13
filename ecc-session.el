@@ -46,10 +46,11 @@
 (require 'ecc-window)
 (require 'ecc-visit)
 
-(declare-function ecc-resume "ecc" (session &optional fork))
+(declare-function ecc-restart "ecc" (session &optional confirm))
 (declare-function ecc-perm-deny "ecc-perm" (&optional reason))
 (declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
 (declare-function ecc-question-open "ecc-perm" (request))
+(declare-function ecc-queue-show "ecc-queue" (&optional session entry))
 (declare-function ecc-plan-open "ecc-plan" (request))
 (declare-function ecc-plan-file-path "ecc-plan" (request))
 (declare-function ecc-review "ecc-review" (&optional session paths))
@@ -113,6 +114,37 @@ buffer."
   "Return the name of the buffer of the session called NAME."
   (format "*ecc: %s*" name))
 
+(defun ecc-session-set-name (session name)
+  "Rename SESSION to NAME, with its buffer, and return the name used.
+The name is made unique among the sessions first, SESSION itself not
+counting (`ecc-model-unique-name\=').  Every rename goes through here:
+the one the user asks for, and the one `/rename\=' does in the CLI."
+  (let ((name (ecc-model-unique-name (string-trim name) session)))
+    (when (string-empty-p name)
+      (user-error "The name is empty"))
+    (setf (ecc-session-name session) name)
+    (when (buffer-live-p (ecc-session-buffer session))
+      (with-current-buffer (ecc-session-buffer session)
+        (rename-buffer (ecc-session-buffer-name name) t)))
+    (force-mode-line-update t)
+    (run-hook-with-args 'ecc-session-renamed-hook session)
+    name))
+
+(defun ecc-session-rename (session name)
+  "Rename SESSION to NAME here and in the CLI, and return the name used.
+The rename here is made at once (`ecc-session-set-name\=').  The CLI is
+told with a `/rename\=' that is not drawn (`ecc-proc-rename\='): at once
+when it runs with no turn open, otherwise once it does.  The name it is
+told is the one the session ended up with, NAME<2> included, so that
+the history and a later resume call the session what it is called here.
+
+A session read back from a recording is told when it is resumed, and
+not otherwise: nothing runs it in the meantime, and the recording is
+the CLI\='s to write."
+  (let ((name (ecc-session-set-name session name)))
+    (ecc-proc-rename session)
+    name))
+
 (defun ecc-session-ensure-buffer (session)
   "Return the buffer of SESSION, creating and drawing it if needed."
   (let ((buffer (ecc-session-buffer session)))
@@ -150,10 +182,13 @@ buffer."
     (message "Interrupt requested")))
 
 (defun ecc-session-resume ()
-  "Start this session again with --resume."
+  "Bring the CLI of this session back.
+A session that has stopped is resumed; an idle one that is still
+running is restarted once the user agrees (`ecc-restart\=').  One key
+for both, since what is wanted either way is a CLI that answers again."
   (interactive)
   (require 'ecc)
-  (ecc-resume (ecc-session-at-point)))
+  (ecc-restart (ecc-session-at-point) t))
 
 (defun ecc-session-show-log ()
   "Show the raw protocol log of this session."
@@ -167,34 +202,50 @@ buffer."
 A question or a plan that is still waiting opens the buffer it is
 answered in.
 
-A line of a diff, the heading of a call that names a file and a path
-the model wrote open that file, at the line when there is one
-\(`ecc-visit-target-at-point\='); the node laid open is
-\[ecc-session-show-detail].  A video or a sound among them plays
-in the machine's own player instead (`ecc-visit-open\=').
+A line of a diff and the heading of a call that names a file open that
+file, at the line when there is one (`ecc-visit-target-at-point\='); the
+node laid open is \[ecc-session-show-detail].  A path the model wrote
+opens the file it names wherever it is found -- a bare name or a path
+written against another directory is looked for among the files of the
+session and of the project, then among the files Emacs visits outside
+it, and on the machine after asking (`ecc-visit-find-written\=').  The
+file picked among several opens at once the next time; with a prefix
+argument the search is made again.  A video or a sound among them
+plays in the machine's own player instead (`ecc-visit-open\=').
 
 A picture drawn in the transcript opens as itself.  A URL comes
 first, and before the node the point is in: the point is
 only on one where a link was drawn, which is narrow enough to say what
 RET does there without a rule of its own.  It is the same key that
 follows a link everywhere else in Emacs, and the same one the transcript
-already opens things with."
+already opens things with.
+
+The prompts waiting in the queue, drawn above the separator, open the
+list of the queue (`ecc-queue-show\='), on the prompt at point.  They
+come before anything else, a URL included: the text of a prompt is
+what the user wrote, and a path or a URL in it is not a link."
   (interactive)
   (let* ((session (ecc-session-at-point))
+         (queued (get-text-property (point) 'ecc-queue))
          (node (ecc-chat-node-at-point))
          (url (ecc-markdown-url-at-point))
          (path (or (ecc-chat-file-at-point) (ecc-chat-plan-file-at-point)))
          (picture (ecc-image-at-point))
-         (target (and (not url) (not picture) (ecc-visit-target-at-point)))
+         (written (and (not url) (not picture) (ecc-markdown-file-at-point)))
+         (target (and (not url) (not picture) (not written)
+                      (ecc-visit-target-at-point)))
          (request (and node (ecc-model-node-get node 'request)))
          (pending (and request (memq request (ecc-session-pending session)))))
     (cond
+     (queued (require 'ecc-queue)
+             (ecc-queue-show session (get-text-property (point) 'ecc-queued)))
      (url (browse-url url))
      ;; A still opens in `image-mode\=', which zooms and scrolls; a video
      ;; is something Emacs cannot play, so the machine plays it.
      (picture (if (ecc-image-plays-outside-p picture)
                   (ecc-image-open-externally picture)
                 (find-file-other-window picture)))
+     (written (ecc-visit-open-written session written current-prefix-arg))
      (target (ecc-visit-open (car target) (cdr target) session))
      (path (ecc-visit-open path nil session))
      ((null node) (user-error "Nothing to show here"))
@@ -411,16 +462,24 @@ stripped from every line."
          (format "%s- %s: %s — %s\n\n" pad (ecc-node-type node)
                  (if request (ecc-request-tool-name request) "?")
                  (ecc-node-status node))))
-      ('result (let ((result (ecc-model-node-get node 'result)))
-                 (format "_%s · $%.4f_\n\n"
-                         (or (alist-get 'stop_reason result) "?")
-                         (or (alist-get 'total_cost_usd result) 0))))
       ('system (if (eq (ecc-model-node-get node 'kind) 'prompt)
                    (format "%s> %s\n\n" pad
                            (string-replace "\n" (concat "\n" pad "> ")
                                            (or (ecc-model-node-get node 'text) "")))
                  ""))
       (_ ""))))
+
+(defun ecc-session--markdown-turn-end (turn)
+  "Return the line that closes TURN in Markdown: how it ended, what it cost.
+It is the turn's own cost (`ecc-model-result-cost'), not the
+`total_cost_usd' of its result, which is the running total of the CLI;
+a cost that is not known is left out.  Nothing for a turn without a
+result."
+  (when-let* ((result (ecc-turn-result turn)))
+    (concat "_" (or (alist-get 'stop_reason result) "?")
+            (when-let* ((cost (ecc-turn-cost turn)))
+              (format " · $%.4f" cost))
+            "_\n\n")))
 
 (defun ecc-session-export-markdown-string (session)
   "Return the transcript of SESSION as Markdown."
@@ -432,7 +491,8 @@ stripped from every line."
                                            (ecc-turn-label turn)
                                            "(resumed)"))
               (mapconcat (lambda (node) (ecc-session--markdown-node node 0))
-                         (ecc-turn-children turn) "")))
+                         (ecc-turn-children turn) "")
+              (ecc-session--markdown-turn-end turn)))
     (ecc-session-turns session) "")))
 
 (defun ecc-session-export-markdown (file)

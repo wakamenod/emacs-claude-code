@@ -71,6 +71,7 @@
 (require 'ecc-model)
 (require 'ecc-image)
 (require 'ecc-markdown)
+(require 'ecc-mermaid)
 (require 'ecc-diff)
 (require 'ecc-visual)
 
@@ -78,7 +79,6 @@
 
 ;; The keymaps belong to `ecc-chat', which sits above this module; they
 ;; are looked up by name when the text is drawn.
-(defvar ecc-chat-text-width)
 (defvar ecc-chat-transcript-map)
 (defvar ecc-chat-button-map)
 (defvar ecc-request-section-map)
@@ -102,8 +102,8 @@ matter of the moment, and TAB, the digits and `+\=' / `-\=' say it per
 node and are remembered.")
 
 (defcustom ecc-render-result-max-lines 12
-  "Lines of a tool result shown in the transcript.
-The whole result is always available with RET."
+  "Lines shown in the transcript of a tool result and of each input value.
+The whole of either is always available with RET."
   :type 'integer
   :group 'ecc)
 
@@ -272,9 +272,9 @@ an arrow or the key of an input says its piece once."
 (defun ecc-render--marker-width (line)
   "Return the columns the list marker of LINE takes, or nil when it has none.
 What is measured is what is drawn rather than what is written:
-`ecc-markdown-fontify\=' puts a `display\=' bullet over the marker of a
-list item, and a numbered marker is wider in the text than the bullet
-drawn in its place."
+`ecc-markdown-fontify\=' puts a one-column `display\=' bullet over a
+\"-\", \"*\" or \"+\" and leaves a number as it is, so the width is the
+bullet's for the first and the number's own for the second."
   (when (string-match ecc-markdown-bullet-regexp line)
     (let* ((from (match-beginning 1))
            (to (match-end 1))
@@ -407,32 +407,22 @@ spans the window rather than the text."
   "Return TEXT with PREFIX after every newline, ready to be appended."
   (string-replace "\n" (concat "\n" prefix) (or text "")))
 
-(defun ecc-render--insert-input (input prefix)
-  "Insert the tool INPUT as one line per key, indented by PREFIX."
+(defun ecc-render--insert-input (input prefix &optional limit)
+  "Insert the tool INPUT as one line per key, indented by PREFIX.
+A value of more than LIMIT lines is cut to its first LIMIT, as a result
+is; without LIMIT every value is drawn whole."
   (dolist (pair input)
     (let ((key (symbol-name (car pair)))
           (value (ecc-protocol-value-string (cdr pair))))
       (if (string-search "\n" value)
           (progn
             (insert (propertize (format "%s%s:" prefix key) 'face 'ecc-dim-face) "\n")
-            (ecc-render--insert-lines value (concat prefix "  ") 'ecc-dim-face))
+            (ecc-render--insert-lines (if limit (ecc-render--clip value limit) value)
+                                      (concat prefix "  ") 'ecc-dim-face))
         (insert (ecc-render--hang
                  (propertize (format "%s%s: %s" prefix key value) 'face 'ecc-dim-face)
                  (concat prefix (make-string (string-width key) ?\s) "  "))
                 "\n")))))
-
-(defun ecc-render--image-width (indent)
-  "Return the pixels an inline image may take, INDENT columns in.
-The ceiling is `ecc-chat-text-width\=' rather than the window: the prose
-is already held to that width by the margins, and a picture wider than
-the text it belongs to reads as a different document."
-  (let* ((window (or (get-buffer-window (current-buffer) t) (selected-window)))
-         (char (frame-char-width (window-frame window)))
-         (columns (- (min (window-body-width window)
-                          (or (bound-and-true-p ecc-chat-text-width)
-                              most-positive-fixnum))
-                     indent 1)))
-    (max (* 8 char) (* columns char))))
 
 (defun ecc-render--insert-image (path prefix &optional bytes name)
   "Insert the image PATH, of BYTES bytes, on a line of its own after PREFIX.
@@ -440,7 +430,7 @@ NAME is what the line says instead of the name of the file.
 Not through `ecc-render--insert-lines\=': that splits on newlines and
 hangs a wrap prefix on every one of them, and an image is one glyph
 that must not be broken."
-  (let* ((width (ecc-render--image-width (string-width prefix)))
+  (let* ((width (ecc-image-width (string-width prefix)))
          (preview (and (ecc-image-video-p path) (ecc-render--video-preview path)))
          (string (ecc-image-string path width ecc-image-max-height
                                    bytes preview name))
@@ -1370,9 +1360,17 @@ is appended."
      (lambda ()
        (if (ecc-node-streaming node)
            (ecc-render--insert-stream-text node (ecc-model-streaming-text node) pad face)
-         (ecc-render--insert-lines (ecc-render--fontify (ecc-node-id node)
-                                                        (ecc-model-node-get node 'text))
-                                   pad face))))))
+         (let ((text (ecc-render--fontify (ecc-node-id node)
+                                          (ecc-model-node-get node 'text)))
+               (start (point)))
+           (ecc-render--insert-lines text pad face)
+           ;; The diagrams are put on the text once it is in: the lines
+           ;; of a block are split and indented apart, and one picture
+           ;; has to lie over all of them.
+           (when (ecc-mermaid-wanted-p text)
+             (ecc-mermaid-show start (point)
+                               (and ecc-render--session
+                                    (ecc-session-name ecc-render--session))))))))))
 
 (defun ecc-render--insert-thinking (node depth)
   "Insert the thinking NODE at DEPTH."
@@ -1480,7 +1478,12 @@ diff when the caller has built it already, to build it only once."
         (insert line))
       (ecc-render--insert-lines (ecc-render--clip diff ecc-render-diff-max-lines)
                                 body 'ecc-dim-face))
-     (t (ecc-render--insert-input input body)))
+     ;; Cut as the output under it is: a command that pipes a file
+     ;; through a heredoc is a hundred lines, and a Bash call that comes
+     ;; up open on its diff had the diff buried under them (2026-10-13).
+     ;; A pending request draws its input whole, as it has to be read
+     ;; before it is answered, and RET shows this one whole.
+     (t (ecc-render--insert-input input body ecc-render-result-max-lines)))
     (when-let* ((status (ecc-model-node-get node 'task-status)))
       (insert (propertize (format "%stask: %s" body status) 'face 'ecc-dim-face) "\n"))
     (pcase (ecc-node-status node)
@@ -1835,24 +1838,32 @@ each question once the request was answered."
 (defun ecc-render--insert-command (node depth)
   "Insert the local command NODE at DEPTH.
 The command is drawn the way the user typed it, and what it printed
-follows in the dim face of something the CLI said rather than the model."
-  (let ((pad (ecc-render--pad depth))
-        (name (or (ecc-model-node-get node 'name) "?"))
-        (args (ecc-model-node-get node 'args))
-        (output (ecc-model-node-get node 'output)))
-    (ecc-render--insert-owned
-     node depth
-     (lambda ()
-       (insert (ecc-render--hang
-                (concat pad (propertize (concat ecc-render-user-mark name
-                                                (if args (concat " " args) ""))
-                                        'face 'ecc-user-face))
-                (concat pad (make-string (string-width ecc-render-user-mark) ?\s)))
-               "\n")))
-    (when (and (stringp output) (not (string-empty-p (string-trim output))))
+follows in the dim face of something the CLI said rather than the model.
+A command the turn above already carries as its prompt -- one typed
+here rather than read out of a recording -- is not drawn twice, and
+only what it printed is inserted."
+  (let* ((pad (ecc-render--pad depth))
+         (name (or (ecc-model-node-get node 'name) "?"))
+         (args (ecc-model-node-get node 'args))
+         (output (ecc-model-node-get node 'output))
+         (echoed (ecc-model-node-get node 'echoed)))
+    (unless echoed
       (ecc-render--insert-owned
-       node (1+ depth)
-       (lambda () (ecc-render--insert-lines output (concat pad "  ") 'ecc-dim-face))))))
+       node depth
+       (lambda ()
+         (insert (ecc-render--hang
+                  (concat pad (propertize (concat ecc-render-user-mark name
+                                                  (if args (concat " " args) ""))
+                                          'face 'ecc-user-face))
+                  (concat pad (make-string (string-width ecc-render-user-mark) ?\s)))
+                 "\n"))))
+    (when (and (stringp output) (not (string-empty-p (string-trim output))))
+      ;; Without the command above it there is nothing to indent under:
+      ;; what it printed stands where the model's own text would.
+      (ecc-render--insert-owned
+       node (if echoed depth (1+ depth))
+       (lambda () (ecc-render--insert-lines output (if echoed pad (concat pad "  "))
+                                            'ecc-dim-face))))))
 
 (defun ecc-render--system-heading (node)
   "Return the heading text of the system NODE."
@@ -3079,7 +3090,8 @@ region has left behind pulls the region back to that block."
                 ecc-usage-hook
                 ecc-compact-hook
                 ecc-files-updated-hook
-                ecc-tasks-updated-hook))
+                ecc-tasks-updated-hook
+                ecc-input-queue-changed-hook))
   (add-hook hook #'ecc-render--on-change))
 
 (defun ecc-render--on-turn-finished (session &optional turn)

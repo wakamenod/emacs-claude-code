@@ -14,6 +14,7 @@
 (require 'ecc-dispatch)
 (require 'ecc-perm)
 (require 'ecc-render)
+(require 'ecc-session)
 
 ;;;; basic-turn
 
@@ -564,7 +565,7 @@ prompt must not be lost, and it must not wait for ever."
     (should (eq (ecc-session-state session) 'running))
     (should (equal 1 (ecc-proc-send-prompt session "ecc から送る")))
     ;; It is in the queue, not on the wire.
-    (should (equal '("ecc から送る") (ecc-session-input-queue session)))
+    (should (equal '("ecc から送る") (ecc-model-queued-texts session)))
     (should-not (seq-find (lambda (message) (equal (alist-get 'type message) "user"))
                           (ecc-test-sent-messages)))
     ;; The result of the remote turn closes it and lets the queue go.
@@ -1254,6 +1255,287 @@ once every result is in."
         (should (equal (ecc-model-node-get node 'output)
                        "Session color set to: red\nand again"))))))
 
+(ert-deftest ecc-dispatch-test-live-local-command ()
+  "A slash command the live CLI ran is a command node, not the model talking.
+The stream says it in one synthetic assistant message rather than in
+the user messages a recording holds."
+  (ecc-test-with-fake-session session
+    (ecc-test-dispatch session "local-command" "/rename aaa")
+    (let ((nodes (seq-filter (lambda (node) (eq (ecc-node-type node) 'command))
+                             (hash-table-values (ecc-session-nodes session)))))
+      (should (= 2 (length nodes)))
+      ;; No text node was made for either of them.
+      (should-not (seq-find (lambda (node) (eq (ecc-node-type node) 'text))
+                            (hash-table-values (ecc-session-nodes session))))
+      (let ((rename (seq-find (lambda (node)
+                                (equal (ecc-model-node-get node 'name) "/rename"))
+                              nodes)))
+        (should rename)
+        (should (equal (ecc-model-node-get rename 'args) "aaa"))
+        (should (equal (ecc-model-node-get rename 'output)
+                       "Session renamed to: aaa")))
+      (let ((model (seq-find (lambda (node)
+                               (equal (ecc-model-node-get node 'name) "/model"))
+                             nodes)))
+        (should model)
+        (should (equal (ecc-model-node-get model 'args) "haiku"))
+        (should (string-search "Haiku" (ecc-model-node-get model 'output)))))))
+
+(ert-deftest ecc-dispatch-test-live-rename-renames-the-session ()
+  "/rename in the CLI renames the session and its buffer here.
+The fixture holds the system/session_title_changed the CLI sends for
+it, ahead of system/init (CLI 2.1.290, 2026-10-12)."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-test-dispatch session "local-command" "/rename aaa")
+    (should (equal (ecc-session-name session) "aaa"))
+    (should (equal (buffer-name (ecc-session-buffer session)) "*ecc: aaa*"))))
+
+(ert-deftest ecc-dispatch-test-title-changed-before-init ()
+  "The title event renames a session that has seen no system/init yet.
+It is the first line of the stream, so it can need nothing init brings,
+and it is drawn as nothing: no notice is made for it."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (should-not (ecc-session-init session))
+    (let ((line (car (ecc-test-fixture-lines "local-command"))))
+      (should (string-search "session_title_changed" line))
+      (ecc-dispatch session (ecc-protocol-parse-line line)))
+    (should (equal (ecc-session-name session) "aaa"))
+    (should (equal (buffer-name (ecc-session-buffer session)) "*ecc: aaa*"))
+    (should-not (seq-find (lambda (node) (memq (ecc-node-type node) '(system unknown)))
+                          (hash-table-values (ecc-session-nodes session))))
+    (should-not (ecc-session-current-turn session))))
+
+(ert-deftest ecc-dispatch-test-title-changed-keeps-other-names ()
+  "A title another session has is made unique, and a blank one is ignored."
+  (ecc-test-with-fake-session session
+    (let ((other (ecc-model-create-session :name "taken" :project-root "/tmp/")))
+      (ecc-dispatch session '((type . "system") (subtype . "session_title_changed")
+                              (title . "taken")))
+      (should (equal (ecc-session-name session) "taken<2>"))
+      (should (equal (ecc-session-name other) "taken"))
+      (ecc-dispatch session '((type . "system") (subtype . "session_title_changed")
+                              (title . "  ")))
+      (should (equal (ecc-session-name session) "taken<2>")))))
+
+(ert-deftest ecc-dispatch-test-rename-output-renames-nothing ()
+  "What `/rename' printed is not read for a name.
+The name comes from system/session_title_changed alone; the sentence
+and the argument are what was typed and shown, not what the CLI did."
+  (ecc-test-with-fake-session session
+    (let ((before (ecc-session-name session)))
+      (ecc-model-begin-turn session "/rename one")
+      (ecc-dispatch session
+                    '((type . "assistant")
+                      (local_command_run . ((command . "rename") (args . "one")))
+                      (local_command_source
+                       . "<local-command-stdout>Session renamed to: two</local-command-stdout>")
+                      (message . ((role . "assistant") (model . "<synthetic>")
+                                  (content . [((type . "text")
+                                               (text . "Session renamed to: two"))])))))
+      (should (equal (ecc-session-name session) before)))))
+
+;;;; A rename sent from Emacs
+
+(defun ecc-dispatch-test--rename-exchange (name)
+  "Return the messages the CLI answers `/rename NAME' with, in order.
+They are the ones of the rename-while-busy fixture (CLI 2.1.290,
+2026-10-12) -- the title event, system/init, the synthetic assistant
+message and the result -- with NAME put in place of the one recorded.
+In front of them is the echo --replay-user-messages would send; that
+CLI sends none for a slash command, and one that did must not open a
+turn either."
+  (let* ((lines (ecc-test-fixture-lines "rename-while-busy"))
+         (from (seq-position lines "session_title_changed"
+                             (lambda (line key) (string-search key line)))))
+    (cons `((type . "user") (isReplay . t)
+            (message . ((role . "user") (content . ,(concat "/rename " name)))))
+          (mapcar (lambda (line)
+                    (ecc-protocol-parse-line
+                     (string-replace "bbb" name line)))
+                  (nthcdr from lines)))))
+
+(defun ecc-dispatch-test--node-count (session)
+  "Return how many nodes SESSION has."
+  (hash-table-count (ecc-session-nodes session)))
+
+(ert-deftest ecc-dispatch-test-hidden-rename-is-not-drawn ()
+  "The CLI's answer to a rename sent from Emacs leaves the transcript alone.
+The echo, the title, init, the synthetic assistant message and the
+result go to the log: no turn, no node, the state and the cost as they
+were.  The title applies the name the session has already."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-test-with-running-cli session
+      (ecc-test-dispatch session "basic-turn" "hello")
+      (ecc-render-refresh session)
+      (let ((turns (length (ecc-session-turns session)))
+            (nodes (ecc-dispatch-test--node-count session))
+            (cost (ecc-session-total-cost session))
+            (text (ecc-test-buffer-string (ecc-session-buffer session)))
+            (renamed nil))
+        (should (> cost 0))
+        (should (equal (ecc-session-rename session "refactor") "refactor"))
+        (let ((ecc-session-renamed-hook
+               (list (lambda (s) (push (ecc-session-name s) renamed)))))
+          (dolist (message (ecc-dispatch-test--rename-exchange "refactor"))
+            (ecc-dispatch session message)))
+        (ecc-render-refresh session)
+        (should (equal (ecc-session-name session) "refactor"))
+        (should (equal renamed '("refactor")))
+        (should (= turns (length (ecc-session-turns session))))
+        (should (= nodes (ecc-dispatch-test--node-count session)))
+        (should-not (ecc-session-current-turn session))
+        (should (eq (ecc-session-state session) 'idle))
+        (should (= cost (ecc-session-total-cost session)))
+        (should (equal text (ecc-test-buffer-string (ecc-session-buffer session))))
+        (should-not (ecc-session-rename-sent session))
+        ;; Only the rename went to the CLI.
+        (should (equal (mapcar (lambda (m) (alist-get 'content (alist-get 'message m)))
+                               (seq-filter (lambda (m) (equal (alist-get 'type m) "user"))
+                                           (ecc-test-sent-messages)))
+                       '("/rename refactor")))
+        (should (string-search "the CLI answered the rename"
+                               (ecc-test-log-string
+                                (get-buffer (ecc-log-buffer-name "refactor")))))))))
+
+(ert-deftest ecc-dispatch-test-hidden-rename-inside-a-turn ()
+  "A prompt sent right after the rename gets the turn the rename does not close.
+The CLI runs the rename first, so its answer arrives with the turn of
+the prompt already open."
+  (ecc-test-with-fake-session session
+    (ecc-test-with-running-cli session
+      (ecc-session-rename session "refactor")
+      (ecc-proc-send-prompt session "hello")
+      (let ((turn (ecc-session-current-turn session)))
+        (dolist (message (ecc-dispatch-test--rename-exchange "refactor"))
+          (ecc-dispatch session message))
+        (should (eq turn (ecc-session-current-turn session)))
+        (should (eq (ecc-session-state session) 'running))
+        (should-not (seq-find (lambda (node) (eq (ecc-node-type node) 'command))
+                              (hash-table-values (ecc-session-nodes session))))
+        ;; The turn's own answer still closes it.
+        (dolist (line (ecc-test-fixture-lines "basic-turn"))
+          (ecc-dispatch session (ecc-protocol-parse-line line)))
+        (should-not (ecc-session-current-turn session))
+        (should (eq turn (car (last (ecc-session-turns session)))))
+        (should (seq-find (lambda (node) (eq (ecc-node-type node) 'text))
+                          (hash-table-values (ecc-session-nodes session))))))))
+
+(ert-deftest ecc-dispatch-test-hidden-rename-outranks-another-title ()
+  "While a rename is out, a title other than its name is not applied.
+That is the old title a resume might bring back.  Once the rename is
+answered, a title applies again: a /rename the user types still names
+the session, and is drawn."
+  (ecc-test-with-fake-session session
+    (ecc-test-with-running-cli session
+      (ecc-session-rename session "mine")
+      (ecc-dispatch session '((type . "system") (subtype . "session_title_changed")
+                              (title . "made up")))
+      (should (equal (ecc-session-name session) "mine"))
+      (dolist (message (ecc-dispatch-test--rename-exchange "mine"))
+        (ecc-dispatch session message))
+      (should (equal (ecc-session-name session) "mine"))
+      ;; Now the user types one.
+      (ecc-proc-send-prompt session "/rename theirs")
+      (dolist (message (cdr (ecc-dispatch-test--rename-exchange "theirs")))
+        (ecc-dispatch session message))
+      (should (equal (ecc-session-name session) "theirs"))
+      (should (seq-find (lambda (node) (eq (ecc-node-type node) 'command))
+                        (hash-table-values (ecc-session-nodes session))))
+      (should-not (ecc-session-current-turn session)))))
+
+(ert-deftest ecc-dispatch-test-hidden-rename-in-one-of-two-sessions ()
+  "A rename out in one session hides nothing of another.
+The other session's /rename, typed by the user, is drawn and names it."
+  (ecc-test-with-fake-session one
+    (let ((two (ecc-model-create-session :name "two"
+                                         :project-root temporary-file-directory)))
+      (unwind-protect
+          (ecc-test-with-running-cli one
+            (ecc-test-with-running-cli two
+              (ecc-session-rename one "first")
+              (ecc-proc-send-prompt two "/rename second")
+              (dolist (message (cdr (ecc-dispatch-test--rename-exchange "second")))
+                (ecc-dispatch two message))
+              (dolist (message (ecc-dispatch-test--rename-exchange "first"))
+                (ecc-dispatch one message))
+              (should (equal (ecc-session-name one) "first"))
+              (should (equal (ecc-session-name two) "second"))
+              (should-not (ecc-session-turns one))
+              (should (= 1 (length (ecc-session-turns two))))
+              (should (seq-find (lambda (node) (eq (ecc-node-type node) 'command))
+                                (hash-table-values (ecc-session-nodes two))))
+              (should-not (ecc-session-current-turn two))))
+        (ecc-test-cleanup-session two)))))
+
+;;;; A title made unique is told back
+
+(defun ecc-dispatch-test--sent-lines ()
+  "Return the text of every user message sent, oldest first."
+  (delq nil (mapcar (lambda (message)
+                      (and (equal (alist-get 'type message) "user")
+                           (alist-get 'content (alist-get 'message message))))
+                    (ecc-test-sent-messages))))
+
+(ert-deftest ecc-dispatch-test-typed-rename-taken-is-told-back ()
+  "A typed /rename to a name another session has is told back as NAME<2>.
+The CLI recorded NAME, so it is told the name the session ended up
+with once the turn ends; its answer carries that name and sends
+nothing more."
+  (ecc-test-with-fake-session session
+    (let ((other (ecc-model-create-session :name "taken"
+                                           :project-root temporary-file-directory)))
+      (unwind-protect
+          (ecc-test-with-running-cli session
+            (ecc-proc-send-prompt session "/rename taken")
+            (dolist (message (cdr (ecc-dispatch-test--rename-exchange "taken")))
+              (ecc-dispatch session message))
+            (should (equal (ecc-session-name session) "taken<2>"))
+            (should (equal (ecc-session-name other) "taken"))
+            (should (equal (ecc-dispatch-test--sent-lines)
+                           '("/rename taken" "/rename taken<2>")))
+            (should (equal (ecc-session-rename-sent session) "taken<2>"))
+            ;; The CLI answers it; the title is the name the session has.
+            (dolist (message (ecc-dispatch-test--rename-exchange "taken<2>"))
+              (ecc-dispatch session message))
+            (should (equal (ecc-session-name session) "taken<2>"))
+            (should (equal (ecc-session-name other) "taken"))
+            (should (equal (ecc-dispatch-test--sent-lines)
+                           '("/rename taken" "/rename taken<2>")))
+            (should-not (ecc-session-rename-sent session))
+            (should-not (ecc-session-rename-pending session)))
+        (ecc-test-cleanup-session other)))))
+
+(ert-deftest ecc-dispatch-test-typed-rename-free-sends-nothing ()
+  "A typed /rename to a name nobody has is applied and told nothing more."
+  (ecc-test-with-fake-session session
+    (let ((other (ecc-model-create-session :name "taken"
+                                           :project-root temporary-file-directory)))
+      (unwind-protect
+          (ecc-test-with-running-cli session
+            (ecc-proc-send-prompt session "/rename free")
+            (dolist (message (cdr (ecc-dispatch-test--rename-exchange "free")))
+              (ecc-dispatch session message))
+            (should (equal (ecc-session-name session) "free"))
+            (should (equal (ecc-session-name other) "taken"))
+            (should (equal (ecc-dispatch-test--sent-lines) '("/rename free")))
+            (should-not (ecc-session-rename-sent session))
+            (should-not (ecc-session-rename-pending session)))
+        (ecc-test-cleanup-session other)))))
+
+(ert-deftest ecc-dispatch-test-synthetic-reply-without-the-fields ()
+  "An older CLI sends the answer of a command as plain synthetic text.
+It carries neither `local_command_run' nor `local_command_source', so
+there is nothing here to tell it from the model talking."
+  (ecc-test-with-fake-session session
+    (ecc-test-dispatch session "slash-commands" "/model opus")
+    (should-not (seq-find (lambda (node) (eq (ecc-node-type node) 'command))
+                          (hash-table-values (ecc-session-nodes session))))
+    (should (seq-find (lambda (node) (eq (ecc-node-type node) 'text))
+                      (hash-table-values (ecc-session-nodes session))))))
+
 (ert-deftest ecc-dispatch-test-command-output-without-a-command ()
   "Output whose command is not in this page is kept rather than dropped."
   (ecc-test-with-fake-session session
@@ -1568,6 +1850,90 @@ in life.  ERROR-P makes the result an error."
         (should-not (ecc-model-node-get node 'written-images))
         (should (equal (ecc-render--tool-images node)
                        (list (list path 12 nil))))))))
+
+;;;; What a turn cost
+
+(defun ecc-dispatch-test--result-totals (name)
+  "Return the `total_cost_usd' of every result of fixture NAME, in order."
+  (delq nil (mapcar (lambda (message)
+                      (and (equal (alist-get 'type message) "result")
+                           (alist-get 'total_cost_usd message)))
+                    (ecc-test-fixture-messages name))))
+
+(defun ecc-dispatch-test--steps (totals)
+  "Return what each of TOTALS adds to the one before it, from 0."
+  (let ((base 0))
+    (mapcar (lambda (total) (prog1 (- total base) (setq base total)))
+            totals)))
+
+(defun ecc-dispatch-test--costs (session)
+  "Return the costs of the turns of SESSION, oldest first."
+  (mapcar #'ecc-turn-cost (ecc-session-turns session)))
+
+(ert-deftest ecc-dispatch-test-turn-cost-from-two-turns ()
+  "Two turns of one CLI cost what each added to its running total.
+The recording's second result carries the first one's total plus its
+own, so the session costs the last total, not the sum of the two."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-sent-echoes session)
+          (list "Reply with exactly: ONE" "Reply with exactly: TWO"))
+    (ecc-test-dispatch session "replay-user-messages" "Reply with exactly: ONE")
+    (let ((totals (ecc-dispatch-test--result-totals "replay-user-messages")))
+      (should (equal totals '(0.0082027 0.0104376)))
+      (should (equal (ecc-dispatch-test--costs session)
+                     (ecc-dispatch-test--steps totals)))
+      (should (< (abs (- (ecc-session-total-cost session) 0.0104376)) 1e-12)))))
+
+(ert-deftest ecc-dispatch-test-turn-cost-across-a-compact ()
+  "The three results around a /compact cost the steps between them."
+  (ecc-test-with-fake-session session
+    (ecc-model-begin-turn session "/compact")
+    (dolist (line (ecc-test-fixture-lines "compact"))
+      (ecc-dispatch session (ecc-protocol-parse-line line)))
+    (let ((totals (ecc-dispatch-test--result-totals "compact")))
+      (should (= 3 (length totals)))
+      (should (equal (ecc-dispatch-test--costs session)
+                     (ecc-dispatch-test--steps totals)))
+      (should (< (abs (- (ecc-session-total-cost session) (car (last totals))))
+                 1e-12)))))
+
+(ert-deftest ecc-dispatch-test-typed-rename-costs-nothing ()
+  "A /rename the user types calls no model, and its turn costs nothing.
+Its result repeats the total of the turn before it (CLI 2.1.290), which
+used to be drawn as the rename's cost and counted a second time."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-sent-echoes session) (list "Reply with exactly: ONE"))
+    (ecc-test-dispatch session "rename-while-busy" "Reply with exactly: ONE")
+    (should (equal (ecc-dispatch-test--result-totals "rename-while-busy")
+                   '(0.0291818 0.0291818)))
+    (should (equal (ecc-dispatch-test--costs session) '(0.0291818 0.0)))
+    (should (= (ecc-session-total-cost session) 0.0291818))))
+
+(ert-deftest ecc-dispatch-test-turn-cost-in-two-sessions ()
+  "Two sessions read side by side count their costs apart.
+Each has the running total of its own CLI to count from."
+  (ecc-test-with-fake-session one
+    (let ((two (ecc-model-create-session :name "two"
+                                         :project-root temporary-file-directory)))
+      (unwind-protect
+          (let ((a (ecc-test-fixture-lines "replay-user-messages"))
+                (b (ecc-test-fixture-lines "compact")))
+            (setf (ecc-session-sent-echoes one)
+                  (list "Reply with exactly: ONE" "Reply with exactly: TWO"))
+            (ecc-model-begin-turn one "Reply with exactly: ONE")
+            (ecc-model-begin-turn two "/compact")
+            (while (or a b)
+              (when a (ecc-dispatch one (ecc-protocol-parse-line (pop a))))
+              (when b (ecc-dispatch two (ecc-protocol-parse-line (pop b)))))
+            (should (equal (ecc-dispatch-test--costs one)
+                           (ecc-dispatch-test--steps
+                            (ecc-dispatch-test--result-totals "replay-user-messages"))))
+            (should (equal (ecc-dispatch-test--costs two)
+                           (ecc-dispatch-test--steps
+                            (ecc-dispatch-test--result-totals "compact"))))
+            (should (< (abs (- (ecc-session-total-cost one) 0.0104376)) 1e-12))
+            (should (< (abs (- (ecc-session-total-cost two) 0.02506535)) 1e-12)))
+        (ecc-test-cleanup-session two)))))
 
 (provide 'ecc-dispatch-test)
 

@@ -667,6 +667,36 @@ buffer-locally."
         (should (equal (cdr (assq 'continuation fringe-indicator-alist))
                        '(nil nil)))))))
 
+(ert-deftest ecc-chat-test-no-paren-matching ()
+  "A session buffer does not match parens, whatever the global mode says.
+Prose has parens that do not pair, and `show-paren-style\=' `mixed\='
+painted a whole paragraph in `show-paren-mismatch\=' from one of them.
+The predicate is what is tested, not the overlay: `show-paren-function\='
+runs on an idle timer, after redisplay, which batch has neither of."
+  (require 'paren)
+  (let ((show-paren-mode t)
+        (show-paren-style 'mixed)
+        (show-paren-when-point-inside-paren t)
+        (show-paren-when-point-in-periphery t))
+    ;; Not vacuous: the same settings do match parens in a text buffer.
+    (with-temp-buffer
+      (text-mode)
+      (should (show-paren--enabled-p)))
+    (ecc-test-with-fake-session session
+      (with-current-buffer (ecc-session-ensure-buffer session)
+        (should-not (show-paren--enabled-p))
+        ;; Asked for by hand, it comes back.
+        (show-paren-local-mode 1)
+        (should (show-paren--enabled-p)))))
+  ;; A buffer made while the global mode is off stays without it when
+  ;; the mode is turned on afterwards, which sets the default value.
+  (let ((show-paren-mode nil))
+    (ecc-test-with-fake-session session
+      (with-current-buffer (ecc-session-ensure-buffer session)
+        (setq-default show-paren-mode t)
+        (should show-paren-mode)
+        (should-not (show-paren--enabled-p))))))
+
 (ert-deftest ecc-chat-test-kill-line-follows-the-visual-line ()
   "C-k kills the visual line, as C-a and C-e move by it.
 C-k is bound to `ecc-chat-kill-line\=' by name, and the remap
@@ -1078,7 +1108,7 @@ all the pictures off."
   (should (eq (lookup-key ecc-chat-transcript-map (kbd "v")) #'ecc-chat-goto-prompt))
   (should (eq (lookup-key ecc-chat-transcript-map (kbd "i")) #'ecc-chat-goto-prompt))
   (should (eq (lookup-key ecc-chat-transcript-map (kbd "F")) #'ecc-chat-goto-files))
-  (should (eq (lookup-key ecc-chat-transcript-map (kbd "I")) #'ecc-image-toggle-animation))
+  (should (eq (lookup-key ecc-chat-transcript-map (kbd "I")) #'ecc-chat-toggle-picture))
   (should-not (lookup-key ecc-chat-transcript-map (kbd "f"))))
 
 (provide 'ecc-chat-test)

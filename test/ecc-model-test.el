@@ -25,6 +25,13 @@
       (ecc-model-remove-session other)
       (should (equal (ecc-model-sessions) (list session))))))
 
+(ert-deftest ecc-model-test-unique-name-excepts-one-session ()
+  "A session is not what its own name collides with."
+  (ecc-test-with-fake-session session
+    (should (equal (ecc-model-unique-name "test") "test<2>"))
+    (should (equal (ecc-model-unique-name "test" session) "test"))
+    (should (equal (ecc-model-unique-name "other" session) "other"))))
+
 (ert-deftest ecc-model-test-session-id-moves ()
   "A forked session keeps its place in the registry under the new id."
   (ecc-test-with-fake-session session
@@ -48,6 +55,50 @@
       (should (= (ecc-session-total-cost session) 0.5))
       (should (= (ecc-model-turn-duration turn) 1.5))
       (should (equal (ecc-turn-id (ecc-model-begin-turn session "again")) "turn-2")))))
+
+(ert-deftest ecc-model-test-turn-cost-is-the-step-of-the-running-total ()
+  "A result carries the CLI's running total; a turn costs what it added.
+A result that called no model repeats the total and costs nothing, and
+the session's total is the last one rather than the sum of them all."
+  (ecc-test-with-fake-session session
+    (let ((costs nil))
+      (dolist (total '(0.5 0.5 0.8))
+        (ecc-model-begin-turn session "go")
+        (push (ecc-turn-cost (ecc-model-finish-turn
+                              session `((total_cost_usd . ,total))))
+              costs))
+      (should (equal '(0.5 0.0 0.3)
+                     (mapcar (lambda (cost) (/ (round (* cost 1000)) 1000.0))
+                             (nreverse costs))))
+      (should (< (abs (- (ecc-session-total-cost session) 0.8)) 1e-9))
+      (should (= (ecc-session-cost-base session) 0.8)))))
+
+(ert-deftest ecc-model-test-turn-cost-unknown-base ()
+  "Without a base to count from, what a turn cost is not known.
+It is neither guessed nor added to the session, and the next result
+counts from this one.  A total below the base is the same case: the CLI
+started from a total that was not the one expected."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-total-cost session) 1.0)
+    (ecc-model-set-cost-base session nil)
+    (ecc-model-begin-turn session "first")
+    (should-not (ecc-turn-cost (ecc-model-finish-turn
+                                session '((total_cost_usd . 2.0)))))
+    (should (= (ecc-session-total-cost session) 1.0))
+    (ecc-model-begin-turn session "second")
+    (should (= 0.25 (ecc-turn-cost (ecc-model-finish-turn
+                                    session '((total_cost_usd . 2.25))))))
+    (should (= (ecc-session-total-cost session) 1.25))
+    ;; Below the base.
+    (ecc-model-begin-turn session "third")
+    (should-not (ecc-turn-cost (ecc-model-finish-turn
+                                session '((total_cost_usd . 0.1)))))
+    (should (= (ecc-session-total-cost session) 1.25))
+    (should (= (ecc-session-cost-base session) 0.1))
+    ;; A result without a total leaves the base where it was.
+    (ecc-model-begin-turn session "fourth")
+    (should-not (ecc-turn-cost (ecc-model-finish-turn session '((subtype . "success")))))
+    (should (= (ecc-session-cost-base session) 0.1))))
 
 (ert-deftest ecc-model-test-implicit-turn ()
   "Output that arrives without a prompt still lands in a turn."
@@ -151,6 +202,45 @@
     (should (equal (ecc-model-pop-input session) "two"))
     (should-not (ecc-model-pop-input session))))
 
+(ert-deftest ecc-model-test-input-queue-keeps-the-draft ()
+  "An entry carries what was typed beside what will be sent; FIRST jumps the queue."
+  (ecc-test-with-fake-session session
+    (ecc-model-queue-input session "typed\n\n```context```" "typed")
+    (should (= (ecc-model-queue-input session "a note from Emacs" nil t) 1))
+    (should (equal (ecc-model-queued-texts session)
+                   '("a note from Emacs" "typed\n\n```context```")))
+    (should (equal (mapcar #'ecc-queued-draft (ecc-session-input-queue session))
+                   '(nil "typed")))))
+
+(ert-deftest ecc-model-test-input-queue-take-and-move ()
+  "Entries are taken and moved by identity, and each change is announced."
+  (ecc-test-with-fake-session session
+    (let ((changes 0))
+      (cl-letf ((ecc-input-queue-changed-hook
+                 (list (lambda (changed)
+                         (should (eq changed session))
+                         (cl-incf changes)))))
+        (dolist (text '("one" "two" "three"))
+          (ecc-model-queue-input session text text))
+        (should (= changes 3))
+        (pcase-let ((`(,one ,two ,three) (ecc-session-input-queue session)))
+          (should (= (ecc-model-move-input session three -1) 2))
+          (should (equal (ecc-model-queued-texts session) '("one" "three" "two")))
+          ;; At the head already: no move, no news.
+          (should (= (ecc-model-move-input session one -1) 1))
+          (should (= changes 4))
+          (should (= (ecc-model-move-input session one 5) 3))
+          (should (equal (ecc-model-queued-texts session) '("three" "two" "one")))
+          (should (eq (ecc-model-take-input session two) two))
+          (should (equal (ecc-model-queued-texts session) '("three" "one")))
+          (should (= changes 6))
+          ;; Gone is gone: nothing else is acted on in its place.
+          (should-not (ecc-model-take-input session two))
+          (should-not (ecc-model-move-input session two 1))
+          (should (equal (ecc-model-pop-input session) "three"))
+          (should (= changes 7))
+          (should (equal (ecc-model-queued-texts session) '("one"))))))))
+
 (ert-deftest ecc-model-test-hooks-fire ()
   "Every change the renderer needs is announced."
   (ecc-test-with-fake-session session
@@ -251,6 +341,7 @@ and the review baseline stay."
           (ecc-session-baseline session) "deadbeef"
           (ecc-session-init session) '((cwd . "/tmp/"))
           (ecc-session-total-cost session) 1.5
+          (ecc-session-cost-base session) 1.5
           (ecc-session-context-tokens session) 4200)
     (let ((turn (ecc-model-begin-turn session "one")))
       (ecc-model-add-node session :type 'text :parent turn :status 'done
@@ -269,6 +360,7 @@ and the review baseline stay."
       (should (= 0 (hash-table-count (ecc-session-nodes session))))
       (should (= 0 (hash-table-count (ecc-session-pending-controls session))))
       (should (= 0 (ecc-session-total-cost session)))
+      (should (= 0 (ecc-session-cost-base session)))
       (should (= 0 (ecc-session-context-tokens session)))
       ;; What the user has stays.
       (should (equal id (ecc-session-id session)))

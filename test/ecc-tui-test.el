@@ -56,7 +56,9 @@ The process the session would run is pretended to be alive until
                    (lambda (session)
                      (setq interrupted t)
                      ;; The CLI answers an interrupt with a result, which
-                     ;; is what takes the session out of `running'.
+                     ;; closes the turn and takes the session out of
+                     ;; `running'.
+                     (ecc-model-finish-turn session nil)
                      (ecc-model-set-state session 'idle)))
                   ((symbol-function 'ecc-proc-stop)
                    (lambda (_session) (setq stopped t alive nil)))
@@ -106,12 +108,34 @@ terminal on the way out."
     (should (equal (cadr (member "--model" (ecc-tui-arguments session)))
                    "opus"))))
 
+;;;; The turn the follow leaves open
+
+(ert-deftest ecc-tui-test-follow-stop-closes-a-turn-on-an-idle-cli ()
+  "A turn the replay left open on an idle live CLI is closed with the follow.
+`ecc-tui-return' replays what the terminal appended with the turn kept
+open and the state put back, so a session already running again was
+left `idle' with a turn open: every prompt then queued behind it, and
+every release interrupted an idle CLI and waited the timeout out.  A
+turn of the live CLI's own is left alone."
+  (ecc-tui-test--with-session session
+    (ecc-tui--put session :time nil)
+    (let ((turn (ecc-model-begin-turn session "in the terminal")))
+      (ecc-model-set-state session 'idle)
+      (ecc-tui-follow-stop session)
+      (should-not (ecc-session-current-turn session))
+      (should (ecc-turn-end-time turn)))
+    (ecc-tui--put session :time nil)
+    (let ((turn (ecc-model-begin-turn session "its own")))
+      (should (eq (ecc-session-state session) 'running))
+      (ecc-tui-follow-stop session)
+      (should (eq turn (ecc-session-current-turn session))))))
+
 ;;;; Only one process at a time
 
 (ert-deftest ecc-tui-test-stops-the-process-first ()
   "The session is interrupted and stopped before the terminal opens."
   (ecc-tui-test--with-session session
-    (ecc-model-set-state session 'running)
+    (ecc-model-begin-turn session "work")
     (ecc-tui-open session)
     (should interrupted)
     (should stopped)
@@ -127,7 +151,7 @@ terminal on the way out."
   (ecc-tui-test--with-session session
     (cl-letf (((symbol-function 'ecc-proc-interrupt)
                (lambda (_session) (setq interrupted t))))
-      (ecc-model-set-state session 'running)
+      (ecc-model-begin-turn session "work")
       (let ((start (float-time)))
         (ecc-tui-open session)
         (should (>= (- (float-time) start) ecc-tui-interrupt-timeout)))

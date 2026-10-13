@@ -76,7 +76,10 @@ shortcut.  Nil remembers every tool.")
 
 ;;;; Responding (the one place that answers)
 
-(defun ecc-perm-ensure-waiting (request)
+(define-obsolete-function-alias 'ecc-perm-ensure-waiting
+  #'ecc-perm--ensure-waiting "0.4.2")
+
+(defun ecc-perm--ensure-waiting (request)
   "Signal a `user-error' unless REQUEST is still waiting for an answer."
   (unless (memq request (ecc-session-pending (ecc-request-session request)))
     (user-error "That request is no longer waiting")))
@@ -96,7 +99,7 @@ CLI may have taken the request back meanwhile, an interrupt closing it
 \(`ecc-model-abandon-requests\='); an answer then would go to a request
 id nothing is waiting on, and resolve the request a second time."
   (let ((session (ecc-request-session request)))
-    (ecc-perm-ensure-waiting request)
+    (ecc-perm--ensure-waiting request)
     (ecc-proc-send-json
      session
      (pcase behavior
@@ -729,7 +732,7 @@ joined by \", \"; the questions are echoed back unchanged and only
 else that collects the answers its own way sends too."
   ;; Before the answers go on the node: those of a request no longer
   ;; waiting would be drawn as if they had been given.
-  (ecc-perm-ensure-waiting request)
+  (ecc-perm--ensure-waiting request)
   (when-let* ((node (ecc-request-node request)))
     (ecc-model-node-put node 'answers pairs))
   (ecc-perm-respond request 'allow

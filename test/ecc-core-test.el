@@ -219,6 +219,16 @@ session never touches."
     (should (equal (ecc-config-directory)
                    (file-name-as-directory (expand-file-name "~/.claude"))))))
 
+(ert-deftest ecc-core-test-unique-name ()
+  "A name taken gets the first `<n>' that is not."
+  (let ((taken '("main" "main<2>" "other")))
+    (should (equal (ecc--unique-name "free" (lambda (name) (member name taken)))
+                   "free"))
+    (should (equal (ecc--unique-name "main" (lambda (name) (member name taken)))
+                   "main<3>"))
+    (should (equal (ecc--unique-name "other" (lambda (name) (member name taken)))
+                   "other<2>"))))
+
 (ert-deftest ecc-core-test-tool-input-path ()
   "The file a tool names: file_path, else notebook_path, never an empty one."
   (should (equal (ecc-tool-input-path '((file_path . "a.el"))) "a.el"))

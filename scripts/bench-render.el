@@ -137,6 +137,65 @@ that costs: the diff is made from it and drawn under the heading."
       (message "live turn of %4d edits: %6.1f ms per redraw"
                n (ecc-bench--ms (lambda () (ecc-render-flush session)))))))
 
+;; After everything else, by the same rule.  Forty replies with a
+;; diagram each, drawn whole by `ecc-render-refresh' and as the live
+;; region by `ecc-render-flush': the draw path of a ```mermaid block
+;; (2026-10-12).  Without `ecc-mermaid' loaded, or with no command, it
+;; is a code block like any other; `miss' is a diagram not made yet,
+;; and `hit' one waiting on disk.  No process is started -- the job
+;; queue starts on a timer, and nothing here lets a timer run.
+
+(defun ecc-bench--mermaid-turn (session n)
+  "Open a turn of SESSION with N replies, each holding a diagram of its own."
+  (ecc-model-begin-turn session "draw them")
+  (dotimes (i n)
+    (ecc-model-node-changed
+     session
+     (ecc-model-add-node
+      session :type 'text :status 'done
+      :data `((text . ,(format "Step %d goes like this:\n\n```mermaid\ngraph TD\n  A%d[開始] --> B%d{判定}\n  B%d -->|yes| C%d[OK]\n  B%d -->|no| D%d[NG]\n```\n\nThat is all.\n"
+                               i i i i i i i)))))))
+
+(defun ecc-bench--mermaid (label)
+  "Print the cost of drawing replies with diagrams, under LABEL."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-bench--mermaid-turn session 40)
+    (ecc-render-refresh session)
+    (message "40 diagrams, %-5s: %6.1f ms per refresh, %5.2f ms per redraw"
+             label
+             (ecc-bench--ms (lambda () (ecc-render-refresh session)))
+             (ecc-bench--ms (lambda () (ecc-render-flush session))))))
+
+(defun ecc-bench-mermaid ()
+  "Print the cost of the diagrams: none, not made yet, and made.
+The frame is said to draw images in every case, the one without
+`ecc-mermaid' included, so that the cases differ by the diagrams alone."
+  (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+            ((symbol-function 'image-type-available-p) (lambda (&rest _) t)))
+    (if (not (featurep 'ecc-mermaid))
+        (ecc-bench--mermaid "plain")
+      (let ((ecc-mermaid-directory (make-temp-file "ecc-bench-mermaid" t))
+            (ecc-mermaid--state (make-hash-table :test #'equal))
+            (ecc-mermaid--waiting (make-hash-table :test #'equal))
+            (ecc-mermaid--queue nil))
+        (unwind-protect
+            (cl-letf (((symbol-function 'ecc-mermaid-program)
+                       (lambda () (and ecc-mermaid-command "mmdc"))))
+              (let ((ecc-mermaid-command nil))
+                (ecc-bench--mermaid "plain"))
+              (ecc-bench--mermaid "miss")
+              ;; Every diagram asked for is put on disk, as a job would.
+              (dolist (hash (hash-table-keys ecc-mermaid--state))
+                (copy-file (ecc-test-image-file) (ecc-mermaid--file hash) t))
+              (clrhash ecc-mermaid--state)
+              (setq ecc-mermaid--queue nil)
+              (ecc-bench--mermaid "hit"))
+          (when (timerp ecc-mermaid--kick) (cancel-timer ecc-mermaid--kick))
+          (setq ecc-mermaid--kick nil)
+          (delete-directory ecc-mermaid-directory t))))))
+
 (ecc-bench-render)
+(ecc-bench-mermaid)
 
 ;;; bench-render.el ends here

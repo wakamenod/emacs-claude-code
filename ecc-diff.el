@@ -175,20 +175,31 @@ whole of them is removed and added."
                                (make-list (length vb) 'added))))
               (make-list suffix 'context)))))
 
+(defun ecc-diff-script-walk (script function)
+  "Call FUNCTION on each tag of SCRIPT, of `ecc-diff-script', with where it is.
+FUNCTION gets the TAG and I and J, the index of its element in the
+vector A and in the vector B the script made A into B with: a removed
+element is the Ith of A, an added one the Jth of B, an element both
+keep both.  Return the list of what FUNCTION returned, in order."
+  (let ((i 0) (j 0))
+    (mapcar (lambda (tag)
+              (prog1 (funcall function tag i j)
+                (pcase tag
+                  ('removed (setq i (1+ i)))
+                  ('added (setq j (1+ j)))
+                  (_ (setq i (1+ i) j (1+ j))))))
+            script)))
+
 (defun ecc-diff-lines (old new &optional large)
   "Return the line diff of OLD against NEW.
 The result is a list of (TAG . LINE) where TAG is `context', `removed'
 or `added', in the order of a unified diff (`ecc-diff-script', which
 LARGE is given to)."
   (let ((a (vconcat (ecc-diff--split old)))
-        (b (vconcat (ecc-diff--split new)))
-        (i 0) (j 0))
-    (mapcar (lambda (tag)
-              (pcase tag
-                ('removed (prog1 (cons 'removed (aref a i)) (setq i (1+ i))))
-                ('added (prog1 (cons 'added (aref b j)) (setq j (1+ j))))
-                (_ (prog1 (cons 'context (aref a i)) (setq i (1+ i) j (1+ j))))))
-            (ecc-diff-script a b large))))
+        (b (vconcat (ecc-diff--split new))))
+    (ecc-diff-script-walk (ecc-diff-script a b large)
+                          (lambda (tag i j)
+                            (cons tag (if (eq tag 'added) (aref b j) (aref a i)))))))
 
 (defun ecc-diff--increasing (pairs)
   "Return the longest run of PAIRS, (I . J) by I, whose J go up too."

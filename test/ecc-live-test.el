@@ -227,6 +227,30 @@ and a draft typed meanwhile is untouched (phase 9b)."
       (should (process-live-p (ecc-session-process session))))))
 
 
+(ert-deftest ecc-test-live-release-a-blocked-turn ()
+  "A turn blocked on a permission is interrupted, ends, and the CLI stops at once.
+The CLI answers the interrupt of a turn waiting on `can_use_tool' with
+a result (2.1.290, 2026-10-12), so the release does not sit out its
+timeout.  The prompt queued behind the turn is still in the queue."
+  :tags '(live)
+  (ecc-test-live-with-session session
+    (let ((file (expand-file-name "ecc-live-release.txt" temporary-file-directory)))
+      (ecc-proc-send-prompt
+       session
+       (format "Use the Write tool to create the file %s containing hello. Do not run any commands." file))
+      (ecc-test-live-wait session (lambda () (car (ecc-session-pending session)))
+                          "the permission request")
+      (ecc-proc-send-prompt session "queued behind the request")
+      (let ((turn (ecc-session-current-turn session))
+            (start (float-time)))
+        (ecc-proc-release session)
+        (should (< (- (float-time) start) 5))
+        (should (ecc-turn-result turn)))
+      (should-not (process-live-p (ecc-session-process session)))
+      (should-not (ecc-session-pending session))
+      (should (= 1 (length (ecc-session-input-queue session))))
+      (should-not (file-exists-p file)))))
+
 (ert-deftest ecc-test-live-streaming ()
   "A long Write streams its input and the reply grows delta by delta.
 The phase 2 acceptance check: each delta costs well under 5ms to draw."
@@ -674,6 +698,74 @@ The working directory and the recording are both removed afterwards."
             (ecc-proc-stop archived)
             (ecc-test-cleanup-session archived)))))))
 
+(ert-deftest ecc-test-live-rename-reaches-the-recording ()
+  "A rename in Emacs is the title of the recording, unseen in the transcript.
+Once while the CLI runs, and once while it is stopped, which goes when
+the session is resumed."
+  :tags '(live)
+  (ecc-test-live-with-recorded-session session
+    (ecc-proc-send-prompt session "Reply with exactly: OK")
+    (ecc-test-live-wait-for-result session)
+    (let ((id (ecc-session-id session))
+          (cost (ecc-session-total-cost session))
+          (nodes (hash-table-count (ecc-session-nodes session)))
+          (answered (lambda (session)
+                      (ecc-test-live-wait
+                       session (lambda () (null (ecc-session-rename-sent session)))
+                       "the CLI to answer the rename")))
+          (stop (lambda (session)
+                  (ecc-proc-stop session)
+                  (ecc-test-live-wait
+                   session (lambda () (not (process-live-p (ecc-session-process session))))
+                   "the CLI to stop"))))
+      (ecc-session-rename session "live-renamed")
+      (funcall answered session)
+      (should (equal (ecc-session-name session) "live-renamed"))
+      (should (= 1 (length (ecc-session-turns session))))
+      (should (= nodes (hash-table-count (ecc-session-nodes session))))
+      (should (= cost (ecc-session-total-cost session)))
+      (should (eq (ecc-session-state session) 'idle))
+      (funcall stop session)
+      (should (equal "live-renamed"
+                     (alist-get 'title (ecc-history-scan-file (ecc-history-file id)))))
+      ;; Stopped: renamed here, and told when it runs again.
+      (ecc-session-rename session "live-again")
+      (should (ecc-session-rename-pending session))
+      (ecc-proc-start session t)
+      (should (equal (ecc-session-rename-sent session) "live-again"))
+      (funcall answered session)
+      (should (equal (ecc-session-name session) "live-again"))
+      (should (= 1 (length (ecc-session-turns session))))
+      (funcall stop session)
+      (should (equal "live-again"
+                     (alist-get 'title (ecc-history-scan-file (ecc-history-file id))))))))
+
+(ert-deftest ecc-test-live-resumed-turn-costs-its-own ()
+  "A turn after a resume costs what it added, not the whole conversation.
+The resumed CLI's first result carries the total the recording ended
+with plus its own turn, and the session's total is the CLI's."
+  :tags '(live)
+  (ecc-test-live-with-recorded-session session
+    (ecc-proc-send-prompt session "Reply with exactly: ONE")
+    (ecc-test-live-wait-for-result session)
+    (let ((first (alist-get 'total_cost_usd
+                            (ecc-turn-result (car (last (ecc-session-turns session)))))))
+      (should (> first 0))
+      (should (= first (ecc-session-total-cost session)))
+      (ecc-proc-stop session)
+      (ecc-test-live-wait
+       session (lambda () (not (process-live-p (ecc-session-process session))))
+       "the CLI to stop")
+      (ecc-proc-start session t)
+      (should (= first (ecc-session-cost-base session)))
+      (ecc-proc-send-prompt session "Reply with exactly: TWO")
+      (ecc-test-live-wait-for-result session)
+      (let* ((turn (car (last (ecc-session-turns session))))
+             (second (alist-get 'total_cost_usd (ecc-turn-result turn))))
+        (should (> second first))
+        (should (= (ecc-turn-cost turn) (- second first)))
+        (should (< (abs (- (ecc-session-total-cost session) second)) 1e-9))))))
+
 (ert-deftest ecc-test-live-agents ()
   "The registry agrees with `claude agents --json'.
 `ecc-registry' reads the session files the CLI writes rather than
@@ -729,9 +821,14 @@ thing standing between a resume and two CLIs on one recording."
             (let ((text (ecc-test-live-turn-text
                          (ecc-test-live-wait-for-result session))))
               ;; The quote block reached the model: it can only answer
-              ;; from the code, which is nowhere but in the prompt.
+              ;; from the code, which is nowhere but in the prompt.  One
+              ;; word is sometimes one character: CLI 2.1.290 answered
+              ;; `減' (2026-10-12).  Naming the operation meant instead
+              ;; shows the code was seen as much as naming the wrong one.
               (should (string-match-p
-                       "subtract\\|minus\\|sign\\|operator\\|引き算\\|減算\\|マイナス\\|符号\\|演算子\\|-"
+                       (concat "subtract\\|minus\\|sign\\|operator\\|add\\|plus"
+                               "\\|引き算\\|減\\|マイナス\\|符号\\|演算子"
+                               "\\|足し算\\|加算\\|[-+]")
                        text))))
         (setq buffer-file-name nil)))
     (let ((prompt (ecc-turn-prompt (car (ecc-session-turns session)))))

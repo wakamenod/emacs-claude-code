@@ -29,6 +29,15 @@
          (progn (make-directory ,inner t) ,@body)
        (delete-directory ,root t))))
 
+(ert-deftest ecc-session-test-set-name-runs-the-hook ()
+  "A rename is announced, with the session, once the name is in place."
+  (ecc-test-with-fake-session session
+    (let* ((heard nil)
+           (ecc-session-renamed-hook
+            (list (lambda (s) (push (ecc-session-name s) heard)))))
+      (ecc-session-set-name session "renamed")
+      (should (equal heard '("renamed"))))))
+
 (ert-deftest ecc-session-test-the-cli-cwd-does-not-move-the-buffer ()
   "A cwd the CLI reports leaves the transcript where the session is.
 CLI 2.1.272 reports the directory the last Bash tool call left it in as
@@ -85,6 +94,118 @@ the part that goes wrong."
               (should-not (equal (ecc-window-session-project one)
                                  (ecc-window-session-project two))))
           (ecc-test-cleanup-session two))))))
+
+;;;; Telling the CLI the name
+
+(defun ecc-session-test--sent-lines ()
+  "Return the text of every user message sent, oldest first."
+  (delq nil (mapcar (lambda (message)
+                      (and (equal (alist-get 'type message) "user")
+                           (alist-get 'content (alist-get 'message message))))
+                    (ecc-test-sent-messages))))
+
+(defun ecc-session-test--result (&optional cost)
+  "Return the result of an ordinary turn costing COST."
+  `((type . "result") (subtype . "success") (is_error . :false)
+    (total_cost_usd . ,(or cost 0.01)) (result . "done")))
+
+(ert-deftest ecc-session-test-rename-tells-the-cli ()
+  "A rename of an idle session reaches its CLI at once, as /rename.
+It opens no turn and goes nowhere near the queue."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-test-with-running-cli session
+      (should (equal (ecc-session-rename session "refactor") "refactor"))
+      (should (equal (buffer-name (ecc-session-buffer session)) "*ecc: refactor*"))
+      (should (equal (ecc-session-test--sent-lines) '("/rename refactor")))
+      (should-not (ecc-session-current-turn session))
+      (should-not (ecc-session-turns session))
+      (should-not (ecc-session-input-queue session))
+      (should (eq (ecc-session-state session) 'idle))
+      (should-not (ecc-session-rename-pending session))
+      (should (equal (ecc-session-rename-sent session) "refactor")))))
+
+(ert-deftest ecc-session-test-rename-sends-the-unique-name ()
+  "The CLI is told NAME<2> when another session holds NAME.
+The two then agree on what the session is called."
+  (ecc-test-with-fake-session session
+    (let ((other (ecc-model-create-session :name "refactor"
+                                           :project-root temporary-file-directory)))
+      (unwind-protect
+          (ecc-test-with-running-cli session
+            (should (equal (ecc-session-rename session "refactor") "refactor<2>"))
+            (should (equal (ecc-session-test--sent-lines) '("/rename refactor<2>")))
+            (should (equal (ecc-session-name other) "refactor")))
+        (ecc-test-cleanup-session other)))))
+
+(ert-deftest ecc-session-test-rename-waits-for-the-turn ()
+  "A rename made while a turn runs goes once it ends, ahead of the queue.
+The prompts queued meanwhile keep their order, and the rename is never
+one of them."
+  (ecc-test-with-fake-session session
+    (ecc-test-with-running-cli session
+      (ecc-proc-send-prompt session "first")
+      (should (eq (ecc-proc-send-prompt session "second") 1))
+      (ecc-session-rename session "refactor")
+      (ecc-session-rename session "renamed")
+      ;; Nothing went while the turn ran, and the queue holds the prompt alone.
+      (should (equal (ecc-session-test--sent-lines) '("first")))
+      (should (equal (mapcar #'ecc-queued-text (ecc-session-input-queue session))
+                     '("second")))
+      (should (ecc-session-rename-pending session))
+      (ecc-dispatch session (ecc-session-test--result))
+      ;; The last name, once, and then the queued prompt in its own turn.
+      (should (equal (ecc-session-test--sent-lines)
+                     '("first" "/rename renamed" "second")))
+      (should (equal (ecc-turn-prompt (ecc-session-current-turn session)) "second"))
+      (should-not (ecc-session-input-queue session))
+      (should (equal (ecc-session-rename-sent session) "renamed")))))
+
+(ert-deftest ecc-session-test-rename-while-one-is-out ()
+  "A second rename waits for the CLI to answer the first, then goes."
+  (ecc-test-with-fake-session session
+    (ecc-test-with-running-cli session
+      (ecc-session-rename session "one")
+      (ecc-session-rename session "two")
+      (should (equal (ecc-session-test--sent-lines) '("/rename one")))
+      (ecc-dispatch session '((type . "result") (subtype . "success")
+                              (local_command . "rename") (total_cost_usd . 0)))
+      (should (equal (ecc-session-test--sent-lines) '("/rename one" "/rename two")))
+      (should (equal (ecc-session-rename-sent session) "two"))
+      (should-not (ecc-session-rename-pending session)))))
+
+(ert-deftest ecc-session-test-rename-of-a-stopped-session ()
+  "A session with no CLI is renamed here, and its next CLI is told."
+  (ecc-test-with-fake-session session
+    (ecc-model-set-state session 'exited)
+    (ecc-session-rename session "later")
+    (should (equal (ecc-session-name session) "later"))
+    (should-not ecc-test-sent)
+    (should (ecc-session-rename-pending session))
+    (let ((spawn (symbol-function 'make-process))
+          (process nil))
+      (cl-letf (((symbol-function 'make-process)
+                 (lambda (&rest _)
+                   (setq process (funcall spawn :name "ecc-test-sleep"
+                                          :command '("sleep" "30") :noquery t))))
+                ((symbol-function 'ecc-proc-control) #'ignore))
+        (unwind-protect
+            (progn
+              (ecc-proc-start session t)
+              (should (equal (ecc-session-test--sent-lines) '("/rename later")))
+              (should-not (ecc-session-rename-pending session))
+              (should-not (ecc-session-current-turn session)))
+          (when process (delete-process process)))))))
+
+(ert-deftest ecc-session-test-rename-unanswered-at-exit ()
+  "A rename the CLI exited without answering waits for the next one."
+  (ecc-test-with-fake-session session
+    (ecc-test-with-running-cli session
+      (ecc-session-rename session "refactor")
+      (should (ecc-session-rename-sent session))
+      (ecc-proc--handle-exit session 1 "killed")
+      (should-not (ecc-session-rename-sent session))
+      (should (ecc-session-rename-pending session)))))
 
 (provide 'ecc-session-test)
 

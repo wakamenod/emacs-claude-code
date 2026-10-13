@@ -218,6 +218,24 @@ middle of a redraw, and a redraw runs on a tenth of a second."
                     video (process-exit-status process))))))
     process))
 
+;;;; How wide one is drawn
+
+(defvar ecc-chat-text-width)
+
+(defun ecc-image-width (indent)
+  "Return the pixels an inline image may take, INDENT columns in.
+The window is the one showing the current buffer.  The ceiling is
+`ecc-chat-text-width\=' rather than the window: the prose is already
+held to that width by the margins, and a picture wider than the text
+it belongs to reads as a different document."
+  (let* ((window (or (get-buffer-window (current-buffer) t) (selected-window)))
+         (char (frame-char-width (window-frame window)))
+         (columns (- (min (window-body-width window)
+                          (or (bound-and-true-p ecc-chat-text-width)
+                              most-positive-fixnum))
+                     indent 1)))
+    (max (* 8 char) (* columns char))))
+
 ;;;; Opening one outside the transcript
 
 (defun ecc-image-open-externally (path)

@@ -68,7 +68,7 @@
 
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-display-session "ecc-window" (session))
-(declare-function ecc-rename-session "ecc-window" (session name))
+(declare-function ecc-session-set-name "ecc-session" (session name))
 (declare-function ecc-render-refresh "ecc-render" (session))
 (declare-function ecc--enable-session-modes "ecc" ())
 (declare-function ecc-space-tab-roots "ecc-space" (&optional frame))
@@ -120,11 +120,17 @@ probe, not an inline question, not one open in a terminal."
        (ecc-model-own-session-p session)))
 
 (defun ecc-restore--session-entry (session)
-  "Return the entry SESSION is saved as."
-  (list :id (ecc-session-id session)
-        :name (ecc-session-name session)
-        :root (ecc-session-project-root session)
-        :cwd (ecc-session-cwd session)))
+  "Return the entry SESSION is saved as.
+A name the CLI has not been told yet is marked `:rename-pending\=', one
+that is on its way included: the next Emacs tells the CLI once the
+session runs (`ecc-proc-send-rename\=')."
+  (append (list :id (ecc-session-id session)
+                :name (ecc-session-name session)
+                :root (ecc-session-project-root session)
+                :cwd (ecc-session-cwd session))
+          (and (or (ecc-session-rename-pending session)
+                   (ecc-session-rename-sent session))
+               (list :rename-pending t))))
 
 (defun ecc-restore--space-roots ()
   "Return the roots of the Spaces with a tab, the selected frame first.
@@ -291,6 +297,7 @@ back walks the state through the turns it replays."
 (add-hook 'ecc-session-state-changed-hook #'ecc-restore--drop-mark)
 (add-hook 'ecc-session-state-changed-hook #'ecc-restore--schedule)
 (add-hook 'ecc-session-removed-hook #'ecc-restore--schedule)
+(add-hook 'ecc-session-renamed-hook #'ecc-restore--schedule)
 (add-hook 'ecc-session-init-hook #'ecc-restore--schedule)
 (add-hook 'tab-bar-tab-post-open-functions #'ecc-restore--schedule)
 (add-hook 'tab-bar-tab-pre-close-functions #'ecc-restore--schedule)
@@ -329,6 +336,8 @@ cons returned instead: (nil . REASON)."
                       :options (list :restored t))))
         (puthash id file ecc-history--files)
         (ecc-model-set-state session 'exited)
+        (when (plist-get entry :rename-pending)
+          (setf (ecc-session-rename-pending session) t))
         (require 'ecc-session)
         (ecc-session-ensure-buffer session)
         (ecc-history-load session)
@@ -340,7 +349,12 @@ The recording is the same conversation: skipping the entry because it
 is being read would leave it out of every save after this one, since a
 recording being read is never saved.  So it becomes what a restored
 session is -- the user's own, stopped, under its saved name and root --
-in the buffer it already has.  Returns (SESSION . nil)."
+in the buffer it already has.  Returns (SESSION . nil).
+
+The saved name is put back in Emacs alone.  It differs from the one
+the recording gave the session whenever the CLI never had it -- the
+name of the directory a first session takes, say -- and only a name
+saved as `:rename-pending\=' is one the CLI is still to be told."
   (setf (ecc-session-kind session) 'own
         (ecc-session-project-root session) (plist-get entry :root)
         (ecc-session-options session)
@@ -349,8 +363,10 @@ in the buffer it already has.  Returns (SESSION . nil)."
     (setf (ecc-session-cwd session) cwd))
   (when-let* ((name (plist-get entry :name))
               ((not (equal name (ecc-session-name session)))))
-    (require 'ecc-window)
-    (ecc-rename-session session name))
+    (require 'ecc-session)
+    (ecc-session-set-name session name))
+  (when (plist-get entry :rename-pending)
+    (setf (ecc-session-rename-pending session) t))
   (when-let* ((buffer (ecc-session-buffer session))
               ((buffer-live-p buffer)))
     (with-current-buffer buffer

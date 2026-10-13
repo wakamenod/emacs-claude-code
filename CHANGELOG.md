@@ -11,6 +11,365 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [0.4.2] - 2026-10-13
+
+Verified against **Claude Code CLI 2.1.290**.
+
+### Added
+
+- `ecc-restart` stops the CLI of an idle session and starts it again on the
+  same conversation, in the same buffer: the transcript, the draft in the
+  prompt, the review baseline and the permission mode stay. It is for a CLI
+  that has stopped answering, or one that should read changed Claude Code
+  settings, MCP servers or plugins. It asks first, and looks again once the
+  answer is in. A session with a turn running, a request waiting or prompts
+  queued is refused with a word to interrupt it first; one with a subagent or
+  a backgrounded shell command still running is refused until it is done; and
+  an inline session is refused outright. A fork that has not been given its
+  own id yet is forked again rather than resumed onto the conversation it
+  came from. A
+  conversation with a recording is resumed with `--resume`; one that was never
+  sent a prompt has none, and starts again under its own id with
+  `--session-id`. `R` in a session buffer now restarts an idle running session
+  and resumes a stopped one, and `ecc-menu` has it under `S`. `C-c c r`
+  (`ecc-resume`) still only goes to a running session.
+- The prompts waiting for the running turn to end are drawn at the end of the
+  transcript, just above the separator: a `⏸ Queued (N)` line and one dim line
+  per prompt, cut to the window. Nothing is drawn while the queue is empty, and
+  the lines change as soon as a prompt is queued, sent, taken back or dropped.
+  `RET` or a click on them opens the list below, on the prompt clicked.
+- `C-c C-q` opens a list of the session's queue, `ecc-queue-show`, in place of
+  the one-line summary it wrote in the echo area. `RET` takes a prompt back into
+  the prompt region as it was typed, before any draft already there and a blank
+  line; it is prepared again (slash command, `@` references, editor context)
+  when it is sent again. A pasted image is an `@` reference to its file and
+  comes back with it. `d` or `k` drops a prompt without asking, and `M-<up>` /
+  `M-<down>` move it. The list follows the queue as it drains and goes when
+  the session does, and a prompt that left the queue while it was open is
+  reported as gone rather than another being acted on in its place. A prompt
+  Emacs queued itself (from `ecc-send`, the review or a plugin reload) is
+  listed by its text, can be dropped, and can be taken back when it is plain
+  text. With an empty queue `C-c C-q` says so and opens nothing.
+  `ecc-prompt-show-queue` remains as an obsolete alias.
+
+  Underneath, `ecc-session-input-queue` holds `ecc-queued` entries carrying the
+  prepared text beside the draft, `ecc-proc-send-prompt` takes the draft as an
+  optional argument, and every change to a queue runs
+  `ecc-input-queue-changed-hook`.
+
+- `RET` or a click on a path Claude wrote in a reply opens the file even when
+  the path does not say where it is: a bare name such as `foo-test.el` for a
+  file in `test/`, or a path written against another directory than the
+  session's. Until now such a path was taken against the session's directory
+  alone and ended in "No such file". The path is tried as written against the
+  session's directory and then the project root; failing that, it is matched
+  as the end of a path, on a directory boundary (`foo.el` is `a/foo.el` and not
+  `a/barfoo.el`), against the files the session read or changed and the files
+  Emacs visits inside the project, then against the project's files, the list
+  `@` completion offers, then against the files Emacs visits outside the
+  project -- after the project's own, so that the copy of a file open in another
+  checkout or worktree does not win over the project's. The first of these that
+  has a match ends the search. One match opens at once and the echo area says
+  where it was found; several are offered with `completing-read`, shown from the
+  project root, with the session's own files first, then the nearest to the
+  session's directory, then the shortest. The pick is remembered for the
+  session until that file is gone, and `C-u RET` on the path passes over it and
+  searches again. Found nowhere else, the whole machine is searched -- Spotlight (`mdfind -name`) on
+  macOS, `locate` elsewhere -- after asking each time; the new
+  `ecc-visit-search-machine` (`ask`, `always` or `never`) decides that. The
+  line the path named is kept wherever the file was found. A path that starts
+  at `/` or `~` is still only taken as written, and the paths of tool calls,
+  the Files section and diffs, which are absolute already, open as before.
+
+- A fenced code block whose language is `mermaid` in a reply is shown as the
+  diagram it describes, drawn by mermaid-cli (`mmdc`, verified with 12.0.0).
+  Nothing waits for it: the block is drawn as code, the diagram is made in the
+  background once the closing fence has arrived, and it is put over the block's
+  text when it is ready -- a `display` property, so no text is inserted and the
+  transcript is not redrawn. The source stays in the buffer under the picture,
+  so search and copy find it, and `I` on a diagram shows the source in its
+  place and back (on anything else `I` still stops or starts a GIF). The
+  diagrams are PNG drawn at twice the size and shown at half, `-t dark` in a
+  dark frame, with a transparent background, fitted to the width of the window
+  and held to `ecc-image-max-height` like any inline image. They are made one at a time, each killed after
+  `ecc-mermaid-timeout` (20 seconds), and kept under `ecc-mermaid-directory`
+  (`ecc-mermaid` in `temporary-file-directory`), keyed by a hash of the source
+  and the arguments, so a diagram is made once and a restored session shows it
+  at once. A source mmdc cannot draw is logged with mmdc's error, keeps its
+  block as code with the error as its `help-echo` and its first line in
+  `ecc-mermaid-error-face`, and is not tried again on its own: `I` on it
+  forgets the failure, takes the error off the block and draws it again, for
+  a cause put right since (a browser mmdc had not downloaded yet, a cold start
+  past the timeout, a full disk). A failure before mmdc starts -- the directory
+  or the source file cannot be written -- is a failure of that diagram like any
+  other, and the queue goes on. There is no `defcustom`:
+  diagrams are drawn where `mmdc` is on `exec-path`, `ecc-image-inline` is on
+  and the frame draws images; `(setq ecc-mermaid-command nil)` turns them off.
+
+  Underneath, `ecc-markdown-code-block-functions` is called on each closed
+  fenced block as it is fontified, and `ecc-image-width` is what
+  `ecc-render--image-width` was.
+
+### Changed
+
+- The Space picker of `C-c c j` (`ecc-space-goto`) groups the Spaces under
+  `Open`, the Spaces of the sidebar in its order, and `Past`, the projects
+  only recordings are left of, newest first; `ecc-space-close`, when it asks,
+  shows the same `Open` list alone. Each line is drawn the way the sidebar draws the row: the Space's
+  state mark (`⚠`, `▶`, `✗`, `○`, and `·` for idle; blank for a Space with
+  nothing running), its sidebar number `[n]`, and `├─` / `└─` in front of a
+  worktree under its repository. A past one gets blanks for the mark and the
+  number and no tree line, even when it is a worktree of an open repository,
+  and a dimmed `past` before its directory, which is what tells it apart where
+  the group headings do not show. The directory follows,
+  dimmed, in a column of its own; the state word is gone. What is typed is
+  matched against the name alone, not the mark, the number or the directory.
+  A worktree's name is what its repository goes by and its branch
+  (`emacs-claude-code › feat/x`, or `app<2> › feat/x` under a repository
+  whose tab is `app<2>`), the same title the session picker now gives its
+  group, so typing a repository's name narrows the list to it and its
+  worktrees; any other Space goes by its tab's name, or its own when it has
+  no tab. Two Spaces that would share a name become `name` and `name<2>`.
+  The groups show in a completion UI that reads `group-function` -- vertico
+  does, and the default `*Completions*` with `completions-group` on; the
+  mark, the number, the tree line and the directory show in both, with
+  `completions-group` on or off.
+
+- `ecc-perm-ensure-waiting` is now `ecc-perm--ensure-waiting`, the internal
+  function it always was; the old name is an obsolete alias.
+
+- **Breaking.** `C-c c V` (`V` in the menu) is `ecc-space-cycle-layout`, and
+  cycles the layouts of a Space. Pressed right after itself it goes on to the
+  next of six: source + session (the source and one session to its right, the
+  column `ecc-window-width` of the frame wide, as before), two sessions side by
+  side without the source, source + two sessions in thirds, two sessions over
+  the source (three fifths and two), source + two sessions stacked in the
+  column of the first, and a 2x2 grid of four sessions -- with three, the
+  source takes the fourth cell. A layout the Space has too few sessions for, or
+  that the frame has no room for, is passed over; when none is left the echo
+  area says so and the windows stay as they were. Pressed after anything else,
+  `C-c c V` builds the layout the tab last chose, which it keeps per tab like
+  the zoom; `C-u C-c c V` goes back to the first. Under `repeat-mode`,
+  `C-c c V V V` cycles, through `ecc-space-layout-repeat-map`. The echo area
+  names each layout. `ecc-space-reset-windows` remains as an obsolete alias.
+
+  A layout is built from nothing every time: every window of the tab but the
+  side windows is deleted and the rest divided with `split-window`, so the same
+  frame and the same sessions give the same windows whatever the tab looked
+  like before. The first place goes to the session in the selected window, the
+  rest to the sessions by use, most recently selected first, so cycling keeps
+  every session in its place; the sessions without a place keep running with no
+  window. The sidebar is left alone: it keeps its width, and one that was
+  hidden stays hidden, where `C-c c V` used to bring it back. Point stays in
+  the buffer it was in, or goes to the first session when that buffer is no
+  longer on the screen. A tab laid out without the source -- two sessions, or
+  the grid -- is not given one back by going to the Space.
+
+  Until now the sessions stood in a row, put there one split at a time: the
+  first beside the source, each next one halving the rightmost when it had
+  twice `ecc-space-session-min-width` columns, after taking them from the other
+  transcripts. Where it ended depended on the windows it started from, and in
+  a frame under 300 columns the second session never fitted.
+
+- A session shown in a Space that already has a session window -- started, or
+  picked in the sidebar -- no longer divides anything: it takes the window of
+  the session used longest ago, by when its buffer was last selected rather
+  than when it was started. With no session window it still opens to the right
+  of the source, `ecc-window-width` of the frame wide.
+
+### Fixed
+
+- What a session cost was counted many times over, and every turn's cost line
+  showed the running total of the conversation rather than that turn's cost.
+  The `total_cost_usd` of a CLI result is the running total of the process,
+  and ecc took it as the cost of the turn and added it to the session's total
+  each time, so the total grew like a sum of running totals: three turns of
+  $0.01 each came to $0.06, not $0.03. A `/rename` or `/cost` typed by the
+  user, which calls no model, was drawn as costing as much as everything
+  before it. A turn now costs what its result adds to the total of the result
+  before it, and the session's total -- the dashboard's Cost column and its
+  sum, and `%c` in `ecc-mode-line-format` -- is what the CLI says the
+  conversation cost. A resumed or forked CLI carries on from the total its
+  recording ended with, so its first result is counted from the recording's
+  last `cost-state` line; when there is no recording to read, that first
+  turn's cost is left unknown rather than guessed. The Markdown export closes
+  a turn with its own cost too. A recording read back is given its whole
+  total, read from the last `cost-state` line wherever it lies, and not only
+  from the last 64 KiB, where a long-lived CLI does not write it. Introduced in 0.1.0;
+  every release up to 0.4.1 showed the wrong cost.
+- A Bash call that comes up open on the files it changed could bury the diff
+  under its own command: a command that writes files through heredocs, or pipes
+  a script into `python`, drew all of its hundred lines above
+  `Updated FILE (+n -m)`. A value of a tool call's input that runs over several
+  lines is now cut to `ecc-render-result-max-lines`, followed by
+  `… N more lines (RET)`, as the output under it already was. This applies to
+  every tool call, opened by default or by hand. `RET` and `o` still show the
+  whole input. A request waiting for an answer still draws its input whole,
+  because it has to be read before it is allowed. Introduced in 0.4.0.
+- `ecc-space-zoom` (`C-c c z`) deleted the sidebar the second time a tab was
+  zoomed. The way back was saved as a window state, which keeps only the
+  window parameters in `window-persistent-parameters`. The sidebar came back
+  without `no-delete-other-windows`, and the next zoom deleted it along with
+  the other windows. The way back is now a window configuration, which
+  restores the windows with their parameters, keeps point where it was moved
+  while zoomed, and still works after you leave the tab and come back.
+  Introduced in 0.3.0.
+- A turn waiting on a permission, a question or a plan, or one compacting its
+  context, was not interrupted before its CLI was stopped for a hand-off to the
+  terminal or a `/resume`: only a session whose state said `running` was taken
+  to be in a turn, and these say `waiting-permission`, `compacting` and the
+  like. The CLI was stopped mid-turn instead. Whether a turn is open now
+  decides it, so such a turn is interrupted first, like a running one.
+  Introduced in 0.3.0.
+- A prompt queued behind a turn was lost when the session was handed over to
+  the terminal or carried on with `/resume` mid-turn. The result that ended the
+  interrupted turn sent the prompt, which opened a turn of its own; the
+  hand-off then waited that turn out and stopped the CLI in the middle of it,
+  so the prompt was never answered. The queue is now held while the CLI is
+  being stopped, and is sent once the session is back. Introduced in 0.1.0.
+- A session taken back from the terminal while a CLI of its own was already
+  running again could be left with a turn open on an idle CLI: the lines the
+  terminal had appended were read in with their turn kept open, and nothing
+  closed it. Every prompt then waited in the queue behind it. The turn is now
+  closed when the follow ends, unless the running CLI is itself in a turn.
+  Introduced in 0.1.0.
+
+- Reply text in the transcript could be painted red, or mauve, across a whole
+  stretch: with `show-paren-mode` on and `show-paren-style` set to `mixed` or
+  `expression`, point near a paren that does not pair -- a `1)` list item, a
+  full-width `（` closed by a half-width `)` -- highlighted everything to its
+  supposed partner. Session buffers now turn paren matching off for
+  themselves, through a buffer-local `show-paren-predicate`, and stay so when
+  the global mode is turned on later; the global settings are left alone, and
+  `show-paren-local-mode` still brings it back in one buffer.
+
+- `C-c c j` (`ecc-space-goto`) answered with `RET` and nothing typed, under
+  the default completion, went on with no Space and failed with
+  `wrong-type-argument`; so did `ecc-space-close` when it asked. It says "No
+  Space chosen" now. Introduced in 0.3.0, with `ecc-space-goto`.
+
+- `ecc-space-close`, asked from outside any Space, offered the projects only
+  recordings are left of along with the open Spaces. Picking one stopped
+  nothing and closed no tab, said "Closed" all the same, and for a worktree
+  went on to offer removing its directory. It offers the open Spaces alone
+  now. Introduced in 0.3.0, with `ecc-space-past-projects`.
+
+- A numbered list item in the transcript showed a bullet in place of its
+  number: `1.` and `10)` were drawn as `•`, like a `-` item, so a reply's
+  numbered steps lost their numbers. The text underneath was right, and copying
+  it gave the numbers back; only the display was wrong. A number is now drawn as
+  itself, and a line that wraps out of a numbered item stands under the item's
+  text, past the number, rather than one column past a bullet. The bullet stays
+  on `-`, `*` and `+`. Introduced in 0.1.0, with the hiding of Markdown markup.
+
+- A comment in the review of a proposal could move onto another line that
+  only read like its own. When the file changed on disk while the
+  permission waited and the proposal was reviewed again, both readings
+  took what the session had recorded of the file for their old side, so
+  a comment on a `}` was carried by its number onto another `}`. A
+  proposal's comments are now carried from the file as the proposal found
+  it, and by their text when that is not known.
+
+- Redrawing a review whose text changed since it was read -- a reading
+  that stopped, a key that got past the keymap -- was an error, raised
+  after the command had done its work and with every comment taken off
+  the screen. `C-c C-c` had sent the prompt and marked the comments sent,
+  and showed none of them; `C-c C-a` in a pull request stopped at
+  the first such review, left the rest undrawn and did not count again;
+  the files filter, removing a comment and hiding Claude's failed the
+  same way. What is drawn now stays as it is, the echo area says that `g`
+  reads the review again, and the command finishes; Claude's
+  `review_remove_comment` and `review_clear_comments` say the same.
+
+- `c` on a comment of yours, in a review being read again, sent the edit
+  to the kill ring instead of making it. An edit needs no line, and is
+  made.
+
+- A comment on a very large file froze Emacs for seconds at the next `g`
+  after a commit moved the file's old side: both blobs were read whole
+  and compared line by line. Their sizes are asked first, as the ediff
+  review does, and two of which one is over `ecc-review-max-bytes` are not
+  read or compared; the comments of that file are outdated, and the log
+  says so once.
+
+- `review_hunks` gave two hunks with one `@@` header -- two patches at one
+  line of a file the session changed outside git -- the same comment count.
+  Each hunk counts its own.
+
+- A file outside git with DEL in its name was named in the review's own
+  header as it is, and one with BEL, VT, FF or CR with an octal escape;
+  git writes `\177`, `\a`, `\v`, `\f` and `\r`, and the review now
+  writes them so.
+
+- A slash command the CLI runs itself -- `/rename`, `/model`, `/cost` and the
+  rest -- is drawn as the command it is in a live session, and no longer as a
+  reply the model wrote. The live stream does not spread such a command over
+  the messages a recording holds: it sends one synthetic assistant message
+  carrying `local_command_run` and `local_command_source`, which nothing here
+  read, so the pretty command node existed only when a recording was replayed.
+  A command typed in the prompt region is not drawn a second time under the
+  turn it heads, also when the CLI reports it under another name: `/cost`
+  comes back as `usage` (confirmed against CLI 2.1.290, 2026-10-12).
+
+- `/rename` renames the session in Emacs, with its buffer, its mode line, the
+  tab line of every window and every menu that lists it, and the name is saved
+  for `ecc-restore`. The CLI sends `system/session_title_changed` with
+  the name it settled on, ahead of `system/init` when the command is the first
+  thing the process runs; nothing here read it, so the two names drifted apart
+  and the event was drawn as a stray notice. It is now applied to the session
+  and drawn as nothing, and the name is never guessed from what the command
+  printed or the argument it was given (confirmed against CLI 2.1.290,
+  2026-10-12). A name another session already has becomes `NAME<2>` here,
+  and the CLI is told that name the way a rename made in Emacs tells it, so
+  the history and a resume call the session what it is called here.
+
+- Renaming a session to the name it already has leaves it alone. The prompt
+  of `C-c c R` offers the current name, and confirming it unchanged renamed
+  the session to `NAME<2>`: `ecc-model-unique-name` counted the session
+  itself as a collision. It now takes the session to leave out.
+
+- `R` in the dashboard is the rename `C-c c R` is. It skipped the trim, so a
+  name of nothing but blanks went through; it wrote the buffer name itself
+  instead of asking `ecc-session-buffer-name` for it; and it offered no
+  default. All three are gone: both keys now call `ecc-rename-session`.
+
+- A rename (`C-c c R`, or `R` in the dashboard) could leave the old name
+  behind. The tab line of another window that listed the session kept the old
+  name until the next change of state drew it again: a window caches its tab
+  line on the tabs and the name of its own buffer, not on the names of the
+  others. And a rename saved nothing for `ecc-restore`, so an Emacs that went
+  down before the next save brought the session back under its old name. Every
+  rename now runs the new `ecc-session-renamed-hook`, on which the tab lines are
+  drawn again and the open sessions are saved. Introduced in 0.1.0; the missing
+  save in 0.4.0, with `ecc-restore`.
+
+- A session renamed with `C-c c R` (or `R` in the dashboard) keeps its name
+  when it is closed and opened again from the history, the dashboard or the
+  search. Two things lost it. The rename never reached the CLI, so the
+  recording had no name of the user's, only the title the CLI made up; and
+  the history read the title from `ai-title` lines alone, so even a name given
+  with `/rename` lost to the AI title, which the CLI goes on writing after the
+  `custom-title` line every turn (confirmed against CLI 2.1.290, 2026-10-12).
+  The history now takes a `custom-title` over any `ai-title`, whatever their
+  order. And a rename now sends `/rename NAME` to the CLI of the session, with
+  the name the session ended up with (`NAME<2>` included), without drawing
+  it: the CLI's answer opens no turn, adds no command node and nothing to the
+  cost, and never enters the queue. While a turn runs the rename waits for it
+  to end and goes ahead of the next queued prompt; a session with no CLI
+  running -- stopped, exited, handed to the terminal, or a recording being
+  read -- is told when it runs again, and `ecc-restore` keeps a rename still
+  to be sent across an Emacs restart. Until the CLI has answered, a title it
+  sends that is not the new name is not applied. A `/rename` typed in the
+  prompt region is drawn as before.
+
+### Removed
+
+- **Breaking.** `ecc-space-session-min-width`. How many sessions a Space shows
+  is the layout's to say now, and the variable is obsolete; setting it does
+  nothing. A question, a plan or a log that has to divide a transcript still
+  goes to its right only when each half gets 80 columns, the default this
+  setting had, and below it otherwise.
+
 ## [0.4.1] - 2026-10-12
 
 Verified against **Claude Code CLI 2.1.290**.
@@ -2647,7 +3006,8 @@ Emacs 29.1, 29.4 and 30.1.
   notifications, and a `transient` menu on `ecc-global-map`.
 - `ecc-version` reports the ecc, Emacs and CLI versions a bug report needs.
 
-[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.2
 [0.4.1]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.1
 [0.4.0]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.0
 [0.3.4]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.3.4

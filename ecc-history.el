@@ -423,8 +423,9 @@ Enough for the first few lines, which say where the session ran.")
 
 (defvar ecc-history-scan-tail-bytes 65536
   "Bytes read from the end of a recording when it is only described.
-The CLI repeats the title, the cost and the last prompt after every
-turn, so the end holds the current values.")
+The CLI repeats the title and the last prompt after every turn, so
+the end holds the current values.  The cost it writes only when it
+exits; `ecc-history-recorded-cost' reads that one.")
 
 (defun ecc-history--edges (file)
   "Return the first and last lines of FILE without reading the middle.
@@ -495,6 +496,61 @@ than one a project filter drops."
     ;; is not the same thing once a file has been copied or renamed.
     (setf (alist-get 'session-id info) (file-name-base file))
     info))
+
+;;;; What the conversation has cost
+
+;; The CLI keeps its running total of what a conversation cost in the
+;; recording, as a `cost-state' line, and a resume carries on from it
+;; (CLI 2.1.290, confirmed 2026-10-13):
+;;
+;; - The line is written once, when the process exits on stdin closing
+;;   or on SIGTERM -- not after every turn, so a long-lived process
+;;   leaves it megabytes before the end.  A process killed with SIGKILL
+;;   writes none, and what it spent is lost to the next one.
+;; - `--resume' starts from the `totalCostUSD' of the last such line:
+;;   the first result of the new process is that plus its own turn.
+;; - `--resume --fork-session' starts from the last line of the
+;;   recording it branches off, so a fork's total includes its parent's.
+;; - With no such line the total starts from 0.
+;;
+;; That is what `ecc-proc-start' counts a resumed CLI's first result
+;; from (`ecc-model-result-cost').
+
+(defvar ecc-history-cost-tail-bytes 262144
+  "Bytes read from the end of a recording to find its last `cost-state'.
+Twice as many are read each time the range holds none, up to the whole
+file.")
+
+(defun ecc-history-recorded-cost (file)
+  "Return the running total the recording FILE ends with, or nil.
+It is the `totalCostUSD' of the last `cost-state' line, the total a
+CLI resuming FILE starts from; nil when FILE has no such line."
+  (let ((size (or (file-attribute-size (file-attributes file)) 0))
+        (bytes ecc-history-cost-tail-bytes)
+        (cost 'more))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (while (eq cost 'more)
+        (let ((from (max 0 (- size bytes))))
+          (erase-buffer)
+          (insert-file-contents-literally file nil from size)
+          (goto-char (point-max))
+          (setq cost nil)
+          (while (and (null cost)
+                      (search-backward "\"type\":\"cost-state\"" nil t))
+            (let ((start (line-beginning-position)))
+              (if (and (> from 0) (= start (point-min)))
+                  ;; The range starts in the middle of this line.
+                  (setq cost 'more)
+                (setq cost (ecc-protocol-history-cost
+                            (decode-coding-string
+                             (buffer-substring start (line-end-position))
+                             'utf-8-unix)))
+                (goto-char start))))
+          (when (and (null cost) (> from 0))
+            (setq cost 'more))
+          (setq bytes (* 2 bytes)))))
+    cost))
 
 ;;;; The projects that were worked in
 
@@ -617,7 +673,12 @@ same kind of buffer as a live conversation and resumed from there."
                        :kind 'archived)))
         (puthash session-id file ecc-history--files)
         (ecc-model-set-state session 'exited)
-        (setf (ecc-session-total-cost session) (or (alist-get 'cost info) 0))
+        ;; The whole of what the conversation cost, as the CLI counts
+        ;; it.  Not the `cost' of `info': that is read from the last
+        ;; few kilobytes, and a long process writes its `cost-state'
+        ;; far before the end.
+        (setf (ecc-session-total-cost session)
+              (or (ecc-history-recorded-cost file) 0))
         session)))
 
 ;;;###autoload
@@ -686,7 +747,16 @@ the CLI would run twice on the same recording."
   (require 'ecc-review)
   (ecc-review-ensure-baseline session)
   (ecc-proc-start session t fork)
+  ;; Noted after the start, which would otherwise be the one to forget it.
+  (setf (alist-get 'fork-unsettled (ecc-session-progress session)) (and fork t))
   session)
+
+(defun ecc-history-fork-unsettled-p (session)
+  "Return non-nil when SESSION was forked and has no id of its own yet.
+A fork goes by the id it branched from until system/init hands it its
+own with the first turn (`ecc-dispatch--init\=' clears this), so the
+conversation under that id is not yet the fork\='s to resume."
+  (alist-get 'fork-unsettled (ecc-session-progress session)))
 
 
 ;;;; Carrying a session on with another conversation

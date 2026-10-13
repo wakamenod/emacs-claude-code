@@ -42,7 +42,7 @@
 (require 'ecc-model)
 
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
-(declare-function ecc-session-buffer-name "ecc-session" (name))
+(declare-function ecc-session-rename "ecc-session" (session name))
 (declare-function ecc-chat-goto-prompt "ecc-chat" ())
 (declare-function ecc-render--project-name-1 "ecc-render" (directory))
 ;; `ecc-space' is above this file and is loaded where `ecc-use-spaces'
@@ -53,14 +53,11 @@
 (declare-function ecc-space-display-session "ecc-space" (session))
 (declare-function ecc-space-display-beside-session "ecc-space" (buffer session))
 (declare-function ecc-space-current-key "ecc-space" ())
-(declare-function ecc-space-tab "ecc-space" (space))
-(declare-function ecc-space-name "ecc-space" (space))
+(declare-function ecc-space-title "ecc-space" (space))
 (declare-function ecc-space-parent "ecc-space" (space))
 ;; `ecc-notify' is above this file as well, and requires it.
 (declare-function ecc-tab-state "ecc-notify" (session))
-(declare-function ecc-tab-mark-of-state "ecc-notify" (state &optional fill))
-(declare-function ecc-tab-faces-of-state "ecc-notify" (state current))
-(defvar ecc-tab--blink-phase)
+(declare-function ecc-tab-column-mark "ecc-notify" (state))
 
 (defvar ecc-window-use-side-window t
   "Non-nil shows a transcript in a side window rather than an ordinary one.
@@ -213,20 +210,14 @@ after it are told apart by a name the user gives."
 
 ;;;###autoload
 (defun ecc-rename-session (session name)
-  "Rename SESSION to NAME and rename its buffers with it."
+  "Rename SESSION to NAME and rename its buffers with it.
+The CLI is told the name too, so that the history and a later resume
+call the session NAME (`ecc-session-rename\=')."
   (interactive
    (let ((session (ecc-window-resolve-session current-prefix-arg)))
      (list session (read-string "New name: " (ecc-session-name session)))))
-  (let ((name (ecc-model-unique-name (string-trim name))))
-    (when (string-empty-p name)
-      (user-error "The name is empty"))
-    (setf (ecc-session-name session) name)
-    (require 'ecc-session)
-    (when (buffer-live-p (ecc-session-buffer session))
-      (with-current-buffer (ecc-session-buffer session)
-        (rename-buffer (ecc-session-buffer-name name) t)))
-    (force-mode-line-update t)
-    name))
+  (require 'ecc-session)
+  (ecc-session-rename session name))
 
 ;;;; The buffer the user came from
 
@@ -555,7 +546,7 @@ every session, and nil leaves the windows as they are, which is the
 default.
 
 What was hidden is not written down.  Under `spaces\=' the way back is
-`ecc-space-reset-windows\=', which deals the tab again; under `classic\='
+`ecc-space-cycle-layout\=', which deals the tab again; under `classic\='
 it is `ecc-focus-project\=', or `ecc-show-session\=' one session at a
 time.")
 
@@ -781,7 +772,7 @@ whatever buffer happens to be in it."
 Nothing is written down about where they were.  There was a record of
 it once, for a command that put every hidden session back in the window
 it came from; what brings one back now deals the whole arrangement again
--- `ecc-space-reset-windows\=' under `spaces\=', `ecc-focus-project\='
+-- `ecc-space-cycle-layout\=' under `spaces\=', `ecc-focus-project\='
 under `classic\=' -- or shows one session at a time, from the sidebar,
 the dashboard or `ecc-show-session\='."
   (when-let* ((visible (seq-filter #'ecc-window-session-visible-p sessions)))
@@ -865,7 +856,7 @@ where the source is, and it is somewhere to start reading.
 The half of focusing a project that puts the code in front of you, for
 `ecc-focus-project\=' and for the `classic\=' side of `ecc-space-select\='.
 It was a command of its own on `C-c c V' until the Spaces took that key
-for `ecc-space-reset-windows\=', which puts back the whole arrangement
+for `ecc-space-cycle-layout\=', which puts back the whole arrangement
 rather than this one window.
 
 Selecting the window is not a flourish.  Every command that takes no
@@ -966,26 +957,17 @@ being whatever they were left as."
 
 (defun ecc-window--session-group (key)
   "Return (TITLE . PARENT) for the group of the sessions of the project KEY.
-Under `spaces\=' the group is the Space.  A linked worktree is titled
-after the repository it belongs to and then its branch,
-`repo › branch\=', and PARENT is the key of that repository; any other
-Space goes by the name of its tab when it has one, so that the two
-agree, and otherwise by its name.  Under `classic\=' it is the project,
+Under `spaces\=' the group is the Space, titled by `ecc-space-title\=' as
+the Space picker titles it, and PARENT is the key of the repository a
+linked worktree belongs to.  Under `classic\=' it is the project,
 with no PARENT: telling a worktree from its repository asks git, and
 nothing under `classic\=' reaches `ecc-worktree\='."
   (cond
    ((string-empty-p key) (list "-"))
    (ecc-use-spaces
     (require 'ecc-space)
-    (let* ((space (ecc-space-of-root key))
-           (parent (ecc-space-parent space)))
-      (if parent
-          ;; The branch and not the tab: a tab's `<2>' is there to tell
-          ;; tabs apart, and the repository in front already does.
-          (cons (concat (ecc-space-name (ecc-space-of-root parent))
-                        " › " (ecc-space-name space))
-                parent)
-        (list (or (ecc-space-tab space) (ecc-space-name space))))))
+    (let ((space (ecc-space-of-root key)))
+      (cons (ecc-space-title space) (ecc-space-parent space))))
    (t (require 'ecc-render)
       (list (ecc-render--project-name-1 key)))))
 
@@ -1029,13 +1011,10 @@ same title are told apart the way their tabs are, `main<2>\='."
           (when (equal (cddr child) (car group))
             (push child ordered)))))
     (dolist (group (nreverse ordered))
-      (let* ((base (cadr group))
-             (title base)
-             (n 1))
-        (while (rassoc title titled)
-          (setq n (1+ n)
-                title (format "%s<%d>" base n)))
-        (push (cons (car group) title) titled)))
+      (push (cons (car group)
+                  (ecc--unique-name (cadr group)
+                                    (lambda (title) (rassoc title titled))))
+            titled))
     (nreverse titled)))
 
 (defun ecc-window--session-candidates (sessions)
@@ -1065,11 +1044,7 @@ candidate before it hands it to the `group-function\=' (confirmed
 mark is the one its tab and its sidebar row carry, at the moment of
 asking: no blinking.  Only the mark takes a face of its own."
   (require 'ecc-notify)
-  (let* ((ecc-tab--blink-phase nil)
-         (state (ecc-tab-state session)))
-    (concat (propertize (ecc-tab-mark-of-state state t)
-                        'face (ecc-tab-faces-of-state state nil))
-            " " name)))
+  (concat (ecc-tab-column-mark (ecc-tab-state session)) " " name))
 
 (defun ecc-window--session-table (candidates)
   "Return a completion table of CANDIDATES, grouped by Space and kept in order.

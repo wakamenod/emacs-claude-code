@@ -33,7 +33,7 @@ There is no setting for the model or for a budget: both belong to your Claude Co
 | `ecc-chat-return-sends` | `nil` | `t` makes `RET` send, as in the terminal client; `C-c C-c` always sends |
 | `ecc-chat-text-width` | `100` | Width of the text in columns; `nil` uses the whole window |
 | `ecc-chat-line-spacing` | `0.15` | Extra space below each line, as in `line-spacing`; `nil` adds none |
-| `ecc-render-result-max-lines` | `12` | Lines shown of a tool result; `RET` shows all of it |
+| `ecc-render-result-max-lines` | `12` | Lines shown of a tool result and of each value of its input; `RET` shows all of it |
 | `ecc-render-inhibit-inline-diff` | `nil` | `t` shows the calls that change a file folded; `TAB` opens them |
 | `ecc-render-diff-max-lines` | `40` | Lines shown of a diff in a tool call or a request; `RET` shows all of it |
 | `ecc-diff-context-lines` | `3` | Context lines around a change in the transcript |
@@ -41,6 +41,7 @@ There is no setting for the model or for a budget: both belong to your Claude Co
 | `ecc-render-debounce` | `0.1` | Seconds to wait before redrawing the part of the transcript that is changing |
 | `ecc-show-hook-events` | `nil` | Non-nil shows each hook that fires, with its exit code and output. The hooks run either way. Read when a session starts |
 | `ecc-image-inline` | `t` | `nil` shows only the line naming each image or video |
+| `ecc-visit-search-machine` | `'ask` | Whether `RET` on a path in a reply that is not in the project searches the whole machine: `'ask` asks each time, `'always` searches, `'never` does not |
 
 ## Header line and mode line
 
@@ -92,7 +93,6 @@ There is no setting for the model or for a budget: both belong to your Claude Co
 |---|---|---|
 | `ecc-use-spaces` | `t` | A tab for each project. `nil` opens transcripts in [side windows, without tabs](/emacs-claude-code/features/spaces/#without-spaces) |
 | `ecc-space-always-session` | `t` | Opening a Space with nothing running starts a session, and closing its last session closes the Space |
-| `ecc-space-session-min-width` | `80` | The narrowest a transcript is made before a new session reuses a window instead |
 | `ecc-sidebar-width` | `28` | Width of the sidebar |
 | `ecc-window-large-frame-min-height` | `80` | With Spaces off: frame height in lines needed for a third session window |
 | `ecc-window-sub-height` | `0.33` | With Spaces off: height of the third session window |

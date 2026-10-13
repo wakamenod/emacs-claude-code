@@ -41,6 +41,11 @@
 (require 'ecc-protocol)
 (require 'ecc-model)
 
+;; `ecc-history' is built on this file, so it is loaded when a resume
+;; first needs it (`ecc-proc--resumed-cost').
+(declare-function ecc-history-file "ecc-history" (session-id))
+(declare-function ecc-history-recorded-cost "ecc-history" (file))
+
 (defvar ecc-control-timeout 30
   "Seconds to wait for the answer to a control request before warning.")
 
@@ -247,6 +252,19 @@ would ever take it out of the list."
         (when (buffer-live-p buffer)
           (kill-buffer buffer))))))
 
+(defun ecc-proc--resumed-cost (session)
+  "Return the running total a resumed CLI of SESSION starts from, or nil.
+The CLI carries on from the total its recording ended with -- the one
+it is resumed from, which for a fork is the parent's -- so the cost of
+its first result is counted from that (`ecc-model-result-cost').  The
+recording is read here and not later: the CLI writes a total of its
+own only when it exits, and a result arriving first must find this one
+in place.  Nil when there is no recording to read."
+  (require 'ecc-history)
+  (when-let* ((file (ecc-history-file (or (ecc-model-option session :resume-from nil)
+                                          (ecc-session-id session)))))
+    (or (ecc-history-recorded-cost file) 0)))
+
 (defun ecc-proc-start (session &optional resume fork)
   "Start the CLI for SESSION and return the process.
 RESUME and FORK are passed to `ecc-proc-build-command'."
@@ -287,6 +305,7 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
       (error (ecc-proc--start-failed session)
              (signal (car error) (cdr error))))
     (setf (alist-get 'stop-requested (ecc-session-progress session)) nil)
+    (ecc-model-set-cost-base session (if resume (ecc-proc--resumed-cost session) 0))
     (process-put process 'ecc-session-id (ecc-session-id session))
     (setf (ecc-session-process session) process)
     ;; What this process was really given, taken here rather than asked
@@ -313,6 +332,13 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
     ;; also carries what the Claude Code settings say about Remote
     ;; Control, which is where the bridge is turned on.
     (ecc-proc-control session "initialize" #'ecc-proc--on-initialize 'hooks nil)
+    ;; A rename made while no CLI ran, or one the last process never
+    ;; answered, goes to this one.  It goes before anything the CLI says
+    ;; is read, so a title the CLI may bring back from the recording
+    ;; arrives while the rename is out and cannot undo it
+    ;; (`ecc-dispatch--title-changed').
+    (ecc-proc--rename-unanswered session)
+    (ecc-proc-send-rename session)
     process))
 
 (defun ecc-proc-stop (session)
@@ -348,15 +374,28 @@ for from one the CLI decided on."
   (and (alist-get 'stop-requested (ecc-session-progress session)) t))
 
 (defvar ecc-proc-interrupt-timeout 10
-  "Seconds a running turn is given to end before the CLI is stopped.")
+  "Seconds an open turn, whatever its state, is given to end.
+The CLI is stopped once they are over, ended or not.")
+
+(defvar ecc-proc--releasing nil
+  "The sessions `ecc-proc-release\=' is waiting on to end their turn.
+Their queue is not drained meanwhile (`ecc-proc-drain-queue\='): the
+result that ends the interrupted turn would otherwise send the next
+queued prompt, open a turn for it, and have the release wait that one
+out and stop the CLI in the middle of it, losing the prompt.  The queue
+is left for whatever has the conversation next.  A list rather than a
+flag, because other sessions answer while this one waits, and theirs
+must drain as usual.")
 
 (defun ecc-proc-release (session &optional timeout)
   "Stop the CLI of SESSION, so that something else may have the conversation.
-A running turn is interrupted first and given TIMEOUT seconds -- default
-`ecc-proc-interrupt-timeout\=' -- to come to an end, because a turn stopped
-mid-tool leaves the CLI to write the result of a call that will never
-finish.  Signals when the process cannot be stopped: two processes on
-one session id branch the conversation without saying so.
+An open turn, whatever its state, is interrupted first and given
+TIMEOUT seconds -- default `ecc-proc-interrupt-timeout\=' -- to come to
+an end, because a turn stopped mid-tool leaves the CLI to write the
+result of a call that will never finish.  The prompts queued behind it
+stay in the queue (`ecc-proc--releasing\=').  Signals when the process
+cannot be stopped: two processes on one session id branch the
+conversation without saying so.
 
 What comes next is the caller\='s: a terminal takes the conversation over
 \(`ecc-tui-open\='), or this Emacs carries on with another one
@@ -364,13 +403,25 @@ What comes next is the caller\='s: a terminal takes the conversation over
   (let ((process (ecc-session-process session))
         (timeout (or timeout ecc-proc-interrupt-timeout)))
     (when (process-live-p process)
-      (when (eq (ecc-session-state session) 'running)
-        (ecc-proc-interrupt session)
-        (let ((deadline (+ (float-time) timeout)))
-          (while (and (eq (ecc-session-state session) 'running)
-                      (process-live-p process)
-                      (< (float-time) deadline))
-            (accept-process-output process 0.2))))
+      ;; Whether a turn is open decides it, not the state: a turn blocked
+      ;; on a permission, a question or a plan, or compacting its
+      ;; context, is a turn the CLI is in the middle of all the same.
+      ;;
+      ;; The wait is for the result, and a blocked turn gets one too:
+      ;; interrupted while it waited on a `can_use_tool' -- a Bash
+      ;; permission, and an AskUserQuestion -- the CLI sent a
+      ;; control_cancel_request for it, the interrupt's control_response
+      ;; and an `error_during_execution' result, all within 10 ms
+      ;; (2.1.290, 2026-10-12).  The timeout is for a CLI that answers
+      ;; nothing.
+      (when (ecc-session-current-turn session)
+        (let ((ecc-proc--releasing (cons session ecc-proc--releasing)))
+          (ecc-proc-interrupt session)
+          (let ((deadline (+ (float-time) timeout)))
+            (while (and (ecc-session-current-turn session)
+                        (process-live-p process)
+                        (< (float-time) deadline))
+              (accept-process-output process 0.2)))))
       (ecc-proc-stop session))
     (when (process-live-p (ecc-session-process session))
       (user-error "%s could not be stopped; two processes would branch the conversation"
@@ -409,6 +460,7 @@ started again; left alone" status)
     (setf (ecc-session-process session) nil)
     (setf (alist-get 'exit-status (ecc-session-progress session)) status)
     (ecc-proc--close-pending session)
+    (ecc-proc--rename-unanswered session)
     ;; A turn the CLI was in the middle of will never get its result. Left
     ;; open, it would hold every later prompt in the queue, and a resumed
     ;; session would never speak again.
@@ -574,20 +626,85 @@ arrive in between, since output is only read when Emacs waits for it."
   (ecc-proc--note-sent session content)
   (ecc-proc-send-json session (ecc-protocol-user-message content)))
 
-(defun ecc-proc-send-prompt (session text)
+(defun ecc-proc-send-prompt (session text &optional draft)
   "Send TEXT to SESSION, or queue it while a turn is running.
+DRAFT is what the user typed, when TEXT was prepared from it; a queued
+prompt keeps it so that it can be taken back as it was written.
 Returns `sent' or the position in the queue."
   (if (ecc-session-current-turn session)
-      (ecc-model-queue-input session text)
+      (ecc-model-queue-input session text draft)
     (ecc-proc-send-user session text)
     'sent))
 
 (defun ecc-proc-drain-queue (session)
-  "Send the next queued prompt of SESSION, if there is one."
+  "Send the next queued prompt of SESSION, if there is one.
+Nothing is sent while `ecc-proc-release\=' is stopping its CLI."
   (when-let* ((text (and (null (ecc-session-current-turn session))
+                        (not (memq session ecc-proc--releasing))
                         (ecc-model-pop-input session))))
     (ecc-proc-send-user session text)
     text))
+
+;;;; The name
+
+;; A rename made in Emacs (`ecc-session-rename') reaches the CLI as the
+;; `/rename' a user would type, because that is what the CLI records:
+;; the `custom-title' line a later `--resume', the history and the
+;; terminal client read the name from.  It is sent as a plain user
+;; message, but it is not the user talking: it opens no turn, never
+;; goes through the queue, and what the CLI answers is not drawn.
+;;
+;; What `/rename NAME' brings back (CLI 2.1.290, confirmed 2026-10-12):
+;; system/session_title_changed with NAME, system/init, a synthetic
+;; assistant message carrying `local_command_run' {command "rename"},
+;; and a result with "local_command": "rename" and no model call, whose
+;; `total_cost_usd' repeats the one of the turn before it: it is the
+;; running total of the process, not what this result cost
+;; (`ecc-model-result-cost').  With --replay-user-messages the line is not
+;; echoed: a prompt is, a slash command is not.  Sent while a turn
+;; runs, the CLI holds it until that turn's result and runs it then.
+;; It is sent here only once no turn is open all the same, so that the
+;; exchange never lands between a prompt of the queue and its turn.
+
+(defun ecc-proc-rename-line (name)
+  "Return the line that renames a session to NAME in the CLI."
+  (concat "/rename " name))
+
+(defun ecc-proc-rename (session)
+  "Have the CLI of SESSION take the name SESSION has now.
+It is sent at once when the CLI runs with no turn open; otherwise the
+rename waits on SESSION until it does: the end of the turn, or the next
+start of the CLI -- a resume, a restart, a hand-off taken back.  Returns
+the name sent, or nil when it waits."
+  (setf (ecc-session-rename-pending session) t)
+  (ecc-proc-send-rename session))
+
+(defun ecc-proc-send-rename (session)
+  "Send the rename SESSION has waiting, if its CLI can take it now.
+The name sent is the one SESSION has when it goes, so a rename made
+twice while the CLI could not be told sends the second name only, and
+a name made unique as NAME<2> is sent as that.  Nothing is sent while
+another one is unanswered, while a turn is open, or while
+`ecc-proc-release\=' is stopping the CLI.  Returns the name sent, or nil."
+  (when (and (ecc-session-rename-pending session)
+             (null (ecc-session-rename-sent session))
+             (null (ecc-session-current-turn session))
+             (not (memq session ecc-proc--releasing))
+             (process-live-p (ecc-session-process session)))
+    (let ((name (ecc-session-name session)))
+      (setf (ecc-session-rename-pending session) nil
+            (ecc-session-rename-sent session) name)
+      (ecc-log name "telling the CLI the name")
+      (ecc-proc-send-json session (ecc-protocol-user-message
+                                   (ecc-proc-rename-line name)))
+      name)))
+
+(defun ecc-proc--rename-unanswered (session)
+  "Put a rename the CLI of SESSION never answered back to wait.
+The process it went to is gone, so the next one is told instead."
+  (when (ecc-session-rename-sent session)
+    (setf (ecc-session-rename-sent session) nil
+          (ecc-session-rename-pending session) t)))
 
 (defun ecc-proc-interrupt (session)
   "Interrupt the running turn of SESSION.

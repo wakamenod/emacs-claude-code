@@ -158,6 +158,12 @@ edit does, and `ecc-files-updated-hook\=' hears only of the file tools.")
 (defvar ecc-session-state-changed-hook nil
   "Functions run with a session and its previous state.")
 
+(defvar ecc-session-renamed-hook nil
+  "Functions run with a session that has just been given a new name.
+A name is drawn in more places than the session buffer's own: the tab
+line of every window that lists the session, and the file the open
+sessions are saved in.")
+
 (defvar ecc-session-removed-hook nil
   "Functions run with a session that has just been forgotten.
 The session is already out of the registry when this runs, which is
@@ -173,6 +179,10 @@ resumed -- so this is not `ecc-session-exited-hook' by another name.")
 
 (defvar ecc-tasks-updated-hook nil
   "Functions run with a session when its task list changed.")
+
+(defvar ecc-input-queue-changed-hook nil
+  "Functions run with a session when its queue of prompts changed.
+A prompt was queued, sent, taken back, dropped or moved.")
 
 ;;;; Structures
 
@@ -227,15 +237,27 @@ resumed -- so this is not `ecc-session-exited-hook' by another name.")
   tasks                 ; hash: task id -> ecc-task
   usage
   context-tokens
-  total-cost
+  total-cost            ; what the results counted so far cost, the sum
+                        ; of `ecc-turn-cost'
+  cost-base             ; the CLI's running total the next result is
+                        ; counted from, or nil when it is not known
+                        ; (`ecc-model-result-cost')
   rate-limit
   last-result-time
   progress              ; alist of progress information for the state line
   auto-approve-turn     ; allow every request of the current turn
   auto-approve-kinds    ; tool kinds allowed for the rest of the session
-  input-queue           ; prompts held back while a turn runs, oldest first
+  input-queue           ; list of ecc-queued: prompts held back while a
+                        ; turn runs, oldest first
   sent-echoes           ; contents sent from here whose --replay echo
                         ; has not come back yet, newest first
+  rename-pending        ; non-nil while the CLI has not been told the
+                        ; name the session was given here; it is told
+                        ; once it runs with no turn open
+                        ; (`ecc-proc-send-rename')
+  rename-sent           ; the name the `/rename' sent for it carried,
+                        ; until the CLI answers it.  Its answer is not
+                        ; drawn (`ecc-dispatch--hidden-rename-p')
   history-offset
   hint-state            ; alist of what the CLI told the session about
                         ; itself: the `suggestion' it last offered
@@ -257,6 +279,16 @@ resumed -- so this is not `ecc-session-exited-hook' by another name.")
                         ; sorts by this instead
   node-counter          ; counters for the ids of nodes and turns; the
   turn-counter)         ; ids have to be stable
+
+(cl-defstruct (ecc-queued (:constructor ecc-queued--make) (:copier nil))
+  "A prompt waiting in the queue of a session until the turn ends.
+An entry is known by its identity, not by its place: the place changes
+under anybody holding it as the queue drains."
+  text                  ; what goes to the CLI, prepared already: a
+                        ; string, or whatever `ecc-prepare-prompt-functions'
+                        ; made of one
+  draft)                ; what the user typed, a string, or nil when the
+                        ; prompt came from Emacs rather than the prompt region
 
 (cl-defstruct ecc-turn
   "One prompt and everything that followed it up to the result.
@@ -337,11 +369,15 @@ registry is most recently started first."
   (let ((id (ecc-session-id session)))
     (setq ecc--session-order (cons id (delete id ecc--session-order)))))
 
-(defun ecc-model-unique-name (base)
-  "Return BASE, or BASE with a suffix if a session already uses it."
+(defun ecc-model-unique-name (base &optional except)
+  "Return BASE, or BASE with a suffix if a session already uses it.
+EXCEPT is a session the name is not taken from: the one being renamed
+keeps the name it already has rather than colliding with itself, which
+turned a rename that changed nothing into BASE<2>."
   (let ((name base)
         (n 1))
-    (while (seq-find (lambda (s) (equal (ecc-session-name s) name))
+    (while (seq-find (lambda (s) (and (not (eq s except))
+                                      (equal (ecc-session-name s) name)))
                      (ecc-model-sessions))
       (setq n (1+ n)
             name (format "%s<%d>" base n)))
@@ -370,6 +406,7 @@ options that overrides the defcustoms for this session."
                    :tasks (make-hash-table :test #'equal)
                    :stream-blocks (make-hash-table :test #'equal)
                    :total-cost 0
+                   :cost-base 0
                    :context-tokens 0
                    :created (cl-incf ecc--session-counter)
                    :node-counter 0
@@ -437,6 +474,7 @@ and no buffer is touched; the caller redraws with
         (ecc-session-usage session) nil
         (ecc-session-context-tokens session) 0
         (ecc-session-total-cost session) 0
+        (ecc-session-cost-base session) 0
         (ecc-session-rate-limit session) nil
         (ecc-session-last-result-time session) nil
         (ecc-session-progress session) nil
@@ -586,19 +624,46 @@ What tells one is that Emacs did not open it and the bridge was up when
 it appeared; see `ecc-model-ensure-turn\='."
   (and turn (equal (ecc-turn-label turn) ecc-model-remote-turn-label)))
 
+(defun ecc-model-set-cost-base (session total)
+  "Count the next result of SESSION from the running total TOTAL.
+TOTAL is what the CLI starts from: 0 for a new conversation, what it
+restored for a resumed one, nil when that is not known."
+  (setf (ecc-session-cost-base session) total))
+
+(defun ecc-model-result-cost (session result)
+  "Return what the RESULT message of SESSION cost, or nil if not known.
+The `total_cost_usd' of a result is the running total of the CLI, not
+the cost of the turn it closes (CLI 2.1.290, confirmed 2026-10-13):
+each result carries the one before it plus what was spent since, a
+result that called no model repeats it, and a resumed CLI carries on
+from the total its recording ended with.  What one result cost is
+therefore the difference from the base the results before it left
+\(`ecc-model-set-cost-base').  A total below that base means the CLI
+started from a total nobody here knew, and then what the turn cost
+cannot be told."
+  (let ((total (alist-get 'total_cost_usd result))
+        (base (ecc-session-cost-base session)))
+    (and (numberp total) (numberp base) (>= total base)
+         (- total base))))
+
 (defun ecc-model-finish-turn (session result)
   "Close the current turn of SESSION with the RESULT message.
 A transient turn costs money like any other, so its cost is counted,
 but it is not an answer the user waited for: it neither ends a
-turn-wide approval nor counts as the moment the session last spoke."
+turn-wide approval nor counts as the moment the session last spoke.
+The cost is what RESULT adds to the running total of the CLI, see
+`ecc-model-result-cost', and the next result counts from RESULT."
   (let ((turn (ecc-session-current-turn session)))
     (when turn
-      (setf (ecc-turn-end-time turn) (current-time)
-            (ecc-turn-result turn) result
-            (ecc-turn-cost turn) (alist-get 'total_cost_usd result))
-      (setf (ecc-session-current-turn session) nil)
-      (cl-incf (ecc-session-total-cost session)
-               (or (alist-get 'total_cost_usd result) 0))
+      (let ((cost (ecc-model-result-cost session result))
+            (total (alist-get 'total_cost_usd result)))
+        (setf (ecc-turn-end-time turn) (current-time)
+              (ecc-turn-result turn) result
+              (ecc-turn-cost turn) cost)
+        (setf (ecc-session-current-turn session) nil)
+        (cl-incf (ecc-session-total-cost session) (or cost 0))
+        (when (numberp total)
+          (ecc-model-set-cost-base session total)))
       (unless (ecc-turn-transient turn)
         (setf (ecc-session-auto-approve-turn session) nil)
         (setf (ecc-session-last-result-time session) (current-time))
@@ -698,6 +763,21 @@ over is not idle while one of these is still at work."
                  (push node nodes)))
              (ecc-session-nodes session))
     nodes))
+
+(defun ecc-model-busy (session)
+  "Return what SESSION is in the middle of, or nil when it may be stopped.
+A session whose turn is over is still busy while a subagent or a
+backgrounded shell command it started runs on; a stopped one is not,
+whatever its last tasks said.  The answer is a phrase that reads after
+the session's name: `list_worktrees\=' says it, and so do the commands
+that refuse to stop a busy session."
+  (pcase (ecc-model-activity session)
+    ('attention "waiting on a request")
+    ('running "running")
+    ((or 'exited 'restored) nil)
+    (_ (when-let* ((tasks (ecc-model-running-tasks session)))
+         (format "idle with %d background task%s still running"
+                 (length tasks) (if (cdr tasks) "s" ""))))))
 
 (defun ecc-model-turn-of (node)
   "Return the turn NODE belongs to, or nil."
@@ -1031,18 +1111,54 @@ under every count of what is waiting."
 
 ;;;; The input queue
 
-(defun ecc-model-queue-input (session text)
-  "Append TEXT to the queue of prompts of SESSION and return its position."
-  (setf (ecc-session-input-queue session)
-        (nconc (ecc-session-input-queue session) (list text)))
-  (length (ecc-session-input-queue session)))
+(defun ecc-model-queue-input (session text &optional draft first)
+  "Queue TEXT for SESSION and return its position, counting from 1.
+DRAFT is what the user typed, when TEXT was prepared from it; it is what
+is given back when the prompt is taken out of the queue to be written
+again.  FIRST puts the prompt at the head of the queue rather than at
+its tail."
+  (let ((entry (ecc-queued--make :text text :draft draft)))
+    (setf (ecc-session-input-queue session)
+          (if first
+              (cons entry (ecc-session-input-queue session))
+            (append (ecc-session-input-queue session) (list entry))))
+    (run-hook-with-args 'ecc-input-queue-changed-hook session)
+    (if first 1 (length (ecc-session-input-queue session)))))
 
 (defun ecc-model-pop-input (session)
-  "Remove and return the next queued prompt of SESSION, or nil."
+  "Remove the next queued prompt of SESSION and return its text, or nil."
+  (when-let* ((entry (car (ecc-session-input-queue session))))
+    (setf (ecc-session-input-queue session) (cdr (ecc-session-input-queue session)))
+    (run-hook-with-args 'ecc-input-queue-changed-hook session)
+    (ecc-queued-text entry)))
+
+(defun ecc-model-queued-texts (session)
+  "Return the texts queued for SESSION, oldest first."
+  (mapcar #'ecc-queued-text (ecc-session-input-queue session)))
+
+(defun ecc-model-take-input (session entry)
+  "Take ENTRY out of the queue of SESSION and return it.
+Nil when ENTRY is no longer there: it has been sent, or taken already."
+  (when (memq entry (ecc-session-input-queue session))
+    (setf (ecc-session-input-queue session)
+          (delq entry (ecc-session-input-queue session)))
+    (run-hook-with-args 'ecc-input-queue-changed-hook session)
+    entry))
+
+(defun ecc-model-move-input (session entry offset)
+  "Move ENTRY OFFSET places towards the tail of the queue of SESSION.
+A negative OFFSET moves it towards the head; the move stops at either
+end.  Returns the new position of ENTRY, counting from 1, or nil when
+it is no longer in the queue."
   (let ((queue (ecc-session-input-queue session)))
-    (when queue
-      (setf (ecc-session-input-queue session) (cdr queue))
-      (car queue))))
+    (when-let* ((from (seq-position queue entry #'eq)))
+      (let* ((to (max 0 (min (1- (length queue)) (+ from offset))))
+             (rest (remq entry queue)))
+        (unless (= from to)
+          (setf (ecc-session-input-queue session)
+                (append (seq-take rest to) (list entry) (seq-drop rest to)))
+          (run-hook-with-args 'ecc-input-queue-changed-hook session))
+        (1+ to)))))
 
 (provide 'ecc-model)
 

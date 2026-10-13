@@ -277,7 +277,7 @@ The call comes first, then the request that names it."
 (defun demo-report-sent (label)
   "Say, under LABEL, the prompts sent, what is queued and what is waiting."
   (demo-say (format "[%s] sent: %S; queued: %S; pending: %S; state %s" label
-                    demo-sent (ecc-session-input-queue demo-session)
+                    demo-sent (ecc-model-queued-texts demo-session)
                     (mapcar #'ecc-request-tool-name (ecc-session-pending demo-session))
                     (ecc-session-state demo-session)))
   nil)

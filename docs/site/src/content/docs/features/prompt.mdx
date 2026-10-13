@@ -21,7 +21,7 @@ A session buffer has the transcript at the top, the prompt region below a divide
 | `C-c C-r` | Choose a past prompt and insert it at point |
 | `C-c C-s` | Take the CLI's suggested prompt |
 | `C-c C-z` | Interrupt the running turn |
-| `C-c C-q` | Show the queued prompts |
+| `C-c C-q` | List the queued prompts |
 | `C-c C-a` / `C-c C-d` | [Allow or deny](/emacs-claude-code/features/permissions/) a request |
 | `C-c C-x` | Turn [editor context](/emacs-claude-code/features/send/#editor-context) on or off |
 | `C-c C-i` | Insert an image |
@@ -33,7 +33,7 @@ A session buffer has the transcript at the top, the prompt region below a divide
 | `S-TAB` | Cycle the [permission mode](/emacs-claude-code/features/permissions/#permission-modes) |
 | `C-c ?` | Open the [menu](/emacs-claude-code/reference/menu/) |
 
-Every session shares one prompt history. `M-p` replaces the whole prompt; `C-c C-r` inserts the prompt you choose at point. A prompt sent while Claude is working waits in a queue, as does a turn started by Remote Control. The footer shows the permission mode and the model.
+Every session shares one prompt history. `M-p` replaces the whole prompt; `C-c C-r` inserts the prompt you choose at point. A prompt sent while Claude is working waits in a queue, as does a turn started by Remote Control. The waiting prompts appear above the divider. `C-c C-q`, or `RET` on them or clicking them, opens the list, where `RET` takes a prompt back into the prompt region to edit, `d` drops it and `M-<up>` / `M-<down>` move it. The footer shows the permission mode and the model.
 
 ### Suggestions
 
@@ -69,6 +69,12 @@ Emacs handles these itself, and they never reach the model: `/btw`, `/hooks`, `/
 
 The transcript shows images under the prompt or the call they came with. `I` stops or starts a GIF, a video shows its first frame when `ffmpeg` is on `PATH`, and `RET` opens the file. `ecc-image-inline` (`I` in the menu) shows only the line naming each file.
 
+### Diagrams
+
+A ```` ```mermaid ```` block in a reply is shown as its diagram when [mermaid-cli](https://github.com/mermaid-js/mermaid-cli) (`mmdc`) is on `PATH`. The block appears as code first, and the diagram replaces it a moment later. `I` on a diagram shows its source, and `I` again shows the diagram. Search and copy work on the source either way. A block mmdc cannot draw stays code, and hovering over it shows the error. `I` on it tries again, after you have fixed the cause.
+
+Install mermaid-cli with `npm install -g --allow-scripts=puppeteer @mermaid-js/mermaid-cli`. Without `--allow-scripts`, npm may skip downloading the browser `mmdc` draws with. `(setq ecc-mermaid-command nil)` turns the diagrams off, and so does turning off `ecc-image-inline`.
+
 ## The transcript
 
 <Video name="fold" label="The transcript folding: everything collapsed, then opened a level at a time, then one node folded and unfolded with TAB" />
@@ -91,11 +97,11 @@ The transcript is ordinary read-only text, so `isearch`, `occur`, narrowing and 
 | `RET` | Open what is at point: a link, a [source line](#opening-the-source), a subagent's transcript, or the full tool result. A click opens a link, a path in Claude's reply or a picture |
 | `o` | Show the whole node: input, diff and result |
 | `w` | Copy the code block at point, or the whole response |
-| `I` | Stop or start the GIF at point |
+| `I` | Show the diagram at point as its source and back, or stop or start the GIF at point |
 | `a` / `d` | Allow / deny the request (`d` elsewhere shows the diff) |
 | `g` | Redraw the transcript |
 | `L` | Show the protocol log |
-| `t` / `R` | [Hand over to the terminal](/emacs-claude-code/features/sessions/#handing-over-to-the-terminal) / resume the session |
+| `t` / `R` | [Hand over to the terminal](/emacs-claude-code/features/sessions/#handing-over-to-the-terminal) / [restart](/emacs-claude-code/features/sessions/#restarting-the-cli) the session, or resume a stopped one |
 | `C-c C-k` | Clear the prompt region |
 | `S-TAB` | Cycle the permission mode |
 | `q` | Bury the buffer |
@@ -115,7 +121,7 @@ On a request waiting for an answer, more keys apply: see [Permissions and plans]
 | A diff line in the Files section or a permission request | That line |
 | A path in Claude's reply (`foo.el:12`, `a/b.el`, `x.el#L3`) | The file at that line |
 
-The line number follows later changes the session made to the same file, so the file opens where the line is now. A video or sound file opens in the system's player. Paths inside fenced code blocks are not links; `(setq ecc-markdown-linkify-paths nil)` turns path links off. On a heading without a file, `RET` shows the full tool result.
+The line number follows later changes the session made to the same file, so the file opens where the line is now. A video or sound file opens in the system's player. A path that is not there as written, such as a name without its directory, opens the file of that name in the project; when there are several, you choose one, and the session remembers the choice; `C-u RET` chooses again. A file that is not in the project is searched for on the whole machine after asking; `ecc-visit-search-machine` set to `'always` or `'never` answers for you. Paths inside fenced code blocks are not links; `(setq ecc-markdown-linkify-paths nil)` turns path links off. On a heading without a file, `RET` shows the full tool result.
 
 :::note[Diffs under a Bash command]
 The CLI reports the files a Bash command changed, in every permission mode, only when `"bashEditDiffEnabled": true` is in `~/.claude/settings.json` (not a project's settings), and only for files inside a git repository.

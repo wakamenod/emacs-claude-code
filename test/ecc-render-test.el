@@ -595,22 +595,22 @@ screen says where the session can be reached (confirmed 2026-09-08)."
 
 (ert-deftest ecc-render-test-a-list-item-wraps-under-itself ()
   "A line that opens a list item wraps under the item, not its bullet.
-What is measured is the bullet as it is drawn: `ecc-markdown-fontify'
-puts a one-column bullet over the marker, so a numbered marker is
-narrower on the screen than it is in the text."
+What is measured is the marker as it is drawn: `ecc-markdown-fontify'
+puts a one-column bullet over \"-\", and a number is drawn as itself."
   (with-temp-buffer
     (ecc-render--insert-lines
-     (ecc-markdown-fontify "- ひとつめ\n1. ふたつめ\nふつうの段落\n")
+     (ecc-markdown-fontify
+      "- ひとつめ\n1. ふたつめ\n  10) みっつめ\nふつうの段落\n")
      "  " 'ecc-assistant-face)
     (goto-char (point-min))
     (let ((wraps nil))
       (while (not (eobp))
         (push (get-text-property (line-beginning-position) 'wrap-prefix) wraps)
         (forward-line 1))
-      ;; "  " + "- " for the first, "  " + the bullet drawn over "1." and
-      ;; the blank after it for the second, and the bare indentation for
-      ;; the paragraph, which opens no item.
-      (should (equal '("    " "    " "  ") (nreverse wraps))))))
+      ;; "  " + the bullet and its blank for the first, "  " + "1. " for
+      ;; the second, "  " + its own indentation + "10) " for the third,
+      ;; and the bare indentation for the paragraph, which opens no item.
+      (should (equal '("    " "     " "        " "  ") (nreverse wraps))))))
 
 (ert-deftest ecc-render-test-tool-use ()
   "A lone tool draws as a tool line and the permission that allowed it."
@@ -839,6 +839,49 @@ every redraw drew the whole session again."
     (ecc-render-flush session)
     (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
       (ecc-render-test--check "local-command" text))))
+
+(ert-deftest ecc-render-test-local-command-typed-here ()
+  "A command typed in the prompt region is not drawn a second time.
+The prompt of the turn is the command, so only what it printed
+follows it, where the model's own answer would stand."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "/rename aaa")
+    (ecc-dispatch session
+                  '((type . "assistant")
+                    (local_command_run . ((command . "rename") (args . "aaa")))
+                    (local_command_source
+                     . "<local-command-stdout>Session renamed to: aaa</local-command-stdout>")
+                    (message . ((role . "assistant") (model . "<synthetic>")
+                                (content . [((type . "text")
+                                             (text . "Session renamed to: aaa"))])))))
+    (ecc-render-flush session)
+    (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+      (should (string-search "〉 /rename aaa" text))
+      (should (= 1 (length (seq-filter (lambda (line) (string-search "/rename aaa" line))
+                                       (split-string text "\n")))))
+      (should (string-search "\n  Session renamed to: aaa" text)))))
+
+(ert-deftest ecc-render-test-local-command-typed-as-an-alias ()
+  "A command typed under an alias is not drawn again under its real name.
+The CLI reports `/cost' as `usage' (2026-09-22); the turn is headed by
+what was typed, and that heading is the command."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "/cost")
+    (ecc-dispatch session
+                  '((type . "assistant")
+                    (local_command_run . ((command . "usage") (args . "")))
+                    (local_command_source
+                     . "<local-command-stdout>Total cost: $0.00</local-command-stdout>")
+                    (message . ((role . "assistant") (model . "<synthetic>")
+                                (content . [((type . "text")
+                                             (text . "Total cost: $0.00"))])))))
+    (ecc-render-flush session)
+    (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+      (should (string-search "/cost" text))
+      (should-not (string-search "/usage" text))
+      (should (string-search "\n  Total cost: $0.00" text)))))
 
 (ert-deftest ecc-render-test-unknown-is-visible ()
   "A message the client does not understand still reaches the buffer."
@@ -1428,6 +1471,76 @@ five the CLI showed are counted.  The call comes up open on them."
         (should-not (string-search "+l4" text))
         (should (string-search "… 7 more lines (RET)" text))))))
 
+(ert-deftest ecc-render-test-tool-input-is-clipped ()
+  "A long value of a call's input is cut as its output is; RET shows it whole.
+A Bash call that wrote files through heredocs drew a hundred lines of
+command over the diff it came up open on (2026-10-13)."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "bash")
+    (let* ((ecc-render-result-max-lines 3)
+           (command (mapconcat (lambda (n) (format "echo c%d" n))
+                               (number-sequence 1 10) "\n"))
+           (node (ecc-model-add-node
+                  session :type 'tool :status 'done
+                  :data `((name . "Bash")
+                          (input . ((command . ,command)
+                                    (description . "two\nlines")))
+                          (result . "")
+                          (bash-edit . (:files ((:path "/w/a.txt" :change updated
+                                                 :patch [((oldStart . 1) (oldLines . 1)
+                                                          (newStart . 1) (newLines . 1)
+                                                          (lines . ["-old" "+new"]))]))
+                                        :changed ("/w/a.txt") :more 0))))))
+      (ecc-model-node-changed session node)
+      (ecc-render-flush session)
+      (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+        ;; The head of the command, the count of the rest, then the
+        ;; short value whole and the diff under the output.
+        (should (string-search (concat "    command:\n"
+                                       "      echo c1\n"
+                                       "      echo c2\n"
+                                       "      echo c3\n"
+                                       "      … 7 more lines (RET)\n"
+                                       "    description:\n"
+                                       "      two\n"
+                                       "      lines\n")
+                               text))
+        ;; Past the heading, whose summary is the command on one line.
+        (should-not (string-search "      echo c4" text))
+        (should (string-search (concat "    Updated /w/a.txt (+1 -1)\n"
+                                       "    1 -old \n"
+                                       "    1 +new \n")
+                               text)))
+      (with-current-buffer (ecc-session-buffer session)
+        (goto-char (point-min))
+        (search-forward "… 7 more lines (RET)")
+        (let (shown)
+          (cl-letf (((symbol-function 'ecc-window-display-beside-session)
+                     (lambda (buffer _session) (setq shown buffer))))
+            (ecc-session-visit))
+          (should shown)
+          (let ((detail (with-current-buffer shown (buffer-string))))
+            (should (string-search "  echo c4\n" detail))
+            (should (string-search "  echo c10\n" detail))
+            (should-not (string-search "more lines" detail))))))))
+
+(ert-deftest ecc-render-test-request-input-is-whole ()
+  "A request waiting on the user draws its input whole, however long.
+It is read before it is answered, and a cut tail is a command run
+unread."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "bash")
+    (let ((ecc-render-result-max-lines 3))
+      (ecc-test-add-request session "Bash"
+                            `((command . ,(mapconcat (lambda (n) (format "echo c%d" n))
+                                                     (number-sequence 1 10) "\n"))))
+      (ecc-render-flush session)
+      (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+        (should (string-search "  echo c10\n" text))
+        (should-not (string-search "more lines" text))))))
+
 ;;;; Files and Tasks
 
 (ert-deftest ecc-render-test-tasks ()
@@ -1569,8 +1682,10 @@ the cache the same way a node of the transcript does."
                   (message . ((role . "assistant")
                               (content . [((type . "text")
                                            (text . "Here:\n\n```elisp\n(+ 1 2)\n```\n\nDone."))])))))
-  (ecc-dispatch session '((type . "result") (subtype . "success") (stop_reason . "end_turn")
-                          (total_cost_usd . 0.01) (duration_ms . 100) (num_turns . 1)))
+  ;; The total is the running one of the CLI: this turn adds 0.01.
+  (ecc-dispatch session `((type . "result") (subtype . "success") (stop_reason . "end_turn")
+                          (total_cost_usd . ,(+ (ecc-session-cost-base session) 0.01))
+                          (duration_ms . 100) (num_turns . 1)))
   (ecc-render-flush session))
 
 (ert-deftest ecc-render-test-band-reaches-the-edge-of-the-window ()
@@ -1683,6 +1798,18 @@ have to be there for whatever searches the text while showing nothing."
         (should (equal (car kill-ring) "Here:\n\n```elisp\n(+ 1 2)\n```\n\nDone."))
         (goto-char (point-min))
         (should-error (ecc-session-copy-at-point) :type 'user-error)))))
+
+(ert-deftest ecc-render-test-turn-end-line-says-what-the-turn-cost ()
+  "The line that closes a turn shows that turn's cost, not the running total.
+The recording's second result says $0.0104376, the total of both."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-sent-echoes session)
+          (list "Reply with exactly: ONE" "Reply with exactly: TWO"))
+    (ecc-render-test--replay session "replay-user-messages" "Reply with exactly: ONE")
+    (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+      (should (string-search "$0.0082" text))
+      (should (string-search "$0.0022" text))
+      (should-not (string-search "$0.0104" text)))))
 
 (ert-deftest ecc-render-test-export-markdown ()
   "The transcript is saved as Markdown, one section per turn."

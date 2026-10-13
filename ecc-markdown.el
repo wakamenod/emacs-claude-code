@@ -104,8 +104,9 @@ empty on a closing fence and on an opening one that names nothing.")
 (defconst ecc-markdown-heading-regexp "^#\\{1,6\\}[ \t]+.*$"
   "Regexp matching a heading line.")
 
-(defconst ecc-markdown-bullet-regexp "^[ \t]*\\([-*+]\\|[0-9]+[.)]\\)[ \t]+"
-  "Regexp matching the marker of a list item; group 1 is the marker.")
+(defconst ecc-markdown-bullet-regexp "^[ \t]*\\([-*+]\\|\\([0-9]+[.)]\\)\\)[ \t]+"
+  "Regexp matching the marker of a list item; group 1 is the marker.
+Group 2 is the marker too when it is a number, and unmatched otherwise.")
 
 (defconst ecc-markdown-inline-code-regexp "`\\([^`\n]+\\)`"
   "Regexp matching an inline code span.")
@@ -168,6 +169,17 @@ Nil leaves every block in `ecc-markdown-code-face'.")
   "Longest code block, in lines, that is coloured with a major mode.
 A long block in a heavy mode costs more than the colour is worth, and
 the transcript is redrawn often.  Nil colours every block.")
+
+(defvar ecc-markdown-code-block-functions nil
+  "Functions called on each fenced code block that has been closed.
+Each is called with the LANGUAGE the fence names, and START and END,
+the bounds of the body in the current buffer, which holds the text
+being fontified.  It may put text properties on the body and must not
+change its text.  A block the model has not closed yet is not passed:
+its body is not the whole of it.
+
+This is how a module above this one has a say in a block without this
+one knowing of it: `ecc-mermaid\=' marks a diagram here.")
 
 (defvar ecc-markdown-language-modes
   '(("elisp" . emacs-lisp-mode)
@@ -491,6 +503,8 @@ drawn with."
               (if body-start
                   (progn
                     (ecc-markdown--fontify-code body-start start language)
+                    (run-hook-with-args 'ecc-markdown-code-block-functions
+                                        language body-start start)
                     (setq body-start nil language nil))
                 (setq language (match-string 2)
                       body-start (min (point-max) (1+ end)))))
@@ -507,7 +521,10 @@ drawn with."
               (when (looking-at ecc-markdown-bullet-regexp)
                 (let ((bullet-start (match-beginning 1))
                       (bullet-end (match-end 1)))
-                  (put-text-property bullet-start bullet-end 'display "•")
+                  ;; A bullet stands in for "-", "*" and "+"; a number
+                  ;; says something, and it stays.
+                  (unless (match-beginning 2)
+                    (put-text-property bullet-start bullet-end 'display "•"))
                   (ecc-markdown--add-face bullet-start bullet-end
                                           'ecc-markdown-bullet-face)))
               (ecc-markdown--fontify-inline start end))))

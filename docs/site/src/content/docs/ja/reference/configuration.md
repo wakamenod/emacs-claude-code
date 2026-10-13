@@ -33,7 +33,7 @@ M-x customize-group RET ecc
 | `ecc-chat-return-sends` | `nil` | `t` なら、ターミナルのクライアントと同じく `RET` で送信。`C-c C-c` はいつでも送信 |
 | `ecc-chat-text-width` | `100` | テキストの幅（桁数）。`nil` ならウィンドウの幅いっぱい |
 | `ecc-chat-line-spacing` | `0.15` | 各行の下に足す間隔。`line-spacing` と同じ。`nil` なら足さない |
-| `ecc-render-result-max-lines` | `12` | ツールの結果を表示する行数。`RET` で全体を表示 |
+| `ecc-render-result-max-lines` | `12` | ツールの結果と、入力の各値を表示する行数。`RET` で全体を表示 |
 | `ecc-render-inhibit-inline-diff` | `nil` | `t` なら、ファイルを変える呼び出しを畳んで表示。`TAB` で開く |
 | `ecc-render-diff-max-lines` | `40` | ツールの呼び出しやリクエストで diff を表示する行数。`RET` で全体を表示 |
 | `ecc-diff-context-lines` | `3` | トランスクリプトで変更の前後に出す文脈の行数 |
@@ -41,6 +41,7 @@ M-x customize-group RET ecc
 | `ecc-render-debounce` | `0.1` | トランスクリプトの変化している部分を再描画するまでの待ち時間（秒） |
 | `ecc-show-hook-events` | `nil` | 非 nil なら、フックが動くたびに終了コードと出力とともに表示する。フックはどちらの場合も動く。セッションを始めるときに読む |
 | `ecc-image-inline` | `t` | `nil` なら、画像や動画はファイル名の行だけを表示 |
+| `ecc-visit-search-machine` | `'ask` | 返答中のパスがプロジェクトにないとき、`RET` でマシン全体を探すか。`'ask` なら毎回確認し、`'always` なら探し、`'never` なら探さない |
 
 ## ヘッダー行とモードライン
 
@@ -92,7 +93,6 @@ M-x customize-group RET ecc
 |---|---|---|
 | `ecc-use-spaces` | `t` | プロジェクトごとにタブを作る。`nil` ならタブを使わず、トランスクリプトを[サイドウィンドウ](/emacs-claude-code/ja/features/spaces/#space-を使わないとき)に開く |
 | `ecc-space-always-session` | `t` | 何も動いていない Space を開くとセッションを始め、最後のセッションを閉じると Space も閉じる |
-| `ecc-space-session-min-width` | `80` | トランスクリプトを狭める限度。これより狭くなるなら、新しいセッションは既存のウィンドウを使う |
 | `ecc-sidebar-width` | `28` | サイドバーの幅 |
 | `ecc-window-large-frame-min-height` | `80` | Space がオフのとき: 3 つ目のセッションウィンドウに必要なフレームの高さ（行数） |
 | `ecc-window-sub-height` | `0.33` | Space がオフのとき: 3 つ目のセッションウィンドウの高さ |

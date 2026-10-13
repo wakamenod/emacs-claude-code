@@ -58,13 +58,13 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-image)
+(require 'ecc-mermaid)
 (require 'ecc-proc)
 (require 'ecc-render)
 
 ;; The commands bound below live in the modules above this one.
 (declare-function ecc-prompt-send "ecc-prompt" ())
 (declare-function ecc-prompt-clear "ecc-prompt" ())
-(declare-function ecc-prompt-show-queue "ecc-prompt" ())
 (declare-function ecc-prompt-toggle-context "ecc-prompt" ())
 (declare-function ecc-prompt-insert-image "ecc-prompt" (file))
 (declare-function ecc-prompt-history-previous "ecc-prompt" ())
@@ -90,6 +90,7 @@
 (declare-function ecc-session-review-file "ecc-session" ())
 (declare-function ecc-session-review-or-deny "ecc-session" ())
 (declare-function ecc-session-timeline "ecc-session" ())
+(defvar show-paren-predicate)
 (declare-function ecc-session-copy-at-point "ecc-session" ())
 (declare-function ecc-session-export-markdown "ecc-session" (file))
 (declare-function ecc-perm-allow "ecc-perm" ())
@@ -101,6 +102,7 @@
 (declare-function ecc-review-comment-request "ecc-review" (text))
 (declare-function ecc-review-edit-proposal "ecc-review" (&optional request))
 (declare-function ecc-btw-show "ecc-btw" (&optional session))
+(declare-function ecc-queue-show "ecc-queue" (&optional session entry))
 (declare-function ecc-next-attention "ecc-answer" ())
 (declare-function ecc-dashboard "ecc-dashboard" ())
 (declare-function ecc-menu "ecc-transient" ())
@@ -222,7 +224,7 @@ the dim face.")
     ;; (confirmed 2026-09-17).  Unbound, the sequence falls through to
     ;; `keyboard-quit', which is what the finger meant.
     (define-key map (kbd "C-c C-z") #'ecc-session-interrupt)
-    (define-key map (kbd "C-c C-q") #'ecc-prompt-show-queue)
+    (define-key map (kbd "C-c C-q") #'ecc-queue-show)
     (define-key map (kbd "C-c C-x") #'ecc-prompt-toggle-context)
     (define-key map (kbd "C-c C-i") #'ecc-prompt-insert-image)
     (define-key map (kbd "C-c C-y") #'ecc-prompt-yank-image-from-clipboard)
@@ -306,7 +308,7 @@ no \\`C-c C-<letter>' free goes to `ecc-menu' rather than taking one.")
     ;; `F', `P', `T' and `L' are the capitals of `ecc-menu', and `I' is
     ;; the picture at point as the menu's `I' is the pictures.
     (define-key map (kbd "v") #'ecc-chat-goto-prompt)
-    (define-key map (kbd "I") #'ecc-image-toggle-animation)
+    (define-key map (kbd "I") #'ecc-chat-toggle-picture)
     (define-key map (kbd "F") #'ecc-chat-goto-files)
     (define-key map (kbd "P") #'ecc-chat-goto-plans)
     (define-key map (kbd "?") #'ecc-menu)
@@ -375,6 +377,18 @@ row.  TAB folds, on this row as on every other.")
   ;; but a user who has turned it off globally means that for files, not
   ;; for a transcript that has no lines of its own (confirmed 2026-09-11).
   (visual-line-mode 1)
+  ;; No paren matching: the buffer is prose, and prose is full of parens
+  ;; that do not pair -- `1)' list items, `(笑', a full-width `（' closed
+  ;; by a half-width `)'.  With `show-paren-style' `mixed' or
+  ;; `expression', point near one of them painted the whole stretch to
+  ;; its supposed partner in `show-paren-mismatch' (confirmed
+  ;; 2026-10-12).  A nil `show-paren-predicate', buffer-local, rather
+  ;; than `(show-paren-local-mode -1)': that leaves no local value when
+  ;; the global mode is off as the buffer is made, so turning it on later
+  ;; would bring it back, whereas the predicate is asked every time.  A
+  ;; user who wants it here still has `show-paren-local-mode', which
+  ;; `show-paren--enabled-p' heeds before the predicate.
+  (setq-local show-paren-predicate nil)
   ;; A folded body shows as an ellipsis after its heading.
   (add-to-invisibility-spec '(ecc-fold . t))
   ;; Markdown markup symbols are hidden by the ecc-markup spec.
@@ -491,6 +505,16 @@ sits on the first character of the ghost text."
   (unless (ecc-chat-prompt-start)
     (user-error "This buffer has no prompt region"))
   (goto-char (ecc-chat-prompt-end)))
+
+(defun ecc-chat-toggle-picture ()
+  "Toggle the picture at point.
+A diagram is shown as its source, or its source as the diagram
+\(`ecc-mermaid-toggle'); a GIF is stopped or set moving
+\(`ecc-image-toggle-animation')."
+  (interactive)
+  (if (ecc-mermaid-block-at)
+      (ecc-mermaid-toggle)
+    (ecc-image-toggle-animation)))
 
 (defun ecc-chat-return ()
   "Insert a newline, or send the prompt when `ecc-chat-return-sends' is on."
