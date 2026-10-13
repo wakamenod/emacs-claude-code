@@ -11,8 +11,8 @@ in a comment there, and this file names the rule alone.
 ## Layout
 
 One feature per file, `ecc-<feature>.el`, with `test/ecc-<module>-test.el` beside it.
-`ecc.el` holds the entry points, `ecc-transient.el` the menu. The boundaries that are
-rules:
+`ecc.el` loads every module, `ecc-lifecycle.el` holds the commands that start and stop a
+session, and `ecc-transient.el` the menu. The boundaries that are rules:
 
 - `ecc-core.el` depends on no other `ecc-` module.
 - JSON is touched only by `ecc-protocol.el` and `ecc-proc.el`, plus the three that speak to

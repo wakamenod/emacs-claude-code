@@ -42,6 +42,7 @@
 (require 'ecc-proc)
 (require 'ecc-visual)
 (require 'ecc-window)
+(require 'ecc-lifecycle)
 
 (declare-function notifications-notify "notifications" (&rest params))
 
@@ -472,8 +473,6 @@ Closing a tab here is not the cheap, undoable thing it is elsewhere in
 Emacs -- it stops the CLI and forgets the transcript -- so it asks
 first.")
 
-(declare-function ecc-kill "ecc" (session))
-
 (defun ecc-tab-close (buffer)
   "Stop the session of BUFFER (`tab-line-close-tab-function').
 The tabs are the sessions of the registry rather than the buffers of a
@@ -489,8 +488,7 @@ about first.  A buffer with no session behind it is only killed."
      ((and ecc-tab-close-confirm
            (not (y-or-n-p (format "Stop %s? " (ecc-session-name session)))))
       (message "Left %s running" (ecc-session-name session)))
-     (t (require 'ecc)
-        (ecc-kill session)))))
+     (t (ecc-kill session)))))
 
 ;; `tab-line-force-update' is Emacs 30 and later (confirmed 2026-09-10 on
 ;; the CI matrix, which builds on 29.1).  What it does is what the blink

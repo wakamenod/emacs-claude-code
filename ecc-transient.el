@@ -54,11 +54,7 @@
 (require 'ecc-dashboard)
 (require 'ecc-inline)
 (require 'ecc-tui)
-
-(declare-function ecc-start "ecc" (&optional directory name))
-(declare-function ecc-resume "ecc" (session &optional fork))
-(declare-function ecc-read-session "ecc" (&optional prompt))
-(declare-function ecc-kill "ecc" (session))
+(require 'ecc-lifecycle)
 
 ;;;; Loading the rest of the package
 
@@ -109,7 +105,6 @@ typed."
   (let ((session (ecc-menu-session)))
     (ecc-proc-set-permission-mode session mode)
     (message "%s: switching to %s" (ecc-session-name session) mode)))
-
 
 ;;;###autoload
 (defun ecc-remote-control-toggle ()

@@ -50,8 +50,7 @@
 (require 'ecc-plan)
 (require 'ecc-queue)
 (require 'ecc-review)
-
-(declare-function ecc-restart "ecc" (session &optional confirm))
+(require 'ecc-lifecycle)
 
 (defun ecc-session--forget-on-kill ()
   "Stop and forget the session when its buffer is killed.
@@ -184,7 +183,6 @@ A session that has stopped is resumed; an idle one that is still
 running is restarted once the user agrees (`ecc-restart\=').  One key
 for both, since what is wanted either way is a CLI that answers again."
   (interactive)
-  (require 'ecc)
   (ecc-restart (ecc-session-at-point) t))
 
 (defun ecc-session-show-log ()
@@ -514,7 +512,6 @@ and RET is the way to open it."
   (mouse-set-point event)
   (when (get-char-property (point) 'mouse-face)
     (ecc-session-visit)))
-
 
 (defvar ecc-session-chat-map
   (let ((map (make-sparse-keymap)))

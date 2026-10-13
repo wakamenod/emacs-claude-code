@@ -55,8 +55,7 @@
 (require 'ecc-window)
 (require 'ecc-review)
 (require 'ecc-review-pr)
-
-(declare-function ecc-start "ecc" (&optional directory name))
+(require 'ecc-lifecycle)
 
 (defcustom ecc-review-menu-count-session-changes t
   "Non-nil makes `ecc-review-menu' count what the session changed.

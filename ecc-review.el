@@ -78,8 +78,8 @@
 (require 'ecc-render)
 (require 'ecc-perm)
 (require 'ecc-window)
+(require 'ecc-lifecycle)
 
-(declare-function ecc-start "ecc" (&optional directory name))
 (autoload 'ecc-review-files-toggle "ecc-review-files" nil t)
 (autoload 'ecc-review-files-filter "ecc-review-files" nil t)
 (autoload 'ecc-review-talk-tour "ecc-review-talk" nil t)
@@ -971,7 +971,6 @@ is one."
              (cons text git-root))))))
 
 ;;;; The buffer
-
 
 (defvar-local ecc-review--session nil
   "The session this review buffer belongs to.")

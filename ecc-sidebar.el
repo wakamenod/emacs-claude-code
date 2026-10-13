@@ -63,9 +63,7 @@
 (require 'ecc-visual)
 (require 'ecc-answer)
 (require 'ecc-perm)
-
-(declare-function ecc-start "ecc" (&optional directory name))
-(declare-function ecc-kill "ecc" (session))
+(require 'ecc-lifecycle)
 
 (defconst ecc-sidebar-buffer-name "*ecc-sidebar*"
   "Name of the sidebar buffer.")
@@ -532,7 +530,6 @@ repository still goes there."
 (defun ecc-sidebar-start-session ()
   "Start a session in the Space of the row at point."
   (interactive)
-  (require 'ecc)
   (let ((space (or (ecc-sidebar--space-at-point)
                    (user-error "No Space on this line"))))
     (ecc-start (ecc-space-root space))))
@@ -567,7 +564,6 @@ The redraw is `ecc-worktree-removed-hook\\=''s, which every removal runs
 (defun ecc-sidebar-kill-session ()
   "Stop the session of the row at point."
   (interactive)
-  (require 'ecc)
   (let ((session (or (ecc-sidebar--session-at-point)
                      (user-error "No session on this line"))))
     (when (yes-or-no-p (format "Stop %s? " (ecc-session-name session)))
