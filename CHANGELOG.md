@@ -11,6 +11,28 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.290**.
+
+### Changed
+
+- Loading ecc puts nothing on the hooks of Emacs any more. It used to put nine
+  of its functions there, so that in an Emacs that had never started a session
+  every save walked the buffer list looking for reviews, every window change
+  walked the windows, and every killed buffer, tab and exit ran ecc code. A
+  review tool for a public archive reports a package that adds hooks when it is
+  loaded. Each now goes on when what it serves first exists: the follow of saved
+  files and shown windows with the first review, diff or ediff; the sweep of
+  file panes with the first files pane; the watch that gives a side window its
+  dedication back with the first session window given a role, which the
+  Spaces never do; the closing of a Space with its tab and source buffers with
+  the first Space tab; and the saving of the open sessions and Spaces, on tabs
+  and at exit, with the first session or `ecc-restore`. The save at exit still
+  runs ahead of everything else on `kill-emacs-hook`. None is taken off again,
+  and nothing a user sees changes. A test now starts a fresh Emacs, loads every
+  file of ecc and fails if any ecc function is on a hook that is not ecc's own.
+
 ## [0.4.2] - 2026-10-13
 
 Verified against **Claude Code CLI 2.1.290**.
