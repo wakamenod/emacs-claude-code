@@ -33,7 +33,7 @@ M-x customize-group RET ecc
 | `ecc-chat-return-sends` | `nil` | `t` なら、ターミナルのクライアントと同じく `RET` で送信。`C-c C-c` はいつでも送信 |
 | `ecc-chat-text-width` | `100` | テキストの幅（桁数）。`nil` ならウィンドウの幅いっぱい |
 | `ecc-chat-line-spacing` | `0.15` | 各行の下に足す間隔。`line-spacing` と同じ。`nil` なら足さない |
-| `ecc-render-result-max-lines` | `12` | ツールの結果を表示する行数。`RET` で全体を表示 |
+| `ecc-render-result-max-lines` | `12` | ツールの結果と、入力の各値を表示する行数。`RET` で全体を表示 |
 | `ecc-render-inhibit-inline-diff` | `nil` | `t` なら、ファイルを変える呼び出しを畳んで表示。`TAB` で開く |
 | `ecc-render-diff-max-lines` | `40` | ツールの呼び出しやリクエストで diff を表示する行数。`RET` で全体を表示 |
 | `ecc-diff-context-lines` | `3` | トランスクリプトで変更の前後に出す文脈の行数 |

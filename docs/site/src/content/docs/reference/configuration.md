@@ -33,7 +33,7 @@ There is no setting for the model or for a budget: both belong to your Claude Co
 | `ecc-chat-return-sends` | `nil` | `t` makes `RET` send, as in the terminal client; `C-c C-c` always sends |
 | `ecc-chat-text-width` | `100` | Width of the text in columns; `nil` uses the whole window |
 | `ecc-chat-line-spacing` | `0.15` | Extra space below each line, as in `line-spacing`; `nil` adds none |
-| `ecc-render-result-max-lines` | `12` | Lines shown of a tool result; `RET` shows all of it |
+| `ecc-render-result-max-lines` | `12` | Lines shown of a tool result and of each value of its input; `RET` shows all of it |
 | `ecc-render-inhibit-inline-diff` | `nil` | `t` shows the calls that change a file folded; `TAB` opens them |
 | `ecc-render-diff-max-lines` | `40` | Lines shown of a diff in a tool call or a request; `RET` shows all of it |
 | `ecc-diff-context-lines` | `3` | Context lines around a change in the transcript |
