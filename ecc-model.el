@@ -40,8 +40,6 @@
 (require 'seq)
 (require 'ecc-core)
 
-(declare-function ecc-inline-session-p "ecc-inline" (session))
-
 ;;;; Hooks
 
 ;; All of these are abnormal hooks.  The first argument is always the
@@ -200,9 +198,10 @@ edit does, and `ecc-files-updated-hook\=' hears only of the file tools.")
 
 (defvar ecc-session-renamed-hook nil
   "Functions run with a session that has just been given a new name.
-A name is drawn in more places than the session buffer's own: the tab
-line of every window that lists the session, and the file the open
-sessions are saved in.")
+Everything that shows the name follows it from here: the name of the
+session buffer, which `ecc-session' changes first, the tab line of every
+window that lists the session, and the file the open sessions are saved
+in.")
 
 (defvar ecc-session-removed-hook nil
   "Functions run with a session that has just been forgotten.
@@ -423,6 +422,20 @@ turned a rename that changed nothing into BASE<2>."
             name (format "%s<%d>" base n)))
     name))
 
+(defun ecc-model-set-name (session name)
+  "Rename SESSION to NAME and return the name used.
+The name is made unique among the sessions first, SESSION itself not
+counting (`ecc-model-unique-name\=').  Every rename goes through here:
+the one the user asks for, and the one `/rename\=' does in the CLI.
+What draws the name follows `ecc-session-renamed-hook\=', the session
+buffer\='s own name included."
+  (let ((name (ecc-model-unique-name (string-trim name) session)))
+    (when (string-empty-p name)
+      (user-error "The name is empty"))
+    (setf (ecc-session-name session) name)
+    (run-hook-with-args 'ecc-session-renamed-hook session)
+    name))
+
 (cl-defun ecc-model-create-session (&key id name project-root cwd kind options)
   "Make a session, register it and return it.
 ID defaults to a fresh UUID, NAME to the directory name of
@@ -478,13 +491,14 @@ and find nothing changed."
   "Return non-nil when SESSION is one of the user\='s own.
 A recording being read, the usage probe and an inline question are all
 kind `own\=' and all belong to nobody: the probe has no project of its
-own and lands in whatever directory was current.  Whatever asks what
-the going of a session means for the project it was in -- a Space, a
-worktree -- asks this first, so that the answer is the same in both."
+own and lands in whatever directory was current.  The probe and an
+inline session say so among their launch options, `:usage-probe\=' and
+`:inline\='.  Whatever asks what the going of a session means for the
+project it was in -- a Space, a worktree -- asks this first, so that
+the answer is the same in both."
   (and (not (eq (ecc-session-kind session) 'archived))
        (not (ecc-model-option session :usage-probe nil))
-       (not (and (fboundp 'ecc-inline-session-p)
-                 (ecc-inline-session-p session)))))
+       (not (ecc-model-option session :inline nil))))
 
 (defun ecc-model-reset-conversation (session)
   "Empty SESSION of the conversation it was in, keeping the session itself.

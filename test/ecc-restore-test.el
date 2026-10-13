@@ -109,7 +109,7 @@ interactive Emacs, and starting a CLI fails the test."
     (let ((a (ecc-restore-test--open "id-a" "a" ecc-restore-test--one)))
       (ecc-restore-test--flush)
       (should-not ecc-restore--timer)
-      (ecc-session-set-name a "renamed")
+      (ecc-model-set-name a "renamed")
       (ecc-restore-test--flush)
       (should (equal (plist-get (car (plist-get (ecc-restore--read) :sessions))
                                 :name)
