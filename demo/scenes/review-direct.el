@@ -33,7 +33,6 @@
 (require 'ecc)
 (require 'ecc-review)
 (require 'ecc-review-ediff)
-(require 'ecc-review-direct)
 
 (defvar demo-session nil "The session the review belongs to.")
 
