@@ -53,6 +53,7 @@
 (require 'ecc-core)
 (require 'ecc-window)
 (require 'ecc-proc)
+(require 'ecc-history)
 (require 'ecc-lifecycle)
 
 ;; A `cl-defun' with &key: `check-declare' reads its arglist as five
@@ -61,7 +62,6 @@
 (declare-function ecc-mcp-session "ecc-mcp" ())
 (declare-function ecc-mcp-published-tools "ecc-mcp" ())
 (declare-function ecc-mcp-tool-name "ecc-mcp" (tool) t)
-(declare-function ecc-history-file "ecc-history" (session-id))
 (declare-function ecc-space-forget "ecc-space" (root))
 (declare-function ecc-space-at-p "ecc-space" (root))
 (declare-function ecc-mcp-define-instructions "ecc-mcp" (name text tools))
@@ -630,15 +630,9 @@ The uncommitted changes are named rather than carried: a worktree is
 made from HEAD, so what has not been committed in the repository is not
 in the worktree, and a brief that leans on an edit that is not there
 sends the new session looking for it."
-  ;; `ecc-history' is above this file -- it reads recordings, and
-  ;; nothing here may pull that in at load time -- so it is asked for
-  ;; only when a brief is actually being written, the way
-  ;; `ecc-worktree-delegate' asks for `ecc'.
-  (require 'ecc-history nil t)
   (let* ((files (and session (ecc-model-files session)))
          (plans (and session (ecc-model-plan-files session)))
-         (record (and session (fboundp 'ecc-history-file)
-                      (ecc-history-file (ecc-session-id session))))
+         (record (and session (ecc-history-file (ecc-session-id session))))
          (dirty (ecc-worktree--output root "status" "--porcelain"))
          (sections nil))
     (when files
