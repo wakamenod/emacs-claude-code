@@ -72,6 +72,15 @@ Verified against **Claude Code CLI 2.1.290**.
   `ecc-tab-column-mark` and the `ecc-tab-*-face` faces) from `ecc-notify.el`
   to `ecc-visual.el`; and `ecc-render--project-name-1` becomes
   `ecc-window-project-name`.
+  No module learns any longer, once another has loaded, what to call. The
+  variables `ecc-proc-message-function` and `ecc-mcp-config-function`, which
+  `ecc-dispatch.el` and `ecc-mcp.el` set as they loaded, are gone: whoever
+  starts a CLI says where its messages go, and `ecc-proc.el` requires
+  `ecc-mcp.el` and asks it for the `--mcp-config` argument by name. The
+  internal `ecc-proc-start` takes that handler as its second argument,
+  `(ecc-proc-start SESSION HANDLER &optional RESUME FORK)`, and refuses a
+  call without one rather than drop every message; `ecc-proc-feed` and
+  `ecc-proc-handle-line` take it last.
 - `ecc-review-direct.el` is folded into `ecc-review-ediff.el`, so
   `(require 'ecc-review-direct)` no longer works; require
   `ecc-review-ediff` instead. Every symbol keeps its name.
