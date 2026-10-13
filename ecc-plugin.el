@@ -81,9 +81,6 @@
 (require 'ecc-skill)
 (require 'ecc-window)
 
-(declare-function ecc-prompt-command-name "ecc-prompt" (text))
-(declare-function ecc-prompt-command-argument "ecc-prompt" (text))
-
 ;;;; Options
 
 (defvar ecc-plugin-reload-sessions 'ask

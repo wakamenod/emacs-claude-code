@@ -141,6 +141,26 @@ names are listed in `ecc-model-context-window'."
     ;; A buffer that shows no session says nothing rather than failing.
     (should (equal (ecc-hint-mode-line-string nil) ""))))
 
+(ert-deftest ecc-hint-test-mode-line-of-a-chat-buffer ()
+  "A chat buffer's mode line carries the hint after the state, escaped.
+`ecc-hint' adds its part from `ecc-chat-mode-hook'.  `format-mode-line'
+draws nothing in batch, so the constructs are evaluated by hand, and a
+percent sign arrives doubled, as the mode line reads it."
+  (ecc-test-with-fake-session session
+    (setf (ecc-session-options session) '(:autocompact 1000))
+    (ecc-model-update-usage session '((input_tokens . 250)))
+    (let ((ecc-mode-line-format " %n · %l"))
+      (with-current-buffer (ecc-session-ensure-buffer session)
+        (ecc-model-begin-turn session "hello")
+        (should (memq #'ecc-hint--setup-mode-line ecc-chat-mode-hook))
+        (should (equal (substring-no-properties
+                        (mapconcat (lambda (construct)
+                                     (or (eval (cadr construct) t) ""))
+                                   mode-line-process ""))
+                       (concat (substring-no-properties
+                                (ecc-render-mode-line-process))
+                               " test · 75%%")))))))
+
 (ert-deftest ecc-hint-test-rate-limit ()
   "The rate limit windows are read out of the event the CLI sends."
   (ecc-test-with-fake-session session

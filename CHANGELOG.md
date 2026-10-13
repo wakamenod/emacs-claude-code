@@ -28,17 +28,22 @@ Verified against **Claude Code CLI 2.1.290**.
   and xref accessors -- say so with the FILEONLY argument. The tree-sitter
   primitives are declared in `treesit.c`, as Emacs's own files declare them;
   an Emacs installed without its C sources still reports those six, having
-  no file to look in. There are also fewer of them: 115 where there were
+  no file to look in. There are also fewer of them: 97 where there were
   250. A file now requires the module it used to declare wherever that makes
   no loop, loads no Space module from below and loads early nothing that was
   loaded late on purpose, and a function the file never calls, or that Emacs
   autoloads, is not declared at all; the two windows of an ediff review no
   longer declare the eight functions of `ecc-review-ediff.el` they call,
-  being part of it now. `ecc-chat.el` no longer names the commands of
-  `ecc-prompt.el` and `ecc-session.el`: it defines the keymaps, each of the
-  two keeps its own commands in a keymap made a parent of them, and
-  `ecc-chat-mode` loads both. A key a user binds in `ecc-chat-mode-map`
-  or the transcript maps still wins over theirs.
+  being part of it now. `ecc-chat.el` no longer names the commands of the
+  modules above it -- `ecc-prompt.el`, `ecc-session.el`, `ecc-queue.el`,
+  `ecc-hint.el`, `ecc-tui.el` and `ecc-transient.el`: it defines the
+  keymaps, each of them keeps its own commands in a keymap made a parent of
+  them, and `ecc-chat-mode` loads them all. A key a user binds in
+  `ecc-chat-mode-map` or the transcript maps still wins over theirs. The
+  mode line is put together the same way: a chat buffer's
+  `mode-line-process` is a list of constructs now rather than one, and
+  `ecc-hint.el` adds what `ecc-mode-line-format` asks for to it from
+  `ecc-chat-mode-hook`, ahead of the user's own functions there.
   `ecc-chat-return`, `ecc-chat-slash` and the option `ecc-chat-return-sends`
   now live in `ecc-prompt.el`, and `ecc-chat-follow-link` in
   `ecc-session.el`, under the same names. No module waits any longer for
@@ -48,7 +53,15 @@ Verified against **Claude Code CLI 2.1.290**.
   answer `/btw`, `/hooks`, `/login` and the like put themselves on them as
   they load -- a configuration that loads one of those modules without
   `ecc-prompt.el` now finds both variables there -- and `ecc-worktree.el`
-  requires `ecc-mcp.el` and registers its MCP tools as it loads. Sixteen
+  requires `ecc-mcp.el` and registers its MCP tools as it loads.
+  `ecc-prompt-command-name` and `ecc-prompt-command-argument`, which those
+  modules read a draft with, moved to `ecc-model.el` beside them under the
+  same names. Three calls no longer ask whether a function of ecc's own is
+  defined before making it: `ecc-prompt.el` and `ecc-dashboard.el` already
+  load `ecc-skill.el`, and `ecc-worktree.el` now requires `ecc-chat.el`.
+  `ecc-lifecycle.el`, `ecc-notify.el` and `ecc-skill.el` read the session of
+  a buffer with `ecc-window-buffer-session` instead of declaring a variable
+  of `ecc-render.el`. Sixteen
   `require`s inside functions, of a module the file had already loaded, are
   gone. The commands that start and stop a session -- `ecc-start`,
   `ecc-resume`, `ecc-restart`, `ecc-kill` and `ecc-read-session`, with the

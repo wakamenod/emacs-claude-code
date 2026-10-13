@@ -53,8 +53,6 @@
 (require 'ecc-protocol)
 (require 'ecc-model)
 
-(declare-function ecc-prompt-command-name "ecc-prompt" (text))
-
 ;;;; What the CLI knows
 
 ;; The events, and what a matcher means for each of them.  Read out of

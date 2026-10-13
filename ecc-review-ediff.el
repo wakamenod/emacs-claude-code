@@ -2143,7 +2143,7 @@ or hides Claude\\='s comments."
 ;; alone, through `ediff-skip-diff-region-function', the way ediff's own
 ;; #h and #f skip theirs.
 
-(defvar ecc-review-ediff-full-frame)
+(defvar ecc-review-ediff-full-frame)     ; below, with the frame it opens in
 
 (cl-defmethod ecc-review-files-entries (&context (major-mode ediff-mode))
   "Return the files of this ediff review, one per section of the two sides.

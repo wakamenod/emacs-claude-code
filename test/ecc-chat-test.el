@@ -24,6 +24,10 @@
 (require 'ecc-session)
 (require 'ecc-prompt)
 (require 'ecc-perm)
+(require 'ecc-queue)
+(require 'ecc-hint)
+(require 'ecc-tui)
+(require 'ecc-transient)
 
 (defun ecc-chat-test--replay (session name prompt)
   "Replay fixture NAME into SESSION under PROMPT, allowing every request."
@@ -254,8 +258,13 @@ nothing to do with whether two maps are ever live at once."
      ("C-<up>" . ecc-prompt-history-previous)
      ("C-<down>" . ecc-prompt-history-next)
      ("C-c C-z" . ecc-session-interrupt)
-     ("C-c C-e" . ecc-session-export-markdown))
+     ("C-c C-e" . ecc-session-export-markdown)
+     ("C-c C-q" . ecc-queue-show)
+     ("C-c C-s" . ecc-hint-accept-suggestion)
+     ("C-c ?" . ecc-menu))
     (ecc-chat-transcript-map
+     ("t" . ecc-tui-open)
+     ("?" . ecc-menu)
      ("RET" . ecc-session-visit)
      ("o" . ecc-session-show-detail)
      ("<mouse-2>" . ecc-chat-follow-link)
@@ -267,6 +276,8 @@ nothing to do with whether two maps are ever live at once."
      ("T" . ecc-session-timeline)
      ("w" . ecc-session-copy-at-point))
     (ecc-request-section-map
+     ("t" . ecc-tui-open)
+     ("?" . ecc-menu)
      ("RET" . ecc-session-visit)
      ("o" . ecc-session-show-detail)
      ("<mouse-2>" . ecc-chat-follow-link)
@@ -277,6 +288,8 @@ nothing to do with whether two maps are ever live at once."
      ("T" . ecc-session-timeline)
      ("w" . ecc-session-copy-at-point))
     (ecc-file-section-map
+     ("t" . ecc-tui-open)
+     ("?" . ecc-menu)
      ("RET" . ecc-session-visit)
      ("d" . ecc-session-review-file)
      ("o" . ecc-session-show-detail)
@@ -288,6 +301,8 @@ nothing to do with whether two maps are ever live at once."
      ("T" . ecc-session-timeline)
      ("w" . ecc-session-copy-at-point))
     (ecc-chat-button-map
+     ("t" . ecc-tui-open)
+     ("?" . ecc-menu)
      ("<follow-link>" . mouse-face)
      ("o" . ecc-session-show-detail)
      ("g" . ecc-session-refresh)
@@ -296,13 +311,15 @@ nothing to do with whether two maps are ever live at once."
      ("d" . ecc-session-review-or-deny)
      ("T" . ecc-session-timeline)
      ("w" . ecc-session-copy-at-point)))
-  "The keys `ecc-prompt' and `ecc-session' give the keymaps of `ecc-chat'.
-Every map in which each of them resolves, through the parents of the
-maps, as it did when `ecc-chat' bound them itself (2026-10-14).")
+  "The keys the modules above `ecc-chat' give its keymaps.
+Those of `ecc-prompt', `ecc-session', `ecc-queue', `ecc-hint', `ecc-tui'
+and `ecc-transient', in every map in which each of them resolves,
+through the parents of the maps, as it did when `ecc-chat' bound them
+itself (2026-10-14).")
 
 (ert-deftest ecc-chat-test-modules-bind-their-keys ()
-  "Each key the prompt and the session bind resolves where it did.
-`ecc-chat' defines the keymaps and the two modules above it make maps of
+  "Each key the modules above `ecc-chat' bind resolves where it did.
+`ecc-chat' defines the keymaps and the modules above it make maps of
 their own parents of them, so a key could go missing from a map that
 only inherits it; the list is what every map resolved to before the
 move.  `text-mode-map' stays under the mode map, which
