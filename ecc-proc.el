@@ -41,6 +41,11 @@
 (require 'ecc-protocol)
 (require 'ecc-model)
 
+;; `ecc-history' is built on this file, so it is loaded when a resume
+;; first needs it (`ecc-proc--resumed-cost').
+(declare-function ecc-history-file "ecc-history" (session-id))
+(declare-function ecc-history-recorded-cost "ecc-history" (file))
+
 (defvar ecc-control-timeout 30
   "Seconds to wait for the answer to a control request before warning.")
 
@@ -247,6 +252,19 @@ would ever take it out of the list."
         (when (buffer-live-p buffer)
           (kill-buffer buffer))))))
 
+(defun ecc-proc--resumed-cost (session)
+  "Return the running total a resumed CLI of SESSION starts from, or nil.
+The CLI carries on from the total its recording ended with -- the one
+it is resumed from, which for a fork is the parent's -- so the cost of
+its first result is counted from that (`ecc-model-result-cost').  The
+recording is read here and not later: the CLI writes a total of its
+own only when it exits, and a result arriving first must find this one
+in place.  Nil when there is no recording to read."
+  (require 'ecc-history)
+  (when-let* ((file (ecc-history-file (or (ecc-model-option session :resume-from nil)
+                                          (ecc-session-id session)))))
+    (or (ecc-history-recorded-cost file) 0)))
+
 (defun ecc-proc-start (session &optional resume fork)
   "Start the CLI for SESSION and return the process.
 RESUME and FORK are passed to `ecc-proc-build-command'."
@@ -287,6 +305,7 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
       (error (ecc-proc--start-failed session)
              (signal (car error) (cdr error))))
     (setf (alist-get 'stop-requested (ecc-session-progress session)) nil)
+    (ecc-model-set-cost-base session (if resume (ecc-proc--resumed-cost session) 0))
     (process-put process 'ecc-session-id (ecc-session-id session))
     (setf (ecc-session-process session) process)
     ;; What this process was really given, taken here rather than asked
@@ -639,8 +658,9 @@ Nothing is sent while `ecc-proc-release\=' is stopping its CLI."
 ;; system/session_title_changed with NAME, system/init, a synthetic
 ;; assistant message carrying `local_command_run' {command "rename"},
 ;; and a result with "local_command": "rename" and no model call, whose
-;; `total_cost_usd' repeats the one of the turn before it rather than
-;; saying nothing was spent.  With --replay-user-messages the line is not
+;; `total_cost_usd' repeats the one of the turn before it: it is the
+;; running total of the process, not what this result cost
+;; (`ecc-model-result-cost').  With --replay-user-messages the line is not
 ;; echoed: a prompt is, a slash command is not.  Sent while a turn
 ;; runs, the CLI holds it until that turn's result and runs it then.
 ;; It is sent here only once no turn is open all the same, so that the
