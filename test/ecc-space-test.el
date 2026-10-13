@@ -332,6 +332,25 @@ closing a Space takes its tab off both, was verified by hand on
           (ecc-space-close one))
         (should-not (ecc-space--tabs))))))
 
+(ert-deftest ecc-space-test-hooks-go-on-with-the-first-tab ()
+  "The global hooks the Spaces need go on when the first Space gets its tab.
+Loading the package puts nothing on them.  They go on whatever
+`ecc-space-always-session\=' says, since it may be changed afterwards,
+and the hook that reads it decides when it runs."
+  (let ((hooks '(tab-bar-tab-pre-close-functions kill-buffer-hook)))
+    (ecc-test-with-global-hooks hooks
+      (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one))
+        (ecc-space-test--with-tab-bar
+          (should-not (memq #'ecc-space--forget-tab
+                            (default-value 'tab-bar-tab-pre-close-functions)))
+          (should-not (memq #'ecc-space--forget-on-source-kill
+                            (default-value 'kill-buffer-hook)))
+          (ecc-space-select (ecc-space-of-root ecc-space-test--one))
+          (should (memq #'ecc-space--forget-tab
+                        (default-value 'tab-bar-tab-pre-close-functions)))
+          (should (memq #'ecc-space--forget-on-source-kill
+                        (default-value 'kill-buffer-hook))))))))
+
 (ert-deftest ecc-space-test-two-spaces-of-one-name ()
   "Two Spaces that would be called the same get tabs that are not."
   (ecc-space-test--with-sessions `(("one" . ,ecc-space-test--one))

@@ -636,6 +636,41 @@ restored session wins over an idle one."
                        (list ecc-restore-test--one ecc-restore-test--two)))
         (should (= 1 (length (ecc-model-sessions))))))))
 
+(defconst ecc-restore-test--hooks
+  '(tab-bar-tab-post-open-functions tab-bar-tab-pre-close-functions kill-emacs-hook)
+  "The hooks of Emacs the saving goes on.")
+
+(defun ecc-restore-test--watching-p ()
+  "Return non-nil when the saving is on every hook of Emacs it goes on."
+  (and (memq #'ecc-restore--schedule (default-value 'tab-bar-tab-post-open-functions))
+       (memq #'ecc-restore--schedule (default-value 'tab-bar-tab-pre-close-functions))
+       (memq #'ecc-restore--save-at-exit (default-value 'kill-emacs-hook))))
+
+(ert-deftest ecc-restore-test-the-saving-goes-on-with-a-session ()
+  "The saving goes on the hooks of Emacs with the first session, not before.
+The save at exit goes ahead of what was on `kill-emacs-hook\=' already."
+  (ecc-test-with-global-hooks ecc-restore-test--hooks
+    (ecc-restore-test--with-world
+      (add-hook 'kill-emacs-hook #'ignore)
+      (should-not (ecc-restore-test--watching-p))
+      (ecc-restore-test--open "id-a" "a" ecc-restore-test--one)
+      (should (ecc-restore-test--watching-p))
+      (should (eq (car (default-value 'kill-emacs-hook)) #'ecc-restore--save-at-exit)))))
+
+(ert-deftest ecc-restore-test-the-saving-goes-on-with-spaces-alone ()
+  "A restore that brings back Spaces and no session still saves at exit.
+It makes the file this Emacs's own, and nothing comes through
+`ecc--enable-session-modes\=' to put the saving on."
+  (ecc-test-with-global-hooks ecc-restore-test--hooks
+    (ecc-restore-test--with-world
+      (ecc-restore-test--with-spaces
+        (let ((ecc-space-always-session nil))
+          (ecc-restore-test--write-state (list ecc-restore-test--one) nil)
+          (should-not (ecc-restore-test--watching-p))
+          (ecc-restore)
+          (should-not (ecc-model-sessions))
+          (should (ecc-restore-test--watching-p)))))))
+
 (provide 'ecc-restore-test)
 
 ;;; ecc-restore-test.el ends here
