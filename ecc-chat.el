@@ -385,7 +385,8 @@ row.  TAB folds, on this row as on every other.")
   (add-hook 'window-size-change-functions #'ecc-chat--set-margins nil t)
   (ecc-chat--set-margins (selected-frame))
   (add-hook 'post-command-hook #'ecc-chat--post-command nil t)
-  (add-hook 'after-change-functions #'ecc-chat--after-change nil t))
+  (add-hook 'after-change-functions #'ecc-chat--after-change nil t)
+  (ecc-chat--watch-working-text))
 
 (defun ecc-chat--set-margins (frame-or-window)
   "Hold the text of a session window to `ecc-chat-text-width\=' columns.
@@ -606,11 +607,28 @@ BUFFER defaults to the current one.  Returns the text shown, or nil."
 ;; a `before-string' of the same kind that never goes near
 ;; `ns-insert-working-text' (both bound in `special-event-map', same
 ;; date).
-(with-eval-after-load 'ns-win
+;;
+;; The advice goes on with the first chat buffer, not when the file is
+;; loaded: before there is a prompt region there is nothing for it to
+;; do, and an Emacs that never opens one keeps its input-method
+;; functions as they came.  Nothing takes it off when the last chat
+;; buffer goes, as with the hooks the Spaces and the restore put on;
+;; outside a chat buffer it returns at once.  The hooks emacs-plus
+;; runs around them, `mac-ime-before-put-text-hook' and
+;; `mac-ime-after-put-text-hook', are its own and both run before the
+;; overlay changes, not after (Emacs 32.0.50, emacs-plus, confirmed
+;; 2026-10-14).  A buffer-local `pre-redisplay-functions' would see the
+;; overlay before it is drawn, at the price of running on every redisplay
+;; of the buffer, and only a real frame could show it does the same.
+(defun ecc-chat--watch-working-text ()
+  "Advise the NS port's working-text functions to keep the placeholder right.
+Called as a chat buffer is set up; once each function is advised, again
+changes nothing.  An Emacs without the NS port has none of them."
   (dolist (function '(ns-insert-working-text
                       ns-insert-marked-text
                       ns-delete-working-text))
-    (when (fboundp function)
+    (when (and (fboundp function)
+               (not (advice-member-p #'ecc-chat--after-working-text function)))
       (advice-add function :after #'ecc-chat--after-working-text))))
 
 ;;;; The footer: which permission mode the session runs
