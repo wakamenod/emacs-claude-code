@@ -64,6 +64,7 @@
 (require 'ecc-history)
 (require 'ecc-usage)
 (require 'ecc-window)
+(require 'ecc-session)
 (require 'ecc-skill)
 
 (declare-function ecc-start "ecc" (&optional directory name))

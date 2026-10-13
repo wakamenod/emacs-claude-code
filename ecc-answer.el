@@ -54,6 +54,7 @@
 (declare-function ecc-history-open "ecc-history" (session-id))
 (declare-function ecc-interrupt "ecc-transient" ())
 (declare-function ecc-menu "ecc-transient" () t)
+(declare-function ecc-rename-session "ecc-session" (session name))
 (declare-function ecc-resume "ecc" (session &optional fork))
 (declare-function ecc-review "ecc-review" (&optional session paths))
 (declare-function ecc-review-menu "ecc-review-menu" () t)

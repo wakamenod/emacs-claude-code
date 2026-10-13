@@ -125,6 +125,34 @@ the part that goes wrong."
   `((type . "result") (subtype . "success") (is_error . :false)
     (total_cost_usd . ,(or cost 0.01)) (result . "done")))
 
+(ert-deftest ecc-session-test-rename-command ()
+  "Renaming a session renames its buffers with it."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-rename-session session "refactor")
+    (should (equal (ecc-session-name session) "refactor"))
+    (should (equal (buffer-name (ecc-session-buffer session)) "*ecc: refactor*"))))
+
+(ert-deftest ecc-session-test-rename-command-to-the-same-name ()
+  "A session does not collide with itself.
+The prompt offers the name the session has, so confirming it unchanged
+used to rename the session to NAME<2>."
+  (ecc-test-with-fake-session session
+    (let ((name (ecc-session-name session))
+          (other (ecc-model-create-session :name "two"
+                                           :project-root temporary-file-directory)))
+      (unwind-protect
+          (progn
+            (ecc-session-ensure-buffer session)
+            (ecc-rename-session session name)
+            (should (equal (ecc-session-name session) name))
+            (should (equal (buffer-name (ecc-session-buffer session))
+                           (ecc-session-buffer-name name)))
+            ;; Another session's name is still taken.
+            (ecc-rename-session session (ecc-session-name other))
+            (should (equal (ecc-session-name session) "two<2>")))
+        (ecc-test-cleanup-session other)))))
+
 (ert-deftest ecc-session-test-rename-tells-the-cli ()
   "A rename of an idle session reaches its CLI at once, as /rename.
 It opens no turn and goes nowhere near the queue."

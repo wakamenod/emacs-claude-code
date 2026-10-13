@@ -141,6 +141,16 @@ the CLI\='s to write."
     (ecc-proc-rename session)
     name))
 
+;;;###autoload
+(defun ecc-rename-session (session name)
+  "Rename SESSION to NAME and rename its buffers with it.
+The CLI is told the name too, so that the history and a later resume
+call the session NAME (`ecc-session-rename\=')."
+  (interactive
+   (let ((session (ecc-window-resolve-session current-prefix-arg)))
+     (list session (read-string "New name: " (ecc-session-name session)))))
+  (ecc-session-rename session name))
+
 (defun ecc-session-ensure-buffer (session)
   "Return the buffer of SESSION, creating and drawing it if needed."
   (let ((buffer (ecc-session-buffer session)))
