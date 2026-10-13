@@ -75,6 +75,10 @@ Verified against **Claude Code CLI 2.1.290**.
 - `ecc-review-direct.el` is folded into `ecc-review-ediff.el`, so
   `(require 'ecc-review-direct)` no longer works; require
   `ecc-review-ediff` instead. Every symbol keeps its name.
+- Every source file names all four models that wrote it, one `Assisted-by:`
+  line each, in place of Claude Opus 5 alone: by the history's commit
+  trailers on 2026-10-14, Claude Opus 5 (428 commits), Opus 5.5 (424),
+  Fable 5.1 (28) and Haiku 4.5 (1).
 - Loading ecc no longer advises Emacs's own functions. On the NS port it put
   an advice on `ns-insert-working-text`, `ns-insert-marked-text` and
   `ns-delete-working-text` -- which keeps the placeholder of the prompt region
