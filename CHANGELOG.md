@@ -33,6 +33,20 @@ Verified against **Claude Code CLI 2.1.290**.
   and nothing a user sees changes. A test now starts a fresh Emacs, loads every
   file of ecc and fails if any ecc function is on a hook that is not ecc's own.
 
+### Fixed
+
+- Three source defects a review tool and a documentation checker find, none of
+  which changes what ecc does. `ecc-tab--force-update` handed `funcall` the
+  name `tab-line-force-update` quoted as a symbol rather than as a function;
+  it is now `#'tab-line-force-update`, still behind the `fboundp` test, since
+  that function is Emacs 30 and later. The Markdown table drawing moved point
+  with `(goto-char (line-beginning-position))` where `(beginning-of-line)`
+  says the same. And the paragraph 0.4.2 added to the docstring of
+  `ecc-dispatch--title-changed` had a line opening with a parenthesis in
+  column 0, which the search for the start of a top-level form reads as one;
+  it is now escaped as `\(`. The documentation checker is back to the 35
+  findings 0.4.1 left, all of them the two families it gets wrong.
+
 ## [0.4.2] - 2026-10-13
 
 Verified against **Claude Code CLI 2.1.290**.

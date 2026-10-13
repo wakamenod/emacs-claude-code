@@ -465,7 +465,7 @@ text rather than only its properties."
       (insert (string-join drawn "\n"))
       ;; The loop this returns to steps over one line, so point is left
       ;; on the last of the lines that were put in rather than past it.
-      (goto-char (line-beginning-position))
+      (beginning-of-line)
       (point))))
 
 (defun ecc-markdown-fontify (text)
