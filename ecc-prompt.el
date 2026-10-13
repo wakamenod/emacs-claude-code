@@ -49,6 +49,7 @@
 (require 'ecc-hint)
 (require 'ecc-window)
 (require 'ecc-context)
+(require 'ecc-skill)
 
 (declare-function ecc-resume "ecc" (session &optional fork))
 
@@ -780,8 +781,6 @@ append, are left in `ecc-prompt-last-attachments' and
                          (nreverse blocks) "\n\n")))))
 
 ;;;; Completion
-
-(declare-function ecc-skill-names "ecc-skill" (session))
 
 (defvar ecc-prompt-group-commands t
   "Non-nil marks the skills apart from the commands when one is offered.

@@ -84,6 +84,7 @@
 (require 'ecc-review)
 (require 'ecc-review-files)
 (require 'ecc-visit)
+(require 'ecc-review-pr)
 
 ;; `ecc-review-ediff.el' requires this file, so these are declared
 ;; rather than required: they are only ever reached from a review that
@@ -98,7 +99,6 @@
 (declare-function ecc-review-ediff-next-difference "ecc-review-ediff" (&optional arg))
 (declare-function ecc-review-ediff-stacked-p "ecc-review-ediff" (&optional control))
 (declare-function ecc-review-ediff-previous-difference "ecc-review-ediff" (&optional arg))
-(declare-function ecc-review-pr-walk-status "ecc-review-pr" (&optional subject))
 
 ;;;; The review a window belongs to
 

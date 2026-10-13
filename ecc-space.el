@@ -63,6 +63,7 @@
 (require 'ecc-window)
 (require 'ecc-worktree)
 (require 'ecc-notify)
+(require 'ecc-history)
 
 (declare-function ecc-render--project-name-1 "ecc-render" (directory))
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
@@ -70,7 +71,6 @@
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-sidebar-show "ecc-sidebar" ())
 (declare-function ecc-sidebar-redraw "ecc-sidebar" (&rest _))
-(declare-function ecc-history-project-roots "ecc-history" ())
 
 ;;;; Settings
 
