@@ -65,9 +65,9 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-history)
+(require 'ecc-window)
 
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
-(declare-function ecc-display-session "ecc-window" (session))
 (declare-function ecc-session-set-name "ecc-session" (session name))
 (declare-function ecc-render-refresh "ecc-render" (session))
 (declare-function ecc--enable-session-modes "ecc" ())
@@ -449,7 +449,6 @@ every time Emacs starts, call it from the init file."
           (dolist (root (cdr result))
             (push (format "%s (gone)" (abbreviate-file-name root)) skipped)))
       (when restored
-        (require 'ecc-window)
         (ecc-display-session (car restored))))
     (when (null file)
       (setq ecc-restore--previous nil

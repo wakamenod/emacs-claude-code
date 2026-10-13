@@ -50,11 +50,11 @@
 (require 'ecc-proc)
 (require 'ecc-dispatch)
 (require 'ecc-registry)
+(require 'ecc-window)
 
 (declare-function ecc-render-refresh "ecc-render" (session))
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-review-ensure-baseline "ecc-review" (session))
-(declare-function ecc-display-session "ecc-window" (session))
 (defvar ecc-prompt-immediate-commands)
 (declare-function ecc-prompt-command-name "ecc-prompt" (text))
 (declare-function ecc-prompt-command-argument "ecc-prompt" (text))
@@ -702,7 +702,6 @@ Interactively the recordings are offered by name."
     (ecc-session-ensure-buffer session)
     (when (null (ecc-session-turns session))
       (ecc-history-load session))
-    (require 'ecc-window)
     (ecc-display-session session)
     session))
 
