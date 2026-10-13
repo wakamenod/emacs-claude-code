@@ -223,6 +223,7 @@ middle of a redraw, and a redraw runs on a tenth of a second."
 
 ;;;; How wide one is drawn
 
+;; Defined in `ecc-chat\=', which requires this file.
 (defvar ecc-chat-text-width)
 
 (defun ecc-image-width (indent)
