@@ -50,10 +50,10 @@
 (declare-function flymake-diagnostic-text "flymake" (diag))
 (declare-function flymake-diagnostic-beg "flymake" (diag))
 (declare-function flymake-diagnostic-type "flymake" (diag))
-(declare-function flycheck-overlay-errors-at "flycheck" (pos))
-(declare-function flycheck-overlay-errors-in "flycheck" (beg end))
-(declare-function flycheck-error-message "flycheck" (err))
-(declare-function flycheck-error-line "flycheck" (err))
+(declare-function flycheck-overlay-errors-at "ext:flycheck" (pos))
+(declare-function flycheck-overlay-errors-in "ext:flycheck" (beg end))
+(declare-function flycheck-error-message "ext:flycheck" (err))
+(declare-function flycheck-error-line "ext:flycheck" (err))
 
 (defvar ecc-context-attach-by-default nil
   "Non-nil attaches the editor context to every prompt sent.

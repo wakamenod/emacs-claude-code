@@ -401,7 +401,7 @@ of step with itself.  A tool that is not here at all gets
   "Return the face the icon of TOOL-NAME is drawn in."
   (nth 2 (ecc-visual-icon-entry tool-name)))
 
-(declare-function nerd-icons-codicon "nerd-icons" (name &rest args))
+(declare-function nerd-icons-codicon "ext:nerd-icons" (name &rest args))
 
 (defvar ecc-visual--nerd-icons 'unknown
   "Whether `nerd-icons' is available: t, nil, or `unknown' before looking.")
