@@ -306,7 +306,14 @@ user starts did not.  A demo found it (2026-09-17)."
   (frame-parameter frame 'ecc-space-tabs))
 
 (defun ecc-space--remember-tab (key name &optional frame)
-  "Remember that the Space KEY lives in the tab called NAME on FRAME."
+  "Remember that the Space KEY lives in the tab called NAME on FRAME.
+This is where the first Space comes to be, so the global hooks the
+Spaces need go on here and not when the file is loaded: before it there
+is no tab to forget and no Space to close.  They go on as they are, and
+each decides for itself when it runs whether there is anything to do,
+since the settings it reads can change after."
+  (add-hook 'tab-bar-tab-pre-close-functions #'ecc-space--forget-tab)
+  (add-hook 'kill-buffer-hook #'ecc-space--forget-on-source-kill)
   (let ((tabs (ecc-space--tabs frame)))
     (setf (alist-get key tabs nil nil #'equal) name)
     (set-frame-parameter frame 'ecc-space-tabs tabs)))
@@ -371,8 +378,6 @@ go on running with no window, which is what the sidebar and
   (when-let* ((name (alist-get 'name tab))
               (key (car (rassoc name (ecc-space--tabs)))))
     (ecc-space--drop-tab key)))
-
-(add-hook 'tab-bar-tab-pre-close-functions #'ecc-space--forget-tab)
 
 (defvar ecc-space--laying-out nil
   "Non-nil while the windows of a Space are being laid out.
@@ -1470,7 +1475,7 @@ side window and is neither deleted nor counted."
             (cond
              (neighbour (ecc-space--display-in neighbour window))
              ((eq (window-deletable-p window) t)
-              (ignore-errors (delete-window window)))
+              (delete-window window))
              (t (when-let* ((space (ecc-space-current))
                             (source (ecc-space--source-buffer space))
                             ((buffer-live-p source)))
@@ -1554,8 +1559,6 @@ project is what closes it.  On `kill-buffer-hook'."
                      (when-let* ((directory (ecc-window-buffer-directory buffer)))
                        (equal (ecc-window-project-key directory) key))))
               (buffer-list)))
-
-(add-hook 'kill-buffer-hook #'ecc-space--forget-on-source-kill)
 
 (provide 'ecc-space)
 

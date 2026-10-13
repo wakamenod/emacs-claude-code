@@ -95,11 +95,13 @@ whole id space.")
 (defun ecc-registry--proc-start (string)
   "Return the time STRING names, read as UTC, or nil.
 STRING is a `procStart' as `ecc-registry-proc-start-format' writes it."
-  (ignore-errors
-    (let ((parsed (parse-time-string string)))
-      (when (nth 5 parsed)
-        (setf (nth 8 parsed) 0)
-        (encode-time parsed)))))
+  (let ((parsed (parse-time-string string)))
+    ;; A field STRING lacks is a nil, which `encode-time' signals about,
+    ;; and so is a year too large to be a time at all.
+    (when (and (seq-every-p #'natnump (seq-take parsed 6))
+               (<= (nth 5 parsed) 9999))
+      (setf (nth 8 parsed) 0)
+      (encode-time parsed))))
 
 (defun ecc-registry--alive-p (entry)
   "Return non-nil when the process of ENTRY is still running.
@@ -201,15 +203,21 @@ well, because a file notification is a courtesy, not a promise."
     (let ((directory (expand-file-name ecc-registry-directory)))
       (setq ecc-registry--watch
             (when (file-directory-p directory)
-              (ignore-errors
-                (file-notify-add-watch directory '(change)
-                                       #'ecc-registry--notify))))))
+              ;; `file-error', not only its child `file-notify-error':
+              ;; the kqueue backend of macOS reports a file it cannot
+              ;; open as a bare `file-missing' (kqueue.c of 29.1, and
+              ;; seen on 32, 2026-10-13).
+              (condition-case nil
+                  (file-notify-add-watch directory '(change)
+                                         #'ecc-registry--notify)
+                (file-error nil))))))
   ecc-registry--watch)
 
 (defun ecc-registry-unwatch ()
   "Stop watching the registry directory."
   (when ecc-registry--watch
-    (ignore-errors (file-notify-rm-watch ecc-registry--watch))
+    (when (file-notify-valid-p ecc-registry--watch)
+      (file-notify-rm-watch ecc-registry--watch))
     (setq ecc-registry--watch nil)))
 
 (provide 'ecc-registry)

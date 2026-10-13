@@ -268,12 +268,15 @@ appends from here on is replayed."
   "Watch FILE and read what is appended to it into SESSION."
   (let ((id (ecc-session-id session)))
     (ecc-tui--put session :watch
-                  (ignore-errors
-                    (file-notify-add-watch
-                     file '(change)
-                     (lambda (&rest _)
-                       (when-let* ((session (ecc-model-session id)))
-                         (ecc-tui-read-new-lines session))))))))
+                  ;; `file-error' and not only `file-notify-error': see
+                  ;; `ecc-registry-watch'.
+                  (condition-case nil
+                      (file-notify-add-watch
+                       file '(change)
+                       (lambda (&rest _)
+                         (when-let* ((session (ecc-model-session id)))
+                           (ecc-tui-read-new-lines session))))
+                    (file-error nil)))))
 
 (defun ecc-tui-read-new-lines (session)
   "Replay into SESSION whatever the terminal appended to its recording.
@@ -360,7 +363,8 @@ not."
   "Stop following the recording of SESSION and forget the hand-off."
   (when-let* ((state (ecc-tui-state session)))
     (when-let* ((watch (plist-get state :watch)))
-      (ignore-errors (file-notify-rm-watch watch)))
+      (when (file-notify-valid-p watch)
+        (file-notify-rm-watch watch)))
     (when-let* ((timer (plist-get state :timer)))
       (cancel-timer timer))
     ;; The follow leaves the turn it is in open, because a batch of
@@ -394,7 +398,8 @@ not."
   "Cancel the hand-off of the session ID that is no longer there."
   (when-let* ((state (gethash id ecc-tui--handoffs)))
     (when-let* ((watch (plist-get state :watch)))
-      (ignore-errors (file-notify-rm-watch watch)))
+      (when (file-notify-valid-p watch)
+        (file-notify-rm-watch watch)))
     (when-let* ((timer (plist-get state :timer)))
       (cancel-timer timer))
     (remhash id ecc-tui--handoffs)))
@@ -433,7 +438,11 @@ down the terminal's own timers and kills its buffer."
     (set-process-sentinel
      process
      (lambda (proc event)
-       (when previous (ignore-errors (funcall previous proc event)))
+       ;; Somebody else's sentinel failing is no reason to keep the
+       ;; session in the terminal; the message says whose it was.
+       (when previous
+         (with-demoted-errors "ecc-tui: error in the terminal sentinel: %S"
+           (funcall previous proc event)))
        (unless (process-live-p proc)
          (when-let* ((session (ecc-model-session id)))
            (when (and (ecc-tui-handoff-p session) ecc-tui-return-on-exit)

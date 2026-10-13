@@ -105,6 +105,14 @@ mean the same project."
   (format-time-string ecc-registry-proc-start-format
                       (alist-get 'start (process-attributes pid)) t))
 
+(ert-deftest ecc-registry-test-proc-start ()
+  "A whole start time is read as UTC; a part of one, or nonsense, is a nil."
+  (should (time-equal-p (ecc-registry--proc-start "Mon Oct 13 10:00:00 2026")
+                        (encode-time '(0 0 10 13 10 2026 nil nil 0))))
+  (dolist (string '("" "garbage" "Mon Oct 13 2026" "10:00:00"
+                    "Mon Oct 13 10:00:00 99999999999999999999999"))
+    (should-not (ecc-registry--proc-start string))))
+
 (ert-deftest ecc-registry-test-drops-a-dead-process ()
   "A file left behind by a killed session is not believed."
   (ecc-registry-test--with-temp-registry directory

@@ -678,7 +678,7 @@ Lisp file is not answered by the backend of some other language."
       (string-join
        (list (format "root: %s" (abbreviate-file-name root))
              (format "vc backend: %s"
-                     (or (ignore-errors (vc-responsible-backend root)) "none"))
+                     (or (vc-responsible-backend root t) "none"))
              (format "files: %s" (if files (length files) "unknown"))
              (format "open in Emacs: %s"
                      (or (string-join

@@ -136,7 +136,9 @@ The answer is pretty-printed over many lines, so it cannot be read line
 by line; it is read from the first bracket to the end instead, which
 steps over a warning or a progress line printed before it."
   (let ((start (string-match-p "[][{]" output)))
-    (or (and start (ignore-errors (ecc--json-read (substring output start))))
+    (or (and start (condition-case nil
+                       (ecc--json-read (substring output start))
+                     (json-error nil)))
         (error "No JSON in the answer: %s" (ecc--truncate output 200)))))
 
 ;;;; What a plugin and a marketplace are here

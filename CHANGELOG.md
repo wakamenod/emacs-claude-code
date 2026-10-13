@@ -11,6 +11,63 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [0.4.3] - 2026-10-13
+
+Verified against **Claude Code CLI 2.1.290**.
+
+### Changed
+
+- Loading ecc puts nothing on the hooks of Emacs any more. It used to put nine
+  of its functions there, so that in an Emacs that had never started a session
+  every save walked the buffer list looking for reviews, every window change
+  walked the windows, and every killed buffer, tab and exit ran ecc code. A
+  review tool for a public archive reports a package that adds hooks when it is
+  loaded. Each now goes on when what it serves first exists: the follow of saved
+  files and shown windows with the first review, diff or ediff; the sweep of
+  file panes with the first files pane; the watch that gives a side window its
+  dedication back with the first session window given a role, which the
+  Spaces never do; the closing of a Space with its tab and source buffers with
+  the first Space tab; and the saving of the open sessions and Spaces, on tabs
+  and at exit, with the first session or `ecc-restore`. The save at exit still
+  runs ahead of everything else on `kill-emacs-hook`. None is taken off again,
+  and nothing a user sees changes. A test now starts a fresh Emacs, loads every
+  file of ecc and fails if any ecc function is on a hook that is not ecc's own.
+- Twenty-two of the twenty-three `ignore-errors` in ecc are gone. Each was
+  there for one failure that was expected -- a file that is not there, JSON
+  that does not parse, a window that cannot be resized -- and swallowed every
+  other error with it, a typo or a wrong argument in ecc's own code included. A
+  review tool for a public archive reports them. Where the failure can be
+  checked for, it is checked first: `iso8601-valid-p` and the fields of the
+  parse before `encode-time`, `window-resizable-p` before `window-resize`,
+  `file-notify-valid-p` before removing a watch, `stringp` before parsing a
+  url, `vc-responsible-backend` with its NO-ERROR argument. Where it cannot, the
+  error class is named: `file-error` for reading the version of ecc and of the
+  CLI, and for adding a file watch, whose kqueue backend on macOS reports a
+  missing file as `file-missing` rather than `file-notify-error`; `json-error`
+  for the answer of `claude plugin`. The functions that signal on purpose --
+  `ecc-protocol-read-settings-file`, so that a broken settings file is never
+  written over, `ecc-auth-status` and the file lookup of the review tools --
+  take a NOERROR argument for the callers that only read, and still signal for
+  the rest. A failing sentinel of the terminal a session is handed to is now
+  reported in the echo area rather than dropped. The one left is around
+  `project-current` in the header line: it runs whatever other packages put on
+  `project-find-functions`, so what it can signal is theirs to name, and a
+  comment there says so. Otherwise nothing a user sees changes.
+
+### Fixed
+
+- Three source defects a review tool and a documentation checker find, none of
+  which changes what ecc does. `ecc-tab--force-update` handed `funcall` the
+  name `tab-line-force-update` quoted as a symbol rather than as a function;
+  it is now `#'tab-line-force-update`, still behind the `fboundp` test, since
+  that function is Emacs 30 and later. The Markdown table drawing moved point
+  with `(goto-char (line-beginning-position))` where `(beginning-of-line)`
+  says the same. And the paragraph 0.4.2 added to the docstring of
+  `ecc-dispatch--title-changed` had a line opening with a parenthesis in
+  column 0, which the search for the start of a top-level form reads as one;
+  it is now escaped as `\(`. The documentation checker is back to the 35
+  findings 0.4.1 left, all of them the two families it gets wrong.
+
 ## [0.4.2] - 2026-10-13
 
 Verified against **Claude Code CLI 2.1.290**.
@@ -3006,7 +3063,8 @@ Emacs 29.1, 29.4 and 30.1.
   notifications, and a `transient` menu on `ecc-global-map`.
 - `ecc-version` reports the ecc, Emacs and CLI versions a bug report needs.
 
-[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.3
 [0.4.2]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.2
 [0.4.1]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.1
 [0.4.0]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.0

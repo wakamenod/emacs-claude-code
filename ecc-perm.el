@@ -419,7 +419,8 @@ most specific pattern to the broadest, and is never empty."
         ((pred (string-prefix-p "mcp__")) (ecc-perm--mcp-patterns tool-name))
         ("WebFetch"
          (when-let* ((url (alist-get 'url input))
-                     (host (ignore-errors (url-host (url-generic-parse-url url)))))
+                     ((stringp url))
+                     (host (url-host (url-generic-parse-url url))))
            (list (format "WebFetch(domain:%s)" host))))
         (_ nil))
       (list tool-name)))

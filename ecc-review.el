@@ -1516,7 +1516,8 @@ denies the proposal."
                                     (memq (cdr entry)
                                           (list ecc-review-mode-map diff-mode-shared-map)))
                                   minor-mode-overriding-map-alist)))
-  (setq header-line-format '(:eval (ecc-review--header-line))))
+  (setq header-line-format '(:eval (ecc-review--header-line)))
+  (ecc-review--watch-files))
 
 (defun ecc-review-buffer-name (session &optional request range label)
   "Return the name of the review buffer of SESSION.
@@ -1894,7 +1895,7 @@ header or before the first hunk."
 As git wrote it, a C-quoted name decoded (`ecc-review-git-name')."
   (save-excursion
     (goto-char beg)
-    (let* ((names (mapcar #'ecc-review-git-name (ignore-errors (diff-hunk-file-names))))
+    (let* ((names (mapcar #'ecc-review-git-name (diff-hunk-file-names)))
            (new (car names))
            (old (cadr names))
            (name (if (or (null new) (equal new "/dev/null")) old new)))
@@ -4118,8 +4119,17 @@ time -- the timer still waiting -- it takes the timer's place."
 (add-hook 'ecc-tool-finished-hook #'ecc-review--on-tool-finished)
 (add-hook 'ecc-turn-finished-hook #'ecc-review--on-turn-finished)
 (add-hook 'ecc-session-removed-hook #'ecc-review--forget-session)
-(add-hook 'after-save-hook #'ecc-review--on-save)
-(add-hook 'window-buffer-change-functions #'ecc-review--on-window-buffer-change)
+
+(defun ecc-review--watch-files ()
+  "Have the reviews follow the files saved and the windows shown.
+Called where a review comes to be -- `ecc-review-mode\=' and the control
+buffer of an ediff review, which is in `ediff-mode\=' -- and not when the
+file is loaded: until then a file saved has no review to mark stale, and
+a window changed none to read again.  Nothing takes them off when the
+last review goes: telling when that is would mean counting the two
+sides of an ediff review too, and with no review each finds nothing."
+  (add-hook 'after-save-hook #'ecc-review--on-save)
+  (add-hook 'window-buffer-change-functions #'ecc-review--on-window-buffer-change))
 
 ;;;; Reviewing a range
 

@@ -278,6 +278,19 @@ window is the next one `display-buffer' takes over."
         (ecc-window-repair-side-windows)
         (should (eq (window-dedicated-p window) 'side))))))
 
+(ert-deftest ecc-window-test-repair-is-installed-with-a-role ()
+  "The dedication watch goes on with the first session window given a role.
+Not before: loading the package puts nothing on the window hooks, and
+with the Spaces, which give no window a role, it never goes on."
+  (ecc-test-with-global-hooks '(window-buffer-change-functions)
+    (ecc-window-test--with-sessions one two
+      (ecc-window-test--with-frame t
+        (should-not (memq #'ecc-window-repair-side-windows
+                          (default-value 'window-buffer-change-functions)))
+        (ecc-display-session one)
+        (should (memq #'ecc-window-repair-side-windows
+                      (default-value 'window-buffer-change-functions)))))))
+
 (defmacro ecc-window-test--with-tabs (tabs &rest body)
   "Run BODY with TABS as the `tabs' frame parameter, putting it back after.
 The parameter is what `ecc-window--layout-key' reads, so a tab is stood

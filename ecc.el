@@ -5,7 +5,7 @@
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
-;; Version: 0.4.2
+;; Version: 0.4.3
 ;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -103,18 +103,26 @@
 ;; it is read back instead: from the package descriptor when ecc was
 ;; installed, and from the header of ecc.el itself when it was only put on
 ;; `load-path'.
+(defun ecc--header-version (file)
+  "Return the Version header of FILE, or nil when FILE cannot be read.
+A file can be readable and still fail to read, so the `file-error' is
+caught as well as checked for.  A directory is asked about first: reading
+one is not a `file-error' on every system."
+  (condition-case nil
+      (and (file-readable-p file)
+           (not (file-directory-p file))
+           (with-temp-buffer
+             (insert-file-contents file nil 0 4096)
+             (lm-header "version")))
+    (file-error nil)))
+
 (defconst ecc-version
-  (or (ignore-errors (package-get-version))
-      (ignore-errors
-        (let ((file (expand-file-name
-                     "ecc.el"
-                     (file-name-directory (or load-file-name
-                                              buffer-file-name
-                                              default-directory)))))
-          (and (file-readable-p file)
-               (with-temp-buffer
-                 (insert-file-contents file nil 0 4096)
-                 (lm-header "version")))))
+  (or (condition-case nil (package-get-version) (file-error nil))
+      (ecc--header-version
+       (expand-file-name "ecc.el"
+                         (file-name-directory (or load-file-name
+                                                  buffer-file-name
+                                                  default-directory))))
       "unknown")
   "The version of ecc that is loaded, as its Version header says.")
 
@@ -136,13 +144,15 @@ moves without anybody upgrading anything."
 The CLI prints something like \"2.1.268 (Claude Code)\"; only the number
 is kept.  A missing or silent executable is a nil, not an error: the
 point of `ecc-version' is to report on a machine that is already broken."
-  (ignore-errors
-    (with-temp-buffer
-      (when (and (executable-find ecc-executable)
-                 (eq 0 (call-process ecc-executable nil t nil "--version")))
-        (goto-char (point-min))
-        (when (re-search-forward "[0-9][^ \t\n]*" nil t)
-          (match-string 0))))))
+  (condition-case nil
+      (with-temp-buffer
+        (when (and (executable-find ecc-executable)
+                   (eq 0 (call-process ecc-executable nil t nil "--version")))
+          (goto-char (point-min))
+          (when (re-search-forward "[0-9][^ \t\n]*" nil t)
+            (match-string 0))))
+    ;; Found on PATH and still not started: a broken link, a bad #! line.
+    (file-error nil)))
 
 (defun ecc-project-root ()
   "Return the root of the project of the current buffer, or its directory."

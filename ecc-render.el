@@ -2338,6 +2338,13 @@ screen when the window has no mode line."
 A remote directory is never asked about: `project-current\=' would go
 over the wire for it, and the header line is drawn on every command."
   (or (and (not (file-remote-p directory))
+           ;; The one `ignore-errors' in ecc.  `project-current' calls
+           ;; each function on `project-find-functions', and other
+           ;; packages add their own there: what those signal is theirs
+           ;; to decide, so there is no error class to name here.  An
+           ;; error let out would break the header line, which is drawn
+           ;; on every command, so any failure falls back to the name of
+           ;; the directory below.
            (ignore-errors
              (when-let* ((project (let ((default-directory directory))
                                     (project-current nil))))

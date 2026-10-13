@@ -376,6 +376,35 @@ moment they were read to a moment in the past."
           (while (not torn-down) (sit-for 0.05)))
         (should torn-down)))))
 
+(ert-deftest ecc-tui-test-a-failing-terminal-sentinel-is-logged ()
+  "The terminal's own sentinel failing is reported and passed over.
+The session still comes back from the terminal."
+  (ecc-tui-test--with-session session
+    (let ((resumed nil)
+          (messages nil)
+          (debug-on-error nil))
+      (cl-letf (((symbol-function 'message)
+                 (lambda (format &rest args)
+                   (push (apply #'format-message format args) messages)))
+                ((symbol-function 'ecc-history-file) (lambda (_id) nil))
+                ((symbol-function 'ecc-registry-live-p) (lambda (_id) nil))
+                ((symbol-function 'ecc-proc-start)
+                 (lambda (_session &optional resume _fork) (setq resumed resume)))
+                ((symbol-function 'ecc-tui--open-ghostel)
+                 (lambda (session)
+                   (let* ((buffer (get-buffer-create (ecc-tui-buffer-name session)))
+                          (process (start-process "ecc-tui-test" buffer "sleep" "60")))
+                     (set-process-sentinel process
+                                           (lambda (&rest _) (error "Torn down badly")))
+                     (cons buffer process)))))
+        (ecc-tui-open session)
+        (delete-process (plist-get (ecc-tui-state session) :process))
+        (with-timeout (5 (ert-fail "the terminal ended and nothing came back"))
+          (while (not resumed) (sit-for 0.05)))
+        (should (eq resumed t))
+        (should (member "ecc-tui: error in the terminal sentinel: (error \"Torn down badly\")"
+                        messages))))))
+
 (ert-deftest ecc-tui-test-ghostel-really-runs-and-really-comes-back ()
   "The ghostel backend is driven for real, with a stand-in for the CLI.
 Nothing here is replaced but the CLI itself and the resume: the buffer,

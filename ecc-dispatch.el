@@ -248,7 +248,7 @@ again before the CLI answered the first one.
 
 A title another session already has is made unique here, as NAME<2>,
 and the CLI is told that name the way a rename made here tells it
-(`ecc-proc-rename\='); otherwise its recording keeps NAME, and the
+\(`ecc-proc-rename\='); otherwise its recording keeps NAME, and the
 history and a later resume call the session NAME again.  The title
 that answers it is the name the session has, so it changes nothing."
   (let ((title (alist-get 'title message)))
