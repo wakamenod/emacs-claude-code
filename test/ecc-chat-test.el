@@ -296,15 +296,19 @@ nothing to do with whether two maps are ever live at once."
      ("d" . ecc-session-review-or-deny)
      ("T" . ecc-session-timeline)
      ("w" . ecc-session-copy-at-point)))
-  "The keys `ecc-prompt' and `ecc-session' bind into the keymaps of `ecc-chat'.
+  "The keys `ecc-prompt' and `ecc-session' give the keymaps of `ecc-chat'.
 Every map in which each of them resolves, through the parents of the
-maps too, as it did when `ecc-chat' bound them itself (2026-10-14).")
+maps, as it did when `ecc-chat' bound them itself (2026-10-14).")
 
 (ert-deftest ecc-chat-test-modules-bind-their-keys ()
   "Each key the prompt and the session bind resolves where it did.
-`ecc-chat' defines the keymaps and the two modules above it bind their
-commands into them, so a key could go missing from a map that only
-inherits it; the list is what every map resolved to before the move."
+`ecc-chat' defines the keymaps and the two modules above it make maps of
+their own parents of them, so a key could go missing from a map that
+only inherits it; the list is what every map resolved to before the
+move.  `text-mode-map' stays under the mode map, which
+`define-derived-mode' would not put there once a module had given the
+map a parent."
+  (should (ecc-chat--keymap-inherits-p ecc-chat-mode-map text-mode-map))
   (dolist (entry ecc-chat-test--module-bindings)
     (let ((map (symbol-value (car entry))))
       (pcase-dolist (`(,key . ,command) (cdr entry))
