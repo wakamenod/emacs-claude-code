@@ -33,9 +33,9 @@
 ;; and sends JSON back.
 ;;
 ;; Together with `ecc-protocol' this is the only place that touches the
-;; wire format.  Parsed messages leave through
-;; `ecc-proc-message-function', which `ecc-dispatch' sets; this file
-;; never calls upwards by name.
+;; wire format.  Parsed messages go to the handler whoever starts the
+;; process hands `ecc-proc-start'; this file never calls upwards by
+;; name.
 
 ;;; Code:
 
@@ -43,6 +43,7 @@
 (require 'ecc-core)
 (require 'ecc-protocol)
 (require 'ecc-model)
+(require 'ecc-mcp)
 
 (defvar ecc-control-timeout 30
   "Seconds to wait for the answer to a control request before warning.")
@@ -52,10 +53,6 @@
 A terminated CLI writes its last lines and takes itself out of the
 session registry other Claude Code processes read, which a killed one
 cannot; it normally takes a fraction of a second.  Zero kills at once.")
-
-(defvar ecc-proc-message-function #'ignore
-  "Function called with a session and every parsed message.
-`ecc-dispatch' installs itself here when it is loaded.")
 
 ;;;; Buffers
 
@@ -206,8 +203,7 @@ a resumed one the model its recording ends on (see `ecc-proc--model')."
              (cons "--allowedTools" tools))
            (when-let* ((tools (funcall opt :disallowed-tools nil)))
              (cons "--disallowedTools" tools))
-           (when-let* ((config (and ecc-mcp-config-function
-                                    (funcall ecc-mcp-config-function session))))
+           (when-let* ((config (ecc-mcp-config session)))
              (list "--mcp-config" config))
            (when-let* ((settings (ecc-protocol-settings-json
                                  (funcall opt :disabled-plugins
@@ -340,9 +336,16 @@ in place.  Nil when there is no recording to read."
                                           (ecc-session-id session)))))
     (or (ecc-history-recorded-cost file) 0)))
 
-(defun ecc-proc-start (session &optional resume fork)
+(defun ecc-proc-start (session handler &optional resume fork)
   "Start the CLI for SESSION and return the process.
-RESUME and FORK are passed to `ecc-proc-build-command'."
+HANDLER is called with SESSION and every message the CLI sends, parsed;
+a session buffer wants `ecc-dispatch'.  RESUME and FORK are passed to
+`ecc-proc-build-command'."
+  ;; Nothing else would ever read what the CLI says, so a process
+  ;; started without somewhere to put it is refused, not left talking
+  ;; to nobody.
+  (unless (functionp handler)
+    (signal 'wrong-type-argument (list #'functionp handler)))
   (when (process-live-p (ecc-session-process session))
     (error "Session %s is already running" (ecc-session-name session)))
   (let* ((command (ecc-proc-build-command session resume fork))
@@ -382,6 +385,7 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
     (setf (alist-get 'stop-requested (ecc-session-progress session)) nil)
     (ecc-model-set-cost-base session (if resume (ecc-proc--resumed-cost session) 0))
     (process-put process 'ecc-session-id (ecc-session-id session))
+    (process-put process 'ecc-handler handler)
     (setf (ecc-session-process session) process)
     ;; What this process was really given, taken here rather than asked
     ;; for later: `process-environment' is the one the CLI has, and the
@@ -557,10 +561,11 @@ locally so that the queue does not keep stale entries."
 (defun ecc-proc--filter (process chunk)
   "Feed CHUNK of PROCESS output into the session line buffer."
   (when-let* ((session (ecc-proc-session process)))
-    (ecc-proc-feed session chunk)))
+    (ecc-proc-feed session chunk (process-get process 'ecc-handler))))
 
-(defun ecc-proc-feed (session chunk)
+(defun ecc-proc-feed (session chunk handler)
   "Append CHUNK to the line buffer of SESSION and handle each whole line.
+Each line is passed to HANDLER, as `ecc-proc-handle-line' says.
 A chunk can stop in the middle of a line, and one line can be several
 megabytes, so the leftover is kept in a buffer rather than a string."
   (let (lines)
@@ -574,13 +579,13 @@ megabytes, so the leftover is kept in a buffer rather than a string."
         (delete-region (point-min) (1+ (point)))))
     (dolist (line lines)
       (unless (string-empty-p line)
-        (ecc-proc-handle-line session line)))
+        (ecc-proc-handle-line session line handler)))
     lines))
 
-(defun ecc-proc-handle-line (session line)
-  "Parse LINE of SESSION and hand it to `ecc-proc-message-function'."
+(defun ecc-proc-handle-line (session line handler)
+  "Parse LINE of SESSION and call HANDLER with SESSION and the message."
   (ecc-log-raw (ecc-session-name session) 'recv line)
-  (funcall ecc-proc-message-function session (ecc-protocol-parse-line line)))
+  (funcall handler session (ecc-protocol-parse-line line)))
 
 ;;;; Sending
 

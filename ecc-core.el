@@ -229,12 +229,6 @@ Called with the command list and the project root; it must return the
 command list to run.  Nil runs the command unchanged."
   :type '(choice (const :tag "None" nil) function))
 
-(defvar ecc-mcp-config-function nil
-  "Function returning the --mcp-config argument of a session, or nil.
-`ecc-mcp' installs itself here when it is loaded, which is how
-`ecc-proc' can register the Emacs MCP server without depending on it
-.")
-
 ;;;; Layout
 
 (defcustom ecc-use-spaces t
