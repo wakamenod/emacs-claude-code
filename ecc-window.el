@@ -50,11 +50,11 @@
 ;; here requires it: the dependency runs the other way.
 (declare-function ecc-space-of-root "ecc-space" (root))
 (declare-function ecc-space-select "ecc-space" (space))
-(declare-function ecc-space-display-session "ecc-space" (session))
+(declare-function ecc-space-display-session "ecc-space" (session &optional no-reuse))
 (declare-function ecc-space-display-beside-session "ecc-space" (buffer session))
 (declare-function ecc-space-current-key "ecc-space" ())
 (declare-function ecc-space-title "ecc-space" (space))
-(declare-function ecc-space-parent "ecc-space" (space))
+(declare-function ecc-space-parent "ecc-space" (space) t)
 ;; `ecc-notify' is above this file as well, and requires it.
 (declare-function ecc-tab-state "ecc-notify" (session))
 (declare-function ecc-tab-column-mark "ecc-notify" (state))

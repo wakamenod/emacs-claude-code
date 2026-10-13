@@ -56,10 +56,12 @@
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function ecc-kill "ecc" (session))
 (declare-function ecc-proc-send-prompt "ecc-proc" (session text &optional draft))
-(declare-function ecc-mcp-define-tool "ecc-mcp" (&rest arguments))
+;; A `cl-defun' with &key: `check-declare' reads its arglist as five
+;; positional arguments, the byte compiler as &rest, so neither is named.
+(declare-function ecc-mcp-define-tool "ecc-mcp" t)
 (declare-function ecc-mcp-session "ecc-mcp" ())
 (declare-function ecc-mcp-published-tools "ecc-mcp" ())
-(declare-function ecc-mcp-tool-name "ecc-mcp" (tool))
+(declare-function ecc-mcp-tool-name "ecc-mcp" (tool) t)
 (declare-function ecc-history-file "ecc-history" (session-id))
 (declare-function ecc-space-forget "ecc-space" (root))
 (declare-function ecc-space-at-p "ecc-space" (root))
