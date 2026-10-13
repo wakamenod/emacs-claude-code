@@ -198,9 +198,10 @@ edit does, and `ecc-files-updated-hook\=' hears only of the file tools.")
 
 (defvar ecc-session-renamed-hook nil
   "Functions run with a session that has just been given a new name.
-A name is drawn in more places than the session buffer's own: the tab
-line of every window that lists the session, and the file the open
-sessions are saved in.")
+Everything that shows the name follows it from here: the name of the
+session buffer, which `ecc-session' changes first, the tab line of every
+window that lists the session, and the file the open sessions are saved
+in.")
 
 (defvar ecc-session-removed-hook nil
   "Functions run with a session that has just been forgotten.
@@ -419,6 +420,20 @@ turned a rename that changed nothing into BASE<2>."
                      (ecc-model-sessions))
       (setq n (1+ n)
             name (format "%s<%d>" base n)))
+    name))
+
+(defun ecc-model-set-name (session name)
+  "Rename SESSION to NAME and return the name used.
+The name is made unique among the sessions first, SESSION itself not
+counting (`ecc-model-unique-name\=').  Every rename goes through here:
+the one the user asks for, and the one `/rename\=' does in the CLI.
+What draws the name follows `ecc-session-renamed-hook\=', the session
+buffer\='s own name included."
+  (let ((name (ecc-model-unique-name (string-trim name) session)))
+    (when (string-empty-p name)
+      (user-error "The name is empty"))
+    (setf (ecc-session-name session) name)
+    (run-hook-with-args 'ecc-session-renamed-hook session)
     name))
 
 (cl-defun ecc-model-create-session (&key id name project-root cwd kind options)

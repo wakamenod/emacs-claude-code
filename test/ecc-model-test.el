@@ -47,6 +47,20 @@ options, and a recording by its kind; nothing else is asked."
       (should-not (ecc-model-own-session-p other))
       (ecc-model-remove-session other))))
 
+(ert-deftest ecc-model-test-set-name ()
+  "A rename is made unique, refuses an empty name and is announced."
+  (ecc-test-with-fake-session session
+    (let* ((other (ecc-model-create-session :name "taken"))
+           (heard nil)
+           (ecc-session-renamed-hook
+            (list (lambda (s) (push (ecc-session-name s) heard)))))
+      (should (equal (ecc-model-set-name session " taken ") "taken<2>"))
+      (should (equal (ecc-session-name session) "taken<2>"))
+      (should (equal heard '("taken<2>")))
+      (should-error (ecc-model-set-name session "  ") :type 'user-error)
+      (should (equal (ecc-session-name session) "taken<2>"))
+      (ecc-model-remove-session other))))
+
 (ert-deftest ecc-model-test-session-id-moves ()
   "A forked session keeps its place in the registry under the new id."
   (ecc-test-with-fake-session session

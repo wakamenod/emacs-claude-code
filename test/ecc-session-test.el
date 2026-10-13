@@ -35,8 +35,24 @@
     (let* ((heard nil)
            (ecc-session-renamed-hook
             (list (lambda (s) (push (ecc-session-name s) heard)))))
-      (ecc-session-set-name session "renamed")
+      (ecc-model-set-name session "renamed")
       (should (equal heard '("renamed"))))))
+
+(ert-deftest ecc-session-test-the-buffer-follows-a-rename-in-the-model ()
+  "A name the model is given reaches the buffer before anything else hears.
+`/rename\=' in the CLI renames through `ecc-model-set-name\=', which knows
+no buffer; the buffer follows on `ecc-session-renamed-hook\=', ahead of
+whatever else listens there."
+  (ecc-test-with-fake-session session
+    (let* ((buffer (ecc-session-ensure-buffer session))
+           (seen nil)
+           (probe (lambda (_s) (push (buffer-name buffer) seen))))
+      (add-hook 'ecc-session-renamed-hook probe)
+      (unwind-protect
+          (should (equal (ecc-model-set-name session "renamed") "renamed"))
+        (remove-hook 'ecc-session-renamed-hook probe))
+      (should (equal (buffer-name buffer) (ecc-session-buffer-name "renamed")))
+      (should (equal seen (list (ecc-session-buffer-name "renamed")))))))
 
 (ert-deftest ecc-session-test-the-cli-cwd-does-not-move-the-buffer ()
   "A cwd the CLI reports leaves the transcript where the session is.

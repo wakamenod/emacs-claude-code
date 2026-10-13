@@ -68,7 +68,6 @@
 (require 'ecc-window)
 
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
-(declare-function ecc-session-set-name "ecc-session" (session name))
 (declare-function ecc-render-refresh "ecc-render" (session))
 (declare-function ecc--enable-session-modes "ecc" ())
 (declare-function ecc-space-tab-roots "ecc-space" (&optional frame))
@@ -374,8 +373,7 @@ saved as `:rename-pending\=' is one the CLI is still to be told."
     (setf (ecc-session-cwd session) cwd))
   (when-let* ((name (plist-get entry :name))
               ((not (equal name (ecc-session-name session)))))
-    (require 'ecc-session)
-    (ecc-session-set-name session name))
+    (ecc-model-set-name session name))
   (when (plist-get entry :rename-pending)
     (setf (ecc-session-rename-pending session) t))
   (when-let* ((buffer (ecc-session-buffer session))
