@@ -18,7 +18,8 @@
 ;; The last are about the modules that register with one above them:
 ;; the interceptors of the prompt region and the MCP tools of
 ;; `ecc-worktree' are in place once their own module is loaded, with
-;; nothing waiting for another to load.
+;; nothing waiting for another to load; and `ecc-proc' alone names the
+;; MCP server on the command line.
 
 ;;; Code:
 
@@ -243,6 +244,32 @@ waiting for that module to be loaded by somebody else."
                            (and (assoc "worktree-removal" ecc-mcp--instructions)
                                 t))))
                  '(t t t t))))
+
+(ert-deftest ecc-load-test-proc-alone-registers-the-mcp-server ()
+  "With `ecc-proc' alone loaded, the command line carries --mcp-config.
+`ecc-proc' requires `ecc-mcp' and asks it by name, so nothing has to
+load it first; with MCP off the argument is not there and no server is
+started."
+  (should (equal (ecc-load-test--run
+                  '(progn
+                     (require 'ecc-proc)
+                     (let ((session (ecc-model-create-session
+                                     :name "probe"
+                                     :project-root temporary-file-directory))
+                           (ecc-mcp-port 0))
+                       (unwind-protect
+                           (list (featurep 'ecc-dispatch)
+                                 (let ((ecc-mcp-enabled nil))
+                                   (and (member "--mcp-config"
+                                                (ecc-proc-build-command session))
+                                        t))
+                                 (and (ecc-mcp-running-p) t)
+                                 (let ((ecc-mcp-enabled t))
+                                   (and (member "--mcp-config"
+                                                (ecc-proc-build-command session))
+                                        t)))
+                         (ecc-mcp-stop)))))
+                 '(nil nil nil t))))
 
 (provide 'ecc-load-test)
 

@@ -235,7 +235,7 @@ one of them."
                 ((symbol-function 'ecc-proc-control) #'ignore))
         (unwind-protect
             (progn
-              (ecc-proc-start session t)
+              (ecc-proc-start session #'ecc-dispatch t)
               (should (equal (ecc-session-test--sent-lines) '("/rename later")))
               (should-not (ecc-session-rename-pending session))
               (should-not (ecc-session-current-turn session)))

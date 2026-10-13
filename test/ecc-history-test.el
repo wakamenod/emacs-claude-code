@@ -633,7 +633,7 @@ So is the line the recording is offered on."
       (let ((session (ecc-history-session "24a1aa86-d53f-4457-b09e-4f4caf450f03")))
         (unwind-protect
             (cl-letf (((symbol-function 'ecc-proc-start)
-                       (lambda (session &optional resume fork)
+                       (lambda (session _handler &optional resume fork)
                          (setq started (list session resume fork)))))
               (ecc-history-resume session t)
               (should (equal (list session t t) started))
@@ -684,7 +684,7 @@ So is the line the recording is offered on."
                    (funcall spawn :name "ecc-test-sleep"
                             :command '("sleep" "30") :noquery t)))
                 ((symbol-function 'ecc-proc-control) #'ignore))
-        (let ((process (ecc-proc-start session)))
+        (let ((process (ecc-proc-start session #'ecc-dispatch)))
           (unwind-protect
               (should-not (ecc-proc-stopped-on-request-p session))
             (delete-process process)))))))
@@ -876,7 +876,7 @@ Nothing is started and nothing is stopped: `ecc-proc-release' and
        (cl-letf (((symbol-function 'ecc-proc-release)
                   (lambda (session &rest _) (setq released session)))
                  ((symbol-function 'ecc-proc-start)
-                  (lambda (session &rest args) (setq resumed (cons session args))))
+                  (lambda (session _handler &rest args) (setq resumed (cons session args))))
                  ((symbol-function 'ecc-review-ensure-baseline) #'ignore)
                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
          ,@body))))
@@ -1016,7 +1016,7 @@ on SESSION is looked at."
                  (funcall spawn :name "ecc-test-sleep"
                           :command '("sleep" "30") :noquery t)))
               ((symbol-function 'ecc-proc-control) #'ignore))
-      (delete-process (ecc-proc-start session resume fork)))))
+      (delete-process (ecc-proc-start session #'ecc-dispatch resume fork)))))
 
 (ert-deftest ecc-history-test-recorded-cost ()
   "The total a recording ends with is its last `cost-state'.
