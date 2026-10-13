@@ -47,8 +47,9 @@
 (require 'ecc-window)
 
 (declare-function ecc-plan-open "ecc-plan" (request))
-;; Autoloaded commands of modules that require this one; the keymap only
-;; names them.
+;; Commands of other modules that `ecc-global-map' only names.  Each is
+;; autoloaded, and a key of the map loads this file and nothing else:
+;; requiring their modules here would load them all on the first key.
 (declare-function ecc-dashboard "ecc-dashboard" ())
 (declare-function ecc-history-open "ecc-history" (session-id))
 (declare-function ecc-interrupt "ecc-transient" ())
