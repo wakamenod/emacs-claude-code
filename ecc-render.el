@@ -102,8 +102,8 @@ matter of the moment, and TAB, the digits and `+\=' / `-\=' say it per
 node and are remembered.")
 
 (defcustom ecc-render-result-max-lines 12
-  "Lines of a tool result shown in the transcript.
-The whole result is always available with RET."
+  "Lines shown in the transcript of a tool result and of each input value.
+The whole of either is always available with RET."
   :type 'integer
   :group 'ecc)
 
@@ -407,15 +407,18 @@ spans the window rather than the text."
   "Return TEXT with PREFIX after every newline, ready to be appended."
   (string-replace "\n" (concat "\n" prefix) (or text "")))
 
-(defun ecc-render--insert-input (input prefix)
-  "Insert the tool INPUT as one line per key, indented by PREFIX."
+(defun ecc-render--insert-input (input prefix &optional limit)
+  "Insert the tool INPUT as one line per key, indented by PREFIX.
+A value of more than LIMIT lines is cut to its first LIMIT, as a result
+is; without LIMIT every value is drawn whole."
   (dolist (pair input)
     (let ((key (symbol-name (car pair)))
           (value (ecc-protocol-value-string (cdr pair))))
       (if (string-search "\n" value)
           (progn
             (insert (propertize (format "%s%s:" prefix key) 'face 'ecc-dim-face) "\n")
-            (ecc-render--insert-lines value (concat prefix "  ") 'ecc-dim-face))
+            (ecc-render--insert-lines (if limit (ecc-render--clip value limit) value)
+                                      (concat prefix "  ") 'ecc-dim-face))
         (insert (ecc-render--hang
                  (propertize (format "%s%s: %s" prefix key value) 'face 'ecc-dim-face)
                  (concat prefix (make-string (string-width key) ?\s) "  "))
@@ -1475,7 +1478,12 @@ diff when the caller has built it already, to build it only once."
         (insert line))
       (ecc-render--insert-lines (ecc-render--clip diff ecc-render-diff-max-lines)
                                 body 'ecc-dim-face))
-     (t (ecc-render--insert-input input body)))
+     ;; Cut as the output under it is: a command that pipes a file
+     ;; through a heredoc is a hundred lines, and a Bash call that comes
+     ;; up open on its diff had the diff buried under them (2026-10-13).
+     ;; A pending request draws its input whole, as it has to be read
+     ;; before it is answered, and RET shows this one whole.
+     (t (ecc-render--insert-input input body ecc-render-result-max-lines)))
     (when-let* ((status (ecc-model-node-get node 'task-status)))
       (insert (propertize (format "%stask: %s" body status) 'face 'ecc-dim-face) "\n"))
     (pcase (ecc-node-status node)

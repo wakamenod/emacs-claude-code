@@ -1471,6 +1471,76 @@ five the CLI showed are counted.  The call comes up open on them."
         (should-not (string-search "+l4" text))
         (should (string-search "… 7 more lines (RET)" text))))))
 
+(ert-deftest ecc-render-test-tool-input-is-clipped ()
+  "A long value of a call's input is cut as its output is; RET shows it whole.
+A Bash call that wrote files through heredocs drew a hundred lines of
+command over the diff it came up open on (2026-10-13)."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "bash")
+    (let* ((ecc-render-result-max-lines 3)
+           (command (mapconcat (lambda (n) (format "echo c%d" n))
+                               (number-sequence 1 10) "\n"))
+           (node (ecc-model-add-node
+                  session :type 'tool :status 'done
+                  :data `((name . "Bash")
+                          (input . ((command . ,command)
+                                    (description . "two\nlines")))
+                          (result . "")
+                          (bash-edit . (:files ((:path "/w/a.txt" :change modified
+                                                 :patch [((oldStart . 1) (oldLines . 1)
+                                                          (newStart . 1) (newLines . 1)
+                                                          (lines . ["-old" "+new"]))]))
+                                        :changed ("/w/a.txt") :more 0))))))
+      (ecc-model-node-changed session node)
+      (ecc-render-flush session)
+      (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+        ;; The head of the command, the count of the rest, then the
+        ;; short value whole and the diff under the output.
+        (should (string-search (concat "    command:\n"
+                                       "      echo c1\n"
+                                       "      echo c2\n"
+                                       "      echo c3\n"
+                                       "      … 7 more lines (RET)\n"
+                                       "    description:\n"
+                                       "      two\n"
+                                       "      lines\n")
+                               text))
+        ;; Past the heading, whose summary is the command on one line.
+        (should-not (string-search "      echo c4" text))
+        (should (string-search (concat "    Updated /w/a.txt (+1 -1)\n"
+                                       "    1 -old \n"
+                                       "    1 +new \n")
+                               text)))
+      (with-current-buffer (ecc-session-buffer session)
+        (goto-char (point-min))
+        (search-forward "… 7 more lines (RET)")
+        (let (shown)
+          (cl-letf (((symbol-function 'ecc-window-display-beside-session)
+                     (lambda (buffer _session) (setq shown buffer))))
+            (ecc-session-visit))
+          (should shown)
+          (let ((detail (with-current-buffer shown (buffer-string))))
+            (should (string-search "  echo c4\n" detail))
+            (should (string-search "  echo c10\n" detail))
+            (should-not (string-search "more lines" detail))))))))
+
+(ert-deftest ecc-render-test-request-input-is-whole ()
+  "A request waiting on the user draws its input whole, however long.
+It is read before it is answered, and a cut tail is a command run
+unread."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "bash")
+    (let ((ecc-render-result-max-lines 3))
+      (ecc-test-add-request session "Bash"
+                            `((command . ,(mapconcat (lambda (n) (format "echo c%d" n))
+                                                     (number-sequence 1 10) "\n"))))
+      (ecc-render-flush session)
+      (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+        (should (string-search "  echo c10\n" text))
+        (should-not (string-search "more lines" text))))))
+
 ;;;; Files and Tasks
 
 (ert-deftest ecc-render-test-tasks ()
