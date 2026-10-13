@@ -1487,7 +1487,7 @@ command over the diff it came up open on (2026-10-13)."
                           (input . ((command . ,command)
                                     (description . "two\nlines")))
                           (result . "")
-                          (bash-edit . (:files ((:path "/w/a.txt" :change modified
+                          (bash-edit . (:files ((:path "/w/a.txt" :change updated
                                                  :patch [((oldStart . 1) (oldLines . 1)
                                                           (newStart . 1) (newLines . 1)
                                                           (lines . ["-old" "+new"]))]))
