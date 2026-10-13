@@ -105,10 +105,12 @@
 ;; `load-path'.
 (defun ecc--header-version (file)
   "Return the Version header of FILE, or nil when FILE cannot be read.
-A file can be readable and still fail to read, a directory for one, so
-the `file-error' is caught as well as checked for."
+A file can be readable and still fail to read, so the `file-error' is
+caught as well as checked for.  A directory is asked about first: reading
+one is not a `file-error' on every system."
   (condition-case nil
       (and (file-readable-p file)
+           (not (file-directory-p file))
            (with-temp-buffer
              (insert-file-contents file nil 0 4096)
              (lm-header "version")))

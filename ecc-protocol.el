@@ -735,6 +735,13 @@ that writes it."
   (when (file-exists-p file)
     (let ((text (condition-case err
                     (with-temp-buffer
+                      ;; Asked first, because reading a directory is not
+                      ;; a `file-error' everywhere: 29.4 on GNU/Linux says
+                      ;; "Maximum buffer size exceeded" (CI, 2026-10-13).
+                      (when (file-directory-p file)
+                        (signal 'file-error
+                                (list "Opening input file" "Is a directory"
+                                      file)))
                       (insert-file-contents file)
                       (string-trim (buffer-string)))
                   (file-error (unless noerror
