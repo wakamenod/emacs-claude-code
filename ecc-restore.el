@@ -249,11 +249,25 @@ nothing in an Emacs with no session of its own, see
              (ecc-restore--own-p))
     (ecc-restore--write (ecc-restore--to-write))))
 
+(defun ecc-restore--watch ()
+  "Put the saving on the hooks of Emacs: a tab opened or closed, and the exit.
+Not when the file is loaded: an Emacs that has had no session writes
+nothing (`ecc-restore--own-p\='), and it ran this code on every tab and
+at every exit all the same.  `ecc-restore--schedule\=' calls this, and
+it runs on every session that comes, changes or goes -- whichever way it
+came in -- and at the end of `ecc-restore\=', which may bring back
+Spaces and no session.  The save at exit is put at -90 for the reason
+`ecc-restore--save-at-exit\=' gives."
+  (add-hook 'tab-bar-tab-post-open-functions #'ecc-restore--schedule)
+  (add-hook 'tab-bar-tab-pre-close-functions #'ecc-restore--schedule)
+  (add-hook 'kill-emacs-hook #'ecc-restore--save-at-exit -90))
+
 (defun ecc-restore--schedule (&rest _)
   "Save once what the current command has changed.
 On the hooks that announce a session or a tab coming or going.  The
 save is put off to a timer so that a command that opens a tab, names it
 and starts a session in it writes once, and writes what it ended with."
+  (ecc-restore--watch)
   (when (and ecc-restore-enabled
              (not ecc-restore--frozen)
              (not ecc-restore--timer))
@@ -299,9 +313,6 @@ back walks the state through the turns it replays."
 (add-hook 'ecc-session-removed-hook #'ecc-restore--schedule)
 (add-hook 'ecc-session-renamed-hook #'ecc-restore--schedule)
 (add-hook 'ecc-session-init-hook #'ecc-restore--schedule)
-(add-hook 'tab-bar-tab-post-open-functions #'ecc-restore--schedule)
-(add-hook 'tab-bar-tab-pre-close-functions #'ecc-restore--schedule)
-(add-hook 'kill-emacs-hook #'ecc-restore--save-at-exit -90)
 
 ;;;; Bringing it back
 

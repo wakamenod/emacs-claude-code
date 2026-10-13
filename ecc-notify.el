@@ -499,7 +499,7 @@ about first.  A buffer with no session behind it is only killed."
 (defun ecc-tab--force-update ()
   "Draw the tab lines again, cache and all."
   (if (fboundp 'tab-line-force-update)
-      (funcall 'tab-line-force-update t)
+      (funcall #'tab-line-force-update t)
     (dolist (window (window-list-1 nil nil t))
       (set-window-parameter window 'tab-line-cache nil))
     (force-mode-line-update t)))

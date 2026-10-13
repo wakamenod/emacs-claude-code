@@ -698,6 +698,20 @@ given lines of the old side, and the old one none."
                  ,@body))
            (ecc-review-ediff-test--quit ,control))))))
 
+(ert-deftest ecc-review-ediff-test-the-watch-goes-on-with-a-review ()
+  "An ediff review puts the watch of the files on, as a diff review does.
+Its control buffer is in `ediff-mode\=', so `ecc-review-mode\=' installing
+it is not enough."
+  (skip-unless (and (executable-find "git") (executable-find ediff-diff-program)))
+  (let ((hooks '(after-save-hook window-buffer-change-functions)))
+    (ecc-test-with-global-hooks hooks
+      (ecc-test-with-fake-session session
+        (ecc-review-ediff-test--with-one-file session control "one\n" "two\n"
+          (should (derived-mode-p 'ediff-mode))
+          (should (memq #'ecc-review--on-save (default-value 'after-save-hook)))
+          (should (memq #'ecc-review--on-window-buffer-change
+                        (default-value 'window-buffer-change-functions))))))))
+
 (ert-deftest ecc-review-ediff-test-the-diff-options-are-the-review-s-own ()
   "The review diffs with its own options, not with those another ediff set.
 ediff keeps them in each control buffer, and `#c' in another ediff sets

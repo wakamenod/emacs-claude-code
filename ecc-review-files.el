@@ -189,6 +189,9 @@ goes (`ecc-review-files--sweep')."
       (set-window-dedicated-p left t)
       (set-window-parameter left 'ecc-review-files t)
       (set-window-parameter left 'ecc-review-files-beside (cons window (current-buffer)))
+      ;; From the first pane on, and not when the file is loaded: before
+      ;; it there is no pane to take down.
+      (add-hook 'window-buffer-change-functions #'ecc-review-files--sweep)
       (add-hook 'quit-window-hook #'ecc-review-files--quitting nil t)
       left)))
 
@@ -208,8 +211,6 @@ is reading."
       (unless (and (window-live-p (car beside))
                    (eq (window-buffer (car beside)) (cdr beside)))
         (ecc-review-files--take-down window)))))
-
-(add-hook 'window-buffer-change-functions #'ecc-review-files--sweep)
 
 (defun ecc-review-files--quitting ()
   "Take the files pane down with the review, on `quit-window-hook\='.

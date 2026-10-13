@@ -2925,6 +2925,7 @@ ediff lays out its windows; quitting puts back what was on the screen."
                (dolist (buffer (list base now))
 		 (with-current-buffer buffer
 		   (setq-local ecc-review--part-of control)))
+               (ecc-review--watch-files)
                ;; The keys of the review in its two windows, and point
                ;; driving it there.
                (ecc-review-direct-setup control)

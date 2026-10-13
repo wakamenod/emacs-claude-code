@@ -665,6 +665,22 @@ is the recentring asked for, where this Emacs asks for it."
                 (setq diff--auto-refine-data nil)))))
       (ecc-review-files-test--kill-buffers))))
 
+(ert-deftest ecc-review-files-test-the-sweep-goes-on-with-a-pane ()
+  "The sweep of the panes is on the window hook once a pane is shown, not before."
+  (ecc-test-with-global-hooks '(window-buffer-change-functions)
+    (ecc-review-files-test--with-pane
+      (ecc-test-with-fake-session session
+        (unwind-protect
+            (let ((review (ecc-review-files-test--fill session)))
+              (ecc-review-files-test--beside session review)
+              (should-not (memq #'ecc-review-files--sweep
+                                (default-value 'window-buffer-change-functions)))
+              (with-current-buffer review (ecc-review-files-toggle))
+              (should (ecc-review-files--pane-window review))
+              (should (memq #'ecc-review-files--sweep
+                            (default-value 'window-buffer-change-functions))))
+          (ecc-review-files-test--kill-buffers))))))
+
 (ert-deftest ecc-review-files-test-the-pane-goes-with-the-review-window ()
   "q takes the pane down; a review taking the window takes the pane window over.
 And a pane whose review left its window, or whose window was deleted,
