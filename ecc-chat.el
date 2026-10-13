@@ -39,7 +39,15 @@
 ;; that one letter commands (n, p, a, d, TAB...) work there and nowhere
 ;; else; the prompt region has no such property, so the keymap of the
 ;; major mode applies, and that one only binds RET, TAB and C-c keys.
-;; Sending is C-c C-c, or RET when `ecc-chat-return-sends' is on.
+;;
+;; The keymaps are defined here, and each module above this one keeps
+;; its commands in a keymap of its own and makes it a parent of them
+;; (`ecc-chat-add-keymap-parent'): `ecc-prompt' the sending, the
+;; history, the slash and what RET does in the region, `ecc-session'
+;; what opens, refreshes or resumes from the transcript.  Both build on
+;; this file, so the dependency runs one way, and `ecc-chat-mode' loads
+;; them before the buffer is used.  A key bound in the maps here, by a
+;; user after this file is loaded, wins over theirs whatever loads next.
 ;;
 ;; A request waiting for an answer is answered from the prompt region
 ;; too, without walking to it: C-c C-a allows one and C-c C-d denies
@@ -66,35 +74,7 @@
 (require 'ecc-review)
 (require 'ecc-btw)
 
-;; The commands bound below live in the modules above this one.
-(declare-function ecc-prompt-send "ecc-prompt" ())
-(declare-function ecc-prompt-clear "ecc-prompt" ())
-(declare-function ecc-prompt-toggle-context "ecc-prompt" ())
-(declare-function ecc-prompt-insert-image "ecc-prompt" (file))
-(declare-function ecc-prompt-history-previous "ecc-prompt" ())
-(declare-function ecc-prompt-history-next "ecc-prompt" ())
-(declare-function ecc-prompt-history-insert "ecc-prompt" ())
-(declare-function ecc-prompt-capf "ecc-prompt" ())
-(declare-function ecc-prompt-at-capf "ecc-prompt" ())
-(declare-function ecc-prompt-read-command "ecc-prompt" (session))
-(defvar ecc-prompt-slash-reads-command)
-(defvar ecc-prompt-immediate-commands)
-(declare-function ecc-prompt-run-immediately "ecc-prompt" (session command))
-(declare-function ecc-prompt-yank-image "ecc-prompt" (mime data))
-(declare-function ecc-prompt-yank-image-from-clipboard "ecc-prompt" ())
-(declare-function ecc-prompt-dnd-insert "ecc-prompt" (url &optional action))
-(declare-function ecc-session-visit "ecc-session" ())
-(declare-function ecc-session-show-detail "ecc-session" ())
-(declare-function ecc-session-refresh "ecc-session" ())
-(declare-function ecc-session-show-log "ecc-session" ())
-(declare-function ecc-session-resume "ecc-session" ())
-(declare-function ecc-session-interrupt "ecc-session" ())
-(declare-function ecc-session-review-file "ecc-session" ())
-(declare-function ecc-session-review-or-deny "ecc-session" ())
-(declare-function ecc-session-timeline "ecc-session" ())
 (defvar show-paren-predicate)
-(declare-function ecc-session-copy-at-point "ecc-session" ())
-(declare-function ecc-session-export-markdown "ecc-session" (file))
 (declare-function ecc-queue-show "ecc-queue" (&optional session entry))
 (declare-function ecc-dashboard "ecc-dashboard" ())
 (declare-function ecc-menu "ecc-transient" () t)
@@ -103,19 +83,6 @@
 (declare-function ecc-hint-mode-line-string "ecc-hint" (&optional session))
 
 ;;;; Options
-
-(defcustom ecc-chat-return-sends nil
-  "Non-nil makes RET send the prompt, the way the terminal client does.
-Off, RET inserts a newline and \\<ecc-chat-mode-map>\\[ecc-prompt-send]
-sends; on, \\[ecc-chat-newline] inserts the newline.
-
-RET is a newline because that is what RET is in Emacs; a reader who
-wants the terminal habit sets this, or rebinds the two keys in
-`ecc-chat-mode-map' outright.  Which of the two it is is a taste, which
-is what makes this a setting rather than a variable (decided
-2026-09-11)."
-  :type 'boolean
-  :group 'ecc)
 
 (defcustom ecc-chat-line-spacing 0.15
   "Extra room under every line of a session buffer, or nil for none.
@@ -188,13 +155,44 @@ the dim face.")
 
 ;;;; Keymaps
 
+(defun ecc-chat--keymap-inherits-p (map parent)
+  "Return non-nil when PARENT is MAP, one of its parents, or in one of them.
+A composed keymap is searched through the keymaps it is made of."
+  (let ((found nil))
+    (while (and map (not found))
+      (if (eq map parent)
+          (setq found t)
+        ;; The keymaps a composed keymap is made of come before its
+        ;; parent, which is the tail that starts with `keymap' again.
+        (let ((tail (cdr map)))
+          (while (and (consp tail) (not (eq (car tail) 'keymap)) (not found))
+            (when (eq (car tail) parent)
+              (setq found t))
+            (setq tail (cdr tail))))
+        (setq map (keymap-parent map))))
+    found))
+
+(defun ecc-chat-add-keymap-parent (map parent)
+  "Give MAP the keys of PARENT, below its own and above its other parents.
+This is how a module above this one gives the keymaps here its
+commands: it keeps them in PARENT and hangs that under MAP, rather than
+binding them in MAP, where they would overwrite whatever a user bound
+there once this file was loaded.  MAP keeps the parents it has, and
+PARENT is added once however often the module is loaded."
+  (let ((old (keymap-parent map)))
+    (unless (ecc-chat--keymap-inherits-p old parent)
+      (set-keymap-parent map (make-composed-keymap (list parent) old)))))
+
 (defvar ecc-chat-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "RET") #'ecc-chat-return)
+    ;; Said here rather than left to `define-derived-mode', which puts
+    ;; `text-mode-map' under a map that has no parent when the mode is
+    ;; first turned on: by then `ecc-prompt' has given it one, and
+    ;; `text-mode-map' would be left out.
+    (set-keymap-parent map text-mode-map)
     (define-key map (kbd "S-<return>") #'ecc-chat-newline)
     (define-key map (kbd "C-j") #'ecc-chat-newline)
     (define-key map (kbd "TAB") #'ecc-chat-tab)
-    (define-key map (kbd "/") #'ecc-chat-slash)
     (define-key map (kbd "C-k") #'ecc-chat-kill-line)
     ;; The line of this buffer is the one on the screen, and these three
     ;; are bound by name rather than left to the remaps of
@@ -207,32 +205,20 @@ the dim face.")
     (define-key map (kbd "C-e") #'end-of-visual-line)
     (define-key map (kbd "<backtab>") #'ecc-chat-cycle-permission-mode)
     (define-key map (kbd "S-<tab>") #'ecc-chat-cycle-permission-mode)
-    (define-key map (kbd "C-c C-c") #'ecc-prompt-send)
-    (define-key map (kbd "C-c C-k") #'ecc-prompt-clear)
     ;; The interrupt is on C-c C-z, comint's key for stopping the
     ;; process, and C-c C-g is left unbound on purpose: pressing C-c and
     ;; then C-g to take the prefix back is the reflex of every other
     ;; mode, where it is harmless, and here it stopped the turn
     ;; (confirmed 2026-09-17).  Unbound, the sequence falls through to
     ;; `keyboard-quit', which is what the finger meant.
-    (define-key map (kbd "C-c C-z") #'ecc-session-interrupt)
     (define-key map (kbd "C-c C-q") #'ecc-queue-show)
-    (define-key map (kbd "C-c C-x") #'ecc-prompt-toggle-context)
-    (define-key map (kbd "C-c C-i") #'ecc-prompt-insert-image)
-    (define-key map (kbd "C-c C-y") #'ecc-prompt-yank-image-from-clipboard)
     (define-key map (kbd "C-c C-s") #'ecc-hint-accept-suggestion)
-    (define-key map (kbd "C-c C-r") #'ecc-prompt-history-insert)
-    (define-key map (kbd "M-p") #'ecc-prompt-history-previous)
-    (define-key map (kbd "M-n") #'ecc-prompt-history-next)
-    (define-key map (kbd "C-<up>") #'ecc-prompt-history-previous)
-    (define-key map (kbd "C-<down>") #'ecc-prompt-history-next)
     (define-key map (kbd "C-c C-n") #'ecc-chat-next-turn)
     (define-key map (kbd "C-c C-p") #'ecc-chat-previous-turn)
     (define-key map (kbd "C-c C-a") #'ecc-perm-allow)
     (define-key map (kbd "C-c C-d") #'ecc-perm-deny)
     (define-key map (kbd "C-c C-b") #'ecc-btw-show)
     (define-key map (kbd "C-c C-t") #'ecc-switch-session)
-    (define-key map (kbd "C-c C-e") #'ecc-session-export-markdown)
     ;; `?' stays self-inserting in a region one writes prose in, so the
     ;; menu is on C-c ? here and on ? in the transcript.
     (define-key map (kbd "C-c ?") #'ecc-menu)
@@ -240,7 +226,7 @@ the dim face.")
   "Keymap of `ecc-chat-mode', in force in the prompt region.
 Everything here is RET, TAB, a movement key or a key under the mode
 prefix, so that a letter is a letter.  The one exception is `/', which
-inserts itself and then offers the slash commands (`ecc-chat-slash').
+inserts itself and then offers the slash commands.
 
 Under the prefix the key is always \\`C-c C-<letter>', never
 \\`C-c <letter>': the Emacs Lisp manual reserves \\`C-c <letter>' for
@@ -262,39 +248,21 @@ no \\`C-c C-<letter>' free goes to `ecc-menu' rather than taking one.")
     (define-key map (kbd "2") #'ecc-chat-show-level-2)
     (define-key map (kbd "3") #'ecc-chat-show-level-3)
     (define-key map (kbd "4") #'ecc-chat-show-level-4)
-    (define-key map (kbd "RET") #'ecc-session-visit)
-    ;; RET on a call that names a file opens the file; the node laid
-    ;; open, which RET was on every heading before, is `o'.
-    (define-key map (kbd "o") #'ecc-session-show-detail)
-    ;; A click follows what is drawn as a link, with a `mouse-face\=':
-    ;; a URL, a path in a reply, a picture.  A line of a diff and the
-    ;; heading of a call carry none and open on RET alone, so that a
-    ;; click that only meant to put the point there does not take the
-    ;; source window with it.  No link carries a keymap of its own:
-    ;; these two are the whole of the mouse side.
-    (define-key map [mouse-2] #'ecc-chat-follow-link)
-    (define-key map [follow-link] 'mouse-face)
     (define-key map (kbd "SPC") #'scroll-up-command)
     (define-key map (kbd "DEL") #'scroll-down-command)
     (define-key map (kbd "i") #'ecc-chat-goto-prompt)
-    (define-key map (kbd "g") #'ecc-session-refresh)
     (define-key map (kbd "q") #'quit-window)
-    (define-key map (kbd "L") #'ecc-session-show-log)
     (define-key map (kbd "t") #'ecc-tui-open)
-    (define-key map (kbd "R") #'ecc-session-resume)
     (define-key map (kbd "a") #'ecc-perm-allow)
-    (define-key map (kbd "d") #'ecc-session-review-or-deny)
-    ;; No C-c C-k here: it falls through to `ecc-prompt-clear', so that
-    ;; the key discards the draft wherever point is, as C-c C-c sends it
-    ;; from wherever point is.  Bound to the interrupt in the transcript,
+    ;; No C-c C-k here: it falls through to the mode map, where it
+    ;; empties the draft, so that the key discards the draft wherever
+    ;; point is, as C-c C-c sends it from wherever point is.  Bound to the interrupt in the transcript,
     ;; the same key did two different destructive things in one buffer.
     ;; Movement and extraction
     (define-key map (kbd "]") #'ecc-chat-next-block)
     (define-key map (kbd "[") #'ecc-chat-previous-block)
     (define-key map (kbd "+") #'ecc-chat-expand-all)
     (define-key map (kbd "-") #'ecc-chat-collapse-all)
-    (define-key map (kbd "T") #'ecc-session-timeline)
-    (define-key map (kbd "w") #'ecc-session-copy-at-point)
     ;; `v' goes to the prompt as `C-c c v' does from anywhere; `i' is
     ;; the same command for the finger that starts writing with it.
     ;; `F', `P', `T' and `L' are the capitals of `ecc-menu', and `I' is
@@ -311,7 +279,6 @@ A key not here falls through to `ecc-chat-mode-map'.")
 (defvar ecc-request-section-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map ecc-chat-transcript-map)
-    (define-key map (kbd "RET") #'ecc-session-visit)
     (define-key map (kbd "a") #'ecc-perm-allow)
     (define-key map (kbd "d") #'ecc-perm-deny)
     (define-key map (kbd "A") #'ecc-perm-allow-always)
@@ -327,14 +294,12 @@ whole turn is `u\=' (until the turn ends) rather than `t\=', which opens
 the terminal everywhere else and answered permissions here without
 asking; the pattern is `r\=' (rule) rather than `p\=', which moves to the
 previous heading everywhere else.  `a\=' and `d\=' are the exception
-worth having: `ecc-session-review-or-deny\=' already sends `d\=' to
-`ecc-perm-deny\=' on a request, so both spellings agree.")
+worth having: `d\=' in the transcript already denies the request it is
+on, so both spellings agree.")
 
 (defvar ecc-file-section-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map ecc-chat-transcript-map)
-    (define-key map (kbd "RET") #'ecc-session-visit)
-    (define-key map (kbd "d") #'ecc-session-review-file)
     map)
   "Keymap of a file row in the Files section.
 `SPC\=' is not taken back for folding here: it scrolls the transcript
@@ -357,6 +322,12 @@ row.  TAB folds, on this row as on every other.")
 
 \\{ecc-chat-mode-map}"
   :interactive nil
+  ;; The prompt and the session give the keymaps above their keys and
+  ;; set up the prompt region from `ecc-chat-mode-hook', so
+  ;; they are loaded before the buffer is used, whichever command made
+  ;; it.  At run time: both require this file.
+  (require 'ecc-prompt)
+  (require 'ecc-session)
   ;; Faces are applied when text is inserted, so no font lock is
   ;; wanted; `text-mode' turns none on.
   ;; The buffer is wrapped prose, so a line on the screen is the line a
@@ -385,8 +356,6 @@ row.  TAB folds, on this row as on every other.")
   (add-to-invisibility-spec '(ecc-fold . t))
   ;; Markdown markup symbols are hidden by the ecc-markup spec.
   (add-to-invisibility-spec '(ecc-markup . nil))
-  (setq-local completion-at-point-functions
-              (list #'ecc-prompt-capf #'ecc-prompt-at-capf))
   ;; A request waiting for an answer is what the mode line is for.  What
   ;; the session costs and how much room is left in its context are on
   ;; the right of the header line instead, where they do not crowd the
@@ -400,11 +369,6 @@ row.  TAB folds, on this row as on every other.")
                                (if (fboundp 'ecc-hint-mode-line-string)
                                    (ecc-hint-mode-line-string)
                                  "")))))
-  ;; An image on the clipboard is worth a file reference.
-  (when (fboundp 'yank-media-handler)
-    (yank-media-handler "image/.*" #'ecc-prompt-yank-image))
-  (setq-local dnd-protocol-alist
-              (cons '("^file:" . ecc-prompt-dnd-insert) dnd-protocol-alist))
   (setq-local line-spacing ecc-chat-line-spacing)
   ;; A wrapped line lines up under the line that began it now, which
   ;; says it continues one plainly enough; the curly arrows the fringes
@@ -508,13 +472,6 @@ A diagram is shown as its source, or its source as the diagram
       (ecc-mermaid-toggle)
     (ecc-image-toggle-animation)))
 
-(defun ecc-chat-return ()
-  "Insert a newline, or send the prompt when `ecc-chat-return-sends' is on."
-  (interactive)
-  (if (and ecc-chat-return-sends (ecc-chat-in-prompt-p))
-      (progn (require 'ecc-prompt) (ecc-prompt-send))
-    (ecc-chat-newline)))
-
 (defun ecc-chat-newline ()
   "Insert a newline in the prompt region."
   (interactive)
@@ -552,50 +509,8 @@ ARG is passed on as `kill-line\=' takes it."
   "Complete in the prompt region, or fold in the transcript."
   (interactive)
   (if (ecc-chat-in-prompt-p)
-      (progn (require 'ecc-prompt) (completion-at-point))
+      (completion-at-point)
     (ecc-chat-toggle)))
-
-(defun ecc-chat--slash-opens-commands-p ()
-  "Return non-nil when the slash just typed should ask for a command.
-Only a slash that opens the prompt does: the CLI reads a command from
-the start of what it is sent and nowhere else, so a slash further in
-would be offered commands that are not going to run
-\(`ecc-prompt-command-name\=').  A slash written into prose is left
-alone, and so is one a keyboard macro types, where there is nobody to
-answer the minibuffer.  What starts a word is still completed on TAB
-wherever it stands (`ecc-prompt-command-bounds\=')."
-  (and (bound-and-true-p ecc-prompt-slash-reads-command)
-       ecc-render--session
-       (not executing-kbd-macro)
-       (not (minibufferp))
-       (ecc-chat-in-prompt-p)
-       (when-let* ((start (ecc-chat-prompt-start))
-                   ((> (point) start)))
-         ;; Only blanks may stand before it, and no newline: that is
-         ;; what `ecc-prompt-command-name' reads as a command.
-         (string-match-p "\\`[ \t]*\\'"
-                         (buffer-substring-no-properties start (1- (point)))))))
-
-(defun ecc-chat-slash (n)
-  "Insert a slash, and offer the slash commands when it starts one.
-N is the prefix argument, as for `self-insert-command\='.  The slash is
-inserted first, so that leaving the question with `C-g\=' keeps it.
-
-A command Emacs answers itself and that takes no argument runs as soon
-as it is chosen (`ecc-prompt-immediate-commands\='), and the slash goes
-with it: there is nothing to send, so there is nothing to write."
-  (interactive "p")
-  (self-insert-command n ?/)
-  (when (and (= n 1) (progn (require 'ecc-prompt) t)
-             (ecc-chat--slash-opens-commands-p))
-    (when-let* ((session ecc-render--session)
-                (command (ecc-prompt-read-command session)))
-      (if (member command ecc-prompt-immediate-commands)
-          ;; Take the slash back before running it: what it opens is a
-          ;; buffer of its own, and point is no longer here afterwards.
-          (progn (delete-char -1)
-                 (ecc-prompt-run-immediately session command))
-        (insert (string-remove-prefix "/" command))))))
 
 ;;;; The placeholder
 
@@ -932,17 +847,6 @@ The Files and Tasks rows are drawn without a node and give nil."
 (defun ecc-chat-heading-at-point ()
   "Return the id of the heading whose line the point is on, or nil."
   (get-text-property (line-beginning-position) 'ecc-heading))
-
-(defun ecc-chat-follow-link (event)
-  "Open the link clicked on in the transcript.
-The point goes where EVENT was.  On a link, text drawn with a
-`mouse-face\=', `ecc-session-visit\=' opens it as RET would; anywhere
-else -- a line of a diff, the heading of a call -- nothing more is done,
-and RET is the way to open it."
-  (interactive "e")
-  (mouse-set-point event)
-  (when (get-char-property (point) 'mouse-face)
-    (ecc-session-visit)))
 
 ;;;; Folding
 

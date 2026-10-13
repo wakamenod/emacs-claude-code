@@ -28,8 +28,9 @@
 
 ;; The buffer a conversation is read and written in, and the commands
 ;; that act on it: visiting what is at point, reviewing, and taking
-;; things out of the transcript.  The major mode, the keys and the
-;; movement live in `ecc-chat'.
+;; things out of the transcript.  The major mode, the keymaps and the
+;; movement live in `ecc-chat'; the keys of the commands here are in
+;; keymaps of their own at the end of this file, made parents of those.
 
 ;;; Code:
 
@@ -500,6 +501,72 @@ result."
     (with-temp-file file
       (insert (ecc-session-export-markdown-string session)))
     (message "Saved to %s" (abbreviate-file-name file))))
+
+;;;; Keys
+
+(defun ecc-chat-follow-link (event)
+  "Open the link clicked on in the transcript.
+The point goes where EVENT was.  On a link, text drawn with a
+`mouse-face\=', `ecc-session-visit\=' opens it as RET would; anywhere
+else -- a line of a diff, the heading of a call -- nothing more is done,
+and RET is the way to open it."
+  (interactive "e")
+  (mouse-set-point event)
+  (when (get-char-property (point) 'mouse-face)
+    (ecc-session-visit)))
+
+
+(defvar ecc-session-chat-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-z") #'ecc-session-interrupt)
+    (define-key map (kbd "C-c C-e") #'ecc-session-export-markdown)
+    map)
+  "The keys of the session in a chat buffer, wherever point is.
+A parent of `ecc-chat-mode-map', so that a key bound there wins.")
+
+(defvar ecc-session-transcript-map
+  (let ((map (make-sparse-keymap)))
+    ;; RET on a call that names a file opens the file; the node laid
+    ;; open, which RET was on every heading before, is `o'.
+    (define-key map (kbd "RET") #'ecc-session-visit)
+    (define-key map (kbd "o") #'ecc-session-show-detail)
+    ;; A click follows what is drawn as a link, with a `mouse-face': a
+    ;; URL, a path in a reply, a picture.  A line of a diff and the
+    ;; heading of a call carry none and open on RET alone, so that a
+    ;; click that only meant to put the point there does not take the
+    ;; source window with it.  No link carries a keymap of its own:
+    ;; these two are the whole of the mouse side.
+    (define-key map [mouse-2] #'ecc-chat-follow-link)
+    (define-key map [follow-link] 'mouse-face)
+    (define-key map (kbd "g") #'ecc-session-refresh)
+    (define-key map (kbd "L") #'ecc-session-show-log)
+    (define-key map (kbd "R") #'ecc-session-resume)
+    (define-key map (kbd "d") #'ecc-session-review-or-deny)
+    (define-key map (kbd "T") #'ecc-session-timeline)
+    (define-key map (kbd "w") #'ecc-session-copy-at-point)
+    map)
+  "The keys of the session in the transcript.
+A parent of `ecc-chat-transcript-map', so that a key bound there wins.")
+
+(defvar ecc-session-request-section-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'ecc-session-visit)
+    map)
+  "The keys of the session on a node that is waiting for an answer.
+A parent of `ecc-request-section-map', above the transcript's keys.")
+
+(defvar ecc-session-file-section-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'ecc-session-visit)
+    (define-key map (kbd "d") #'ecc-session-review-file)
+    map)
+  "The keys of the session on a file row in the Files section.
+A parent of `ecc-file-section-map', above the transcript's keys.")
+
+(ecc-chat-add-keymap-parent ecc-chat-mode-map ecc-session-chat-map)
+(ecc-chat-add-keymap-parent ecc-chat-transcript-map ecc-session-transcript-map)
+(ecc-chat-add-keymap-parent ecc-request-section-map ecc-session-request-section-map)
+(ecc-chat-add-keymap-parent ecc-file-section-map ecc-session-file-section-map)
 
 (provide 'ecc-session)
 

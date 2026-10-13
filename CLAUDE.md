@@ -20,8 +20,12 @@ rules:
 - `ecc-model.el` — the session, the Turn > Step > Tool tree, the pending-request queue
   and the hooks — knows nothing of JSON, processes or drawing, and never sees the buffer.
 - `ecc-render.el` alone draws the transcript; `ecc-chat.el` holds the major mode, the
-  keymaps and the movement. The prompt region lives after `ecc-render--prompt-start` in
-  the same buffer, and no redraw deletes past it.
+  movement and the keymaps. It defines them, and each module above it keeps its own
+  commands in a keymap of its own made a parent of them (`ecc-chat-add-keymap-parent`),
+  so that a user's binding wins: `ecc-chat.el` names no command of `ecc-prompt.el` or
+  `ecc-session.el`.
+  The prompt region lives after `ecc-render--prompt-start` in the same buffer, and no
+  redraw deletes past it.
 - `ecc-window.el` does not require `ecc-space.el`: the Spaces are built on top of the
   windows, not inside them. `ecc-window.el` branches on `ecc-use-spaces` at the head of
   the four functions that care and loads `ecc-space` at run time, and with that setting

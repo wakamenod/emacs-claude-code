@@ -28,13 +28,20 @@ Verified against **Claude Code CLI 2.1.290**.
   and xref accessors -- say so with the FILEONLY argument. The tree-sitter
   primitives are declared in `treesit.c`, as Emacs's own files declare them;
   an Emacs installed without its C sources still reports those six, having
-  no file to look in. There are also fewer of them: 168 where there were
+  no file to look in. There are also fewer of them: 143 where there were
   250. A file now requires the module it used to declare wherever that makes
   no loop, loads no Space module from below and loads early nothing that was
   loaded late on purpose, and a function the file never calls, or that Emacs
   autoloads, is not declared at all; the two windows of an ediff review no
   longer declare the eight functions of `ecc-review-ediff.el` they call,
-  being part of it now. Nothing a user sees changes.
+  being part of it now. `ecc-chat.el` no longer names the commands of
+  `ecc-prompt.el` and `ecc-session.el`: it defines the keymaps, each of the
+  two keeps its own commands in a keymap made a parent of them, and
+  `ecc-chat-mode` loads both. A key a user binds in `ecc-chat-mode-map`
+  or the transcript maps still wins over theirs.
+  `ecc-chat-return`, `ecc-chat-slash` and the option `ecc-chat-return-sends`
+  now live in `ecc-prompt.el`, and `ecc-chat-follow-link` in
+  `ecc-session.el`, under the same names. Nothing a user sees changes.
 - `ecc-review-direct.el` is folded into `ecc-review-ediff.el`, so
   `(require 'ecc-review-direct)` no longer works; require
   `ecc-review-ediff` instead. Every symbol keeps its name.
