@@ -101,6 +101,18 @@ Verified against **Claude Code CLI 2.1.290**.
   line each, in place of Claude Opus 5 alone: by the history's commit
   trailers on 2026-10-14, Claude Opus 5 (428 commits), Opus 5.5 (424),
   Fable 5.1 (28) and Haiku 4.5 (1).
+- Loading ecc no longer advises Emacs's own functions. On the NS port it put
+  an advice on `ns-insert-working-text`, `ns-insert-marked-text` and
+  `ns-delete-working-text` -- which keeps the placeholder of the prompt region
+  out of the way of what an input method is composing -- as soon as the file
+  was loaded, in every Emacs whether or not it ever opened a chat buffer. The
+  advice now goes on with the first chat buffer, once, and does nothing
+  outside one; it is not taken off again, as with the hooks in 0.4.3. On
+  Emacs before 31 the ediff review did the same with
+  `ediff-recenter-one-window`, which it keeps from changing the current
+  buffer; that advice now goes on with the first ediff review. A test now
+  starts a fresh Emacs with stand-ins for the NS functions, loads every file
+  of ecc and fails if any ecc function advises one that is not ecc's own.
 
 ## [0.4.3] - 2026-10-13
 
