@@ -1483,6 +1483,8 @@ the key is forgotten everywhere it was written down."
     (setq ecc-space--implicit
           (delete (ecc-space-key space) ecc-space--implicit)))
   (ecc-space--child-gone space)
+  ;; `ecc-sidebar' requires this file, and the sidebar is a panel a
+  ;; Space can be used without: there is nothing to redraw until it loads.
   (when (fboundp 'ecc-sidebar-redraw)
     (ecc-sidebar-redraw))
   (message "Closed %s" (ecc-space-name space)))

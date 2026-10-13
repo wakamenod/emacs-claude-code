@@ -55,6 +55,7 @@
 (require 'ecc-proc)
 (require 'ecc-mcp)
 (require 'ecc-lifecycle)
+(require 'ecc-chat)
 
 (declare-function ecc-space-forget "ecc-space" (root))
 (declare-function ecc-space-at-p "ecc-space" (root))
@@ -907,8 +908,6 @@ sessions run in, which is why the line is worth its tokens."
 ;; nothing else refuses: it is a network call, made while the model
 ;; waits on the tool.
 
-(declare-function ecc-chat-draft "ecc-chat" ())
-
 (defcustom ecc-worktree-auto-allow-removal t
   "Non-nil allows the MCP tool `remove_worktree' without asking.
 The tool removes a worktree only when nothing in it would be lost: no
@@ -1107,7 +1106,6 @@ This is `ecc-model-busy\=', the one definition of a busy session."
   "Return non-nil when the prompt of SESSION holds a draft not sent."
   (when-let* ((buffer (ecc-session-buffer session)))
     (and (buffer-live-p buffer)
-         (fboundp 'ecc-chat-draft)
          (with-current-buffer buffer
            (not (string-empty-p (string-trim (ecc-chat-draft))))))))
 

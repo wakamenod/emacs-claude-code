@@ -808,10 +808,8 @@ asked for as well.  Nil leaves both to the completion in use.")
 
 (defun ecc-prompt--skill-p (session name)
   "Return non-nil when the slash command NAME of SESSION is a skill.
-NAME carries its slash.  `ecc-skill\=' is what knows; a session it has
-not been loaded for has no skills as far as this is concerned."
-  (and (fboundp 'ecc-skill-names)
-       (member (string-remove-prefix "/" name) (ecc-skill-names session))
+NAME carries its slash.  `ecc-skill\=' is what knows."
+  (and (member (string-remove-prefix "/" name) (ecc-skill-names session))
        t))
 
 (defun ecc-prompt--grouper (session)

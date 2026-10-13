@@ -72,12 +72,6 @@
 (require 'ecc-window)
 (require 'ecc-capability)
 
-;; Declared rather than required: `ecc-render' is above this file, and
-;; the session of the current buffer is all that is wanted of it.  The
-;; same form `ecc-notify' uses, and what lets this file compile on its
-;; own (confirmed 2026-09-17).
-(defvar ecc-render--session)
-
 (declare-function ecc-dashboard-session-at-point "ecc-dashboard" ())
 
 ;;;; Options
@@ -845,9 +839,11 @@ column the description happens to reach."
 (defun ecc-skill--read-session ()
   "Return the session the skills should be shown of."
   (or ecc-skill--session
+      ;; `ecc-dashboard' requires this file and cannot be required back;
+      ;; the dashboard's row counts only once it has been loaded.
       (and (fboundp 'ecc-dashboard-session-at-point)
            (ecc-dashboard-session-at-point))
-      ecc-render--session
+      (ecc-window-buffer-session)
       (car (ecc-model-sessions))
       (user-error "No session to look at")))
 
