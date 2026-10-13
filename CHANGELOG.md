@@ -36,7 +36,9 @@ Verified against **Claude Code CLI 2.1.290**.
   longer declare the eight functions of `ecc-review-ediff.el` they call,
   being part of it now. `ecc-chat.el` no longer names the commands of
   `ecc-prompt.el` and `ecc-session.el`: it defines the keymaps, each of the
-  two binds its own commands into them, and `ecc-chat-mode` loads both.
+  two keeps its own commands in a keymap made a parent of them, and
+  `ecc-chat-mode` loads both. A key a user binds in `ecc-chat-mode-map`
+  or the transcript maps still wins over theirs.
   `ecc-chat-return`, `ecc-chat-slash` and the option `ecc-chat-return-sends`
   now live in `ecc-prompt.el`, and `ecc-chat-follow-link` in
   `ecc-session.el`, under the same names. Nothing a user sees changes.
