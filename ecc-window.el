@@ -454,6 +454,12 @@ is left undedicated on purpose, so that a review may borrow it and
 A window that is there already keeps its place: what is in it is
 replaced rather than a second window being opened."
   (require 'ecc-session)
+  ;; The tab line changes what a window shows with `switch-to-buffer',
+  ;; which costs a side window its dedication; so does anything else the
+  ;; user does in one.  Nothing else puts it back, so this watches, from
+  ;; the first window with a role on: before it there is nothing to
+  ;; watch, and the Spaces give no window a role.
+  (add-hook 'window-buffer-change-functions #'ecc-window-repair-side-windows)
   (when (memq role '(sub-1 sub-2))
     (setq ecc-window--last-sub role))
   (let ((buffer (ecc-session-ensure-buffer session))
@@ -1203,11 +1209,6 @@ put into this window whatever its project."
       (select-window window)
       (ecc-chat-goto-prompt)
       window))))
-
-;; The tab line changes what a window shows with `switch-to-buffer',
-;; which costs a side window its dedication; so does anything else the
-;; user does in one.  Nothing else puts it back, so this watches.
-(add-hook 'window-buffer-change-functions #'ecc-window-repair-side-windows)
 
 (provide 'ecc-window)
 

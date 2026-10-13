@@ -179,6 +179,20 @@ session; the process is there for whatever asks whether the CLI runs."
                   ,@body)
          (delete-process ,process)))))
 
+(defmacro ecc-test-with-global-hooks (hooks &rest body)
+  "Run BODY with the global values of HOOKS emptied, putting them back after.
+HOOKS is a list of hook variables.  What a test installs on them is gone
+afterwards, and what an earlier test left there does not answer for
+BODY: `add-hook\=' is how a hook gets onto them, and it is installed the
+first time something needs it, then stays for the rest of the run."
+  (declare (indent 1) (debug (form body)))
+  (let ((was (make-symbol "was")))
+    `(let ((,was (mapcar (lambda (hook) (cons hook (default-value hook))) ,hooks)))
+       (unwind-protect
+           (progn (dolist (entry ,was) (set-default (car entry) nil))
+                  ,@body)
+         (dolist (entry ,was) (set-default (car entry) (cdr entry)))))))
+
 (defun ecc-test-dispatch (session name &optional prompt)
   "Feed every line of fixture NAME to SESSION through `ecc-dispatch'.
 PROMPT, when given, opens the turn the recording answers, the way
