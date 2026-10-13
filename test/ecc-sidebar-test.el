@@ -514,6 +514,12 @@ window measures, the rest of a widened one is blank."
       (should (> (window-total-width window) ecc-sidebar-width))
       (should (eq (ecc-sidebar-show) window))
       (should (= (window-total-width window) ecc-sidebar-width))
+      ;; A new `ecc-sidebar-width' is taken up by a sidebar still at the
+      ;; width it preserved, which refuses any resize that respects it.
+      (let ((ecc-sidebar-width (+ ecc-sidebar-width 10)))
+        (should-not (window-resizable-p window 10 t))
+        (ecc-sidebar--set-width window)
+        (should (= (window-total-width window) ecc-sidebar-width)))
       (ecc-sidebar-hide))))
 
 (ert-deftest ecc-sidebar-test-focus-goes-in-and-comes-back ()
