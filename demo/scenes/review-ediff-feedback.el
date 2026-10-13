@@ -38,7 +38,6 @@
 (require 'ecc-protocol)
 (require 'ecc-review)
 (require 'ecc-review-ediff)
-(require 'ecc-review-direct)
 (require 'ecc-review-talk)
 (require 'ecc-review-agent)
 
@@ -108,7 +107,7 @@
   (find-file (expand-file-name "src/table.py" demo-root))
   (delete-other-windows)
   (demo-say (format "ecc %s from %s   theme %S   ecc-use-spaces %S"
-                    (ecc-version) (file-name-directory (locate-library "ecc-review-direct"))
+                    (ecc-version) (file-name-directory (locate-library "ecc-review-ediff"))
                     custom-enabled-themes ecc-use-spaces))
   nil)
 
