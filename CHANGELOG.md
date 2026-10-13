@@ -45,11 +45,12 @@ Verified against **Claude Code CLI 2.1.290**.
   when it is sent again. A pasted image is an `@` reference to its file and
   comes back with it. `d` or `k` drops a prompt without asking, and `M-<up>` /
   `M-<down>` move it. The list follows the queue as it drains and goes when
-  the session does, and a prompt that left the queue while it was open is reported as gone rather than another
-  being acted on in its place. A prompt Emacs queued itself (from `ecc-send`,
-  the review or a plugin reload) is listed by its text, can be dropped, and can
-  be taken back when it is plain text. With an empty queue `C-c C-q` says so
-  and opens nothing. `ecc-prompt-show-queue` remains as an obsolete alias.
+  the session does, and a prompt that left the queue while it was open is
+  reported as gone rather than another being acted on in its place. A prompt
+  Emacs queued itself (from `ecc-send`, the review or a plugin reload) is
+  listed by its text, can be dropped, and can be taken back when it is plain
+  text. With an empty queue `C-c C-q` says so and opens nothing.
+  `ecc-prompt-show-queue` remains as an obsolete alias.
 
   Underneath, `ecc-session-input-queue` holds `ecc-queued` entries carrying the
   prepared text beside the draft, `ecc-proc-send-prompt` takes the draft as an
