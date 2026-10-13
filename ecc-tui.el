@@ -66,7 +66,7 @@
 (require 'ecc-window)
 
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
-(declare-function ghostel-exec "ghostel" (buffer program &optional args identity))
+(declare-function ghostel-exec "ext:ghostel" (buffer program &optional args identity))
 
 ;;;; Options
 

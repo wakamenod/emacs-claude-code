@@ -70,7 +70,7 @@
 (declare-function ecc-start "ecc" (&optional directory name))
 (declare-function dired-noselect "dired" (dir-or-list &optional switches))
 (declare-function ecc-sidebar-show "ecc-sidebar" ())
-(declare-function ecc-sidebar-redraw "ecc-sidebar" ())
+(declare-function ecc-sidebar-redraw "ecc-sidebar" (&rest _))
 (declare-function ecc-history-project-roots "ecc-history" ())
 
 ;;;; Settings

@@ -58,10 +58,10 @@
 
 (declare-function ecc-prompt-command-name "ecc-prompt" (text))
 (declare-function ecc-prompt-command-argument "ecc-prompt" (text))
-(declare-function posframe-workable-p "posframe" ())
-(declare-function posframe-show "posframe" (buffer &rest args))
-(declare-function posframe-hide "posframe" (buffer))
-(declare-function posframe-poshandler-frame-center "posframe" (info))
+(declare-function posframe-workable-p "ext:posframe" ())
+(declare-function posframe-show "ext:posframe" (buffer &rest args))
+(declare-function posframe-hide "ext:posframe" (buffer))
+(declare-function posframe-poshandler-frame-center "ext:posframe" (info))
 
 ;;;; Options
 

@@ -60,10 +60,10 @@
 
 ;; posframe is not a dependency of this package: without it, and on a
 ;; frame that cannot carry a child frame, the buffer goes in a window.
-(declare-function posframe-workable-p "posframe" ())
-(declare-function posframe-show "posframe" (buffer &rest args))
-(declare-function posframe-hide "posframe" (buffer))
-(declare-function posframe-poshandler-frame-center "posframe" (info))
+(declare-function posframe-workable-p "ext:posframe" ())
+(declare-function posframe-show "ext:posframe" (buffer &rest args))
+(declare-function posframe-hide "ext:posframe" (buffer))
+(declare-function posframe-poshandler-frame-center "ext:posframe" (info))
 
 (defvar ecc-usage-buffer-name "*ecc-usage*"
   "Name of the buffer `ecc-usage' draws into.")

@@ -448,7 +448,7 @@ conversation that is only a recording.  The nerd icon is used when
 Only a graphical display scales an icon; on a terminal it is one cell
 whatever this says.")
 
-(declare-function nerd-icons-codicon "nerd-icons" (name &rest args))
+(declare-function nerd-icons-codicon "ext:nerd-icons" (name &rest args))
 
 (defun ecc--session-status-icon (status)
   "Return the one-column icon of STATUS, a key of `ecc-session-status-icons'.

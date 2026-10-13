@@ -11,6 +11,25 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.290**.
+
+### Changed
+
+- The `declare-function` forms pass `check-declare`, which reported 42
+  problems in them. The packages ecc uses only when they are installed --
+  posframe, ghostel, nerd-icons and flycheck -- are declared as `"ext:"`
+  files, so it no longer looks for them. Four declarations of ecc's own
+  functions had an argument list the definition no longer has, and two of
+  Emacs's (`flymake-diagnostic-text`, `treesit-buffer-root-node`) that of an
+  older Emacs. Declarations of functions it cannot see the definition of -- `cl-defstruct`
+  accessors, `transient-define-prefix` commands, the flymake and xref
+  accessors -- say so with the FILEONLY argument. The tree-sitter primitives
+  are declared in `treesit.c`, as Emacs's own files declare them; an Emacs
+  installed without its C sources still reports those six, having no file to
+  look in. Nothing a user sees changes.
+
 ## [0.4.3] - 2026-10-13
 
 Verified against **Claude Code CLI 2.1.290**.

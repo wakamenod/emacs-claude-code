@@ -62,7 +62,7 @@
 (declare-function ecc-answer-deny "ecc-answer" (reason))
 (declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
 (declare-function ecc-review "ecc-review" (&optional session paths))
-(declare-function ecc-review-menu "ecc-review-menu" ())
+(declare-function ecc-review-menu "ecc-review-menu" () t)
 (declare-function ecc-session-timeline "ecc-session" ())
 (declare-function ecc-chat-goto-files "ecc-chat" ())
 (declare-function ecc-chat-goto-plans "ecc-chat" ())
