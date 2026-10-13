@@ -37,10 +37,11 @@
 ;; hand -- and says how many files each would show.  A menu is about
 ;; one session and its project: the session's changes, that project's
 ;; working tree and branches, and that session to send the comments to.
-;; `S' turns the whole menu to another session.  What it opens is `ecc-review' or
-;; `ecc-review-range' with the arguments chosen, and those are the
-;; arguments `review_open' takes, so a review Claude is asked for in the
-;; same words is the same review (`ecc-review-agent-open-description').
+;; `S' turns the whole menu to another session.  What it opens is
+;; `ecc-review' or `ecc-review-range' with the arguments chosen, and
+;; those are the arguments `review_open' takes, so a review Claude is
+;; asked for in the same words is the same review
+;; (`ecc-review-agent-open-description').
 ;;
 ;; Only what the transient bundled with Emacs 29.1 (0.4.1) has is used.
 ;; What the open menu is about lives in a variable of this file rather
