@@ -180,7 +180,7 @@ line of the buffer and the list starts below them."
          (should (eq shown b))
          ;; R starts the CLI on the recording of that session.
          (cl-letf (((symbol-function 'ecc-proc-start)
-                    (lambda (s &optional resume fork)
+                    (lambda (s _handler &optional resume fork)
                       (setq started (list s resume fork)))))
            (ecc-dashboard-resume)
            (should (equal (list b t nil) started)))))

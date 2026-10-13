@@ -633,7 +633,7 @@ So is the line the recording is offered on."
       (let ((session (ecc-history-session "24a1aa86-d53f-4457-b09e-4f4caf450f03")))
         (unwind-protect
             (cl-letf (((symbol-function 'ecc-proc-start)
-                       (lambda (session &optional resume fork)
+                       (lambda (session _handler &optional resume fork)
                          (setq started (list session resume fork)))))
               (ecc-history-resume session t)
               (should (equal (list session t t) started))
@@ -876,7 +876,7 @@ Nothing is started and nothing is stopped: `ecc-proc-release' and
        (cl-letf (((symbol-function 'ecc-proc-release)
                   (lambda (session &rest _) (setq released session)))
                  ((symbol-function 'ecc-proc-start)
-                  (lambda (session &rest args) (setq resumed (cons session args))))
+                  (lambda (session _handler &rest args) (setq resumed (cons session args))))
                  ((symbol-function 'ecc-review-ensure-baseline) #'ignore)
                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
          ,@body))))

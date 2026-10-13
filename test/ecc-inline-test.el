@@ -137,7 +137,7 @@ the session of the project it was asked from stays the user's."
       (let ((ecc-inline-binding 'fork)
             (arguments nil))
         (cl-letf (((symbol-function #'ecc-proc-start)
-                   (lambda (session &optional resume fork)
+                   (lambda (session _handler &optional resume fork)
                      (setq arguments (list resume fork))
                      ;; The command line is what proves the branch.
                      (setq arguments

@@ -665,9 +665,11 @@ printf '{\"type\":\"system\",\"subtype\":\"init\"}\\n'; exec sleep 30")))))
                         (lambda (from message) (push (cons from message) seen)))))
           (unwind-protect
               (progn
-                (with-timeout (10 (ert-fail "No message reached the handler"))
-                  (while (not seen)
-                    (accept-process-output process 0.1)))
+                ;; Only this process is read and no timer is run: one
+                ;; another test left behind would go off in this one.
+                (let ((deadline (+ (float-time) 10)))
+                  (while (and (not seen) (< (float-time) deadline))
+                    (accept-process-output process 0.1 nil 1)))
                 (should (= 1 (length seen)))
                 (should (eq (car (car seen)) session))
                 (should (equal (alist-get 'subtype (cdr (car seen))) "init")))
