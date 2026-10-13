@@ -32,6 +32,21 @@
     (should (equal (ecc-model-unique-name "test" session) "test"))
     (should (equal (ecc-model-unique-name "other" session) "other"))))
 
+(ert-deftest ecc-model-test-own-session-p-reads-the-options ()
+  "Whose a session is the model reads off the session itself.
+The usage probe and an inline question say so among their launch
+options, and a recording by its kind; nothing else is asked."
+  (ecc-test-with-fake-session session
+    (should (ecc-model-own-session-p session))
+    (dolist (other (list (ecc-model-create-session
+                          :name "probe" :options '(:usage-probe t))
+                         (ecc-model-create-session
+                          :name "inline" :options '(:inline t))
+                         (ecc-model-create-session
+                          :name "past" :kind 'archived)))
+      (should-not (ecc-model-own-session-p other))
+      (ecc-model-remove-session other))))
+
 (ert-deftest ecc-model-test-session-id-moves ()
   "A forked session keeps its place in the registry under the new id."
   (ecc-test-with-fake-session session

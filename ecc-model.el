@@ -40,8 +40,6 @@
 (require 'seq)
 (require 'ecc-core)
 
-(declare-function ecc-inline-session-p "ecc-inline" (session))
-
 ;;;; Hooks
 
 ;; All of these are abnormal hooks.  The first argument is always the
@@ -478,13 +476,14 @@ and find nothing changed."
   "Return non-nil when SESSION is one of the user\='s own.
 A recording being read, the usage probe and an inline question are all
 kind `own\=' and all belong to nobody: the probe has no project of its
-own and lands in whatever directory was current.  Whatever asks what
-the going of a session means for the project it was in -- a Space, a
-worktree -- asks this first, so that the answer is the same in both."
+own and lands in whatever directory was current.  The probe and an
+inline session say so among their launch options, `:usage-probe\=' and
+`:inline\='.  Whatever asks what the going of a session means for the
+project it was in -- a Space, a worktree -- asks this first, so that
+the answer is the same in both."
   (and (not (eq (ecc-session-kind session) 'archived))
        (not (ecc-model-option session :usage-probe nil))
-       (not (and (fboundp 'ecc-inline-session-p)
-                 (ecc-inline-session-p session)))))
+       (not (ecc-model-option session :inline nil))))
 
 (defun ecc-model-reset-conversation (session)
   "Empty SESSION of the conversation it was in, keeping the session itself.
