@@ -70,11 +70,14 @@ test-live: autoloads compile
 	$(BATCH) $(foreach f,$(TESTS),-l $(f)) \
 	  --eval '(ert-run-tests-batch-and-exit (quote (tag live)))'
 
-# checkdoc prints and does not gate.  Two kinds of finding it is wrong about
-# are all that is left here: a key sequence of more than one chord -- `C-c
-# C-m' -- which it reports even where the quoting is right, and the `&context'
-# specializers of `cl-defmethod', which it reads as arguments that ought to be
-# documented.  Its findings are read rather than obeyed.  package-lint goes through
+# checkdoc prints and does not gate.  Two kinds of finding are left here.
+# The `&context' specializers of `cl-defmethod' it reads as arguments that
+# ought to be documented.  A key sequence of more than one chord -- `C-c
+# C-m' -- it reports however it is quoted, so it cannot tell a key a
+# docstring is about from one of ecc's own bindings, which is written as
+# \\[command] so that it follows a rebinding.  The keys still written out
+# are keys a docstring is about, and each has a comment saying so.  Its
+# findings are read rather than obeyed.  package-lint goes through
 # scripts/lint.el, whose Commentary says which of its findings are fatal
 # here and why.  Neither is installed by Emacs; `make lint-deps' fetches
 # package-lint, and without it this target says so and passes.
