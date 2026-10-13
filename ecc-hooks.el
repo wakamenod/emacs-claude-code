@@ -209,7 +209,7 @@ and no CLI in reach."
 ORIGIN names the plugin, for a file that belongs to one.  A file that
 does not parse is passed over rather than signalled: it is one of
 several, and one bad file should not take the whole list with it."
-  (let ((object (ignore-errors (ecc-protocol-read-settings-file file))))
+  (let ((object (ecc-protocol-read-settings-file file t)))
     (mapcar (lambda (plist)
               (let ((entry (plist-get plist :entry)))
                 (make-ecc-hook
@@ -275,7 +275,7 @@ Empty when nothing does."
     (pcase-dolist (`(,_scope . ,file) (ecc-protocol-settings-files root))
       (when (ecc--json-true-p
              (alist-get 'disableAllHooks
-                        (ignore-errors (ecc-protocol-read-settings-file file))))
+                        (ecc-protocol-read-settings-file file t)))
         (push (format "disableAllHooks is on in %s: no hook runs at all."
                       (abbreviate-file-name file))
               notes)))

@@ -770,6 +770,14 @@ for a review whose right side is not checked out."
     (ecc-review-agent-test--ok session "review_clear_comments" '((file . "gone.el")))
     (should-not ecc-review--notes)))
 
+(ert-deftest ecc-review-agent-test-path-noerror ()
+  "NOERROR makes a file the review has not got a nil instead of an error."
+  (ecc-review-agent-test--with-review session
+    (should (equal (ecc-review-agent--path "b/foo.el" nil t) "foo.el"))
+    (should-error (ecc-review-agent--path "nope.el"))
+    (should-not (ecc-review-agent--path "nope.el" t t))
+    (should-not (ecc-review-agent--path nil t t))))
+
 ;;;; A place set while nobody looks
 
 (ert-deftest ecc-review-agent-test-a-hidden-place-is-kept ()

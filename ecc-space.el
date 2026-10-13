@@ -1475,7 +1475,7 @@ side window and is neither deleted nor counted."
             (cond
              (neighbour (ecc-space--display-in neighbour window))
              ((eq (window-deletable-p window) t)
-              (ignore-errors (delete-window window)))
+              (delete-window window))
              (t (when-let* ((space (ecc-space-current))
                             (source (ecc-space--source-buffer space))
                             ((buffer-live-p source)))

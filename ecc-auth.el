@@ -111,7 +111,7 @@ for it."
     (let ((exit (apply #'call-process ecc-executable nil t nil args)))
       (cons exit (buffer-string)))))
 
-(defun ecc-auth-status ()
+(defun ecc-auth-status (&optional noerror)
   "Return what the CLI says about the account, as an alist.
 The keys are those of `claude auth status --json\\=': `loggedIn\\=',
 `authMethod\\=', `email\\=', `subscriptionType\\=' and the rest.
@@ -122,16 +122,28 @@ saying so (confirmed against 2.1.268, 2026-09-12).  Reading the exit
 code first made being signed out an error, which is the one state the
 question is most often asked in.  A CLI that answers with something
 other than JSON is still an error rather than a nil, which would read
-as being signed out and is a different thing."
-  (pcase-let ((`(,exit . ,output) (ecc-auth--run "auth" "status" "--json")))
-    (condition-case error
-        (let ((status (ecc--json-read output)))
-          (unless (assq 'loggedIn status)
-            (signal 'error (list "no loggedIn in the answer")))
-          status)
-      (error
-       (error "%s auth status failed (%s): %s (%s)" ecc-executable exit
-              (string-trim output) (error-message-string error))))))
+as being signed out and is a different thing.
+
+With NOERROR non-nil, a CLI that cannot be started or does not answer
+with the JSON is a nil after all, for a caller that only reports and
+does not act on the answer."
+  (pcase-let* ((`(,exit . ,output)
+                (condition-case err
+                    (ecc-auth--run "auth" "status" "--json")
+                  (file-error (if noerror
+                                  (cons nil "")
+                                (signal (car err) (cdr err))))))
+               (`(,status . ,problem)
+                (condition-case err
+                    (let ((status (ecc--json-read output)))
+                      (if (and (consp status) (assq 'loggedIn status))
+                          (list status)
+                        (cons nil "no loggedIn in the answer")))
+                  (json-error (cons nil (error-message-string err))))))
+    (cond (status status)
+          (noerror nil)
+          (t (error "%s auth status failed (%s): %s (%s)" ecc-executable exit
+                    (string-trim output) problem)))))
 
 (defun ecc-auth-logged-in-p (&optional status)
   "Return non-nil when STATUS, or the CLI, says somebody is signed in."
@@ -277,7 +289,7 @@ credentials they started with (`ecc-auth-restart-sessions\\=')."
 
 (defun ecc-auth--after-login ()
   "Report the account, and offer the running sessions the new credentials."
-  (let ((status (ignore-errors (ecc-auth-status))))
+  (let ((status (ecc-auth-status t)))
     (message "%s" (if status (ecc-auth-status-string status) "sign-in ended"))
     (when (and status (ecc-auth-logged-in-p status) ecc-auth-restart-sessions)
       (let ((running (ecc-auth-running-sessions)))

@@ -126,6 +126,9 @@
                  '("mcp__github__list_issues" "mcp__github")))
   (should (equal (ecc-perm-suggest-patterns "WebFetch" '((url . "https://example.com/a/b")))
                  '("WebFetch(domain:example.com)")))
+  ;; A url that is not a string, or has no host, offers the bare name.
+  (should (equal (ecc-perm-suggest-patterns "WebFetch" '((url . 42))) '("WebFetch")))
+  (should (equal (ecc-perm-suggest-patterns "WebFetch" '((url . "nohost"))) '("WebFetch")))
   (should (equal (ecc-perm-suggest-patterns "Glob" '((pattern . "*.el"))) '("Glob"))))
 
 (ert-deftest ecc-perm-test-add-pattern-writes-settings-and-allows ()

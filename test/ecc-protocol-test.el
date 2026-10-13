@@ -417,6 +417,31 @@ of its own looks like."
     (should (equal (with-temp-buffer (insert-file-contents file) (buffer-string))
                    "{not json"))))
 
+(ert-deftest ecc-protocol-test-history-timestamp ()
+  "A full timestamp is a time; anything less, or not a string, is a nil."
+  (should (time-equal-p (ecc-protocol-history-timestamp
+                         '((timestamp . "2026-10-13T10:00:00Z")))
+                        (encode-time '(0 0 10 13 10 2026 nil nil 0))))
+  (dolist (stamp '("2026-10-13" "2026" "garbage" "" 42 :null))
+    (should-not (ecc-protocol-history-timestamp `((timestamp . ,stamp))))))
+
+(ert-deftest ecc-protocol-test-read-settings-noerror ()
+  "NOERROR makes a broken file a nil for a reader; without it, an error."
+  (dolist (text '("{not json" "[1, 2]" "null"))
+    (ecc-protocol-test--with-settings file text
+      (should-error (ecc-protocol-read-settings-file file))
+      (should-not (ecc-protocol-read-settings-file file t))))
+  (let ((directory (make-temp-file "ecc-settings" t)))
+    (unwind-protect
+        (progn
+          (should-error (ecc-protocol-read-settings-file directory)
+                        :type 'file-error)
+          (should-not (ecc-protocol-read-settings-file directory t)))
+      (delete-directory directory t)))
+  (ecc-protocol-test--with-settings file "{\"model\": \"opus\"}"
+    (should (equal (ecc-protocol-read-settings-file file t)
+                   '((model . "opus"))))))
+
 (ert-deftest ecc-protocol-test-remove-hook-folds-what-it-empties ()
   "Removing the last hook takes its group, its event and the block with it."
   (ecc-protocol-test--with-settings file "{\"permissions\":{\"allow\":[\"A\"]}}"

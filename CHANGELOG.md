@@ -32,6 +32,27 @@ Verified against **Claude Code CLI 2.1.290**.
   runs ahead of everything else on `kill-emacs-hook`. None is taken off again,
   and nothing a user sees changes. A test now starts a fresh Emacs, loads every
   file of ecc and fails if any ecc function is on a hook that is not ecc's own.
+- Twenty-two of the twenty-three `ignore-errors` in ecc are gone. Each was
+  there for one failure that was expected -- a file that is not there, JSON
+  that does not parse, a window that cannot be resized -- and swallowed every
+  other error with it, a typo or a wrong argument in ecc's own code included. A
+  review tool for a public archive reports them. Where the failure can be
+  checked for, it is checked first: `iso8601-valid-p` and the fields of the
+  parse before `encode-time`, `window-resizable-p` before `window-resize`,
+  `file-notify-valid-p` before removing a watch, `stringp` before parsing a
+  url, `vc-responsible-backend` with its NO-ERROR argument. Where it cannot, the
+  error class is named: `file-error` for reading the version of ecc and of the
+  CLI, and for adding a file watch, whose kqueue backend on macOS reports a
+  missing file as `file-missing` rather than `file-notify-error`; `json-error`
+  for the answer of `claude plugin`. The functions that signal on purpose --
+  `ecc-protocol-read-settings-file`, so that a broken settings file is never
+  written over, `ecc-auth-status` and the file lookup of the review tools --
+  take a NOERROR argument for the callers that only read, and still signal for
+  the rest. A failing sentinel of the terminal a session is handed to is now
+  reported in the echo area rather than dropped. The one left is around
+  `project-current` in the header line: it runs whatever other packages put on
+  `project-find-functions`, so what it can signal is theirs to name, and a
+  comment there says so. Otherwise nothing a user sees changes.
 
 ### Fixed
 

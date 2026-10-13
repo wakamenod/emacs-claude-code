@@ -698,8 +698,12 @@ while working, and it is `no-other-window' for the same reason."
 (defun ecc-sidebar--set-width (window)
   "Make WINDOW exactly `ecc-sidebar-width' columns wide and keep it there."
   (let ((delta (- ecc-sidebar-width (window-total-width window))))
-    (unless (zerop delta)
-      (ignore-errors (window-resize window delta t)))
+    ;; `preserved', because the width is preserved below: a window
+    ;; still at that width says it cannot be resized without it, where
+    ;; `window-resize' tries again with it and succeeds.
+    (when (and (not (zerop delta))
+               (window-resizable-p window delta t 'preserved))
+      (window-resize window delta t))
     (window-preserve-size window t t)))
 
 ;;;###autoload

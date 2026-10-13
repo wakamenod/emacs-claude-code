@@ -408,7 +408,9 @@ same."
       (unwind-protect
           (cl-letf* ((read (symbol-function #'ecc-protocol-read-settings-file))
                      ((symbol-function #'ecc-protocol-read-settings-file)
-                      (lambda (f) (cl-incf reads) (funcall read f))))
+                      (lambda (f &rest rest)
+                        (cl-incf reads)
+                        (apply read f rest))))
             (ecc-protocol-write-settings-file file '((model . "opus")))
             (should (equal (ecc-proc-startup-model session) "opus"))
             (let ((after-first reads))

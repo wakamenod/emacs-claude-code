@@ -79,6 +79,19 @@ wrong thing to tell somebody.  So is JSON that answers another question."
   (ecc-auth-test-with-cli '(("auth status --json" . (0 . "{\"error\":\"nope\"}\n")))
     (should-error (ecc-auth-status))))
 
+(ert-deftest ecc-auth-test-status-noerror ()
+  "NOERROR makes a CLI that does not answer, or cannot start, a nil."
+  (ecc-auth-test-with-cli '(("auth status --json" . (0 . "command not found\n")))
+    (should-not (ecc-auth-status t)))
+  (ecc-auth-test-with-cli `(("auth status --json" . (1 . ,ecc-auth-test--logged-out)))
+    (should (assq 'loggedIn (ecc-auth-status t))))
+  (cl-letf (((symbol-function 'ecc-auth--run)
+             (lambda (&rest _)
+               (signal 'file-missing '("Searching for program"
+                                       "No such file or directory" "claude")))))
+    (should-error (ecc-auth-status) :type 'file-error)
+    (should-not (ecc-auth-status t))))
+
 (ert-deftest ecc-auth-test-status-string-names-the-account ()
   "The line says who is signed in and how."
   (ecc-auth-test-with-cli `(("auth status --json" . (0 . ,ecc-auth-test--logged-in)))
