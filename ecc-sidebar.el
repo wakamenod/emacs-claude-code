@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -63,11 +66,7 @@
 (require 'ecc-visual)
 (require 'ecc-answer)
 (require 'ecc-perm)
-
-(declare-function ecc-start "ecc" (&optional directory name))
-(declare-function ecc-kill "ecc" (session))
-(declare-function ecc-start-worktree "ecc-worktree" (branch))
-(declare-function ecc-remove-worktree "ecc-worktree" (path))
+(require 'ecc-lifecycle)
 
 (defconst ecc-sidebar-buffer-name "*ecc-sidebar*"
   "Name of the sidebar buffer.")
@@ -534,7 +533,6 @@ repository still goes there."
 (defun ecc-sidebar-start-session ()
   "Start a session in the Space of the row at point."
   (interactive)
-  (require 'ecc)
   (let ((space (or (ecc-sidebar--space-at-point)
                    (user-error "No Space on this line"))))
     (ecc-start (ecc-space-root space))))
@@ -542,7 +540,6 @@ repository still goes there."
 (defun ecc-sidebar-start-worktree ()
   "Make a worktree of the Space at point and start a session in it."
   (interactive)
-  (require 'ecc-worktree)
   (let ((space (or (ecc-sidebar--space-at-point)
                    (user-error "No Space on this line"))))
     (let ((default-directory (ecc-space-root space)))
@@ -559,7 +556,6 @@ repository still goes there."
 The redraw is `ecc-worktree-removed-hook\\=''s, which every removal runs
 -- this one and the ones an offer makes."
   (interactive)
-  (require 'ecc-worktree)
   (let ((space (or (ecc-sidebar--space-at-point)
                    (user-error "No Space on this line"))))
     (unless (ecc-space-parent space)
@@ -569,7 +565,6 @@ The redraw is `ecc-worktree-removed-hook\\=''s, which every removal runs
 (defun ecc-sidebar-kill-session ()
   "Stop the session of the row at point."
   (interactive)
-  (require 'ecc)
   (let ((session (or (ecc-sidebar--session-at-point)
                      (user-error "No session on this line"))))
     (when (yes-or-no-p (format "Stop %s? " (ecc-session-name session)))

@@ -42,7 +42,6 @@
 (require 'ecc-review-menu)
 (require 'ecc-review-pr)
 (require 'ecc-review-ediff)
-(require 'ecc-review-direct)
 
 (defvar demo-session nil "The session the comments go to.")
 

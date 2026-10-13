@@ -33,7 +33,6 @@
 (require 'ecc)
 (require 'ecc-review)
 (require 'ecc-review-ediff)
-(require 'ecc-review-direct)
 (require 'ecc-review-talk)
 (require 'ecc-review-menu)
 

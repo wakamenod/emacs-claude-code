@@ -9,6 +9,21 @@
 ;; where.  This one says the rest: after loading, nothing of ecc is on a
 ;; hook that is not ecc's own.  Wiring ecc to itself -- its functions
 ;; on `ecc-request-added-hook' and the like -- is what loading is for.
+;;
+;; The others are about the keymaps `ecc-chat' defines and the modules
+;; above it give their keys to: whatever entry point is loaded, a chat
+;; buffer comes up with them, a user's own binding wins over them
+;; whatever loads first, and loading a module again changes nothing.
+;;
+;; Three are about advice: loading ecc advises no function of Emacs; the
+;; NS input-method functions are advised by the first chat buffer; and
+;; loading the ediff review leaves ediff alone.
+;;
+;; The last are about the modules that register with one above them:
+;; the interceptors of the prompt region and the MCP tools of
+;; `ecc-worktree' are in place once their own module is loaded, with
+;; nothing waiting for another to load; and `ecc-proc' alone names the
+;; MCP server on the command line.
 
 ;;; Code:
 
@@ -54,6 +69,305 @@ opened the reviews, Spaces and sessions that put them there."
       (goto-char (point-min))
       (should (search-forward "ecc-load-test: " nil t))
       (should (equal (read (current-buffer)) nil)))))
+
+(defun ecc-load-test--run (form)
+  "Evaluate FORM in an Emacs of its own and return what it returns.
+That Emacs has ecc on its `load-path' and has loaded nothing of it, so
+FORM decides what is loaded and in what order.  What FORM returns is
+printed and read back, so it must have a printed representation."
+  (let ((dir (file-name-directory (locate-library "ecc.el" t))))
+    (with-temp-buffer
+      (should (zerop (call-process
+                      (expand-file-name invocation-name invocation-directory)
+                      nil t nil "-Q" "--batch"
+                      "--eval"
+                      (prin1-to-string
+                       `(progn
+                          (add-to-list 'load-path ,dir)
+                          (let ((value ,form))
+                            (princ "\necc-load-test: ")
+                            (prin1 value)
+                            (terpri)))))))
+      (goto-char (point-min))
+      (should (search-forward "ecc-load-test: " nil t))
+      (read (current-buffer)))))
+
+(ert-deftest ecc-load-test-chat-buffer-has-module-keys ()
+  "A chat buffer has the keys of the modules above `ecc-chat', whatever made it.
+The keymaps are defined in `ecc-chat', and `ecc-prompt', `ecc-session',
+`ecc-queue', `ecc-hint', `ecc-tui' and `ecc-transient' give them their
+keys; `ecc-chat-mode' loads them all.  Most of the ways to a buffer -- a
+recording read back, the terminal, an answer from anywhere, a Space --
+load `ecc-session' and never `ecc-prompt' or `ecc-transient', so without
+that a buffer would come up with no \\`C-c C-c' and no \\`?'.  FEATURE is
+required as that entry point would be, and the buffer is made the way
+every path makes one: `ecc-session' required at run time and
+`ecc-session-ensure-buffer' called."
+  (dolist (feature '(ecc-chat ecc-session ecc-window ecc-space ecc-history
+                              ecc-restore ecc-tui ecc-answer ecc))
+    (should (equal (cons feature
+                         (ecc-load-test--run
+                          `(progn
+                             (require ',feature)
+                             (require 'ecc-session)
+                             (with-current-buffer
+                                 (ecc-session-ensure-buffer
+                                  (ecc-model-create-session
+                                   :name "probe"
+                                   :project-root temporary-file-directory))
+                               (list (key-binding (kbd "C-c C-c"))
+                                     (lookup-key ecc-chat-transcript-map (kbd "RET"))
+                                     (car completion-at-point-functions)
+                                     (key-binding (kbd "C-c C-q"))
+                                     (key-binding (kbd "C-c C-s"))
+                                     (key-binding (kbd "C-c ?"))
+                                     (lookup-key ecc-chat-transcript-map (kbd "t"))
+                                     (lookup-key ecc-chat-transcript-map (kbd "?"))
+                                     (and (memq #'ecc-hint--setup-mode-line
+                                                ecc-chat-mode-hook)
+                                          t))))))
+                   (list feature #'ecc-prompt-send #'ecc-session-visit
+                         #'ecc-prompt-capf #'ecc-queue-show
+                         #'ecc-hint-accept-suggestion #'ecc-menu
+                         #'ecc-tui-open #'ecc-menu t)))))
+
+(ert-deftest ecc-load-test-user-bindings-survive-the-modules ()
+  "A key a user binds once `ecc-chat' is loaded keeps its binding.
+`ecc-chat' defines the keymaps, so `with-eval-after-load' of it is where
+a user changes them; the modules above it load after it, and
+their keys are in parents of those maps rather than in the maps, so they
+do not overwrite what the user put there.  The keys the user left alone
+still resolve to the modules' commands."
+  (should (equal (ecc-load-test--run
+                  '(progn
+                     (with-eval-after-load 'ecc-chat
+                       (define-key ecc-chat-mode-map (kbd "RET") #'ignore)
+                       (define-key ecc-chat-mode-map (kbd "C-c C-c") #'ignore)
+                       (define-key ecc-chat-mode-map (kbd "C-c ?") #'ignore)
+                       (define-key ecc-chat-transcript-map (kbd "g") #'ignore)
+                       (define-key ecc-chat-transcript-map (kbd "?") #'ignore))
+                     (require 'ecc)
+                     (mapcar (lambda (entry)
+                               (lookup-key (symbol-value (car entry))
+                                           (kbd (cdr entry))))
+                             '((ecc-chat-mode-map . "RET")
+                               (ecc-chat-mode-map . "C-c C-c")
+                               (ecc-chat-mode-map . "C-c ?")
+                               (ecc-chat-transcript-map . "g")
+                               (ecc-chat-transcript-map . "?")
+                               (ecc-chat-mode-map . "C-c C-x")
+                               (ecc-chat-mode-map . "C-c C-z")
+                               (ecc-chat-transcript-map . "RET")
+                               (ecc-chat-mode-map . "C-c C-q")
+                               (ecc-chat-transcript-map . "t")))))
+                 (list #'ignore #'ignore #'ignore #'ignore #'ignore
+                       #'ecc-prompt-toggle-context #'ecc-session-interrupt
+                       #'ecc-session-visit #'ecc-queue-show #'ecc-tui-open))))
+
+(ert-deftest ecc-load-test-reloading-a-module-keeps-the-keymaps ()
+  "Loading a module that binds chat keys again leaves the keymaps as they were.
+A module hangs its keymap under the chat maps once: a second load finds
+it there and does not nest it again."
+  (should (ecc-load-test--run
+           '(let ((maps '(ecc-chat-mode-map ecc-chat-transcript-map
+                          ecc-request-section-map ecc-file-section-map
+                          ecc-chat-button-map)))
+              (require 'ecc)
+              (let ((before (mapcar (lambda (map)
+                                      (copy-tree (symbol-value map)))
+                                    maps)))
+                (dolist (file '("ecc-prompt" "ecc-session" "ecc-queue"
+                                "ecc-hint" "ecc-tui" "ecc-transient"))
+                  (load file nil t))
+                (equal before (mapcar (lambda (map)
+                                        (copy-tree (symbol-value map)))
+                                      maps)))))))
+
+;; The NS port's input-method functions, which `ecc-chat' advises so the
+;; placeholder makes way for working text.  Batch has no NS port, so the
+;; tests below define stand-ins under the same names and provide
+;; `ns-win', as the NS port has done by the time ecc loads.
+(defconst ecc-load-test--ns-stand-ins
+  '(progn
+     (dolist (function '(ns-insert-working-text
+                         ns-insert-marked-text
+                         ns-delete-working-text))
+       (defalias function #'ignore))
+     (provide 'ns-win))
+  "The form that makes this Emacs look like the NS port to `ecc-chat'.")
+
+(defun ecc-load-test--advice-form ()
+  "Return the form that lists every ecc function advising one not ecc's.
+Each element is (ADVISED . ADVICE)."
+  '(let ((found nil))
+     (mapatoms
+      (lambda (symbol)
+        (when (and (fboundp symbol)
+                   (not (string-prefix-p "ecc-" (symbol-name symbol))))
+          (advice-mapc
+           (lambda (advice _props)
+             (when (and (symbolp advice)
+                        (string-prefix-p "ecc-" (symbol-name advice)))
+               (push (cons symbol advice) found)))
+           symbol))))
+     found))
+
+(ert-deftest ecc-load-test-loading-advises-nothing-of-emacs ()
+  "Loading every file of ecc puts no ecc advice on a function of Emacs.
+On the NS port `ecc-chat' advised three input-method functions as soon
+as it was loaded; the stand-ins and `ns-win' are in place first, so this
+would see it."
+  (let ((dir (file-name-directory (locate-library "ecc.el" t))))
+    (should (equal (ecc-load-test--run
+                    `(progn
+                       ,ecc-load-test--ns-stand-ins
+                       (dolist (file (directory-files ,dir nil "\\`ecc.*\\.el\\'"))
+                         (unless (equal file "ecc-autoloads.el")
+                           (require (intern (file-name-base file)))))
+                       ,(ecc-load-test--advice-form)))
+                   nil))))
+
+(defconst ecc-load-test--ns-functions
+  '(ns-insert-working-text ns-insert-marked-text ns-delete-working-text)
+  "The NS input-method functions `ecc-chat' advises.")
+
+(defun ecc-load-test--ns-advice-form ()
+  "Return the form that says how often each NS function carries ecc's advice."
+  `(mapcar (lambda (function)
+             (let ((count 0))
+               (advice-mapc (lambda (advice _props)
+                              (when (eq advice 'ecc-chat--after-working-text)
+                                (setq count (1+ count))))
+                            function)
+               (cons function count)))
+           ',ecc-load-test--ns-functions))
+
+(ert-deftest ecc-load-test-chat-buffer-advises-working-text ()
+  "The first chat buffer advises the NS input-method functions, once.
+A second buffer leaves them as the first did, and outside a chat buffer
+the advice does nothing.  In an Emacs of its own, with the stand-ins of
+the NS port; none of them is advised before the buffer is made."
+  (should (equal
+           (ecc-load-test--run
+            `(progn
+               ,ecc-load-test--ns-stand-ins
+               (require 'ecc)
+               (let ((before ,(ecc-load-test--ns-advice-form)))
+                 (dolist (name '("one" "two"))
+                   (ecc-session-ensure-buffer
+                    (ecc-model-create-session
+                     :name name :project-root temporary-file-directory)))
+                 (with-temp-buffer
+                   (ns-insert-working-text)
+                   (ns-delete-working-text))
+                 (list before ,(ecc-load-test--ns-advice-form)))))
+           (list (mapcar (lambda (function) (cons function 0))
+                         ecc-load-test--ns-functions)
+                 (mapcar (lambda (function) (cons function 1))
+                         ecc-load-test--ns-functions)))))
+
+(ert-deftest ecc-load-test-review-ediff-alone-advises-nothing ()
+  "Loading `ecc-review-ediff' leaves `ediff-recenter-one-window' as it is.
+Before Emacs 31 the review puts its advice there, and used to as the
+file was loaded; now an ediff review opening does it."
+  (should-not (ecc-load-test--run
+               '(progn
+                  (require 'ecc-review-ediff)
+                  (require 'ediff)
+                  (advice-member-p #'ecc-review-ediff--recenter-one-window
+                                   'ediff-recenter-one-window)))))
+
+(defconst ecc-load-test--interceptors
+  '((ecc-auth ecc-auth-intercept nil)
+    (ecc-btw ecc-btw-intercept nil)
+    (ecc-history ecc-history-resume-intercept ecc-history-resume-command)
+    (ecc-hooks ecc-hooks-intercept ecc-hooks-command)
+    (ecc-plugin ecc-plugin-intercept (car ecc-plugin-commands))
+    (ecc-skill ecc-skill-intercept (car ecc-skill-commands)))
+  "Each module that answers a command in the prompt region.
+Its feature, its interceptor, and the form giving the command it puts
+on `ecc-prompt-immediate-commands\=', or nil when it puts none there.")
+
+(defun ecc-load-test--interceptors-form (&optional features)
+  "Return the form that says, per module, whether it is registered.
+Each element is (FEATURE ON-THE-HOOK IMMEDIATE), the last t for a
+module that puts no command among the immediate ones.  FEATURES, when
+given, are the modules asked about; the others may not be loaded."
+  `(mapcar (lambda (entry)
+             (list (nth 0 entry)
+                   (and (memq (nth 1 entry) ecc-prompt-intercept-functions) t)
+                   (or (null (nth 2 entry))
+                       (and (member (eval (nth 2 entry) t)
+                                    ecc-prompt-immediate-commands)
+                            t))))
+           ',(if features
+                 (mapcar (lambda (feature)
+                           (assq feature ecc-load-test--interceptors))
+                         features)
+               ecc-load-test--interceptors)))
+
+(ert-deftest ecc-load-test-interceptors-register-with-the-package ()
+  "Loading the package puts every interceptor on the prompt's hook.
+The tests of each module bind the hook themselves, so they would pass
+with nothing ever registered."
+  (should (equal (ecc-load-test--run
+                  `(progn (require 'ecc)
+                          ,(ecc-load-test--interceptors-form)))
+                 (mapcar (lambda (entry) (list (car entry) t t))
+                         ecc-load-test--interceptors))))
+
+(ert-deftest ecc-load-test-interceptors-register-on-their-own ()
+  "Each interceptor is on the hook once its own module alone is loaded.
+The hook and the immediate commands are defined in `ecc-model', which
+every one of them requires, and not in `ecc-prompt' above them; so no
+module waits for the prompt region to load before it registers."
+  (dolist (entry ecc-load-test--interceptors)
+    (let ((feature (car entry)))
+      (should (equal (ecc-load-test--run
+                      `(progn
+                         (require ',feature)
+                         ,(ecc-load-test--interceptors-form (list feature))))
+                     (list (list feature t t)))))))
+
+(ert-deftest ecc-load-test-worktree-tools-register-on-their-own ()
+  "Loading `ecc-worktree' alone registers its MCP tools.
+It requires `ecc-mcp' and registers them at its top level, rather than
+waiting for that module to be loaded by somebody else."
+  (should (equal (ecc-load-test--run
+                  '(progn
+                     (require 'ecc-worktree)
+                     (list (and (ecc-mcp-tool "start_worktree_session") t)
+                           (and (ecc-mcp-tool "list_worktrees") t)
+                           (and (ecc-mcp-tool "remove_worktree") t)
+                           (and (assoc "worktree-removal" ecc-mcp--instructions)
+                                t))))
+                 '(t t t t))))
+
+(ert-deftest ecc-load-test-proc-alone-registers-the-mcp-server ()
+  "With `ecc-proc' alone loaded, the command line carries --mcp-config.
+`ecc-proc' requires `ecc-mcp' and asks it by name, so nothing has to
+load it first; with MCP off the argument is not there and no server is
+started."
+  (should (equal (ecc-load-test--run
+                  '(progn
+                     (require 'ecc-proc)
+                     (let ((session (ecc-model-create-session
+                                     :name "probe"
+                                     :project-root temporary-file-directory))
+                           (ecc-mcp-port 0))
+                       (unwind-protect
+                           (list (featurep 'ecc-dispatch)
+                                 (let ((ecc-mcp-enabled nil))
+                                   (and (member "--mcp-config"
+                                                (ecc-proc-build-command session))
+                                        t))
+                                 (and (ecc-mcp-running-p) t)
+                                 (let ((ecc-mcp-enabled t))
+                                   (and (member "--mcp-config"
+                                                (ecc-proc-build-command session))
+                                        t)))
+                         (ecc-mcp-stop)))))
+                 '(nil nil nil t))))
 
 (provide 'ecc-load-test)
 

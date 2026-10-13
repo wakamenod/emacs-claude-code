@@ -24,6 +24,10 @@
 (require 'ecc-session)
 (require 'ecc-prompt)
 (require 'ecc-perm)
+(require 'ecc-queue)
+(require 'ecc-hint)
+(require 'ecc-tui)
+(require 'ecc-transient)
 
 (defun ecc-chat-test--replay (session name prompt)
   "Replay fixture NAME into SESSION under PROMPT, allowing every request."
@@ -238,6 +242,95 @@ nothing to do with whether two maps are ever live at once."
       (should-error (ecc-chat-next-heading) :type 'user-error))))
 
 ;;;; Keys
+
+(defconst ecc-chat-test--module-bindings
+  '((ecc-chat-mode-map
+     ("RET" . ecc-chat-return)
+     ("/" . ecc-chat-slash)
+     ("C-c C-c" . ecc-prompt-send)
+     ("C-c C-k" . ecc-prompt-clear)
+     ("C-c C-x" . ecc-prompt-toggle-context)
+     ("C-c C-i" . ecc-prompt-insert-image)
+     ("C-c C-y" . ecc-prompt-yank-image-from-clipboard)
+     ("C-c C-r" . ecc-prompt-history-insert)
+     ("M-p" . ecc-prompt-history-previous)
+     ("M-n" . ecc-prompt-history-next)
+     ("C-<up>" . ecc-prompt-history-previous)
+     ("C-<down>" . ecc-prompt-history-next)
+     ("C-c C-z" . ecc-session-interrupt)
+     ("C-c C-e" . ecc-session-export-markdown)
+     ("C-c C-q" . ecc-queue-show)
+     ("C-c C-s" . ecc-hint-accept-suggestion)
+     ("C-c ?" . ecc-menu))
+    (ecc-chat-transcript-map
+     ("t" . ecc-tui-open)
+     ("?" . ecc-menu)
+     ("RET" . ecc-session-visit)
+     ("o" . ecc-session-show-detail)
+     ("<mouse-2>" . ecc-chat-follow-link)
+     ("<follow-link>" . mouse-face)
+     ("g" . ecc-session-refresh)
+     ("L" . ecc-session-show-log)
+     ("R" . ecc-session-resume)
+     ("d" . ecc-session-review-or-deny)
+     ("T" . ecc-session-timeline)
+     ("w" . ecc-session-copy-at-point))
+    (ecc-request-section-map
+     ("t" . ecc-tui-open)
+     ("?" . ecc-menu)
+     ("RET" . ecc-session-visit)
+     ("o" . ecc-session-show-detail)
+     ("<mouse-2>" . ecc-chat-follow-link)
+     ("<follow-link>" . mouse-face)
+     ("g" . ecc-session-refresh)
+     ("L" . ecc-session-show-log)
+     ("R" . ecc-session-resume)
+     ("T" . ecc-session-timeline)
+     ("w" . ecc-session-copy-at-point))
+    (ecc-file-section-map
+     ("t" . ecc-tui-open)
+     ("?" . ecc-menu)
+     ("RET" . ecc-session-visit)
+     ("d" . ecc-session-review-file)
+     ("o" . ecc-session-show-detail)
+     ("<mouse-2>" . ecc-chat-follow-link)
+     ("<follow-link>" . mouse-face)
+     ("g" . ecc-session-refresh)
+     ("L" . ecc-session-show-log)
+     ("R" . ecc-session-resume)
+     ("T" . ecc-session-timeline)
+     ("w" . ecc-session-copy-at-point))
+    (ecc-chat-button-map
+     ("t" . ecc-tui-open)
+     ("?" . ecc-menu)
+     ("<follow-link>" . mouse-face)
+     ("o" . ecc-session-show-detail)
+     ("g" . ecc-session-refresh)
+     ("L" . ecc-session-show-log)
+     ("R" . ecc-session-resume)
+     ("d" . ecc-session-review-or-deny)
+     ("T" . ecc-session-timeline)
+     ("w" . ecc-session-copy-at-point)))
+  "The keys the modules above `ecc-chat' give its keymaps.
+Those of `ecc-prompt', `ecc-session', `ecc-queue', `ecc-hint', `ecc-tui'
+and `ecc-transient', in every map in which each of them resolves,
+through the parents of the maps, as it did when `ecc-chat' bound them
+itself (2026-10-14).")
+
+(ert-deftest ecc-chat-test-modules-bind-their-keys ()
+  "Each key the modules above `ecc-chat' bind resolves where it did.
+`ecc-chat' defines the keymaps and the modules above it make maps of
+their own parents of them, so a key could go missing from a map that
+only inherits it; the list is what every map resolved to before the
+move.  `text-mode-map' stays under the mode map, which
+`define-derived-mode' would not put there once a module had given the
+map a parent."
+  (should (ecc-chat--keymap-inherits-p ecc-chat-mode-map text-mode-map))
+  (dolist (entry ecc-chat-test--module-bindings)
+    (let ((map (symbol-value (car entry))))
+      (pcase-dolist (`(,key . ,command) (cdr entry))
+        (should (equal (list (car entry) key (lookup-key map (kbd key)))
+                       (list (car entry) key command)))))))
 
 (ert-deftest ecc-chat-test-keys-differ-by-region ()
   "A letter moves in the transcript and is a letter in the prompt region."

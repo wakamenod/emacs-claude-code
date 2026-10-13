@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -64,10 +67,9 @@
 (require 'ecc-history)
 (require 'ecc-usage)
 (require 'ecc-window)
-
-(declare-function ecc-start "ecc" (&optional directory name))
-(declare-function ecc-kill "ecc" (session))
-(declare-function ecc-session-ensure-buffer "ecc-session" (session))
+(require 'ecc-session)
+(require 'ecc-skill)
+(require 'ecc-lifecycle)
 
 (defconst ecc-dashboard-buffer-name "*ecc-dashboard*"
   "Name of the dashboard buffer.")
@@ -373,9 +375,6 @@ REMEMBER is passed to `tabulated-list-print'."
   (setq tabulated-list-entries (mapcar #'ecc-dashboard--row
                                        (ecc-dashboard-entries))))
 
-(declare-function ecc-skill-show "ecc-skill" (&optional session))
-(declare-function ecc-skill-override-for "ecc-skill" (session name))
-
 ;;;; Capabilities
 
 ;; What a session can do is spread over `system/init' (the names of the
@@ -491,10 +490,8 @@ answer to initialize."
 
 (defun ecc-capabilities--skill-override (capability)
   "Return what CAPABILITY is set to, when it is a skill that is not on.
-`ecc-skill\=' owns the skill settings and is not required here, so this
-answers nil until that module is loaded."
+`ecc-skill\=' owns the skill settings."
   (when (and (eq (ecc-capability-kind capability) 'skill)
-             (fboundp 'ecc-skill-override-for)
              ecc-capabilities--session)
     (ecc-skill-override-for ecc-capabilities--session
                             (ecc-capability-name capability))))
@@ -713,13 +710,11 @@ which arrives with the first turn.\n"
 (defun ecc-dashboard-visit ()
   "Show the transcript of the session at point."
   (interactive)
-  (require 'ecc-window)
   (select-window (ecc-display-session (ecc-dashboard-session-at-point))))
 
 (defun ecc-dashboard-new (directory)
   "Start a session in DIRECTORY."
   (interactive (list (read-directory-name "Directory: " (ecc-window-project-root))))
-  (require 'ecc)
   (ecc-start directory)
   (ecc-dashboard-redraw))
 
@@ -731,7 +726,6 @@ transcript with it, and the row point is on is whichever the last
 redraw left it on."
   (interactive)
   (let ((session (ecc-dashboard-session-at-point)))
-    (require 'ecc)
     (when (yes-or-no-p (format "Stop %s? " (ecc-session-name session)))
       (ecc-kill session)
       (ecc-dashboard-redraw))))
@@ -767,7 +761,6 @@ where the buffer and the mode line follow it."
   ;; `ecc-history-resume' unless the user insists.
   (let ((session (ecc-dashboard-session-at-point)))
     (ecc-history-resume session current-prefix-arg)
-    (require 'ecc-window)
     (select-window (ecc-display-session session))
     (ecc-dashboard-redraw)))
 

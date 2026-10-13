@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -76,11 +79,7 @@
 (require 'ecc-model)
 (require 'ecc-proc)
 (require 'ecc-skill)
-
-(declare-function ecc-window-project-root "ecc-window" (&optional directory))
-(declare-function ecc-prompt-command-name "ecc-prompt" (text))
-(defvar ecc-prompt-immediate-commands)
-(declare-function ecc-prompt-command-argument "ecc-prompt" (text))
+(require 'ecc-window)
 
 ;;;; Options
 
@@ -1444,11 +1443,10 @@ the plugins that mention MCP.  This is on
     (ecc-plugin (ecc-prompt-command-argument text))
     t))
 
-(with-eval-after-load 'ecc-prompt
-  (add-hook 'ecc-prompt-intercept-functions #'ecc-plugin-intercept)
-  ;; What follows it only narrows the rows, which the browser does as
-  ;; well, so choosing it in the prompt region is the whole of it.
-  (add-to-list 'ecc-prompt-immediate-commands (car ecc-plugin-commands)))
+(add-hook 'ecc-prompt-intercept-functions #'ecc-plugin-intercept)
+;; What follows it only narrows the rows, which the browser does as
+;; well, so choosing it in the prompt region is the whole of it.
+(add-to-list 'ecc-prompt-immediate-commands (car ecc-plugin-commands))
 
 (provide 'ecc-plugin)
 

@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -45,14 +48,10 @@
 
 (require 'cl-lib)
 (require 'seq)
+(require 'project)
 (require 'ecc-core)
 (require 'ecc-protocol)
 (require 'ecc-model)
-
-(declare-function project-current "project" (&optional maybe-prompt directory))
-(declare-function project-root "project" (project))
-(declare-function ecc-prompt-command-name "ecc-prompt" (text))
-(defvar ecc-prompt-immediate-commands)
 
 ;;;; What the CLI knows
 
@@ -396,7 +395,6 @@ from wherever point stands on it."
 
 (defun ecc-hooks--project-directory ()
   "Return the root of the project of the current buffer, or nil."
-  (require 'project)
   (when-let* ((project (project-current nil default-directory)))
     (file-name-as-directory (expand-file-name (project-root project)))))
 
@@ -646,11 +644,10 @@ sent as a prompt.  This is on `ecc-prompt-intercept-functions'."
     (ecc-hooks-show (and session (ecc-session-project-root session)))
     t))
 
-(with-eval-after-load 'ecc-prompt
-  (add-hook 'ecc-prompt-intercept-functions #'ecc-hooks-intercept)
-  ;; It takes no argument, so choosing it in the prompt region is
-  ;; already the whole of it.
-  (add-to-list 'ecc-prompt-immediate-commands ecc-hooks-command))
+(add-hook 'ecc-prompt-intercept-functions #'ecc-hooks-intercept)
+;; It takes no argument, so choosing it in the prompt region is already
+;; the whole of it.
+(add-to-list 'ecc-prompt-immediate-commands ecc-hooks-command)
 
 (provide 'ecc-hooks)
 

@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -55,15 +58,16 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
+(require 'ecc-dispatch)
 
 (declare-function ecc-dashboard-session-at-point "ecc-dashboard" ())
 
 ;; posframe is not a dependency of this package: without it, and on a
 ;; frame that cannot carry a child frame, the buffer goes in a window.
-(declare-function posframe-workable-p "posframe" ())
-(declare-function posframe-show "posframe" (buffer &rest args))
-(declare-function posframe-hide "posframe" (buffer))
-(declare-function posframe-poshandler-frame-center "posframe" (info))
+(declare-function posframe-workable-p "ext:posframe" ())
+(declare-function posframe-show "ext:posframe" (buffer &rest args))
+(declare-function posframe-hide "ext:posframe" (buffer))
+(declare-function posframe-poshandler-frame-center "ext:posframe" (info))
 
 (defvar ecc-usage-buffer-name "*ecc-usage*"
   "Name of the buffer `ecc-usage' draws into.")
@@ -152,7 +156,7 @@ running."
                   :options (list :remote-control nil
                                  :usage-probe t
                                  :extra-args ecc-usage-probe-args))))
-    (ecc-proc-start session)
+    (ecc-proc-start session #'ecc-dispatch)
     (ecc-usage-fetch
      session
      (lambda (probe response)

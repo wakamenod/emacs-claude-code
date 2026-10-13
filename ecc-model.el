@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -39,8 +42,6 @@
 (require 'cl-lib)
 (require 'seq)
 (require 'ecc-core)
-
-(declare-function ecc-inline-session-p "ecc-inline" (session))
 
 ;;;; Hooks
 
@@ -108,7 +109,7 @@ nothing to add returns the prompt it was given.
 This is where a module puts a word of its own beside what the user
 wrote -- a line saying that Emacs can do the thing being asked for.
 Taking a draft away from the CLI altogether is
-`ecc-prompt-intercept-functions\=', which is the other one, and belongs to
+`ecc-prompt-intercept-functions\=', which is the other one, and is run by
 the prompt region alone: intercepting is a command, and a command is
 typed somewhere.
 
@@ -125,6 +126,60 @@ worth what it costs: a line on every prompt is a line on every prompt.")
   "Return TEXT as `ecc-prepare-prompt-functions\=' would have SESSION send it."
   (dolist (function ecc-prepare-prompt-functions text)
     (setq text (or (funcall function session text) text))))
+
+(defvar ecc-prompt-intercept-functions nil
+  "Functions given a session and a draft before the draft is sent.
+The first one to return non-nil takes the draft: nothing is sent to the
+CLI, and `ecc-prompt-send\=' returns `intercepted\='.  The draft is
+emptied and remembered either way, so that a typo can be brought back
+with \\[ecc-prompt-history-previous].
+
+`/resume\=' is ours outright: the CLI names no resume in
+`slash_commands\=' and none in `terminal_slash_commands\=' (checked
+against 2.1.270).  The terminal client draws that picker for itself,
+and what it does there is take the conversation over in place, which is
+what Emacs does to the window it is typed in.
+
+Only a draft the CLI is not meant to see belongs here.  The side
+question is the one there is: `/btw\=' is not a slash
+command, and sending it would put it in the conversation it is supposed
+to be asked beside.
+
+The prompt region runs it, and it is defined here rather than in
+`ecc-prompt\=' so that the modules answering a command -- `ecc-auth\=',
+`ecc-btw\=', `ecc-history\=', `ecc-hooks\=', `ecc-plugin\=' and
+`ecc-skill\=' -- can put themselves on it as they load.  They sit below
+the prompt region in the load order and could not require it back
+without dragging the whole user interface into a file that wanted one
+hook.  A function on it is given the session and a string, and nothing
+of the buffer.")
+
+(defvar ecc-prompt-immediate-commands nil
+  "Slash commands that run the moment they are chosen from the `/\=' question.
+A command Emacs answers itself and that needs no argument -- `/hooks\=',
+`/skills\=', `/plugins\=' -- has nothing to say to the CLI, so writing its
+name into the prompt only to send it is a step with no purpose: it is
+run there and then, and the slash that opened the question is taken
+back.  Each module puts its own command here, next to the interceptor
+that answers it (`ecc-prompt-intercept-functions\='), and this lives
+beside that hook for the same reason.
+
+A command whose argument is the point of it stays out: `/btw <question>\='
+and `/login <account>\=' are typed, not chosen.")
+
+(defun ecc-prompt-command-name (text)
+  "Return the slash command TEXT starts with, or nil.
+It lives here rather than in `ecc-prompt\=' for the reason
+`ecc-prompt-intercept-functions\=' does: the modules answering a command
+read the draft with it, and they sit below the prompt region."
+  (when (string-match "\\`[ \t]*\\(/[^ \t\n]+\\)" text)
+    (match-string 1 text)))
+
+(defun ecc-prompt-command-argument (text)
+  "Return what follows the slash command in TEXT, trimmed.
+It lives here for the same reason as `ecc-prompt-command-name\='."
+  (when (string-match "\\`[ \t]*/[^ \t\n]+\\(\\(?:.\\|\n\\)*\\)\\'" text)
+    (string-trim (match-string 1 text))))
 
 (defvar ecc-request-added-hook nil
   "Functions run with a session and a request that needs an answer.")
@@ -160,9 +215,10 @@ edit does, and `ecc-files-updated-hook\=' hears only of the file tools.")
 
 (defvar ecc-session-renamed-hook nil
   "Functions run with a session that has just been given a new name.
-A name is drawn in more places than the session buffer's own: the tab
-line of every window that lists the session, and the file the open
-sessions are saved in.")
+Everything that shows the name follows it from here: the name of the
+session buffer, which `ecc-session' changes first, the tab line of every
+window that lists the session, and the file the open sessions are saved
+in.")
 
 (defvar ecc-session-removed-hook nil
   "Functions run with a session that has just been forgotten.
@@ -383,6 +439,20 @@ turned a rename that changed nothing into BASE<2>."
             name (format "%s<%d>" base n)))
     name))
 
+(defun ecc-model-set-name (session name)
+  "Rename SESSION to NAME and return the name used.
+The name is made unique among the sessions first, SESSION itself not
+counting (`ecc-model-unique-name\=').  Every rename goes through here:
+the one the user asks for, and the one `/rename\=' does in the CLI.
+What draws the name follows `ecc-session-renamed-hook\=', the session
+buffer\='s own name included."
+  (let ((name (ecc-model-unique-name (string-trim name) session)))
+    (when (string-empty-p name)
+      (user-error "The name is empty"))
+    (setf (ecc-session-name session) name)
+    (run-hook-with-args 'ecc-session-renamed-hook session)
+    name))
+
 (cl-defun ecc-model-create-session (&key id name project-root cwd kind options)
   "Make a session, register it and return it.
 ID defaults to a fresh UUID, NAME to the directory name of
@@ -438,13 +508,14 @@ and find nothing changed."
   "Return non-nil when SESSION is one of the user\='s own.
 A recording being read, the usage probe and an inline question are all
 kind `own\=' and all belong to nobody: the probe has no project of its
-own and lands in whatever directory was current.  Whatever asks what
-the going of a session means for the project it was in -- a Space, a
-worktree -- asks this first, so that the answer is the same in both."
+own and lands in whatever directory was current.  The probe and an
+inline session say so among their launch options, `:usage-probe\=' and
+`:inline\='.  Whatever asks what the going of a session means for the
+project it was in -- a Space, a worktree -- asks this first, so that
+the answer is the same in both."
   (and (not (eq (ecc-session-kind session) 'archived))
        (not (ecc-model-option session :usage-probe nil))
-       (not (and (fboundp 'ecc-inline-session-p)
-                 (ecc-inline-session-p session)))))
+       (not (ecc-model-option session :inline nil))))
 
 (defun ecc-model-reset-conversation (session)
   "Empty SESSION of the conversation it was in, keeping the session itself.

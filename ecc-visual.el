@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -29,7 +32,9 @@
 ;; The movement the terminal client gets for free and a buffer of text
 ;; does not.  A spinner while a turn runs, a pulsing background under
 ;; the tool that is running, a blinking line where an answer is wanted,
-;; a flash when something finishes, and an icon per tool.
+;; a flash when something finishes, and an icon per tool.  Besides
+;; them, the mark and the colour a session is listed with for each
+;; state it can be in.
 ;;
 ;; Every effect is a timer over an overlay, and every one of them can be
 ;; turned off by itself.  Two rules keep them from becoming a cost: at
@@ -355,6 +360,115 @@ at the ends."
     (pulse-momentary-highlight-region start end)
     t))
 
+;;;; The mark of a session's state
+
+;; What a session is doing -- `attention', `running', `exited',
+;; `restored' or `idle', which `ecc-model-activity' says -- is shown the
+;; same way wherever a session is listed: a mark in front of its name and
+;; a colour.  The tab line, the sidebar, the Space picker and the session
+;; picker all take them from here, given the state; whose state it is,
+;; this module does not ask.
+
+(defface ecc-tab-running-face
+  '((t :inherit (ecc-running-face ecc-heading-face)))
+  "Face of the tab of the working session the window is showing.
+The yellow green of `ecc-running-face', which the transcript and the
+mode line use for the same state, over the weight of a heading."
+  :group 'ecc)
+
+(defface ecc-tab-running-dim-face
+  '((((class color) (min-colors 88) (background dark)) :foreground "#7a9c33")
+    (((class color) (min-colors 88) (background light)) :foreground "#7d9e60")
+    (((class color)) :foreground "green")
+    (t :inherit default))
+  "Face of the tab of a working session the window is not showing.
+The full yellow green of `ecc-tab-running-face', bold, reads as the tab
+one is looking at, whichever tab that is; a working session elsewhere
+says the same thing more quietly, in a shade of the same green and at
+the weight of the rest of the row."
+  :group 'ecc)
+
+(defface ecc-tab-attention-face
+  '((t :inherit ecc-pending-face))
+  "Face of the tab of a session that is waiting for an answer."
+  :group 'ecc)
+
+(defface ecc-tab-idle-face
+  '((t :inherit ecc-dim-face))
+  "Face of the tab of a session with nothing to do."
+  :group 'ecc)
+
+(defface ecc-tab-attention-blink-face
+  '((t :inherit ecc-tab-attention-face :inverse-video t))
+  "Face of a tab waiting for an answer, on every other beat of the blink."
+  :group 'ecc)
+
+(defface ecc-tab-current-face
+  '((t :inherit (bold ecc-heading-face) :underline t))
+  "Face of the tab of the session the window is showing."
+  :group 'ecc)
+
+(defvar ecc-tab--blink-phase nil
+  "Non-nil on the beat a tab waiting for an answer is drawn lit.")
+
+(defun ecc-tab-mark-of-state (state &optional fill)
+  "Return the character that stands for STATE.
+A state with nothing to say gets no mark: a row of tabs is quieter
+when only the ones that want something are marked.  Somewhere the mark
+opens a column of names -- the sidebar, the session picker -- passes
+FILL, and idle gets a `·\=' of its own, so that an idle name does not
+stand a column to the left of every other."
+  (pcase state
+    ('attention "⚠") ('running "▶") ('exited "✗") ('restored "○")
+    (_ (if fill "·" ""))))
+
+(defun ecc-tab-faces-of-state (state current)
+  "Return the faces for STATE, the telling one first.
+CURRENT says the window is showing this session.  The state comes
+first so that its colour wins, and `ecc-tab-current-face' follows to
+add what it alone says -- the weight and the underline that mark the
+tab one is looking at.  Putting `current' first instead, as this did
+before, cost the tab of the session in front of you the very colour
+that says what it is doing.  An idle tab is the one exception, and is
+left to `ecc-tab-current-face' alone.  A running tab that is not the
+current one takes the quieter `ecc-tab-running-dim-face': the full
+green, bold, was bright enough elsewhere in the row to be read as the
+tab in front of you."
+  (let ((state (if (and ecc-tab--blink-phase (eq state 'attention))
+                   'ecc-tab-attention-blink-face
+                 (pcase state
+                   ('attention 'ecc-tab-attention-face)
+                   ('running (if current
+                                 'ecc-tab-running-face
+                               'ecc-tab-running-dim-face))
+                   ('exited 'ecc-error-face)
+                   ;; Quiet like idle: waiting to be used, not broken.
+                   (_ 'ecc-tab-idle-face)))))
+    (cond
+     ;; Idle is not a colour so much as the want of one: the dim face
+     ;; is there to sink the sessions with nothing to say into the
+     ;; background, and the one being read does not belong there.  Dim
+     ;; and current together read as neither.
+     ((and current (eq state 'ecc-tab-idle-face))
+      (list 'ecc-tab-current-face))
+     (current (list state 'ecc-tab-current-face))
+     (t (list state)))))
+
+(defun ecc-tab-column-mark (state)
+  "Return the mark of STATE with its face, where a mark opens a line.
+What the sidebar, the session picker and the Space picker put in front
+of a name.  Idle gets `·\=' -- the tab line leaves it blank -- so that
+an idle name does not stand a column to the left of every other, and a
+STATE of nil -- a Space with nothing running, or one only recordings
+are left of -- a blank of the same width.  The face is the mark\='s of
+the moment of asking, not blinking; the sidebar lays the face of its
+whole row over it."
+  (let ((ecc-tab--blink-phase nil))
+    (if state
+        (propertize (ecc-tab-mark-of-state state t)
+                    'face (ecc-tab-faces-of-state state nil))
+      " ")))
+
 ;;;; Icons
 
 (defvar ecc-visual-icon-alist
@@ -401,7 +515,7 @@ of step with itself.  A tool that is not here at all gets
   "Return the face the icon of TOOL-NAME is drawn in."
   (nth 2 (ecc-visual-icon-entry tool-name)))
 
-(declare-function nerd-icons-codicon "nerd-icons" (name &rest args))
+(declare-function nerd-icons-codicon "ext:nerd-icons" (name &rest args))
 
 (defvar ecc-visual--nerd-icons 'unknown
   "Whether `nerd-icons' is available: t, nil, or `unknown' before looking.")

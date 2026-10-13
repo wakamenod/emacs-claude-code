@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -49,11 +52,10 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
+(require 'ecc-dispatch)
 (require 'ecc-markdown)
 (require 'ecc-diff)
 (require 'ecc-context)
-
-(declare-function ecc-session-ensure-buffer "ecc-session" (session))
 
 ;;;; Settings
 
@@ -191,9 +193,10 @@ id of its own in system/init, and the binding must survive that.")
 (defun ecc-inline-session-p (session)
   "Return non-nil when SESSION is one of the inline ones.
 An inline session is kind `own' like any other and is told apart by
-this rather than by its name: what says it is inline is that a buffer
-is waiting for its answer."
-  (and (gethash session ecc-inline--targets) t))
+this rather than by its name: `ecc-inline--start' starts it with
+`:inline' among its options, which is what the model reads as well
+\(`ecc-model-own-session-p')."
+  (ecc-model-option session :inline nil))
 
 (defun ecc-inline--read-binding ()
   "Ask which kind of session this buffer should use, and return it."
@@ -249,8 +252,8 @@ was; the CLI hands the fork its real id in system/init."
                              (if forkp
                                  (list :resume-from (ecc-session-id parent))
                                (list :extra-args ecc-inline-light-args))
-                             (list :remote-control nil)))))
-    (ecc-proc-start session forkp forkp)
+                             (list :remote-control nil :inline t)))))
+    (ecc-proc-start session #'ecc-dispatch forkp forkp)
     session))
 
 ;;;; Asking

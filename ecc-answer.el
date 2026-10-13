@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -47,22 +50,24 @@
 (require 'ecc-window)
 
 (declare-function ecc-plan-open "ecc-plan" (request))
-;; Autoloaded commands of modules that require this one; the keymap only
-;; names them.
+;; Commands of other modules that `ecc-global-map' only names.  Each is
+;; autoloaded, and a key of the map loads this file and nothing else:
+;; requiring their modules here would load them all on the first key.
 (declare-function ecc-dashboard "ecc-dashboard" ())
 (declare-function ecc-history-open "ecc-history" (session-id))
 (declare-function ecc-interrupt "ecc-transient" ())
-(declare-function ecc-menu "ecc-transient" ())
-(declare-function ecc-resume "ecc" (session &optional fork))
+(declare-function ecc-menu "ecc-transient" () t)
+(declare-function ecc-rename-session "ecc-session" (session name))
+(declare-function ecc-resume "ecc-lifecycle" (session &optional fork))
 (declare-function ecc-review "ecc-review" (&optional session paths))
-(declare-function ecc-review-menu "ecc-review-menu" ())
+(declare-function ecc-review-menu "ecc-review-menu" () t)
 (declare-function ecc-search "ecc-search" (query &optional everywhere))
 (declare-function ecc-sidebar-focus "ecc-sidebar" ())
 (declare-function ecc-space-goto "ecc-space" (space))
 (declare-function ecc-space-zoom "ecc-space" ())
 (declare-function ecc-space-cycle-layout "ecc-space" (&optional first))
 (declare-function ecc-show-session "ecc-transient" ())
-(declare-function ecc-start "ecc" (&optional directory name))
+(declare-function ecc-start "ecc-lifecycle" (&optional directory name))
 (declare-function ecc-tui-open "ecc-tui" (&optional session))
 (declare-function ecc-usage "ecc-usage" ())
 

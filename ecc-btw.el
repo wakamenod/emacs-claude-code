@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -56,12 +59,10 @@
 (require 'ecc-markdown)
 (require 'ecc-window)
 
-(declare-function ecc-prompt-command-name "ecc-prompt" (text))
-(declare-function ecc-prompt-command-argument "ecc-prompt" (text))
-(declare-function posframe-workable-p "posframe" ())
-(declare-function posframe-show "posframe" (buffer &rest args))
-(declare-function posframe-hide "posframe" (buffer))
-(declare-function posframe-poshandler-frame-center "posframe" (info))
+(declare-function posframe-workable-p "ext:posframe" ())
+(declare-function posframe-show "ext:posframe" (buffer &rest args))
+(declare-function posframe-hide "ext:posframe" (buffer))
+(declare-function posframe-poshandler-frame-center "ext:posframe" (info))
 
 ;;;; Options
 
@@ -455,8 +456,7 @@ sent as a prompt.  This is on `ecc-prompt-intercept-functions'."
        (t (message "Usage: /btw <your question>")))
       t)))
 
-(with-eval-after-load 'ecc-prompt
-  (add-hook 'ecc-prompt-intercept-functions #'ecc-btw-intercept))
+(add-hook 'ecc-prompt-intercept-functions #'ecc-btw-intercept)
 
 (provide 'ecc-btw)
 

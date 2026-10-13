@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -72,16 +75,7 @@
 (require 'ecc-window)
 (require 'ecc-capability)
 
-;; Declared rather than required: `ecc-render' is above this file, and
-;; the session of the current buffer is all that is wanted of it.  The
-;; same form `ecc-notify' uses, and what lets this file compile on its
-;; own (confirmed 2026-09-17).
-(defvar ecc-render--session)
-
-(declare-function ecc-prompt-command-name "ecc-prompt" (text))
-(defvar ecc-prompt-immediate-commands)
 (declare-function ecc-dashboard-session-at-point "ecc-dashboard" ())
-(declare-function ecc-prompt-command-argument "ecc-prompt" (text))
 
 ;;;; Options
 
@@ -848,9 +842,11 @@ column the description happens to reach."
 (defun ecc-skill--read-session ()
   "Return the session the skills should be shown of."
   (or ecc-skill--session
+      ;; `ecc-dashboard' requires this file and cannot be required back;
+      ;; the dashboard's row counts only once it has been loaded.
       (and (fboundp 'ecc-dashboard-session-at-point)
            (ecc-dashboard-session-at-point))
-      ecc-render--session
+      (ecc-window-buffer-session)
       (car (ecc-model-sessions))
       (user-error "No session to look at")))
 
@@ -1066,12 +1062,11 @@ being sent.  This is on `ecc-prompt-intercept-functions'."
   "Draw the Skills buffer again when SESSION says something new."
   (ecc-skill--redraw session))
 
-(with-eval-after-load 'ecc-prompt
-  (add-hook 'ecc-prompt-intercept-functions #'ecc-skill-intercept)
-  ;; A bare /skills opens the buffer, and the buffer is where a skill
-  ;; is run from, so choosing it in the prompt region is the whole of
-  ;; it.  A skill by name is still typed out and sent.
-  (add-to-list 'ecc-prompt-immediate-commands (car ecc-skill-commands)))
+(add-hook 'ecc-prompt-intercept-functions #'ecc-skill-intercept)
+;; A bare /skills opens the buffer, and the buffer is where a skill is
+;; run from, so choosing it in the prompt region is the whole of it.  A
+;; skill by name is still typed out and sent.
+(add-to-list 'ecc-prompt-immediate-commands (car ecc-skill-commands))
 
 (add-hook 'ecc-session-init-hook #'ecc-skill--on-session-change)
 (add-hook 'ecc-commands-updated-hook #'ecc-skill--on-session-change)

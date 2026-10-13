@@ -383,7 +383,7 @@ name of the project rather than `records<2>'."
                               :extra-args ("--max-budget-usd" "0.30"
                                            . ,shot-live-isolation))))
   (ecc-session-ensure-buffer shot-live)
-  (ecc-proc-start shot-live)
+  (ecc-proc-start shot-live #'ecc-dispatch)
   (ecc--enable-session-modes)
   (shot-show shot-live))
 
@@ -407,7 +407,7 @@ either way).  The budget is larger to match, and still a budget."
                               :extra-args ("--max-budget-usd" "0.50"
                                            . ,shot-live-isolation))))
   (ecc-session-ensure-buffer shot-live)
-  (ecc-proc-start shot-live)
+  (ecc-proc-start shot-live #'ecc-dispatch)
   (ecc--enable-session-modes)
   (shot-show shot-live))
 
@@ -2088,7 +2088,7 @@ appended to its system prompt.  Every other session goes, as in
   ;; is of what it changes from here.
   (ecc-review-ensure-baseline shot-live)
   (ecc-session-ensure-buffer shot-live)
-  (ecc-proc-start shot-live)
+  (ecc-proc-start shot-live #'ecc-dispatch)
   (ecc--enable-session-modes)
   (shot-show shot-live))
 

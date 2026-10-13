@@ -11,13 +11,15 @@
 ;; kind of thing.  An error is a defect in the package -- a header nothing
 ;; reads, a global mode a user's init cannot turn on, a function that was
 ;; removed from Emacs before the version we claim -- and no release should
-;; carry one.  A warning is a judgement, and several of this package's are
-;; deliberate: `with-eval-after-load' between two files of this package is
-;; how a module registers with the prompt region without requiring the
-;; whole user interface back up the load order.  Failing on those would
-;; mean either undoing that or turning the check off, and a check that is
-;; off is how forty-two stale `Package-Requires' headers and five global
-;; modes with no autoload cookie went unnoticed until 2026-09-18.
+;; carry one.  A warning is a judgement, and the one this package has is
+;; deliberate: a `with-eval-after-load' of `savehist', a library of Emacs
+;; that a user may never load, and the comment above it says why.
+;; Between two files of this package there is none: a module registers
+;; with one above it by putting itself on a variable defined below both.
+;; Failing on it would mean either undoing it or turning the check off,
+;; and a check that is off is how
+;; forty-two stale `Package-Requires' headers and five global modes with
+;; no autoload cookie went unnoticed until 2026-09-18.
 ;;
 ;; `package-lint-batch-and-exit' cannot be told this: it fails on warnings
 ;; too unless `package-lint-batch-fail-on-warnings' is nil, and with that

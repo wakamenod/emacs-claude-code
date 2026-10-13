@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -78,8 +81,8 @@
 (require 'ecc-render)
 (require 'ecc-perm)
 (require 'ecc-window)
+(require 'ecc-lifecycle)
 
-(declare-function ecc-start "ecc" (&optional directory name))
 (autoload 'ecc-review-files-toggle "ecc-review-files" nil t)
 (autoload 'ecc-review-files-filter "ecc-review-files" nil t)
 (autoload 'ecc-review-talk-tour "ecc-review-talk" nil t)
@@ -89,7 +92,6 @@
 (autoload 'ecc-review-pr-previous-commit "ecc-review-pr" nil t)
 (autoload 'ecc-review-pr-send-all "ecc-review-pr" nil t)
 (declare-function ecc-review-pr-walk-status "ecc-review-pr" (&optional subject))
-(declare-function ediff-recenter "ediff-util" (&optional no-rehighlight))
 (declare-function ecc-review-ediff-buffer "ecc-review-ediff" (session &optional paths))
 (declare-function ecc-review-ediff-range-buffer "ecc-review-ediff"
                   (session &optional range root paths))
@@ -972,7 +974,6 @@ is one."
              (cons text git-root))))))
 
 ;;;; The buffer
-
 
 (defvar-local ecc-review--session nil
   "The session this review buffer belongs to.")

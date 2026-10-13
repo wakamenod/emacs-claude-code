@@ -11,8 +11,8 @@ in a comment there, and this file names the rule alone.
 ## Layout
 
 One feature per file, `ecc-<feature>.el`, with `test/ecc-<module>-test.el` beside it.
-`ecc.el` holds the entry points, `ecc-transient.el` the menu. The boundaries that are
-rules:
+`ecc.el` loads every module, `ecc-lifecycle.el` holds the commands that start and stop a
+session, and `ecc-transient.el` the menu. The boundaries that are rules:
 
 - `ecc-core.el` depends on no other `ecc-` module.
 - JSON is touched only by `ecc-protocol.el` and `ecc-proc.el`, plus the three that speak to
@@ -20,8 +20,13 @@ rules:
 - `ecc-model.el` — the session, the Turn > Step > Tool tree, the pending-request queue
   and the hooks — knows nothing of JSON, processes or drawing, and never sees the buffer.
 - `ecc-render.el` alone draws the transcript; `ecc-chat.el` holds the major mode, the
-  keymaps and the movement. The prompt region lives after `ecc-render--prompt-start` in
-  the same buffer, and no redraw deletes past it.
+  movement and the keymaps. It defines them, and each module above it keeps its own
+  commands in a keymap of its own made a parent of them (`ecc-chat-add-keymap-parent`),
+  so that a user's binding wins: `ecc-chat.el` names no command of a module above it.
+  What such a module adds to a chat buffer -- the prompt's completion, the hint's part of
+  the mode line -- it adds from `ecc-chat-mode-hook`.
+  The prompt region lives after `ecc-render--prompt-start` in the same buffer, and no
+  redraw deletes past it.
 - `ecc-window.el` does not require `ecc-space.el`: the Spaces are built on top of the
   windows, not inside them. `ecc-window.el` branches on `ecc-use-spaces` at the head of
   the four functions that care and loads `ecc-space` at run time, and with that setting

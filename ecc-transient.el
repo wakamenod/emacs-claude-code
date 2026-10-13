@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -43,34 +46,18 @@
 (require 'ecc-prompt)
 (require 'ecc-context)
 (require 'ecc-notify)
-
-(declare-function ecc-start "ecc" (&optional directory name))
-(declare-function ecc-resume "ecc" (session &optional fork))
-(declare-function ecc-read-session "ecc" (&optional prompt))
-(declare-function ecc-kill "ecc" (session))
-(declare-function ecc-dashboard "ecc-dashboard" ())
-(declare-function ecc-capabilities-show "ecc-dashboard" (session))
-(declare-function ecc-inline-prompt "ecc-inline" (question))
-(declare-function ecc-rewrite "ecc-inline" (beg end instruction))
-(declare-function ecc-next-attention "ecc-answer" (&optional project-root))
-(declare-function ecc-next-attention-in-project "ecc-answer" ())
-(declare-function ecc-answer-option-1 "ecc-answer" ())
-(declare-function ecc-answer-option-2 "ecc-answer" ())
-(declare-function ecc-answer-option-3 "ecc-answer" ())
-(declare-function ecc-answer-option-4 "ecc-answer" ())
-(declare-function ecc-answer-allow "ecc-answer" ())
-(declare-function ecc-answer-deny "ecc-answer" (reason))
-(declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
-(declare-function ecc-review "ecc-review" (&optional session paths))
-(declare-function ecc-review-menu "ecc-review-menu" ())
-(declare-function ecc-session-timeline "ecc-session" ())
-(declare-function ecc-chat-goto-files "ecc-chat" ())
-(declare-function ecc-chat-goto-plans "ecc-chat" ())
-(declare-function ecc-session-ensure-buffer "ecc-session" (session))
-(declare-function ecc-history-open "ecc-history" (session-id))
-(declare-function ecc-search "ecc-search" (query &optional everywhere))
-(declare-function ecc-tui-open "ecc-tui" (&optional session))
-(declare-function ecc-tui-return "ecc-tui" (&optional session))
+(require 'ecc-chat)
+(require 'ecc-session)
+(require 'ecc-perm)
+(require 'ecc-answer)
+(require 'ecc-history)
+(require 'ecc-review)
+(require 'ecc-review-menu)
+(require 'ecc-search)
+(require 'ecc-dashboard)
+(require 'ecc-inline)
+(require 'ecc-tui)
+(require 'ecc-lifecycle)
 
 ;;;; Loading the rest of the package
 
@@ -121,7 +108,6 @@ typed."
   (let ((session (ecc-menu-session)))
     (ecc-proc-set-permission-mode session mode)
     (message "%s: switching to %s" (ecc-session-name session) mode)))
-
 
 ;;;###autoload
 (defun ecc-remote-control-toggle ()
@@ -192,7 +178,6 @@ the model can be changed without restarting it."
   "Show the transcript of the session at hand and run COMMAND there.
 The commands that move around a transcript need its window, not just
 its buffer."
-  (require 'ecc-session)
   (let ((session (ecc-menu-session)))
     (select-window (ecc-display-session session))
     (call-interactively command)))
@@ -310,7 +295,6 @@ With --remember among ARGS the tools involved are not asked about again
 for the rest of the session."
   :description "Allow every waiting request"
   (interactive (list (transient-args 'ecc-allow-all-menu)))
-  (require 'ecc-perm)
   (ecc-perm-allow-all (and (member "--remember" args) t)))
 
 (transient-define-prefix ecc-allow-all-menu ()
@@ -430,6 +414,28 @@ before it draws anything."
   (interactive)
   (ecc-transient--load)
   (transient-setup 'ecc-menu))
+
+;;;; The keys of a chat buffer
+
+;; `?' stays self-inserting in a region one writes prose in, so the menu
+;; is on C-c ? there and on ? in the transcript.
+
+(defvar ecc-transient-chat-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c ?") #'ecc-menu)
+    map)
+  "The keys of the menu in a chat buffer, wherever point is.
+A parent of `ecc-chat-mode-map', so that a key bound there wins.")
+
+(defvar ecc-transient-transcript-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "?") #'ecc-menu)
+    map)
+  "The keys of the menu in the transcript.
+A parent of `ecc-chat-transcript-map', so that a key bound there wins.")
+
+(ecc-chat-add-keymap-parent ecc-chat-mode-map ecc-transient-chat-map)
+(ecc-chat-add-keymap-parent ecc-chat-transcript-map ecc-transient-transcript-map)
 
 (provide 'ecc-transient)
 

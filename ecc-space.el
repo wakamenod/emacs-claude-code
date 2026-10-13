@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -63,15 +66,12 @@
 (require 'ecc-window)
 (require 'ecc-worktree)
 (require 'ecc-notify)
+(require 'ecc-history)
+(require 'ecc-lifecycle)
 
-(declare-function ecc-render--project-name-1 "ecc-render" (directory))
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
-(declare-function ecc-kill "ecc" (session))
-(declare-function ecc-start "ecc" (&optional directory name))
-(declare-function dired-noselect "dired" (dir-or-list &optional switches))
 (declare-function ecc-sidebar-show "ecc-sidebar" ())
-(declare-function ecc-sidebar-redraw "ecc-sidebar" ())
-(declare-function ecc-history-project-roots "ecc-history" ())
+(declare-function ecc-sidebar-redraw "ecc-sidebar" (&rest _))
 
 ;;;; Settings
 
@@ -127,10 +127,9 @@ A worktree goes by its branch, which is what tells two worktrees of one
 repository apart -- the directory name is a slug of that branch and
 says nothing more.  The `worktree/' that herdr puts in front of the
 branches it generates is dropped, as it drops it."
-  (require 'ecc-render)
   (if (and parent branch)
       (string-remove-prefix "worktree/" branch)
-    (ecc-render--project-name-1 root)))
+    (ecc-window-project-name root)))
 
 (defun ecc-space-of-root (root)
   "Return the Space of the project ROOT belongs to."
@@ -511,7 +510,6 @@ rather than started in a directory that does not exist."
              (null (ecc-space-sessions space))
              (file-directory-p (ecc-space-root space)))
     (let ((ecc-space--starting (cons (ecc-space-key space) ecc-space--starting)))
-      (require 'ecc)
       (condition-case error
           (ecc-start (ecc-space-root space))
         (error (message "%s: nothing started: %s" (ecc-space-name space)
@@ -1178,7 +1176,6 @@ the sidebar draws and the `1\='-`9\=' keys take under the user\='s feet.
 
 A worktree that has been removed is left out: its recordings are still
 readable with `ecc-history-open\=', but there is nowhere to start."
-  (require 'ecc-history)
   (let ((keys (ecc-space--keys))
         (seen (make-hash-table :test #'equal))
         (spaces nil))
@@ -1374,7 +1371,6 @@ by itself."
                                    (if (= 1 (length sessions)) "" "s")
                                    (ecc-space--group-name space children)))
         (user-error "Left alone"))
-      (require 'ecc)
       (let ((ecc-space--closing t))
         (mapc #'ecc-kill sessions)))
     (let ((ecc-space--closing t))
@@ -1490,6 +1486,8 @@ the key is forgotten everywhere it was written down."
     (setq ecc-space--implicit
           (delete (ecc-space-key space) ecc-space--implicit)))
   (ecc-space--child-gone space)
+  ;; `ecc-sidebar' requires this file, and the sidebar is a panel a
+  ;; Space can be used without: there is nothing to redraw until it loads.
   (when (fboundp 'ecc-sidebar-redraw)
     (ecc-sidebar-redraw))
   (message "Closed %s" (ecc-space-name space)))

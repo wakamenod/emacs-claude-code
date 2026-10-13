@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -60,12 +63,9 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
+(require 'ecc-lifecycle)
 
-(declare-function ecc-prompt-command-name "ecc-prompt" (text))
-(declare-function ecc-prompt-command-argument "ecc-prompt" (text))
-(declare-function ecc-resume "ecc" (session &optional fork))
-(declare-function ghostel-exec "ghostel" (buffer program &optional args identity))
-(declare-function make-term "term" (name program &optional startfile &rest switches))
+(declare-function ghostel-exec "ext:ghostel" (buffer program &optional args identity))
 
 ;;;; Options
 
@@ -284,7 +284,6 @@ credentials they started with (`ecc-auth-restart-sessions\\=')."
   "Stop the CLI of SESSION and start it again on the current credentials.
 `ecc-resume\\=' reads the recording back, so the transcript survives."
   (ecc-proc-stop session)
-  (require 'ecc)
   (ecc-resume session))
 
 (defun ecc-auth--after-login ()
@@ -324,8 +323,7 @@ sent as a prompt.  This is on `ecc-prompt-intercept-functions\\='."
       (ecc-auth-show-status)
       t))))
 
-(with-eval-after-load 'ecc-prompt
-  (add-hook 'ecc-prompt-intercept-functions #'ecc-auth-intercept))
+(add-hook 'ecc-prompt-intercept-functions #'ecc-auth-intercept)
 
 (provide 'ecc-auth)
 

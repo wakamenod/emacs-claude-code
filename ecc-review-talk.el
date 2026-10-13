@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -68,12 +71,12 @@
 (require 'ecc-context)
 (require 'ecc-review)
 (require 'ecc-review-agent)
+(require 'ecc-review-files)
 
 (defvar ediff-window-A)
 (defvar ediff-buffer-B)
 (declare-function ediff-keep-window-config "ediff-wind" (control-buf))
 (declare-function ecc-review-ediff-stacked-p "ecc-review-ediff" (&optional control))
-(declare-function ecc-review-files--pane-window "ecc-review-files" (review))
 
 (defcustom ecc-review-talk-reply-height 12
   "How many lines the reply pane under an ediff review takes, or nil for none.

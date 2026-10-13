@@ -11,6 +11,109 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [0.4.4] - 2026-10-14
+
+Verified against **Claude Code CLI 2.1.290**.
+
+### Changed
+
+- The `declare-function` forms pass `check-declare`, which reported 42
+  problems in them. The packages ecc uses only when they are installed --
+  posframe, ghostel, nerd-icons and flycheck -- are declared as `"ext:"`
+  files, so it no longer looks for them. Four declarations of ecc's own
+  functions had an argument list the definition no longer has, and two of
+  Emacs's (`flymake-diagnostic-text`, `treesit-buffer-root-node`) that of an
+  older Emacs. Declarations of functions it cannot see the definition of --
+  `cl-defstruct` accessors, `transient-define-prefix` commands, the flymake
+  and xref accessors -- say so with the FILEONLY argument. The tree-sitter
+  primitives are declared in `treesit.c`, as Emacs's own files declare them;
+  an Emacs installed without its C sources still reports those six, having
+  no file to look in. There are also fewer of them: 97 where there were
+  250. A file now requires the module it used to declare wherever that makes
+  no loop, loads no Space module from below and loads early nothing that was
+  loaded late on purpose, and a function the file never calls, or that Emacs
+  autoloads, is not declared at all; the two windows of an ediff review no
+  longer declare the eight functions of `ecc-review-ediff.el` they call,
+  being part of it now. `ecc-chat.el` no longer names the commands of the
+  modules above it -- `ecc-prompt.el`, `ecc-session.el`, `ecc-queue.el`,
+  `ecc-hint.el`, `ecc-tui.el` and `ecc-transient.el`: it defines the
+  keymaps, each of them keeps its own commands in a keymap made a parent of
+  them, and `ecc-chat-mode` loads them all. A key a user binds in
+  `ecc-chat-mode-map` or the transcript maps still wins over theirs. The
+  mode line is put together the same way: a chat buffer's
+  `mode-line-process` is a list of constructs now rather than one, and
+  `ecc-hint.el` adds what `ecc-mode-line-format` asks for to it from
+  `ecc-chat-mode-hook`, ahead of the user's own functions there.
+  `ecc-chat-return`, `ecc-chat-slash` and the option `ecc-chat-return-sends`
+  now live in `ecc-prompt.el`, and `ecc-chat-follow-link` in
+  `ecc-session.el`, under the same names. No module waits any longer for
+  another of ecc's own to be loaded before it registers with it:
+  `ecc-prompt-intercept-functions` and `ecc-prompt-immediate-commands` keep
+  their names and are now defined in `ecc-model.el`, so the modules that
+  answer `/btw`, `/hooks`, `/login` and the like put themselves on them as
+  they load -- a configuration that loads one of those modules without
+  `ecc-prompt.el` now finds both variables there -- and `ecc-worktree.el`
+  requires `ecc-mcp.el` and registers its MCP tools as it loads.
+  `ecc-prompt-command-name` and `ecc-prompt-command-argument`, which those
+  modules read a draft with, moved to `ecc-model.el` beside them under the
+  same names. Three calls no longer ask whether a function of ecc's own is
+  defined before making it: `ecc-prompt.el` and `ecc-dashboard.el` already
+  load `ecc-skill.el`, and `ecc-worktree.el` now requires `ecc-chat.el`.
+  `ecc-lifecycle.el`, `ecc-notify.el` and `ecc-skill.el` read the session of
+  a buffer with `ecc-window-buffer-session` instead of declaring a variable
+  of `ecc-render.el`. Sixteen
+  `require`s inside functions, of a module the file had already loaded, are
+  gone. The commands that start and stop a session -- `ecc-start`,
+  `ecc-resume`, `ecc-restart`, `ecc-kill` and `ecc-read-session`, with the
+  offer to resume a CLI that exited on its own -- moved from `ecc.el` to
+  `ecc-lifecycle.el` under the same names, so the modules that start or
+  stop a session require it instead of declaring functions of `ecc.el`.
+  Their autoloads now load that file, and it loads the rest of the package
+  before a CLI starts, as the autoloads of `ecc.el` did. Nothing a user
+  sees changes.
+  The lowest modules no longer call up into the ones built on them. An
+  inline session carries `:inline` among its launch options, as the usage
+  probe carries `:usage-probe`, and `ecc-model-own-session-p` reads it there
+  instead of asking `ecc-inline.el`. `ecc-history-directory`,
+  `ecc-history-file` and `ecc-history-recorded-cost` live in `ecc-proc.el`,
+  which counts a resumed CLI's cost from the recording. A rename is the
+  model's: `ecc-model-set-name` renames the session and runs
+  `ecc-session-renamed-hook`, on which `ecc-session.el` renames the buffer,
+  and `ecc-session-set-name` is an obsolete alias of it. `ecc-rename-session`
+  moves from `ecc-window.el` to `ecc-session.el`; the marks and faces of a
+  session's state (`ecc-tab-mark-of-state`, `ecc-tab-faces-of-state`,
+  `ecc-tab-column-mark` and the `ecc-tab-*-face` faces) from `ecc-notify.el`
+  to `ecc-visual.el`; and `ecc-render--project-name-1` becomes
+  `ecc-window-project-name`.
+  No module learns any longer, once another has loaded, what to call. The
+  variables `ecc-proc-message-function` and `ecc-mcp-config-function`, which
+  `ecc-dispatch.el` and `ecc-mcp.el` set as they loaded, are gone: whoever
+  starts a CLI says where its messages go, and `ecc-proc.el` requires
+  `ecc-mcp.el` and asks it for the `--mcp-config` argument by name. The
+  internal `ecc-proc-start` takes that handler as its second argument,
+  `(ecc-proc-start SESSION HANDLER &optional RESUME FORK)`, and refuses a
+  call without one rather than drop every message; `ecc-proc-feed` and
+  `ecc-proc-handle-line` take it last.
+- `ecc-review-direct.el` is folded into `ecc-review-ediff.el`, so
+  `(require 'ecc-review-direct)` no longer works; require
+  `ecc-review-ediff` instead. Every symbol keeps its name.
+- Every source file names all four models that wrote it, one `Assisted-by:`
+  line each, in place of Claude Opus 5 alone: by the history's commit
+  trailers on 2026-10-14, Claude Opus 5 (428 commits), Opus 5.5 (424),
+  Fable 5.1 (28) and Haiku 4.5 (1).
+- Loading ecc no longer advises Emacs's own functions. On the NS port it put
+  an advice on `ns-insert-working-text`, `ns-insert-marked-text` and
+  `ns-delete-working-text` -- which keeps the placeholder of the prompt region
+  out of the way of what an input method is composing -- as soon as the file
+  was loaded, in every Emacs whether or not it ever opened a chat buffer. The
+  advice now goes on with the first chat buffer, once, and does nothing
+  outside one; it is not taken off again, as with the hooks in 0.4.3. On
+  Emacs before 31 the ediff review did the same with
+  `ediff-recenter-one-window`, which it keeps from changing the current
+  buffer; that advice now goes on with the first ediff review. A test now
+  starts a fresh Emacs with stand-ins for the NS functions, loads every file
+  of ecc and fails if any ecc function advises one that is not ecc's own.
+
 ## [0.4.3] - 2026-10-13
 
 Verified against **Claude Code CLI 2.1.290**.

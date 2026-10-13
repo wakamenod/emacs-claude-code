@@ -35,8 +35,24 @@
     (let* ((heard nil)
            (ecc-session-renamed-hook
             (list (lambda (s) (push (ecc-session-name s) heard)))))
-      (ecc-session-set-name session "renamed")
+      (ecc-model-set-name session "renamed")
       (should (equal heard '("renamed"))))))
+
+(ert-deftest ecc-session-test-the-buffer-follows-a-rename-in-the-model ()
+  "A name the model is given reaches the buffer before anything else hears.
+`/rename\=' in the CLI renames through `ecc-model-set-name\=', which knows
+no buffer; the buffer follows on `ecc-session-renamed-hook\=', ahead of
+whatever else listens there."
+  (ecc-test-with-fake-session session
+    (let* ((buffer (ecc-session-ensure-buffer session))
+           (seen nil)
+           (probe (lambda (_s) (push (buffer-name buffer) seen))))
+      (add-hook 'ecc-session-renamed-hook probe)
+      (unwind-protect
+          (should (equal (ecc-model-set-name session "renamed") "renamed"))
+        (remove-hook 'ecc-session-renamed-hook probe))
+      (should (equal (buffer-name buffer) (ecc-session-buffer-name "renamed")))
+      (should (equal seen (list (ecc-session-buffer-name "renamed")))))))
 
 (ert-deftest ecc-session-test-the-cli-cwd-does-not-move-the-buffer ()
   "A cwd the CLI reports leaves the transcript where the session is.
@@ -108,6 +124,34 @@ the part that goes wrong."
   "Return the result of an ordinary turn costing COST."
   `((type . "result") (subtype . "success") (is_error . :false)
     (total_cost_usd . ,(or cost 0.01)) (result . "done")))
+
+(ert-deftest ecc-session-test-rename-command ()
+  "Renaming a session renames its buffers with it."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-rename-session session "refactor")
+    (should (equal (ecc-session-name session) "refactor"))
+    (should (equal (buffer-name (ecc-session-buffer session)) "*ecc: refactor*"))))
+
+(ert-deftest ecc-session-test-rename-command-to-the-same-name ()
+  "A session does not collide with itself.
+The prompt offers the name the session has, so confirming it unchanged
+used to rename the session to NAME<2>."
+  (ecc-test-with-fake-session session
+    (let ((name (ecc-session-name session))
+          (other (ecc-model-create-session :name "two"
+                                           :project-root temporary-file-directory)))
+      (unwind-protect
+          (progn
+            (ecc-session-ensure-buffer session)
+            (ecc-rename-session session name)
+            (should (equal (ecc-session-name session) name))
+            (should (equal (buffer-name (ecc-session-buffer session))
+                           (ecc-session-buffer-name name)))
+            ;; Another session's name is still taken.
+            (ecc-rename-session session (ecc-session-name other))
+            (should (equal (ecc-session-name session) "two<2>")))
+        (ecc-test-cleanup-session other)))))
 
 (ert-deftest ecc-session-test-rename-tells-the-cli ()
   "A rename of an idle session reaches its CLI at once, as /rename.
@@ -191,7 +235,7 @@ one of them."
                 ((symbol-function 'ecc-proc-control) #'ignore))
         (unwind-protect
             (progn
-              (ecc-proc-start session t)
+              (ecc-proc-start session #'ecc-dispatch t)
               (should (equal (ecc-session-test--sent-lines) '("/rename later")))
               (should-not (ecc-session-rename-pending session))
               (should-not (ecc-session-current-turn session)))

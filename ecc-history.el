@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -50,21 +53,11 @@
 (require 'ecc-proc)
 (require 'ecc-dispatch)
 (require 'ecc-registry)
+(require 'ecc-window)
 
 (declare-function ecc-render-refresh "ecc-render" (session))
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-review-ensure-baseline "ecc-review" (session))
-(declare-function ecc-display-session "ecc-window" (session))
-(defvar ecc-prompt-immediate-commands)
-(declare-function ecc-prompt-command-name "ecc-prompt" (text))
-(declare-function ecc-prompt-command-argument "ecc-prompt" (text))
-
-(defvar ecc-history-directory (expand-file-name "projects/" (ecc-config-directory))
-  "Directory the CLI keeps its recorded conversations in.
-CLAUDE_CONFIG_DIR moves it, which is why it is not written out here;
-see `ecc-config-directory'.
-It holds one subdirectory per working directory, each with one jsonl
-file per session.")
 
 (defvar ecc-history-page-turns 50
   "Number of turns read when a recorded conversation is opened.")
@@ -89,15 +82,17 @@ notification.
 Everything the renderer listens to is left alone, and a replay simply
 draws once at the end.")
 
-(defvar ecc-history--files (make-hash-table :test #'equal)
-  "Hash mapping a session id to the history file it was read from.")
-
 (defvar ecc-history--abandoned (make-hash-table :test #'equal)
   "Hash mapping a session id to the uuids of its abandoned branches.
 Worked out once when the recording is opened and used again by every
 page read after that.")
 
 ;;;; Finding the files
+
+;; Where the recordings are, `ecc-history-directory', and the one of a
+;; session, `ecc-history-file', are in `ecc-proc' together with the
+;; total a recording ends on (`ecc-history-recorded-cost'): a resumed
+;; CLI is counted from that as it starts.
 
 (defun ecc-history-project-directory (root)
   "Return the name the CLI gives the history directory of ROOT.
@@ -119,15 +114,6 @@ the working files of a session, not another conversation."
                     (directory-files directory t "\\.jsonl\\'"))
                   (seq-filter #'file-directory-p
                               (directory-files root t directory-files-no-dot-files-regexp))))))
-
-(defun ecc-history-file (session-id)
-  "Return the recorded conversation of SESSION-ID, or nil.
-The directory a session was recorded in follows its working directory,
-which Emacs may not know, so the file is looked for by name."
-  (or (gethash session-id ecc-history--files)
-      (car (file-expand-wildcards
-            (expand-file-name (format "*/%s.jsonl" session-id)
-                              (expand-file-name ecc-history-directory))))))
 
 ;;;; Reading the file
 
@@ -497,61 +483,6 @@ than one a project filter drops."
     (setf (alist-get 'session-id info) (file-name-base file))
     info))
 
-;;;; What the conversation has cost
-
-;; The CLI keeps its running total of what a conversation cost in the
-;; recording, as a `cost-state' line, and a resume carries on from it
-;; (CLI 2.1.290, confirmed 2026-10-13):
-;;
-;; - The line is written once, when the process exits on stdin closing
-;;   or on SIGTERM -- not after every turn, so a long-lived process
-;;   leaves it megabytes before the end.  A process killed with SIGKILL
-;;   writes none, and what it spent is lost to the next one.
-;; - `--resume' starts from the `totalCostUSD' of the last such line:
-;;   the first result of the new process is that plus its own turn.
-;; - `--resume --fork-session' starts from the last line of the
-;;   recording it branches off, so a fork's total includes its parent's.
-;; - With no such line the total starts from 0.
-;;
-;; That is what `ecc-proc-start' counts a resumed CLI's first result
-;; from (`ecc-model-result-cost').
-
-(defvar ecc-history-cost-tail-bytes 262144
-  "Bytes read from the end of a recording to find its last `cost-state'.
-Twice as many are read each time the range holds none, up to the whole
-file.")
-
-(defun ecc-history-recorded-cost (file)
-  "Return the running total the recording FILE ends with, or nil.
-It is the `totalCostUSD' of the last `cost-state' line, the total a
-CLI resuming FILE starts from; nil when FILE has no such line."
-  (let ((size (or (file-attribute-size (file-attributes file)) 0))
-        (bytes ecc-history-cost-tail-bytes)
-        (cost 'more))
-    (with-temp-buffer
-      (set-buffer-multibyte nil)
-      (while (eq cost 'more)
-        (let ((from (max 0 (- size bytes))))
-          (erase-buffer)
-          (insert-file-contents-literally file nil from size)
-          (goto-char (point-max))
-          (setq cost nil)
-          (while (and (null cost)
-                      (search-backward "\"type\":\"cost-state\"" nil t))
-            (let ((start (line-beginning-position)))
-              (if (and (> from 0) (= start (point-min)))
-                  ;; The range starts in the middle of this line.
-                  (setq cost 'more)
-                (setq cost (ecc-protocol-history-cost
-                            (decode-coding-string
-                             (buffer-substring start (line-end-position))
-                             'utf-8-unix)))
-                (goto-char start))))
-          (when (and (null cost) (> from 0))
-            (setq cost 'more))
-          (setq bytes (* 2 bytes)))))
-    cost))
-
 ;;;; The projects that were worked in
 
 (defvar ecc-history-scan-cwd-bytes 65536
@@ -702,7 +633,6 @@ Interactively the recordings are offered by name."
     (ecc-session-ensure-buffer session)
     (when (null (ecc-session-turns session))
       (ecc-history-load session))
-    (require 'ecc-window)
     (ecc-display-session session)
     session))
 
@@ -746,7 +676,7 @@ the CLI would run twice on the same recording."
   ;; back from a recording takes its first here.
   (require 'ecc-review)
   (ecc-review-ensure-baseline session)
-  (ecc-proc-start session t fork)
+  (ecc-proc-start session #'ecc-dispatch t fork)
   ;; Noted after the start, which would otherwise be the one to forget it.
   (setf (alist-get 'fork-unsettled (ecc-session-progress session)) (and fork t))
   session)
@@ -887,9 +817,8 @@ sent as a prompt.  This is on `ecc-prompt-intercept-functions\='."
       (ecc-history-take-over session info))
     t))
 
-(with-eval-after-load 'ecc-prompt
-  (add-hook 'ecc-prompt-intercept-functions #'ecc-history-resume-intercept)
-  (add-to-list 'ecc-prompt-immediate-commands ecc-history-resume-command))
+(add-hook 'ecc-prompt-intercept-functions #'ecc-history-resume-intercept)
+(add-to-list 'ecc-prompt-immediate-commands ecc-history-resume-command)
 
 (provide 'ecc-history)
 

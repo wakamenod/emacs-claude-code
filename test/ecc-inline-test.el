@@ -109,6 +109,27 @@
                            ecc-inline-light-args))
             (ecc-model-remove-session first)))))))
 
+(ert-deftest ecc-inline-test-the-session-says-it-is-inline ()
+  "An inline session is one from the moment it is made, and the model knows.
+It carries `:inline' among its options before its CLI is started, so
+that nothing that runs while it starts counts it as the user's own;
+the session of the project it was asked from stays the user's."
+  (ecc-test-with-fake-session session
+    (ecc-inline-test-with-source buffer
+      (let ((ecc-inline-binding 'light)
+            (own-at-start 'unset))
+        (cl-letf (((symbol-function #'ecc-proc-start)
+                   (lambda (inline &rest _)
+                     (setq own-at-start (ecc-model-own-session-p inline))
+                     nil)))
+          (let ((inline (ecc-inline-session buffer)))
+            (should-not own-at-start)
+            (should (ecc-inline-session-p inline))
+            (should-not (ecc-model-own-session-p inline))
+            (should-not (ecc-inline-session-p session))
+            (should (ecc-model-own-session-p session))
+            (ecc-model-remove-session inline)))))))
+
 (ert-deftest ecc-inline-test-fork-leaves-the-parent-alone ()
   "A forked inline session branches off without taking the parent's id."
   (ecc-test-with-fake-session session
@@ -116,7 +137,7 @@
       (let ((ecc-inline-binding 'fork)
             (arguments nil))
         (cl-letf (((symbol-function #'ecc-proc-start)
-                   (lambda (session &optional resume fork)
+                   (lambda (session _handler &optional resume fork)
                      (setq arguments (list resume fork))
                      ;; The command line is what proves the branch.
                      (setq arguments

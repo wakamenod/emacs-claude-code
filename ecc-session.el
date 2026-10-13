@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -28,8 +31,9 @@
 
 ;; The buffer a conversation is read and written in, and the commands
 ;; that act on it: visiting what is at point, reviewing, and taking
-;; things out of the transcript.  The major mode, the keys and the
-;; movement live in `ecc-chat'.
+;; things out of the transcript.  The major mode, the keymaps and the
+;; movement live in `ecc-chat'; the keys of the commands here are in
+;; keymaps of their own at the end of this file, made parents of those.
 
 ;;; Code:
 
@@ -45,16 +49,11 @@
 (require 'ecc-diff)
 (require 'ecc-window)
 (require 'ecc-visit)
-
-(declare-function ecc-restart "ecc" (session &optional confirm))
-(declare-function ecc-perm-deny "ecc-perm" (&optional reason))
-(declare-function ecc-perm-allow-all "ecc-perm" (&optional remember))
-(declare-function ecc-question-open "ecc-perm" (request))
-(declare-function ecc-queue-show "ecc-queue" (&optional session entry))
-(declare-function ecc-plan-open "ecc-plan" (request))
-(declare-function ecc-plan-file-path "ecc-plan" (request))
-(declare-function ecc-review "ecc-review" (&optional session paths))
-(declare-function ecc-perm-request-at-point "ecc-perm" ())
+(require 'ecc-perm)
+(require 'ecc-plan)
+(require 'ecc-queue)
+(require 'ecc-review)
+(require 'ecc-lifecycle)
 
 (defun ecc-session--forget-on-kill ()
   "Stop and forget the session when its buffer is killed.
@@ -114,25 +113,24 @@ buffer."
   "Return the name of the buffer of the session called NAME."
   (format "*ecc: %s*" name))
 
-(defun ecc-session-set-name (session name)
-  "Rename SESSION to NAME, with its buffer, and return the name used.
-The name is made unique among the sessions first, SESSION itself not
-counting (`ecc-model-unique-name\=').  Every rename goes through here:
-the one the user asks for, and the one `/rename\=' does in the CLI."
-  (let ((name (ecc-model-unique-name (string-trim name) session)))
-    (when (string-empty-p name)
-      (user-error "The name is empty"))
-    (setf (ecc-session-name session) name)
-    (when (buffer-live-p (ecc-session-buffer session))
-      (with-current-buffer (ecc-session-buffer session)
-        (rename-buffer (ecc-session-buffer-name name) t)))
-    (force-mode-line-update t)
-    (run-hook-with-args 'ecc-session-renamed-hook session)
-    name))
+(defun ecc-session--rename-buffer (session)
+  "Give the buffer of SESSION the name SESSION has now.
+On `ecc-session-renamed-hook\=', ahead of the rest of it: what runs after
+reads the buffer by its new name.  A session has no buffer until this
+file makes one, so nothing is lost while it is not loaded."
+  (when (buffer-live-p (ecc-session-buffer session))
+    (with-current-buffer (ecc-session-buffer session)
+      (rename-buffer (ecc-session-buffer-name (ecc-session-name session)) t)))
+  (force-mode-line-update t))
+
+(add-hook 'ecc-session-renamed-hook #'ecc-session--rename-buffer -90)
+
+(define-obsolete-function-alias 'ecc-session-set-name #'ecc-model-set-name
+  "0.4.4")
 
 (defun ecc-session-rename (session name)
   "Rename SESSION to NAME here and in the CLI, and return the name used.
-The rename here is made at once (`ecc-session-set-name\=').  The CLI is
+The rename here is made at once (`ecc-model-set-name\=').  The CLI is
 told with a `/rename\=' that is not drawn (`ecc-proc-rename\='): at once
 when it runs with no turn open, otherwise once it does.  The name it is
 told is the one the session ended up with, NAME<2> included, so that
@@ -141,9 +139,19 @@ the history and a later resume call the session what it is called here.
 A session read back from a recording is told when it is resumed, and
 not otherwise: nothing runs it in the meantime, and the recording is
 the CLI\='s to write."
-  (let ((name (ecc-session-set-name session name)))
+  (let ((name (ecc-model-set-name session name)))
     (ecc-proc-rename session)
     name))
+
+;;;###autoload
+(defun ecc-rename-session (session name)
+  "Rename SESSION to NAME and rename its buffers with it.
+The CLI is told the name too, so that the history and a later resume
+call the session NAME (`ecc-session-rename\=')."
+  (interactive
+   (let ((session (ecc-window-resolve-session current-prefix-arg)))
+     (list session (read-string "New name: " (ecc-session-name session)))))
+  (ecc-session-rename session name))
 
 (defun ecc-session-ensure-buffer (session)
   "Return the buffer of SESSION, creating and drawing it if needed."
@@ -187,7 +195,6 @@ A session that has stopped is resumed; an idle one that is still
 running is restarted once the user agrees (`ecc-restart\=').  One key
 for both, since what is wanted either way is a CLI that answers again."
   (interactive)
-  (require 'ecc)
   (ecc-restart (ecc-session-at-point) t))
 
 (defun ecc-session-show-log ()
@@ -237,8 +244,7 @@ what the user wrote, and a path or a URL in it is not a link."
          (request (and node (ecc-model-node-get node 'request)))
          (pending (and request (memq request (ecc-session-pending session)))))
     (cond
-     (queued (require 'ecc-queue)
-             (ecc-queue-show session (get-text-property (point) 'ecc-queued)))
+     (queued (ecc-queue-show session (get-text-property (point) 'ecc-queued)))
      (url (browse-url url))
      ;; A still opens in `image-mode\=', which zooms and scrolls; a video
      ;; is something Emacs cannot play, so the machine plays it.
@@ -251,15 +257,12 @@ what the user wrote, and a path or a URL in it is not a link."
      ((null node) (user-error "Nothing to show here"))
      ((eq (ecc-node-type node) 'agent) (ecc-session-show-agent session node))
      ((and pending (eq (ecc-node-type node) 'question))
-      (require 'ecc-perm)
       (ecc-window-display-beside-session (ecc-question-open request) session))
      ((and pending (eq (ecc-node-type node) 'plan))
-      (require 'ecc-plan)
       (ecc-window-display-beside-session (ecc-plan-open request) session))
      ((eq (ecc-node-type node) 'plan)
       ;; A plan that was answered already: show the file the CLI wrote it
       ;; to, when it named one and it is still there.
-      (require 'ecc-plan)
       (let ((path (and request (ecc-plan-file-path request))))
         (if (and path (file-exists-p path))
             (ecc-visit-open path nil session)
@@ -280,13 +283,11 @@ transcript cuts."
 (defun ecc-session-review ()
   "Open every change of this session as one diff to review."
   (interactive)
-  (require 'ecc-review)
   (ecc-review (ecc-session-at-point)))
 
 (defun ecc-session-review-file ()
   "Open the diff of the file at point in the Files section."
   (interactive)
-  (require 'ecc-review)
   (ecc-review (ecc-session-at-point)
               (list (or (ecc-chat-file-at-point)
                         (user-error "Not on a file")))))
@@ -295,7 +296,6 @@ transcript cuts."
   "Deny the request at point, or open the review when not on one.
 The d key of the transcript does both."
   (interactive)
-  (require 'ecc-perm)
   (if (ecc-perm-request-at-point)
       (call-interactively #'ecc-perm-deny)
     (ecc-session-review)))
@@ -504,6 +504,71 @@ result."
     (with-temp-file file
       (insert (ecc-session-export-markdown-string session)))
     (message "Saved to %s" (abbreviate-file-name file))))
+
+;;;; Keys
+
+(defun ecc-chat-follow-link (event)
+  "Open the link clicked on in the transcript.
+The point goes where EVENT was.  On a link, text drawn with a
+`mouse-face\=', `ecc-session-visit\=' opens it as RET would; anywhere
+else -- a line of a diff, the heading of a call -- nothing more is done,
+and RET is the way to open it."
+  (interactive "e")
+  (mouse-set-point event)
+  (when (get-char-property (point) 'mouse-face)
+    (ecc-session-visit)))
+
+(defvar ecc-session-chat-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-z") #'ecc-session-interrupt)
+    (define-key map (kbd "C-c C-e") #'ecc-session-export-markdown)
+    map)
+  "The keys of the session in a chat buffer, wherever point is.
+A parent of `ecc-chat-mode-map', so that a key bound there wins.")
+
+(defvar ecc-session-transcript-map
+  (let ((map (make-sparse-keymap)))
+    ;; RET on a call that names a file opens the file; the node laid
+    ;; open, which RET was on every heading before, is `o'.
+    (define-key map (kbd "RET") #'ecc-session-visit)
+    (define-key map (kbd "o") #'ecc-session-show-detail)
+    ;; A click follows what is drawn as a link, with a `mouse-face': a
+    ;; URL, a path in a reply, a picture.  A line of a diff and the
+    ;; heading of a call carry none and open on RET alone, so that a
+    ;; click that only meant to put the point there does not take the
+    ;; source window with it.  No link carries a keymap of its own:
+    ;; these two are the whole of the mouse side.
+    (define-key map [mouse-2] #'ecc-chat-follow-link)
+    (define-key map [follow-link] 'mouse-face)
+    (define-key map (kbd "g") #'ecc-session-refresh)
+    (define-key map (kbd "L") #'ecc-session-show-log)
+    (define-key map (kbd "R") #'ecc-session-resume)
+    (define-key map (kbd "d") #'ecc-session-review-or-deny)
+    (define-key map (kbd "T") #'ecc-session-timeline)
+    (define-key map (kbd "w") #'ecc-session-copy-at-point)
+    map)
+  "The keys of the session in the transcript.
+A parent of `ecc-chat-transcript-map', so that a key bound there wins.")
+
+(defvar ecc-session-request-section-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'ecc-session-visit)
+    map)
+  "The keys of the session on a node that is waiting for an answer.
+A parent of `ecc-request-section-map', above the transcript's keys.")
+
+(defvar ecc-session-file-section-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'ecc-session-visit)
+    (define-key map (kbd "d") #'ecc-session-review-file)
+    map)
+  "The keys of the session on a file row in the Files section.
+A parent of `ecc-file-section-map', above the transcript's keys.")
+
+(ecc-chat-add-keymap-parent ecc-chat-mode-map ecc-session-chat-map)
+(ecc-chat-add-keymap-parent ecc-chat-transcript-map ecc-session-transcript-map)
+(ecc-chat-add-keymap-parent ecc-request-section-map ecc-session-request-section-map)
+(ecc-chat-add-keymap-parent ecc-file-section-map ecc-session-file-section-map)
 
 (provide 'ecc-session)
 

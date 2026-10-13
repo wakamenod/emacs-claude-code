@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -80,7 +83,7 @@
 (declare-function ecc-review-ediff-quit "ecc-review-ediff" (control))
 (declare-function ecc-review-ediff-range-buffer "ecc-review-ediff"
                   (session &optional range root paths))
-(declare-function ecc-review-direct-refresh-headers "ecc-review-direct" (control))
+(declare-function ecc-review-direct-refresh-headers "ecc-review-ediff" (control))
 
 (defvar ecc-review-gh-executable "gh"
   "The gh program `p' in `ecc-review-menu' asks for pull requests.")

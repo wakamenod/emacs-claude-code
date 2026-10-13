@@ -31,7 +31,7 @@ and the registry are empty directories of their own."
           (ecc-registry-directory (make-temp-file "ecc-restart-registry" t))
           (ecc-executable bin)
           (ecc-command-wrapper-function nil)
-          (ecc-mcp-config-function nil)
+          (ecc-mcp-enabled nil)
           (ecc-stop-grace 2.0))
      (set-file-modes bin #o755)
      (unwind-protect
@@ -61,7 +61,7 @@ turn in the transcript and a recording on disk."
     (ecc-model-finish-turn session nil)
     (ecc-restart-test--record session))
   (ecc-session-ensure-buffer session)
-  (ecc-proc-start session))
+  (ecc-proc-start session #'ecc-dispatch))
 
 (defun ecc-restart-test--stop-all (&rest sessions)
   "Stop the stand-in CLI of every one of SESSIONS.
@@ -253,9 +253,9 @@ conversation."
       (unwind-protect
           (progn
             (ecc-restart-test--start session)
-            (puthash session (current-buffer) ecc-inline--targets)
+            (setf (ecc-session-options session)
+                  (plist-put (ecc-session-options session) :inline t))
             (ecc-restart-test--refused session))
-        (remhash session ecc-inline--targets)
         (ecc-restart-test--stop-all session)))))
 
 (ert-deftest ecc-restart-test-declining-leaves-it-alone ()

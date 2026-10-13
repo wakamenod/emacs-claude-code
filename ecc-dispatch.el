@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -52,11 +55,6 @@
 (require 'ecc-proc)
 (require 'ecc-diff)
 
-;; The buffer of a session is none of this module's business; `/rename'
-;; is the one thing here that has to reach it, and `ecc-session' is
-;; loaded for it at run time.
-(declare-function ecc-session-set-name "ecc-session" (session name))
-
 (defvar ecc-turn-approve-tools '("Edit" "Write" "NotebookEdit")
   "Tools that a turn-wide approval covers.")
 
@@ -83,8 +81,6 @@ Errors are caught: an unreadable message must never stop the stream."
      (ecc-log (ecc-session-name session) "dispatch error: %s on %S"
               (error-message-string err) message)
      (ecc-dispatch--unknown session message (error-message-string err)))))
-
-(setq ecc-proc-message-function #'ecc-dispatch)
 
 (defun ecc-dispatch--message (session message)
   "Apply MESSAGE to SESSION without catching errors."
@@ -258,8 +254,7 @@ that answers it is the name the session has, so it changes nothing."
           (ecc-log (ecc-session-name session)
                    "title %S not applied: the CLI is being told %S"
                    title (ecc-session-rename-sent session))
-        (require 'ecc-session)
-        (unless (equal (ecc-session-set-name session title) title)
+        (unless (equal (ecc-model-set-name session title) title)
           (ecc-proc-rename session))))))
 
 (defun ecc-dispatch--hidden-rename-p (session)

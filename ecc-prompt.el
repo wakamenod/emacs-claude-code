@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -32,12 +35,26 @@
 ;; holds a prompt back while a turn runs, the history shared by every
 ;; session, the `@' references Emacs expands before sending, pasted
 ;; images and the editor context.
+;;
+;; Its keys are in `ecc-prompt-chat-map', a parent of the mode map
+;; `ecc-chat' defines, and the region is set up from
+;; `ecc-chat-mode-hook': completion, pasted images and dropped files.  `ecc-chat-return' and `ecc-chat-slash'
+;; keep the names they had when they lived in `ecc-chat': they are what
+;; RET and `/' do in the chat buffer, and a user may have bound them.
+;;
+;; A draft that Emacs answers itself goes to `ecc-prompt-intercept-functions'
+;; before it is sent, and a command that runs the moment it is chosen is
+;; one of `ecc-prompt-immediate-commands'.  Both keep this file's prefix
+;; and are defined in `ecc-model': the modules that answer a command sit
+;; below this one in the load order and put themselves on them as they
+;; load, which they could not do with the variables here.
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'seq)
 (require 'dnd)
+(require 'project)
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-image)
@@ -48,12 +65,23 @@
 (require 'ecc-hint)
 (require 'ecc-window)
 (require 'ecc-context)
-
-(declare-function project-files "project" (project &optional dirs))
-(declare-function project-current "project" (&optional maybe-prompt directory))
-(declare-function ecc-resume "ecc" (session &optional fork))
+(require 'ecc-skill)
+(require 'ecc-lifecycle)
 
 ;;;; Options
+
+(defcustom ecc-chat-return-sends nil
+  "Non-nil makes RET send the prompt, the way the terminal client does.
+Off, RET inserts a newline and \\<ecc-chat-mode-map>\\[ecc-prompt-send]
+sends; on, \\[ecc-chat-newline] inserts the newline.
+
+RET is a newline because that is what RET is in Emacs; a reader who
+wants the terminal habit sets this, or rebinds the two keys in
+`ecc-chat-mode-map' outright.  Which of the two it is is a taste, which
+is what makes this a setting rather than a variable (decided
+2026-09-11)."
+  :type 'boolean
+  :group 'ecc)
 
 (defvar ecc-prompt-history-size 200
   "Number of prompts kept in `ecc-prompt-history'.")
@@ -467,16 +495,6 @@ out `ecc-prompt-hidden-commands'."
       (seq-remove (lambda (command) (member (car command) hidden))
                   (ecc-prompt-commands session)))))
 
-(defun ecc-prompt-command-name (text)
-  "Return the slash command TEXT starts with, or nil."
-  (when (string-match "\\`[ \t]*\\(/[^ \t\n]+\\)" text)
-    (match-string 1 text)))
-
-(defun ecc-prompt-command-argument (text)
-  "Return what follows the slash command in TEXT, trimmed."
-  (when (string-match "\\`[ \t]*/[^ \t\n]+\\(\\(?:.\\|\n\\)*\\)\\'" text)
-    (string-trim (match-string 1 text))))
-
 (defun ecc-prompt-models (session)
   "Return the models of SESSION as an alist of value and description.
 The `models\=' array of the initialize response is the source: `value\='
@@ -782,8 +800,6 @@ append, are left in `ecc-prompt-last-attachments' and
 
 ;;;; Completion
 
-(declare-function ecc-skill-names "ecc-skill" (session))
-
 (defvar ecc-prompt-group-commands t
   "Non-nil marks the skills apart from the commands when one is offered.
 The terminal client puts the skills of the session at the top of the
@@ -795,10 +811,8 @@ asked for as well.  Nil leaves both to the completion in use.")
 
 (defun ecc-prompt--skill-p (session name)
   "Return non-nil when the slash command NAME of SESSION is a skill.
-NAME carries its slash.  `ecc-skill\=' is what knows; a session it has
-not been loaded for has no skills as far as this is concerned."
-  (and (fboundp 'ecc-skill-names)
-       (member (string-remove-prefix "/" name) (ecc-skill-names session))
+NAME carries its slash.  `ecc-skill\=' is what knows."
+  (and (member (string-remove-prefix "/" name) (ecc-skill-names session))
        t))
 
 (defun ecc-prompt--grouper (session)
@@ -1037,45 +1051,6 @@ sees of it, and a `@region' that expanded to nothing is worth more
      (format "; %s had nothing to send and went as it stands"
              (mapconcat #'identity ecc-prompt-last-skipped ", ")))))
 
-(defvar ecc-prompt-intercept-functions nil
-  "Functions given a session and a draft before the draft is sent.
-The first one to return non-nil takes the draft: nothing is sent to the
-CLI, and `ecc-prompt-send\' returns `intercepted\'.  The draft is
-emptied and remembered either way, so that a typo can be brought back
-with \\[ecc-prompt-history-previous].
-
-`/resume\' is ours outright: the CLI names no resume in
-`slash_commands\' and none in `terminal_slash_commands\' (checked
-against 2.1.270).  The terminal client draws that picker for itself,
-and what it does there is take the conversation over in place, which is
-what Emacs does to the window it is typed in.
-
-Only a draft the CLI is not meant to see belongs here.  The side
-question is the one there is: `/btw\' is not a slash
-command, and sending it would put it in the conversation it is supposed
-to be asked beside.
-
-The modules that answer a command register here from a
-`with-eval-after-load\' of this file rather than by requiring it, and so
-does `ecc-prompt-immediate-commands\': `ecc-auth\', `ecc-history\',
-`ecc-hooks\', `ecc-plugin\', `ecc-skill\' and `ecc-btw\' all sit below
-the prompt region in the load order, and a `require\' back up it would
-drag the whole user interface into a file that wanted one hook.  What
-is waited for is always another file of this package; no module of it
-reaches into a package the user installed for their own reasons.")
-
-(defvar ecc-prompt-immediate-commands nil
-  "Slash commands that run the moment they are chosen from the `/\=' question.
-A command Emacs answers itself and that needs no argument -- `/hooks\=',
-`/skills\=', `/plugins\=' -- has nothing to say to the CLI, so writing its
-name into the prompt only to send it is a step with no purpose: it is
-run there and then, and the slash that opened the question is taken
-back.  Each module puts its own command here, next to the interceptor
-that answers it (`ecc-prompt-intercept-functions\=').
-
-A command whose argument is the point of it stays out: `/btw <question>\='
-and `/login <account>\=' are typed, not chosen.")
-
 (defun ecc-prompt-run-immediately (session command)
   "Answer COMMAND for SESSION at once when it is one that runs as it is chosen.
 COMMAND carries its slash.  Returns non-nil when it was answered, which
@@ -1137,7 +1112,6 @@ is running is asked about here; saying no leaves the draft where it
 was."
   (when (and (ecc-model-option session :restored nil)
              (not (process-live-p (ecc-session-process session))))
-    (require 'ecc)
     (save-current-buffer (ecc-resume session))))
 
 (cl-defun ecc-prompt-send ()
@@ -1187,6 +1161,92 @@ history."
   "Empty the prompt region."
   (interactive)
   (ecc-chat-clear-draft))
+
+;;;; The keys of the chat buffer
+
+(defun ecc-chat-return ()
+  "Insert a newline, or send the prompt when `ecc-chat-return-sends' is on."
+  (interactive)
+  (if (and ecc-chat-return-sends (ecc-chat-in-prompt-p))
+      (ecc-prompt-send)
+    (ecc-chat-newline)))
+
+(defun ecc-prompt--slash-opens-commands-p ()
+  "Return non-nil when the slash just typed should ask for a command.
+Only a slash that opens the prompt does: the CLI reads a command from
+the start of what it is sent and nowhere else, so a slash further in
+would be offered commands that are not going to run
+\(`ecc-prompt-command-name\=').  A slash written into prose is left
+alone, and so is one a keyboard macro types, where there is nobody to
+answer the minibuffer.  What starts a word is still completed on TAB
+wherever it stands (`ecc-prompt-command-bounds\=')."
+  (and ecc-prompt-slash-reads-command
+       ecc-render--session
+       (not executing-kbd-macro)
+       (not (minibufferp))
+       (ecc-chat-in-prompt-p)
+       (when-let* ((start (ecc-chat-prompt-start))
+                   ((> (point) start)))
+         ;; Only blanks may stand before it, and no newline: that is
+         ;; what `ecc-prompt-command-name' reads as a command.
+         (string-match-p "\\`[ \t]*\\'"
+                         (buffer-substring-no-properties start (1- (point)))))))
+
+(defun ecc-chat-slash (n)
+  "Insert a slash, and offer the slash commands when it starts one.
+N is the prefix argument, as for `self-insert-command\='.  The slash is
+inserted first, so that leaving the question with `C-g\=' keeps it.
+
+A command Emacs answers itself and that takes no argument runs as soon
+as it is chosen (`ecc-prompt-immediate-commands\='), and the slash goes
+with it: there is nothing to send, so there is nothing to write."
+  (interactive "p")
+  (self-insert-command n ?/)
+  (when (and (= n 1) (ecc-prompt--slash-opens-commands-p))
+    (when-let* ((session ecc-render--session)
+                (command (ecc-prompt-read-command session)))
+      (if (member command ecc-prompt-immediate-commands)
+          ;; Take the slash back before running it: what it opens is a
+          ;; buffer of its own, and point is no longer here afterwards.
+          (progn (delete-char -1)
+                 (ecc-prompt-run-immediately session command))
+        (insert (string-remove-prefix "/" command))))))
+
+(defun ecc-prompt--setup-buffer ()
+  "Set up the prompt region of an `ecc-chat-mode' buffer.
+Completion of slash commands and `@' references, an image on the
+clipboard yanked as a file reference, and a file dropped on the buffer
+inserted as one.  Run from `ecc-chat-mode-hook', ahead of the user's
+own functions there, so that what they add to these is kept."
+  (setq-local completion-at-point-functions
+              (list #'ecc-prompt-capf #'ecc-prompt-at-capf))
+  ;; An image on the clipboard is worth a file reference.
+  (when (fboundp 'yank-media-handler)
+    (yank-media-handler "image/.*" #'ecc-prompt-yank-image))
+  (setq-local dnd-protocol-alist
+              (cons '("^file:" . ecc-prompt-dnd-insert) dnd-protocol-alist)))
+
+(add-hook 'ecc-chat-mode-hook #'ecc-prompt--setup-buffer -50)
+
+(defvar ecc-prompt-chat-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'ecc-chat-return)
+    (define-key map (kbd "/") #'ecc-chat-slash)
+    (define-key map (kbd "C-c C-c") #'ecc-prompt-send)
+    (define-key map (kbd "C-c C-k") #'ecc-prompt-clear)
+    (define-key map (kbd "C-c C-x") #'ecc-prompt-toggle-context)
+    (define-key map (kbd "C-c C-i") #'ecc-prompt-insert-image)
+    (define-key map (kbd "C-c C-y") #'ecc-prompt-yank-image-from-clipboard)
+    (define-key map (kbd "C-c C-r") #'ecc-prompt-history-insert)
+    (define-key map (kbd "M-p") #'ecc-prompt-history-previous)
+    (define-key map (kbd "M-n") #'ecc-prompt-history-next)
+    (define-key map (kbd "C-<up>") #'ecc-prompt-history-previous)
+    (define-key map (kbd "C-<down>") #'ecc-prompt-history-next)
+    map)
+  "The keys of the prompt in a chat buffer.
+A parent of `ecc-chat-mode-map', so that a key bound there wins.")
+
+(ecc-chat-add-keymap-parent ecc-chat-mode-map ecc-prompt-chat-map)
 
 (provide 'ecc-prompt)
 

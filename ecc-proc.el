@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -30,9 +33,9 @@
 ;; and sends JSON back.
 ;;
 ;; Together with `ecc-protocol' this is the only place that touches the
-;; wire format.  Parsed messages leave through
-;; `ecc-proc-message-function', which `ecc-dispatch' sets; this file
-;; never calls upwards by name.
+;; wire format.  Parsed messages go to the handler whoever starts the
+;; process hands `ecc-proc-start'; this file never calls upwards by
+;; name.
 
 ;;; Code:
 
@@ -40,11 +43,7 @@
 (require 'ecc-core)
 (require 'ecc-protocol)
 (require 'ecc-model)
-
-;; `ecc-history' is built on this file, so it is loaded when a resume
-;; first needs it (`ecc-proc--resumed-cost').
-(declare-function ecc-history-file "ecc-history" (session-id))
-(declare-function ecc-history-recorded-cost "ecc-history" (file))
+(require 'ecc-mcp)
 
 (defvar ecc-control-timeout 30
   "Seconds to wait for the answer to a control request before warning.")
@@ -54,10 +53,6 @@
 A terminated CLI writes its last lines and takes itself out of the
 session registry other Claude Code processes read, which a killed one
 cannot; it normally takes a fraction of a second.  Zero kills at once.")
-
-(defvar ecc-proc-message-function #'ignore
-  "Function called with a session and every parsed message.
-`ecc-dispatch' installs itself here when it is loaded.")
 
 ;;;; Buffers
 
@@ -208,8 +203,7 @@ a resumed one the model its recording ends on (see `ecc-proc--model')."
              (cons "--allowedTools" tools))
            (when-let* ((tools (funcall opt :disallowed-tools nil)))
              (cons "--disallowedTools" tools))
-           (when-let* ((config (and ecc-mcp-config-function
-                                    (funcall ecc-mcp-config-function session))))
+           (when-let* ((config (ecc-mcp-config session)))
              (list "--mcp-config" config))
            (when-let* ((settings (ecc-protocol-settings-json
                                  (funcall opt :disabled-plugins
@@ -221,6 +215,84 @@ a resumed one the model its recording ends on (see `ecc-proc--model')."
         (funcall ecc-command-wrapper-function command
                  (ecc-session-project-root session))
       command)))
+
+;;;; The recording
+
+;; Where the CLI keeps the conversation it is running, and the running
+;; total it left there.  `ecc-history' reads the recordings back; what
+;; is here is what starting a CLI needs of them (`ecc-proc--resumed-cost').
+
+(defvar ecc-history-directory (expand-file-name "projects/" (ecc-config-directory))
+  "Directory the CLI keeps its recorded conversations in.
+CLAUDE_CONFIG_DIR moves it, which is why it is not written out here;
+see `ecc-config-directory'.
+It holds one subdirectory per working directory, each with one jsonl
+file per session.")
+
+(defvar ecc-history--files (make-hash-table :test #'equal)
+  "Hash mapping a session id to the history file it was read from.")
+
+(defun ecc-history-file (session-id)
+  "Return the recorded conversation of SESSION-ID, or nil.
+The directory a session was recorded in follows its working directory,
+which Emacs may not know, so the file is looked for by name."
+  (or (gethash session-id ecc-history--files)
+      (car (file-expand-wildcards
+            (expand-file-name (format "*/%s.jsonl" session-id)
+                              (expand-file-name ecc-history-directory))))))
+
+;; The CLI keeps its running total of what a conversation cost in the
+;; recording, as a `cost-state' line, and a resume carries on from it
+;; (CLI 2.1.290, confirmed 2026-10-13):
+;;
+;; - The line is written once, when the process exits on stdin closing
+;;   or on SIGTERM -- not after every turn, so a long-lived process
+;;   leaves it megabytes before the end.  A process killed with SIGKILL
+;;   writes none, and what it spent is lost to the next one.
+;; - `--resume' starts from the `totalCostUSD' of the last such line:
+;;   the first result of the new process is that plus its own turn.
+;; - `--resume --fork-session' starts from the last line of the
+;;   recording it branches off, so a fork's total includes its parent's.
+;; - With no such line the total starts from 0.
+;;
+;; That is what `ecc-proc-start' counts a resumed CLI's first result
+;; from (`ecc-model-result-cost').
+
+(defvar ecc-history-cost-tail-bytes 262144
+  "Bytes read from the end of a recording to find its last `cost-state'.
+Twice as many are read each time the range holds none, up to the whole
+file.")
+
+(defun ecc-history-recorded-cost (file)
+  "Return the running total the recording FILE ends with, or nil.
+It is the `totalCostUSD' of the last `cost-state' line, the total a
+CLI resuming FILE starts from; nil when FILE has no such line."
+  (let ((size (or (file-attribute-size (file-attributes file)) 0))
+        (bytes ecc-history-cost-tail-bytes)
+        (cost 'more))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (while (eq cost 'more)
+        (let ((from (max 0 (- size bytes))))
+          (erase-buffer)
+          (insert-file-contents-literally file nil from size)
+          (goto-char (point-max))
+          (setq cost nil)
+          (while (and (null cost)
+                      (search-backward "\"type\":\"cost-state\"" nil t))
+            (let ((start (line-beginning-position)))
+              (if (and (> from 0) (= start (point-min)))
+                  ;; The range starts in the middle of this line.
+                  (setq cost 'more)
+                (setq cost (ecc-protocol-history-cost
+                            (decode-coding-string
+                             (buffer-substring start (line-end-position))
+                             'utf-8-unix)))
+                (goto-char start))))
+          (when (and (null cost) (> from 0))
+            (setq cost 'more))
+          (setq bytes (* 2 bytes)))))
+    cost))
 
 ;;;; Starting and stopping
 
@@ -260,14 +332,20 @@ its first result is counted from that (`ecc-model-result-cost').  The
 recording is read here and not later: the CLI writes a total of its
 own only when it exits, and a result arriving first must find this one
 in place.  Nil when there is no recording to read."
-  (require 'ecc-history)
   (when-let* ((file (ecc-history-file (or (ecc-model-option session :resume-from nil)
                                           (ecc-session-id session)))))
     (or (ecc-history-recorded-cost file) 0)))
 
-(defun ecc-proc-start (session &optional resume fork)
+(defun ecc-proc-start (session handler &optional resume fork)
   "Start the CLI for SESSION and return the process.
-RESUME and FORK are passed to `ecc-proc-build-command'."
+HANDLER is called with SESSION and every message the CLI sends, parsed;
+a session buffer wants `ecc-dispatch'.  RESUME and FORK are passed to
+`ecc-proc-build-command'."
+  ;; Nothing else would ever read what the CLI says, so a process
+  ;; started without somewhere to put it is refused, not left talking
+  ;; to nobody.
+  (unless (functionp handler)
+    (signal 'wrong-type-argument (list #'functionp handler)))
   (when (process-live-p (ecc-session-process session))
     (error "Session %s is already running" (ecc-session-name session)))
   (let* ((command (ecc-proc-build-command session resume fork))
@@ -307,6 +385,7 @@ RESUME and FORK are passed to `ecc-proc-build-command'."
     (setf (alist-get 'stop-requested (ecc-session-progress session)) nil)
     (ecc-model-set-cost-base session (if resume (ecc-proc--resumed-cost session) 0))
     (process-put process 'ecc-session-id (ecc-session-id session))
+    (process-put process 'ecc-handler handler)
     (setf (ecc-session-process session) process)
     ;; What this process was really given, taken here rather than asked
     ;; for later: `process-environment' is the one the CLI has, and the
@@ -482,10 +561,11 @@ locally so that the queue does not keep stale entries."
 (defun ecc-proc--filter (process chunk)
   "Feed CHUNK of PROCESS output into the session line buffer."
   (when-let* ((session (ecc-proc-session process)))
-    (ecc-proc-feed session chunk)))
+    (ecc-proc-feed session chunk (process-get process 'ecc-handler))))
 
-(defun ecc-proc-feed (session chunk)
+(defun ecc-proc-feed (session chunk handler)
   "Append CHUNK to the line buffer of SESSION and handle each whole line.
+Each line is passed to HANDLER, as `ecc-proc-handle-line' says.
 A chunk can stop in the middle of a line, and one line can be several
 megabytes, so the leftover is kept in a buffer rather than a string."
   (let (lines)
@@ -499,13 +579,13 @@ megabytes, so the leftover is kept in a buffer rather than a string."
         (delete-region (point-min) (1+ (point)))))
     (dolist (line lines)
       (unless (string-empty-p line)
-        (ecc-proc-handle-line session line)))
+        (ecc-proc-handle-line session line handler)))
     lines))
 
-(defun ecc-proc-handle-line (session line)
-  "Parse LINE of SESSION and hand it to `ecc-proc-message-function'."
+(defun ecc-proc-handle-line (session line handler)
+  "Parse LINE of SESSION and call HANDLER with SESSION and the message."
   (ecc-log-raw (ecc-session-name session) 'recv line)
-  (funcall ecc-proc-message-function session (ecc-protocol-parse-line line)))
+  (funcall handler session (ecc-protocol-parse-line line)))
 
 ;;;; Sending
 

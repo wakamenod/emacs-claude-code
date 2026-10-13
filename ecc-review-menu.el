@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -55,8 +58,7 @@
 (require 'ecc-window)
 (require 'ecc-review)
 (require 'ecc-review-pr)
-
-(declare-function ecc-start "ecc" (&optional directory name))
+(require 'ecc-lifecycle)
 
 (defcustom ecc-review-menu-count-session-changes t
   "Non-nil makes `ecc-review-menu' count what the session changed.

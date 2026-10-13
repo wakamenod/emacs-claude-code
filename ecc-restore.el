@@ -4,6 +4,9 @@
 
 ;; Author: Jun <wakamenod@gmail.com>
 ;; Assisted-by: Claude Code:claude-opus-5
+;; Assisted-by: Claude Code:claude-opus-5-5
+;; Assisted-by: Claude Code:claude-fable-5-1
+;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
@@ -65,15 +68,15 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-history)
+(require 'ecc-window)
+(require 'ecc-lifecycle)
 
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
-(declare-function ecc-display-session "ecc-window" (session))
-(declare-function ecc-session-set-name "ecc-session" (session name))
 (declare-function ecc-render-refresh "ecc-render" (session))
-(declare-function ecc--enable-session-modes "ecc" ())
 (declare-function ecc-space-tab-roots "ecc-space" (&optional frame))
 (declare-function ecc-space-of-root "ecc-space" (root))
 (declare-function ecc-space-select "ecc-space" (space))
+;; Not required: with `ecc-use-spaces\=' off nothing reaches `ecc-space\='.
 (defvar ecc-space-always-session)
 
 (defvar ecc-restore-file (expand-file-name "ecc-state.eld" user-emacs-directory)
@@ -374,8 +377,7 @@ saved as `:rename-pending\=' is one the CLI is still to be told."
     (setf (ecc-session-cwd session) cwd))
   (when-let* ((name (plist-get entry :name))
               ((not (equal name (ecc-session-name session)))))
-    (require 'ecc-session)
-    (ecc-session-set-name session name))
+    (ecc-model-set-name session name))
   (when (plist-get entry :rename-pending)
     (setf (ecc-session-rename-pending session) t))
   (when-let* ((buffer (ecc-session-buffer session))
@@ -449,7 +451,6 @@ every time Emacs starts, call it from the init file."
           (dolist (root (cdr result))
             (push (format "%s (gone)" (abbreviate-file-name root)) skipped)))
       (when restored
-        (require 'ecc-window)
         (ecc-display-session (car restored))))
     (when (null file)
       (setq ecc-restore--previous nil
