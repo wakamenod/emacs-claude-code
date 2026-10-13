@@ -44,10 +44,13 @@
 ;; its commands in a keymap of its own and makes it a parent of them
 ;; (`ecc-chat-add-keymap-parent'): `ecc-prompt' the sending, the
 ;; history, the slash and what RET does in the region, `ecc-session'
-;; what opens, refreshes or resumes from the transcript.  Both build on
-;; this file, so the dependency runs one way, and `ecc-chat-mode' loads
-;; them before the buffer is used.  A key bound in the maps here, by a
-;; user after this file is loaded, wins over theirs whatever loads next.
+;; what opens, refreshes or resumes from the transcript, and the queue,
+;; the hint, the terminal and the menu a key or two each.  They all
+;; build on this file, so the dependency runs one way, and
+;; `ecc-chat-mode' loads them before the buffer is used.  A key bound in
+;; the maps here, by a user after this file is loaded, wins over theirs
+;; whatever loads next.  The mode line is put together the same way:
+;; `ecc-hint' adds its part from `ecc-chat-mode-hook'.
 ;;
 ;; A request waiting for an answer is answered from the prompt region
 ;; too, without walking to it: C-c C-a allows one and C-c C-d denies
@@ -75,12 +78,6 @@
 (require 'ecc-btw)
 
 (defvar show-paren-predicate)
-(declare-function ecc-queue-show "ecc-queue" (&optional session entry))
-(declare-function ecc-dashboard "ecc-dashboard" ())
-(declare-function ecc-menu "ecc-transient" () t)
-(declare-function ecc-tui-open "ecc-tui" (&optional session))
-(declare-function ecc-hint-accept-suggestion "ecc-hint" ())
-(declare-function ecc-hint-mode-line-string "ecc-hint" (&optional session))
 
 ;;;; Options
 
@@ -211,17 +208,12 @@ PARENT is added once however often the module is loaded."
     ;; mode, where it is harmless, and here it stopped the turn
     ;; (confirmed 2026-09-17).  Unbound, the sequence falls through to
     ;; `keyboard-quit', which is what the finger meant.
-    (define-key map (kbd "C-c C-q") #'ecc-queue-show)
-    (define-key map (kbd "C-c C-s") #'ecc-hint-accept-suggestion)
     (define-key map (kbd "C-c C-n") #'ecc-chat-next-turn)
     (define-key map (kbd "C-c C-p") #'ecc-chat-previous-turn)
     (define-key map (kbd "C-c C-a") #'ecc-perm-allow)
     (define-key map (kbd "C-c C-d") #'ecc-perm-deny)
     (define-key map (kbd "C-c C-b") #'ecc-btw-show)
     (define-key map (kbd "C-c C-t") #'ecc-switch-session)
-    ;; `?' stays self-inserting in a region one writes prose in, so the
-    ;; menu is on C-c ? here and on ? in the transcript.
-    (define-key map (kbd "C-c ?") #'ecc-menu)
     map)
   "Keymap of `ecc-chat-mode', in force in the prompt region.
 Everything here is RET, TAB, a movement key or a key under the mode
@@ -232,7 +224,8 @@ Under the prefix the key is always \\`C-c C-<letter>', never
 \\`C-c <letter>': the Emacs Lisp manual reserves \\`C-c <letter>' for
 users, and it is the only space reserved for them, so a mode that takes
 one blocks the only keys its user is entitled to.  A command that finds
-no \\`C-c C-<letter>' free goes to `ecc-menu' rather than taking one.")
+no \\`C-c C-<letter>' free goes to the menu on \\`C-c ?' rather than
+taking one.")
 
 (defvar ecc-chat-transcript-map
   (let ((map (make-sparse-keymap)))
@@ -252,7 +245,6 @@ no \\`C-c C-<letter>' free goes to `ecc-menu' rather than taking one.")
     (define-key map (kbd "DEL") #'scroll-down-command)
     (define-key map (kbd "i") #'ecc-chat-goto-prompt)
     (define-key map (kbd "q") #'quit-window)
-    (define-key map (kbd "t") #'ecc-tui-open)
     (define-key map (kbd "a") #'ecc-perm-allow)
     ;; No C-c C-k here: it falls through to the mode map, where it
     ;; empties the draft, so that the key discards the draft wherever
@@ -265,13 +257,12 @@ no \\`C-c C-<letter>' free goes to `ecc-menu' rather than taking one.")
     (define-key map (kbd "-") #'ecc-chat-collapse-all)
     ;; `v' goes to the prompt as `C-c c v' does from anywhere; `i' is
     ;; the same command for the finger that starts writing with it.
-    ;; `F', `P', `T' and `L' are the capitals of `ecc-menu', and `I' is
+    ;; `F', `P', `T' and `L' are the capitals of the menu, and `I' is
     ;; the picture at point as the menu's `I' is the pictures.
     (define-key map (kbd "v") #'ecc-chat-goto-prompt)
     (define-key map (kbd "I") #'ecc-chat-toggle-picture)
     (define-key map (kbd "F") #'ecc-chat-goto-files)
     (define-key map (kbd "P") #'ecc-chat-goto-plans)
-    (define-key map (kbd "?") #'ecc-menu)
     map)
   "Keymap of the transcript, put on its text as the `keymap' property.
 A key not here falls through to `ecc-chat-mode-map'.")
@@ -322,12 +313,16 @@ row.  TAB folds, on this row as on every other.")
 
 \\{ecc-chat-mode-map}"
   :interactive nil
-  ;; The prompt and the session give the keymaps above their keys and
-  ;; set up the prompt region from `ecc-chat-mode-hook', so
-  ;; they are loaded before the buffer is used, whichever command made
-  ;; it.  At run time: both require this file.
+  ;; The modules above this one give the keymaps above their keys, and
+  ;; the prompt region and the mode line their parts from
+  ;; `ecc-chat-mode-hook', so they are loaded before the buffer is used,
+  ;; whichever command made it.  At run time: they all require this file.
   (require 'ecc-prompt)
   (require 'ecc-session)
+  (require 'ecc-queue)
+  (require 'ecc-hint)
+  (require 'ecc-tui)
+  (require 'ecc-transient)
   ;; Faces are applied when text is inserted, so no font lock is
   ;; wanted; `text-mode' turns none on.
   ;; The buffer is wrapped prose, so a line on the screen is the line a
@@ -360,15 +355,12 @@ row.  TAB folds, on this row as on every other.")
   ;; the session costs and how much room is left in its context are on
   ;; the right of the header line instead, where they do not crowd the
   ;; mode name; `ecc-mode-line-format\=' puts them back for whoever
-  ;; wants them there.
+  ;; wants them there.  A list of constructs, so that a module can add
+  ;; its own after this one from `ecc-chat-mode-hook'.
   (setq-local mode-line-process
-              ;; Escaped where it is put together rather than in each
-              ;; piece: what the pieces return is text for a person.
-              '(:eval (ecc--mode-line-escape
-                       (concat (ecc-render-mode-line-process)
-                               (if (fboundp 'ecc-hint-mode-line-string)
-                                   (ecc-hint-mode-line-string)
-                                 "")))))
+              ;; Escaped where it is put in the mode line rather than in
+              ;; the function: what that returns is text for a person.
+              '((:eval (ecc--mode-line-escape (ecc-render-mode-line-process)))))
   (setq-local line-spacing ecc-chat-line-spacing)
   ;; A wrapped line lines up under the line that began it now, which
   ;; says it continues one plainly enough; the curly arrows the fringes

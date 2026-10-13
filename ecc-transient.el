@@ -412,6 +412,28 @@ before it draws anything."
   (ecc-transient--load)
   (transient-setup 'ecc-menu))
 
+;;;; The keys of a chat buffer
+
+;; `?' stays self-inserting in a region one writes prose in, so the menu
+;; is on C-c ? there and on ? in the transcript.
+
+(defvar ecc-transient-chat-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c ?") #'ecc-menu)
+    map)
+  "The keys of the menu in a chat buffer, wherever point is.
+A parent of `ecc-chat-mode-map', so that a key bound there wins.")
+
+(defvar ecc-transient-transcript-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "?") #'ecc-menu)
+    map)
+  "The keys of the menu in the transcript.
+A parent of `ecc-chat-transcript-map', so that a key bound there wins.")
+
+(ecc-chat-add-keymap-parent ecc-chat-mode-map ecc-transient-chat-map)
+(ecc-chat-add-keymap-parent ecc-chat-transcript-map ecc-transient-transcript-map)
+
 (provide 'ecc-transient)
 
 ;;; ecc-transient.el ends here

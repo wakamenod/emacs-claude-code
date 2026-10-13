@@ -64,6 +64,7 @@
 (require 'ecc-registry)
 (require 'ecc-history)
 (require 'ecc-window)
+(require 'ecc-chat)
 (require 'ecc-session)
 
 (declare-function ghostel-exec "ext:ghostel" (buffer program &optional args identity))
@@ -493,6 +494,15 @@ conversation."
       (ecc-proc-drain-queue session)
       (message "%s is back in Emacs" (ecc-session-name session))
       session))))
+
+(defvar ecc-tui-transcript-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "t") #'ecc-tui-open)
+    map)
+  "The keys of the terminal in the transcript.
+A parent of `ecc-chat-transcript-map', so that a key bound there wins.")
+
+(ecc-chat-add-keymap-parent ecc-chat-transcript-map ecc-tui-transcript-map)
 
 (provide 'ecc-tui)
 
