@@ -178,6 +178,15 @@ Verified against **Claude Code CLI 2.1.290**.
 
 ### Fixed
 
+- A Bash call that comes up open on the files it changed could bury the diff
+  under its own command: a command that writes files through heredocs, or pipes
+  a script into `python`, drew all of its hundred lines above
+  `Updated FILE (+n -m)`. A value of a tool call's input that runs over several
+  lines is now cut to `ecc-render-result-max-lines`, followed by
+  `… N more lines (RET)`, as the output under it already was. This applies to
+  every tool call, opened by default or by hand. `RET` and `o` still show the
+  whole input. A request waiting for an answer still draws its input whole,
+  because it has to be read before it is allowed. Introduced in 0.4.0.
 - `ecc-space-zoom` (`C-c c z`) deleted the sidebar the second time a tab was
   zoomed. The way back was saved as a window state, which keeps only the
   window parameters in `window-persistent-parameters`. The sidebar came back
