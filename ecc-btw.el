@@ -455,8 +455,7 @@ sent as a prompt.  This is on `ecc-prompt-intercept-functions'."
        (t (message "Usage: /btw <your question>")))
       t)))
 
-(with-eval-after-load 'ecc-prompt
-  (add-hook 'ecc-prompt-intercept-functions #'ecc-btw-intercept))
+(add-hook 'ecc-prompt-intercept-functions #'ecc-btw-intercept)
 
 (provide 'ecc-btw)
 

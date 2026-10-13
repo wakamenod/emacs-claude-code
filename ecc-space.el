@@ -1177,7 +1177,6 @@ the sidebar draws and the `1\='-`9\=' keys take under the user\='s feet.
 
 A worktree that has been removed is left out: its recordings are still
 readable with `ecc-history-open\=', but there is nowhere to start."
-  (require 'ecc-history)
   (let ((keys (ecc-space--keys))
         (seen (make-hash-table :test #'equal))
         (spaces nil))

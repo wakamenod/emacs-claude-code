@@ -323,8 +323,7 @@ sent as a prompt.  This is on `ecc-prompt-intercept-functions\\='."
       (ecc-auth-show-status)
       t))))
 
-(with-eval-after-load 'ecc-prompt
-  (add-hook 'ecc-prompt-intercept-functions #'ecc-auth-intercept))
+(add-hook 'ecc-prompt-intercept-functions #'ecc-auth-intercept)
 
 (provide 'ecc-auth)
 

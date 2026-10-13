@@ -540,7 +540,6 @@ repository still goes there."
 (defun ecc-sidebar-start-worktree ()
   "Make a worktree of the Space at point and start a session in it."
   (interactive)
-  (require 'ecc-worktree)
   (let ((space (or (ecc-sidebar--space-at-point)
                    (user-error "No Space on this line"))))
     (let ((default-directory (ecc-space-root space)))
@@ -557,7 +556,6 @@ repository still goes there."
 The redraw is `ecc-worktree-removed-hook\\=''s, which every removal runs
 -- this one and the ones an offer makes."
   (interactive)
-  (require 'ecc-worktree)
   (let ((space (or (ecc-sidebar--space-at-point)
                    (user-error "No Space on this line"))))
     (unless (ecc-space-parent space)

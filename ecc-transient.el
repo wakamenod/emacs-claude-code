@@ -180,7 +180,6 @@ the model can be changed without restarting it."
   "Show the transcript of the session at hand and run COMMAND there.
 The commands that move around a transcript need its window, not just
 its buffer."
-  (require 'ecc-session)
   (let ((session (ecc-menu-session)))
     (select-window (ecc-display-session session))
     (call-interactively command)))
@@ -298,7 +297,6 @@ With --remember among ARGS the tools involved are not asked about again
 for the rest of the session."
   :description "Allow every waiting request"
   (interactive (list (transient-args 'ecc-allow-all-menu)))
-  (require 'ecc-perm)
   (ecc-perm-allow-all (and (member "--remember" args) t)))
 
 (transient-define-prefix ecc-allow-all-menu ()

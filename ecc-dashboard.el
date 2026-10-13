@@ -710,7 +710,6 @@ which arrives with the first turn.\n"
 (defun ecc-dashboard-visit ()
   "Show the transcript of the session at point."
   (interactive)
-  (require 'ecc-window)
   (select-window (ecc-display-session (ecc-dashboard-session-at-point))))
 
 (defun ecc-dashboard-new (directory)
@@ -764,7 +763,6 @@ where the buffer and the mode line follow it."
   ;; `ecc-history-resume' unless the user insists.
   (let ((session (ecc-dashboard-session-at-point)))
     (ecc-history-resume session current-prefix-arg)
-    (require 'ecc-window)
     (select-window (ecc-display-session session))
     (ecc-dashboard-redraw)))
 

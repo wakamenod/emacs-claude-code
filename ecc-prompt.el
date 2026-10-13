@@ -38,6 +38,13 @@
 ;; `ecc-chat-mode-hook': completion, pasted images and dropped files.  `ecc-chat-return' and `ecc-chat-slash'
 ;; keep the names they had when they lived in `ecc-chat': they are what
 ;; RET and `/' do in the chat buffer, and a user may have bound them.
+;;
+;; A draft that Emacs answers itself goes to `ecc-prompt-intercept-functions'
+;; before it is sent, and a command that runs the moment it is chosen is
+;; one of `ecc-prompt-immediate-commands'.  Both keep this file's prefix
+;; and are defined in `ecc-model': the modules that answer a command sit
+;; below this one in the load order and put themselves on them as they
+;; load, which they could not do with the variables here.
 
 ;;; Code:
 
@@ -1053,45 +1060,6 @@ sees of it, and a `@region' that expanded to nothing is worth more
    (when ecc-prompt-last-skipped
      (format "; %s had nothing to send and went as it stands"
              (mapconcat #'identity ecc-prompt-last-skipped ", ")))))
-
-(defvar ecc-prompt-intercept-functions nil
-  "Functions given a session and a draft before the draft is sent.
-The first one to return non-nil takes the draft: nothing is sent to the
-CLI, and `ecc-prompt-send\' returns `intercepted\'.  The draft is
-emptied and remembered either way, so that a typo can be brought back
-with \\[ecc-prompt-history-previous].
-
-`/resume\' is ours outright: the CLI names no resume in
-`slash_commands\' and none in `terminal_slash_commands\' (checked
-against 2.1.270).  The terminal client draws that picker for itself,
-and what it does there is take the conversation over in place, which is
-what Emacs does to the window it is typed in.
-
-Only a draft the CLI is not meant to see belongs here.  The side
-question is the one there is: `/btw\' is not a slash
-command, and sending it would put it in the conversation it is supposed
-to be asked beside.
-
-The modules that answer a command register here from a
-`with-eval-after-load\' of this file rather than by requiring it, and so
-does `ecc-prompt-immediate-commands\': `ecc-auth\', `ecc-history\',
-`ecc-hooks\', `ecc-plugin\', `ecc-skill\' and `ecc-btw\' all sit below
-the prompt region in the load order, and a `require\' back up it would
-drag the whole user interface into a file that wanted one hook.  What
-is waited for is always another file of this package; no module of it
-reaches into a package the user installed for their own reasons.")
-
-(defvar ecc-prompt-immediate-commands nil
-  "Slash commands that run the moment they are chosen from the `/\=' question.
-A command Emacs answers itself and that needs no argument -- `/hooks\=',
-`/skills\=', `/plugins\=' -- has nothing to say to the CLI, so writing its
-name into the prompt only to send it is a step with no purpose: it is
-run there and then, and the slash that opened the question is taken
-back.  Each module puts its own command here, next to the interceptor
-that answers it (`ecc-prompt-intercept-functions\=').
-
-A command whose argument is the point of it stays out: `/btw <question>\='
-and `/login <account>\=' are typed, not chosen.")
 
 (defun ecc-prompt-run-immediately (session command)
   "Answer COMMAND for SESSION at once when it is one that runs as it is chosen.
