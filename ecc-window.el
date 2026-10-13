@@ -42,6 +42,12 @@
 (require 'ecc-model)
 (require 'ecc-visual)
 
+;; Showing a session goes through here from every level -- a question
+;; answered, the dashboard, a recording opened, a restore -- and the
+;; buffer it shows, with the prompt in it, is made at the top by
+;; `ecc-session' and `ecc-chat'.  Moving the showing up would have each
+;; of those load the whole transcript to show one, so these two are
+;; loaded where they are called (`ecc-display-session').
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-chat-goto-prompt "ecc-chat" ())
 ;; `ecc-space' is above this file and is loaded where `ecc-use-spaces'
