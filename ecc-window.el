@@ -905,7 +905,6 @@ about which project one is in."
 (defun ecc-window-read-project (&optional prompt)
   "Ask which of the projects that have a session to use, with PROMPT.
 A single project answers for itself: there is nothing to choose."
-  (require 'ecc-render)
   (let ((projects (ecc-window-session-projects)))
     (cond
      ((null projects) (user-error "No session is running"))
