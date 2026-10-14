@@ -121,6 +121,9 @@ session running in the background does not grab the window.")
     (define-key map (kbd "C-c C-p") #'ecc-plan-set-mode)
     (define-key map (kbd "C-c C-n") #'ecc-plan-next-change)
     map)
+  ;; `C-c C-m' is written out, not \\[...]: nothing is bound to it, and
+  ;; the docstring says why.  checkdoc reports its second chord all the
+  ;; same.
   "Keymap of `ecc-plan-mode\='.
 The plan is edited here, so a letter has to stay a letter and every
 command sits under \\`C-c C-\='.  Not \\`C-c <letter>\=': the Emacs Lisp

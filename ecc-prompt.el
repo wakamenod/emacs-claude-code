@@ -38,9 +38,10 @@
 ;;
 ;; Its keys are in `ecc-prompt-chat-map', a parent of the mode map
 ;; `ecc-chat' defines, and the region is set up from
-;; `ecc-chat-mode-hook': completion, pasted images and dropped files.  `ecc-chat-return' and `ecc-chat-slash'
-;; keep the names they had when they lived in `ecc-chat': they are what
-;; RET and `/' do in the chat buffer, and a user may have bound them.
+;; `ecc-chat-mode-hook': completion, pasted images and dropped files.
+;; `ecc-chat-return' and `ecc-chat-slash' keep the names they had when
+;; they lived in `ecc-chat': they are what RET and `/' do in the chat
+;; buffer, and a user may have bound them.
 ;;
 ;; A draft that Emacs answers itself goes to `ecc-prompt-intercept-functions'
 ;; before it is sent, and a command that runs the moment it is chosen is
