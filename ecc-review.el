@@ -4259,7 +4259,7 @@ project has none; nothing is started here.  `ecc-review-range\=' and
   (let* ((buffer-session (ecc-window-buffer-session))
          (directory (if buffer-session
                         (ecc-window-session-project buffer-session)
-                      (ecc-window-context-project-root))))
+                      (ecc-context-project-root))))
     (cons (or buffer-session (car (ecc-window-project-sessions directory)))
           (and directory (file-name-as-directory (expand-file-name directory))))))
 

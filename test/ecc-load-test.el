@@ -25,10 +25,11 @@
 ;; nothing waiting for another to load; and `ecc-proc' alone names the
 ;; MCP server on the command line.
 ;;
-;; Two are about `ecc-window' and the Spaces above it: `ecc-window' calls
-;; into no module that requires it beyond the buffer of a session, and a
-;; recording opened under `spaces' reaches the Space, which is a method
-;; there only once `ecc-space' has been loaded.
+;; The last four are about `ecc-window' and the Spaces above it:
+;; `ecc-window' calls into no module that requires it beyond the buffer
+;; of a session; and a recording opened under `spaces', a project focused
+;; and a command that asks which project it is in all reach the Space,
+;; which is a method there only once `ecc-space' has been loaded.
 
 ;;; Code:
 
@@ -511,6 +512,61 @@ loads `ecc-history' and nothing above it."
                                    (and (frame-parameter nil 'ecc-space-tabs) t)))
                          (delete-directory root t))))
                    '(t t)))))
+
+(ert-deftest ecc-load-test-focus-project-cold-reaches-the-space ()
+  "A project focused in an Emacs that has loaded nothing of ecc gets its Space.
+`ecc-focus-project' is defined in `ecc-window', which loads nothing of
+`ecc-space', and under `spaces' the answer is a method of `ecc-space':
+an autoload that loaded `ecc-window' alone gave the `classic' one, which
+refuses a project with no session.  Its autoload loads the package."
+  (should (equal (ecc-load-test--run
+                  `(let ((root (file-name-as-directory
+                                (make-temp-file "ecc-load-focus" t))))
+                     (unwind-protect
+                         (progn
+                           (load "ecc-autoloads" nil t)
+                           ;; A Space with nothing running starts a CLI.
+                           (setq ecc-use-spaces t
+                                 ecc-space-always-session nil)
+                           (list (condition-case error
+                                     (progn (ecc-focus-project root) 'ok)
+                                   (error error))
+                                 (featurep 'ecc-space)
+                                 (length (tab-bar-tabs))))
+                       (delete-directory root t))))
+                 '(ok t 2))))
+
+(ert-deftest ecc-load-test-context-root-cold-reads-the-space ()
+  "A command that asks which project it is in counts the Space showing, cold.
+Under `spaces' the tab showing is the second answer, after the buffer in
+front of the user, and the Space of a tab is known to `ecc-space' alone.
+A tab can be a Space before `ecc-space' is loaded -- `desktop-save-mode'
+puts back the tabs of a frame and its parameters -- so the commands that
+start a session, the worktree ones and the review of a range load the
+package before they ask.  Each reader runs in an Emacs of its own: once
+one has loaded the package the others would have it too."
+  (dolist (case '((ecc-lifecycle (car (ecc-start--read-arguments)))
+                  (ecc-worktree (ecc-worktree-context-root))
+                  (ecc-review (cdr (ecc-review-context)))))
+    (should (equal (ecc-load-test--run
+                    `(let ((root (file-name-as-directory
+                                  (make-temp-file "ecc-load-context" t))))
+                       (unwind-protect
+                           (progn
+                             (load "ecc-autoloads" nil t)
+                             (require ',(car case))
+                             (setq ecc-use-spaces t)
+                             ;; A Space tab as a restored desktop leaves it.
+                             (let ((key (ecc-window-project-key root)))
+                               (tab-bar-new-tab)
+                               (tab-bar-rename-tab "restored")
+                               (set-frame-parameter
+                                nil 'ecc-space-tabs (list (cons key "restored")))
+                               (list ',(car case)
+                                     (equal ,(cadr case) key)
+                                     (featurep 'ecc-space))))
+                         (delete-directory root t))))
+                   (list (car case) t t)))))
 
 (provide 'ecc-load-test)
 

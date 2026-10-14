@@ -930,7 +930,13 @@ A single project answers for itself: there is nothing to choose."
                                         (mapcar #'car labels) nil t)))
           (cdr (assoc choice labels)))))))
 
-;;;###autoload
+;; The two commands here that dispatch on the layout are autoloaded from
+;; `ecc' and not from this file.  Under `spaces' their answer is a method
+;; of `ecc-space', which this file does not load, and an autoload that
+;; loaded it alone gave the `classic' answer to the first command of the
+;; day: `ecc-focus-project' refused a project with no session instead of
+;; making its Space.  Loading the package is what the first command does.
+;;;###autoload (autoload 'ecc-focus-project "ecc" "Show the sessions of ROOT alone, and its source in the main window." t)
 (defun ecc-focus-project (root &optional choose)
   "Show the sessions of ROOT alone, and its source in the main window.
 The session windows of every other project are taken off the screen;
@@ -1197,7 +1203,8 @@ session when EVERY; the one that window already shows is not among them."
      (t (user-error "%s" (substitute-command-keys
                           "No other session in this project; \\[universal-argument] \\[ecc-switch-session] lists them all"))))))
 
-;;;###autoload
+;; Autoloaded from `ecc', as `ecc-focus-project' is and for its reason.
+;;;###autoload (autoload 'ecc-switch-session "ecc" "Show SESSION in this window, the way clicking its tab would." t)
 (defun ecc-switch-session (session)
   "Show SESSION in this window, the way clicking its tab would.
 Which session a window shows is the user's to choose: this is the same

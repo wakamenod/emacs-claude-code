@@ -1460,7 +1460,7 @@ mcp__SERVER__TOOL, and the prefix is made from `ecc-mcp-server-name\='."
   "Return the main worktree of the project a command should act in.
 A worktree of a worktree is not a thing, so a command run from a
 linked worktree means the repository it came from."
-  (let ((root (ecc-window-context-project-root)))
+  (let ((root (ecc-context-project-root)))
     (or (ecc-worktree-main root) root)))
 
 (defun ecc-worktree-read-branch (root)
@@ -1474,7 +1474,7 @@ made by accident."
 (defun ecc-worktree-read-linked (prompt)
   "Ask with PROMPT which linked worktree of this project to act on.
 The current one answers for itself when the command was run in one."
-  (let ((root (ecc-window-context-project-root)))
+  (let ((root (ecc-context-project-root)))
     (if (ecc-worktree-main root)
         root
       (let* ((entries (seq-remove #'ecc-worktree-entry-main-p
@@ -1531,7 +1531,7 @@ goes is `ecc-worktree-directory'."
   "Start a session in the worktree PATH of this project.
 Interactively, the worktrees of the project are offered."
   (interactive
-   (list (let* ((root (ecc-window-context-project-root))
+   (list (let* ((root (ecc-context-project-root))
                 (entries (seq-remove #'ecc-worktree-entry-main-p
                                      (ecc-worktree-list root))))
            (unless entries
