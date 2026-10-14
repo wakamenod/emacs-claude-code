@@ -24,7 +24,11 @@ Verified against **Claude Code CLI 2.1.290**.
   the prompt's completion and the hint in the mode line are there by
   whatever way the buffer came. A recording opened with `ecc-history-open`
   or `ecc-search` in an Emacs that had loaded nothing of ecc therefore
-  loads all of it now, rather than the modules the mode named.
+  loads all of it now, rather than the modules the mode named. The
+  commands that load the package on their way in -- the menus, the review
+  menu, `ecc-restore` and the worktree hand-off -- all do it through
+  `ecc--require-package` now, which leaves one `(require 'ecc)` in the
+  package; `ecc-transient--load` is gone.
 
 ### Fixed
 

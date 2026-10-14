@@ -1033,8 +1033,8 @@ review the other way from `ecc-review-style'."
     ("S" ecc-review-menu-switch-session)]]
   (interactive)
   ;; The suffixes reach into the whole package, and a menu opened from a
-  ;; cold Emacs has loaded this file alone (`ecc-transient--load').
-  (require 'ecc)
+  ;; cold Emacs has loaded this file alone.
+  (ecc--require-package)
   (add-hook 'transient-exit-hook #'ecc-review-menu--forget-state)
   (setq ecc-review-menu--state (ecc-review-menu--fresh-state))
   (transient-setup 'ecc-review-menu)

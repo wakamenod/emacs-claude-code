@@ -81,7 +81,10 @@ there for a session that was opened with them loaded.  A session buffer
 gets its keys, its completion and its part of the mode line from the
 modules above `ecc-chat', which it cannot load itself: they require it.
 `ecc' is what requires every one of them, and it requires this file in
-turn, so it is loaded here at run time rather than at the top."
+turn, so it is loaded here at run time rather than at the top.  Every
+command that loads the package on its way in -- a menu, a restore, a
+worktree handed over -- calls this, so that the `require' of `ecc' is
+written once."
   (require 'ecc))
 
 (defun ecc-project-root ()
