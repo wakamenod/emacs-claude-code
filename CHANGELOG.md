@@ -15,6 +15,17 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 Verified against **Claude Code CLI 2.1.290**.
 
+### Changed
+
+- `ecc-chat-mode` no longer loads the modules above `ecc-chat.el`, which
+  0.4.4 had it do so that every chat buffer had their keys. What makes a
+  session buffer, `ecc-session-ensure-buffer`, loads the whole package
+  before it makes one, as starting a session already did, so the keys,
+  the prompt's completion and the hint in the mode line are there by
+  whatever way the buffer came. A recording opened with `ecc-history-open`
+  or `ecc-search` in an Emacs that had loaded nothing of ecc therefore
+  loads all of it now, rather than the modules the mode named.
+
 ### Fixed
 
 - Three docstrings that wrote out a key of ecc's own now show the key the
