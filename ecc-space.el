@@ -985,6 +985,40 @@ that a transcript is lost."
                                            2))))))
         (display-buffer buffer))))
 
+;;;; The windows under `spaces'
+
+;; `ecc-window' gives the `classic' answer to everything that depends on
+;; the layout, and these are the answers of a Space.  `ecc-window--layout'
+;; says `spaces' when `ecc-use-spaces' is non-nil, and only then.
+
+(cl-defmethod ecc-window--tab-root ((_layout (eql spaces)))
+  "Return the key of the Space of the tab showing, or nil."
+  (ecc-space-current-key))
+
+(cl-defmethod ecc-window--project-group ((_layout (eql spaces)) key)
+  "Return the title of the Space of KEY and the key of its parent.
+The title is the one the Space picker offers it under."
+  (let ((space (ecc-space-of-root key)))
+    (cons (ecc-space-title space) (ecc-space-parent space))))
+
+(cl-defmethod ecc-window--show-session ((_layout (eql spaces)) session)
+  "Show SESSION in the Space of its project and return its window."
+  (ecc-space-display-session session))
+
+(cl-defmethod ecc-window--place-beside ((_layout (eql spaces)) buffer session
+                                        _no-select)
+  "Show BUFFER next to SESSION in its Space and return the window."
+  (ecc-space-display-beside-session buffer session))
+
+(cl-defmethod ecc-window--focus ((_layout (eql spaces)) key sessions _choose)
+  "Go to the Space of KEY and return SESSIONS, the sessions of KEY.
+There is nothing to deal and nothing to hide: the Space is a tab, and
+going to it brings back the windows the user arranged there."
+  (ecc-space-select (ecc-space-of-root key))
+  (message "%s: %d session%s" (ecc--project-label key) (length sessions)
+           (if (= 1 (length sessions)) "" "s"))
+  sessions)
+
 ;;;; Commands
 
 (defun ecc-space--forget-zoom ()

@@ -30,6 +30,22 @@ Verified against **Claude Code CLI 2.1.290**.
   `ecc--require-package` now, which leaves one `(require 'ecc)` in the
   package; `ecc-transient--load` is gone.
 
+- `ecc-window` no longer calls into `ecc-space`. What depends on the layout
+  -- the project the tab showing stands for, the title a group of sessions
+  goes by in the session picker, where a session or a buffer beside it is
+  shown, and what `ecc-focus-project` does -- is a generic function of
+  `ecc-window` dispatching on `ecc-window--layout`, with the `classic`
+  answer as its default, and `ecc-space` specialises each of them on
+  `spaces`. Seven `declare-function`s and five run-time requires of
+  `ecc-space` are gone from `ecc-window`, and so is a `(require 'ecc-render)`
+  in `ecc-window-read-project` that nothing had used since the name of a
+  project moved into `ecc-window-project-name`. Nothing a user sees changes.
+  A Space is a method that exists once `ecc-space` is loaded, which
+  `ecc-session-ensure-buffer` sees to by loading the whole package before
+  a session buffer is made; a test opens a recording in an Emacs of its own
+  to check that it lands in a Space. Another fails when `ecc-window` gains a
+  `declare-function` or a run-time `require` of a module that requires it.
+
 ### Fixed
 
 - Three docstrings that wrote out a key of ecc's own now show the key the

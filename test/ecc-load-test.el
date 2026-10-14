@@ -24,10 +24,17 @@
 ;; `ecc-worktree' are in place once their own module is loaded, with
 ;; nothing waiting for another to load; and `ecc-proc' alone names the
 ;; MCP server on the command line.
+;;
+;; Two are about `ecc-window' and the Spaces above it: `ecc-window' calls
+;; into no module that requires it beyond the buffer of a session, and a
+;; recording opened under `spaces' reaches the Space, which is a method
+;; there only once `ecc-space' has been loaded.
 
 ;;; Code:
 
 (require 'ert)
+(require 'cl-lib)
+(require 'seq)
 (require 'ecc-test-helpers)
 
 (defun ecc-load-test--probe (dir)
@@ -394,6 +401,116 @@ started."
                                         t)))
                          (ecc-mcp-stop)))))
                  '(nil nil nil t))))
+
+;;;; What ecc-window reaches up to
+
+(defun ecc-load-test--references (file)
+  "Return (TOP . INNER) for the forms of FILE.
+TOP is the features of ecc FILE requires at top level.  INNER is every
+other reference to a module of ecc in it: (require FEATURE FEATURE) for
+a `require' inside a form, and (declare FUNCTION FEATURE) for a
+`declare-function'."
+  (let ((top nil)
+        (inner nil))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (cl-labels ((ecc-feature (form)
+                    (and (eq (car-safe form) 'quote)
+                         (symbolp (cadr form))
+                         (string-prefix-p "ecc" (symbol-name (cadr form)))
+                         (cadr form)))
+                  (walk (form)
+                    (when (consp form)
+                      (pcase form
+                        (`(require ,feature . ,_)
+                         (when-let* ((feature (ecc-feature feature)))
+                           (push (list 'require feature feature) inner)))
+                        (`(declare-function ,function ,(and (pred stringp) file) . ,_)
+                         (when (string-prefix-p "ecc" file)
+                           (push (list 'declare function (intern file)) inner))))
+                      (while (consp form)
+                        (walk (car form))
+                        (setq form (cdr form))))))
+        (condition-case nil
+            (while t
+              (let ((form (read (current-buffer))))
+                (if-let* (((eq (car-safe form) 'require))
+                          (feature (ecc-feature (cadr form))))
+                    (push feature top)
+                  (walk form))))
+          (end-of-file nil))))
+    (cons top inner)))
+
+(defun ecc-load-test--upward (feature)
+  "Return the references of FEATURE to a module that requires it.
+A module that requires FEATURE, however indirectly, is above it, and a
+`declare-function' or a `require' inside a function that names one is
+a call into what loads FEATURE: the two files call each other."
+  (let* ((dir (file-name-directory (locate-library "ecc.el" t)))
+         (modules (mapcar (lambda (file)
+                            (cons (intern (file-name-base file))
+                                  (ecc-load-test--references
+                                   (expand-file-name file dir))))
+                          (seq-remove (lambda (file)
+                                        (equal file "ecc-autoloads.el"))
+                                      (directory-files dir nil "\\`ecc.*\\.el\\'"))))
+         (above (lambda (target)
+                  ;; Whether TARGET requires FEATURE, however indirectly.
+                  (let ((seen nil)
+                        (queue (list target)))
+                    (while queue
+                      (let ((module (pop queue)))
+                        (unless (memq module seen)
+                          (push module seen)
+                          (setq queue (append (car (alist-get module modules))
+                                              queue)))))
+                    (and (memq feature (delq target seen)) t)))))
+    (sort (seq-filter (lambda (reference) (funcall above (nth 2 reference)))
+                      (cdr (alist-get feature modules)))
+          (lambda (a b) (string< (prin1-to-string a) (prin1-to-string b))))))
+
+(ert-deftest ecc-load-test-window-reaches-up-to-no-space ()
+  "`ecc-window' calls into nothing above it but the buffer of a session.
+The Spaces are built on top of the windows: what differs under them is a
+generic function of `ecc-window' that `ecc-space' specialises, and no
+`declare-function' or `require' of `ecc-window' names `ecc-space' or any
+other module that requires it.  What is left is the buffer a session is
+shown in and its prompt, which `ecc-session' and `ecc-chat' make; a
+reference added here fails this, and one taken away is struck off."
+  (should (equal (ecc-load-test--upward 'ecc-window)
+                 '((declare ecc-chat-goto-prompt ecc-chat)
+                   (declare ecc-session-ensure-buffer ecc-session)
+                   (require ecc-session ecc-session)
+                   (require ecc-session ecc-session)
+                   (require ecc-session ecc-session)))))
+
+(ert-deftest ecc-load-test-spaces-reached-from-a-recording ()
+  "A recording opened under `spaces' is shown in a Space, in an Emacs of its own.
+`ecc-window' loads nothing of `ecc-space': the Space is a method that is
+there once `ecc-space' is loaded, and before that the `classic' answer
+is the one given.  So whatever shows a session has to have loaded it,
+or a session under `spaces' lands in a window role with no word said.
+`ecc-history-open' is a way in that starts no CLI, and its autoload
+loads `ecc-history' and nothing above it."
+  (let ((fixture (ecc-test-history-fixture "session")))
+    (should (equal (ecc-load-test--run
+                    `(let* ((root (make-temp-file "ecc-load-history" t))
+                            (project (expand-file-name "-tmp-project" root))
+                            (id "24a1aa86-d53f-4457-b09e-4f4caf450f03"))
+                       (unwind-protect
+                           (progn
+                             (make-directory project t)
+                             (copy-file ,fixture (expand-file-name
+                                                  (concat id ".jsonl") project))
+                             (require 'ecc-history)
+                             (setq ecc-history-directory root
+                                   ecc-use-spaces t)
+                             (ecc-history-open id)
+                             (list (featurep 'ecc-space)
+                                   (and (frame-parameter nil 'ecc-space-tabs) t)))
+                         (delete-directory root t))))
+                   '(t t)))))
 
 (provide 'ecc-load-test)
 
