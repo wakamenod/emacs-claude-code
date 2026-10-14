@@ -42,9 +42,18 @@ Verified against **Claude Code CLI 2.1.290**.
   project moved into `ecc-window-project-name`. Nothing a user sees changes.
   A Space is a method that exists once `ecc-space` is loaded, which
   `ecc-session-ensure-buffer` sees to by loading the whole package before
-  a session buffer is made; a test opens a recording in an Emacs of its own
-  to check that it lands in a Space. Another fails when `ecc-window` gains a
-  `declare-function` or a run-time `require` of a module that requires it.
+  a session buffer is made. The commands that can consult the layout
+  before a session exists load the package first: `ecc-focus-project` and
+  `ecc-switch-session` are autoloaded from `ecc` rather than `ecc-window`,
+  and `ecc-start`, `ecc-start-worktree`, `ecc-start-in-worktree`,
+  `ecc-remove-worktree` and `ecc-review-range` ask which project they are
+  in through `ecc-context-project-root`, which loads it before it asks.
+  Tests run in an Emacs of their own: a recording opened under `spaces`
+  lands in a Space, a project focused there gets its Space, and a tab that
+  is a Space before anything of ecc has run, as `desktop-save-mode` puts it
+  back, is the project those commands start from. Another fails when
+  `ecc-window` gains a `declare-function` or a run-time `require` of a
+  module that requires it.
 
 ### Fixed
 
