@@ -91,6 +91,17 @@ written once."
   "Return the root of the project of the current buffer, or its directory."
   (ecc-window-project-root))
 
+(defun ecc-context-project-root ()
+  "Return the project a command should act in, the package loaded first.
+It is `ecc-window-context-project-root', which under `spaces' counts
+the tab showing as the user's choice of project -- and which tab is a
+Space only `ecc-space' knows.  A tab can be one before anything of ecc
+has run, `desktop-save-mode' putting back the tabs of a frame and its
+parameters, so a command that asks this before it has made a session
+loads the package to ask it."
+  (ecc--require-package)
+  (ecc-window-context-project-root))
+
 (defun ecc--enable-session-modes ()
   "Turn on the global modes every session wants.
 Every way into a session comes through here, and not `ecc-start' alone:
@@ -145,7 +156,7 @@ reach it.  The directory comes from the buffer the user is working in
 rather than from whichever buffer happens to be current: `ecc-start\=' is
 run from a transcript, the dashboard or the scratch buffer as often as
 from a file, and none of those says which project was meant."
-  (let ((root (ecc-window-context-project-root)))
+  (let ((root (ecc-context-project-root)))
     (if current-prefix-arg
         (list (read-directory-name "Directory: " root)
               (read-string "Session name: "))
