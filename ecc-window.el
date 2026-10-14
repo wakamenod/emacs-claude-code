@@ -53,16 +53,23 @@
 ;; loaded where they are called (`ecc-display-session').
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-chat-goto-prompt "ecc-chat" ())
-;; `ecc-space' is above this file and is loaded where `ecc-use-spaces'
-;; says so, the way `ecc-display-session' loads `ecc-session'.  Nothing
-;; here requires it: the dependency runs the other way.
-(declare-function ecc-space-of-root "ecc-space" (root))
-(declare-function ecc-space-select "ecc-space" (space))
-(declare-function ecc-space-display-session "ecc-space" (session &optional no-reuse))
-(declare-function ecc-space-display-beside-session "ecc-space" (buffer session))
-(declare-function ecc-space-current-key "ecc-space" ())
-(declare-function ecc-space-title "ecc-space" (space))
-(declare-function ecc-space-parent "ecc-space" (space) t)
+
+;; What a session window does under `spaces' is not decided here.  The
+;; operations whose answer depends on the layout -- which project the tab
+;; showing stands for, what a group of sessions is called, where a session
+;; or a buffer beside it is shown, what focusing a project does -- are
+;; generic functions of the layout, `ecc-window--layout', whose default
+;; body is the `classic' answer; `ecc-space', which requires this file,
+;; specialises each of them on `spaces'.  No code here calls into
+;; `ecc-space': the Spaces are built on top of the windows, and the
+;; dependency runs that way alone.  With `ecc-use-spaces' nil no method of
+;; `ecc-space' is ever chosen.
+
+(defun ecc-window--layout ()
+  "Return the layout the session windows follow: `spaces' or `classic'.
+It is what the generic functions of this file dispatch on, and it says
+`spaces' whenever `ecc-use-spaces' is non-nil."
+  (if ecc-use-spaces 'spaces 'classic))
 
 (defvar ecc-window-use-side-window t
   "Non-nil shows a transcript in a side window rather than an ordinary one.
@@ -209,16 +216,15 @@ Space, and choosing one is as plain a statement of which project is
 meant as the buffer in front of them."
   (ecc-window-project-key
    (or (ecc-window-buffer-directory (current-buffer))
-       (ecc-window--space-root)
+       (ecc-window--tab-root (ecc-window--layout))
        (ecc-window-buffer-directory ecc-window--last-source-buffer)
        default-directory)))
 
-(defun ecc-window--space-root ()
-  "Return the root of the Space of the current tab, or nil.
-Nil under `classic', where there are no Spaces to ask about."
-  (when ecc-use-spaces
-    (require 'ecc-space)
-    (ecc-space-current-key)))
+(cl-defgeneric ecc-window--tab-root (_layout)
+  "Return the root of the project the tab showing stands for, or nil.
+Nil under the `classic' LAYOUT, where a tab stands for no project;
+`ecc-space' answers under `spaces' with the Space of the tab."
+  nil)
 
 (defun ecc-window-read-session-name (root)
   "Return a name for a new session in ROOT, asking when it is not the first.
@@ -494,38 +500,44 @@ replaced rather than a second window being opened."
 
 (defun ecc-display-session (session)
   "Show the buffer of SESSION and return its window.
-The window is not selected; `ecc-window-select-session' does that."
+The window is not selected; `ecc-window-select-session' does that.
+Where it is shown is `ecc-window--show-session'."
+  (ecc-window--show-session (ecc-window--layout) session))
+
+(cl-defgeneric ecc-window--show-session (_layout session)
+  "Show the buffer of SESSION under LAYOUT and return its window.
+Under `classic' the session goes into a window role, or to a plain
+`display-buffer' without `ecc-window-use-side-window'; `ecc-space'
+shows it in its Space under `spaces'."
   (require 'ecc-session)
-  (if ecc-use-spaces
-      (progn
-        (require 'ecc-space)
-        (ecc-space-display-session session))
-    (if (not ecc-window-use-side-window)
-        (display-buffer (ecc-session-ensure-buffer session))
-      (ecc-display-session-in-role session (ecc-window-role-for session)))))
+  (if (not ecc-window-use-side-window)
+      (display-buffer (ecc-session-ensure-buffer session))
+    (ecc-display-session-in-role session (ecc-window-role-for session))))
 
 (defun ecc-window-display-beside-session (buffer session &optional no-select)
   "Show BUFFER beside the window of SESSION and return the window.
 Everything that opens a buffer of its own out of one conversation goes
 through here: a question, a plan, a log, an agent transcript, a node
-laid open.  With `ecc-use-spaces\=' the Space decides where it lands
-\(`ecc-space-display-beside-session\='), and it never takes the window of
-another session; without it, it is `pop-to-buffer\=', which is what it
-always was.
+laid open.  Where it lands is `ecc-window--place-beside\='.
 
 The window is selected unless NO-SELECT says otherwise: the buffer is
 opened to be read or answered."
-  (let ((window (if ecc-use-spaces
-                    (progn
-                      (require 'ecc-space)
-                      (ecc-space-display-beside-session buffer session))
-                  (if no-select
-                      (display-buffer buffer)
-                    (pop-to-buffer buffer)
-                    (get-buffer-window buffer)))))
+  (let ((window (ecc-window--place-beside (ecc-window--layout)
+                                          buffer session no-select)))
     (when (and (not no-select) (window-live-p window))
       (select-window window))
     window))
+
+(cl-defgeneric ecc-window--place-beside (_layout buffer _session no-select)
+  "Show BUFFER beside the window of SESSION under LAYOUT; return the window.
+Under `classic' it is `pop-to-buffer\=', which is what it always was, or
+`display-buffer\=' when NO-SELECT says the buffer is not to be selected.
+Under `spaces' `ecc-space' lets the Space decide, and there it never
+takes the window of another session."
+  (if no-select
+      (display-buffer buffer)
+    (pop-to-buffer buffer)
+    (get-buffer-window buffer)))
 
 ;;;; Keeping a side window a side window
 
@@ -937,34 +949,35 @@ arranged there.  CHOOSE has no meaning then, the buffers of the tab
 being whatever they were left as."
   (interactive (list (ecc-window-read-project "Focus project: ")
                      current-prefix-arg))
-  (let* ((key (ecc-window-project-key root))
-         (mine (ecc-window-project-sessions key)))
-    (if ecc-use-spaces
-        (progn
-          (require 'ecc-space)
-          (ecc-space-select (ecc-space-of-root key))
-          (message "%s: %d session%s" (ecc--project-label key) (length mine)
-                   (if (= 1 (length mine)) "" "s"))
-          mine)
-      (unless mine
-        (user-error "No session in %s" (abbreviate-file-name key)))
-      (let ((hidden (ecc-window-hide-sessions
-                     (seq-remove (lambda (session) (memq session mine))
-                                 (ecc-window-displayed-sessions)))))
-        (when ecc-window-use-side-window
-          ;; The roles are dealt out again from nothing, so a window one
-          ;; of these sessions already holds comes down first.  Moving a
-          ;; session from one role to another otherwise leaves the window
-          ;; it came from showing it as well, and the frame ends up with
-          ;; the same transcript twice (confirmed 2026-09-13).
-          (mapc #'ecc-window-hide-session mine)
-          (cl-mapc #'ecc-display-session-in-role
-                   mine (ecc-window-available-roles)))
-        (ecc-window--focus-source key choose)
-        (message "Focused %s: %d session%s, %d hidden"
-                 (ecc--project-label key) (length mine)
-                 (if (= 1 (length mine)) "" "s") (length hidden))
-        mine))))
+  (let ((key (ecc-window-project-key root)))
+    (ecc-window--focus (ecc-window--layout)
+                       key (ecc-window-project-sessions key) choose)))
+
+(cl-defgeneric ecc-window--focus (_layout key sessions choose)
+  "Focus the project KEY under LAYOUT and return SESSIONS, its sessions.
+CHOOSE is that of `ecc-focus-project'.  Under `classic' the session
+windows of every other project come down, SESSIONS are dealt into the
+roles and the source of KEY goes in the main window.  Under `spaces'
+`ecc-space' goes to the Space of KEY instead."
+  (unless sessions
+    (user-error "No session in %s" (abbreviate-file-name key)))
+  (let ((hidden (ecc-window-hide-sessions
+                 (seq-remove (lambda (session) (memq session sessions))
+                             (ecc-window-displayed-sessions)))))
+    (when ecc-window-use-side-window
+      ;; The roles are dealt out again from nothing, so a window one of
+      ;; these sessions already holds comes down first.  Moving a session
+      ;; from one role to another otherwise leaves the window it came from
+      ;; showing it as well, and the frame ends up with the same
+      ;; transcript twice (confirmed 2026-09-13).
+      (mapc #'ecc-window-hide-session sessions)
+      (cl-mapc #'ecc-display-session-in-role
+               sessions (ecc-window-available-roles)))
+    (ecc-window--focus-source key choose)
+    (message "Focused %s: %d session%s, %d hidden"
+             (ecc--project-label key) (length sessions)
+             (if (= 1 (length sessions)) "" "s") (length hidden))
+    sessions))
 
 ;;;; Which session a command talks to
 
@@ -975,18 +988,20 @@ being whatever they were left as."
 
 (defun ecc-window--session-group (key)
   "Return (TITLE . PARENT) for the group of the sessions of the project KEY.
-Under `spaces\=' the group is the Space, titled by `ecc-space-title\=' as
-the Space picker titles it, and PARENT is the key of the repository a
-linked worktree belongs to.  Under `classic\=' it is the project,
-with no PARENT: telling a worktree from its repository asks git, and
-nothing under `classic\=' reaches `ecc-worktree\='."
-  (cond
-   ((string-empty-p key) (list "-"))
-   (ecc-use-spaces
-    (require 'ecc-space)
-    (let ((space (ecc-space-of-root key)))
-      (cons (ecc-space-title space) (ecc-space-parent space))))
-   (t (list (ecc-window-project-name key)))))
+A session with no project is in a group of its own, titled \"-\"; the
+rest are grouped by `ecc-window--project-group\='."
+  (if (string-empty-p key)
+      (list "-")
+    (ecc-window--project-group (ecc-window--layout) key)))
+
+(cl-defgeneric ecc-window--project-group (_layout key)
+  "Return (TITLE . PARENT) for the group of the sessions of KEY under LAYOUT.
+Under `classic' it is the project, with no PARENT: telling a worktree
+from its repository asks git, and nothing under `classic' reaches
+`ecc-worktree'.  Under `spaces' `ecc-space' groups them by Space, titled
+as the Space picker titles it, and PARENT is the key of the repository
+a linked worktree belongs to."
+  (list (ecc-window-project-name key)))
 
 (defun ecc-window--sessions-by-use (sessions)
   "Return SESSIONS, the one whose buffer was selected last first.
@@ -1162,7 +1177,8 @@ meant is the Space that is showing, or under `classic' the one
      (session (ecc-window-project-sessions
                (ecc-window-session-project session)))
      (t (ecc-window-project-sessions
-         (or (ecc-window--space-root) (ecc-window-context-project-root)))))))
+         (or (ecc-window--tab-root (ecc-window--layout))
+             (ecc-window-context-project-root)))))))
 
 (defun ecc-window--read-switch (every)
   "Ask which session `ecc-switch-session' should show.
