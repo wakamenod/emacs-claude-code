@@ -96,10 +96,11 @@ printed and read back, so it must have a printed representation."
   "A chat buffer has the keys of the modules above `ecc-chat', whatever made it.
 The keymaps are defined in `ecc-chat', and `ecc-prompt', `ecc-session',
 `ecc-queue', `ecc-hint', `ecc-tui' and `ecc-transient' give them their
-keys; `ecc-chat-mode' loads them all.  Most of the ways to a buffer -- a
-recording read back, the terminal, an answer from anywhere, a Space --
-load `ecc-session' and never `ecc-prompt' or `ecc-transient', so without
-that a buffer would come up with no \\`C-c C-c' and no \\`?'.  FEATURE is
+keys; `ecc-session-ensure-buffer' loads the whole package before it
+makes the buffer.  Most of the ways to a buffer -- a recording read
+back, the terminal, an answer from anywhere, a Space -- load
+`ecc-session' and never `ecc-prompt' or `ecc-transient', so without that
+a buffer would come up with no \\`C-c C-c' and no \\`?'.  FEATURE is
 required as that entry point would be, and the buffer is made the way
 every path makes one: `ecc-session' required at run time and
 `ecc-session-ensure-buffer' called."

@@ -42,11 +42,13 @@
 ;;
 ;; A session wants the whole package -- the MCP tools, the hints, the
 ;; notifications -- and some of it is registered when its file is
-;; loaded, so it has to be there before the CLI starts.  The autoload of
-;; `ecc-start' loads this file alone, and so does that of any command
-;; above it that starts a session, which is why every way into a session
-;; loads `ecc' first (`ecc--require-package').  The few functions of the
-;; modules above that are called here are the ones that loading brings.
+;; loaded, so it has to be there before the CLI starts.  A session
+;; buffer wants it too: the modules above `ecc-chat' give it its keys.
+;; The autoload of `ecc-start' loads this file alone, and so does that of
+;; any command above it that starts a session, which is why every way
+;; into a session, and every session buffer, loads `ecc' first
+;; (`ecc--require-package').  The few functions of the modules above that
+;; are called here are the ones that loading brings.
 
 ;;; Code:
 
@@ -72,12 +74,14 @@
 (declare-function ecc-tab-line-mode "ecc-notify" (&optional arg))
 
 (defun ecc--require-package ()
-  "Load the whole of ecc, as a session is about to be opened.
+  "Load the whole of ecc, as a session or its buffer is about to be made.
 The features that register themselves when they are loaded -- the MCP
 tools, among them, which a CLI lists once when it starts -- are only
-there for a session that was opened with them loaded.  `ecc' is what
-requires every one of them, and it requires this file in turn, so it
-is loaded here at run time rather than at the top."
+there for a session that was opened with them loaded.  A session buffer
+gets its keys, its completion and its part of the mode line from the
+modules above `ecc-chat', which it cannot load itself: they require it.
+`ecc' is what requires every one of them, and it requires this file in
+turn, so it is loaded here at run time rather than at the top."
   (require 'ecc))
 
 (defun ecc-project-root ()
